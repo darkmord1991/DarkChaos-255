@@ -1,26 +1,32 @@
-﻿--[[-----------------------------------------------------------------------------
+--[[-----------------------------------------------------------------------------
 Icon Widget
 -------------------------------------------------------------------------------]]
 local Type, Version = "Icon", 20
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
+
 -- Lua APIs
 local select, pairs, print = select, pairs, print
+
 -- WoW APIs
 local CreateFrame, UIParent, GetBuildInfo = CreateFrame, UIParent, GetBuildInfo
+
 --[[-----------------------------------------------------------------------------
 Scripts
 -------------------------------------------------------------------------------]]
 local function Control_OnEnter(frame)
 	frame.obj:Fire("OnEnter")
 end
+
 local function Control_OnLeave(frame)
 	frame.obj:Fire("OnLeave")
 end
+
 local function Button_OnClick(frame, button)
 	frame.obj:Fire("OnClick", button)
 	AceGUI:ClearFocus()
 end
+
 --[[-----------------------------------------------------------------------------
 Methods
 -------------------------------------------------------------------------------]]
@@ -33,7 +39,9 @@ local methods = {
 		self:SetImageSize(64, 64)
 		self:SetDisabled(false)
 	end,
+
 	-- ["OnRelease"] = nil,
+
 	["SetLabel"] = function(self, text)
 		if text and text ~= "" then
 			self.label:Show()
@@ -44,9 +52,11 @@ local methods = {
 			self:SetHeight(self.image:GetHeight() + 10)
 		end
 	end,
+
 	["SetImage"] = function(self, path, ...)
 		local image = self.image
 		image:SetTexture(path)
+		
 		if image:GetTexture() then
 			local n = select("#", ...)
 			if n == 4 or n == 8 then
@@ -56,6 +66,7 @@ local methods = {
 			end
 		end
 	end,
+
 	["SetImageSize"] = function(self, width, height)
 		self.image:SetWidth(width)
 		self.image:SetHeight(height)
@@ -66,6 +77,7 @@ local methods = {
 			self:SetHeight(height + 10)
 		end
 	end,
+
 	["SetDisabled"] = function(self, disabled)
 		self.disabled = disabled
 		if disabled then
@@ -79,31 +91,37 @@ local methods = {
 		end
 	end
 }
+
 --[[-----------------------------------------------------------------------------
 Constructor
 -------------------------------------------------------------------------------]]
 local function Constructor()
 	local frame = CreateFrame("Button", nil, UIParent)
 	frame:Hide()
+
 	frame:EnableMouse(true)
 	frame:SetScript("OnEnter", Control_OnEnter)
 	frame:SetScript("OnLeave", Control_OnLeave)
 	frame:SetScript("OnClick", Button_OnClick)
+
 	local label = frame:CreateFontString(nil, "BACKGROUND", "GameFontHighlight")
 	label:SetPoint("BOTTOMLEFT")
 	label:SetPoint("BOTTOMRIGHT")
 	label:SetJustifyH("CENTER")
 	label:SetJustifyV("TOP")
 	label:SetHeight(18)
+
 	local image = frame:CreateTexture(nil, "BACKGROUND")
 	image:SetWidth(64)
 	image:SetHeight(64)
 	image:SetPoint("TOP", 0, -5)
+
 	local highlight = frame:CreateTexture(nil, "HIGHLIGHT")
 	highlight:SetAllPoints(image)
 	highlight:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight")
 	highlight:SetTexCoord(0, 1, 0.23, 0.77)
 	highlight:SetBlendMode("ADD")
+
 	local widget = {
 		label = label,
 		image = image,
@@ -119,7 +137,8 @@ local function Constructor()
 	else
 		widget.SetText = function(self, ...) print("AceGUI-3.0-Icon: SetText is deprecated! Use SetLabel instead!"); self:SetLabel(...) end
 	end
+
 	return AceGUI:RegisterAsWidget(widget)
 end
-AceGUI:RegisterWidgetType(Type, Constructor, Version)
 
+AceGUI:RegisterWidgetType(Type, Constructor, Version)

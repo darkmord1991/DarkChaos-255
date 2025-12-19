@@ -1,14 +1,17 @@
-﻿--[[-----------------------------------------------------------------------------
+--[[-----------------------------------------------------------------------------
 DropdownGroup Container
 Container controlled by a dropdown on the top.
 -------------------------------------------------------------------------------]]
 local Type, Version = "DropdownGroup", 20
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
 if not AceGUI or (AceGUI:GetWidgetVersion(Type) or 0) >= Version then return end
+
 -- Lua APIs
 local assert, pairs, type = assert, pairs, type
+
 -- WoW APIs
 local CreateFrame = CreateFrame
+
 --[[-----------------------------------------------------------------------------
 Scripts
 -------------------------------------------------------------------------------]]
@@ -18,6 +21,7 @@ local function SelectedGroup(self, event, value)
 	status.selected = value
 	self.parentgroup:Fire("OnGroupSelected", value)
 end
+
 --[[-----------------------------------------------------------------------------
 Methods
 -------------------------------------------------------------------------------]]
@@ -27,6 +31,7 @@ local methods = {
 		self:SetDropdownWidth(200)
 		self:SetTitle("")
 	end,
+
 	["OnRelease"] = function(self)
 		self.dropdown.list = nil
 		self.status = nil
@@ -34,6 +39,7 @@ local methods = {
 			self.localstatus[k] = nil
 		end
 	end,
+
 	["SetTitle"] = function(self, title)
 		self.titletext:SetText(title)
 		self.dropdown.frame:ClearAllPoints()
@@ -43,19 +49,23 @@ local methods = {
 			self.dropdown.frame:SetPoint("TOPLEFT", -1, 0)
 		end
 	end,
+
 	["SetGroupList"] = function(self,list)
 		self.dropdown:SetList(list)
 	end,
+
 	["SetStatusTable"] = function(self, status)
 		assert(type(status) == "table")
 		self.status = status
 	end,
+
 	["SetGroup"] = function(self,group)
 		self.dropdown:SetValue(group)
 		local status = self.status or self.localstatus
 		status.selected = group
 		self:Fire("OnGroupSelected", group)
 	end,
+
 	["OnWidthSet"] = function(self, width)
 		local content = self.content
 		local contentwidth = width - 26
@@ -65,6 +75,7 @@ local methods = {
 		content:SetWidth(contentwidth)
 		content.width = contentwidth
 	end,
+
 	["OnHeightSet"] = function(self, height)
 		local content = self.content
 		local contentheight = height - 63
@@ -74,13 +85,16 @@ local methods = {
 		content:SetHeight(contentheight)
 		content.height = contentheight
 	end,
+
 	["LayoutFinished"] = function(self, width, height)
 		self:SetHeight((height or 0) + 63)
 	end,
+
 	["SetDropdownWidth"] = function(self, width)
 		self.dropdown:SetWidth(width)
 	end
 }
+
 --[[-----------------------------------------------------------------------------
 Constructor
 -------------------------------------------------------------------------------]]
@@ -90,16 +104,19 @@ local PaneBackdrop  = {
 	tile = true, tileSize = 16, edgeSize = 16,
 	insets = { left = 3, right = 3, top = 5, bottom = 3 }
 }
+
 local function Constructor()
 	local frame = CreateFrame("Frame")
 	frame:SetHeight(100)
 	frame:SetWidth(100)
 	frame:SetFrameStrata("FULLSCREEN_DIALOG")
+
 	local titletext = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	titletext:SetPoint("TOPLEFT", 4, -5)
 	titletext:SetPoint("TOPRIGHT", -4, -5)
 	titletext:SetJustifyH("LEFT")
 	titletext:SetHeight(18)
+
 	local dropdown = AceGUI:Create("Dropdown")
 	dropdown.frame:SetParent(frame)
 	dropdown.frame:SetFrameLevel(dropdown.frame:GetFrameLevel() + 2)
@@ -107,16 +124,19 @@ local function Constructor()
 	dropdown.frame:SetPoint("TOPLEFT", -1, 0)
 	dropdown.frame:Show()
 	dropdown:SetLabel("")
+
 	local border = CreateFrame("Frame", nil, frame)
 	border:SetPoint("TOPLEFT", 0, -26)
 	border:SetPoint("BOTTOMRIGHT", 0, 3)
 	border:SetBackdrop(PaneBackdrop)
 	border:SetBackdropColor(0.1,0.1,0.1,0.5)
 	border:SetBackdropBorderColor(0.4,0.4,0.4)
+
 	--Container Support
 	local content = CreateFrame("Frame", nil, border)
 	content:SetPoint("TOPLEFT", 10, -10)
 	content:SetPoint("BOTTOMRIGHT", -10, 10)
+
 	local widget = {
 		frame       = frame,
 		localstatus = {},
@@ -130,7 +150,8 @@ local function Constructor()
 		widget[method] = func
 	end
 	dropdown.parentgroup = widget
+	
 	return AceGUI:RegisterAsContainer(widget)
 end
-AceGUI:RegisterWidgetType(Type, Constructor, Version)
 
+AceGUI:RegisterWidgetType(Type, Constructor, Version)
