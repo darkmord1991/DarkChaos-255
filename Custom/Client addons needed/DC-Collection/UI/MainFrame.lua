@@ -723,6 +723,14 @@ end
 -- ============================================================================
 
 function DC:OnItemLeftClick(item)
+    if item.type == "shop" then
+        -- Default action in shop: preview if supported
+        if item.collectionTypeName == "transmog" then
+            self:PreviewShopTransmogItem(item)
+        end
+        return
+    end
+
     if not item.collected then
         -- Not collected - show where to get it
         return
@@ -746,6 +754,133 @@ function DC:OnItemRightClick(item)
     local menu = {
         { text = item.name, isTitle = true, notCheckable = true },
     }
+
+    -- Shop: Preview + Buy
+    if item.type == "shop" then
+        if item.collectionTypeName == "transmog" then
+            table.insert(menu, {
+                text = "Preview",
+                notCheckable = true,
+                func = function() DC:PreviewShopTransmogItem(item) end,
+            })
+        end
+
+        if not item.owned then
+            table.insert(menu, {
+                text = "Buy",
+                notCheckable = true,
+                func = function() if item.shopId then DC:RequestBuyItem(item.shopId) end end,
+            })
+        end
+
+        table.insert(menu, { text = L["CANCEL"], notCheckable = true })
+        local dropdown = CreateFrame("Frame", "DCCollectionContextMenu", UIParent, "UIDropDownMenuTemplate")
+        EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
+        return
+    end
+
+    -- Transmog: add apply/clear actions (retail-like)
+    if item.type == "transmog" then
+        -- Preview (dressing room)
+        table.insert(menu, {
+            text = "Preview",
+            notCheckable = true,
+            func = function() DC:PreviewTransmogAppearance(item.id) end,
+        })
+
+        local invType = item.definition and item.definition.inventoryType
+        local appearanceId = item.id
+
+        local slotLabels = {
+            ["HeadSlot"] = "Head",
+            ["ShoulderSlot"] = "Shoulder",
+            ["BackSlot"] = "Back",
+            ["ChestSlot"] = "Chest",
+            ["WristSlot"] = "Wrist",
+            ["HandsSlot"] = "Hands",
+            ["WaistSlot"] = "Waist",
+            ["LegsSlot"] = "Legs",
+            ["FeetSlot"] = "Feet",
+            ["MainHandSlot"] = "Main Hand",
+            ["SecondaryHandSlot"] = "Off Hand",
+            ["RangedSlot"] = "Ranged",
+        }
+
+        local invTypeToSlots = {
+            [1] = { "HeadSlot" },
+            [3] = { "ShoulderSlot" },
+            [16] = { "BackSlot" },
+            [5] = { "ChestSlot" },
+            [20] = { "ChestSlot" }, -- robe
+            [9] = { "WristSlot" },
+            [10] = { "HandsSlot" },
+            [6] = { "WaistSlot" },
+            [7] = { "LegsSlot" },
+            [8] = { "FeetSlot" },
+
+            -- weapons
+            [13] = { "MainHandSlot" },
+            [21] = { "MainHandSlot" },
+            [17] = { "SecondaryHandSlot" },
+            [22] = { "SecondaryHandSlot" },
+            [14] = { "RangedSlot" },
+            [15] = { "RangedSlot" },
+            [25] = { "RangedSlot" },
+            [28] = { "RangedSlot" },
+        }
+
+        local slots = invType and invTypeToSlots[invType] or nil
+        if slots and item.collected then
+            table.insert(menu, { text = "Apply", isTitle = true, notCheckable = true })
+
+            for _, slotName in ipairs(slots) do
+                local invSlotId = GetInventorySlotInfo(slotName)
+                local equippedItemId = GetInventoryItemID("player", invSlotId)
+                if equippedItemId then
+                    table.insert(menu, {
+                        text = "Apply to " .. (slotLabels[slotName] or slotName),
+                        notCheckable = true,
+                        func = function() DC:RequestSetTransmog(invSlotId, appearanceId) end,
+                    })
+                end
+            end
+        end
+
+        -- Clear options for slots that currently have transmog
+        local state = DC.transmogState or {}
+        local anyClear = false
+        if slots and next(state) ~= nil then
+            for _, slotName in ipairs(slots) do
+                local invSlotId = GetInventorySlotInfo(slotName)
+                local equipmentSlot = (invSlotId == 1 and 0) or (invSlotId and (invSlotId - 1))
+                if state[tostring(equipmentSlot)] and tonumber(state[tostring(equipmentSlot)]) and tonumber(state[tostring(equipmentSlot)]) ~= 0 then
+                    anyClear = true
+                end
+            end
+        end
+
+        if anyClear then
+            table.insert(menu, { text = "Clear", isTitle = true, notCheckable = true })
+            for _, slotName in ipairs(slots) do
+                local invSlotId = GetInventorySlotInfo(slotName)
+                local equipmentSlot = (invSlotId == 1 and 0) or (invSlotId and (invSlotId - 1))
+                local v = state[tostring(equipmentSlot)]
+                if v and tonumber(v) and tonumber(v) ~= 0 then
+                    table.insert(menu, {
+                        text = "Clear " .. (slotLabels[slotName] or slotName),
+                        notCheckable = true,
+                        func = function() DC:RequestClearTransmog(invSlotId) end,
+                    })
+                end
+            end
+        end
+
+        -- Outfits (sets)
+        if DC.ShowOutfitMenu then
+            table.insert(menu, { text = " ", isTitle = true, notCheckable = true })
+            DC:ShowOutfitMenu(menu)
+        end
+    end
     
     if item.collected then
         if item.is_favorite then
@@ -818,6 +953,8 @@ function DC:ShowItemTooltip(anchor, item)
             GameTooltip:AddLine("Click to summon to bags", 0.5, 0.5, 0.5)
         elseif item.type == "titles" then
             GameTooltip:AddLine("Click to set as active title", 0.5, 0.5, 0.5)
+        elseif item.type == "transmog" then
+            GameTooltip:AddLine("Right-click to apply to a slot", 0.5, 0.5, 0.5)
         end
     else
         GameTooltip:AddLine(L["NOT_COLLECTED"], 1, 0, 0)

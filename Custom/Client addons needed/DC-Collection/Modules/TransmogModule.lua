@@ -234,3 +234,230 @@ function TransmogModule:GetPrimarySourceItem(appearanceId)
     local def = self:GetAppearanceDefinition(appearanceId)
     return def and def.itemId
 end
+
+-- ============================================================================
+-- PREVIEW (DRESSING ROOM)
+-- ============================================================================
+
+local function TryDressUpItemId(itemId)
+    if not itemId or itemId == 0 then
+        return
+    end
+
+    local link = "item:" .. tostring(itemId)
+
+    if DressUpModel and DressUpModel.TryOn then
+        if DressUpFrame and DressUpFrame.Show then
+            DressUpFrame:Show()
+        end
+        DressUpModel:TryOn(link)
+        return
+    end
+
+    if DressUpItemLink then
+        DressUpItemLink(link)
+    end
+end
+
+function DC:PreviewTransmogAppearance(appearanceId)
+    local def = self.TransmogModule and self.TransmogModule:GetAppearanceDefinition(appearanceId)
+    if not def then
+        return
+    end
+
+    local itemId = def.itemId
+    if not itemId and def.sourceItems and def.sourceItems[1] then
+        itemId = def.sourceItems[1]
+    end
+
+    TryDressUpItemId(itemId)
+end
+
+function DC:PreviewShopTransmogItem(shopItem)
+    if not shopItem then return end
+
+    if shopItem.itemId then
+        TryDressUpItemId(shopItem.itemId)
+        return
+    end
+
+    if shopItem.appearanceId then
+        self:PreviewTransmogAppearance(shopItem.appearanceId)
+    end
+end
+
+-- ============================================================================
+-- OUTFITS (TRANSMOG SETS)
+-- Saved per-character in DCCollectionCharDB.outfits
+-- ============================================================================
+
+local function EnsureOutfitsTable()
+    DCCollectionCharDB = DCCollectionCharDB or {}
+    DCCollectionCharDB.outfits = DCCollectionCharDB.outfits or {}
+    DC.outfits = DCCollectionCharDB.outfits
+end
+
+function DC:GetOutfitNames()
+    EnsureOutfitsTable()
+    local names = {}
+    for name in pairs(DC.outfits) do
+        table.insert(names, name)
+    end
+    table.sort(names)
+    return names
+end
+
+function DC:SaveOutfit(name)
+    if not name or name == "" then return false end
+    EnsureOutfitsTable()
+
+    local snapshot = {}
+    for slot, appearanceId in pairs(self.transmogState or {}) do
+        local v = tonumber(appearanceId)
+        if v and v ~= 0 then
+            snapshot[tostring(slot)] = v
+        end
+    end
+
+    DC.outfits[name] = {
+        state = snapshot,
+        savedAt = time(),
+    }
+
+    return true
+end
+
+function DC:DeleteOutfit(name)
+    if not name or name == "" then return false end
+    EnsureOutfitsTable()
+    if DC.outfits[name] then
+        DC.outfits[name] = nil
+        return true
+    end
+    return false
+end
+
+function DC:ApplyOutfit(name)
+    EnsureOutfitsTable()
+    local outfit = DC.outfits[name]
+    if not outfit or not outfit.state then
+        return false
+    end
+
+    -- Clear current applied transmogs first
+    for slotStr in pairs(self.transmogState or {}) do
+        local slot = tonumber(slotStr)
+        if slot ~= nil then
+            self:RequestClearTransmogByEquipmentSlot(slot)
+        end
+    end
+
+    -- Apply outfit
+    for slotStr, appearanceId in pairs(outfit.state) do
+        local slot = tonumber(slotStr)
+        local app = tonumber(appearanceId)
+        if slot ~= nil and app and app ~= 0 then
+            self:RequestSetTransmogByEquipmentSlot(slot, app)
+        end
+    end
+
+    return true
+end
+
+function DC:PreviewOutfit(name)
+    EnsureOutfitsTable()
+    local outfit = DC.outfits[name]
+    if not outfit or not outfit.state then
+        return false
+    end
+
+    if DressUpModel and DressUpModel.Undress then
+        if DressUpFrame and DressUpFrame.Show then
+            DressUpFrame:Show()
+        end
+        DressUpModel:Undress()
+    end
+
+    for _, appearanceId in pairs(outfit.state) do
+        local app = tonumber(appearanceId)
+        if app and app ~= 0 then
+            local def = self.TransmogModule and self.TransmogModule:GetAppearanceDefinition(app)
+            local itemId = def and def.itemId
+            TryDressUpItemId(itemId)
+        end
+    end
+
+    return true
+end
+
+-- Popup + menu helpers
+local function EnsureOutfitPopup()
+    if StaticPopupDialogs and not StaticPopupDialogs["DC_COLLECTION_OUTFIT_SAVE"] then
+        StaticPopupDialogs["DC_COLLECTION_OUTFIT_SAVE"] = {
+            text = "Save outfit as:",
+            button1 = ACCEPT,
+            button2 = CANCEL,
+            hasEditBox = true,
+            maxLetters = 30,
+            OnAccept = function(self)
+                local name = self.editBox:GetText()
+                if DC:SaveOutfit(name) then
+                    DC:Print("Outfit saved: " .. tostring(name))
+                end
+            end,
+            EditBoxOnEnterPressed = function(self)
+                local parent = self:GetParent()
+                local name = self:GetText()
+                parent:Hide()
+                if DC:SaveOutfit(name) then
+                    DC:Print("Outfit saved: " .. tostring(name))
+                end
+            end,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+        }
+    end
+end
+
+function DC:ShowOutfitMenu(parentMenu)
+    EnsureOutfitsTable()
+    EnsureOutfitPopup()
+
+    table.insert(parentMenu, { text = "Outfits", isTitle = true, notCheckable = true })
+
+    table.insert(parentMenu, {
+        text = "Save current...",
+        notCheckable = true,
+        func = function() StaticPopup_Show("DC_COLLECTION_OUTFIT_SAVE") end,
+    })
+
+    local names = self:GetOutfitNames()
+    if #names > 0 then
+        local applyList = {}
+        local previewList = {}
+        local deleteList = {}
+
+        for _, n in ipairs(names) do
+            table.insert(applyList, {
+                text = n,
+                notCheckable = true,
+                func = function() DC:ApplyOutfit(n) end,
+            })
+            table.insert(previewList, {
+                text = n,
+                notCheckable = true,
+                func = function() DC:PreviewOutfit(n) end,
+            })
+            table.insert(deleteList, {
+                text = n,
+                notCheckable = true,
+                func = function() DC:DeleteOutfit(n) end,
+            })
+        end
+
+        table.insert(parentMenu, { text = "Apply", hasArrow = true, notCheckable = true, menuList = applyList })
+        table.insert(parentMenu, { text = "Preview", hasArrow = true, notCheckable = true, menuList = previewList })
+        table.insert(parentMenu, { text = "Delete", hasArrow = true, notCheckable = true, menuList = deleteList })
+    end
+end

@@ -110,6 +110,8 @@ DC.definitions = {
     pets = {},
     toys = {},
     heirlooms = {},
+    transmog = {},
+    titles = {},
 }
 
 -- Statistics
@@ -133,6 +135,9 @@ DC.wishlist = {}
 
 -- Mount speed bonus
 DC.mountSpeedBonus = 0
+
+-- Per-character applied transmog (slot -> appearanceId/displayId)
+DC.transmogState = {}
 
 -- ============================================================================
 -- STATE MANAGEMENT

@@ -65,6 +65,10 @@ DC.Opcodes = {
     CMSG_SYNC_COLLECTION     = 0x03,
     CMSG_GET_STATS           = 0x04,
     CMSG_GET_BONUSES         = 0x05,
+
+    -- Client -> Server: Definitions / Per-type collections
+    CMSG_GET_DEFINITIONS     = 0x06,
+    CMSG_GET_COLLECTION      = 0x07,
     
     -- Client -> Server: Shop
     CMSG_GET_SHOP            = 0x10,
@@ -80,6 +84,9 @@ DC.Opcodes = {
     CMSG_USE_ITEM            = 0x30,
     CMSG_SET_FAVORITE        = 0x31,
     CMSG_TOGGLE_UNLOCK       = 0x32,
+
+    -- Client -> Server: Transmog
+    CMSG_SET_TRANSMOG        = 0x33,
     
     -- Server -> Client: Sync/Data
     SMSG_HANDSHAKE_ACK       = 0x40,
@@ -88,6 +95,13 @@ DC.Opcodes = {
     SMSG_STATS               = 0x43,
     SMSG_BONUSES             = 0x44,
     SMSG_ITEM_LEARNED        = 0x45,
+
+    -- Server -> Client: Definitions / Per-type collections
+    SMSG_DEFINITIONS         = 0x46,
+    SMSG_COLLECTION          = 0x47,
+
+    -- Server -> Client: Transmog
+    SMSG_TRANSMOG_STATE      = 0x48,
     
     -- Server -> Client: Shop
     SMSG_SHOP_DATA           = 0x50,
@@ -208,6 +222,50 @@ function DC:RequestBonuses()
     return self:SendMessage(self.Opcodes.CMSG_GET_BONUSES, {})
 end
 
+-- Request type definitions (e.g. "mounts", "pets", "transmog")
+-- If collType is nil, requests all supported types (Core.lua compatibility).
+function DC:RequestDefinitions(collType)
+    if not collType then
+        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "mounts" })
+        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pets" })
+        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "toys" })
+        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "heirlooms" })
+        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "titles" })
+        return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog" })
+    end
+
+    return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = collType })
+end
+
+-- Request type collection items (e.g. "mounts", "pets", "transmog")
+-- If collType is nil, requests all supported types.
+function DC:RequestCollection(collType)
+    if not collType then
+        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "mounts" })
+        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pets" })
+        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "toys" })
+        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "heirlooms" })
+        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "titles" })
+        return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "transmog" })
+    end
+
+    return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = collType })
+end
+
+-- Core.lua expects these names
+function DC:RequestCollections()
+    return self:RequestCollection(nil)
+end
+
+function DC:RequestCollectionUpdate(collectionType)
+    local typeName = self:GetTypeNameFromId(collectionType)
+    return self:RequestCollection(typeName)
+end
+
+function DC:RequestShopData(category)
+    return self:RequestShopItems(category)
+end
+
 -- Request shop items (optional category filter)
 function DC:RequestShopItems(category)
     return self:SendMessage(self.Opcodes.CMSG_GET_SHOP, {
@@ -234,41 +292,89 @@ end
 
 -- Add to wishlist
 function DC:RequestAddWishlist(collectionType, entryId)
+    local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
     return self:SendMessage(self.Opcodes.CMSG_ADD_WISHLIST, {
-        type = collectionType,
+        type = typeId or 0,
         entryId = entryId,
     })
 end
 
 -- Remove from wishlist
 function DC:RequestRemoveWishlist(collectionType, entryId)
+    local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
     return self:SendMessage(self.Opcodes.CMSG_REMOVE_WISHLIST, {
-        type = collectionType,
+        type = typeId or 0,
         entryId = entryId,
     })
 end
 
 -- Use/summon collection item (mount, pet, toy)
 function DC:RequestUseItem(collectionType, entryId)
+    local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
     return self:SendMessage(self.Opcodes.CMSG_USE_ITEM, {
-        type = collectionType,
+        type = typeId or 0,
         entryId = entryId,
     })
 end
 
 -- Set favorite status
 function DC:RequestSetFavorite(collectionType, entryId, favorite)
+    local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
     return self:SendMessage(self.Opcodes.CMSG_SET_FAVORITE, {
-        type = collectionType,
+        type = typeId or 0,
         entryId = entryId,
         favorite = favorite,
     })
 end
 
+-- Toggle favorite status (used throughout modules/UI)
+function DC:RequestToggleFavorite(collectionType, entryId)
+    local typeName = type(collectionType) == "string" and string.lower(collectionType) or self:GetTypeNameFromId(collectionType)
+    local current = typeName and self:GetCollectionItem(typeName, entryId)
+    local isFav = current and current.is_favorite
+    return self:RequestSetFavorite(collectionType, entryId, not isFav)
+end
+
+-- Apply a collected appearance (displayId) to an equipment slot
+function DC:RequestSetTransmog(slot, appearanceId)
+    local equipmentSlot = (slot == 1 and 0) or (slot and (slot - 1))
+    return self:SendMessage(self.Opcodes.CMSG_SET_TRANSMOG, {
+        slot = equipmentSlot,
+        appearanceId = appearanceId,
+        clear = false,
+    })
+end
+
+-- Clear transmog from an equipment slot
+function DC:RequestClearTransmog(slot)
+    local equipmentSlot = (slot == 1 and 0) or (slot and (slot - 1))
+    return self:SendMessage(self.Opcodes.CMSG_SET_TRANSMOG, {
+        slot = equipmentSlot,
+        clear = true,
+    })
+end
+
+-- Apply/clear by equipment slot index (server expects 0..)
+function DC:RequestSetTransmogByEquipmentSlot(equipmentSlot, appearanceId)
+    return self:SendMessage(self.Opcodes.CMSG_SET_TRANSMOG, {
+        slot = equipmentSlot,
+        appearanceId = appearanceId,
+        clear = false,
+    })
+end
+
+function DC:RequestClearTransmogByEquipmentSlot(equipmentSlot)
+    return self:SendMessage(self.Opcodes.CMSG_SET_TRANSMOG, {
+        slot = equipmentSlot,
+        clear = true,
+    })
+end
+
 -- Toggle account-wide unlock (for heirlooms)
 function DC:RequestToggleUnlock(collectionType, entryId)
+    local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
     return self:SendMessage(self.Opcodes.CMSG_TOGGLE_UNLOCK, {
-        type = collectionType,
+        type = typeId or 0,
         entryId = entryId,
     })
 end
@@ -312,6 +418,12 @@ function DC.OnProtocolMessage(payload)
         self:HandleBonuses(data)
     elseif opcode == self.Opcodes.SMSG_ITEM_LEARNED then
         self:HandleItemLearned(data)
+    elseif opcode == self.Opcodes.SMSG_DEFINITIONS then
+        self:HandleDefinitions(data)
+    elseif opcode == self.Opcodes.SMSG_COLLECTION then
+        self:HandleCollection(data)
+    elseif opcode == self.Opcodes.SMSG_TRANSMOG_STATE then
+        self:HandleTransmogState(data)
     elseif opcode == self.Opcodes.SMSG_SHOP_DATA then
         self:HandleShopData(data)
     elseif opcode == self.Opcodes.SMSG_PURCHASE_RESULT then
@@ -496,22 +608,90 @@ end
 -- Handle shop data
 function DC:HandleShopData(data)
     self:Debug("Received shop data")
-    
-    self.shopItems = data.items or {}
+
     self.shopCategory = data.category
-    self.currencies = {
-        tokens = data.tokens or 0,
-        emblems = data.emblems or 0,
-    }
+    self.currency.tokens = data.tokens or 0
+    self.currency.emblems = data.emblems or 0
+
+    local rawItems = data.items or {}
+    local mapped = {}
+
+    for _, it in ipairs(rawItems) do
+        local collTypeId = it.type
+        local typeName = self:GetTypeNameFromId(collTypeId)
+
+        local card = {
+            type = "shop",
+            shopId = it.shopId,
+            collectionTypeId = collTypeId,
+            collectionTypeName = typeName,
+            entryId = it.entryId,
+            appearanceId = it.appearanceId,
+            itemId = it.itemId,
+            priceTokens = it.priceTokens or 0,
+            priceEmblems = it.priceEmblems or 0,
+            discount = it.discount or 0,
+            stock = it.stock,
+            featured = it.featured,
+            owned = it.owned or false,
+            collected = it.owned or false,
+            rarity = 2,
+            source = "Shop",
+        }
+
+        -- Resolve name/icon from definitions (or item cache for transmog)
+        if typeName and self.definitions[typeName] then
+            local defKey = it.entryId
+            if typeName == "transmog" and it.appearanceId then
+                defKey = it.appearanceId
+            end
+
+            local def = self.definitions[typeName][defKey]
+            if def then
+                card.name = def.name
+                card.icon = def.icon
+                card.definition = def
+            end
+        end
+
+        if (not card.icon or card.icon == "") and typeName == "transmog" and it.itemId and GetItemInfo then
+            local _, _, quality, _, _, _, _, _, _, texture = GetItemInfo(it.itemId)
+            if texture then
+                card.icon = texture
+            end
+            if quality then
+                card.rarity = quality
+            end
+        end
+
+        if not card.name or card.name == "" then
+            if typeName == "transmog" and it.itemId and GetItemInfo then
+                local name, _, quality = GetItemInfo(it.itemId)
+                if name then
+                    card.name = name
+                end
+                if quality then
+                    card.rarity = quality
+                end
+            end
+        end
+
+        card.icon = card.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+        card.name = card.name or "Shop Item"
+
+        table.insert(mapped, card)
+    end
+
+    self.shopItems = mapped
     
     -- Fire callback
     if self.callbacks.onShopDataReceived then
         self.callbacks.onShopDataReceived(data)
     end
-    
-    -- Refresh Shop UI if open
-    if self.Shop and self.Shop.UI and self.Shop.UI:IsShown() then
-        self.Shop:RefreshItems()
+
+    -- Refresh MainFrame if open
+    if self.MainFrame and self.MainFrame:IsShown() then
+        self:RefreshCurrentTab()
     end
 end
 
@@ -522,11 +702,10 @@ function DC:HandlePurchaseResult(data)
     if data.success then
         self:Print("|cff00ff00Purchase successful!|r")
         
-        -- Update currencies
-        self.currencies = {
-            tokens = data.tokens or self.currencies.tokens,
-            emblems = data.emblems or self.currencies.emblems,
-        }
+        -- Update currency
+        self.currency = self.currency or { tokens = 0, emblems = 0 }
+        self.currency.tokens = data.tokens or self.currency.tokens or 0
+        self.currency.emblems = data.emblems or self.currency.emblems or 0
     else
         self:Print("|cffff0000Purchase failed:|r " .. (data.error or "Unknown error"))
     end
@@ -540,15 +719,13 @@ end
 -- Handle currencies response
 function DC:HandleCurrencies(data)
     self:Debug("Received currencies")
-    
-    self.currencies = {
-        tokens = data.tokens or 0,
-        emblems = data.emblems or 0,
-    }
+
+    self.currency.tokens = data.tokens or 0
+    self.currency.emblems = data.emblems or 0
     
     -- Fire callback
     if self.callbacks.onCurrenciesReceived then
-        self.callbacks.onCurrenciesReceived(self.currencies)
+        self.callbacks.onCurrenciesReceived(self.currency)
     end
 end
 
@@ -624,6 +801,21 @@ function DC:HandleError(data)
     if self.callbacks.onError then
         self.callbacks.onError(data)
     end
+end
+
+function DC:HandleTransmogState(data)
+    local state = data.state or {}
+    self.transmogState = state
+
+    DCCollectionCharDB = DCCollectionCharDB or {}
+    DCCollectionCharDB.transmogState = state
+
+    -- Refresh UI if open
+    if self.UI and self.UI.mainFrame and self.UI.mainFrame:IsShown() then
+        self.UI:RefreshCurrentTab()
+    end
+
+    self:Debug(string.format("Received transmog state (%d slots)", self:TableCount(state)))
 end
 
 function DC:HandleDefinitions(data)

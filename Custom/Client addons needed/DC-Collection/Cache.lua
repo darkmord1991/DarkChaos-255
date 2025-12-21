@@ -104,6 +104,16 @@ function DC:LoadCache()
     if DCCollectionDB.wishlistCache then
         self.wishlist = DCCollectionDB.wishlistCache
     end
+
+    -- Load per-character transmog state
+    if DCCollectionCharDB and DCCollectionCharDB.transmogState then
+        self.transmogState = DCCollectionCharDB.transmogState
+    end
+
+    -- Load per-character outfits
+    if DCCollectionCharDB and DCCollectionCharDB.outfits then
+        self.outfits = DCCollectionCharDB.outfits
+    end
     
     self:Debug("Cache loaded successfully")
 end
@@ -185,14 +195,44 @@ end
 -- CACHE UPDATE FUNCTIONS
 -- ============================================================================
 
+local function NormalizeType(self, collectionType)
+    if not collectionType then
+        return nil
+    end
+
+    if type(collectionType) == "number" then
+        return self:GetTypeNameFromId(collectionType)
+    end
+
+    return string.lower(tostring(collectionType))
+end
+
+local function NormalizeId(id)
+    if id == nil then
+        return nil
+    end
+
+    if type(id) == "number" then
+        return id
+    end
+
+    return tonumber(id) or id
+end
+
 -- Add a single item to collection cache
 function DC:CacheAddItem(collectionType, itemId, itemData)
-    self.collections[collectionType] = self.collections[collectionType] or {}
-    self.collections[collectionType][itemId] = itemData
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return
+    end
+
+    local normalizedId = NormalizeId(itemId)
+    self.collections[typeName] = self.collections[typeName] or {}
+    self.collections[typeName][normalizedId] = itemData
     
     -- Update stats
-    if self.stats[collectionType] then
-        self.stats[collectionType].owned = self:CountCollection(collectionType)
+    if self.stats[typeName] then
+        self.stats[typeName].owned = self:CountCollection(typeName)
     end
     
     -- Mark for save
@@ -201,9 +241,15 @@ end
 
 -- Update item in collection (e.g., favorite status)
 function DC:CacheUpdateItem(collectionType, itemId, updates)
-    if self.collections[collectionType] and self.collections[collectionType][itemId] then
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return
+    end
+
+    local normalizedId = NormalizeId(itemId)
+    if self.collections[typeName] and self.collections[typeName][normalizedId] then
         for key, value in pairs(updates) do
-            self.collections[collectionType][itemId][key] = value
+            self.collections[typeName][normalizedId][key] = value
         end
         self.cacheNeedsSave = true
     end
@@ -211,51 +257,69 @@ end
 
 -- Add definition to cache
 function DC:CacheAddDefinition(collectionType, itemId, defData)
-    self.definitions[collectionType] = self.definitions[collectionType] or {}
-    self.definitions[collectionType][itemId] = defData
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return
+    end
+
+    local normalizedId = NormalizeId(itemId)
+    self.definitions[typeName] = self.definitions[typeName] or {}
+    self.definitions[typeName][normalizedId] = defData
     
     -- Update total stats
-    if self.stats[collectionType] then
-        self.stats[collectionType].total = self:CountDefinitions(collectionType)
+    if self.stats[typeName] then
+        self.stats[typeName].total = self:CountDefinitions(typeName)
     end
 end
 
 -- Batch update definitions
 function DC:CacheMergeDefinitions(collectionType, definitions)
-    self.definitions[collectionType] = self.definitions[collectionType] or {}
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return
+    end
+
+    self.definitions[typeName] = self.definitions[typeName] or {}
     
     local added = 0
     for itemId, defData in pairs(definitions) do
-        if not self.definitions[collectionType][itemId] then
+        local normalizedId = NormalizeId(itemId)
+        if not self.definitions[typeName][normalizedId] then
             added = added + 1
         end
-        self.definitions[collectionType][itemId] = defData
+        self.definitions[typeName][normalizedId] = defData
     end
     
-    if self.stats[collectionType] then
-        self.stats[collectionType].total = self:CountDefinitions(collectionType)
+    if self.stats[typeName] then
+        self.stats[typeName].total = self:CountDefinitions(typeName)
     end
     
-    self:Debug(string.format("Merged %d definitions for %s", added, collectionType))
+    self:Debug(string.format("Merged %d definitions for %s", added, typeName))
 end
 
 -- Batch update collection
 function DC:CacheMergeCollection(collectionType, items)
-    self.collections[collectionType] = self.collections[collectionType] or {}
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return
+    end
+
+    self.collections[typeName] = self.collections[typeName] or {}
     
     local added = 0
     for itemId, itemData in pairs(items) do
-        if not self.collections[collectionType][itemId] then
+        local normalizedId = NormalizeId(itemId)
+        if not self.collections[typeName][normalizedId] then
             added = added + 1
         end
-        self.collections[collectionType][itemId] = itemData
+        self.collections[typeName][normalizedId] = itemData
     end
     
-    if self.stats[collectionType] then
-        self.stats[collectionType].owned = self:CountCollection(collectionType)
+    if self.stats[typeName] then
+        self.stats[typeName].owned = self:CountCollection(typeName)
     end
     
-    self:Debug(string.format("Merged %d items for %s collection", added, collectionType))
+    self:Debug(string.format("Merged %d items for %s collection", added, typeName))
     self.cacheNeedsSave = true
 end
 
@@ -284,9 +348,14 @@ end
 
 -- Get IDs of items we already have (for delta request)
 function DC:GetCollectedIds(collectionType)
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return {}
+    end
+
     local ids = {}
-    if self.collections[collectionType] then
-        for id in pairs(self.collections[collectionType]) do
+    if self.collections[typeName] then
+        for id in pairs(self.collections[typeName]) do
             table.insert(ids, id)
         end
     end
@@ -298,9 +367,14 @@ end
 -- ============================================================================
 
 function DC:CountCollection(collectionType)
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return 0
+    end
+
     local count = 0
-    if self.collections[collectionType] then
-        for _ in pairs(self.collections[collectionType]) do
+    if self.collections[typeName] then
+        for _ in pairs(self.collections[typeName]) do
             count = count + 1
         end
     end
@@ -309,9 +383,14 @@ end
 
 function DC:CountDefinitions(collectionType)
     if collectionType then
+        local typeName = NormalizeType(self, collectionType)
+        if not typeName then
+            return 0
+        end
+
         local count = 0
-        if self.definitions[collectionType] then
-            for _ in pairs(self.definitions[collectionType]) do
+        if self.definitions[typeName] then
+            for _ in pairs(self.definitions[typeName]) do
                 count = count + 1
             end
         end
@@ -330,16 +409,28 @@ end
 
 -- Get definition for an item
 function DC:GetDefinition(collectionType, itemId)
-    if self.definitions[collectionType] then
-        return self.definitions[collectionType][itemId]
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return nil
+    end
+
+    local normalizedId = NormalizeId(itemId)
+    if self.definitions[typeName] then
+        return self.definitions[typeName][normalizedId]
     end
     return nil
 end
 
 -- Get collection item data
 function DC:GetCollectionItem(collectionType, itemId)
-    if self.collections[collectionType] then
-        return self.collections[collectionType][itemId]
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return nil
+    end
+
+    local normalizedId = NormalizeId(itemId)
+    if self.collections[typeName] then
+        return self.collections[typeName][normalizedId]
     end
     return nil
 end
@@ -392,40 +483,52 @@ end
 
 -- Set entire collection for a type (replaces existing)
 function DC:SetCollection(collectionType, items)
-    self.collections[collectionType] = {}
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return
+    end
+
+    self.collections[typeName] = {}
     
     if items then
         for itemId, itemData in pairs(items) do
+            local normalizedId = NormalizeId(itemId)
             -- Handle both array format and key-value format
             if type(itemData) == "table" then
-                self.collections[collectionType][itemId] = itemData
+                self.collections[typeName][normalizedId] = itemData
             else
                 -- Simple list of IDs
-                self.collections[collectionType][itemData] = { owned = true }
+                self.collections[typeName][NormalizeId(itemData)] = { owned = true }
             end
         end
     end
     
     -- Update stats
-    if self.stats[collectionType] then
-        self.stats[collectionType].owned = self:CountCollection(collectionType)
+    if self.stats[typeName] then
+        self.stats[typeName].owned = self:CountCollection(typeName)
     end
     
     self.cacheNeedsSave = true
-    self:Debug(string.format("Set collection type %d with %d items", 
-        collectionType, self:CountCollection(collectionType)))
+    self:Debug(string.format("Set collection %s with %d items", 
+        typeName, self:CountCollection(typeName)))
 end
 
 -- Add single item to collection
 function DC:AddToCollection(collectionType, itemId, itemData)
-    self.collections[collectionType] = self.collections[collectionType] or {}
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return false
+    end
+
+    local normalizedId = NormalizeId(itemId)
+    self.collections[typeName] = self.collections[typeName] or {}
     
-    if not self.collections[collectionType][itemId] then
-        self.collections[collectionType][itemId] = itemData or { owned = true }
+    if not self.collections[typeName][normalizedId] then
+        self.collections[typeName][normalizedId] = itemData or { owned = true }
         
         -- Update stats
-        if self.stats[collectionType] then
-            self.stats[collectionType].owned = self:CountCollection(collectionType)
+        if self.stats[typeName] then
+            self.stats[typeName].owned = self:CountCollection(typeName)
         end
         
         self.cacheNeedsSave = true
@@ -437,12 +540,18 @@ end
 
 -- Remove single item from collection
 function DC:RemoveFromCollection(collectionType, itemId)
-    if self.collections[collectionType] and self.collections[collectionType][itemId] then
-        self.collections[collectionType][itemId] = nil
+    local typeName = NormalizeType(self, collectionType)
+    if not typeName then
+        return false
+    end
+
+    local normalizedId = NormalizeId(itemId)
+    if self.collections[typeName] and self.collections[typeName][normalizedId] then
+        self.collections[typeName][normalizedId] = nil
         
         -- Update stats
-        if self.stats[collectionType] then
-            self.stats[collectionType].owned = self:CountCollection(collectionType)
+        if self.stats[typeName] then
+            self.stats[typeName].owned = self:CountCollection(typeName)
         end
         
         self.cacheNeedsSave = true
