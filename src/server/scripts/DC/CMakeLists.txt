@@ -211,6 +211,11 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/npc_group_finder.cpp
 )
 
+# DC Collection System - Retail-like collection management
+set(SCRIPTS_DC_CollectionSystem
+    CollectionSystem/dc_addon_collection.cpp
+)
+
 # DC First Start System - First-start experience, login system
 set(SCRIPTS_DC_FirstStart
     FirstStart/dc_firststart.cpp
@@ -262,6 +267,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_Jadeforest}
     ${SCRIPTS_DC_GiantIsles}
     ${SCRIPTS_DC_AddonExtension}
+    ${SCRIPTS_DC_CollectionSystem}
     ${SCRIPTS_DC_FirstStart}
     ${SCRIPTS_DC_GOMove}
     ${SCRIPTS_DC_CrossSystem}

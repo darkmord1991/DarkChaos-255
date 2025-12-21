@@ -23,6 +23,7 @@
 #   15. Custom Login System - First-login rewards, BoA items, DC integrations
 #   16. DC-Welcome Addon System - First-start experience, FAQ, milestones
 #   17. Cross-System Integration - EventBus, SessionContext, unified rewards
+#   18. Collection System - Mounts, pets, toys, heirlooms, titles, transmog
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
@@ -5328,6 +5329,75 @@ DC.CrossSystem.Stats.Enable = 1
 #        Range:       60 - 3600
 #
 DC.CrossSystem.Stats.UpdateIntervalSeconds = 300
+
+
+###########################################################################
+#
+#    SECTION 18: COLLECTION SYSTEM
+#
+#    Retail-like collection management for mounts, pets, toys, heirlooms,
+#    titles, and transmog appearances. Features account-wide unlocks,
+#    mount speed bonuses based on collection size, collection shop with
+#    currencies, and wishlist system.
+#
+#    Protocol: DCAddonProtocol Module "COLL"
+#    Client addon: DC-Collection
+#
+###########################################################################
+
+#
+#    DCCollection.Enable
+#        Description: Master toggle for the Collection System
+#        Default:     1 (Enabled)
+#
+DCCollection.Enable = 1
+
+#
+#    DCCollection.MountBonuses.Enable
+#        Description: Enable mount speed bonuses based on collection size
+#                     Players gain +1% to +5% mount speed based on mounts owned:
+#                     - 25+ mounts: +1% speed (Collector's Speed I)
+#                     - 50+ mounts: +2% speed (Collector's Speed II)
+#                     - 100+ mounts: +3% speed (Collector's Speed III)
+#                     - 200+ mounts: +5% speed (Collector's Speed IV)
+#                     Uses custom spells 300510-300513.
+#        Default:     1 (Enabled)
+#
+DCCollection.MountBonuses.Enable = 1
+
+#
+#    DCCollection.Shop.Enable
+#        Description: Enable the collection shop
+#                     Allows purchasing collection items with currencies
+#                     (Collection Tokens and Collector's Emblems)
+#        Default:     1 (Enabled)
+#
+DCCollection.Shop.Enable = 1
+
+#
+#    DCCollection.Wishlist.Enable
+#        Description: Enable the wishlist system
+#                     Players can track desired collection items
+#        Default:     1 (Enabled)
+#
+DCCollection.Wishlist.Enable = 1
+
+#
+#    DCCollection.Wishlist.MaxItems
+#        Description: Maximum items allowed on wishlist per account
+#        Default:     25
+#        Range:       5 - 100
+#
+DCCollection.Wishlist.MaxItems = 25
+
+#
+#    DCCollection.SyncInterval
+#        Description: Interval in seconds between automatic syncs
+#                     Lower values = more responsive but more traffic
+#        Default:     30
+#        Range:       10 - 300
+#
+DCCollection.SyncInterval = 30
 
 
 ###########################################################################
