@@ -351,7 +351,7 @@ public:
         do
         {
             uint32 ach_id = result->Fetch()[0].Get<uint32>();
-            for (const auto& ach : achievements)
+            for (auto const& ach : achievements)
             {
                 if (ach.achievement_id == ach_id)
                 {
@@ -405,7 +405,7 @@ public:
 
     void CheckAndAwardAchievements(uint32 player_guid) override
     {
-        for (const auto& ach : achievements)
+        for (auto const& ach : achievements)
         {
             if (PlayerHasAchievement(player_guid, ach.achievement_id))
                 continue;
@@ -647,7 +647,7 @@ public:
         handler->PSendSysMessage("Earned: %u achievements", static_cast<uint32>(player_achievements.size()));
         handler->PSendSysMessage("");
 
-        for (const auto& ach : player_achievements)
+        for (auto const& ach : player_achievements)
         {
             handler->PSendSysMessage("|cff00ff00%s|r - %s (Reward: %u prestige, %u tokens)",
                 ach.name.c_str(), ach.description.c_str(),
@@ -658,7 +658,7 @@ public:
         handler->PSendSysMessage("|cffffd700Available Achievements:|r");
 
         auto all_achievements = achMgr.GetAllAchievements();
-        for (const auto& ach : all_achievements)
+        for (auto const& ach : all_achievements)
         {
             if (achMgr.PlayerHasAchievement(player->GetGUID().GetCounter(), ach.achievement_id))
                 continue;

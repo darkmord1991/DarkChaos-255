@@ -107,7 +107,7 @@ void OutdoorPvPHL::HandleAdminQueueClear(Player* admin)
 
     uint32 clearedCount = GetQueuedPlayerCount();
     ClearQueue();
-    
+
     ChatHandler(admin->GetSession()).PSendSysMessage("HLBG Admin: Cleared {} players from queue.", clearedCount);
     LOG_INFO("bg.battleground", "HLBG: Admin {} cleared queue ({} players)", admin->GetName(), clearedCount);
 }
@@ -119,7 +119,7 @@ void OutdoorPvPHL::HandleAdminQueueList(Player* admin)
 
     ChatHandler ch(admin->GetSession());
     ch.PSendSysMessage("=== HLBG Queue List (Admin) ===");
-    
+
     if (_queuedPlayers.empty())
     {
         ch.PSendSysMessage("Queue is empty.");
@@ -133,7 +133,7 @@ void OutdoorPvPHL::HandleAdminQueueList(Player* admin)
         std::string playerName = queuedPlayer ? queuedPlayer->GetName() : "Offline";
         std::string teamName = (entry.teamId == TEAM_ALLIANCE) ? "Alliance" : "Horde";
         uint32 waitTime = GameTime::GetGameTime().count() - entry.joinTime;
-        
+
     ch.PSendSysMessage("{}. {} ({}) - {} seconds", position, playerName.c_str(), teamName.c_str(), waitTime);
         position++;
     }
@@ -168,7 +168,7 @@ void OutdoorPvPHL::HandleAdminQueueConfig(Player* admin, const char* setting, co
 
     ChatHandler ch(admin->GetSession());
     std::string settingStr = setting;
-    
+
     if (settingStr == "enabled")
     {
         if (value)
@@ -301,7 +301,7 @@ bool OutdoorPvPHL::HandleAdminCommand(Player* admin, const std::string& command,
                 HandleAdminQueueConfig(admin, "", "");
                 return true;
             }
-            
+
             std::size_t spacePos = configArgs.find(' ');
             if (spacePos != std::string::npos)
             {

@@ -23,19 +23,19 @@ void AddGiantIslesScripts()
 {
     // Zone scripts (announcements, area triggers, etc.)
     AddSC_giant_isles_zone();
-    
+
     // Cannon quest event
     AddSC_giant_isles_cannon_quest();
-    
+
     // Zandalari invasion event
     AddSC_giant_isles_invasion();
-    
+
     // World Boss: Oondasta - King of Dinosaurs
     AddSC_boss_oondasta();
-    
+
     // World Boss: Thok the Bloodthirsty
     AddSC_boss_thok();
-    
+
     // World Boss: Nalak the Storm Lord
     AddSC_boss_nalak();
 }

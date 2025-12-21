@@ -42,15 +42,15 @@ class IAffixHandler
 {
 public:
     virtual ~IAffixHandler() = default;
-    
+
     virtual AffixType GetType() const = 0;
     virtual std::string GetName() const = 0;
     virtual std::string GetDescription() const = 0;
-    
+
     // Lifecycle hooks
     virtual void OnAffixActivate(Map* map, uint8 keystoneLevel) = 0;
     virtual void OnAffixDeactivate(Map* map) = 0;
-    
+
     // Event hooks
     virtual void OnCreatureDeath(Creature* creature, Unit* killer) = 0;
     virtual void OnCreatureDamageDone(Creature* attacker, Unit* victim, uint32& damage) = 0;
@@ -65,11 +65,11 @@ class MythicPlusAffixManager
 {
 public:
     static MythicPlusAffixManager* instance();
-    
+
     void RegisterAffix(std::unique_ptr<IAffixHandler> handler);
     void ActivateAffixes(Map* map, const std::vector<AffixType>& affixes, uint8 keystoneLevel);
     void DeactivateAffixes(Map* map);
-    
+
     // Event dispatchers
     void OnCreatureDeath(Creature* creature, Unit* killer);
     void OnCreatureDamageDone(Creature* attacker, Unit* victim, uint32& damage);
@@ -77,22 +77,22 @@ public:
     void OnPlayerDamageTaken(Player* player, Unit* attacker, uint32& damage);
     void OnCreatureSelectLevel(Creature* creature);
     void OnPlayerUpdate(Player* player, uint32 diff);
-    
+
     std::vector<AffixType> GetActiveAffixes(Map* map) const;
     uint8 GetKeystoneLevel(Map* map) const;
 
 private:
     MythicPlusAffixManager() = default;
-    
+
     struct InstanceAffixState
     {
         std::vector<AffixType> activeAffixes;
         uint8 keystoneLevel = 0;
     };
-    
+
     std::unordered_map<AffixType, std::unique_ptr<IAffixHandler>> _handlers;
     std::unordered_map<uint64, InstanceAffixState> _instanceStates; // Key combines instance + map ID
-    
+
     uint64 MakeInstanceKey(const Map* map) const;
     InstanceAffixState* GetInstanceState(Map* map);
 };

@@ -415,7 +415,7 @@ public:
 
             Difficulty newDiff;
             std::string diffName;
-            
+
             if (diffNorm == "normal")
             {
                 newDiff = DUNGEON_DIFFICULTY_NORMAL;

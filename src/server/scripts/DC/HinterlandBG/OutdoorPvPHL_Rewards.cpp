@@ -55,7 +55,6 @@ uint32 OutdoorPvPHL::GetPlayerHKDelta(Player* player)
     return (current > base) ? (current - base) : 0u;
 }
 
-
 // Resource adjustments are configurable via hinterlandbg.conf
 
 // Honor amounts are now driven by config fields on OutdoorPvPHL; no local constants needed.
@@ -128,7 +127,7 @@ void OutdoorPvPHL::HandleRewards(TeamId winner)
                 // Optional: token reward for match participation/victory
                 if (_rewardNpcTokenItemId && _rewardNpcTokenCount && team == winner)
                     plr->AddItem(_rewardNpcTokenItemId, _rewardNpcTokenCount);
-                
+
                 // Record win in hlbg_player_stats for leaderboards (winners only)
                 if (team == winner)
                     HLBGPlayerStats::OnPlayerWin(plr);
@@ -225,7 +224,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
     if (_bgState != BG_STATE_IN_PROGRESS)
         return;
 
-    if (killed->GetTypeId() == TYPEID_PLAYER) // Killing players will take their Resources away. It also gives extra honor.
+    if (killed->IsPlayer()) // Killing players will take their Resources away. It also gives extra honor.
     {
         // prevent self-kill manipulation and ensure victim differs from killer
         if (player->GetGUID() == killed->GetGUID())

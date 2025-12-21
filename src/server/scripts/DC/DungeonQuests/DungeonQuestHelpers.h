@@ -74,7 +74,7 @@ inline PlayerStatsCache GetCachedPlayerStats(Player* player)
 
     // Cache miss or expired - fetch from database
     LOG_DEBUG("scripts.dungeonquest", "Fetching fresh stats for GUID {}", guid);
-    
+
     PlayerStatsCache cache{};
     cache.timestamp = now;
 
@@ -111,7 +111,7 @@ inline PlayerStatsCache GetCachedPlayerStats(Player* player)
 
     // Update cache
     g_PlayerStatsCache[guid] = cache;
-    
+
     return cache;
 }
 
@@ -122,10 +122,10 @@ inline void InvalidatePlayerStatsCache(Player* player)
 {
     if (!player)
         return;
-        
+
     uint64 guid = player->GetGUID().GetCounter();
     g_PlayerStatsCache.erase(guid);
-    
+
     LOG_DEBUG("scripts.dungeonquest", "Invalidated stats cache for GUID {}", guid);
 }
 
@@ -192,8 +192,8 @@ inline uint32 GetStatisticValue(Player* player, const std::string& statName)
     // Validate column name against whitelist
     if (validStats.find(statName) == validStats.end())
     {
-        LOG_ERROR("scripts.dungeonquest", 
-            "GetStatisticValue: Invalid stat name '{}' requested by player {}", 
+        LOG_ERROR("scripts.dungeonquest",
+            "GetStatisticValue: Invalid stat name '{}' requested by player {}",
             statName, player->GetGUID().ToString());
         return 0;
     }
@@ -357,13 +357,13 @@ inline std::string FormatQuestStatistics(Player* player)
     output << "Daily Quests: " << stats.dailyQuests << "\n";
     output << "Weekly Quests: " << stats.weeklyQuests << "\n";
     output << "Dungeon Quests: " << stats.dungeonQuests << "\n\n";
-    
+
     // v4.0: Difficulty breakdown
     output << "Difficulty Breakdown:\n";
     output << "- Heroic: " << stats.heroicQuests << "\n";
     output << "- Mythic: " << stats.mythicQuests << "\n";
     output << "- Mythic+: " << stats.mythicPlusQuests << "\n";
-    
+
     return output.str();
 }
 
@@ -390,7 +390,7 @@ inline std::string FormatRewardsInfo()
     info << "- Heroic: +50% token rewards\n";
     info << "- Mythic: +100% token rewards\n";
     info << "- Mythic+: +200% token rewards\n";
-    
+
     return info.str();
 }
 
@@ -404,7 +404,7 @@ inline bool CanAcceptDifficultyQuest(Player* player, uint32 questId)
         return false;
 
     QuestDifficulty difficulty = GetQuestDifficulty(questId);
-    
+
     // Normal difficulty always available
     if (difficulty == DIFFICULTY_NORMAL)
         return true;
@@ -441,7 +441,7 @@ inline bool CanAcceptDifficultyQuest(Player* player, uint32 questId)
 inline std::pair<uint32, std::string> GetNextMilestone(Player* player)
 {
     uint32 totalQuests = GetTotalQuestCompletions(player);
-    
+
     if (totalQuests < 1)
         return {13500, "Complete 1 quest for Dungeon Novice"};
     else if (totalQuests < 10)
@@ -474,26 +474,27 @@ inline void SendDifficultyMessage(Player* player, QuestDifficulty difficulty, co
 
 /*
  * USAGE EXAMPLE:
- * 
+ *
  * #include "DungeonQuestHelpers.h"
  * using namespace DungeonQuestHelpers;
- * 
+ *
  * // Get player statistics
  * uint32 totalQuests = GetTotalQuestCompletions(player);
  * uint32 heroicQuests = GetHeroicQuestCompletions(player);
- * 
+ *
  * // Check difficulty unlock
- * if (!CanAcceptDifficultyQuest(player, questId)) {
+ * if (!CanAcceptDifficultyQuest(player, questId))
+ * {
  *     ChatHandler(player->GetSession()).SendSysMessage(
  *         "You must complete more quests on lower difficulty first!"
  *     );
  *     return;
  * }
- * 
+ *
  * // Display statistics in gossip
  * std::string stats = FormatQuestStatistics(player);
  * AddGossipItemFor(player, GOSSIP_ICON_CHAT, stats, ...);
- * 
+ *
  * // Send colored message
  * SendDifficultyMessage(player, DIFFICULTY_MYTHIC, "Quest completed!");
  */

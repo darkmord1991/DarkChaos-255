@@ -2,7 +2,7 @@
  * Giant Isles - Cannon Quest Script
  * ============================================================================
  * Daily Quest: "Sink the Zandalari Scout"
- * 
+ *
  * Mechanics:
  *   - Player speaks to Captain Harlan to get the quest
  *   - Player enters a Coastal Cannon (vehicle)
@@ -114,22 +114,22 @@ public:
         // Check if player has the quest
         if (player->GetQuestStatus(QUEST_SINK_THE_SCOUT) == QUEST_STATUS_INCOMPLETE)
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                "The cannon is ready, Captain. I'll sink that scout ship!", 
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "The cannon is ready, Captain. I'll sink that scout ship!",
                 GOSSIP_SENDER_MAIN, 1);
         }
 
         // GM/Admin menu for testing
         if (player->IsGameMaster())
         {
-            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, 
-                "[GM] Spawn a scout ship manually", 
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
+                "[GM] Spawn a scout ship manually",
                 GOSSIP_SENDER_MAIN, 100);
-            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, 
-                "[GM] Despawn my current ship", 
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
+                "[GM] Despawn my current ship",
                 GOSSIP_SENDER_MAIN, 101);
-            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, 
-                "[GM] Show ship/cannon debug info", 
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
+                "[GM] Show ship/cannon debug info",
                 GOSSIP_SENDER_MAIN, 102);
         }
 
@@ -152,7 +152,7 @@ public:
         {
             // Direct player to the cannon
             creature->Whisper("The coastal cannon is just down the hill, soldier. "
-                "Get in there and show those Zandalari what we're made of!", 
+                "Get in there and show those Zandalari what we're made of!",
                 LANG_UNIVERSAL, player);
         }
         else if (action == 100 && player->IsGameMaster())
@@ -187,16 +187,16 @@ public:
             ChatHandler(player->GetSession()).SendSysMessage(fmt::format("NPC_COASTAL_CANNON = {}", NPC_COASTAL_CANNON));
             ChatHandler(player->GetSession()).SendSysMessage(fmt::format("NPC_SHIP_HITBOX = {}", NPC_SHIP_HITBOX));
             ChatHandler(player->GetSession()).SendSysMessage(fmt::format("GO_ZANDALARI_SCOUT_SHIP = {}", GO_ZANDALARI_SCOUT_SHIP));
-            
+
             auto it = PlayerShipMap.find(player->GetGUID());
             if (it != PlayerShipMap.end())
             {
                 ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Your ship GUID: {}", it->second.ToString()));
                 if (Creature* ship = ObjectAccessor::GetCreature(*creature, it->second))
                 {
-                    ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Ship entry: {}, DisplayID: {}", 
+                    ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Ship entry: {}, DisplayID: {}",
                         ship->GetEntry(), ship->GetDisplayId()));
-                    ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Ship pos: {:.2f}, {:.2f}, {:.2f}", 
+                    ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Ship pos: {:.2f}, {:.2f}, {:.2f}",
                         ship->GetPositionX(), ship->GetPositionY(), ship->GetPositionZ()));
                     ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Ship alive: {}", ship->IsAlive() ? "yes" : "no"));
                 }
@@ -209,11 +209,11 @@ public:
             {
                 ChatHandler(player->GetSession()).SendSysMessage("No ship mapped to you.");
             }
-            
+
             // Find nearest cannon
             if (Creature* cannon = creature->FindNearestCreature(NPC_COASTAL_CANNON, 200.0f))
             {
-                ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Cannon found: entry={}, displayID={}, vehicleID={}", 
+                ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Cannon found: entry={}, displayID={}, vehicleID={}",
                     cannon->GetEntry(), cannon->GetDisplayId(), cannon->GetCreatureTemplate()->VehicleId));
             }
             else
@@ -224,7 +224,7 @@ public:
 
         return true;
     }
-    
+
     void SpawnShipForPlayer(Player* player, Creature* creature)
     {
         LOG_INFO("scripts.dc", "Giant Isles Captain: GM spawning ship for {}", player->GetName());
@@ -274,7 +274,7 @@ public:
         // Clear pending marker now that spawn succeeded
         PendingShipSpawn.erase(player->GetGUID());
 
-        ChatHandler(player->GetSession()).SendSysMessage(fmt::format("|cFF00FF00Ship spawned!|r Entry: {}, GUID: {}, DisplayID: {}", 
+        ChatHandler(player->GetSession()).SendSysMessage(fmt::format("|cFF00FF00Ship spawned!|r Entry: {}, GUID: {}, DisplayID: {}",
             ship->GetEntry(), ship->GetGUID().ToString(), ship->GetDisplayId()));
         ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Position: {:.2f}, {:.2f}, {:.2f}", shipX, shipY, shipZ));
     }
@@ -287,7 +287,7 @@ public:
         if (quest->GetQuestId() == QUEST_SINK_THE_SCOUT)
         {
             creature->Whisper("A Zandalari scout ship has been spotted off the coast. "
-                "Use our coastal cannon to sink it before they can report back!", 
+                "Use our coastal cannon to sink it before they can report back!",
                 LANG_UNIVERSAL, player);
         }
 
@@ -306,7 +306,7 @@ public:
 
     struct npc_coastal_cannonAI : public VehicleAI
     {
-        npc_coastal_cannonAI(Creature* creature) : VehicleAI(creature) 
+        npc_coastal_cannonAI(Creature* creature) : VehicleAI(creature)
         {
             LOG_INFO("scripts.dc", "Giant Isles Cannon: AI created for cannon {}", creature->GetGUID().ToString());
         }
@@ -320,7 +320,7 @@ public:
         void PassengerBoarded(Unit* passenger, int8 /*seatId*/, bool apply) override
         {
             LOG_INFO("scripts.dc", "Giant Isles Cannon: PassengerBoarded called, apply={}", apply);
-            
+
             if (!passenger || !passenger->IsPlayer())
                 return;
 
@@ -351,7 +351,7 @@ public:
             /*
             if (questStatus != QUEST_STATUS_INCOMPLETE)
             {
-                me->Whisper("You need the 'Sink the Zandalari Scout' quest to use this cannon.", 
+                me->Whisper("You need the 'Sink the Zandalari Scout' quest to use this cannon.",
                     LANG_UNIVERSAL, player);
                 return;
             }
@@ -366,7 +366,7 @@ public:
                 {
                     if (existingShip->IsAlive())
                     {
-                        me->Whisper("Your target ship is still out there! Take aim!", 
+                        me->Whisper("Your target ship is still out there! Take aim!",
                             LANG_UNIVERSAL, player);
                         return;
                     }
@@ -459,7 +459,7 @@ public:
                         if (ship->IsAlive())
                         {
                             ship->DespawnOrUnsummon(1s);
-                            me->Whisper("The ship is escaping! You'll have to try again.", 
+                            me->Whisper("The ship is escaping! You'll have to try again.",
                                 LANG_UNIVERSAL, player);
                         }
                     }
@@ -566,7 +566,7 @@ public:
 
     struct npc_zandalari_scout_shipAI : public ScriptedAI
     {
-        npc_zandalari_scout_shipAI(Creature* creature) : ScriptedAI(creature) 
+        npc_zandalari_scout_shipAI(Creature* creature) : ScriptedAI(creature)
         {
             _hitCount = 0;
             _isSinking = false;
@@ -586,7 +586,7 @@ public:
             if (type == 1) // Cannon hit event
             {
                 LOG_INFO("scripts.dc", "Giant Isles Ship: SetData received cannon hit, spell={}", data);
-                
+
                 if (_isSinking)
                     return;
 
@@ -611,7 +611,7 @@ public:
             _hitCount++;
             ShipHitCount[me->GetGUID()] = _hitCount;
 
-            LOG_INFO("scripts.dc", "Giant Isles Ship: Hit {} of {} for player {}", 
+            LOG_INFO("scripts.dc", "Giant Isles Ship: Hit {} of {} for player {}",
                 _hitCount, HITS_REQUIRED, player->GetName());
 
             // Visual feedback - explosion
@@ -620,8 +620,8 @@ public:
             // Inform player of progress
             if (_hitCount < HITS_REQUIRED)
             {
-                std::string msg = fmt::format("|cFF00FF00Direct hit!|r {} more hit{} to sink the ship!", 
-                    HITS_REQUIRED - _hitCount, 
+                std::string msg = fmt::format("|cFF00FF00Direct hit!|r {} more hit{} to sink the ship!",
+                    HITS_REQUIRED - _hitCount,
                     (HITS_REQUIRED - _hitCount) > 1 ? "s" : "");
                 ChatHandler(player->GetSession()).SendSysMessage(msg);
             }
@@ -638,7 +638,7 @@ public:
             me->SetReactState(REACT_PASSIVE);
             // Don't disable movement - ship will patrol on waypoints
             LOG_INFO("scripts.dc", "Giant Isles Ship: AI initialized for ship {}", me->GetGUID().ToString());
-            
+
             // Start waypoint movement after a short delay
             _events.ScheduleEvent(EVENT_START_WAYPOINTS, 2s);
         }
@@ -646,7 +646,7 @@ public:
         // Handle any damage taken (more reliable than SpellHit for vehicle spells)
         void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType /*damagetype*/, SpellSchoolMask /*damageSchoolMask*/) override
         {
-            LOG_INFO("scripts.dc", "Giant Isles Ship: DamageTaken called, damage={}, attacker={}", 
+            LOG_INFO("scripts.dc", "Giant Isles Ship: DamageTaken called, damage={}, attacker={}",
                 damage, attacker ? attacker->GetName() : "null");
 
             if (!attacker || _isSinking)
@@ -710,7 +710,7 @@ public:
             _hitCount++;
             ShipHitCount[me->GetGUID()] = _hitCount;
 
-            LOG_INFO("scripts.dc", "Giant Isles Ship: Hit {} of {} for player {}", 
+            LOG_INFO("scripts.dc", "Giant Isles Ship: Hit {} of {} for player {}",
                 _hitCount, HITS_REQUIRED, player->GetName());
 
             // Visual feedback - explosion visual
@@ -719,8 +719,8 @@ public:
             // Inform player of progress
             if (_hitCount < HITS_REQUIRED)
             {
-                std::string msg = fmt::format("|cFF00FF00Direct hit!|r {} more hit{} to sink the ship!", 
-                    HITS_REQUIRED - _hitCount, 
+                std::string msg = fmt::format("|cFF00FF00Direct hit!|r {} more hit{} to sink the ship!",
+                    HITS_REQUIRED - _hitCount,
                     (HITS_REQUIRED - _hitCount) > 1 ? "s" : "");
                 ChatHandler(player->GetSession()).SendSysMessage(msg);
             }
@@ -734,7 +734,7 @@ public:
         void SpellHit(Unit* caster, SpellInfo const* spellInfo) override
         {
             LOG_INFO("scripts.dc", "Giant Isles Ship: SpellHit called, spell={}", spellInfo ? spellInfo->Id : 0);
-            
+
             if (!caster || !spellInfo)
                 return;
 
@@ -795,7 +795,7 @@ public:
             // Verify this is the player's ship
             if (me->GetCreatorGUID() != player->GetGUID())
             {
-                LOG_INFO("scripts.dc", "Giant Isles Ship: SpellHit - wrong player (creator={}, attacker={})", 
+                LOG_INFO("scripts.dc", "Giant Isles Ship: SpellHit - wrong player (creator={}, attacker={})",
                     me->GetCreatorGUID().ToString(), player->GetGUID().ToString());
                 return;
             }
@@ -804,7 +804,7 @@ public:
             _hitCount++;
             ShipHitCount[me->GetGUID()] = _hitCount;
 
-            LOG_INFO("scripts.dc", "Giant Isles Ship: SpellHit registered! Hit {} of {} for player {}", 
+            LOG_INFO("scripts.dc", "Giant Isles Ship: SpellHit registered! Hit {} of {} for player {}",
                 _hitCount, HITS_REQUIRED, player->GetName());
 
             // Visual feedback
@@ -849,7 +849,7 @@ public:
             // Zone-wide message for the player
             if (Creature* cannon = me->FindNearestCreature(NPC_COASTAL_CANNON, 200.0f))
             {
-                cannon->Whisper("|cFF00FF00The Zandalari scout ship is sinking! Great work, soldier!|r", 
+                cannon->Whisper("|cFF00FF00The Zandalari scout ship is sinking! Great work, soldier!|r",
                     LANG_UNIVERSAL, player);
             }
 
@@ -891,10 +891,10 @@ public:
                         LOG_INFO("scripts.dc", "Giant Isles Ship: Starting waypoint patrol");
                         // Use smooth path movement along a patrol route
                         me->GetMotionMaster()->Clear();
-                        
+
                         // Define a smooth patrol path
                         Movement::PointsArray path;
-                        
+
                         // Path points
                         path.emplace_back(5948.124f, 1763.0355f, -1.4322f);
                         path.emplace_back(5930.056f, 1764.0424f, -1.4322f);

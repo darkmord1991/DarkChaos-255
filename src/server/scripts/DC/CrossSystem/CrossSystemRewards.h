@@ -102,7 +102,7 @@ namespace Rewards
 
         if (auto* mgr = DarkChaos::SeasonalRewards::SeasonalRewardManager::instance())
         {
-            const auto& cfg = mgr->GetConfig();
+            auto const& cfg = mgr->GetConfig();
             if (itemId == cfg.tokenItemId)
                 return AwardTokens(player, amount, sourceSystem, triggerEvent, sourceName, sourceId);
             if (itemId == cfg.essenceItemId)

@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
- * 
+ *
  * Mythic+ Boss Loot Generation System
  * Generates spec-appropriate loot for Mythic+ dungeons (retail-like)
  */

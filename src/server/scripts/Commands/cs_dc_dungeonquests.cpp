@@ -141,7 +141,7 @@ namespace DC_DungeonQuests
             uint32 questId = fields[0].Get<uint32>();
             std::string questName = fields[1].Get<std::string>();
 
-            if (type == "all" || 
+            if (type == "all" ||
                 (type == "daily" && questId >= DAILY_QUEST_MIN && questId <= DAILY_QUEST_MAX) ||
                 (type == "weekly" && questId >= WEEKLY_QUEST_MIN && questId <= WEEKLY_QUEST_MAX) ||
                 (type == "dungeon" && questId >= DUNGEON_QUEST_MIN && questId <= DUNGEON_QUEST_MAX))
@@ -352,7 +352,7 @@ namespace DC_DungeonQuests
         if (msg == EQUIP_ERR_OK)
         {
             player->StoreNewItem(dest, rewardTokenId, true);
-            handler->PSendSysMessage("Rewarded %u token(s) to %s for quest %u (%.1fx multiplier)", 
+            handler->PSendSysMessage("Rewarded %u token(s) to %s for quest %u (%.1fx multiplier)",
                                     finalCount, playerName, questId, rewardMultiplier);
             DebugLog("Quest reward given - Player: " + std::string(playerName) + ", Quest: " + std::to_string(questId));
         }

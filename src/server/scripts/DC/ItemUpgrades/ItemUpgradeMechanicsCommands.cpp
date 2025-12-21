@@ -255,7 +255,7 @@ public:
         // Count items to reset
         std::string sql = Acore::StringFormat(
             "SELECT COUNT(*) FROM {} WHERE player_guid = {}", ITEM_UPGRADES_TABLE, player_guid);
-        
+
         QueryResult result = CharacterDatabase.Query(sql.c_str());
 
         uint32 count = 0;

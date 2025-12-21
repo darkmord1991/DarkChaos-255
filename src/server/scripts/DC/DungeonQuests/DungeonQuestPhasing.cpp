@@ -45,14 +45,14 @@ public:
             return 1; // Default phase
 
         uint32 mapId = player->GetMapId();
-        
+
         // Check if player is in a dungeon
         if (!IsDungeonMap(mapId))
             return 1; // Not in dungeon, use default phase
 
         // Get base phase from group or player GUID
         uint32 basePhase = PHASE_BASE_DUNGEON_QUEST;
-        
+
         Group* group = player->GetGroup();
         if (group && group->GetMembersCount() > 1)
         {
@@ -69,7 +69,7 @@ public:
         // Add map ID to make phase unique per dungeon
         // This prevents issues if the same player/group enters multiple dungeons
         uint32 mapPhaseModifier = (mapId % 1000) * 100000;
-        
+
         return basePhase + mapPhaseModifier;
     }
 
@@ -106,7 +106,7 @@ public:
                 if (player->GetPhaseMask() != 1)
                 {
                     player->SetPhaseMask(1, true);
-                    
+
                     if (sConfigMgr->GetOption<uint32>("DungeonQuest.Debug.Enable", 0) >= 2)
                     {
                         ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Mythic+ detected, phase reset to default (no quest NPCs)");
@@ -117,15 +117,15 @@ public:
         }
 
         uint32 newPhase = CalculatePhaseForPlayer(player);
-        
+
         // Only update if phase actually changed
         if (player->GetPhaseMask() != newPhase)
         {
             player->SetPhaseMask(newPhase, true);
-            
+
             if (sConfigMgr->GetOption<uint32>("DungeonQuest.Debug.Enable", 0) >= 2)
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Dungeon phase updated to %u (Map: %u)", 
+                ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Dungeon phase updated to %u (Map: %u)",
                     newPhase, player->GetMapId());
             }
         }
@@ -144,7 +144,7 @@ public:
         if (!IsDungeonMap(player->GetMapId()) && player->GetPhaseMask() >= PHASE_BASE_DUNGEON_QUEST)
         {
             player->SetPhaseMask(1, true); // Reset to default phase
-            
+
             if (sConfigMgr->GetOption<uint32>("DungeonQuest.Debug.Enable", 0) >= 2)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("DEBUG: Phase reset to default (left dungeon)");
@@ -184,7 +184,7 @@ public:
                     return;
                 }
             }
-            
+
             // Calculate phase similar to CalculatePhaseForPlayer
             uint32 basePhase = PHASE_BASE_DUNGEON_QUEST;
             if (Group* grp = player->GetGroup())
@@ -226,7 +226,7 @@ public:
                     return;
                 }
             }
-            
+
             uint32 basePhase = PHASE_BASE_DUNGEON_QUEST + (player->GetGUID().GetCounter() % 10000);
             uint32 mapPhaseModifier = (mapId % 1000) * 100000;
             uint32 newPhase = basePhase + mapPhaseModifier;

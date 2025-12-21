@@ -109,13 +109,13 @@ namespace HLBGAddon
 
     // Cache for season names (loaded from WorldDatabase.dc_hlbg_seasons)
     static std::unordered_map<uint32, std::string> s_SeasonNameCache;
-    
+
     static std::string GetSeasonName(uint32 season)
     {
         auto it = s_SeasonNameCache.find(season);
         if (it != s_SeasonNameCache.end())
             return it->second;
-        
+
         // Query from WorldDatabase
         QueryResult rs = WorldDatabase.Query("SELECT name FROM dc_hlbg_seasons WHERE season={}", season);
         std::string name = rs ? rs->Fetch()[0].Get<std::string>() : ("Season " + std::to_string(season));
@@ -186,8 +186,8 @@ namespace HLBGAddon
             ss << '{'
                << "\"id\":\"" << mid << "-P" << i+1 << "\","
                << "\"ts\":\"" << HLBGAddon::EscapeJson(ts) << "\","
-               << "\"name\":\"" << HLBGAddon::EscapeJson(rows[i].name) << "\"," 
-               << "\"team\":\"" << rows[i].team << "\"," 
+               << "\"name\":\"" << HLBGAddon::EscapeJson(rows[i].name) << "\","
+               << "\"team\":\"" << rows[i].team << "\","
                << "\"score\":" << rows[i].score << ','
                << "\"hk\":" << rows[i].hk << ','
                << "\"class\":" << static_cast<uint32>(rows[i].cls) << ','
@@ -312,13 +312,13 @@ namespace HLBGAddon
 
         OutdoorPvPHL* hl = HLBGAddon::GetHL();
         uint32 season = seasonOverride > 0 ? seasonOverride : (hl ? hl->GetSeason() : 0u);
-        
+
         // Build parameterized query with whitelisted sort/dir
         std::string sortCol = "h.id";
-        if (sort == "id") sortCol = "h.id"; 
-        else if (sort == "occurred_at") sortCol = "h.occurred_at"; 
+        if (sort == "id") sortCol = "h.id";
+        else if (sort == "occurred_at") sortCol = "h.occurred_at";
         else if (sort == "season") sortCol = "h.season";
-        
+
         // Note: dc_hlbg_seasons is in WorldDatabase, dc_hlbg_winner_history is in CharacterDatabase
         // Cannot JOIN across databases, so we fetch history without season names and look them up separately
         std::string query = "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM dc_hlbg_winner_history";
@@ -326,11 +326,11 @@ namespace HLBGAddon
             query += " WHERE season=" + std::to_string(season);
         query += " ORDER BY " + sortCol + " " + odir;
         query += " LIMIT " + std::to_string(per) + " OFFSET " + std::to_string(offset);
-        
+
         // Get total count for pagination
         std::string countQuery = "SELECT COUNT(*) FROM dc_hlbg_winner_history";
         if (season > 0) countQuery += " WHERE season=" + std::to_string(season);
-        
+
         uint32 totalRows = 0;
         QueryResult countRes = CharacterDatabase.Query(countQuery);
         if (countRes) totalRows = countRes->Fetch()[0].Get<uint32>();
@@ -396,7 +396,7 @@ namespace HLBGAddon
         {
             LOG_ERROR("hlbg", "Failed to query average duration for season {}", season);
         }
-        
+
         if (season > 0)
         {
             QueryResult r3 = WorldDatabase.Query("SELECT name FROM dc_hlbg_seasons WHERE season={}", season);
@@ -440,7 +440,7 @@ namespace HLBGAddon
         {
             LOG_ERROR("hlbg", "Failed to query largest margin for season {}", season);
         }
-        
+
         QueryResult q2 = CharacterDatabase.Query("SELECT AVG(ABS(score_alliance - score_horde)) FROM dc_hlbg_winner_history" + whereAnd("winner_tid IN (0,1)"));
         if (q2)
         {
@@ -490,9 +490,13 @@ namespace HLBGAddon
         {
             do {
                 Field* f = qs->Fetch(); uint8 tid = f[0].Get<uint8>();
-                if (tid > 1) { // draw or neutral breaks streak
-                    currentLen = 0; currentTeam = TEAM_NEUTRAL;
-                } else {
+                if (tid > 1) // draw or neutral breaks streak
+                {
+                    currentLen = 0;
+                    currentTeam = TEAM_NEUTRAL;
+                }
+                else
+                {
                     if (currentLen == 0 || currentTeam != tid) { currentTeam = tid; currentLen = 1; } else { ++currentLen; }
                     if (currentLen > longestLen) { longestLen = currentLen; longestTeam = currentTeam; }
                 }

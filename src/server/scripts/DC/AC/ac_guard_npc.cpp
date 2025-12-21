@@ -135,7 +135,7 @@ public:
 
     // Called when a player selects a gossip menu item
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override {
-        
+
         // Validate the selected action (POI index)
         // Guard against malformed client packets by ensuring the index is valid.
         if (action >= sizeof(ac_guard_pois) / sizeof(ACGuardPOI))
@@ -160,53 +160,59 @@ public:
 
         // Teleport entries only (Startcamp + Flight Master).
         CloseGossipMenuFor(player);
-        
+
         // === SAFETY CHECKS ===
         // Prevent teleportation in unsafe conditions
-        
+
         // 1. Combat check - cannot teleport while in combat
-        if (player->IsInCombat()) {
+        if (player->IsInCombat())
+        {
             ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport while in combat.");
             return true;
         }
-        
+
         // 2. Mount check - cannot teleport while mounted
-        if (player->IsMounted()) {
+        if (player->IsMounted())
+        {
             ChatHandler(player->GetSession()).SendSysMessage("You must dismount before teleporting.");
             return true;
         }
-        
+
         // 3. Vehicle check - cannot teleport while in a vehicle
-        if (player->GetVehicle()) {
+        if (player->GetVehicle())
+        {
             ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport while in a vehicle.");
             return true;
         }
-        
+
         // 4. Instance check - cannot teleport from inside an instance (optional, can be removed if desired)
-        if (player->GetMap() && player->GetMap()->IsDungeon()) {
+        if (player->GetMap() && player->GetMap()->IsDungeon())
+        {
             ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport from inside an instance.");
             return true;
         }
-        
+
         // 5. Dead check - cannot teleport while dead (ghost form)
-        if (!player->IsAlive()) {
+        if (!player->IsAlive())
+        {
             ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport while dead.");
             return true;
         }
-        
+
         // 6. Falling check - cannot teleport while falling
-        if (player->IsFalling()) {
+        if (player->IsFalling())
+        {
             ChatHandler(player->GetSession()).SendSysMessage("You cannot teleport while falling.");
             return true;
         }
-        
+
         // All safety checks passed - proceed with teleport
         // Brief confirmation message before teleport
         ChatHandler(player->GetSession()).PSendSysMessage("Teleporting to {}", poiPrefix + std::string(poi.name));
-        
+
         // Execute teleport
         player->TeleportTo(poi.map, poi.x, poi.y, poi.z, poi.o);
-        
+
         return true;
     }
 };

@@ -1,10 +1,10 @@
 /*
  * Dark Chaos - Welcome/First-Start Addon Handler
  * ================================================
- * 
+ *
  * Server-side handler for the DC-Welcome addon.
  * Provides first-login detection, server info sync, and progressive introduction.
- * 
+ *
  * Features:
  * - First-login detection and welcome popup trigger
  * - Server configuration sync (max level, season, links)
@@ -12,14 +12,14 @@
  * - Level milestone messages
  * - FAQ data sync
  * - Progress data sync (M+ rating, prestige, seasons)
- * 
+ *
  * Message Format:
  * - JSON format: WELC|OPCODE|J|{json}
- * 
+ *
  * Opcodes:
  * - CMSG: 0x01 (GET_SERVER_INFO), 0x02 (GET_FAQ), 0x03 (DISMISS), 0x04 (MARK_SEEN), 0x05 (GET_WHATS_NEW), 0x06 (GET_PROGRESS)
  * - SMSG: 0x10 (SHOW_WELCOME), 0x11 (SERVER_INFO), 0x12 (FAQ_DATA), 0x13 (FEATURE_UNLOCK), 0x14 (WHATS_NEW), 0x15 (LEVEL_MILESTONE), 0x16 (PROGRESS_DATA)
- * 
+ *
  * Copyright (C) 2025 Dark Chaos Development Team
  */
 
@@ -41,7 +41,7 @@ namespace DCWelcome
 {
     // Module identifier - must match client-side
     constexpr const char* MODULE = "WELC";
-    
+
     // Opcodes - must match client-side
     namespace Opcode
     {
@@ -53,7 +53,7 @@ namespace DCWelcome
         constexpr uint8 CMSG_GET_WHATS_NEW       = 0x05;
         constexpr uint8 CMSG_GET_PROGRESS        = 0x06;  // NEW: Request progress data
         constexpr uint8 CMSG_GET_NPC_INFO        = 0x07;  // NEW: Request NPC info (DB GUID)
-        
+
         // Server -> Client
         constexpr uint8 SMSG_SHOW_WELCOME        = 0x10;
         constexpr uint8 SMSG_SERVER_INFO         = 0x11;
@@ -64,7 +64,7 @@ namespace DCWelcome
         constexpr uint8 SMSG_PROGRESS_DATA       = 0x16;  // NEW: Progress data response
         constexpr uint8 SMSG_NPC_INFO            = 0x17;  // NEW: NPC info response
     }
-    
+
     // Configuration keys
     namespace Config
     {
@@ -74,7 +74,7 @@ namespace DCWelcome
         constexpr const char* DISCORD_URL = "DCWelcome.DiscordUrl";
         constexpr const char* WEBSITE_URL = "DCWelcome.WebsiteUrl";
         constexpr const char* WIKI_URL = "DCWelcome.WikiUrl";
-        
+
         // Progressive introduction
         constexpr const char* PROGRESSIVE_ENABLED = "DCWelcome.Progressive.Enabled";
         // Future: Load custom messages from config
@@ -82,7 +82,7 @@ namespace DCWelcome
         // constexpr const char* LEVEL_20_MESSAGE = "DCWelcome.Progressive.Level20.Message";
         // constexpr const char* LEVEL_80_MESSAGE = "DCWelcome.Progressive.Level80.Message";
     }
-    
+
     // Level milestones for progressive introduction
     // Matches DarkChaos-255 progression (max level 255)
     struct LevelMilestone
@@ -91,7 +91,7 @@ namespace DCWelcome
         std::string feature;
         std::string message;
     };
-    
+
     const std::vector<LevelMilestone> MILESTONES = {
         { 10,  "hotspots",        "Hotspots are now available! Use /hotspot to see active bonus zones." },
         { 20,  "prestige_preview","At level 80, you'll unlock the Prestige system for permanent bonuses!" },
@@ -103,20 +103,20 @@ namespace DCWelcome
         { 200, "tier_200",        "Level 200! You've entered the endgame tier. Elite challenges await!" },
         { 255, "max_level",       "MAXIMUM LEVEL! You've reached the pinnacle of power on DarkChaos-255!" },
     };
-    
+
     // =======================================================================
     // Handler Functions
     // =======================================================================
-    
+
     void SendServerInfo(Player* player)
     {
         if (!player || !player->GetSession())
             return;
-        
+
         // Get current season info using unified helper
         uint32 seasonId = DarkChaos::GetActiveSeasonId();
         std::string seasonName = DarkChaos::GetActiveSeasonName();
-        
+
         // Build JSON message
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SERVER_INFO);
         msg.Set("serverName", sConfigMgr->GetOption<std::string>(Config::SERVER_NAME, "DarkChaos-255"));
@@ -126,19 +126,19 @@ namespace DCWelcome
         msg.Set("wikiUrl", sConfigMgr->GetOption<std::string>(Config::WIKI_URL, "wiki.darkchaos255.com"));
         msg.Set("seasonId", seasonId);
         msg.Set("seasonName", seasonName);
-        
+
         msg.Send(player);
     }
-    
+
     void SendShowWelcome(Player* player)
     {
         if (!player || !player->GetSession())
             return;
-        
+
         // Get season info using unified helper
         uint32 seasonId = DarkChaos::GetActiveSeasonId();
         std::string seasonName = DarkChaos::GetActiveSeasonName();
-        
+
         // Build welcome message with embedded server info
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SHOW_WELCOME);
         msg.Set("serverName", sConfigMgr->GetOption<std::string>(Config::SERVER_NAME, "DarkChaos-255"));
@@ -148,16 +148,16 @@ namespace DCWelcome
         msg.Set("seasonId", seasonId);
         msg.Set("seasonName", seasonName);
         msg.Set("isFirstLogin", true);
-        
+
         msg.Send(player);
     }
-    
+
     void SendLevelMilestone(Player* player, uint8 level)
     {
         if (!player || !player->GetSession())
             return;
-        
-        for (const auto& milestone : MILESTONES)
+
+        for (auto const& milestone : MILESTONES)
         {
             if (milestone.level == level)
             {
@@ -165,39 +165,39 @@ namespace DCWelcome
                 msg.Set("level", milestone.level);
                 msg.Set("feature", milestone.feature);
                 msg.Set("message", milestone.message);
-                
+
                 msg.Send(player);
                 break;
             }
         }
     }
-    
+
     void SendFeatureUnlock(Player* player, const std::string& feature, const std::string& message)
     {
         if (!player || !player->GetSession())
             return;
-        
+
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_FEATURE_UNLOCK);
         msg.Set("feature", feature);
         msg.Set("message", message);
-        
+
         msg.Send(player);
     }
-    
+
     // =======================================================================
     // Message Handlers
     // =======================================================================
-    
+
     void HandleGetServerInfo(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
         SendServerInfo(player);
     }
-    
+
     void HandleGetFAQ(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player || !player->GetSession())
             return;
-        
+
         // Parse optional category filter from request
         std::string categoryFilter = "";
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
@@ -205,7 +205,7 @@ namespace DCWelcome
         {
             categoryFilter = json["category"].AsString();
         }
-        
+
         // Build FAQ query - load from dc_welcome_faq table
         std::string query = "SELECT id, category, question, answer FROM dc_welcome_faq WHERE active = 1";
         if (!categoryFilter.empty() && categoryFilter != "all")
@@ -213,16 +213,16 @@ namespace DCWelcome
             query += " AND category = '" + categoryFilter + "'";
         }
         query += " ORDER BY category, priority DESC, id";
-        
+
         QueryResult result = CharacterDatabase.Query(query);
-        
+
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_FAQ_DATA);
-        
+
         if (result)
         {
             DCAddon::JsonValue entriesArray;
             entriesArray.SetArray();
-            
+
             int count = 0;
             do
             {
@@ -236,7 +236,7 @@ namespace DCWelcome
                 entriesArray.Push(entry);
                 count++;
             } while (result->NextRow());
-            
+
             response.Set("entries", entriesArray.Encode());
             response.Set("count", count);
         }
@@ -245,15 +245,15 @@ namespace DCWelcome
             response.Set("entries", "[]");
             response.Set("count", 0);
         }
-        
+
         response.Send(player);
     }
-    
+
     void HandleDismissWelcome(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
         if (!player)
             return;
-        
+
         // Record that player dismissed the welcome screen
         CharacterDatabase.Execute(
             "INSERT INTO dc_player_welcome (guid, account_id, dismissed_at, show_on_login) "
@@ -263,20 +263,20 @@ namespace DCWelcome
             player->GetSession()->GetAccountId()
         );
     }
-    
+
     void HandleMarkFeatureSeen(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player)
             return;
-        
+
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         if (json.IsNull())
             return;
-        
+
         std::string feature = json["feature"].AsString();
         if (feature.empty())
             return;
-        
+
         // Record that player has seen this feature intro
         CharacterDatabase.Execute(
             "INSERT INTO dc_player_seen_features (guid, feature, seen_at, dismissed) "
@@ -286,28 +286,28 @@ namespace DCWelcome
             feature
         );
     }
-    
+
     void HandleGetWhatsNew(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
         if (!player || !player->GetSession())
             return;
-        
+
         // Load What's New from database
         QueryResult result = CharacterDatabase.Query(
             "SELECT id, version, title, content, icon, category FROM dc_welcome_whats_new "
             "WHERE active = 1 AND (expires_at IS NULL OR expires_at > NOW()) "
             "ORDER BY priority DESC, id DESC LIMIT 10"
         );
-        
+
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_WHATS_NEW);
-        
+
         if (result)
         {
             DCAddon::JsonValue entriesArray;
             entriesArray.SetArray();
             std::string latestVersion = "";
             int count = 0;
-            
+
             do
             {
                 Field* fields = result->Fetch();
@@ -321,11 +321,11 @@ namespace DCWelcome
                 entry.Set("category", DCAddon::JsonValue(fields[5].Get<std::string>()));
                 entriesArray.Push(entry);
                 count++;
-                
+
                 if (latestVersion.empty())
                     latestVersion = fields[1].Get<std::string>();
             } while (result->NextRow());
-            
+
             response.Set("version", latestVersion);
             response.Set("entries", entriesArray.Encode());
             response.Set("count", count);
@@ -337,21 +337,21 @@ namespace DCWelcome
             response.Set("content", "Welcome to DarkChaos-255! Features include Mythic+, Prestige, Hotspots, and more.");
             response.Set("count", 0);
         }
-        
+
         response.Send(player);
     }
-    
+
     // =======================================================================
     // Progress Data Handler - NEW
     // =======================================================================
-    
+
     void HandleGetProgress(Player* player, const DCAddon::ParsedMessage& /*msg*/)
     {
         if (!player || !player->GetSession())
             return;
-        
+
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_PROGRESS_DATA);
-        
+
         // Get M+ Rating from dc_mplus_player_ratings table (canonical rating table)
         uint32 mythicRating = 0;
         {
@@ -363,7 +363,7 @@ namespace DCWelcome
                 mythicRating = result->Fetch()[0].Get<uint32>();
         }
         response.Set("mythicRating", static_cast<int32>(mythicRating));
-        
+
         // Get Prestige Level from dc_character_prestige table
         uint32 prestigeLevel = 0;
         uint32 prestigeXP = 0;  // Prestige XP not tracked in current schema, reserved for future
@@ -379,14 +379,14 @@ namespace DCWelcome
         }
         response.Set("prestigeLevel", static_cast<int32>(prestigeLevel));
         response.Set("prestigeXP", static_cast<int32>(prestigeXP));
-        
+
         // Get Season Rank/Points from dc_mplus_scores table (aggregate best scores)
         uint32 seasonPoints = 0;
         uint32 seasonRank = 0;
         {
             // Use unified season helper
             uint32 activeSeason = DarkChaos::GetActiveSeasonId();
-            
+
             // Sum best scores across all dungeons for the season
             QueryResult result = CharacterDatabase.Query(
                 "SELECT COALESCE(SUM(best_score), 0) FROM dc_mplus_scores "
@@ -398,7 +398,7 @@ namespace DCWelcome
         }
         response.Set("seasonPoints", static_cast<int32>(seasonPoints));
         response.Set("seasonRank", static_cast<int32>(seasonRank));
-        
+
         // Get Weekly Vault Progress (M+ runs this week)
         uint32 weeklyVaultProgress = 0;
         {
@@ -411,7 +411,7 @@ namespace DCWelcome
                 weeklyVaultProgress = std::min(static_cast<uint32>(3), result->Fetch()[0].Get<uint32>());
         }
         response.Set("weeklyVaultProgress", static_cast<int32>(weeklyVaultProgress));
-        
+
         // Get Achievement Points - calculate from completed achievements
         uint32 achievementPoints = 0;
         {
@@ -429,7 +429,7 @@ namespace DCWelcome
             }
         }
         response.Set("achievementPoints", static_cast<int32>(achievementPoints));
-        
+
         // Keys completed this week
         uint32 keysThisWeek = 0;
         {
@@ -442,14 +442,14 @@ namespace DCWelcome
                 keysThisWeek = result->Fetch()[0].Get<uint32>();
         }
         response.Set("keysThisWeek", static_cast<int32>(keysThisWeek));
-        
+
         // Prestige Alt Bonus Level (max-level chars on account, capped at 5)
         uint32 altBonusLevel = 0;
         uint32 altBonusPercent = 0;
         {
             uint32 accountId = player->GetSession()->GetAccountId();
             uint32 maxLevel = sConfigMgr->GetOption<uint32>("Prestige.AltBonus.MaxLevel", 255);
-            
+
             QueryResult result = CharacterDatabase.Query(
                 "SELECT COUNT(*) FROM characters WHERE account = {} AND level >= {}",
                 accountId, maxLevel
@@ -462,7 +462,7 @@ namespace DCWelcome
         }
         response.Set("altBonusLevel", static_cast<int32>(altBonusLevel));
         response.Set("altBonusPercent", static_cast<int32>(altBonusPercent));
-        
+
         response.Send(player);
     }
 
@@ -474,9 +474,9 @@ namespace DCWelcome
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         if (!json.HasKey("guid") || !json["guid"].IsString())
             return;
-            
+
         std::string guidStr = json["guid"].AsString();
-        
+
         // Allow strings like "0xf130..." or plain hex
         if (guidStr.size() > 1 && guidStr.rfind("0x", 0) == 0)
             guidStr = guidStr.substr(2);
@@ -488,13 +488,13 @@ namespace DCWelcome
             // ChatHandler(player->GetSession()).PSendSysMessage("Debug: Failed to parse GUID string {}", guidStr.c_str());
             return;
         }
-        
+
         ObjectGuid guid(guidVal);
         // ChatHandler(player->GetSession()).PSendSysMessage("Debug: Parsed GUID {} from string {}", guid.ToString().c_str(), guidStr.c_str());
 
         uint32 spawnId = 0;
         uint32 entry = 0;
-        
+
         if (guid.IsCreatureOrVehicle())
         {
             if (Creature* creature = ObjectAccessor::GetCreature(*player, guid))
@@ -516,18 +516,18 @@ namespace DCWelcome
                  entry = go->GetEntry();
              }
         }
-        
+
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_NPC_INFO);
         response.Set("guid", guidStr);
         response.Set("spawnId", static_cast<int32>(spawnId));
         response.Set("entry", static_cast<int32>(entry));
         response.Send(player);
     }
-    
+
     void RegisterHandlers()
     {
         using namespace DCAddon;
-        
+
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_SERVER_INFO, HandleGetServerInfo);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_FAQ, HandleGetFAQ);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_DISMISS_WELCOME, HandleDismissWelcome);
@@ -535,10 +535,10 @@ namespace DCWelcome
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_WHATS_NEW, HandleGetWhatsNew);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_PROGRESS, HandleGetProgress);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_NPC_INFO, HandleGetNPCInfo);
-        
+
         MessageRouter::Instance().SetModuleEnabled(MODULE, true);
     }
-    
+
 } // namespace DCWelcome
 
 // ===========================================================================
@@ -549,13 +549,13 @@ class DCWelcome_PlayerScript : public PlayerScript
 {
 public:
     DCWelcome_PlayerScript() : PlayerScript("DCWelcome_PlayerScript") { }
-    
+
     // Called when player logs in
     void OnPlayerLogin(Player* player) override
     {
         if (!player || !sConfigMgr->GetOption<bool>(DCWelcome::Config::ENABLED, true))
             return;
-        
+
         // Check if this is a first login (new character - total played time is 0)
         if (player->GetTotalPlayedTime() == 0)
         {
@@ -563,27 +563,27 @@ public:
             DCWelcome::SendShowWelcome(player);
             return;
         }
-        
+
         // Check if player has dismissed welcome
         QueryResult result = CharacterDatabase.Query(
             "SELECT dismissed_at FROM dc_player_welcome WHERE guid = {}",
             player->GetGUID().GetCounter()
         );
-        
+
         // Always send server info on login (for version updates, season changes, etc.)
         DCWelcome::SendServerInfo(player);
     }
-    
+
     // Called when player levels up
     void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
     {
         if (!player || !sConfigMgr->GetOption<bool>(DCWelcome::Config::PROGRESSIVE_ENABLED, true))
             return;
-        
+
         uint8 newLevel = player->GetLevel();
-        
+
         // Check for milestone levels
-        for (const auto& milestone : DCWelcome::MILESTONES)
+        for (auto const& milestone : DCWelcome::MILESTONES)
         {
             if (newLevel == milestone.level && oldLevel < milestone.level)
             {
@@ -602,7 +602,7 @@ void AddSC_dc_addon_welcome()
 {
     // Register message handlers
     DCWelcome::RegisterHandlers();
-    
+
     // Register player script
     new DCWelcome_PlayerScript();
 }

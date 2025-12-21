@@ -94,7 +94,7 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
         SendStatusAddonToPlayer(player);
     }
     OutdoorPvP::HandlePlayerEnterZone(player, zone);
-    
+
     // Invalidate player cache for performance optimization
     InvalidatePlayerCache();
 }
@@ -189,7 +189,7 @@ void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
          }
      }
     OutdoorPvP::HandlePlayerLeaveZone(player, zone);
-    
+
     // Invalidate player cache for performance optimization
     InvalidatePlayerCache();
 }

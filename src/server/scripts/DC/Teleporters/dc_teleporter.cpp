@@ -136,7 +136,7 @@ private:
             {
                 if (pair.second.Faction != -1 && (int32)player->GetTeamId() != pair.second.Faction)
                     continue;
-                
+
                 if (player->GetSession()->GetSecurity() < pair.second.SecurityLevel)
                     continue;
 
@@ -161,7 +161,7 @@ private:
             {
                 backId = it->second.ParentId;
             }
-            
+
             // If backId is 0, it means back to main menu.
             // If backId is not 0, it means back to parent menu.
             // We need to send an action that OnGossipSelect understands.
@@ -170,12 +170,12 @@ private:
             // However, if backId is 0, we send 0.
             // But wait, if we have an option with ID 0 (unlikely but possible), it would conflict.
             // Assuming no option with ID 0.
-            
+
             // But wait, if backId is a MENU option, OnGossipSelect will find it in sTeleporterOptions and call ShowMenu(backId).
             // If backId is 0, it won't find it (unless ID 0 exists).
             // If not found, OnGossipSelect returns false?
             // No, I added a check: if (action == 0) ShowMenu(0).
-            
+
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "[Back]", 0, backId);
         }
 

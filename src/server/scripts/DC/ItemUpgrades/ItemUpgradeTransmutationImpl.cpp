@@ -152,7 +152,7 @@ namespace DarkChaos
 
                 uint8 player_level = level_result->Fetch()[0].Get<uint8>();
 
-                for (const auto& [id, recipe] : recipes)
+                for (auto const& [id, recipe] : recipes)
                 {
                     if (recipe.required_level <= player_level)
                     {
@@ -234,7 +234,7 @@ namespace DarkChaos
                 }
 
                 // Check item requirements
-                for (const auto& input : recipe.input_items)
+                for (auto const& input : recipe.input_items)
                 {
                     QueryResult item_result = CharacterDatabase.Query(
                         "SELECT COUNT(*) FROM item_instance ii "
@@ -249,7 +249,7 @@ namespace DarkChaos
                 }
 
                 // Check upgrade requirements
-                for (const auto& [item_guid, min_level] : recipe.input_upgrades)
+                for (auto const& [item_guid, min_level] : recipe.input_upgrades)
                 {
                     QueryResult upgrade_result = CharacterDatabase.Query(
                         "SELECT upgrade_level FROM {} "

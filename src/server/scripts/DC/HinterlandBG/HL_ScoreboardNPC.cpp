@@ -72,7 +72,7 @@ public:
         std::vector<HistRow> rows;
         uint32 limit = PAGE_SIZE + 1; // fetch one extra to detect next page
         uint32 offset = page * PAGE_SIZE;
-        
+
         CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_HLBG_HISTORY_PAGE);
         stmt->SetData(0, limit);
         stmt->SetData(1, offset);
@@ -184,7 +184,7 @@ public:
     // Important: older rows may have NULL win_reason; excluding manual must keep those (use IS NULL OR <> 'manual')
     std::string cond = includeManual ? std::string("1=1") : std::string("(win_reason IS NULL OR win_reason <> 'manual')");
     uint64 aWins = 0, hWins = 0, draws = 0, depWins = 0, tieWins = 0, manual = 0, total = 0;
-    
+
     // Note: cond is either "1=1" or a safe constant string - no user input
     std::string query1 = "SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2), SUM(win_reason='depletion'), SUM(win_reason='tiebreaker'), SUM(win_reason='manual'), COUNT(*) FROM dc_hlbg_winner_history WHERE " + cond;
     QueryResult res = CharacterDatabase.Query(query1);
@@ -222,7 +222,7 @@ public:
         // Current and longest winning streaks (based on last 200 rows)
         uint32 currCount = 0; TeamId currTeam = TEAM_NEUTRAL;
         uint32 bestCount = 0; TeamId bestTeam = TEAM_NEUTRAL;
-        
+
         std::string query2 = "SELECT winner_tid FROM dc_hlbg_winner_history WHERE " + cond + " ORDER BY id DESC LIMIT 200";
         QueryResult rs = CharacterDatabase.Query(query2);
         if (rs)
@@ -511,7 +511,7 @@ public:
         // Median margin per affix using window functions (guarded by DB capability)
         if (sWindowFns)
         {
-            std::string query12 = 
+            std::string query12 =
                 "WITH ranked AS (\n"
                 "  SELECT affix, ABS(score_alliance - score_horde) AS m,\n"
                 "         ROW_NUMBER() OVER (PARTITION BY affix ORDER BY ABS(score_alliance - score_horde)) AS rn,\n"

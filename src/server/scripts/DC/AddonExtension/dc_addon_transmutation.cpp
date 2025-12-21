@@ -1,9 +1,9 @@
 /*
  * Dark Chaos - Item Upgrade Transmutation Addon Handler
  * =====================================================
- * 
+ *
  * Handles DC|UPG|... messages for the Transmutation system.
- * 
+ *
  * Copyright (C) 2025 Dark Chaos Development Team
  */
 
@@ -32,30 +32,30 @@ namespace Upgrade
     static void SendTransmutationInfo(Player* player)
     {
         using namespace DarkChaos::ItemUpgrade;
-        
+
         TransmutationManager* transMgr = GetTransmutationManager();
         SynthesisManager* synthMgr = GetSynthesisManager();
-        
+
         // 1. Get Exchange Rates
         uint32 tokensToEssence, essenceToTokens;
         transMgr->GetExchangeRates(tokensToEssence, essenceToTokens);
-        
+
         // 2. Get Transmutation Status
         TransmutationSession session = transMgr->GetTransmutationStatus(player->GetGUID().GetCounter());
-        
+
         // 3. Get Synthesis Recipes
         auto recipes = synthMgr->GetSynthesisRecipes(player->GetGUID().GetCounter());
-        
+
         // Build JSON response
         std::ostringstream json;
         json << "{";
-        
+
         // Exchange Rates
         json << "\"exchange\":{"
              << "\"tokensToEssence\":" << tokensToEssence << ","
              << "\"essenceToTokens\":" << essenceToTokens
              << "},";
-             
+
         // Session Status
         bool sessionActive = (session.player_guid != 0 && !session.completed);
         json << "\"session\":{"
@@ -66,15 +66,15 @@ namespace Upgrade
              << "\"startTime\":" << session.start_time << ","
              << "\"endTime\":" << session.end_time
              << "},";
-             
+
         // Recipes
         json << "\"recipes\":[";
         bool first = true;
-        for (const auto& recipe : recipes)
+        for (auto const& recipe : recipes)
         {
             if (!first) json << ",";
             first = false;
-            
+
             json << "{"
                  << "\"id\":" << recipe.recipe_id << ","
                  << "\"name\":\"" << recipe.name << "\"," // Should escape quotes
@@ -86,9 +86,9 @@ namespace Upgrade
                  << "}";
         }
         json << "]";
-        
+
         json << "}";
-        
+
         JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_INFO)
             .Set("data", json.str()) // Nested JSON string for now, or could structure it directly
             .Send(player);
@@ -105,11 +105,11 @@ namespace Upgrade
         // Type 1: Tier Conversion (ItemGUID, TargetTier)
         // Type 2: Currency Exchange (Type, Amount)
         // Type 3: Synthesis (RecipeID)
-        
+
         uint32 type = msg.GetUInt32(0);
-        
+
         using namespace DarkChaos::ItemUpgrade;
-        
+
         if (type == 1) // Tier Conversion
         {
             // Not fully implemented in this snippet, requires ItemGUID parsing
@@ -118,18 +118,18 @@ namespace Upgrade
         {
             uint32 exchangeType = msg.GetUInt32(1); // 1=Token->Essence, 2=Essence->Token
             // Amount logic would go here
-            
+
             TransmutationManager* transMgr = GetTransmutationManager();
             bool success = false;
-            
+
             // Use the manager's ExchangeCurrency interface
             success = transMgr->ExchangeCurrency(player->GetGUID().GetCounter(), exchangeType == 1, 1);
-                
+
             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
                 .Add(success)
                 .Add(type)
                 .Send(player);
-                
+
             if (success)
                 SendCurrencyUpdate(player); // Defined in dc_addon_upgrade.cpp, need to link or duplicate
         }

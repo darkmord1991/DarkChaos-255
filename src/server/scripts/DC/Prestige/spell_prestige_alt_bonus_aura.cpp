@@ -21,32 +21,32 @@ namespace
     // constexpr uint32 SPELL_ALT_BONUS_15 = 800022;  // 15% bonus (3 max-level chars)
     // constexpr uint32 SPELL_ALT_BONUS_20 = 800023;  // 20% bonus (4 max-level chars)
     // constexpr uint32 SPELL_ALT_BONUS_25 = 800024;  // 25% bonus (5+ max-level chars)
-    
+
     // Base aura script for all alt bonus spells
     template<uint8 BonusPercent>
     class AltBonusAuraScript : public AuraScript
     {
         PrepareAuraScript(AltBonusAuraScript);
-        
+
         void HandleApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
         {
             // Aura is purely visual - actual XP bonus is handled in dc_prestige_alt_bonus.cpp
             // This just shows players they have the bonus active
         }
-        
+
         void Register() override
         {
             OnEffectApply += AuraEffectApplyFn(AltBonusAuraScript::HandleApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
         }
     };
-    
+
     // Spell loaders for each bonus tier
     template<uint8 BonusPercent>
     class AltBonusSpellLoader : public SpellScriptLoader
     {
     public:
         explicit AltBonusSpellLoader(char const* scriptName) : SpellScriptLoader(scriptName) { }
-        
+
         AuraScript* GetAuraScript() const override
         {
             return new AltBonusAuraScript<BonusPercent>();

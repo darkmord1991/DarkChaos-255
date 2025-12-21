@@ -327,8 +327,8 @@ private:
 
             if (currentTier < 5)
             {
-                std::string upgradeMsg = "  [Slot " + std::to_string(slot) + "] " + std::string(proto->Name1) + 
-                                        " (Tier " + std::to_string(currentTier) + " -> Tier " + std::to_string(currentTier + 1) + 
+                std::string upgradeMsg = "  [Slot " + std::to_string(slot) + "] " + std::string(proto->Name1) +
+                                        " (Tier " + std::to_string(currentTier) + " -> Tier " + std::to_string(currentTier + 1) +
                                         ", iLvL: " + std::to_string(proto->ItemLevel) + ")";
                 handler->SendSysMessage(upgradeMsg.c_str());
                 upgradeCount++;

@@ -3,7 +3,7 @@
  * ============================================================================
  * King of Dinosaurs - The apex predator of Giant Isles
  * Based on MoP world boss mechanics adapted for WotLK 3.3.5a
- * 
+ *
  * ABILITIES:
  *   - Crushing Charge: Charges a random target, dealing massive damage
  *   - Frill Blast: Frontal cone attack dealing shadow damage
@@ -32,11 +32,11 @@ enum OondastaSpells
     SPELL_PIERCING_ROAR         = 36629,  // AoE fear
     SPELL_GROWING_FURY          = 37540,  // Stacking damage buff (frenzy)
     SPELL_ALPHA_PREDATOR        = 42705,  // Visual for summoning
-    
+
     // Visual effects
     SPELL_BERSERK               = 26662,  // Hard enrage
     SPELL_CHAOS_AURA            = 28126,  // Chaos visual effect
-    
+
     // Add spells
     SPELL_YOUNG_BITE            = 49892,  // Young Oondasta basic attack
 };
@@ -67,7 +67,7 @@ enum OondastaData
 {
     NPC_OONDASTA                = 400100,
     NPC_YOUNG_OONDASTA          = 400400,
-    
+
     // Timers (in milliseconds)
     TIMER_CRUSHING_CHARGE       = 25000,
     TIMER_FRILL_BLAST           = 15000,
@@ -102,12 +102,12 @@ public:
 
         void Reset() override
         {
-        
+
             events.Reset();
             summons.DespawnAll();
             furyStacks = 0;
             isEnraged = false;
-            
+
             me->RemoveAllAuras();
             me->SetReactState(REACT_AGGRESSIVE);
             hpTriggered[0] = hpTriggered[1] = hpTriggered[2] = false;
@@ -147,7 +147,7 @@ public:
         void JustEngagedWith(Unit* /*who*/) override
         {
             Talk(SAY_AGGRO);
-            
+
             // Schedule abilities
             events.ScheduleEvent(EVENT_CRUSHING_CHARGE, 10s);
             events.ScheduleEvent(EVENT_FRILL_BLAST, 8s);
@@ -190,7 +190,7 @@ public:
         {
             Talk(SAY_DEATH);
             summons.DespawnAll();
-            
+
             // Server-wide announcement handled by zone script
 
             // Notify addon clients (WRLD) that world boss has died
@@ -253,7 +253,7 @@ public:
         void JustSummoned(Creature* summon) override
         {
             summons.Summon(summon);
-            
+
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 summon->AI()->AttackStart(target);
         }
@@ -268,7 +268,7 @@ public:
             // Get a random ranged target for charge
             std::vector<Unit*> targets;
             ThreatContainer::StorageType const& threatList = me->GetThreatMgr().GetThreatList();
-            
+
             for (auto itr = threatList.begin(); itr != threatList.end(); ++itr)
             {
                 if (Unit* target = ObjectAccessor::GetUnit(*me, (*itr)->getUnitGuid()))
@@ -277,10 +277,10 @@ public:
                         targets.push_back(target);
                 }
             }
-            
+
             if (targets.empty())
                 return SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true);
-            
+
             return targets[urand(0, targets.size() - 1)];
         }
 
@@ -289,11 +289,11 @@ public:
             if (Unit* target = GetChargeTarget())
             {
                 Talk(SAY_CHARGE);
-                
+
                 // Face target and charge
                 me->SetFacingToObject(target);
                 DoCast(target, SPELL_CRUSHING_CHARGE);
-                
+
                 // Do AoE damage immediately after charge cast
                 DoCastAOE(SPELL_CRUSHING_CHARGE_DMG);
             }
@@ -317,22 +317,22 @@ public:
                         DoCrushingCharge();
                         events.ScheduleEvent(EVENT_CRUSHING_CHARGE, 25s);
                         break;
-                        
+
                     case EVENT_FRILL_BLAST:
                         Talk(SAY_FRILL_BLAST);
                         DoCastVictim(SPELL_FRILL_BLAST);
                         events.ScheduleEvent(EVENT_FRILL_BLAST, 15s);
                         break;
-                        
+
                     case EVENT_PIERCING_ROAR:
                         DoCastAOE(SPELL_PIERCING_ROAR);
                         events.ScheduleEvent(EVENT_PIERCING_ROAR, 45s);
                         break;
-                        
+
                     case EVENT_GROWING_FURY:
                         DoCastSelf(SPELL_GROWING_FURY);
                         furyStacks++;
-                        
+
                         // Announce at dangerous stacks
                         if (furyStacks == 5)
                         {
@@ -342,13 +342,13 @@ public:
                         {
                             me->Yell("Oondasta enters a primal rage!", LANG_UNIVERSAL);
                         }
-                        
+
                         events.ScheduleEvent(EVENT_GROWING_FURY, 20s);
                         break;
-                        
+
                     case EVENT_SUMMON_ADDS:
                         Talk(SAY_SUMMON);
-                        
+
                         // Summon 2-3 Young Oondasta adds
                         for (uint8 i = 0; i < urand(2, 3); ++i)
                         {
@@ -356,11 +356,11 @@ public:
                             float dist = frand(10.0f, 20.0f);
                             float x = me->GetPositionX() + dist * cos(angle);
                             float y = me->GetPositionY() + dist * sin(angle);
-                            
-                            me->SummonCreature(NPC_YOUNG_OONDASTA, x, y, me->GetPositionZ(), 
+
+                            me->SummonCreature(NPC_YOUNG_OONDASTA, x, y, me->GetPositionZ(),
                                 me->GetOrientation(), TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 120000);
                         }
-                        
+
                         events.ScheduleEvent(EVENT_SUMMON_ADDS, 60s);
                         break;
 
@@ -393,7 +393,7 @@ public:
                         if (!me->isDead()) events.ScheduleEvent(EVENT_HP_CHECK, 5s);
                     }
                     break;
-                        
+
                     case EVENT_BERSERK:
                         if (!isEnraged)
                         {

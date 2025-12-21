@@ -40,7 +40,6 @@ enum BG_BFG_Misc
     BG_BFG_BANNER_UPDATE_TIME            = 2000
 };
 
-
 enum BattlegroundCriteriaId
 {
     BG_CRITERIA_CHECK_RESILIENT_VICTORY,
@@ -245,7 +244,6 @@ protected:
     }
 
     void BuildObjectivesBlock(WorldPacket& data) final;
-
 
     uint32 GetAttr1() const override { return BasesAssaulted; }
     uint32 GetAttr2() const override { return BasesDefended; }

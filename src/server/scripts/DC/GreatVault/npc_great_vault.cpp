@@ -1,6 +1,6 @@
 /*
  * Great Vault NPC script
- * 
+ *
  * Simplified to only trigger the client-side addon interface.
  */
 
@@ -21,10 +21,10 @@ public:
 
         // Trigger the addon interface
         DCAddon::MythicPlus::SendOpenVault(player);
-        
+
         // Close any existing gossip menu just in case
         CloseGossipMenuFor(player);
-        
+
         return true;
     }
 };

@@ -1,9 +1,9 @@
 /*
  * Dark Chaos - Group Finder NPC
  * =============================
- * 
+ *
  * Simplified to only trigger the client-side addon interface.
- * 
+ *
  * Copyright (C) 2024-2025 Dark Chaos Development Team
  */
 
@@ -30,10 +30,10 @@ public:
 
         // Trigger the addon interface
         DCAddon::GroupFinder::SendOpenGroupFinder(player);
-        
+
         // Close any existing gossip menu just in case
         CloseGossipMenuFor(player);
-        
+
         return true;
     }
 };

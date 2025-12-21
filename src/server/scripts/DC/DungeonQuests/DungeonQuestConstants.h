@@ -235,19 +235,20 @@ inline const char* GetDifficultyColor(QuestDifficulty difficulty)
 
 /*
  * USAGE EXAMPLE:
- * 
+ *
  * #include "DungeonQuestConstants.h"
  * using namespace DungeonQuest;
- * 
- * if (IsDailyQuest(questId)) {
+ *
+ * if (IsDailyQuest(questId))
+ * {
  *     LOG_INFO("scripts", "Processing daily quest: {}", questId);
  *     player->AddItem(ITEM_DUNGEON_EXPLORER_TOKEN, 1);
  * }
- * 
+ *
  * QuestDifficulty diff = DIFFICULTY_HEROIC;
  * ChatHandler(player->GetSession()).PSendSysMessage(
- *     "%sCompleted %s quest!|r", 
- *     GetDifficultyColor(diff), 
+ *     "%sCompleted %s quest!|r",
+ *     GetDifficultyColor(diff),
  *     GetDifficultyName(diff)
  * );
  */

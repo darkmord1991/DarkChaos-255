@@ -126,7 +126,7 @@ namespace DarkChaos
             std::string safeReason = reason ? reason : "";
             CleanStringForMysqlQuery(safeTransaction);
             CleanStringForMysqlQuery(safeReason);
-            
+
             CharacterDatabase.Execute(
                 "INSERT INTO dc_token_transaction_log (player_guid, currency_type, amount, transaction_type, reason) "
                 "VALUES ({}, '{}', {}, '{}', '{}')",
@@ -233,7 +233,7 @@ namespace DarkChaos
                 LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reason.str().c_str(), reward, 0);
 
                 // Send notification
-                std::string questMsg = "|cff00ff00+" + std::to_string(reward) + " Upgrade Tokens|r (Quest Complete: " + 
+                std::string questMsg = "|cff00ff00+" + std::to_string(reward) + " Upgrade Tokens|r (Quest Complete: " +
                                       std::string(quest->GetTitle()) + ")";
                 ChatHandler(player->GetSession()).SendSysMessage(questMsg.c_str());
 
@@ -297,7 +297,7 @@ namespace DarkChaos
                 LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reason.str().c_str(), 0, essence_reward);
 
                 // Send notification
-                std::string achieveMsg = "|cffff9900+" + std::to_string(essence_reward) + " Artifact Essence|r (Achievement: " + 
+                std::string achieveMsg = "|cffff9900+" + std::to_string(essence_reward) + " Artifact Essence|r (Achievement: " +
                                         achName + ")";
                 ChatHandler(player->GetSession()).SendSysMessage(achieveMsg.c_str());
 

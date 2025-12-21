@@ -1,7 +1,7 @@
 /*
  * Dark Chaos - Mythic+ Addon Module Public Interface
  * ===================================================
- * 
+ *
  * Public functions for the Mythic+ Addon Module.
  */
 

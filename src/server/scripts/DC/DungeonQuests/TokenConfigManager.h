@@ -82,12 +82,12 @@ public:
     bool Initialize()
     {
         bool success = true;
-        
+
         success &= LoadTokens("DC_Dungeon_Quests/dc_items_tokens.csv");
         success &= LoadAchievements("DC_Dungeon_Quests/dc_achievements.csv");
         success &= LoadTitles("DC_Dungeon_Quests/dc_titles.csv");
         success &= LoadDungeonNPCs("DC_Dungeon_Quests/dc_dungeon_npcs.csv");
-        
+
         if (success)
         {
             sLog->outInfo(LOG_FILTER_GUILD, "TokenConfigManager: Successfully loaded all configuration files");
@@ -97,7 +97,7 @@ public:
         {
             sLog->outError(LOG_FILTER_GUILD, "TokenConfigManager: Failed to load some configuration files");
         }
-        
+
         return success;
     }
 

@@ -46,12 +46,12 @@ static uint32 GetQuestMasterEntryForMap(uint32 mapId)
         "SELECT quest_master_entry FROM dc_dungeon_npc_mapping WHERE map_id = {} AND enabled = 1",
         mapId
     );
-    
+
     if (result)
     {
         return (*result)[0].Get<uint32>();
     }
-    
+
     LOG_WARN("scripts", "DungeonQuestMaster: No quest master found for map ID {}, using default", mapId);
     return NPC_DEFAULT_QUEST_MASTER;
 }
@@ -63,41 +63,41 @@ static Creature* SpawnQuestMasterFollower(Player* player)
         return nullptr;
 
     uint32 entry = GetQuestMasterEntryForMap(player->GetMapId());
-    
+
     // Get spawn position near player
     float x, y, z, o;
     player->GetPosition(x, y, z, o);
-    
+
     // Offset slightly behind player
     float angle = o + M_PI; // 180 degrees behind
     x += 2.0f * cos(angle);
     y += 2.0f * sin(angle);
-    
+
     // Spawn quest master follower for player
     if (TempSummon* summon = player->SummonCreature(entry, x, y, z, o, TEMPSUMMON_MANUAL_DESPAWN))
     {
         // Configure follower behavior
         summon->SetReactState(REACT_PASSIVE); // Don't attack
-        summon->SetUInt32Value(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
-        
+        summon->ReplaceAllNpcFlags(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+
         // Debug logging
-        LOG_DEBUG("scripts", "DungeonQuestMaster: Spawned entry={} for player {} at ({:.2f},{:.2f},{:.2f})", 
+        LOG_DEBUG("scripts", "DungeonQuestMaster: Spawned entry={} for player {} at ({:.2f},{:.2f},{:.2f})",
                   entry, player->GetName(), x, y, z);
-        LOG_DEBUG("scripts", "DungeonQuestMaster: NPC Flags set to {} (GOSSIP=1 | QUESTGIVER=2)", 
-                  summon->GetUInt32Value(UNIT_NPC_FLAGS));
-        
+        LOG_DEBUG("scripts", "DungeonQuestMaster: NPC Flags set to {} (GOSSIP=1 | QUESTGIVER=2)",
+                  static_cast<uint32>(summon->GetNpcFlags()));
+
         // Make it follow the player
         summon->GetMotionMaster()->MoveFollow(player, 2.0f, M_PI); // 2 yards behind
-        
+
         // Store mapping
         sQuestMasterFollowers[player->GetGUID()] = summon->GetGUID();
-        
-        LOG_DEBUG("scripts", "DungeonQuestMaster: Follower {} stored for player {}", 
+
+        LOG_DEBUG("scripts", "DungeonQuestMaster: Follower {} stored for player {}",
                   summon->GetGUID().ToString(), player->GetName());
-        
+
         return summon;
     }
-    
+
     return nullptr;
 }
 
@@ -106,7 +106,7 @@ static void DespawnQuestMasterFollower(Player* player, bool notify = false)
 {
     if (!player)
         return;
-        
+
     auto it = sQuestMasterFollowers.find(player->GetGUID());
     if (it == sQuestMasterFollowers.end())
         return;
@@ -116,9 +116,9 @@ static void DespawnQuestMasterFollower(Player* player, bool notify = false)
         follower->DespawnOrUnsummon(0ms);
         LOG_DEBUG("scripts", "DungeonQuestMaster: Despawned follower for player {}", player->GetName());
     }
-    
+
     sQuestMasterFollowers.erase(it);
-    
+
     if (notify)
     {
         ChatHandler(player->GetSession()).PSendSysMessage("Quest Master dismissed.");
@@ -130,11 +130,11 @@ static Creature* GetQuestMasterFollower(Player* player)
 {
     if (!player)
         return nullptr;
-        
+
     auto it = sQuestMasterFollowers.find(player->GetGUID());
     if (it == sQuestMasterFollowers.end())
         return nullptr;
-    
+
     return ObjectAccessor::GetCreature(*player, it->second);
 }
 
@@ -149,34 +149,34 @@ public:
     {
         if (!player)
             return;
-            
+
         if (!sConfigMgr->GetOption<bool>("DungeonQuest.FollowerEnable", true))
             return;
-        
+
         uint32 mapId = player->GetMapId();
         MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
         if (!mapEntry || !mapEntry->IsDungeon())
             return;
-        
+
         // Don't spawn quest masters in Mythic or Mythic+ difficulties
         Map* map = player->GetMap();
         if (map && map->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
         {
-            LOG_DEBUG("scripts", "DungeonQuestMaster: Skipping spawn in Mythic difficulty for player {}", 
+            LOG_DEBUG("scripts", "DungeonQuestMaster: Skipping spawn in Mythic difficulty for player {}",
                       player->GetName());
             return;
         }
-        
+
         // Check if follower already exists
         if (GetQuestMasterFollower(player))
             return;
-        
+
         // Spawn follower for solo players or any dungeon participant
         if (Creature* follower = SpawnQuestMasterFollower(player))
         {
             uint32 entry = GetQuestMasterEntryForMap(mapId);
-            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[DungeonQuest DEBUG]|r Master spawned - Entry: {} Flags: {} Follow: YES", 
-                                                               entry, follower->GetUInt32Value(UNIT_NPC_FLAGS));
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[DungeonQuest DEBUG]|r Master spawned - Entry: {} Flags: {} Follow: YES",
+                                                               entry, static_cast<uint32>(follower->GetNpcFlags()));
             ChatHandler(player->GetSession()).PSendSysMessage("A Quest Master has joined you!");
         }
     }
@@ -201,7 +201,7 @@ public:
     {
         if (!player)
             return;
-        
+
         DespawnQuestMasterFollower(player);
     }
 };
@@ -216,10 +216,10 @@ public:
     {
         if (!group)
             return;
-            
+
         if (!sConfigMgr->GetOption<bool>("DungeonQuest.FollowerEnable", true))
             return;
-        
+
         // When leader changes in a group, followers are already per-player so no special handling needed
         // Each player keeps their own follower, regardless of who the leader is
         (void)newLeaderGuid;
@@ -230,7 +230,7 @@ public:
     {
         if (!group)
             return;
-        
+
         // Clean up all followers when group disbands
         for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
@@ -269,14 +269,14 @@ public:
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
-        
+
         // Check if player is in combat
         if (player->IsInCombat())
         {
             handler->PSendSysMessage("You cannot summon the Quest Master while in combat!");
             return true;
         }
-        
+
         // Check if player is in a dungeon
         uint32 mapId = player->GetMapId();
         MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
@@ -285,7 +285,7 @@ public:
             handler->PSendSysMessage("You can only summon the Quest Master inside dungeons!");
             return true;
         }
-        
+
         // Don't allow summoning in Mythic or Mythic+ difficulties
         Map* map = player->GetMap();
         if (map && map->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
@@ -293,21 +293,21 @@ public:
             handler->PSendSysMessage("Quest Masters do not assist in Mythic difficulty!");
             return true;
         }
-        
+
         // Check if already summoned for this player
         if (GetQuestMasterFollower(player))
         {
             handler->PSendSysMessage("Quest Master is already with you!");
             return true;
         }
-        
+
         // Summon (any dungeon participant can summon, not just group leader)
         if (SpawnQuestMasterFollower(player))
         {
             handler->PSendSysMessage("Quest Master has been summoned!");
             return true;
         }
-        
+
         handler->PSendSysMessage("Failed to summon Quest Master. Please try again.");
         return false;
     }
@@ -317,14 +317,14 @@ public:
         Player* player = handler->GetSession()->GetPlayer();
         if (!player)
             return false;
-        
+
         // Check if follower exists
         if (!GetQuestMasterFollower(player))
         {
             handler->PSendSysMessage("No Quest Master is currently following you!");
             return true;
         }
-        
+
         DespawnQuestMasterFollower(player, true);
         return true;
     }

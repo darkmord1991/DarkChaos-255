@@ -78,58 +78,58 @@ public:
             "SELECT difficulty FROM dc_quest_difficulty_mapping WHERE quest_id = {}", questId
         );
         QueryResult result = WorldDatabase.Query(sql.c_str());
-        
+
         if (result)
         {
             Field* fields = result->Fetch();
             uint8 difficulty = fields[0].Get<uint8>();
             return static_cast<QuestDifficulty>(difficulty);
         }
-        
+
         return DIFFICULTY_NORMAL;
     }
-    
+
     // v4.0: Get difficulty configuration
     static float GetDifficultyTokenMultiplier(QuestDifficulty difficulty)
     {
         std::string sql = Acore::StringFormat(
-            "SELECT token_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}", 
+            "SELECT token_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}",
             static_cast<uint32>(difficulty)
         );
         QueryResult result = WorldDatabase.Query(sql.c_str());
-        
+
         if (result)
         {
             Field* fields = result->Fetch();
             return fields[0].Get<float>();
         }
-        
+
         return 1.0f;
     }
-    
+
     static float GetDifficultyGoldMultiplier(QuestDifficulty difficulty)
     {
         std::string sql = Acore::StringFormat(
-            "SELECT gold_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}", 
+            "SELECT gold_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}",
             static_cast<uint32>(difficulty)
         );
         QueryResult result = WorldDatabase.Query(sql.c_str());
-        
+
         if (result)
         {
             Field* fields = result->Fetch();
             return fields[0].Get<float>();
         }
-        
+
         return 1.0f;
     }
-    
+
     // v4.0: Update difficulty-specific statistics
     static void UpdateDifficultyStatistics(Player* player, QuestDifficulty difficulty)
     {
         if (!player)
             return;
-            
+
         std::string statName;
         switch (difficulty)
         {
@@ -145,13 +145,13 @@ public:
             default:
                 return; // Don't track Normal separately
         }
-        
+
         UpdateStatistics(player, statName, 1);
-        
-        LOG_DEBUG("scripts", "DungeonQuest: Updated {} for player {}", 
+
+        LOG_DEBUG("scripts", "DungeonQuest: Updated {} for player {}",
                   statName, player->GetName());
     }
-    
+
     // v4.0: Get dungeon ID from quest ID
     static uint32 GetDungeonIdFromQuest(uint32 questId)
     {
@@ -159,22 +159,22 @@ public:
             "SELECT dungeon_id FROM dc_quest_difficulty_mapping WHERE quest_id = {}", questId
         );
         QueryResult result = WorldDatabase.Query(sql.c_str());
-        
+
         if (result)
         {
             Field* fields = result->Fetch();
             return fields[0].Get<uint32>();
         }
-        
+
         return 0;
     }
-    
+
     // v4.0: Track difficulty completion
     static void TrackDifficultyCompletion(Player* player, uint32 dungeonId, QuestDifficulty difficulty)
     {
         if (!player || dungeonId == 0)
             return;
-        
+
         std::string difficultyStr = "Normal";
         switch (difficulty)
         {
@@ -183,7 +183,7 @@ public:
             case DIFFICULTY_MYTHIC_PLUS: difficultyStr = "Mythic+"; break;
             default: break;
         }
-        
+
         // Update completion tracking
         std::string sql = Acore::StringFormat(
             "INSERT INTO dc_character_difficulty_completions "
@@ -323,7 +323,7 @@ public:
             return true;
 
         // Additional validation can go here
-        LOG_INFO("scripts", "DungeonQuest: Player {} is about to complete quest {}", 
+        LOG_INFO("scripts", "DungeonQuest: Player {} is about to complete quest {}",
                  player->GetName(), questId);
 
         return true; // Allow completion
@@ -345,7 +345,7 @@ public:
         if (!isDailyQuest && !isWeeklyQuest && !isDungeonQuest)
             return;
 
-        LOG_INFO("scripts", "DungeonQuest: Player {} completed dungeon quest {}", 
+        LOG_INFO("scripts", "DungeonQuest: Player {} completed dungeon quest {}",
                  player->GetName(), questId);
 
         // Log the completion
@@ -389,11 +389,11 @@ private:
         // v4.0: Get difficulty and apply multiplier
         QuestDifficulty difficulty = DungeonQuestDB::GetQuestDifficulty(questId);
         float multiplier = DungeonQuestDB::GetDifficultyTokenMultiplier(difficulty);
-        
+
         // Calculate final token amount
         uint32 finalTokenAmount = static_cast<uint32>(tokenAmount * multiplier);
-        
-        LOG_INFO("scripts", "DungeonQuest: Quest {} base={} tokens, difficulty multiplier={:.2f}, final={} tokens", 
+
+        LOG_INFO("scripts", "DungeonQuest: Quest {} base={} tokens, difficulty multiplier={:.2f}, final={} tokens",
                  questId, tokenAmount, multiplier, finalTokenAmount);
 
         // Award tokens to player via central CrossSystem/Seasonal pipeline.
@@ -452,7 +452,7 @@ private:
         uint32 dungeonId = DungeonQuestDB::GetDungeonIdFromQuest(questId);
         if (dungeonId > 0)
             DungeonQuestDB::TrackDifficultyCompletion(player, dungeonId, difficulty);
-        
+
         if (isDailyQuest)
         {
             DungeonQuestDB::UpdateStatistics(player, "daily_quests_completed", 1);
@@ -466,13 +466,13 @@ private:
         else if (isDungeonQuest)
         {
             DungeonQuestDB::UpdateStatistics(player, "dungeon_quests_completed", 1);
-            
+
             // Update dungeon-specific progress
             uint32 dungeonId = DungeonQuestDB::GetDungeonIdFromQuest(questId); // v4.0: Use static database function
             if (dungeonId > 0)
             {
                 DungeonQuestDB::UpdateDungeonProgress(player, dungeonId, questId);
-                LOG_DEBUG("scripts", "DungeonQuest: Updated dungeon {} progress for player {}", 
+                LOG_DEBUG("scripts", "DungeonQuest: Updated dungeon {} progress for player {}",
                          dungeonId, player->GetName());
             }
         }
@@ -490,7 +490,7 @@ private:
         if (isDungeonQuest)
         {
             uint32 totalCompletions = DungeonQuestDB::GetDungeonQuestCompletions(player);
-            
+
             if (totalCompletions == 1)
             {
                 AwardAchievement(player, 13500, "First Steps");
@@ -560,7 +560,7 @@ private:
         if (achievement)
         {
             player->CompletedAchievement(achievement);
-            LOG_INFO("scripts", "DungeonQuest: Awarded achievement {} ({}) to player {}", 
+            LOG_INFO("scripts", "DungeonQuest: Awarded achievement {} ({}) to player {}",
                      achievementId, name, player->GetName());
         }
         else
@@ -579,7 +579,7 @@ public:
     void OnStartup() override
     {
         LOG_INFO("server.loading", ">> Loading Dungeon Quest System...");
-        
+
         // Verify database tables exist
         if (CheckDatabaseTables())
         {
@@ -604,7 +604,7 @@ private:
             "dc_character_dungeon_statistics"
         };
 
-        for (const auto& tableName : charTables)
+        for (auto const& tableName : charTables)
         {
             std::string sql = Acore::StringFormat("SHOW TABLES LIKE '{}'", tableName);
             QueryResult result = CharacterDatabase.Query(sql.c_str());
@@ -622,7 +622,7 @@ private:
             "dc_quest_reward_tokens"
         };
 
-        for (const auto& tableName : worldTables)
+        for (auto const& tableName : worldTables)
         {
             std::string sql = Acore::StringFormat("SHOW TABLES LIKE '{}'", tableName);
             QueryResult result = WorldDatabase.Query(sql.c_str());

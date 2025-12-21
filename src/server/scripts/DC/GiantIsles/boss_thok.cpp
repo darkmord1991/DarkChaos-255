@@ -3,7 +3,7 @@
  * ============================================================================
  * The Primal Hunter - A savage raptor pack leader
  * Based on SoO raid boss mechanics adapted for WotLK 3.3.5a world boss
- * 
+ *
  * ABILITIES:
  *   - Bloodthirsty: Gains attack speed as health decreases
  *   - Deafening Screech: Silences all players in range
@@ -33,11 +33,11 @@ enum ThokSpells
     SPELL_BLOOD_FRENZY          = 28131,  // Frenzy visual (soft enrage)
     SPELL_FIXATE                = 40415,  // Fixate on target
     SPELL_BLOODTHIRSTY          = 59867,  // Attack speed buff (stacks)
-    
+
     // Damage spells
     SPELL_SAVAGE_BITE           = 52585,  // Heavy melee damage
     SPELL_CARNAGE               = 28414,  // Bleed DoT
-    
+
     // Visual effects
     SPELL_BERSERK               = 26662,  // Hard enrage
     SPELL_CHAOS_AURA            = 28126,  // Chaos visual
@@ -71,7 +71,7 @@ enum ThokData
 {
     NPC_THOK                    = 400101,
     NPC_PACK_RAPTOR             = 400401,
-    
+
     // Timers
     TIMER_DEAFENING_SCREECH     = 30000,
     TIMER_TAIL_LASH             = 12000,
@@ -120,12 +120,12 @@ public:
         {
             events.Reset();
             summons.DespawnAll();
-            
+
             phase = PHASE_NORMAL;
             accelerationStacks = 0;
             inFrenzy = false;
             fixateTarget = ObjectGuid::Empty;
-            
+
             me->RemoveAllAuras();
             me->SetReactState(REACT_AGGRESSIVE);
             me->SetSpeedRate(MOVE_RUN, 1.0f);
@@ -163,7 +163,7 @@ public:
         void JustEngagedWith(Unit* /*who*/) override
         {
             Talk(SAY_AGGRO);
-            
+
             // Schedule abilities
             events.ScheduleEvent(EVENT_DEAFENING_SCREECH, 20s);
             events.ScheduleEvent(EVENT_TAIL_LASH, 8s);
@@ -254,7 +254,7 @@ public:
             {
                 // Killing makes Thok more bloodthirsty
                 DoCastSelf(SPELL_BLOODTHIRSTY);
-                
+
                 if (urand(0, 100) < 30)
                     Talk(SAY_KILL);
             }
@@ -263,7 +263,7 @@ public:
         void JustSummoned(Creature* summon) override
         {
             summons.Summon(summon);
-            
+
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
                 summon->AI()->AttackStart(target);
         }
@@ -275,13 +275,13 @@ public:
             {
                 inFrenzy = true;
                 phase = PHASE_FRENZY;
-                
+
                 Talk(SAY_FRENZY);
                 DoCastSelf(SPELL_BLOOD_FRENZY);
-                
+
                 // Summon pack of raptors
                 SummonPackRaptors();
-                
+
                 // Increase ability frequency in frenzy
                 events.CancelEvent(EVENT_SUMMON_PACK);
                 events.ScheduleEvent(EVENT_SUMMON_PACK, 30s);
@@ -291,7 +291,7 @@ public:
         void SummonPackRaptors()
         {
             Talk(SAY_FRENZY);
-            
+
             // Summon 4-6 pack raptors
             for (uint8 i = 0; i < urand(4, 6); ++i)
             {
@@ -299,7 +299,7 @@ public:
                 float dist = frand(8.0f, 15.0f);
                 float x = me->GetPositionX() + dist * cos(angle);
                 float y = me->GetPositionY() + dist * sin(angle);
-                
+
                 me->SummonCreature(NPC_PACK_RAPTOR, x, y, me->GetPositionZ(),
                     me->GetOrientation(), TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
             }
@@ -308,29 +308,29 @@ public:
         void DoFixate()
         {
             Talk(SAY_FIXATE);
-            
+
             // Target random player who isn't the tank
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 1, 100.0f, true))
             {
                 fixateTarget = target->GetGUID();
-                
+
                 // Apply fixate visual
                 DoCast(target, SPELL_FIXATE);
-                
+
                 // Warn the target
                 if (Player* player = target->ToPlayer())
                 {
                     ChatHandler(player->GetSession()).PSendSysMessage(
                         "|cFFFF0000Thok is FIXATING on you! RUN!|r");
                 }
-                
+
                 // Clear threat and attack fixate target
                 me->GetThreatMgr().ClearAllThreat();
                 me->GetThreatMgr().AddThreat(target, 1000000.0f);
-                
+
                 // Increase speed during fixate
                 me->SetSpeedRate(MOVE_RUN, 1.5f);
-                
+
                 // Schedule end of fixate
                 events.ScheduleEvent(EVENT_END_FIXATE, 10s);
             }
@@ -340,7 +340,7 @@ public:
         {
             fixateTarget = ObjectGuid::Empty;
             me->SetSpeedRate(MOVE_RUN, 1.0f + (accelerationStacks * 0.1f));
-            
+
             // Return to normal threat
             me->GetThreatMgr().ClearAllThreat();
             DoZoneInCombat();
@@ -363,22 +363,22 @@ public:
                     case EVENT_DEAFENING_SCREECH:
                         Talk(SAY_SCREECH);
                         DoCastAOE(SPELL_DEAFENING_SCREECH);
-                        events.ScheduleEvent(EVENT_DEAFENING_SCREECH, 
+                        events.ScheduleEvent(EVENT_DEAFENING_SCREECH,
                             inFrenzy ? 20s : 30s);
                         break;
-                        
+
                     case EVENT_TAIL_LASH:
                         DoCastSelf(SPELL_TAIL_LASH);
                         events.ScheduleEvent(EVENT_TAIL_LASH, 12s);
                         break;
-                        
+
                     case EVENT_ACCELERATION:
                         DoCastSelf(SPELL_ACCELERATION);
                         accelerationStacks++;
-                        
+
                         // Increase base speed
                         me->SetSpeedRate(MOVE_RUN, 1.0f + (accelerationStacks * 0.1f));
-                        
+
                         if (accelerationStacks == 3)
                         {
                             me->Yell("Thok accelerates dangerously!", LANG_UNIVERSAL);
@@ -387,30 +387,30 @@ public:
                         {
                             me->Yell("Thok reaches maximum speed!", LANG_UNIVERSAL);
                         }
-                        
+
                         events.ScheduleEvent(EVENT_ACCELERATION, 45s);
                         break;
-                        
+
                     case EVENT_SAVAGE_BITE:
                         DoCastVictim(SPELL_SAVAGE_BITE);
-                        
+
                         // Apply bleed
                         if (Unit* victim = me->GetVictim())
                             DoCast(victim, SPELL_CARNAGE);
-                        
-                        events.ScheduleEvent(EVENT_SAVAGE_BITE, 
+
+                        events.ScheduleEvent(EVENT_SAVAGE_BITE,
                             inFrenzy ? 5s : 8s);
                         break;
-                        
+
                     case EVENT_FIXATE:
                         DoFixate();
                         events.ScheduleEvent(EVENT_FIXATE, 40s);
                         break;
-                        
+
                     case EVENT_END_FIXATE:
                         EndFixate();
                         break;
-                        
+
                     case EVENT_SUMMON_PACK:
                         if (inFrenzy)
                         {
@@ -421,14 +421,14 @@ public:
                                 float dist = frand(8.0f, 15.0f);
                                 float x = me->GetPositionX() + dist * cos(angle);
                                 float y = me->GetPositionY() + dist * sin(angle);
-                                
+
                                 me->SummonCreature(NPC_PACK_RAPTOR, x, y, me->GetPositionZ(),
                                     me->GetOrientation(), TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
                             }
                             events.ScheduleEvent(EVENT_SUMMON_PACK, 30s);
                         }
                         break;
-                        
+
                     case EVENT_BERSERK:
                         Talk(SAY_BERSERK);
                         DoCastSelf(SPELL_BERSERK);
@@ -495,7 +495,7 @@ public:
         {
             leapTimer = 5000;
             rakeTimer = 3000;
-            
+
             // Pack raptors are faster
             me->SetSpeedRate(MOVE_RUN, 1.3f);
         }

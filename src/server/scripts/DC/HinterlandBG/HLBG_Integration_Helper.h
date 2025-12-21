@@ -1,6 +1,6 @@
 /* HLBG Battleground Integration Helper - Header
  * Provides static hooks for recording player statistics in dc_hlbg_player_stats table.
- * 
+ *
  * These functions should be called from OutdoorPvPHL handlers:
  * - OnPlayerEnterBG: When player enters HLBG zone (HandlePlayerEnterZone)
  * - OnPlayerKill: When a player kills another player (HandleKill)
@@ -94,7 +94,7 @@ public:
     static void OnTeamWin(TeamId winningTeam, uint32 zoneId)
     {
         // This will be called from the match end handler to update all winning players
-        LOG_DEBUG("hlbg.stats", "Team {} won in zone {} - updating player wins", 
+        LOG_DEBUG("hlbg.stats", "Team {} won in zone {} - updating player wins",
             winningTeam == TEAM_ALLIANCE ? "Alliance" : "Horde", zoneId);
     }
 };

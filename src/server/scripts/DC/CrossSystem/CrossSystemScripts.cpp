@@ -26,22 +26,22 @@ class CrossSystemWorldScript : public WorldScript
 {
 public:
     CrossSystemWorldScript() : WorldScript("dc_cross_system_world") {}
-    
+
     void OnStartup() override
     {
         LOG_INFO("dc.crosssystem", "CrossSystemWorldScript: OnStartup");
         GetManager()->Initialize();
-        
+
         // Register all system adapters
         Adapters::RegisterAllAdapters();
     }
-    
+
     void OnShutdown() override
     {
         LOG_INFO("dc.crosssystem", "CrossSystemWorldScript: OnShutdown");
         GetManager()->Shutdown();
     }
-    
+
     void OnUpdate(uint32 diff) override
     {
         GetManager()->OnWorldUpdate(diff);
@@ -56,32 +56,32 @@ class CrossSystemPlayerScript : public PlayerScript
 {
 public:
     CrossSystemPlayerScript() : PlayerScript("dc_cross_system_player") {}
-    
+
     void OnPlayerLogin(Player* player) override
     {
         GetManager()->OnPlayerLogin(player, false);  // Note: firstLogin not available in this hook
     }
-    
+
     void OnPlayerLogout(Player* player) override
     {
         GetManager()->OnPlayerLogout(player);
     }
-    
+
     void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
     {
         GetManager()->OnPlayerLevelChanged(player, oldLevel, player->GetLevel());
     }
-    
+
     void OnPlayerKilledByCreature(Creature* /*killer*/, Player* player) override
     {
         GetManager()->OnPlayerDeath(player, nullptr);
     }
-    
+
     void OnPlayerPVPKill(Player* killer, Player* killed) override
     {
         GetManager()->OnPlayerDeath(killed, killer);
     }
-    
+
     void OnPlayerMapChanged(Player* player) override
     {
         if (player && player->GetMap())
@@ -89,7 +89,7 @@ public:
             GetManager()->OnPlayerEnterMap(player, player->GetMap());
         }
     }
-    
+
     void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
     {
         if (player && quest)
@@ -97,15 +97,15 @@ public:
             GetManager()->OnQuestComplete(player, quest->GetQuestId());
         }
     }
-    
+
     void OnPlayerCreatureKill(Player* player, Creature* creature) override
     {
         if (!player || !creature)
             return;
-            
+
         // Check if it's a boss
         bool isBoss = creature->IsDungeonBoss() || creature->isWorldBoss();
-        
+
         if (isBoss)
         {
             GetManager()->OnBossKilled(player, creature, creature->isWorldBoss());

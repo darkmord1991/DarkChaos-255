@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
  * Customized for DarkChaos-255
- * 
+ *
  * Challenge Mode Database Integration - Implementation
  * Uses parameterized queries to prevent SQL injection
  */
@@ -35,10 +35,10 @@ std::string ChallengeModeDatabase::BitFlagsToString(uint32 flags)
 {
     if (flags == 0)
         return "None";
-    
+
     std::vector<std::string> activeModes;
     activeModes.reserve(8); // Preallocate for typical case
-    
+
     if (flags & CHALLENGE_FLAG_HARDCORE)      activeModes.push_back("Hardcore");
     if (flags & CHALLENGE_FLAG_SEMI_HARDCORE) activeModes.push_back("Semi-Hardcore");
     if (flags & CHALLENGE_FLAG_SELF_CRAFTED)  activeModes.push_back("Self-Crafted");
@@ -48,7 +48,7 @@ std::string ChallengeModeDatabase::BitFlagsToString(uint32 flags)
     if (flags & CHALLENGE_FLAG_IRON_MAN)      activeModes.push_back("Iron Man");
     if (flags & CHALLENGE_FLAG_IRON_MAN_PLUS) activeModes.push_back("Iron Man+");
     if (flags & CHALLENGE_FLAG_QUEST_ONLY)    activeModes.push_back("Quest Only");
-    
+
     // Join with ", " - single string allocation
     std::string result;
     for (size_t i = 0; i < activeModes.size(); ++i)
@@ -57,7 +57,7 @@ std::string ChallengeModeDatabase::BitFlagsToString(uint32 flags)
             result += ", ";
         result += activeModes[i];
     }
-    
+
     return result;
 }
 
@@ -70,7 +70,7 @@ uint32 ChallengeModeDatabase::GetActiveModesForPlayer(ObjectGuid guid)
         Field* fields = result->Fetch();
         return fields[0].Get<uint32>();
     }
-    
+
     return 0;
 }
 
@@ -105,7 +105,7 @@ void ChallengeModeDatabase::LogEvent(
         case EVENT_UNLOCK:     eventTypeStr = "UNLOCK"; break;
         case EVENT_MODIFY:     eventTypeStr = "MODIFY"; break;
     }
-    
+
     // Build and execute SQL with proper parameterization
     if (player)
     {
@@ -162,7 +162,7 @@ void ChallengeModeDatabase::RecordHardcoreDeath(ObjectGuid guid, Player* player,
         "UPDATE dc_character_challenge_modes SET hardcore_deaths = hardcore_deaths + 1, last_hardcore_death = NOW() WHERE guid = {}",
         guid.GetCounter()
     );
-    
+
     uint32 activeModes = GetActiveModesForPlayer(guid);
     std::string details = "Hardcore death - killed by " + killerName;
     LogEvent(guid, EVENT_DEATH, activeModes, activeModes, details, player, killerEntry, killerName);
@@ -175,7 +175,7 @@ void ChallengeModeDatabase::LockCharacter(ObjectGuid guid)
         "UPDATE dc_character_challenge_modes SET character_locked = 1, locked_at = NOW() WHERE guid = {}",
         guid.GetCounter()
     );
-    
+
     uint32 activeModes = GetActiveModesForPlayer(guid);
     LogEvent(guid, EVENT_LOCK, activeModes, activeModes, "Character locked due to hardcore death");
 }
@@ -187,7 +187,7 @@ void ChallengeModeDatabase::UnlockCharacter(ObjectGuid guid)
         "UPDATE dc_character_challenge_modes SET character_locked = 0, locked_at = NULL WHERE guid = {}",
         guid.GetCounter()
     );
-    
+
     uint32 activeModes = GetActiveModesForPlayer(guid);
     LogEvent(guid, EVENT_UNLOCK, activeModes, activeModes, "Character unlocked by administrator");
 }
@@ -199,13 +199,13 @@ bool ChallengeModeDatabase::IsCharacterLocked(ObjectGuid guid)
         "SELECT character_locked FROM dc_character_challenge_modes WHERE guid = {}",
         guid.GetCounter()
     );
-    
+
     if (result)
     {
         Field* fields = result->Fetch();
         return fields[0].Get<uint8>() == 1;
     }
-    
+
     return false;
 }
 
@@ -340,16 +340,16 @@ void ChallengeModeDatabase::SyncActiveModesFromSettings(Player* player)
 {
     if (!player)
         return;
-    
+
     uint32 activeModes = 0;
-    
+
     // Check each challenge mode setting and build bitfield
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_HARDCORE).value == 1)
         activeModes |= CHALLENGE_FLAG_HARDCORE;
-    
+
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_SEMI_HARDCORE).value == 1)
         activeModes |= CHALLENGE_FLAG_SEMI_HARDCORE;
-    
+
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_SELF_CRAFTED).value == 1)
         activeModes |= CHALLENGE_FLAG_SELF_CRAFTED;
 
@@ -361,16 +361,16 @@ void ChallengeModeDatabase::SyncActiveModesFromSettings(Player* player)
 
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_VERY_SLOW_XP_GAIN).value == 1)
         activeModes |= CHALLENGE_FLAG_VERY_SLOW_XP_GAIN;
-    
+
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_IRON_MAN).value == 1)
         activeModes |= CHALLENGE_FLAG_IRON_MAN;
 
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_IRON_MAN_PLUS).value == 1)
         activeModes |= CHALLENGE_FLAG_IRON_MAN_PLUS;
-    
+
     if (player->GetPlayerSetting("mod-challenge-modes", SETTING_QUEST_XP_ONLY).value == 1)
         activeModes |= CHALLENGE_FLAG_QUEST_ONLY;
-    
+
     // Update the tracking table
     UpdateActiveModes(player->GetGUID(), activeModes);
 }

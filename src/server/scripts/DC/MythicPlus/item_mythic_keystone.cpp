@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
- * 
+ *
  * Item Script: Mythic Keystone Items (300313-300331 for M+2-M+20)
  * Shows information about Mythic+ system when used
  */
@@ -58,65 +58,65 @@ public:
         uint8 keystoneLevel = ResolveKeystoneLevel(item->GetEntry());
 
         ClearGossipMenuFor(player);
-        
+
         // Header with keystone level
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
             "|cffff8000=== MYTHIC KEYSTONE +" + std::to_string(keystoneLevel) + " ===",
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
-        
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ",
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
-        
+
         // How to use section
         AddGossipItemFor(player, GOSSIP_ICON_TALK,
             "|cffffd700How to Use This Keystone|r",
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO);
-        
+
         // Scaling information section
         std::string scalingText = "|cffffd700Difficulty Scaling (M+" + std::to_string(keystoneLevel) + ")|r";
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
             scalingText,
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_SCALING);
-        
+
         // Rewards section
         AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
             "|cffffd700Rewards & Upgrades|r",
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_REWARDS);
-        
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ",
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
-        
+
         // Close button
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,
             "|cffaaaaaa[Close]|r",
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CLOSE);
-        
+
         SendGossipMenuFor(player, item->GetEntry(), item->GetGUID());
         return false; // Return false to prevent item consumption
     }
-    
+
     void OnGossipSelect(Player* player, Item* item, uint32 /*sender*/, uint32 action) override
     {
         if (!player || !item)
             return;
-        
+
         // Calculate keystone level
         uint8 keystoneLevel = ResolveKeystoneLevel(item->GetEntry());
-        
+
         ChatHandler handler(player->GetSession());
-        
+
         if (action == GOSSIP_ACTION_CLOSE)
         {
             CloseGossipMenuFor(player);
             return;
         }
-        
+
         // Calculate values
         float hpMultiplier = 2.0f + (keystoneLevel * 0.25f);
         float dmgMultiplier = 2.0f + (keystoneLevel * 0.25f);
         uint32 itemLevel = GetRewardItemLevel(keystoneLevel);
         uint32 estimatedTokens = GetEstimatedTokenReward(keystoneLevel);
-        
+
         if (action == GOSSIP_ACTION_INFO)
         {
             handler.SendSysMessage("|cff00ff00========================================|r");
@@ -152,9 +152,9 @@ public:
             handler.SendSysMessage("|cff00ff00========================================|r");
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd700Enemy Difficulty:|r");
-            handler.SendSysMessage(Acore::StringFormat("|cffffffff  Health: |cffff8000+{:.0f}%|r ({:.1f}x multiplier)", 
+            handler.SendSysMessage(Acore::StringFormat("|cffffffff  Health: |cffff8000+{:.0f}%|r ({:.1f}x multiplier)",
                 (hpMultiplier - 1.0f) * 100.0f, hpMultiplier));
-            handler.SendSysMessage(Acore::StringFormat("|cffffffff  Damage: |cffff8000+{:.0f}%|r ({:.1f}x multiplier)", 
+            handler.SendSysMessage(Acore::StringFormat("|cffffffff  Damage: |cffff8000+{:.0f}%|r ({:.1f}x multiplier)",
                 (dmgMultiplier - 1.0f) * 100.0f, dmgMultiplier));
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cffffd700Scaling Formula:|r");
@@ -206,7 +206,7 @@ public:
             handler.SendSysMessage(" ");
             handler.SendSysMessage("|cff00ff00========================================|r");
         }
-        
+
         CloseGossipMenuFor(player);
     }
 };

@@ -58,7 +58,6 @@ static void UpdateGraveyardForNodeIndex(uint8 graveyardIndex, TeamId teamId, boo
 BattlegroundTypeId BATTLEGROUND_BFG = BattlegroundTypeId(120); // value from BattlemasterList.dbc
 BattlegroundQueueTypeId BATTLEGROUND_QUEUE_BFG = BattlegroundQueueTypeId(13);
 
-
 void BattlegroundBFGScore::BuildObjectivesBlock(WorldPacket& data)
 {
     data << uint32(2);
@@ -193,7 +192,6 @@ void BattlegroundBFG::StartingEventOpenDoors()
     }
 }
 
-
 void BattlegroundBFG::AddPlayer(Player* player)
 {
     Battleground::AddPlayer(player);
@@ -289,7 +287,6 @@ void BattlegroundBFG::FillInitialWorldStates(WorldPackets::WorldState::InitWorld
     packet.Worldstates.emplace_back(GILNEAS_BG_OP_RESOURCES_HORDE, m_TeamScores[TEAM_HORDE]);
     packet.Worldstates.emplace_back(0x745, 0x2); // unk
 }
-
 
 void BattlegroundBFG::SendNodeUpdate(uint8 node)
 {
@@ -403,7 +400,7 @@ void BattlegroundBFG::EventPlayerClickedOnFlag(Player* player, GameObject* gameO
 
     SendNodeUpdate(node);
     SendBroadcastText(LANG_BG_BFG_NODE_CLAIMED, CHAT_MSG_BG_SYSTEM_NEUTRAL, player);
-    
+
     PlaySoundToAll(sound);
 }
 
@@ -478,7 +475,7 @@ void BattlegroundBFG::Init()
         _capturePointInfo[i]._ownerTeamId = TEAM_NEUTRAL;
         _capturePointInfo[i]._state = GILNEAS_BG_NODE_TYPE_NEUTRAL;
     }
-    
+
     _controlledPoints[TEAM_ALLIANCE] = 0;
     _controlledPoints[TEAM_HORDE] = 0;
     _teamScores500Disadvantage[TEAM_ALLIANCE] = false;
@@ -604,38 +601,39 @@ int32 BattlegroundBFG::_GetNodeNameId(uint8 node)
     }
 }
 
-
 class BattleForGilneasWorld : public WorldScript
 {
-	public:
+    public:
     	BattleForGilneasWorld() : WorldScript("BattleForGilneasWorld") { }
 };
 
 void AddBattleForGilneasScripts() {
-	new BattleForGilneasWorld();
+    new BattleForGilneasWorld();
 
-	// Add Battle for Gilneas to battleground list
-	BattlegroundMgr::queueToBg[BATTLEGROUND_QUEUE_BFG] = BATTLEGROUND_BFG;
-	BattlegroundMgr::bgToQueue[BATTLEGROUND_BFG] = BATTLEGROUND_QUEUE_BFG;
-	BattlegroundMgr::bgtypeToBattleground[BATTLEGROUND_BFG] = new BattlegroundBFG;
+    // Add Battle for Gilneas to battleground list
+    BattlegroundMgr::queueToBg[BATTLEGROUND_QUEUE_BFG] = BATTLEGROUND_BFG;
+    BattlegroundMgr::bgToQueue[BATTLEGROUND_BFG] = BATTLEGROUND_QUEUE_BFG;
+    BattlegroundMgr::bgtypeToBattleground[BATTLEGROUND_BFG] = new BattlegroundBFG;
 
-	BattlegroundMgr::bgTypeToTemplate[BATTLEGROUND_BFG] = [](Battleground *bg_t) -> Battleground * { return new BattlegroundBFG(*(BattlegroundBFG *) bg_t); };
+    BattlegroundMgr::bgTypeToTemplate[BATTLEGROUND_BFG] = [](Battleground *bg_t) -> Battleground * { return new BattlegroundBFG(*(BattlegroundBFG *) bg_t); };
 
-	// BattlegroundMgr::getBgFromTypeID[BATTLEGROUND_BFG] = [](WorldPacket* data, Battleground::BattlegroundScoreMap::const_iterator itr2, Battleground* /* bg */) {
+    // BattlegroundMgr::getBgFromTypeID[BATTLEGROUND_BFG] = [](WorldPacket* data, Battleground::BattlegroundScoreMap::const_iterator itr2, Battleground* /* bg */) {
     //     *data << uint32(0x00000002);            // count of next fields
     //     *data << uint32(((BattlegroundBFGScore*)itr2->second)->BasesAssaulted);      // bases asssaulted
     //     *data << uint32(((BattlegroundBFGScore*)itr2->second)->BasesDefended);       // bases defended
-	// };
+    // };
 
-	// BattlegroundMgr::getBgFromMap[761] = [](WorldPacket* data, Battleground::BattlegroundScoreMap::const_iterator itr2) {
+    // BattlegroundMgr::getBgFromMap[761] = [](WorldPacket* data, Battleground::BattlegroundScoreMap::const_iterator itr2) {
     //     *data << uint32(0x00000002);            // count of next fields
     //     *data << uint32(((BattlegroundBFGScore*)itr2->second)->BasesAssaulted);      // bases asssaulted
     //     *data << uint32(((BattlegroundBFGScore*)itr2->second)->BasesDefended);       // bases defended
-	// };
+    // };
 
-        Player::bgZoneIdToFillWorldStates[5449] = [](Battleground* bg, WorldPackets::WorldState::InitWorldStates& packet) {
-                if (bg && bg->GetBgTypeID(true) == BATTLEGROUND_BFG) {
-                    bg->FillInitialWorldStates(packet);
-                }
-        };
+    Player::bgZoneIdToFillWorldStates[5449] = [](Battleground* bg, WorldPackets::WorldState::InitWorldStates& packet)
+    {
+        if (bg && bg->GetBgTypeID(true) == BATTLEGROUND_BFG)
+        {
+            bg->FillInitialWorldStates(packet);
+        }
+    };
 }

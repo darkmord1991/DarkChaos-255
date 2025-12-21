@@ -36,7 +36,7 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     }
 
     ObjectGuid playerGuid = player->GetGUID();
-    
+
     // Check if player is already in queue
     if (IsPlayerInQueue(player))
     {
@@ -57,15 +57,15 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     // integral count into the uint32 joinTime field.
     entry.joinTime = static_cast<uint32>(GameTime::GetGameTime().count());
     entry.teamId = player->GetTeamId();
-    
+
     _queuedPlayers.push_back(entry);
 
     // Announce queue join
     std::string playerName = player->GetName();
     uint32 queueSize = GetQueuedPlayerCount();
-    
+
     ChatHandler(player->GetSession()).PSendSysMessage("You have joined the Hinterland BG queue. Position: {}", queueSize);
-    
+
     // Notify zone if we're getting close to battle start
     if (queueSize >= _minPlayersToStart && _bgState == BG_STATE_CLEANUP)
     {
@@ -81,7 +81,7 @@ void OutdoorPvPHL::RemovePlayerFromQueue(Player* player)
         return;
 
     ObjectGuid playerGuid = player->GetGUID();
-    
+
     auto it = std::find_if(_queuedPlayers.begin(), _queuedPlayers.end(),
         [playerGuid](const QueueEntry& entry) {
             return entry.playerGuid == playerGuid;
@@ -105,7 +105,7 @@ bool OutdoorPvPHL::IsPlayerInQueue(Player* player)
         return false;
 
     ObjectGuid playerGuid = player->GetGUID();
-    
+
     return std::find_if(_queuedPlayers.begin(), _queuedPlayers.end(),
         [playerGuid](const QueueEntry& entry) {
             return entry.playerGuid == playerGuid;
@@ -133,13 +133,13 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
     uint32 totalQueued = GetQueuedPlayerCount();
     uint32 allianceQueued = GetQueuedPlayerCountByTeam(TEAM_ALLIANCE);
     uint32 hordeQueued = GetQueuedPlayerCountByTeam(TEAM_HORDE);
-    
+
     ChatHandler ch(player->GetSession());
     ch.PSendSysMessage("=== Hinterland BG Queue Status ===");
     ch.PSendSysMessage("Total players in queue: {}", totalQueued);
     ch.PSendSysMessage("Alliance: {} | Horde: {}", allianceQueued, hordeQueued);
     ch.PSendSysMessage("Minimum players to start: {}", _minPlayersToStart);
-    
+
     if (IsPlayerInQueue(player))
     {
         // Find player's position in queue
@@ -147,7 +147,7 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
             [player](const QueueEntry& entry) {
                 return entry.playerGuid == player->GetGUID();
             });
-        
+
         if (it != _queuedPlayers.end())
         {
             uint32 position = static_cast<uint32>(std::distance(_queuedPlayers.begin(), it) + 1);
@@ -157,7 +157,7 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
             ch.PSendSysMessage("Your position: {} | Wait time: {} seconds", position, waitTime);
         }
     }
-    
+
     // Show battle state
     switch (_bgState)
     {
@@ -199,7 +199,7 @@ void OutdoorPvPHL::ProcessQueueSystem()
     // Check if we have enough players to start warmup
     uint32 queuedPlayers = GetQueuedPlayerCount();
     uint32 requiredPlayers = std::max<uint32>(_minPlayersToStart, 1u);
-    
+
     if (queuedPlayers >= requiredPlayers)
     {
         // Start warmup phase and teleport queued players
@@ -243,7 +243,7 @@ void OutdoorPvPHL::StartWarmupPhase()
 void OutdoorPvPHL::TeleportQueuedPlayers()
 {
     uint32 teleportCount = 0;
-    
+
     for (const QueueEntry& entry : _queuedPlayers)
     {
         Player* player = ObjectAccessor::FindConnectedPlayer(entry.playerGuid);
@@ -253,7 +253,7 @@ void OutdoorPvPHL::TeleportQueuedPlayers()
     // Choose spawn location based on team. Use the local HLBase struct declared
     // inside OutdoorPvPHL (map + x/y/z/o) rather than WorldLocation.
     const HLBase* spawnLoc = (entry.teamId == TEAM_ALLIANCE) ? &_baseAlliance : &_baseHorde;
-        
+
         // Only teleport if player is not already in the zone
         if (player->GetZoneId() != OutdoorPvPHLBuffZones[0])
         {
@@ -408,7 +408,7 @@ void OutdoorPvPHL::SendQueueStatusAIO(Player* player)
     std::ostringstream oss;
     oss << "QUEUE_STATUS|";
     oss << "IN_QUEUE=" << (IsPlayerInQueue(player) ? "1" : "0") << "|";
-    
+
     if (IsPlayerInQueue(player))
     {
         // Find player's position
@@ -416,16 +416,16 @@ void OutdoorPvPHL::SendQueueStatusAIO(Player* player)
             [player](const QueueEntry& entry) {
                 return entry.playerGuid == player->GetGUID();
             });
-        
+
         if (it != _queuedPlayers.end())
         {
             uint32 position = static_cast<uint32>(std::distance(_queuedPlayers.begin(), it) + 1);
             oss << "POSITION=" << position << "|";
         }
     }
-    
+
     oss << "TOTAL=" << GetQueuedPlayerCount() << "|";
-    
+
     // Send battle state
     switch (_bgState)
     {
@@ -446,10 +446,10 @@ void OutdoorPvPHL::SendQueueStatusAIO(Player* player)
             oss << "STATE=WAITING";
             break;
     }
-    
+
     // Send via AIO to client
     AIO().Msg(player, "HLBG", "QueueStatus", oss.str());
-    
+
     LOG_DEBUG("hlbg.queue", "Sent queue status to {}: {}", player->GetName(), oss.str());
 #else
     // Fallback to chat command if AIO not available
@@ -479,10 +479,10 @@ void OutdoorPvPHL::SendConfigInfoAIO(Player* player)
     oss << "REWARD_HONOR_TIEBREAKER=" << _rewardMatchHonorTiebreaker << "|";
     oss << "AFFIX_ENABLED=" << (_affixEnabled ? "1" : "0") << "|";
     oss << "AFFIX_CURRENT=" << static_cast<uint32>(_activeAffix);
-    
+
     // Send via AIO
     AIO().Msg(player, "HLBG", "ConfigInfo", oss.str());
-    
+
     LOG_DEBUG("hlbg.aio", "Sent config info to {}", player->GetName());
 #else
     // Fallback to chat message

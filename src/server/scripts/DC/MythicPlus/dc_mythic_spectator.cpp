@@ -39,7 +39,7 @@ void RunReplay::AddEvent(ReplayEventType type, std::string const& data)
 {
     if (events.size() >= REPLAY_MAX_EVENTS)
         events.pop_front();  // Remove oldest event if at capacity
-    
+
     ReplayEvent event;
     event.timestamp = GameTime::GetGameTimeMS().count() - (startTime * 1000);
     event.type = type;
@@ -59,7 +59,7 @@ std::string RunReplay::Serialize() const
        << ",\"completed\":" << (completed ? "true" : "false")
        << ",\"leaderName\":\"" << leaderName << "\""
        << ",\"events\":[";
-    
+
     bool first = true;
     for (auto const& event : events)
     {
@@ -88,17 +88,17 @@ void MythicSpectatorConfig::Load()
     allowPublicListing = sConfigMgr->GetOption<bool>("MythicSpectator.AllowPublicListing", true);
     streamModeEnabled = sConfigMgr->GetOption<bool>("MythicSpectator.StreamModeEnabled", true);
     defaultStreamMode = sConfigMgr->GetOption<uint32>("MythicSpectator.DefaultStreamMode", 0);
-    
+
     // Invite system
     inviteLinksEnabled = sConfigMgr->GetOption<bool>("MythicSpectator.InviteLinks.Enable", true);
     inviteLinkExpireSeconds = sConfigMgr->GetOption<uint32>("MythicSpectator.InviteLinks.ExpireSeconds", 3600);
-    
+
     // Replay system
     replayEnabled = sConfigMgr->GetOption<bool>("MythicSpectator.Replay.Enable", true);
     replayMaxStoredRuns = sConfigMgr->GetOption<uint32>("MythicSpectator.Replay.MaxStoredRuns", 100);
     replayRecordPositions = sConfigMgr->GetOption<bool>("MythicSpectator.Replay.RecordPositions", false);
     replayRecordCombatLog = sConfigMgr->GetOption<bool>("MythicSpectator.Replay.RecordCombatLog", false);
-    
+
     // HUD sync
     syncHudToSpectators = sConfigMgr->GetOption<bool>("MythicSpectator.SyncHudToSpectators", true);
 }
@@ -126,7 +126,7 @@ std::string MythicSpectatorManager::GenerateRandomCode(uint32 length)
     static std::random_device rd;
     static std::mt19937 gen(rd());
     static std::uniform_int_distribution<> dis(0, sizeof(chars) - 2);
-    
+
     std::string code;
     code.reserve(length);
     for (uint32 i = 0; i < length; ++i)
@@ -163,12 +163,12 @@ void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId, uint32 mapId, 
     run.activeReplay = nullptr;
 
     _activeRuns[instanceId] = run;
-    
+
     // Start recording if enabled
     if (_config.replayEnabled)
         StartRecording(instanceId);
 
-    LOG_DEBUG("scripts", "MythicSpectator: Registered run {} (map {}, +{})", 
+    LOG_DEBUG("scripts", "MythicSpectator: Registered run {} (map {}, +{})",
               instanceId, mapId, keystoneLevel);
 }
 
@@ -177,7 +177,7 @@ void MythicSpectatorManager::UnregisterActiveRun(uint32 instanceId)
     auto it = _activeRuns.find(instanceId);
     if (it == _activeRuns.end())
         return;
-    
+
     // Stop and save replay
     if (_config.replayEnabled)
         StopRecording(instanceId, true);
@@ -198,7 +198,7 @@ void MythicSpectatorManager::UnregisterActiveRun(uint32 instanceId)
     LOG_DEBUG("scripts", "MythicSpectator: Unregistered run {}", instanceId);
 }
 
-void MythicSpectatorManager::UpdateRunStatus(uint32 instanceId, uint32 timerRemaining, 
+void MythicSpectatorManager::UpdateRunStatus(uint32 instanceId, uint32 timerRemaining,
                                               uint8 bossesKilled, uint8 bossesTotal, uint8 deaths)
 {
     auto it = _activeRuns.find(instanceId);
@@ -411,7 +411,7 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
 
     // Teleport to the dungeon
     float z = targetPlayer->GetPositionZ() + 0.25f;
-    player->TeleportTo(run.mapId, targetPlayer->GetPositionX(), targetPlayer->GetPositionY(), 
+    player->TeleportTo(run.mapId, targetPlayer->GetPositionX(), targetPlayer->GetPositionY(),
                        z, targetPlayer->GetOrientation());
 
     // Start watching the first player
@@ -434,7 +434,7 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
         }
     }
 
-    LOG_INFO("scripts", "MythicSpectator: {} started spectating run {} (+{})", 
+    LOG_INFO("scripts", "MythicSpectator: {} started spectating run {} (+{})",
              player->GetName(), instanceId, run.keystoneLevel);
 
     return true;
@@ -473,7 +473,7 @@ bool MythicSpectatorManager::StartSpectatingPlayer(Player* spectator, std::strin
             ChatHandler(spectator->GetSession()).SendSysMessage("|cffff0000[M+ Spectator]|r That player is not in a Mythic+ run.");
             return false;
         }
-        
+
         // Try to get run info from MythicPlusRunManager and register it
         // This handles cases where the run wasn't registered yet
         ChatHandler(spectator->GetSession()).SendSysMessage("|cffff0000[M+ Spectator]|r That run is not available for spectating.");
@@ -564,7 +564,7 @@ bool MythicSpectatorManager::WatchPlayer(Player* spectator, Player* target)
 
     // Set new viewpoint if spectator has target in sight
     state.watchingPlayer = target->GetGUID();
-    
+
     if (spectator->HaveAtClient(target))
         spectator->CastSpell(target, SPECTATOR_BINDSIGHT_SPELL, true);
 
@@ -636,7 +636,7 @@ void MythicSpectatorManager::SendRunSnapshot(Player* spectator, uint32 instanceI
     uint32 streamMode = (stateIt != _spectators.end()) ? stateIt->second.streamMode : 0;
 
     std::string data = FormatRunData(runIt->second, streamMode);
-    
+
     WorldPacket packet;
     CreatePacket(packet, data);
     spectator->SendDirectMessage(&packet);
@@ -660,14 +660,14 @@ std::string MythicSpectatorManager::FormatRunData(SpectateableRun const& run, ui
     ss << uint32(run.bossesKilled) << "|";
     ss << uint32(run.bossesTotal) << "|";
     ss << uint32(run.deaths) << "|";
-    
+
     if (streamMode >= STREAM_MODE_NAMES_HIDDEN)
         ss << "Group Leader|";  // Anonymous
     else
         ss << run.leaderName << "|";
-    
+
     ss << run.spectators.size();
-    
+
     return ss.str();
 }
 
@@ -721,7 +721,7 @@ void MythicSpectatorManager::Update(uint32 diff)
 void MythicSpectatorManager::SaveSpectatorPosition(Player* player, SpectatorState& state)
 {
     state.savedMapId = player->GetMapId();
-    state.savedPosition = Position(player->GetPositionX(), player->GetPositionY(), 
+    state.savedPosition = Position(player->GetPositionX(), player->GetPositionY(),
                                     player->GetPositionZ(), player->GetOrientation());
 }
 
@@ -760,7 +760,7 @@ void MythicSpectatorManager::UpdateSpectatorViewpoint(Player* spectator)
         {
             // Target dead or left - find another player to watch
             state.watchingPlayer.Clear();
-            
+
             Map* map = sMapMgr->FindMap(state.targetMapId, state.targetInstanceId);
             if (map)
             {
@@ -801,11 +801,11 @@ std::string MythicSpectatorManager::GenerateInviteCode(Player* player, uint32 in
 
     // Generate unique code
     std::string code = GenerateRandomCode(INVITE_CODE_LENGTH);
-    
+
     // Ensure uniqueness
     while (_inviteCodes.find(code) != _inviteCodes.end())
         code = GenerateRandomCode(INVITE_CODE_LENGTH);
-    
+
     SpectatorInvite invite;
     invite.code = code;
     invite.instanceId = instanceId;
@@ -813,14 +813,14 @@ std::string MythicSpectatorManager::GenerateInviteCode(Player* player, uint32 in
     invite.createdAt = GameTime::GetGameTime().count();
     invite.expiresAt = invite.createdAt + _config.inviteLinkExpireSeconds;
     invite.usesRemaining = uses;
-    
+
     _inviteCodes[code] = invite;
     run->inviteCode = code;
     run->inviteCodeExpires = invite.expiresAt;
-    
-    LOG_DEBUG("scripts", "MythicSpectator: Generated invite code {} for run {} by {}", 
+
+    LOG_DEBUG("scripts", "MythicSpectator: Generated invite code {} for run {} by {}",
               code, instanceId, player->GetName());
-    
+
     return code;
 }
 
@@ -829,17 +829,17 @@ bool MythicSpectatorManager::ValidateInviteCode(std::string const& code, uint32&
     auto it = _inviteCodes.find(code);
     if (it == _inviteCodes.end())
         return false;
-    
+
     SpectatorInvite const& invite = it->second;
-    
+
     // Check expiration
     if (static_cast<uint64>(GameTime::GetGameTime().count()) > invite.expiresAt)
         return false;
-    
+
     // Check if run still exists
     if (_activeRuns.find(invite.instanceId) == _activeRuns.end())
         return false;
-    
+
     outInstanceId = invite.instanceId;
     return true;
 }
@@ -853,7 +853,7 @@ bool MythicSpectatorManager::StartSpectatingByCode(Player* player, std::string c
             "|cffff0000[M+ Spectator]|r Invalid or expired invite code.");
         return false;
     }
-    
+
     // Decrement uses if limited
     auto it = _inviteCodes.find(inviteCode);
     if (it != _inviteCodes.end() && it->second.usesRemaining > 0)
@@ -862,7 +862,7 @@ bool MythicSpectatorManager::StartSpectatingByCode(Player* player, std::string c
         if (it->second.usesRemaining == 0)
             _inviteCodes.erase(it);
     }
-    
+
     return StartSpectating(player, instanceId);
 }
 
@@ -874,7 +874,7 @@ void MythicSpectatorManager::SendInviteLink(Player* sender, Player* recipient, u
             "|cffff0000[M+ Spectator]|r Invite links are disabled.");
         return;
     }
-    
+
     std::string code = GenerateInviteCode(sender, instanceId, 1);  // Single-use invite
     if (code.empty())
     {
@@ -882,7 +882,7 @@ void MythicSpectatorManager::SendInviteLink(Player* sender, Player* recipient, u
             "|cffff0000[M+ Spectator]|r Failed to generate invite code.");
         return;
     }
-    
+
     auto* run = GetRun(instanceId);
     std::string mapName = "Unknown";
     if (run)
@@ -890,13 +890,13 @@ void MythicSpectatorManager::SendInviteLink(Player* sender, Player* recipient, u
         if (MapEntry const* mapEntry = sMapStore.LookupEntry(run->mapId))
             mapName = mapEntry->name[0];
     }
-    
+
     // Send clickable link to recipient
     ChatHandler(recipient->GetSession()).PSendSysMessage(
         "|cff00ff00[M+ Spectator]|r %s invites you to watch their +%u %s run! "
         "|cffffd700|Hspectate:%s|h[Click to Join]|h|r or type: .spectate code %s",
         sender->GetName().c_str(), run ? run->keystoneLevel : 0, mapName.c_str(), code.c_str(), code.c_str());
-    
+
     ChatHandler(sender->GetSession()).PSendSysMessage(
         "|cff00ff00[M+ Spectator]|r Invite sent to %s.", recipient->GetName().c_str());
 }
@@ -905,7 +905,7 @@ void MythicSpectatorManager::BroadcastInviteToGuild(Player* sender, uint32 insta
 {
     if (!_config.inviteLinksEnabled)
         return;
-    
+
     Guild* guild = sender->GetGuild();
     if (!guild)
     {
@@ -913,11 +913,11 @@ void MythicSpectatorManager::BroadcastInviteToGuild(Player* sender, uint32 insta
             "|cffff0000[M+ Spectator]|r You are not in a guild.");
         return;
     }
-    
+
     std::string code = GenerateInviteCode(sender, instanceId, 0);  // Unlimited uses
     if (code.empty())
         return;
-    
+
     auto* run = GetRun(instanceId);
     std::string mapName = "Unknown";
     if (run)
@@ -925,15 +925,15 @@ void MythicSpectatorManager::BroadcastInviteToGuild(Player* sender, uint32 insta
         if (MapEntry const* mapEntry = sMapStore.LookupEntry(run->mapId))
             mapName = mapEntry->name[0];
     }
-    
+
     // Broadcast to guild chat
     std::ostringstream ss;
     ss << "|cff00ff00[M+ Spectator]|r " << sender->GetName() << " is running +";
     ss << uint32(run ? run->keystoneLevel : 0) << " " << mapName;
     ss << "! Watch live: |cffffd700.spectate code " << code << "|r";
-    
+
     guild->BroadcastToGuild(sender->GetSession(), false, ss.str(), LANG_UNIVERSAL);
-    
+
     ChatHandler(sender->GetSession()).SendSysMessage(
         "|cff00ff00[M+ Spectator]|r Spectator invite broadcast to guild.");
 }
@@ -941,7 +941,7 @@ void MythicSpectatorManager::BroadcastInviteToGuild(Player* sender, uint32 insta
 void MythicSpectatorManager::CleanupExpiredInvites()
 {
     uint64 now = GameTime::GetGameTime().count();
-    
+
     for (auto it = _inviteCodes.begin(); it != _inviteCodes.end(); )
     {
         if (now > it->second.expiresAt)
@@ -970,8 +970,8 @@ void MythicSpectatorManager::SyncHudToSpectator(Player* spectator, uint32 instan
     // Send all worldstates to spectator
     for (auto const& [worldStateId, value] : state->hudWorldStates)
         spectator->SendUpdateWorldState(worldStateId, value);
-    
-    LOG_DEBUG("scripts", "MythicSpectator: Synced {} HUD worldstates to spectator {}", 
+
+    LOG_DEBUG("scripts", "MythicSpectator: Synced {} HUD worldstates to spectator {}",
               state->hudWorldStates.size(), spectator->GetName());
 }
 
@@ -1015,15 +1015,15 @@ void MythicSpectatorManager::StartRecording(uint32 instanceId)
     replay.endTime = 0;
     replay.completed = false;
     replay.leaderName = run->leaderName;
-    
+
     _activeReplays[instanceId] = replay;
-    
+
     // Record start event
     std::ostringstream ss;
-    ss << "{\"mapId\":" << run->mapId << ",\"level\":" << uint32(run->keystoneLevel) 
+    ss << "{\"mapId\":" << run->mapId << ",\"level\":" << uint32(run->keystoneLevel)
        << ",\"leader\":\"" << run->leaderName << "\"}";
     RecordEvent(instanceId, ReplayEventType::RUN_START, ss.str());
-    
+
     LOG_DEBUG("scripts", "MythicSpectator: Started recording replay for run {}", instanceId);
 }
 
@@ -1034,12 +1034,12 @@ void MythicSpectatorManager::StopRecording(uint32 instanceId, bool save)
         return;
 
     it->second.endTime = GameTime::GetGameTime().count();
-    
+
     if (save)
         SaveReplay(instanceId);
-    
+
     _activeReplays.erase(it);
-    
+
     LOG_DEBUG("scripts", "MythicSpectator: Stopped recording replay for run {}", instanceId);
 }
 
@@ -1067,7 +1067,7 @@ bool MythicSpectatorManager::SaveReplay(uint32 instanceId)
     CharacterDatabase.EscapeString(leaderNameEscaped);
     std::string serializedEscaped = serialized;
     CharacterDatabase.EscapeString(serializedEscaped);
-    
+
     // Save to database
     CharacterDatabase.Execute(
         "INSERT INTO dc_mplus_spec_replays "
@@ -1075,31 +1075,31 @@ bool MythicSpectatorManager::SaveReplay(uint32 instanceId)
         "VALUES ({}, {}, '{}', {}, {}, {}, '{}')",
         replay.mapId, uint32(replay.keystoneLevel), leaderNameEscaped,
         replay.startTime, replay.endTime, replay.completed ? 1 : 0, serializedEscaped);
-    
+
     // Cleanup old replays if over limit
     CharacterDatabase.Execute(
         "DELETE FROM dc_mplus_spec_replays WHERE id NOT IN "
         "(SELECT id FROM (SELECT id FROM dc_mplus_spec_replays ORDER BY start_time DESC LIMIT {}) AS t)",
         _config.replayMaxStoredRuns);
-    
-    LOG_INFO("scripts", "MythicSpectator: Saved replay for run {} ({} events)", 
+
+    LOG_INFO("scripts", "MythicSpectator: Saved replay for run {} ({} events)",
              instanceId, replay.events.size());
-    
+
     return true;
 }
 
 std::vector<std::pair<uint32, std::string>> MythicSpectatorManager::GetRecentReplays(uint32 limit)
 {
     std::vector<std::pair<uint32, std::string>> result;
-    
+
     QueryResult qr = CharacterDatabase.Query(
         "SELECT id, map_id, keystone_level, leader_name, start_time, completed "
         "FROM dc_mplus_spec_replays ORDER BY start_time DESC LIMIT {}",
         limit);
-    
+
     if (!qr)
         return result;
-    
+
     do
     {
         Field* fields = qr->Fetch();
@@ -1108,19 +1108,19 @@ std::vector<std::pair<uint32, std::string>> MythicSpectatorManager::GetRecentRep
         uint8 level = fields[2].Get<uint8>();
         std::string leader = fields[3].Get<std::string>();
         bool completed = fields[5].Get<bool>();
-        
+
         std::string mapName = "Unknown";
         if (MapEntry const* mapEntry = sMapStore.LookupEntry(mapId))
             mapName = mapEntry->name[0];
-        
+
         std::ostringstream ss;
         ss << "+$" << uint32(level) << " " << mapName << " by " << leader;
         ss << (completed ? " (Completed)" : " (Failed)");
-        
+
         result.emplace_back(replayId, ss.str());
     }
     while (qr->NextRow());
-    
+
     return result;
 }
 
@@ -1181,7 +1181,7 @@ public:
 
         handler->SendSysMessage("|cff00ff00======== ACTIVE M+ RUNS ========|r");
         handler->SendSysMessage("|cffffd700ID    | Level | Dungeon | Leader | Progress | Spectators|r");
-        
+
         for (auto const& run : runs)
         {
             std::string mapName = "Unknown";
@@ -1316,7 +1316,7 @@ public:
         uint32 uses = maxUses.value_or(10); // Default 10 uses
 
         std::string inviteCode = sMythicSpectator.GenerateInviteCode(player, instanceId, uses);
-        
+
         if (inviteCode.empty())
         {
             handler->SendSysMessage("|cffff0000[M+ Spectator]|r Failed to create invite link.");
@@ -1350,10 +1350,10 @@ public:
         }
 
         uint32 instanceId = player->GetInstanceId();
-        
+
         // Create invite code
         std::string inviteCode = sMythicSpectator.GenerateInviteCode(player, instanceId, 50);
-        
+
         if (inviteCode.empty())
         {
             handler->SendSysMessage("|cffff0000[M+ Spectator]|r Failed to create guild invite.");
@@ -1366,11 +1366,11 @@ public:
             mapName = mapEntry->name[0];
 
         std::ostringstream msg;
-        msg << "|cff00ff00[M+ Spectator]|r " << player->GetName() << " invites you to watch: " 
+        msg << "|cff00ff00[M+ Spectator]|r " << player->GetName() << " invites you to watch: "
             << mapName << "! Use: .spectate code " << inviteCode;
 
         guild->BroadcastToGuild(player->GetSession(), false, msg.str().c_str(), LANG_UNIVERSAL);
-        
+
         handler->SendSysMessage("|cff00ff00[M+ Spectator]|r Guild broadcast sent!");
         return true;
     }
@@ -1428,7 +1428,7 @@ public:
         // For now, just inform - full playback would need map teleport
         handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Loading replay %u...", replayId);
         handler->SendSysMessage("|cffffd700Note: Full replay playback requires being teleported to the dungeon.|r");
-        
+
         // TODO: Implement full replay playback with ghost player simulation
         return true;
     }
@@ -1471,7 +1471,7 @@ public:
     void OnStartup() override
     {
         sMythicSpectator.LoadConfig();
-        LOG_INFO("scripts", "DarkChaos Mythic+ Spectator system initialized (Enabled: {})", 
+        LOG_INFO("scripts", "DarkChaos Mythic+ Spectator system initialized (Enabled: {})",
                  sMythicSpectator.GetConfig().enabled ? "Yes" : "No");
     }
 

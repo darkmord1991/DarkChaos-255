@@ -330,7 +330,7 @@ namespace DarkChaos
             std::vector<BalanceAdjustment> GetActiveAdjustments(uint32 season_id) const
             {
                 std::vector<BalanceAdjustment> active;
-                for (const auto& adj : adjustments)
+                for (auto const& adj : adjustments)
                 {
                     if (adj.is_active && adj.season_id == season_id)
                         active.push_back(adj);
@@ -344,7 +344,7 @@ namespace DarkChaos
             float GetCombinedImpact(uint32 season_id) const
             {
                 float combined = 1.0f;
-                for (const auto& adj : GetActiveAdjustments(season_id))
+                for (auto const& adj : GetActiveAdjustments(season_id))
                     combined *= adj.impact_multiplier;
                 return combined;
             }

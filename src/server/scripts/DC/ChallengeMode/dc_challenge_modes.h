@@ -15,7 +15,6 @@
 #include <map>
 #include <sstream>
 
-
 enum ChallengeModeSettings
 {
     SETTING_HARDCORE           = 0,
@@ -65,7 +64,6 @@ struct ChallengeSettingConfig
 // Global config map - eliminates 240 lines of duplicate switch statements
 extern const std::map<ChallengeModeSettings, ChallengeSettingConfig> g_ChallengeSettingConfigs;
 
-
 class ChallengeModes
 {
 public:
@@ -103,7 +101,7 @@ public:
 
                     { "Hardcore.ItemRewards",                 &hardcoreItemRewards                  },
                     { "SemiHardcore.ItemRewards",             &semiHardcoreItemRewards              },
-                    { "SelfCrafted.ItemRewards",              &selfCraftedItemRewards               }, 
+                    { "SelfCrafted.ItemRewards",              &selfCraftedItemRewards               },
                     { "ItemQualityLevel.ItemRewards",         &itemQualityLevelItemRewards          },
                     { "SlowXpGain.ItemRewards",               &slowXpGainItemRewards                },
                     { "VerySlowXpGain.ItemRewards",           &verySlowXpGainItemRewards            },

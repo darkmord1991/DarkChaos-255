@@ -1,9 +1,9 @@
 /*
  * Dark Chaos - Teleport Addon Handler
  * ===================================
- * 
+ *
  * Handles teleport list requests from the client.
- * 
+ *
  * Copyright (C) 2024 Dark Chaos Development Team
  */
 

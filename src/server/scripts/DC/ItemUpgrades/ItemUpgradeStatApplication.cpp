@@ -1,9 +1,9 @@
 /*
  * ItemUpgradeStatApplication.cpp
- * 
+ *
  * Purpose: Handle stat application and updates for upgraded items
  * Ensures that upgraded item stats are properly applied to players
- * 
+ *
  * This module provides the stat update functionality for the item upgrade system.
  */
 

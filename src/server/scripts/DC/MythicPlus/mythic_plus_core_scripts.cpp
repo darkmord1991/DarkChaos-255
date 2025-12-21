@@ -63,13 +63,13 @@ public:
 
         Difficulty difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
         uint32 rank = creature->GetCreatureTemplate()->rank;
-        
+
         // Determine creature type
         bool isBoss = (rank == CREATURE_ELITE_WORLDBOSS || rank == CREATURE_ELITE_RAREELITE);
         bool isElite = (rank == CREATURE_ELITE_ELITE);
-        
+
         uint8 newLevel = level; // Keep original by default
-        
+
         switch (difficulty)
         {
             case DUNGEON_DIFFICULTY_HEROIC:
@@ -81,7 +81,7 @@ public:
                 else if (profile->heroicLevelNormal > 0)
                     newLevel = profile->heroicLevelNormal;
                 break;
-                
+
             case DUNGEON_DIFFICULTY_EPIC: // Mythic
                 // Use database configured levels (0 = keep original)
                 if (isBoss && profile->mythicLevelBoss > 0)
@@ -91,11 +91,11 @@ public:
                 else if (profile->mythicLevelNormal > 0)
                     newLevel = profile->mythicLevelNormal;
                 break;
-                
+
             default:
                 break;
         }
-        
+
         // Modify the level reference - this will be used by SelectLevel()
         if (newLevel != level)
         {
@@ -119,7 +119,7 @@ public:
             return;
 
         Difficulty difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
-        
+
         // Determine multipliers based on difficulty
         float hpMult = 1.0f;
         float damageMult = 1.0f;
@@ -130,22 +130,22 @@ public:
             case DUNGEON_DIFFICULTY_NORMAL:
                 // No additional scaling for Normal
                 break;
-                
+
             case DUNGEON_DIFFICULTY_HEROIC:
                 if (!profile->heroicEnabled)
                     break;
-                
+
                 hpMult = profile->heroicHealthMult;
                 damageMult = profile->heroicDamageMult;
                 break;
-                
+
             case DUNGEON_DIFFICULTY_EPIC: // Mythic
                 if (!profile->mythicEnabled)
                     break;
-                
+
                 hpMult = profile->mythicHealthMult;
                 damageMult = profile->mythicDamageMult;
-                
+
                 // Check for Mythic+ keystone
                 keystoneLevel = sMythicScaling->GetKeystoneLevel(map);
                 if (keystoneLevel > 0)
@@ -153,16 +153,16 @@ public:
                     float mplusHpMult = 1.0f;
                     float mplusDamageMult = 1.0f;
                     sMythicScaling->CalculateMythicPlusMultipliers(keystoneLevel, mplusHpMult, mplusDamageMult);
-                    
+
                     hpMult *= mplusHpMult;
                     damageMult *= mplusDamageMult;
                 }
                 break;
-                
+
             default:
                 break;
         }
-        
+
         // Apply multipliers to already-set stats
         if (hpMult > 1.0f || damageMult > 1.0f)
         {
@@ -172,13 +172,13 @@ public:
             creature->SetCreateHealth(newHealth);
             creature->SetMaxHealth(newHealth);
             creature->SetHealth(newHealth);
-            
+
             // Multiply damage
             float baseMinDamage = creature->GetFloatValue(UNIT_FIELD_MINDAMAGE);
             float baseMaxDamage = creature->GetFloatValue(UNIT_FIELD_MAXDAMAGE);
             creature->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, baseMinDamage * damageMult);
             creature->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, baseMaxDamage * damageMult);
-            
+
             // Also scale off-hand if exists
             float baseOffhandMin = creature->GetFloatValue(UNIT_FIELD_MINOFFHANDDAMAGE);
             if (baseOffhandMin > 0.0f)
@@ -187,12 +187,12 @@ public:
                 creature->SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, baseOffhandMin * damageMult);
                 creature->SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, baseOffhandMax * damageMult);
             }
-            
+
             LOG_INFO("mythic.scaling", "Scaled creature {} (entry {}) on map {} (difficulty {}) to level {} with {:.2f}x HP ({} -> {}), {:.2f}x Damage",
-                      creature->GetName(), creature->GetEntry(), map->GetId(), uint32(difficulty), creature->GetLevel(), 
+                      creature->GetName(), creature->GetEntry(), map->GetId(), uint32(difficulty), creature->GetLevel(),
                       hpMult, uint32(baseHealth), newHealth, damageMult);
         }
-        
+
         // Apply affix-specific scaling (e.g., Tyrannical, Fortified)
         sAffixMgr->OnCreatureSelectLevel(creature);
     }
@@ -201,19 +201,19 @@ public:
     {
         if (!creature)
             return;
-        
+
         Map* map = creature->GetMap();
         if (!map || !map->IsDungeon())
             return;
-        
+
         // Only process in Mythic difficulty
         if (sMythicScaling->ResolveDungeonDifficulty(map) != DUNGEON_DIFFICULTY_EPIC)
             return;
-        
+
         // Despawn quest givers cleanly (remove from world immediately - no corpse)
         if (creature->IsQuestGiver())
         {
-            LOG_INFO("mythic.scaling", "Despawning quest giver {} (entry {}) in Mythic mode", 
+            LOG_INFO("mythic.scaling", "Despawning quest giver {} (entry {}) in Mythic mode",
                      creature->GetName(), creature->GetEntry());
             creature->RemoveFromWorld();
         }
@@ -312,14 +312,14 @@ public:
                 ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00=== Dungeon Entered ===");
             ChatHandler(player->GetSession()).SendSysMessage(("Dungeon: |cffffffff" + dungeonName + "|r").c_str());
                 ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff8000Keystone Level: |r|cffff8000+{}|r", keystoneLevel));
-            
+
             // Show M+ specific scaling (multiplicative on top of Mythic base)
             float mplusHpMult = 1.0f;
             float mplusDamageMult = 1.0f;
             sMythicScaling->CalculateMythicPlusMultipliers(keystoneLevel, mplusHpMult, mplusDamageMult);
             std::string mplusScaling = FormatScalingText(mplusHpMult, mplusDamageMult);
             ChatHandler(player->GetSession()).SendSysMessage(("M+ Multiplier (×Mythic base): |cffaaaaaa" + mplusScaling + "|r").c_str());
-            
+
             // Show active affixes
             auto activeAffixes = sAffixMgr->GetActiveAffixes(map);
             if (!activeAffixes.empty())
@@ -349,7 +349,7 @@ public:
 
         // Player leaving during an active Mythic+ run
         sMythicRuns->InitiateCancellation(map);
-        
+
         LOG_INFO("mythic.run", "Player {} logged out during active run on map {} instance {}",
                  player->GetName(), map->GetId(), map->GetInstanceId());
     }
@@ -365,7 +365,7 @@ public:
 
         // Player leaving during an active Mythic+ run (teleport/zone change)
         sMythicRuns->InitiateCancellation(map);
-        
+
         LOG_INFO("mythic.run", "Player {} left world during active run on map {} instance {}",
                  player->GetName(), map->GetId(), map->GetInstanceId());
     }
@@ -412,7 +412,7 @@ public:
         // Teleport player to dungeon entrance and resurrect them
         player->ResurrectPlayer(0.5f);  // Resurrect with 50% health
         player->SpawnCorpseBones();      // Remove corpse
-        player->TeleportTo(entranceTrigger->target_mapId, entranceTrigger->target_X, 
+        player->TeleportTo(entranceTrigger->target_mapId, entranceTrigger->target_X,
                           entranceTrigger->target_Y, entranceTrigger->target_Z, entranceTrigger->target_Orientation);
 
         LOG_DEBUG("mythic.run", "Player {} died in M+{} - resurrected at dungeon entrance ({}, {}, {})",
@@ -434,11 +434,11 @@ public:
     {
         if (!player || !player->IsInWorld())
             return;
-            
+
         Map* map = player->GetMap();
         if (!map || !map->IsDungeon())
             return;
-            
+
         // Process cancellation timers and votes (runs every player update)
         static uint32 _cancellationUpdateTimer = 0;
         _cancellationUpdateTimer += diff;
@@ -450,7 +450,7 @@ public:
             sMythicRuns->ProcessHudUpdates();
             _cancellationUpdateTimer = 0;
         }
-            
+
         // Dispatch to affix handlers for periodic effects (e.g., Grievous)
         sAffixMgr->OnPlayerUpdate(player, diff);
     }
@@ -532,16 +532,16 @@ public:
 
         sMythicRuns->HandleBossEvade(creature);
     }
-    
+
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override
     {
         if (!attacker || !victim || damage == 0)
             return;
-            
+
         Map* map = attacker->GetMap();
         if (!map || !map->IsDungeon())
             return;
-            
+
         // Dispatch to affix handlers
         if (Creature* attackerCreature = attacker->ToCreature())
         {
@@ -549,7 +549,7 @@ public:
                 sAffixMgr->OnPlayerDamageTaken(victimPlayer, attackerCreature, damage);
             else if (Creature* victimCreature = victim->ToCreature())
                 sAffixMgr->OnCreatureDamageTaken(victimCreature, attacker, damage);
-                
+
             sAffixMgr->OnCreatureDamageDone(attackerCreature, victim, damage);
         }
     }

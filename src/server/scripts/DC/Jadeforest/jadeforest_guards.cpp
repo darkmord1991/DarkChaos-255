@@ -66,7 +66,7 @@ public:
             player->PrepareQuestMenu(creature->GetGUID());
 
         // Add teleport options
-        for (const auto& tp : teleportPoints)
+        for (auto const& tp : teleportPoints)
         {
             AddGossipItemFor(player, GOSSIP_ICON_TAXI, tp.name, GOSSIP_SENDER_MAIN, tp.id);
         }
@@ -81,7 +81,7 @@ public:
         CloseGossipMenuFor(player);
 
         // Find the selected teleport point
-        for (const auto& tp : teleportPoints)
+        for (auto const& tp : teleportPoints)
         {
             if (tp.id == action)
             {

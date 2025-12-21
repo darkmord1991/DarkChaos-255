@@ -1,9 +1,9 @@
 /*
-    .__      .___.                
+    .__      .___.
     [__)  .    |   _ ._ _ ._ _   .
     [__)\_|    |  (_)[ | )[ | )\_|
             ._|                    ._|
-    
+
             Was for Omni-WoW
             Now: Released - 5/4/2012
 */
@@ -13,7 +13,7 @@
     #include "OutdoorPvP.h"
     #include "OutdoorPvPMgr.h"
     #include "Chat.h"
-	#include "Player.h"
+    #include "Player.h"
     #include "ObjectGuid.h"
     #include "SharedDefines.h"
     #include "Util.h"
@@ -29,7 +29,6 @@
     #include <map>
     #include <deque>
     #include "Position.h"
-
 
     /*
      * Hinterland BG — Feature Overview (2025-10-05) — UPDATED
@@ -102,7 +101,7 @@
      */
 
     const uint8 PointsLoseOnPvPKill = 5;
-    
+
     const uint8 OutdoorPvPHLBuffZonesNum = 1;
     const uint32 OutdoorPvPHLBuffZones[OutdoorPvPHLBuffZonesNum] = { 47 };
 
@@ -125,31 +124,31 @@
     enum AllianceNpcs
     {
             Alliance_Healer = 600005,
-			Alliance_Boss = 810003,         // updated DC-WoW
-			Alliance_Infantry = 810000,     // updated DC-WoW
-			Alliance_Squadleader = 600011,
+            Alliance_Boss = 810003,         // updated DC-WoW
+            Alliance_Infantry = 810000,     // updated DC-WoW
+            Alliance_Squadleader = 600011,
     };
 
     enum HordeNpcs
     {
             Horde_Heal = 600004,
-			Horde_Squadleader = 600008,
-			Horde_Infantry = 810001,        // updated DC-WoW
-			Horde_Boss = 810002,            // updated DC-WoW
+            Horde_Squadleader = 600008,
+            Horde_Infantry = 810001,        // updated DC-WoW
+            Horde_Boss = 810002,            // updated DC-WoW
     };
 
 /* OutdoorPvPHL Related */
     class OutdoorPvPHL : public OutdoorPvP
     {
-        public:            
+        public:
             OutdoorPvPHL();
             ~OutdoorPvPHL() override; // ensure key function for vtable emission
 
             // Public affix enum (used by DC helper sources and tests)
             // Declared early so it is visible to all subsequent member declarations
             // Weather-based affixes: 3 good weather (player buffs) + 3 bad weather (NPC buffs)
-            enum AffixType { 
-                AFFIX_NONE = 0, 
+            enum AffixType {
+                AFFIX_NONE = 0,
                 // Good Weather - Player Buffs
                 AFFIX_SUNLIGHT = 1,         // Clear weather: +10% haste to players
                 AFFIX_CLEAR_SKIES = 2,      // Clear weather: +15% damage to players
@@ -159,7 +158,7 @@
                 AFFIX_HEAVY_RAIN = 5,       // Storm: +20% armor to NPCs
                 AFFIX_FOG = 6               // Sandstorm: +10% evasion to NPCs
             };
-            
+
             // Battleground state machine
             enum BGState { BG_STATE_WARMUP=0, BG_STATE_IN_PROGRESS=1, BG_STATE_PAUSED=2, BG_STATE_FINISHED=3, BG_STATE_CLEANUP=4 };
 
@@ -171,7 +170,7 @@
 
             /* Handle Killer Kill */
             void HandleKill(Player * player, Unit * killed) override;
-			
+
             /* Handle Randomizer */
             void Randomizer(Player * player);
 
@@ -262,7 +261,7 @@
 
             // Public wrapper to check if a player is queued (avoids exposing private helper)
             bool IsPlayerQueued(Player* player) { return IsPlayerInQueue(player); }
-            
+
             // State machine interface
             BGState GetBGState() const { return _bgState; }
             bool IsInWarmup() const { return _bgState == BG_STATE_WARMUP; }
@@ -390,7 +389,7 @@
             // + state machine tick, or admin force finish during depletion) could
             // attempt to insert duplicate rows into dc_hlbg_winner_history.
             bool _winnerRecorded = false; // reset in constructor and HandleReset
-            
+
             // State machine implementation
             void UpdateStateMachine(uint32 diff);
             void EnterWarmupState();
@@ -420,7 +419,7 @@
             void TeleportQueuedPlayers();
             void ClearQueue();
             void OnPlayerDisconnected(Player* player);
-            
+
             // Group queue methods
             bool AddGroupToQueue(Player* leader);
             bool RemoveGroupFromQueue(Player* leader);
@@ -511,7 +510,7 @@
     uint32 _resourcesLossNpcBoss;      // e.g., 200
     // Persistence and lock configuration
     bool   _persistenceEnabled;        // save/restore match state across restarts
-    
+
     // State machine variables
     BGState _bgState;                  // current battleground state
     uint32  _warmupDurationSeconds;    // warmup phase duration (configurable)
@@ -530,7 +529,7 @@
         uint32 joinTime;
         TeamId teamId;
     };
-    
+
     std::vector<QueueEntry> _queuedPlayers;
     uint32 _minPlayersToStart;
     uint32 _maxGroupSize;

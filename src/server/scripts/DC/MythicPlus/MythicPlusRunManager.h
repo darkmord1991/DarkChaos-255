@@ -109,7 +109,7 @@ public:
     void BuildStatisticsMenu(Player* player, Creature* creature);
     void ResetWeeklyVaultProgress();
     void ResetWeeklyVaultProgress(Player* player);
-    
+
     // Vault reward pool management
     bool GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart);
     std::vector<std::tuple<uint8, uint32, uint32>> GetVaultRewardPool(ObjectGuid::LowType playerGuid, uint32 seasonId, uint32 weekStart);
@@ -126,7 +126,7 @@ public:
     void UpgradeKeystone(ObjectGuid::LowType playerGuid);
     void DowngradeKeystone(ObjectGuid::LowType playerGuid);
     void GenerateNewKeystone(ObjectGuid::LowType playerGuid, uint8 level);
-    
+
     // Run cancellation and management
     void InitiateCancellation(Map* map);
     void ProcessCancellationTimers();
@@ -135,7 +135,7 @@ public:
     bool VoteToCancelRun(Player* player, Map* map);
     void ProcessCancellationVotes();
     bool IsFinalBoss(uint32 mapId, uint32 bossEntry) const;
-    
+
     // Boss loot generation (retail-like spec-based drops)
     void GenerateBossLoot(Creature* boss, Map* map, InstanceState* state);
     uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel) const;
@@ -183,13 +183,13 @@ private:
     void SendGenericError(Player* player, std::string_view text);
     bool ClaimVaultSlot(Player* player, uint8 slot);
     std::string SerializeParticipants(const InstanceState* state) const;
-    
+
     // Teleportation helpers
     void TeleportGroupToEntrance(Player* activator, Map* map);
     void TeleportPlayerToEntrance(Player* player, Map* map);
     void StartRunAfterCountdown(InstanceState* state, Map* map, Player* activator);
     bool IsFinalBossEncounter(const InstanceState* state, const Creature* creature) const;
-    
+
     // Seasonal validation and affix system (NEW)
     bool IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seasonId) const;
     std::vector<uint32> GetWeeklyAffixes(uint32 seasonId) const;

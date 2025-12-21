@@ -1,8 +1,8 @@
 /*
  * DarkChaos Hotspot XP Buff Spell Script
- * 
+ *
  * Spell ID: 800001 (Custom hotspot buff)
- * 
+ *
  * This spell script handles the XP bonus for players inside hotspots.
  * When the aura is active, all experience gained is multiplied by the hotspot XP bonus percentage.
  */

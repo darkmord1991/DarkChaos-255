@@ -161,7 +161,7 @@ uint8 GetCurrentDayOfWeek()
 uint32 GetActiveBossEntry()
 {
     uint8 day = GetCurrentDayOfWeek();
-    
+
     // Boss rotation: 3 bosses across 7 days
     // Mon, Thu = Oondasta
     // Tue, Fri = Thok
@@ -242,7 +242,7 @@ public:
 class world_giant_isles_manager : public WorldScript
 {
 public:
-    world_giant_isles_manager() : WorldScript("world_giant_isles_manager") 
+    world_giant_isles_manager() : WorldScript("world_giant_isles_manager")
     {
         _nextRareSpawnTime = Milliseconds(0);
         _currentRareGUID = ObjectGuid::Empty;
@@ -253,7 +253,7 @@ public:
     {
         LOG_INFO("scripts.dc", "Giant Isles zone manager loaded.");
         LOG_INFO("scripts.dc", "Today's active boss: Entry {}", GetActiveBossEntry());
-        
+
         // Initialize first rare spawn timer (spawn first rare after 5-15 minutes)
         _nextRareSpawnTime = GameTime::GetGameTimeMS() + Milliseconds(urand(5 * 60 * 1000, 15 * 60 * 1000));
         LOG_INFO("scripts.dc", "Giant Isles: First random rare spawn scheduled.");
@@ -264,7 +264,7 @@ public:
     {
         // Check if it's time to spawn a random rare
         Milliseconds currentTime = GameTime::GetGameTimeMS();
-        
+
         if (!_rareIsAlive && currentTime >= _nextRareSpawnTime)
         {
             TrySpawnRandomRare();
@@ -281,7 +281,7 @@ private:
         // Get a random rare entry and spawn location
         uint32 rareEntry = GetRandomRareEntry();
         RareSpawnLocation loc = GetRandomSpawnLocation();
-        
+
         if (rareEntry == 0)
         {
             ScheduleNextRareSpawn();
@@ -291,9 +291,9 @@ private:
         // Find a map to spawn on (Giant Isles map - placeholder mapId)
         // In production, you'd need the actual map ID for Giant Isles
         // For now, we'll just log the spawn attempt
-        LOG_INFO("scripts.dc", "Giant Isles: Attempting to spawn random rare {} at ({}, {}, {})", 
+        LOG_INFO("scripts.dc", "Giant Isles: Attempting to spawn random rare {} at ({}, {}, {})",
             rareEntry, loc.x, loc.y, loc.z);
-        
+
         // Get the creature name for announcement
         std::string rareName;
         switch (rareEntry)
@@ -305,12 +305,12 @@ private:
             case 400059: rareName = "Gul'rok the Cursed"; break;
             default: rareName = "Unknown Rare"; break;
         }
-        
+
         // Announce the spawn server-wide (using zone chat instead of server message)
         LOG_INFO("scripts.dc", "Giant Isles: Rare {} spawned", rareName);
-        
+
         _rareIsAlive = true;
-        
+
         // Schedule despawn check and next spawn
         ScheduleNextRareSpawn();
     }
@@ -318,10 +318,10 @@ private:
     void ScheduleNextRareSpawn()
     {
         // Schedule next rare spawn between 30-90 minutes from now
-        _nextRareSpawnTime = GameTime::GetGameTimeMS() + 
+        _nextRareSpawnTime = GameTime::GetGameTimeMS() +
             Milliseconds(urand(RARE_SPAWN_TIMER_MIN, RARE_SPAWN_TIMER_MAX));
         _rareIsAlive = false;
-        
+
         LOG_DEBUG("scripts.dc", "Giant Isles: Next random rare spawn scheduled.");
     }
 };
@@ -356,7 +356,7 @@ public:
                 Player* player = who->ToPlayer();
                 if (player && !player->HasAura(28126)) // Check if not recently whispered
                 {
-                    me->Whisper("The ancient spirits stir... The dinosaurs grow restless.", 
+                    me->Whisper("The ancient spirits stir... The dinosaurs grow restless.",
                         LANG_UNIVERSAL, player);
                 }
             }
@@ -464,13 +464,13 @@ public:
 
         // Check if world boss is already active (used in gossip select)
         [[maybe_unused]] uint32 activeBoss = GetActiveBossEntry();
-        
+
         // Add gossip options
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Commune with the ancient spirits", 
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Commune with the ancient spirits",
             GOSSIP_SENDER_MAIN, 1);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Inquire about today's world boss", 
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Inquire about today's world boss",
             GOSSIP_SENDER_MAIN, 2);
-        
+
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
         return true;
     }

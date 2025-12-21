@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
- * 
+ *
  * Mythic+ Token Vendor - Exchange tokens for class/spec appropriate gear
  */
 
@@ -818,11 +818,11 @@ public:
         }
 
         ClearGossipMenuFor(player);
-        
+
         // Count player's tokens
         uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
         std::string armorType = GetArmorTypeForClass(player->getClass());
-        
+
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000=== Mythic+ Token Vendor ===|r", GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffYour Tokens:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffArmor Type:|r " + armorType, GOSSIP_SENDER_MAIN, 0);
@@ -831,19 +831,19 @@ public:
         // Addon UI entry (recommended)
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff32c4ff[UI]|r Open Token Vendor UI", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_OPEN_VENDOR_UI);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
-        
+
         // Item level tiers
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ff00Item Level 200 Gear|r (11 tokens)", GOSSIP_SENDER_MAIN, 200);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ff00Item Level 213 Gear|r (12 tokens)", GOSSIP_SENDER_MAIN, 213);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cff00ff00Item Level 226 Gear|r (13 tokens)", GOSSIP_SENDER_MAIN, 226);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffff8000Item Level 239 Gear|r (14 tokens)", GOSSIP_SENDER_MAIN, 239);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "|cffff8000Item Level 252 Gear|r (15 tokens)", GOSSIP_SENDER_MAIN, 252);
-        
+
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "|cffffd700Currency Exchange (Tokens <-> Essence)|r", GOSSIP_SENDER_MAIN, 2000);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "|cffaaaaaa[Info] How do tokens work?|r", GOSSIP_SENDER_MAIN, 1000);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, 0);
-        
+
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
     }
@@ -851,7 +851,7 @@ public:
     bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
         (void)sender;  // Currently unused
-        
+
         if (!player || !creature)
             return false;
 
@@ -902,13 +902,13 @@ public:
             uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true);
 
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000=== Token Exchange ===|r", GOSSIP_SENDER_MAIN, 0);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, 
-                "Current Essence: |cffffffff" + std::to_string(currentEssence) + "|r", 
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
+                "Current Essence: |cffffffff" + std::to_string(currentEssence) + "|r",
                 GOSSIP_SENDER_MAIN, 0);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, 
-                "Current Tokens: |cffffffff" + std::to_string(tokenCount) + "|r", 
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
+                "Current Tokens: |cffffffff" + std::to_string(tokenCount) + "|r",
                 GOSSIP_SENDER_MAIN, 0);
-            
+
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
 
             // Token -> Essence
@@ -925,7 +925,7 @@ public:
 
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "<< Back", GOSSIP_SENDER_MAIN, 9999);
-            
+
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             return true;
         }
@@ -1009,7 +1009,7 @@ public:
         {
             uint32 itemLevel = action / 1000;
             uint8 slot = action % 1000;
-            
+
             ShowItemChoices(player, creature, itemLevel, slot);
             return true;
         }
@@ -1030,15 +1030,15 @@ private:
     void ShowGearSlotMenu(Player* player, Creature* creature, uint32 itemLevel)
     {
         ClearGossipMenuFor(player);
-        
+
         uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
         uint32 cost = GetTokenCost(itemLevel);
         std::string armorType = GetArmorTypeForClass(player->getClass());
-        
+
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000Item Level " + std::to_string(itemLevel) + " Gear|r", GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffCost:|r " + std::to_string(cost) + " tokens | |cffffffffYou have:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
-        
+
         // Gear slots
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Head (" + armorType + ")", GOSSIP_SENDER_MAIN, itemLevel * 1000 + TOKEN_SLOT_HEAD);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Neck", GOSSIP_SENDER_MAIN, itemLevel * 1000 + TOKEN_SLOT_NECK);
@@ -1054,23 +1054,23 @@ private:
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Trinket", GOSSIP_SENDER_MAIN, itemLevel * 1000 + TOKEN_SLOT_TRINKET);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Weapon", GOSSIP_SENDER_MAIN, itemLevel * 1000 + TOKEN_SLOT_WEAPON);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Off-hand / Shield", GOSSIP_SENDER_MAIN, itemLevel * 1000 + TOKEN_SLOT_OFFHAND);
-        
+
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "<< Back", GOSSIP_SENDER_MAIN, 9999);
-        
+
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
     void ShowItemChoices(Player* player, Creature* creature, uint32 itemLevel, uint8 slot)
     {
         ClearGossipMenuFor(player);
-        
+
         uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
         uint32 cost = GetTokenCost(itemLevel);
-        
+
         // Query item_template for suitable items
         std::vector<ItemChoice> choices = ::GetItemsForSlotAndClass(player, slot, itemLevel);
-        
+
         if (choices.empty())
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff0000No items found!|r", GOSSIP_SENDER_MAIN, 0);
@@ -1082,11 +1082,11 @@ private:
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             return;
         }
-        
+
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffff8000Choose Your Item|r", GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffffffffCost:|r " + std::to_string(cost) + " tokens | |cffffffffYou have:|r " + std::to_string(tokenCount), GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
-        
+
         // Show up to 3 item choices with preview
         for (size_t i = 0; i < choices.size() && i < 3; ++i)
         {
@@ -1094,23 +1094,23 @@ private:
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(choice.itemId);
             if (!proto)
                 continue;
-                
+
             std::string itemLink = GetItemLink(choice.itemId, proto);
             std::string displayText = itemLink + " (ilvl " + std::to_string(choice.itemLevel) + ")";
-            
+
             AddGossipItemFor(player, GOSSIP_ICON_VENDOR, displayText, GOSSIP_SENDER_MAIN, 5000000 + choice.itemId);
         }
-        
+
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
         AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "<< Back", GOSSIP_SENDER_MAIN, itemLevel);
-        
+
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
     void PurchaseGear(Player* player, Creature* creature, uint32 itemId)
     {
         (void)creature;
-        
+
         // Verify item template exists
         ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
         if (!itemTemplate)
@@ -1119,10 +1119,10 @@ private:
             CloseGossipMenuFor(player);
             return;
         }
-        
+
         uint32 cost = GetTokenCost(itemTemplate->ItemLevel);
         uint32 tokenCount = player->GetItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId());
-        
+
         // Check if player has enough tokens
         if (tokenCount < cost)
         {
@@ -1137,7 +1137,7 @@ private:
         // Give item
         ItemPosCountVec dest;
         uint8 msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, 1);
-        
+
         if (msg == EQUIP_ERR_OK)
         {
             if (Item* item = player->StoreNewItem(dest, itemId, true))

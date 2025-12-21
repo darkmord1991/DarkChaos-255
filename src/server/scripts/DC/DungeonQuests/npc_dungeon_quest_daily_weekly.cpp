@@ -1,7 +1,7 @@
 /*
 * DarkChaos-255 Dungeon Quest System - Daily/Weekly Quest Reset
 * Version: 2.0
-* 
+*
 * Handles quest reset logic:
 * - Daily quest reset at server reset time
 * - Weekly quest reset on server reset (configurable day)
@@ -95,7 +95,7 @@ private:
     {
         // Update database: mark not completed
         std::string sql = Acore::StringFormat(
-            "UPDATE dc_player_daily_quest_progress SET completed_today = 0 WHERE guid = {} AND daily_quest_entry = {}", 
+            "UPDATE dc_player_daily_quest_progress SET completed_today = 0 WHERE guid = {} AND daily_quest_entry = {}",
             player->GetGUID().GetCounter(), questId
         );
         CharacterDatabase.Execute(sql.c_str());
@@ -108,7 +108,7 @@ private:
     {
         // Update database: mark not completed
         std::string sql = Acore::StringFormat(
-            "UPDATE dc_player_weekly_quest_progress SET completed_this_week = 0 WHERE guid = {} AND weekly_quest_entry = {}", 
+            "UPDATE dc_player_weekly_quest_progress SET completed_this_week = 0 WHERE guid = {} AND weekly_quest_entry = {}",
             player->GetGUID().GetCounter(), questId
         );
         CharacterDatabase.Execute(sql.c_str());
@@ -121,7 +121,7 @@ private:
     {
         // Update last activity timestamp in player_dungeon_completion_stats
         std::string sql = Acore::StringFormat(
-            "UPDATE dc_player_dungeon_completion_stats SET last_activity = FROM_UNIXTIME({}) WHERE guid = {}", 
+            "UPDATE dc_player_dungeon_completion_stats SET last_activity = FROM_UNIXTIME({}) WHERE guid = {}",
             uint32(time(nullptr)), player->GetGUID().GetCounter()
         );
         CharacterDatabase.Execute(sql.c_str());
@@ -138,42 +138,42 @@ void AddSC_npc_dungeon_quest_daily_weekly()
 
 /*
 * PREPARED STATEMENTS NEEDED:
-* 
+*
 * CHAR_SEL_PLAYER_DAILY_QUEST_PROGRESS
-* SELECT daily_quest_entry, completed_today, last_completed 
+* SELECT daily_quest_entry, completed_today, last_completed
 * FROM player_daily_quest_progress WHERE guid = ?
-* 
+*
 * CHAR_SEL_PLAYER_WEEKLY_QUEST_PROGRESS
-* SELECT weekly_quest_entry, completed_this_week, week_reset_date 
+* SELECT weekly_quest_entry, completed_this_week, week_reset_date
 * FROM player_weekly_quest_progress WHERE guid = ?
-* 
+*
 * CHAR_UPD_PLAYER_DAILY_QUEST_RESET
-* UPDATE player_daily_quest_progress 
+* UPDATE player_daily_quest_progress
 * SET completed_today = 0 WHERE guid = ? AND daily_quest_entry = ?
-* 
+*
 * CHAR_UPD_PLAYER_WEEKLY_QUEST_RESET
-* UPDATE player_weekly_quest_progress 
+* UPDATE player_weekly_quest_progress
 * SET completed_this_week = 0 WHERE guid = ? AND weekly_quest_entry = ?
-* 
+*
 * CHAR_UPD_PLAYER_DUNGEON_STATS
-* UPDATE player_dungeon_completion_stats 
+* UPDATE player_dungeon_completion_stats
 * SET last_activity = FROM_UNIXTIME(?) WHERE guid = ?
-* 
+*
 * WORLD_SEL_DAILY_QUEST_TOKEN_REWARD
-* SELECT token_id, token_count FROM dc_daily_quest_token_rewards 
+* SELECT token_id, token_count FROM dc_daily_quest_token_rewards
 * WHERE daily_quest_entry = ? AND is_active = 1
-* 
+*
 * WORLD_SEL_WEEKLY_QUEST_TOKEN_REWARD
-* SELECT token_id, token_count FROM dc_weekly_quest_token_rewards 
+* SELECT token_id, token_count FROM dc_weekly_quest_token_rewards
 * WHERE weekly_quest_entry = ? AND is_active = 1
-* 
+*
 * CHAR_UPD_DAILY_QUEST_COMPLETION
-* UPDATE player_daily_quest_progress 
-* SET completed_today = 1, last_completed = FROM_UNIXTIME(?) 
+* UPDATE player_daily_quest_progress
+* SET completed_today = 1, last_completed = FROM_UNIXTIME(?)
 * WHERE guid = ? AND daily_quest_entry = ?
-* 
+*
 * CHAR_UPD_WEEKLY_QUEST_COMPLETION
-* UPDATE player_weekly_quest_progress 
-* SET completed_this_week = 1, last_completed = FROM_UNIXTIME(?), week_reset_date = FROM_UNIXTIME(?) 
+* UPDATE player_weekly_quest_progress
+* SET completed_this_week = 1, last_completed = FROM_UNIXTIME(?), week_reset_date = FROM_UNIXTIME(?)
 * WHERE guid = ? AND weekly_quest_entry = ?
 */

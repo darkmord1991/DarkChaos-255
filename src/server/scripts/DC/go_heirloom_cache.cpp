@@ -1,11 +1,11 @@
 /*
  * Heirloom Cache GameObjects Script
- * 
+ *
  * Handles custom loot caches for Heirloom Tier 3 items (entries 1991001-1991033)
  * - OnGossipHello: Directly adds heirloom items to player inventory (no bind dialogs)
  * - Class restrictions: Items not usable by your class are NOT added
  * - Despawns after looting
- * 
+ *
  * This script hardcodes heirloom items to completely bypass the loot system
  * and bind confirmation dialogs on the client side.
  */
@@ -34,7 +34,7 @@ public:
 
         // Add heirloom items directly to inventory
         uint32 itemsAdded = 0;
-        
+
         // Item 300365 - Heirloom Shirt (Transmog cosmetic, all classes)
         if (player->AddItem(300365, 1))
         {
@@ -59,7 +59,7 @@ public:
         go->SetLootState(GO_ACTIVATED, player);
         go->SetGoState(GO_STATE_ACTIVE);
 
-        LOG_DEBUG("scripts", "go_heirloom_cache: Player {} looted heirloom cache entry {} (items added: {})", 
+        LOG_DEBUG("scripts", "go_heirloom_cache: Player {} looted heirloom cache entry {} (items added: {})",
             player->GetName(), go->GetEntry(), itemsAdded);
 
         return true; // Handled - don't process default behavior

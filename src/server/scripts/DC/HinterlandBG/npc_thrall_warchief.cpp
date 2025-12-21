@@ -63,7 +63,6 @@ enum ThrallWarchief : uint32
 
 const Position heraldOfThrallPos = { -462.404f, -2637.68f, 96.0656f, 5.8606f };
 
-
 // Main script class for Thrall Warchief
 class npc_thrall_hinterlandbg : public CreatureScript
 {
@@ -198,7 +197,6 @@ public:
         }
     };
 };
-
 
 // Registration function for the script loader (extern "C" for stable linkage)
 void AddSC_npc_thrall_hinterlandbg()

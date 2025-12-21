@@ -45,16 +45,16 @@ namespace CrossSystem
     // =========================================================================
     // Forward Declarations
     // =========================================================================
-    
+
     class SessionContext;
     class EventBus;
     class RewardDistributor;
     class CrossSystemManager;
-    
+
     // =========================================================================
     // System Identifiers
     // =========================================================================
-    
+
     enum class SystemId : uint8
     {
         None            = 0,
@@ -71,7 +71,7 @@ namespace CrossSystem
         Welcome         = 11,
         Max
     };
-    
+
     // Convert SystemId to string for logging/display
     inline const char* SystemIdToString(SystemId id)
     {
@@ -92,75 +92,75 @@ namespace CrossSystem
             default:                        return "Unknown";
         }
     }
-    
+
     // =========================================================================
     // Event Types
     // =========================================================================
-    
+
     enum class EventType : uint16
     {
         None = 0,
-        
+
         // Player Events
         PlayerLogin             = 100,
         PlayerLogout            = 101,
         PlayerLevelUp           = 102,
         PlayerDeath             = 103,
         PlayerPrestige          = 104,
-        
+
         // Combat Events
         CreatureKill            = 200,
         BossKill                = 201,
         WorldBossKill           = 202,
         PlayerKill              = 203,
-        
+
         // Dungeon Events
         DungeonEnter            = 300,
         DungeonLeave            = 301,
         DungeonComplete         = 302,
         DungeonFailed           = 303,
         DungeonReset            = 304,
-        
+
         // Mythic+ Events
         MythicPlusStart         = 400,
         MythicPlusComplete      = 401,
         MythicPlusFail          = 402,
         MythicPlusAbandon       = 403,
         KeystoneUpgrade         = 404,
-        
+
         // Quest Events
         QuestComplete           = 500,
         DailyQuestComplete      = 501,
         WeeklyQuestComplete     = 502,
-        
+
         // Reward Events
         TokensAwarded           = 600,
         EssenceAwarded          = 601,
         ItemUpgraded            = 602,
         LootReceived            = 603,
-        
+
         // Seasonal Events
         WeeklyResetOccurred     = 700,
         SeasonStart             = 701,
         SeasonEnd               = 702,
         VaultClaimed            = 703,
-        
+
         // Achievement Events
         AchievementUnlocked     = 800,
         MilestoneReached        = 801,
-        
+
         // PvP Events
         DuelComplete            = 900,
         HLBGMatchComplete       = 901,
         ArenaMatchComplete      = 902,
-        
+
         Max
     };
-    
+
     // =========================================================================
     // Content Type Classification
     // =========================================================================
-    
+
     enum class ContentType : uint8
     {
         None        = 0,
@@ -173,11 +173,11 @@ namespace CrossSystem
         HLBG        = 7,  // Hinterland BG
         Max
     };
-    
+
     // =========================================================================
     // Difficulty Classification (unified across systems)
     // =========================================================================
-    
+
     enum class ContentDifficulty : uint8
     {
         None        = 0,
@@ -191,11 +191,11 @@ namespace CrossSystem
         Raid25H     = 8,
         Max
     };
-    
+
     // =========================================================================
     // Event Data Structures
     // =========================================================================
-    
+
     // Base event data
     struct EventData
     {
@@ -204,10 +204,10 @@ namespace CrossSystem
         ObjectGuid playerGuid;
         uint32 mapId = 0;
         uint32 instanceId = 0;
-        
+
         virtual ~EventData() = default;
     };
-    
+
     // Creature kill event
     struct CreatureKillEvent : EventData
     {
@@ -220,7 +220,7 @@ namespace CrossSystem
         uint32 tokensAwarded = 0;
         uint32 essenceAwarded = 0;
     };
-    
+
     // Dungeon completion event
     struct DungeonCompleteEvent : EventData
     {
@@ -236,7 +236,7 @@ namespace CrossSystem
         uint32 essenceAwarded = 0;
         std::vector<ObjectGuid> participants;
     };
-    
+
     // Quest complete event
     struct QuestCompleteEvent : EventData
     {
@@ -246,7 +246,7 @@ namespace CrossSystem
         uint32 tokensAwarded = 0;
         uint32 essenceAwarded = 0;
     };
-    
+
     // Item upgrade event
     struct ItemUpgradeEvent : EventData
     {
@@ -258,7 +258,7 @@ namespace CrossSystem
         uint32 tokensCost = 0;
         uint32 essenceCost = 0;
     };
-    
+
     // Prestige event
     struct PrestigeEvent : EventData
     {
@@ -267,7 +267,7 @@ namespace CrossSystem
         uint8 fromLevel = 0;
         bool keptGear = false;
     };
-    
+
     // Vault claim event
     struct VaultClaimEvent : EventData
     {
@@ -277,11 +277,11 @@ namespace CrossSystem
         uint32 tokensClaimed = 0;
         uint32 essenceClaimed = 0;
     };
-    
+
     // =========================================================================
     // Multiplier Configuration
     // =========================================================================
-    
+
     struct MultiplierConfig
     {
         float baseTokenMultiplier = 1.0f;
@@ -291,44 +291,44 @@ namespace CrossSystem
         float groupSizeBonus = 0.0f;              // Optional group bonus
         float weekendBonus = 0.0f;                // Weekend event multiplier
         float eventBonus = 0.0f;                  // Special event multiplier
-        
+
         // Per-content-type multipliers
         std::unordered_map<ContentType, float> contentTypeMultipliers;
-        
+
         // Per-difficulty multipliers
         std::unordered_map<ContentDifficulty, float> difficultyMultipliers;
     };
-    
+
     // =========================================================================
     // Event Handler Interface
     // =========================================================================
-    
+
     // Base interface for systems that want to receive cross-system events
     class IEventHandler
     {
     public:
         virtual ~IEventHandler() = default;
-        
+
         // Get system identifier
         virtual SystemId GetSystemId() const = 0;
-        
+
         // Get system name for logging
         virtual const char* GetSystemName() const = 0;
-        
+
         // Called when an event is broadcast
         virtual void OnEvent(const EventData& event) = 0;
-        
+
         // Get which event types this handler wants to receive
         virtual std::vector<EventType> GetSubscribedEvents() const = 0;
-        
+
         // Priority for event handling (lower = earlier)
         virtual uint8 GetPriority() const { return 100; }
     };
-    
+
     // =========================================================================
     // Reward Context
     // =========================================================================
-    
+
     // Context passed to reward calculations
     struct RewardContext
     {
@@ -346,16 +346,16 @@ namespace CrossSystem
         uint32 seasonId = 0;
         bool isWeekly = false;
         bool isDaily = false;
-        
+
         // Calculated multipliers (set by RewardDistributor)
         float finalTokenMultiplier = 1.0f;
         float finalEssenceMultiplier = 1.0f;
     };
-    
+
     // =========================================================================
     // System Priority
     // =========================================================================
-    
+
     enum class SystemPriority : uint8
     {
         HIGHEST = 0,
@@ -365,11 +365,11 @@ namespace CrossSystem
         LOW     = 4,
         LOWEST  = 5
     };
-    
+
     // =========================================================================
     // System Capabilities
     // =========================================================================
-    
+
     enum class SystemCapability : uint32
     {
         NONE                = 0x00000000,
@@ -384,11 +384,11 @@ namespace CrossSystem
         CURRENCY_MANAGEMENT = 0x00000100,
         ACHIEVEMENT_TRACKING= 0x00000200
     };
-    
+
     // =========================================================================
     // DCSystem Base Interface
     // =========================================================================
-    
+
     /**
      * @brief Base interface for all DC systems that integrate with CrossSystem
      *
@@ -398,42 +398,42 @@ namespace CrossSystem
     {
     public:
         virtual ~DCSystem() = default;
-        
+
         // System identification
         virtual std::string GetSystemName() const = 0;
         virtual SystemPriority GetPriority() const { return SystemPriority::NORMAL; }
         virtual uint32 GetCapabilities() const { return 0; }
-        
+
         // Lifecycle
         virtual bool Initialize() { return true; }
         virtual void Shutdown() {}
         virtual void Update(uint32 /*diff*/) {}
-        
+
         // Player hooks
         virtual void OnPlayerLogin(Player* /*player*/, bool /*firstLogin*/) {}
         virtual void OnPlayerLogout(Player* /*player*/) {}
         virtual void OnPlayerLevelUp(Player* /*player*/, uint8 /*oldLevel*/) {}
         virtual void OnPlayerDeath(Player* /*player*/, Player* /*killer*/) {}
-        
+
         // Content hooks
         virtual void OnDungeonStart(Player* /*player*/, Map* /*map*/, uint8 /*difficulty*/) {}
         virtual void OnDungeonComplete(Player* /*player*/, Map* /*map*/, uint32 /*completionTimeMs*/) {}
         virtual void OnBossKill(Player* /*player*/, Creature* /*boss*/, bool /*isWorldBoss*/) {}
-        
+
         // Check if initialized
         bool IsInitialized() const { return _initialized; }
-        
+
     protected:
         bool _initialized = false;
     };
-    
+
     // =========================================================================
     // Global Access Functions
     // =========================================================================
-    
+
     // Get the singleton CrossSystemManager instance
     CrossSystemManager* GetManager();
-    
+
     // Convenience functions (defined in their respective headers)
     SessionContext* GetPlayerSession(Player* player);
     EventBus* GetEventBus();

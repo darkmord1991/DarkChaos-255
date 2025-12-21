@@ -12,10 +12,10 @@ namespace DC
         {
             if (!player)
                 return "Unknown";
-            
+
             uint8 classId = player->getClass();
             uint8 primaryTree = player->GetMostPointsTalentTree();
-            
+
             switch (classId)
             {
                 case CLASS_WARRIOR:
@@ -67,7 +67,7 @@ namespace DC
         {
             if (!player)
                 return "Misc";
-            
+
             switch (player->getClass())
             {
                 case CLASS_WARRIOR:
@@ -93,10 +93,10 @@ namespace DC
         {
             if (!player)
                 return 7; // Universal
-            
+
             uint8 classId = player->getClass();
             uint8 primaryTree = player->GetMostPointsTalentTree();
-            
+
             // 1=Tank, 2=Healer, 4=DPS
             switch (classId)
             {

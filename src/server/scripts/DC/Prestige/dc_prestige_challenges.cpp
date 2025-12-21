@@ -8,7 +8,7 @@
  * - Iron Prestige: No deaths while leveling 1-255
  * - Speed Prestige: Reach 255 in <100 hours played
  * - Solo Prestige: No grouping while leveling
- * 
+ *
  * Rewards: Special titles, bonus stats, cosmetics
  */
 
@@ -34,18 +34,18 @@ namespace
         CHALLENGE_SPEED = 2,  // <100 hours
         CHALLENGE_SOLO  = 3,  // No grouping
     };
-    
+
     // Challenge rewards
     constexpr uint32 TITLE_IRON_PRESTIGE = 188;   // Title ID for Iron Prestige
     constexpr uint32 TITLE_SPEED_PRESTIGE = 189;  // Title ID for Speed Prestige
     constexpr uint32 TITLE_SOLO_PRESTIGE = 190;   // Title ID for Solo Prestige
-    
+
     constexpr uint32 BONUS_STAT_PERCENT_IRON = 2;   // +2% all stats
     constexpr uint32 BONUS_STAT_PERCENT_SPEED = 2;  // +2% all stats
     constexpr uint32 BONUS_STAT_PERCENT_SOLO = 2;   // +2% all stats
-    
+
     constexpr uint32 SPEED_CHALLENGE_TIME_LIMIT = 100 * 3600; // 100 hours in seconds
-    
+
     struct ChallengeProgress
     {
         uint32 guid;
@@ -58,10 +58,10 @@ namespace
         uint32 deathCount;
         uint32 groupCount;
     };
-    
+
     // Cache active challenges per player
     std::unordered_map<uint32, std::vector<ChallengeProgress>> g_ActiveChallenges;
-    
+
     class PrestigeChallengeSystem
     {
     public:
@@ -70,7 +70,7 @@ namespace
             static PrestigeChallengeSystem instance;
             return &instance;
         }
-        
+
         void LoadConfig()
         {
             enabled = sConfigMgr->GetOption<bool>("Prestige.Challenges.Enable", true);
@@ -78,33 +78,33 @@ namespace
             speedEnabled = sConfigMgr->GetOption<bool>("Prestige.Challenges.Speed.Enable", true);
             soloEnabled = sConfigMgr->GetOption<bool>("Prestige.Challenges.Solo.Enable", true);
             speedTimeLimit = sConfigMgr->GetOption<uint32>("Prestige.Challenges.Speed.TimeLimit", SPEED_CHALLENGE_TIME_LIMIT);
-            
+
             LOG_INFO("scripts", "Prestige Challenges: Loaded (Iron: {}, Speed: {}h, Solo: {})",
                 ironEnabled ? "ON" : "OFF",
                 speedEnabled ? speedTimeLimit / 3600 : 0,
                 soloEnabled ? "ON" : "OFF");
         }
-        
+
         bool IsEnabled() const { return enabled; }
         bool IsIronEnabled() const { return ironEnabled; }
         bool IsSpeedEnabled() const { return speedEnabled; }
         bool IsSoloEnabled() const { return soloEnabled; }
         uint32 GetSpeedTimeLimit() const { return speedTimeLimit; }
-        
+
         void LoadPlayerChallenges(Player* player)
         {
             if (!player)
                 return;
-            
+
             uint32 guid = player->GetGUID().GetCounter();
             g_ActiveChallenges[guid].clear();
-            
+
             QueryResult result = CharacterDatabase.Query(
                 "SELECT guid, prestige_level, challenge_type, active, completed, start_time, start_playtime, death_count, group_count "
                 "FROM dc_prestige_challenges WHERE guid = {} AND active = 1",
                 guid
             );
-            
+
             if (result)
             {
                 do
@@ -120,39 +120,39 @@ namespace
                     progress.startPlayTime = fields[6].Get<uint32>();
                     progress.deathCount = fields[7].Get<uint32>();
                     progress.groupCount = fields[8].Get<uint32>();
-                    
+
                     g_ActiveChallenges[guid].push_back(progress);
                 } while (result->NextRow());
-                
+
                 LOG_INFO("scripts", "Prestige Challenges: Loaded {} active challenge(s) for player {}",
                     g_ActiveChallenges[guid].size(), player->GetName());
             }
         }
-        
+
         bool HasActiveChallenge(Player* player, PrestigeChallenge challengeType)
         {
             if (!player)
                 return false;
-            
+
             uint32 guid = player->GetGUID().GetCounter();
             auto it = g_ActiveChallenges.find(guid);
             if (it == g_ActiveChallenges.end())
                 return false;
-            
-            for (const auto& challenge : it->second)
+
+            for (auto const& challenge : it->second)
             {
                 if (challenge.challengeType == challengeType && challenge.active)
                     return true;
             }
-            
+
             return false;
         }
-        
+
         bool StartChallenge(Player* player, PrestigeChallenge challengeType, uint32 prestigeLevel)
         {
             if (!player || !enabled)
                 return false;
-            
+
             // Check if challenge type is enabled
             if ((challengeType == CHALLENGE_IRON && !ironEnabled) ||
                 (challengeType == CHALLENGE_SPEED && !speedEnabled) ||
@@ -160,22 +160,22 @@ namespace
             {
                 return false;
             }
-            
+
             // Check if player already has this challenge active
             if (HasActiveChallenge(player, challengeType))
                 return false;
-            
+
             uint32 guid = player->GetGUID().GetCounter();
             uint32 currentTime = GameTime::GetGameTime().count();
             uint32 currentPlayTime = player->GetTotalPlayedTime();
-            
+
             // Insert into database
             CharacterDatabase.Execute(
                 "INSERT INTO dc_prestige_challenges (guid, prestige_level, challenge_type, active, completed, start_time, start_playtime, death_count, group_count) "
                 "VALUES ({}, {}, {}, 1, 0, {}, {}, 0, 0)",
                 guid, prestigeLevel, static_cast<uint32>(challengeType), currentTime, currentPlayTime
             );
-            
+
             // Add to cache
             ChallengeProgress progress;
             progress.guid = guid;
@@ -187,29 +187,29 @@ namespace
             progress.startPlayTime = currentPlayTime;
             progress.deathCount = 0;
             progress.groupCount = 0;
-            
+
             g_ActiveChallenges[guid].push_back(progress);
-            
+
             LOG_INFO("scripts", "Prestige Challenges: Player {} started challenge {} for prestige {}",
                 player->GetName(), static_cast<uint32>(challengeType), prestigeLevel);
-            
+
             return true;
         }
-        
+
         void FailChallenge(Player* player, PrestigeChallenge challengeType, const std::string& reason)
         {
             if (!player)
                 return;
-            
+
             uint32 guid = player->GetGUID().GetCounter();
-            
+
             // Update database
             CharacterDatabase.Execute(
                 "UPDATE dc_prestige_challenges SET active = 0, completed = 0 "
                 "WHERE guid = {} AND challenge_type = {} AND active = 1",
                 guid, static_cast<uint32>(challengeType)
             );
-            
+
             // Remove from cache
             auto it = g_ActiveChallenges.find(guid);
             if (it != g_ActiveChallenges.end())
@@ -221,32 +221,32 @@ namespace
                     challenges.end()
                 );
             }
-            
+
             // Notify player
             std::string challengeName = GetChallengeName(challengeType);
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cFFFF0000[Challenge Failed]|r {} failed: {}",
                 challengeName, reason
             );
-            
+
             LOG_INFO("scripts", "Prestige Challenges: Player {} failed challenge {} - {}",
                 player->GetName(), static_cast<uint32>(challengeType), reason);
         }
-        
+
         void CompleteChallenge(Player* player, PrestigeChallenge challengeType)
         {
             if (!player)
                 return;
-            
+
             uint32 guid = player->GetGUID().GetCounter();
-            
+
             // Update database
             CharacterDatabase.Execute(
                 "UPDATE dc_prestige_challenges SET active = 0, completed = 1, completion_time = UNIX_TIMESTAMP() "
                 "WHERE guid = {} AND challenge_type = {} AND active = 1",
                 guid, static_cast<uint32>(challengeType)
             );
-            
+
             // Remove from active cache
             auto it = g_ActiveChallenges.find(guid);
             if (it != g_ActiveChallenges.end())
@@ -258,118 +258,118 @@ namespace
                     challenges.end()
                 );
             }
-            
+
             // Grant rewards
             GrantChallengeRewards(player, challengeType);
-            
+
             std::string challengeName = GetChallengeName(challengeType);
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cFFFFD700[Challenge Complete]|r Congratulations! You completed {}!",
                 challengeName
             );
-            
+
             LOG_INFO("scripts", "Prestige Challenges: Player {} completed challenge {}",
                 player->GetName(), static_cast<uint32>(challengeType));
         }
-        
+
         void OnDeath(Player* player)
         {
             if (!player || !ironEnabled)
                 return;
-            
+
             if (HasActiveChallenge(player, CHALLENGE_IRON))
             {
                 FailChallenge(player, CHALLENGE_IRON, "You died");
             }
         }
-        
+
         void OnJoinGroup(Player* player)
         {
             if (!player || !soloEnabled)
                 return;
-            
+
             if (HasActiveChallenge(player, CHALLENGE_SOLO))
             {
                 FailChallenge(player, CHALLENGE_SOLO, "You joined a group");
             }
         }
-        
+
         void CheckSpeedChallenge(Player* player)
         {
             if (!player || !speedEnabled)
                 return;
-            
+
             if (!HasActiveChallenge(player, CHALLENGE_SPEED))
                 return;
-            
+
             // Check if player reached max level
             if (player->GetLevel() < 255)
                 return;
-            
+
             uint32 guid = player->GetGUID().GetCounter();
             auto it = g_ActiveChallenges.find(guid);
             if (it == g_ActiveChallenges.end())
                 return;
-            
-            for (const auto& challenge : it->second)
+
+            for (auto const& challenge : it->second)
             {
                 if (challenge.challengeType == CHALLENGE_SPEED && challenge.active)
                 {
                     uint32 totalPlayed = player->GetTotalPlayedTime();
                     uint32 playedTime = (totalPlayed >= challenge.startPlayTime) ? (totalPlayed - challenge.startPlayTime) : 0;
-                    
+
                     if (playedTime <= speedTimeLimit)
                     {
                         CompleteChallenge(player, CHALLENGE_SPEED);
                     }
                     else
                     {
-                        FailChallenge(player, CHALLENGE_SPEED, 
-                            Acore::StringFormat("Took too long ({}h > {}h)", 
+                        FailChallenge(player, CHALLENGE_SPEED,
+                            Acore::StringFormat("Took too long ({}h > {}h)",
                                 playedTime / 3600, speedTimeLimit / 3600));
                     }
                     break;
                 }
             }
         }
-        
+
         void CheckChallengeCompletion(Player* player)
         {
             if (!player)
                 return;
-            
+
             // Check if player reached max level
             if (player->GetLevel() < 255)
                 return;
-            
+
             uint32 guid = player->GetGUID().GetCounter();
             auto it = g_ActiveChallenges.find(guid);
             if (it == g_ActiveChallenges.end())
                 return;
-            
+
             // Check Iron and Solo challenges (they complete at max level if still active)
             std::vector<PrestigeChallenge> toComplete;
-            
-            for (const auto& challenge : it->second)
+
+            for (auto const& challenge : it->second)
             {
                 if (!challenge.active)
                     continue;
-                
+
                 if (challenge.challengeType == CHALLENGE_IRON || challenge.challengeType == CHALLENGE_SOLO)
                 {
                     toComplete.push_back(static_cast<PrestigeChallenge>(challenge.challengeType));
                 }
             }
-            
+
             for (auto challengeType : toComplete)
             {
                 CompleteChallenge(player, challengeType);
             }
-            
+
             // Speed challenge is checked separately
             CheckSpeedChallenge(player);
         }
-        
+
         std::string GetChallengeName(PrestigeChallenge challengeType)
         {
             switch (challengeType)
@@ -380,15 +380,15 @@ namespace
                 default: return "Unknown Challenge";
             }
         }
-        
+
         void GrantChallengeRewards(Player* player, PrestigeChallenge challengeType)
         {
             if (!player)
                 return;
-            
+
             uint32 titleId = 0;
             uint32 statBonus = 0;
-            
+
             switch (challengeType)
             {
                 case CHALLENGE_IRON:
@@ -406,7 +406,7 @@ namespace
                 default:
                     return;
             }
-            
+
             // Grant title
             if (titleId > 0)
             {
@@ -419,37 +419,37 @@ namespace
                         "|cFFFFD700You have earned the title: {}|r", titleName);
                 }
             }
-            
+
             // Grant permanent stat bonus (stored in database)
             CharacterDatabase.Execute(
                 "INSERT INTO dc_prestige_challenge_rewards (guid, challenge_type, stat_bonus_percent, granted_time) "
                 "VALUES ({}, {}, {}, UNIX_TIMESTAMP())",
                 player->GetGUID().GetCounter(), static_cast<uint32>(challengeType), statBonus
             );
-            
+
             ChatHandler(player->GetSession()).PSendSysMessage(
                 "|cFFFFD700You gained +{}% permanent stat bonus!|r", statBonus);
         }
-        
+
         uint32 GetTotalChallengeStatBonus(Player* player)
         {
             if (!player)
                 return 0;
-            
+
             QueryResult result = CharacterDatabase.Query(
                 "SELECT SUM(stat_bonus_percent) FROM dc_prestige_challenge_rewards WHERE guid = {}",
                 player->GetGUID().GetCounter()
             );
-            
+
             if (result)
             {
                 Field* fields = result->Fetch();
                 return fields[0].Get<uint32>();
             }
-            
+
             return 0;
         }
-        
+
     private:
         bool enabled;
         bool ironEnabled;
@@ -457,19 +457,19 @@ namespace
         bool soloEnabled;
         uint32 speedTimeLimit;
     };
-    
+
     class PrestigeChallengePlayerScript : public PlayerScript
     {
     public:
         PrestigeChallengePlayerScript() : PlayerScript("PrestigeChallengePlayerScript") { }
-        
+
         void OnPlayerLogin(Player* player) override
         {
             if (!PrestigeChallengeSystem::instance()->IsEnabled())
                 return;
-            
+
             PrestigeChallengeSystem::instance()->LoadPlayerChallenges(player);
-            
+
             // Show active challenges
             uint32 guid = player->GetGUID().GetCounter();
             auto it = g_ActiveChallenges.find(guid);
@@ -479,22 +479,22 @@ namespace
                     "|cFFFFD700You have {} active prestige challenge(s)!|r", it->second.size());
             }
         }
-        
+
         void OnPlayerKilledByCreature(Creature* /*killer*/, Player* player) override
         {
             PrestigeChallengeSystem::instance()->OnDeath(player);
         }
-        
+
         void OnPlayerPVPKill(Player* /*killer*/, Player* victim) override
         {
             PrestigeChallengeSystem::instance()->OnDeath(victim);
         }
-        
+
         void OnPlayerJoinedGroup(Player* player, Group* /*group*/)
         {
             PrestigeChallengeSystem::instance()->OnJoinGroup(player);
         }
-        
+
         void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
         {
             // Check if challenges are completed when reaching max level
@@ -519,28 +519,28 @@ namespace
             PrestigeChallengeSystem::instance()->OnJoinGroup(player);
         }
     };
-    
+
     class PrestigeChallengeWorldScript : public WorldScript
     {
     public:
         PrestigeChallengeWorldScript() : WorldScript("PrestigeChallengeWorldScript") { }
-        
+
         void OnAfterConfigLoad(bool /*reload*/) override
         {
             PrestigeChallengeSystem::instance()->LoadConfig();
         }
-        
+
         void OnStartup() override
         {
             LOG_INFO("scripts", "Prestige Challenges: System initialized");
         }
     };
-    
+
     class PrestigeChallengeCommandScript : public CommandScript
     {
     public:
         PrestigeChallengeCommandScript() : CommandScript("PrestigeChallengeCommandScript") { }
-        
+
         Acore::ChatCommands::ChatCommandTable GetCommands() const override
         {
             static Acore::ChatCommands::ChatCommandTable challengeCommandTable =
@@ -549,41 +549,41 @@ namespace
                 { "status", HandleChallengeStatusCommand, SEC_PLAYER, Acore::ChatCommands::Console::No },
                 { "list",   HandleChallengeListCommand,   SEC_PLAYER, Acore::ChatCommands::Console::No }
             };
-            
+
             static Acore::ChatCommands::ChatCommandTable prestigeCommandTable =
             {
                 { "challenge", challengeCommandTable }
             };
-            
+
             static Acore::ChatCommands::ChatCommandTable commandTable =
             {
                 { "prestige", prestigeCommandTable }
             };
-            
+
             return commandTable;
         }
-        
+
         static bool HandleChallengeStartCommand(ChatHandler* handler, char const* args)
         {
             Player* player = handler->GetSession()->GetPlayer();
             if (!player)
                 return false;
-            
+
             if (!PrestigeChallengeSystem::instance()->IsEnabled())
             {
                 handler->SendSysMessage("Prestige challenges are currently disabled.");
                 return true;
             }
-            
+
             if (!args || strlen(args) == 0)
             {
                 handler->SendSysMessage("Usage: .prestige challenge start <iron|speed|solo>");
                 return true;
             }
-            
+
             std::string challengeName(args);
             PrestigeChallenge challengeType;
-            
+
             if (challengeName == "iron")
                 challengeType = CHALLENGE_IRON;
             else if (challengeName == "speed")
@@ -595,7 +595,7 @@ namespace
                 handler->SendSysMessage("Invalid challenge type. Use: iron, speed, or solo");
                 return true;
             }
-            
+
             // TODO: Get current prestige level from prestige system
             if (!PrestigeAPI::IsEnabled())
             {
@@ -609,12 +609,12 @@ namespace
                 handler->SendSysMessage("You must be at least Prestige Level 1 to start prestige challenges.");
                 return true;
             }
-            
+
             if (PrestigeChallengeSystem::instance()->StartChallenge(player, challengeType, prestigeLevel))
             {
-                handler->PSendSysMessage("|cFF00FF00Challenge started: {}|r", 
+                handler->PSendSysMessage("|cFF00FF00Challenge started: {}|r",
                     PrestigeChallengeSystem::instance()->GetChallengeName(challengeType));
-                
+
                 // Show challenge requirements
                 switch (challengeType)
                 {
@@ -634,58 +634,58 @@ namespace
             {
                 handler->SendSysMessage("|cFFFF0000Failed to start challenge. You may already have this challenge active.|r");
             }
-            
+
             return true;
         }
-        
+
         static bool HandleChallengeStatusCommand(ChatHandler* handler, char const* /*args*/)
         {
             Player* player = handler->GetSession()->GetPlayer();
             if (!player)
                 return false;
-            
+
             if (!PrestigeChallengeSystem::instance()->IsEnabled())
             {
                 handler->SendSysMessage("Prestige challenges are currently disabled.");
                 return true;
             }
-            
+
             uint32 guid = player->GetGUID().GetCounter();
             auto it = g_ActiveChallenges.find(guid);
-            
+
             handler->SendSysMessage("|cFFFFD700=== Active Prestige Challenges ===|r");
-            
+
             if (it == g_ActiveChallenges.end() || it->second.empty())
             {
                 handler->SendSysMessage("You have no active challenges.");
             }
             else
             {
-                for (const auto& challenge : it->second)
+                for (auto const& challenge : it->second)
                 {
                     std::string name = PrestigeChallengeSystem::instance()->GetChallengeName(
                         static_cast<PrestigeChallenge>(challenge.challengeType));
-                    
+
                     handler->PSendSysMessage("- {} (Prestige Level {})", name, challenge.prestigeLevel);
-                    
+
                     if (challenge.challengeType == CHALLENGE_SPEED)
                     {
                         uint32 elapsed = player->GetTotalPlayedTime() - challenge.startPlayTime;
                         uint32 remaining = 0;
                         if (elapsed < PrestigeChallengeSystem::instance()->GetSpeedTimeLimit())
                             remaining = PrestigeChallengeSystem::instance()->GetSpeedTimeLimit() - elapsed;
-                        handler->PSendSysMessage("  Time remaining: {}h {}m", 
+                        handler->PSendSysMessage("  Time remaining: {}h {}m",
                             remaining / 3600, (remaining % 3600) / 60);
                     }
                 }
             }
-            
+
             // Show completed challenges
             QueryResult result = CharacterDatabase.Query(
                 "SELECT challenge_type FROM dc_prestige_challenges WHERE guid = {} AND completed = 1",
                 guid
             );
-            
+
             if (result)
             {
                 handler->SendSysMessage("");
@@ -698,7 +698,7 @@ namespace
                     handler->PSendSysMessage("- {}", name);
                 } while (result->NextRow());
             }
-            
+
             // Show total stat bonus
             uint32 totalBonus = PrestigeChallengeSystem::instance()->GetTotalChallengeStatBonus(player);
             if (totalBonus > 0)
@@ -706,39 +706,39 @@ namespace
                 handler->SendSysMessage("");
                 handler->PSendSysMessage("|cFF00FF00Total challenge stat bonus: +{}%|r", totalBonus);
             }
-            
+
             return true;
         }
-        
+
         static bool HandleChallengeListCommand(ChatHandler* handler, char const* /*args*/)
         {
             handler->SendSysMessage("|cFFFFD700=== Available Prestige Challenges ===|r");
-            
+
             if (PrestigeChallengeSystem::instance()->IsIronEnabled())
             {
                 handler->SendSysMessage("|cFF00FF00Iron Prestige|r");
                 handler->SendSysMessage("  Requirement: Reach level 255 without dying");
                 handler->SendSysMessage("  Rewards: Special title, +2% all stats");
             }
-            
+
             if (PrestigeChallengeSystem::instance()->IsSpeedEnabled())
             {
                 handler->PSendSysMessage("|cFF00FF00Speed Prestige|r");
-                handler->PSendSysMessage("  Requirement: Reach level 255 in <{} hours", 
+                handler->PSendSysMessage("  Requirement: Reach level 255 in <{} hours",
                     PrestigeChallengeSystem::instance()->GetSpeedTimeLimit() / 3600);
                 handler->SendSysMessage("  Rewards: Special title, +2% all stats");
             }
-            
+
             if (PrestigeChallengeSystem::instance()->IsSoloEnabled())
             {
                 handler->SendSysMessage("|cFF00FF00Solo Prestige|r");
                 handler->SendSysMessage("  Requirement: Reach level 255 without joining a group");
                 handler->SendSysMessage("  Rewards: Special title, +2% all stats");
             }
-            
+
             handler->SendSysMessage("");
             handler->SendSysMessage("Use |cFFFFFF00.prestige challenge start <type>|r to begin");
-            
+
             return true;
         }
     };

@@ -59,7 +59,6 @@ enum VarianHinterlandBG : uint32
 
 const Position heraldOfVarianPos = { -462.404f, -2637.68f, 96.0656f, 5.8606f };
 
-
 // Main script class for King Varian Wrynn
 class npc_Varian_hinterlandbg : public CreatureScript
 {
@@ -194,7 +193,6 @@ public:
         }
     };
 };
-
 
 void AddSC_hinterlandbg_Varian_wrynn()
 {

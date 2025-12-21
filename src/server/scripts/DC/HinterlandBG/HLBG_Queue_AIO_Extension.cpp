@@ -24,7 +24,7 @@ namespace HLBGQueueHandlers
         // Example implementations:
         // return sOutdoorPvPMgr->GetOutdoorPvPToZoneId(ZoneId::HINTERLANDS);
         // OR: return dynamic_cast<OutdoorPvPHL*>(sOutdoorPvPMgr->GetScript("outdoor_pvp_hl"));
-        
+
         // Placeholder - replace with actual accessor:
         return nullptr;  // TODO: Implement GetHinterlandBG() accessor
     }
@@ -47,7 +47,7 @@ namespace HLBGQueueHandlers
         bool inQueue = pvp->IsPlayerQueued(player);
         uint32 queueSize = pvp->GetQueuedPlayerCount();
         uint32 position = 0;
-        
+
         // Get player's position in queue if they're queued
         if (inQueue)
         {
@@ -56,7 +56,7 @@ namespace HLBGQueueHandlers
             // If not available, iterate through queue to find position:
             auto queuedPlayers = pvp->GetQueuedPlayers();  // May need to add this accessor
             uint32 idx = 1;
-            for (const auto& entry : queuedPlayers)
+            for (auto const& entry : queuedPlayers)
             {
                 if (entry.playerGuid == player->GetGUID())
                 {

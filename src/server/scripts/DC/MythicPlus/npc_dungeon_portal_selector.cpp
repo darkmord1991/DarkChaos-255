@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
- * 
+ *
  * Dungeon Portal Difficulty Selector
  * Allows players to select Normal/Heroic/Mythic difficulty before entering dungeons
  */
@@ -302,7 +302,7 @@ struct DifficultyRequirements
 DifficultyRequirements GetDifficultyRequirements(uint8 expansion, uint8 difficulty)
 {
     DifficultyRequirements req;
-    
+
     switch (expansion)
     {
         case EXPANSION_VANILLA:
@@ -322,7 +322,7 @@ DifficultyRequirements GetDifficultyRequirements(uint8 expansion, uint8 difficul
                 req.minItemLevel = 180;
             }
             break;
-            
+
         case EXPANSION_TBC:
             if (difficulty == DIFFICULTY_NORMAL)
             {
@@ -340,7 +340,7 @@ DifficultyRequirements GetDifficultyRequirements(uint8 expansion, uint8 difficul
                 req.minItemLevel = 180;
             }
             break;
-            
+
         case EXPANSION_WOTLK:
             if (difficulty == DIFFICULTY_NORMAL)
             {
@@ -358,13 +358,13 @@ DifficultyRequirements GetDifficultyRequirements(uint8 expansion, uint8 difficul
                 req.minItemLevel = 180;
             }
             break;
-            
+
         default:
             req.minLevel = 1;
             req.minItemLevel = 0;
             break;
     }
-    
+
     return req;
 }
 
@@ -373,7 +373,7 @@ void TeleportToDungeonEntrance(Player* player, uint32 teleporterEntryId)
 {
     if (!player)
         return;
-    
+
     // Query teleporter coordinates from eluna_teleporter table
     QueryResult result = WorldDatabase.Query(
         "SELECT map, x, y, z, o FROM eluna_teleporter WHERE id = {}", teleporterEntryId);
@@ -459,23 +459,23 @@ public:
         }
 
         ClearGossipMenuFor(player);
-        
+
         // Show dungeon selection menu - using teleporter entry IDs
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-            "|cffff8000=== Select Mythic+ Dungeon ===|r", 
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            "|cffff8000=== Select Mythic+ Dungeon ===|r",
             GOSSIP_SENDER_MAIN, 0);
-        
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", 
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ",
             GOSSIP_SENDER_MAIN, 0);
 
         // Addon UI entry (recommended)
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff32c4ff[UI]|r Open Seasonal Dungeon Portal UI", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_OPEN_SEASONAL_UI);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", GOSSIP_SENDER_MAIN, 0);
-        
+
         // WotLK Dungeons - use teleporter entry IDs from eluna_teleporter table
         for (auto const& option : kDungeonTeleporterOptions)
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE, option.label, GOSSIP_SENDER_MAIN, option.entryId);
-        
+
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
     }
@@ -509,31 +509,31 @@ public:
         if (sender == GOSSIP_SENDER_MAIN && IsMythicDungeonTeleporter(action))
         {
             // Store selected teleporter entry in sender for next step
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, 
-                "|cffff8000=== Select Difficulty ===|r", 
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                "|cffff8000=== Select Difficulty ===|r",
                 action, 0);
-            
+
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, " ", action, 0);
-            
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
-                "|cffffffff[Normal]|r - Base difficulty", 
+
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+                "|cffffffff[Normal]|r - Base difficulty",
                 action, GOSSIP_ACTION_NORMAL);
-            
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
-                "|cff0070ff[Heroic]|r - +15% HP/Damage", 
+
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+                "|cff0070ff[Heroic]|r - +15% HP/Damage",
                 action, GOSSIP_ACTION_HEROIC);
-            
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, 
-                "|cffff8000[Mythic]|r - Mythic+ difficulty", 
+
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+                "|cffff8000[Mythic]|r - Mythic+ difficulty",
                 action, GOSSIP_ACTION_MYTHIC);
-            
+
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             return true;
         }
 
         // Sender now contains the teleporter entry ID, action is the difficulty
         uint32 teleporterEntryId = sender;
-        
+
         Difficulty selectedDifficulty = DUNGEON_DIFFICULTY_NORMAL;
         const char* difficultyLabel = "|cffffffffNormal|r";
 
@@ -558,10 +558,10 @@ public:
         player->SetDungeonDifficulty(selectedDifficulty);
         std::string message = "|cff00ff00[Dungeon Portal]|r Teleporting to " + std::string(difficultyLabel) + " entrance...";
         ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
-        
+
         // Teleport player after setting difficulty
         TeleportToDungeonEntrance(player, teleporterEntryId);
-        
+
         CloseGossipMenuFor(player);
         return true;
     }

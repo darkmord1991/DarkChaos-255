@@ -1,10 +1,10 @@
 /*
  * Dark Chaos - Group Finder Manager
  * ==================================
- * 
+ *
  * Singleton manager for the Group Finder system.
  * Handles matchmaking, queue management, scheduled events, and notifications.
- * 
+ *
  * Copyright (C) 2024-2025 Dark Chaos Development Team
  */
 
@@ -25,7 +25,7 @@ namespace DCAddon
     // ========================================================================
     // ENUMS & CONSTANTS
     // ========================================================================
-    
+
     enum GroupFinderListingType : uint8
     {
         GF_LISTING_MYTHIC_PLUS = 1,
@@ -33,7 +33,7 @@ namespace DCAddon
         GF_LISTING_PVP         = 3,
         GF_LISTING_OTHER       = 4
     };
-    
+
     enum GroupFinderApplicationStatus : uint8
     {
         GF_APP_PENDING   = 0,
@@ -42,7 +42,7 @@ namespace DCAddon
         GF_APP_CANCELLED = 3,
         GF_APP_EXPIRED   = 4
     };
-    
+
     enum GroupFinderRole : uint8
     {
         GF_ROLE_NONE   = 0,
@@ -50,7 +50,7 @@ namespace DCAddon
         GF_ROLE_HEALER = 2,
         GF_ROLE_DPS    = 4
     };
-    
+
     enum ScheduledEventStatus : uint8
     {
         GF_EVENT_OPEN      = 1,
@@ -59,11 +59,11 @@ namespace DCAddon
         GF_EVENT_CANCELLED = 4,
         GF_EVENT_COMPLETED = 5
     };
-    
+
     // ========================================================================
     // DATA STRUCTURES
     // ========================================================================
-    
+
     struct GroupFinderListing
     {
         uint32 id = 0;
@@ -87,7 +87,7 @@ namespace DCAddon
         time_t expiresAt = 0;
         bool active = true;
     };
-    
+
     struct GroupFinderApplication
     {
         uint32 id = 0;
@@ -103,7 +103,7 @@ namespace DCAddon
         uint8 status = GF_APP_PENDING;
         time_t createdAt = 0;
     };
-    
+
     struct ScheduledEvent
     {
         uint32 id = 0;
@@ -119,7 +119,7 @@ namespace DCAddon
         uint8 status = GF_EVENT_OPEN;
         time_t createdAt = 0;
     };
-    
+
     struct EventSignup
     {
         uint32 id = 0;
@@ -131,26 +131,26 @@ namespace DCAddon
         std::string note;
         time_t createdAt = 0;
     };
-    
+
     // ========================================================================
     // GROUP FINDER MANAGER
     // ========================================================================
-    
+
     class GroupFinderMgr
     {
     private:
         GroupFinderMgr();
         ~GroupFinderMgr() = default;
-        
+
         // Caches
         std::unordered_map<uint32, GroupFinderListing> _listings;
         std::unordered_map<uint32, std::vector<GroupFinderApplication>> _applications;  // listingId -> apps
         std::unordered_map<uint32, ScheduledEvent> _events;
         std::unordered_map<uint32, std::vector<EventSignup>> _eventSignups;  // eventId -> signups
-        
+
         // Player lookup (guid -> listings they lead)
         std::unordered_map<uint32, std::set<uint32>> _playerListings;
-        
+
         // Configuration
         bool _enabled = true;
         bool _crossFaction = false;
@@ -161,7 +161,7 @@ namespace DCAddon
         uint32 _ratingMatchRange = 200;
         uint32 _keyLevelMatchRange = 3;
         uint32 _cleanupIntervalMs = 60000;  // 1 minute
-        
+
         // Reward Config
         bool _rewardEnabled = true;
         uint32 _rewardItemId = 49426;
@@ -172,29 +172,29 @@ namespace DCAddon
 
         std::mutex _mutex;
         uint32 _lastCleanupTime = 0;
-        
+
     public:
         static GroupFinderMgr& Instance();
-        
+
         // Initialization
         void LoadConfig();
         void LoadFromDatabase();
         void Initialize();
-        
+
         // Cleanup
         void Update(uint32 diff);
         void CleanupExpiredListings();
         void CleanupExpiredApplications();
         void CleanupExpiredEvents();
-        
+
         // Listing Management
         uint32 CreateListing(Player* player, const GroupFinderListing& listing);
         bool UpdateListing(Player* player, uint32 listingId, const GroupFinderListing& updates);
         bool DeleteListing(Player* player, uint32 listingId);
         GroupFinderListing* GetListing(uint32 listingId);
-        std::vector<GroupFinderListing> SearchListings(uint8 listingType, uint32 dungeonId, 
+        std::vector<GroupFinderListing> SearchListings(uint8 listingType, uint32 dungeonId,
                                                         uint8 minLevel, uint8 maxLevel, uint16 minRating);
-        
+
         // Application Management
         bool ApplyToListing(Player* player, uint32 listingId, uint8 role, const std::string& note);
         bool AcceptApplication(Player* leader, uint32 listingId, uint32 applicantGuid);
@@ -202,7 +202,7 @@ namespace DCAddon
         bool CancelApplication(Player* player, uint32 listingId);
         std::vector<GroupFinderApplication> GetApplicationsForListing(uint32 listingId);
         std::vector<GroupFinderApplication> GetPlayerApplications(uint32 playerGuid);
-        
+
         // Rewards
         void HandleDungeonCompletion(Player* player, uint32 dungeonId, uint8 difficulty);
         bool CanReceiveReward(Player* player);
@@ -212,7 +212,7 @@ namespace DCAddon
         void TryAutoMatch(uint32 listingId);
         bool CheckRoleRequirements(const GroupFinderListing& listing);
         void FormGroupFromListing(uint32 listingId);
-        
+
         // Scheduled Events
         uint32 CreateEvent(Player* player, const ScheduledEvent& event);
         bool CancelEvent(Player* player, uint32 eventId);
@@ -221,23 +221,23 @@ namespace DCAddon
         bool ConfirmEventSignup(Player* leader, uint32 eventId, uint32 playerGuid);
         std::vector<ScheduledEvent> GetUpcomingEvents(uint8 eventType);
         std::vector<EventSignup> GetEventSignups(uint32 eventId);
-        
+
         // Player Rating
         uint16 GetPlayerMythicRating(uint32 playerGuid);
         uint16 GetPlayerItemLevel(Player* player);
-        
+
         // Notifications
         void NotifyNewListing(const GroupFinderListing& listing);
         void NotifyApplicationStatus(uint32 playerGuid, uint32 listingId, uint8 status, const std::string& message);
         void NotifyNewApplication(uint32 leaderGuid, const GroupFinderApplication& app);
         void NotifyGroupReady(uint32 listingId);
         void NotifyEventReminder(uint32 eventId);
-        
+
         // Getters
         bool IsEnabled() const { return _enabled; }
         bool IsCrossFaction() const { return _crossFaction; }
         uint32 GetListingExpireMinutes() const { return _listingExpireMinutes; }
-        
+
         // Reward Getters
         bool IsRewardEnabled() const { return _rewardEnabled; }
         uint32 GetRewardItemId() const { return _rewardItemId; }
@@ -249,7 +249,7 @@ namespace DCAddon
         // Utility
         uint32 FindListingIdForApplication(uint32 applicationId);
     };
-    
+
     #define sGroupFinderMgr GroupFinderMgr::Instance()
 
 }  // namespace DCAddon

@@ -15,21 +15,21 @@
 
 /*
  * Heirloom Scaling Extension to Level 255
- * 
+ *
  * This script extends heirloom item scaling beyond the default DBC cap (level 80)
  * up to level 255 for custom high-level servers.
- * 
+ *
  * IMPORTANT: For Tier 3 Heirloom Upgrade System Integration:
  * - Primary stats (STR/AGI/INT/STA/SPI) scale with player level (handled here)
  * - Secondary stats (Crit/Haste/Hit/Expertise/ArmorPen) scale with upgrade level (handled by upgrade system)
  * - Item level NEVER changes (stays at 80) - tier 3 items use upgrade level only
  * - Upgrade system adds secondary stats via permanent enchantments
- * 
+ *
  * Features:
  * - Scales heirloom armor/weapons PRIMARY stats (Strength, Stamina, etc.) with player level
  * - Scales heirloom bag slots (containers get more slots at higher levels)
  * - Respects upgrade system for secondary stat bonuses
- * 
+ *
  * How it works:
  * - Intercepts the ScalingStatValue lookup before DBC capping occurs
  * - For heirloom items (Quality 7), uses level 80 scaling data
@@ -75,13 +75,13 @@ namespace {
 
         uint32 desiredSlots = CalculateHeirloomBagSlots(player->GetLevel());
         uint32 currentSlots = bag->GetBagSize();
-        
+
         if (currentSlots == desiredSlots)
             return;
 
         // Update the bag slot count
         bag->SetUInt32Value(CONTAINER_FIELD_NUM_SLOTS, desiredSlots);
-        
+
         // Save the updated bag to database
         bag->SaveToDB(nullptr);
     }
@@ -127,7 +127,7 @@ public:
             return;
 
         uint32 playerLevel = player->GetLevel();
-        
+
         // If player is at or below the DBC max level, let normal scaling handle it
         if (playerLevel <= ssd->MaxLevel)
             return;
@@ -135,11 +135,11 @@ public:
         // For levels above MaxLevel (typically 80), we need to extend scaling
         // We'll use the ScalingStatValue from MaxLevel as the base
         // and apply linear extrapolation for higher levels
-        
+
         // The ScalingStatValue determines which row of ScalingStatValues.dbc to use
         // We want to use the level 80 entry as reference
         uint32 baseScalingValue = proto->ScalingStatValue;
-        
+
         if (baseScalingValue == 0)
             return;
 
@@ -159,7 +159,7 @@ public:
         //   Level 240: 3.0x
         float levelDifference = float(playerLevel - ssd->MaxLevel);
         float scalingBoost = 1.0f + (levelDifference / float(ssd->MaxLevel));
-        
+
         // For extreme high levels, cap the boost to prevent absurd values
         const float MAX_SCALING_BOOST = 4.0f; // Max 4x the level 80 stats at level 255
         if (scalingBoost > MAX_SCALING_BOOST)
@@ -168,14 +168,14 @@ public:
         // We can't modify the DBC data directly, but we can influence the stat calculation
         // by overriding CustomScalingStatValue to signal our custom handler
         // We'll encode the boost information in the upper bits
-        
+
         // Store: original value in lower 16 bits, boost multiplier * 100 in upper 16 bits
         uint32 boostEncoded = uint32(scalingBoost * 100.0f);
         CustomScalingStatValue = (boostEncoded << 16) | (baseScalingValue & 0xFFFF);
     }
 
     // Hook during stat calculation to apply our custom scaling
-    void OnPlayerCustomScalingStatValue(Player* player, ItemTemplate const* proto, uint32& statType, int32& val, 
+    void OnPlayerCustomScalingStatValue(Player* player, ItemTemplate const* proto, uint32& statType, int32& val,
                                        uint8 itemProtoStatNumber, uint32 ScalingStatValue, ScalingStatValuesEntry const* ssv) override
     {
         if (!player || !proto || !ssv)
@@ -194,15 +194,15 @@ public:
         uint32 baseScalingValue = ScalingStatValue & 0xFFFF;
         float scalingBoost = float(boostEncoded) / 100.0f;
 
-        ScalingStatDistributionEntry const* ssd = proto->ScalingStatDistribution ? 
+        ScalingStatDistributionEntry const* ssd = proto->ScalingStatDistribution ?
             sScalingStatDistributionStore.LookupEntry(proto->ScalingStatDistribution) : nullptr;
-        
+
         if (!ssd)
             return;
 
         // Get player's actual level
         uint32 playerLevel = player->GetLevel();
-        
+
         // Only apply boost for levels above MaxLevel
         if (playerLevel <= ssd->MaxLevel)
             return;
@@ -217,7 +217,7 @@ public:
         {
             statType = ssd->StatMod[itemProtoStatNumber];
             int32 baseVal = (baseSSV->getssdMultiplier(baseScalingValue) * ssd->Modifier[itemProtoStatNumber]) / 10000;
-            
+
             // Apply the scaling boost
             val = int32(float(baseVal) * scalingBoost);
         }
@@ -272,7 +272,7 @@ public:
     void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
     {
         ApplyHeirloomBagScaling(player);
-        
+
         // Send a message to player about bag slots update (if changed)
         for (uint8 slot = INVENTORY_SLOT_BAG_START; slot < INVENTORY_SLOT_BAG_END; ++slot)
         {

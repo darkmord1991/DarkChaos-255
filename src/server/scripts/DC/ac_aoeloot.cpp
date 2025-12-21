@@ -149,10 +149,10 @@ static uint8 GetPlayerMinQualityFilter(Player* player)
 static bool ItemMeetsQualityFilter(uint32 itemId, uint8 minQuality)
 {
     if (minQuality == 0) return true; // No filter, accept everything
-    
+
     ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
     if (!proto) return false;
-    
+
     return proto->Quality >= minQuality;
 }
 
@@ -161,10 +161,10 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
     if (!player || !creature) return false;
     // Creature::HasLoot() does not exist in this repo; check the loot container instead
     if (creature->loot.empty()) return false;
-    if (sAoEConfig.playersOnly && player->GetTypeId() != TYPEID_PLAYER) return false;
+    if (sAoEConfig.playersOnly && !player->IsPlayer()) return false;
     if (sAoEConfig.ignoreTapped)
     {
-    if (creature->hasLootRecipient())
+        if (creature->hasLootRecipient())
         {
             Player* recipient = creature->GetLootRecipient();
             if (!recipient) return false;
@@ -189,7 +189,7 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
 static bool PerformAoELoot(Player* player, Creature* mainCreature)
 {
     if (!player || !mainCreature) return false;
-    
+
     // Check if player has disabled AoE loot
     try {
         if (!DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID()))
@@ -200,7 +200,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     } catch (...) {
         // If extensions not available, continue with AoE loot
     }
-    
+
     Loot* mainLoot = &mainCreature->loot;
     if (!mainLoot) return false;
 
@@ -249,12 +249,12 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     if (nearby.empty())
     {
         LOG_DEBUG("scripts", "AoELoot: no nearby corpses to merge for player {}", player->GetGUID().ToString());
-        
+
         // If quality filter is active, we must handle the loot ourselves to apply filtering
         if (playerMinQuality > 0)
         {
             size_t beforeFilter = mainLoot->items.size();
-            
+
             // Filter the main loot
             mainLoot->items.erase(
                 std::remove_if(mainLoot->items.begin(), mainLoot->items.end(),
@@ -264,9 +264,9 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                     }),
                 mainLoot->items.end()
             );
-            LOG_DEBUG("scripts", "AoELoot: Applied quality filter (min {}) to single corpse, {} items remain", 
+            LOG_DEBUG("scripts", "AoELoot: Applied quality filter (min {}) to single corpse, {} items remain",
                      playerMinQuality, mainLoot->items.size());
-            
+
             // If no items remain after filtering and no gold, let normal loot proceed
             // (corpse will appear empty or just show gold)
             if (mainLoot->items.empty() && mainLoot->gold == 0)
@@ -274,12 +274,12 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                 LOG_DEBUG("scripts", "AoELoot: All {} items filtered out and no gold, letting normal loot proceed", beforeFilter);
                 return false; // Let normal loot handling show empty corpse
             }
-            
+
             // If auto-loot is enabled, auto-loot the filtered items
             if (shouldAutoLootForPlayer(player))
             {
                 std::vector<std::pair<uint32, uint32>> mailItems;
-                
+
                 for (auto const& li : mainLoot->items)
                 {
                     ItemPosCountVec dest;
@@ -292,14 +292,14 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                     else
                         mailItems.emplace_back(li.itemid, li.count);
                 }
-                
+
                 // Handle gold
                 if (mainLoot->gold > 0)
                 {
                     player->ModifyMoney(mainLoot->gold);
                     player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LOOT_MONEY, mainLoot->gold);
                 }
-                
+
                 // Mail items that didn't fit
                 if (!mailItems.empty())
                 {
@@ -317,20 +317,20 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                     draft.SendMailTo(trans, MailReceiver(player), sender);
                     CharacterDatabase.CommitTransaction(trans);
                 }
-                
+
                 // Clear the loot and mark corpse as looted
                 mainLoot->clear();
                 mainCreature->AllLootRemovedFromCorpse();
                 mainCreature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
-                
+
                 return true; // We handled it
             }
-            
+
             // Not auto-loot, open the filtered loot window
             player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
             return true; // We handled it
         }
-        
+
         if (ShouldShowMessage(player))
             ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: no nearby corpses found");
         return false;
@@ -350,7 +350,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
 
     // Limit merge slots (configurable; default 15 to avoid overflowing client 16-slot window)
     const size_t MAX_MERGE_SLOTS = sAoEConfig.maxMergeSlots;
-    
+
     // playerMinQuality already declared above
     LOG_INFO("scripts", "AoELoot: Player {} has minQuality filter set to {}", player->GetName(), playerMinQuality);
 
@@ -363,7 +363,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                 [playerMinQuality, player](const LootItem& item) {
                     ItemTemplate const* proto = sObjectMgr->GetItemTemplate(item.itemid);
                     bool shouldRemove = proto && proto->Quality < playerMinQuality;
-                    if (shouldRemove) {
+                    if (shouldRemove)
+                    {
                         LOG_INFO("scripts", "AoELoot: Filtering out item {} (quality {}) for player {} (min quality {})",
                             item.itemid, proto ? proto->Quality : 0, player->GetName(), playerMinQuality);
                         // Track filtered item quality
@@ -413,7 +414,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
             if (projected >= MAX_MERGE_SLOTS) break;
             itemsToAdd.push_back(it);
             ++addedItemsFromCorpse;
-            
+
             // Track quality of looted items
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(it.itemid);
             if (proto)
@@ -426,7 +427,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
             if (projected >= MAX_MERGE_SLOTS) break;
             questItemsToAdd.push_back(it);
             ++addedQuestItemsFromCorpse;
-            
+
             // Quest items are treated as common quality for tracking
             DCAoELootExt::UpdateQualityStats(player->GetGUID(), 1);
         }
@@ -495,7 +496,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         {
             // Apply quality filter - skip items below minimum quality
             if (!ItemMeetsQualityFilter(li.itemid, playerMinQuality)) return;
-            
+
             ItemPosCountVec dest;
             InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, li.itemid, li.count);
             if (msg == EQUIP_ERR_OK)
@@ -583,9 +584,9 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     // Update detailed stats for leaderboards
     if (processed > 0)
     {
-        DCAoELootExt::UpdateDetailedStats(player->GetGUID(), 
-            static_cast<uint32>(itemsToAdd.size()), 
-            mergedGold, 
+        DCAoELootExt::UpdateDetailedStats(player->GetGUID(),
+            static_cast<uint32>(itemsToAdd.size()),
+            mergedGold,
             0);  // upgradesFound - would need smart loot detection here
     }
 
@@ -616,10 +617,10 @@ public:
         {
             Player* player = session->GetPlayer();
             if (!player) return true;
-            
+
             // Record timestamp for auto-loot detection
             sPlayerAutoStoreTimestamp[player->GetGUID()] = GameTime::GetGameTime().count();
-            
+
             // Check if player has a quality filter active
             uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
             if (playerMinQuality > 0)
@@ -629,11 +630,11 @@ public:
                 uint8 lootSlot;
                 packet >> lootSlot;
                 packet.rpos(0);
-                
+
                 // Get the player's current loot source
                 Loot* loot = nullptr;
                 ObjectGuid lootGuid = player->GetLootGUID();
-                
+
                 if (lootGuid.IsCreatureOrVehicle())
                 {
                     if (Creature* creature = player->GetMap()->GetCreature(lootGuid))
@@ -644,7 +645,7 @@ public:
                     if (Corpse* corpse = ObjectAccessor::GetCorpse(*player, lootGuid))
                         loot = &corpse->loot;
                 }
-                
+
                 if (loot)
                 {
                     // Check if it's a regular item or quest item slot
@@ -663,19 +664,19 @@ public:
                             return true;
                         }
                     }
-                    
+
                     if (itemId > 0 && !ItemMeetsQualityFilter(itemId, playerMinQuality))
                     {
                         // Block this item from being looted - doesn't meet quality filter
                         ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
-                        LOG_INFO("scripts", "AoELoot: Blocking loot of item {} '{}' (quality {} < min {}) for player {}", 
-                                 itemId, proto ? proto->Name1 : "Unknown", proto ? proto->Quality : 0, 
+                        LOG_INFO("scripts", "AoELoot: Blocking loot of item {} '{}' (quality {} < min {}) for player {}",
+                                 itemId, proto ? proto->Name1 : "Unknown", proto ? proto->Quality : 0,
                                  playerMinQuality, player->GetName());
                         return false; // Block the packet silently - item stays in loot window
                     }
                 }
             }
-            
+
             return true; // Allow the loot
         }
 
@@ -727,7 +728,7 @@ public:
         // Initialize player data with default showMessages = true
         PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
         data.showMessages = true; // default - will be updated by addon if they have preference saved
-        
+
         if (ShouldShowMessage(player))
             ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[AoE Loot]|r System enabled. Loot one corpse to loot nearby corpses.");
         // Load persisted accumulated credited gold from character DB if table exists
@@ -809,11 +810,11 @@ public:
     {
         Player* player = handler->GetPlayer();
         if (!player) return false;
-        
+
         // Toggle showMessages for this player
         bool currentSetting = ShouldShowMessage(player);
         bool newSetting = !currentSetting;
-        
+
         // Update via extensions system
         try {
             DCAoELootExt::SetPlayerShowMessages(player->GetGUID(), newSetting);
@@ -822,7 +823,7 @@ public:
             PlayerAoELootData& data = sPlayerLootData[player->GetGUID()];
             data.showMessages = newSetting;
         }
-        
+
         handler->PSendSysMessage("|cFF00FF00[AoE Loot]|r Show Messages: {}", newSetting ? "Enabled" : "Disabled");
         return true;
     }
@@ -932,4 +933,3 @@ void AddSC_ac_aoeloot()
     new AoELootPlayerScript();
     new AoELootCommandScript();
 }
-

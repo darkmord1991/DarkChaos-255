@@ -32,7 +32,7 @@ namespace DCMythicSpectator
     constexpr uint32 SPECTATOR_BINDSIGHT_SPELL = 6277;
     constexpr uint32 INVITE_CODE_LENGTH = 8;
     constexpr uint32 REPLAY_MAX_EVENTS = 10000;
-    
+
     // Stream Mode - Hide player identities for public broadcasts
     constexpr uint32 STREAM_MODE_NONE = 0;
     constexpr uint32 STREAM_MODE_NAMES_HIDDEN = 1;
@@ -80,7 +80,7 @@ namespace DCMythicSpectator
         std::string leaderName;
         std::vector<std::string> participants;
         std::deque<ReplayEvent> events;
-        
+
         void AddEvent(ReplayEventType type, std::string const& data);
         std::string Serialize() const;
         bool Deserialize(std::string const& data);
@@ -101,17 +101,17 @@ namespace DCMythicSpectator
         bool allowPublicListing = true;
         bool streamModeEnabled = true;
         uint32 defaultStreamMode = 0;
-        
+
         // Invite system
         bool inviteLinksEnabled = true;
         uint32 inviteLinkExpireSeconds = 3600;
-        
+
         // Replay system
         bool replayEnabled = true;
         uint32 replayMaxStoredRuns = 100;
         bool replayRecordPositions = false;  // High bandwidth, disabled by default
         bool replayRecordCombatLog = false;  // Very high storage, disabled by default
-        
+
         // HUD sync
         bool syncHudToSpectators = true;
 
@@ -136,11 +136,11 @@ namespace DCMythicSpectator
         bool allowsSpectators;
         uint32 streamMode;
         std::unordered_set<ObjectGuid> spectators;
-        
+
         // Invite system
         std::string inviteCode;
         uint64 inviteCodeExpires;
-        
+
         // Replay recording
         RunReplay* activeReplay;
     };
@@ -187,13 +187,13 @@ namespace DCMythicSpectator
         MythicSpectatorConfig const& GetConfig() const { return _config; }
 
         // Run Management
-        void RegisterActiveRun(uint32 instanceId, uint32 mapId, uint8 keystoneLevel, 
+        void RegisterActiveRun(uint32 instanceId, uint32 mapId, uint8 keystoneLevel,
                                std::string const& leaderName, bool allowSpectators = true);
         void UnregisterActiveRun(uint32 instanceId);
-        void UpdateRunStatus(uint32 instanceId, uint32 timerRemaining, uint8 bossesKilled, 
+        void UpdateRunStatus(uint32 instanceId, uint32 timerRemaining, uint8 bossesKilled,
                              uint8 bossesTotal, uint8 deaths);
         void SetRunStreamMode(uint32 instanceId, uint32 mode);
-        
+
         std::vector<SpectateableRun> GetSpectateableRuns() const;
         SpectateableRun const* GetRun(uint32 instanceId) const;
         SpectateableRun* GetRunMutable(uint32 instanceId);
@@ -206,7 +206,7 @@ namespace DCMythicSpectator
         void StopSpectating(Player* player);
         bool IsSpectating(Player* player) const;
         bool WatchPlayer(Player* spectator, Player* target);
-        
+
         SpectatorState* GetSpectatorState(ObjectGuid guid);
         std::vector<Player*> GetSpectatorsForInstance(uint32 instanceId) const;
 
@@ -215,11 +215,11 @@ namespace DCMythicSpectator
         bool ValidateInviteCode(std::string const& code, uint32& outInstanceId) const;
         void SendInviteLink(Player* sender, Player* recipient, uint32 instanceId);
         void BroadcastInviteToGuild(Player* sender, uint32 instanceId);
-        
+
         // HUD Sync for Spectators
         void SyncHudToSpectator(Player* spectator, uint32 instanceId);
         void BroadcastHudUpdate(uint32 instanceId, std::unordered_map<uint32, uint32> const& worldStates);
-        
+
         // Replay System
         void StartRecording(uint32 instanceId);
         void StopRecording(uint32 instanceId, bool save = true);
@@ -234,7 +234,7 @@ namespace DCMythicSpectator
         void BroadcastToSpectators(uint32 instanceId, std::string const& message);
         void BroadcastRunUpdate(uint32 instanceId);
         void SendRunSnapshot(Player* spectator, uint32 instanceId);
-        
+
         // Protocol helpers
         static void CreatePacket(WorldPacket& data, std::string const& message);
         static std::string FormatRunData(SpectateableRun const& run, uint32 streamMode);

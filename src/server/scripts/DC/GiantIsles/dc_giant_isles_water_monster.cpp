@@ -21,7 +21,7 @@ enum WaterMonsterData
     NPC_CORRUPTED_ELEMENTAL     = 400351, // New NPC for adds
     GO_ANCIENT_STONE            = 700015,
     EVENT_ID_WATER_MONSTER      = 100,
-    
+
     // Spells
     SPELL_THROW_VISUAL          = 51361,
     SPELL_WATER_BOLT_VOLLEY     = 34449, // AoE Frost damage
@@ -30,7 +30,7 @@ enum WaterMonsterData
     SPELL_ENRAGE                = 50630, // Damage increase
     SPELL_SUBMERGE_VISUAL       = 46355, // Visual for submerging (if applicable) or just hide
     SPELL_SUMMON_ELEMENTALS     = 31687, // Visual or actual summon spell
-    
+
     // Actions
     ACTION_ELEMENTAL_DIED       = 1
 };
@@ -65,7 +65,7 @@ static void SendEventUpdate(uint8 opcode, std::string state, uint8 wave = 1, uin
     data.Set("type", DCAddon::JsonValue("event"));
     data.Set("state", DCAddon::JsonValue(state));
     data.Set("active", DCAddon::JsonValue(state == "active"));
-    
+
     if (state == "active")
     {
         data.Set("wave", DCAddon::JsonValue(wave));
@@ -74,7 +74,7 @@ static void SendEventUpdate(uint8 opcode, std::string state, uint8 wave = 1, uin
     }
 
     DCAddon::JsonMessage msg(DCAddon::Module::EVENTS, opcode, data);
-    
+
     WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
     for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
     {
@@ -143,7 +143,7 @@ public:
 
             // Intro: a scream is heard, the monster appears after 10 seconds and swims in.
             player->SendSystemMessage("A terrifying scream echoes from the deep...");
-            
+
             // Spawn at the start of the water path (boss AI handles the delayed appearance + pathing)
             Position const& start = GiantWaterMonsterPath[0];
             if (Creature* monster = go->SummonCreature(NPC_GIANT_WATER_MONSTER, start.GetPositionX(), start.GetPositionY(), start.GetPositionZ(), start.GetOrientation(), TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 10 * MINUTE * IN_MILLISECONDS))
@@ -158,7 +158,7 @@ public:
                 Position const& last = GiantWaterMonsterPath[pathCount - 1];
                 monster->SetHomePosition(last.GetPositionX(), last.GetPositionY(), last.GetPositionZ(), last.GetOrientation());
                 SendEventUpdate(DCAddon::Opcode::Events::SMSG_EVENT_SPAWN, "active");
-                go->SetGoState(GO_STATE_ACTIVE); 
+                go->SetGoState(GO_STATE_ACTIVE);
             }
             else
             {
@@ -270,7 +270,7 @@ public:
 
         void IsSummonedBy(WorldObject* summoner) override
         {
-            eventSummon = (summoner && summoner->GetTypeId() == TYPEID_GAMEOBJECT && summoner->GetEntry() == GO_ANCIENT_STONE);
+            eventSummon = (summoner && summoner->IsGameObject() && summoner->GetEntry() == GO_ANCIENT_STONE);
             StartIntro();
         }
 
@@ -335,7 +335,7 @@ public:
                     me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
                     me->SetReactState(REACT_AGGRESSIVE);
                     me->Say("I return to crush you!", LANG_UNIVERSAL);
-                    
+
                     // Enrage
                     if (!enraged)
                     {

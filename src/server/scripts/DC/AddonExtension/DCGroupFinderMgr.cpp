@@ -1,7 +1,7 @@
 /*
  * Dark Chaos - Group Finder Manager Implementation
  * =================================================
- * 
+ *
  * Copyright (C) 2024-2025 Dark Chaos Development Team
  */
 
@@ -43,7 +43,7 @@ void GroupFinderMgr::LoadConfig()
     _ratingMatchRange = sConfigMgr->GetOption<uint32>("DC.GroupFinder.RatingMatchRange", 200);
     _keyLevelMatchRange = sConfigMgr->GetOption<uint32>("DC.GroupFinder.KeyLevelMatchRange", 3);
     _cleanupIntervalMs = sConfigMgr->GetOption<uint32>("DC.GroupFinder.CleanupIntervalMs", 60000);
-    
+
     // Rewards
     _rewardEnabled = sConfigMgr->GetOption<bool>("DC.GroupFinder.Reward.Enable", true);
     _rewardItemId = sConfigMgr->GetOption<uint32>("DC.GroupFinder.Reward.ItemID", 49426);
@@ -59,16 +59,16 @@ void GroupFinderMgr::LoadConfig()
 void GroupFinderMgr::LoadFromDatabase()
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     uint32 count = 0;
-    
+
     // Load active listings
     QueryResult result = CharacterDatabase.Query(
         "SELECT id, leader_guid, group_guid, listing_type, dungeon_id, dungeon_name, difficulty, "
         "keystone_level, min_ilvl, current_tank, current_healer, current_dps, "
         "need_tank, need_healer, need_dps, note, UNIX_TIMESTAMP(created_at) "
         "FROM dc_group_finder_listings WHERE status = 1");
-    
+
     if (result)
     {
         do
@@ -94,22 +94,22 @@ void GroupFinderMgr::LoadFromDatabase()
             listing.createdAt = fields[16].Get<time_t>();
             listing.expiresAt = listing.createdAt + (_listingExpireMinutes * 60);
             listing.active = true;
-            
+
             _listings[listing.id] = listing;
             _playerListings[listing.leaderGuid].insert(listing.id);
             ++count;
         } while (result->NextRow());
     }
-    
+
     LOG_INFO("dc.groupfinder", "Loaded {} active group finder listings", count);
-    
+
     // Load pending applications
     count = 0;
     result = CharacterDatabase.Query(
         "SELECT id, listing_id, player_guid, player_name, role, player_class, player_level, "
         "player_ilvl, note, status, UNIX_TIMESTAMP(created_at) "
         "FROM dc_group_finder_applications WHERE status = 0");
-    
+
     if (result)
     {
         do
@@ -127,21 +127,21 @@ void GroupFinderMgr::LoadFromDatabase()
             app.note = fields[8].Get<std::string>();
             app.status = fields[9].Get<uint8>();
             app.createdAt = fields[10].Get<time_t>();
-            
+
             _applications[app.listingId].push_back(app);
             ++count;
         } while (result->NextRow());
     }
-    
+
     LOG_INFO("dc.groupfinder", "Loaded {} pending applications", count);
-    
+
     // Load scheduled events
     count = 0;
     result = CharacterDatabase.Query(
         "SELECT id, leader_guid, event_type, dungeon_id, dungeon_name, keystone_level, "
         "UNIX_TIMESTAMP(scheduled_time), max_signups, current_signups, note, status "
         "FROM dc_group_finder_scheduled_events WHERE status IN (1, 2)");
-    
+
     if (result)
     {
         do
@@ -159,12 +159,12 @@ void GroupFinderMgr::LoadFromDatabase()
             event.currentSignups = fields[8].Get<uint8>();
             event.description = fields[9].Get<std::string>();
             event.status = fields[10].Get<uint8>();
-            
+
             _events[event.id] = event;
             ++count;
         } while (result->NextRow());
     }
-    
+
     LOG_INFO("dc.groupfinder", "Loaded {} scheduled events", count);
 }
 
@@ -179,9 +179,9 @@ void GroupFinderMgr::Update(uint32 diff)
 {
     if (!_enabled)
         return;
-    
+
     _lastCleanupTime += diff;
-    
+
     if (_lastCleanupTime >= _cleanupIntervalMs)
     {
         _lastCleanupTime = 0;
@@ -194,10 +194,10 @@ void GroupFinderMgr::Update(uint32 diff)
 void GroupFinderMgr::CleanupExpiredListings()
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     time_t now = GameTime::GetGameTime().count();
     std::vector<uint32> toRemove;
-    
+
     for (auto& [id, listing] : _listings)
     {
         if (listing.expiresAt > 0 && now >= listing.expiresAt)
@@ -205,11 +205,11 @@ void GroupFinderMgr::CleanupExpiredListings()
             toRemove.push_back(id);
         }
     }
-    
+
     for (uint32 id : toRemove)
     {
         auto& listing = _listings[id];
-        
+
         // Notify leader
         if (Player* leader = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(listing.leaderGuid)))
         {
@@ -219,17 +219,17 @@ void GroupFinderMgr::CleanupExpiredListings()
                 .Set("message", "Your group listing has expired")
                 .Send(leader);
         }
-        
+
         // Update database
         CharacterDatabase.Execute("UPDATE dc_group_finder_listings SET status = 0 WHERE id = {}", id);
         CharacterDatabase.Execute("UPDATE dc_group_finder_applications SET status = 4 WHERE listing_id = {} AND status = 0", id);
-        
+
         // Remove from cache
         _playerListings[listing.leaderGuid].erase(id);
         _applications.erase(id);
         _listings.erase(id);
     }
-    
+
     if (!toRemove.empty())
         LOG_DEBUG("dc.groupfinder", "Cleaned up {} expired listings", toRemove.size());
 }
@@ -238,7 +238,7 @@ void GroupFinderMgr::CleanupExpiredApplications()
 {
     // Applications older than configured minutes that are still pending get expired
     time_t cutoff = GameTime::GetGameTime().count() - (_applicationExpireMinutes * 60);
-    
+
     CharacterDatabase.Execute(
         "UPDATE dc_group_finder_applications SET status = 4 "
         "WHERE status = 0 AND created_at < FROM_UNIXTIME({})",
@@ -248,10 +248,10 @@ void GroupFinderMgr::CleanupExpiredApplications()
 void GroupFinderMgr::CleanupExpiredEvents()
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     time_t now = GameTime::GetGameTime().count();
     std::vector<uint32> toRemove;
-    
+
     for (auto& [id, event] : _events)
     {
         // Events that have passed their scheduled time by 1 hour are marked completed
@@ -260,7 +260,7 @@ void GroupFinderMgr::CleanupExpiredEvents()
             toRemove.push_back(id);
         }
     }
-    
+
     for (uint32 id : toRemove)
     {
         CharacterDatabase.Execute("UPDATE dc_group_finder_scheduled_events SET status = 5 WHERE id = {}", id);
@@ -275,32 +275,32 @@ void GroupFinderMgr::CleanupExpiredEvents()
 uint32 GroupFinderMgr::CreateListing(Player* player, const GroupFinderListing& listing)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     uint32 guid = player->GetGUID().GetCounter();
-    
+
     // Check max listings
     if (_playerListings[guid].size() >= _maxListingsPerPlayer)
         return 0;
-    
+
     // Get group GUID if in a group
     uint32 groupGuid = 0;
     if (Group* group = player->GetGroup())
         groupGuid = group->GetGUID().GetCounter();
-    
+
     // Note: using synchronous execution below to ensure LAST_INSERT_ID() can be retrieved immediately.
-    
+
     // We need the ID. Since we can't easily get it from the async transaction above without a callback,
     // and we need to return it immediately, we have to use a synchronous query or a different approach.
     // BUT, we are already inside a lock and blocking.
-    // Let's use a synchronous execution with manual escaping for now to ensure we get the ID, 
+    // Let's use a synchronous execution with manual escaping for now to ensure we get the ID,
     // OR better: use the "Execute" method that returns a future? No, ACore doesn't have that standard.
-    
+
     // Fallback to safe synchronous execution with escaping
     std::string safeNote = listing.note;
     std::string safeDungeonName = listing.dungeonName;
     CharacterDatabase.EscapeString(safeNote);
     CharacterDatabase.EscapeString(safeDungeonName);
-    
+
     CharacterDatabase.Execute(
         "INSERT INTO dc_group_finder_listings "
         "(leader_guid, group_guid, listing_type, dungeon_id, dungeon_name, difficulty, "
@@ -309,11 +309,11 @@ uint32 GroupFinderMgr::CreateListing(Player* player, const GroupFinderListing& l
         guid, groupGuid, listing.listingType, listing.dungeonId, safeDungeonName,
         listing.difficulty, listing.keystoneLevel, listing.minIlvl,
         listing.needTank, listing.needHealer, listing.needDps, safeNote);
-    
+
     // Get inserted ID
     QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
     uint32 listingId = result ? (*result)[0].Get<uint32>() : 0;
-    
+
     if (listingId > 0)
     {
         GroupFinderListing newListing = listing;
@@ -323,53 +323,53 @@ uint32 GroupFinderMgr::CreateListing(Player* player, const GroupFinderListing& l
         newListing.createdAt = GameTime::GetGameTime().count();
         newListing.expiresAt = newListing.createdAt + (_listingExpireMinutes * 60);
         newListing.active = true;
-        
+
         _listings[listingId] = newListing;
         _playerListings[guid].insert(listingId);
-        
+
         // Notify potential matches
         NotifyNewListing(newListing);
     }
-    
+
     return listingId;
 }
 
 bool GroupFinderMgr::DeleteListing(Player* player, uint32 listingId)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     auto it = _listings.find(listingId);
     if (it == _listings.end())
         return false;
-    
+
     if (it->second.leaderGuid != player->GetGUID().GetCounter())
         return false;
-    
+
     // Update database
     CharacterDatabase.Execute("UPDATE dc_group_finder_listings SET status = 0 WHERE id = {}", listingId);
     CharacterDatabase.Execute("UPDATE dc_group_finder_applications SET status = 3 WHERE listing_id = {} AND status = 0", listingId);
-    
+
     // Notify applicants
-    for (const auto& app : _applications[listingId])
+    for (auto const& app : _applications[listingId])
     {
         if (app.status == GF_APP_PENDING)
         {
             NotifyApplicationStatus(app.playerGuid, listingId, GF_APP_CANCELLED, "Group listing was removed");
         }
     }
-    
+
     // Remove from cache
     _playerListings[it->second.leaderGuid].erase(listingId);
     _applications.erase(listingId);
     _listings.erase(it);
-    
+
     return true;
 }
 
 GroupFinderListing* GroupFinderMgr::GetListing(uint32 listingId)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     auto it = _listings.find(listingId);
     if (it != _listings.end())
         return &it->second;
@@ -380,41 +380,41 @@ std::vector<GroupFinderListing> GroupFinderMgr::SearchListings(uint8 listingType
                                                                 uint8 minLevel, uint8 maxLevel, uint16 minRating)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     std::vector<GroupFinderListing> results;
-    
-    for (const auto& [id, listing] : _listings)
+
+    for (auto const& [id, listing] : _listings)
     {
         if (!listing.active)
             continue;
-        
+
         if (listingType > 0 && listing.listingType != listingType)
             continue;
-        
+
         if (dungeonId > 0 && listing.dungeonId != dungeonId)
             continue;
-        
+
         if (minLevel > 0 && listing.keystoneLevel < minLevel)
             continue;
-        
+
         if (maxLevel > 0 && listing.keystoneLevel > maxLevel)
             continue;
-        
+
         if (minRating > 0 && listing.minRating < minRating)
             continue;
-        
+
         results.push_back(listing);
     }
-    
+
     // Sort by keystone level descending
     std::sort(results.begin(), results.end(), [](const GroupFinderListing& a, const GroupFinderListing& b) {
         return a.keystoneLevel > b.keystoneLevel;
     });
-    
+
     // Limit results
     if (results.size() > 50)
         results.resize(50);
-    
+
     return results;
 }
 
@@ -425,30 +425,30 @@ std::vector<GroupFinderListing> GroupFinderMgr::SearchListings(uint8 listingType
 bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role, const std::string& note)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     auto it = _listings.find(listingId);
     if (it == _listings.end() || !it->second.active)
         return false;
-    
+
     uint32 guid = player->GetGUID().GetCounter();
-    
+
     // Can't apply to own listing
     if (it->second.leaderGuid == guid)
         return false;
-    
+
     // Check if already applied
     auto& apps = _applications[listingId];
-    for (const auto& app : apps)
+    for (auto const& app : apps)
     {
         if (app.playerGuid == guid && app.status == GF_APP_PENDING)
             return false;
     }
-    
+
     // Check item level requirement
     uint16 playerIlvl = GetPlayerItemLevel(player);
     if (it->second.minIlvl > 0 && playerIlvl < it->second.minIlvl)
         return false;
-    
+
     // Check rating requirement for M+
     uint16 playerRating = 0;
     if (it->second.listingType == GF_LISTING_MYTHIC_PLUS && it->second.minRating > 0)
@@ -457,23 +457,23 @@ bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role
         if (playerRating < it->second.minRating)
             return false;
     }
-    
+
     std::string safeNote = note;
     CharacterDatabase.EscapeString(safeNote);
     std::string safePlayerName = player->GetName();
     CharacterDatabase.EscapeString(safePlayerName);
-    
+
     // Insert application
     CharacterDatabase.Execute(
         "INSERT INTO dc_group_finder_applications "
         "(listing_id, player_guid, player_name, role, player_class, player_level, player_ilvl, note, status) "
         "VALUES ({}, {}, '{}', {}, {}, {}, {}, '{}', 0)",
         listingId, guid, safePlayerName, role, player->getClass(), player->GetLevel(), playerIlvl, safeNote);
-    
+
     // Get inserted ID
     QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
     uint32 appId = result ? (*result)[0].Get<uint32>() : 0;
-    
+
     if (appId > 0)
     {
         GroupFinderApplication app;
@@ -489,39 +489,39 @@ bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role
         app.note = note;
         app.status = GF_APP_PENDING;
         app.createdAt = GameTime::GetGameTime().count();
-        
+
         apps.push_back(app);
-        
+
         // Notify leader
         NotifyNewApplication(it->second.leaderGuid, app);
     }
-    
+
     return appId > 0;
 }
 
 bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 applicantGuid)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     auto listingIt = _listings.find(listingId);
     if (listingIt == _listings.end())
         return false;
-    
+
     if (listingIt->second.leaderGuid != leader->GetGUID().GetCounter())
         return false;
-    
+
     auto& apps = _applications[listingId];
     for (auto& app : apps)
     {
         if (app.playerGuid == applicantGuid && app.status == GF_APP_PENDING)
         {
             app.status = GF_APP_ACCEPTED;
-            
+
             // Update database
             CharacterDatabase.Execute(
                 "UPDATE dc_group_finder_applications SET status = 1 WHERE id = {}",
                 app.id);
-            
+
             // Update listing role counts
             if (app.role == GF_ROLE_TANK && listingIt->second.needTank > 0)
             {
@@ -538,17 +538,17 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
                 listingIt->second.currentDps++;
                 listingIt->second.needDps--;
             }
-            
+
             // Update database
             CharacterDatabase.Execute(
                 "UPDATE dc_group_finder_listings SET current_tank = {}, current_healer = {}, current_dps = {}, "
                 "need_tank = {}, need_healer = {}, need_dps = {} WHERE id = {}",
                 listingIt->second.currentTank, listingIt->second.currentHealer, listingIt->second.currentDps,
                 listingIt->second.needTank, listingIt->second.needHealer, listingIt->second.needDps, listingId);
-            
+
             // Notify applicant
             NotifyApplicationStatus(applicantGuid, listingId, GF_APP_ACCEPTED, "Your application was accepted!");
-            
+
             // Invite to group
             if (Player* applicant = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(applicantGuid)))
             {
@@ -570,58 +570,58 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
                     }
                 }
             }
-            
+
             // Check if group is now complete
             if (CheckRoleRequirements(listingIt->second))
             {
                 NotifyGroupReady(listingId);
             }
-            
+
             return true;
         }
     }
-    
+
     return false;
 }
 
 bool GroupFinderMgr::DeclineApplication(Player* leader, uint32 listingId, uint32 applicantGuid)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     auto listingIt = _listings.find(listingId);
     if (listingIt == _listings.end())
         return false;
-    
+
     if (listingIt->second.leaderGuid != leader->GetGUID().GetCounter())
         return false;
-    
+
     auto& apps = _applications[listingId];
     for (auto& app : apps)
     {
         if (app.playerGuid == applicantGuid && app.status == GF_APP_PENDING)
         {
             app.status = GF_APP_DECLINED;
-            
+
             CharacterDatabase.Execute(
                 "UPDATE dc_group_finder_applications SET status = 2 WHERE id = {}",
                 app.id);
-            
+
             NotifyApplicationStatus(applicantGuid, listingId, GF_APP_DECLINED, "Your application was declined.");
             return true;
         }
     }
-    
+
     return false;
 }
 
 std::vector<GroupFinderApplication> GroupFinderMgr::GetApplicationsForListing(uint32 listingId)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     auto it = _applications.find(listingId);
     if (it != _applications.end())
         return it->second;
-    
+
     return {};
 }
 
@@ -639,7 +639,7 @@ void GroupFinderMgr::NotifyGroupReady(uint32 listingId)
     auto it = _listings.find(listingId);
     if (it == _listings.end())
         return;
-    
+
     // Notify leader
     if (Player* leader = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(it->second.leaderGuid)))
     {
@@ -649,7 +649,7 @@ void GroupFinderMgr::NotifyGroupReady(uint32 listingId)
             .Set("message", "Your group is now complete!")
             .Send(leader);
     }
-    
+
     // Auto-delist since group is complete
     it->second.active = false;
     CharacterDatabase.Execute("UPDATE dc_group_finder_listings SET status = 0 WHERE id = {}", listingId);
@@ -662,24 +662,24 @@ void GroupFinderMgr::NotifyGroupReady(uint32 listingId)
 uint32 GroupFinderMgr::CreateEvent(Player* player, const ScheduledEvent& event)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     uint32 guid = player->GetGUID().GetCounter();
-    
+
     std::string safeTitle = event.title;
     CharacterDatabase.EscapeString(safeTitle);
     std::string safeDesc = event.description;
     CharacterDatabase.EscapeString(safeDesc);
-    
+
     CharacterDatabase.Execute(
         "INSERT INTO dc_group_finder_scheduled_events "
         "(leader_guid, event_type, dungeon_id, dungeon_name, keystone_level, scheduled_time, max_signups, note, status) "
         "VALUES ({}, {}, {}, '{}', {}, FROM_UNIXTIME({}), {}, '{}', 1)",
         guid, event.eventType, event.dungeonId, safeTitle, event.keystoneLevel,
         event.scheduledTime, event.maxSignups, safeDesc);
-    
+
     QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
     uint32 eventId = result ? (*result)[0].Get<uint32>() : 0;
-    
+
     if (eventId > 0)
     {
         ScheduledEvent newEvent = event;
@@ -687,47 +687,47 @@ uint32 GroupFinderMgr::CreateEvent(Player* player, const ScheduledEvent& event)
         newEvent.leaderGuid = guid;
         newEvent.status = GF_EVENT_OPEN;
         newEvent.createdAt = GameTime::GetGameTime().count();
-        
+
         _events[eventId] = newEvent;
     }
-    
+
     return eventId;
 }
 
 bool GroupFinderMgr::SignupForEvent(Player* player, uint32 eventId, uint8 role, const std::string& note)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     auto it = _events.find(eventId);
     if (it == _events.end() || it->second.status != GF_EVENT_OPEN)
         return false;
-    
+
     if (it->second.currentSignups >= it->second.maxSignups)
         return false;
-    
+
     uint32 guid = player->GetGUID().GetCounter();
-    
+
     // Check if already signed up
     auto& signups = _eventSignups[eventId];
-    for (const auto& signup : signups)
+    for (auto const& signup : signups)
     {
         if (signup.playerGuid == guid)
             return false;
     }
-    
+
     std::string safeNote = note;
     CharacterDatabase.EscapeString(safeNote);
     std::string safePlayerName = player->GetName();
     CharacterDatabase.EscapeString(safePlayerName);
-    
+
     CharacterDatabase.Execute(
         "INSERT INTO dc_group_finder_event_signups (event_id, player_guid, player_name, role, note, status) "
         "VALUES ({}, {}, '{}', {}, '{}', 0)",
         eventId, guid, safePlayerName, role, safeNote);
-    
+
     QueryResult result = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
     uint32 signupId = result ? (*result)[0].Get<uint32>() : 0;
-    
+
     if (signupId > 0)
     {
         EventSignup signup;
@@ -739,14 +739,14 @@ bool GroupFinderMgr::SignupForEvent(Player* player, uint32 eventId, uint8 role, 
         signup.note = note;
         signup.status = GF_APP_PENDING;
         signup.createdAt = GameTime::GetGameTime().count();
-        
+
         signups.push_back(signup);
-        
+
         it->second.currentSignups++;
         CharacterDatabase.Execute(
             "UPDATE dc_group_finder_scheduled_events SET current_signups = {} WHERE id = {}",
             it->second.currentSignups, eventId);
-        
+
         if (it->second.currentSignups >= it->second.maxSignups)
         {
             it->second.status = GF_EVENT_FULL;
@@ -755,47 +755,47 @@ bool GroupFinderMgr::SignupForEvent(Player* player, uint32 eventId, uint8 role, 
                 eventId);
         }
     }
-    
+
     return signupId > 0;
 }
 
 std::vector<ScheduledEvent> GroupFinderMgr::GetUpcomingEvents(uint8 eventType)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     std::vector<ScheduledEvent> results;
     time_t now = GameTime::GetGameTime().count();
-    
-    for (const auto& [id, event] : _events)
+
+    for (auto const& [id, event] : _events)
     {
         if (event.status > GF_EVENT_FULL)
             continue;
-        
+
         if (event.scheduledTime < now)
             continue;
-        
+
         if (eventType > 0 && event.eventType != eventType)
             continue;
-        
+
         results.push_back(event);
     }
-    
+
     // Sort by scheduled time
     std::sort(results.begin(), results.end(), [](const ScheduledEvent& a, const ScheduledEvent& b) {
         return a.scheduledTime < b.scheduledTime;
     });
-    
+
     return results;
 }
 
 std::vector<EventSignup> GroupFinderMgr::GetEventSignups(uint32 eventId)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    
+
     auto it = _eventSignups.find(eventId);
     if (it != _eventSignups.end())
         return it->second;
-    
+
     return {};
 }
 
@@ -808,10 +808,10 @@ uint16 GroupFinderMgr::GetPlayerMythicRating(uint32 playerGuid)
     QueryResult result = CharacterDatabase.Query(
         "SELECT rating FROM dc_mplus_player_ratings WHERE player_guid = {}",
         playerGuid);
-    
+
     if (result)
         return (*result)[0].Get<uint16>();
-    
+
     return 0;
 }
 
@@ -819,11 +819,11 @@ uint16 GroupFinderMgr::GetPlayerItemLevel(Player* player)
 {
     if (!player)
         return 0;
-    
+
     // Calculate average equipped item level
     uint32 totalIlvl = 0;
     uint32 itemCount = 0;
-    
+
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
         if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
@@ -835,7 +835,7 @@ uint16 GroupFinderMgr::GetPlayerItemLevel(Player* player)
             }
         }
     }
-    
+
     return itemCount > 0 ? static_cast<uint16>(totalIlvl / itemCount) : 0;
 }
 
@@ -847,7 +847,7 @@ void GroupFinderMgr::NotifyNewListing(const GroupFinderListing& listing)
 {
     // Future: Could broadcast to players who have matching search criteria
     // For now, just log
-    LOG_DEBUG("dc.groupfinder", "New listing created: {} {} +{}", 
+    LOG_DEBUG("dc.groupfinder", "New listing created: {} {} +{}",
         listing.dungeonName, listing.listingType == GF_LISTING_MYTHIC_PLUS ? "M+" : "Raid", listing.keystoneLevel);
 }
 
@@ -864,7 +864,7 @@ void GroupFinderMgr::NotifyApplicationStatus(uint32 playerGuid, uint32 listingId
             case GF_APP_EXPIRED: statusStr = "expired"; break;
             default: statusStr = "pending"; break;
         }
-        
+
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_APPLICATION_STATUS)
             .Set("success", status == GF_APP_ACCEPTED)
             .Set("status", statusStr)
@@ -885,7 +885,7 @@ void GroupFinderMgr::NotifyNewApplication(uint32 leaderGuid, const GroupFinderAp
             case GF_ROLE_HEALER: roleStr = "healer"; break;
             default: roleStr = "dps"; break;
         }
-        
+
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_NEW_APPLICATION)
             .Set("listingId", static_cast<int32>(app.listingId))
             .Set("playerGuid", static_cast<int32>(app.playerGuid))
@@ -912,10 +912,10 @@ std::vector<GroupFinderApplication> GroupFinderMgr::GetPlayerApplications(uint32
 {
     std::lock_guard<std::mutex> lock(_mutex);
     std::vector<GroupFinderApplication> result;
-    
-    for (const auto& pair : _applications)
+
+    for (auto const& pair : _applications)
     {
-        for (const auto& app : pair.second)
+        for (auto const& app : pair.second)
         {
             if (app.playerGuid == playerGuid && app.status == GF_APP_PENDING)
             {
@@ -929,11 +929,11 @@ std::vector<GroupFinderApplication> GroupFinderMgr::GetPlayerApplications(uint32
 uint32 GroupFinderMgr::FindListingIdForApplication(uint32 applicationId)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    for (const auto& kv : _applications)
+    for (auto const& kv : _applications)
     {
         uint32 listingId = kv.first;
-        const auto& apps = kv.second;
-        for (const auto& app : apps)
+        auto const& apps = kv.second;
+        for (auto const& app : apps)
         {
             if (app.id == applicationId)
                 return listingId;
@@ -951,7 +951,7 @@ void GroupFinderMgr::HandleDungeonCompletion(Player* player, uint32 dungeonId, u
     // Check if player was in a group formed by GroupFinder
     // For now, we check if they have any accepted application for this dungeon that is recent.
     // This is a simplified check.
-    
+
     if (CanReceiveReward(player))
     {
         GiveReward(player);
@@ -961,7 +961,7 @@ void GroupFinderMgr::HandleDungeonCompletion(Player* player, uint32 dungeonId, u
 bool GroupFinderMgr::CanReceiveReward(Player* player)
 {
     if (!_rewardEnabled) return false;
-    
+
     // Check daily limit
     if (_rewardDailyLimit > 0)
     {
@@ -969,24 +969,24 @@ bool GroupFinderMgr::CanReceiveReward(Player* player)
         QueryResult result = CharacterDatabase.Query("SELECT COUNT(*) FROM dc_group_finder_rewards WHERE player_guid = {} AND claim_time > DATE_SUB(NOW(), INTERVAL 1 DAY)", player->GetGUID().GetCounter());
         if (result)
             count = (*result)[0].Get<uint32>();
-            
+
         if (count >= _rewardDailyLimit)
             return false;
     }
-    
+
     return true;
 }
 
 void GroupFinderMgr::GiveReward(Player* player)
 {
     if (!player) return;
-    
+
     // Give Item
     if (_rewardItemId > 0 && _rewardItemCount > 0)
     {
         player->AddItem(_rewardItemId, _rewardItemCount);
     }
-    
+
     // Give Currency
     if (_rewardCurrencyId > 0 && _rewardCurrencyCount > 0)
     {
@@ -1002,10 +1002,10 @@ void GroupFinderMgr::GiveReward(Player* player)
             player->ModifyMoney(static_cast<int32>(_rewardCurrencyCount));
         }
     }
-    
+
     // Log reward
     CharacterDatabase.Execute("INSERT INTO dc_group_finder_rewards (player_guid, reward_type, dungeon_type) VALUES ({}, 0, 0)", player->GetGUID().GetCounter());
-    
+
     player->SendSystemMessage("You have received a reward for using the Group Finder!");
 }
 

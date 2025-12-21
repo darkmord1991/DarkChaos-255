@@ -38,22 +38,22 @@ using DarkChaos::ItemUpgrade::ITEM_UPGRADE_LOG_TABLE;
 static constexpr const char* MISSING_ITEMS_TABLE = "dc_item_upgrade_missing_items";
 
 // Log a missing/failed item to the database for analysis
-static void LogMissingItem(Player* player, uint32 itemId, uint32 itemGuid, 
+static void LogMissingItem(Player* player, uint32 itemId, uint32 itemGuid,
                            const std::string& errorType, const std::string& errorDetail,
                            uint8 bag = 0, uint8 slot = 0)
 {
     if (!player)
         return;
-    
+
     // Get item name if template exists
     std::string itemName = "Unknown";
     if (ItemTemplate const* templ = sObjectMgr->GetItemTemplate(itemId))
         itemName = templ->Name1;
-    
+
     // Escape strings for SQL
     std::string escapedName = itemName;
     std::string escapedDetail = errorDetail;
-    
+
     // Replace single quotes with escaped quotes
     size_t pos = 0;
     while ((pos = escapedName.find("'", pos)) != std::string::npos) {
@@ -65,7 +65,7 @@ static void LogMissingItem(Player* player, uint32 itemId, uint32 itemGuid,
         escapedDetail.replace(pos, 1, "''");
         pos += 2;
     }
-    
+
     CharacterDatabase.Execute(
         "INSERT INTO {} (player_guid, player_name, item_id, item_guid, item_name, "
         "error_type, error_detail, bag_slot, item_slot) "
@@ -81,7 +81,7 @@ static void LogMissingItem(Player* player, uint32 itemId, uint32 itemGuid,
         bag,
         slot
     );
-    
+
     LOG_DEBUG("scripts", "ItemUpgrade: Logged missing item {} ({}) for player {} - {} ({})",
         itemId, itemName, player->GetName(), errorType, errorDetail);
 }
@@ -216,7 +216,7 @@ private:
             uint8 slot = 0;
             if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
-                LogMissingItem(player, 0, 0, "SLOT_INVALID", 
+                LogMissingItem(player, 0, 0, "SLOT_INVALID",
                     Acore::StringFormat("Query: Invalid slot translation extBag={}, extSlot={}", extBag, extSlot),
                     static_cast<uint8>(extBag), static_cast<uint8>(extSlot));
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid item slot");
@@ -226,7 +226,7 @@ private:
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
-                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND", 
+                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND",
                     Acore::StringFormat("Query: No item at bag={}, slot={}", bag, slot),
                     bag, slot);
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Item not found");
@@ -277,8 +277,8 @@ private:
                 std::ostringstream ss;
                 ss.setf(std::ios::fixed);
                 ss << std::setprecision(3);
-                ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << HEIRLOOM_TIER 
-                   << ":" << baseItemLevel << ":" << baseItemLevel << ":" << statMultiplier 
+                ss << "DCUPGRADE_QUERY:" << itemGUID << ":" << upgradeLevel << ":" << HEIRLOOM_TIER
+                   << ":" << baseItemLevel << ":" << baseItemLevel << ":" << statMultiplier
                    << ':' << HEIRLOOM_SHIRT_ENTRY << ':' << HEIRLOOM_SHIRT_ENTRY
                    << ':' << cloneMapStream.str();
 
@@ -332,7 +332,7 @@ private:
                 upgradeLevel = fields[0].Get<uint32>();
                 // NOTE: Don't trust stored tier - we already calculated it above using baseEntry
                 // tier = fields[1].Get<uint32>();  // DISABLED - calculated above
-                
+
                 // Note: base_item_level and upgraded_item_level are calculated in-memory, not stored
                 // storedBaseIlvl remains baseItemLevel from template
                 // upgradedIlvl will be calculated below
@@ -386,7 +386,7 @@ private:
 
             std::ostringstream mapStream;
             bool firstPair = true;
-            for (const auto& pair : cloneEntries)
+            for (auto const& pair : cloneEntries)
             {
                 if (firstPair)
                     firstPair = false;
@@ -450,7 +450,7 @@ private:
             }
 
             // Process each query in the batch
-            for (const auto& [bag, slot] : batchQueries)
+            for (auto const& [bag, slot] : batchQueries)
             {
                 Item* item = player->GetItemByPos(bag, slot);
                 if (!item)
@@ -538,7 +538,7 @@ private:
 
                 std::ostringstream mapStream;
                 bool firstPair = true;
-                for (const auto& pair : cloneEntries)
+                for (auto const& pair : cloneEntries)
                 {
                     if (firstPair)
                         firstPair = false;
@@ -580,7 +580,7 @@ private:
             uint8 slot = 0;
             if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
-                LogMissingItem(player, 0, 0, "SLOT_INVALID", 
+                LogMissingItem(player, 0, 0, "SLOT_INVALID",
                     Acore::StringFormat("Perform: Invalid slot translation extBag={}, extSlot={}", extBag, extSlot),
                     static_cast<uint8>(extBag), static_cast<uint8>(extSlot));
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Invalid item slot");
@@ -590,7 +590,7 @@ private:
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
-                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND", 
+                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND",
                     Acore::StringFormat("Perform: No item at bag={}, slot={}", bag, slot),
                     bag, slot);
                 SendAddonResponse(player, "DCUPGRADE_ERROR:Item not found");
@@ -601,11 +601,11 @@ private:
             uint32 playerGuid = player->GetGUID().GetCounter();
             uint32 baseItemLevel = item->GetTemplate()->ItemLevel;
             std::string baseItemNameRaw = item->GetTemplate()->Name1;
-            
+
             // FIRST: Determine base entry - we need it for tier lookup
             uint32 currentEntry = item->GetEntry();
             uint32 baseEntry = currentEntry;
-            
+
             std::string baseLookupSql = Acore::StringFormat(
                 "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}",
                 currentEntry);
@@ -623,7 +623,7 @@ private:
             uint32 tier = 1;
 
             uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
-            
+
             // Get tier from database mapping using BASE ENTRY (not clone entry)
             if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
                 tier = mgr->GetItemTier(baseEntry);
@@ -978,7 +978,7 @@ private:
             uint8 slot = 0;
             if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
-                LogMissingItem(player, 0, 0, "SLOT_INVALID", 
+                LogMissingItem(player, 0, 0, "SLOT_INVALID",
                     Acore::StringFormat("Heirloom Query: Invalid slot extBag={}, extSlot={}", extBag, extSlot),
                     static_cast<uint8>(extBag), static_cast<uint8>(extSlot));
                 SendAddonResponse(player, "DCHEIRLOOM_ERROR:Invalid item slot");
@@ -988,7 +988,7 @@ private:
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
-                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND", 
+                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND",
                     Acore::StringFormat("Heirloom Query: No item bag={}, slot={}", bag, slot),
                     bag, slot);
                 SendAddonResponse(player, "DCHEIRLOOM_ERROR:Item not found");
@@ -1064,7 +1064,7 @@ private:
             uint8 slot = 0;
             if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
             {
-                LogMissingItem(player, 0, 0, "SLOT_INVALID", 
+                LogMissingItem(player, 0, 0, "SLOT_INVALID",
                     Acore::StringFormat("Heirloom Upgrade: Invalid slot extBag={}, extSlot={}", extBag, extSlot),
                     static_cast<uint8>(extBag), static_cast<uint8>(extSlot));
                 SendAddonResponse(player, "DCHEIRLOOM_ERROR:Invalid item slot");
@@ -1074,7 +1074,7 @@ private:
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
             {
-                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND", 
+                LogMissingItem(player, 0, 0, "ITEM_NOT_FOUND",
                     Acore::StringFormat("Heirloom Upgrade: No item bag={}, slot={}", bag, slot),
                     bag, slot);
                 SendAddonResponse(player, "DCHEIRLOOM_ERROR:Item not found");
@@ -1180,7 +1180,7 @@ private:
             // Mirror Spell::EffectEnchantItem behavior: remove old enchant effects, set, then apply new.
             player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
             item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, player->GetGUID());
-            
+
             // Debug Logging for Enchant Stats
             if (SpellItemEnchantmentEntry const* enchant = sSpellItemEnchantmentStore.LookupEntry(enchantId))
             {

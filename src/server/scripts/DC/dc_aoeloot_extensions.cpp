@@ -42,39 +42,39 @@ namespace DCAoELootExt
     struct AoELootExtConfig
     {
         bool enabled = true;
-        
+
         // Quality Filtering
         bool qualityFilterEnabled = false;
         uint8 minQuality = 0;  // 0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary
         uint8 maxQuality = 6;  // 6=Artifact
         bool autoVendorPoorItems = false;
-        
+
         // Profession Integration
         bool autoSkinEnabled = true;
         bool autoMineEnabled = true;
         bool autoHerbEnabled = true;
         float professionRange = 10.0f;
-        
+
         // Smart Loot Preferences
         bool preferCurrentSpec = true;
         bool preferEquippable = true;
         bool prioritizeUpgrades = true;
-        
+
         // Mythic+ Integration
         bool mythicPlusBonus = true;
         float mythicPlusRangeMultiplier = 1.5f;
-        
+
         // Raid Features
         bool raidModeEnabled = true;
         uint32 raidMaxCorpses = 25;
-        
+
         // Statistics
         bool trackDetailedStats = true;
 
         void Load()
         {
             enabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Enable", true);
-            
+
             qualityFilterEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.QualityFilter.Enable", false);
             // Clamp minQuality to 0-6 range
             minQuality = sConfigMgr->GetOption<uint8>("AoELoot.Extensions.QualityFilter.MinQuality", 0);
@@ -85,7 +85,7 @@ namespace DCAoELootExt
             // Ensure minQuality <= maxQuality
             if (minQuality > maxQuality) minQuality = maxQuality;
             autoVendorPoorItems = sConfigMgr->GetOption<bool>("AoELoot.Extensions.QualityFilter.AutoVendorPoor", false);
-            
+
             autoSkinEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Profession.AutoSkin", true);
             autoMineEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Profession.AutoMine", true);
             autoHerbEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Profession.AutoHerb", true);
@@ -93,23 +93,23 @@ namespace DCAoELootExt
             professionRange = sConfigMgr->GetOption<float>("AoELoot.Extensions.Profession.Range", 10.0f);
             if (professionRange < 1.0f) professionRange = 1.0f;
             if (professionRange > 100.0f) professionRange = 100.0f;
-            
+
             preferCurrentSpec = sConfigMgr->GetOption<bool>("AoELoot.Extensions.SmartLoot.PreferCurrentSpec", true);
             preferEquippable = sConfigMgr->GetOption<bool>("AoELoot.Extensions.SmartLoot.PreferEquippable", true);
             prioritizeUpgrades = sConfigMgr->GetOption<bool>("AoELoot.Extensions.SmartLoot.PrioritizeUpgrades", true);
-            
+
             mythicPlusBonus = sConfigMgr->GetOption<bool>("AoELoot.Extensions.MythicPlus.Bonus", true);
             // Clamp mythic+ range multiplier to 1.0-5.0
             mythicPlusRangeMultiplier = sConfigMgr->GetOption<float>("AoELoot.Extensions.MythicPlus.RangeMultiplier", 1.5f);
             if (mythicPlusRangeMultiplier < 1.0f) mythicPlusRangeMultiplier = 1.0f;
             if (mythicPlusRangeMultiplier > 5.0f) mythicPlusRangeMultiplier = 5.0f;
-            
+
             raidModeEnabled = sConfigMgr->GetOption<bool>("AoELoot.Extensions.Raid.Enable", true);
             // Clamp raid max corpses to 1-100
             raidMaxCorpses = sConfigMgr->GetOption<uint32>("AoELoot.Extensions.Raid.MaxCorpses", 25);
             if (raidMaxCorpses < 1) raidMaxCorpses = 1;
             if (raidMaxCorpses > 100) raidMaxCorpses = 100;
-            
+
             trackDetailedStats = sConfigMgr->GetOption<bool>("AoELoot.Extensions.TrackDetailedStats", true);
         }
     };
@@ -196,7 +196,7 @@ namespace DCAoELootExt
         uint32 minedNodes = 0;
         uint32 herbedNodes = 0;
         uint32 upgradesFound = 0;
-        
+
         // Quality breakdown for looted items (0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)
         uint32 qualityPoor = 0;      // Gray
         uint32 qualityCommon = 0;    // White
@@ -204,7 +204,7 @@ namespace DCAoELootExt
         uint32 qualityRare = 0;      // Blue
         uint32 qualityEpic = 0;      // Purple
         uint32 qualityLegendary = 0; // Orange
-        
+
         // Filtered/skipped items by quality (due to min quality filter)
         uint32 filteredPoor = 0;
         uint32 filteredCommon = 0;
@@ -219,22 +219,22 @@ namespace DCAoELootExt
     // ============================================================
     // Exported Functions for Stat Tracking
     // ============================================================
-    
+
     // Called by ac_aoeloot.cpp when loot is merged/collected
     void UpdateDetailedStats(ObjectGuid playerGuid, uint32 itemsLooted, uint32 goldLooted, uint32 upgradesFound)
     {
         if (!sConfig.trackDetailedStats)
             return;
-        
+
         DetailedLootStats& stats = sDetailedStats[playerGuid];
         stats.totalItemsLooted += itemsLooted;
         stats.totalGoldLooted += goldLooted;
         stats.upgradesFound += upgradesFound;
-        
+
         LOG_DEBUG("scripts", "DCAoELootExt: UpdateDetailedStats for {} - items +{} (total: {}), gold +{} (total: {})",
             playerGuid.ToString(), itemsLooted, stats.totalItemsLooted, goldLooted, stats.totalGoldLooted);
     }
-    
+
     // Get current stats for a player (for leaderboard queries)
     void GetDetailedStats(ObjectGuid playerGuid, uint32& itemsLooted, uint32& goldLooted, uint32& upgradesFound)
     {
@@ -252,13 +252,13 @@ namespace DCAoELootExt
             upgradesFound = 0;
         }
     }
-    
+
     // Called by ac_aoeloot.cpp when an item is looted - track by quality
     void UpdateQualityStats(ObjectGuid playerGuid, uint8 quality)
     {
         if (!sConfig.trackDetailedStats)
             return;
-        
+
         DetailedLootStats& stats = sDetailedStats[playerGuid];
         switch (quality)
         {
@@ -267,18 +267,18 @@ namespace DCAoELootExt
             case 2: stats.qualityUncommon++; break;
             case 3: stats.qualityRare++; break;
             case 4: stats.qualityEpic++; break;
-            case 5: 
+            case 5:
             case 6: stats.qualityLegendary++; break; // 6 = artifact, treat as legendary
             default: stats.qualityCommon++; break;
         }
     }
-    
+
     // Called when an item is filtered/skipped due to quality filter
     void UpdateFilteredStats(ObjectGuid playerGuid, uint8 quality)
     {
         if (!sConfig.trackDetailedStats)
             return;
-        
+
         DetailedLootStats& stats = sDetailedStats[playerGuid];
         switch (quality)
         {
@@ -287,15 +287,15 @@ namespace DCAoELootExt
             case 2: stats.filteredUncommon++; break;
             case 3: stats.filteredRare++; break;
             case 4: stats.filteredEpic++; break;
-            case 5: 
+            case 5:
             case 6: stats.filteredLegendary++; break;
             default: stats.filteredCommon++; break;
         }
     }
-    
+
     // Get quality breakdown for a player (for addon stats display)
-    void GetQualityStats(ObjectGuid playerGuid, 
-                         uint32& poor, uint32& common, uint32& uncommon, 
+    void GetQualityStats(ObjectGuid playerGuid,
+                         uint32& poor, uint32& common, uint32& uncommon,
                          uint32& rare, uint32& epic, uint32& legendary,
                          uint32& filtPoor, uint32& filtCommon, uint32& filtUncommon,
                          uint32& filtRare, uint32& filtEpic, uint32& filtLegendary)
@@ -303,14 +303,14 @@ namespace DCAoELootExt
         auto it = sDetailedStats.find(playerGuid);
         if (it != sDetailedStats.end())
         {
-            const auto& s = it->second;
+            auto const& s = it->second;
             poor = s.qualityPoor;
             common = s.qualityCommon;
             uncommon = s.qualityUncommon;
             rare = s.qualityRare;
             epic = s.qualityEpic;
             legendary = s.qualityLegendary;
-            
+
             filtPoor = s.filteredPoor;
             filtCommon = s.filteredCommon;
             filtUncommon = s.filteredUncommon;
@@ -341,7 +341,6 @@ namespace DCAoELootExt
         // This is a simple check - could integrate with sMythicPlusRunManager
         return sConfigMgr->GetOption<bool>("MythicPlus.Enable", false);
     }
-
 
     bool IsItemUpgrade(Player* player, uint32 itemId)
     {
@@ -477,7 +476,7 @@ namespace DCAoELootExt
         creature->loot.clear();
         creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE);
 
-        LOG_DEBUG("scripts", "DCAoELootExt: Auto-skinned creature {} for player {}", 
+        LOG_DEBUG("scripts", "DCAoELootExt: Auto-skinned creature {} for player {}",
                   creature->GetEntry(), player->GetName());
     }
 
@@ -514,7 +513,7 @@ public:
             prefs.minQuality = loadedQuality > 6 ? 6 : loadedQuality;
             prefs.autoSkin = fields[2].Get<bool>();
             prefs.smartLootEnabled = fields[3].Get<bool>();
-            
+
             std::string ignoredStr = fields[4].Get<std::string>();
             // Parse comma-separated item IDs
             std::istringstream ss(ignoredStr);
@@ -524,7 +523,7 @@ public:
                 if (uint32 id = std::stoul(token))
                     prefs.ignoredItemIds.insert(id);
             }
-            
+
             prefs.showMessages = fields[5].Get<bool>();
         }
         sPlayerPrefs[player->GetGUID()] = prefs;
@@ -553,7 +552,7 @@ public:
                 stats.minedNodes = f[5].Get<uint32>();
                 stats.herbedNodes = f[6].Get<uint32>();
                 stats.upgradesFound = f[7].Get<uint32>();
-                
+
                 // Quality breakdown
                 stats.qualityPoor = f[8].Get<uint32>();
                 stats.qualityCommon = f[9].Get<uint32>();
@@ -561,7 +560,7 @@ public:
                 stats.qualityRare = f[11].Get<uint32>();
                 stats.qualityEpic = f[12].Get<uint32>();
                 stats.qualityLegendary = f[13].Get<uint32>();
-                
+
                 // Filtered breakdown
                 stats.filteredPoor = f[14].Get<uint32>();
                 stats.filteredCommon = f[15].Get<uint32>();
@@ -583,7 +582,7 @@ public:
         if (prefIt != sPlayerPrefs.end())
         {
             PlayerLootPreferences& prefs = prefIt->second;
-            
+
             std::ostringstream ignoredSS;
             bool first = true;
             for (uint32 id : prefs.ignoredItemIds)
@@ -926,7 +925,7 @@ public:
     void OnStartup() override
     {
         sConfig.Load();
-        LOG_INFO("scripts", "DarkChaos AoE Loot Extensions initialized (Enabled: {})", 
+        LOG_INFO("scripts", "DarkChaos AoE Loot Extensions initialized (Enabled: {})",
                  sConfig.enabled ? "Yes" : "No");
     }
 };

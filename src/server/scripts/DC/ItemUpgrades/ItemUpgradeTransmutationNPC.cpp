@@ -37,7 +37,7 @@ namespace DarkChaos
 
                 // Trigger the client-side addon UI
                 DCAddon::Upgrade::SendOpenTransmutationUI(player);
-                
+
                 // Close the gossip menu immediately as the addon window will open
                 CloseGossipMenuFor(player);
 

@@ -1,9 +1,9 @@
 /*
  * Dark Chaos - Addon Extension Loader
  * ====================================
- * 
+ *
  * Loads all addon extension scripts for the DC namespace.
- * 
+ *
  * Copyright (C) 2024-2025 Dark Chaos Development Team
  */
 
@@ -33,7 +33,7 @@ void AddDCAddonExtensionScripts()
 {
     // Core protocol router (must load first)
     AddSC_dc_addon_protocol();
-    
+
     // Module handlers
     AddSC_dc_addon_aoeloot();
     AddSC_dc_addon_upgrade();
@@ -49,16 +49,16 @@ void AddDCAddonExtensionScripts()
     AddSC_dc_addon_world();
     AddSC_DCAddon_GOMove();
     DCAddon::AddTeleportScripts();
-    
+
     // NPC scripts
     AddSC_npc_group_finder();
-    
+
     // Duel addon handler
     AddSC_dc_addon_duels();
-    
+
     // Prestige addon handler
     AddSC_dc_addon_prestige();
-    
+
     // Collection System addon handler
     AddSC_dc_addon_collection();
 }

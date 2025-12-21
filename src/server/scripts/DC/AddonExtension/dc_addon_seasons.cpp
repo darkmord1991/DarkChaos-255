@@ -163,21 +163,21 @@ namespace Seasons
         // Get seasonal token/essence item IDs from config
         uint32 tokenItemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceItemId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
-        
+
         // Get current token count from player's inventory
         uint32 currentTokens = player->GetItemCount(tokenItemId);
         uint32 currentEssence = player->GetItemCount(essenceItemId);
-        
+
         // Weekly caps from config
         uint32 weeklyTokenCap = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyTokenCap", 1000);
         uint32 weeklyEssenceCap = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyEssenceCap", 1000);
-        
+
         // Query weekly progress from database if table exists
         uint32 weeklyTokensEarned = 0;
         uint32 weeklyEssenceEarned = 0;
         uint32 questsCompleted = 0;
         uint32 bossesKilled = 0;
-        
+
         if (QueryResult result = CharacterDatabase.Query(
             "SELECT weekly_tokens_earned, weekly_essence_earned, quests_completed, bosses_killed "
             "FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
@@ -189,7 +189,7 @@ namespace Seasons
             questsCompleted = fields[2].Get<uint32>();
             bossesKilled = fields[3].Get<uint32>();
         }
-        
+
         // Build response with extended data using JSON
         DCAddon::JsonMessage response(Module::SEASONAL, Opcode::Season::SMSG_PROGRESS);
         response.Set("seasonId", static_cast<int32>(seasonId));

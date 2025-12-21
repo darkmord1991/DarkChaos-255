@@ -1,8 +1,8 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license
- * 
+ *
  * DarkChaos Hotspots System - Constants
- * 
+ *
  * Centralized constants for the hotspot system to eliminate magic numbers
  * and improve maintainability.
  */

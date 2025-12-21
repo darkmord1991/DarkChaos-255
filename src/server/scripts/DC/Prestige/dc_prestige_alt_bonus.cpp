@@ -21,7 +21,7 @@ namespace
     constexpr uint32 XP_BONUS_PER_MAX_CHAR = 5;  // 5% per character
     constexpr uint32 MAX_BONUS_CHARACTERS = 5;    // Max 5 characters = 25% bonus
     // constexpr uint32 MAX_XP_BONUS_PERCENT = XP_BONUS_PER_MAX_CHAR * MAX_BONUS_CHARACTERS; // 25%
-    
+
     // Visual buff spell IDs (must match DBC entries and spell_prestige_alt_bonus_aura.cpp)
     // Spell IDs: 800040-800044 (5%-25% XP bonus in 5% increments)
     constexpr uint32 SPELL_ALT_BONUS_5  = 800040;  // 5% bonus visual
@@ -29,10 +29,10 @@ namespace
     constexpr uint32 SPELL_ALT_BONUS_15 = 800042;  // 15% bonus visual
     constexpr uint32 SPELL_ALT_BONUS_20 = 800043;  // 20% bonus visual
     constexpr uint32 SPELL_ALT_BONUS_25 = 800044;  // 25% bonus visual
-    
+
     // Cache for account max level character counts
     std::unordered_map<uint32, uint32> g_AccountMaxLevelCache;
-    
+
     class PrestigeAltBonusSystem
     {
     public:
@@ -41,14 +41,14 @@ namespace
             static PrestigeAltBonusSystem instance;
             return &instance;
         }
-        
+
         void LoadConfig()
         {
             enabled = sConfigMgr->GetOption<bool>("Prestige.AltBonus.Enable", true);
             maxLevel = sConfigMgr->GetOption<uint32>("Prestige.AltBonus.MaxLevel", 255);
             bonusPerChar = sConfigMgr->GetOption<uint32>("Prestige.AltBonus.PercentPerChar", XP_BONUS_PER_MAX_CHAR);
             maxBonusChars = sConfigMgr->GetOption<uint32>("Prestige.AltBonus.MaxCharacters", MAX_BONUS_CHARACTERS);
-            
+
             // Validate config
             if (bonusPerChar == 0 || bonusPerChar > 25)
             {
@@ -56,72 +56,72 @@ namespace
                     bonusPerChar, XP_BONUS_PER_MAX_CHAR);
                 bonusPerChar = XP_BONUS_PER_MAX_CHAR;
             }
-            
+
             if (maxBonusChars == 0 || maxBonusChars > 10)
             {
                 LOG_ERROR("scripts", "Prestige Alt Bonus: Invalid MaxCharacters ({}). Must be 1-10. Using default {}.",
                     maxBonusChars, MAX_BONUS_CHARACTERS);
                 maxBonusChars = MAX_BONUS_CHARACTERS;
             }
-            
+
             LOG_INFO("scripts", "Prestige Alt Bonus: Loaded ({}% per char, max {} chars = {}% max bonus)",
                 bonusPerChar, maxBonusChars, bonusPerChar * maxBonusChars);
         }
-        
+
         bool IsEnabled() const { return enabled; }
 
         uint32 GetMaxLevel() const { return maxLevel; }
-        
+
         uint32 GetMaxLevelCharCount(uint32 accountId)
         {
             if (!enabled)
                 return 0;
-                
+
             // Check cache first
             auto it = g_AccountMaxLevelCache.find(accountId);
             if (it != g_AccountMaxLevelCache.end())
                 return it->second;
-            
+
             // Query database for max level characters on this account
             QueryResult result = CharacterDatabase.Query(
                 "SELECT COUNT(*) FROM characters WHERE account = {} AND level >= {}",
                 accountId, maxLevel
             );
-            
+
             uint32 count = 0;
             if (result)
             {
                 Field* fields = result->Fetch();
                 count = fields[0].Get<uint32>();
             }
-            
+
             // Cap at max bonus characters
             if (count > maxBonusChars)
                 count = maxBonusChars;
-            
+
             // Cache the result
             g_AccountMaxLevelCache[accountId] = count;
             return count;
         }
-        
+
         uint32 CalculateXPBonus(Player* player)
         {
             if (!enabled || !player)
                 return 0;
-            
+
             // Don't grant bonus to max level characters
             if (player->GetLevel() >= maxLevel)
                 return 0;
-            
+
             uint32 maxLevelCount = GetMaxLevelCharCount(player->GetSession()->GetAccountId());
-            
+
             // Subtract 1 if this character is at max level (shouldn't happen due to check above, but just in case)
             if (player->GetLevel() >= maxLevel && maxLevelCount > 0)
                 maxLevelCount--;
-            
+
             return maxLevelCount * bonusPerChar;
         }
-        
+
         void ClearAccountCache(uint32 accountId)
         {
             auto it = g_AccountMaxLevelCache.find(accountId);
@@ -130,7 +130,7 @@ namespace
                 g_AccountMaxLevelCache.erase(it);
             }
         }
-        
+
         void InvalidateCacheForPlayer(Player* player)
         {
             if (player)
@@ -138,7 +138,7 @@ namespace
                 ClearAccountCache(player->GetSession()->GetAccountId());
             }
         }
-        
+
         uint32 GetBonusSpellId(uint32 bonusPercent)
         {
             switch (bonusPercent)
@@ -151,40 +151,40 @@ namespace
                 default: return 0;
             }
         }
-        
+
         void ApplyVisualBuff(Player* player)
         {
             if (!player || !enabled)
                 return;
-            
+
             uint32 bonusPercent = CalculateXPBonus(player);
             if (bonusPercent == 0)
             {
                 RemoveVisualBuff(player);
                 return;
             }
-            
+
             uint32 spellId = GetBonusSpellId(bonusPercent);
             if (spellId == 0)
                 return;
-            
+
             // Remove all other alt bonus buffs first
             RemoveVisualBuff(player);
-            
+
             // Apply the appropriate buff
             if (!player->HasAura(spellId))
             {
                 player->CastSpell(player, spellId, true);
-                LOG_INFO("scripts", "Prestige Alt Bonus: Applied {}% visual buff to player {}", 
+                LOG_INFO("scripts", "Prestige Alt Bonus: Applied {}% visual buff to player {}",
                     bonusPercent, player->GetName());
             }
         }
-        
+
         void RemoveVisualBuff(Player* player)
         {
             if (!player)
                 return;
-            
+
             // Remove all possible alt bonus buffs
             player->RemoveAura(SPELL_ALT_BONUS_5);
             player->RemoveAura(SPELL_ALT_BONUS_10);
@@ -192,24 +192,24 @@ namespace
             player->RemoveAura(SPELL_ALT_BONUS_20);
             player->RemoveAura(SPELL_ALT_BONUS_25);
         }
-        
+
     private:
         bool enabled;
         uint32 maxLevel;
         uint32 bonusPerChar;
         uint32 maxBonusChars;
     };
-    
+
     class PrestigeAltBonusPlayerScript : public PlayerScript
     {
     public:
         PrestigeAltBonusPlayerScript() : PlayerScript("PrestigeAltBonusPlayerScript") { }
-        
+
         void OnPlayerGiveXP(Player* player, uint32& amount, Unit* /*victim*/, uint8 /*xpSource*/) override
         {
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
                 return;
-            
+
             uint32 bonusPercent = PrestigeAltBonusSystem::instance()->CalculateXPBonus(player);
             if (bonusPercent > 0)
             {
@@ -217,107 +217,107 @@ namespace
                 amount += bonusXP;
             }
         }
-        
+
         void OnPlayerLogin(Player* player) override
         {
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
                 return;
-            
+
             uint32 bonusPercent = PrestigeAltBonusSystem::instance()->CalculateXPBonus(player);
-            
+
             // Apply visual buff
             PrestigeAltBonusSystem::instance()->ApplyVisualBuff(player);
-            
+
             // Show welcome message if player has bonus
             if (bonusPercent > 0)
             {
                 uint32 maxLevelCount = PrestigeAltBonusSystem::instance()->GetMaxLevelCharCount(
                     player->GetSession()->GetAccountId());
-                
+
                 ChatHandler(player->GetSession()).PSendSysMessage(
                     "|cFF00FF00[Alt Bonus]|r You have {}% bonus XP from {} max-level character(s) on your account!",
                     bonusPercent, maxLevelCount
                 );
             }
         }
-        
+
         void OnPlayerLevelChanged(Player* player, uint8 /*oldLevel*/) override
         {
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
                 return;
-            
+
             // Clear cache and update buff when player reaches max level
             if (player->GetLevel() >= PrestigeAltBonusSystem::instance()->GetMaxLevel())
             {
                 PrestigeAltBonusSystem::instance()->InvalidateCacheForPlayer(player);
                 PrestigeAltBonusSystem::instance()->RemoveVisualBuff(player);
-                
+
                 LOG_INFO("scripts", "Prestige Alt Bonus: Cleared cache and buff for account {} (player {} reached max level)",
                     player->GetSession()->GetAccountId(), player->GetName());
             }
         }
     };
-    
+
     class PrestigeAltBonusWorldScript : public WorldScript
     {
     public:
         PrestigeAltBonusWorldScript() : WorldScript("PrestigeAltBonusWorldScript") { }
-        
+
         void OnAfterConfigLoad(bool /*reload*/) override
         {
             PrestigeAltBonusSystem::instance()->LoadConfig();
         }
-        
+
         void OnStartup() override
         {
             LOG_INFO("scripts", "Prestige Alt Bonus: System initialized");
         }
     };
-    
+
     class PrestigeAltBonusCommandScript : public CommandScript
     {
     public:
         PrestigeAltBonusCommandScript() : CommandScript("PrestigeAltBonusCommandScript") { }
-        
+
         Acore::ChatCommands::ChatCommandTable GetCommands() const override
         {
             static Acore::ChatCommands::ChatCommandTable altBonusCommandTable =
             {
                 { "info", HandleAltBonusInfoCommand, SEC_PLAYER, Acore::ChatCommands::Console::No }
             };
-            
+
             static Acore::ChatCommands::ChatCommandTable prestigeCommandTable =
             {
                 { "altbonus", altBonusCommandTable }
             };
-            
+
             static Acore::ChatCommands::ChatCommandTable commandTable =
             {
                 { "prestige", prestigeCommandTable }
             };
-            
+
             return commandTable;
         }
-        
+
         static bool HandleAltBonusInfoCommand(ChatHandler* handler, char const* /*args*/)
         {
             Player* player = handler->GetSession()->GetPlayer();
             if (!player)
                 return false;
-            
+
             if (!PrestigeAltBonusSystem::instance()->IsEnabled())
             {
                 handler->SendSysMessage("Alt bonus system is currently disabled.");
                 return true;
             }
-            
+
             uint32 accountId = player->GetSession()->GetAccountId();
             uint32 maxLevelCount = PrestigeAltBonusSystem::instance()->GetMaxLevelCharCount(accountId);
             uint32 bonusPercent = PrestigeAltBonusSystem::instance()->CalculateXPBonus(player);
-            
+
             handler->PSendSysMessage("|cFFFFD700=== Alt-Friendly XP Bonus ===|r");
             handler->PSendSysMessage("Max-level characters on account: |cFF00FF00{}|r", maxLevelCount);
-            
+
             if (player->GetLevel() >= PrestigeAltBonusSystem::instance()->GetMaxLevel())
             {
                 handler->PSendSysMessage("|cFFFFFF00You are max level and do not receive the bonus.|r");
@@ -327,7 +327,7 @@ namespace
                 handler->PSendSysMessage("Current XP bonus: |cFF00FF00{}%|r", bonusPercent);
                 handler->PSendSysMessage("(5% per max-level character, max 25%)");
             }
-            
+
             return true;
         }
     };

@@ -51,25 +51,25 @@ class MythicDifficultyScaling
 {
 public:
     static MythicDifficultyScaling* instance();
-    
+
     // Initialize and load dungeon profiles from database
     void LoadDungeonProfiles();
-    
+
     // Get dungeon profile for a given map
     DungeonProfile* GetDungeonProfile(uint32 mapId);
-    
+
     // Main scaling function called on creature spawn
     void ScaleCreature(Creature* creature, Map* map);
-    
+
     // Calculate appropriate level based on difficulty and creature rank
     uint8 CalculateCreatureLevel(Creature* creature, Map* map, DungeonProfile* profile);
-    
+
     // Apply HP and damage multipliers
     void ApplyMultipliers(Creature* creature, float hpMult, float damageMult);
-    
+
     // Check if keystone is active for Mythic+ scaling
     uint32 GetKeystoneLevel(Map* map);
-    
+
     // Calculate Mythic+ multipliers based on keystone level
     void CalculateMythicPlusMultipliers(uint32 keystoneLevel, float& hpMult, float& damageMult);
 
@@ -77,7 +77,7 @@ public:
     Difficulty ResolveDungeonDifficulty(Map* map) const;
 
     uint32 GetActiveSeasonId() const { return _activeSeasonId; }
-    
+
 private:
     MythicDifficultyScaling() = default;
     std::unordered_map<uint32, DungeonProfile> _dungeonProfiles;
@@ -90,7 +90,7 @@ private:
     uint32 _activeSeasonId = 0;
     uint32 _keystoneCacheTtlSeconds = 15;
     std::unordered_map<uint32, std::pair<float, float>> _scalingMultipliers;
-    
+
     // Helper to determine expansion from map ID
     uint8 GetExpansionForMap(uint32 mapId);
     uint32 ResolveKeystoneLevel(Map* map);

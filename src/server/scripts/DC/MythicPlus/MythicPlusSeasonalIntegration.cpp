@@ -21,7 +21,7 @@ namespace DarkChaos
         // =====================================================================
         // Season Integration Helper
         // =====================================================================
-        
+
         uint32 GetMythicPlusActiveSeason()
         {
             // Use unified season helper for consistent season ID across all systems
@@ -29,6 +29,6 @@ namespace DarkChaos
             LOG_DEBUG("mythicplus", "Using unified season helper: Season {}", seasonId);
             return seasonId;
         }
-        
+
     } // namespace MythicPlus
 } // namespace DarkChaos

@@ -3,7 +3,7 @@
  * ============================================================================
  * Ancient Thunder Lizard - Master of Lightning
  * Based on MoP world boss mechanics adapted for WotLK 3.3.5a
- * 
+ *
  * ABILITIES:
  *   - Static Shield: Absorbs damage and reflects lightning
  *   - Arc Nova: Large AoE lightning damage
@@ -35,17 +35,17 @@ enum NalakSpells
     SPELL_STORM_CLOUD           = 57986,  // Summon storm cloud (damaging void zone)
     SPELL_TEMPEST_WING          = 56867,  // Knockback
     SPELL_STORMSTRIKE           = 48617,  // Heavy nature damage to tank
-    
+
     // Lightning effects
     SPELL_LIGHTNING_BOLT        = 59024,  // Ranged attack
     SPELL_CHAIN_LIGHTNING       = 64213,  // Chain lightning
     SPELL_LIGHTNING_NOVA        = 56326,  // Pulsing damage
-    
+
     // Visual effects
     SPELL_BERSERK               = 26662,
     SPELL_CHAOS_AURA            = 28126,
     SPELL_LIGHTNING_VISUAL      = 45111,  // Storm visual on boss
-    
+
     // Cloud spells
     SPELL_STORM_CLOUD_DAMAGE    = 58965,  // Damage from standing in cloud
 };
@@ -80,7 +80,7 @@ enum NalakData
     NPC_NALAK                   = 400102,
     NPC_STORM_SPARK             = 400402,
     NPC_STATIC_CLOUD            = 400403,
-    
+
     // Timers
     TIMER_STATIC_SHIELD         = 60000,
     TIMER_ARC_NOVA              = 35000,
@@ -121,10 +121,10 @@ public:
             summons.DespawnAll();
             shieldActive = false;
             hpTriggered[0] = hpTriggered[1] = hpTriggered[2] = false;
-            
+
             me->RemoveAllAuras();
             me->SetReactState(REACT_AGGRESSIVE);
-            
+
             // Nalak uses nature/lightning school
             me->SetPower(POWER_MANA, me->GetMaxPower(POWER_MANA));
         }
@@ -159,10 +159,10 @@ public:
         void JustEngagedWith(Unit* /*who*/) override
         {
             Talk(SAY_AGGRO);
-            
+
             // Apply storm visual
             DoCastSelf(SPELL_LIGHTNING_VISUAL);
-            
+
             // Schedule abilities
             events.ScheduleEvent(EVENT_STATIC_SHIELD, 5s); // Early shield
             events.ScheduleEvent(EVENT_ARC_NOVA, 25s);
@@ -259,7 +259,7 @@ public:
         void JustSummoned(Creature* summon) override
         {
             summons.Summon(summon);
-            
+
             if (summon->GetEntry() == NPC_STORM_SPARK)
             {
                 if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 100.0f, true))
@@ -275,10 +275,10 @@ public:
         void DoArcNova()
         {
             Talk(SAY_ARC_NOVA);
-            
+
             // Warning emote
             me->Yell("Nalak channels a massive Arc Nova!", LANG_UNIVERSAL);
-            
+
             // Cast AoE
             DoCastAOE(SPELL_ARC_NOVA);
         }
@@ -286,11 +286,11 @@ public:
         void DoLightningTether()
         {
             Talk(SAY_TETHER);
-            
+
             // Get 2-3 random players and chain them
             std::vector<Unit*> targets;
             ThreatContainer::StorageType const& threatList = me->GetThreatMgr().GetThreatList();
-            
+
             for (auto itr = threatList.begin(); itr != threatList.end(); ++itr)
             {
                 if (Unit* target = ObjectAccessor::GetUnit(*me, (*itr)->getUnitGuid()))
@@ -299,7 +299,7 @@ public:
                         targets.push_back(target);
                 }
             }
-            
+
             if (targets.size() >= 2)
             {
                 // Shuffle and pick 2-3
@@ -307,11 +307,11 @@ public:
                 static std::mt19937 rng(rd());
                 std::shuffle(targets.begin(), targets.end(), rng);
                 uint8 numTargets = std::min((size_t)3, targets.size());
-                
+
                 for (uint8 i = 0; i < numTargets; ++i)
                 {
                     DoCast(targets[i], SPELL_LIGHTNING_TETHER);
-                    
+
                     if (Player* player = targets[i]->ToPlayer())
                     {
                         ChatHandler(player->GetSession()).PSendSysMessage(
@@ -324,7 +324,7 @@ public:
         void DoStormCloud()
         {
             Talk(SAY_STORM);
-            
+
             // Spawn storm clouds at random positions
             for (uint8 i = 0; i < urand(2, 4); ++i)
             {
@@ -332,7 +332,7 @@ public:
                 float dist = frand(15.0f, 35.0f);
                 float x = me->GetPositionX() + dist * cos(angle);
                 float y = me->GetPositionY() + dist * sin(angle);
-                
+
                 if (Creature* cloud = me->SummonCreature(NPC_STATIC_CLOUD, x, y, me->GetPositionZ(),
                     0, TEMPSUMMON_TIMED_DESPAWN, 20000))
                 {
@@ -341,7 +341,7 @@ public:
                     cloud->SetSpeedRate(MOVE_RUN, 0.3f);
                     cloud->SetReactState(REACT_PASSIVE);
                     cloud->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
-                    
+
                     // Cloud pulses damage
                     cloud->CastSpell(cloud, SPELL_STORM_CLOUD_DAMAGE, true);
                 }
@@ -365,9 +365,9 @@ public:
                     case EVENT_STATIC_SHIELD:
                         DoCastSelf(SPELL_STATIC_SHIELD);
                         shieldActive = true;
-                        
+
                         me->Yell("Nalak surrounds himself with a Static Shield!", LANG_UNIVERSAL);
-                        
+
                         // Spawn storm sparks while shield is active
                         for (uint8 i = 0; i < 2; ++i)
                         {
@@ -375,39 +375,39 @@ public:
                             float dist = frand(5.0f, 10.0f);
                             float x = me->GetPositionX() + dist * cos(angle);
                             float y = me->GetPositionY() + dist * sin(angle);
-                            
+
                             me->SummonCreature(NPC_STORM_SPARK, x, y, me->GetPositionZ(),
                                 me->GetOrientation(), TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 30000);
                         }
-                        
+
                         events.ScheduleEvent(EVENT_STATIC_SHIELD, 60s);
                         break;
-                        
+
                     case EVENT_ARC_NOVA:
                         DoArcNova();
                         events.ScheduleEvent(EVENT_ARC_NOVA, 35s);
                         break;
-                        
+
                     case EVENT_LIGHTNING_TETHER:
                         DoLightningTether();
                         events.ScheduleEvent(EVENT_LIGHTNING_TETHER, 25s);
                         break;
-                        
+
                     case EVENT_STORM_CLOUD:
                         DoStormCloud();
                         events.ScheduleEvent(EVENT_STORM_CLOUD, 20s);
                         break;
-                        
+
                     case EVENT_TEMPEST_WING:
                         DoCastAOE(SPELL_TEMPEST_WING);
                         events.ScheduleEvent(EVENT_TEMPEST_WING, 18s);
                         break;
-                        
+
                     case EVENT_STORMSTRIKE:
                         DoCastVictim(SPELL_STORMSTRIKE);
                         events.ScheduleEvent(EVENT_STORMSTRIKE, 10s);
                         break;
-                        
+
                     case EVENT_LIGHTNING_BOLT:
                         // Cast at random ranged player
                         if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 40.0f, true))
@@ -416,7 +416,7 @@ public:
                         }
                         events.ScheduleEvent(EVENT_LIGHTNING_BOLT, 3s);
                         break;
-                        
+
                     case EVENT_CHAIN_LIGHTNING:
                         if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 40.0f, true))
                             DoCast(target, SPELL_CHAIN_LIGHTNING);
@@ -453,7 +453,7 @@ public:
                         if (!me->isDead()) events.ScheduleEvent(EVENT_HP_CHECK, 5s);
                     }
                     break;
-                        
+
                     case EVENT_BERSERK:
                         Talk(SAY_BERSERK);
                         DoCastSelf(SPELL_BERSERK);
@@ -544,7 +544,7 @@ public:
         {
             moveTimer = 3000;
             damageTimer = 1000;
-            
+
             // Apply storm cloud visual
             DoCastSelf(SPELL_STORM_CLOUD_DAMAGE);
         }
@@ -558,7 +558,7 @@ public:
                 float dist = 5.0f;
                 float x = me->GetPositionX() + dist * cos(angle);
                 float y = me->GetPositionY() + dist * sin(angle);
-                
+
                 me->GetMotionMaster()->MovePoint(0, x, y, me->GetPositionZ());
                 moveTimer = 5000;
             }

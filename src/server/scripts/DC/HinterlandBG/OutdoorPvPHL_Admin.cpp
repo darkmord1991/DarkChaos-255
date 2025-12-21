@@ -159,7 +159,7 @@ void OutdoorPvPHL::_recordWinner(TeamId winner)
     // Weather info at the moment of result
     uint32 weather = GetAffixWeatherType(aff);
     float wint = GetAffixWeatherIntensity(aff);
-    
+
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_HLBG_WINNER_HISTORY);
     stmt->SetData(0, zone);
     stmt->SetData(1, mapId);
@@ -188,7 +188,7 @@ void OutdoorPvPHL::_recordManualReset()
     uint32 dur = GetCurrentMatchDurationSeconds();
     uint32 weather = GetAffixWeatherType(aff);
     float wint = GetAffixWeatherIntensity(aff);
-    
+
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_HLBG_WINNER_HISTORY);
     stmt->SetData(0, zone);
     stmt->SetData(1, mapId);

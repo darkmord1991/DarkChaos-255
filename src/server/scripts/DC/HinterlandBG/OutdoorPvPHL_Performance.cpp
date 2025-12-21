@@ -30,12 +30,12 @@ static ZonePlayerCache s_zonePlayerCache;
 void OutdoorPvPHL::CollectZonePlayers(std::vector<Player*>& players) const
 {
     uint32 currentTime = GameTime::GetGameTimeMS().count();
-    
+
     // Check if cache needs refresh
     if (currentTime - s_zonePlayerCache.lastUpdateTime > ZonePlayerCache::CACHE_DURATION_MS)
     {
         s_zonePlayerCache.playerGuids.clear();
-        
+
         // Use the OutdoorPvP's internal player tracking instead of GetAllSessions()
         for (uint8 team = 0; team < 2; ++team)
         {
@@ -50,14 +50,14 @@ void OutdoorPvPHL::CollectZonePlayers(std::vector<Player*>& players) const
                 }
             }
         }
-        
+
         s_zonePlayerCache.lastUpdateTime = currentTime;
     }
-    
+
     // Convert cached GUIDs to Player pointers
     players.clear();
     players.reserve(s_zonePlayerCache.playerGuids.size());
-    
+
     for (const ObjectGuid& guid : s_zonePlayerCache.playerGuids)
     {
         if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
@@ -75,7 +75,7 @@ void OutdoorPvPHL::PlaySoundsOptimized(bool side)
 {
     std::vector<Player*> zonePlayers;
     CollectZonePlayers(zonePlayers);
-    
+
     for (Player* player : zonePlayers)
     {
         if (player->GetTeamId() == TEAM_ALLIANCE && side == true)
@@ -94,17 +94,17 @@ void OutdoorPvPHL::UpdateWorldStatesAllPlayersOptimized()
 {
     std::vector<Player*> zonePlayers;
     CollectZonePlayers(zonePlayers);
-    
+
     // Batch worldstate updates to reduce per-player overhead
     struct WorldStateUpdate
     {
         uint32 stateId;
         uint32 value;
     };
-    
+
     std::vector<WorldStateUpdate> updates;
     updates.reserve(10); // Typical number of worldstates
-    
+
     // Use Wintergrasp worldstates (WG-like HUD for HLBG).
     // Keep this consistent with FillInitialWorldStates()/UpdateWorldStatesForPlayer:
     // - CLOCK/CLOCK_TEXTS use an absolute end-epoch (not seconds remaining)
@@ -129,7 +129,7 @@ void OutdoorPvPHL::UpdateWorldStatesAllPlayersOptimized()
     updates.push_back({WORLD_STATE_BATTLEFIELD_WG_ICON_ACTIVE, 0});
     if (_affixWorldstateEnabled)
         updates.push_back({WORLD_STATE_HL_AFFIX_TEXT, static_cast<uint32>(_activeAffix)});
-    
+
     // Apply all updates to all players in batch
     for (Player* player : zonePlayers)
     {
@@ -153,13 +153,13 @@ void OutdoorPvPHL::_applyAffixEffectsOptimized()
 {
     if (!_affixEnabled)
         return;
-        
+
     std::vector<Player*> zonePlayers;
     CollectZonePlayers(zonePlayers);
-    
+
     uint32 playerSpell = GetAffixPlayerSpell(static_cast<uint8>(_activeAffix));
     uint32 npcSpell = GetAffixNpcSpell(static_cast<uint8>(_activeAffix));
-    
+
     // Apply to players in batch
     if (playerSpell > 0)
     {
@@ -171,7 +171,7 @@ void OutdoorPvPHL::_applyAffixEffectsOptimized()
             }
         }
     }
-    
+
     // Apply to NPCs using zone player iteration (more compatible approach)
     if (npcSpell > 0)
     {
@@ -180,10 +180,10 @@ void OutdoorPvPHL::_applyAffixEffectsOptimized()
         {
             std::list<Creature*> nearbyCreatures;
             player->GetCreatureListWithEntryInGrid(nearbyCreatures, 0, 200.0f); // Get all creatures within 200 yards
-            
+
             for (Creature* creature : nearbyCreatures)
             {
-                if (creature && creature->IsAlive() && !creature->HasAura(npcSpell) && 
+                if (creature && creature->IsAlive() && !creature->HasAura(npcSpell) &&
                     creature->GetZoneId() == OutdoorPvPHLBuffZones[0])
                 {
                     creature->CastSpell(creature, npcSpell, true);
@@ -199,6 +199,6 @@ void OutdoorPvPHL::LogPerformanceStats() const
 {
     uint32 cacheAge = GameTime::GetGameTimeMS().count() - s_zonePlayerCache.lastUpdateTime;
     uint32 cachedPlayers = s_zonePlayerCache.playerGuids.size();
-    
+
     LOG_DEBUG("bg.battleground", "HLBG Performance: Cache age {}ms, {} cached players", cacheAge, cachedPlayers);
 }

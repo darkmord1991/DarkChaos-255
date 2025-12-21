@@ -1,7 +1,7 @@
 /*
  * This source code is part of the DarkChaos Custom Content project
  * Copyright (C) DarkChaos-255 Custom WoW Server
- * 
+ *
  * ItemUpgrade - Quest Reward Hook
  * Purpose: Award artifact essence when artifact quest completes
  */

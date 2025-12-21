@@ -1,10 +1,10 @@
 /*
  * Dark Chaos - GOMove Addon Integration
  * =====================================
- * 
+ *
  * Integrates the GOMove system with the unified DC Addon Protocol.
  * Handles object moving, spawning, and searching via DC_ADDON messages.
- * 
+ *
  * Copyright (C) 2025 Dark Chaos Development Team
  */
 
@@ -63,7 +63,7 @@ namespace DCAddon
             }
             // Format: DC|GOMV|0x01|ID|LOWGUID|ARG
             // This maps to the original .gomove command args
-            
+
             if (msg.GetDataCount() < 3)
                 return;
 
@@ -208,22 +208,22 @@ namespace DCAddon
                 return;
             // Format: DC|GOMV|0x02|SEARCH_TERM
             if (msg.GetDataCount() < 1) return;
-            
+
             std::string searchTerm = msg.GetString(0);
             if (searchTerm.empty()) return;
-            
+
             // Convert to lowercase for case-insensitive search
             std::transform(searchTerm.begin(), searchTerm.end(), searchTerm.begin(), ::tolower);
 
             // Escape user-provided search term for SQL safety
             std::string escaped = searchTerm;
             WorldDatabase.EscapeString(escaped);
-            
+
             JsonValue response;
             JsonValue results; results.SetArray();
-            
+
             uint32 count = 0;
-            
+
             std::string query = "SELECT entry, name, displayId FROM gameobject_template WHERE name LIKE '%" + escaped + "%' LIMIT 50";
             if (QueryResult result = WorldDatabase.Query(query.c_str()))
             {
@@ -239,14 +239,14 @@ namespace DCAddon
                     obj.Set("name", JsonValue(name));
                     obj.Set("display", JsonValue(displayId));
                     results.Push(obj);
-                    
+
                     count++;
                 } while (result->NextRow());
             }
-            
+
             response.Set("results", results);
             response.Set("count", JsonValue(count));
-            
+
             JsonMessage(Module::GOMOVE, Opcode::GOMove::SMSG_SEARCH_RESULT, response).Send(player);
         }
 
@@ -256,10 +256,10 @@ namespace DCAddon
             if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMinSecurity))
                 return;
             // Format: DC|GOMV|0x03
-            
+
             JsonValue response;
             JsonValue locations; locations.SetArray();
-            
+
             // Query game_tele table
             if (QueryResult result = WorldDatabase.Query("SELECT id, name, map, position_x, position_y, position_z, orientation FROM game_tele ORDER BY name"))
             {
@@ -277,9 +277,9 @@ namespace DCAddon
                     locations.Push(loc);
                 } while (result->NextRow());
             }
-            
+
             response.Set("locations", locations);
-            
+
             // This might be large, so the chunking in DC Protocol will handle it
             JsonMessage(Module::GOMOVE, Opcode::GOMove::SMSG_TELE_LIST, response).Send(player);
         }

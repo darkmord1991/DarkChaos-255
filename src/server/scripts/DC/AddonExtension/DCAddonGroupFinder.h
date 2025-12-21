@@ -1,7 +1,7 @@
 /*
  * Dark Chaos - Group Finder Addon Module Public Interface
  * ========================================================
- * 
+ *
  * Public functions for the Group Finder Addon Module.
  */
 

@@ -334,7 +334,7 @@ bool ItemUpgradeState::SaveToDatabase() const
         if (activeSeason)
             return activeSeason->season_id;
     }
-    
+
     // Fallback to config or default
     return sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);
 }

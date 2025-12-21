@@ -59,7 +59,7 @@ public:
         uint32 entry = 100000 + (level * 100);
 
         // Create the creature
-        Creature* creature = player->SummonCreature(entry, 
+        Creature* creature = player->SummonCreature(entry,
             player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), 0,
             TEMPSUMMON_CORPSE_DESPAWN, 0);
 
@@ -93,7 +93,7 @@ public:
         }
 
         uint8 level = (entry - 100000) / 100;
-        
+
         // Calculate rewards
         uint32 itemLevel = GetItemLevelForKeystoneLevel(level);
         uint32 baseTokens = GetTokenRewardForKeystoneLevel(level);
@@ -104,7 +104,7 @@ public:
         handler->SendSysMessage(Acore::StringFormat("  Item Level: {}", itemLevel));
         handler->SendSysMessage(Acore::StringFormat("  Base Tokens: {}", baseTokens));
         handler->SendSysMessage(("  Difficulty Name: " + creature->GetName()).c_str());
-        
+
         return true;
     }
 
@@ -117,7 +117,7 @@ public:
             handler->SendSysMessage(Acore::StringFormat("|cffff8000Mythic+ Keystone Rewards (M+{} to M+{}):|r", MIN_KEYSTONE_LEVEL, MAX_KEYSTONE_LEVEL));
             handler->SendSysMessage("Level | Item Level | Base Tokens");
             handler->SendSysMessage("------|------------|------------");
-            
+
             for (uint8 level = MIN_KEYSTONE_LEVEL; level <= MAX_KEYSTONE_LEVEL; ++level)
             {
                 uint32 ilvl = GetItemLevelForKeystoneLevel(level);
@@ -141,7 +141,7 @@ public:
         handler->SendSysMessage(Acore::StringFormat("  Item Level: {}", ilvl));
         handler->SendSysMessage(Acore::StringFormat("  Base Tokens: {}", tokens));
         handler->SendSysMessage(Acore::StringFormat("  Entry: {}", 100000 + (level * 100)));
-        
+
         return true;
     }
 

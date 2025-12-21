@@ -73,7 +73,7 @@ namespace HLBG
     // =====================================================================
     // ENUMS & STRUCTURES
     // =====================================================================
-    
+
     // BG Status values
     enum HLBGStatus : uint8
     {
@@ -97,7 +97,7 @@ namespace HLBG
         CMSG_GET_PLAYER_STATS       = 0x07,
         CMSG_GET_ALLTIME_STATS      = 0x08,
     };
-    
+
     // Server message opcodes
     enum ServerOpcodes : uint8
     {
@@ -136,7 +136,7 @@ namespace HLBG
     // =====================================================================
     // BINARY MESSAGE HELPERS - Real-time BG updates
     // =====================================================================
-    
+
     void SendStatus(Player* player, HLBGStatus status, uint32 mapId, uint32 timeRemaining)
     {
         Message msg(Module::HINTERLAND, SMSG_STATUS);
@@ -210,7 +210,7 @@ namespace HLBG
     // =====================================================================
     // UNIFIED SCHEMA LEADERBOARD QUERIES
     // =====================================================================
-    
+
     /**
      * Query seasonal player leaderboard from materialized views
      * Uses v_hlbg_player_seasonal_stats for all 7 leaderboard types
@@ -223,7 +223,7 @@ namespace HLBG
         std::string& outError)
     {
         std::string query;
-        
+
         // Map leaderboard type to SQL query
         switch (leaderboardType)
         {
@@ -235,7 +235,7 @@ namespace HLBG
                     "ORDER BY current_rating DESC LIMIT %u",
                     season, limit);
                 break;
-                
+
             case 2:  // WINS
                 query = Acore::StringFormat(
                     "SELECT guid, player_name, wins, games_played "
@@ -244,7 +244,7 @@ namespace HLBG
                     "ORDER BY wins DESC LIMIT %u",
                     season, limit);
                 break;
-                
+
             case 3:  // WINRATE
                 query = Acore::StringFormat(
                     "SELECT guid, player_name, CAST(win_rate * 100 AS UNSIGNED), games_played "
@@ -253,7 +253,7 @@ namespace HLBG
                     "ORDER BY win_rate DESC LIMIT %u",
                     season, limit);
                 break;
-                
+
             case 4:  // GAMES PLAYED
                 query = Acore::StringFormat(
                     "SELECT guid, player_name, games_played, wins "
@@ -262,7 +262,7 @@ namespace HLBG
                     "ORDER BY games_played DESC LIMIT %u",
                     season, limit);
                 break;
-                
+
             case 5:  // KILLS
                 query = Acore::StringFormat(
                     "SELECT guid, player_name, total_kills, avg_kills_per_game "
@@ -271,7 +271,7 @@ namespace HLBG
                     "ORDER BY total_kills DESC LIMIT %u",
                     season, limit);
                 break;
-                
+
             case 6:  // RESOURCES CAPTURED
                 query = Acore::StringFormat(
                     "SELECT guid, player_name, total_resources_captured, games_played "
@@ -280,7 +280,7 @@ namespace HLBG
                     "ORDER BY total_resources_captured DESC LIMIT %u",
                     season, limit);
                 break;
-                
+
             case 7:  // K/D RATIO
                 query = Acore::StringFormat(
                     "SELECT guid, player_name, CAST(kd_ratio * 100 AS UNSIGNED), games_played "
@@ -289,12 +289,12 @@ namespace HLBG
                     "ORDER BY kd_ratio DESC LIMIT %u",
                     season, limit);
                 break;
-                
+
             default:
                 outError = "Invalid leaderboard type";
                 return false;
         }
-        
+
         // Execute query
         QueryResult result = CharacterDatabase.Query(query);
         if (!result)
@@ -302,25 +302,25 @@ namespace HLBG
             outError = "No data available";
             return false;
         }
-        
+
         uint32 rank = 1;
         do
         {
             Field* fields = result->Fetch();
-            
+
             LeaderboardEntry entry;
             entry.rank = rank++;
             entry.playerGuid = fields[0].Get<uint32>();
             entry.playerName = fields[1].Get<std::string>();
             entry.score = fields[2].Get<uint32>();
             entry.extra = fields[3].Get<uint32>();
-            
+
             outEntries.push_back(entry);
         } while (result->NextRow());
-        
+
         return true;
     }
-    
+
     /**
      * Query player's seasonal statistics from unified schema view
      */
@@ -335,9 +335,9 @@ namespace HLBG
             outError = "Invalid player";
             return false;
         }
-        
+
         uint32 playerGuid = player->GetGUID().GetCounter();
-        
+
         std::string query = Acore::StringFormat(
             "SELECT "
             "IFNULL(current_rating, 0), "
@@ -353,7 +353,7 @@ namespace HLBG
             "FROM `v_hlbg_player_seasonal_stats` "
             "WHERE guid = %u AND season_id = %u",
             playerGuid, season);
-        
+
         QueryResult result = CharacterDatabase.Query(query);
         if (!result)
         {
@@ -365,9 +365,9 @@ namespace HLBG
                 "}";
             return true;
         }
-        
+
         Field* fields = result->Fetch();
-        
+
         outJson = Acore::StringFormat(
             "{"
             "\"rating\":%d,"
@@ -391,10 +391,10 @@ namespace HLBG
             fields[7].Get<float>(),
             fields[8].Get<float>(),
             fields[9].Get<float>());
-        
+
         return true;
     }
-    
+
     /**
      * Query player's all-time statistics from unified schema view
      */
@@ -408,9 +408,9 @@ namespace HLBG
             outError = "Invalid player";
             return false;
         }
-        
+
         uint32 playerGuid = player->GetGUID().GetCounter();
-        
+
         std::string query = Acore::StringFormat(
             "SELECT "
             "IFNULL(total_matches, 0), "
@@ -424,7 +424,7 @@ namespace HLBG
             "FROM `v_hlbg_player_alltime_stats` "
             "WHERE guid = %u",
             playerGuid);
-        
+
         QueryResult result = CharacterDatabase.Query(query);
         if (!result)
         {
@@ -436,9 +436,9 @@ namespace HLBG
                 "}";
             return true;
         }
-        
+
         Field* fields = result->Fetch();
-        
+
         outJson = Acore::StringFormat(
             "{"
             "\"totalMatches\":%u,"
@@ -458,14 +458,14 @@ namespace HLBG
             fields[5].Get<float>(),
             fields[6].Get<float>(),
             fields[7].Get<float>());
-        
+
         return true;
     }
 
     // =====================================================================
     // MESSAGE HANDLERS
     // =====================================================================
-    
+
     // Real-time BG status handlers
     static void HandleRequestStatus(Player* player, const ParsedMessage& /*msg*/)
     {
@@ -552,7 +552,7 @@ namespace HLBG
         if (seasonId == 0)
             if (OutdoorPvPHL* hl = GetHL())
                 seasonId = hl->GetSeason();
-        
+
         // Query from unified schema
         std::string statsJson;
         std::string error;
@@ -563,7 +563,7 @@ namespace HLBG
             response.Send(player);
             return;
         }
-        
+
         Message response(Module::HINTERLAND, SMSG_PLAYER_STATS);
         response.Add(statsJson);
         response.Send(player);
@@ -577,11 +577,11 @@ namespace HLBG
 
         if (IsRateLimited(player, 800))
             return;
-        
+
         uint32 leaderboardType = 1;
         uint32 season = 0;
         uint32 limit = 100;
-        
+
         // Simple JSON parsing for request parameters
         if (data.find("\"leaderboardType\"") != std::string::npos)
         {
@@ -607,11 +607,11 @@ namespace HLBG
                 season = hl->GetSeason();
 
         limit = std::min<uint32>(limit, 200u);
-        
+
         // Query leaderboard
         std::vector<LeaderboardEntry> entries;
         std::string error;
-        
+
         if (!QuerySeasonalLeaderboard(leaderboardType, season, limit, entries, error))
         {
             Message packet(Module::HINTERLAND, SMSG_ERROR);
@@ -619,13 +619,13 @@ namespace HLBG
             packet.Send(player);
             return;
         }
-        
+
         // Build JSON response
         std::string jsonEntries = "[";
         for (size_t i = 0; i < entries.size(); ++i)
         {
             if (i > 0) jsonEntries += ",";
-            
+
             jsonEntries += Acore::StringFormat(
                 "{\"rank\":%u,\"guid\":%u,\"name\":\"%s\",\"score\":%u,\"extra\":%u}",
                 entries[i].rank,
@@ -635,13 +635,13 @@ namespace HLBG
                 entries[i].extra);
         }
         jsonEntries += "]";
-        
+
         std::string response = Acore::StringFormat(
             "{\"leaderboardType\":%u,\"season\":%u,\"entries\":%s}",
             leaderboardType,
             season,
             jsonEntries.c_str());
-        
+
         Message packet(Module::HINTERLAND, SMSG_LEADERBOARD_DATA);
         packet.Add(response);
         packet.Send(player);
@@ -654,7 +654,7 @@ namespace HLBG
 
         if (IsRateLimited(player, 800))
             return;
-        
+
         uint32 season = 0;
         if (data.find("\"season\"") != std::string::npos)
         {
@@ -666,10 +666,10 @@ namespace HLBG
         if (season == 0)
             if (OutdoorPvPHL* hl = GetHL())
                 season = hl->GetSeason();
-        
+
         std::string statsJson;
         std::string error;
-        
+
         if (!QueryPlayerSeasonalStats(player, season, statsJson, error))
         {
             Message packet(Module::HINTERLAND, SMSG_ERROR);
@@ -677,7 +677,7 @@ namespace HLBG
             packet.Send(player);
             return;
         }
-        
+
         Message packet(Module::HINTERLAND, SMSG_PLAYER_STATS);
         packet.Add(statsJson);
         packet.Send(player);
@@ -689,10 +689,10 @@ namespace HLBG
 
         if (IsRateLimited(player, 800))
             return;
-        
+
         std::string statsJson;
         std::string error;
-        
+
         if (!QueryPlayerAllTimeStats(player, statsJson, error))
         {
             Message msg(Module::HINTERLAND, SMSG_ERROR);
@@ -700,7 +700,7 @@ namespace HLBG
             msg.Send(player);
             return;
         }
-        
+
         Message msg(Module::HINTERLAND, SMSG_ALLTIME_STATS);
         msg.Add(statsJson);
         msg.Send(player);
@@ -709,7 +709,7 @@ namespace HLBG
     // =====================================================================
     // HANDLER REGISTRATION
     // =====================================================================
-    
+
     void RegisterHandlers()
     {
         LoadConfig();
@@ -726,13 +726,13 @@ namespace HLBG
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_QUICK_QUEUE, HandleQuickQueue);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_LEAVE_QUEUE, HandleLeaveQueue);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_REQUEST_STATS, HandleRequestStats);
-        
+
         // Leaderboard and stats handlers (JSON-based)
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_GET_LEADERBOARD, HandleGetLeaderboard);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_GET_PLAYER_STATS, HandleGetPlayerStats);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_GET_ALLTIME_STATS, HandleGetAllTimeStats);
 
-        LOG_INFO("dc.addon", "HLBG unified handler registered with %s support", 
+        LOG_INFO("dc.addon", "HLBG unified handler registered with %s support",
             "real-time + leaderboards + unified schema");
     }
 
@@ -843,8 +843,6 @@ namespace HLBGAddonFallback
         } while (rs->NextRow());
         return ss.str();
     }
-
-
 
     static std::string BuildLivePlayersJson(OutdoorPvPHL* hl, uint32 limit = 40)
     {

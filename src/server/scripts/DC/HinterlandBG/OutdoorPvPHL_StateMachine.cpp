@@ -70,8 +70,8 @@ void OutdoorPvPHL::TransitionToState(BGState newState)
 
     BGState oldState = _bgState;
     _bgState = newState;
-    
-    LOG_INFO("outdoorpvp.hl", "[HL] State transition: {} -> {}", 
+
+    LOG_INFO("outdoorpvp.hl", "[HL] State transition: {} -> {}",
         static_cast<uint32>(oldState), static_cast<uint32>(newState));
 
     // State entry actions
@@ -103,21 +103,21 @@ void OutdoorPvPHL::EnterWarmupState()
     // We reuse _matchEndTime as the HUD end-epoch (GetHudEndEpoch()).
     _matchStartTime = 0;
     _matchEndTime = NowSec() + _warmupDurationSeconds;
-    
+
     // Announce warmup phase
     BroadcastToZone("Hinterland BG: Warmup phase started! Join now to participate.");
-    
+
     // Reset battle statistics
     _playerScores.clear();
     _playerHKBaseline.clear();
-    
+
     // Teleport any players who queued for the next match, then consume the queue.
     if (!_queuedPlayers.empty())
     {
         TeleportQueuedPlayers();
         ClearQueue();
     }
-    
+
     // Initialize worldstates for warmup
     UpdateWorldStatesAllPlayers();
 }
@@ -145,7 +145,7 @@ void OutdoorPvPHL::UpdateWarmupState(uint32 diff)
     else
     {
         _warmupTimeRemaining -= diff;
-        
+
         // Send periodic warmup notifications
         uint32 remainingSeconds = _warmupTimeRemaining / IN_MILLISECONDS;
         if (remainingSeconds == 60 || remainingSeconds == 30 || remainingSeconds == 10)
@@ -160,10 +160,10 @@ void OutdoorPvPHL::EnterInProgressState()
     // Set match timer
     _matchStartTime = NowSec();
     _matchEndTime = _matchStartTime + _matchDurationSeconds;
-    
+
     // Announce battle start
     BroadcastToZone("Hinterland BG: Battle has begun! Current affix: {}", GetAffixName(_activeAffix));
-    
+
     // Apply affix effects if enabled
     if (_affixEnabled)
     {
@@ -171,7 +171,7 @@ void OutdoorPvPHL::EnterInProgressState()
         if (_affixWeatherEnabled)
             ApplyAffixWeather();
     }
-    
+
     // Immediately update worldstates when battle starts
     UpdateWorldStatesAllPlayers();
 }
@@ -186,7 +186,7 @@ void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
         TransitionToState(BG_STATE_FINISHED);
         return;
     }
-    
+
     if (_horde_gathered == 0)
     {
         if (!_winnerRecorded)
@@ -194,26 +194,31 @@ void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
         TransitionToState(BG_STATE_FINISHED);
         return;
     }
-    
+
     // Check for timer expiry
     if (NowSec() >= _matchEndTime)
     {
         // Determine winner by resources
-        if (_ally_gathered > _horde_gathered) {
+        if (_ally_gathered > _horde_gathered)
+        {
             if (!_winnerRecorded)
                 _recordWinner(TEAM_ALLIANCE);
-        } else if (_horde_gathered > _ally_gathered) {
+        }
+        else if (_horde_gathered > _ally_gathered)
+        {
             if (!_winnerRecorded)
                 _recordWinner(TEAM_HORDE);
-        } else {
+        }
+        else
+        {
             if (!_winnerRecorded)
                 _recordWinner(TEAM_NEUTRAL); // Draw
         }
-            
+
         TransitionToState(BG_STATE_FINISHED);
         return;
     }
-    
+
     // Update affix rotation if enabled
     if (_affixEnabled && _affixPeriodSec > 0)
     {
@@ -248,7 +253,7 @@ void OutdoorPvPHL::EnterFinishedState()
     // Clear affix effects
     if (_affixEnabled)
         _clearAffixEffects();
-    
+
     // Award rewards
     TeamId winner = GetLastWinnerTeamId();
     if (winner != TEAM_NEUTRAL)
@@ -260,7 +265,7 @@ void OutdoorPvPHL::EnterFinishedState()
     {
         BroadcastToZone("Hinterland BG: Battle ends in a draw!");
     }
-    
+
     // Start cleanup timer (5 seconds)
     _cleanupTimeRemaining = 5000;
 }
@@ -342,7 +347,7 @@ void OutdoorPvPHL::BroadcastToZone(const char* format, ...)
     char buffer[512];
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
-    
+
     if (Map* m = GetMap())
     {
         std::string msg = GetBgChatPrefix() + buffer;

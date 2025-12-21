@@ -1,8 +1,8 @@
 /*
-        .__      .___.                
-        [__)  .    |   _ ._ _ ._ _   .
-        [__)\_|    |  (_)[ | )[ | )\_|
-                        ._|                    ._|
+    .__      .___.
+    [__)  .    |   _ ._ _ ._ _   .
+    [__)\_|    |  (_)[ | )[ | )\_|
+            ._|
 
                 Hinterland BG (OutdoorPvP HL)
                 ------------------------------
@@ -88,7 +88,7 @@
     #include "Chat.h"
     #include "ObjectMgr.h"
     #include "ObjectAccessor.h"
-        #include "GameObject.h"
+    #include "GameObject.h"
     #include "DBCStores.h"
     #include "Misc/GameGraveyard.h"
     #include "Time/GameTime.h"
@@ -96,7 +96,7 @@
     #include "WorldState.h"
     #include "WeatherMgr.h"
     #include "Weather.h"
-    
+
     #include "GroupMgr.h"
     #include "MapMgr.h"
     #include "CellImpl.h" // for TypeContainerVisitor over MapStoredObjectTypesContainer
@@ -377,8 +377,6 @@
 
     // --- Admin/inspection helpers moved to DC/HinterlandBG/OutdoorPvPHL_Admin.cpp ---
 
-    
-
     bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
     {
         if (!plr)
@@ -432,8 +430,6 @@
 
     // moved to DC/HinterlandBG/OutdoorPvPHL_JoinLeave.cpp
 
-    
-
     // moved to DC/HinterlandBG/OutdoorPvPHL_Announce.cpp
 
     void OutdoorPvPHL::PlaySounds(bool side)
@@ -447,23 +443,17 @@
     // Note: Using a harmless vanity item ID for link formatting. Only the text is shown; clicking opens an item tooltip.
     // moved to DC/HinterlandBG/OutdoorPvPHL_Announce.cpp
 
-    
-
-    
-
-    
-
     // AFK thresholds are configurable via LoadConfig()
 
     bool OutdoorPvPHL::Update(uint32 diff)
     {
         OutdoorPvP::Update(diff);
-		
+
         // Only tick the state machine for non-match phases.
         // Match progression (expiry/depletion/reset) is still handled by the legacy HLBG tick code.
         if (_bgState != BG_STATE_IN_PROGRESS)
             UpdateStateMachine(diff);
-        
+
         // Performance monitoring (log every 5 minutes)
         static uint32 s_perfLogTimer = 0;
         s_perfLogTimer += diff;
@@ -472,14 +462,14 @@
             LogPerformanceStats();
             s_perfLogTimer = 0;
         }
-        
-        if(_FirstLoad == false)
+
+        if (_FirstLoad == false)
         {
-            if(_LastWin == ALLIANCE)
+            if (_LastWin == ALLIANCE)
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Alliance");
-            else if(_LastWin == HORDE)
+            else if (_LastWin == HORDE)
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! Last winner: Horde ");
-            else if(_LastWin == 0)
+            else if (_LastWin == 0)
                 LOG_INFO("misc", "[OutdoorPvPHL]: The battle of Hinterland has started! There was no winner last time!");
 
             // Do not start a match automatically if there are no players in-zone or no connected queued players.
@@ -511,7 +501,6 @@
         // 0) While locked, hold interactions except HUD/status; exit early
         if (_tickLock(diff))
             return false;
-
 
         // 1) Timer expiry only applies while a match is in progress.
         if (_bgState == BG_STATE_IN_PROGRESS)
@@ -838,19 +827,18 @@
     // moved to DC/HinterlandBG/OutdoorPvPHL_Thresholds.cpp
 
     // moved to DC/HinterlandBG/OutdoorPvPHL_Announce.cpp
-    
 
     // moved to DC/HinterlandBG/OutdoorPvPHL_Rewards.cpp
 
     // moved to DC/HinterlandBG/OutdoorPvPHL_Rewards.cpp
-    
+
     class OutdoorPvP_hinterland : public OutdoorPvPScript
     {
         public:
-     
+
         OutdoorPvP_hinterland()
             : OutdoorPvPScript("outdoorpvp_hl") {}
-     
+
         OutdoorPvP* GetOutdoorPvP() const
         {
             return new OutdoorPvPHL();
@@ -865,7 +853,7 @@
     {
         new OutdoorPvP_hinterland;
         new HLMovementHandlerScript();
-	}
+    }
 
     // --- Persistence ---
     void OutdoorPvPHL::SaveRequiredWorldStates() const

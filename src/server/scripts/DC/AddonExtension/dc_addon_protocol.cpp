@@ -1,10 +1,10 @@
 /*
  * Dark Chaos - Addon Protocol Core Implementation
  * ================================================
- * 
+ *
  * Main protocol handler that routes all DC addon messages.
  * Uses unified "DC" prefix with module-based routing.
- * 
+ *
  * Copyright (C) 2024 Dark Chaos Development Team
  */
 
@@ -31,28 +31,28 @@ namespace DCAddon
     // ========================================================================
     // MESSAGE SENDING IMPLEMENTATION
     // ========================================================================
-    
+
     // Forward declaration
     static void SendRaw(Player* player, const std::string& msg);
-    
+
     void Message::Send(Player* player) const
     {
         if (!player || !player->GetSession())
             return;
-        
+
         std::string fullMessage = Build();
-        
+
         // Log S2C message if enabled
         if (g_S2CLoggingEnabled)
         {
             LogS2CMessageGlobal(player, _module, _opcode, fullMessage.length());
         }
-        
+
         // Check if chunking is needed
         if (fullMessage.length() > MAX_CLIENT_MSG_SIZE - 10)
         {
             auto chunks = ChunkedMessage::Chunk(fullMessage);
-            for (const auto& chunk : chunks)
+            for (auto const& chunk : chunks)
             {
                 SendRaw(player, chunk);
             }
@@ -62,7 +62,7 @@ namespace DCAddon
             SendRaw(player, fullMessage);
         }
     }
-    
+
     static void SendRaw(Player* player, const std::string& msg)
     {
         // Build addon message using proper CHAT_MSG_WHISPER format
@@ -107,7 +107,7 @@ struct DCAddonProtocolConfig
     bool EnableHotspot;
     bool EnableWorld;
     bool EnableEvents;
-    
+
     // Security settings
     bool EnableDebugLog;
     bool EnableProtocolLogging;  // Log to dc_addon_protocol_log table
@@ -115,7 +115,7 @@ struct DCAddonProtocolConfig
     uint32 RateLimitAction;
     uint32 ChunkTimeoutMs;
     uint32 MinGOMoveSecurity;
-    
+
     // Version
     std::string ProtocolVersion;
 };
@@ -140,19 +140,19 @@ static void LoadAddonConfig()
     s_AddonConfig.EnableHotspot     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Hotspot.Enable", true);
     s_AddonConfig.EnableWorld       = sConfigMgr->GetOption<bool>("DC.AddonProtocol.World.Enable", true);
     s_AddonConfig.EnableEvents      = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Events.Enable", true);
-    
+
     s_AddonConfig.EnableDebugLog        = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Debug.Enable", false);
     s_AddonConfig.EnableProtocolLogging = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Logging.Enable", false);
     s_AddonConfig.MaxMessagesPerSecond  = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Messages", 30);
     s_AddonConfig.RateLimitAction       = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Action", 0);
     s_AddonConfig.ChunkTimeoutMs        = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.ChunkTimeout", 5000);
     s_AddonConfig.MinGOMoveSecurity     = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.GOMove.MinSecurity", 1);
-    
+
     // Set global flag for S2C logging (needed by Message::Send before config is accessible)
     g_S2CLoggingEnabled = s_AddonConfig.EnableProtocolLogging;
-    
+
     s_AddonConfig.ProtocolVersion = "1.0.0";
-    
+
     // Update router module enables
     auto& router = DCAddon::MessageRouter::Instance();
     router.SetModuleEnabled(DCAddon::Module::CORE, s_AddonConfig.EnableCore);
@@ -183,14 +183,14 @@ static std::string ExtractModuleCode(const std::string& payload)
 {
     if (payload.empty())
         return "UNKN";
-    
+
     size_t colonPos = payload.find(':');
     if (colonPos != std::string::npos && colonPos > 0)
     {
         // Truncate to 8 chars max to fit the database column
         return payload.substr(0, std::min(colonPos, static_cast<size_t>(8)));
     }
-    
+
     // No colon found, return first 8 chars or less
     return payload.substr(0, std::min(payload.length(), static_cast<size_t>(8)));
 }
@@ -201,13 +201,13 @@ static uint8 ExtractOpcode(const std::string& payload)
     size_t colonPos = payload.find(':');
     if (colonPos == std::string::npos || colonPos + 1 >= payload.length())
         return 0;
-    
+
     // Find the end of the opcode (next colon or end of string)
     size_t opcodeStart = colonPos + 1;
     size_t opcodeEnd = payload.find(':', opcodeStart);
     if (opcodeEnd == std::string::npos)
         opcodeEnd = payload.length();
-    
+
     std::string opcodeStr = payload.substr(opcodeStart, opcodeEnd - opcodeStart);
     try {
         return static_cast<uint8>(std::stoul(opcodeStr));
@@ -226,17 +226,17 @@ static std::string DetectRequestType(const std::string& payload)
 {
     if (payload.empty())
         return "STANDARD";
-    
+
     // Check for AIO modules first (known AIO modules: SPOT = Spectator, SEAS = Seasonal, MHUD = M+ HUD)
     std::string moduleCode = ExtractModuleCode(payload);
     if (moduleCode == "SPOT" || moduleCode == "SEAS" || moduleCode == "MHUD")
         return "AIO";
-    
+
     // Find where the data portion starts (after module and opcode)
     // Format 1: MODULE:OPCODE:DATA (colon delimited)
     // Format 2: MODULE[OPCODE]:DATA (bracket opcode)
     size_t dataStart = std::string::npos;
-    
+
     // Check for bracket format first: MODULE[x]:
     size_t bracketClose = payload.find(']');
     if (bracketClose != std::string::npos && bracketClose + 1 < payload.length())
@@ -244,7 +244,7 @@ static std::string DetectRequestType(const std::string& payload)
         if (payload[bracketClose + 1] == ':')
             dataStart = bracketClose + 2;
     }
-    
+
     // Check for double-colon format: MODULE:OPCODE:
     if (dataStart == std::string::npos)
     {
@@ -256,7 +256,7 @@ static std::string DetectRequestType(const std::string& payload)
                 dataStart = secondColon + 1;
         }
     }
-    
+
     // If we found a data portion, it's DC protocol
     if (dataStart != std::string::npos && dataStart < payload.length())
     {
@@ -267,7 +267,7 @@ static std::string DetectRequestType(const std::string& payload)
         else
             return "DC_PLAIN";
     }
-    
+
     // Check if it looks like DC protocol at all (has MODULE:OPCODE format even without data)
     size_t firstColon = payload.find(':');
     if (firstColon != std::string::npos && firstColon < 8)
@@ -275,7 +275,7 @@ static std::string DetectRequestType(const std::string& payload)
         // Has a short module code followed by colon - likely DC protocol
         return "DC_PLAIN";
     }
-    
+
     // Plain Blizzard addon message (no DC protocol format detected)
     return "STANDARD";
 }
@@ -291,12 +291,12 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
         moduleCode = moduleCode.substr(0, 16);
     // Remove any single quotes from module code
     moduleCode.erase(std::remove(moduleCode.begin(), moduleCode.end(), '\''), moduleCode.end());
-    
+
     uint8 opcode = ExtractOpcode(payload);
     std::string requestType = DetectRequestType(payload);
     std::string status = handled ? "completed" : (errorMsg.empty() ? "pending" : "error");
     std::string preview = payload.length() > 255 ? payload.substr(0, 255) : payload;
-    
+
     // Escape single quotes in preview
     size_t pos = 0;
     while ((pos = preview.find("'", pos)) != std::string::npos)
@@ -304,7 +304,7 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
         preview.replace(pos, 1, "''");
         pos += 2;
     }
-    
+
     // Escape error message
     std::string safeError = errorMsg;
     pos = 0;
@@ -342,11 +342,11 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
     if (moduleCode.length() > 16)
         moduleCode = moduleCode.substr(0, 16);
     moduleCode.erase(std::remove(moduleCode.begin(), moduleCode.end(), '\''), moduleCode.end());
-    
+
     uint8 opcode = ExtractOpcode(payload);
     std::string requestType = DetectRequestType(payload);
     std::string preview = payload.length() > 255 ? payload.substr(0, 255) : payload;
-    
+
     // Escape single quotes in preview
     size_t pos = 0;
     while ((pos = preview.find("'", pos)) != std::string::npos)
@@ -382,7 +382,7 @@ static void UpdateProtocolStats(Player* player, const std::string& moduleCode, b
     safeModuleCode.erase(std::remove(safeModuleCode.begin(), safeModuleCode.end(), '\''), safeModuleCode.end());
 
     uint32 guid = player->GetGUID().GetCounter();
-    
+
     if (isRequest)
     {
         CharacterDatabase.Execute(
@@ -398,7 +398,7 @@ static void UpdateProtocolStats(Player* player, const std::string& moduleCode, b
             updateFields = "total_timeouts = total_timeouts + 1";
         else if (isError)
             updateFields = "total_errors = total_errors + 1";
-        
+
         if (responseTimeMs > 0)
         {
             CharacterDatabase.Execute(
@@ -430,20 +430,20 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
 {
     if (!player || !player->GetSession())
         return;
-    
+
     // Ensure module code is safe for SQL and fits column (max 16 chars)
     std::string safeModule = module;
     if (safeModule.length() > 16)
         safeModule = safeModule.substr(0, 16);
     safeModule.erase(std::remove(safeModule.begin(), safeModule.end(), '\''), safeModule.end());
-    
+
     // Determine request type based on module
     std::string requestType = "STANDARD";
     if (safeModule == "SPOT" || safeModule == "SEAS" || safeModule == "MHUD")
         requestType = "AIO";
     else if (safeModule == "LBRD")
         requestType = "JSON";
-    
+
     CharacterDatabase.Execute(
         "INSERT INTO dc_addon_protocol_log "
         "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status) "
@@ -455,7 +455,7 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
         safeModule,
         opcode,
         dataSize);
-    
+
     // Also update stats for S2C
     CharacterDatabase.Execute(
         "INSERT INTO dc_addon_protocol_stats (guid, module, total_responses, first_request, last_request) "
@@ -483,24 +483,24 @@ static bool CheckRateLimit(Player* player)
 {
     uint32 accountId = player->GetSession()->GetAccountId();
     uint32 now = GameTime::GetGameTime().count();
-    
+
     auto& tracker = s_MessageTrackers[accountId];
-    
+
     // Check if muted
     if (tracker.isMuted && now < tracker.muteExpireTime)
         return false;
     else if (tracker.isMuted)
         tracker.isMuted = false;
-    
+
     // Reset counter if second has passed
     if (now > tracker.lastResetTime)
     {
         tracker.messageCount = 0;
         tracker.lastResetTime = now;
     }
-    
+
     tracker.messageCount++;
-    
+
     if (tracker.messageCount > s_AddonConfig.MaxMessagesPerSecond)
     {
         switch (s_AddonConfig.RateLimitAction)
@@ -521,7 +521,7 @@ static bool CheckRateLimit(Player* player)
         }
         return false;
     }
-    
+
     return true;
 }
 
@@ -533,17 +533,17 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
 {
     // Client says hello, server acknowledges with version and enabled features
     std::string clientVersion = msg.GetString(0);
-    
+
     if (s_AddonConfig.EnableDebugLog)
-        LOG_DEBUG("dc.addon", "Handshake from {} with client version {}", 
+        LOG_DEBUG("dc.addon", "Handshake from {} with client version {}",
                   player->GetName(), clientVersion);
-    
+
     // Send acknowledgment with server protocol version
     DCAddon::Message(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_HANDSHAKE_ACK)
         .Add(s_AddonConfig.ProtocolVersion)
         .Add(true)  // Handshake success
         .Send(player);
-    
+
     // Automatically send feature list
     DCAddon::Message featureMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_FEATURE_LIST);
     featureMsg.Add(s_AddonConfig.EnableAOELoot);
@@ -568,10 +568,10 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
 static void HandleCoreVersionCheck(Player* player, const DCAddon::ParsedMessage& msg)
 {
     std::string clientVersion = msg.GetString(0);
-    
+
     // Simple version comparison (could be made more sophisticated)
     bool compatible = (clientVersion == s_AddonConfig.ProtocolVersion);
-    
+
     DCAddon::Message(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_VERSION_RESULT)
         .Add(compatible)
         .Add(s_AddonConfig.ProtocolVersion)
@@ -597,7 +597,7 @@ static void HandleCoreFeatureQuery(Player* player, const DCAddon::ParsedMessage&
 static void RegisterCoreHandlers()
 {
     using namespace DCAddon;
-    
+
     DC_REGISTER_HANDLER(Module::CORE, Opcode::Core::CMSG_HANDSHAKE, HandleCoreHandshake);
     DC_REGISTER_HANDLER(Module::CORE, Opcode::Core::CMSG_VERSION_CHECK, HandleCoreVersionCheck);
     DC_REGISTER_HANDLER(Module::CORE, Opcode::Core::CMSG_FEATURE_QUERY, HandleCoreFeatureQuery);
@@ -614,16 +614,16 @@ static std::unordered_map<uint32, uint32> s_ChunkStartTimes;
 static void CleanupExpiredChunks()
 {
     uint32 now = GameTime::GetGameTime().count() * 1000;  // Convert to ms
-    
+
     std::vector<uint32> toRemove;
-    for (const auto& [accountId, startTime] : s_ChunkStartTimes)
+    for (auto const& [accountId, startTime] : s_ChunkStartTimes)
     {
         if (now - startTime > s_AddonConfig.ChunkTimeoutMs)
         {
             toRemove.push_back(accountId);
         }
     }
-    
+
     for (uint32 id : toRemove)
     {
         s_ChunkedMessages.erase(id);
@@ -639,14 +639,14 @@ class DCAddonProtocolScript : public PlayerScript
 {
 public:
     DCAddonProtocolScript() : PlayerScript("DCAddonProtocolScript") {}
-    
+
     void OnPlayerLogin(Player* player) override
     {
         (void)player;  // Unused for now
         // Could send initial sync here if client addon is already known to be present
         // For now, we wait for client handshake
     }
-    
+
     void OnPlayerLogout(Player* player) override
     {
         // Clean up any pending chunked messages
@@ -661,26 +661,26 @@ class DCAddonMessageRouterScript : public PlayerScript
 {
 public:
     DCAddonMessageRouterScript() : PlayerScript("DCAddonMessageRouterScript") {}
-    
+
     // Intercept addon messages with "DC" prefix and route to handlers
     void OnPlayerBeforeSendChatMessage(Player* player, uint32& type, uint32& lang, std::string& msg) override
     {
         // Only process addon whisper messages
         if (lang != LANG_ADDON || type != CHAT_MSG_WHISPER)
             return;
-        
+
         // Addon messages are formatted as "PREFIX\tPAYLOAD"
         // Check if message starts with "DC\t"
         static const std::string dcPrefix = "DC\t";
         if (msg.rfind(dcPrefix, 0) != 0)
             return;
-        
+
         // Skip the "DC\t" prefix and route to handler
         std::string payload = msg.substr(3);  // Everything after "DC\t"
-        
+
         if (s_AddonConfig.EnableDebugLog)
             LOG_DEBUG("dc.addon", "Routing DC message from {}: {}", player->GetName(), payload);
-        
+
         // Parse module and opcode for logging (format: "MODULE:OPCODE:DATA" or "MODULE:OPCODE")
         std::string moduleStr, opcodeStr, dataStr;
         size_t firstColon = payload.find(':');
@@ -698,17 +698,17 @@ public:
                 opcodeStr = payload.substr(firstColon + 1);
             }
         }
-        
+
         // Route the message
         bool handled = DCAddon::MessageRouter::Instance().Route(player, payload);
-        
+
         // Log to database if protocol logging is enabled
         if (s_AddonConfig.EnableProtocolLogging && !moduleStr.empty())
         {
             LogC2SMessage(player, payload, handled);
             UpdateProtocolStats(player, moduleStr, true);  // true = isRequest
         }
-        
+
         if (handled)
         {
             // Message was handled by DC protocol - clear it to prevent normal processing
@@ -725,12 +725,12 @@ class DCAddonWorldScript : public WorldScript
 {
 public:
     DCAddonWorldScript() : WorldScript("DCAddonWorldScript") {}
-    
+
     void OnStartup() override
     {
         LoadAddonConfig();
         RegisterCoreHandlers();
-        
+
         LOG_INFO("dc.addon", "===========================================");
         LOG_INFO("dc.addon", "Dark Chaos Addon Protocol v{} loaded", s_AddonConfig.ProtocolVersion);
         LOG_INFO("dc.addon", "Enabled modules:");
@@ -749,7 +749,7 @@ public:
         LOG_INFO("dc.addon", "  DB Logging:  {}", s_AddonConfig.EnableProtocolLogging ? "Yes" : "No");
         LOG_INFO("dc.addon", "===========================================");
     }
-    
+
     void OnAfterConfigLoad(bool /*reload*/) override
     {
         LoadAddonConfig();

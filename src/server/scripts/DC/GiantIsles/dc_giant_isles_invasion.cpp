@@ -98,7 +98,6 @@ enum InvasionData
     ITEM_INVASION_TOKEN         = 90001, // TODO: Create invasion token item
 };
 
-
 enum InvasionPhase
 {
     INVASION_INACTIVE           = 0,
@@ -171,7 +170,7 @@ const InvasionSpawnPoint LANE_SPAWN_POINTS[3] =
 const InvasionSpawnPoint TARGET_POINTS[3] =
 {
     { 5753.34f, 1319.46f, 23.34f, 5.43f, "Left Defense Line" },   // Left target
-    { 5769.76f, 1322.34f, 24.64f, 5.91f, "Center Defense Line" }, // Center target  
+    { 5769.76f, 1322.34f, 24.64f, 5.91f, "Center Defense Line" }, // Center target
     { 5795.22f, 1318.57f, 27.29f, 4.13f, "Right Defense Line" }   // Right target
 };
 
@@ -512,7 +511,7 @@ public:
 
             // Dramatic death yell
             me->Yell("The tide... turns... but Zandalar endures...", LANG_UNIVERSAL);
-            
+
             // Notify: perform basic victory actions (inline fallback)
             if (Map* map = me->GetMap())
             {
@@ -965,7 +964,7 @@ public:
                 LOG_DEBUG("scripts", "Giant Isles Invasion: Warning announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
             }
         }
-        
+
         // Play war horn sound to all players in zone
         DoForParticipants(map, [](Player* player)
         {
@@ -1055,7 +1054,7 @@ public:
             for (const ObjectGuid& guid : _bossGuardGuids)
                 if (Creature* guard = map->GetCreature(guid))
                     guard->DespawnOrUnsummon(5s);
-            
+
             // Leader retreat
             BossWaveComment(5);
             LeaderAnnounce(5);
@@ -1073,7 +1072,7 @@ public:
     {
         if (waveNum < 1 || waveNum > 4)
             return;
-            
+
         // Set phase to just before the requested wave, then advance
         _invasionPhase = static_cast<InvasionPhase>(waveNum - 1);
         AdvanceWave(map);
@@ -1183,7 +1182,7 @@ public:
         // Only fail the invasion if we are actually in a wave or boss phase
         if (CheckDefendersAlive(map) == 0 && _invasionPhase >= INVASION_WAVE_1 && _invasionPhase < INVASION_VICTORY)
             FailInvasion(map);
-            
+
         // Check boss death manually since we don't have InstanceScript hooks
         if (_invasionPhase == INVASION_WAVE_4_BOSS && !_bossGUID.IsEmpty())
         {
@@ -1215,7 +1214,7 @@ public:
                 SpawnWaveCreatures(map);
                 BroadcastEventStatus(map);
                 break;
-                
+
             case INVASION_WAVE_1:
                 _invasionPhase = INVASION_WAVE_2;
                 _waveTimer = WAVE_2_DURATION;
@@ -1229,7 +1228,7 @@ public:
                 MaybeSpawnReinforcements(map, 2);
                 BroadcastEventStatus(map);
                 break;
-                
+
             case INVASION_WAVE_2:
                 _invasionPhase = INVASION_WAVE_3;
                 _waveTimer = WAVE_3_DURATION;
@@ -1243,7 +1242,7 @@ public:
                 MaybeSpawnReinforcements(map, 3);
                 BroadcastEventStatus(map);
                 break;
-                
+
             case INVASION_WAVE_3:
                 _invasionPhase = INVASION_WAVE_4_BOSS;
                 _waveTimer = WAVE_4_DURATION;
@@ -1255,11 +1254,11 @@ public:
                 ActivateBossWave(map);
                 BroadcastEventStatus(map);
                 break;
-                
+
             case INVASION_WAVE_4_BOSS:
                 // Victory handled in OnBossKilled
                 break;
-                
+
             default:
                 break;
         }
@@ -1286,7 +1285,7 @@ public:
                 _frontlineDefenderGuids.push_back(defender->GetGUID());
                 defender->SetFaction(14);  // Monster faction (hostile to invaders who are faction 16)
                 defender->SetReactState(REACT_AGGRESSIVE);
-                
+
                 // Move slightly forward to engage
                 float x = p.GetPositionX() + 5.0f * cos(p.GetOrientation());
                 float y = p.GetPositionY() + 5.0f * sin(p.GetOrientation());
@@ -1406,7 +1405,6 @@ public:
             LOG_ERROR("scripts", "Giant Isles Invasion: No wave entries defined for phase {}", _invasionPhase);
             return;
         }
-
 
         // Hard safety check
         if (totalBudget > MAX_ACTIVE_INVADERS)
@@ -1782,15 +1780,15 @@ public:
             case INVASION_WAVE_1:
                 // Scout wave - light forces
                 return { NPC_ZANDALARI_INVADER, NPC_ZANDALARI_SCOUT, NPC_ZANDALARI_SPEARMAN };
-            
+
             case INVASION_WAVE_2:
                 // War party - heavier forces
                 return { NPC_ZANDALARI_WARRIOR, NPC_ZANDALARI_BERSERKER, NPC_ZANDALARI_SHADOW_HUNTER };
-            
+
             case INVASION_WAVE_3:
                 // Elite assault - strongest forces
                 return { NPC_ZANDALARI_BLOOD_GUARD, NPC_ZANDALARI_WITCH_DOCTOR, NPC_ZANDALARI_BEAST_TAMER };
-            
+
             default:
                 LOG_ERROR("scripts", "Giant Isles Invasion: GetWaveCreatureEntries called with invalid phase {}", _invasionPhase);
                 return {};
@@ -1816,7 +1814,7 @@ public:
     {
         Creature* nearest = nullptr;
         float minDist = 999.0f;
-        for (const auto& guid : _defenderGuids)
+        for (auto const& guid : _defenderGuids)
         {
             if (Creature* defender = map->GetCreature(guid))
             {
@@ -1837,7 +1835,7 @@ public:
     uint32 CheckDefendersAlive(Map* map) const
     {
         uint32 count = 0;
-        for (const auto& guid : _defenderGuids)
+        for (auto const& guid : _defenderGuids)
         {
             if (Creature* defender = map->GetCreature(guid))
             {
@@ -1887,7 +1885,7 @@ public:
                 LOG_DEBUG("scripts", "Giant Isles Invasion: Failure announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
             }
         }
-        
+
             _waveTimer = INVASION_POST_END_DISPLAY_TIME;
             _pendingRemoval = true;
             _pendingRemovalReason = "failed";
@@ -1990,7 +1988,7 @@ public:
             return;
         }
 
-        for (const auto& guid : _invaderGuids)
+        for (auto const& guid : _invaderGuids)
         {
             if (Creature* invader = map->GetCreature(guid))
             {
@@ -2001,7 +1999,7 @@ public:
         _invaderGuids.clear();
         _invaderLaneIndex.clear();
 
-        for (const auto& guid : _bossGuardGuids)
+        for (auto const& guid : _bossGuardGuids)
         {
             if (Creature* guard = map->GetCreature(guid))
             {
@@ -2011,7 +2009,7 @@ public:
         }
         _bossGuardGuids.clear();
 
-        for (const auto& guid : _defenderGuids)
+        for (auto const& guid : _defenderGuids)
         {
             if (Creature* defender = map->GetCreature(guid))
             {
@@ -2439,7 +2437,7 @@ public:
             return;
 
         constexpr float reassignRange = 200.0f;
-        for (const auto& guid : _invaderGuids)
+        for (auto const& guid : _invaderGuids)
         {
             Creature* inv = map->GetCreature(guid);
             if (!inv || !inv->IsAlive())

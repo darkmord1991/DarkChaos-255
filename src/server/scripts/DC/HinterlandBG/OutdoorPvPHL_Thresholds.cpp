@@ -15,65 +15,65 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
 {
     if (_lockEnabled && _isLocked)
         return;
-    if(_ally_gathered <= 50 && limit_A == 0)
+    if (_ally_gathered <= 50 && limit_A == 0)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         IS_RESOURCE_MESSAGE_A = true;
         limit_A = 1;
         PlaySounds(false);
     }
-    else if(_horde_gathered <= 50 && limit_H == 0)
+    else if (_horde_gathered <= 50 && limit_H == 0)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         IS_RESOURCE_MESSAGE_H = true;
         limit_H = 1;
         PlaySounds(true);
     }
-    else if(_ally_gathered <= 0 && limit_A == 1)
+    else if (_ally_gathered <= 0 && limit_A == 1)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         IS_RESOURCE_MESSAGE_A = true;
         limit_A = 2;
         PlaySounds(false);
     }
-    else if(_horde_gathered <= 0 && limit_H == 1)
+    else if (_horde_gathered <= 0 && limit_H == 1)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         IS_RESOURCE_MESSAGE_H = true;
         limit_H = 2;
         PlaySounds(true);
     }
-    else if(_ally_gathered <= 300 && limit_resources_message_A == 0)
+    else if (_ally_gathered <= 300 && limit_resources_message_A == 0)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         limit_resources_message_A = 1;
         PlaySounds(false);
     }
-    else if(_horde_gathered <= 300 && limit_resources_message_H == 0)
+    else if (_horde_gathered <= 300 && limit_resources_message_H == 0)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         limit_resources_message_H = 1;
         PlaySounds(true);
     }
-    else if(_ally_gathered <= 200 && limit_resources_message_A == 1)
+    else if (_ally_gathered <= 200 && limit_resources_message_A == 1)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         limit_resources_message_A = 2;
         PlaySounds(false);
     }
-    else if(_horde_gathered <= 200 && limit_resources_message_H == 1)
+    else if (_horde_gathered <= 200 && limit_resources_message_H == 1)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         limit_resources_message_H = 2;
         PlaySounds(true);
     }
-    else if(_ally_gathered <= 100 && limit_resources_message_A == 2)
+    else if (_ally_gathered <= 100 && limit_resources_message_A == 2)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         limit_resources_message_A = 3;
         PlaySounds(false);
     }
-    else if(_horde_gathered <= 100 && limit_resources_message_H == 2)
+    else if (_horde_gathered <= 100 && limit_resources_message_H == 2)
     {
         IS_ABLE_TO_SHOW_MESSAGE = true;
         limit_resources_message_H = 3;

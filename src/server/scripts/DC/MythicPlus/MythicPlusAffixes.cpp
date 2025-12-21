@@ -22,7 +22,7 @@ void MythicPlusAffixManager::RegisterAffix(std::unique_ptr<IAffixHandler> handle
 {
     if (!handler)
         return;
-        
+
     AffixType type = handler->GetType();
     _handlers[type] = std::move(handler);
     LOG_INFO("mythic.affixes", "Registered affix handler: {}", _handlers[type]->GetName());
@@ -37,14 +37,14 @@ void MythicPlusAffixManager::ActivateAffixes(Map* map, const std::vector<AffixTy
     auto& state = _instanceStates[key];
     state.activeAffixes = affixes;
     state.keystoneLevel = keystoneLevel;
-    
+
     for (AffixType affix : affixes)
     {
         auto itr = _handlers.find(affix);
         if (itr != _handlers.end())
         {
             itr->second->OnAffixActivate(map, keystoneLevel);
-            LOG_INFO("mythic.affixes", "Activated affix {} on map {} instance {}", 
+            LOG_INFO("mythic.affixes", "Activated affix {} on map {} instance {}",
                      itr->second->GetName(), map->GetId(), map->GetInstanceId());
         }
     }
@@ -59,7 +59,7 @@ void MythicPlusAffixManager::DeactivateAffixes(Map* map)
     auto itr = _instanceStates.find(key);
     if (itr == _instanceStates.end())
         return;
-        
+
     for (AffixType affix : itr->second.activeAffixes)
     {
         auto handlerItr = _handlers.find(affix);
@@ -68,7 +68,7 @@ void MythicPlusAffixManager::DeactivateAffixes(Map* map)
             handlerItr->second->OnAffixDeactivate(map);
         }
     }
-    
+
     _instanceStates.erase(itr);
 }
 
@@ -76,12 +76,12 @@ void MythicPlusAffixManager::OnCreatureDeath(Creature* creature, Unit* killer)
 {
     if (!creature)
         return;
-        
+
     Map* map = creature->GetMap();
     InstanceAffixState* state = GetInstanceState(map);
     if (!state)
         return;
-        
+
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
@@ -94,12 +94,12 @@ void MythicPlusAffixManager::OnCreatureDamageDone(Creature* attacker, Unit* vict
 {
     if (!attacker || !victim)
         return;
-        
+
     Map* map = attacker->GetMap();
     InstanceAffixState* state = GetInstanceState(map);
     if (!state)
         return;
-        
+
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
@@ -112,12 +112,12 @@ void MythicPlusAffixManager::OnCreatureDamageTaken(Creature* victim, Unit* attac
 {
     if (!victim || !attacker)
         return;
-        
+
     Map* map = victim->GetMap();
     InstanceAffixState* state = GetInstanceState(map);
     if (!state)
         return;
-        
+
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
@@ -130,12 +130,12 @@ void MythicPlusAffixManager::OnPlayerDamageTaken(Player* player, Unit* attacker,
 {
     if (!player || !attacker)
         return;
-        
+
     Map* map = player->GetMap();
     InstanceAffixState* state = GetInstanceState(map);
     if (!state)
         return;
-        
+
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
@@ -148,12 +148,12 @@ void MythicPlusAffixManager::OnCreatureSelectLevel(Creature* creature)
 {
     if (!creature)
         return;
-        
+
     Map* map = creature->GetMap();
     InstanceAffixState* state = GetInstanceState(map);
     if (!state)
         return;
-        
+
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
@@ -166,12 +166,12 @@ void MythicPlusAffixManager::OnPlayerUpdate(Player* player, uint32 diff)
 {
     if (!player)
         return;
-        
+
     Map* map = player->GetMap();
     InstanceAffixState* state = GetInstanceState(map);
     if (!state)
         return;
-        
+
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
@@ -194,7 +194,7 @@ uint8 MythicPlusAffixManager::GetKeystoneLevel(Map* map) const
 {
     if (!map)
         return 0;
-        
+
     uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     return (itr != _instanceStates.end()) ? itr->second.keystoneLevel : 0;
@@ -211,7 +211,7 @@ MythicPlusAffixManager::InstanceAffixState* MythicPlusAffixManager::GetInstanceS
 {
     if (!map)
         return nullptr;
-        
+
     uint64 key = MakeInstanceKey(map);
     auto itr = _instanceStates.find(key);
     return (itr != _instanceStates.end()) ? &itr->second : nullptr;

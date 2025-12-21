@@ -22,7 +22,7 @@
  * Purpose: Handle dungeon quest start/completion via standard AzerothCore APIs
  *          with improved user experience through categorized gossip menus
  * Version: 3.0 (AC standards + Enhanced UX)
- * 
+ *
  * Uses standard AzerothCore tables:
  * - creature_questrelation (quest starters)
  * - creature_involvedrelation (quest completers)
@@ -127,20 +127,20 @@ namespace DungeonQuestHelper
 
         return true;
     }
-    
+
     void ShowFilteredQuests(Player* player, Creature* creature, uint32 rangeStart, uint32 rangeEnd, const std::string& category)
     {
         // Prepare AC's quest menu, but we'll filter it
         // rangeStart/rangeEnd/category are not used by the current filtered display implementation
         (void)rangeStart; (void)rangeEnd; (void)category;
         player->PrepareGossipMenu(creature);
-        
+
         // Note: AC automatically adds quests from creature_questrelation and creature_involvedrelation
         // The PrepareGossipMenu already filtered by this NPC, we just show them
-        
+
         // Add back button
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back to Main Menu", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BACK_TO_MAIN);
-        
+
         // Send the menu with category title
         player->SendPreparedGossip(creature);
     }
@@ -188,7 +188,7 @@ namespace DungeonQuestHelper
         stats << "Daily Quests Completed: " << dailyQuests << "\n";
         stats << "Weekly Quests Completed: " << weeklyQuests << "\n\n";
         stats << "Next Achievement Milestone:\n";
-        
+
         if (totalQuests < 1)
             stats << "- Complete 1 quest for Dungeon Novice";
         else if (totalQuests < 10)
@@ -263,7 +263,7 @@ public:
          * - Quests the NPC starts are shown as "Accept Quest"
          * - creature_questender is automatically queried
          * - Quests the NPC completes are shown as "Complete Quest"
-         * 
+         *
          * IMPORTANT: Return false to let AC handle it automatically!
          * If we handle it manually, AC's auto-quest-list won't work.
          */

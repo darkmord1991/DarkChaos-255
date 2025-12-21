@@ -1,25 +1,25 @@
 /*
  * Dark Chaos - Duel Statistics Addon Handler
  * ============================================
- * 
+ *
  * Server-side handler for the DC-Duels addon module.
  * Provides duel statistics, leaderboard data, and spectator support via DCAddonProtocol.
- * 
+ *
  * Features:
  * - Player duel statistics (wins, losses, draws, damage, timing)
  * - Top duelists leaderboard
  * - Active duel list for spectating
  * - Real-time duel start/end notifications
- * 
+ *
  * Message Format:
  * - JSON format: DUEL|OPCODE|J|{json}
- * 
+ *
  * Opcodes (from DCAddonNamespace.h):
  * - CMSG: 0x01 (GET_STATS), 0x02 (GET_LEADERBOARD), 0x03 (SPECTATE_DUEL)
  * - SMSG: 0x10 (STATS), 0x11 (LEADERBOARD), 0x12 (DUEL_START), 0x13 (DUEL_END), 0x14 (DUEL_UPDATE)
- * 
+ *
  * Integrates with dc_phased_duels.cpp for statistics data.
- * 
+ *
  * Copyright (C) 2025 DarkChaos Development Team
  */
 
@@ -36,7 +36,7 @@ namespace DCDuelAddon
 {
     // Module identifier - must match client-side and DCAddonNamespace.h
     constexpr const char* MODULE = "DUEL";
-    
+
     // Opcodes - match DCAddonNamespace.h Opcode::Duel
     namespace Opcode
     {
@@ -44,7 +44,7 @@ namespace DCDuelAddon
         constexpr uint8 CMSG_GET_STATS         = 0x01;  // Request player's duel stats
         constexpr uint8 CMSG_GET_LEADERBOARD   = 0x02;  // Request top duelists
         constexpr uint8 CMSG_SPECTATE_DUEL     = 0x03;  // Request to spectate an active duel
-        
+
         // Server -> Client
         constexpr uint8 SMSG_STATS             = 0x10;  // Player's duel statistics
         constexpr uint8 SMSG_LEADERBOARD       = 0x11;  // Top duelists list
@@ -52,7 +52,7 @@ namespace DCDuelAddon
         constexpr uint8 SMSG_DUEL_END          = 0x13;  // Notification: duel ended
         constexpr uint8 SMSG_DUEL_UPDATE       = 0x14;  // Real-time duel update (damage, etc.)
     }
-    
+
     // Configuration
     namespace Config
     {
@@ -60,11 +60,11 @@ namespace DCDuelAddon
         // Note: LeaderboardLimit is currently unused but reserved for future config
         // constexpr const char* LEADERBOARD_LIMIT = "DCDuelAddon.LeaderboardLimit";
     }
-    
+
     // =======================================================================
     // Handler Functions
     // =======================================================================
-    
+
     /**
      * Send player's duel statistics
      * JSON Response:
@@ -85,7 +85,7 @@ namespace DCDuelAddon
     {
         if (!player || !player->GetSession())
             return;
-        
+
         // Query from database
         QueryResult result = CharacterDatabase.Query(
             "SELECT d.wins, d.losses, d.draws, d.total_damage_dealt, d.total_damage_taken, "
@@ -94,9 +94,9 @@ namespace DCDuelAddon
             "LEFT JOIN characters c ON c.guid = d.last_opponent_guid "
             "WHERE d.player_guid = {}",
             targetGuid.GetCounter());
-        
+
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_STATS);
-        
+
         if (!result)
         {
             // No stats yet - send empty response
@@ -124,10 +124,10 @@ namespace DCDuelAddon
             uint32 fastestWin = fields[6].Get<uint32>();
             uint64 lastDuelTime = fields[7].Get<uint64>();
             std::string lastOpponentName = fields[9].IsNull() ? "" : fields[9].Get<std::string>();
-            
+
             uint32 total = wins + losses + draws;
             double winRate = total > 0 ? (static_cast<double>(wins) / static_cast<double>(total)) * 100.0 : 0.0;
-            
+
             msg.Set("wins", wins);
             msg.Set("losses", losses);
             msg.Set("draws", draws);
@@ -140,17 +140,17 @@ namespace DCDuelAddon
             msg.Set("lastOpponentName", lastOpponentName);
             msg.Set("hasStats", true);
         }
-        
+
         msg.Send(player);
     }
-    
+
     /**
      * Send leaderboard of top duelists
      * Supports different sorting modes: wins, winrate, rating, streak
      * JSON Response:
      * {
      *   "entries": [
-     *     { "rank": uint32, "name": string, "class": string, "wins": uint32, 
+     *     { "rank": uint32, "name": string, "class": string, "wins": uint32,
      *       "losses": uint32, "winRate": float, "total": uint32 }
      *   ],
      *   "totalCount": uint32,
@@ -162,16 +162,16 @@ namespace DCDuelAddon
     {
         if (!player || !player->GetSession())
             return;
-        
+
         // Clamp limit
         if (limit == 0) limit = 25;
         if (limit > 100) limit = 100;
-        
+
         uint32 offset = page * limit;
-        
+
         // Build ORDER BY clause based on sortBy
         std::string orderBy = "d.wins DESC, (d.wins + d.losses + d.draws) DESC";  // Default: by wins
-        
+
         if (sortBy == "winrate")
         {
             orderBy = "(d.wins * 100.0 / NULLIF(d.wins + d.losses + d.draws, 0)) DESC, d.wins DESC";
@@ -184,12 +184,12 @@ namespace DCDuelAddon
         {
             orderBy = "d.total_damage_dealt DESC, d.wins DESC";
         }
-        
+
         // Get total count
         QueryResult countResult = CharacterDatabase.Query(
             "SELECT COUNT(*) FROM dc_duel_statistics WHERE wins > 0 OR losses > 0");
         uint32 totalCount = countResult ? countResult->Fetch()[0].Get<uint32>() : 0;
-        
+
         // Get leaderboard entries
         QueryResult result = CharacterDatabase.Query(
             "SELECT c.name, c.class, d.wins, d.losses, d.draws, d.total_damage_dealt "
@@ -199,15 +199,15 @@ namespace DCDuelAddon
             "ORDER BY {} "
             "LIMIT {} OFFSET {}",
             orderBy, limit, offset);
-        
+
         // Build JSON response
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_LEADERBOARD);
-        
+
         // Build entries array as JSON string
         std::string entriesJson = "[";
         uint32 rank = offset + 1;
         bool first = true;
-        
+
         if (result)
         {
             do
@@ -219,10 +219,10 @@ namespace DCDuelAddon
                 uint32 losses = fields[3].Get<uint32>();
                 uint32 draws = fields[4].Get<uint32>();
                 uint32 damageDealt = fields[5].Get<uint32>();
-                
+
                 uint32 total = wins + losses + draws;
                 double winRate = total > 0 ? (static_cast<double>(wins) / static_cast<double>(total)) * 100.0 : 0.0;
-                
+
                 // Get class name
                 std::string className;
                 switch (classId)
@@ -239,32 +239,32 @@ namespace DCDuelAddon
                     case 11: className = "DRUID"; break;
                     default: className = "UNKNOWN"; break;
                 }
-                
+
                 if (!first)
                     entriesJson += ",";
                 first = false;
-                
+
                 char entryBuf[512];
                 std::snprintf(entryBuf, sizeof(entryBuf),
                     "{\"rank\":%u,\"name\":\"%s\",\"class\":\"%s\",\"wins\":%u,\"losses\":%u,"
                     "\"draws\":%u,\"winRate\":%.1f,\"total\":%u,\"damage\":%u}",
                     rank++, name.c_str(), className.c_str(), wins, losses, draws, winRate, total, damageDealt);
                 entriesJson += entryBuf;
-                
+
             } while (result->NextRow());
         }
-        
+
         entriesJson += "]";
-        
+
         msg.Set("entries", entriesJson);
         msg.Set("totalCount", totalCount);
         msg.Set("page", page);
         msg.Set("sortBy", sortBy);
         msg.Set("limit", limit);
-        
+
         msg.Send(player);
     }
-    
+
     /**
      * Handle spectate request for active duels
      * Returns list of active duels if no target specified
@@ -274,9 +274,9 @@ namespace DCDuelAddon
     {
         if (!player || !player->GetSession())
             return;
-        
+
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_DUEL_UPDATE);
-        
+
         if (targetGuid.IsEmpty())
         {
             // Return list of active duels
@@ -294,22 +294,22 @@ namespace DCDuelAddon
             msg.Set("success", false);
             msg.Set("message", "Duel spectating is not yet implemented.");
         }
-        
+
         msg.Send(player);
     }
-    
+
     // =======================================================================
     // Message Handlers
     // =======================================================================
-    
+
     void HandleGetStats(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player)
             return;
-        
+
         // Check if requesting own stats or another player's
         ObjectGuid targetGuid = player->GetGUID();
-        
+
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         if (!json.IsNull() && json.HasKey("targetGuid"))
         {
@@ -319,19 +319,19 @@ namespace DCDuelAddon
                 targetGuid = ObjectGuid::Create<HighGuid::Player>(static_cast<uint32>(rawGuid));
             }
         }
-        
+
         SendPlayerStats(player, targetGuid);
     }
-    
+
     void HandleGetLeaderboard(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player)
             return;
-        
+
         std::string sortBy = "wins";  // Default sort
         uint32 page = 0;
         uint32 limit = 25;
-        
+
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         if (!json.IsNull())
         {
@@ -342,17 +342,17 @@ namespace DCDuelAddon
             if (json.HasKey("limit"))
                 limit = json["limit"].AsUInt32();
         }
-        
+
         SendLeaderboard(player, sortBy, page, limit);
     }
-    
+
     void HandleSpectateDuel(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player)
             return;
-        
+
         ObjectGuid targetGuid;
-        
+
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         if (!json.IsNull() && json.HasKey("targetGuid"))
         {
@@ -362,14 +362,14 @@ namespace DCDuelAddon
                 targetGuid = ObjectGuid::Create<HighGuid::Player>(static_cast<uint32>(rawGuid));
             }
         }
-        
+
         HandleSpectateRequest(player, targetGuid);
     }
-    
+
     // =======================================================================
     // Notification Helpers (called from PhasedDuels system)
     // =======================================================================
-    
+
     /**
      * Notify addon clients about a duel starting
      * Called from DCPhasedDuelsPlayerScript::OnPlayerDuelStart
@@ -378,7 +378,7 @@ namespace DCDuelAddon
     {
         if (!player1 || !player2)
             return;
-        
+
         // Build notification for player1
         {
             DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_DUEL_START);
@@ -388,7 +388,7 @@ namespace DCDuelAddon
             msg.Set("phaseId", phaseId);
             msg.Send(player1);
         }
-        
+
         // Build notification for player2
         {
             DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_DUEL_START);
@@ -398,11 +398,11 @@ namespace DCDuelAddon
             msg.Set("phaseId", phaseId);
             msg.Send(player2);
         }
-        
-        LOG_DEBUG("scripts.addon", "DCDuelAddon: Sent duel start notifications for {} vs {}", 
+
+        LOG_DEBUG("scripts.addon", "DCDuelAddon: Sent duel start notifications for {} vs {}",
                   player1->GetName(), player2->GetName());
     }
-    
+
     /**
      * Notify addon clients about a duel ending
      * Called from DCPhasedDuelsPlayerScript::OnPlayerDuelEnd
@@ -411,7 +411,7 @@ namespace DCDuelAddon
     {
         if (!winner || !loser)
             return;
-        
+
         // Notify winner
         {
             DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_DUEL_END);
@@ -420,7 +420,7 @@ namespace DCDuelAddon
             msg.Set("duration", durationSeconds);
             msg.Send(winner);
         }
-        
+
         // Notify loser
         {
             DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_DUEL_END);
@@ -429,11 +429,11 @@ namespace DCDuelAddon
             msg.Set("duration", durationSeconds);
             msg.Send(loser);
         }
-        
-        LOG_DEBUG("scripts.addon", "DCDuelAddon: Sent duel end notifications ({} beat {})", 
+
+        LOG_DEBUG("scripts.addon", "DCDuelAddon: Sent duel end notifications ({} beat {})",
                   winner->GetName(), loser->GetName());
     }
-    
+
 } // namespace DCDuelAddon
 
 // =======================================================================
@@ -444,25 +444,25 @@ class DCDuelAddonWorldScript : public WorldScript
 {
 public:
     DCDuelAddonWorldScript() : WorldScript("DCDuelAddonWorldScript") { }
-    
+
     void OnStartup() override
     {
         bool enabled = sConfigMgr->GetOption<bool>(DCDuelAddon::Config::ENABLED, true);
-        
+
         if (enabled)
         {
             // Register message handlers
             auto& router = DCAddon::MessageRouter::Instance();
-            
+
             router.RegisterHandler(DCDuelAddon::MODULE, DCDuelAddon::Opcode::CMSG_GET_STATS,
                 DCDuelAddon::HandleGetStats);
-            
+
             router.RegisterHandler(DCDuelAddon::MODULE, DCDuelAddon::Opcode::CMSG_GET_LEADERBOARD,
                 DCDuelAddon::HandleGetLeaderboard);
-            
+
             router.RegisterHandler(DCDuelAddon::MODULE, DCDuelAddon::Opcode::CMSG_SPECTATE_DUEL,
                 DCDuelAddon::HandleSpectateDuel);
-            
+
             LOG_INFO("scripts.addon", "DCDuelAddon: Duel addon handler initialized");
         }
         else

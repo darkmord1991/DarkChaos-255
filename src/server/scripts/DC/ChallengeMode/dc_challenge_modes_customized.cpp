@@ -40,7 +40,7 @@ namespace
 }
 
 // Global configuration map - replaces 240 lines of duplicate switch statements
-const std::map<ChallengeModeSettings, ChallengeSettingConfig> g_ChallengeSettingConfigs = 
+const std::map<ChallengeModeSettings, ChallengeSettingConfig> g_ChallengeSettingConfigs =
 {
     { SETTING_HARDCORE, {
         SETTING_HARDCORE,
@@ -106,7 +106,6 @@ const std::map<ChallengeModeSettings, ChallengeSettingConfig> g_ChallengeSetting
         SPELL_AURA_IRON_MAN_PLUS
     }}
 };
-
 
 ChallengeModes* ChallengeModes::instance()
 {
@@ -320,7 +319,7 @@ void ChallengeModes::RefreshChallengeAuras(Player* player)
             if (!player->HasAura(config.auraId))
             {
                 player->CastSpell(player, config.auraId, true);
-                LOG_DEBUG("dc.challenge", "ChallengeMode: Applied aura {} ({}) to player {}", 
+                LOG_DEBUG("dc.challenge", "ChallengeMode: Applied aura {} ({}) to player {}",
                     config.auraId, config.name, player->GetName());
             }
         }
@@ -496,7 +495,7 @@ public:
     void OnBeforeConfigLoad(bool /*reload*/) override
     {
         sChallengeModes->challengesEnabled = sConfigMgr->GetOption<bool>("ChallengeModes.Enable", false);
-        
+
         if (!sChallengeModes->enabled())
             return;
 
@@ -738,10 +737,10 @@ public:
         bool hasQuestXPOnly = sChallengeModes->challengeEnabledForPlayer(SETTING_QUEST_XP_ONLY, player);
         bool hasIronMan = sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player);
         bool hasIronManPlus = sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN_PLUS, player);
-        
+
         // XP modes are mutually exclusive
         [[maybe_unused]] bool hasAnyXPMode = hasSlowXP || hasVerySlowXP || hasQuestXPOnly;
-        
+
         // Iron Man includes Hardcore, Self-Crafted, and Item Quality - blocks those individually
         // Hardcore and Semi-Hardcore are mutually exclusive
 
@@ -1062,11 +1061,11 @@ public:
 
             std::string explanation = GetChallengeExplanation(setting);
             std::string title = GetChallengeTitle(setting);
-            
+
             // Display information in gossip
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, title, GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
-            
+
             // Split explanation into lines for better display
             size_t pos = 0;
             size_t lastPos = 0;
@@ -1084,12 +1083,12 @@ public:
                 if (!line.empty())
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT, line, GOSSIP_SENDER_MAIN, 9999);
             }
-            
+
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00ff00[Continue] I want to activate this mode|r", GOSSIP_SENDER_MAIN, action + 100);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Return to mode selection|r", GOSSIP_SENDER_MAIN, 998);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
-            
+
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
         }
@@ -1098,7 +1097,7 @@ public:
         {
             return OnGossipHello(player, go);
         }
-        
+
         if (action >= 100 && action < 200) // Step 2: Show confirmation
         {
             uint32 challengeId = action - 100;
@@ -1107,7 +1106,7 @@ public:
 
             if (g_ChallengeSettingConfigs.find(setting) == g_ChallengeSettingConfigs.end())
                 return OnGossipHello(player, go);
-            
+
             // Check if already enabled
             if (sChallengeModes->challengeEnabledForPlayer(setting, player))
             {
@@ -1197,7 +1196,7 @@ public:
             }
 
             // Cannot enable individual modes if Iron Man is active
-            if ((setting == SETTING_HARDCORE || setting == SETTING_SEMI_HARDCORE || 
+            if ((setting == SETTING_HARDCORE || setting == SETTING_SEMI_HARDCORE ||
                  setting == SETTING_SELF_CRAFTED || setting == SETTING_ITEM_QUALITY_LEVEL) &&
                 IsIronManOrPlusActive(player))
             {
@@ -1259,11 +1258,11 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cff00ff00[CONFIRM] Yes, I accept the challenge!|r", GOSSIP_SENDER_MAIN, action + 100);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700[<< Back] Let me reconsider...|r", GOSSIP_SENDER_MAIN, 998);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
-            
+
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
         }
-        
+
         if (action >= 200 && action < 300) // Step 3: Activate challenge mode
         {
             uint32 challengeId = action - 200;
@@ -1276,7 +1275,7 @@ public:
                 CloseGossipMenuFor(player);
                 return true;
             }
-            
+
             // Activate challenge mode
             player->UpdatePlayerSetting("mod-challenge-modes", setting, 1);
             sChallengeModes->RefreshChallengeAuras(player);
@@ -1288,10 +1287,10 @@ public:
             // Persist active modes to tracking DB (optional analytics / admin tooling)
             ChallengeModeDatabase::InitializeTracking(player->GetGUID());
             ChallengeModeDatabase::SyncActiveModesFromSettings(player);
-            
+
             std::string title = GetChallengeTitle(setting);
             std::string activationMsg = "|cff00ff00Challenge Mode Activated:|r " + title;
-            
+
             // Success message
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff00ff00=== CHALLENGE ACTIVATED ===|r", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
@@ -1301,9 +1300,9 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFFD700May the odds be ever in your favor!|r", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
-            
+
             ChatHandler(player->GetSession()).PSendSysMessage("%s", activationMsg.c_str());
-            
+
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
         }
@@ -1329,15 +1328,15 @@ void HandleHardcoreDeath(Player* victim, uint32 killerEntry, std::string const& 
     ChallengeModeDatabase::SyncActiveModesFromSettings(victim);
     ChallengeModeDatabase::RecordHardcoreDeath(victim->GetGUID(), victim, killerEntry, killerName);
     ChallengeModeDatabase::LockCharacter(victim->GetGUID());
-    
+
     // Global announcement
     std::ostringstream ss;
-    ss << "|cffFF0000[HARDCORE DEATH]|r " << victim->GetName() 
+    ss << "|cffFF0000[HARDCORE DEATH]|r " << victim->GetName()
        << " has fallen at level " << (uint32)victim->GetLevel() << "! "
        << "Killed by " << killerName << ". "
        << "RIP - May they rest in peace.";
     sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
-    
+
     // Show final stats to player
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000========================================|r");
     ChatHandler(victim->GetSession()).PSendSysMessage("|cffFF0000   HARDCORE CHARACTER - DECEASED   |r");
@@ -1377,7 +1376,7 @@ public:
             return;
 
         HandleHardcoreDeath(victim, killer ? killer->GetEntry() : 0, killer ? killer->GetName() : "Unknown");
-        
+
         // Make player a permanent ghost (original functionality)
         victim->SetPvPDeath(true);
     }
@@ -1388,7 +1387,7 @@ public:
             return;
 
         HandleHardcoreDeath(victim, 0, killer ? killer->GetName() : "Unknown");
-        
+
         // Make player a permanent ghost (original functionality)
         victim->SetPvPDeath(true);
     }
@@ -1424,7 +1423,7 @@ public:
             ChatHandler(player->GetSession()).PSendSysMessage("You cannot log in with this character anymore.");
             ChatHandler(player->GetSession()).PSendSysMessage("Please create a new character or choose another one.");
             ChatHandler(player->GetSession()).SendSysMessage("|cffFF0000========================================|r");
-            
+
             // Kick player after showing message
             player->GetSession()->KickPlayer("Hardcore character is deceased");
             return;
@@ -1452,70 +1451,70 @@ public:
     static bool HandleChallengeInfoCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
-        
+
         handler->PSendSysMessage("|cff00ff00========================================|r");
         handler->PSendSysMessage("|cff00ff00   ACTIVE CHALLENGE MODES|r");
         handler->PSendSysMessage("|cff00ff00========================================|r");
-        
+
         bool hasAnyChallenges = false;
-        
+
         // Check each challenge type
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_HARDCORE, player))
         {
             handler->PSendSysMessage("|cffFF0000[HARDCORE]|r Active - One life only!");
             hasAnyChallenges = true;
         }
-        
+
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_SEMI_HARDCORE, player))
         {
             handler->PSendSysMessage("|cffFF8800[SEMI-HARDCORE]|r Active - Death = Gear loss");
             hasAnyChallenges = true;
         }
-        
+
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_SELF_CRAFTED, player))
         {
             handler->PSendSysMessage("|cff00ffff[SELF-CRAFTED]|r Active - Crafted gear only");
             hasAnyChallenges = true;
         }
-        
+
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_ITEM_QUALITY_LEVEL, player))
         {
             handler->PSendSysMessage("|cffaaaaaa[ITEM QUALITY]|r Active - White/gray only");
             hasAnyChallenges = true;
         }
-        
+
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_SLOW_XP_GAIN, player))
         {
             handler->PSendSysMessage("|cff8888ff[SLOW XP]|r Active - 50%% XP rate");
             hasAnyChallenges = true;
         }
-        
+
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_VERY_SLOW_XP_GAIN, player))
         {
             handler->PSendSysMessage("|cff4444ff[VERY SLOW XP]|r Active - 25%% XP rate");
             hasAnyChallenges = true;
         }
-        
+
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_QUEST_XP_ONLY, player))
         {
             handler->PSendSysMessage("|cff00ff88[QUEST XP ONLY]|r Active - Quests only");
             hasAnyChallenges = true;
         }
-        
+
         if (sChallengeModes->challengeEnabledForPlayer(SETTING_IRON_MAN, player))
         {
             handler->PSendSysMessage("|cffFFD700[IRON MAN]|r Active - Ultimate challenge!");
             hasAnyChallenges = true;
         }
-        
+
         if (!hasAnyChallenges)
         {
             handler->PSendSysMessage("No active challenge modes.");
             handler->PSendSysMessage("Visit a Challenge Shrine to begin your journey!");
         }
-        
+
         handler->PSendSysMessage("|cff00ff00========================================|r");
-        
+
         return true;
     }
 };

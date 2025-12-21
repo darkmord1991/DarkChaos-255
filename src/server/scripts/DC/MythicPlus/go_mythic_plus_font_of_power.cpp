@@ -4,7 +4,7 @@
  *
  * Font of Power GameObject Script
  * Handles keystone activation with group ready check support
- * 
+ *
  * When a player clicks the Font of Power:
  * 1. Validates keystone can be activated
  * 2. If group present: Initiates group ready check via AIO
@@ -95,7 +95,7 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
                 Acore::StringFormat("|cff00ff00[Group Ready Check]|r +{} {}", descriptor.level, dungeonName),
                 GOSSIP_SENDER_MAIN, ACTION_START_READY);
-            
+
             // Also show instant start for leader (bypasses ready check)
             if (group->IsLeader(player->GetGUID()))
             {
@@ -222,15 +222,15 @@ private:
                     role = "TANK";
                 else if (member->HasHealSpec())
                     role = "HEALER";
-                
+
                 members.push_back({member->GetName(), role});
             }
         }
 
         // Build affixes list
         std::vector<uint32> affixIds;
-        const auto& weeklyAffixes = sMythicScaling->GetWeeklyAffixes();
-        for (const auto& affix : weeklyAffixes)
+        auto const& weeklyAffixes = sMythicScaling->GetWeeklyAffixes();
+        for (auto const& affix : weeklyAffixes)
         {
             affixIds.push_back(affix.spellId);
         }
@@ -246,8 +246,8 @@ private:
                 for (size_t i = 0; i < members.size(); ++i)
                 {
                     if (i > 0) membersJson += ",";
-                    membersJson += Acore::StringFormat("{\"name\":\"%s\",\"role\":\"%s\",\"guid\":\"%s\"}", 
-                        members[i].first.c_str(), 
+                    membersJson += Acore::StringFormat("{\"name\":\"%s\",\"role\":\"%s\",\"guid\":\"%s\"}",
+                        members[i].first.c_str(),
                         members[i].second.c_str(),
                         member->GetGUID().ToString().c_str());
                 }
@@ -312,7 +312,7 @@ public:
         }
 
         PendingKeystoneActivation& pending = it->second;
-        
+
         // Update player state
         pending.memberStates[player->GetGUID()] = accepted ? STATE_READY : STATE_DECLINED;
 
@@ -340,7 +340,7 @@ public:
 
         // Check if all ready
         bool allReady = true;
-        for (const auto& [guid, state] : pending.memberStates)
+        for (auto const& [guid, state] : pending.memberStates)
         {
             if (state == STATE_PENDING)
             {
@@ -448,4 +448,3 @@ void AddSC_go_mythic_plus_font_of_power()
 {
     new go_mythic_plus_font_of_power();
 }
-

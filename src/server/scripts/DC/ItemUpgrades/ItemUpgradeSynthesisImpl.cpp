@@ -92,7 +92,7 @@ namespace DarkChaos
 
                 uint32 player_level = player->GetLevel();
 
-                for (const auto& pair : synthesis_recipes_)
+                for (auto const& pair : synthesis_recipes_)
                 {
                     const TransmutationRecipe& recipe = pair.second;
 
@@ -165,7 +165,7 @@ namespace DarkChaos
 
                 // Check input items
                 required_items.clear();
-                for (const auto& input : recipe.input_items)
+                for (auto const& input : recipe.input_items)
                 {
                     uint32 count = CountMatchingItems(player, input);
                     if (count < input.quantity)
@@ -240,7 +240,7 @@ namespace DarkChaos
 
                     // Consume input items
                     consumed_items.clear();
-                    for (const auto& input : recipe.input_items)
+                    for (auto const& input : recipe.input_items)
                     {
                         if (!ConsumeItemsForSynthesis(player, input, consumed_items))
                             throw std::runtime_error("Failed to consume input items");
@@ -400,7 +400,7 @@ namespace DarkChaos
                     return false;
 
                 // Check input items (basic count check)
-                for (const auto& input : recipe.input_items)
+                for (auto const& input : recipe.input_items)
                 {
                     if (CountMatchingItems(player, input) < input.quantity)
                         return false;

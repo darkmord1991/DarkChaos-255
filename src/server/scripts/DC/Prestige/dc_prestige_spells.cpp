@@ -5,7 +5,7 @@
  * DarkChaos-255 Prestige Spell Scripts
  *
  * Applies configurable stat bonuses for prestige levels (800010-800019).
- * 
+ *
  * SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE automatically handles all stats including armor,
  * so no manual HandleStatModifier() calls are needed.
  */
@@ -20,7 +20,7 @@ namespace
 {
     // Cache the stat bonus percentage to avoid reading config on every aura calculation
     uint32 g_CachedStatBonusPercent = 0;
-    
+
     // Shared aura handler that rescales the base amount using the configured bonus.
     template<uint8 PrestigeLevel>
     class PrestigeBonusAuraScript : public AuraScript
@@ -51,23 +51,23 @@ namespace
             return new PrestigeBonusAuraScript<PrestigeLevel>();
         }
     };
-    
+
     // WorldScript to cache config value on startup and config reload
     class PrestigeSpellConfigScript : public WorldScript
     {
     public:
         PrestigeSpellConfigScript() : WorldScript("PrestigeSpellConfigScript") { }
-        
+
         void OnStartup() override
         {
             CacheConfig();
         }
-        
+
         void OnAfterConfigLoad(bool /*reload*/) override
         {
             CacheConfig();
         }
-        
+
     private:
         void CacheConfig()
         {

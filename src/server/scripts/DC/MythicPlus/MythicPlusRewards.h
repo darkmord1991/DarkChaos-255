@@ -24,7 +24,7 @@ inline uint32 GetItemLevelForKeystoneLevel(uint8 keystoneLevel)
         return 252; // M+5-7: Tier 2
     if (keystoneLevel <= 11)
         return 264; // M+8-11: Tier 3
-    
+
     // M+12+: 277 base + 13 per tier (M+16=290, M+20=303, etc.)
     return 277 + (((keystoneLevel - 12) / 4) * 13);
 }

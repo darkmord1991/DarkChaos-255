@@ -122,4 +122,3 @@ void AddCommandsScripts()
     AddSC_dc_addons_commandscript();
     AddSC_dc_dungeonquests_commandscript();
 }
-

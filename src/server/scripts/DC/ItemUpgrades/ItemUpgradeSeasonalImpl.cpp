@@ -581,7 +581,7 @@ public:
         handler->PSendSysMessage("|cffffd700===== %s Leaderboard =====|r", type.c_str());
         handler->PSendSysMessage("");
 
-        for (const auto& entry : entries)
+        for (auto const& entry : entries)
         {
             handler->PSendSysMessage("#%u - %s (Score: %u, Items: %u, Prestige: %u)",
                 entry.rank, entry.player_name.c_str(), entry.score,
@@ -608,7 +608,7 @@ public:
         handler->PSendSysMessage("(Showing last %u upgrades)", limit);
         handler->PSendSysMessage("");
 
-        for (const auto& entry : history)
+        for (auto const& entry : history)
         {
             time_t timestamp = entry.timestamp;
             char time_buf[64];

@@ -1,10 +1,10 @@
 /*
  * Dark Chaos - Hotspot Addon Module Handler
  * ==========================================
- * 
+ *
  * Handles DC|SPOT|... messages for Hotspot XP bonus zones.
  * Integrates with ac_hotspots.cpp
- * 
+ *
  * Copyright (C) 2024 Dark Chaos Development Team
  */
 
@@ -71,7 +71,7 @@ namespace Hotspot
         h.Set("name", JsonValue("Hotspot"));
         return h;
     }
-    
+
     // Handler: Get list of active hotspots
     static void HandleGetList(Player* player, const ParsedMessage& /*msg*/)
     {
@@ -82,7 +82,7 @@ namespace Hotspot
             "(expire_time - UNIX_TIMESTAMP()) as dur "
             "FROM dc_hotspots_active "
             "WHERE expire_time > UNIX_TIMESTAMP()");
-        
+
         // Get XP bonus from config (same for all hotspots)
         uint32 xpBonus = GetHotspotXPBonusPercentage();
 
@@ -111,7 +111,7 @@ namespace Hotspot
             .Set("hotspots", hotspots)
             .Send(player);
     }
-    
+
     // Handler: Get specific hotspot info
     static void HandleGetInfo(Player* player, const ParsedMessage& msg)
     {
@@ -124,14 +124,14 @@ namespace Hotspot
                 .Send(player);
             return;
         }
-        
+
         QueryResult result = WorldDatabase.Query(
             "SELECT id, map_id, zone_id, x, y, z, "
             "(expire_time - UNIX_TIMESTAMP()) as dur "
             "FROM dc_hotspots_active "
             "WHERE id = {} AND expire_time > UNIX_TIMESTAMP()",
             hotspotId);
-        
+
         if (!result)
         {
             JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_INFO)
@@ -140,10 +140,10 @@ namespace Hotspot
                 .Send(player);
             return;
         }
-        
+
         // Get XP bonus from config
         uint32 xpBonus = GetHotspotXPBonusPercentage();
-        
+
         uint32 mapId = (*result)[1].Get<uint32>();
         uint32 zoneId = (*result)[2].Get<uint32>();
         float x = (*result)[3].Get<float>();
@@ -161,7 +161,7 @@ namespace Hotspot
             reply.Set(k, v);
         reply.Send(player);
     }
-    
+
     // Handler: Teleport to hotspot (GM only or with item)
     static void HandleTeleport(Player* player, const ParsedMessage& msg)
     {
@@ -174,15 +174,15 @@ namespace Hotspot
                 .Send(player);
             return;
         }
-        
+
         // Check if player has permission (GM level 1+ or special item)
         bool canTeleport = player->GetSession()->GetSecurity() >= SEC_MODERATOR;
-        
+
         // Could also check for teleport item here
         // uint32 teleportItemId = sConfigMgr->GetOption<uint32>("Hotspot.TeleportItemId", 0);
         // if (teleportItemId > 0 && player->HasItemCount(teleportItemId, 1))
         //     canTeleport = true;
-        
+
         if (!canTeleport)
         {
             JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
@@ -192,11 +192,11 @@ namespace Hotspot
                 .Send(player);
             return;
         }
-        
+
         QueryResult result = WorldDatabase.Query(
             "SELECT map_id, x, y, z FROM dc_hotspots_active WHERE id = {} AND expire_time > UNIX_TIMESTAMP()",
             hotspotId);
-        
+
         if (!result)
         {
             JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
@@ -206,12 +206,12 @@ namespace Hotspot
                 .Send(player);
             return;
         }
-        
+
         uint32 mapId = (*result)[0].Get<uint32>();
         float x = (*result)[1].Get<float>();
         float y = (*result)[2].Get<float>();
         float z = (*result)[3].Get<float>();
-        
+
         player->TeleportTo(mapId, x, y, z, player->GetOrientation());
 
         JsonMessage(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_TELEPORT_RESULT)
@@ -219,17 +219,17 @@ namespace Hotspot
             .Set("id", hotspotId)
             .Send(player);
     }
-    
+
     // Broadcast hotspot spawn to all players
-    void BroadcastHotspotSpawn(uint32 id, uint32 mapId, uint32 zoneId, 
-                               const std::string& zoneName, float x, float y, 
+    void BroadcastHotspotSpawn(uint32 id, uint32 mapId, uint32 zoneId,
+                               const std::string& zoneName, float x, float y,
                                uint32 duration, float bonus)
     {
         // Build message
         (void)bonus;
         JsonMessage msg(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_SPAWN);
         msg.Set("hotspot", BuildHotspotObject(id, mapId, zoneId, zoneName, x, y, 0.0f, duration, static_cast<uint32>(GetHotspotXPBonusPercentage())));
-        
+
         // Send to all online players
         // This would need access to SessionMgr - for now placeholder
         // SessionMgr::Instance().DoForAllSessions([&msg](WorldSession* session) {
@@ -237,24 +237,24 @@ namespace Hotspot
         //         msg.Send(player);
         // });
     }
-    
+
     // Broadcast hotspot expiration
     void BroadcastHotspotExpire(uint32 id)
     {
         // Similar to spawn broadcast
         JsonMessage msg(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_EXPIRE);
         msg.Set("id", id);
-        
+
         // Send to all online players
     }
-    
+
     // Register all handlers
     void RegisterHandlers()
     {
         DC_REGISTER_HANDLER(MODULE_HOTSPOT, Opcode::Hotspot::CMSG_GET_LIST, HandleGetList);
         DC_REGISTER_HANDLER(MODULE_HOTSPOT, Opcode::Hotspot::CMSG_GET_INFO, HandleGetInfo);
         DC_REGISTER_HANDLER(MODULE_HOTSPOT, Opcode::Hotspot::CMSG_TELEPORT, HandleTeleport);
-        
+
         LOG_INFO("dc.addon", "Hotspot module handlers registered");
     }
 

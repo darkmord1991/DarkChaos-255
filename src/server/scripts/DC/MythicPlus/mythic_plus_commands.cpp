@@ -76,9 +76,9 @@ public:
             affixes.push_back(AFFIX_NECROTIC);
         if (keystoneLevel >= 10)
             affixes.push_back(AFFIX_GRIEVOUS);
-        
+
         sAffixMgr->ActivateAffixes(map, affixes, keystoneLevel);
-        
+
         handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: Activated Keystone Level |cffff8000+{}|r with affixes:", keystoneLevel));
         handler->SendSysMessage(Acore::StringFormat("  - {}", affixes.size() >= 1 ? "Tyrannical" : ""));
         handler->SendSysMessage(Acore::StringFormat("  - {}", affixes.size() >= 2 ? "Bolstering" : ""));
@@ -124,7 +124,7 @@ public:
                 return true;
             }
         }
-        
+
         handler->SendSysMessage("|cffff0000Error:|r Could not create keystone. Inventory may be full.");
         return false;
     }
@@ -146,7 +146,7 @@ public:
         if (sMythicRuns->GenerateVaultRewardPool(guidLow, seasonId, weekStart))
         {
             handler->SendSysMessage("|cff00ff00Mythic+|r: Generated weekly vault reward pool.");
-            
+
             // Show available rewards
             auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
             for (auto const& [slotIndex, itemId, itemLevel] : rewards)
@@ -158,7 +158,7 @@ public:
                     handler->SendSysMessage(rewardMsg.c_str());
                 }
             }
-            
+
             return true;
         }
 
@@ -209,9 +209,9 @@ public:
 
         AffixType type = static_cast<AffixType>(affixType.value_or(AFFIX_BOLSTERING));
         std::vector<AffixType> affixes = { type };
-        
+
         sAffixMgr->ActivateAffixes(map, affixes, 10);
-        
+
         handler->SendSysMessage(Acore::StringFormat("|cff00ff00Mythic+|r: Activated affix type {}", static_cast<uint8>(type)));
         return true;
     }
@@ -275,17 +275,17 @@ public:
         auto affixes = sAffixMgr->GetActiveAffixes(map);
 
         handler->SendSysMessage("|cff00ff00=== Mythic+ Dungeon Info ===");
-        
+
         if (profile)
             handler->SendSysMessage(Acore::StringFormat("Dungeon: |cffffffff{}|r", profile->name));
-        
+
         handler->SendSysMessage(Acore::StringFormat("Map ID: |cffffffff{}|r", map->GetId()));
         handler->SendSysMessage(Acore::StringFormat("Difficulty: |cffffffff{}|r", static_cast<uint32>(sMythicScaling->ResolveDungeonDifficulty(map))));
-        
+
         if (keystoneLevel > 0)
         {
             handler->SendSysMessage(Acore::StringFormat("Keystone Level: |cffff8000+{}|r", keystoneLevel));
-            
+
             if (!affixes.empty())
             {
                 handler->SendSysMessage(Acore::StringFormat("Active Affixes: |cffffffff{}|r", static_cast<uint32>(affixes.size())));
@@ -295,7 +295,7 @@ public:
 
         return true;
     }
-    
+
     // .mplus cancel - Cancel the current Mythic+ run and downgrade keystone
     static bool HandleMPlusCancelCommand(ChatHandler* handler)
     {

@@ -41,7 +41,7 @@ namespace ItemUpgrade
     // Proc Spell Registry
     // =====================================================================
     // Maps Spell IDs to the Item IDs that trigger them.
-    
+
     class ProcSpellRegistry
     {
     private:
@@ -68,7 +68,7 @@ namespace ItemUpgrade
                 ItemTemplate const& itemTemplate = pair.second;
 
                 // Check all 5 possible item spells
-                for (const auto& itemSpell : itemTemplate.Spells)
+                for (auto const& itemSpell : itemTemplate.Spells)
                 {
                     if (itemSpell.SpellId > 0)
                     {
@@ -79,7 +79,7 @@ namespace ItemUpgrade
                         // - ITEM_SPELLTRIGGER_SOULSTONE (Soulstone)
                         // - ITEM_SPELLTRIGGER_ON_NO_DELAY_USE (Use with no delay)
                         // - ITEM_SPELLTRIGGER_LEARN_SPELL_ID (Learn) - Ignored
-                        
+
                         if (itemSpell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
                             continue;
 
@@ -101,7 +101,7 @@ namespace ItemUpgrade
             auto it = _procSpellMap.find(spellId);
             if (it != _procSpellMap.end())
                 return &it->second;
-            
+
             return nullptr;
         }
     };
@@ -112,7 +112,7 @@ namespace ItemUpgrade
     // =====================================================================
     // Helper: Find Source Item
     // =====================================================================
-    
+
     static Item* FindSourceItem(Player* player, uint32 spellId)
     {
         const std::vector<uint32>* potentialItems = ProcSpellRegistry::GetItemsForSpell(spellId);
@@ -167,7 +167,7 @@ namespace ItemUpgrade
                 // Check if this item has any procs
                 const ItemTemplate* temp = item->GetTemplate();
                 bool hasProc = false;
-                for (const auto& spell : temp->Spells)
+                for (auto const& spell : temp->Spells)
                 {
                     if (spell.SpellId > 0 && spell.SpellTrigger != ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
                     {
@@ -179,8 +179,8 @@ namespace ItemUpgrade
                 if (hasProc)
                 {
                     found = true;
-                    ss << "- " << item->GetTemplate()->Name1 << ": " 
-                       << std::fixed << std::setprecision(1) << ((state->stat_multiplier - 1.0f) * 100.0f) 
+                    ss << "- " << item->GetTemplate()->Name1 << ": "
+                       << std::fixed << std::setprecision(1) << ((state->stat_multiplier - 1.0f) * 100.0f)
                        << "% bonus to procs\n";
                 }
             }
@@ -231,14 +231,14 @@ namespace ItemUpgrade
             // We use the item's stat multiplier (e.g., 1.05x, 1.10x)
             // This scales the proc damage exactly as much as the stats are scaled.
             float multiplier = state->stat_multiplier;
-            
+
             if (multiplier > 1.0f)
             {
                 // int32 oldDamage = damage;
                 damage = static_cast<int32>(damage * multiplier);
-                
+
                 // Debug log (optional, can be spammy)
-                // LOG_DEBUG("scripts", "ItemUpgrade: Scaled proc {} from item {} by {:.2f}x ({} -> {})", 
+                // LOG_DEBUG("scripts", "ItemUpgrade: Scaled proc {} from item {} by {:.2f}x ({} -> {})",
                 //     spellInfo->Id, sourceItem->GetEntry(), multiplier, oldDamage, damage);
             }
         }
@@ -267,7 +267,7 @@ namespace ItemUpgrade
                 return;
 
             float multiplier = state->stat_multiplier;
-            
+
             if (multiplier > 1.0f)
             {
                 gain = static_cast<uint32>(gain * multiplier);
@@ -287,7 +287,7 @@ namespace ItemUpgrade
         void OnPlayerLogin(Player* player) override
         {
             if (!player) return;
-            
+
             // Check if player has any upgraded items with procs
             std::string info = GetPlayerProcScalingInfo(player);
             if (info.find("bonus to procs") != std::string::npos)
@@ -300,7 +300,7 @@ namespace ItemUpgrade
     // =====================================================================
     // WorldScript for Initialization
     // =====================================================================
-    
+
     class ItemUpgradeProcWorldScript : public WorldScript
     {
     public:
