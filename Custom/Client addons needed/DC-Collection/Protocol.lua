@@ -137,17 +137,58 @@ function DC:InitializeProtocol()
         self:Print("|cffff0000Error:|r DCAddonProtocol not found. Collection System requires DC-AddonProtocol.")
         return false
     end
-    
-    -- Register our module
-    local success = DCAddonProtocol:RegisterModule(self.MODULE_ID, self.OnProtocolMessage)
-    if success then
-        self:Debug("Protocol module registered: " .. self.MODULE_ID)
-        self.isConnected = true
-    else
+
+    -- Two protocol variants exist in this project:
+    -- 1) Legacy DCAddonProtocol:RegisterModule(moduleId, callback) + :SendMessage(moduleId, payload)
+    -- 2) Current DCAddonProtocol:RegisterJSONHandler(module, opcode, handler) + :Request(module, opcode, data)
+    -- Support both to avoid runtime errors when the library is updated.
+
+    -- Legacy API
+    if type(DCAddonProtocol.RegisterModule) == "function" and type(DCAddonProtocol.SendMessage) == "function" then
+        local success = DCAddonProtocol:RegisterModule(self.MODULE_ID, self.OnProtocolMessage)
+        if success then
+            self:Debug("Protocol module registered: " .. self.MODULE_ID)
+            self.isConnected = true
+            return true
+        end
+
         self:Print("|cffff0000Error:|r Failed to register protocol module")
         return false
     end
-    
+
+    -- Current API
+    if type(DCAddonProtocol.RegisterJSONHandler) ~= "function" or type(DCAddonProtocol.Request) ~= "function" then
+        self:Print("|cffff0000Error:|r DCAddonProtocol API mismatch (missing RegisterJSONHandler/Request).")
+        return false
+    end
+
+    local function registerOpcode(opcode)
+        DCAddonProtocol:RegisterJSONHandler(self.MODULE_ID, opcode, function(data)
+            DC.OnProtocolMessage({ op = opcode, data = data or {} })
+        end)
+    end
+
+    -- Register handlers for all server->client opcodes we care about.
+    registerOpcode(self.Opcodes.SMSG_HANDSHAKE_ACK)
+    registerOpcode(self.Opcodes.SMSG_FULL_COLLECTION)
+    registerOpcode(self.Opcodes.SMSG_DELTA_SYNC)
+    registerOpcode(self.Opcodes.SMSG_STATS)
+    registerOpcode(self.Opcodes.SMSG_BONUSES)
+    registerOpcode(self.Opcodes.SMSG_ITEM_LEARNED)
+    registerOpcode(self.Opcodes.SMSG_DEFINITIONS)
+    registerOpcode(self.Opcodes.SMSG_COLLECTION)
+    registerOpcode(self.Opcodes.SMSG_TRANSMOG_STATE)
+    registerOpcode(self.Opcodes.SMSG_SHOP_DATA)
+    registerOpcode(self.Opcodes.SMSG_PURCHASE_RESULT)
+    registerOpcode(self.Opcodes.SMSG_CURRENCIES)
+    registerOpcode(self.Opcodes.SMSG_WISHLIST_DATA)
+    registerOpcode(self.Opcodes.SMSG_WISHLIST_AVAILABLE)
+    registerOpcode(self.Opcodes.SMSG_WISHLIST_UPDATED)
+    registerOpcode(self.Opcodes.SMSG_OPEN_UI)
+    registerOpcode(self.Opcodes.SMSG_ERROR)
+
+    self:Debug("Protocol handlers registered via RegisterJSONHandler: " .. self.MODULE_ID)
+    self.isConnected = true
     return true
 end
 
@@ -161,29 +202,51 @@ function DC:SendMessage(opcode, data)
         self:Debug("Cannot send message - not connected")
         return false
     end
-    
-    -- Build message payload
-    local payload = {
-        op = opcode,
-        data = data or {},
-        time = time(),
-    }
-    
-    -- Send via DCAddonProtocol
-    local success = DCAddonProtocol:SendMessage(self.MODULE_ID, payload)
-    if success then
+
+    -- Legacy API: send a wrapped payload
+    if type(DCAddonProtocol.SendMessage) == "function" then
+        local payload = {
+            op = opcode,
+            data = data or {},
+            time = time(),
+        }
+
+        local success = DCAddonProtocol:SendMessage(self.MODULE_ID, payload)
+        if success then
+            self:Debug(string.format("Sent message opcode 0x%02X", opcode))
+
+            self.pendingRequests[opcode] = {
+                sentAt = GetTime(),
+                data = data,
+            }
+        else
+            self:Debug("Failed to send message")
+        end
+
+        return success
+    end
+
+    -- Current API: module+opcode routing, JSON-by-default
+    if type(DCAddonProtocol.Request) ~= "function" then
+        self:Debug("Cannot send message - DCAddonProtocol missing Request")
+        return false
+    end
+
+    local ok, err = pcall(function()
+        DCAddonProtocol:Request(self.MODULE_ID, opcode, data or {})
+    end)
+
+    if ok then
         self:Debug(string.format("Sent message opcode 0x%02X", opcode))
-        
-        -- Track pending request
         self.pendingRequests[opcode] = {
             sentAt = GetTime(),
             data = data,
         }
-    else
-        self:Debug("Failed to send message")
+        return true
     end
-    
-    return success
+
+    self:Debug("Failed to send message: " .. tostring(err))
+    return false
 end
 
 -- ============================================================================
@@ -228,10 +291,17 @@ function DC:RequestDefinitions(collType)
     if not collType then
         self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "mounts" })
         self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pets" })
-        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "toys" })
         self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "heirlooms" })
         self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "titles" })
-        return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog" })
+        -- Transmog definitions can be huge; fetch on-demand (and paged) when the Transmog tab is opened.
+        return
+    end
+
+    if collType == "transmog" then
+        self._transmogDefOffset = 0
+        self._transmogDefLimit = self._transmogDefLimit or 200
+        self._transmogDefLoading = true
+        return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = 0, limit = self._transmogDefLimit })
     end
 
     return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = collType })
@@ -243,7 +313,6 @@ function DC:RequestCollection(collType)
     if not collType then
         self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "mounts" })
         self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pets" })
-        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "toys" })
         self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "heirlooms" })
         self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "titles" })
         return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "transmog" })
@@ -315,6 +384,62 @@ function DC:RequestUseItem(collectionType, entryId)
         type = typeId or 0,
         entryId = entryId,
     })
+end
+
+function DC:RequestSummonMount(spellId, random)
+    if random or not spellId then
+        local mounts = self.collections and self.collections.mounts
+        if not mounts then
+            return
+        end
+
+        local spellIds = {}
+        for id, owned in pairs(mounts) do
+            if owned then
+                spellIds[#spellIds + 1] = tonumber(id) or id
+            end
+        end
+
+        if #spellIds == 0 then
+            return
+        end
+
+        spellId = spellIds[math.random(1, #spellIds)]
+    end
+
+    return self:RequestUseItem("mounts", spellId)
+end
+
+function DC:RequestSummonPet(creatureId, random)
+    if random or not creatureId then
+        local pets = self.collections and self.collections.pets
+        if not pets then
+            return
+        end
+
+        local creatureIds = {}
+        for id, owned in pairs(pets) do
+            if owned then
+                creatureIds[#creatureIds + 1] = tonumber(id) or id
+            end
+        end
+
+        if #creatureIds == 0 then
+            return
+        end
+
+        creatureId = creatureIds[math.random(1, #creatureIds)]
+    end
+
+    return self:RequestUseItem("pets", creatureId)
+end
+
+function DC:RequestSummonHeirloom(entryId)
+    return self:RequestUseItem("heirlooms", entryId)
+end
+
+function DC:RequestSetTitle(entryId)
+    return self:RequestUseItem("titles", entryId)
 end
 
 -- Set favorite status
@@ -456,12 +581,18 @@ function DC:HandleHandshakeAck(data)
     
     self.serverHash = data.serverHash
     self.isConnected = true
+    self._handshakeAcked = true
     
     if data.needsSync then
         self:Debug("Server indicates full sync needed")
         self:RequestFullCollection()
     else
         self:Debug("Collection is in sync with server")
+    end
+
+    -- Request the rest of the initial data (definitions, currencies, shop, etc.)
+    if type(self.RequestInitialData) == "function" then
+        self:RequestInitialData(true)
     end
     
     -- Fire callback
@@ -487,6 +618,8 @@ function DC:HandleFullCollection(data)
     -- Store stats
     if data.stats then
         self.stats = data.stats
+        -- Toys are disabled; ignore any server-provided toy stats.
+        self.stats.toys = nil
     end
     
     -- Store bonuses
@@ -549,16 +682,22 @@ function DC:HandleDeltaSync(data)
 end
 
 -- Handle stats response
-function DC:HandleStats(data)
+function DC:HandleStatsLegacy(data)
     self:Debug("Received stats")
     
     if data.stats then
         self.stats = data.stats
+        -- Toys are disabled; ignore any server-provided toy stats.
+        self.stats.toys = nil
     end
     
     -- Fire callback
     if self.callbacks.onStatsReceived then
         self.callbacks.onStatsReceived(data.stats)
+    end
+
+    if self.MainFrame and self.MainFrame:IsShown() then
+        self:RefreshCurrentTab()
     end
 end
 
@@ -720,8 +859,27 @@ end
 function DC:HandleCurrencies(data)
     self:Debug("Received currencies")
 
-    self.currency.tokens = data.tokens or 0
-    self.currency.emblems = data.emblems or 0
+    self.currency = self.currency or { tokens = 0, emblems = 0 }
+    if type(self.CacheUpdateCurrency) == "function" then
+        self:CacheUpdateCurrency(data.tokens or 0, data.emblems or 0)
+    else
+        self.currency.tokens = data.tokens or 0
+        self.currency.emblems = data.emblems or 0
+    end
+
+    if self.MainFrame and self.MainFrame:IsShown() then
+        self:UpdateHeader()
+    end
+    if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() and self.ShopUI.UpdateCurrencyDisplay then
+        self.ShopUI:UpdateCurrencyDisplay()
+    end
+
+    -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
+    -- so other UIs that use GetItemCount-based token helpers can still show.
+    local central = rawget(_G, "DCAddonProtocol")
+    if central and type(central.SetServerCurrencyBalance) == "function" then
+        central:SetServerCurrencyBalance(self.currency.tokens or 0, self.currency.emblems or 0)
+    end
     
     -- Fire callback
     if self.callbacks.onCurrenciesReceived then
@@ -834,6 +992,25 @@ function DC:HandleDefinitions(data)
     
     self:Debug(string.format("Received %d definitions for %s", 
         self:TableCount(definitions), collType))
+
+    -- Transmog definitions can be very large; server may send them in pages.
+    if collType == "transmog" and data.more then
+        local nextOffset = (data.offset or 0) + (data.limit or 0)
+        local limit = data.limit or (self._transmogDefLimit or 200)
+
+        self._transmogDefOffset = nextOffset
+        self._transmogDefLimit = limit
+
+        if type(self.After) == "function" then
+            self:After(0.05, function()
+                self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = nextOffset, limit = limit })
+            end)
+        else
+            self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = nextOffset, limit = limit })
+        end
+    elseif collType == "transmog" then
+        self._transmogDefLoading = nil
+    end
 end
 
 function DC:HandleCollection(data)
@@ -875,18 +1052,6 @@ function DC:HandlePetSummoned(data)
         end
     else
         self:Print("|cffff0000" .. (data.error or DC.L["ERR_CANT_USE_NOW"]) .. "|r")
-    end
-end
-
-function DC:HandleToyUsed(data)
-    if data.success then
-        -- Toy used successfully, update cooldown
-        local itemId = data.itemId
-        if self.collections.toys and self.collections.toys[itemId] then
-            self.collections.toys[itemId].lastUsed = time()
-        end
-    else
-        self:Print("|cffff0000" .. (data.error or DC.L["ERR_ON_COOLDOWN"]) .. "|r")
     end
 end
 
@@ -994,7 +1159,7 @@ function DC:HandleStats(data)
     
     -- Notify UI
     if self.MainFrame and self.MainFrame:IsShown() then
-        self.MainFrame:UpdateStatsDisplay()
+        self:RefreshCurrentTab()
     end
 end
 
@@ -1061,7 +1226,7 @@ function DC:FullSync()
     self:Print(DC.L["SYNC_STARTED"] or "Syncing collection data...")
     
     -- Request definitions for all types
-    for _, collType in ipairs({"mounts", "pets", "toys", "heirlooms", "transmog", "titles"}) do
+    for _, collType in ipairs({"mounts", "pets", "heirlooms", "transmog", "titles"}) do
         self:RequestDefinitions(collType)
         self:RequestCollection(collType)
     end
@@ -1077,7 +1242,7 @@ function DC:DeltaSync()
     self:Debug("Starting delta sync...")
     
     -- Request only definitions that changed
-    for _, collType in ipairs({"mounts", "pets", "toys", "heirlooms", "transmog", "titles"}) do
+    for _, collType in ipairs({"mounts", "pets", "heirlooms", "transmog", "titles"}) do
         local lastVersion = self:GetSyncVersion(collType)
         if lastVersion > 0 then
             self:RequestDefinitions(collType, lastVersion)
@@ -1087,7 +1252,7 @@ function DC:DeltaSync()
     end
     
     -- Always request collection (server handles delta)
-    for _, collType in ipairs({"mounts", "pets", "toys", "heirlooms", "transmog", "titles"}) do
+    for _, collType in ipairs({"mounts", "pets", "heirlooms", "transmog", "titles"}) do
         self:RequestCollection(collType)
     end
     

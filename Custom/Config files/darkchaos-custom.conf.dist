@@ -2868,6 +2868,31 @@ DCCollection.Wishlist.MaxItems = 25
 #
 DCCollection.SyncInterval = 30
 
+# -------------------------------------------------------------------------
+# DCCollection Transmog: Legacy Import Settings
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Transmog.LegacyImport.Enable
+#        Description: Enable the one-time legacy transmog import from existing inventory for all accounts on server start
+#        Default:     1 (Enabled)
+#
+DCCollection.Transmog.LegacyImport.Enable = 1
+
+#
+#    DCCollection.Transmog.LegacyImport.IncludeBank
+#        Description: Include bank and reagent bank items when performing the legacy import
+#        Default:     1 (Enabled)
+#
+DCCollection.Transmog.LegacyImport.IncludeBank = 1
+
+#
+#    DCCollection.Transmog.LegacyImport.RequireSoulbound
+#        Description: Only import items that are soulbound to prevent importing items not owned by the account
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.LegacyImport.RequireSoulbound = 0
+
 ###########################################################################
 # END OF CONFIGURATION FILE
 ###########################################################################

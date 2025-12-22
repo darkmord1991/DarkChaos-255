@@ -25,7 +25,6 @@ void AddSC_DCAddon_GOMove();
 void AddSC_npc_group_finder();
 void AddSC_dc_addon_duels();
 void AddSC_dc_addon_prestige();
-void AddSC_dc_addon_collection();
 
 namespace DCAddon { void AddTeleportScripts(); }
 
@@ -59,6 +58,5 @@ void AddDCAddonExtensionScripts()
     // Prestige addon handler
     AddSC_dc_addon_prestige();
 
-    // Collection System addon handler
-    AddSC_dc_addon_collection();
+
 }

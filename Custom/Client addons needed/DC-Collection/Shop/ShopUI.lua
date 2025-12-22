@@ -11,6 +11,25 @@
 local DC = DCCollection
 local L = DC.L
 
+local function SetWidgetEnabled(widget, enabled)
+    if not widget then
+        return
+    end
+    if type(widget.SetEnabled) == "function" then
+        widget:SetEnabled(enabled and true or false)
+        return
+    end
+    if enabled then
+        if type(widget.Enable) == "function" then
+            widget:Enable()
+        end
+    else
+        if type(widget.Disable) == "function" then
+            widget:Disable()
+        end
+    end
+end
+
 -- ============================================================================
 -- CONSTANTS
 -- ============================================================================
@@ -295,7 +314,6 @@ function DC:PopulateShopItems()
             bonus = 1,
             mount = 2,
             pet = 3,
-            toy = 4,
         }
         filters.itemType = typeMap[filter]
     end
@@ -332,8 +350,8 @@ function DC:PopulateShopItems()
     
     -- Update page navigation
     frame.pageText:SetText(string.format("Page %d of %d", frame.currentPage, totalPages))
-    frame.prevBtn:SetEnabled(frame.currentPage > 1)
-    frame.nextBtn:SetEnabled(frame.currentPage < totalPages)
+    SetWidgetEnabled(frame.prevBtn, frame.currentPage > 1)
+    SetWidgetEnabled(frame.nextBtn, frame.currentPage < totalPages)
     
     -- Update filter button states
     for key, btn in pairs(frame.filterButtons) do

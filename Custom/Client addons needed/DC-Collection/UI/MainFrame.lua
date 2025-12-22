@@ -11,6 +11,136 @@
 local DC = DCCollection
 local L = DC.L
 
+local function SetWidgetEnabled(widget, enabled)
+    if not widget then
+        return
+    end
+    if type(widget.SetEnabled) == "function" then
+        widget:SetEnabled(enabled and true or false)
+        return
+    end
+    if enabled then
+        if type(widget.Enable) == "function" then
+            widget:Enable()
+        end
+    else
+        if type(widget.Disable) == "function" then
+            widget:Disable()
+        end
+    end
+end
+
+local function GetRarityColor(self, rarity)
+    local r = rarity or 1
+    local rarityColors = self.RARITY_COLORS or self.RarityColors
+
+    if not rarityColors or not next(rarityColors) then
+        rarityColors = {
+            [0] = {0.62, 0.62, 0.62}, -- poor
+            [1] = {1.00, 1.00, 1.00}, -- common
+            [2] = {0.12, 1.00, 0.00}, -- uncommon
+            [3] = {0.00, 0.44, 0.87}, -- rare
+            [4] = {0.64, 0.21, 0.93}, -- epic
+            [5] = {1.00, 0.50, 0.00}, -- legendary
+            [6] = {0.90, 0.80, 0.50}, -- artifact
+            [7] = {0.90, 0.80, 0.50}, -- heirloom
+        }
+        self.RARITY_COLORS = rarityColors
+    end
+
+    local c = rarityColors[r] or { 1, 1, 1 }
+    return c[1], c[2], c[3]
+end
+
+function DC:ResolveDefinitionIcon(collType, id, def)
+    if def and def.icon and def.icon ~= "" then
+        return def.icon
+    end
+
+    local numericId = tonumber(id) or id
+
+    if collType == "mounts" then
+        if type(GetSpellInfo) == "function" and numericId then
+            local _, _, icon = GetSpellInfo(numericId)
+            if icon and icon ~= "" then
+                return icon
+            end
+        end
+        if type(GetSpellTexture) == "function" and numericId then
+            local texture = GetSpellTexture(numericId)
+            if texture and texture ~= "" then
+                return texture
+            end
+        end
+
+        if def then
+            local itemId = def.itemId or def.item_id or def.itemID
+            if itemId then
+                itemId = tonumber(itemId) or itemId
+                if type(GetItemIcon) == "function" then
+                    local texture = GetItemIcon(itemId)
+                    if texture and texture ~= "" then
+                        return texture
+                    end
+                end
+                if type(GetItemInfo) == "function" then
+                    local texture = select(10, GetItemInfo(itemId))
+                    if texture and texture ~= "" then
+                        return texture
+                    end
+                end
+            end
+        end
+    elseif collType == "pets" or collType == "heirlooms" then
+        if type(GetItemIcon) == "function" and numericId then
+            local texture = GetItemIcon(numericId)
+            if texture and texture ~= "" then
+                return texture
+            end
+        end
+
+        if type(GetItemInfo) == "function" and numericId then
+            local texture = select(10, GetItemInfo(numericId))
+            if texture and texture ~= "" then
+                return texture
+            end
+        end
+
+        -- Some datasets identify pets by spellId rather than itemId.
+        if type(GetSpellInfo) == "function" and numericId then
+            local _, _, icon = GetSpellInfo(numericId)
+            if icon and icon ~= "" then
+                return icon
+            end
+        end
+        if type(GetSpellTexture) == "function" and numericId then
+            local texture = GetSpellTexture(numericId)
+            if texture and texture ~= "" then
+                return texture
+            end
+        end
+    elseif collType == "transmog" and def then
+        local itemId = def.itemId or def.item_id or def.itemID
+        if itemId then
+            itemId = tonumber(itemId) or itemId
+            if type(GetItemIcon) == "function" then
+                local texture = GetItemIcon(itemId)
+                if texture and texture ~= "" then
+                    return texture
+                end
+            end
+            if type(GetItemInfo) == "function" then
+                local texture = select(10, GetItemInfo(itemId))
+                if texture and texture ~= "" then
+                    return texture
+                end
+            end
+        end
+    end
+
+    return "Interface\\Icons\\INV_Misc_QuestionMark"
+end
+
 -- ============================================================================
 -- CONSTANTS
 -- ============================================================================
@@ -90,8 +220,12 @@ function DC:CreateHeader(parent)
     
     -- Stats display
     header.statsText = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    header.statsText:SetPoint("LEFT", header, "LEFT", 5, 0)
+    header.statsText:SetPoint("TOPLEFT", header, "TOPLEFT", 5, -2)
     header.statsText:SetJustifyH("LEFT")
+
+    header.totalStatsText = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    header.totalStatsText:SetPoint("TOPLEFT", header.statsText, "BOTTOMLEFT", 0, -2)
+    header.totalStatsText:SetJustifyH("LEFT")
     
     -- Currency display
     header.currencyFrame = CreateFrame("Frame", nil, header)
@@ -144,7 +278,6 @@ function DC:CreateTabBar(parent)
     local tabs = {
         { key = "mounts",    text = L["TAB_MOUNTS"],    icon = "Interface\\Icons\\Ability_Mount_RidingHorse" },
         { key = "pets",      text = L["TAB_PETS"],      icon = "Interface\\Icons\\INV_Box_PetCarrier_01" },
-        { key = "toys",      text = L["TAB_TOYS"],      icon = "Interface\\Icons\\INV_Misc_Toy_10" },
         { key = "heirlooms", text = L["TAB_HEIRLOOMS"], icon = "Interface\\Icons\\INV_Sword_43" },
         { key = "transmog",  text = L["TAB_TRANSMOG"],  icon = "Interface\\Icons\\INV_Misc_Desecrated_ClothHelm" },
         { key = "titles",    text = L["TAB_TITLES"],    icon = "Interface\\Icons\\INV_Scroll_11" },
@@ -276,6 +409,81 @@ function DC:CreateFilterBar(parent)
     notCollectedLabel:SetText(L["FILTER_NOT_COLLECTED"])
     
     filterBar.notCollectedCheck = notCollectedCheck
+
+    -- Transmog-specific controls (slot picker + quick actions)
+    -- Shown only when the Transmog tab is active.
+    local transmogSlotDropdown = CreateFrame("Frame", "DCCollectionTransmogSlotDropdown", filterBar, "UIDropDownMenuTemplate")
+    transmogSlotDropdown:SetPoint("RIGHT", filterBar, "RIGHT", -120, 0)
+    UIDropDownMenu_SetWidth(transmogSlotDropdown, 110)
+    UIDropDownMenu_SetText(transmogSlotDropdown, "Slot: All")
+
+    UIDropDownMenu_Initialize(transmogSlotDropdown, function(self, level)
+        local info = UIDropDownMenu_CreateInfo()
+
+        local options = {
+            { text = "All", slotName = nil },
+            { text = "Head", slotName = "HeadSlot" },
+            { text = "Shoulder", slotName = "ShoulderSlot" },
+            { text = "Back", slotName = "BackSlot" },
+            { text = "Chest", slotName = "ChestSlot" },
+            { text = "Wrist", slotName = "WristSlot" },
+            { text = "Hands", slotName = "HandsSlot" },
+            { text = "Waist", slotName = "WaistSlot" },
+            { text = "Legs", slotName = "LegsSlot" },
+            { text = "Feet", slotName = "FeetSlot" },
+            { text = "Main Hand", slotName = "MainHandSlot" },
+            { text = "Off Hand", slotName = "SecondaryHandSlot" },
+            { text = "Ranged", slotName = "RangedSlot" },
+        }
+
+        for _, opt in ipairs(options) do
+            info.text = opt.text
+            info.notCheckable = true
+            info.func = function()
+                DC.transmogSelectedSlotName = opt.slotName
+                DC.transmogSelectedInvSlotId = opt.slotName and GetInventorySlotInfo(opt.slotName) or nil
+                UIDropDownMenu_SetText(transmogSlotDropdown, "Slot: " .. opt.text)
+                DC:OnFilterChanged()
+            end
+            UIDropDownMenu_AddButton(info)
+        end
+    end)
+
+    filterBar.transmogSlotDropdown = transmogSlotDropdown
+
+    local transmogClearBtn = CreateFrame("Button", nil, filterBar, "UIPanelButtonTemplate")
+    transmogClearBtn:SetSize(70, 20)
+    transmogClearBtn:SetPoint("RIGHT", transmogSlotDropdown, "LEFT", -10, 0)
+    transmogClearBtn:SetText("Clear")
+    transmogClearBtn:SetScript("OnClick", function()
+        local invSlotId = DC.transmogSelectedInvSlotId
+        if not invSlotId then
+            if DC.Print then DC:Print("Select a slot first.") end
+            return
+        end
+        if not GetInventoryItemID("player", invSlotId) then
+            if DC.Print then DC:Print("No item equipped in that slot.") end
+            return
+        end
+        DC:RequestClearTransmog(invSlotId)
+    end)
+    filterBar.transmogClearBtn = transmogClearBtn
+
+    local transmogOutfitsBtn = CreateFrame("Button", nil, filterBar, "UIPanelButtonTemplate")
+    transmogOutfitsBtn:SetSize(70, 20)
+    transmogOutfitsBtn:SetPoint("RIGHT", transmogClearBtn, "LEFT", -8, 0)
+    transmogOutfitsBtn:SetText("Outfits")
+    transmogOutfitsBtn:SetScript("OnClick", function()
+        if not DC.ShowOutfitMenu then
+            return
+        end
+        local menu = {}
+        DC:ShowOutfitMenu(menu)
+        table.insert(menu, { text = L["CANCEL"] or "Cancel", notCheckable = true })
+        local dropdown = CreateFrame("Frame", "DCCollectionOutfitsMenu", UIParent, "UIDropDownMenuTemplate")
+        EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
+    end)
+    filterBar.transmogOutfitsBtn = transmogOutfitsBtn
     
     -- Sort dropdown
     local sortDropdown = CreateFrame("Frame", "DCCollectionSortDropdown", filterBar, "UIDropDownMenuTemplate")
@@ -307,8 +515,32 @@ function DC:CreateFilterBar(parent)
     end)
     
     filterBar.sortDropdown = sortDropdown
+
+    -- Start hidden until Transmog tab is opened.
+    transmogSlotDropdown:Hide()
+    transmogClearBtn:Hide()
+    transmogOutfitsBtn:Hide()
     
     parent.FilterBar = filterBar
+end
+
+function DC:UpdateFilterBarForTab(tabKey)
+    if not self.MainFrame or not self.MainFrame.FilterBar then
+        return
+    end
+
+    local fb = self.MainFrame.FilterBar
+    local isTransmog = (tabKey == "transmog")
+
+    if fb.transmogSlotDropdown then
+        if isTransmog then fb.transmogSlotDropdown:Show() else fb.transmogSlotDropdown:Hide() end
+    end
+    if fb.transmogClearBtn then
+        if isTransmog then fb.transmogClearBtn:Show() else fb.transmogClearBtn:Hide() end
+    end
+    if fb.transmogOutfitsBtn then
+        if isTransmog then fb.transmogOutfitsBtn:Show() else fb.transmogOutfitsBtn:Hide() end
+    end
 end
 
 -- ============================================================================
@@ -324,10 +556,48 @@ function DC:CreateContentArea(parent)
     local contentBg = content:CreateTexture(nil, "BACKGROUND")
     contentBg:SetAllPoints()
     contentBg:SetColorTexture(0, 0, 0, 0.3)
+
+    -- Details bar: left info + right visuals (shared across tabs)
+    local details = CreateFrame("Frame", nil, content)
+    details:SetPoint("TOPLEFT", content, "TOPLEFT", 5, -5)
+    details:SetPoint("TOPRIGHT", content, "TOPRIGHT", -5, -5)
+    details:SetHeight(80)
+
+    details.bg = details:CreateTexture(nil, "BACKGROUND")
+    details.bg:SetAllPoints()
+    details.bg:SetColorTexture(0, 0, 0, 0.25)
+
+    details.iconBorder = details:CreateTexture(nil, "BORDER")
+    details.iconBorder:SetSize(70, 70)
+    details.iconBorder:SetPoint("RIGHT", details, "RIGHT", -8, 0)
+    details.iconBorder:SetColorTexture(0.25, 0.25, 0.25, 0.8)
+
+    details.icon = details:CreateTexture(nil, "ARTWORK")
+    details.icon:SetSize(64, 64)
+    details.icon:SetPoint("CENTER", details.iconBorder, "CENTER", 0, 0)
+    details.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+
+    details.name = details:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    details.name:SetPoint("TOPLEFT", details, "TOPLEFT", 10, -10)
+    details.name:SetPoint("TOPRIGHT", details.iconBorder, "TOPLEFT", -10, -10)
+    details.name:SetJustifyH("LEFT")
+    details.name:SetText(L["HOVER_FOR_DETAILS"] or "Hover an item to see details")
+
+    details.line1 = details:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    details.line1:SetPoint("TOPLEFT", details.name, "BOTTOMLEFT", 0, -6)
+    details.line1:SetPoint("TOPRIGHT", details.iconBorder, "TOPLEFT", -10, -6)
+    details.line1:SetJustifyH("LEFT")
+
+    details.line2 = details:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    details.line2:SetPoint("TOPLEFT", details.line1, "BOTTOMLEFT", 0, -4)
+    details.line2:SetPoint("TOPRIGHT", details.iconBorder, "TOPLEFT", -10, -4)
+    details.line2:SetJustifyH("LEFT")
+
+    content.details = details
     
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "DCCollectionScrollFrame", content, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", content, "TOPLEFT", 5, -5)
+    scrollFrame:SetPoint("TOPLEFT", details, "BOTTOMLEFT", 0, -5)
     scrollFrame:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -25, 5)
     
     -- Scroll child (content container)
@@ -339,6 +609,61 @@ function DC:CreateContentArea(parent)
     content.scrollChild = scrollChild
     
     parent.Content = content
+end
+
+function DC:ClearDetailsPanel()
+    if not self.MainFrame or not self.MainFrame.Content or not self.MainFrame.Content.details then
+        return
+    end
+
+    local d = self.MainFrame.Content.details
+    d.name:SetText(L["HOVER_FOR_DETAILS"] or "Hover an item to see details")
+    d.name:SetTextColor(1, 1, 1)
+    d.line1:SetText("")
+    d.line2:SetText("")
+    d.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    d.icon:SetDesaturated(false)
+    d.icon:SetAlpha(1)
+end
+
+function DC:UpdateDetailsPanel(item)
+    if not item or not self.MainFrame or not self.MainFrame.Content or not self.MainFrame.Content.details then
+        return
+    end
+
+    local d = self.MainFrame.Content.details
+    local r, g, b = GetRarityColor(self, item.rarity or 1)
+
+    d.name:SetText(item.name or "Unknown")
+    d.name:SetTextColor(r, g, b)
+
+    local sourceText = item.sourceText
+    if not sourceText then
+        sourceText = self:FormatSource(item.source)
+    end
+
+    if sourceText and sourceText ~= "" then
+        d.line1:SetText((L["SOURCE"] or "Source") .. ": " .. tostring(sourceText))
+    else
+        d.line1:SetText("")
+    end
+
+    if item.type == "shop" then
+        local priceTokens = item.priceTokens or 0
+        local priceEmblems = item.priceEmblems or 0
+        d.line2:SetText(string.format("Price: %d tokens, %d emblems", priceTokens, priceEmblems))
+    else
+        d.line2:SetText(item.collected and (L["COLLECTED"] or "Collected") or (L["NOT_COLLECTED"] or "Not collected"))
+    end
+
+    d.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    if item.collected == false then
+        d.icon:SetDesaturated(true)
+        d.icon:SetAlpha(0.5)
+    else
+        d.icon:SetDesaturated(false)
+        d.icon:SetAlpha(1)
+    end
 end
 
 -- ============================================================================
@@ -433,6 +758,8 @@ end
 
 function DC:SelectTab(tabKey)
     self.activeTab = tabKey
+
+    self:UpdateFilterBarForTab(tabKey)
     
     -- Update tab visuals
     for key, tab in pairs(self.MainFrame.TabBar.tabs) do
@@ -441,6 +768,8 @@ function DC:SelectTab(tabKey)
     
     -- Clear current page
     self.currentPage = 1
+
+    self:ClearDetailsPanel()
     
     -- Show appropriate content
     if tabKey == "shop" then
@@ -475,10 +804,25 @@ function DC:UpdateHeader()
     -- Update stats for current tab
     local stats = self.stats[self.activeTab]
     if stats then
-        header.statsText:SetText(string.format("%s: %d / %d", 
+        local owned = stats.owned or 0
+        local total = stats.total or 0
+        local pct = (total > 0) and math.floor((owned / total) * 1000 + 0.5) / 10 or 0
+        header.statsText:SetText(string.format("%s  Collected: %d / %d (%.1f%%)",
             L["TAB_" .. string.upper(self.activeTab)] or self.activeTab,
-            stats.owned or 0, 
-            stats.total or 0))
+            owned,
+            total,
+            pct))
+    else
+        header.statsText:SetText("")
+    end
+
+    -- Overall totals across all categories
+    if type(self.GetTotalCount) == "function" then
+        local o, t = self:GetTotalCount()
+        local pct = (t > 0) and math.floor((o / t) * 1000 + 0.5) / 10 or 0
+        header.totalStatsText:SetText(string.format("Total  Collected: %d / %d (%.1f%%)", o or 0, t or 0, pct))
+    else
+        header.totalStatsText:SetText("")
     end
     
     -- Update mount speed bonus
@@ -540,8 +884,8 @@ function DC:PopulateGrid()
     
     -- Update page info
     self.MainFrame.Footer.pageInfo:SetText(string.format("Page %d of %d", self.currentPage, totalPages))
-    self.MainFrame.Footer.prevBtn:SetEnabled(self.currentPage > 1)
-    self.MainFrame.Footer.nextBtn:SetEnabled(self.currentPage < totalPages)
+    SetWidgetEnabled(self.MainFrame.Footer.prevBtn, self.currentPage > 1)
+    SetWidgetEnabled(self.MainFrame.Footer.nextBtn, self.currentPage < totalPages)
 end
 
 function DC:CreateItemCard(parent, item, col, row, size, spacing)
@@ -560,7 +904,7 @@ function DC:CreateItemCard(parent, item, col, row, size, spacing)
     
     -- Rarity border
     local rarity = item.rarity or 1
-    local r, g, b = unpack(self.RARITY_COLORS[rarity] or {1, 1, 1})
+    local r, g, b = GetRarityColor(self, rarity)
     card.border = card:CreateTexture(nil, "BORDER")
     card.border:SetPoint("TOPLEFT", -2, 2)
     card.border:SetPoint("BOTTOMRIGHT", 2, -2)
@@ -609,6 +953,7 @@ function DC:CreateItemCard(parent, item, col, row, size, spacing)
     
     -- Tooltip
     card:SetScript("OnEnter", function(self)
+        DC:UpdateDetailsPanel(item)
         DC:ShowItemTooltip(self, item)
     end)
     card:SetScript("OnLeave", function()
@@ -637,9 +982,43 @@ function DC:GetFilteredItems()
     local showCollected = self.MainFrame.FilterBar.collectedCheck:GetChecked()
     local showNotCollected = self.MainFrame.FilterBar.notCollectedCheck:GetChecked()
     
+    local function InvTypeMatchesSelectedTransmogSlot(invType)
+        local slotName = DC.transmogSelectedSlotName
+        if collType ~= "transmog" or not slotName then
+            return true
+        end
+
+        local allowed = {
+            HeadSlot = { [1] = true },
+            ShoulderSlot = { [3] = true },
+            BackSlot = { [16] = true },
+            ChestSlot = { [5] = true, [20] = true },
+            WristSlot = { [9] = true },
+            HandsSlot = { [10] = true },
+            WaistSlot = { [6] = true },
+            LegsSlot = { [7] = true },
+            FeetSlot = { [8] = true },
+            MainHandSlot = { [13] = true, [17] = true, [21] = true },
+            SecondaryHandSlot = { [13] = true, [17] = true, [22] = true, [14] = true, [23] = true },
+            RangedSlot = { [14] = true, [15] = true, [25] = true, [28] = true },
+        }
+
+        local set = allowed[slotName]
+        if not set then
+            -- Safety: if slotName is unknown, treat as "All".
+            return true
+        end
+        return set[invType] or false
+    end
+
     for id, def in pairs(definitions) do
         local collData = collection[id]
         local isCollected = collData ~= nil
+
+        -- Transmog: filter by selected slot (retail-like slot browsing)
+        if collType == "transmog" and not InvTypeMatchesSelectedTransmogSlot(def.inventoryType or 0) then
+            -- skip
+        else
         
         -- Filter by collected state
         if (isCollected and showCollected) or (not isCollected and showNotCollected) then
@@ -649,9 +1028,11 @@ function DC:GetFilteredItems()
                 table.insert(items, {
                     id = id,
                     name = def.name,
-                    icon = def.icon,
+                    icon = self:ResolveDefinitionIcon(collType, id, def),
                     rarity = def.rarity,
                     source = def.source,
+                    sourceText = self:FormatSource(def.source),
+                    sourceSort = self:GetSourceSortKey(def.source),
                     type = collType,
                     collected = isCollected,
                     is_favorite = collData and collData.is_favorite,
@@ -659,6 +1040,8 @@ function DC:GetFilteredItems()
                     definition = def,
                 })
             end
+        end
+
         end
     end
     
@@ -688,7 +1071,7 @@ function DC:SortItems(items)
         elseif sortKey == "type" then
             return (a.definition and a.definition.mountType or 0) < (b.definition and b.definition.mountType or 0)
         elseif sortKey == "source" then
-            return (a.source or "") < (b.source or "")
+            return (a.sourceSort or "") < (b.sourceSort or "")
         end
         return false
     end)
@@ -740,12 +1123,18 @@ function DC:OnItemLeftClick(item)
         self:RequestSummonMount(item.id)
     elseif item.type == "pets" then
         self:RequestSummonPet(item.id)
-    elseif item.type == "toys" then
-        self:RequestUseToy(item.id)
     elseif item.type == "heirlooms" then
         self:RequestSummonHeirloom(item.id)
     elseif item.type == "titles" then
         self:RequestSetTitle(item.id)
+    elseif item.type == "transmog" then
+        -- Retail-ish workflow: click to apply to selected slot; fallback to preview.
+        local invSlotId = self.transmogSelectedInvSlotId
+        if invSlotId and GetInventoryItemID("player", invSlotId) then
+            self:RequestSetTransmog(invSlotId, item.id)
+        else
+            self:PreviewTransmogAppearance(item.id)
+        end
     end
 end
 
@@ -919,10 +1308,25 @@ end
 -- ============================================================================
 
 function DC:ShowItemTooltip(anchor, item)
+    if type(self.GetSetting) == "function" and not self:GetSetting("showTooltips") then
+        return
+    end
+
+    local function LT(key, fallback)
+        local v = nil
+        if L then
+            v = L[key] or L[string.upper(key)]
+        end
+        if type(v) ~= "string" or v == "" then
+            v = fallback
+        end
+        return v
+    end
+
     GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
     
     -- Name with rarity color
-    local r, g, b = unpack(self.RARITY_COLORS[item.rarity or 1] or {1, 1, 1})
+    local r, g, b = GetRarityColor(self, item.rarity or 1)
     GameTooltip:AddLine(item.name or "Unknown", r, g, b)
     
     -- Type
@@ -932,42 +1336,49 @@ function DC:ShowItemTooltip(anchor, item)
     end
     
     -- Source
-    if item.source then
+    local sourceText = item.sourceText
+    if not sourceText then
+        sourceText = self:FormatSource(item.source)
+    end
+
+    if sourceText and sourceText ~= "" then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L["SOURCE"] .. ": " .. item.source, 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(LT("SOURCE", "Source") .. ": " .. tostring(sourceText), 0.7, 0.7, 0.7)
     end
     
     -- Collection status
     GameTooltip:AddLine(" ")
     if item.collected then
-        GameTooltip:AddLine(L["COLLECTED"], 0, 1, 0)
+        GameTooltip:AddLine(LT("COLLECTED", "Collected"), 0, 1, 0)
         
         -- Usage instructions
         if item.type == "mounts" then
-            GameTooltip:AddLine(L["CLICK_SUMMON"], 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(LT("CLICK_SUMMON", "Click to summon"), 0.5, 0.5, 0.5)
         elseif item.type == "pets" then
-            GameTooltip:AddLine(L["CLICK_SUMMON"], 0.5, 0.5, 0.5)
-        elseif item.type == "toys" then
-            GameTooltip:AddLine("Click to use", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine(LT("CLICK_SUMMON", "Click to summon"), 0.5, 0.5, 0.5)
         elseif item.type == "heirlooms" then
             GameTooltip:AddLine("Click to summon to bags", 0.5, 0.5, 0.5)
         elseif item.type == "titles" then
             GameTooltip:AddLine("Click to set as active title", 0.5, 0.5, 0.5)
         elseif item.type == "transmog" then
-            GameTooltip:AddLine("Right-click to apply to a slot", 0.5, 0.5, 0.5)
+            if self.transmogSelectedInvSlotId then
+                GameTooltip:AddLine("Click to apply to selected slot", 0.5, 0.5, 0.5)
+            else
+                GameTooltip:AddLine("Select a slot to apply (or right-click)", 0.5, 0.5, 0.5)
+            end
         end
     else
-        GameTooltip:AddLine(L["NOT_COLLECTED"], 1, 0, 0)
+        GameTooltip:AddLine(LT("NOT_COLLECTED", "Not collected"), 1, 0, 0)
     end
     
     -- Favorite status
     if item.is_favorite then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("★ " .. L["FAVORITE"], 1, 0.82, 0)
+        GameTooltip:AddLine("★ " .. LT("FAVORITE", "Favorite"), 1, 0.82, 0)
     end
     
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine(L["RIGHT_CLICK_MENU"], 0.5, 0.5, 0.5)
+    GameTooltip:AddLine(LT("RIGHT_CLICK_MENU", "Right-click for options"), 0.5, 0.5, 0.5)
     
     GameTooltip:Show()
 end

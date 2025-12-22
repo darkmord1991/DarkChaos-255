@@ -1,6 +1,6 @@
 ## Interface: 30300
 ## Title: DC-Collection
-## Notes: Account-wide mount, pet, toy, and transmog collection system for DarkChaos-255
+## Notes: Account-wide mount, pet, and transmog collection system for DarkChaos-255
 ## Author: DarkChaos-255
 ## Version: 1.0.0
 ## SavedVariables: DCCollectionDB
@@ -17,18 +17,12 @@ Cache.lua
 Protocol.lua
 
 # UI Components
-UI\UIUtils.lua
 UI\MainFrame.lua
-UI\TabButton.lua
-UI\CollectionGrid.lua
-UI\ItemCard.lua
-UI\FilterBar.lua
-UI\ProgressBar.lua
+UI\TransmogFrame.lua
 
 # Collection Modules
 Modules\MountModule.lua
 Modules\PetModule.lua
-Modules\ToyModule.lua
 Modules\HeirloomModule.lua
 Modules\TransmogModule.lua
 Modules\TitleModule.lua

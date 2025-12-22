@@ -53,6 +53,7 @@ set(SCRIPTS_DC_PhasedDuels
 
 # Main AC scripts
 set(SCRIPTS_DC_AC
+    dc_script_loader.cpp
     AC/ac_guard_npc.cpp
     heirloom_scaling_255.cpp
     dc_login_announce.cpp

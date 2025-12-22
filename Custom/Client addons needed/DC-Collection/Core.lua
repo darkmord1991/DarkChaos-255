@@ -25,7 +25,6 @@ DC.MODULE_ID = "COLL"  -- DCAddonProtocol module identifier
 DC.CollectionType = {
     MOUNT = "mount",
     PET = "pet",
-    TOY = "toy",
     HEIRLOOM = "heirloom",
     TRANSMOG = "transmog",
     TITLE = "title",
@@ -72,11 +71,15 @@ local defaults = {
     
     -- Communication
     enableServerSync = true,
+    autoSyncOnLogin = true,
     debugMode = false,
     
     -- Cache
     lastSyncTime = 0,
     syncVersion = 0,
+
+    -- Transmog outfits storage scope: "char" (per-character) or "account" (account-wide)
+    outfitsScope = "char",
 }
 
 local charDefaults = {
@@ -98,7 +101,6 @@ local charDefaults = {
 DC.collections = {
     mounts = {},
     pets = {},
-    toys = {},
     heirlooms = {},
     transmog = {},
     titles = {},
@@ -108,7 +110,6 @@ DC.collections = {
 DC.definitions = {
     mounts = {},
     pets = {},
-    toys = {},
     heirlooms = {},
     transmog = {},
     titles = {},
@@ -118,7 +119,6 @@ DC.definitions = {
 DC.stats = {
     mounts = { owned = 0, total = 0 },
     pets = { owned = 0, total = 0 },
-    toys = { owned = 0, total = 0 },
     heirlooms = { owned = 0, total = 0 },
     transmog = { owned = 0, total = 0 },
     titles = { owned = 0, total = 0 },
@@ -186,6 +186,79 @@ function DC:FormatCurrency(tokens, emblems)
         table.insert(parts, "|cffa335ee" .. self:FormatNumber(emblems) .. "|r " .. L.CURRENCY_EMBLEMS)
     end
     return table.concat(parts, " + ")
+end
+
+-- ============================================================================
+-- SOURCE FORMATTING
+-- ============================================================================
+
+function DC:FormatSource(source)
+    if not source then
+        return ""
+    end
+
+    local t = type(source)
+    if t == "string" then
+        return source
+    end
+
+    if t ~= "table" then
+        return tostring(source)
+    end
+
+    local sourceType = source.type or source.Type
+    if type(sourceType) ~= "string" then
+        sourceType = "unknown"
+    end
+
+    if sourceType == "vendor" then
+        local npc = source.npc or source.vendor or source.name
+        if type(npc) == "string" and npc ~= "" then
+            return "Vendor: " .. npc
+        end
+        local npcEntry = source.npcEntry or source.npc_entry or source.creatureEntry
+        if npcEntry then
+            return "Vendor (NPC " .. tostring(npcEntry) .. ")"
+        end
+        return "Vendor"
+    end
+
+    if sourceType == "drop" then
+        local boss = source.boss or source.creature
+        local dropRate = source.dropRate or source.chance
+        local text = "Drop"
+        if type(boss) == "string" and boss ~= "" then
+            text = text .. ": " .. boss
+        end
+        if type(dropRate) == "number" then
+            text = text .. string.format(" (%.1f%%)", dropRate)
+        end
+        return text
+    end
+
+    if sourceType == "quest" then
+        local questId = source.questId or source.quest_id or source.id
+        if questId then
+            return "Quest: #" .. tostring(questId)
+        end
+        return "Quest"
+    end
+
+    if sourceType == "unknown" then
+        local itemId = source.itemId or source.item_id or source.itemID
+        if itemId then
+            return "Unknown (item " .. tostring(itemId) .. ")"
+        end
+        return "Unknown"
+    end
+
+    -- Fallback: display the type string.
+    return tostring(sourceType)
+end
+
+function DC:GetSourceSortKey(source)
+    local s = self:FormatSource(source) or ""
+    return string.lower(s)
 end
 
 -- ============================================================================
@@ -316,7 +389,297 @@ function DC:OpenSettings()
         InterfaceOptionsFrame_OpenToCategory(self.optionsPanel)
         InterfaceOptionsFrame_OpenToCategory(self.optionsPanel)  -- WoW bug workaround
     else
-        self:Print("Settings panel not yet implemented. Use /dcc debug to toggle debug mode.")
+        self:CreateOptionsPanel()
+        if self.optionsPanel then
+            InterfaceOptionsFrame_OpenToCategory(self.optionsPanel)
+            InterfaceOptionsFrame_OpenToCategory(self.optionsPanel)
+        else
+            self:Print("Settings panel could not be created.")
+        end
+    end
+end
+
+function DC:CreateOptionsPanel()
+    if self.optionsPanel then
+        return self.optionsPanel
+    end
+
+    if not InterfaceOptions_AddCategory then
+        return nil
+    end
+
+    local panel = CreateFrame("Frame", "DCCollectionOptionsPanel", InterfaceOptionsFramePanelContainer)
+    panel.name = "DC-Collection"
+
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("DC-Collection")
+
+    local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    subtitle:SetText("Account-wide collection UI settings")
+
+    local optionIndex = 0
+    local function NextOptionName(prefix)
+        optionIndex = optionIndex + 1
+        return panel:GetName() .. prefix .. tostring(optionIndex)
+    end
+
+    local function CreateCheckbox(text, tooltip, offsetY, getValue, setValue)
+        local cb = CreateFrame("CheckButton", NextOptionName("Check"), panel, "InterfaceOptionsCheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", 16, offsetY)
+
+        local label = cb.Text or _G[cb:GetName() .. "Text"]
+        if label then
+            label:SetText(text)
+        end
+        cb.tooltipText = tooltip
+        cb:SetScript("OnShow", function(self)
+            self:SetChecked(getValue() and true or false)
+        end)
+        cb:SetScript("OnClick", function(self)
+            setValue(self:GetChecked() and true or false)
+        end)
+        return cb
+    end
+
+    local function CreateSlider(text, tooltip, offsetY, minVal, maxVal, step, getValue, setValue, formatFunc)
+        local s = CreateFrame("Slider", NextOptionName("Slider"), panel, "OptionsSliderTemplate")
+        s:SetPoint("TOPLEFT", 16, offsetY)
+        s:SetMinMaxValues(minVal, maxVal)
+        s:SetValueStep(step)
+        if type(s.SetObeyStepOnDrag) == "function" then
+            s:SetObeyStepOnDrag(true)
+        end
+        s.tooltipText = tooltip
+
+        local textFS = s.Text or _G[s:GetName() .. "Text"]
+        local lowFS = s.Low or _G[s:GetName() .. "Low"]
+        local highFS = s.High or _G[s:GetName() .. "High"]
+
+        if textFS then textFS:SetText(text) end
+        if lowFS then lowFS:SetText(tostring(minVal)) end
+        if highFS then highFS:SetText(tostring(maxVal)) end
+
+        local valueText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        valueText:SetPoint("TOPLEFT", s, "TOPRIGHT", 12, -2)
+
+        local function UpdateLabel(val)
+            if formatFunc then
+                valueText:SetText(formatFunc(val))
+            else
+                valueText:SetText(tostring(val))
+            end
+        end
+
+        s:SetScript("OnShow", function(self)
+            local v = getValue()
+            if type(v) ~= "number" then v = minVal end
+            self:SetValue(v)
+            UpdateLabel(v)
+        end)
+        s:SetScript("OnValueChanged", function(self, value)
+            value = math.floor((value / step) + 0.5) * step
+            setValue(value)
+            UpdateLabel(value)
+        end)
+
+        return s
+    end
+
+    local function CreateButton(text, tooltip, offsetY, onClick)
+        local b = CreateFrame("Button", NextOptionName("Button"), panel, "UIPanelButtonTemplate")
+        b:SetPoint("TOPLEFT", 16, offsetY)
+        b:SetSize(160, 22)
+        b:SetText(text)
+        b.tooltipText = tooltip
+        b:SetScript("OnClick", function()
+            if type(onClick) == "function" then
+                onClick()
+            end
+        end)
+        return b
+    end
+
+    -- Checkboxes
+    CreateCheckbox(
+        "Enable server sync",
+        "When enabled, the addon requests updates from the server.",
+        -60,
+        function() return self:GetSetting("enableServerSync") end,
+        function(v) self:SaveSetting("enableServerSync", v) end
+    )
+
+    CreateCheckbox(
+        "Show collection notifications",
+        "Show chat notifications when new items are learned.",
+        -90,
+        function() return self:GetSetting("showCollectionNotifications") end,
+        function(v) self:SaveSetting("showCollectionNotifications", v) end
+    )
+
+    CreateCheckbox(
+        "Show wishlist alerts",
+        "Show alerts when an item on your wishlist becomes available.",
+        -120,
+        function() return self:GetSetting("showWishlistAlerts") end,
+        function(v) self:SaveSetting("showWishlistAlerts", v) end
+    )
+
+    CreateCheckbox(
+        "Play sounds",
+        "Play UI sounds for certain collection events.",
+        -150,
+        function() return self:GetSetting("playSounds") end,
+        function(v) self:SaveSetting("playSounds", v) end
+    )
+
+    CreateCheckbox(
+        "Show tooltips",
+        "Show tooltips when hovering collection items.",
+        -180,
+        function() return self:GetSetting("showTooltips") end,
+        function(v) self:SaveSetting("showTooltips", v) end
+    )
+
+    CreateCheckbox(
+        "Remember filters",
+        "Remember your last used filters per character.",
+        -210,
+        function() return self:GetSetting("rememberFilters") end,
+        function(v) self:SaveSetting("rememberFilters", v) end
+    )
+
+    CreateCheckbox(
+        "Debug mode",
+        "Enables verbose debug output in chat.",
+        -240,
+        function() return self:GetSetting("debugMode") end,
+        function(v) self:SaveSetting("debugMode", v) end
+    )
+
+    CreateButton(
+        "Refresh cache",
+        "Clears local cache and requests fresh data from the server.",
+        -270,
+        function() self:RefreshCacheNow() end
+    )
+
+    -- Sliders
+    CreateSlider(
+        "Grid columns",
+        "How many columns are shown in the collection grid.",
+        -290,
+        3, 10, 1,
+        function() return self:GetSetting("gridColumns") end,
+        function(v)
+            self:SaveSetting("gridColumns", v)
+            if self.MainFrame and self.MainFrame:IsShown() and self.RefreshGrid then
+                self:RefreshGrid()
+            end
+        end
+    )
+
+    CreateSlider(
+        "Grid icon size",
+        "Icon size (in pixels) for items in the grid.",
+        -340,
+        32, 64, 1,
+        function() return self:GetSetting("gridIconSize") end,
+        function(v)
+            self:SaveSetting("gridIconSize", v)
+            if self.MainFrame and self.MainFrame:IsShown() and self.RefreshGrid then
+                self:RefreshGrid()
+            end
+        end
+    )
+
+    InterfaceOptions_AddCategory(panel)
+    self.optionsPanel = panel
+
+    -- Communication sub-panel (looks like other DC addons: separate category)
+    local comm = CreateFrame("Frame", "DCCollectionOptionsPanelComm", InterfaceOptionsFramePanelContainer)
+    comm.name = "Communication"
+    comm.parent = panel.name
+
+    local commTitle = comm:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    commTitle:SetPoint("TOPLEFT", 16, -16)
+    commTitle:SetText("DC-Collection")
+
+    local commSubtitle = comm:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    commSubtitle:SetPoint("TOPLEFT", commTitle, "BOTTOMLEFT", 0, -8)
+    commSubtitle:SetText("Communication settings")
+
+    local commIndex = 0
+    local function NextCommName(prefix)
+        commIndex = commIndex + 1
+        return comm:GetName() .. prefix .. tostring(commIndex)
+    end
+
+    local function CommCheckbox(text, tooltip, offsetY, getValue, setValue)
+        local cb = CreateFrame("CheckButton", NextCommName("Check"), comm, "InterfaceOptionsCheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", 16, offsetY)
+
+        local label = cb.Text or _G[cb:GetName() .. "Text"]
+        if label then
+            label:SetText(text)
+        end
+        cb.tooltipText = tooltip
+        cb:SetScript("OnShow", function(self)
+            self:SetChecked(getValue() and true or false)
+        end)
+        cb:SetScript("OnClick", function(self)
+            setValue(self:GetChecked() and true or false)
+        end)
+        return cb
+    end
+
+    CommCheckbox(
+        "Enable server sync",
+        "When disabled, the addon will not request data from the server.",
+        -60,
+        function() return self:GetSetting("enableServerSync") end,
+        function(v) self:SaveSetting("enableServerSync", v) end
+    )
+
+    CommCheckbox(
+        "Auto sync on login",
+        "When enabled, the addon automatically requests data shortly after login.",
+        -90,
+        function() return self:GetSetting("autoSyncOnLogin") end,
+        function(v) self:SaveSetting("autoSyncOnLogin", v) end
+    )
+
+    CommCheckbox(
+        "Debug mode",
+        "Enables verbose debug output in chat.",
+        -120,
+        function() return self:GetSetting("debugMode") end,
+        function(v) self:SaveSetting("debugMode", v) end
+    )
+
+    InterfaceOptions_AddCategory(comm)
+    self.optionsPanelComm = comm
+    return panel
+end
+
+function DC:RefreshCacheNow()
+    DCCollectionDB = DCCollectionDB or {}
+
+    if type(self.ClearCache) == "function" then
+        self:ClearCache()
+    end
+
+    if not self:IsProtocolReady() then
+        self:Print("Server sync is disabled or not ready.")
+        return
+    end
+
+    self:Print("Refreshing cache from server...")
+    self:RequestFullSync()
+
+    if self.MainFrame and self.MainFrame:IsShown() and type(self.RefreshCurrentTab) == "function" then
+        self:RefreshCurrentTab()
     end
 end
 
@@ -337,8 +700,6 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
         DC:OpenTab("mounts")
     elseif cmd == "pets" then
         DC:OpenTab("pets")
-    elseif cmd == "toys" then
-        DC:OpenTab("toys")
     elseif cmd == "heirlooms" then
         DC:OpenTab("heirlooms")
     elseif cmd == "transmog" then
@@ -349,6 +710,8 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
         DC:OpenTab("shop")
     elseif cmd == "wishlist" then
         DC:OpenTab("wishlist")
+    elseif cmd == "settings" or cmd == "options" then
+        DC:OpenSettings()
     elseif cmd == "sync" then
         DC:Print("Requesting full sync from server...")
         DC:RequestFullSync()
@@ -360,7 +723,6 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
         DC:Print("Collection Statistics:")
         DC:Print(string.format("  Mounts: %d / %d", DC.stats.mounts.owned, DC.stats.mounts.total))
         DC:Print(string.format("  Pets: %d / %d", DC.stats.pets.owned, DC.stats.pets.total))
-        DC:Print(string.format("  Toys: %d / %d", DC.stats.toys.owned, DC.stats.toys.total))
         DC:Print(string.format("  Heirlooms: %d / %d", DC.stats.heirlooms.owned, DC.stats.heirlooms.total))
         DC:Print(string.format("  Total: %d / %d (%.1f%%)", owned, total, total > 0 and (owned/total*100) or 0))
         DC:Print(string.format("  Mount Speed Bonus: +%d%%", DC.mountSpeedBonus))
@@ -369,9 +731,10 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
     elseif cmd == "help" then
         DC:Print("Available commands:")
         DC:Print("  /dcc - Toggle collection window")
-        DC:Print("  /dcc mounts|pets|toys|heirlooms|transmog|titles - Open specific tab")
+        DC:Print("  /dcc mounts|pets|heirlooms|transmog|titles - Open specific tab")
         DC:Print("  /dcc shop - Open collection shop")
         DC:Print("  /dcc wishlist - Open wishlist")
+        DC:Print("  /dcc settings - Open settings panel")
         DC:Print("  /dcc sync - Request full data sync")
         DC:Print("  /dcc stats - Show collection statistics")
         DC:Print("  /dcc currency - Show current currency")
@@ -388,9 +751,30 @@ end
 local eventFrame = CreateFrame("Frame", "DCCollectionEventFrame", UIParent)
 local events = {}
 
+-- WoW 3.3.5a compatibility: C_Timer does not exist.
+local function After(seconds, callback)
+    if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+        return C_Timer.After(seconds, callback)
+    end
+
+    local f = CreateFrame("Frame")
+    local elapsed = 0
+    f:SetScript("OnUpdate", function(self, delta)
+        elapsed = elapsed + (delta or 0)
+        if elapsed >= (seconds or 0) then
+            self:SetScript("OnUpdate", nil)
+            local ok, err = pcall(callback)
+            if not ok and DEFAULT_CHAT_FRAME then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[DC-Collection] Timer error:|r " .. tostring(err))
+            end
+        end
+    end)
+end
+
 function events:ADDON_LOADED(addonName)
     if addonName == "DC-Collection" then
         DC:LoadSettings()
+        DC:CreateOptionsPanel()
         DC:InitializeCache()
         DC:InitializeProtocol()
         
@@ -398,7 +782,10 @@ function events:ADDON_LOADED(addonName)
         DC:Print(string.format(L.ADDON_LOADED, DC.VERSION))
         
         -- Request initial data after a short delay
-        C_Timer.After(2, function()
+        After(2, function()
+            if not DC:GetSetting("autoSyncOnLogin") then
+                return
+            end
             if DC:IsProtocolReady() then
                 DC:RequestInitialData()
             end
@@ -463,11 +850,39 @@ end
 
 function DC:IsProtocolReady()
     -- Check if we can communicate with server
-    return DCAddonProtocol ~= nil and DCAddonProtocol.IsReady and DCAddonProtocol:IsReady()
+    if not DCAddonProtocol then
+        return false
+    end
+
+    if not self:GetSetting("enableServerSync") then
+        return false
+    end
+
+    -- DCAddonProtocol in 3.3.5a does not expose IsReady(); assume ready if Request/SendJSON exists
+    if self.isConnected then
+        return true
+    end
+
+    return type(DCAddonProtocol.Request) == "function" or type(DCAddonProtocol.SendJSON) == "function" or type(DCAddonProtocol.Send) == "function"
 end
 
-function DC:RequestInitialData()
+function DC:RequestInitialData(skipHandshake)
     DC:Debug("Requesting initial collection data...")
+
+    if not self:IsProtocolReady() then
+        self:Debug("Protocol not ready (or server sync disabled)")
+        return
+    end
+
+    -- Ensure handshake happens first when supported.
+    if not skipHandshake and type(self.RequestHandshake) == "function" then
+        if not self._handshakeRequested and not self._handshakeAcked then
+            self._handshakeRequested = true
+            self:Debug("Sending handshake...")
+            self:RequestHandshake()
+            return
+        end
+    end
     
     -- Request currency first
     self:RequestCurrency()
@@ -489,23 +904,45 @@ function DC:RequestFullSync()
     -- Force a complete resync
     DCCollectionDB.lastSyncTime = 0
     DCCollectionDB.syncVersion = 0
-    self:RequestInitialData()
+    self._handshakeRequested = nil
+    self._handshakeAcked = nil
+    self:RequestInitialData(false)
 end
 
 -- Placeholder functions (implemented in Protocol.lua)
-function DC:RequestCurrency() end
-function DC:RequestStats() end
-function DC:RequestDefinitions() end
-function DC:RequestCollections() end
-function DC:RequestShopData() end
-function DC:RequestCollectionUpdate(collectionType) end
+if type(DC.RequestCurrency) ~= "function" then
+    function DC:RequestCurrency() end
+end
+if type(DC.RequestStats) ~= "function" then
+    function DC:RequestStats() end
+end
+if type(DC.RequestDefinitions) ~= "function" then
+    function DC:RequestDefinitions() end
+end
+if type(DC.RequestCollections) ~= "function" then
+    function DC:RequestCollections() end
+end
+if type(DC.RequestShopData) ~= "function" then
+    function DC:RequestShopData() end
+end
+if type(DC.RequestCollectionUpdate) ~= "function" then
+    function DC:RequestCollectionUpdate(collectionType) end
+end
 
 -- Placeholder for mount speed bonus (implemented in Bonuses.lua)
-function DC:ApplyMountSpeedBonus() end
+if type(DC.ApplyMountSpeedBonus) ~= "function" then
+    function DC:ApplyMountSpeedBonus() end
+end
 
 -- Placeholder for main frame creation (implemented in UI/MainFrame.lua)
-function DC:CreateMainFrame() end
+if type(DC.CreateMainFrame) ~= "function" then
+    function DC:CreateMainFrame() end
+end
 
 -- Placeholder for cache functions (implemented in Cache.lua)
-function DC:LoadCache() end
-function DC:SaveCache() end
+if type(DC.LoadCache) ~= "function" then
+    function DC:LoadCache() end
+end
+if type(DC.SaveCache) ~= "function" then
+    function DC:SaveCache() end
+end

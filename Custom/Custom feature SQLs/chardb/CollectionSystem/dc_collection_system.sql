@@ -46,6 +46,16 @@ CREATE TABLE IF NOT EXISTS `dc_collection_wishlist` (
 -- CURRENCY
 -- ============================================================================
 
+-- NOTE (Dec 2025):
+-- The DC-Collection server handler now reuses the existing ItemUpgrade currency
+-- implementation (shared by CrossSystem/Seasons):
+--   - Table: `dc_player_upgrade_tokens`
+--   - currency_type: 'upgrade_token' (tokens) and 'artifact_essence' (emblems)
+--   - Season: resolved via DarkChaos::ItemUpgrade::GetCurrentSeasonId()
+--
+-- The `dc_collection_currency` table below is kept ONLY for older revisions and
+-- is not used by the current server code.
+
 CREATE TABLE IF NOT EXISTS `dc_collection_currency` (
     `account_id` INT UNSIGNED NOT NULL,
     `currency_id` INT UNSIGNED NOT NULL COMMENT '1=tokens, 2=emblems',
@@ -83,6 +93,18 @@ CREATE TABLE IF NOT EXISTS `dc_character_transmog` (
     `real_entry` INT UNSIGNED NOT NULL COMMENT 'Real equipped item entry',
     PRIMARY KEY (`guid`, `slot`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Applied transmog per character';
+
+-- ============================================================================
+-- MIGRATIONS (OPTIONAL)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS `dc_collection_migrations` (
+    `account_id` INT UNSIGNED NOT NULL,
+    `migration_key` VARCHAR(64) NOT NULL,
+    `done` TINYINT(1) NOT NULL DEFAULT 1,
+    `done_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`account_id`, `migration_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='One-time account migrations for DC-Collection';
 
 -- NOTE:
 -- The previous per-type schema and stored procedures were removed in v2.0.0.

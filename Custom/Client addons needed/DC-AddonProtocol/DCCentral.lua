@@ -58,6 +58,40 @@ DC.KEYSTONE_ITEM_IDS = {
 }
 
 -- ============================================================================
+-- Optional server-reported currency balance
+-- ============================================================================
+
+-- Some addons (e.g. DC-Collection) receive currency from the server via addon
+-- messages rather than actual item counts. Store that here so UIs can display
+-- consistent values.
+DC.ServerCurrencyBalance = DC.ServerCurrencyBalance or {
+    tokens = 0,
+    emblems = 0,
+    byItemId = {},
+    updatedAt = nil,
+}
+
+--- Update currency balances as reported by the server.
+--- @param tokens number
+--- @param emblems number
+function DC:SetServerCurrencyBalance(tokens, emblems)
+    tokens = tonumber(tokens) or 0
+    emblems = tonumber(emblems) or 0
+
+    self.ServerCurrencyBalance.tokens = tokens
+    self.ServerCurrencyBalance.emblems = emblems
+    self.ServerCurrencyBalance.byItemId[self.TOKEN_ITEM_ID] = tokens
+    self.ServerCurrencyBalance.byItemId[self.ESSENCE_ITEM_ID] = emblems
+    self.ServerCurrencyBalance.updatedAt = time and time() or nil
+end
+
+--- Get last server-reported currency balances.
+--- @return table
+function DC:GetServerCurrencyBalance()
+    return self.ServerCurrencyBalance
+end
+
+-- ============================================================================
 -- Token and Essence Functions
 -- ============================================================================
 
@@ -106,11 +140,15 @@ end
 --- @return number Total count
 function DC:GetPlayerTokenCount(itemID)
     if itemID then
+        local bal = self.ServerCurrencyBalance
+        if bal and bal.byItemId and bal.byItemId[itemID] ~= nil then
+            return bal.byItemId[itemID] or 0
+        end
         return GetItemCount(itemID) or 0
     else
         local total = 0
         for id in pairs(self.TokenInfo) do
-            total = total + (GetItemCount(id) or 0)
+            total = total + (self:GetPlayerTokenCount(id) or 0)
         end
         return total
     end

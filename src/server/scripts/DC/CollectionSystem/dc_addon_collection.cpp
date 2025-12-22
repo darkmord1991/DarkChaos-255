@@ -36,13 +36,18 @@
 #include "Pet.h"
 #include "Item.h"
 #include "ItemTemplate.h"
+#include "Bag.h"
 #include "ScriptMgr.h"
+#include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/ItemUpgrades/ItemUpgradeSeasonResolver.h"
 #include <string>
 #include <sstream>
 #include <unordered_set>
 #include <unordered_map>
 #include <ctime>
 #include <functional>
+#include <algorithm>
+#include <vector>
 
 namespace DCCollection
 {
@@ -61,6 +66,16 @@ namespace DCCollection
         constexpr const char* WISHLIST_ENABLED = "DCCollection.Wishlist.Enable";
         constexpr const char* WISHLIST_MAX_ITEMS = "DCCollection.Wishlist.MaxItems";
         [[maybe_unused]] constexpr const char* SYNC_INTERVAL = "DCCollection.SyncInterval";
+
+        // Transmog unlock rules
+        constexpr const char* TRANSMOG_UNLOCK_ON_CREATE = "DCCollection.Transmog.UnlockOnCreate";
+        constexpr const char* TRANSMOG_UNLOCK_ON_EQUIP = "DCCollection.Transmog.UnlockOnEquip";
+        constexpr const char* TRANSMOG_UNLOCK_ON_SOULBIND = "DCCollection.Transmog.UnlockOnSoulbind";
+
+        // Legacy import (scan items owned by old characters)
+        constexpr const char* TRANSMOG_LEGACY_IMPORT_ENABLED = "DCCollection.Transmog.LegacyImport.Enable";
+        constexpr const char* TRANSMOG_LEGACY_IMPORT_INCLUDE_BANK = "DCCollection.Transmog.LegacyImport.IncludeBank";
+        constexpr const char* TRANSMOG_LEGACY_IMPORT_REQUIRE_SOULBOUND = "DCCollection.Transmog.LegacyImport.RequireSoulbound";
     }
 
     // Collection types - matches client-side
@@ -74,9 +89,11 @@ namespace DCCollection
         TRANSMOG    = 6
     };
 
-    // Currency IDs (must match dc_collection_system.sql)
-    constexpr uint32 CURRENCY_TOKEN = 1;     // Collection Token
-    constexpr uint32 CURRENCY_EMBLEM = 2;    // Collector's Emblem
+    // Currency IDs
+    // Reuse the existing ItemUpgrade currency implementation (used by CrossSystem/Seasons).
+    // These values intentionally match DarkChaos::ItemUpgrade::CurrencyType.
+    constexpr uint32 CURRENCY_TOKEN = 1;     // Upgrade Token
+    constexpr uint32 CURRENCY_EMBLEM = 2;    // Artifact Essence
 
     // Transmog behavior
     constexpr uint32 TRANSMOG_CANONICAL_ITEMID_THRESHOLD = 200000; // Prefer non-custom items for naming/appearance
@@ -97,6 +114,271 @@ namespace DCCollection
     // =======================================================================
     // Utility Functions
     // =======================================================================
+
+    uint32 FindCompanionItemIdForSpell(uint32 spellId)
+    {
+        // Companion pets in 3.3.5a are typically taught by item_template (class=15, subclass=2).
+        QueryResult r = WorldDatabase.Query(
+            "SELECT MIN(entry) FROM item_template "
+            "WHERE class = 15 AND subclass = 2 AND ("
+            "  spellid_1 = {} OR spellid_2 = {} OR spellid_3 = {} OR spellid_4 = {} OR spellid_5 = {}"
+            ")",
+            spellId, spellId, spellId, spellId, spellId);
+
+        if (!r)
+            return 0;
+
+        Field* f = r->Fetch();
+        if (f[0].IsNull())
+            return 0;
+        return f[0].Get<uint32>();
+    }
+
+    // Forward declarations used by early migration helpers.
+    uint32 GetItemDisplayId(ItemTemplate const* proto);
+    bool IsItemEligibleForTransmogUnlock(ItemTemplate const* proto);
+
+    bool CharacterTableExists(std::string const& tableName)
+    {
+        QueryResult result = CharacterDatabase.Query("SHOW TABLES LIKE '{}'", tableName);
+        return result != nullptr;
+    }
+
+    bool ShouldRunTransmogLegacyImport(uint32 accountId)
+    {
+        if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_ENABLED, true))
+            return false;
+
+        // Prefer a persistent migration flag when available.
+        static bool checkedTable = false;
+        static bool hasMigrationsTable = false;
+        if (!checkedTable)
+        {
+            hasMigrationsTable = CharacterTableExists("dc_collection_migrations");
+            checkedTable = true;
+        }
+
+        if (hasMigrationsTable)
+        {
+            QueryResult r = CharacterDatabase.Query(
+                "SELECT 1 FROM dc_collection_migrations WHERE account_id = {} AND migration_key = 'legacy_transmog_import_v1' LIMIT 1",
+                accountId);
+            return r == nullptr;
+        }
+
+        // Fallback: run once per server session per account.
+        static std::unordered_set<uint32> importedThisSession;
+        if (importedThisSession.find(accountId) != importedThisSession.end())
+            return false;
+
+        importedThisSession.insert(accountId);
+        return true;
+    }
+
+    void MarkTransmogLegacyImportDone(uint32 accountId)
+    {
+        if (!CharacterTableExists("dc_collection_migrations"))
+            return;
+
+        CharacterDatabase.Execute(
+            "INSERT IGNORE INTO dc_collection_migrations (account_id, migration_key, done, done_at) "
+            "VALUES ({}, 'legacy_transmog_import_v1', 1, NOW())",
+            accountId);
+    }
+
+    // Forward declaration: ensure GetAccountId is visible at call sites
+    inline uint32 GetAccountId(Player* player);
+
+    void ImportExistingCollections(Player* player)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        uint32 accountId = GetAccountId(player);
+        if (!accountId)
+            return;
+
+        auto trans = CharacterDatabase.BeginTransaction();
+
+        // Migrate older PET collection rows that used learned spellIds instead of companion itemIds.
+        // If entry_id is not a valid item_template entry, attempt to map it to the teaching item.
+        {
+            QueryResult pets = CharacterDatabase.Query(
+                "SELECT entry_id FROM dc_collection_items "
+                "WHERE account_id = {} AND collection_type = {} AND unlocked = 1",
+                accountId, static_cast<uint8>(CollectionType::PET));
+
+            if (pets)
+            {
+                do
+                {
+                    uint32 entryId = pets->Fetch()[0].Get<uint32>();
+                    if (sObjectMgr->GetItemTemplate(entryId))
+                        continue;
+
+                    uint32 mappedItemId = FindCompanionItemIdForSpell(entryId);
+                    if (!mappedItemId)
+                        continue;
+
+                    trans->Append(
+                        "INSERT IGNORE INTO dc_collection_items "
+                        "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                        "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
+                        accountId, static_cast<uint8>(CollectionType::PET), mappedItemId);
+
+                    trans->Append(
+                        "DELETE FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND entry_id = {}",
+                        accountId, static_cast<uint8>(CollectionType::PET), entryId);
+
+                } while (pets->NextRow());
+            }
+        }
+
+        // Import learned mount + companion pet spells into account-wide collections.
+        PlayerSpellMap const& spells = player->GetSpellMap();
+        for (auto const& spell : spells)
+        {
+            if (!spell.second || spell.second->State == PLAYERSPELL_REMOVED)
+                continue;
+
+            uint32 spellId = spell.first;
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (!spellInfo)
+                continue;
+
+            bool isMount = false;
+            bool isPetSpell = false;
+
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+            {
+                if (spellInfo->Effects[i].Effect == SPELL_EFFECT_APPLY_AURA &&
+                    (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED ||
+                     spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED))
+                {
+                    isMount = true;
+                    break;
+                }
+
+                if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON &&
+                    spellInfo->Effects[i].MiscValueB == 0)
+                {
+                    isPetSpell = true;
+                }
+            }
+
+            if (isMount)
+            {
+                trans->Append(
+                    "INSERT IGNORE INTO dc_collection_items "
+                    "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                    "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
+                    accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
+            }
+            else if (isPetSpell)
+            {
+                uint32 itemId = FindCompanionItemIdForSpell(spellId);
+                if (!itemId)
+                    continue;
+
+                trans->Append(
+                    "INSERT IGNORE INTO dc_collection_items "
+                    "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                    "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
+                    accountId, static_cast<uint8>(CollectionType::PET), itemId);
+            }
+        }
+
+        // Import earned titles into account-wide collections.
+        for (uint32 i = 1; i < sCharTitlesStore.GetNumRows(); ++i)
+        {
+            CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(i);
+            if (!titleEntry)
+                continue;
+
+            if (!player->HasTitle(titleEntry))
+                continue;
+
+            trans->Append(
+                "INSERT IGNORE INTO dc_collection_items "
+                "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
+                accountId, static_cast<uint8>(CollectionType::TITLE), titleEntry->ID);
+        }
+
+        // Import legacy transmog appearances for old characters by scanning owned items.
+        // This is intentionally a one-time import per account.
+        if (ShouldRunTransmogLegacyImport(accountId))
+        {
+            bool includeBank = sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_INCLUDE_BANK, true);
+            bool requireSoulbound = sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_REQUIRE_SOULBOUND, false);
+
+            std::unordered_set<uint32> displayIds;
+
+            auto considerItem = [&](Item* item)
+            {
+                if (!item)
+                    return;
+
+                if (requireSoulbound && !item->IsSoulBound())
+                    return;
+
+                ItemTemplate const* proto = item->GetTemplate();
+                if (!IsItemEligibleForTransmogUnlock(proto))
+                    return;
+
+                uint32 displayId = GetItemDisplayId(proto);
+                if (!displayId)
+                    return;
+
+                displayIds.insert(displayId);
+            };
+
+            // Equipped slots.
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+                considerItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+
+            // Backpack.
+            for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+                considerItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+
+            // Bags.
+            for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
+            {
+                if (Bag* bag = player->GetBagByPos(bagSlot))
+                    for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+                        considerItem(bag->GetItemByPos(static_cast<uint8>(i)));
+            }
+
+            if (includeBank)
+            {
+                // Bank slots.
+                for (uint8 slot = BANK_SLOT_ITEM_START; slot < BANK_SLOT_ITEM_END; ++slot)
+                    considerItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+
+                // Bank bags.
+                for (uint8 bagSlot = BANK_SLOT_BAG_START; bagSlot < BANK_SLOT_BAG_END; ++bagSlot)
+                {
+                    if (Bag* bag = player->GetBagByPos(bagSlot))
+                        for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+                            considerItem(bag->GetItemByPos(static_cast<uint8>(i)));
+                }
+            }
+
+            for (uint32 displayId : displayIds)
+            {
+                trans->Append(
+                    "INSERT IGNORE INTO dc_collection_items "
+                    "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                    "VALUES ({}, {}, {}, 'IMPORT_ITEMSCAN', 1, NOW())",
+                    accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId);
+            }
+
+            // Mark migration as done even if nothing was found.
+            MarkTransmogLegacyImportDone(accountId);
+        }
+
+        CharacterDatabase.CommitTransaction(trans);
+    }
 
     // Generate simple hash for delta sync comparison
     inline uint32 GenerateCollectionHash(const std::vector<uint32>& items)
@@ -121,6 +403,12 @@ namespace DCCollection
     // =======================================================================
     // Database Queries
     // =======================================================================
+
+    bool WorldTableExists(std::string const& tableName)
+    {
+        QueryResult result = WorldDatabase.Query("SHOW TABLES LIKE '{}'", tableName);
+        return result != nullptr;
+    }
 
     // Load player's collection for a specific type
     std::vector<uint32> LoadPlayerCollection(uint32 accountId, CollectionType type)
@@ -168,47 +456,91 @@ namespace DCCollection
         return counts;
     }
 
+    // Forward declaration: ensure transmog keys available at call site
+    std::vector<uint32> const& GetTransmogAppearanceKeysCached();
+
     // Get total counts for definitions (for % calculations)
     std::map<CollectionType, uint32> LoadTotalDefinitions()
     {
         std::map<CollectionType, uint32> totals;
 
-        QueryResult result = WorldDatabase.Query(
-            "SELECT collection_type, COUNT(*) FROM dc_collection_definitions "
-            "WHERE enabled = 1 "
-            "GROUP BY collection_type");
-
-        if (result)
+        if (WorldTableExists("dc_collection_definitions"))
         {
-            do
+            QueryResult result = WorldDatabase.Query(
+                "SELECT collection_type, COUNT(*) FROM dc_collection_definitions "
+                "WHERE enabled = 1 "
+                "GROUP BY collection_type");
+
+            if (result)
             {
-                Field* fields = result->Fetch();
-                CollectionType type = static_cast<CollectionType>(fields[0].Get<uint8>());
-                totals[type] = fields[1].Get<uint32>();
-            } while (result->NextRow());
+                do
+                {
+                    Field* fields = result->Fetch();
+                    CollectionType type = static_cast<CollectionType>(fields[0].Get<uint8>());
+                    totals[type] = fields[1].Get<uint32>();
+                } while (result->NextRow());
+            }
+        }
+
+        // Fallbacks when the generic definitions table is missing or unpopulated.
+        auto ensureTotal = [&](CollectionType type, uint32 value)
+        {
+            if (totals.find(type) == totals.end())
+                totals[type] = value;
+        };
+
+        // Titles can always be enumerated from DBC.
+        ensureTotal(CollectionType::TITLE, static_cast<uint32>(sCharTitlesStore.GetNumRows() > 0 ? (sCharTitlesStore.GetNumRows() - 1) : 0));
+
+        // Transmog definitions are built in-memory from item_template.
+        ensureTotal(CollectionType::TRANSMOG, static_cast<uint32>(GetTransmogAppearanceKeysCached().size()));
+
+        // Prefer curated per-type tables if they exist.
+        if (WorldTableExists("dc_mount_definitions"))
+        {
+            QueryResult r = WorldDatabase.Query("SELECT COUNT(*) FROM dc_mount_definitions");
+            if (r)
+                ensureTotal(CollectionType::MOUNT, r->Fetch()[0].Get<uint32>());
+        }
+        if (WorldTableExists("dc_pet_definitions"))
+        {
+            QueryResult r = WorldDatabase.Query("SELECT COUNT(*) FROM dc_pet_definitions");
+            if (r)
+                ensureTotal(CollectionType::PET, r->Fetch()[0].Get<uint32>());
+        }
+        if (WorldTableExists("dc_toy_definitions"))
+        {
+            QueryResult r = WorldDatabase.Query("SELECT COUNT(*) FROM dc_toy_definitions");
+            if (r)
+                ensureTotal(CollectionType::TOY, r->Fetch()[0].Get<uint32>());
+        }
+        if (WorldTableExists("dc_heirloom_definitions"))
+        {
+            QueryResult r = WorldDatabase.Query("SELECT COUNT(*) FROM dc_heirloom_definitions");
+            if (r)
+                ensureTotal(CollectionType::HEIRLOOM, r->Fetch()[0].Get<uint32>());
         }
 
         return totals;
     }
 
-    // Load player currencies
-    std::map<uint32, uint32> LoadCurrencies(uint32 accountId)
+    // Load player currencies (shared currency backing from the ItemUpgrade system)
+    std::map<uint32, uint32> LoadCurrencies(Player* player)
     {
         std::map<uint32, uint32> currencies;
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT currency_id, amount FROM dc_collection_currency "
-            "WHERE account_id = {}",
-            accountId);
+        if (!player)
+            return currencies;
 
-        if (result)
-        {
-            do
-            {
-                Field* fields = result->Fetch();
-                currencies[fields[0].Get<uint32>()] = fields[1].Get<uint32>();
-            } while (result->NextRow());
-        }
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!mgr)
+            return currencies;
+
+        uint32 playerGuid = player->GetGUID().GetCounter();
+        uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+
+        currencies[CURRENCY_TOKEN] = mgr->GetCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, season);
+        currencies[CURRENCY_EMBLEM] = mgr->GetCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, season);
 
         return currencies;
     }
@@ -233,6 +565,9 @@ namespace DCCollection
     // Forward declaration
     AppearanceMap BuildTransmogAppearanceMap();
 
+    // Forward declaration: A list of appearance display IDs cached for quick lookup
+    std::vector<uint32> const& GetTransmogAppearanceKeysCached();
+
     AppearanceMap const& GetTransmogAppearanceMapCached()
     {
         static AppearanceMap cached;
@@ -243,6 +578,23 @@ namespace DCCollection
             initialized = true;
         }
         return cached;
+    }
+
+    std::vector<uint32> const& GetTransmogAppearanceKeysCached()
+    {
+        static std::vector<uint32> keys;
+        static bool initialized = false;
+        if (!initialized)
+        {
+            auto const& appearances = GetTransmogAppearanceMapCached();
+            keys.reserve(appearances.size());
+            for (auto const& [displayId, _] : appearances)
+                keys.push_back(displayId);
+
+            std::sort(keys.begin(), keys.end());
+            initialized = true;
+        }
+        return keys;
     }
 
     bool IsInvTypeCompatibleForSlot(uint8 slot, uint32 invType)
@@ -588,6 +940,8 @@ namespace DCCollection
         std::vector<uint32> allItems;
         for (int t = 1; t <= 6; ++t)
         {
+            if (t == static_cast<int>(CollectionType::TOY))
+                continue; // Toys are disabled
             auto items = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
             allItems.insert(allItems.end(), items.begin(), items.end());
         }
@@ -619,6 +973,8 @@ namespace DCCollection
 
         for (int t = 1; t <= 6; ++t)
         {
+            if (t == static_cast<int>(CollectionType::TOY))
+                continue; // Toys are disabled
             auto items = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
 
             DCAddon::JsonValue arr;
@@ -638,6 +994,8 @@ namespace DCCollection
         stats.SetObject();
         for (int t = 1; t <= 6; ++t)
         {
+            if (t == static_cast<int>(CollectionType::TOY))
+                continue; // Toys are disabled
             CollectionType type = static_cast<CollectionType>(t);
             uint32 owned = counts[type];
             uint32 total = totals[type];
@@ -663,6 +1021,8 @@ namespace DCCollection
         std::vector<uint32> allItems;
         for (int t = 1; t <= 6; ++t)
         {
+            if (t == static_cast<int>(CollectionType::TOY))
+                continue; // Toys are disabled
             auto items = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
             allItems.insert(allItems.end(), items.begin(), items.end());
         }
@@ -697,6 +1057,8 @@ namespace DCCollection
 
         for (int t = 1; t <= 6; ++t)
         {
+            if (t == static_cast<int>(CollectionType::TOY))
+                continue; // Toys are disabled
             CollectionType type = static_cast<CollectionType>(t);
             uint32 owned = counts[type];
             uint32 total = totals[type];
@@ -750,8 +1112,7 @@ namespace DCCollection
         if (!player || !player->GetSession())
             return;
 
-        uint32 accountId = GetAccountId(player);
-        auto currencies = LoadCurrencies(accountId);
+        auto currencies = LoadCurrencies(player);
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_CURRENCIES);
         msg.Set("tokens", currencies[CURRENCY_TOKEN]);
@@ -780,14 +1141,14 @@ namespace DCCollection
             "       discount_percent, available_until, stock_remaining, featured "
             "FROM dc_collection_shop "
             "WHERE enabled = 1 AND (available_from IS NULL OR available_from <= NOW()) "
-            "  AND (available_until IS NULL OR available_until >= NOW())";
+            "  AND (available_until IS NULL OR available_until >= NOW()) "
+            "  AND collection_type != 3";
 
         if (!category.empty() && category != "all")
         {
             uint8 typeId = 0;
             if (category == "mounts") typeId = 1;
             else if (category == "pets") typeId = 2;
-            else if (category == "toys") typeId = 3;
             else if (category == "heirlooms") typeId = 4;
             else if (category == "titles") typeId = 5;
             else if (category == "transmog") typeId = 6;
@@ -809,6 +1170,8 @@ namespace DCCollection
             std::unordered_set<std::string> ownedItems;
             for (int t = 1; t <= 6; ++t)
             {
+                if (t == static_cast<int>(CollectionType::TOY))
+                    continue; // Toys are disabled
                 auto owned = LoadPlayerCollection(accountId, static_cast<CollectionType>(t));
                 for (uint32 id : owned)
                 {
@@ -884,7 +1247,7 @@ namespace DCCollection
         }
 
         // Get player currencies for display
-        auto currencies = LoadCurrencies(accountId);
+        auto currencies = LoadCurrencies(player);
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_SHOP_DATA);
         msg.Set("items", items);
@@ -1050,7 +1413,7 @@ namespace DCCollection
         }
 
         // Check currencies
-        auto currencies = LoadCurrencies(accountId);
+        auto currencies = LoadCurrencies(player);
         if (currencies[CURRENCY_TOKEN] < priceTokens || currencies[CURRENCY_EMBLEM] < priceEmblems)
         {
             DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
@@ -1060,24 +1423,43 @@ namespace DCCollection
             return;
         }
 
-        // Process purchase - use transaction
-        auto trans = CharacterDatabase.BeginTransaction();
+        // Deduct currencies using the shared ItemUpgrade currency implementation.
+        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (!mgr)
+        {
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
+            msg.Set("success", false);
+            msg.Set("error", "Currency system unavailable");
+            msg.Send(player);
+            return;
+        }
 
-        // Deduct currencies
-        if (priceTokens > 0)
+        uint32 playerGuid = player->GetGUID().GetCounter();
+        uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+
+        if (priceTokens > 0 && !mgr->RemoveCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, priceTokens, season))
         {
-            trans->Append(
-                "UPDATE dc_collection_currency SET amount = amount - {} "
-                "WHERE account_id = {} AND currency_id = {}",
-                priceTokens, accountId, CURRENCY_TOKEN);
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
+            msg.Set("success", false);
+            msg.Set("error", "Insufficient currency");
+            msg.Send(player);
+            return;
         }
-        if (priceEmblems > 0)
+
+        if (priceEmblems > 0 && !mgr->RemoveCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, priceEmblems, season))
         {
-            trans->Append(
-                "UPDATE dc_collection_currency SET amount = amount - {} "
-                "WHERE account_id = {} AND currency_id = {}",
-                priceEmblems, accountId, CURRENCY_EMBLEM);
+            if (priceTokens > 0)
+            mgr->AddCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, priceTokens, season);
+
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
+            msg.Set("success", false);
+            msg.Set("error", "Insufficient currency");
+            msg.Send(player);
+            return;
         }
+
+        // Process purchase - use transaction for granting/recording
+        auto trans = CharacterDatabase.BeginTransaction();
 
         // Add to collection
         trans->Append(
@@ -1109,7 +1491,7 @@ namespace DCCollection
         }
 
         // Send success response
-        auto newCurrencies = LoadCurrencies(accountId);
+        auto newCurrencies = LoadCurrencies(player);
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
         msg.Set("success", true);
@@ -1380,10 +1762,136 @@ namespace DCCollection
     // Definitions / Per-Type Sync
     // =======================================================================
 
-    void SendDefinitions(Player* player, uint8 type)
+    void SendDefinitions(Player* player, uint8 type, uint32 offset = 0, uint32 limit = 0)
     {
         if (!player || !player->GetSession())
             return;
+
+        auto const looksLikeJson = [](std::string const& s) -> bool
+        {
+            size_t i = s.find_first_not_of(" \t\r\n");
+            if (i == std::string::npos)
+                return false;
+            return s[i] == '{' || s[i] == '[';
+        };
+
+        auto const parseSourceValue = [&](std::string const& sourceStr) -> DCAddon::JsonValue
+        {
+            if (!looksLikeJson(sourceStr))
+                return DCAddon::JsonValue(sourceStr);
+
+            DCAddon::JsonValue parsed = DCAddon::JsonParser::Parse(sourceStr);
+            if (parsed.IsObject() || parsed.IsArray())
+                return parsed;
+
+            return DCAddon::JsonValue(sourceStr);
+        };
+
+        auto const isUnknownSource = [](DCAddon::JsonValue const& v) -> bool
+        {
+            if (!v.IsObject())
+                return false;
+            if (!v.HasKey("type"))
+                return false;
+
+            DCAddon::JsonValue const& t = v["type"];
+            return t.IsString() && (t.AsString() == "unknown" || t.AsString() == "");
+        };
+
+        auto const buildSourceForItem = [&](uint32 itemId) -> DCAddon::JsonValue
+        {
+            DCAddon::JsonValue src;
+            src.SetObject();
+            src.Set("type", DCAddon::JsonValue("unknown"));
+            if (itemId)
+                src.Set("itemId", DCAddon::JsonValue(itemId));
+
+            if (!itemId)
+                return src;
+
+            // Prefer boss drops.
+            if (QueryResult r = WorldDatabase.Query(
+                "SELECT ct.name, ct.entry, clt.Chance "
+                "FROM creature_loot_template clt "
+                "JOIN creature_template ct ON ct.lootid = clt.Entry "
+                "WHERE clt.Item = {} AND (ct.rank >= 3 OR (ct.unit_flags & 32768) > 0) "
+                "ORDER BY clt.Chance DESC LIMIT 1",
+                itemId))
+            {
+                Field* f = r->Fetch();
+                src.Set("type", DCAddon::JsonValue("drop"));
+                src.Set("boss", DCAddon::JsonValue(f[0].Get<std::string>()));
+                src.Set("creatureEntry", DCAddon::JsonValue(f[1].Get<uint32>()));
+                src.Set("dropRate", DCAddon::JsonValue(f[2].Get<float>()));
+                return src;
+            }
+
+            // Vendors.
+            if (QueryResult r = WorldDatabase.Query(
+                "SELECT ct.name, ct.entry "
+                "FROM npc_vendor nv "
+                "JOIN creature_template ct ON ct.entry = nv.entry "
+                "WHERE nv.item = {} LIMIT 1",
+                itemId))
+            {
+                Field* f = r->Fetch();
+                src.Set("type", DCAddon::JsonValue("vendor"));
+                src.Set("npc", DCAddon::JsonValue(f[0].Get<std::string>()));
+                src.Set("npcEntry", DCAddon::JsonValue(f[1].Get<uint32>()));
+                return src;
+            }
+
+            // Quest rewards.
+            if (QueryResult r = WorldDatabase.Query(
+                "SELECT ID FROM quest_template WHERE "
+                "RewardItem1 = {} OR RewardItem2 = {} OR RewardItem3 = {} OR RewardItem4 = {} OR "
+                "RewardChoiceItemID1 = {} OR RewardChoiceItemID2 = {} OR RewardChoiceItemID3 = {} OR "
+                "RewardChoiceItemID4 = {} OR RewardChoiceItemID5 = {} OR RewardChoiceItemID6 = {} "
+                "LIMIT 1",
+                itemId, itemId, itemId, itemId,
+                itemId, itemId, itemId, itemId, itemId, itemId))
+            {
+                Field* f = r->Fetch();
+                src.Set("type", DCAddon::JsonValue("quest"));
+                src.Set("questId", DCAddon::JsonValue(f[0].Get<uint32>()));
+                return src;
+            }
+
+            // Any creature drop.
+            if (QueryResult r = WorldDatabase.Query(
+                "SELECT ct.name, ct.entry, clt.Chance "
+                "FROM creature_loot_template clt "
+                "JOIN creature_template ct ON ct.lootid = clt.Entry "
+                "WHERE clt.Item = {} "
+                "ORDER BY clt.Chance DESC LIMIT 1",
+                itemId))
+            {
+                Field* f = r->Fetch();
+                src.Set("type", DCAddon::JsonValue("drop"));
+                src.Set("boss", DCAddon::JsonValue(f[0].Get<std::string>()));
+                src.Set("creatureEntry", DCAddon::JsonValue(f[1].Get<uint32>()));
+                src.Set("dropRate", DCAddon::JsonValue(f[2].Get<float>()));
+                return src;
+            }
+
+            return src;
+        };
+
+        // Cache expensive worlddb lookups by itemId across requests.
+        auto const buildSourceForItemCached = [&](uint32 itemId) -> DCAddon::JsonValue
+        {
+            if (!itemId)
+                return buildSourceForItem(itemId);
+
+            static std::unordered_map<uint32, DCAddon::JsonValue> cache;
+            auto it = cache.find(itemId);
+            if (it != cache.end())
+                return it->second;
+
+            DCAddon::JsonValue v = buildSourceForItem(itemId);
+            cache.emplace(itemId, v);
+            return v;
+        };
 
         std::string typeName;
         switch (static_cast<CollectionType>(type))
@@ -1402,9 +1910,25 @@ namespace DCCollection
 
         if (static_cast<CollectionType>(type) == CollectionType::TRANSMOG)
         {
-            auto appearanceMap = BuildTransmogAppearanceMap();
-            for (auto const& [displayId, def] : appearanceMap)
+            auto const& appearanceMap = GetTransmogAppearanceMapCached();
+            auto const& keys = GetTransmogAppearanceKeysCached();
+
+            if (limit == 0)
+                limit = 200;
+
+            uint32 total = static_cast<uint32>(keys.size());
+            if (offset > total)
+                offset = total;
+
+            uint32 end = std::min<uint32>(total, offset + limit);
+            for (uint32 i = offset; i < end; ++i)
             {
+                uint32 displayId = keys[i];
+                auto it = appearanceMap.find(displayId);
+                if (it == appearanceMap.end())
+                    continue;
+
+                auto const& def = it->second;
                 DCAddon::JsonValue d;
                 d.SetObject();
                 d.Set("itemId", def.canonicalItemId);
@@ -1414,7 +1938,279 @@ namespace DCCollection
                 d.Set("weaponType", def.itemClass == ITEM_CLASS_WEAPON ? def.itemSubClass : 0);
                 d.Set("armorType", def.itemClass == ITEM_CLASS_ARMOR ? def.itemSubClass : 0);
                 d.Set("displayId", def.displayId);
+                d.Set("source", buildSourceForItemCached(def.canonicalItemId));
                 defs.Set(std::to_string(displayId), d);
+            }
+
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
+            msg.Set("type", typeName);
+            msg.Set("definitions", defs);
+            msg.Set("syncVersion", 1);
+            msg.Set("offset", offset);
+            msg.Set("limit", limit);
+            msg.Set("total", total);
+            msg.Set("more", end < total);
+            msg.Send(player);
+            return;
+        }
+
+        // Non-transmog: try curated per-type tables first; fall back to the generic index; fall back to owned-only.
+        CollectionType ct = static_cast<CollectionType>(type);
+
+        auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity, std::string const& source, int32 extraType, uint32 itemIdForSource = 0)
+        {
+            DCAddon::JsonValue d;
+            d.SetObject();
+            if (!name.empty())
+                d.Set("name", name);
+            if (!icon.empty())
+                d.Set("icon", icon);
+            if (rarity)
+                d.Set("rarity", rarity);
+
+            if (!source.empty())
+            {
+                DCAddon::JsonValue srcVal = parseSourceValue(source);
+                if (isUnknownSource(srcVal) && itemIdForSource)
+                    srcVal = buildSourceForItemCached(itemIdForSource);
+                d.Set("source", srcVal);
+            }
+            else if (itemIdForSource)
+            {
+                d.Set("source", buildSourceForItemCached(itemIdForSource));
+            }
+
+            // Some client modules sort on mountType.
+            if (ct == CollectionType::MOUNT && extraType >= 0)
+                d.Set("mountType", static_cast<uint32>(extraType));
+
+            defs.Set(std::to_string(id), d);
+        };
+
+        bool loadedAny = false;
+
+        if (ct == CollectionType::MOUNT && WorldTableExists("dc_mount_definitions"))
+        {
+            QueryResult r = WorldDatabase.Query(
+                "SELECT md.spell_id, md.name, md.icon, md.rarity, md.mount_type, md.source, "
+                "(SELECT MIN(i.entry) FROM item_template i "
+                " WHERE i.class = 15 AND i.subclass = 5 AND (" 
+                "   i.spellid_1 = md.spell_id OR i.spellid_2 = md.spell_id OR i.spellid_3 = md.spell_id OR "
+                "   i.spellid_4 = md.spell_id OR i.spellid_5 = md.spell_id" 
+                ")) AS item_id "
+                "FROM dc_mount_definitions md");
+            if (r)
+            {
+                do
+                {
+                    Field* f = r->Fetch();
+
+                    uint32 spellId = f[0].Get<uint32>();
+                    std::string name = f[1].Get<std::string>();
+                    std::string icon = f[2].Get<std::string>();
+                    uint32 rarity = f[3].Get<uint32>();
+                    int32 mountType = f[4].Get<int32>();
+                    std::string source = f[5].Get<std::string>();
+                    uint32 itemId = f[6].Get<uint32>();
+
+                    DCAddon::JsonValue d;
+                    d.SetObject();
+                    if (!name.empty())
+                        d.Set("name", name);
+                    if (!icon.empty())
+                        d.Set("icon", icon);
+                    if (rarity)
+                        d.Set("rarity", rarity);
+                    {
+                        if (!source.empty())
+                        {
+                            DCAddon::JsonValue srcVal = parseSourceValue(source);
+                            if (isUnknownSource(srcVal) && itemId)
+                                srcVal = buildSourceForItem(itemId);
+                            d.Set("source", srcVal);
+                        }
+                        else if (itemId)
+                        {
+                            d.Set("source", buildSourceForItem(itemId));
+                        }
+                    }
+                    if (mountType >= 0)
+                        d.Set("mountType", static_cast<uint32>(mountType));
+                    if (itemId)
+                        d.Set("itemId", itemId);
+
+                    defs.Set(std::to_string(spellId), d);
+                    loadedAny = true;
+                } while (r->NextRow());
+            }
+        }
+        else if (ct == CollectionType::PET && WorldTableExists("dc_pet_definitions"))
+        {
+            QueryResult r = WorldDatabase.Query(
+                "SELECT pet_entry, name, icon, rarity, source FROM dc_pet_definitions");
+            if (r)
+            {
+                do
+                {
+                    Field* f = r->Fetch();
+
+                    uint32 itemId = f[0].Get<uint32>();
+                    addDef(
+                        itemId,
+                        f[1].Get<std::string>(),
+                        f[2].Get<std::string>(),
+                        f[3].Get<uint32>(),
+                        f[4].Get<std::string>(),
+                        -1,
+                        itemId);
+                    loadedAny = true;
+                } while (r->NextRow());
+            }
+        }
+        else if (ct == CollectionType::TOY && WorldTableExists("dc_toy_definitions"))
+        {
+            QueryResult r = WorldDatabase.Query(
+                "SELECT item_id, name, icon, rarity, source FROM dc_toy_definitions");
+            if (r)
+            {
+                do
+                {
+                    Field* f = r->Fetch();
+                    uint32 itemId = f[0].Get<uint32>();
+                    addDef(
+                        itemId,
+                        f[1].Get<std::string>(),
+                        f[2].Get<std::string>(),
+                        f[3].Get<uint32>(),
+                        f[4].Get<std::string>(),
+                        -1,
+                        itemId);
+                    loadedAny = true;
+                } while (r->NextRow());
+            }
+        }
+        else if (ct == CollectionType::HEIRLOOM && WorldTableExists("dc_heirloom_definitions"))
+        {
+            QueryResult r = WorldDatabase.Query(
+                "SELECT item_id, name, icon FROM dc_heirloom_definitions");
+            if (r)
+            {
+                do
+                {
+                    Field* f = r->Fetch();
+                    uint32 itemId = f[0].Get<uint32>();
+                    addDef(
+                        itemId,
+                        f[1].Get<std::string>(),
+                        f[2].Get<std::string>(),
+                        0,
+                        std::string(),
+                        -1,
+                        itemId);
+                    loadedAny = true;
+                } while (r->NextRow());
+            }
+        }
+        else if (ct == CollectionType::TITLE)
+        {
+            // Titles are available from DBC; send them all (lightweight).
+            for (uint32 i = 1; i < sCharTitlesStore.GetNumRows(); ++i)
+            {
+                CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(i);
+                if (!titleEntry)
+                    continue;
+
+                std::string name;
+                if (titleEntry->nameMale[0])
+                    name = titleEntry->nameMale[0];
+                else if (titleEntry->nameFemale[0])
+                    name = titleEntry->nameFemale[0];
+
+                addDef(titleEntry->ID, name, std::string(), 0, std::string(), -1, 0);
+                loadedAny = true;
+            }
+        }
+
+        if (!loadedAny && WorldTableExists("dc_collection_definitions"))
+        {
+            QueryResult r = WorldDatabase.Query(
+                "SELECT entry_id FROM dc_collection_definitions WHERE collection_type = {} AND enabled = 1",
+                static_cast<uint8>(ct));
+
+            if (r)
+            {
+                do
+                {
+                    uint32 entryId = r->Fetch()[0].Get<uint32>();
+                    std::string name;
+
+                    if (ct == CollectionType::MOUNT || ct == CollectionType::PET)
+                    {
+                        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(entryId))
+                        {
+                            if (spellInfo->SpellName[0])
+                                name = spellInfo->SpellName[0];
+                        }
+                    }
+                    else if (ct == CollectionType::TOY || ct == CollectionType::HEIRLOOM)
+                    {
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                            name = proto->Name1;
+                    }
+                    else if (ct == CollectionType::TITLE)
+                    {
+                        if (CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(entryId))
+                        {
+                            if (titleEntry->nameMale[0])
+                                name = titleEntry->nameMale[0];
+                            else if (titleEntry->nameFemale[0])
+                                name = titleEntry->nameFemale[0];
+                        }
+                    }
+
+                    addDef(entryId, name, std::string(), 0, std::string(), -1);
+                    loadedAny = true;
+                } while (r->NextRow());
+            }
+        }
+
+        if (!loadedAny)
+        {
+            // Last-resort: send definitions only for owned items so the UI isn't empty.
+            uint32 accountId = GetAccountId(player);
+            if (accountId)
+            {
+                auto owned = LoadPlayerCollection(accountId, ct);
+                for (uint32 entryId : owned)
+                {
+                    std::string name;
+
+                    if (ct == CollectionType::MOUNT || ct == CollectionType::PET)
+                    {
+                        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(entryId))
+                        {
+                            if (spellInfo->SpellName[0])
+                                name = spellInfo->SpellName[0];
+                        }
+                    }
+                    else if (ct == CollectionType::TOY || ct == CollectionType::HEIRLOOM)
+                    {
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                            name = proto->Name1;
+                    }
+                    else if (ct == CollectionType::TITLE)
+                    {
+                        if (CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(entryId))
+                        {
+                            if (titleEntry->nameMale[0])
+                                name = titleEntry->nameMale[0];
+                            else if (titleEntry->nameFemale[0])
+                                name = titleEntry->nameFemale[0];
+                        }
+                    }
+
+                    addDef(entryId, name, std::string(), 0, std::string(), -1);
+                }
             }
         }
 
@@ -1475,6 +2271,8 @@ namespace DCCollection
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         // Client sends collType string, but we accept either string or numeric.
         uint8 type = 0;
+        uint32 offset = 0;
+        uint32 limit = 0;
 
         if (json.HasKey("type"))
         {
@@ -1483,7 +2281,6 @@ namespace DCCollection
                 std::string t = json["type"].AsString();
                 if (t == "mounts") type = static_cast<uint8>(CollectionType::MOUNT);
                 else if (t == "pets") type = static_cast<uint8>(CollectionType::PET);
-                else if (t == "toys") type = static_cast<uint8>(CollectionType::TOY);
                 else if (t == "heirlooms") type = static_cast<uint8>(CollectionType::HEIRLOOM);
                 else if (t == "titles") type = static_cast<uint8>(CollectionType::TITLE);
                 else if (t == "transmog") type = static_cast<uint8>(CollectionType::TRANSMOG);
@@ -1494,8 +2291,13 @@ namespace DCCollection
             }
         }
 
-        if (type >= 1 && type <= 6)
-            SendDefinitions(player, type);
+        if (json.HasKey("offset"))
+            offset = json["offset"].AsUInt32();
+        if (json.HasKey("limit"))
+            limit = json["limit"].AsUInt32();
+
+        if (type >= 1 && type <= 6 && type != static_cast<uint8>(CollectionType::TOY))
+            SendDefinitions(player, type, offset, limit);
     }
 
     void HandleGetCollectionMessage(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1513,7 +2315,6 @@ namespace DCCollection
                 std::string t = json["type"].AsString();
                 if (t == "mounts") type = static_cast<uint8>(CollectionType::MOUNT);
                 else if (t == "pets") type = static_cast<uint8>(CollectionType::PET);
-                else if (t == "toys") type = static_cast<uint8>(CollectionType::TOY);
                 else if (t == "heirlooms") type = static_cast<uint8>(CollectionType::HEIRLOOM);
                 else if (t == "titles") type = static_cast<uint8>(CollectionType::TITLE);
                 else if (t == "transmog") type = static_cast<uint8>(CollectionType::TRANSMOG);
@@ -1524,7 +2325,7 @@ namespace DCCollection
             }
         }
 
-        if (type >= 1 && type <= 6)
+        if (type >= 1 && type <= 6 && type != static_cast<uint8>(CollectionType::TOY))
             SendCollection(player, type);
     }
 
@@ -1587,6 +2388,9 @@ namespace DCCollection
             if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
                 return;
 
+            // Seed account-wide collections from already-known mounts/pets/titles.
+            ImportExistingCollections(player);
+
             // Apply mount speed bonus on login
             UpdateMountSpeedBonus(player);
 
@@ -1609,13 +2413,15 @@ namespace DCCollection
             if (!accountId)
                 return;
 
-            // Check for mount effect (SPELL_AURA_MOUNTED)
+            // Check for mount effect
             bool isMount = false;
             bool isPet = false;
 
             for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
             {
-                if (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED)
+                if (spellInfo->Effects[i].Effect == SPELL_EFFECT_APPLY_AURA &&
+                    (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED ||
+                     spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED))
                 {
                     isMount = true;
                     break;
@@ -1643,13 +2449,17 @@ namespace DCCollection
             }
             else if (isPet)
             {
+                uint32 itemId = FindCompanionItemIdForSpell(spellId);
+                if (!itemId)
+                    return;
+
                 CharacterDatabase.Execute(
                     "INSERT IGNORE INTO dc_collection_items "
                     "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'LEARNED', 1, NOW())",
-                    accountId, static_cast<uint8>(CollectionType::PET), spellId);
+                    accountId, static_cast<uint8>(CollectionType::PET), itemId);
 
-                SendItemLearned(player, CollectionType::PET, spellId);
+                SendItemLearned(player, CollectionType::PET, itemId);
             }
         }
 
@@ -1723,6 +2533,28 @@ namespace DCCollection
                 player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
             }
         }
+
+        void OnPlayerEquip(Player* player, Item* it, uint8 /*bag*/, uint8 /*slot*/, bool /*update*/) override
+        {
+            if (!player || !it)
+                return;
+
+            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+                return;
+
+            ItemTemplate const* proto = it->GetTemplate();
+            if (!proto)
+                return;
+
+            bool unlockOnEquip = sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ON_EQUIP, false);
+            bool unlockOnSoulbind = sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ON_SOULBIND, false);
+
+            if (unlockOnEquip)
+                UnlockTransmogAppearance(player, proto, "EQUIPPED");
+
+            if (unlockOnSoulbind && it->IsSoulBound())
+                UnlockTransmogAppearance(player, proto, "SOULBOUND");
+        }
     };
 
     class CollectionMiscScript : public MiscScript
@@ -1740,8 +2572,11 @@ namespace DCCollection
             if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
                 return;
 
-            // Unlock transmog appearances for any created item (loot, craft, vendor, mail, etc.)
-            UnlockTransmogAppearance(player, itemProto, "CREATED");
+            if (sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ON_CREATE, true))
+            {
+                // Unlock transmog appearances for any created item (loot, craft, vendor, mail, etc.)
+                UnlockTransmogAppearance(player, itemProto, "CREATED");
+            }
         }
     };
 

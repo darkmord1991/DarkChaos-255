@@ -193,6 +193,14 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_cross_system_multipliers", "Cross-System", false},      -- Multiplier overrides
         {"acore_chars", "dc_cross_system_achievement_triggers", "Cross-System", false}, -- Achievement trigger definitions
         
+        -- Collection System (added 2025-12-21)
+        -- Retail-like collection management for mounts, pets, toys, heirlooms, etc.
+        {"acore_chars", "dc_collection_items", "Collection System", true},           -- Generic account-wide collection items
+        {"acore_chars", "dc_collection_wishlist", "Collection System", false},       -- Collection wishlist
+        {"acore_chars", "dc_collection_currency", "Collection System", false},       -- Collection currency (tokens/emblems)
+        {"acore_chars", "dc_collection_shop_purchases", "Collection System", false}, -- Shop purchase history
+        {"acore_chars", "dc_character_transmog", "Collection System", false},        -- Active transmog selections
+        
         -- ============================================================
         -- WORLD DATABASE (acore_world)
         -- ============================================================
@@ -215,6 +223,15 @@ local DC_TABLE_CHECKER = {
         
         -- Difficulty System
         {"acore_world", "dc_difficulty_config", "Difficulty System", true},
+        
+        -- Collection System (added 2025-12-21)
+        {"acore_world", "dc_collection_definitions", "Collection System", true},     -- Generic definitions
+        {"acore_world", "dc_mount_definitions", "Collection System", true},          -- Mount definitions
+        {"acore_world", "dc_pet_definitions", "Collection System", true},            -- Pet definitions
+        {"acore_world", "dc_toy_definitions", "Collection System", true},            -- Toy definitions
+        {"acore_world", "dc_heirloom_definitions", "Collection System", true},       -- Heirloom definitions
+        {"acore_world", "dc_collection_shop", "Collection System", false},           -- Shop items
+        {"acore_world", "dc_collection_achievement_defs", "Collection System", false}, -- Collection achievements
         
         -- Duel System
         {"acore_world", "dc_duel_tournament_npcs", "Duel System", false},

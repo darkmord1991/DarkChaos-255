@@ -110,9 +110,16 @@ function DC:LoadCache()
         self.transmogState = DCCollectionCharDB.transmogState
     end
 
-    -- Load per-character outfits
-    if DCCollectionCharDB and DCCollectionCharDB.outfits then
-        self.outfits = DCCollectionCharDB.outfits
+    -- Load outfits (scope selectable)
+    local scope = (DCCollectionDB and DCCollectionDB.outfitsScope) or "char"
+    if scope == "account" then
+        if DCCollectionDB and DCCollectionDB.outfits then
+            self.outfits = DCCollectionDB.outfits
+        end
+    else
+        if DCCollectionCharDB and DCCollectionCharDB.outfits then
+            self.outfits = DCCollectionCharDB.outfits
+        end
     end
     
     self:Debug("Cache loaded successfully")
@@ -445,8 +452,6 @@ local TYPE_NAME_TO_ID = {
     ["mount"] = DC.CollectionType.MOUNT,
     ["pets"] = DC.CollectionType.PET,
     ["pet"] = DC.CollectionType.PET,
-    ["toys"] = DC.CollectionType.TOY,
-    ["toy"] = DC.CollectionType.TOY,
     ["heirlooms"] = DC.CollectionType.HEIRLOOM,
     ["heirloom"] = DC.CollectionType.HEIRLOOM,
     ["titles"] = DC.CollectionType.TITLE,
@@ -459,7 +464,6 @@ local TYPE_NAME_TO_ID = {
 local TYPE_ID_TO_NAME = {
     [DC.CollectionType.MOUNT] = "mounts",
     [DC.CollectionType.PET] = "pets",
-    [DC.CollectionType.TOY] = "toys",
     [DC.CollectionType.HEIRLOOM] = "heirlooms",
     [DC.CollectionType.TITLE] = "titles",
     [DC.CollectionType.TRANSMOG] = "transmog",

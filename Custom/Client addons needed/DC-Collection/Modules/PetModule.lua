@@ -93,8 +93,11 @@ function PetModule:GetFilteredPets(filters)
         end
         
         -- Source filter
-        if filters.source and def.source ~= filters.source then
-            include = false
+        if filters.source and filters.source ~= "" then
+            local sourceText = DC:FormatSource(def.source)
+            if sourceText ~= filters.source then
+                include = false
+            end
         end
         
         if include then

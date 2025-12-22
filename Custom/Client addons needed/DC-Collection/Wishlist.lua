@@ -178,7 +178,7 @@ function DC:CreateWishlistItemFrame(parent, wish, yOffset)
     frame.info:SetPoint("TOPLEFT", frame.name, "BOTTOMLEFT", 0, -3)
     
     local typeStr = L["TAB_" .. string.upper(wish.type)] or wish.type
-    local sourceStr = def and def.source or "Unknown"
+    local sourceStr = def and self:FormatSource(def.source) or "Unknown"
     frame.info:SetText(typeStr .. " - " .. sourceStr)
     frame.info:SetTextColor(0.5, 0.5, 0.5)
     

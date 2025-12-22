@@ -288,10 +288,18 @@ end
 
 -- ============================================================================
 -- OUTFITS (TRANSMOG SETS)
--- Saved per-character in DCCollectionCharDB.outfits
+-- Saved in either DCCollectionCharDB.outfits (per-character) or DCCollectionDB.outfits (account-wide)
 -- ============================================================================
 
 local function EnsureOutfitsTable()
+    local scope = (DCCollectionDB and DCCollectionDB.outfitsScope) or "char"
+    if scope == "account" then
+        DCCollectionDB = DCCollectionDB or {}
+        DCCollectionDB.outfits = DCCollectionDB.outfits or {}
+        DC.outfits = DCCollectionDB.outfits
+        return
+    end
+
     DCCollectionCharDB = DCCollectionCharDB or {}
     DCCollectionCharDB.outfits = DCCollectionCharDB.outfits or {}
     DC.outfits = DCCollectionCharDB.outfits

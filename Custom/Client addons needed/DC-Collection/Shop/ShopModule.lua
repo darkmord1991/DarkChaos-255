@@ -26,7 +26,6 @@ DC.SHOP_ITEM_TYPES = {
     BONUS = 1,       -- Speed bonuses, passive effects
     MOUNT = 2,       -- Purchasable mounts
     PET = 3,         -- Purchasable pets
-    TOY = 4,         -- Purchasable toys
     HEIRLOOM = 5,    -- Purchasable heirlooms
     BUNDLE = 6,      -- Bundle of multiple items
     CONSUMABLE = 7,  -- One-time use items
@@ -179,7 +178,6 @@ function ShopModule:GetItemTypeString(itemType)
         [1] = L["SHOP_TYPE_BONUS"] or "Bonus",
         [2] = L["SHOP_TYPE_MOUNT"] or "Mount",
         [3] = L["SHOP_TYPE_PET"] or "Pet",
-        [4] = L["SHOP_TYPE_TOY"] or "Toy",
         [5] = L["SHOP_TYPE_HEIRLOOM"] or "Heirloom",
         [6] = L["SHOP_TYPE_BUNDLE"] or "Bundle",
         [7] = L["SHOP_TYPE_CONSUMABLE"] or "Consumable",

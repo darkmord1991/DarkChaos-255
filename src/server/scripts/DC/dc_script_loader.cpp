@@ -86,6 +86,9 @@ void AddSC_spell_challenge_mode_auras();      // ChallengeMode\spell_challenge_m
 // --- Custom Achievements ---
 void AddSC_dc_achievements();                 // Achievements\dc_achievements.cpp
 
+// --- Collection System ---
+void AddSC_dc_addon_collection();             // CollectionSystem\dc_addon_collection.cpp
+
 // --- GOMove System ---
 void AddSC_GOMove_commandscript();            // GOMove\GOMoveScripts.cpp
 
@@ -142,14 +145,28 @@ void AddDCScripts()
     LOG_INFO("scripts", "║ DarkChaos: DC Script Loader — loading DC-specific systems");
     LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
     // ═══════════════════════════════════════════════════════════════════════
-    // CORE AC SCRIPTS
+    // CORE AC SCRIPTS (Overrides & Customizations)
     // ═══════════════════════════════════════════════════════════════════════
     AddSC_ac_guard_npc();
-    AddSC_dc_login_announce();
     AddSC_ac_quest_npc_800009();
-    AddSC_aio_bridge();
     AddSC_flightmasters();
-    AddSC_dc_teleporter();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DC CORE SERVICES
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> DC Core Services");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_login_announce();
+        AddSC_aio_bridge();
+        AddSC_dc_teleporter();
+        LOG_INFO("scripts", ">>   ✓ Login announce, AIO bridge, and Teleporter loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in DC Core Services: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in DC Core Services");
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // JADEFOREST ZONE
@@ -197,8 +214,18 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // HEIRLOOM SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    AddSC_heirloom_scaling_255();
-    AddSC_go_heirloom_cache();
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Heirloom System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_heirloom_scaling_255();
+        AddSC_go_heirloom_cache();
+        LOG_INFO("scripts", ">>   ✓ Heirloom scaling and cache loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Heirloom System: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Heirloom System");
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // AOE LOOT SYSTEM
@@ -235,7 +262,17 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // BATTLE FOR GILNEAS
     // ═══════════════════════════════════════════════════════════════════════
-    AddBattleForGilneasScripts();
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Battle for Gilneas");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddBattleForGilneasScripts();
+        LOG_INFO("scripts", ">>   ✓ Battle for Gilneas scripts loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Battle for Gilneas: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Battle for Gilneas");
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // HINTERLAND BATTLEGROUND SYSTEM
@@ -309,6 +346,21 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Custom Achievements: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Custom Achievements");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // COLLECTION SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> Collection System (Mounts, Pets, Heirlooms, Transmog)");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_addon_collection();
+        LOG_INFO("scripts", ">>   ✓ Collection system handlers and scripts loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Collection System: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Collection System");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -569,6 +621,9 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // GOMOVE SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> GOMove System");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_GOMove_commandscript();
         LOG_INFO("scripts", ">>   ✓ GOMove System loaded");

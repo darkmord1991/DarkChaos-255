@@ -116,8 +116,11 @@ function MountModule:GetFilteredMounts(filters)
         end
         
         -- Source filter
-        if filters.source and def.source ~= filters.source then
-            include = false
+        if filters.source and filters.source ~= "" then
+            local sourceText = DC:FormatSource(def.source)
+            if sourceText ~= filters.source then
+                include = false
+            end
         end
         
         if include then
@@ -241,14 +244,15 @@ function MountModule:GetSources()
     local definitions = self:GetMountDefinitions()
     
     for _, def in pairs(definitions) do
-        if def.source and not sources[def.source] then
-            sources[def.source] = true
+        local sourceText = DC:FormatSource(def.source)
+        if sourceText and sourceText ~= "" and not sources[sourceText] then
+            sources[sourceText] = true
         end
     end
     
     local result = {}
-    for source in pairs(sources) do
-        table.insert(result, source)
+    for sourceText in pairs(sources) do
+        table.insert(result, sourceText)
     end
     table.sort(result)
     
