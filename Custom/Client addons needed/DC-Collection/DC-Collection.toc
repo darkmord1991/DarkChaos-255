@@ -19,18 +19,6 @@ Protocol.lua
 # UI Components
 UI\MainFrame.lua
 UI\TransmogFrame.lua
-
-# Collection Modules
-Modules\MountModule.lua
-Modules\PetModule.lua
-Modules\HeirloomModule.lua
-Modules\TransmogModule.lua
-Modules\TitleModule.lua
-
-# Shop & Wishlist
-Shop\ShopModule.lua
-Shop\ShopUI.lua
-Wishlist.lua
-
-# Bonuses
-Bonuses.lua
+UI\ToastFrame.lua
+UI\MountJournalFrame.lua
+UI\PetJournalFrame.lua

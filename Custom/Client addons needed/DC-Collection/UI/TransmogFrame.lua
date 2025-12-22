@@ -10,6 +10,7 @@
 
     NOTE:
     This is an original implementation for DC-Collection.
+    Enhanced to use server-side slot-based API for appearance fetching.
 ]]
 
 local DC = DCCollection
@@ -25,19 +26,37 @@ local function SafeGetText(key, fallback)
     return fallback
 end
 
+-- Visual slot IDs (matching PLAYER_VISIBLE_ITEM_*_ENTRYID constants from Transmogrification addon and C++ handlers)
+local VISUAL_SLOT_HEAD       = 283
+local VISUAL_SLOT_SHOULDER   = 287
+local VISUAL_SLOT_SHIRT      = 289
+local VISUAL_SLOT_CHEST      = 291
+local VISUAL_SLOT_WAIST      = 293
+local VISUAL_SLOT_LEGS       = 295
+local VISUAL_SLOT_FEET       = 297
+local VISUAL_SLOT_WRIST      = 299
+local VISUAL_SLOT_HANDS      = 301
+local VISUAL_SLOT_BACK       = 311
+local VISUAL_SLOT_MAIN_HAND  = 313
+local VISUAL_SLOT_OFF_HAND   = 315
+local VISUAL_SLOT_RANGED     = 317
+local VISUAL_SLOT_TABARD     = 319
+
 local SLOT_ORDER = {
-    { key = "HeadSlot",          label = "Head",      invTypes = { [1] = true } },
-    { key = "ShoulderSlot",      label = "Shoulder",  invTypes = { [3] = true } },
-    { key = "BackSlot",          label = "Back",      invTypes = { [16] = true } },
-    { key = "ChestSlot",         label = "Chest",     invTypes = { [5] = true, [20] = true } },
-    { key = "WristSlot",         label = "Wrist",     invTypes = { [9] = true } },
-    { key = "HandsSlot",         label = "Hands",     invTypes = { [10] = true } },
-    { key = "WaistSlot",         label = "Waist",     invTypes = { [6] = true } },
-    { key = "LegsSlot",          label = "Legs",      invTypes = { [7] = true } },
-    { key = "FeetSlot",          label = "Feet",      invTypes = { [8] = true } },
-    { key = "MainHandSlot",      label = "Main Hand", invTypes = { [13] = true, [17] = true, [21] = true } },
-    { key = "SecondaryHandSlot", label = "Off Hand",  invTypes = { [13] = true, [14] = true, [17] = true, [22] = true, [23] = true } },
-    { key = "RangedSlot",        label = "Ranged",    invTypes = { [14] = true, [15] = true, [25] = true, [28] = true } },
+    { key = "HeadSlot",          label = "Head",      visualSlot = VISUAL_SLOT_HEAD,      invTypes = { [1] = true } },
+    { key = "ShoulderSlot",      label = "Shoulder",  visualSlot = VISUAL_SLOT_SHOULDER,  invTypes = { [3] = true } },
+    { key = "BackSlot",          label = "Back",      visualSlot = VISUAL_SLOT_BACK,      invTypes = { [16] = true } },
+    { key = "ChestSlot",         label = "Chest",     visualSlot = VISUAL_SLOT_CHEST,     invTypes = { [5] = true, [20] = true } },
+    { key = "ShirtSlot",         label = "Shirt",     visualSlot = VISUAL_SLOT_SHIRT,     invTypes = { [4] = true } },
+    { key = "TabardSlot",        label = "Tabard",    visualSlot = VISUAL_SLOT_TABARD,    invTypes = { [19] = true } },
+    { key = "WristSlot",         label = "Wrist",     visualSlot = VISUAL_SLOT_WRIST,     invTypes = { [9] = true } },
+    { key = "HandsSlot",         label = "Hands",     visualSlot = VISUAL_SLOT_HANDS,     invTypes = { [10] = true } },
+    { key = "WaistSlot",         label = "Waist",     visualSlot = VISUAL_SLOT_WAIST,     invTypes = { [6] = true } },
+    { key = "LegsSlot",          label = "Legs",      visualSlot = VISUAL_SLOT_LEGS,      invTypes = { [7] = true } },
+    { key = "FeetSlot",          label = "Feet",      visualSlot = VISUAL_SLOT_FEET,      invTypes = { [8] = true } },
+    { key = "MainHandSlot",      label = "Main Hand", visualSlot = VISUAL_SLOT_MAIN_HAND, invTypes = { [13] = true, [17] = true, [21] = true } },
+    { key = "SecondaryHandSlot", label = "Off Hand",  visualSlot = VISUAL_SLOT_OFF_HAND,  invTypes = { [13] = true, [14] = true, [17] = true, [22] = true, [23] = true } },
+    { key = "RangedSlot",        label = "Ranged",    visualSlot = VISUAL_SLOT_RANGED,    invTypes = { [14] = true, [15] = true, [25] = true, [28] = true } },
 }
 
 local function GetSelectedSlotDef()
@@ -52,11 +71,26 @@ local function GetSelectedSlotDef()
     return SLOT_ORDER[1]
 end
 
+local function GetSlotDefByVisualSlot(visualSlot)
+    for _, s in ipairs(SLOT_ORDER) do
+        if s.visualSlot == visualSlot then
+            return s
+        end
+    end
+    return nil
+end
+
 local function GetEquipmentSlotIndex(invSlotId)
     -- Protocol expects EQUIPMENT_SLOT (0-based in visible item fields)
     -- GetInventorySlotInfo returns 1-based inventory slot IDs.
     return (invSlotId == 1 and 0) or (invSlotId and (invSlotId - 1))
 end
+
+-- State for server-fetched slot items
+UI.slotItems = {}      -- { [visualSlot] = { items = {}, page = 1, hasMore = false } }
+UI.currentPage = 1
+UI.hasMorePages = false
+UI.useServerItems = true  -- Use server-fetched items instead of local definitions
 
 local function EnsureDataLoaded()
     if not DC or not DC.RequestDefinitions or not DC.RequestCollection then
@@ -72,15 +106,15 @@ local function ModelTryOnItem(model, itemId)
         return
     end
 
-    local link = "item:" .. tostring(itemId)
-
+    -- Use the raw item ID for TryOn - WoW 3.3.5a TryOn accepts item IDs directly
     if model.TryOn then
-        model:TryOn(link)
+        model:TryOn(itemId)
         return
     end
 
     -- Fallback: open dressing room
     if DressUpItemLink then
+        local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
         DressUpItemLink(link)
     end
 end
@@ -286,6 +320,8 @@ end
 local function SelectSlot(slotKey)
     UI.selectedSlotKey = slotKey
     UI.page = 1
+    UI.currentPage = 1
+    UI.hasMorePages = false
     UI.selectedAppearanceId = nil
 
     if UI.frame and UI.frame.slotButtons then
@@ -296,30 +332,134 @@ local function SelectSlot(slotKey)
 
     UpdateEquippedHeader()
 
+    -- Request items from server using the new slot-based API
+    local slotDef = GetSelectedSlotDef()
+    if slotDef and slotDef.visualSlot then
+        local searchText = UI.searchText
+        if searchText and searchText ~= "" then
+            -- Use search API
+            if DC and DC.SearchTransmogItems then
+                DC:SearchTransmogItems(slotDef.visualSlot, searchText, 1)
+            end
+        else
+            -- Use standard slot items API
+            if DC and DC.RequestTransmogSlotItems then
+                DC:RequestTransmogSlotItems(slotDef.visualSlot, 1)
+            end
+        end
+    end
+
+    -- Also show local results while waiting for server
     UpdateGrid()
 end
 
-local function PreviewAppearance(appearanceId)
-    if not appearanceId or not UI.frame or not UI.frame.model then
+-- Callback handler for server-fetched slot items
+function UI:OnSlotItemsReceived(visualSlot, items, page, hasMore)
+    local slotDef = GetSelectedSlotDef()
+    if not slotDef or slotDef.visualSlot ~= visualSlot then
+        return -- Response is for a different slot
+    end
+
+    UI.slotItems[visualSlot] = {
+        items = items or {},
+        page = page or 1,
+        hasMore = hasMore or false,
+    }
+    UI.currentPage = page or 1
+    UI.hasMorePages = hasMore or false
+
+    -- Update the grid with server-fetched items
+    UpdateGridWithServerItems(items, page, hasMore)
+end
+
+-- Update grid using server-fetched item list (itemIds)
+local function UpdateGridWithServerItems(items, page, hasMore)
+    if not UI.frame or not UI.frame:IsShown() then
         return
     end
 
-    local def = DC and DC.definitions and DC.definitions.transmog and DC.definitions.transmog[appearanceId]
-    if not def then
+    items = items or {}
+    page = page or 1
+
+    UI.frame.pageText:SetText(string.format("Page %d", page))
+
+    -- Update pagination button states
+    if UI.frame.prevBtn then
+        if page > 1 then
+            UI.frame.prevBtn:Enable()
+        else
+            UI.frame.prevBtn:Disable()
+        end
+    end
+
+    if UI.frame.nextBtn then
+        if hasMore then
+            UI.frame.nextBtn:Enable()
+        else
+            UI.frame.nextBtn:Disable()
+        end
+    end
+
+    -- Fill grid buttons with server items
+    for i, btn in ipairs(UI.frame.gridButtons) do
+        local itemId = items[i]
+
+        if itemId then
+            btn:Show()
+            btn.itemId = itemId
+            btn.entry = { id = itemId, itemId = itemId, collected = true }
+
+            local icon = nil
+            if GetItemInfo then
+                icon = select(10, GetItemInfo(itemId))
+            end
+            btn.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            btn.icon:SetVertexColor(1, 1, 1, 1)
+            btn.lockOverlay:Hide()
+
+            if UI.selectedAppearanceId and UI.selectedAppearanceId == itemId then
+                btn.selectedBorder:Show()
+            else
+                btn.selectedBorder:Hide()
+            end
+        else
+            btn:Hide()
+            btn.itemId = nil
+            btn.entry = nil
+        end
+    end
+end
+
+local function PreviewAppearance(itemIdOrAppearanceId)
+    if not itemIdOrAppearanceId or not UI.frame or not UI.frame.model then
         return
     end
 
-    UI.selectedAppearanceId = appearanceId
+    -- Try to get itemId from definitions first (legacy path)
+    local def = DC and DC.definitions and DC.definitions.transmog and DC.definitions.transmog[itemIdOrAppearanceId]
+    local itemId = def and def.itemId or itemIdOrAppearanceId
 
-    -- Reset model to player, then try-on canonical item.
+    UI.selectedAppearanceId = itemIdOrAppearanceId
+    UI.selectedItemId = itemId
+
+    -- Reset model to player, then try-on the item.
     ModelResetToPlayer(UI.frame.model)
-    ModelTryOnItem(UI.frame.model, def.itemId)
+    ModelTryOnItem(UI.frame.model, itemId)
 
-    UpdateGrid()
+    -- Refresh grid to show selection
+    if UI.slotItems and next(UI.slotItems) then
+        local slotDef = GetSelectedSlotDef()
+        local data = slotDef and UI.slotItems[slotDef.visualSlot]
+        if data then
+            UpdateGridWithServerItems(data.items, data.page, data.hasMore)
+        end
+    else
+        UpdateGrid()
+    end
 end
 
 local function ApplySelectedAppearance()
-    if not UI.selectedAppearanceId then
+    if not UI.selectedAppearanceId and not UI.selectedItemId then
         return
     end
 
@@ -337,16 +477,14 @@ local function ApplySelectedAppearance()
         return
     end
 
-    local col = (DC and DC.collections and DC.collections.transmog) or {}
-    if not col[UI.selectedAppearanceId] then
-        if DC and DC.Print then
-            DC:Print("Appearance not collected.")
-        end
-        return
-    end
+    -- Use itemId for the server request (server will resolve to displayId)
+    local itemId = UI.selectedItemId or UI.selectedAppearanceId
 
-    if DC and DC.RequestSetTransmog then
-        DC:RequestSetTransmog(invSlotId, UI.selectedAppearanceId)
+    if DC and DC.RequestSetTransmogByEquipmentSlot then
+        local eqSlot = GetEquipmentSlotIndex(invSlotId)
+        DC:RequestSetTransmogByEquipmentSlot(eqSlot, itemId)
+    elseif DC and DC.RequestSetTransmog then
+        DC:RequestSetTransmog(invSlotId, itemId)
     end
 end
 
@@ -399,6 +537,33 @@ local function CreateTransmogPanel()
     model:SetHeight(260)
 
     ModelResetToPlayer(model)
+
+    -- Enable mouse rotation on the model (similar to Transmogrification addon)
+    model:EnableMouse(true)
+    model.isMouseRotating = false
+    model.lastCursorX = 0
+    
+    model:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then
+            self.isMouseRotating = true
+            self.lastCursorX = GetCursorPosition()
+        end
+    end)
+    
+    model:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" then
+            self.isMouseRotating = false
+        end
+    end)
+    
+    model:SetScript("OnUpdate", function(self)
+        if self.isMouseRotating then
+            local currentX = GetCursorPosition()
+            local diff = (currentX - self.lastCursorX) * 0.02
+            self:SetFacing(self:GetFacing() + diff)
+            self.lastCursorX = currentX
+        end
+    end)
 
     frame.model = model
 
@@ -469,13 +634,42 @@ local function CreateTransmogPanel()
     searchBox:SetMaxLetters(50)
     searchBox:SetScript("OnTextChanged", function(self)
         UI.searchText = self:GetText() or ""
-        UI.page = 1
-        UpdateGrid()
+        -- Don't auto-search on each keystroke; user presses Enter
     end)
-    searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    searchBox:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
+    searchBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        UI.currentPage = 1
+        -- Trigger server search
+        local slotDef = GetSelectedSlotDef()
+        if slotDef and slotDef.visualSlot then
+            local searchText = UI.searchText
+            if searchText and searchText ~= "" then
+                if DC and DC.SearchTransmogItems then
+                    DC:SearchTransmogItems(slotDef.visualSlot, searchText, 1)
+                end
+            else
+                if DC and DC.RequestTransmogSlotItems then
+                    DC:RequestTransmogSlotItems(slotDef.visualSlot, 1)
+                end
+            end
+        end
+    end)
+    searchBox:SetScript("OnEscapePressed", function(self)
+        self:SetText("")
+        self:ClearFocus()
+        UI.searchText = ""
+        UI.currentPage = 1
+        -- Clear search, fetch default items
+        local slotDef = GetSelectedSlotDef()
+        if slotDef and slotDef.visualSlot then
+            if DC and DC.RequestTransmogSlotItems then
+                DC:RequestTransmogSlotItems(slotDef.visualSlot, 1)
+            end
+        end
+    end)
+    frame.searchBox = searchBox
 
-    -- Collected / Not collected toggles
+    -- Collected / Not collected toggles (only affect local filtering, not server results)
     UI.filterCollected = true
     UI.filterNotCollected = true
 
@@ -575,34 +769,34 @@ local function CreateTransmogPanel()
         b.selectedBorder:Hide()
 
         b:SetScript("OnClick", function(self, button)
-            if not self.entry then
+            local itemId = self.itemId or (self.entry and self.entry.id)
+            if not itemId then
                 return
             end
 
-            PreviewAppearance(self.entry.id)
+            PreviewAppearance(itemId)
 
             if button == "LeftButton" then
-                -- Apply on left click if collected
-                if self.entry.collected then
-                    ApplySelectedAppearance()
-                end
+                -- Apply on left click (server items are always collected)
+                ApplySelectedAppearance()
             end
         end)
         b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
         b:SetScript("OnEnter", function(self)
-            if not self.entry then
+            local itemId = self.itemId or (self.entry and self.entry.itemId)
+            if not itemId then
                 return
             end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(self.entry.name or "")
-            if self.entry.collected then
-                GameTooltip:AddLine(SafeGetText("COLLECTED", "Collected"), 0, 1, 0)
-                GameTooltip:AddLine("Click to apply", 0.7, 0.7, 0.7)
-            else
-                GameTooltip:AddLine(SafeGetText("NOT_COLLECTED", "Not collected"), 1, 0, 0)
-                GameTooltip:AddLine("Click to preview", 0.7, 0.7, 0.7)
+            -- Try to show item tooltip
+            if itemId > 0 then
+                GameTooltip:SetHyperlink("item:" .. itemId .. ":0:0:0:0:0:0:0")
             end
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(SafeGetText("COLLECTED", "Collected"), 0, 1, 0)
+            GameTooltip:AddLine("Left-click to apply", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Right-click to preview", 0.7, 0.7, 0.7)
             GameTooltip:Show()
         end)
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -615,22 +809,57 @@ local function CreateTransmogPanel()
     prevBtn:SetPoint("BOTTOMLEFT", right, "BOTTOMLEFT", 0, 10)
     prevBtn:SetText("Prev")
     prevBtn:SetScript("OnClick", function()
-        UI.page = math.max(1, (UI.page or 1) - 1)
-        UpdateGrid()
+        local newPage = math.max(1, (UI.currentPage or 1) - 1)
+        if newPage < (UI.currentPage or 1) then
+            UI.currentPage = newPage
+            -- Request previous page from server
+            local slotDef = GetSelectedSlotDef()
+            if slotDef and slotDef.visualSlot then
+                local searchText = UI.searchText
+                if searchText and searchText ~= "" then
+                    if DC and DC.SearchTransmogItems then
+                        DC:SearchTransmogItems(slotDef.visualSlot, searchText, newPage)
+                    end
+                else
+                    if DC and DC.RequestTransmogSlotItems then
+                        DC:RequestTransmogSlotItems(slotDef.visualSlot, newPage)
+                    end
+                end
+            end
+        end
     end)
+    frame.prevBtn = prevBtn
 
     local nextBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
     nextBtn:SetSize(60, 20)
     nextBtn:SetPoint("BOTTOMLEFT", prevBtn, "BOTTOMRIGHT", 6, 0)
     nextBtn:SetText("Next")
     nextBtn:SetScript("OnClick", function()
-        UI.page = (UI.page or 1) + 1
-        UpdateGrid()
+        if not UI.hasMorePages then
+            return
+        end
+        local newPage = (UI.currentPage or 1) + 1
+        UI.currentPage = newPage
+        -- Request next page from server
+        local slotDef = GetSelectedSlotDef()
+        if slotDef and slotDef.visualSlot then
+            local searchText = UI.searchText
+            if searchText and searchText ~= "" then
+                if DC and DC.SearchTransmogItems then
+                    DC:SearchTransmogItems(slotDef.visualSlot, searchText, newPage)
+                end
+            else
+                if DC and DC.RequestTransmogSlotItems then
+                    DC:RequestTransmogSlotItems(slotDef.visualSlot, newPage)
+                end
+            end
+        end
     end)
+    frame.nextBtn = nextBtn
 
     local pageText = right:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     pageText:SetPoint("LEFT", nextBtn, "RIGHT", 8, 0)
-    pageText:SetText("1 / 1")
+    pageText:SetText("Page 1")
     frame.pageText = pageText
 
     local applyBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")

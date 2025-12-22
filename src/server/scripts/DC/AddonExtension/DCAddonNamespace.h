@@ -457,6 +457,17 @@ namespace DCAddon
 
             constexpr uint8 CMSG_SET_TRANSMOG         = 0x33;  // Apply/clear transmog appearance for an equipment slot
 
+            // Client -> Server: Transmog-specific (slot-based UI like Transmogrification addon)
+            constexpr uint8 CMSG_GET_TRANSMOG_SLOT_ITEMS = 0x34;  // Get appearances for a slot (paginated)
+            constexpr uint8 CMSG_SEARCH_TRANSMOG_ITEMS   = 0x35;  // Search appearances by name
+            constexpr uint8 CMSG_GET_COLLECTED_APPEARANCES = 0x36; // Get all collected displayIds (for tooltip)
+            constexpr uint8 CMSG_GET_TRANSMOG_STATE      = 0x37;  // Request current per-slot state
+            constexpr uint8 CMSG_APPLY_TRANSMOG_PREVIEW  = 0x38;  // Apply all pending preview slots at once
+
+            // Server -> Client: Transmog-specific
+            constexpr uint8 SMSG_TRANSMOG_SLOT_ITEMS   = 0x49;  // Appearances for a slot response
+            constexpr uint8 SMSG_COLLECTED_APPEARANCES = 0x4A;  // All collected displayIds
+
             // Server -> Client: Sync/Data
             constexpr uint8 SMSG_HANDSHAKE_ACK       = 0x40;  // Handshake response
             constexpr uint8 SMSG_FULL_COLLECTION     = 0x41;  // Full collection data (JSON)

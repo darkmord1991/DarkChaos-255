@@ -1590,6 +1590,259 @@ namespace DCCollection
     }
 
     // =======================================================================
+    // Use Item Handlers (Summon Mount, Set Title, Summon Heirloom)
+    // =======================================================================
+
+    void HandleUseItemMessage(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        if (!DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::SendError(player, MODULE, "Invalid request format",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        
+        std::string typeStr = json.HasKey("type") ? json["type"].AsString() : "";
+        uint32 entryId = json.HasKey("entryId") ? json["entryId"].AsUInt32() : 0;
+        bool random = json.HasKey("random") && json["random"].AsBool();
+
+        uint8 typeId = 0;
+        if (typeStr == "mount" || typeStr == "mounts") typeId = static_cast<uint8>(CollectionType::MOUNT);
+        else if (typeStr == "title" || typeStr == "titles") typeId = static_cast<uint8>(CollectionType::TITLE);
+        else if (typeStr == "heirloom" || typeStr == "heirlooms") typeId = static_cast<uint8>(CollectionType::HEIRLOOM);
+        else if (json.HasKey("type") && json["type"].IsNumber())
+            typeId = static_cast<uint8>(json["type"].AsUInt32());
+
+        switch (static_cast<CollectionType>(typeId))
+        {
+            case CollectionType::MOUNT:
+                HandleSummonMount(player, entryId, random);
+                break;
+            case CollectionType::TITLE:
+                HandleSetTitle(player, entryId);
+                break;
+            case CollectionType::HEIRLOOM:
+                HandleSummonHeirloom(player, entryId);
+                break;
+            default:
+                DCAddon::SendError(player, MODULE, "Unsupported collection type for use",
+                    DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                break;
+        }
+    }
+
+    void HandleSummonMount(Player* player, uint32 spellId, bool random)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        uint32 accountId = GetAccountId(player);
+
+        if (random)
+        {
+            // Get all collected mounts for this account
+            std::vector<uint32> mounts = LoadPlayerCollection(accountId, CollectionType::MOUNT);
+            
+            if (mounts.empty())
+            {
+                DCAddon::SendError(player, MODULE, "No mounts in collection",
+                    DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                return;
+            }
+
+            // Check config for favorites-only random
+            bool favoritesOnly = sConfigMgr->GetOption<bool>("DCCollection.Mounts.RandomFavoritesOnly", false);
+            if (favoritesOnly)
+            {
+                std::vector<uint32> favorites;
+                QueryResult result = CharacterDatabase.Query(
+                    "SELECT entry_id FROM dc_collection_items "
+                    "WHERE account_id = {} AND collection_type = {} AND is_favorite = 1",
+                    accountId, static_cast<uint8>(CollectionType::MOUNT));
+                if (result)
+                {
+                    do
+                    {
+                        favorites.push_back(result->Fetch()[0].Get<uint32>());
+                    } while (result->NextRow());
+                }
+
+                if (!favorites.empty())
+                    mounts = favorites;
+            }
+
+            // Smart mount: prefer ground/flying mounts based on zone flyability
+            bool smartMount = sConfigMgr->GetOption<bool>("DCCollection.Mounts.SmartMount", true);
+            if (smartMount)
+            {
+                // Check if player can fly in current zone
+                bool canFly = player->IsKnowHowFlyIn(player->GetMapId(), player->GetZoneId(), player->GetAreaId());
+
+                // Mount types: 0=ground, 1=flying, 2=aquatic, 3=all
+                // Filter mounts by type based on whether player can fly
+                std::vector<uint32> filteredMounts;
+
+                // Query mount types from definitions table
+                std::string mountListStr;
+                for (size_t i = 0; i < mounts.size(); ++i)
+                {
+                    if (i > 0)
+                        mountListStr += ",";
+                    mountListStr += std::to_string(mounts[i]);
+                }
+
+                if (!mountListStr.empty())
+                {
+                    QueryResult defResult = WorldDatabase.Query(
+                        "SELECT spell_id, mount_type FROM dc_mount_definitions WHERE spell_id IN ({})",
+                        mountListStr);
+                    
+                    std::unordered_map<uint32, uint8> mountTypes;
+                    if (defResult)
+                    {
+                        do
+                        {
+                            Field* fields = defResult->Fetch();
+                            uint32 mountSpellId = fields[0].Get<uint32>();
+                            uint8 mountType = fields[1].Get<uint8>();
+                            mountTypes[mountSpellId] = mountType;
+                        } while (defResult->NextRow());
+                    }
+
+                    for (uint32 mountId : mounts)
+                    {
+                        auto it = mountTypes.find(mountId);
+                        uint8 type = (it != mountTypes.end()) ? it->second : 3; // Default to "all" if not found
+
+                        if (canFly)
+                        {
+                            // Prefer flying mounts (1) or all-terrain (3)
+                            if (type == 1 || type == 3)
+                                filteredMounts.push_back(mountId);
+                        }
+                        else
+                        {
+                            // Prefer ground mounts (0) or all-terrain (3)
+                            if (type == 0 || type == 3)
+                                filteredMounts.push_back(mountId);
+                        }
+                    }
+
+                    // Fallback to all mounts if filtering resulted in empty list
+                    if (!filteredMounts.empty())
+                        mounts = filteredMounts;
+                }
+            }
+
+            // Pick random mount
+            spellId = mounts[urand(0, mounts.size() - 1)];
+        }
+
+        // Verify player owns this mount
+        if (!HasCollectionItem(accountId, CollectionType::MOUNT, spellId))
+        {
+            DCAddon::SendError(player, MODULE, "Mount not in collection",
+                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // Check if player can cast (not in combat, etc.)
+        if (player->IsInCombat())
+        {
+            DCAddon::SendError(player, MODULE, "Cannot summon mount in combat",
+                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // Cast the mount spell
+        player->CastSpell(player, spellId, true);
+
+        // Update usage counter
+        CharacterDatabase.Execute(
+            "UPDATE dc_collection_items SET times_used = times_used + 1 "
+            "WHERE account_id = {} AND collection_type = {} AND entry_id = {}",
+            accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
+    }
+
+    void HandleSetTitle(Player* player, uint32 titleId)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        // titleId = 0 means clear title
+        if (titleId == 0)
+        {
+            player->SetTitle(nullptr);
+            return;
+        }
+
+        uint32 accountId = GetAccountId(player);
+
+        // Verify player owns this title
+        if (!HasCollectionItem(accountId, CollectionType::TITLE, titleId))
+        {
+            DCAddon::SendError(player, MODULE, "Title not in collection",
+                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // Get title from DBC
+        CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(titleId);
+        if (!titleEntry)
+        {
+            DCAddon::SendError(player, MODULE, "Invalid title ID",
+                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // Make sure player has the title bit set
+        if (!player->HasTitle(titleEntry))
+        {
+            player->SetTitle(titleEntry, false);  // Grant the title
+        }
+
+        // Set as active title (chosenTitle is the bit index)
+        player->SetUInt32Value(PLAYER_CHOSEN_TITLE, titleEntry->bit_index);
+    }
+
+    void HandleSummonHeirloom(Player* player, uint32 itemId)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        uint32 accountId = GetAccountId(player);
+
+        // Verify player owns this heirloom
+        if (!HasCollectionItem(accountId, CollectionType::HEIRLOOM, itemId))
+        {
+            DCAddon::SendError(player, MODULE, "Heirloom not in collection",
+                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // Check if player has bag space
+        ItemPosCountVec dest;
+        InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, 1);
+        if (msg != EQUIP_ERR_OK)
+        {
+            DCAddon::SendError(player, MODULE, "No bag space available",
+                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // Create and add the item
+        if (Item* item = player->StoreNewItem(dest, itemId, true))
+        {
+            player->SendNewItem(item, 1, true, false);
+        }
+    }
+
+    // =======================================================================
     // Message Handlers
     // =======================================================================
 
@@ -1755,6 +2008,327 @@ namespace DCCollection
 
         // Apply immediately
         player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
+        SendTransmogState(player);
+    }
+
+    // =======================================================================
+    // Transmog Slot-Based UI Handlers (Transmogrification addon style)
+    // =======================================================================
+
+    // Map visual slot IDs (from Transmogrification addon) to equipment slot
+    uint8 VisualSlotToEquipmentSlot(uint32 visualSlot)
+    {
+        switch (visualSlot)
+        {
+            case 283: return EQUIPMENT_SLOT_HEAD;       // PLAYER_VISIBLE_ITEM_1_ENTRYID
+            case 287: return EQUIPMENT_SLOT_SHOULDERS;  // PLAYER_VISIBLE_ITEM_3_ENTRYID
+            case 289: return EQUIPMENT_SLOT_SHIRT;      // PLAYER_VISIBLE_ITEM_4_ENTRYID
+            case 291: return EQUIPMENT_SLOT_CHEST;      // PLAYER_VISIBLE_ITEM_5_ENTRYID
+            case 293: return EQUIPMENT_SLOT_WAIST;      // PLAYER_VISIBLE_ITEM_6_ENTRYID
+            case 295: return EQUIPMENT_SLOT_LEGS;       // PLAYER_VISIBLE_ITEM_7_ENTRYID
+            case 297: return EQUIPMENT_SLOT_FEET;       // PLAYER_VISIBLE_ITEM_8_ENTRYID
+            case 299: return EQUIPMENT_SLOT_WRISTS;     // PLAYER_VISIBLE_ITEM_9_ENTRYID
+            case 301: return EQUIPMENT_SLOT_HANDS;      // PLAYER_VISIBLE_ITEM_10_ENTRYID
+            case 311: return EQUIPMENT_SLOT_BACK;       // PLAYER_VISIBLE_ITEM_15_ENTRYID
+            case 313: return EQUIPMENT_SLOT_MAINHAND;   // PLAYER_VISIBLE_ITEM_16_ENTRYID
+            case 315: return EQUIPMENT_SLOT_OFFHAND;    // PLAYER_VISIBLE_ITEM_17_ENTRYID
+            case 317: return EQUIPMENT_SLOT_RANGED;     // PLAYER_VISIBLE_ITEM_18_ENTRYID
+            case 319: return EQUIPMENT_SLOT_TABARD;     // PLAYER_VISIBLE_ITEM_19_ENTRYID
+            default:  return 255;  // Invalid
+        }
+    }
+
+    // Get inventory types for a visual slot
+    std::vector<uint32> GetInvTypesForVisualSlot(uint32 visualSlot)
+    {
+        switch (visualSlot)
+        {
+            case 283: return { INVTYPE_HEAD };                                    // Head
+            case 287: return { INVTYPE_SHOULDERS };                               // Shoulder
+            case 289: return { INVTYPE_BODY };                                    // Shirt
+            case 291: return { INVTYPE_CHEST, INVTYPE_ROBE };                     // Chest
+            case 293: return { INVTYPE_WAIST };                                   // Waist
+            case 295: return { INVTYPE_LEGS };                                    // Legs
+            case 297: return { INVTYPE_FEET };                                    // Feet
+            case 299: return { INVTYPE_WRISTS };                                  // Wrist
+            case 301: return { INVTYPE_HANDS };                                   // Hands
+            case 311: return { INVTYPE_CLOAK };                                   // Back
+            case 313: return { INVTYPE_WEAPON, INVTYPE_2HWEAPON, INVTYPE_WEAPONMAINHAND }; // Main Hand
+            case 315: return { INVTYPE_WEAPON, INVTYPE_WEAPONOFFHAND, INVTYPE_SHIELD, INVTYPE_HOLDABLE, INVTYPE_2HWEAPON }; // Off Hand
+            case 317: return { INVTYPE_RANGED, INVTYPE_RANGEDRIGHT, INVTYPE_THROWN, INVTYPE_RELIC }; // Ranged
+            case 319: return { INVTYPE_TABARD };                                  // Tabard
+            default:  return {};
+        }
+    }
+
+    // Helper: Get collected appearances for a slot, optionally filtered by search
+    std::vector<uint32> GetCollectedAppearancesForSlot(Player* player, uint32 visualSlot, std::string const& searchFilter = "")
+    {
+        if (!player)
+            return {};
+
+        uint32 accountId = GetAccountId(player);
+        std::vector<uint32> invTypes = GetInvTypesForVisualSlot(visualSlot);
+        if (invTypes.empty())
+            return {};
+
+        uint8 equipmentSlot = VisualSlotToEquipmentSlot(visualSlot);
+        Item* equippedItem = (equipmentSlot < EQUIPMENT_SLOT_END) ?
+            player->GetItemByPos(INVENTORY_SLOT_BAG_0, equipmentSlot) : nullptr;
+
+        uint32 equippedClass = 0;
+        uint32 equippedSubClass = 0;
+        if (equippedItem)
+        {
+            ItemTemplate const* proto = equippedItem->GetTemplate();
+            equippedClass = proto->Class;
+            equippedSubClass = proto->SubClass;
+        }
+
+        // Lowercase search filter for case-insensitive matching
+        std::string searchLower = searchFilter;
+        std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(), ::tolower);
+        bool hasSearch = !searchLower.empty();
+
+        auto const& appearances = GetTransmogAppearanceMapCached();
+        std::vector<uint32> matchingItemIds;
+        matchingItemIds.reserve(128);  // Pre-allocate for performance
+
+        for (auto const& [displayId, def] : appearances)
+        {
+            // Check inventory type match
+            bool invTypeMatch = false;
+            for (uint32 invType : invTypes)
+            {
+                if (def.inventoryType == invType)
+                {
+                    invTypeMatch = true;
+                    break;
+                }
+            }
+            if (!invTypeMatch)
+                continue;
+
+            // If equipped item exists, check armor/weapon subclass match
+            if (equippedItem && equippedClass == def.itemClass && equippedSubClass != def.itemSubClass)
+                continue;
+
+            // Apply search filter if provided
+            if (hasSearch)
+            {
+                std::string nameLower = def.name;
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+                if (nameLower.find(searchLower) == std::string::npos &&
+                    std::to_string(displayId).find(searchFilter) == std::string::npos)
+                    continue;
+            }
+
+            // Check if player owns this appearance
+            if (HasTransmogAppearanceUnlocked(accountId, displayId))
+            {
+                matchingItemIds.push_back(def.canonicalItemId);
+            }
+        }
+
+        return matchingItemIds;
+    }
+
+    // Helper: Build and send paginated transmog slot items response
+    void SendTransmogSlotItemsResponse(Player* player, uint32 visualSlot, uint32 page,
+                                        std::vector<uint32> const& matchingItemIds,
+                                        std::string const& searchFilter = "")
+    {
+        uint32 pageSize = 6;  // Match Eluna's SLOTS = 6
+        uint32 totalCount = static_cast<uint32>(matchingItemIds.size());
+        uint32 startIdx = (page > 0) ? (page - 1) * pageSize : 0;
+        bool hasMore = (startIdx + pageSize) < totalCount;
+
+        DCAddon::JsonValue items;
+        items.SetArray();
+        for (uint32 i = startIdx; i < totalCount && i < startIdx + pageSize; ++i)
+        {
+            items.Push(DCAddon::JsonValue(matchingItemIds[i]));
+        }
+
+        DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_TRANSMOG_SLOT_ITEMS);
+        response.Set("slot", visualSlot);
+        response.Set("page", page);
+        response.Set("hasMore", hasMore);
+        response.Set("items", items);
+        response.Set("total", totalCount);
+        if (!searchFilter.empty())
+            response.Set("search", searchFilter);
+        response.Send(player);
+    }
+
+    void HandleGetTransmogSlotItems(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        if (!DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::SendError(player, MODULE, "Invalid request format",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        uint32 visualSlot = json["slot"].AsUInt32();
+        uint32 page = json.HasKey("page") ? json["page"].AsUInt32() : 1;
+
+        uint8 equipmentSlot = VisualSlotToEquipmentSlot(visualSlot);
+        if (equipmentSlot >= EQUIPMENT_SLOT_END && equipmentSlot != EQUIPMENT_SLOT_TABARD)
+        {
+            DCAddon::SendError(player, MODULE, "Invalid slot",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // Use common helpers to get and send collected appearances
+        std::vector<uint32> matchingItemIds = GetCollectedAppearancesForSlot(player, visualSlot, "");
+        SendTransmogSlotItemsResponse(player, visualSlot, page, matchingItemIds);
+    }
+
+    void HandleSearchTransmogItems(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        if (!DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::SendError(player, MODULE, "Invalid request format",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        uint32 visualSlot = json["slot"].AsUInt32();
+        std::string search = json.HasKey("search") ? json["search"].AsString() : "";
+        uint32 page = json.HasKey("page") ? json["page"].AsUInt32() : 1;
+
+        // Use common helpers - empty search is treated as no filter
+        std::vector<uint32> matchingItemIds = GetCollectedAppearancesForSlot(player, visualSlot, search);
+        SendTransmogSlotItemsResponse(player, visualSlot, page, matchingItemIds, search);
+    }
+
+    void HandleGetCollectedAppearances(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        uint32 accountId = GetAccountId(player);
+
+        // Get all collected transmog displayIds
+        std::vector<uint32> collectedDisplayIds = LoadPlayerCollection(accountId, CollectionType::TRANSMOG);
+
+        // Also get all items that share these displayIds for tooltip support
+        DCAddon::JsonValue items;
+        items.SetArray();
+
+        auto const& appearances = GetTransmogAppearanceMapCached();
+        for (uint32 displayId : collectedDisplayIds)
+        {
+            auto it = appearances.find(displayId);
+            if (it != appearances.end())
+            {
+                items.Push(DCAddon::JsonValue(it->second.canonicalItemId));
+            }
+        }
+
+        DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COLLECTED_APPEARANCES);
+        response.Set("count", static_cast<uint32>(collectedDisplayIds.size()));
+        response.Set("items", items);
+        response.Send(player);
+    }
+
+    void HandleGetTransmogState(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    {
+        SendTransmogState(player);
+    }
+
+    void HandleApplyTransmogPreview(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        if (!DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::SendError(player, MODULE, "Invalid request format",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        if (!json.HasKey("preview") || !json["preview"].IsObject())
+        {
+            DCAddon::SendError(player, MODULE, "Missing preview data",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        DCAddon::JsonValue preview = json["preview"];
+        uint32 accountId = GetAccountId(player);
+        uint32 guid = player->GetGUID().GetCounter();
+        auto const& appearances = GetTransmogAppearanceMapCached();
+
+        // Process each slot in the preview
+        for (auto const& key : preview.GetKeys())
+        {
+            uint32 visualSlot = std::stoul(key);
+            uint8 equipmentSlot = VisualSlotToEquipmentSlot(visualSlot);
+
+            if (equipmentSlot >= EQUIPMENT_SLOT_END)
+                continue;
+
+            Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, equipmentSlot);
+            if (!equippedItem)
+                continue;
+
+            DCAddon::JsonValue slotValue = preview[key];
+            
+            if (slotValue.IsNull())
+            {
+                // Clear/restore transmog
+                CharacterDatabase.Execute(
+                    "DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}",
+                    guid, static_cast<uint32>(equipmentSlot));
+                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), equippedItem->GetEntry());
+            }
+            else if (slotValue.AsUInt32() == 0)
+            {
+                // Hide item (set to 0)
+                CharacterDatabase.Execute(
+                    "REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, 0, {})",
+                    guid, static_cast<uint32>(equipmentSlot), equippedItem->GetEntry());
+                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), 0);
+            }
+            else
+            {
+                uint32 itemId = slotValue.AsUInt32();
+                ItemTemplate const* fakeProto = sObjectMgr->GetItemTemplate(itemId);
+                if (!fakeProto)
+                    continue;
+
+                uint32 displayId = fakeProto->DisplayInfoID;
+                if (!HasTransmogAppearanceUnlocked(accountId, displayId))
+                    continue;
+
+                auto it = appearances.find(displayId);
+                if (it == appearances.end())
+                    continue;
+
+                ItemTemplate const* equippedProto = equippedItem->GetTemplate();
+                if (!IsAppearanceCompatible(equipmentSlot, equippedProto, it->second))
+                    continue;
+
+                CharacterDatabase.Execute(
+                    "REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})",
+                    guid, static_cast<uint32>(equipmentSlot), itemId, equippedItem->GetEntry());
+                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), itemId);
+            }
+        }
+
         SendTransmogState(player);
     }
 
@@ -2630,9 +3204,16 @@ void AddSC_dc_addon_collection()
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_ADD_WISHLIST, HandleAddWishlistMessage);
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_REMOVE_WISHLIST, HandleRemoveWishlistMessage);
 
+    // Actions: Use item (summon mount, set title, summon heirloom)
+    DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_USE_ITEM, HandleUseItemMessage);
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_SET_FAVORITE, HandleSetFavoriteMessage);
 
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_SET_TRANSMOG, HandleSetTransmogMessage);
+    DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_GET_TRANSMOG_SLOT_ITEMS, HandleGetTransmogSlotItems);
+    DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_SEARCH_TRANSMOG_ITEMS, HandleSearchTransmogItems);
+    DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_GET_COLLECTED_APPEARANCES, HandleGetCollectedAppearances);
+    DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_GET_TRANSMOG_STATE, HandleGetTransmogState);
+    DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_APPLY_TRANSMOG_PREVIEW, HandleApplyTransmogPreview);
 
     // Register player and world scripts
     new CollectionPlayerScript();

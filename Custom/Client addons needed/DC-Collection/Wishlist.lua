@@ -242,3 +242,78 @@ function DC:IsInWishlist(collectionType, itemId)
     end
     return false
 end
+-- ============================================================================
+-- ZONE NOTIFICATIONS
+-- ============================================================================
+
+-- Register zone change events
+local zoneEventFrame = CreateFrame("Frame")
+zoneEventFrame:RegisterEvent("ZONE_CHANGED")
+zoneEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+zoneEventFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
+zoneEventFrame:SetScript("OnEvent", function(self, event)
+    if DC:GetSetting("wishlistZoneNotify") then
+        DC:CheckWishlistZoneNotifications()
+    end
+end)
+
+function DC:CheckWishlistZoneNotifications()
+    if not self.wishlist or #self.wishlist == 0 then
+        return
+    end
+
+    local currentZone = GetRealZoneText() or ""
+    local currentSubZone = GetSubZoneText() or ""
+    local currentMapId = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
+
+    local zoneLC = currentZone:lower()
+    local subZoneLC = currentSubZone:lower()
+
+    local matchingItems = {}
+
+    for _, wish in ipairs(self.wishlist) do
+        local def = self:GetDefinition(wish.type, wish.itemId)
+        if def and def.source then
+            local sourceText = self:FormatSource(def.source) or ""
+            local sourceLC = sourceText:lower()
+
+            -- Check if source mentions current zone or subzone
+            if (zoneLC ~= "" and sourceLC:find(zoneLC, 1, true)) or
+               (subZoneLC ~= "" and sourceLC:find(subZoneLC, 1, true)) then
+                table.insert(matchingItems, {
+                    name = def.name or "Unknown",
+                    type = wish.type,
+                    source = sourceText,
+                })
+            end
+        end
+    end
+
+    if #matchingItems > 0 then
+        self:ShowZoneWishlistNotification(matchingItems, currentZone)
+    end
+end
+
+function DC:ShowZoneWishlistNotification(items, zone)
+    local notifySound = self:GetSetting("notificationSound")
+    if notifySound then
+        PlaySound(8959) -- SOUNDKIT.UI_70_ARTIFACT_FORGE_APPEARANCE_COLOR_SELECT or similar
+    end
+
+    -- Show in chat
+    self:Print(string.format("|cff00ff00%s|r %s:", 
+        L["WISHLIST_ZONE_ALERT"] or "Wishlist items available in",
+        zone))
+    
+    for _, item in ipairs(items) do
+        local typeStr = L["TAB_" .. string.upper(item.type)] or item.type
+        self:Print(string.format("  |cffffd700%s|r (%s) - %s", item.name, typeStr, item.source))
+    end
+
+    -- Show toast notification if enabled
+    if self:GetSetting("showNewItemToast") then
+        local count = #items
+        local msg = string.format(L["WISHLIST_ITEMS_HERE"] or "%d wishlist item(s) available here!", count)
+        self:ShowToast("wishlist", msg, "Interface\\Icons\\INV_Misc_Map02")
+    end
+end

@@ -91,7 +91,8 @@ function DC:ResolveDefinitionIcon(collType, id, def)
                 end
             end
         end
-    elseif collType == "pets" or collType == "heirlooms" then
+    elseif collType == "pets" then
+        -- Companion pets: try item icon first, then spell
         if type(GetItemIcon) == "function" and numericId then
             local texture = GetItemIcon(numericId)
             if texture and texture ~= "" then
@@ -119,6 +120,45 @@ function DC:ResolveDefinitionIcon(collType, id, def)
                 return texture
             end
         end
+    elseif collType == "heirlooms" then
+        -- Heirlooms: item ID -> GetItemIcon / GetItemInfo
+        -- First try definition's itemId field
+        local itemId = numericId
+        if def then
+            itemId = def.itemId or def.item_id or def.itemID or numericId
+        end
+        itemId = tonumber(itemId) or itemId
+
+        if itemId and type(GetItemIcon) == "function" then
+            local texture = GetItemIcon(itemId)
+            if texture and texture ~= "" then
+                return texture
+            end
+        end
+
+        if itemId and type(GetItemInfo) == "function" then
+            local texture = select(10, GetItemInfo(itemId))
+            if texture and texture ~= "" then
+                return texture
+            end
+        end
+
+        -- Fallback: default heirloom icon
+        return "Interface\\Icons\\INV_Misc_Rune_01"
+    elseif collType == "achievements" then
+        -- Achievements: use GetAchievementInfo if available (WotLK 3.3.5+)
+        if numericId and type(GetAchievementInfo) == "function" then
+            local _, _, _, _, _, _, _, _, _, icon = GetAchievementInfo(numericId)
+            if icon and icon ~= "" then
+                return icon
+            end
+        end
+
+        -- Fallback: default achievement icon
+        return "Interface\\Icons\\Achievement_General"
+    elseif collType == "titles" then
+        -- Titles don't have icons in WoW, use a scroll icon
+        return "Interface\\Icons\\INV_Scroll_11"
     elseif collType == "transmog" and def then
         local itemId = def.itemId or def.item_id or def.itemID
         if itemId then

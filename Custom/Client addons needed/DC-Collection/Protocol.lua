@@ -86,7 +86,12 @@ DC.Opcodes = {
     CMSG_TOGGLE_UNLOCK       = 0x32,
 
     -- Client -> Server: Transmog
-    CMSG_SET_TRANSMOG        = 0x33,
+    CMSG_SET_TRANSMOG            = 0x33,
+    CMSG_GET_TRANSMOG_SLOT_ITEMS = 0x34,
+    CMSG_SEARCH_TRANSMOG_ITEMS   = 0x35,
+    CMSG_GET_COLLECTED_APPEARANCES = 0x36,
+    CMSG_GET_TRANSMOG_STATE      = 0x37,
+    CMSG_APPLY_TRANSMOG_PREVIEW  = 0x38,
     
     -- Server -> Client: Sync/Data
     SMSG_HANDSHAKE_ACK       = 0x40,
@@ -101,7 +106,9 @@ DC.Opcodes = {
     SMSG_COLLECTION          = 0x47,
 
     -- Server -> Client: Transmog
-    SMSG_TRANSMOG_STATE      = 0x48,
+    SMSG_TRANSMOG_STATE          = 0x48,
+    SMSG_TRANSMOG_SLOT_ITEMS     = 0x49,
+    SMSG_COLLECTED_APPEARANCES   = 0x4A,
     
     -- Server -> Client: Shop
     SMSG_SHOP_DATA           = 0x50,
@@ -178,6 +185,8 @@ function DC:InitializeProtocol()
     registerOpcode(self.Opcodes.SMSG_DEFINITIONS)
     registerOpcode(self.Opcodes.SMSG_COLLECTION)
     registerOpcode(self.Opcodes.SMSG_TRANSMOG_STATE)
+    registerOpcode(self.Opcodes.SMSG_TRANSMOG_SLOT_ITEMS)
+    registerOpcode(self.Opcodes.SMSG_COLLECTED_APPEARANCES)
     registerOpcode(self.Opcodes.SMSG_SHOP_DATA)
     registerOpcode(self.Opcodes.SMSG_PURCHASE_RESULT)
     registerOpcode(self.Opcodes.SMSG_CURRENCIES)
@@ -495,6 +504,48 @@ function DC:RequestClearTransmogByEquipmentSlot(equipmentSlot)
     })
 end
 
+-- ============================================================================
+-- TRANSMOG SLOT UI REQUESTS (for polished TransmogUI)
+-- ============================================================================
+
+-- Request paginated appearances for a visual slot (e.g. 283=head, 287=shoulder)
+function DC:RequestTransmogSlotItems(visualSlot, page)
+    return self:SendMessage(self.Opcodes.CMSG_GET_TRANSMOG_SLOT_ITEMS, {
+        slot = visualSlot,
+        page = page or 1,
+    })
+end
+
+-- Search appearances by name for a visual slot
+function DC:SearchTransmogItems(visualSlot, searchText, page)
+    return self:SendMessage(self.Opcodes.CMSG_SEARCH_TRANSMOG_ITEMS, {
+        slot = visualSlot,
+        search = searchText or "",
+        page = page or 1,
+    })
+end
+
+-- Request all collected appearance displayIds (for tooltip highlighting)
+function DC:RequestCollectedAppearances()
+    return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTED_APPEARANCES, {})
+end
+
+-- Request current transmog state for all slots
+function DC:RequestTransmogState()
+    return self:SendMessage(self.Opcodes.CMSG_GET_TRANSMOG_STATE, {})
+end
+
+-- Apply multiple transmog changes at once (preview table: { [visualSlot] = itemId, ... })
+function DC:ApplyTransmogPreview(previewTable)
+    local entries = {}
+    for visualSlot, itemId in pairs(previewTable or {}) do
+        table.insert(entries, { slot = visualSlot, itemId = itemId })
+    end
+    return self:SendMessage(self.Opcodes.CMSG_APPLY_TRANSMOG_PREVIEW, {
+        entries = entries,
+    })
+end
+
 -- Toggle account-wide unlock (for heirlooms)
 function DC:RequestToggleUnlock(collectionType, entryId)
     local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
@@ -549,6 +600,10 @@ function DC.OnProtocolMessage(payload)
         self:HandleCollection(data)
     elseif opcode == self.Opcodes.SMSG_TRANSMOG_STATE then
         self:HandleTransmogState(data)
+    elseif opcode == self.Opcodes.SMSG_TRANSMOG_SLOT_ITEMS then
+        self:HandleTransmogSlotItems(data)
+    elseif opcode == self.Opcodes.SMSG_COLLECTED_APPEARANCES then
+        self:HandleCollectedAppearances(data)
     elseif opcode == self.Opcodes.SMSG_SHOP_DATA then
         self:HandleShopData(data)
     elseif opcode == self.Opcodes.SMSG_PURCHASE_RESULT then
@@ -976,6 +1031,55 @@ function DC:HandleTransmogState(data)
     self:Debug(string.format("Received transmog state (%d slots)", self:TableCount(state)))
 end
 
+-- Handle paginated slot items (for TransmogUI grid)
+function DC:HandleTransmogSlotItems(data)
+    local visualSlot = data.slot  -- Server sends "slot"
+    local page = data.page or 1
+    local hasMore = data.hasMore or false
+    local items = data.items or {}
+    
+    self._transmogSlotItems = self._transmogSlotItems or {}
+    self._transmogSlotItems[visualSlot] = {
+        page = page,
+        hasMore = hasMore,
+        items = items,
+    }
+    
+    self:Debug(string.format("Received %d transmog items for slot %d (page %d)", #items, visualSlot or 0, page))
+    
+    -- Fire callback for TransmogUI to refresh
+    if self.callbacks.onTransmogSlotItems then
+        self.callbacks.onTransmogSlotItems(visualSlot, items, page, hasMore)
+    end
+    
+    -- Notify TransmogUI directly if it exists
+    if self.TransmogUI and self.TransmogUI.OnSlotItemsReceived then
+        self.TransmogUI:OnSlotItemsReceived(visualSlot, items, page, hasMore)
+    end
+end
+
+-- Handle all collected appearances (for tooltip highlighting)
+function DC:HandleCollectedAppearances(data)
+    local appearances = data.appearances or {}
+    self.collectedAppearances = {}
+    
+    for _, displayId in ipairs(appearances) do
+        self.collectedAppearances[displayId] = true
+    end
+    
+    self:Debug(string.format("Received %d collected appearances", #appearances))
+    
+    -- Fire callback
+    if self.callbacks.onCollectedAppearances then
+        self.callbacks.onCollectedAppearances(self.collectedAppearances)
+    end
+end
+
+-- Check if an appearance is collected (by displayId)
+function DC:IsAppearanceCollected(displayId)
+    return self.collectedAppearances and self.collectedAppearances[displayId]
+end
+
 function DC:HandleDefinitions(data)
     local collType = data.type
     local definitions = data.definitions or {}
@@ -1273,11 +1377,13 @@ function DC:TableCount(t)
 end
 
 -- Toast notification for new items
-function DC:ShowToast(collType, itemName, icon)
-    -- Simple chat notification for now
-    -- Can be enhanced with a custom frame later
-    local typeStr = DC.L["TAB_" .. string.upper(collType)] or collType
-    self:Print(string.format("|cff00ff00New %s:|r %s", typeStr, itemName))
+-- Note: This is overridden by UI/ToastFrame.lua when loaded
+-- Fallback implementation for when toast UI is not available
+if not DC.ShowToast then
+    function DC:ShowToast(collType, itemName, icon)
+        local typeStr = DC.L["TAB_" .. string.upper(collType)] or collType
+        self:Print(string.format("|cff00ff00New %s:|r %s", typeStr, itemName))
+    end
 end
 
 -- Check achievements after collection update

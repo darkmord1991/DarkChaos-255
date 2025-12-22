@@ -2823,6 +2823,7 @@ DC.Achievements.Debug = 0
 #    SECTION 18: COLLECTION SYSTEM
 #
 #    Retail-like collection management for mounts, pets, toys, etc.
+#    Skipped: BattlePets, Toys (not implemented for WotLK 3.3.5a)
 #
 ###########################################################################
 
@@ -2834,6 +2835,63 @@ DC.Achievements.Debug = 0
 DCCollection.Enable = 1
 
 #
+#    DCCollection.Debug
+#        Description: Enable debug logging for the Collection System
+#        Default:     0 (Disabled)
+#
+DCCollection.Debug = 0
+
+# -------------------------------------------------------------------------
+# DCCollection: Module Toggles
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Mounts.Enable
+#        Description: Enable mount collection and journal
+#        Default:     1 (Enabled)
+#
+DCCollection.Mounts.Enable = 1
+
+#
+#    DCCollection.Mounts.SmartMount
+#        Description: Automatically detect ground vs flying zone for random mount
+#        Default:     1 (Enabled)
+#
+DCCollection.Mounts.SmartMount = 1
+
+#
+#    DCCollection.Mounts.RandomFavoritesOnly
+#        Description: Random mount only picks from favorites (if any)
+#        Default:     0 (Disabled - picks from all mounts)
+#
+DCCollection.Mounts.RandomFavoritesOnly = 0
+
+#
+#    DCCollection.Titles.Enable
+#        Description: Enable title collection and management
+#        Default:     1 (Enabled)
+#
+DCCollection.Titles.Enable = 1
+
+#
+#    DCCollection.Heirlooms.Enable
+#        Description: Enable heirloom collection (integrates with Item Upgrade System)
+#        Default:     1 (Enabled)
+#
+DCCollection.Heirlooms.Enable = 1
+
+#
+#    DCCollection.Transmog.Enable
+#        Description: Enable transmog appearance collection
+#        Default:     1 (Enabled)
+#
+DCCollection.Transmog.Enable = 1
+
+# -------------------------------------------------------------------------
+# DCCollection: Mount Speed Bonuses
+# -------------------------------------------------------------------------
+
+#
 #    DCCollection.MountBonuses.Enable
 #        Description: Enable mount speed bonuses based on collection size
 #        Default:     1 (Enabled)
@@ -2841,11 +2899,61 @@ DCCollection.Enable = 1
 DCCollection.MountBonuses.Enable = 1
 
 #
+#    DCCollection.MountBonuses.Threshold1
+#        Description: First threshold (mounts needed, bonus %)
+#        Default:     "25,2" (25 mounts = +2% speed)
+#
+DCCollection.MountBonuses.Threshold1 = "25,2"
+
+#
+#    DCCollection.MountBonuses.Threshold2
+#        Description: Second threshold (mounts needed, bonus %)
+#        Default:     "50,3" (50 mounts = +3% speed)
+#
+DCCollection.MountBonuses.Threshold2 = "50,3"
+
+#
+#    DCCollection.MountBonuses.Threshold3
+#        Description: Third threshold (mounts needed, bonus %)
+#        Default:     "100,3" (100 mounts = +3% speed)
+#
+DCCollection.MountBonuses.Threshold3 = "100,3"
+
+#
+#    DCCollection.MountBonuses.Threshold4
+#        Description: Fourth threshold (mounts needed, bonus %)
+#        Default:     "150,2" (150 mounts = +2% speed, total +10%)
+#
+DCCollection.MountBonuses.Threshold4 = "150,2"
+
+# -------------------------------------------------------------------------
+# DCCollection: Shop System
+# -------------------------------------------------------------------------
+
+#
 #    DCCollection.Shop.Enable
 #        Description: Enable the collection shop
 #        Default:     1 (Enabled)
 #
 DCCollection.Shop.Enable = 1
+
+#
+#    DCCollection.Shop.CurrencyToken
+#        Description: Item ID used as shop token currency
+#        Default:     0 (Use custom currency, not an item)
+#
+DCCollection.Shop.CurrencyToken = 0
+
+#
+#    DCCollection.Shop.CurrencyEmblem
+#        Description: Item ID used as shop emblem currency
+#        Default:     0 (Use custom currency, not an item)
+#
+DCCollection.Shop.CurrencyEmblem = 0
+
+# -------------------------------------------------------------------------
+# DCCollection: Wishlist System
+# -------------------------------------------------------------------------
 
 #
 #    DCCollection.Wishlist.Enable
@@ -2857,9 +2965,34 @@ DCCollection.Wishlist.Enable = 1
 #
 #    DCCollection.Wishlist.MaxItems
 #        Description: Maximum items allowed on wishlist per account
-#        Default:     25
+#        Default:     50
 #
-DCCollection.Wishlist.MaxItems = 25
+DCCollection.Wishlist.MaxItems = 50
+
+#
+#    DCCollection.Wishlist.NotifyOnZoneEnter
+#        Description: Notify player when entering a zone with wishlist item source
+#        Default:     1 (Enabled)
+#
+DCCollection.Wishlist.NotifyOnZoneEnter = 1
+
+# -------------------------------------------------------------------------
+# DCCollection: Notifications & UI
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Notifications.Enable
+#        Description: Enable toast notifications when items are collected
+#        Default:     1 (Enabled)
+#
+DCCollection.Notifications.Enable = 1
+
+#
+#    DCCollection.Notifications.Sound
+#        Description: Play sound when collecting new items
+#        Default:     1 (Enabled)
+#
+DCCollection.Notifications.Sound = 1
 
 #
 #    DCCollection.SyncInterval
@@ -2867,6 +3000,24 @@ DCCollection.Wishlist.MaxItems = 25
 #        Default:     30
 #
 DCCollection.SyncInterval = 30
+
+# -------------------------------------------------------------------------
+# DCCollection: Leaderboard Integration
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Leaderboards.Enable
+#        Description: Enable collection leaderboards (integrates with DC-Leaderboards)
+#        Default:     1 (Enabled)
+#
+DCCollection.Leaderboards.Enable = 1
+
+#
+#    DCCollection.Leaderboards.UpdateInterval
+#        Description: How often to update leaderboard cache (in minutes)
+#        Default:     15
+#
+DCCollection.Leaderboards.UpdateInterval = 15
 
 # -------------------------------------------------------------------------
 # DCCollection Transmog: Legacy Import Settings
