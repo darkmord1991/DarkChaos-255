@@ -198,7 +198,7 @@ function MountJournal:CreateMountList(parent)
     -- Background
     local bg = listFrame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0, 0, 0, 0.4)
+    bg:SetTexture(0, 0, 0, 0.4)
 
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "DCMountJournalScrollFrame", listFrame, "UIPanelScrollFrameTemplate")
@@ -252,7 +252,7 @@ function MountJournal:CreateModelPreview(parent)
     -- Background
     local bg = modelFrame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0.05, 0.05, 0.1, 0.8)
+    bg:SetTexture(0.05, 0.05, 0.1, 0.8)
 
     -- 3D Model
     local model = CreateFrame("DressUpModel", "DCMountJournalModel", modelFrame)
@@ -403,7 +403,7 @@ function MountJournal:CreateMountButton(parent, index)
     -- Background
     btn.bg = btn:CreateTexture(nil, "BACKGROUND")
     btn.bg:SetAllPoints()
-    btn.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+    btn.bg:SetTexture(0.1, 0.1, 0.1, 0.8)
 
     -- Icon
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
@@ -433,13 +433,13 @@ function MountJournal:CreateMountButton(parent, index)
     -- Highlight
     btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
     btn.highlight:SetAllPoints()
-    btn.highlight:SetColorTexture(0.3, 0.3, 0.5, 0.3)
+    btn.highlight:SetTexture(0.3, 0.3, 0.5, 0.3)
 
     -- Selected indicator
     btn.selected = btn:CreateTexture(nil, "BORDER")
     btn.selected:SetPoint("TOPLEFT", -1, 1)
     btn.selected:SetPoint("BOTTOMRIGHT", 1, -1)
-    btn.selected:SetColorTexture(0.4, 0.4, 0.8, 0.5)
+    btn.selected:SetTexture(0.4, 0.4, 0.8, 0.5)
     btn.selected:Hide()
 
     -- Click handler
@@ -536,11 +536,11 @@ function MountJournal:RefreshList()
         if not mount.collected then
             btn.icon:SetDesaturated(true)
             btn.icon:SetAlpha(0.5)
-            btn.bg:SetColorTexture(0.1, 0.1, 0.1, 0.5)
+            btn.bg:SetTexture(0.1, 0.1, 0.1, 0.5)
         else
             btn.icon:SetDesaturated(false)
             btn.icon:SetAlpha(1)
-            btn.bg:SetColorTexture(0.15, 0.25, 0.15, 0.8)
+            btn.bg:SetTexture(0.15, 0.25, 0.15, 0.8)
         end
 
         if self.selectedMount and self.selectedMount.id == mount.id then

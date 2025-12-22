@@ -63,11 +63,18 @@ function DC:CreateShopUI()
     currencyFrame:SetPoint("RIGHT", header, "RIGHT", -10, 0)
     currencyFrame:SetSize(250, 30)
     
+    -- Get icons from DCCentral if available, else use fallback
+    local central = rawget(_G, "DCAddonProtocol")
+    local tokenIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.TOKEN_ITEM_ID or 300311))
+                      or "Interface\\Icons\\INV_Misc_Token_ArgentCrusade"
+    local emblemIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.ESSENCE_ITEM_ID or 300312))
+                       or "Interface\\Icons\\INV_Misc_Herb_Draenethisle"
+    
     -- Tokens
     local tokensIcon = currencyFrame:CreateTexture(nil, "ARTWORK")
     tokensIcon:SetSize(20, 20)
     tokensIcon:SetPoint("LEFT", currencyFrame, "LEFT", 0, 0)
-    tokensIcon:SetTexture("Interface\\Icons\\INV_Misc_Coin_02")
+    tokensIcon:SetTexture(tokenIcon)
     
     local tokensLabel = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     tokensLabel:SetPoint("LEFT", tokensIcon, "RIGHT", 5, 0)
@@ -82,7 +89,7 @@ function DC:CreateShopUI()
     local emblemsIcon = currencyFrame:CreateTexture(nil, "ARTWORK")
     emblemsIcon:SetSize(20, 20)
     emblemsIcon:SetPoint("LEFT", tokensValue, "RIGHT", 20, 0)
-    emblemsIcon:SetTexture("Interface\\Icons\\Spell_Holy_SummonChampion")
+    emblemsIcon:SetTexture(emblemIcon)
     
     local emblemsLabel = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     emblemsLabel:SetPoint("LEFT", emblemsIcon, "RIGHT", 5, 0)
@@ -203,12 +210,12 @@ function DC:CreateShopItemFrame(parent, index)
     -- Background
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
-    frame.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+    frame.bg:SetTexture(0.1, 0.1, 0.1, 0.8)
     
     -- Highlight
     frame.highlight = frame:CreateTexture(nil, "HIGHLIGHT")
     frame.highlight:SetAllPoints()
-    frame.highlight:SetColorTexture(0.3, 0.3, 0.3, 0.5)
+    frame.highlight:SetTexture(0.3, 0.3, 0.3, 0.5)
     
     -- Icon
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
@@ -237,7 +244,13 @@ function DC:CreateShopItemFrame(parent, index)
     frame.typeBadge:SetTextColor(0.5, 0.8, 1)
     frame.typeBadge:SetText("[Bonus]")
     
-    -- Cost
+    -- Cost (get icons from DCCentral if available)
+    local central = rawget(_G, "DCAddonProtocol")
+    local itemTokenIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.TOKEN_ITEM_ID or 300311))
+                          or "Interface\\Icons\\INV_Misc_Token_ArgentCrusade"
+    local itemEmblemIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.ESSENCE_ITEM_ID or 300312))
+                           or "Interface\\Icons\\INV_Misc_Herb_Draenethisle"
+    
     frame.costFrame = CreateFrame("Frame", nil, frame)
     frame.costFrame:SetSize(120, 40)
     frame.costFrame:SetPoint("RIGHT", frame, "RIGHT", -90, 0)
@@ -245,7 +258,7 @@ function DC:CreateShopItemFrame(parent, index)
     frame.costTokensIcon = frame.costFrame:CreateTexture(nil, "ARTWORK")
     frame.costTokensIcon:SetSize(16, 16)
     frame.costTokensIcon:SetPoint("TOPLEFT", frame.costFrame, "TOPLEFT", 0, 0)
-    frame.costTokensIcon:SetTexture("Interface\\Icons\\INV_Misc_Coin_02")
+    frame.costTokensIcon:SetTexture(itemTokenIcon)
     
     frame.costTokensText = frame.costFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.costTokensText:SetPoint("LEFT", frame.costTokensIcon, "RIGHT", 3, 0)
@@ -254,7 +267,7 @@ function DC:CreateShopItemFrame(parent, index)
     frame.costEmblemsIcon = frame.costFrame:CreateTexture(nil, "ARTWORK")
     frame.costEmblemsIcon:SetSize(16, 16)
     frame.costEmblemsIcon:SetPoint("TOPLEFT", frame.costTokensIcon, "BOTTOMLEFT", 0, -5)
-    frame.costEmblemsIcon:SetTexture("Interface\\Icons\\Spell_Holy_SummonChampion")
+    frame.costEmblemsIcon:SetTexture(itemEmblemIcon)
     
     frame.costEmblemsText = frame.costFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.costEmblemsText:SetPoint("LEFT", frame.costEmblemsIcon, "RIGHT", 3, 0)

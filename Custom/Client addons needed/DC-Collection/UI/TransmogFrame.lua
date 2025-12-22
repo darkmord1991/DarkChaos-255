@@ -587,7 +587,7 @@ local function CreateTransmogPanel()
 
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0, 0, 0, 0.4)
+        btn.bg:SetTexture(0, 0, 0, 0.4)
 
         btn.icon = btn:CreateTexture(nil, "ARTWORK")
         btn.icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
@@ -596,12 +596,12 @@ local function CreateTransmogPanel()
 
         btn.appliedGlow = btn:CreateTexture(nil, "BORDER")
         btn.appliedGlow:SetAllPoints()
-        btn.appliedGlow:SetColorTexture(0, 1, 0, 0.15)
+        btn.appliedGlow:SetTexture(0, 1, 0, 0.15)
         btn.appliedGlow:Hide()
 
         btn.selectedGlow = btn:CreateTexture(nil, "BORDER")
         btn.selectedGlow:SetAllPoints()
-        btn.selectedGlow:SetColorTexture(0.3, 0.5, 1, 0.25)
+        btn.selectedGlow:SetTexture(0.3, 0.5, 1, 0.25)
         btn.selectedGlow:Hide()
 
         btn:SetScript("OnClick", function()
@@ -751,7 +751,7 @@ local function CreateTransmogPanel()
 
         b.bg = b:CreateTexture(nil, "BACKGROUND")
         b.bg:SetAllPoints()
-        b.bg:SetColorTexture(0, 0, 0, 0.3)
+        b.bg:SetTexture(0, 0, 0, 0.3)
 
         b.icon = b:CreateTexture(nil, "ARTWORK")
         b.icon:SetPoint("CENTER", b, "CENTER", 0, 0)
@@ -760,12 +760,12 @@ local function CreateTransmogPanel()
 
         b.lockOverlay = b:CreateTexture(nil, "OVERLAY")
         b.lockOverlay:SetAllPoints()
-        b.lockOverlay:SetColorTexture(0, 0, 0, 0.35)
+        b.lockOverlay:SetTexture(0, 0, 0, 0.35)
         b.lockOverlay:Hide()
 
         b.selectedBorder = b:CreateTexture(nil, "BORDER")
         b.selectedBorder:SetAllPoints()
-        b.selectedBorder:SetColorTexture(0.3, 0.5, 1, 0.35)
+        b.selectedBorder:SetTexture(0.3, 0.5, 1, 0.35)
         b.selectedBorder:Hide()
 
         b:SetScript("OnClick", function(self, button)

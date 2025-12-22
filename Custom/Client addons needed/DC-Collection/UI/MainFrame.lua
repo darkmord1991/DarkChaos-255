@@ -60,29 +60,26 @@ function DC:ResolveDefinitionIcon(collType, id, def)
     local numericId = tonumber(id) or id
 
     if collType == "mounts" then
-        if type(GetSpellInfo) == "function" and numericId then
-            local _, _, icon = GetSpellInfo(numericId)
-            if icon and icon ~= "" then
-                return icon
-            end
-        end
+        -- Mounts use spell ID - GetSpellTexture is the most reliable in WotLK
         if type(GetSpellTexture) == "function" and numericId then
             local texture = GetSpellTexture(numericId)
             if texture and texture ~= "" then
                 return texture
             end
         end
+        if type(GetSpellInfo) == "function" and numericId then
+            local _, _, icon = GetSpellInfo(numericId)
+            if icon and icon ~= "" then
+                return icon
+            end
+        end
 
+        -- Some mount definitions include itemId for the mount item
         if def then
             local itemId = def.itemId or def.item_id or def.itemID
             if itemId then
                 itemId = tonumber(itemId) or itemId
-                if type(GetItemIcon) == "function" then
-                    local texture = GetItemIcon(itemId)
-                    if texture and texture ~= "" then
-                        return texture
-                    end
-                end
+                -- In WotLK 3.3.5a, use GetItemInfo (GetItemIcon doesn't exist)
                 if type(GetItemInfo) == "function" then
                     local texture = select(10, GetItemInfo(itemId))
                     if texture and texture ~= "" then
@@ -92,49 +89,46 @@ function DC:ResolveDefinitionIcon(collType, id, def)
             end
         end
     elseif collType == "pets" then
-        -- Companion pets: try item icon first, then spell
-        if type(GetItemIcon) == "function" and numericId then
-            local texture = GetItemIcon(numericId)
+        -- Companion pets: try item info first, then spell
+        local itemId = def and (def.itemId or def.item_id or def.itemID)
+        local spellId = def and (def.spellId or def.spell_id or def.spellID)
+        
+        -- If no explicit IDs, assume numericId is Item ID
+        if not itemId and not spellId then
+             itemId = numericId
+        end
+
+        -- Try Item Info
+        if itemId and type(GetItemInfo) == "function" then
+            local texture = select(10, GetItemInfo(itemId))
             if texture and texture ~= "" then
                 return texture
             end
         end
 
-        if type(GetItemInfo) == "function" and numericId then
-            local texture = select(10, GetItemInfo(numericId))
-            if texture and texture ~= "" then
-                return texture
+        -- Try Spell Info (fallback or if explicit spellId)
+        local sId = spellId or numericId
+        if sId then
+            if type(GetSpellTexture) == "function" then
+                local texture = GetSpellTexture(sId)
+                if texture and texture ~= "" then
+                    return texture
+                end
             end
-        end
-
-        -- Some datasets identify pets by spellId rather than itemId.
-        if type(GetSpellInfo) == "function" and numericId then
-            local _, _, icon = GetSpellInfo(numericId)
-            if icon and icon ~= "" then
-                return icon
-            end
-        end
-        if type(GetSpellTexture) == "function" and numericId then
-            local texture = GetSpellTexture(numericId)
-            if texture and texture ~= "" then
-                return texture
+            if type(GetSpellInfo) == "function" then
+                local _, _, icon = GetSpellInfo(sId)
+                if icon and icon ~= "" then
+                    return icon
+                end
             end
         end
     elseif collType == "heirlooms" then
-        -- Heirlooms: item ID -> GetItemIcon / GetItemInfo
-        -- First try definition's itemId field
+        -- Heirlooms: item ID -> GetItemInfo (10th return = texture)
         local itemId = numericId
         if def then
             itemId = def.itemId or def.item_id or def.itemID or numericId
         end
         itemId = tonumber(itemId) or itemId
-
-        if itemId and type(GetItemIcon) == "function" then
-            local texture = GetItemIcon(itemId)
-            if texture and texture ~= "" then
-                return texture
-            end
-        end
 
         if itemId and type(GetItemInfo) == "function" then
             local texture = select(10, GetItemInfo(itemId))
@@ -160,15 +154,10 @@ function DC:ResolveDefinitionIcon(collType, id, def)
         -- Titles don't have icons in WoW, use a scroll icon
         return "Interface\\Icons\\INV_Scroll_11"
     elseif collType == "transmog" and def then
-        local itemId = def.itemId or def.item_id or def.itemID
+        local itemId = def.itemId or def.item_id or def.itemID or numericId
         if itemId then
             itemId = tonumber(itemId) or itemId
-            if type(GetItemIcon) == "function" then
-                local texture = GetItemIcon(itemId)
-                if texture and texture ~= "" then
-                    return texture
-                end
-            end
+            -- In WotLK 3.3.5a, use GetItemInfo for texture
             if type(GetItemInfo) == "function" then
                 local texture = select(10, GetItemInfo(itemId))
                 if texture and texture ~= "" then
@@ -212,6 +201,16 @@ function DC:CreateMainFrame()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
+
+    -- Event handling for item info
+    frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    frame:SetScript("OnEvent", function(self, event, ...)
+        if event == "GET_ITEM_INFO_RECEIVED" then
+            if DC.MainFrame and DC.MainFrame:IsShown() then
+                DC:RefreshCurrentTab()
+            end
+        end
+    end)
     
     -- Title
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
@@ -267,7 +266,19 @@ function DC:CreateHeader(parent)
     header.totalStatsText:SetPoint("TOPLEFT", header.statsText, "BOTTOMLEFT", 0, -2)
     header.totalStatsText:SetJustifyH("LEFT")
     
-    -- Currency display
+    -- Currency display (get icons from DCCentral if available)
+    local central = rawget(_G, "DCAddonProtocol")
+    local tokenIconPath = "Interface\\Icons\\INV_Misc_Token_ArgentCrusade"
+    local emblemIconPath = "Interface\\Icons\\INV_Misc_Herb_Draenethisle"
+
+    if central and central.GetTokenIcon then
+        local t = central:GetTokenIcon(central.TOKEN_ITEM_ID or 300311)
+        if t then tokenIconPath = t end
+        
+        local e = central:GetTokenIcon(central.ESSENCE_ITEM_ID or 300312)
+        if e then emblemIconPath = e end
+    end
+    
     header.currencyFrame = CreateFrame("Frame", nil, header)
     header.currencyFrame:SetPoint("RIGHT", header, "RIGHT", -5, 0)
     header.currencyFrame:SetSize(200, 24)
@@ -276,7 +287,8 @@ function DC:CreateHeader(parent)
     header.tokensIcon = header.currencyFrame:CreateTexture(nil, "ARTWORK")
     header.tokensIcon:SetSize(16, 16)
     header.tokensIcon:SetPoint("RIGHT", header.currencyFrame, "RIGHT", 0, 0)
-    header.tokensIcon:SetTexture("Interface\\Icons\\INV_Misc_Coin_02")
+    header.tokensIcon:SetTexture(tokenIconPath)
+    header.tokensIcon:Show()
     
     header.tokensText = header.currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     header.tokensText:SetPoint("RIGHT", header.tokensIcon, "LEFT", -3, 0)
@@ -286,7 +298,8 @@ function DC:CreateHeader(parent)
     header.emblemsIcon = header.currencyFrame:CreateTexture(nil, "ARTWORK")
     header.emblemsIcon:SetSize(16, 16)
     header.emblemsIcon:SetPoint("RIGHT", header.tokensText, "LEFT", -15, 0)
-    header.emblemsIcon:SetTexture("Interface\\Icons\\Spell_Holy_SummonChampion")
+    header.emblemsIcon:SetTexture(emblemIconPath)
+    header.emblemsIcon:Show()
     
     header.emblemsText = header.currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     header.emblemsText:SetPoint("RIGHT", header.emblemsIcon, "LEFT", -3, 0)
@@ -312,7 +325,7 @@ function DC:CreateTabBar(parent)
     -- Tab background
     local tabBg = tabBar:CreateTexture(nil, "BACKGROUND")
     tabBg:SetAllPoints()
-    tabBg:SetColorTexture(0, 0, 0, 0.3)
+    tabBg:SetTexture(0, 0, 0, 0.3)
     
     -- Create tabs
     local tabs = {
@@ -349,17 +362,17 @@ function DC:CreateTabButton(parent, tabInfo, width, index)
     -- Background
     tab.bg = tab:CreateTexture(nil, "BACKGROUND")
     tab.bg:SetAllPoints()
-    tab.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+    tab.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
     
     -- Highlight
     tab.highlight = tab:CreateTexture(nil, "HIGHLIGHT")
     tab.highlight:SetAllPoints()
-    tab.highlight:SetColorTexture(0.4, 0.4, 0.4, 0.5)
+    tab.highlight:SetTexture(0.4, 0.4, 0.4, 0.5)
     
     -- Checked texture
     tab.checked = tab:CreateTexture(nil, "BACKGROUND")
     tab.checked:SetAllPoints()
-    tab.checked:SetColorTexture(0.3, 0.3, 0.6, 0.8)
+    tab.checked:SetTexture(0.3, 0.3, 0.6, 0.8)
     tab:SetCheckedTexture(tab.checked)
     
     -- Icon
@@ -394,7 +407,7 @@ function DC:CreateFilterBar(parent)
     -- Background
     local filterBg = filterBar:CreateTexture(nil, "BACKGROUND")
     filterBg:SetAllPoints()
-    filterBg:SetColorTexture(0, 0, 0, 0.2)
+    filterBg:SetTexture(0, 0, 0, 0.2)
     
     -- Search box
     local searchBox = CreateFrame("EditBox", "DCCollectionSearchBox", filterBar, "InputBoxTemplate")
@@ -595,7 +608,7 @@ function DC:CreateContentArea(parent)
     -- Background
     local contentBg = content:CreateTexture(nil, "BACKGROUND")
     contentBg:SetAllPoints()
-    contentBg:SetColorTexture(0, 0, 0, 0.3)
+    contentBg:SetTexture(0, 0, 0, 0.3)
 
     -- Details bar: left info + right visuals (shared across tabs)
     local details = CreateFrame("Frame", nil, content)
@@ -605,12 +618,12 @@ function DC:CreateContentArea(parent)
 
     details.bg = details:CreateTexture(nil, "BACKGROUND")
     details.bg:SetAllPoints()
-    details.bg:SetColorTexture(0, 0, 0, 0.25)
+    details.bg:SetTexture(0, 0, 0, 0.25)
 
     details.iconBorder = details:CreateTexture(nil, "BORDER")
     details.iconBorder:SetSize(70, 70)
     details.iconBorder:SetPoint("RIGHT", details, "RIGHT", -8, 0)
-    details.iconBorder:SetColorTexture(0.25, 0.25, 0.25, 0.8)
+    details.iconBorder:SetTexture(0.25, 0.25, 0.25, 0.8)
 
     details.icon = details:CreateTexture(nil, "ARTWORK")
     details.icon:SetSize(64, 64)
@@ -633,9 +646,180 @@ function DC:CreateContentArea(parent)
     details.line2:SetPoint("TOPRIGHT", details.iconBorder, "TOPLEFT", -10, -4)
     details.line2:SetJustifyH("LEFT")
 
+    -- Use/Summon button for mounts/pets/titles
+    details.useBtn = CreateFrame("Button", nil, details, "UIPanelButtonTemplate")
+    details.useBtn:SetSize(80, 22)
+    details.useBtn:SetPoint("BOTTOMLEFT", details, "BOTTOMLEFT", 10, 8)
+    details.useBtn:SetText(L["SUMMON"] or "Summon")
+    details.useBtn:SetScript("OnClick", function()
+        if DC.selectedItem then
+            DC:OnItemLeftClick(DC.selectedItem)
+        end
+    end)
+    details.useBtn:Hide()
+
     content.details = details
+
+    -- ========================================================================
+    -- RETAIL STYLE MOUNT FRAMES
+    -- ========================================================================
     
-    -- Scroll frame
+    -- Mount List (Left Side)
+    local mountList = CreateFrame("ScrollFrame", "DCCollectionMountList", content, "UIPanelScrollFrameTemplate")
+    mountList:SetPoint("TOPLEFT", content, "TOPLEFT", 5, -5)
+    mountList:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 5, 5)
+    mountList:SetWidth(300)
+    mountList:Hide()
+    
+    local mountListChild = CreateFrame("Frame", nil, mountList)
+    mountListChild:SetSize(mountList:GetWidth(), 1)
+    mountList:SetScrollChild(mountListChild)
+    
+    content.mountList = mountList
+    content.mountListChild = mountListChild
+    
+    -- Mount Model Preview (Right Side)
+    local mountPreview = CreateFrame("Frame", nil, content)
+    mountPreview:SetPoint("TOPLEFT", mountList, "TOPRIGHT", 5, 0)
+    mountPreview:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -5, 5)
+    mountPreview:Hide()
+    
+    mountPreview.bg = mountPreview:CreateTexture(nil, "BACKGROUND")
+    mountPreview.bg:SetAllPoints()
+    mountPreview.bg:SetTexture(0, 0, 0, 0.3)
+    
+    -- Model
+    mountPreview.model = CreateFrame("PlayerModel", "DCCollectionMountModel", mountPreview)
+    mountPreview.model:SetPoint("TOPLEFT", mountPreview, "TOPLEFT", 0, -40) -- Leave space for name
+    mountPreview.model:SetPoint("BOTTOMRIGHT", mountPreview, "BOTTOMRIGHT", 0, 40) -- Leave space for buttons
+    mountPreview.model:EnableMouse(true)
+    mountPreview.model:EnableMouseWheel(true)
+    
+    mountPreview.model:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then
+            self.rotating = true
+            self.prevX = GetCursorPosition()
+        end
+    end)
+    mountPreview.model:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" then
+            self.rotating = false
+        end
+    end)
+    mountPreview.model:SetScript("OnUpdate", function(self)
+        if self.rotating then
+            local x = GetCursorPosition()
+            local delta = (x - (self.prevX or x)) * 0.01
+            self.rotation = (self.rotation or 0) + delta
+            self:SetFacing(self.rotation)
+            self.prevX = x
+        end
+    end)
+    mountPreview.model:SetScript("OnMouseWheel", function(self, delta)
+        local zoom = self.zoom or 0
+        zoom = zoom + delta * 0.1
+        zoom = math.max(-1, math.min(1, zoom))
+        self.zoom = zoom
+        self:SetCamera(0)
+        self:SetPosition(zoom, 0, 0)
+    end)
+    
+    -- Mount Name
+    mountPreview.name = mountPreview:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    mountPreview.name:SetPoint("TOP", mountPreview, "TOP", 0, -10)
+    mountPreview.name:SetText("")
+    
+    -- Mount Source
+    mountPreview.source = mountPreview:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    mountPreview.source:SetPoint("TOP", mountPreview.name, "BOTTOM", 0, -5)
+    mountPreview.source:SetText("")
+    
+    -- Summon Button
+    mountPreview.summonBtn = CreateFrame("Button", nil, mountPreview, "UIPanelButtonTemplate")
+    mountPreview.summonBtn:SetSize(120, 30)
+    mountPreview.summonBtn:SetPoint("BOTTOM", mountPreview, "BOTTOM", 0, 10)
+    mountPreview.summonBtn:SetText(L["SUMMON"] or "Summon")
+    mountPreview.summonBtn:SetScript("OnClick", function()
+        if DC.selectedItem then
+            DC:OnItemLeftClick(DC.selectedItem)
+        end
+    end)
+    
+    -- Favorite Button
+    mountPreview.favBtn = CreateFrame("Button", nil, mountPreview)
+    mountPreview.favBtn:SetSize(30, 30)
+    mountPreview.favBtn:SetPoint("LEFT", mountPreview.summonBtn, "RIGHT", 10, 0)
+    mountPreview.favBtn:SetNormalTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
+    mountPreview.favBtn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    mountPreview.favBtn:SetScript("OnClick", function()
+        if DC.selectedItem then
+            DC:OnItemRightClick(DC.selectedItem)
+            -- Refresh UI
+            DC:UpdateMountPreview(DC.selectedItem)
+        end
+    end)
+    
+    content.mountPreview = mountPreview
+
+    -- 3D Model Preview Panel (for mounts/pets)
+    local modelPanel = CreateFrame("Frame", nil, content)
+    modelPanel:SetPoint("TOPRIGHT", content, "TOPRIGHT", -5, -90)
+    modelPanel:SetSize(200, 200)
+    modelPanel:Hide()
+
+    modelPanel.bg = modelPanel:CreateTexture(nil, "BACKGROUND")
+    modelPanel.bg:SetAllPoints()
+    modelPanel.bg:SetTexture(0.05, 0.05, 0.1, 0.9)
+
+    modelPanel.border = modelPanel:CreateTexture(nil, "BORDER")
+    modelPanel.border:SetPoint("TOPLEFT", -2, 2)
+    modelPanel.border:SetPoint("BOTTOMRIGHT", 2, -2)
+    modelPanel.border:SetTexture(0.3, 0.3, 0.3, 1)
+
+    -- 3D Model
+    modelPanel.model = CreateFrame("DressUpModel", "DCCollectionModelPreview", modelPanel)
+    modelPanel.model:SetPoint("TOPLEFT", 5, -5)
+    modelPanel.model:SetPoint("BOTTOMRIGHT", -5, 5)
+    modelPanel.model:EnableMouse(true)
+    modelPanel.model:EnableMouseWheel(true)
+    modelPanel.model.rotation = 0
+    modelPanel.model.zoom = 0
+
+    modelPanel.model:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then
+            self.rotating = true
+            self.prevX = GetCursorPosition()
+        end
+    end)
+
+    modelPanel.model:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" then
+            self.rotating = false
+        end
+    end)
+
+    modelPanel.model:SetScript("OnUpdate", function(self)
+        if self.rotating then
+            local x = GetCursorPosition()
+            local delta = (x - (self.prevX or x)) * 0.01
+            self.rotation = (self.rotation or 0) + delta
+            self:SetFacing(self.rotation)
+            self.prevX = x
+        end
+    end)
+
+    modelPanel.model:SetScript("OnMouseWheel", function(self, delta)
+        local zoom = self.zoom or 0
+        zoom = zoom + delta * 0.1
+        zoom = math.max(-1, math.min(1, zoom))
+        self.zoom = zoom
+        self:SetCamera(0)
+        self:SetPosition(zoom, 0, 0)
+    end)
+
+    content.modelPanel = modelPanel
+    
+    -- Scroll frame (adjusted width when model panel is shown)
     local scrollFrame = CreateFrame("ScrollFrame", "DCCollectionScrollFrame", content, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", details, "BOTTOMLEFT", 0, -5)
     scrollFrame:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -25, 5)
@@ -664,9 +848,87 @@ function DC:ClearDetailsPanel()
     d.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
     d.icon:SetDesaturated(false)
     d.icon:SetAlpha(1)
+    if d.useBtn then d.useBtn:Hide() end
+
+    -- Hide model panel
+    local modelPanel = self.MainFrame.Content.modelPanel
+    if modelPanel then
+        modelPanel:Hide()
+        modelPanel.model:ClearModel()
+    end
+
+    self.selectedItem = nil
+end
+
+function DC:UpdateMountPreview(item)
+    if not self.MainFrame or not self.MainFrame.Content or not self.MainFrame.Content.mountPreview then return end
+    local p = self.MainFrame.Content.mountPreview
+    
+    if not item then
+        p.name:SetText("Select a Mount")
+        p.source:SetText("")
+        p.model:ClearModel()
+        p.summonBtn:Disable()
+        p.favBtn:Hide()
+        return
+    end
+    
+    local r, g, b = GetRarityColor(self, item.rarity or 1)
+    p.name:SetText(item.name or "Unknown")
+    p.name:SetTextColor(r, g, b)
+    
+    local sourceText = item.sourceText or self:FormatSource(item.source)
+    p.source:SetText(sourceText or "")
+    
+    -- Model
+    p.model:ClearModel()
+    local displayId = item.definition and (item.definition.displayId or item.definition.display_id or item.definition.creatureId)
+    
+    -- Fallback: check if item itself has displayId
+    if not displayId and item.displayId then
+        displayId = item.displayId
+    end
+
+    if displayId and displayId > 0 and p.model.SetDisplayInfo then
+        p.model:SetDisplayInfo(displayId)
+        p.model:SetCamera(0) -- Reset camera
+    else
+        -- If no display ID, maybe show a generic model or nothing?
+        -- For now, just ensure it's cleared.
+    end
+    p.model:SetPosition(0, 0, 0)
+    p.model:SetFacing(0)
+    
+    -- Buttons
+    if item.collected then
+        p.summonBtn:Enable()
+        p.summonBtn:SetText(L["SUMMON"] or "Summon")
+    else
+        p.summonBtn:Disable()
+        p.summonBtn:SetText(L["NOT_COLLECTED"] or "Not Collected")
+    end
+    
+    p.favBtn:Show()
+    if item.is_favorite then
+        p.favBtn:SetNormalTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
+        if p.favBtn:GetNormalTexture() then
+            p.favBtn:GetNormalTexture():SetDesaturated(false)
+        end
+    else
+        p.favBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Star_01") -- Or empty star
+        if p.favBtn:GetNormalTexture() then
+            p.favBtn:GetNormalTexture():SetDesaturated(true)
+        end
+    end
 end
 
 function DC:UpdateDetailsPanel(item)
+    -- If we are in mount mode, update the mount preview instead
+    if self.activeTab == "mounts" then
+        self:UpdateMountPreview(item)
+        return
+    end
+
     if not item or not self.MainFrame or not self.MainFrame.Content or not self.MainFrame.Content.details then
         return
     end
@@ -703,6 +965,68 @@ function DC:UpdateDetailsPanel(item)
     else
         d.icon:SetDesaturated(false)
         d.icon:SetAlpha(1)
+    end
+
+    -- Store selected item for use button
+    self.selectedItem = item
+
+    -- Show use button for collected mounts/pets/titles
+    local collType = item.type
+    if collType == "shop" then
+        collType = item.collectionTypeName
+    end
+
+    if (collType == "mounts" or collType == "pets" or collType == "titles") and item.collected then
+        if collType == "mounts" then
+            d.useBtn:SetText(L["SUMMON"] or "Summon")
+        elseif collType == "pets" then
+            d.useBtn:SetText(L["SUMMON"] or "Summon")
+        elseif collType == "titles" then
+            d.useBtn:SetText(L["SET_TITLE"] or "Set Title")
+        end
+        d.useBtn:Show()
+    else
+        d.useBtn:Hide()
+    end
+
+    -- Show 3D model for mounts/pets/transmog
+    local modelPanel = self.MainFrame.Content.modelPanel
+    if modelPanel and (collType == "mounts" or collType == "pets" or collType == "transmog") then
+        local displayId = item.definition and (item.definition.displayId or item.definition.display_id or item.definition.creatureId)
+        
+        modelPanel:Show()
+        local model = modelPanel.model
+        model:ClearModel()
+        model.rotation = 0
+        model.zoom = 0
+
+        if collType == "transmog" then
+            -- Transmog: Show player and try on item
+            model:SetUnit("player")
+            local itemId = item.definition and (item.definition.itemId or item.definition.item_id or item.definition.itemID) or item.id
+            if itemId then
+                if model.TryOn then
+                    model:TryOn(itemId)
+                end
+            end
+            model:SetCamera(0)
+        elseif displayId and displayId > 0 and model.SetDisplayInfo then
+            model:SetDisplayInfo(displayId)
+            model:SetCamera(0)
+        elseif collType == "mounts" then
+            -- If we don't have a display ID, we can't show the mount.
+            modelPanel:Hide()
+            return
+        elseif collType == "pets" then
+            -- For pets, if displayId missing, hide model
+            modelPanel:Hide()
+            return
+        end
+
+        model:SetFacing(0)
+        model:SetPosition(0, 0, 0)
+    elseif modelPanel then
+        modelPanel:Hide()
     end
 end
 
@@ -773,8 +1097,28 @@ function DC:ShowMainFrame()
     
     self.MainFrame:Show()
     
-    -- Refresh current tab
-    self:RefreshCurrentTab()
+    -- Load all data on open (not just when clicking tabs)
+    self:RequestStats()
+    self:RequestCurrencies()
+    
+    -- Request definitions for all collection types
+    local collTypes = {"mounts", "pets", "heirlooms", "transmog", "titles"}
+    for _, collType in ipairs(collTypes) do
+        if not self.definitions[collType] or not next(self.definitions[collType]) then
+            self:RequestDefinitions(collType)
+        end
+        if not self.collections[collType] then
+            self:RequestCollection(collType)
+        end
+    end
+    
+    -- Request shop items
+    if not self.shopItems or #self.shopItems == 0 then
+        self:RequestShopItems()
+    end
+    
+    -- Select the active tab to ensure correct layout (List vs Grid)
+    self:SelectTab(self.activeTab or "mounts")
     self:UpdateHeader()
 end
 
@@ -806,6 +1150,23 @@ function DC:SelectTab(tabKey)
         tab:SetChecked(key == tabKey)
     end
     
+    -- Toggle Frames based on tab
+    local content = self.MainFrame.Content
+    if tabKey == "mounts" then
+        content.details:Hide()
+        content.scrollFrame:Hide()
+        if content.modelPanel then content.modelPanel:Hide() end
+        
+        content.mountList:Show()
+        content.mountPreview:Show()
+    else
+        content.mountList:Hide()
+        content.mountPreview:Hide()
+        
+        content.details:Show()
+        content.scrollFrame:Show()
+    end
+
     -- Clear current page
     self.currentPage = 1
 
@@ -825,7 +1186,12 @@ function DC:RefreshCurrentTab()
     end
     
     self:UpdateHeader()
-    self:PopulateGrid()
+    
+    if self.activeTab == "mounts" then
+        self:PopulateMountList()
+    else
+        self:PopulateGrid()
+    end
 end
 
 -- ============================================================================
@@ -875,6 +1241,129 @@ function DC:UpdateHeader()
 end
 
 -- ============================================================================
+-- MOUNT LIST POPULATION (RETAIL STYLE)
+-- ============================================================================
+
+function DC:PopulateMountList()
+    if not self.MainFrame then return end
+    
+    local scrollChild = self.MainFrame.Content.mountListChild
+    
+    -- Clear existing items
+    for _, child in ipairs({scrollChild:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    
+    local items = self:GetFilteredItems()
+    
+    -- Sort items
+    self:SortItems(items)
+    
+    -- Pagination
+    local itemsPerPage = 12 -- Fits in the scroll frame
+    local totalPages = math.max(1, math.ceil(#items / itemsPerPage))
+    self.currentPage = math.min(self.currentPage or 1, totalPages)
+    
+    local startIdx = (self.currentPage - 1) * itemsPerPage + 1
+    local endIdx = math.min(startIdx + itemsPerPage - 1, #items)
+    
+    local btnHeight = 46
+    local btnWidth = scrollChild:GetWidth() - 5
+    
+    local btnIndex = 0
+    for i = startIdx, endIdx do
+        local item = items[i]
+        local btn = CreateFrame("Button", nil, scrollChild)
+        btn:SetSize(btnWidth, btnHeight)
+        btn:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -btnIndex * (btnHeight + 2))
+        
+        -- Background
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        if item.collected then
+            btn.bg:SetTexture(0.15, 0.25, 0.15, 0.8)
+        else
+            btn.bg:SetTexture(0.1, 0.1, 0.1, 0.8)
+        end
+        
+        -- Icon
+        btn.icon = btn:CreateTexture(nil, "ARTWORK")
+        btn.icon:SetSize(40, 40)
+        btn.icon:SetPoint("LEFT", btn, "LEFT", 5, 0)
+        btn.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        if not item.collected then
+            btn.icon:SetDesaturated(true)
+            btn.icon:SetAlpha(0.5)
+        end
+        
+        -- Name
+        btn.name = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.name:SetPoint("TOPLEFT", btn.icon, "TOPRIGHT", 10, -5)
+        btn.name:SetText(item.name or "Unknown")
+        local r, g, b = GetRarityColor(self, item.rarity or 1)
+        btn.name:SetTextColor(r, g, b)
+        
+        -- Source
+        btn.source = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.source:SetPoint("TOPLEFT", btn.name, "BOTTOMLEFT", 0, -2)
+        btn.source:SetText(item.sourceText or self:FormatSource(item.source))
+        btn.source:SetTextColor(0.6, 0.6, 0.6)
+        
+        -- Favorite
+        if item.is_favorite then
+            btn.fav = btn:CreateTexture(nil, "OVERLAY")
+            btn.fav:SetSize(16, 16)
+            btn.fav:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -5, -5)
+            btn.fav:SetTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
+        end
+        
+        -- Highlight
+        btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+        btn.highlight:SetAllPoints()
+        btn.highlight:SetTexture(0.3, 0.3, 0.5, 0.3)
+        
+        -- Selected
+        if self.selectedItem and self.selectedItem.id == item.id then
+            btn.selected = btn:CreateTexture(nil, "BORDER")
+            btn.selected:SetAllPoints()
+            btn.selected:SetTexture(0.4, 0.4, 0.8, 0.5)
+        end
+        
+        -- Click
+        btn:SetScript("OnClick", function(selfBtn, button)
+            if button == "LeftButton" then
+                DC.selectedItem = item
+                DC:UpdateMountPreview(item)
+                DC:PopulateMountList() -- Refresh to show selection
+            elseif button == "RightButton" then
+                DC:OnItemRightClick(item)
+                DC:UpdateMountPreview(item)
+                DC:PopulateMountList()
+            end
+        end)
+        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        
+        btnIndex = btnIndex + 1
+    end
+    
+    scrollChild:SetHeight(btnIndex * (btnHeight + 2))
+    
+    -- Update page info
+    self.MainFrame.Footer.pageInfo:SetText(string.format("Page %d of %d", self.currentPage, totalPages))
+    SetWidgetEnabled(self.MainFrame.Footer.prevBtn, self.currentPage > 1)
+    SetWidgetEnabled(self.MainFrame.Footer.nextBtn, self.currentPage < totalPages)
+    
+    -- Update preview if nothing selected
+    if not self.selectedItem and items[1] then
+        self.selectedItem = items[1]
+        DC:UpdateMountPreview(items[1])
+    elseif self.selectedItem then
+        DC:UpdateMountPreview(self.selectedItem)
+    end
+end
+
+-- ============================================================================
 -- GRID POPULATION
 -- ============================================================================
 
@@ -883,14 +1372,50 @@ function DC:PopulateGrid()
     
     local scrollChild = self.MainFrame.Content.scrollChild
     
-    -- Clear existing items
+    -- Clear existing items and loading text
     for _, child in ipairs({scrollChild:GetChildren()}) do
         child:Hide()
         child:SetParent(nil)
     end
     
+    -- Hide loading text if it exists
+    if scrollChild.loadingText then
+        scrollChild.loadingText:Hide()
+    end
+    
     -- Get filtered items
     local items = self:GetFilteredItems()
+    
+    -- Check if we're still loading data
+    local collType = self.activeTab
+    if collType ~= "shop" and #items == 0 then
+        local defs = self.definitions[collType] or {}
+        local defCount = 0
+        for _ in pairs(defs) do defCount = defCount + 1 end
+        
+        -- If definitions are empty, show loading message
+        if defCount == 0 then
+            if not scrollChild.loadingText then
+                scrollChild.loadingText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+                scrollChild.loadingText:SetPoint("CENTER", scrollChild, "CENTER", 0, 50)
+            end
+            
+            if self._transmogDefLoading and collType == "transmog" then
+                scrollChild.loadingText:SetText("Loading transmog definitions...")
+            else
+                scrollChild.loadingText:SetText("Loading " .. collType .. " data...")
+            end
+            scrollChild.loadingText:Show()
+            
+            -- Request definitions again if needed
+            if not self.definitions[collType] or not next(self.definitions[collType]) then
+                self:RequestDefinitions(collType)
+            end
+            
+            self.MainFrame.Footer.pageInfo:SetText("Loading...")
+            return
+        end
+    end
     
     -- Paginate
     local itemsPerPage = 24  -- 6 columns x 4 rows
@@ -937,9 +1462,9 @@ function DC:CreateItemCard(parent, item, col, row, size, spacing)
     card.bg = card:CreateTexture(nil, "BACKGROUND")
     card.bg:SetAllPoints()
     if item.collected then
-        card.bg:SetColorTexture(0.2, 0.4, 0.2, 0.8)
+        card.bg:SetTexture(0.2, 0.4, 0.2, 0.8)
     else
-        card.bg:SetColorTexture(0.3, 0.3, 0.3, 0.5)
+        card.bg:SetTexture(0.3, 0.3, 0.3, 0.5)
     end
     
     -- Rarity border
@@ -948,7 +1473,7 @@ function DC:CreateItemCard(parent, item, col, row, size, spacing)
     card.border = card:CreateTexture(nil, "BORDER")
     card.border:SetPoint("TOPLEFT", -2, 2)
     card.border:SetPoint("BOTTOMRIGHT", 2, -2)
-    card.border:SetColorTexture(r, g, b, 0.8)
+    card.border:SetTexture(r, g, b, 0.8)
     
     -- Icon
     card.icon = card:CreateTexture(nil, "ARTWORK")
@@ -979,7 +1504,7 @@ function DC:CreateItemCard(parent, item, col, row, size, spacing)
     -- Highlight
     card.highlight = card:CreateTexture(nil, "HIGHLIGHT")
     card.highlight:SetAllPoints()
-    card.highlight:SetColorTexture(1, 1, 1, 0.2)
+    card.highlight:SetTexture(1, 1, 1, 0.2)
     
     -- Click handlers
     card:SetScript("OnClick", function(self, button)

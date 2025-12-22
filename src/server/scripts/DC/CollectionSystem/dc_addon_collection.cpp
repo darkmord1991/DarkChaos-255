@@ -456,6 +456,15 @@ namespace DCCollection
         return counts;
     }
 
+    // Check whether an account owns a given collection item (unlocked)
+    bool HasCollectionItem(uint32 accountId, CollectionType type, uint32 entryId)
+    {
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND entry_id = {} AND unlocked = 1 LIMIT 1",
+            accountId, static_cast<uint8>(type), entryId);
+        return result != nullptr;
+    }
+
     // Forward declaration: ensure transmog keys available at call site
     std::vector<uint32> const& GetTransmogAppearanceKeysCached();
 
@@ -567,6 +576,11 @@ namespace DCCollection
 
     // Forward declaration: A list of appearance display IDs cached for quick lookup
     std::vector<uint32> const& GetTransmogAppearanceKeysCached();
+
+    // Forward declarations for user actions
+    void HandleSummonMount(Player* player, uint32 spellId, bool random);
+    void HandleSetTitle(Player* player, uint32 titleId);
+    void HandleSummonHeirloom(Player* player, uint32 itemId);
 
     AppearanceMap const& GetTransmogAppearanceMapCached()
     {
@@ -1225,11 +1239,77 @@ namespace DCCollection
                 std::string key = std::to_string(collType) + "_" + std::to_string(ownedEntryId);
                 bool owned = ownedItems.count(key) > 0;
 
+                // Resolve name and icon for the shop item
+                std::string itemName;
+                std::string itemIcon;
+                uint32 itemRarity = 2; // Default to uncommon
+
+                switch (static_cast<CollectionType>(collType))
+                {
+                    case CollectionType::MOUNT:
+                    {
+                        // Mounts use spell data
+                        if (SpellInfo const* spell = sSpellMgr->GetSpellInfo(entryId))
+                        {
+                            itemName = spell->SpellName[0]; // English locale
+                            // Spell icons are stored as client texture IDs; client can use GetSpellTexture
+                            itemIcon = std::to_string(spell->SpellIconID);
+                        }
+                        break;
+                    }
+                    case CollectionType::PET:
+                    {
+                        // Pets are usually items that teach a pet spell
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                        {
+                            itemName = proto->Name1;
+                            itemIcon = std::to_string(proto->DisplayInfoID);
+                            itemRarity = proto->Quality;
+                        }
+                        break;
+                    }
+                    case CollectionType::HEIRLOOM:
+                    {
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                        {
+                            itemName = proto->Name1;
+                            itemIcon = std::to_string(proto->DisplayInfoID);
+                            itemRarity = proto->Quality;
+                        }
+                        break;
+                    }
+                    case CollectionType::TITLE:
+                    {
+                        if (CharTitlesEntry const* title = sCharTitlesStore.LookupEntry(entryId))
+                        {
+                            itemName = title->nameMale[0]; // English locale
+                        }
+                        itemIcon = ""; // Titles don't have icons; client uses static icon
+                        break;
+                    }
+                    case CollectionType::TRANSMOG:
+                    {
+                        uint32 lookupItemId = itemId ? itemId : entryId;
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(lookupItemId))
+                        {
+                            itemName = proto->Name1;
+                            itemIcon = std::to_string(proto->DisplayInfoID);
+                            itemRarity = proto->Quality;
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+
                 DCAddon::JsonValue item;
                 item.SetObject();
                 item.Set("shopId", shopId);
                 item.Set("type", collType);
                 item.Set("entryId", entryId);
+                item.Set("name", itemName);
+                item.Set("icon", itemIcon);
+                item.Set("rarity", itemRarity);
                 if (collType == static_cast<uint8>(CollectionType::TRANSMOG))
                 {
                     item.Set("appearanceId", appearanceId);
@@ -1631,7 +1711,7 @@ namespace DCCollection
                 break;
             default:
                 DCAddon::SendError(player, MODULE, "Unsupported collection type for use",
-                    DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                    DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
                 break;
         }
     }
@@ -1651,7 +1731,7 @@ namespace DCCollection
             if (mounts.empty())
             {
                 DCAddon::SendError(player, MODULE, "No mounts in collection",
-                    DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                    DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
                 return;
             }
 
@@ -1681,7 +1761,8 @@ namespace DCCollection
             if (smartMount)
             {
                 // Check if player can fly in current zone
-                bool canFly = player->IsKnowHowFlyIn(player->GetMapId(), player->GetZoneId(), player->GetAreaId());
+                // Determine whether the player is allowed to fly in their current location
+                bool canFly = player->canFlyInZone(player->GetMapId(), player->GetZoneId(), nullptr);
 
                 // Mount types: 0=ground, 1=flying, 2=aquatic, 3=all
                 // Filter mounts by type based on whether player can fly
@@ -1747,20 +1828,72 @@ namespace DCCollection
         if (!HasCollectionItem(accountId, CollectionType::MOUNT, spellId))
         {
             DCAddon::SendError(player, MODULE, "Mount not in collection",
-                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
 
-        // Check if player can cast (not in combat, etc.)
+        // Check if player can cast (combat, moving, casting, arena, battleground start, etc.)
         if (player->IsInCombat())
         {
             DCAddon::SendError(player, MODULE, "Cannot summon mount in combat",
-                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
 
-        // Cast the mount spell
-        player->CastSpell(player, spellId, true);
+        if (player->HasUnitState(UNIT_STATE_CASTING))
+        {
+            DCAddon::SendError(player, MODULE, "Cannot summon mount while casting",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        if (player->IsMounted())
+        {
+            // Dismount first
+            player->RemoveAurasByType(SPELL_AURA_MOUNTED);
+        }
+
+        // Prevent mounting while inside arena matches
+        if (player->InArena())
+        {
+            DCAddon::SendError(player, MODULE, "Cannot summon mount in arena",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        // Check if player is in a battleground that hasn't started
+        if (Battleground* bg = player->GetBattleground())
+        {
+            if (bg->GetStatus() != STATUS_IN_PROGRESS)
+            {
+                DCAddon::SendError(player, MODULE, "Cannot summon mount yet",
+                    DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+                return;
+            }
+        }
+
+        // Check if indoors (non-flyable)
+        if (!player->IsOutdoors())
+        {
+            // Check if mount is ground-capable
+            QueryResult typeRes = WorldDatabase.Query(
+                "SELECT mount_type FROM dc_mount_definitions WHERE spell_id = {}",
+                spellId);
+            if (typeRes)
+            {
+                uint8 mountType = typeRes->Fetch()[0].Get<uint8>();
+                // type 1 = flying only
+                if (mountType == 1)
+                {
+                    DCAddon::SendError(player, MODULE, "Cannot use flying mount indoors",
+                        DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+                    return;
+                }
+            }
+        }
+
+        // Cast the mount spell with triggered=false for normal cast time and interrupt checks
+        player->CastSpell(player, spellId, false);
 
         // Update usage counter
         CharacterDatabase.Execute(
@@ -1787,7 +1920,7 @@ namespace DCCollection
         if (!HasCollectionItem(accountId, CollectionType::TITLE, titleId))
         {
             DCAddon::SendError(player, MODULE, "Title not in collection",
-                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
 
@@ -1796,7 +1929,7 @@ namespace DCCollection
         if (!titleEntry)
         {
             DCAddon::SendError(player, MODULE, "Invalid title ID",
-                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
 
@@ -1821,7 +1954,7 @@ namespace DCCollection
         if (!HasCollectionItem(accountId, CollectionType::HEIRLOOM, itemId))
         {
             DCAddon::SendError(player, MODULE, "Heirloom not in collection",
-                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
 
@@ -1831,7 +1964,7 @@ namespace DCCollection
         if (msg != EQUIP_ERR_OK)
         {
             DCAddon::SendError(player, MODULE, "No bag space available",
-                DCAddon::ErrorCode::INVALID_DATA, DCAddon::Opcode::Collection::SMSG_ERROR);
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
 
@@ -2022,7 +2155,7 @@ namespace DCCollection
         {
             case 283: return EQUIPMENT_SLOT_HEAD;       // PLAYER_VISIBLE_ITEM_1_ENTRYID
             case 287: return EQUIPMENT_SLOT_SHOULDERS;  // PLAYER_VISIBLE_ITEM_3_ENTRYID
-            case 289: return EQUIPMENT_SLOT_SHIRT;      // PLAYER_VISIBLE_ITEM_4_ENTRYID
+            case 289: return EQUIPMENT_SLOT_BODY;      // PLAYER_VISIBLE_ITEM_4_ENTRYID (Shirt)
             case 291: return EQUIPMENT_SLOT_CHEST;      // PLAYER_VISIBLE_ITEM_5_ENTRYID
             case 293: return EQUIPMENT_SLOT_WAIST;      // PLAYER_VISIBLE_ITEM_6_ENTRYID
             case 295: return EQUIPMENT_SLOT_LEGS;       // PLAYER_VISIBLE_ITEM_7_ENTRYID
@@ -2273,8 +2406,9 @@ namespace DCCollection
         auto const& appearances = GetTransmogAppearanceMapCached();
 
         // Process each slot in the preview
-        for (auto const& key : preview.GetKeys())
+        for (auto const& kv : preview.AsObject())
         {
+            auto const& key = kv.first;
             uint32 visualSlot = std::stoul(key);
             uint8 equipmentSlot = VisualSlotToEquipmentSlot(visualSlot);
 
@@ -2285,7 +2419,7 @@ namespace DCCollection
             if (!equippedItem)
                 continue;
 
-            DCAddon::JsonValue slotValue = preview[key];
+            DCAddon::JsonValue const& slotValue = kv.second;
             
             if (slotValue.IsNull())
             {
@@ -2587,6 +2721,22 @@ namespace DCCollection
                     std::string source = f[5].Get<std::string>();
                     uint32 itemId = f[6].Get<uint32>();
 
+                    // Get mount displayId from spell data
+                    uint32 displayId = 0;
+                    if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId))
+                    {
+                        // Mount spells typically use effect SPELL_EFFECT_APPLY_AURA with SPELL_AURA_MOUNTED
+                        // The mount displayId is stored in MiscValue or EffectMiscValue
+                        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                        {
+                            if (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED)
+                            {
+                                displayId = spellInfo->Effects[i].MiscValue;
+                                break;
+                            }
+                        }
+                    }
+
                     DCAddon::JsonValue d;
                     d.SetObject();
                     if (!name.empty())
@@ -2595,6 +2745,8 @@ namespace DCCollection
                         d.Set("icon", icon);
                     if (rarity)
                         d.Set("rarity", rarity);
+                    if (displayId > 0)
+                        d.Set("displayId", displayId);
                     {
                         if (!source.empty())
                         {

@@ -771,6 +771,9 @@ local function After(seconds, callback)
     end)
 end
 
+-- Expose After function for other modules (e.g., Protocol.lua)
+DC.After = After
+
 function events:ADDON_LOADED(addonName)
     if addonName == "DC-Collection" then
         DC:LoadSettings()

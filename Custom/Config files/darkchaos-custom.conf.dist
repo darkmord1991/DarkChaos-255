@@ -3002,6 +3002,31 @@ DCCollection.Notifications.Sound = 1
 DCCollection.SyncInterval = 30
 
 # -------------------------------------------------------------------------
+# DCCollection Transmog: Unlock Behavior
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Transmog.UnlockOnEquip
+#        Description: Automatically unlock a transmog appearance when the corresponding item is equipped
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.UnlockOnEquip = 0
+
+#
+#    DCCollection.Transmog.UnlockOnCreate
+#        Description: Automatically unlock a transmog appearance when the item is created/earned (crafted, looted, or received)
+#        Default:     1 (Enabled)
+#
+DCCollection.Transmog.UnlockOnCreate = 1
+
+#
+#    DCCollection.Transmog.UnlockOnSoulbind
+#        Description: Automatically unlock a transmog appearance when the item becomes soulbound
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.UnlockOnSoulbind = 0
+
+# -------------------------------------------------------------------------
 # DCCollection: Leaderboard Integration
 # -------------------------------------------------------------------------
 

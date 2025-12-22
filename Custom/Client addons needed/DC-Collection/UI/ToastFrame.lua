@@ -47,19 +47,19 @@ local function CreateSingleToast(index)
     -- Background
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
-    frame.bg:SetColorTexture(0, 0, 0, 0.85)
+    frame.bg:SetTexture(0, 0, 0, 0.85)
 
     -- Border
     frame.border = frame:CreateTexture(nil, "BORDER")
     frame.border:SetPoint("TOPLEFT", -2, 2)
     frame.border:SetPoint("BOTTOMRIGHT", 2, -2)
-    frame.border:SetColorTexture(0.3, 0.3, 0.3, 1)
+    frame.border:SetTexture(0.3, 0.3, 0.3, 1)
 
     -- Left glow bar (colored by type)
     frame.glowBar = frame:CreateTexture(nil, "ARTWORK")
     frame.glowBar:SetSize(4, TOAST_HEIGHT - 8)
     frame.glowBar:SetPoint("LEFT", frame, "LEFT", 4, 0)
-    frame.glowBar:SetColorTexture(0.2, 0.8, 0.2, 1)
+    frame.glowBar:SetTexture(0.2, 0.8, 0.2, 1)
 
     -- Icon
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
@@ -185,7 +185,7 @@ function ToastFrame:ShowSingleToast(toast, data)
     local color = typeColors[collType] or typeColors.default
 
     -- Set glow bar color
-    toast.glowBar:SetColorTexture(color.r, color.g, color.b, 1)
+    toast.glowBar:SetTexture(color.r, color.g, color.b, 1)
 
     -- Set icon
     toast.icon:SetTexture(data.icon or typeIcons[collType] or "Interface\\Icons\\INV_Misc_QuestionMark")

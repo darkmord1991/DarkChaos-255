@@ -807,6 +807,20 @@ function DC:HandleShopData(data)
     self.currency.tokens = data.tokens or 0
     self.currency.emblems = data.emblems or 0
 
+    -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
+    local central = rawget(_G, "DCAddonProtocol")
+    if central and type(central.SetServerCurrencyBalance) == "function" then
+        central:SetServerCurrencyBalance(self.currency.tokens, self.currency.emblems)
+    end
+
+    if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() then
+        self:UpdateShopCurrencyDisplay()
+    end
+
+    if self.MainFrame and self.MainFrame:IsShown() then
+        self:UpdateHeader()
+    end
+
     local rawItems = data.items or {}
     local mapped = {}
 
@@ -829,47 +843,42 @@ function DC:HandleShopData(data)
             featured = it.featured,
             owned = it.owned or false,
             collected = it.owned or false,
-            rarity = 2,
+            rarity = it.rarity or 2,
             source = "Shop",
+            name = it.name,
+            icon = nil, -- Will be resolved below
         }
 
-        -- Resolve name/icon from definitions (or item cache for transmog)
-        if typeName and self.definitions[typeName] then
-            local defKey = it.entryId
-            if typeName == "transmog" and it.appearanceId then
-                defKey = it.appearanceId
+        -- Server sends icon as displayInfoId or spellIconId string - resolve to actual texture
+        local serverIcon = it.icon
+        
+        -- Resolve icon from server data or game API
+        if typeName == "mounts" then
+            -- Server sends spell icon ID; use GetSpellTexture for mounts
+            if it.entryId and GetSpellTexture then
+                local tex = GetSpellTexture(it.entryId)
+                if tex then card.icon = tex end
             end
-
-            local def = self.definitions[typeName][defKey]
-            if def then
-                card.name = def.name
-                card.icon = def.icon
-                card.definition = def
+            -- Fallback to GetSpellInfo for name
+            if (not card.name or card.name == "") and it.entryId and GetSpellInfo then
+                local name = GetSpellInfo(it.entryId)
+                if name then card.name = name end
             end
+        elseif typeName == "pets" or typeName == "heirlooms" or typeName == "transmog" then
+            -- Use GetItemInfo for items (returns texture as 10th value)
+            local itemIdToUse = it.itemId or it.entryId
+            if itemIdToUse and GetItemInfo then
+                local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(itemIdToUse)
+                if texture then card.icon = texture end
+                if name and (not card.name or card.name == "") then card.name = name end
+                if quality then card.rarity = quality end
+            end
+        elseif typeName == "titles" then
+            -- Titles use static icon
+            card.icon = "Interface\\Icons\\INV_Scroll_11"
         end
 
-        if (not card.icon or card.icon == "") and typeName == "transmog" and it.itemId and GetItemInfo then
-            local _, _, quality, _, _, _, _, _, _, texture = GetItemInfo(it.itemId)
-            if texture then
-                card.icon = texture
-            end
-            if quality then
-                card.rarity = quality
-            end
-        end
-
-        if not card.name or card.name == "" then
-            if typeName == "transmog" and it.itemId and GetItemInfo then
-                local name, _, quality = GetItemInfo(it.itemId)
-                if name then
-                    card.name = name
-                end
-                if quality then
-                    card.rarity = quality
-                end
-            end
-        end
-
+        -- Final fallbacks
         card.icon = card.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
         card.name = card.name or "Shop Item"
 
@@ -878,6 +887,18 @@ function DC:HandleShopData(data)
 
     self.shopItems = mapped
     
+    -- Some items may need cache warming - schedule a refresh
+    if self.shopNeedsCacheWarm == nil then
+        self.shopNeedsCacheWarm = true
+        -- Use C_Timer or simple delayed call
+        if self.After and type(self.After) == "function" then
+            self:After(0.5, function()
+                self.shopNeedsCacheWarm = nil
+                self:RefreshShopIcons()
+            end)
+        end
+    end
+    
     -- Fire callback
     if self.callbacks.onShopDataReceived then
         self.callbacks.onShopDataReceived(data)
@@ -885,6 +906,49 @@ function DC:HandleShopData(data)
 
     -- Refresh MainFrame if open
     if self.MainFrame and self.MainFrame:IsShown() then
+        self:RefreshCurrentTab()
+    end
+end
+
+-- Refresh shop icons after cache warming
+function DC:RefreshShopIcons()
+    if not self.shopItems then return end
+    
+    local needsRefresh = false
+    for _, card in ipairs(self.shopItems) do
+        if card.icon == "Interface\\Icons\\INV_Misc_QuestionMark" or card.name == "Shop Item" then
+            local typeName = card.collectionTypeName
+            local itemIdToUse = card.itemId or card.entryId
+            
+            if typeName == "mounts" and card.entryId and GetSpellTexture then
+                local tex = GetSpellTexture(card.entryId)
+                if tex then 
+                    card.icon = tex
+                    needsRefresh = true
+                end
+                if GetSpellInfo then
+                    local name = GetSpellInfo(card.entryId)
+                    if name and card.name == "Shop Item" then 
+                        card.name = name
+                        needsRefresh = true
+                    end
+                end
+            elseif (typeName == "pets" or typeName == "heirlooms" or typeName == "transmog") and itemIdToUse and GetItemInfo then
+                local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(itemIdToUse)
+                if texture and card.icon == "Interface\\Icons\\INV_Misc_QuestionMark" then
+                    card.icon = texture
+                    needsRefresh = true
+                end
+                if name and card.name == "Shop Item" then
+                    card.name = name
+                    needsRefresh = true
+                end
+                if quality then card.rarity = quality end
+            end
+        end
+    end
+    
+    if needsRefresh and self.MainFrame and self.MainFrame:IsShown() and self.activeTab == "shop" then
         self:RefreshCurrentTab()
     end
 end
@@ -900,6 +964,12 @@ function DC:HandlePurchaseResult(data)
         self.currency = self.currency or { tokens = 0, emblems = 0 }
         self.currency.tokens = data.tokens or self.currency.tokens or 0
         self.currency.emblems = data.emblems or self.currency.emblems or 0
+        
+        -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
+        local central = rawget(_G, "DCAddonProtocol")
+        if central and type(central.SetServerCurrencyBalance) == "function" then
+            central:SetServerCurrencyBalance(self.currency.tokens, self.currency.emblems)
+        end
     else
         self:Print("|cffff0000Purchase failed:|r " .. (data.error or "Unknown error"))
     end
@@ -925,8 +995,8 @@ function DC:HandleCurrencies(data)
     if self.MainFrame and self.MainFrame:IsShown() then
         self:UpdateHeader()
     end
-    if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() and self.ShopUI.UpdateCurrencyDisplay then
-        self.ShopUI:UpdateCurrencyDisplay()
+    if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() then
+        self:UpdateShopCurrencyDisplay()
     end
 
     -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
