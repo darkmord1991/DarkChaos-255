@@ -310,8 +310,11 @@ end
 function DC:UpdateShopCurrencyDisplay()
     if not self.ShopUI then return end
     
-    self.ShopUI.tokensValue:SetText(self.currency.tokens or 0)
-    self.ShopUI.emblemsValue:SetText(self.currency.emblems or 0)
+    local tokens = (self.currency and self.currency.tokens) or 0
+    local emblems = (self.currency and self.currency.emblems) or 0
+    
+    self.ShopUI.tokensValue:SetText(tokens)
+    self.ShopUI.emblemsValue:SetText(emblems)
 end
 
 function DC:PopulateShopItems()
@@ -380,7 +383,19 @@ function DC:UpdateShopItemFrame(frame, item)
     frame.itemData = item
     
     -- Icon
-    frame.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    local icon = item.icon
+    if not icon or icon == "" then
+        -- Try to resolve icon from item ID if available
+        if item.itemId then
+            if type(GetItemIcon) == "function" then
+                icon = GetItemIcon(item.itemId)
+            end
+            if (not icon) and type(GetItemInfo) == "function" then
+                icon = select(10, GetItemInfo(item.itemId))
+            end
+        end
+    end
+    frame.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
     
     -- Name with rarity color
     local r, g, b = unpack(self.RARITY_COLORS[item.rarity or 2] or {1, 1, 1})

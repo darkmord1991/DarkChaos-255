@@ -24,7 +24,7 @@ DC.PetJournal = PetJournal
 -- CONSTANTS
 -- ============================================================================
 
-local FRAME_WIDTH = 750
+local FRAME_WIDTH = 980
 local FRAME_HEIGHT = 500
 local LIST_WIDTH = 280
 local BUTTON_HEIGHT = 48
@@ -62,10 +62,14 @@ local function GetPetIcon(spellId, def)
     end
 
     -- Try item icon if pet has associated item
-    if def and def.itemId and GetItemIcon then
-        local tex = GetItemIcon(def.itemId)
-        if tex and tex ~= "" then
-            return tex
+    if def and def.itemId then
+        if type(GetItemIcon) == "function" then
+            local tex = GetItemIcon(def.itemId)
+            if tex and tex ~= "" then return tex end
+        end
+        if type(GetItemInfo) == "function" then
+            local tex = select(10, GetItemInfo(def.itemId))
+            if tex and tex ~= "" then return tex end
         end
     end
 
@@ -145,7 +149,7 @@ function PetJournal:CreateFilterBar(parent)
     collectedCheck:SetSize(24, 24)
     collectedCheck:SetPoint("LEFT", searchBox, "RIGHT", 15, 0)
     collectedCheck:SetChecked(true)
-    collectedCheck:SetScript("OnClick", function() PetJournal:RefreshList() end)
+    collectedCheck:SetScript("OnClick", function() PetJournal:UpdatePetList() end)
     filterBar.collectedCheck = collectedCheck
 
     local collectedLabel = filterBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -156,7 +160,7 @@ function PetJournal:CreateFilterBar(parent)
     notCollectedCheck:SetSize(24, 24)
     notCollectedCheck:SetPoint("LEFT", collectedLabel, "RIGHT", 10, 0)
     notCollectedCheck:SetChecked(true)
-    notCollectedCheck:SetScript("OnClick", function() PetJournal:RefreshList() end)
+    notCollectedCheck:SetScript("OnClick", function() PetJournal:UpdatePetList() end)
     filterBar.notCollectedCheck = notCollectedCheck
 
     local notCollectedLabel = filterBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -429,11 +433,7 @@ function PetJournal:CreatePetButton(parent, index)
     return btn
 end
 
-function PetJournal:RefreshList()
-    if not self.frame or not self.frame:IsShown() then
-        return
-    end
-
+function PetJournal:UpdatePetList()
     local searchText = self.frame.filterBar.searchBox:GetText() or ""
     local showCollected = self.frame.filterBar.collectedCheck:GetChecked()
     local showNotCollected = self.frame.filterBar.notCollectedCheck:GetChecked()
@@ -464,6 +464,22 @@ function PetJournal:RefreshList()
 
     local stats = DC.PetModule:GetStats()
     self.frame.filterBar.statsText:SetText(string.format("%d / %d", stats.owned, stats.total))
+    
+    self.currentPage = 1
+    self:RefreshList()
+end
+
+function PetJournal:RefreshList()
+    if not self.frame or not self.frame:IsShown() then
+        return
+    end
+    
+    if not self.filteredPets then
+        self:UpdatePetList()
+        return
+    end
+    
+    local pets = self.filteredPets
 
     local totalPages = math.max(1, math.ceil(#pets / ITEMS_PER_PAGE))
     self.currentPage = math.min(self.currentPage or 1, totalPages)
@@ -592,8 +608,7 @@ function PetJournal:NextPage()
 end
 
 function PetJournal:OnSearchChanged(text)
-    self.currentPage = 1
-    self:RefreshList()
+    self:UpdatePetList()
 end
 
 -- ============================================================================

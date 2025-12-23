@@ -47,7 +47,8 @@ local function CreateSingleToast(index)
     -- Background
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
-    frame.bg:SetTexture(0, 0, 0, 0.85)
+    frame.bg:SetTexture("Interface\\Buttons\\WHITE8X8")
+    frame.bg:SetVertexColor(0, 0, 0, 0.85)
 
     -- Border
     frame.border = frame:CreateTexture(nil, "BORDER")

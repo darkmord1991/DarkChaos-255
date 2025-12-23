@@ -124,6 +124,12 @@ DC.stats = {
     titles = { owned = 0, total = 0 },
 }
 
+-- Collection stats for My Collection overview (dynamic from server)
+DC.collectionStats = {}
+
+-- Recent additions for My Collection overview
+DC.recentAdditions = {}
+
 -- Currency
 DC.currency = {
     tokens = 0,

@@ -25,7 +25,7 @@ DC.MountJournal = MountJournal
 -- CONSTANTS
 -- ============================================================================
 
-local FRAME_WIDTH = 750
+local FRAME_WIDTH = 980
 local FRAME_HEIGHT = 500
 local LIST_WIDTH = 280
 local MODEL_WIDTH = 450
@@ -159,7 +159,7 @@ function MountJournal:CreateFilterBar(parent)
     collectedCheck:SetSize(24, 24)
     collectedCheck:SetPoint("LEFT", searchBox, "RIGHT", 15, 0)
     collectedCheck:SetChecked(true)
-    collectedCheck:SetScript("OnClick", function() MountJournal:RefreshList() end)
+    collectedCheck:SetScript("OnClick", function() MountJournal:UpdateMountList() end)
     filterBar.collectedCheck = collectedCheck
 
     local collectedLabel = filterBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -171,7 +171,7 @@ function MountJournal:CreateFilterBar(parent)
     notCollectedCheck:SetSize(24, 24)
     notCollectedCheck:SetPoint("LEFT", collectedLabel, "RIGHT", 10, 0)
     notCollectedCheck:SetChecked(true)
-    notCollectedCheck:SetScript("OnClick", function() MountJournal:RefreshList() end)
+    notCollectedCheck:SetScript("OnClick", function() MountJournal:UpdateMountList() end)
     filterBar.notCollectedCheck = notCollectedCheck
 
     local notCollectedLabel = filterBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -456,11 +456,7 @@ function MountJournal:CreateMountButton(parent, index)
     return btn
 end
 
-function MountJournal:RefreshList()
-    if not self.frame or not self.frame:IsShown() then
-        return
-    end
-
+function MountJournal:UpdateMountList()
     -- Build filtered list
     local searchText = self.frame.filterBar.searchBox:GetText() or ""
     local showCollected = self.frame.filterBar.collectedCheck:GetChecked()
@@ -496,6 +492,22 @@ function MountJournal:RefreshList()
     -- Update stats
     local stats = DC.MountModule:GetStats()
     self.frame.filterBar.statsText:SetText(string.format("%d / %d", stats.owned, stats.total))
+    
+    self.currentPage = 1
+    self:RefreshList()
+end
+
+function MountJournal:RefreshList()
+    if not self.frame or not self.frame:IsShown() then
+        return
+    end
+    
+    if not self.filteredMounts then
+        self:UpdateMountList()
+        return
+    end
+
+    local mounts = self.filteredMounts
 
     -- Paginate
     local totalPages = math.max(1, math.ceil(#mounts / ITEMS_PER_PAGE))
@@ -645,8 +657,7 @@ function MountJournal:NextPage()
 end
 
 function MountJournal:OnSearchChanged(text)
-    self.currentPage = 1
-    self:RefreshList()
+    self:UpdateMountList()
 end
 
 -- ============================================================================
@@ -667,7 +678,7 @@ function MountJournal:Show()
     end
 
     self.frame:Show()
-    self:RefreshList()
+    self:UpdateMountList()
 
     -- Auto-select first mount if none selected
     if not self.selectedMount and #self.filteredMounts > 0 then

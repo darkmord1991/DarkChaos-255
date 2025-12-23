@@ -789,6 +789,31 @@ function DC:HandleItemLearned(data)
     local typeName = self:GetTypeNameFromId(data.type)
     self:Print(string.format("|cff00ff00New %s added to your collection!|r", typeName or "item"))
     
+    -- Add to recent additions for My Collection overview
+    self.recentAdditions = self.recentAdditions or {}
+    local def = self:GetDefinition(typeName, data.entryId)
+    local newEntry = {
+        type = typeName or "unknown",
+        id = data.entryId,
+        name = def and def.name or nil,
+        icon = def and def.icon or nil,
+        itemId = data.itemId or (def and def.itemId),
+        spellId = data.spellId or (def and def.spellId),
+        timestamp = time(),
+        rarity = def and def.rarity or 1,
+    }
+    table.insert(self.recentAdditions, 1, newEntry) -- Insert at beginning
+    
+    -- Limit to 50 recent items
+    while #self.recentAdditions > 50 do
+        table.remove(self.recentAdditions)
+    end
+    
+    -- Update My Collection UI if visible
+    if self.MyCollection then
+        self.MyCollection:Update()
+    end
+    
     -- Fire callback
     if self.callbacks.onItemLearned then
         self.callbacks.onItemLearned(data)
@@ -1257,6 +1282,11 @@ function DC:HandleCurrency(data)
     if self.ShopUI and self.ShopUI:IsShown() then
         self.ShopUI:UpdateCurrencyDisplay()
     end
+
+    -- Update MainFrame Header if shown
+    if self.MainFrame and self.MainFrame:IsShown() then
+        self:UpdateHeader()
+    end
 end
 
 function DC:HandleShopItems(data)
@@ -1294,6 +1324,11 @@ function DC:HandleShopResult(data)
         if self.ShopUI and self.ShopUI:IsShown() then
             self.ShopUI:Refresh()
         end
+
+        -- Update MainFrame Header if shown
+        if self.MainFrame and self.MainFrame:IsShown() then
+            self:UpdateHeader()
+        end
     else
         self:Print("|cffff0000" .. (data.error or DC.L["ERR_SHOP_FAILED"]) .. "|r")
     end
@@ -1318,6 +1353,7 @@ function DC:HandleTitleSet(data)
 end
 
 function DC:HandleStats(data)
+    -- Store raw stats for legacy compatibility
     for collType, stats in pairs(data.stats or {}) do
         if self.stats[collType] then
             self.stats[collType].owned = stats.owned or 0
@@ -1331,14 +1367,49 @@ function DC:HandleStats(data)
         DCCollectionDB.mountSpeedBonus = data.mountSpeedBonus
     end
     
-    -- Notify UI
+    -- Update collectionStats for MyCollection overview (new format)
+    self.collectionStats = self.collectionStats or {}
+    
+    -- Map from stats format to collectionStats format
+    local statsData = data.stats or data
+    for collType, stats in pairs(statsData) do
+        if type(stats) == "table" then
+            self.collectionStats[collType] = {
+                collected = stats.owned or stats.collected or 0,
+                total = stats.total or 0,
+            }
+        end
+    end
+    
+    -- Handle recent additions if included
+    if data.recent then
+        self.recentAdditions = data.recent
+    end
+    
+    -- Notify legacy UI
     if self.MainFrame and self.MainFrame:IsShown() then
         self:RefreshCurrentTab()
+    end
+    
+    -- Notify My Collection overview
+    if self.MyCollection then
+        self.MyCollection:Update()
     end
 end
 
 function DC:HandleAchievements(data)
-    self.achievements = data.achievements or {}
+    local list = data.achievements or {}
+    self.achievements = {}
+    
+    -- Convert list to lookup table
+    for k, v in pairs(list) do
+        if type(v) == "number" then
+            self.achievements[v] = true
+        elseif type(k) == "number" or type(k) == "string" then
+            -- Handle case where it might already be a map or mixed
+            self.achievements[k] = v
+        end
+    end
     
     -- Notify UI
     if self.AchievementsUI and self.AchievementsUI:IsShown() then

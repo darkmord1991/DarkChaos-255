@@ -15,10 +15,25 @@ Localization.lua
 Core.lua
 Cache.lua
 Protocol.lua
+Bonuses.lua
+Wishlist.lua
+
+# Modules
+Modules\HeirloomModule.lua
+Modules\MountModule.lua
+Modules\PetModule.lua
+Modules\TitleModule.lua
+Modules\ToyModule.lua
+Modules\TransmogModule.lua
+Shop\ShopModule.lua
 
 # UI Components
+UI\MyCollectionFrame.lua
 UI\MainFrame.lua
+UI\AchievementsFrame.lua
 UI\TransmogFrame.lua
+UI\WardrobeFrame.lua
 UI\ToastFrame.lua
 UI\MountJournalFrame.lua
 UI\PetJournalFrame.lua
+Shop\ShopUI.lua
