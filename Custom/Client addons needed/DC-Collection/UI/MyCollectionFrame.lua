@@ -43,7 +43,6 @@ local COLLECTION_TYPES = {
     { key = "transmog",  name = "Appearances", icon = "Interface\\Icons\\INV_Chest_Cloth_17",              color = {0.9, 0.6, 0.2} },
     { key = "titles",    name = "Titles",      icon = "Interface\\Icons\\INV_Scroll_11",                   color = {0.8, 0.8, 0.2} },
     { key = "heirlooms", name = "Heirlooms",   icon = "Interface\\Icons\\INV_Sword_43",                    color = {0.9, 0.8, 0.5} },
-    { key = "toys",      name = "Toys",        icon = "Interface\\Icons\\INV_Misc_Toy_10",                 color = {0.9, 0.3, 0.9} },
 }
 
 -- ============================================================================
@@ -107,6 +106,30 @@ function MyCollection:Create(parent)
     header:SetText("My Collection")
     frame.header = header
 
+    -- Refresh button (fallback when initial sync hasn't populated yet)
+    local refreshBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    refreshBtn:SetSize(90, 22)
+    refreshBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -12, -10)
+    refreshBtn:SetText("Refresh")
+    refreshBtn:SetScript("OnClick", function()
+        if DC and type(DC.RequestInitialDataWithRetry) == "function" then
+            DC:RequestInitialDataWithRetry(8, 1)
+        elseif DC and type(DC.RequestInitialData) == "function" then
+            DC:RequestInitialData(false)
+        elseif DC and type(DC.RequestStats) == "function" then
+            DC:RequestStats()
+        end
+    end)
+    frame.refreshBtn = refreshBtn
+
+    local loadingText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    loadingText:SetPoint("TOPRIGHT", refreshBtn, "BOTTOMRIGHT", 0, -6)
+    loadingText:SetJustifyH("RIGHT")
+    loadingText:SetTextColor(0.8, 0.8, 0.8)
+    loadingText:SetText("Loading...")
+    loadingText:Hide()
+    frame.loadingText = loadingText
+
     -- Stats container
     local statsContainer = CreateFrame("Frame", nil, frame)
     statsContainer:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -15)
@@ -153,13 +176,24 @@ function MyCollection:CreateStatCards(parent)
     local cardWidth = STAT_CARD_WIDTH
     local cardHeight = STAT_CARD_HEIGHT
 
+    local total = #COLLECTION_TYPES
+
     for i, typeDef in ipairs(COLLECTION_TYPES) do
         local row = math.floor((i - 1) / cols)
         local col = (i - 1) % cols
 
+        -- Center the last row if it has fewer than 'cols' items
+        local rowFirstIndex = row * cols + 1
+        local remaining = total - rowFirstIndex + 1
+        local itemsInRow = math.min(cols, remaining)
+        local offsetX = 0
+        if itemsInRow < cols then
+            offsetX = ((cols - itemsInRow) * (cardWidth + padding)) / 2
+        end
+
         local card = CreateFrame("Button", nil, container)
         card:SetSize(cardWidth, cardHeight)
-        card:SetPoint("TOPLEFT", container, "TOPLEFT", col * (cardWidth + padding), -row * (cardHeight + padding))
+        card:SetPoint("TOPLEFT", container, "TOPLEFT", offsetX + col * (cardWidth + padding), -row * (cardHeight + padding))
         card.typeDef = typeDef
 
         -- Background
@@ -410,6 +444,31 @@ end
 function MyCollection:Update()
     if not self.frame or not self.frame:IsShown() then return end
 
+    -- If stats haven't arrived yet, show a small loading hint.
+    local hasAnyTotals = false
+    if DC and DC.collectionStats then
+        for _, typeDef in ipairs(COLLECTION_TYPES) do
+            local s = DC.collectionStats[typeDef.key]
+            if s and type(s) == "table" and (s.total or 0) > 0 then
+                hasAnyTotals = true
+                break
+            end
+        end
+    end
+
+    if self.frame.loadingText then
+        local shouldShow = not hasAnyTotals
+        if type(self.frame.loadingText.SetShown) == "function" then
+            self.frame.loadingText:SetShown(shouldShow)
+        else
+            if shouldShow then
+                self.frame.loadingText:Show()
+            else
+                self.frame.loadingText:Hide()
+            end
+        end
+    end
+
     self:UpdateStatCards()
     self:UpdateRecentIcons()
     self:UpdateProgressBars()
@@ -510,7 +569,9 @@ function MyCollection:Show()
     end
 
     -- Request fresh stats from server
-    if DC and DC.RequestStats then
+    if DC and type(DC.RequestInitialDataWithRetry) == "function" then
+        DC:RequestInitialDataWithRetry(8, 1)
+    elseif DC and DC.RequestStats then
         DC:RequestStats()
     end
     if DC and DC.RequestRecentAdditions then

@@ -398,7 +398,9 @@ function DC:UpdateShopItemFrame(frame, item)
     frame.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
     
     -- Name with rarity color
-    local r, g, b = unpack(self.RARITY_COLORS[item.rarity or 2] or {1, 1, 1})
+    local rarityColors = DC.RarityColors or {}
+    local rarityData = rarityColors[item.rarity or 2] or { r = 1, g = 1, b = 1 }
+    local r, g, b = rarityData.r or 1, rarityData.g or 1, rarityData.b or 1
     frame.name:SetText(item.name or "Unknown")
     frame.name:SetTextColor(r, g, b)
     
@@ -441,7 +443,13 @@ function DC:UpdateShopItemFrame(frame, item)
         
         -- Enable/disable based on affordability
         local canAfford = self.ShopModule:CanAfford(item)
-        frame.buyBtn:SetEnabled(canAfford)
+        if frame.buyBtn.SetEnabled then
+            frame.buyBtn:SetEnabled(canAfford)
+        elseif canAfford then
+            frame.buyBtn:Enable()
+        else
+            frame.buyBtn:Disable()
+        end
         
         if canAfford then
             frame.costTokensText:SetTextColor(1, 1, 1)

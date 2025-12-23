@@ -1,0 +1,10 @@
+## Interface: 30305
+## Title: |cffFFCC00DC|r Template
+## Notes: Starting point for new DC addons.
+## Author: DarkChaos
+## Version: 1.0
+## Dependencies: DC-AddonProtocol
+
+Core.lua
+Config.lua
+UI.lua

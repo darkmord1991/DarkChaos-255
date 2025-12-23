@@ -80,40 +80,25 @@ end
 -- FRAME CREATION
 -- ============================================================================
 
-function PetJournal:Create()
+function PetJournal:Create(parent)
     if self.frame then
         return self.frame
     end
 
-    local frame = CreateFrame("Frame", "DCPetJournalFrame", UIParent, "UIPanelDialogTemplate")
-    frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
-    frame:SetPoint("CENTER")
-    frame:SetMovable(true)
-    frame:SetClampedToScreen(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    -- Create container frame embedded in MainFrame content (not standalone)
+    local frame = CreateFrame("Frame", "DCPetJournalFrame", parent or UIParent)
+    frame:SetAllPoints(parent)
     frame:Hide()
 
-    -- Title
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    frame.title:SetPoint("TOP", frame, "TOP", 0, -12)
-    frame.title:SetText(L["PET_JOURNAL"] or "Companion Pets")
+    -- Background
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
+    frame.bg:SetAllPoints()
+    frame.bg:SetTexture(0, 0, 0, 0.3)
 
-    -- Close button
-    local closeBtn = _G[frame:GetName() .. "Close"]
-    if closeBtn then
-        closeBtn:SetScript("OnClick", function() PetJournal:Hide() end)
-    end
-
-    -- Create sections
-    self:CreateFilterBar(frame)
+    -- Create sections (no title/close since we're embedded in MainFrame)
     self:CreatePetList(frame)
     self:CreateModelPreview(frame)
     self:CreateActionBar(frame)
-
-    tinsert(UISpecialFrames, frame:GetName())
 
     self.frame = frame
     self.currentPage = 1
@@ -124,64 +109,14 @@ function PetJournal:Create()
 end
 
 -- ============================================================================
--- FILTER BAR
--- ============================================================================
-
-function PetJournal:CreateFilterBar(parent)
-    local filterBar = CreateFrame("Frame", nil, parent)
-    filterBar:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -35)
-    filterBar:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, -35)
-    filterBar:SetHeight(30)
-
-    local searchBox = CreateFrame("EditBox", "DCPetJournalSearch", filterBar, "InputBoxTemplate")
-    searchBox:SetSize(150, 20)
-    searchBox:SetPoint("LEFT", filterBar, "LEFT", 5, 0)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetMaxLetters(50)
-    searchBox:SetScript("OnTextChanged", function(self)
-        PetJournal:OnSearchChanged(self:GetText())
-    end)
-    searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    searchBox:SetScript("OnEscapePressed", function(self) self:SetText("") self:ClearFocus() end)
-    filterBar.searchBox = searchBox
-
-    local collectedCheck = CreateFrame("CheckButton", nil, filterBar, "UICheckButtonTemplate")
-    collectedCheck:SetSize(24, 24)
-    collectedCheck:SetPoint("LEFT", searchBox, "RIGHT", 15, 0)
-    collectedCheck:SetChecked(true)
-    collectedCheck:SetScript("OnClick", function() PetJournal:UpdatePetList() end)
-    filterBar.collectedCheck = collectedCheck
-
-    local collectedLabel = filterBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    collectedLabel:SetPoint("LEFT", collectedCheck, "RIGHT", 2, 0)
-    collectedLabel:SetText(L["FILTER_COLLECTED"] or "Collected")
-
-    local notCollectedCheck = CreateFrame("CheckButton", nil, filterBar, "UICheckButtonTemplate")
-    notCollectedCheck:SetSize(24, 24)
-    notCollectedCheck:SetPoint("LEFT", collectedLabel, "RIGHT", 10, 0)
-    notCollectedCheck:SetChecked(true)
-    notCollectedCheck:SetScript("OnClick", function() PetJournal:UpdatePetList() end)
-    filterBar.notCollectedCheck = notCollectedCheck
-
-    local notCollectedLabel = filterBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    notCollectedLabel:SetPoint("LEFT", notCollectedCheck, "RIGHT", 2, 0)
-    notCollectedLabel:SetText(L["FILTER_NOT_COLLECTED"] or "Not Collected")
-
-    filterBar.statsText = filterBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    filterBar.statsText:SetPoint("RIGHT", filterBar, "RIGHT", -10, 0)
-    filterBar.statsText:SetText("0/0")
-
-    parent.filterBar = filterBar
-end
-
--- ============================================================================
 -- PET LIST (Left Side)
 -- ============================================================================
 
 function PetJournal:CreatePetList(parent)
     local listFrame = CreateFrame("Frame", nil, parent)
-    listFrame:SetPoint("TOPLEFT", parent.filterBar, "BOTTOMLEFT", 0, -5)
-    listFrame:SetSize(LIST_WIDTH, FRAME_HEIGHT - 120)
+    listFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 5, -5)
+    listFrame:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 5, 50)
+    listFrame:SetWidth(LIST_WIDTH)
 
     local bg = listFrame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -220,6 +155,11 @@ function PetJournal:CreatePetList(parent)
     nextBtn:SetText(">")
     nextBtn:SetScript("OnClick", function() PetJournal:NextPage() end)
     pageFrame.nextBtn = nextBtn
+
+    -- Stats text (moved here from removed filter bar)
+    listFrame.statsText = listFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    listFrame.statsText:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -30, 10)
+    listFrame.statsText:SetText("0 / 0")
 
     listFrame.pageFrame = pageFrame
     parent.listFrame = listFrame
@@ -434,9 +374,29 @@ function PetJournal:CreatePetButton(parent, index)
 end
 
 function PetJournal:UpdatePetList()
-    local searchText = self.frame.filterBar.searchBox:GetText() or ""
-    local showCollected = self.frame.filterBar.collectedCheck:GetChecked()
-    local showNotCollected = self.frame.filterBar.notCollectedCheck:GetChecked()
+    -- Get filter values from MainFrame's filter bar
+    local searchText = ""
+    local showCollected = true
+    local showNotCollected = true
+    
+    if DC.MainFrame and DC.MainFrame.FilterBar then
+        local fb = DC.MainFrame.FilterBar
+        if fb.searchBox then
+            searchText = fb.searchBox:GetText() or ""
+        end
+        if fb.collectedCheck then
+            showCollected = fb.collectedCheck:GetChecked() and true or false
+        end
+        if fb.notCollectedCheck then
+            showNotCollected = fb.notCollectedCheck:GetChecked() and true or false
+        end
+    end
+
+    -- If both are unchecked, treat it as "show all" (avoids empty list)
+    if showCollected == false and showNotCollected == false then
+        showCollected = true
+        showNotCollected = true
+    end
 
     local pets = DC.PetModule:GetFilteredPets({
         search = searchText,
@@ -463,7 +423,9 @@ function PetJournal:UpdatePetList()
     self.filteredPets = pets
 
     local stats = DC.PetModule:GetStats()
-    self.frame.filterBar.statsText:SetText(string.format("%d / %d", stats.owned, stats.total))
+    if self.frame and self.frame.listFrame and self.frame.listFrame.statsText then
+        self.frame.listFrame.statsText:SetText(string.format("%d / %d", stats.owned, stats.total))
+    end
     
     self.currentPage = 1
     self:RefreshList()
@@ -481,17 +443,50 @@ function PetJournal:RefreshList()
     
     local pets = self.filteredPets
 
+    local scrollChild = self.frame.listFrame.scrollChild
+    
+    -- Clear existing items
+    for _, child in ipairs({scrollChild:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    
+    -- Hide loading text if it exists
+    if scrollChild.loadingText then
+        scrollChild.loadingText:Hide()
+    end
+    
+    -- Check if we're still loading data
+    if #pets == 0 then
+        local defs = DC.definitions["pets"] or {}
+        local defCount = 0
+        for _ in pairs(defs) do defCount = defCount + 1 end
+        
+        -- If definitions are empty, show loading message
+        if defCount == 0 then
+            if not scrollChild.loadingText then
+                scrollChild.loadingText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+                scrollChild.loadingText:SetPoint("CENTER", scrollChild, "CENTER", 0, 50)
+            end
+            
+            scrollChild.loadingText:SetText("Loading pets data...")
+            scrollChild.loadingText:Show()
+            
+            -- Request definitions again if needed
+            if type(DC.RequestDefinitions) == "function" then
+                DC:RequestDefinitions("pets")
+            end
+            
+            self.frame.listFrame.pageFrame.pageText:SetText("Loading...")
+            return
+        end
+    end
+
     local totalPages = math.max(1, math.ceil(#pets / ITEMS_PER_PAGE))
     self.currentPage = math.min(self.currentPage or 1, totalPages)
 
     local startIdx = (self.currentPage - 1) * ITEMS_PER_PAGE + 1
     local endIdx = math.min(startIdx + ITEMS_PER_PAGE - 1, #pets)
-
-    local scrollChild = self.frame.listFrame.scrollChild
-    for _, child in ipairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
-    end
 
     local btnIndex = 1
     for i = startIdx, endIdx do
@@ -558,22 +553,53 @@ function PetJournal:SelectPet(petData)
     local sourceText = DC:FormatSource(petData.source)
     infoFrame.source:SetText(sourceText or "")
 
-    if petData.is_favorite then
-        infoFrame.favBtn:GetNormalTexture():SetVertexColor(1, 0.8, 0)
-    else
-        infoFrame.favBtn:GetNormalTexture():SetVertexColor(0.5, 0.5, 0.5)
+    local favTex = infoFrame.favBtn:GetNormalTexture()
+    if favTex then
+        if petData.is_favorite then
+            favTex:SetVertexColor(1, 0.8, 0)
+        else
+            favTex:SetVertexColor(0.5, 0.5, 0.5)
+        end
     end
 
     -- Display 3D model
-    local displayId = petData.definition and petData.definition.displayId
+    -- Try various definition keys for display ID
+    local def = petData.definition or {}
+    local displayId = def.displayId or def.displayID or def.display_id 
+                   or def.creatureDisplayId or def.creature_display_id
+                   or def.modelId or def.model_id
+    
+    -- Convert to number if string
+    if type(displayId) == "string" then
+        displayId = tonumber(displayId)
+    end
+    
     if displayId and displayId > 0 then
+        model:ClearModel()
         model:SetDisplayInfo(displayId)
         model:SetFacing(0)
         model.rotation = 0
         model.zoom = 0
         model:SetPosition(0, 0, 0)
     else
-        model:ClearModel()
+        -- Try using spell ID to spawn creature via SetCreature (may work for some companions)
+        local spellId = petData.id
+        if spellId and type(model.SetCreature) == "function" then
+            -- Some WoW 3.3.5a models support SetCreature with creature entry
+            local creatureId = def.creatureId or def.creature_id or def.creatureEntry
+            if creatureId and creatureId > 0 then
+                model:ClearModel()
+                model:SetCreature(creatureId)
+                model:SetFacing(0)
+                model.rotation = 0
+                model.zoom = 0
+                model:SetPosition(0, 0, 0)
+            else
+                model:ClearModel()
+            end
+        else
+            model:ClearModel()
+        end
     end
 
     local summonBtn = self.frame.actionBar.summonBtn

@@ -106,6 +106,15 @@ function AchievementsUI:UpdateCategories()
     -- In 3.3.5a, GetAchievementCategoryList() returns a list of category IDs
     local categories = (GetAchievementCategoryList and GetAchievementCategoryList()) or {}
     
+    -- If no categories found, show a message
+    if #categories == 0 then
+        local msg = child:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        msg:SetPoint("CENTER", child, "CENTER", 0, 0)
+        msg:SetText("No achievement categories found.\nAchievement data may not be loaded yet.")
+        child:SetHeight(100)
+        return
+    end
+    
     local btnHeight = 24
     local yOffset = 0
 
@@ -297,6 +306,14 @@ end
 function AchievementsUI:Show()
     if not self.frame then return end
     self.frame:Show()
+
+    -- Ensure Blizzard achievement data is loaded (WotLK loads it on demand)
+    if LoadAddOn then
+        pcall(LoadAddOn, "Blizzard_AchievementUI")
+    end
+    if AchievementFrame_LoadUI then
+        pcall(AchievementFrame_LoadUI)
+    end
     
     -- Request data if needed
     if DC.RequestAchievements then
@@ -304,6 +321,15 @@ function AchievementsUI:Show()
     end
     
     self:UpdateCategories()
+
+    -- Some clients populate category data a frame later; retry shortly.
+    if DC and type(DC.After) == "function" then
+        DC:After(0.2, function()
+            if AchievementsUI.frame and AchievementsUI.frame:IsShown() then
+                AchievementsUI:UpdateCategories()
+            end
+        end)
+    end
 end
 
 function AchievementsUI:Hide()

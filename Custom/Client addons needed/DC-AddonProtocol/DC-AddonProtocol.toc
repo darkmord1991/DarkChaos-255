@@ -7,3 +7,4 @@
 
 DCAddonProtocol.lua
 DCCentral.lua
+UI\Core.lua

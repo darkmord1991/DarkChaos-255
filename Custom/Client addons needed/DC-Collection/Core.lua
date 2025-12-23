@@ -113,6 +113,8 @@ DC.definitions = {
     heirlooms = {},
     transmog = {},
     titles = {},
+    itemSets = {},
+    sets = {},
 }
 
 -- Statistics
@@ -795,7 +797,9 @@ function events:ADDON_LOADED(addonName)
             if not DC:GetSetting("autoSyncOnLogin") then
                 return
             end
-            if DC:IsProtocolReady() then
+            if type(DC.RequestInitialDataWithRetry) == "function" then
+                DC:RequestInitialDataWithRetry(8, 1)
+            elseif DC:IsProtocolReady() then
                 DC:RequestInitialData()
             end
         end)
@@ -907,6 +911,39 @@ function DC:RequestInitialData(skipHandshake)
     
     -- Request shop data
     self:RequestShopData()
+end
+
+-- Request initial data, retrying briefly if protocol isn't ready yet.
+-- This helps cases where the UI is opened very early on login.
+function DC:RequestInitialDataWithRetry(maxAttempts, delaySeconds)
+    maxAttempts = maxAttempts or 8
+    delaySeconds = delaySeconds or 1
+
+    if self._initialDataRetryInProgress then
+        return
+    end
+    self._initialDataRetryInProgress = true
+
+    local attempt = 0
+    local function tryRequest()
+        attempt = attempt + 1
+
+        if self:IsProtocolReady() then
+            self._initialDataRetryInProgress = nil
+            self:RequestInitialData(false)
+            return
+        end
+
+        if attempt >= maxAttempts then
+            self._initialDataRetryInProgress = nil
+            self:Debug("Initial data request retry exhausted")
+            return
+        end
+
+        After(delaySeconds, tryRequest)
+    end
+
+    tryRequest()
 end
 
 function DC:RequestFullSync()

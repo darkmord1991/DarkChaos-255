@@ -86,7 +86,8 @@ namespace DCCollection
         TOY         = 3,
         HEIRLOOM    = 4,
         TITLE       = 5,
-        TRANSMOG    = 6
+        TRANSMOG    = 6,
+        ITEM_SET    = 7  // Armor/weapon sets from ItemSet.dbc
     };
 
     // Currency IDs
@@ -2947,6 +2948,77 @@ namespace DCCollection
         msg.Send(player);
     }
 
+    // Send ItemSet definitions from ItemSet.dbc
+    void SendItemSetDefinitions(Player* player)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        DCAddon::JsonValue defs;
+        defs.SetObject();
+
+        for (uint32 entryId = 0; entryId < sItemSetStore.GetNumRows(); ++entryId)
+        {
+            ItemSetEntry const* setEntry = sItemSetStore.LookupEntry(entryId);
+            if (!setEntry)
+                continue;
+
+            // Get set name
+            std::string name;
+            if (setEntry->name[0])
+                name = setEntry->name[0];
+
+            if (name.empty())
+                continue;
+
+            // Build items array
+            DCAddon::JsonValue itemsArr;
+            itemsArr.SetArray();
+            uint32 itemCount = 0;
+
+            for (uint32 i = 0; i < MAX_ITEM_SET_ITEMS; ++i)
+            {
+                uint32 itemId = setEntry->itemId[i];
+                if (itemId)
+                {
+                    itemsArr.Push(DCAddon::JsonValue(itemId));
+                    ++itemCount;
+                }
+            }
+
+            if (itemCount == 0)
+                continue;
+
+            // Get first item for icon
+            uint32 firstItemId = setEntry->itemId[0];
+            std::string icon;
+            if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(firstItemId))
+            {
+                if (proto->DisplayInfoID)
+                {
+                    // We don't have easy icon access, client will use GetItemInfo
+                }
+            }
+
+            DCAddon::JsonValue setDef;
+            setDef.SetObject();
+            setDef.Set("name", DCAddon::JsonValue(name));
+            setDef.Set("items", itemsArr);
+            if (setEntry->required_skill_id)
+                setDef.Set("requiredSkill", DCAddon::JsonValue(setEntry->required_skill_id));
+            if (setEntry->required_skill_value)
+                setDef.Set("requiredSkillValue", DCAddon::JsonValue(setEntry->required_skill_value));
+
+            defs.Set(std::to_string(entryId), setDef);
+        }
+
+        DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
+        msg.Set("type", "itemSets");
+        msg.Set("definitions", defs);
+        msg.Set("syncVersion", 1);
+        msg.Send(player);
+    }
+
     void SendCollection(Player* player, uint8 type)
     {
         if (!player || !player->GetSession())
@@ -3010,6 +3082,7 @@ namespace DCCollection
                 else if (t == "heirlooms") type = static_cast<uint8>(CollectionType::HEIRLOOM);
                 else if (t == "titles") type = static_cast<uint8>(CollectionType::TITLE);
                 else if (t == "transmog") type = static_cast<uint8>(CollectionType::TRANSMOG);
+                else if (t == "itemSets" || t == "sets") type = static_cast<uint8>(CollectionType::ITEM_SET);
             }
             else
             {
@@ -3021,6 +3094,13 @@ namespace DCCollection
             offset = json["offset"].AsUInt32();
         if (json.HasKey("limit"))
             limit = json["limit"].AsUInt32();
+
+        // Handle itemSets separately (from DBC, not stored collection)
+        if (type == static_cast<uint8>(CollectionType::ITEM_SET))
+        {
+            SendItemSetDefinitions(player);
+            return;
+        }
 
         if (type >= 1 && type <= 6 && type != static_cast<uint8>(CollectionType::TOY))
             SendDefinitions(player, type, offset, limit);

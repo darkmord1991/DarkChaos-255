@@ -187,6 +187,10 @@ local HEADER_HEIGHT = 60
 local FILTER_HEIGHT = 32
 local FOOTER_HEIGHT = 40
 
+-- Pagination settings - can be adjusted for "more items per page" effect
+local GRID_ITEMS_PER_PAGE = 48  -- 8 columns x 6 rows (increased from 24)
+local MOUNT_ITEMS_PER_PAGE = 20 -- Increased from 12
+
 -- ============================================================================
 -- MAIN FRAME CREATION
 -- ============================================================================
@@ -1024,11 +1028,13 @@ function DC:UpdateDetailsPanel(item)
         collType = item.collectionTypeName
     end
 
-    if (collType == "mounts" or collType == "pets" or collType == "titles") and item.collected then
+    if (collType == "mounts" or collType == "pets" or collType == "titles" or collType == "heirlooms") and item.collected then
         if collType == "mounts" then
             d.useBtn:SetText(L["SUMMON"] or "Summon")
         elseif collType == "pets" then
             d.useBtn:SetText(L["SUMMON"] or "Summon")
+        elseif collType == "heirlooms" then
+            d.useBtn:SetText("Add to bags")
         elseif collType == "titles" then
             d.useBtn:SetText(L["SET_TITLE"] or "Set Title")
         end
@@ -1037,9 +1043,47 @@ function DC:UpdateDetailsPanel(item)
         d.useBtn:Hide()
     end
 
-    -- Show 3D model for mounts/pets/transmog
+    -- Heirlooms: show current (level-scaled) tooltip summary in line2.
+    if collType == "heirlooms" then
+        local itemId = (item.definition and (item.definition.itemId or item.definition.item_id or item.definition.itemID)) or item.id
+        local _, link = (GetItemInfo and itemId) and GetItemInfo(itemId) or nil
+        if link then
+            self._scanTooltip = self._scanTooltip or CreateFrame("GameTooltip", "DCCollectionScanTooltip", UIParent, "GameTooltipTemplate")
+            local tip = self._scanTooltip
+            tip:SetOwner(UIParent, "ANCHOR_NONE")
+            tip:ClearLines()
+            pcall(function() tip:SetHyperlink(link) end)
+
+            local picked = {}
+            for i = 2, 10 do
+                local fs = _G["DCCollectionScanTooltipTextLeft" .. i]
+                local txt = fs and fs.GetText and fs:GetText() or nil
+                if txt and txt ~= "" then
+                    if string.find(txt, "Item Level", 1, true)
+                        or string.find(txt, "Requires Level", 1, true)
+                        or string.find(txt, "Level", 1, true)
+                        or string.find(txt, "Armor", 1, true)
+                        or string.find(txt, "Damage", 1, true)
+                        or string.find(txt, "+", 1, true) then
+                        picked[#picked + 1] = txt
+                    end
+                end
+                if #picked >= 2 then
+                    break
+                end
+            end
+
+            if #picked > 0 then
+                d.line2:SetText(table.concat(picked, "  "))
+            end
+        else
+            d.line2:SetText("Loading item data...")
+        end
+    end
+
+    -- Show 3D model for mounts/pets/transmog/heirlooms
     local modelPanel = self.MainFrame.Content.modelPanel
-    if modelPanel and (collType == "mounts" or collType == "pets" or collType == "transmog") then
+    if modelPanel and (collType == "mounts" or collType == "pets" or collType == "transmog" or collType == "heirlooms") then
         local displayId = item.definition and (item.definition.displayId or item.definition.display_id or item.definition.creatureId)
         
         modelPanel:Show()
@@ -1048,8 +1092,8 @@ function DC:UpdateDetailsPanel(item)
         model.rotation = 0
         model.zoom = 0
 
-        if collType == "transmog" then
-            -- Transmog: Show player and try on item
+        if collType == "transmog" or collType == "heirlooms" then
+            -- Transmog/Heirlooms: Show player and try on item
             model:SetUnit("player")
             local itemId = item.definition and (item.definition.itemId or item.definition.item_id or item.definition.itemID) or item.id
             if itemId then
@@ -1161,6 +1205,14 @@ function DC:ShowMainFrame()
     end
     
     self.MainFrame:Show()
+
+    -- If we open very early on login, the protocol may not be ready yet.
+    -- Kick a short retry loop so data appears without requiring re-open.
+    if type(self.RequestInitialDataWithRetry) == "function" then
+        self:RequestInitialDataWithRetry(8, 1)
+    elseif type(self.RequestInitialData) == "function" then
+        self:RequestInitialData(false)
+    end
     
     -- Load all data on open (not just when clicking tabs)
     self:RequestStats()
@@ -1172,7 +1224,7 @@ function DC:ShowMainFrame()
         if not self.definitions[collType] or not next(self.definitions[collType]) then
             self:RequestDefinitions(collType)
         end
-        if not self.collections[collType] then
+        if not self.collections[collType] or not next(self.collections[collType]) then
             self:RequestCollection(collType)
         end
     end
@@ -1235,6 +1287,8 @@ function DC:SelectTab(tabKey)
     
     if DC.AchievementsUI then DC.AchievementsUI:Hide() end
     if DC.MyCollection then DC.MyCollection:Hide() end
+    if DC.PetJournal and DC.PetJournal.frame then DC.PetJournal.frame:Hide() end
+    if self.ShopUI then self.ShopUI:Hide() end
 
     if tabKey == "overview" then
         -- Show My Collection overview
@@ -1313,22 +1367,30 @@ function DC:UpdateHeader()
     
     local header = self.MainFrame.Header
     
-    -- Update currency
-    local tokens = self.currency.tokens or 0
-    local emblems = self.currency.emblems or 0
-    
-    -- Fallback to central if zero (maybe we haven't received data yet but central has it)
-    if tokens == 0 and emblems == 0 then
-        local central = rawget(_G, "DCAddonProtocol")
-        if central and central.GetServerCurrencyBalance then
-             local t, e = central:GetServerCurrencyBalance()
-             if t then tokens = t end
-             if e then emblems = e end
+    -- Only show currency in Shop tab
+    if self.activeTab == "shop" then
+        -- Update currency
+        local tokens = self.currency.tokens or 0
+        local emblems = self.currency.emblems or 0
+        
+        -- Fallback to central if zero (maybe we haven't received data yet but central has it)
+        if tokens == 0 and emblems == 0 then
+            local central = rawget(_G, "DCAddonProtocol")
+            if central and central.GetServerCurrencyBalance then
+                 local t, e = central:GetServerCurrencyBalance()
+                 if t then tokens = t end
+                 if e then emblems = e end
+            end
         end
-    end
 
-    header.tokensText:SetText(tokens)
-    header.emblemsText:SetText(emblems)
+        header.tokensText:SetText(tokens)
+        header.emblemsText:SetText(emblems)
+        header.tokensText:Show()
+        header.emblemsText:Show()
+    else
+        header.tokensText:Hide()
+        header.emblemsText:Hide()
+    end
     
     -- Update stats for current tab
     local stats = self.stats[self.activeTab]
@@ -1378,13 +1440,44 @@ function DC:PopulateMountList()
         child:SetParent(nil)
     end
     
+    -- Hide loading text if it exists
+    if scrollChild.loadingText then
+        scrollChild.loadingText:Hide()
+    end
+    
     local items = self:GetFilteredItems()
+    
+    -- Check if we're still loading data
+    if #items == 0 then
+        local defs = self.definitions["mounts"] or {}
+        local defCount = 0
+        for _ in pairs(defs) do defCount = defCount + 1 end
+        
+        -- If definitions are empty, show loading message
+        if defCount == 0 then
+            if not scrollChild.loadingText then
+                scrollChild.loadingText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+                scrollChild.loadingText:SetPoint("CENTER", scrollChild, "CENTER", 0, 50)
+            end
+            
+            scrollChild.loadingText:SetText("Loading mounts data...")
+            scrollChild.loadingText:Show()
+            
+            -- Request definitions again if needed
+            if not self.definitions["mounts"] or not next(self.definitions["mounts"]) then
+                self:RequestDefinitions("mounts")
+            end
+            
+            self.MainFrame.Footer.pageInfo:SetText("Loading...")
+            return
+        end
+    end
     
     -- Sort items
     self:SortItems(items)
     
-    -- Pagination
-    local itemsPerPage = 12 -- Fits in the scroll frame
+    -- Pagination - use configurable items per page for better browsing
+    local itemsPerPage = MOUNT_ITEMS_PER_PAGE
     local totalPages = math.max(1, math.ceil(#items / itemsPerPage))
     self.currentPage = math.min(self.currentPage or 1, totalPages)
     
@@ -1544,17 +1637,17 @@ function DC:PopulateGrid()
         end
     end
     
-    -- Paginate
-    local itemsPerPage = 24  -- 6 columns x 4 rows
+    -- Paginate - use configurable items per page for better browsing
+    local itemsPerPage = GRID_ITEMS_PER_PAGE
     local totalPages = math.max(1, math.ceil(#items / itemsPerPage))
     self.currentPage = math.min(self.currentPage or 1, totalPages)
     
     local startIdx = (self.currentPage - 1) * itemsPerPage + 1
     local endIdx = math.min(startIdx + itemsPerPage - 1, #items)
     
-    -- Create item cards
-    local cols = 6
-    local cardSize = 85
+    -- Create item cards with responsive columns
+    local cols = 8  -- Increased from 6 for more items
+    local cardSize = 75  -- Slightly smaller to fit more
     local spacing = 5
     local row = 0
     local col = 0
@@ -1674,6 +1767,10 @@ function DC:GetFilteredItems()
     local showCollected = self.MainFrame.FilterBar.collectedCheck:GetChecked()
     local showNotCollected = self.MainFrame.FilterBar.notCollectedCheck:GetChecked()
     
+    -- Deduplication for appearance-based collections (transmog)
+    local seenAppearances = {}
+    local shouldDedupe = (collType == "transmog")
+    
     local function InvTypeMatchesSelectedTransmogSlot(invType)
         local slotName = DC.transmogSelectedSlotName
         if collType ~= "transmog" or not slotName then
@@ -1717,20 +1814,62 @@ function DC:GetFilteredItems()
             -- Filter by search
             local name = string.lower(def.name or "")
             if searchText == "" or string.find(name, searchText, 1, true) then
-                table.insert(items, {
-                    id = id,
-                    name = def.name,
-                    icon = self:ResolveDefinitionIcon(collType, id, def),
-                    rarity = def.rarity,
-                    source = def.source,
-                    sourceText = self:FormatSource(def.source),
-                    sourceSort = self:GetSourceSortKey(def.source),
-                    type = collType,
-                    collected = isCollected,
-                    is_favorite = collData and collData.is_favorite,
-                    collectionData = collData,
-                    definition = def,
-                })
+                -- Deduplication check for appearance-based collections
+                local shouldAdd = true
+                if shouldDedupe then
+                    local displayId = def.displayId or def.display_id or def.itemDisplayId
+                    -- Use displayId as key if available, otherwise fall back to name to group variants
+                    local dedupeKey = displayId or def.name
+                    if dedupeKey and seenAppearances[dedupeKey] then
+                        -- Already have this appearance, but update if this one is collected and previous wasn't
+                        local existing = seenAppearances[dedupeKey]
+                        if isCollected and not existing.collected then
+                            -- Replace with collected version
+                            for i, item in ipairs(items) do
+                                if item.dedupeKey == dedupeKey then
+                                    items[i] = {
+                                        id = id,
+                                        name = def.name,
+                                        icon = self:ResolveDefinitionIcon(collType, id, def),
+                                        rarity = def.rarity,
+                                        source = def.source,
+                                        sourceText = self:FormatSource(def.source),
+                                        sourceSort = self:GetSourceSortKey(def.source),
+                                        type = collType,
+                                        collected = isCollected,
+                                        is_favorite = collData and collData.is_favorite,
+                                        collectionData = collData,
+                                        definition = def,
+                                        dedupeKey = dedupeKey,
+                                    }
+                                    seenAppearances[dedupeKey] = { collected = isCollected }
+                                    break
+                                end
+                            end
+                        end
+                        shouldAdd = false
+                    else
+                        seenAppearances[dedupeKey] = { collected = isCollected }
+                    end
+                end
+                
+                if shouldAdd then
+                    table.insert(items, {
+                        id = id,
+                        name = def.name,
+                        icon = self:ResolveDefinitionIcon(collType, id, def),
+                        rarity = def.rarity,
+                        source = def.source,
+                        sourceText = self:FormatSource(def.source),
+                        sourceSort = self:GetSourceSortKey(def.source),
+                        type = collType,
+                        collected = isCollected,
+                        is_favorite = collData and collData.is_favorite,
+                        collectionData = collData,
+                        definition = def,
+                        dedupeKey = shouldDedupe and (def.displayId or def.display_id or def.itemDisplayId or def.name) or nil,
+                    })
+                end
             end
         end
 
@@ -1824,7 +1963,9 @@ function DC:OnItemLeftClick(item)
     elseif item.type == "pets" then
         self:RequestSummonPet(item.id)
     elseif item.type == "heirlooms" then
-        self:RequestSummonHeirloom(item.id)
+        -- Don't auto-summon on click; show preview/scaling in the details panel.
+        self:UpdateDetailsPanel(item)
+        return
     elseif item.type == "titles" then
         self:RequestSetTitle(item.id)
     elseif item.type == "transmog" then
@@ -2057,7 +2198,7 @@ function DC:ShowItemTooltip(anchor, item)
         elseif item.type == "pets" then
             GameTooltip:AddLine(LT("CLICK_SUMMON", "Click to summon"), 0.5, 0.5, 0.5)
         elseif item.type == "heirlooms" then
-            GameTooltip:AddLine("Click to summon to bags", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine("Click to preview", 0.5, 0.5, 0.5)
         elseif item.type == "titles" then
             GameTooltip:AddLine("Click to set as active title", 0.5, 0.5, 0.5)
         elseif item.type == "transmog" then

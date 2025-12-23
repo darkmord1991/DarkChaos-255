@@ -308,8 +308,11 @@ function DC:RequestDefinitions(collType)
 
     if collType == "transmog" then
         self._transmogDefOffset = 0
-        self._transmogDefLimit = self._transmogDefLimit or 200
+        self._transmogDefLimit = self._transmogDefLimit or 1000
         self._transmogDefLoading = true
+        self._transmogDefLastRequestedOffset = 0
+        self._transmogDefLastRequestedLimit = self._transmogDefLimit
+        self._transmogDefPagesFetched = 0
         return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = 0, limit = self._transmogDefLimit })
     end
 
@@ -829,8 +832,9 @@ function DC:HandleShopData(data)
     self:Debug("Received shop data")
 
     self.shopCategory = data.category
-    self.currency.tokens = data.tokens or 0
-    self.currency.emblems = data.emblems or 0
+    self.currency = self.currency or { tokens = 0, emblems = 0 }
+    self.currency.tokens = data.tokens or data.token or self.currency.tokens or 0
+    self.currency.emblems = data.emblems or data.essence or data.emblem or self.currency.emblems or 0
 
     -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
     local central = rawget(_G, "DCAddonProtocol")
@@ -940,6 +944,7 @@ function DC:RefreshShopIcons()
     if not self.shopItems then return end
     
     local needsRefresh = false
+    local unresolved = 0
     for _, card in ipairs(self.shopItems) do
         if card.icon == "Interface\\Icons\\INV_Misc_QuestionMark" or card.name == "Shop Item" then
             local typeName = card.collectionTypeName
@@ -971,6 +976,23 @@ function DC:RefreshShopIcons()
                 if quality then card.rarity = quality end
             end
         end
+
+        if card.icon == "Interface\\Icons\\INV_Misc_QuestionMark" or card.name == "Shop Item" then
+            unresolved = unresolved + 1
+        end
+    end
+
+    -- Retry a few times because item info cache warming can be slow in 3.3.5a
+    if unresolved > 0 then
+        self._shopIconRefreshAttempts = (self._shopIconRefreshAttempts or 0) + 1
+        if self._shopIconRefreshAttempts <= 6 and self.After and type(self.After) == "function" then
+            local delay = 0.5 + (self._shopIconRefreshAttempts * 0.25)
+            self:After(delay, function()
+                self:RefreshShopIcons()
+            end)
+        end
+    else
+        self._shopIconRefreshAttempts = nil
     end
     
     if needsRefresh and self.MainFrame and self.MainFrame:IsShown() and self.activeTab == "shop" then
@@ -987,8 +1009,10 @@ function DC:HandlePurchaseResult(data)
         
         -- Update currency
         self.currency = self.currency or { tokens = 0, emblems = 0 }
-        self.currency.tokens = data.tokens or self.currency.tokens or 0
-        self.currency.emblems = data.emblems or self.currency.emblems or 0
+        local tokens = data.tokens or data.token or self.currency.tokens or 0
+        local emblems = data.emblems or data.essence or data.emblem or self.currency.emblems or 0
+        self.currency.tokens = tokens
+        self.currency.emblems = emblems
         
         -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
         local central = rawget(_G, "DCAddonProtocol")
@@ -1010,11 +1034,13 @@ function DC:HandleCurrencies(data)
     self:Debug("Received currencies")
 
     self.currency = self.currency or { tokens = 0, emblems = 0 }
+    local tokens = data.tokens or data.token or 0
+    local emblems = data.emblems or data.essence or data.emblem or 0
     if type(self.CacheUpdateCurrency) == "function" then
-        self:CacheUpdateCurrency(data.tokens or 0, data.emblems or 0)
+        self:CacheUpdateCurrency(tokens, emblems)
     else
-        self.currency.tokens = data.tokens or 0
-        self.currency.emblems = data.emblems or 0
+        self.currency.tokens = tokens
+        self.currency.emblems = emblems
     end
 
     if self.MainFrame and self.MainFrame:IsShown() then
@@ -1179,6 +1205,24 @@ function DC:HandleDefinitions(data)
     local collType = data.type
     local definitions = data.definitions or {}
     local syncVersion = data.syncVersion
+
+    -- Some servers send definitions as an array of records instead of a map.
+    -- Normalize arrays into an id->def map so the rest of the UI can iterate reliably.
+    if type(definitions) == "table" and #definitions > 0 then
+        local mapped = {}
+        for _, def in ipairs(definitions) do
+            if type(def) == "table" then
+                local id = def.id or def.entryId or def.entry_id or def.appearanceId or def.appearance_id or def.itemId or def.item_id
+                if id ~= nil then
+                    mapped[id] = def
+                end
+            end
+        end
+        -- Only replace if we successfully mapped at least one entry.
+        if next(mapped) ~= nil then
+            definitions = mapped
+        end
+    end
     
     self:CacheMergeDefinitions(collType, definitions)
     self:SetSyncVersion(collType, syncVersion)
@@ -1189,26 +1233,71 @@ function DC:HandleDefinitions(data)
         self:RefreshCurrentTab()
     end
     
+    -- Notify Wardrobe if open (transmog or itemSets data)
+    if (collType == "transmog" or collType == "itemsets" or collType == "itemSets") and DC.Wardrobe and DC.Wardrobe.frame and DC.Wardrobe.frame:IsShown() then
+        if DC.Wardrobe.currentTab == "sets" then
+            DC.Wardrobe:RefreshSetsGrid()
+        else
+            DC.Wardrobe:RefreshGrid()
+        end
+    end
+    
     self:Debug(string.format("Received %d definitions for %s", 
         self:TableCount(definitions), collType))
 
     -- Transmog definitions can be very large; server may send them in pages.
-    if collType == "transmog" and data.more then
-        local nextOffset = (data.offset or 0) + (data.limit or 0)
-        local limit = data.limit or (self._transmogDefLimit or 200)
+    if collType == "transmog" then
+        local requestedOffset = tonumber(data.offset or data.off) or tonumber(self._transmogDefLastRequestedOffset) or 0
+        local requestedLimit = tonumber(data.limit or data.lim) or tonumber(self._transmogDefLastRequestedLimit) or tonumber(self._transmogDefLimit) or 1000
+        local total = tonumber(data.total or data.count) or nil
 
-        self._transmogDefOffset = nextOffset
-        self._transmogDefLimit = limit
+        local moreFlag = data.more
+        if moreFlag == nil then moreFlag = data.hasMore end
+        if moreFlag == nil then moreFlag = data.has_more end
+        if moreFlag == nil then moreFlag = data.morePages end
 
-        if type(self.After) == "function" then
-            self:After(0.05, function()
-                self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = nextOffset, limit = limit })
-            end)
-        else
-            self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = nextOffset, limit = limit })
+        local receivedCount = self:TableCount(definitions)
+
+        local hasMore = false
+        if moreFlag == true or moreFlag == 1 or moreFlag == "1" then
+            hasMore = true
+        elseif total and (requestedOffset + requestedLimit) < total then
+            hasMore = true
+        elseif moreFlag == nil then
+            -- Server didn't send paging flags/total; infer "more" if we got a full page.
+            -- This avoids the "only ~300 items" symptom when the server sends chunked definitions
+            -- but omits hasMore/total fields.
+            if receivedCount > 0 and receivedCount >= requestedLimit then
+                hasMore = true
+            end
         end
-    elseif collType == "transmog" then
-        self._transmogDefLoading = nil
+
+        if hasMore then
+            local nextOffset = tonumber(data.nextOffset or data.next_offset) or (requestedOffset + requestedLimit)
+
+            self._transmogDefOffset = nextOffset
+            self._transmogDefLimit = requestedLimit
+            self._transmogDefLastRequestedOffset = nextOffset
+            self._transmogDefLastRequestedLimit = requestedLimit
+            self._transmogDefPagesFetched = (self._transmogDefPagesFetched or 0) + 1
+
+            -- Safety valve: prevent infinite loops if the server keeps repeating the same page.
+            if (self._transmogDefPagesFetched or 0) > 500 then
+                self:Debug("Stopping transmog definitions paging: too many pages (possible server loop)")
+                self._transmogDefLoading = nil
+                return
+            end
+
+            if type(self.After) == "function" then
+                self:After(0.05, function()
+                    self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = nextOffset, limit = requestedLimit })
+                end)
+            else
+                self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = nextOffset, limit = requestedLimit })
+            end
+        else
+            self._transmogDefLoading = nil
+        end
     end
 end
 
@@ -1222,6 +1311,11 @@ function DC:HandleCollection(data)
     -- Notify UI if open
     if self.MainFrame and self.MainFrame:IsShown() then
         self:RefreshCurrentTab()
+    end
+    
+    -- Notify Wardrobe if open (transmog data)
+    if collType == "transmog" and DC.Wardrobe and DC.Wardrobe.frame and DC.Wardrobe.frame:IsShown() then
+        DC.Wardrobe:RefreshGrid()
     end
     
     self:Debug(string.format("Received %d items for %s collection", 
