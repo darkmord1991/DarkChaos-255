@@ -573,11 +573,18 @@ function DC:CreateOptionsPanel()
         function() self:RefreshCacheNow() end
     )
 
+    CreateButton(
+        "Test server collections",
+        "Requests definitions + collection per type and prints counts in chat.",
+        -295,
+        function() self:RunServerCollectionsTest() end
+    )
+
     -- Sliders
     CreateSlider(
         "Grid columns",
         "How many columns are shown in the collection grid.",
-        -290,
+        -325,
         3, 10, 1,
         function() return self:GetSetting("gridColumns") end,
         function(v)
@@ -591,7 +598,7 @@ function DC:CreateOptionsPanel()
     CreateSlider(
         "Grid icon size",
         "Icon size (in pixels) for items in the grid.",
-        -340,
+        -375,
         32, 64, 1,
         function() return self:GetSetting("gridIconSize") end,
         function(v)
@@ -669,6 +676,93 @@ function DC:CreateOptionsPanel()
     InterfaceOptions_AddCategory(comm)
     self.optionsPanelComm = comm
     return panel
+end
+
+-- ============================================================================
+-- SERVER TEST / DIAGNOSTICS
+-- ============================================================================
+
+local function CountMap(t)
+    if type(t) ~= "table" then
+        return 0
+    end
+    local n = 0
+    for _ in pairs(t) do
+        n = n + 1
+    end
+    return n
+end
+
+function DC:RunServerCollectionsTest()
+    if type(self.IsProtocolReady) == "function" and not self:IsProtocolReady() then
+        self:Print("Server protocol not ready.")
+        return
+    end
+
+    self._serverCollectionsTestActive = true
+    self._serverCollectionsTestStarted = time()
+
+    self:Print("[DC-Collection] Running server collections test...")
+
+    if type(self.RequestStats) == "function" then
+        self:RequestStats()
+    end
+
+    local types = { "mounts", "pets", "heirlooms", "titles" }
+    for _, t in ipairs(types) do
+        if type(self.RequestDefinitions) == "function" then
+            self:RequestDefinitions(t)
+        end
+        if type(self.RequestCollection) == "function" then
+            self:RequestCollection(t)
+        end
+    end
+
+    -- Transmog definitions can be huge; fetch a single page only.
+    self._serverTestNoTransmogPaging = true
+    if type(self.SendMessage) == "function" and self.Opcodes and self.Opcodes.CMSG_GET_DEFINITIONS then
+        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = 0, limit = 200 })
+    elseif type(self.RequestDefinitions) == "function" then
+        self:RequestDefinitions("transmog")
+    end
+    if type(self.RequestCollection) == "function" then
+        self:RequestCollection("transmog")
+    end
+
+    -- Also test the slot-based transmog endpoint for the reported problem slots.
+    if type(self.SendMessage) == "function" and self.Opcodes and self.Opcodes.CMSG_GET_TRANSMOG_SLOT_ITEMS then
+        self:SendMessage(self.Opcodes.CMSG_GET_TRANSMOG_SLOT_ITEMS, { slot = 283, page = 1 }) -- Head
+        self:SendMessage(self.Opcodes.CMSG_GET_TRANSMOG_SLOT_ITEMS, { slot = 287, page = 1 }) -- Shoulder
+        self:SendMessage(self.Opcodes.CMSG_GET_TRANSMOG_SLOT_ITEMS, { slot = 311, page = 1 }) -- Back
+    end
+
+    if type(self.After) == "function" then
+        self:After(3, function()
+            local reportTypes = { "mounts", "pets", "heirlooms", "titles", "transmog" }
+            self:Print("[DC-Collection] Server test results (client cache snapshot):")
+            for _, t in ipairs(reportTypes) do
+                local defs = self.definitions and self.definitions[t]
+                local coll = self.collections and self.collections[t]
+                local stats = self.stats and self.stats[t]
+
+                local defsCount = CountMap(defs)
+                local collCount = CountMap(coll)
+
+                local statsOwned = stats and (stats.owned or stats.collected) or nil
+                local statsTotal = stats and stats.total or nil
+
+                if statsOwned ~= nil and statsTotal ~= nil then
+                    self:Print(string.format("  %s: defs=%d, coll=%d, stats=%d/%d", t, defsCount, collCount, statsOwned or 0, statsTotal or 0))
+                else
+                    self:Print(string.format("  %s: defs=%d, coll=%d", t, defsCount, collCount))
+                end
+            end
+
+            self._serverCollectionsTestActive = nil
+        end)
+    else
+        self._serverCollectionsTestActive = nil
+    end
 end
 
 function DC:RefreshCacheNow()
@@ -798,8 +892,10 @@ function events:ADDON_LOADED(addonName)
                 return
             end
             if type(DC.RequestInitialDataWithRetry) == "function" then
+                DC._initialDataRequested = true
                 DC:RequestInitialDataWithRetry(8, 1)
             elseif DC:IsProtocolReady() then
+                DC._initialDataRequested = true
                 DC:RequestInitialData()
             end
         end)
@@ -809,6 +905,23 @@ end
 function events:PLAYER_LOGIN()
     -- Apply mount speed bonus on login
     DC:ApplyMountSpeedBonus()
+
+    -- Fallback: some clients/protocols only become ready after PLAYER_LOGIN.
+    After(2, function()
+        if not DC:GetSetting("autoSyncOnLogin") then
+            return
+        end
+        if DC._initialDataRequested or DC._initialDataRetryInProgress then
+            return
+        end
+        if type(DC.RequestInitialDataWithRetry) == "function" then
+            DC._initialDataRequested = true
+            DC:RequestInitialDataWithRetry(8, 1)
+        elseif DC:IsProtocolReady() then
+            DC._initialDataRequested = true
+            DC:RequestInitialData(false)
+        end
+    end)
 end
 
 function events:PLAYER_LOGOUT()
@@ -881,6 +994,8 @@ end
 
 function DC:RequestInitialData(skipHandshake)
     DC:Debug("Requesting initial collection data...")
+
+    self._initialDataRequested = true
 
     if not self:IsProtocolReady() then
         self:Debug("Protocol not ready (or server sync disabled)")

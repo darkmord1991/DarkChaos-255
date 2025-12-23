@@ -211,7 +211,23 @@ local function NormalizeType(self, collectionType)
         return self:GetTypeNameFromId(collectionType)
     end
 
-    return string.lower(tostring(collectionType))
+    local t = string.lower(tostring(collectionType))
+
+    -- Normalize server/client variations to the canonical keys used by this addon.
+    -- Many code paths assume plural keys (mounts/pets/heirlooms/titles).
+    if t == "mount" then return "mounts" end
+    if t == "pet" then return "pets" end
+    if t == "heirloom" then return "heirlooms" end
+    if t == "title" then return "titles" end
+    if t == "appearances" or t == "appearance" then return "transmog" end
+
+    return t
+end
+
+-- Expose the type normalization used by the cache layer so UI/protocol code can
+-- consistently map server/client variants to the canonical keys.
+function DC:NormalizeCollectionType(collectionType)
+    return NormalizeType(self, collectionType)
 end
 
 local function NormalizeId(id)
@@ -344,13 +360,15 @@ end
 -- Get last sync version for a collection type
 function DC:GetSyncVersion(collectionType)
     DCCollectionDB.syncVersions = DCCollectionDB.syncVersions or {}
-    return DCCollectionDB.syncVersions[collectionType] or 0
+    local typeName = NormalizeType(self, collectionType)
+    return DCCollectionDB.syncVersions[typeName or collectionType] or 0
 end
 
 -- Set sync version after successful sync
 function DC:SetSyncVersion(collectionType, version)
     DCCollectionDB.syncVersions = DCCollectionDB.syncVersions or {}
-    DCCollectionDB.syncVersions[collectionType] = version
+    local typeName = NormalizeType(self, collectionType)
+    DCCollectionDB.syncVersions[typeName or collectionType] = version
 end
 
 -- Get IDs of items we already have (for delta request)

@@ -462,8 +462,16 @@ function PetJournal:RefreshList()
         local defCount = 0
         for _ in pairs(defs) do defCount = defCount + 1 end
         
-        -- If definitions are empty, show loading message
+        -- If definitions are empty, try a client-side fallback first (known companion spells).
         if defCount == 0 then
+            if DC.PetModule and type(DC.PetModule.SeedFromClientKnownPets) == "function" then
+                if DC.PetModule:SeedFromClientKnownPets() then
+                    self:UpdatePetList()
+                    return
+                end
+            end
+
+            -- Still empty: show loading message and keep asking the server.
             if not scrollChild.loadingText then
                 scrollChild.loadingText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
                 scrollChild.loadingText:SetPoint("CENTER", scrollChild, "CENTER", 0, 50)
@@ -644,6 +652,11 @@ end
 function PetJournal:Show()
     if not self.frame then
         self:Create()
+    end
+
+    -- If server-side pet definitions are not configured, seed from client-known companions.
+    if (not DC.definitions or not DC.definitions.pets or next(DC.definitions.pets) == nil) and DC.PetModule and type(DC.PetModule.SeedFromClientKnownPets) == "function" then
+        DC.PetModule:SeedFromClientKnownPets()
     end
 
     if DC.RequestDefinitions then

@@ -863,6 +863,26 @@ function DC:CreateContentArea(parent)
     end)
 
     content.modelPanel = modelPanel
+
+    -- Stats panel shown under the model preview (used by Heirlooms)
+    local statsPanel = CreateFrame("Frame", nil, content)
+    statsPanel:SetPoint("TOPLEFT", modelPanel, "BOTTOMLEFT", 0, -5)
+    statsPanel:SetPoint("TOPRIGHT", modelPanel, "BOTTOMRIGHT", 0, -5)
+    statsPanel:SetHeight(110)
+    statsPanel:Hide()
+
+    statsPanel.bg = statsPanel:CreateTexture(nil, "BACKGROUND")
+    statsPanel.bg:SetAllPoints()
+    statsPanel.bg:SetTexture(0, 0, 0, 0.25)
+
+    statsPanel.text = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    statsPanel.text:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 6, -6)
+    statsPanel.text:SetPoint("BOTTOMRIGHT", statsPanel, "BOTTOMRIGHT", -6, 6)
+    statsPanel.text:SetJustifyH("LEFT")
+    statsPanel.text:SetJustifyV("TOP")
+    statsPanel.text:SetText("")
+
+    content.modelStatsPanel = statsPanel
     
     -- Scroll frame (adjusted width when model panel is shown)
     local scrollFrame = CreateFrame("ScrollFrame", "DCCollectionScrollFrame", content, "UIPanelScrollFrameTemplate")
@@ -900,6 +920,14 @@ function DC:ClearDetailsPanel()
     if modelPanel then
         modelPanel:Hide()
         modelPanel.model:ClearModel()
+    end
+
+    local statsPanel = self.MainFrame.Content.modelStatsPanel
+    if statsPanel then
+        statsPanel:Hide()
+        if statsPanel.text then
+            statsPanel.text:SetText("")
+        end
     end
 
     self.selectedItem = nil
@@ -1043,10 +1071,11 @@ function DC:UpdateDetailsPanel(item)
         d.useBtn:Hide()
     end
 
-    -- Heirlooms: show current (level-scaled) tooltip summary in line2.
+    -- Heirlooms: show tooltip summary in line2.
     if collType == "heirlooms" then
         local itemId = (item.definition and (item.definition.itemId or item.definition.item_id or item.definition.itemID)) or item.id
-        local _, link = (GetItemInfo and itemId) and GetItemInfo(itemId) or nil
+        itemId = tonumber(itemId) or itemId
+        local link = (type(itemId) == "number" and itemId > 0) and ("item:" .. itemId) or nil
         if link then
             self._scanTooltip = self._scanTooltip or CreateFrame("GameTooltip", "DCCollectionScanTooltip", UIParent, "GameTooltipTemplate")
             local tip = self._scanTooltip
@@ -1075,6 +1104,15 @@ function DC:UpdateDetailsPanel(item)
 
             if #picked > 0 then
                 d.line2:SetText(table.concat(picked, "  "))
+            else
+                d.line2:SetText("Loading item data...")
+                if DC and type(DC.After) == "function" then
+                    DC:After(0.3, function()
+                        if self.selectedItem and self.selectedItem.id == item.id then
+                            self:UpdateDetailsPanel(item)
+                        end
+                    end)
+                end
             end
         else
             d.line2:SetText("Loading item data...")
@@ -1083,6 +1121,7 @@ function DC:UpdateDetailsPanel(item)
 
     -- Show 3D model for mounts/pets/transmog/heirlooms
     local modelPanel = self.MainFrame.Content.modelPanel
+    local statsPanel = self.MainFrame.Content.modelStatsPanel
     if modelPanel and (collType == "mounts" or collType == "pets" or collType == "transmog" or collType == "heirlooms") then
         local displayId = item.definition and (item.definition.displayId or item.definition.display_id or item.definition.creatureId)
         
@@ -1095,11 +1134,37 @@ function DC:UpdateDetailsPanel(item)
         if collType == "transmog" or collType == "heirlooms" then
             -- Transmog/Heirlooms: Show player and try on item
             model:SetUnit("player")
+            if model.Undress then
+                model:Undress()
+            end
+            if model.SetPortraitZoom then
+                model:SetPortraitZoom(0)
+            end
+            if collType == "heirlooms" and model.SetCamDistanceScale then
+                -- Zoom out further to avoid head-only closeups.
+                model:SetCamDistanceScale(2.8)
+            elseif model.SetCamDistanceScale then
+                model:SetCamDistanceScale(1.6)
+            end
+
             local itemId = item.definition and (item.definition.itemId or item.definition.item_id or item.definition.itemID) or item.id
-            if itemId then
-                if model.TryOn then
-                    model:TryOn(itemId)
+            itemId = tonumber(itemId) or itemId
+
+            -- Avoid spamming "cannot be equipped" for non-equippable heirloom tokens.
+            local canTryOn = true
+            if collType == "heirlooms" and type(GetItemInfo) == "function" and type(itemId) == "number" then
+                local equipLoc = select(9, GetItemInfo(itemId))
+                if equipLoc == nil or equipLoc == "" or equipLoc == "INVTYPE_NON_EQUIP" then
+                    canTryOn = false
                 end
+            end
+
+            if itemId and model.TryOn and canTryOn then
+                local tryOnArg = itemId
+                if type(itemId) == "number" then
+                    tryOnArg = "item:" .. itemId
+                end
+                model:TryOn(tryOnArg)
             end
             model:SetCamera(0)
         elseif (collType == "mounts" or collType == "pets") and displayId and displayId > 0 then
@@ -1124,8 +1189,69 @@ function DC:UpdateDetailsPanel(item)
 
         model:SetFacing(0)
         model:SetPosition(0, 0, 0)
+
+        -- Heirlooms: show tooltip stats under the preview panel
+        if statsPanel then
+            if collType == "heirlooms" then
+                local itemId = (item.definition and (item.definition.itemId or item.definition.item_id or item.definition.itemID)) or item.id
+            itemId = tonumber(itemId) or itemId
+            local link = (type(itemId) == "number" and itemId > 0) and ("item:" .. itemId) or nil
+
+                statsPanel:Show()
+                if link then
+                    self._scanTooltip = self._scanTooltip or CreateFrame("GameTooltip", "DCCollectionScanTooltip", UIParent, "GameTooltipTemplate")
+                    local tip = self._scanTooltip
+                    tip:SetOwner(UIParent, "ANCHOR_NONE")
+                    tip:ClearLines()
+                    pcall(function() tip:SetHyperlink(link) end)
+
+                    local lines = {}
+                    for i = 2, 20 do
+                        local fs = _G["DCCollectionScanTooltipTextLeft" .. i]
+                        local txt = fs and fs.GetText and fs:GetText() or nil
+                        if txt and txt ~= "" then
+                            -- Skip common noise lines.
+                            if not string.find(txt, "Binds", 1, true)
+                                and not string.find(txt, "Unique", 1, true)
+                                and not string.find(txt, "Sell Price", 1, true) then
+                                lines[#lines + 1] = txt
+                            end
+                        end
+                        if #lines >= 10 then
+                            break
+                        end
+                    end
+
+                    if #lines > 0 then
+                        statsPanel.text:SetText(table.concat(lines, "\n"))
+                    else
+                        statsPanel.text:SetText("Loading item data...")
+                        if DC and type(DC.After) == "function" then
+                            DC:After(0.3, function()
+                                if self.selectedItem and self.selectedItem.id == item.id then
+                                    self:UpdateDetailsPanel(item)
+                                end
+                            end)
+                        end
+                    end
+                else
+                    statsPanel.text:SetText("Loading item data...")
+                end
+            else
+                statsPanel:Hide()
+                if statsPanel.text then
+                    statsPanel.text:SetText("")
+                end
+            end
+        end
     elseif modelPanel then
         modelPanel:Hide()
+        if statsPanel then
+            statsPanel:Hide()
+            if statsPanel.text then
+                statsPanel.text:SetText("")
+            end
+        end
     end
 end
 
@@ -1301,6 +1427,14 @@ function DC:SelectTab(tabKey)
     elseif tabKey == "mounts" then
         content.mountList:Show()
         content.mountPreview:Show()
+    elseif tabKey == "shop" then
+        -- Shop uses its own UI; avoid stacking with the generic details + scroll grid.
+        content.details:Hide()
+        content.scrollFrame:Hide()
+        if content.modelPanel then content.modelPanel:Hide() end
+        if content.modelStatsPanel then content.modelStatsPanel:Hide() end
+
+        self:ShowShopContent()
     elseif tabKey == "pets" then
         -- Show Pet Journal
         if DC.PetJournal then
@@ -1331,8 +1465,6 @@ function DC:SelectTab(tabKey)
     if tabKey == "overview" then
         -- My Collection handles its own update
         self:UpdateHeader()
-    elseif tabKey == "shop" then
-        self:ShowShopContent()
     elseif tabKey == "achievements" then
         self:UpdateHeader()
     else
@@ -1366,31 +1498,10 @@ function DC:UpdateHeader()
     if not self.MainFrame then return end
     
     local header = self.MainFrame.Header
-    
-    -- Only show currency in Shop tab
-    if self.activeTab == "shop" then
-        -- Update currency
-        local tokens = self.currency.tokens or 0
-        local emblems = self.currency.emblems or 0
-        
-        -- Fallback to central if zero (maybe we haven't received data yet but central has it)
-        if tokens == 0 and emblems == 0 then
-            local central = rawget(_G, "DCAddonProtocol")
-            if central and central.GetServerCurrencyBalance then
-                 local t, e = central:GetServerCurrencyBalance()
-                 if t then tokens = t end
-                 if e then emblems = e end
-            end
-        end
 
-        header.tokensText:SetText(tokens)
-        header.emblemsText:SetText(emblems)
-        header.tokensText:Show()
-        header.emblemsText:Show()
-    else
-        header.tokensText:Hide()
-        header.emblemsText:Hide()
-    end
+    -- Currency is displayed inside the Shop tab UI. Hide the header currency to avoid duplicates.
+    if header.tokensText then header.tokensText:Hide() end
+    if header.emblemsText then header.emblemsText:Hide() end
     
     -- Update stats for current tab
     local stats = self.stats[self.activeTab]
@@ -2110,6 +2221,16 @@ function DC:OnItemRightClick(item)
             table.insert(menu, { text = " ", isTitle = true, notCheckable = true })
             DC:ShowOutfitMenu(menu)
         end
+    end
+
+    -- Heirlooms: allow adding the collected heirloom to bags via context menu.
+    if item.type == "heirlooms" and item.collected then
+        table.insert(menu, {
+            text = (L and (L["ADD_TO_BAGS"] or L["ADD_TO_BAG"])) or "Add to bags",
+            notCheckable = true,
+            func = function() DC:RequestSummonHeirloom(item.id) end,
+        })
+        table.insert(menu, { text = " ", isTitle = true, notCheckable = true })
     end
     
     if item.collected then

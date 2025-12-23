@@ -169,7 +169,7 @@ namespace DCCollection
             col = "entry";
 
         if (col.empty())
-            TC_LOG_ERROR("server.loading", "DC-Collection: Character DB table '{}' missing 'entry_id'/'entry' column (schema mismatch or wrong DB).", tableName);
+            LOG_ERROR("server.loading", "DC-Collection: Character DB table '{}' missing 'entry_id'/'entry' column (schema mismatch or wrong DB).", tableName);
 
         auto res = cache.emplace(tableName, std::move(col));
         return res.first->second;
@@ -220,7 +220,7 @@ namespace DCCollection
             cached = "item_id";
 
         if (cached.empty())
-            TC_LOG_ERROR("server.loading", "DC-Collection: Character DB table 'dc_collection_wishlist' missing 'entry_id'/'entry'/'item_id' column (schema mismatch).");
+            LOG_ERROR("server.loading", "DC-Collection: Character DB table 'dc_collection_wishlist' missing 'entry_id'/'entry'/'item_id' column (schema mismatch).");
 
         return cached;
     }
@@ -543,7 +543,7 @@ namespace DCCollection
             col = "entry";
 
         if (col.empty())
-            TC_LOG_ERROR("server.loading", "DC-Collection: World DB table '{}' missing 'entry_id'/'entry' column (schema mismatch or wrong DB).", tableName);
+            LOG_ERROR("server.loading", "DC-Collection: World DB table '{}' missing 'entry_id'/'entry' column (schema mismatch or wrong DB).", tableName);
 
         auto res = cache.emplace(tableName, std::move(col));
         return res.first->second;
@@ -3072,23 +3072,34 @@ namespace DCCollection
         }
         else if (ct == CollectionType::PET && WorldTableExists("dc_pet_definitions"))
         {
+            // Schema-flexible: most client logic expects pets to be keyed by spellId.
+            // Some older schemas use pet_entry (creature entry / item id). Prefer spell_id when present.
+            std::string idCol;
+            if (WorldColumnExists("dc_pet_definitions", "spell_id"))
+                idCol = "spell_id";
+            else if (WorldColumnExists("dc_pet_definitions", "spellId"))
+                idCol = "spellId";
+            else if (WorldColumnExists("dc_pet_definitions", "pet_entry"))
+                idCol = "pet_entry";
+            else
+                idCol = "pet_entry";
+
             QueryResult r = WorldDatabase.Query(
-                "SELECT pet_entry, name, icon, rarity, source FROM dc_pet_definitions");
+                "SELECT {}, name, icon, rarity, source FROM dc_pet_definitions", idCol);
             if (r)
             {
                 do
                 {
                     Field* f = r->Fetch();
-
-                    uint32 itemId = f[0].Get<uint32>();
+                    uint32 id = f[0].Get<uint32>();
                     addDef(
-                        itemId,
+                        id,
                         f[1].Get<std::string>(),
                         f[2].Get<std::string>(),
                         f[3].Get<uint32>(),
                         f[4].Get<std::string>(),
                         -1,
-                        itemId);
+                        0);
                     loadedAny = true;
                 } while (r->NextRow());
             }

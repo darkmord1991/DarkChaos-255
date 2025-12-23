@@ -194,6 +194,11 @@ function DC:CreateShopUI()
     
     self.ShopUI = frame
     frame.currentPage = 1
+
+    -- Compatibility: Protocol may call ShopUI:UpdateCurrencyDisplay()
+    function frame:UpdateCurrencyDisplay()
+        DC:UpdateShopCurrencyDisplay()
+    end
     
     return frame
 end
@@ -317,6 +322,8 @@ function DC:UpdateShopCurrencyDisplay()
     self.ShopUI.emblemsValue:SetText(emblems)
 end
 
+-- Compatibility: Protocol.lua may call ShopUI:UpdateCurrencyDisplay()
+-- when currency updates arrive.
 function DC:PopulateShopItems()
     if not self.ShopUI then return end
     
@@ -385,13 +392,25 @@ function DC:UpdateShopItemFrame(frame, item)
     -- Icon
     local icon = item.icon
     if not icon or icon == "" then
-        -- Try to resolve icon from item ID if available
-        if item.itemId then
+        local anyId = item.itemId or item.entryId or item.entry_id or item.spellId
+        if type(anyId) == "string" then anyId = tonumber(anyId) end
+
+        -- Mounts often use a spell ID
+        if (item.itemType == (DC.SHOP_ITEM_TYPES and DC.SHOP_ITEM_TYPES.MOUNT) or item.itemType == 2) and anyId and type(GetSpellTexture) == "function" then
+            icon = GetSpellTexture(anyId)
+            if (not item.name or item.name == "" or item.name == "Unknown") and type(GetSpellInfo) == "function" then
+                local n = GetSpellInfo(anyId)
+                if n then item.name = n end
+            end
+        end
+
+        -- Items/pets/heirlooms/transmog often use an item template ID
+        if (not icon) and anyId then
             if type(GetItemIcon) == "function" then
-                icon = GetItemIcon(item.itemId)
+                icon = GetItemIcon(anyId)
             end
             if (not icon) and type(GetItemInfo) == "function" then
-                icon = select(10, GetItemInfo(item.itemId))
+                icon = select(10, GetItemInfo(anyId))
             end
         end
     end

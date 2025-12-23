@@ -34,6 +34,21 @@ local SCROLL_BAR_WIDTH = 26
 -- FRAME CREATION
 -- ============================================================================
 
+local function EnsureBlizzardAchievementUI()
+    if LoadAddOn then
+        pcall(LoadAddOn, "Blizzard_AchievementUI")
+    end
+    if AchievementFrame_LoadUI then
+        pcall(AchievementFrame_LoadUI)
+    end
+end
+
+local function Clamp(v, minV, maxV)
+    if v < minV then return minV end
+    if v > maxV then return maxV end
+    return v
+end
+
 function AchievementsUI:Create(parent)
     if self.frame then
         return self.frame
@@ -44,48 +59,48 @@ function AchievementsUI:Create(parent)
     frame:SetAllPoints(parent)
     frame:Hide()
 
-    -- Background
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.bg:SetAllPoints()
-    frame.bg:SetTexture(0, 0, 0, 0.3)
-
-    -- 1. Categories (Left Side)
-    local categoryList = CreateFrame("ScrollFrame", "DCAchievementsCategoryList", frame, "UIPanelScrollFrameTemplate")
-    categoryList:SetPoint("TOPLEFT", frame, "TOPLEFT", 5, -5)
-    categoryList:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 5, 5)
-    categoryList:SetWidth(CATEGORY_WIDTH)
-    
-    -- Category List Background
-    categoryList.bg = categoryList:CreateTexture(nil, "BACKGROUND")
-    categoryList.bg:SetAllPoints()
-    categoryList.bg:SetTexture(0, 0, 0, 0.5)
-
-    local categoryChild = CreateFrame("Frame", nil, categoryList)
-    categoryChild:SetSize(CATEGORY_WIDTH, 1)
-    categoryList:SetScrollChild(categoryChild)
-    
-    frame.categoryList = categoryList
-    frame.categoryChild = categoryChild
-
-    -- 2. Achievements (Right Side)
-    local achievementList = CreateFrame("ScrollFrame", "DCAchievementsList", frame, "UIPanelScrollFrameTemplate")
-    achievementList:SetPoint("TOPLEFT", categoryList, "TOPRIGHT", 5, 0)
-    achievementList:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -25, 5)
-    
-    -- Achievement List Background
-    achievementList.bg = achievementList:CreateTexture(nil, "BACKGROUND")
-    achievementList.bg:SetAllPoints()
-    achievementList.bg:SetTexture(0, 0, 0, 0.2)
-
-    local achievementChild = CreateFrame("Frame", nil, achievementList)
-    achievementChild:SetSize(achievementList:GetWidth(), 1)
-    achievementList:SetScrollChild(achievementChild)
-
-    frame.achievementList = achievementList
-    frame.achievementChild = achievementChild
+    if type(frame.SetClipsChildren) == "function" then
+        frame:SetClipsChildren(true)
+    end
 
     self.frame = frame
     return frame
+end
+
+function AchievementsUI:FitEmbeddedAchievementFrame()
+    if not self.frame or not AchievementFrame then
+        return
+    end
+
+    local availW = self.frame:GetWidth() or 0
+    local availH = self.frame:GetHeight() or 0
+
+    if availW <= 1 or availH <= 1 then
+        return
+    end
+
+    -- Base size is the WotLK AchievementFrame footprint.
+    local baseW = (AchievementFrame.GetWidth and AchievementFrame:GetWidth()) or FRAME_WIDTH
+    local baseH = (AchievementFrame.GetHeight and AchievementFrame:GetHeight()) or FRAME_HEIGHT
+    if baseW <= 1 then baseW = FRAME_WIDTH end
+    if baseH <= 1 then baseH = FRAME_HEIGHT end
+
+    local scale = math.min(availW / baseW, availH / baseH)
+    scale = Clamp(scale, 0.5, 1)
+
+    AchievementFrame:ClearAllPoints()
+    AchievementFrame:SetPoint("CENTER", self.frame, "CENTER", 0, 0)
+    if type(AchievementFrame.SetScale) == "function" then
+        AchievementFrame:SetScale(scale)
+    end
+
+    if type(AchievementFrame.SetClampedToScreen) == "function" then
+        AchievementFrame:SetClampedToScreen(true)
+    end
+
+    if AchievementFrameCloseButton then
+        AchievementFrameCloseButton:Hide()
+    end
 end
 
 -- ============================================================================
@@ -93,7 +108,7 @@ end
 -- ============================================================================
 
 function AchievementsUI:UpdateCategories()
-    if not self.frame then return end
+    if not self.frame or not self.frame.categoryChild then return end
     
     local child = self.frame.categoryChild
     -- Clear existing
@@ -103,8 +118,23 @@ function AchievementsUI:UpdateCategories()
     end
 
     -- Get Categories
-    -- In 3.3.5a, GetAchievementCategoryList() returns a list of category IDs
-    local categories = (GetAchievementCategoryList and GetAchievementCategoryList()) or {}
+    -- 3.3.5a clients commonly expose GetCategoryList() (varargs) rather than GetAchievementCategoryList().
+    local categories = nil
+    if type(GetAchievementCategoryList) == "function" then
+        categories = GetAchievementCategoryList()
+    end
+    if type(categories) ~= "table" then
+        if type(GetCategoryList) == "function" then
+            local res = GetCategoryList()
+            if type(res) == "table" then
+                categories = res
+            else
+                categories = { GetCategoryList() }
+            end
+        else
+            categories = {}
+        end
+    end
     
     -- If no categories found, show a message
     if #categories == 0 then
@@ -119,7 +149,12 @@ function AchievementsUI:UpdateCategories()
     local yOffset = 0
 
     for i, catId in ipairs(categories) do
-        local name, parentId = GetAchievementCategory(catId)
+        local name, parentId
+        if type(GetCategoryInfo) == "function" then
+            name, parentId = GetCategoryInfo(catId)
+        else
+            name = tostring(catId)
+        end
         
         local btn = CreateFrame("Button", nil, child)
         btn:SetSize(CATEGORY_WIDTH, btnHeight)
@@ -128,7 +163,7 @@ function AchievementsUI:UpdateCategories()
         -- Text
         btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         btn.text:SetPoint("LEFT", btn, "LEFT", 10, 0)
-        btn.text:SetText(name)
+        btn.text:SetText(name or tostring(catId))
         
         -- Highlight
         btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -167,7 +202,7 @@ end
 -- ============================================================================
 
 function AchievementsUI:UpdateAchievements(categoryId)
-    if not self.frame or not categoryId then return end
+    if not self.frame or not self.frame.achievementChild or not categoryId then return end
     
     local child = self.frame.achievementChild
     -- Clear existing
@@ -177,7 +212,7 @@ function AchievementsUI:UpdateAchievements(categoryId)
     end
 
     -- Get Achievements in Category
-    -- GetAchievementCategory(categoryId) returns name, parentId
+    -- In WotLK, GetCategoryInfo(categoryId) returns name/parent; achievements are accessed via GetAchievementInfo(categoryId, index).
     -- We need to iterate achievements.
     -- In 3.3.5a, we might need to scan all achievements or use an API if available.
     -- Actually, GetCategoryNumAchievements(categoryId) returns count.
@@ -298,41 +333,55 @@ function AchievementsUI:CreateAchievementButton(parent, width, height)
 end
 
 function AchievementsUI:Refresh()
-    if self.selectedCategory then
-        self:UpdateAchievements(self.selectedCategory)
-    end
+    -- Blizzard UI updates itself.
 end
 
 function AchievementsUI:Show()
     if not self.frame then return end
+
+    EnsureBlizzardAchievementUI()
+
+    if AchievementFrame then
+        if not self._origParent then
+            self._origParent = AchievementFrame:GetParent() or UIParent
+        end
+
+        AchievementFrame:Hide()
+        AchievementFrame:SetParent(self.frame)
+        AchievementFrame:ClearAllPoints()
+        AchievementFrame:Show()
+
+        -- Keep it fitted even if the main window is resized.
+        if not self._fitHooked then
+            self._fitHooked = true
+            self.frame:SetScript("OnSizeChanged", function()
+                AchievementsUI:FitEmbeddedAchievementFrame()
+            end)
+        end
+
+        self:FitEmbeddedAchievementFrame()
+    end
+
     self.frame:Show()
-
-    -- Ensure Blizzard achievement data is loaded (WotLK loads it on demand)
-    if LoadAddOn then
-        pcall(LoadAddOn, "Blizzard_AchievementUI")
-    end
-    if AchievementFrame_LoadUI then
-        pcall(AchievementFrame_LoadUI)
-    end
-    
-    -- Request data if needed
-    if DC.RequestAchievements then
-        DC:RequestAchievements()
-    end
-    
-    self:UpdateCategories()
-
-    -- Some clients populate category data a frame later; retry shortly.
-    if DC and type(DC.After) == "function" then
-        DC:After(0.2, function()
-            if AchievementsUI.frame and AchievementsUI.frame:IsShown() then
-                AchievementsUI:UpdateCategories()
-            end
-        end)
-    end
 end
 
 function AchievementsUI:Hide()
-    if not self.frame then return end
-    self.frame:Hide()
+    if self.frame then
+        self.frame:Hide()
+    end
+
+    if AchievementFrame and self._origParent and AchievementFrame:GetParent() == self.frame then
+        AchievementFrame:Hide()
+        AchievementFrame:SetParent(self._origParent)
+        AchievementFrame:ClearAllPoints()
+        AchievementFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+
+        if type(AchievementFrame.SetScale) == "function" then
+            AchievementFrame:SetScale(1)
+        end
+
+        if AchievementFrameCloseButton then
+            AchievementFrameCloseButton:Show()
+        end
+    end
 end

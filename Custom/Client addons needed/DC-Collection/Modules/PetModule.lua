@@ -227,6 +227,51 @@ function PetModule:ScanKnownPets()
     return knownPets
 end
 
+-- When the server has no pet definitions table (or returns an empty set),
+-- fall back to the client spellbook companion list so the Pets tab isn't empty.
+function PetModule:SeedFromClientKnownPets()
+    local pets = self:ScanKnownPets()
+    if not pets or next(pets) == nil then
+        return false
+    end
+
+    DC.definitions.pets = DC.definitions.pets or {}
+    DC.collections.pets = DC.collections.pets or {}
+
+    local changed = false
+    for spellId, data in pairs(pets) do
+        if spellId then
+            if not DC.definitions.pets[spellId] then
+                DC.definitions.pets[spellId] = {
+                    name = data.name,
+                    icon = data.icon,
+                }
+                changed = true
+            end
+            if not DC.collections.pets[spellId] then
+                DC.collections.pets[spellId] = { owned = true }
+                changed = true
+            end
+        end
+    end
+
+    if changed then
+        if DC.stats and DC.stats.pets then
+            if type(DC.CountDefinitions) == "function" then
+                DC.stats.pets.total = DC:CountDefinitions("pets")
+            end
+            if type(DC.CountCollection) == "function" then
+                DC.stats.pets.owned = DC:CountCollection("pets")
+            end
+        end
+        if type(DC.SaveCache) == "function" then
+            DC:SaveCache()
+        end
+    end
+
+    return changed
+end
+
 -- ============================================================================
 -- INTEGRATION
 -- ============================================================================

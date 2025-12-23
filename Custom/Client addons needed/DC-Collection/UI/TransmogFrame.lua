@@ -175,7 +175,51 @@ local function IsAppearanceForSelectedSlot(def)
         return false
     end
     local slotDef = GetSelectedSlotDef()
-    local invType = def.inventoryType or 0
+
+    local invType = def.inventoryType or def.inventory_type or def.invType or def.inv_type
+    if type(invType) == "string" then
+        invType = tonumber(invType)
+    end
+    invType = invType or 0
+
+    -- If inventoryType is missing (common on some servers/caches), infer from the canonical itemId.
+    if invType == 0 then
+        local itemId = def.itemId or def.item_id or def.item
+        if type(itemId) == "string" then
+            itemId = tonumber(itemId)
+        end
+
+        if itemId and GetItemInfo then
+            local _, _, _, _, _, _, _, _, equipLoc = GetItemInfo(itemId)
+            local equipMap = {
+                INVTYPE_HEAD = 1,
+                INVTYPE_SHOULDER = 3,
+                INVTYPE_CLOAK = 16,
+                INVTYPE_CHEST = 5,
+                INVTYPE_ROBE = 20,
+                INVTYPE_BODY = 4,
+                INVTYPE_TABARD = 19,
+                INVTYPE_WRIST = 9,
+                INVTYPE_HAND = 10,
+                INVTYPE_WAIST = 6,
+                INVTYPE_LEGS = 7,
+                INVTYPE_FEET = 8,
+                INVTYPE_WEAPON = 13,
+                INVTYPE_2HWEAPON = 17,
+                INVTYPE_WEAPONMAINHAND = 21,
+                INVTYPE_WEAPONOFFHAND = 22,
+                INVTYPE_HOLDABLE = 23,
+                INVTYPE_SHIELD = 14,
+                INVTYPE_RANGED = 15,
+                INVTYPE_RANGEDRIGHT = 26,
+                INVTYPE_RELIC = 28,
+            }
+            if equipLoc and equipMap[equipLoc] then
+                invType = equipMap[equipLoc]
+            end
+        end
+    end
+
     return slotDef.invTypes[invType] == true
 end
 

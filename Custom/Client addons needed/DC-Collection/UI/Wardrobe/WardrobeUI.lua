@@ -521,15 +521,17 @@ function Wardrobe:CreateRightPanel(parent)
             end
 
             if button == "LeftButton" then
-                if selfBtn.itemData.collected then
+                -- Always preview on left-click.
+                if selfBtn.itemData.itemId then
+                    Wardrobe:PreviewAppearance(selfBtn.itemData.itemId)
+                end
+
+                -- If collected, also apply (keeps the existing workflow, but adds preview).
+                if selfBtn.itemData.collected and selfBtn.itemData.itemId then
                     Wardrobe:ApplyAppearance(selfBtn.itemData.itemId)
-                else
-                    if DC and DC.Print then
-                        DC:Print("This appearance is not collected. Shift-click to wishlist it.")
-                    end
                 end
             else
-                Wardrobe:PreviewAppearance(selfBtn.itemData.itemId)
+                Wardrobe:ShowAppearanceContextMenu(selfBtn.itemData)
             end
         end)
 
@@ -547,8 +549,11 @@ function Wardrobe:CreateRightPanel(parent)
                     GameTooltip:AddLine("Wishlisted", 1, 0.82, 0)
                 end
             end
-            GameTooltip:AddLine("Left-click to apply", 0.7, 0.7, 0.7)
-            GameTooltip:AddLine("Right-click to preview", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Left-click to preview", 0.7, 0.7, 0.7)
+            if selfBtn.itemData.collected then
+                GameTooltip:AddLine("(Also applies if collected)", 0.7, 0.7, 0.7)
+            end
+            GameTooltip:AddLine("Right-click for options", 0.7, 0.7, 0.7)
             GameTooltip:AddLine("Shift-click to toggle wishlist", 0.7, 0.7, 0.7)
             GameTooltip:Show()
         end)

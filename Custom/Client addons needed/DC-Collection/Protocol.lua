@@ -300,10 +300,17 @@ function DC:RequestDefinitions(collType)
     if not collType then
         self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "mounts" })
         self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pets" })
+        -- Compatibility: some servers use singular type names.
+        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pet" })
         self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "heirlooms" })
         self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "titles" })
         -- Transmog definitions can be huge; fetch on-demand (and paged) when the Transmog tab is opened.
         return
+    end
+
+    if collType == "pets" or collType == "pet" then
+        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pets" })
+        return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pet" })
     end
 
     if collType == "transmog" then
@@ -325,9 +332,16 @@ function DC:RequestCollection(collType)
     if not collType then
         self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "mounts" })
         self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pets" })
+        -- Compatibility: some servers use singular type names.
+        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pet" })
         self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "heirlooms" })
         self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "titles" })
         return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "transmog" })
+    end
+
+    if collType == "pets" or collType == "pet" then
+        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pets" })
+        return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pet" })
     end
 
     return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = collType })
@@ -1158,15 +1172,21 @@ function DC:HandleTransmogSlotItems(data)
     local page = data.page or 1
     local hasMore = data.hasMore or false
     local items = data.items or {}
+    local total = data.total or data.totalCount or data.count
     
     self._transmogSlotItems = self._transmogSlotItems or {}
     self._transmogSlotItems[visualSlot] = {
         page = page,
         hasMore = hasMore,
         items = items,
+        total = total,
     }
     
     self:Debug(string.format("Received %d transmog items for slot %d (page %d)", #items, visualSlot or 0, page))
+
+    if self._serverCollectionsTestActive then
+        self:Print(string.format("[DC-Collection] Test: slot %d page %d items=%d total=%s", visualSlot or 0, page or 0, #items, tostring(total or "?")))
+    end
     
     -- Fire callback for TransmogUI to refresh
     if self.callbacks.onTransmogSlotItems then
@@ -1202,7 +1222,8 @@ function DC:IsAppearanceCollected(displayId)
 end
 
 function DC:HandleDefinitions(data)
-    local collType = data.type
+    local rawType = data.type
+    local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
     local definitions = data.definitions or {}
     local syncVersion = data.syncVersion
 
@@ -1225,8 +1246,26 @@ function DC:HandleDefinitions(data)
     end
     
     self:CacheMergeDefinitions(collType, definitions)
-    self:SetSyncVersion(collType, syncVersion)
+    if syncVersion ~= nil then
+        self:SetSyncVersion(collType, syncVersion)
+    end
     self:SaveCache()
+
+    -- Debug: how many transmog definitions are missing inventoryType on this page
+    if collType == "transmog" then
+        local total = 0
+        local missing = 0
+        for _, def in pairs(definitions or {}) do
+            total = total + 1
+            local invType = (type(def) == "table") and (def.inventoryType or def.inventory_type or def.invType or def.inv_type) or nil
+            if invType == nil or invType == 0 or invType == "0" then
+                missing = missing + 1
+            end
+        end
+        if total > 0 then
+            self:Debug(string.format("Transmog defs page: inventoryType missing %d / %d", missing, total))
+        end
+    end
     
     -- Notify UI if open
     if self.MainFrame and self.MainFrame:IsShown() then
@@ -1272,6 +1311,22 @@ function DC:HandleDefinitions(data)
             end
         end
 
+        -- During the settings "Test server collections" run, do not auto-page transmog.
+        if self._serverTestNoTransmogPaging then
+            hasMore = false
+            self._serverTestNoTransmogPaging = nil
+        end
+
+        if self._serverCollectionsTestActive then
+            self:Print(string.format(
+                "[DC-Collection] Test: transmog defs received=%d offset=%s limit=%s total=%s more=%s",
+                receivedCount,
+                tostring(requestedOffset),
+                tostring(requestedLimit),
+                tostring(total),
+                tostring(hasMore)))
+        end
+
         if hasMore then
             local nextOffset = tonumber(data.nextOffset or data.next_offset) or (requestedOffset + requestedLimit)
 
@@ -1302,7 +1357,8 @@ function DC:HandleDefinitions(data)
 end
 
 function DC:HandleCollection(data)
-    local collType = data.type
+    local rawType = data.type
+    local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
     local items = data.items or {}
     
     self:CacheMergeCollection(collType, items)
@@ -1357,7 +1413,8 @@ function DC:HandleHeirloomSummoned(data)
 end
 
 function DC:HandleFavoriteToggled(data)
-    local collType = data.type
+    local rawType = data.type
+    local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
     local itemId = data.itemId
     local isFavorite = data.isFavorite
     
@@ -1370,11 +1427,27 @@ function DC:HandleFavoriteToggled(data)
 end
 
 function DC:HandleCurrency(data)
-    self:CacheUpdateCurrency(data.tokens, data.emblems)
+    local tokens = data.tokens or data.token or data.Tokens or data.Token
+    local emblems = data.emblems or data.emblem or data.essence or data.Essence or data.Emblems
+
+    if type(tokens) == "string" then tokens = tonumber(tokens) end
+    if type(emblems) == "string" then emblems = tonumber(emblems) end
+
+    self:CacheUpdateCurrency(tokens, emblems)
+
+    -- Bridge: expose server currency into DCAddonProtocol's DCCentral helpers
+    local central = rawget(_G, "DCAddonProtocol")
+    if central and type(central.SetServerCurrencyBalance) == "function" then
+        central:SetServerCurrencyBalance(self.currency.tokens or 0, self.currency.emblems or 0)
+    end
     
     -- Update UI
-    if self.ShopUI and self.ShopUI:IsShown() then
-        self.ShopUI:UpdateCurrencyDisplay()
+    if self.ShopUI and self.ShopUI.IsShown and self.ShopUI:IsShown() then
+        if type(self.UpdateShopCurrencyDisplay) == "function" then
+            self:UpdateShopCurrencyDisplay()
+        elseif type(self.UpdateShopUI) == "function" then
+            self:UpdateShopUI()
+        end
     end
 
     -- Update MainFrame Header if shown
@@ -1388,7 +1461,11 @@ function DC:HandleShopItems(data)
     
     -- Update shop UI if open
     if self.ShopUI and self.ShopUI:IsShown() then
-        self.ShopUI:Refresh()
+        if type(self.UpdateShopUI) == "function" then
+            self:UpdateShopUI()
+        elseif type(self.PopulateShopItems) == "function" then
+            self:PopulateShopItems()
+        end
     end
     
     self:Debug(string.format("Received %d shop items", #self.shopItems))
@@ -1397,7 +1474,11 @@ end
 function DC:HandleShopResult(data)
     if data.success then
         -- Update currency
-        self:CacheUpdateCurrency(data.newTokens, data.newEmblems)
+        local newTokens = data.newTokens or data.tokens or data.token
+        local newEmblems = data.newEmblems or data.newEssence or data.emblems or data.essence or data.emblem
+        if type(newTokens) == "string" then newTokens = tonumber(newTokens) end
+        if type(newEmblems) == "string" then newEmblems = tonumber(newEmblems) end
+        self:CacheUpdateCurrency(newTokens, newEmblems)
         
         -- Show success message
         local itemName = data.itemName or "Item"

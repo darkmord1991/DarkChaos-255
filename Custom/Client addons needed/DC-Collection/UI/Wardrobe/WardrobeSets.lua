@@ -11,6 +11,52 @@ if not DC then return end
 DC.Wardrobe = DC.Wardrobe or {}
 local Wardrobe = DC.Wardrobe
 
+function Wardrobe:PreviewSet(set)
+    if not set or not self.frame or not self.frame.model then
+        return
+    end
+
+    local model = self.frame.model
+    if model.SetUnit then
+        model:SetUnit("player")
+    end
+    if model.Undress then
+        model:Undress()
+    end
+
+    if not set.items or type(set.items) ~= "table" then
+        return
+    end
+
+    if model.TryOn then
+        for _, itemId in ipairs(set.items) do
+            if itemId then
+                local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
+                model:TryOn(link)
+            end
+        end
+    end
+end
+
+function Wardrobe:ShowSetContextMenu(set)
+    if not set then
+        return
+    end
+
+    local menu = {
+        { text = set.name or "Set", isTitle = true, notCheckable = true },
+        {
+            text = "Preview set",
+            notCheckable = true,
+            func = function() Wardrobe:PreviewSet(set) end,
+        },
+        { text = (DC.L and DC.L["CANCEL"]) or "Cancel", notCheckable = true },
+    }
+
+    local dropdown = CreateFrame("Frame", "DCWardrobeSetContextMenu", UIParent, "UIDropDownMenuTemplate")
+    EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
+end
+
 function Wardrobe:RefreshSetsGrid()
     if not self.frame then return end
 
@@ -76,6 +122,15 @@ function Wardrobe:RefreshSetsGrid()
                 btn.icon:SetVertexColor(0.4, 0.4, 0.4)
                 btn.notCollected:Show()
             end
+
+            btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            btn:SetScript("OnClick", function(_, which)
+                if which == "LeftButton" then
+                    Wardrobe:PreviewSet(set)
+                else
+                    Wardrobe:ShowSetContextMenu(set)
+                end
+            end)
 
             btn:SetScript("OnEnter", function()
                 GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
