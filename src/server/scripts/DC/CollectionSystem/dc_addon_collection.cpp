@@ -145,6 +145,111 @@ namespace DCCollection
         return result != nullptr;
     }
 
+    bool CharacterColumnExists(std::string const& tableName, std::string const& columnName)
+    {
+        if (!CharacterTableExists(tableName))
+            return false;
+
+        QueryResult result = CharacterDatabase.Query("SHOW COLUMNS FROM `{}` LIKE '{}'", tableName, columnName);
+        return result != nullptr;
+    }
+
+    std::string const& GetCharEntryColumn(std::string const& tableName)
+    {
+        // Cache per table. Supports legacy schemas where `entry` was used instead of `entry_id`.
+        static std::unordered_map<std::string, std::string> cache;
+        auto it = cache.find(tableName);
+        if (it != cache.end())
+            return it->second;
+
+        std::string col;
+        if (CharacterColumnExists(tableName, "entry_id"))
+            col = "entry_id";
+        else if (CharacterColumnExists(tableName, "entry"))
+            col = "entry";
+
+        if (col.empty())
+            TC_LOG_ERROR("server.loading", "DC-Collection: Character DB table '{}' missing 'entry_id'/'entry' column (schema mismatch or wrong DB).", tableName);
+
+        auto res = cache.emplace(tableName, std::move(col));
+        return res.first->second;
+    }
+
+    bool CharacterColumnTypeContains(std::string const& tableName, std::string const& columnName, std::string_view needle)
+    {
+        if (!CharacterTableExists(tableName))
+            return false;
+
+        QueryResult result = CharacterDatabase.Query("SHOW COLUMNS FROM `{}` LIKE '{}'", tableName, columnName);
+        if (!result)
+            return false;
+
+        Field* fields = result->Fetch();
+        std::string type = fields[1].Get<std::string>();
+        return type.find(needle) != std::string::npos;
+    }
+
+    bool WishlistCollectionTypeIsEnum()
+    {
+        static bool checked = false;
+        static bool isEnum = false;
+        if (!checked)
+        {
+            isEnum = CharacterColumnTypeContains("dc_collection_wishlist", "collection_type", "enum(");
+            checked = true;
+        }
+        return isEnum;
+    }
+
+    std::string const& GetWishlistIdColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_collection_wishlist"))
+            return cached;
+
+        if (CharacterColumnExists("dc_collection_wishlist", "entry_id"))
+            cached = "entry_id";
+        else if (CharacterColumnExists("dc_collection_wishlist", "entry"))
+            cached = "entry";
+        else if (CharacterColumnExists("dc_collection_wishlist", "item_id"))
+            cached = "item_id";
+
+        if (cached.empty())
+            TC_LOG_ERROR("server.loading", "DC-Collection: Character DB table 'dc_collection_wishlist' missing 'entry_id'/'entry'/'item_id' column (schema mismatch).");
+
+        return cached;
+    }
+
+    std::string WishlistTypeToString(uint8 type)
+    {
+        switch (static_cast<CollectionType>(type))
+        {
+            case CollectionType::MOUNT: return "mount";
+            case CollectionType::PET: return "pet";
+            case CollectionType::TOY: return "toy";
+            case CollectionType::HEIRLOOM: return "heirloom";
+            case CollectionType::TITLE: return "title";
+            case CollectionType::TRANSMOG: return "transmog";
+            default: return std::string();
+        }
+    }
+
+    uint8 WishlistTypeFromString(std::string const& type)
+    {
+        if (type == "mount") return static_cast<uint8>(CollectionType::MOUNT);
+        if (type == "pet") return static_cast<uint8>(CollectionType::PET);
+        if (type == "toy") return static_cast<uint8>(CollectionType::TOY);
+        if (type == "heirloom") return static_cast<uint8>(CollectionType::HEIRLOOM);
+        if (type == "title") return static_cast<uint8>(CollectionType::TITLE);
+        if (type == "transmog") return static_cast<uint8>(CollectionType::TRANSMOG);
+        return 0;
+    }
+
     bool ShouldRunTransmogLegacyImport(uint32 accountId)
     {
         if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_LEGACY_IMPORT_ENABLED, true))
@@ -199,15 +304,19 @@ namespace DCCollection
         if (!accountId)
             return;
 
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return;
+
         auto trans = CharacterDatabase.BeginTransaction();
 
         // Migrate older PET collection rows that used learned spellIds instead of companion itemIds.
         // If entry_id is not a valid item_template entry, attempt to map it to the teaching item.
         {
             QueryResult pets = CharacterDatabase.Query(
-                "SELECT entry_id FROM dc_collection_items "
+                "SELECT {} FROM dc_collection_items "
                 "WHERE account_id = {} AND collection_type = {} AND unlocked = 1",
-                accountId, static_cast<uint8>(CollectionType::PET));
+                itemsEntryCol, accountId, static_cast<uint8>(CollectionType::PET));
 
             if (pets)
             {
@@ -223,13 +332,13 @@ namespace DCCollection
 
                     trans->Append(
                         "INSERT IGNORE INTO dc_collection_items "
-                        "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                        "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                         "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                        accountId, static_cast<uint8>(CollectionType::PET), mappedItemId);
+                        itemsEntryCol, accountId, static_cast<uint8>(CollectionType::PET), mappedItemId);
 
                     trans->Append(
-                        "DELETE FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND entry_id = {}",
-                        accountId, static_cast<uint8>(CollectionType::PET), entryId);
+                        "DELETE FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND {} = {}",
+                        accountId, static_cast<uint8>(CollectionType::PET), itemsEntryCol, entryId);
 
                 } while (pets->NextRow());
             }
@@ -271,9 +380,9 @@ namespace DCCollection
             {
                 trans->Append(
                     "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                    accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
+                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
             }
             else if (isPetSpell)
             {
@@ -283,9 +392,9 @@ namespace DCCollection
 
                 trans->Append(
                     "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                    accountId, static_cast<uint8>(CollectionType::PET), itemId);
+                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::PET), itemId);
             }
         }
 
@@ -301,9 +410,9 @@ namespace DCCollection
 
             trans->Append(
                 "INSERT IGNORE INTO dc_collection_items "
-                "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                 "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                accountId, static_cast<uint8>(CollectionType::TITLE), titleEntry->ID);
+                itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TITLE), titleEntry->ID);
         }
 
         // Import legacy transmog appearances for old characters by scanning owned items.
@@ -369,9 +478,9 @@ namespace DCCollection
             {
                 trans->Append(
                     "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'IMPORT_ITEMSCAN', 1, NOW())",
-                    accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId);
+                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId);
             }
 
             // Mark migration as done even if nothing was found.
@@ -411,15 +520,48 @@ namespace DCCollection
         return result != nullptr;
     }
 
+    bool WorldColumnExists(std::string const& tableName, std::string const& columnName)
+    {
+        if (!WorldTableExists(tableName))
+            return false;
+
+        QueryResult result = WorldDatabase.Query("SHOW COLUMNS FROM `{}` LIKE '{}'", tableName, columnName);
+        return result != nullptr;
+    }
+
+    std::string const& GetWorldEntryColumn(std::string const& tableName)
+    {
+        static std::unordered_map<std::string, std::string> cache;
+        auto it = cache.find(tableName);
+        if (it != cache.end())
+            return it->second;
+
+        std::string col;
+        if (WorldColumnExists(tableName, "entry_id"))
+            col = "entry_id";
+        else if (WorldColumnExists(tableName, "entry"))
+            col = "entry";
+
+        if (col.empty())
+            TC_LOG_ERROR("server.loading", "DC-Collection: World DB table '{}' missing 'entry_id'/'entry' column (schema mismatch or wrong DB).", tableName);
+
+        auto res = cache.emplace(tableName, std::move(col));
+        return res.first->second;
+    }
+
     // Load player's collection for a specific type
     std::vector<uint32> LoadPlayerCollection(uint32 accountId, CollectionType type)
     {
         std::vector<uint32> items;
 
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return items;
+
         QueryResult result = CharacterDatabase.Query(
-            "SELECT entry_id FROM dc_collection_items "
+            "SELECT {} FROM dc_collection_items "
             "WHERE account_id = {} AND collection_type = {} AND unlocked = 1",
-            accountId, static_cast<uint8>(type));
+            itemsEntryCol, accountId, static_cast<uint8>(type));
 
         if (result)
         {
@@ -460,9 +602,13 @@ namespace DCCollection
     // Check whether an account owns a given collection item (unlocked)
     bool HasCollectionItem(uint32 accountId, CollectionType type, uint32 entryId)
     {
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return false;
+
         QueryResult result = CharacterDatabase.Query(
-            "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND entry_id = {} AND unlocked = 1 LIMIT 1",
-            accountId, static_cast<uint8>(type), entryId);
+            "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND {} = {} AND unlocked = 1 LIMIT 1",
+            accountId, static_cast<uint8>(type), itemsEntryCol, entryId);
         return result != nullptr;
     }
 
@@ -680,9 +826,13 @@ namespace DCCollection
 
     bool HasTransmogAppearanceUnlocked(uint32 accountId, uint32 displayId)
     {
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return false;
+
         QueryResult result = CharacterDatabase.Query(
-            "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND entry_id = {} AND unlocked = 1 LIMIT 1",
-            accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId);
+            "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND {} = {} AND unlocked = 1 LIMIT 1",
+            accountId, static_cast<uint8>(CollectionType::TRANSMOG), itemsEntryCol, displayId);
 
         return result != nullptr;
     }
@@ -835,11 +985,15 @@ namespace DCCollection
             return;
 
         // Store as a generic collection item: type=TRANSMOG, entry_id=displayId
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return;
+
         CharacterDatabase.Execute(
             "INSERT IGNORE INTO dc_collection_items "
-            "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+            "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
             "VALUES ({}, {}, {}, '{}', 1, NOW())",
-            accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId, std::string(sourceType));
+            itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId, std::string(sourceType));
     }
 
     // Load wishlist
@@ -847,17 +1001,34 @@ namespace DCCollection
     {
         std::vector<std::pair<uint8, uint32>> wishlist;
 
+        std::string const& wishIdCol = GetWishlistIdColumn();
+        if (wishIdCol.empty())
+            return wishlist;
+
         QueryResult result = CharacterDatabase.Query(
-            "SELECT collection_type, entry_id FROM dc_collection_wishlist "
+            "SELECT collection_type, {} FROM dc_collection_wishlist "
             "WHERE account_id = {} ORDER BY added_date DESC",
-            accountId);
+            wishIdCol, accountId);
 
         if (result)
         {
             do
             {
                 Field* fields = result->Fetch();
-                wishlist.emplace_back(fields[0].Get<uint8>(), fields[1].Get<uint32>());
+
+                uint8 type = 0;
+                if (WishlistCollectionTypeIsEnum())
+                {
+                    std::string t = fields[0].Get<std::string>();
+                    type = WishlistTypeFromString(t);
+                }
+                else
+                {
+                    type = fields[0].Get<uint8>();
+                }
+
+                if (type)
+                    wishlist.emplace_back(type, fields[1].Get<uint32>());
             } while (result->NextRow());
         }
 
@@ -867,10 +1038,28 @@ namespace DCCollection
     // Check if item is on wishlist
     bool IsOnWishlist(uint32 accountId, CollectionType type, uint32 entryId)
     {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT 1 FROM dc_collection_wishlist "
-            "WHERE account_id = {} AND collection_type = {} AND entry_id = {}",
-            accountId, static_cast<uint8>(type), entryId);
+        std::string const& wishIdCol = GetWishlistIdColumn();
+        if (wishIdCol.empty())
+            return false;
+
+        QueryResult result;
+        if (WishlistCollectionTypeIsEnum())
+        {
+            std::string typeStr = WishlistTypeToString(static_cast<uint8>(type));
+            if (typeStr.empty())
+                return false;
+            result = CharacterDatabase.Query(
+                "SELECT 1 FROM dc_collection_wishlist "
+                "WHERE account_id = {} AND collection_type = '{}' AND {} = {}",
+                accountId, typeStr, wishIdCol, entryId);
+        }
+        else
+        {
+            result = CharacterDatabase.Query(
+                "SELECT 1 FROM dc_collection_wishlist "
+                "WHERE account_id = {} AND collection_type = {} AND {} = {}",
+                accountId, static_cast<uint8>(type), wishIdCol, entryId);
+        }
 
         return result != nullptr;
     }
@@ -1150,9 +1339,17 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
+        std::string const& shopEntryCol = GetWorldEntryColumn("dc_collection_shop");
+        if (shopEntryCol.empty())
+        {
+            DCAddon::SendError(player, MODULE, "Shop table schema mismatch",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
         // Query shop items based on category
         std::string query =
-            "SELECT id, collection_type, entry_id, price_tokens, price_emblems, "
+            "SELECT id, collection_type, " + shopEntryCol + ", price_tokens, price_emblems, "
             "       discount_percent, available_until, stock_remaining, featured "
             "FROM dc_collection_shop "
             "WHERE enabled = 1 AND (available_from IS NULL OR available_from <= NOW()) "
@@ -1398,9 +1595,25 @@ namespace DCCollection
             wishMsg.Send(player);
 
             // Remove from wishlist
-            CharacterDatabase.Execute(
-                "DELETE FROM dc_collection_wishlist WHERE account_id = {} AND collection_type = {} AND entry_id = {}",
-                accountId, static_cast<uint8>(type), entryId);
+            std::string const& wishIdCol = GetWishlistIdColumn();
+            if (wishIdCol.empty())
+                return;
+
+            if (WishlistCollectionTypeIsEnum())
+            {
+                std::string typeStr = WishlistTypeToString(static_cast<uint8>(type));
+                if (typeStr.empty())
+                    return;
+                CharacterDatabase.Execute(
+                    "DELETE FROM dc_collection_wishlist WHERE account_id = {} AND collection_type = '{}' AND {} = {}",
+                    accountId, typeStr, wishIdCol, entryId);
+            }
+            else
+            {
+                CharacterDatabase.Execute(
+                    "DELETE FROM dc_collection_wishlist WHERE account_id = {} AND collection_type = {} AND {} = {}",
+                    accountId, static_cast<uint8>(type), wishIdCol, entryId);
+            }
         }
     }
 
@@ -1422,11 +1635,21 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
+        std::string const& shopEntryCol = GetWorldEntryColumn("dc_collection_shop");
+        if (shopEntryCol.empty())
+        {
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
+            msg.Set("success", false);
+            msg.Set("error", "Shop table schema mismatch");
+            msg.Send(player);
+            return;
+        }
+
         // Get shop item details
         QueryResult result = WorldDatabase.Query(
-            "SELECT collection_type, entry_id, price_tokens, price_emblems, stock_remaining "
+            "SELECT collection_type, {}, price_tokens, price_emblems, stock_remaining "
             "FROM dc_collection_shop WHERE id = {} AND enabled = 1",
-            shopId);
+            shopEntryCol, shopId);
 
         if (!result)
         {
@@ -1542,18 +1765,28 @@ namespace DCCollection
         // Process purchase - use transaction for granting/recording
         auto trans = CharacterDatabase.BeginTransaction();
 
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+        {
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
+            msg.Set("success", false);
+            msg.Set("error", "Collection table schema mismatch");
+            msg.Send(player);
+            return;
+        }
+
         // Add to collection
         trans->Append(
-            "INSERT INTO dc_collection_items (account_id, collection_type, entry_id, source_type, source_id, unlocked, acquired_date) "
+            "INSERT INTO dc_collection_items (account_id, collection_type, {}, source_type, source_id, unlocked, acquired_date) "
             "VALUES ({}, {}, {}, 'SHOP', {}, 1, NOW()) "
             "ON DUPLICATE KEY UPDATE unlocked = 1, acquired_date = NOW()",
-            accountId, collType, purchasedEntryId, shopId);
+            itemsEntryCol, accountId, collType, purchasedEntryId, shopId);
 
         // Record purchase
         trans->Append(
-            "INSERT INTO dc_collection_shop_purchases (account_id, shop_item_id, character_guid, price_tokens, price_emblems, purchase_date) "
-            "VALUES ({}, {}, {}, {}, {}, NOW())",
-            accountId, shopId, player->GetGUID().GetCounter(), priceTokens, priceEmblems);
+            "INSERT INTO dc_collection_shop_purchases (account_id, shop_id, character_id, character_name, purchase_date, cost_tokens, cost_emblems, cost_gold) "
+            "VALUES ({}, {}, {}, '{}', NOW(), {}, {}, 0)",
+            accountId, shopId, player->GetGUID().GetCounter(), std::string(player->GetName()), priceTokens, priceEmblems);
 
         // Update stock if limited
         if (stock > 0)
@@ -1601,6 +1834,16 @@ namespace DCCollection
         uint32 accountId = GetAccountId(player);
         uint32 maxItems = sConfigMgr->GetOption<uint32>(Config::WISHLIST_MAX_ITEMS, 25);
 
+        std::string const& wishIdCol = GetWishlistIdColumn();
+        if (wishIdCol.empty())
+        {
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
+            msg.Set("success", false);
+            msg.Set("error", "Wishlist table schema mismatch");
+            msg.Send(player);
+            return;
+        }
+
         // Check current count
         auto wishlist = LoadWishlist(accountId);
         if (wishlist.size() >= maxItems)
@@ -1623,10 +1866,30 @@ namespace DCCollection
         }
 
         // Add to wishlist
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_collection_wishlist (account_id, collection_type, entry_id, added_date) "
-            "VALUES ({}, {}, {}, NOW())",
-            accountId, type, entryId);
+        if (WishlistCollectionTypeIsEnum())
+        {
+            std::string typeStr = WishlistTypeToString(type);
+            if (typeStr.empty())
+            {
+                DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
+                msg.Set("success", false);
+                msg.Set("error", "Unsupported wishlist type");
+                msg.Send(player);
+                return;
+            }
+
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_collection_wishlist (account_id, collection_type, {}, added_date) "
+                "VALUES ({}, '{}', {}, NOW())",
+                wishIdCol, accountId, typeStr, entryId);
+        }
+        else
+        {
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_collection_wishlist (account_id, collection_type, {}, added_date) "
+                "VALUES ({}, {}, {}, NOW())",
+                wishIdCol, accountId, type, entryId);
+        }
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
         msg.Set("success", true);
@@ -1643,9 +1906,32 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
-        CharacterDatabase.Execute(
-            "DELETE FROM dc_collection_wishlist WHERE account_id = {} AND collection_type = {} AND entry_id = {}",
-            accountId, type, entryId);
+        std::string const& wishIdCol = GetWishlistIdColumn();
+        if (wishIdCol.empty())
+        {
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
+            msg.Set("success", false);
+            msg.Set("error", "Wishlist table schema mismatch");
+            msg.Send(player);
+            return;
+        }
+
+        if (WishlistCollectionTypeIsEnum())
+        {
+            std::string typeStr = WishlistTypeToString(type);
+            if (typeStr.empty())
+                return;
+
+            CharacterDatabase.Execute(
+                "DELETE FROM dc_collection_wishlist WHERE account_id = {} AND collection_type = '{}' AND {} = {}",
+                accountId, typeStr, wishIdCol, entryId);
+        }
+        else
+        {
+            CharacterDatabase.Execute(
+                "DELETE FROM dc_collection_wishlist WHERE account_id = {} AND collection_type = {} AND {} = {}",
+                accountId, type, wishIdCol, entryId);
+        }
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_WISHLIST_UPDATED);
         msg.Set("success", true);
@@ -1662,10 +1948,14 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return;
+
         CharacterDatabase.Execute(
             "UPDATE dc_collection_items SET is_favorite = {} "
-            "WHERE account_id = {} AND collection_type = {} AND entry_id = {}",
-            favorite ? 1 : 0, accountId, type, entryId);
+            "WHERE account_id = {} AND collection_type = {} AND {} = {}",
+            favorite ? 1 : 0, accountId, type, itemsEntryCol, entryId);
 
         // No response needed, client handles optimistically
     }
@@ -1741,10 +2031,15 @@ namespace DCCollection
             if (favoritesOnly)
             {
                 std::vector<uint32> favorites;
+
+                std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+                if (itemsEntryCol.empty())
+                    return;
+
                 QueryResult result = CharacterDatabase.Query(
-                    "SELECT entry_id FROM dc_collection_items "
+                    "SELECT {} FROM dc_collection_items "
                     "WHERE account_id = {} AND collection_type = {} AND is_favorite = 1",
-                    accountId, static_cast<uint8>(CollectionType::MOUNT));
+                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::MOUNT));
                 if (result)
                 {
                     do
@@ -1897,10 +2192,14 @@ namespace DCCollection
         player->CastSpell(player, spellId, false);
 
         // Update usage counter
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return;
+
         CharacterDatabase.Execute(
             "UPDATE dc_collection_items SET times_used = times_used + 1 "
-            "WHERE account_id = {} AND collection_type = {} AND entry_id = {}",
-            accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
+            "WHERE account_id = {} AND collection_type = {} AND {} = {}",
+            accountId, static_cast<uint8>(CollectionType::MOUNT), itemsEntryCol, spellId);
     }
 
     void HandleSetTitle(Player* player, uint32 titleId)
@@ -2860,9 +3159,13 @@ namespace DCCollection
 
         if (!loadedAny && WorldTableExists("dc_collection_definitions"))
         {
+            std::string const& defEntryCol = GetWorldEntryColumn("dc_collection_definitions");
+            if (defEntryCol.empty())
+                return;
+
             QueryResult r = WorldDatabase.Query(
-                "SELECT entry_id FROM dc_collection_definitions WHERE collection_type = {} AND enabled = 1",
-                static_cast<uint8>(ct));
+                "SELECT {} FROM dc_collection_definitions WHERE collection_type = {} AND enabled = 1",
+                defEntryCol, static_cast<uint8>(ct));
 
             if (r)
             {
@@ -3243,12 +3546,16 @@ namespace DCCollection
 
             if (isMount)
             {
+                std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+                if (itemsEntryCol.empty())
+                    return;
+
                 // Add mount to collection
                 CharacterDatabase.Execute(
                     "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'LEARNED', 1, NOW())",
-                    accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
+                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
 
                 SendItemLearned(player, CollectionType::MOUNT, spellId);
                 UpdateMountSpeedBonus(player);
@@ -3259,11 +3566,15 @@ namespace DCCollection
                 if (!itemId)
                     return;
 
+                std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+                if (itemsEntryCol.empty())
+                    return;
+
                 CharacterDatabase.Execute(
                     "INSERT IGNORE INTO dc_collection_items "
-                    "(account_id, collection_type, entry_id, source_type, unlocked, acquired_date) "
+                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'LEARNED', 1, NOW())",
-                    accountId, static_cast<uint8>(CollectionType::PET), itemId);
+                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::PET), itemId);
 
                 SendItemLearned(player, CollectionType::PET, itemId);
             }

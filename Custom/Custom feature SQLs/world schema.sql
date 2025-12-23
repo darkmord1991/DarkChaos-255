@@ -1436,6 +1436,49 @@ CREATE TABLE IF NOT EXISTS `dc_chaos_artifact_items` (
   KEY `idx_rarity` (`artifact_rarity`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `dc_collection_achievement_defs` (
+  `achievement_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `description` text,
+  `collection_type` enum('mount','pet','toy','transmog','title','heirloom','total') NOT NULL,
+  `required_count` int unsigned NOT NULL,
+  `reward_type` enum('title','mount','pet','item','currency','spell') DEFAULT NULL,
+  `reward_id` int unsigned DEFAULT NULL,
+  `reward_tokens` int unsigned NOT NULL DEFAULT '0',
+  `reward_emblems` int unsigned NOT NULL DEFAULT '0',
+  `icon` varchar(255) DEFAULT NULL,
+  `points` int unsigned NOT NULL DEFAULT '10',
+  `sort_order` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`achievement_id`),
+  KEY `idx_type` (`collection_type`),
+  KEY `idx_count` (`required_count`)
+) ENGINE=InnoDB AUTO_INCREMENT=56 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection achievement definitions';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_definitions` (
+  `collection_type` tinyint unsigned NOT NULL COMMENT '1=mount,2=pet,3=toy,4=heirloom,5=title,6=transmog',
+  `entry_id` int unsigned NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`collection_type`,`entry_id`),
+  KEY `idx_enabled` (`collection_type`,`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Generic collection definition index';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_shop` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `collection_type` tinyint unsigned NOT NULL COMMENT '1..6 (see dc_collection_items.collection_type)',
+  `entry_id` int unsigned NOT NULL,
+  `price_tokens` int unsigned NOT NULL DEFAULT '0',
+  `price_emblems` int unsigned NOT NULL DEFAULT '0',
+  `discount_percent` tinyint unsigned NOT NULL DEFAULT '0',
+  `available_from` datetime DEFAULT NULL,
+  `available_until` datetime DEFAULT NULL,
+  `stock_remaining` int DEFAULT NULL COMMENT 'NULL or <0 for unlimited',
+  `featured` tinyint(1) NOT NULL DEFAULT '0',
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`id`),
+  KEY `idx_enabled_time` (`enabled`,`available_from`,`available_until`),
+  KEY `idx_type` (`collection_type`)
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection shop (generic)';
+
 CREATE TABLE IF NOT EXISTS `dc_daily_quest_token_rewards` (
   `quest_id` int unsigned NOT NULL COMMENT 'Daily quest ID (700101-700104)',
   `token_item_id` int unsigned NOT NULL COMMENT 'Token item ID to award',
@@ -1559,6 +1602,20 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_setup` (
   KEY `season_lock` (`season_lock`),
   CONSTRAINT `dc_dungeon_setup_ibfk_1` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Unified dungeon availability toggles for Normal/Heroic/Mythic/Mythic+';
+
+CREATE TABLE IF NOT EXISTS `dc_heirloom_definitions` (
+  `item_id` int unsigned NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `slot` tinyint unsigned NOT NULL COMMENT 'Equipment slot',
+  `armor_type` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=misc, 1=cloth, 2=leather, 3=mail, 4=plate',
+  `max_upgrade_level` tinyint unsigned NOT NULL DEFAULT '3',
+  `scaling_type` tinyint unsigned NOT NULL DEFAULT '0',
+  `icon` varchar(255) DEFAULT '',
+  `source` text,
+  PRIMARY KEY (`item_id`),
+  KEY `idx_slot` (`slot`),
+  KEY `idx_armor_type` (`armor_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom definitions';
 
 CREATE TABLE IF NOT EXISTS `dc_heirloom_enchant_mapping` (
   `package_id` tinyint unsigned NOT NULL,
@@ -1792,6 +1849,28 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_tiers` (
   KEY `idx_active_tiers` (`season`,`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tier definitions for item upgrade system';
 
+CREATE TABLE IF NOT EXISTS `dc_mount_definitions` (
+  `spell_id` int unsigned NOT NULL COMMENT 'Mount spell ID',
+  `name` varchar(100) NOT NULL COMMENT 'Mount name',
+  `mount_type` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=ground, 1=flying, 2=aquatic, 3=all',
+  `source` text COMMENT 'JSON source info',
+  `faction` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=both, 1=alliance, 2=horde',
+  `class_mask` int unsigned NOT NULL DEFAULT '0' COMMENT '0=all, else class bitmask',
+  `display_id` int unsigned NOT NULL DEFAULT '0',
+  `icon` varchar(255) DEFAULT '' COMMENT 'Icon path override',
+  `rarity` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=common, 1=uncommon, 2=rare, 3=epic, 4=legendary',
+  `speed` smallint unsigned NOT NULL DEFAULT '100' COMMENT 'Speed percentage',
+  `expansion` tinyint unsigned NOT NULL DEFAULT '2' COMMENT '0=vanilla, 1=tbc, 2=wotlk',
+  `is_tradeable` tinyint(1) NOT NULL DEFAULT '0',
+  `profession_required` tinyint unsigned DEFAULT NULL,
+  `skill_required` smallint unsigned DEFAULT NULL,
+  `flags` int unsigned NOT NULL DEFAULT '0' COMMENT 'Custom flags',
+  PRIMARY KEY (`spell_id`),
+  KEY `idx_mount_type` (`mount_type`),
+  KEY `idx_rarity` (`rarity`),
+  KEY `idx_faction` (`faction`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Mount definitions';
+
 CREATE TABLE IF NOT EXISTS `dc_mplus_affix_pairs` (
   `pair_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique affix pair identifier',
   `name` varchar(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Pair display name (e.g., "Tyrannical + Bolstering")',
@@ -1944,6 +2023,23 @@ CREATE TABLE IF NOT EXISTS `dc_npc_quest_link` (
   KEY `quest_idx` (`quest_id`),
   KEY `npc_idx` (`npc_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Optional tracking - standard AC tables (creature_questrelation, creature_involvedrelation) are authoritative';
+
+CREATE TABLE IF NOT EXISTS `dc_pet_definitions` (
+  `pet_entry` int unsigned NOT NULL COMMENT 'Pet entry or spell ID',
+  `name` varchar(100) NOT NULL,
+  `pet_type` enum('companion','minipet') NOT NULL DEFAULT 'companion',
+  `pet_spell_id` int unsigned DEFAULT NULL COMMENT 'Summon spell if different',
+  `source` text COMMENT 'JSON source info',
+  `faction` tinyint unsigned NOT NULL DEFAULT '0',
+  `display_id` int unsigned NOT NULL DEFAULT '0',
+  `icon` varchar(255) DEFAULT '',
+  `rarity` tinyint unsigned NOT NULL DEFAULT '0',
+  `expansion` tinyint unsigned NOT NULL DEFAULT '2',
+  `flags` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`pet_entry`),
+  KEY `idx_rarity` (`rarity`),
+  KEY `idx_faction` (`faction`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Pet definitions';
 
 CREATE TABLE IF NOT EXISTS `dc_quest_difficulty_mapping` (
   `quest_id` int unsigned NOT NULL,
@@ -2111,6 +2207,21 @@ CREATE TABLE IF NOT EXISTS `dc_token_vendor_items` (
   KEY `idx_class_slot_ilvl` (`class`,`slot`,`item_level`),
   KEY `idx_item_id` (`item_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=797 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token vendor item pool for Mythic+ rewards';
+
+CREATE TABLE IF NOT EXISTS `dc_toy_definitions` (
+  `item_id` int unsigned NOT NULL COMMENT 'Toy item ID',
+  `name` varchar(100) NOT NULL,
+  `category` varchar(50) DEFAULT 'General',
+  `source` text COMMENT 'JSON source info',
+  `cooldown` int unsigned NOT NULL DEFAULT '0' COMMENT 'Cooldown in seconds',
+  `icon` varchar(255) DEFAULT '',
+  `rarity` tinyint unsigned NOT NULL DEFAULT '0',
+  `expansion` tinyint unsigned NOT NULL DEFAULT '2',
+  `flags` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`item_id`),
+  KEY `idx_category` (`category`),
+  KEY `idx_rarity` (`rarity`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Toy definitions';
 
 CREATE TABLE IF NOT EXISTS `dc_upgrade_tracks` (
   `track_id` int NOT NULL AUTO_INCREMENT COMMENT 'Unique track identifier',
@@ -4382,6 +4493,107 @@ CREATE TABLE IF NOT EXISTS `pool_template` (
   PRIMARY KEY (`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DELIMITER //
+CREATE PROCEDURE `PopulateHeirloomDefinitions`()
+BEGIN
+    INSERT IGNORE INTO dc_heirloom_definitions (item_id, name, slot, armor_type)
+    SELECT 
+        h.item_id,
+        h.item_name,
+        h.slot,
+        h.armor_type
+    FROM v_heirloom_items h
+    WHERE h.item_id NOT IN (SELECT item_id FROM dc_heirloom_definitions);
+    
+    SELECT ROW_COUNT() AS heirlooms_added;
+END//
+DELIMITER ;
+
+DELIMITER //
+CREATE PROCEDURE `PopulateMountDefinitions`()
+BEGIN
+    -- Insert mounts from item_template that aren't already defined
+    INSERT IGNORE INTO dc_mount_definitions (spell_id, name, rarity, display_id, source)
+    SELECT 
+        m.spell_id,
+        m.item_name,
+        m.rarity,
+        m.display_id,
+        JSON_OBJECT('type', 'unknown', 'item_id', m.item_id)
+    FROM v_mount_items m
+    WHERE m.spell_id NOT IN (SELECT spell_id FROM dc_mount_definitions);
+    
+    SELECT ROW_COUNT() AS mounts_added;
+END//
+DELIMITER ;
+
+DELIMITER //
+CREATE PROCEDURE `PopulateMountSourcesFromLoot`()
+BEGIN
+    -- Update mount sources from creature loot
+    UPDATE dc_mount_definitions md
+    JOIN (
+        SELECT 
+            mi.spell_id,
+            JSON_OBJECT(
+                'type', 'drop',
+                -- Pick a representative boss for this spell_id.
+                -- Aggregation avoids ONLY_FULL_GROUP_BY issues.
+                'boss', MIN(ct.name),
+                'dropRate', ROUND(MAX(clt.Chance), 1),
+                'creature_entry', MIN(ct.entry)
+            ) AS source_json
+        FROM v_mount_items mi
+        JOIN creature_loot_template clt ON clt.Item = mi.item_id
+        JOIN creature_template ct ON ct.lootid = clt.Entry
+        WHERE ct.rank >= 3 OR (ct.unit_flags & 32768) > 0  -- Boss flag
+        GROUP BY mi.spell_id
+    ) src ON md.spell_id = src.spell_id
+    SET md.source = src.source_json
+    WHERE md.source IS NULL OR JSON_EXTRACT(md.source, '$.type') = 'unknown';
+    
+    -- Update mount sources from vendors
+    UPDATE dc_mount_definitions md
+    JOIN (
+        SELECT 
+            mi.spell_id,
+            JSON_OBJECT(
+                'type', 'vendor',
+                -- Pick a representative vendor for this spell_id.
+                'npc', MIN(ct.name),
+                'cost', MIN(i.BuyPrice)
+            ) AS source_json
+        FROM v_mount_items mi
+        JOIN item_template i ON i.entry = mi.item_id
+        JOIN npc_vendor nv ON nv.item = mi.item_id
+        JOIN creature_template ct ON ct.entry = nv.entry
+        GROUP BY mi.spell_id
+    ) src ON md.spell_id = src.spell_id
+    SET md.source = src.source_json
+    WHERE md.source IS NULL OR JSON_EXTRACT(md.source, '$.type') = 'unknown';
+    
+    SELECT 'Mount sources updated' AS status;
+END//
+DELIMITER ;
+
+DELIMITER //
+CREATE PROCEDURE `PopulatePetDefinitions`()
+BEGIN
+    INSERT IGNORE INTO dc_pet_definitions (pet_entry, name, pet_spell_id, rarity, display_id, source)
+    SELECT 
+        p.item_id,
+        p.item_name,
+        p.spell_id,
+        p.rarity,
+        p.display_id,
+        JSON_OBJECT('type', 'unknown', 'item_id', p.item_id)
+    FROM v_pet_items p
+    WHERE p.item_id NOT IN (SELECT pet_entry FROM dc_pet_definitions);
+    
+    SELECT ROW_COUNT() AS pets_added;
+END//
+DELIMITER ;
+
 CREATE TABLE IF NOT EXISTS `powerdisplay_dbc` (
   `ID` int NOT NULL DEFAULT '0',
   `ActualType` int NOT NULL DEFAULT '0',
@@ -5997,6 +6209,15 @@ CREATE TABLE IF NOT EXISTS `updates_include` (
   PRIMARY KEY (`path`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='List of directories where we want to include sql updates.';
 
+CREATE TABLE `v_heirloom_items` (
+	`item_id` INT UNSIGNED NOT NULL,
+	`item_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_unicode_ci',
+	`rarity` TINYINT UNSIGNED NOT NULL,
+	`slot` TINYINT UNSIGNED NOT NULL,
+	`armor_type` TINYINT UNSIGNED NOT NULL,
+	`display_id` INT UNSIGNED NOT NULL
+);
+
 CREATE TABLE `v_heirloom_packages_detailed` (
 	`package_id` TINYINT UNSIGNED NOT NULL,
 	`package_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_0900_ai_ci',
@@ -6012,6 +6233,22 @@ CREATE TABLE `v_heirloom_packages_detailed` (
 	`recommended_classes` VARCHAR(1) NULL COMMENT 'Recommended class names' COLLATE 'utf8mb4_0900_ai_ci',
 	`recommended_specs` VARCHAR(1) NULL COMMENT 'Recommended spec names' COLLATE 'utf8mb4_0900_ai_ci',
 	`sort_order` TINYINT UNSIGNED NULL COMMENT 'Display order in addon'
+);
+
+CREATE TABLE `v_mount_items` (
+	`item_id` INT UNSIGNED NOT NULL,
+	`item_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_unicode_ci',
+	`spell_id` INT NOT NULL,
+	`rarity` TINYINT UNSIGNED NOT NULL,
+	`display_id` INT UNSIGNED NOT NULL
+);
+
+CREATE TABLE `v_pet_items` (
+	`item_id` INT UNSIGNED NOT NULL,
+	`item_name` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_unicode_ci',
+	`spell_id` INT NOT NULL,
+	`rarity` TINYINT UNSIGNED NOT NULL,
+	`display_id` INT UNSIGNED NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS `vehicle_accessory` (
@@ -6283,8 +6520,20 @@ CREATE TABLE IF NOT EXISTS `worldmapoverlay_dbc` (
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS `v_heirloom_items`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_heirloom_items` AS select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`Quality` AS `rarity`,`i`.`InventoryType` AS `slot`,`i`.`subclass` AS `armor_type`,`i`.`displayid` AS `display_id` from `item_template` `i` where (`i`.`Quality` = 7)
+;
+
 DROP TABLE IF EXISTS `v_heirloom_packages_detailed`;
 CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_heirloom_packages_detailed` AS select `p`.`package_id` AS `package_id`,`p`.`package_name` AS `package_name`,`p`.`package_icon` AS `package_icon`,`p`.`description` AS `description`,`p`.`stat_type_1` AS `stat_type_1`,`p`.`stat_type_2` AS `stat_type_2`,`p`.`stat_type_3` AS `stat_type_3`,(case `p`.`stat_type_1` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' else concat('Stat ',`p`.`stat_type_1`) end) AS `stat_1_name`,(case `p`.`stat_type_2` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' else concat('Stat ',`p`.`stat_type_2`) end) AS `stat_2_name`,(case `p`.`stat_type_3` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' when NULL then NULL else concat('Stat ',`p`.`stat_type_3`) end) AS `stat_3_name`,concat('rgb(',`p`.`color_r`,',',`p`.`color_g`,',',`p`.`color_b`,')') AS `color_css`,`p`.`recommended_classes` AS `recommended_classes`,`p`.`recommended_specs` AS `recommended_specs`,`p`.`sort_order` AS `sort_order` from `dc_heirloom_stat_packages` `p` where (`p`.`is_enabled` = true) order by `p`.`sort_order`
+;
+
+DROP TABLE IF EXISTS `v_mount_items`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_mount_items` AS select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_1` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_1` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_2` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_2` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_3` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_3` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_4` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_4` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_5` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_5` > 0))
+;
+
+DROP TABLE IF EXISTS `v_pet_items`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_pet_items` AS select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_1` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_1` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_2` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_2` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_3` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_3` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_4` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_4` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_5` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_5` > 0))
 ;
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;

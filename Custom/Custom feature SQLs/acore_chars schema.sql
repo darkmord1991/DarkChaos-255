@@ -40,6 +40,24 @@ CREATE TABLE IF NOT EXISTS `active_arena_season` (
   `season_state` tinyint unsigned NOT NULL COMMENT 'Supported 2 states: 0 - disabled; 1 - in progress.'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DELIMITER //
+CREATE PROCEDURE `AddCollectionCurrency`(
+    IN p_account_id INT UNSIGNED,
+    IN p_tokens INT,
+    IN p_emblems INT
+)
+BEGIN
+    INSERT INTO dc_collection_currency (account_id, tokens, emblems, lifetime_tokens, lifetime_emblems)
+    VALUES (p_account_id, GREATEST(0, p_tokens), GREATEST(0, p_emblems), GREATEST(0, p_tokens), GREATEST(0, p_emblems))
+    ON DUPLICATE KEY UPDATE
+        tokens = tokens + p_tokens,
+        emblems = emblems + p_emblems,
+        lifetime_tokens = lifetime_tokens + GREATEST(0, p_tokens),
+        lifetime_emblems = lifetime_emblems + GREATEST(0, p_emblems),
+        last_updated = CURRENT_TIMESTAMP;
+END//
+DELIMITER ;
+
 CREATE TABLE IF NOT EXISTS `addons` (
   `name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `crc` int unsigned NOT NULL DEFAULT '0',
@@ -571,15 +589,6 @@ CREATE TABLE IF NOT EXISTS `character_talent` (
   PRIMARY KEY (`guid`,`spell`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `character_transmog` (
-  `player_guid` int unsigned DEFAULT NULL,
-  `slot` varchar(3) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT '',
-  `item` int unsigned DEFAULT NULL,
-  `real_item` int unsigned DEFAULT NULL,
-  UNIQUE KEY `player_and_slot` (`player_guid`,`slot`) USING BTREE,
-  KEY `player_and_slot_key` (`player_guid`,`slot`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
 CREATE TABLE IF NOT EXISTS `characters` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Global Unique Identifier',
   `account` int unsigned NOT NULL DEFAULT '0' COMMENT 'Account Identifier',
@@ -786,28 +795,6 @@ CREATE TABLE IF NOT EXISTS `custom_solocraft_character_stats` (
   PRIMARY KEY (`GUID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 
-CREATE TABLE IF NOT EXISTS `custom_transmogrification` (
-  `GUID` int unsigned NOT NULL COMMENT 'Item guidLow',
-  `FakeEntry` int unsigned NOT NULL COMMENT 'Item entry',
-  `Owner` int unsigned NOT NULL COMMENT 'Player guidLow',
-  PRIMARY KEY (`GUID`),
-  KEY `Owner` (`Owner`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='6_2';
-
-CREATE TABLE IF NOT EXISTS `custom_transmogrification_sets` (
-  `Owner` int unsigned NOT NULL COMMENT 'Player guidlow',
-  `PresetID` tinyint unsigned NOT NULL COMMENT 'Preset identifier',
-  `SetName` text COMMENT 'SetName',
-  `SetData` text COMMENT 'Slot1 Entry1 Slot2 Entry2',
-  PRIMARY KEY (`Owner`,`PresetID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COMMENT='6_1';
-
-CREATE TABLE IF NOT EXISTS `custom_unlocked_appearances` (
-  `account_id` int unsigned NOT NULL,
-  `item_template_id` mediumint unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`account_id`,`item_template_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
 CREATE TABLE IF NOT EXISTS `daily_players_reports` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `creation_time` int unsigned NOT NULL DEFAULT '0',
@@ -880,7 +867,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=10120 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=18028 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1154,6 +1141,106 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige_stats` (
   PRIMARY KEY (`prestige_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos: Statistics for prestige levels';
 
+CREATE TABLE IF NOT EXISTS `dc_character_transmog` (
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID (low)',
+  `slot` tinyint unsigned NOT NULL COMMENT 'Equipment slot (0-18)',
+  `fake_entry` int unsigned NOT NULL COMMENT 'Item entry used for appearance',
+  `real_entry` int unsigned NOT NULL COMMENT 'Real equipped item entry',
+  PRIMARY KEY (`guid`,`slot`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Applied transmog per character';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_achievements` (
+  `account_id` int unsigned NOT NULL,
+  `achievement_id` int unsigned NOT NULL COMMENT 'Custom achievement ID',
+  `completed_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `completed_by` int unsigned NOT NULL COMMENT 'Character GUID',
+  `reward_claimed` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`account_id`,`achievement_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection achievements';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_currency` (
+  `account_id` int unsigned NOT NULL,
+  `tokens` int unsigned NOT NULL DEFAULT '0' COMMENT 'Collection Tokens',
+  `emblems` int unsigned NOT NULL DEFAULT '0' COMMENT 'Collectors Emblems (rare)',
+  `lifetime_tokens` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total tokens ever earned',
+  `lifetime_emblems` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total emblems ever earned',
+  `last_daily_reward` date DEFAULT NULL COMMENT 'Last daily token claim',
+  `last_updated` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection currency per account';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_items` (
+  `account_id` int unsigned NOT NULL,
+  `collection_type` tinyint unsigned NOT NULL COMMENT '1=mount,2=pet,3=toy,4=heirloom,5=title,6=transmog',
+  `entry_id` int unsigned NOT NULL COMMENT 'SpellId (mount/pet), ItemId (toy/heirloom), TitleId, DisplayId (transmog)',
+  `unlocked` tinyint(1) NOT NULL DEFAULT '1',
+  `is_favorite` tinyint(1) NOT NULL DEFAULT '0',
+  `source_type` varchar(16) NOT NULL DEFAULT 'UNKNOWN',
+  `source_id` int unsigned DEFAULT NULL,
+  `acquired_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `times_used` int unsigned NOT NULL DEFAULT '0',
+  `last_used` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`account_id`,`collection_type`,`entry_id`),
+  KEY `idx_type_account` (`collection_type`,`account_id`),
+  KEY `idx_fav` (`account_id`,`collection_type`,`is_favorite`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Generic account-wide collection items';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_migrations` (
+  `account_id` int unsigned NOT NULL,
+  `migration_key` varchar(64) NOT NULL,
+  `done` tinyint(1) NOT NULL DEFAULT '1',
+  `done_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`account_id`,`migration_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='One-time account migrations for DC-Collection';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_mount_speed` (
+  `account_id` int unsigned NOT NULL,
+  `enhancement_level` tinyint unsigned NOT NULL COMMENT '1-4',
+  `learned_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `learned_by` int unsigned NOT NULL COMMENT 'Character GUID',
+  PRIMARY KEY (`account_id`,`enhancement_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Mount speed enhancements learned';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_shop_purchases` (
+  `purchase_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `account_id` int unsigned NOT NULL,
+  `shop_id` int unsigned NOT NULL,
+  `character_id` int unsigned NOT NULL COMMENT 'Character who made purchase',
+  `character_name` varchar(50) DEFAULT NULL,
+  `purchase_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `cost_tokens` int unsigned NOT NULL DEFAULT '0',
+  `cost_emblems` int unsigned NOT NULL DEFAULT '0',
+  `cost_gold` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`purchase_id`),
+  KEY `idx_account` (`account_id`),
+  KEY `idx_shop_item` (`shop_id`),
+  KEY `idx_date` (`purchase_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Shop purchase history';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_stats` (
+  `account_id` int unsigned NOT NULL,
+  `mount_count` int unsigned NOT NULL DEFAULT '0',
+  `pet_count` int unsigned NOT NULL DEFAULT '0',
+  `toy_count` int unsigned NOT NULL DEFAULT '0',
+  `heirloom_count` int unsigned NOT NULL DEFAULT '0',
+  `transmog_count` int unsigned NOT NULL DEFAULT '0',
+  `title_count` int unsigned NOT NULL DEFAULT '0',
+  `total_count` int unsigned NOT NULL DEFAULT '0',
+  `mount_speed_bonus` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Current speed bonus %',
+  `last_updated` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`account_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection statistics cache';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_wishlist` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
+  `collection_type` enum('mount','pet','toy','transmog','title','heirloom') NOT NULL,
+  `item_id` int unsigned NOT NULL COMMENT 'Spell ID, item ID, or display ID',
+  `added_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `priority` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'User priority 0-5',
+  `notes` varchar(255) DEFAULT NULL COMMENT 'User notes',
+  PRIMARY KEY (`account_id`,`collection_type`,`item_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection wishlist';
+
 CREATE TABLE IF NOT EXISTS `dc_cross_system_achievement_triggers` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `achievement_id` int unsigned NOT NULL COMMENT 'Custom achievement ID to grant',
@@ -1422,6 +1509,16 @@ CREATE TABLE IF NOT EXISTS `dc_guild_upgrade_stats` (
   KEY `idx_total_upgrades` (`total_upgrades` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild-level upgrade statistics for leaderboards';
 
+CREATE TABLE IF NOT EXISTS `dc_heirloom_collection` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
+  `item_id` int unsigned NOT NULL COMMENT 'Heirloom item ID',
+  `upgrade_level` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Upgrade tier',
+  `obtained_by` int unsigned NOT NULL COMMENT 'Character GUID who obtained it',
+  `obtained_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`account_id`,`item_id`),
+  KEY `idx_obtained_by` (`obtained_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account heirloom collection';
+
 CREATE TABLE IF NOT EXISTS `dc_heirloom_package_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID',
@@ -1475,7 +1572,7 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrade_log` (
   KEY `idx_player` (`player_guid`),
   KEY `idx_item` (`item_guid`),
   KEY `idx_timestamp` (`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom upgrade transaction log';
+) ENGINE=InnoDB AUTO_INCREMENT=48 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom upgrade transaction log';
 
 CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID from item_instance',
@@ -1521,7 +1618,7 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_match_participants` (
   KEY `idx_participant_season_guid` (`season_id`,`guid`),
   KEY `idx_participant_team_date` (`team`,`match_date`),
   KEY `idx_participant_match_guid` (`match_id`,`guid`)
-) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks individual player statistics for each HLBG match';
+) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks individual player statistics for each HLBG match';
 
 CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   `player_guid` int unsigned NOT NULL COMMENT 'Player GUID (unique identifier)',
@@ -1637,7 +1734,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_unresolved` (`resolved`,`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=394 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+) ENGINE=InnoDB AUTO_INCREMENT=567 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
 
 CREATE TABLE `dc_item_upgrade_missing_items_summary` (
 	`item_id` INT UNSIGNED NOT NULL COMMENT 'Item template ID that failed',
@@ -1692,7 +1789,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_log` (
   `recipe_id` int unsigned NOT NULL,
   `success` tinyint unsigned NOT NULL,
   `attempt_time` int unsigned NOT NULL,
-  `consumed_items` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`log_id`),
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_recipe_id` (`recipe_id`),
@@ -1702,21 +1798,15 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_synthesis_log` (
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_transmutation_sessions` (
   `session_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
-  `item_guid` int unsigned NOT NULL,
-  `transmutation_type` enum('standard','special','fusion','synthesis') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'standard',
-  `status` enum('pending','in_progress','completed','failed','cancelled') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
-  `target_tier` tinyint unsigned DEFAULT '1',
-  `target_level` tinyint unsigned DEFAULT '1',
-  `tokens_required` int unsigned DEFAULT '0',
-  `essence_required` int unsigned DEFAULT '0',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `started_at` timestamp NULL DEFAULT NULL,
-  `completed_at` timestamp NULL DEFAULT NULL,
+  `recipe_id` int unsigned NOT NULL,
+  `start_time` int unsigned NOT NULL,
+  `end_time` int unsigned NOT NULL,
+  `success` tinyint(1) NOT NULL DEFAULT '0',
+  `completed` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`session_id`),
-  KEY `idx_player_guid` (`player_guid`),
-  KEY `idx_item_guid` (`item_guid`),
-  KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Session tracking for transmutation processes';
+  KEY `idx_player_completed_end` (`player_guid`,`completed`,`end_time`),
+  KEY `idx_recipe_id` (`recipe_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_item_upgrades` (
   `upgrade_id` int NOT NULL AUTO_INCREMENT COMMENT 'Unique upgrade record ID',
@@ -1757,6 +1847,32 @@ CREATE TABLE IF NOT EXISTS `dc_leaderboard_cache` (
   KEY `idx_entity` (`entity_guid`,`entity_type`),
   KEY `idx_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cached leaderboard rankings for fast retrieval';
+
+CREATE TABLE IF NOT EXISTS `dc_migration_auth_unlocks` (
+  `account_id` int unsigned NOT NULL,
+  `displayid` int unsigned NOT NULL,
+  PRIMARY KEY (`account_id`,`displayid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Migration staging: auth unlocks (account_id -> displayid)';
+
+CREATE TABLE IF NOT EXISTS `dc_migration_item_display` (
+  `entry` mediumint unsigned NOT NULL,
+  `displayid` int unsigned NOT NULL,
+  PRIMARY KEY (`entry`),
+  KEY `idx_displayid` (`displayid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Migration helper: item_template entry -> displayid';
+
+CREATE TABLE IF NOT EXISTS `dc_mount_collection` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
+  `spell_id` int unsigned NOT NULL COMMENT 'Mount spell ID',
+  `obtained_by` int unsigned NOT NULL COMMENT 'Character GUID who obtained it',
+  `obtained_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When the mount was obtained',
+  `times_used` int unsigned NOT NULL DEFAULT '0' COMMENT 'Usage counter',
+  `is_favorite` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Marked as favorite',
+  `last_used` timestamp NULL DEFAULT NULL COMMENT 'Last time mount was summoned',
+  PRIMARY KEY (`account_id`,`spell_id`),
+  KEY `idx_obtained_by` (`obtained_by`),
+  KEY `idx_favorite` (`account_id`,`is_favorite`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account mount collection';
 
 CREATE TABLE IF NOT EXISTS `dc_mplus_best_runs` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -1916,6 +2032,21 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_spec_settings` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Player Settings';
+
+CREATE TABLE IF NOT EXISTS `dc_pet_collection` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
+  `pet_entry` int unsigned NOT NULL COMMENT 'Pet creature entry or spell ID',
+  `pet_type` enum('companion','minipet') NOT NULL DEFAULT 'companion',
+  `obtained_by` int unsigned NOT NULL COMMENT 'Character GUID who obtained it',
+  `obtained_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `pet_name` varchar(50) DEFAULT NULL COMMENT 'Custom pet name',
+  `times_used` int unsigned NOT NULL DEFAULT '0',
+  `is_favorite` tinyint(1) NOT NULL DEFAULT '0',
+  `last_used` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`account_id`,`pet_entry`),
+  KEY `idx_obtained_by` (`obtained_by`),
+  KEY `idx_favorite` (`account_id`,`is_favorite`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account pet collection';
 
 CREATE TABLE IF NOT EXISTS `dc_player_achievements` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -2216,12 +2347,11 @@ CREATE TABLE IF NOT EXISTS `dc_player_tier_unlocks` (
 
 CREATE TABLE IF NOT EXISTS `dc_player_transmutation_cooldowns` (
   `player_guid` int unsigned NOT NULL,
-  `transmutation_type` enum('standard','special','fusion','synthesis') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'standard',
-  `cooldown_until` timestamp NULL DEFAULT NULL,
-  `daily_uses` int unsigned DEFAULT '0',
-  `last_reset` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`player_guid`,`transmutation_type`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Transmutation cooldown tracking per player';
+  `recipe_id` int unsigned NOT NULL,
+  `last_used` int unsigned NOT NULL,
+  PRIMARY KEY (`player_guid`,`recipe_id`),
+  KEY `idx_last_used` (`last_used`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `dc_player_upgrade_summary` (
 	`player_guid` INT NOT NULL COMMENT 'Character GUID (from characters table)',
@@ -2493,16 +2623,28 @@ CREATE TABLE IF NOT EXISTS `dc_spectator_settings` (
 CREATE TABLE IF NOT EXISTS `dc_tier_conversion_log` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL,
+  `item_guid` int unsigned NOT NULL,
   `from_tier` tinyint unsigned NOT NULL,
   `to_tier` tinyint unsigned NOT NULL,
-  `conversion_type` enum('upgrade','downgrade','reset','skip') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'upgrade',
-  `tokens_spent` int unsigned DEFAULT '0',
-  `reason` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `upgrade_level` tinyint unsigned NOT NULL,
+  `success` tinyint(1) NOT NULL,
+  `cost_essence` int unsigned NOT NULL DEFAULT '0',
+  `cost_tokens` int unsigned NOT NULL DEFAULT '0',
+  `timestamp` int unsigned NOT NULL,
   PRIMARY KEY (`log_id`),
   KEY `idx_player_guid` (`player_guid`),
-  KEY `idx_created_at` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Audit trail for tier conversion events';
+  KEY `idx_timestamp` (`timestamp`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dc_title_collection` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
+  `title_id` int unsigned NOT NULL COMMENT 'Title ID from CharTitles.dbc',
+  `obtained_by` int unsigned NOT NULL COMMENT 'Character GUID who obtained it',
+  `obtained_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `is_favorite` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`account_id`,`title_id`),
+  KEY `idx_obtained_by` (`obtained_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account title collection';
 
 CREATE TABLE IF NOT EXISTS `dc_token_event_config` (
   `event_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique event config ID',
@@ -2554,7 +2696,7 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_transaction_type` (`transaction_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=346 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
+) ENGINE=InnoDB AUTO_INCREMENT=349 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
 CREATE TABLE `dc_top_upgraders` (
 	`player_guid` INT UNSIGNED NOT NULL,
@@ -2567,6 +2709,30 @@ CREATE TABLE `dc_top_upgraders` (
 	`total_mastery_points` INT UNSIGNED NULL,
 	`season_id` INT UNSIGNED NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS `dc_toy_collection` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
+  `item_id` int unsigned NOT NULL COMMENT 'Toy item ID',
+  `obtained_by` int unsigned NOT NULL COMMENT 'Character GUID who obtained it',
+  `obtained_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `times_used` int unsigned NOT NULL DEFAULT '0',
+  `is_favorite` tinyint(1) NOT NULL DEFAULT '0',
+  `last_used` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`account_id`,`item_id`),
+  KEY `idx_obtained_by` (`obtained_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account toy collection';
+
+CREATE TABLE IF NOT EXISTS `dc_transmog_collection` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
+  `display_id` int unsigned NOT NULL COMMENT 'Item display ID',
+  `slot` tinyint unsigned NOT NULL COMMENT 'Equipment slot',
+  `obtained_by` int unsigned NOT NULL COMMENT 'Character GUID who obtained it',
+  `obtained_from` int unsigned DEFAULT NULL COMMENT 'Source item ID',
+  `obtained_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`account_id`,`display_id`),
+  KEY `idx_slot` (`account_id`,`slot`),
+  KEY `idx_obtained_by` (`obtained_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account transmog appearances';
 
 CREATE TABLE IF NOT EXISTS `dc_upgrade_history` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -3414,6 +3580,51 @@ BEGIN
         p_killer_entry,
         p_killer_name
     );
+END//
+DELIMITER ;
+
+DELIMITER //
+CREATE PROCEDURE `UpdateCollectionStats`(IN p_account_id INT UNSIGNED)
+BEGIN
+    DECLARE v_mounts INT DEFAULT 0;
+    DECLARE v_pets INT DEFAULT 0;
+    DECLARE v_toys INT DEFAULT 0;
+    DECLARE v_heirlooms INT DEFAULT 0;
+    DECLARE v_transmog INT DEFAULT 0;
+    DECLARE v_titles INT DEFAULT 0;
+    DECLARE v_speed INT DEFAULT 0;
+    
+    SELECT COUNT(*) INTO v_mounts FROM dc_mount_collection WHERE account_id = p_account_id;
+    SELECT COUNT(*) INTO v_pets FROM dc_pet_collection WHERE account_id = p_account_id;
+    SELECT COUNT(*) INTO v_toys FROM dc_toy_collection WHERE account_id = p_account_id;
+    SELECT COUNT(*) INTO v_heirlooms FROM dc_heirloom_collection WHERE account_id = p_account_id;
+    SELECT COUNT(*) INTO v_transmog FROM dc_transmog_collection WHERE account_id = p_account_id;
+    SELECT COUNT(*) INTO v_titles FROM dc_title_collection WHERE account_id = p_account_id;
+    
+    -- Calculate mount speed bonus
+    SELECT COALESCE(SUM(CASE enhancement_level 
+        WHEN 1 THEN 2 
+        WHEN 2 THEN 3 
+        WHEN 3 THEN 3 
+        WHEN 4 THEN 2 
+        ELSE 0 END), 0) INTO v_speed
+    FROM dc_collection_mount_speed WHERE account_id = p_account_id;
+    
+    INSERT INTO dc_collection_stats 
+        (account_id, mount_count, pet_count, toy_count, heirloom_count, transmog_count, title_count, total_count, mount_speed_bonus)
+    VALUES 
+        (p_account_id, v_mounts, v_pets, v_toys, v_heirlooms, v_transmog, v_titles, 
+         v_mounts + v_pets + v_toys + v_heirlooms + v_transmog + v_titles, v_speed)
+    ON DUPLICATE KEY UPDATE
+        mount_count = v_mounts,
+        pet_count = v_pets,
+        toy_count = v_toys,
+        heirloom_count = v_heirlooms,
+        transmog_count = v_transmog,
+        title_count = v_titles,
+        total_count = v_mounts + v_pets + v_toys + v_heirlooms + v_transmog + v_titles,
+        mount_speed_bonus = v_speed,
+        last_updated = CURRENT_TIMESTAMP;
 END//
 DELIMITER ;
 

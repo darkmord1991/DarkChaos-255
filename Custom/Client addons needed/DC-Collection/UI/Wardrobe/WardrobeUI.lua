@@ -11,6 +11,36 @@ if not DC then return end
 DC.Wardrobe = DC.Wardrobe or {}
 local Wardrobe = DC.Wardrobe
 
+local INVTYPE_LABELS = {
+    [0]  = "Unknown",
+    [1]  = "Head",
+    [3]  = "Shoulder",
+    [4]  = "Shirt",
+    [5]  = "Chest",
+    [6]  = "Waist",
+    [7]  = "Legs",
+    [8]  = "Feet",
+    [9]  = "Wrist",
+    [10] = "Hands",
+    [13] = "One-Hand",
+    [14] = "Off-Hand",
+    [15] = "Ranged",
+    [16] = "Back",
+    [17] = "Two-Hand",
+    [19] = "Tabard",
+    [20] = "Robe",
+    [21] = "Main Hand",
+    [22] = "Off Hand",
+    [23] = "Held In Off-hand",
+    [25] = "Thrown",
+    [26] = "Ranged",
+    [28] = "Relic",
+}
+
+local function GetInvTypeLabel(invType)
+    return INVTYPE_LABELS[invType] or ("InvType " .. tostring(invType))
+end
+
 -- ============================================================================
 -- FRAME CREATION
 -- ============================================================================
@@ -367,6 +397,30 @@ function Wardrobe:CreateRightPanel(parent)
                 btn.selected:Show()
             end
             Wardrobe:RefreshGrid()
+        end)
+
+        btn:SetScript("OnEnter", function(selfBtn)
+            GameTooltip:SetOwner(selfBtn, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("Slot Filter", 1, 0.82, 0)
+
+            local invTypes = {}
+            for invType in pairs(filter.invTypes or {}) do
+                table.insert(invTypes, invType)
+            end
+            table.sort(invTypes)
+
+            if #invTypes == 0 then
+                GameTooltip:AddLine("Unknown", 1, 1, 1)
+            else
+                for _, invType in ipairs(invTypes) do
+                    GameTooltip:AddLine(string.format("%s (invType %d)", GetInvTypeLabel(invType), invType), 1, 1, 1)
+                end
+            end
+
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave", function()
+            GameTooltip:Hide()
         end)
 
         table.insert(parent.slotFilterButtons, btn)
