@@ -306,12 +306,14 @@ namespace DCAddon
             constexpr uint8 CMSG_REFRESH           = 0x04;  // Force refresh
             constexpr uint8 CMSG_TEST_TABLES       = 0x05;  // Test database tables (debug)
             constexpr uint8 CMSG_GET_SEASONS       = 0x06;  // Get available seasons
+            constexpr uint8 CMSG_GET_MPLUS_DUNGEONS = 0x07; // Get M+ dungeon list for filtering
 
             constexpr uint8 SMSG_LEADERBOARD_DATA  = 0x10;  // Leaderboard response
             constexpr uint8 SMSG_CATEGORIES        = 0x11;  // Available categories
             constexpr uint8 SMSG_MY_RANK           = 0x12;  // Player's rank info
             constexpr uint8 SMSG_TEST_RESULTS      = 0x15;  // Database test results
             constexpr uint8 SMSG_SEASONS_LIST      = 0x16;  // Available seasons list
+            constexpr uint8 SMSG_MPLUS_DUNGEONS    = 0x17;  // M+ dungeon list response
             constexpr uint8 SMSG_ERROR             = 0x1F;  // Error response
         }
 
@@ -323,6 +325,8 @@ namespace DCAddon
             constexpr uint8 CMSG_DISMISS_WELCOME   = 0x03;  // User dismissed welcome
             constexpr uint8 CMSG_MARK_FEATURE_SEEN = 0x04;  // User saw feature intro
             constexpr uint8 CMSG_GET_WHATS_NEW     = 0x05;  // Request what's new content
+            constexpr uint8 CMSG_GET_PROGRESS      = 0x06;  // Request progress data
+            constexpr uint8 CMSG_GET_NPC_INFO      = 0x07;  // Request NPC info (DB GUID)
 
             constexpr uint8 SMSG_SHOW_WELCOME      = 0x10;  // Trigger welcome popup
             constexpr uint8 SMSG_SERVER_INFO       = 0x11;  // Server configuration
@@ -330,6 +334,8 @@ namespace DCAddon
             constexpr uint8 SMSG_FEATURE_UNLOCK    = 0x13;  // Feature unlocked notification
             constexpr uint8 SMSG_WHATS_NEW         = 0x14;  // What's new content
             constexpr uint8 SMSG_LEVEL_MILESTONE   = 0x15;  // Level milestone reached
+            constexpr uint8 SMSG_PROGRESS_DATA     = 0x16;  // Progress data response
+            constexpr uint8 SMSG_NPC_INFO          = 0x17;  // NPC info response
         }
 
         // Group Finder opcodes (M+, Raid Finder, Scheduled Events)

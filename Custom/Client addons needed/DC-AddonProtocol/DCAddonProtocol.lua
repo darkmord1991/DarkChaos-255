@@ -108,35 +108,37 @@ do
     end
 end
 
--- Module names for display
+-- Module names for display (keys must match actual module codes)
 DC.ModuleNames = {
     CORE = "Core",
-    AOEL = "AOE Loot",
+    AOE = "AOE Loot",
     SPOT = "Hotspot",
-    UPGR = "Item Upgrade",
+    UPG = "Item Upgrade",
     SPEC = "Spectator",
     DUEL = "Phased Duels",
-    MPLS = "Mythic+",
+    MPLUS = "Mythic+",
     SEAS = "Seasonal",
+    PRES = "Prestige",
+    HLBG = "Hinterland BG",
     LBRD = "Leaderboards",
     WELC = "Welcome",
     GRPF = "Group Finder",
+    GOMV = "GOMove",
+    TELE = "Teleports",
+    EVNT = "Events",
+    WRLD = "World",
+    COLL = "Collection",
 }
 
 -- Shared Keystone item IDs mapping for client addons (faster inventory detection)
--- Default placeholder. If DCCentral exists, prefer the canonical list from it.
+-- These are the default keystone item IDs (M+2 through M+20). The server will send
+-- an updated list via SMSG_KEYSTONE_LIST on login if needed.
 DC.KEYSTONE_ITEM_IDS = {
-    -- Placeholder IDs used in DC: update as needed
-    [60000] = true,
-    [60001] = true,
-    [60002] = true,
+    [300313] = true, [300314] = true, [300315] = true, [300316] = true, [300317] = true,
+    [300318] = true, [300319] = true, [300320] = true, [300321] = true, [300322] = true,
+    [300323] = true, [300324] = true, [300325] = true, [300326] = true, [300327] = true,
+    [300328] = true, [300329] = true, [300330] = true, [300331] = true,
 }
-
--- If DC Central is loaded, prefer its KEYSTONE_ITEM_IDS definition
-local central = rawget(_G, "DCCentral")
-if central and central.KEYSTONE_ITEM_IDS then
-    DC.KEYSTONE_ITEM_IDS = central.KEYSTONE_ITEM_IDS
-end
 
 -- Shared scan tooltip accessor. If DCCentral exposes one (DCScanTooltip), use it; otherwise DC will lazily create a fallback.
 function DC:GetScanTooltip()
@@ -631,7 +633,7 @@ end
 
 DC.JSON = { encode = function(v) return DC:EncodeJSON(v) end, decode = function(s) return DC:DecodeJSON(s) end }
 
--- Module identifiers (must match server-side)
+-- Module identifiers (must match server-side DCAddonNamespace.h)
 DC.Module = {
     CORE = "CORE",
     AOE_LOOT = "AOE",
@@ -646,29 +648,55 @@ DC.Module = {
     RESTORE_XP = "RXP",
     LEADERBOARD = "LBRD",
     WELCOME = "WELC",
+    GROUP_FINDER = "GRPF",
+    GOMOVE = "GOMV",
+    TELEPORTS = "TELE",
+    EVENTS = "EVNT",
+    WORLD = "WRLD",
+    COLLECTION = "COLL",
 }
 
--- Opcode definitions for each module
+-- Opcode definitions for each module (must match server-side DCAddonNamespace.h)
 DC.Opcode = {
     Core = {
         CMSG_HANDSHAKE = 0x01,
+        CMSG_VERSION_CHECK = 0x02,
+        CMSG_FEATURE_QUERY = 0x03,
         SMSG_HANDSHAKE_ACK = 0x10,
+        SMSG_VERSION_RESULT = 0x11,
         SMSG_FEATURE_LIST = 0x12,
-        SMSG_ERROR = 0x1F,
+        SMSG_RELOAD_UI = 0x13,
         SMSG_PERMISSION_DENIED = 0x1E,
+        SMSG_ERROR = 0x1F,
     },
     AOE = {
         CMSG_TOGGLE_ENABLED = 0x01,
         CMSG_SET_QUALITY = 0x02,
         CMSG_GET_STATS = 0x03,
+        CMSG_SET_AUTO_SKIN = 0x04,
+        CMSG_SET_RANGE = 0x05,
         CMSG_GET_SETTINGS = 0x06,
+        CMSG_IGNORE_ITEM = 0x07,
+        CMSG_GET_QUALITY_STATS = 0x08,
         SMSG_STATS = 0x10,
         SMSG_SETTINGS_SYNC = 0x11,
+        SMSG_LOOT_RESULT = 0x12,
+        SMSG_GOLD_COLLECTED = 0x13,
+        SMSG_QUALITY_STATS = 0x14,
+    },
+    GOMove = {
+        CMSG_REQUEST_MOVE = 0x01,
+        CMSG_REQUEST_SEARCH = 0x02,
+        CMSG_REQUEST_TELE_SYNC = 0x03,
+        SMSG_MOVE_RESULT = 0x10,
+        SMSG_SEARCH_RESULT = 0x11,
+        SMSG_TELE_LIST = 0x12,
     },
     Hotspot = {
         CMSG_GET_LIST = 0x01,
         CMSG_GET_INFO = 0x02,
         CMSG_TELEPORT = 0x03,
+        CMSG_TOGGLE_PINS = 0x04,
         SMSG_HOTSPOT_LIST = 0x10,
         SMSG_HOTSPOT_INFO = 0x11,
         SMSG_HOTSPOT_SPAWN = 0x12,
@@ -678,19 +706,46 @@ DC.Opcode = {
     Upgrade = {
         CMSG_GET_ITEM_INFO = 0x01,
         CMSG_DO_UPGRADE = 0x02,
-        CMSG_BATCH_REQUEST = 0x03,
-        CMSG_GET_CURRENCY = 0x04,
+        CMSG_LIST_UPGRADEABLE = 0x03,
+        CMSG_GET_COSTS = 0x04,
         CMSG_PACKAGE_SELECT = 0x05,
         SMSG_ITEM_INFO = 0x10,
         SMSG_UPGRADE_RESULT = 0x11,
-        SMSG_BATCH_ITEM_INFO = 0x12,
+        SMSG_UPGRADEABLE_LIST = 0x12,
+        SMSG_COST_INFO = 0x13,
         SMSG_CURRENCY_UPDATE = 0x14,
         SMSG_PACKAGE_SELECTED = 0x15,
+        -- Transmutation
+        CMSG_GET_TRANSMUTE_INFO = 0x20,
+        CMSG_DO_TRANSMUTE = 0x21,
+        SMSG_TRANSMUTE_INFO = 0x30,
+        SMSG_TRANSMUTE_RESULT = 0x31,
+        SMSG_OPEN_TRANSMUTE_UI = 0x32,
     },
     Spec = {
         CMSG_REQUEST_SPECTATE = 0x01,
+        CMSG_STOP_SPECTATE = 0x02,
         CMSG_LIST_RUNS = 0x03,
+        CMSG_SET_HUD_OPTION = 0x04,
+        CMSG_SWITCH_TARGET = 0x05,
+        SMSG_SPECTATE_START = 0x10,
+        SMSG_SPECTATE_STOP = 0x11,
         SMSG_RUN_LIST = 0x12,
+        SMSG_HUD_UPDATE = 0x13,
+        SMSG_PLAYER_STATS = 0x14,
+        SMSG_BOSS_UPDATE = 0x15,
+        SMSG_TIMER_SYNC = 0x16,
+        SMSG_DEATH_COUNT = 0x17,
+    },
+    Duel = {
+        CMSG_GET_STATS = 0x01,
+        CMSG_GET_LEADERBOARD = 0x02,
+        CMSG_SPECTATE_DUEL = 0x03,
+        SMSG_STATS = 0x10,
+        SMSG_LEADERBOARD = 0x11,
+        SMSG_DUEL_START = 0x12,
+        SMSG_DUEL_END = 0x13,
+        SMSG_DUEL_UPDATE = 0x14,
     },
     MPlus = {
         CMSG_GET_KEY_INFO = 0x01,
@@ -698,6 +753,8 @@ DC.Opcode = {
         CMSG_GET_BEST_RUNS = 0x03,
         CMSG_GET_KEYSTONE_LIST = 0x04,
         CMSG_REQUEST_HUD = 0x05,
+        CMSG_GET_VAULT_INFO = 0x06,
+        CMSG_CLAIM_VAULT_REWARD = 0x07,
         SMSG_KEY_INFO = 0x10,
         SMSG_AFFIXES = 0x11,
         SMSG_BEST_RUNS = 0x12,
@@ -706,19 +763,68 @@ DC.Opcode = {
         SMSG_TIMER_UPDATE = 0x15,
         SMSG_OBJECTIVE_UPDATE = 0x16,
         SMSG_KEYSTONE_LIST = 0x17,
+        SMSG_VAULT_INFO = 0x18,
+        SMSG_CLAIM_VAULT_RESULT = 0x19,
+        -- Token Vendor UI
+        SMSG_TOKEN_VENDOR_OPEN = 0x80,
+        CMSG_TOKEN_VENDOR_CHOICES = 0x81,
+        SMSG_TOKEN_VENDOR_CHOICES = 0x82,
+        CMSG_TOKEN_VENDOR_BUY = 0x83,
+        SMSG_TOKEN_VENDOR_RESULT = 0x84,
+        CMSG_TOKEN_VENDOR_EXCHANGE = 0x85,
+        SMSG_TOKEN_VENDOR_STATE = 0x86,
+        -- Seasonal Dungeon Teleporter UI
+        SMSG_SEASONAL_PORTAL_OPEN = 0x90,
+        CMSG_SEASONAL_PORTAL_TELEPORT = 0x91,
+        SMSG_SEASONAL_PORTAL_RESULT = 0x92,
+    },
+    Prestige = {
+        CMSG_GET_INFO = 0x01,
+        CMSG_GET_BONUSES = 0x02,
+        SMSG_INFO = 0x10,
+        SMSG_BONUSES = 0x11,
+        SMSG_LEVEL_UP = 0x12,
     },
     Season = {
         CMSG_GET_CURRENT = 0x01,
-        SMSG_CURRENT = 0x10,
+        CMSG_GET_REWARDS = 0x02,
+        CMSG_GET_PROGRESS = 0x03,
+        SMSG_CURRENT_SEASON = 0x10,
+        SMSG_REWARDS = 0x11,
+        SMSG_PROGRESS = 0x12,
+        SMSG_SEASON_END = 0x13,
+    },
+    HLBG = {
+        CMSG_REQUEST_STATUS = 0x01,
+        CMSG_REQUEST_RESOURCES = 0x02,
+        CMSG_REQUEST_OBJECTIVE = 0x03,
+        CMSG_QUICK_QUEUE = 0x04,
+        CMSG_LEAVE_QUEUE = 0x05,
+        CMSG_REQUEST_STATS = 0x06,
+        SMSG_STATUS = 0x10,
+        SMSG_RESOURCES = 0x11,
+        SMSG_OBJECTIVE = 0x12,
+        SMSG_QUEUE_UPDATE = 0x13,
+        SMSG_TIMER_SYNC = 0x14,
+        SMSG_TEAM_SCORE = 0x15,
+        SMSG_STATS = 0x16,
+        SMSG_AFFIX_INFO = 0x17,
+        SMSG_MATCH_END = 0x18,
     },
     Leaderboard = {
         CMSG_GET_LEADERBOARD = 0x01,
         CMSG_GET_CATEGORIES = 0x02,
         CMSG_GET_MY_RANK = 0x03,
         CMSG_REFRESH = 0x04,
+        CMSG_TEST_TABLES = 0x05,
+        CMSG_GET_SEASONS = 0x06,
+        CMSG_GET_MPLUS_DUNGEONS = 0x07,
         SMSG_LEADERBOARD_DATA = 0x10,
         SMSG_CATEGORIES = 0x11,
         SMSG_MY_RANK = 0x12,
+        SMSG_TEST_RESULTS = 0x15,
+        SMSG_SEASONS_LIST = 0x16,
+        SMSG_MPLUS_DUNGEONS = 0x17,
         SMSG_ERROR = 0x1F,
     },
     Welcome = {
@@ -727,12 +833,80 @@ DC.Opcode = {
         CMSG_DISMISS = 0x03,
         CMSG_MARK_FEATURE_SEEN = 0x04,
         CMSG_GET_WHATS_NEW = 0x05,
+        CMSG_GET_PROGRESS = 0x06,
+        CMSG_GET_NPC_INFO = 0x07,
         SMSG_SHOW_WELCOME = 0x10,
         SMSG_SERVER_INFO = 0x11,
         SMSG_FAQ_DATA = 0x12,
         SMSG_FEATURE_UNLOCK = 0x13,
         SMSG_WHATS_NEW = 0x14,
         SMSG_LEVEL_MILESTONE = 0x15,
+        SMSG_PROGRESS_DATA = 0x16,
+        SMSG_NPC_INFO = 0x17,
+    },
+    Events = {
+        CMSG_SUBSCRIBE = 0x01,
+        CMSG_UNSUBSCRIBE = 0x02,
+        SMSG_EVENT_UPDATE = 0x10,
+        SMSG_EVENT_SPAWN = 0x11,
+        SMSG_EVENT_REMOVE = 0x12,
+    },
+    Teleports = {
+        CMSG_REQUEST_LIST = 0x01,
+        SMSG_SEND_LIST = 0x10,
+    },
+    World = {
+        CMSG_GET_CONTENT = 0x01,
+        SMSG_CONTENT = 0x10,
+        SMSG_UPDATE = 0x11,
+    },
+    Collection = {
+        -- Sync/Request
+        CMSG_HANDSHAKE = 0x01,
+        CMSG_GET_FULL_COLLECTION = 0x02,
+        CMSG_SYNC_COLLECTION = 0x03,
+        CMSG_GET_STATS = 0x04,
+        CMSG_GET_BONUSES = 0x05,
+        CMSG_GET_DEFINITIONS = 0x06,
+        CMSG_GET_COLLECTION = 0x07,
+        -- Shop
+        CMSG_GET_SHOP = 0x10,
+        CMSG_BUY_ITEM = 0x11,
+        CMSG_GET_CURRENCIES = 0x12,
+        -- Wishlist
+        CMSG_GET_WISHLIST = 0x20,
+        CMSG_ADD_WISHLIST = 0x21,
+        CMSG_REMOVE_WISHLIST = 0x22,
+        -- Actions
+        CMSG_USE_ITEM = 0x30,
+        CMSG_SET_FAVORITE = 0x31,
+        CMSG_TOGGLE_UNLOCK = 0x32,
+        CMSG_SET_TRANSMOG = 0x33,
+        CMSG_GET_TRANSMOG_SLOT_ITEMS = 0x34,
+        CMSG_SEARCH_TRANSMOG_ITEMS = 0x35,
+        CMSG_GET_COLLECTED_APPEARANCES = 0x36,
+        CMSG_GET_TRANSMOG_STATE = 0x37,
+        CMSG_APPLY_TRANSMOG_PREVIEW = 0x38,
+        -- Server responses
+        SMSG_HANDSHAKE_ACK = 0x40,
+        SMSG_FULL_COLLECTION = 0x41,
+        SMSG_DELTA_SYNC = 0x42,
+        SMSG_STATS = 0x43,
+        SMSG_BONUSES = 0x44,
+        SMSG_ITEM_LEARNED = 0x45,
+        SMSG_DEFINITIONS = 0x46,
+        SMSG_COLLECTION = 0x47,
+        SMSG_TRANSMOG_STATE = 0x48,
+        SMSG_TRANSMOG_SLOT_ITEMS = 0x49,
+        SMSG_COLLECTED_APPEARANCES = 0x4A,
+        SMSG_SHOP_DATA = 0x50,
+        SMSG_PURCHASE_RESULT = 0x51,
+        SMSG_CURRENCIES = 0x52,
+        SMSG_WISHLIST_DATA = 0x60,
+        SMSG_WISHLIST_AVAILABLE = 0x61,
+        SMSG_WISHLIST_UPDATED = 0x62,
+        SMSG_OPEN_UI = 0x70,
+        SMSG_ERROR = 0x7F,
     },
 }
 
@@ -2380,14 +2554,23 @@ end
 function DC:GetModuleColor(module)
     local colors = {
         CORE = "|cff00ff00",
-        AOEL = "|cffff8800",
+        AOE = "|cffff8800",
         SPOT = "|cff00ccff",
-        UPGR = "|cffa335ee",
+        UPG = "|cffa335ee",
         SPEC = "|cff0070dd",
         DUEL = "|cffff0000",
-        MPLS = "|cffff8000",
+        MPLUS = "|cffff8000",
         SEAS = "|cffffff00",
+        PRES = "|cffff00ff",
+        HLBG = "|cff00ff00",
         LBRD = "|cff00ff96",
+        WELC = "|cff00ccff",
+        GRPF = "|cff0070dd",
+        GOMV = "|cffff8800",
+        TELE = "|cffa335ee",
+        EVNT = "|cffffff00",
+        WRLD = "|cff00ff00",
+        COLL = "|cffff00ff",
     }
     return colors[module] or "|cffffffff"
 end

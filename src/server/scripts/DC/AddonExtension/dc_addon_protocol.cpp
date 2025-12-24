@@ -330,45 +330,6 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
         safeError);
 }
 
-// Log S2C (Server to Client) message to database
-// Note: Currently unused but kept for future debugging/logging features
-[[maybe_unused]] static void LogS2CMessage(Player* player, const std::string& payload)
-{
-    if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession())
-        return;
-
-    std::string moduleCode = ExtractModuleCode(payload);
-    // Ensure module code is safe for SQL and fits column (max 16 chars)
-    if (moduleCode.length() > 16)
-        moduleCode = moduleCode.substr(0, 16);
-    moduleCode.erase(std::remove(moduleCode.begin(), moduleCode.end(), '\''), moduleCode.end());
-
-    uint8 opcode = ExtractOpcode(payload);
-    std::string requestType = DetectRequestType(payload);
-    std::string preview = payload.length() > 255 ? payload.substr(0, 255) : payload;
-
-    // Escape single quotes in preview
-    size_t pos = 0;
-    while ((pos = preview.find("'", pos)) != std::string::npos)
-    {
-        preview.replace(pos, 1, "''");
-        pos += 2;
-    }
-
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_addon_protocol_log "
-        "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status) "
-        "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '{}', 'completed')",
-        player->GetGUID().GetCounter(),
-        player->GetSession()->GetAccountId(),
-        player->GetName(),
-        requestType,
-        moduleCode,
-        opcode,
-        payload.length(),
-        preview);
-}
-
 // Update player statistics in dc_addon_protocol_stats
 static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout = false, bool isError = false, uint32 responseTimeMs = 0)
 {
@@ -478,7 +439,6 @@ struct PlayerMessageTracker
 
 static std::unordered_map<uint32, PlayerMessageTracker> s_MessageTrackers;
 
-[[maybe_unused]]
 static bool CheckRateLimit(Player* player)
 {
     uint32 accountId = player->GetSession()->GetAccountId();
@@ -610,7 +570,6 @@ static void RegisterCoreHandlers()
 static std::unordered_map<uint32, DCAddon::ChunkedMessage> s_ChunkedMessages;
 static std::unordered_map<uint32, uint32> s_ChunkStartTimes;
 
-[[maybe_unused]]
 static void CleanupExpiredChunks()
 {
     uint32 now = GameTime::GetGameTime().count() * 1000;  // Convert to ms
@@ -649,11 +608,14 @@ public:
 
     void OnPlayerLogout(Player* player) override
     {
-        // Clean up any pending chunked messages
+        // Clean up any pending chunked messages for this player
         uint32 accountId = player->GetSession()->GetAccountId();
         s_ChunkedMessages.erase(accountId);
         s_ChunkStartTimes.erase(accountId);
         s_MessageTrackers.erase(accountId);
+
+        // Also clean up any expired chunks from other players (opportunistic cleanup)
+        CleanupExpiredChunks();
     }
 };
 
@@ -677,6 +639,13 @@ public:
 
         // Skip the "DC\t" prefix and route to handler
         std::string payload = msg.substr(3);  // Everything after "DC\t"
+
+        // Check rate limit before processing
+        if (!CheckRateLimit(player))
+        {
+            msg.clear();
+            return;
+        }
 
         if (s_AddonConfig.EnableDebugLog)
             LOG_DEBUG("dc.addon", "Routing DC message from {}: {}", player->GetName(), payload);
