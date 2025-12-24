@@ -255,9 +255,17 @@ function DC:FormatSource(source)
     if sourceType == "unknown" then
         local itemId = source.itemId or source.item_id or source.itemID
         if itemId then
-            return "Unknown (item " .. tostring(itemId) .. ")"
+            local itemName, itemLink = GetItemInfo(itemId)
+            if itemLink then
+                return "Item: " .. itemLink
+            elseif itemName then
+                return "Item: " .. itemName
+            else
+                -- If item info is not cached, return a placeholder that doesn't look like an error
+                return "Item ID: " .. tostring(itemId)
+            end
         end
-        return "Unknown"
+        return "Unknown Source"
     end
 
     -- Fallback: display the type string.
@@ -882,6 +890,10 @@ function events:ADDON_LOADED(addonName)
         DC:CreateOptionsPanel()
         DC:InitializeCache()
         DC:InitializeProtocol()
+
+        if type(DC.InitializeModules) == "function" then
+            DC:InitializeModules()
+        end
         
         DC.isLoaded = true
         DC:Print(string.format(L.ADDON_LOADED, DC.VERSION))
@@ -971,6 +983,27 @@ function DC:InitializeProtocol()
     -- Initialize DCAddonProtocol communication
     if self.SetupProtocol then
         self:SetupProtocol()
+    end
+end
+
+function DC:InitializeModules()
+    -- Initialize collection modules after all addon files are loaded.
+    local modules = {
+        self.MountModule,
+        self.PetModule,
+        self.HeirloomModule,
+        self.TitleModule,
+        self.ToyModule,
+        self.TransmogModule,
+    }
+
+    for _, module in ipairs(modules) do
+        if module and type(module.Init) == "function" then
+            local ok, err = pcall(module.Init, module)
+            if not ok then
+                self:Debug("Module init error: " .. tostring(err))
+            end
+        end
     end
 end
 

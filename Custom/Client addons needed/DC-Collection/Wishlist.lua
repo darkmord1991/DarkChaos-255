@@ -133,15 +133,64 @@ function DC:RefreshWishlistUI()
     self.WishlistUI.emptyText:Hide()
     self.WishlistUI.scrollFrame:Show()
     
-    -- Create wishlist items
+    -- Create wishlist items grouped by type (category)
     local yOffset = 0
+    local headerHeight = 18
     local itemHeight = 50
-    
-    for i, wish in ipairs(wishlist) do
-        local itemFrame = self:CreateWishlistItemFrame(scrollChild, wish, yOffset)
-        yOffset = yOffset + itemHeight + 5
+
+    local grouped = {}
+    local typeOrder = { "transmog", "pets", "mounts", "heirlooms", "titles" }
+    local typeSeen = {}
+
+    for _, wish in ipairs(wishlist) do
+        local t = wish.type or "unknown"
+        grouped[t] = grouped[t] or {}
+        table.insert(grouped[t], wish)
+        typeSeen[t] = true
     end
-    
+
+    -- Append any unknown types deterministically
+    for t in pairs(typeSeen) do
+        local known = false
+        for _, ot in ipairs(typeOrder) do
+            if ot == t then
+                known = true
+                break
+            end
+        end
+        if not known then
+            table.insert(typeOrder, t)
+        end
+    end
+
+    for _, t in ipairs(typeOrder) do
+        local list = grouped[t]
+        if list and #list > 0 then
+            table.sort(list, function(a, b)
+                return tostring(a.itemId or a.entryId or "") < tostring(b.itemId or b.entryId or "")
+            end)
+
+            -- Header
+            local header = CreateFrame("Frame", nil, scrollChild)
+            header:SetSize(scrollChild:GetWidth() - 10, headerHeight)
+            header:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 5, -yOffset)
+
+            local headerText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            headerText:SetPoint("LEFT", header, "LEFT", 2, 0)
+            headerText:SetText((L and (L["TAB_" .. string.upper(t)] or L[string.upper(t)])) or t)
+            headerText:SetTextColor(0.8, 0.8, 0.8)
+
+            yOffset = yOffset + headerHeight + 4
+
+            for _, wish in ipairs(list) do
+                self:CreateWishlistItemFrame(scrollChild, wish, yOffset)
+                yOffset = yOffset + itemHeight + 5
+            end
+
+            yOffset = yOffset + 6
+        end
+    end
+
     scrollChild:SetHeight(yOffset)
 end
 

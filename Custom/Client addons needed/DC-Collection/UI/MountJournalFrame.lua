@@ -442,8 +442,69 @@ function MountJournal:CreateMountButton(parent, index)
     btn.selected:SetTexture(0.4, 0.4, 0.8, 0.5)
     btn.selected:Hide()
 
+    local function ShowMountContextMenu(mountData)
+        if not mountData then
+            return
+        end
+
+        local id = mountData.id
+        local menu = {
+            { text = mountData.name or "Mount", isTitle = true, notCheckable = true },
+        }
+
+        if mountData.collected then
+            if mountData.is_favorite then
+                table.insert(menu, {
+                    text = (L and L["UNFAVORITE"]) or "Unfavorite",
+                    notCheckable = true,
+                    func = function()
+                        DC:RequestToggleFavorite("mounts", id)
+                        MountJournal:UpdateMountList()
+                    end,
+                })
+            else
+                table.insert(menu, {
+                    text = (L and L["FAVORITE"]) or "Favorite",
+                    notCheckable = true,
+                    func = function()
+                        DC:RequestToggleFavorite("mounts", id)
+                        MountJournal:UpdateMountList()
+                    end,
+                })
+            end
+        else
+            local inWishlist = DC.IsInWishlist and DC:IsInWishlist("mounts", id) or false
+            if inWishlist then
+                table.insert(menu, {
+                    text = (L and (L["REMOVE_FROM_WISHLIST"] or L["REMOVE_WISHLIST"])) or "Remove from wishlist",
+                    notCheckable = true,
+                    func = function()
+                        DC:RequestRemoveWishlist("mounts", id)
+                    end,
+                })
+            else
+                table.insert(menu, {
+                    text = (L and (L["ADD_TO_WISHLIST"] or L["WISHLIST"])) or "Add to wishlist",
+                    notCheckable = true,
+                    func = function()
+                        DC:RequestAddWishlist("mounts", id)
+                    end,
+                })
+            end
+        end
+
+        table.insert(menu, { text = (L and L["CANCEL"]) or "Cancel", notCheckable = true })
+
+        local dropdown = CreateFrame("Frame", "DCMountContextMenu", UIParent, "UIDropDownMenuTemplate")
+        EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
+    end
+
     -- Click handler
-    btn:SetScript("OnClick", function()
+    btn:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            ShowMountContextMenu(btn.mountData)
+            return
+        end
         MountJournal:SelectMount(btn.mountData)
     end)
 

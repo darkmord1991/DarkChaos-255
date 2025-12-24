@@ -133,26 +133,51 @@ function Wardrobe:RefreshSetsGrid()
             end)
 
             btn:SetScript("OnEnter", function()
-                GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
-                GameTooltip:SetText(set.name or "Unknown Set")
-                GameTooltip:AddLine(string.format("%d / %d pieces", collectedCount, totalCount), 0.6, 0.8, 1)
-                GameTooltip:AddLine(" ")
-                if set.items then
-                    for _, itemId in ipairs(set.items) do
-                        local name = GetItemInfo(itemId)
-                        local isCollected = col[itemId]
-                        if name then
-                            if isCollected then
-                                GameTooltip:AddLine(name, 0.1, 1, 0.1)
-                            else
-                                GameTooltip:AddLine(name, 0.5, 0.5, 0.5)
+                if Wardrobe and Wardrobe.ShowFixedItemTooltip then
+                    -- Use a fixed tooltip location so the set list doesn't cover the preview.
+                    Wardrobe:ShowFixedItemTooltip(btn, (set.items and set.items[1]) or nil, function(tip)
+                        tip:ClearLines()
+                        tip:SetText(set.name or "Unknown Set")
+                        tip:AddLine(string.format("%d / %d pieces", collectedCount, totalCount), 0.6, 0.8, 1)
+                        tip:AddLine(" ")
+                        if set.items then
+                            for _, itemId in ipairs(set.items) do
+                                local name = GetItemInfo(itemId)
+                                local isCollected = col[itemId]
+                                if name then
+                                    if isCollected then
+                                        tip:AddLine(name, 0.1, 1, 0.1)
+                                    else
+                                        tip:AddLine(name, 0.5, 0.5, 0.5)
+                                    end
+                                else
+                                    tip:AddLine("Item #" .. itemId, 0.5, 0.5, 0.5)
+                                end
                             end
-                        else
-                            GameTooltip:AddLine("Item #" .. itemId, 0.5, 0.5, 0.5)
+                        end
+                    end)
+                else
+                    GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
+                    GameTooltip:SetText(set.name or "Unknown Set")
+                    GameTooltip:AddLine(string.format("%d / %d pieces", collectedCount, totalCount), 0.6, 0.8, 1)
+                    GameTooltip:AddLine(" ")
+                    if set.items then
+                        for _, itemId in ipairs(set.items) do
+                            local name = GetItemInfo(itemId)
+                            local isCollected = col[itemId]
+                            if name then
+                                if isCollected then
+                                    GameTooltip:AddLine(name, 0.1, 1, 0.1)
+                                else
+                                    GameTooltip:AddLine(name, 0.5, 0.5, 0.5)
+                                end
+                            else
+                                GameTooltip:AddLine("Item #" .. itemId, 0.5, 0.5, 0.5)
+                            end
                         end
                     end
+                    GameTooltip:Show()
                 end
-                GameTooltip:Show()
             end)
             btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
         else

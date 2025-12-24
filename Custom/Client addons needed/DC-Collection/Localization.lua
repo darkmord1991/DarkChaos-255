@@ -19,7 +19,7 @@ L.ADDON_LOADED = "DC-Collection v%s loaded. Type /dcc for options."
 -- Tabs
 L.TAB_OVERVIEW = "My Collection"
 L.TAB_MOUNTS = "Mounts"
-L.TAB_PETS = "Pets"
+L.TAB_PETS = "Companions"
 L.TAB_HEIRLOOMS = "Heirlooms"
 L.TAB_TRANSMOG = "Transmog"
 L.TAB_WARDROBE = "Wardrobe"
@@ -88,7 +88,7 @@ L.SHOP_TOKENS = "Collection Tokens"
 L.SHOP_EMBLEMS = "Collector's Emblems"
 L.SHOP_REQUIRES = "Requires:"
 L.SHOP_REQUIRES_MOUNTS = "%d mounts collected"
-L.SHOP_REQUIRES_PETS = "%d pets collected"
+L.SHOP_REQUIRES_PETS = "%d companions collected"
 L.SHOP_REQUIRES_TOTAL = "%d total collectibles"
 
 -- Currency

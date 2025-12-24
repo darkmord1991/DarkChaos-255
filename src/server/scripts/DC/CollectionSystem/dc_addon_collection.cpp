@@ -613,7 +613,7 @@ namespace DCCollection
     }
 
     // Forward declaration: ensure transmog keys available at call site
-    std::vector<uint32> const& GetTransmogAppearanceKeysCached();
+    std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached();
 
     // Get total counts for definitions (for % calculations)
     std::map<CollectionType, uint32> LoadTotalDefinitions()
@@ -649,7 +649,7 @@ namespace DCCollection
         ensureTotal(CollectionType::TITLE, static_cast<uint32>(sCharTitlesStore.GetNumRows() > 0 ? (sCharTitlesStore.GetNumRows() - 1) : 0));
 
         // Transmog definitions are built in-memory from item_template.
-        ensureTotal(CollectionType::TRANSMOG, static_cast<uint32>(GetTransmogAppearanceKeysCached().size()));
+        ensureTotal(CollectionType::TRANSMOG, static_cast<uint32>(GetTransmogAppearanceVariantKeysCached().size()));
 
         // Prefer curated per-type tables if they exist.
         if (WorldTableExists("dc_mount_definitions"))
@@ -705,7 +705,7 @@ namespace DCCollection
     // Transmog Helpers
     // =======================================================================
 
-    struct TransmogAppearanceDef
+    struct TransmogAppearanceVariant
     {
         uint32 canonicalItemId = 0;
         uint32 displayId = 0;
@@ -713,46 +713,85 @@ namespace DCCollection
         uint32 itemClass = 0;
         uint32 itemSubClass = 0;
         uint32 quality = 0;
+        uint32 itemLevel = 0;
         std::string name;
+        std::vector<uint32> itemIds;
     };
 
-    using AppearanceMap = std::unordered_map<uint32, TransmogAppearanceDef>; // displayId -> def
+    using AppearanceIndex = std::unordered_map<uint32, std::vector<TransmogAppearanceVariant>>; // displayId -> variants
 
     // Forward declaration
-    AppearanceMap BuildTransmogAppearanceMap();
+    AppearanceIndex BuildTransmogAppearanceIndex();
 
-    // Forward declaration: A list of appearance display IDs cached for quick lookup
-    std::vector<uint32> const& GetTransmogAppearanceKeysCached();
+    // Forward declaration: A list of appearance variant keys cached for quick lookup
+    std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached();
 
     // Forward declarations for user actions
     void HandleSummonMount(Player* player, uint32 spellId, bool random);
     void HandleSetTitle(Player* player, uint32 titleId);
     void HandleSummonHeirloom(Player* player, uint32 itemId);
 
-    AppearanceMap const& GetTransmogAppearanceMapCached()
+    static bool IsBetterTransmogRepresentative(uint32 newEntry, bool newIsNonCustom, uint32 newQuality, uint32 newItemLevel,
+        uint32 oldEntry, bool oldIsNonCustom, uint32 oldQuality, uint32 oldItemLevel)
     {
-        static AppearanceMap cached;
+        if (newIsNonCustom != oldIsNonCustom)
+            return newIsNonCustom;
+
+        if (newQuality != oldQuality)
+            return newQuality > oldQuality;
+
+        if (newItemLevel != oldItemLevel)
+            return newItemLevel > oldItemLevel;
+
+        return newEntry < oldEntry;
+    }
+
+    static std::string BuildTransmogVariantKey(uint32 displayId, uint32 inventoryType, uint32 itemClass, uint32 itemSubClass)
+    {
+        return std::to_string(displayId) + ":" + std::to_string(inventoryType) + ":" + std::to_string(itemClass) + ":" + std::to_string(itemSubClass);
+    }
+
+    AppearanceIndex const& GetTransmogAppearanceIndexCached()
+    {
+        static AppearanceIndex cached;
         static bool initialized = false;
         if (!initialized)
         {
-            cached = BuildTransmogAppearanceMap();
+            cached = BuildTransmogAppearanceIndex();
             initialized = true;
         }
         return cached;
     }
 
-    std::vector<uint32> const& GetTransmogAppearanceKeysCached()
+    std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached()
     {
-        static std::vector<uint32> keys;
+        static std::vector<std::string> keys;
         static bool initialized = false;
         if (!initialized)
         {
-            auto const& appearances = GetTransmogAppearanceMapCached();
-            keys.reserve(appearances.size());
-            for (auto const& [displayId, _] : appearances)
-                keys.push_back(displayId);
+            auto const& appearances = GetTransmogAppearanceIndexCached();
+            std::vector<std::tuple<uint32, uint32, uint32, uint32, std::string>> tmp;
+            tmp.reserve(appearances.size());
 
-            std::sort(keys.begin(), keys.end());
+            for (auto const& [displayId, variants] : appearances)
+            {
+                for (auto const& v : variants)
+                {
+                    tmp.emplace_back(displayId, v.inventoryType, v.itemClass, v.itemSubClass,
+                        BuildTransmogVariantKey(displayId, v.inventoryType, v.itemClass, v.itemSubClass));
+                }
+            }
+
+            std::sort(tmp.begin(), tmp.end(), [](auto const& a, auto const& b)
+            {
+                return std::tie(std::get<0>(a), std::get<1>(a), std::get<2>(a), std::get<3>(a))
+                    < std::tie(std::get<0>(b), std::get<1>(b), std::get<2>(b), std::get<3>(b));
+            });
+
+            keys.reserve(tmp.size());
+            for (auto const& t : tmp)
+                keys.push_back(std::get<4>(t));
+
             initialized = true;
         }
         return keys;
@@ -782,7 +821,28 @@ namespace DCCollection
         }
     }
 
-    bool IsAppearanceCompatible(uint8 slot, ItemTemplate const* equipped, TransmogAppearanceDef const& appearance)
+    bool IsWeaponCompatible(uint32 subClass1, uint32 subClass2)
+    {
+        if (subClass1 == subClass2)
+            return true;
+
+        auto is1H = [](uint32 s) { return s == ITEM_SUBCLASS_WEAPON_AXE || s == ITEM_SUBCLASS_WEAPON_MACE || s == ITEM_SUBCLASS_WEAPON_SWORD; };
+        auto is2H = [](uint32 s) { return s == ITEM_SUBCLASS_WEAPON_AXE2 || s == ITEM_SUBCLASS_WEAPON_MACE2 || s == ITEM_SUBCLASS_WEAPON_SWORD2; };
+        auto isRanged = [](uint32 s) { return s == ITEM_SUBCLASS_WEAPON_BOW || s == ITEM_SUBCLASS_WEAPON_GUN || s == ITEM_SUBCLASS_WEAPON_CROSSBOW; };
+        
+        if (is1H(subClass1) && is1H(subClass2)) return true;
+        if (is2H(subClass1) && is2H(subClass2)) return true;
+        if (isRanged(subClass1) && isRanged(subClass2)) return true;
+        
+        // Polearms and Staves are often compatible
+        if ((subClass1 == ITEM_SUBCLASS_WEAPON_POLEARM || subClass1 == ITEM_SUBCLASS_WEAPON_STAFF) &&
+            (subClass2 == ITEM_SUBCLASS_WEAPON_POLEARM || subClass2 == ITEM_SUBCLASS_WEAPON_STAFF))
+            return true;
+
+        return false;
+    }
+
+    bool IsAppearanceCompatible(uint8 slot, ItemTemplate const* equipped, TransmogAppearanceVariant const& appearance)
     {
         if (!equipped)
             return false;
@@ -794,9 +854,20 @@ namespace DCCollection
         if (appearance.itemClass != equipped->Class)
             return false;
 
-        // Armor type / weapon subtype should match (retail-like restriction).
+        // Check subclass compatibility
         if (appearance.itemSubClass != equipped->SubClass)
-            return false;
+        {
+            if (equipped->Class == ITEM_CLASS_WEAPON)
+            {
+                if (!IsWeaponCompatible(equipped->SubClass, appearance.itemSubClass))
+                    return false;
+            }
+            else
+            {
+                // Strict armor type matching
+                return false;
+            }
+        }
 
         if (!IsInvTypeCompatibleForSlot(slot, appearance.inventoryType))
             return false;
@@ -851,7 +922,7 @@ namespace DCCollection
 
         if (result)
         {
-            auto const& appearances = GetTransmogAppearanceMapCached();
+            auto const& appearances = GetTransmogAppearanceIndexCached();
             do
             {
                 Field* fields = result->Fetch();
@@ -877,14 +948,14 @@ namespace DCCollection
         msg.Send(player);
     }
 
-    // Build a minimal in-memory appearance map from item_template.
-    // Dedup by displayId, prefer canonical item IDs < 200000.
-    AppearanceMap BuildTransmogAppearanceMap()
+    // Build an in-memory appearance index from item_template.
+    // Group by displayId, then by (inventoryType, class, subclass) to avoid cross-slot collisions.
+    AppearanceIndex BuildTransmogAppearanceIndex()
     {
-        AppearanceMap defs;
+        AppearanceIndex defs;
 
         QueryResult result = WorldDatabase.Query(
-            "SELECT entry, displayid, name, class, subclass, InventoryType, Quality "
+            "SELECT entry, displayid, name, class, subclass, InventoryType, Quality, ItemLevel "
             "FROM item_template "
             "WHERE displayid <> 0 "
             "  AND class IN (2, 4) " // weapon, armor
@@ -903,42 +974,61 @@ namespace DCCollection
             uint32 itemSubClass = fields[4].Get<uint32>();
             uint32 inventoryType = fields[5].Get<uint32>();
             uint32 quality = fields[6].Get<uint32>();
+            uint32 itemLevel = fields[7].Get<uint32>();
 
             if (!displayId)
                 continue;
 
-            auto it = defs.find(displayId);
-            bool prefer = false;
+            auto& variants = defs[displayId];
 
-            if (it == defs.end())
+            TransmogAppearanceVariant* bucket = nullptr;
+            for (auto& v : variants)
             {
-                prefer = true;
-            }
-            else
-            {
-                uint32 existing = it->second.canonicalItemId;
-                bool entryIsNonCustom = entry < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
-                bool existingIsNonCustom = existing < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
-
-                if (entryIsNonCustom && !existingIsNonCustom)
-                    prefer = true;
-                else if (entryIsNonCustom == existingIsNonCustom && entry < existing)
-                    prefer = true;
+                if (v.inventoryType == inventoryType && v.itemClass == itemClass && v.itemSubClass == itemSubClass)
+                {
+                    bucket = &v;
+                    break;
+                }
             }
 
-            if (prefer)
+            if (!bucket)
             {
-                TransmogAppearanceDef def;
-                def.canonicalItemId = entry;
-                def.displayId = displayId;
-                def.inventoryType = inventoryType;
-                def.itemClass = itemClass;
-                def.itemSubClass = itemSubClass;
-                def.quality = quality;
-                def.name = name;
-                defs[displayId] = std::move(def);
+                TransmogAppearanceVariant v;
+                v.canonicalItemId = entry;
+                v.displayId = displayId;
+                v.inventoryType = inventoryType;
+                v.itemClass = itemClass;
+                v.itemSubClass = itemSubClass;
+                v.quality = quality;
+                v.itemLevel = itemLevel;
+                v.name = name;
+                v.itemIds.push_back(entry);
+                variants.push_back(std::move(v));
+                continue;
+            }
+
+            bucket->itemIds.push_back(entry);
+
+            bool entryIsNonCustom = entry < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
+            bool existingIsNonCustom = bucket->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
+            if (IsBetterTransmogRepresentative(entry, entryIsNonCustom, quality, itemLevel,
+                bucket->canonicalItemId, existingIsNonCustom, bucket->quality, bucket->itemLevel))
+            {
+                bucket->canonicalItemId = entry;
+                bucket->quality = quality;
+                bucket->itemLevel = itemLevel;
+                bucket->name = name;
             }
         } while (result->NextRow());
+
+        for (auto& [_, variants] : defs)
+        {
+            for (auto& v : variants)
+            {
+                std::sort(v.itemIds.begin(), v.itemIds.end());
+                v.itemIds.erase(std::unique(v.itemIds.begin(), v.itemIds.end()), v.itemIds.end());
+            }
+        }
 
         return defs;
     }
@@ -948,6 +1038,46 @@ namespace DCCollection
         if (!proto)
             return 0;
         return proto->DisplayInfoID;
+    }
+
+    static TransmogAppearanceVariant const* FindAnyVariant(uint32 displayId)
+    {
+        auto const& idx = GetTransmogAppearanceIndexCached();
+        auto it = idx.find(displayId);
+        if (it == idx.end() || it->second.empty())
+            return nullptr;
+        return &it->second.front();
+    }
+
+    static TransmogAppearanceVariant const* FindBestVariantForSlot(uint32 displayId, uint8 slot, ItemTemplate const* equippedProto)
+    {
+        auto const& idx = GetTransmogAppearanceIndexCached();
+        auto it = idx.find(displayId);
+        if (it == idx.end())
+            return nullptr;
+
+        TransmogAppearanceVariant const* best = nullptr;
+        for (auto const& v : it->second)
+        {
+            if (!IsAppearanceCompatible(slot, equippedProto, v))
+                continue;
+
+            if (!best)
+            {
+                best = &v;
+                continue;
+            }
+
+            bool newIsNonCustom = v.canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
+            bool oldIsNonCustom = best->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
+            if (IsBetterTransmogRepresentative(v.canonicalItemId, newIsNonCustom, v.quality, v.itemLevel,
+                best->canonicalItemId, oldIsNonCustom, best->quality, best->itemLevel))
+            {
+                best = &v;
+            }
+        }
+
+        return best;
     }
 
     bool IsItemEligibleForTransmogUnlock(ItemTemplate const* proto)
@@ -1425,10 +1555,8 @@ namespace DCCollection
                     {
                         // Treat entryId as displayId
                         appearanceId = entryId;
-                        auto const& appearances = GetTransmogAppearanceMapCached();
-                        auto it = appearances.find(appearanceId);
-                        if (it != appearances.end())
-                            itemId = it->second.canonicalItemId;
+                        if (TransmogAppearanceVariant const* v = FindAnyVariant(appearanceId))
+                            itemId = v->canonicalItemId;
                     }
 
                     ownedEntryId = appearanceId;
@@ -1683,8 +1811,7 @@ namespace DCCollection
             else
             {
                 purchasedEntryId = entryId;
-                auto const& appearances = GetTransmogAppearanceMapCached();
-                if (appearances.find(purchasedEntryId) == appearances.end())
+                if (!FindAnyVariant(purchasedEntryId))
                 {
                     DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
                     msg.Set("success", false);
@@ -2415,26 +2542,16 @@ namespace DCCollection
             return;
         }
 
-        auto const& appearances = GetTransmogAppearanceMapCached();
-        auto it = appearances.find(displayId);
-        if (it == appearances.end())
-        {
-            DCAddon::SendError(player, MODULE, "Unknown appearance",
-                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
-            return;
-        }
-
-        TransmogAppearanceDef const& appearance = it->second;
-
         ItemTemplate const* equippedProto = equippedItem->GetTemplate();
-        if (!IsAppearanceCompatible(slot, equippedProto, appearance))
+        TransmogAppearanceVariant const* appearance = FindBestVariantForSlot(displayId, slot, equippedProto);
+        if (!appearance)
         {
             DCAddon::SendError(player, MODULE, "Appearance not compatible with equipped item",
                 DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
 
-        uint32 fakeEntry = appearance.canonicalItemId;
+        uint32 fakeEntry = appearance->canonicalItemId;
         CharacterDatabase.Execute(
             "REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})",
             guid, static_cast<uint32>(slot), fakeEntry, equippedItem->GetEntry());
@@ -2509,56 +2626,53 @@ namespace DCCollection
         Item* equippedItem = (equipmentSlot < EQUIPMENT_SLOT_END) ?
             player->GetItemByPos(INVENTORY_SLOT_BAG_0, equipmentSlot) : nullptr;
 
-        uint32 equippedClass = 0;
-        uint32 equippedSubClass = 0;
-        if (equippedItem)
-        {
-            ItemTemplate const* proto = equippedItem->GetTemplate();
-            equippedClass = proto->Class;
-            equippedSubClass = proto->SubClass;
-        }
-
         // Lowercase search filter for case-insensitive matching
         std::string searchLower = searchFilter;
         std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(), ::tolower);
         bool hasSearch = !searchLower.empty();
 
-        auto const& appearances = GetTransmogAppearanceMapCached();
+        auto const& appearances = GetTransmogAppearanceIndexCached();
         std::vector<uint32> matchingItemIds;
         matchingItemIds.reserve(128);  // Pre-allocate for performance
 
-        for (auto const& [displayId, def] : appearances)
+        for (auto const& [displayId, variants] : appearances)
         {
-            // Check inventory type match
-            bool invTypeMatch = false;
-            for (uint32 invType : invTypes)
-            {
-                if (def.inventoryType == invType)
-                {
-                    invTypeMatch = true;
-                    break;
-                }
-            }
-            if (!invTypeMatch)
-                continue;
-
-            // If equipped item exists, check armor/weapon subclass match
-            if (equippedItem && equippedClass == def.itemClass && equippedSubClass != def.itemSubClass)
-                continue;
-
-            // Apply search filter if provided
-            if (hasSearch)
-            {
-                std::string nameLower = def.name;
-                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
-                if (nameLower.find(searchLower) == std::string::npos &&
-                    std::to_string(displayId).find(searchFilter) == std::string::npos)
-                    continue;
-            }
-
             // Check if player owns this appearance
-            if (HasTransmogAppearanceUnlocked(accountId, displayId))
+            if (!HasTransmogAppearanceUnlocked(accountId, displayId))
+                continue;
+
+            for (auto const& def : variants)
             {
+                // Check inventory type match
+                bool invTypeMatch = false;
+                for (uint32 invType : invTypes)
+                {
+                    if (def.inventoryType == invType)
+                    {
+                        invTypeMatch = true;
+                        break;
+                    }
+                }
+                if (!invTypeMatch)
+                    continue;
+
+                // If equipped item exists, check compatibility
+                if (equippedItem)
+                {
+                    if (!IsAppearanceCompatible(equipmentSlot, equippedItem->GetTemplate(), def))
+                        continue;
+                }
+
+                // Apply search filter if provided
+                if (hasSearch)
+                {
+                    std::string nameLower = def.name;
+                    std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+                    if (nameLower.find(searchLower) == std::string::npos &&
+                        std::to_string(displayId).find(searchFilter) == std::string::npos)
+                        continue;
+                }
+
                 matchingItemIds.push_back(def.canonicalItemId);
             }
         }
@@ -2659,13 +2773,14 @@ namespace DCCollection
         DCAddon::JsonValue items;
         items.SetArray();
 
-        auto const& appearances = GetTransmogAppearanceMapCached();
+        auto const& appearances = GetTransmogAppearanceIndexCached();
         for (uint32 displayId : collectedDisplayIds)
         {
             auto it = appearances.find(displayId);
             if (it != appearances.end())
             {
-                items.Push(DCAddon::JsonValue(it->second.canonicalItemId));
+                for (auto const& v : it->second)
+                    items.Push(DCAddon::JsonValue(v.canonicalItemId));
             }
         }
 
@@ -2703,7 +2818,7 @@ namespace DCCollection
         DCAddon::JsonValue preview = json["preview"];
         uint32 accountId = GetAccountId(player);
         uint32 guid = player->GetGUID().GetCounter();
-        auto const& appearances = GetTransmogAppearanceMapCached();
+        auto const& appearances = GetTransmogAppearanceIndexCached();
 
         // Process each slot in the preview
         for (auto const& kv : preview.AsObject())
@@ -2748,12 +2863,8 @@ namespace DCCollection
                 if (!HasTransmogAppearanceUnlocked(accountId, displayId))
                     continue;
 
-                auto it = appearances.find(displayId);
-                if (it == appearances.end())
-                    continue;
-
                 ItemTemplate const* equippedProto = equippedItem->GetTemplate();
-                if (!IsAppearanceCompatible(equipmentSlot, equippedProto, it->second))
+                if (!FindBestVariantForSlot(displayId, equipmentSlot, equippedProto))
                     continue;
 
                 CharacterDatabase.Execute(
@@ -2918,8 +3029,8 @@ namespace DCCollection
 
         if (static_cast<CollectionType>(type) == CollectionType::TRANSMOG)
         {
-            auto const& appearanceMap = GetTransmogAppearanceMapCached();
-            auto const& keys = GetTransmogAppearanceKeysCached();
+            auto const& appearanceIndex = GetTransmogAppearanceIndexCached();
+            auto const& keys = GetTransmogAppearanceVariantKeysCached();
 
             if (limit == 0)
                 limit = 200;
@@ -2931,23 +3042,62 @@ namespace DCCollection
             uint32 end = std::min<uint32>(total, offset + limit);
             for (uint32 i = offset; i < end; ++i)
             {
-                uint32 displayId = keys[i];
-                auto it = appearanceMap.find(displayId);
-                if (it == appearanceMap.end())
+                std::string const& k = keys[i];
+
+                // Parse: displayId:invType:class:subclass
+                size_t p1 = k.find(':');
+                size_t p2 = (p1 == std::string::npos) ? std::string::npos : k.find(':', p1 + 1);
+                size_t p3 = (p2 == std::string::npos) ? std::string::npos : k.find(':', p2 + 1);
+                if (p1 == std::string::npos || p2 == std::string::npos || p3 == std::string::npos)
                     continue;
 
-                auto const& def = it->second;
+                uint32 displayId = static_cast<uint32>(std::stoul(k.substr(0, p1)));
+                uint32 invType = static_cast<uint32>(std::stoul(k.substr(p1 + 1, p2 - (p1 + 1))));
+                uint32 itemClass = static_cast<uint32>(std::stoul(k.substr(p2 + 1, p3 - (p2 + 1))));
+                uint32 itemSubClass = static_cast<uint32>(std::stoul(k.substr(p3 + 1)));
+
+                auto it = appearanceIndex.find(displayId);
+                if (it == appearanceIndex.end())
+                    continue;
+
+                TransmogAppearanceVariant const* def = nullptr;
+                for (auto const& v : it->second)
+                {
+                    if (v.inventoryType == invType && v.itemClass == itemClass && v.itemSubClass == itemSubClass)
+                    {
+                        def = &v;
+                        break;
+                    }
+                }
+                if (!def)
+                    continue;
+
                 DCAddon::JsonValue d;
                 d.SetObject();
-                d.Set("itemId", def.canonicalItemId);
-                d.Set("name", def.name);
-                d.Set("rarity", def.quality);
-                d.Set("inventoryType", def.inventoryType);
-                d.Set("weaponType", def.itemClass == ITEM_CLASS_WEAPON ? def.itemSubClass : 0);
-                d.Set("armorType", def.itemClass == ITEM_CLASS_ARMOR ? def.itemSubClass : 0);
-                d.Set("displayId", def.displayId);
-                d.Set("source", buildSourceForItemCached(def.canonicalItemId));
-                defs.Set(std::to_string(displayId), d);
+                d.Set("itemId", def->canonicalItemId);
+                d.Set("name", def->name);
+                d.Set("rarity", def->quality);
+                d.Set("inventoryType", def->inventoryType);
+                d.Set("weaponType", def->itemClass == ITEM_CLASS_WEAPON ? def->itemSubClass : 0);
+                d.Set("armorType", def->itemClass == ITEM_CLASS_ARMOR ? def->itemSubClass : 0);
+                d.Set("displayId", def->displayId);
+                d.Set("key", k);
+
+                DCAddon::JsonValue itemsArr;
+                itemsArr.SetArray();
+                uint32 pushed = 0;
+                for (uint32 itemId : def->itemIds)
+                {
+                    if (pushed >= 25)
+                        break;
+                    itemsArr.Push(DCAddon::JsonValue(itemId));
+                    ++pushed;
+                }
+                d.Set("itemIds", itemsArr);
+                d.Set("itemIdsTotal", static_cast<uint32>(def->itemIds.size()));
+
+                d.Set("source", buildSourceForItemCached(def->canonicalItemId));
+                defs.Set(k, d);
             }
 
             DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
@@ -2965,7 +3115,7 @@ namespace DCCollection
         // Non-transmog: try curated per-type tables first; fall back to the generic index; fall back to owned-only.
         CollectionType ct = static_cast<CollectionType>(type);
 
-        auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity, std::string const& source, int32 extraType, uint32 itemIdForSource = 0)
+        auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity, std::string const& source, int32 extraType, uint32 itemIdForSource = 0, uint32 displayId = 0)
         {
             DCAddon::JsonValue d;
             d.SetObject();
@@ -2975,6 +3125,8 @@ namespace DCCollection
                 d.Set("icon", icon);
             if (rarity)
                 d.Set("rarity", rarity);
+            if (displayId > 0)
+                d.Set("displayId", displayId);
 
             if (!source.empty())
             {
@@ -3072,34 +3224,145 @@ namespace DCCollection
         }
         else if (ct == CollectionType::PET && WorldTableExists("dc_pet_definitions"))
         {
-            // Schema-flexible: most client logic expects pets to be keyed by spellId.
-            // Some older schemas use pet_entry (creature entry / item id). Prefer spell_id when present.
-            std::string idCol;
-            if (WorldColumnExists("dc_pet_definitions", "spell_id"))
-                idCol = "spell_id";
-            else if (WorldColumnExists("dc_pet_definitions", "spellId"))
-                idCol = "spellId";
-            else if (WorldColumnExists("dc_pet_definitions", "pet_entry"))
-                idCol = "pet_entry";
-            else
-                idCol = "pet_entry";
+            // Pets are stored account-wide by the companion teaching itemId (class=15, subclass=2).
+            // Send definitions keyed by that itemId, and include spellId/creatureId/displayId for the client.
+            std::string entryCol = WorldColumnExists("dc_pet_definitions", "pet_entry") ? "pet_entry" : "";
+            if (entryCol.empty() && WorldColumnExists("dc_pet_definitions", "item_id"))
+                entryCol = "item_id";
 
-            QueryResult r = WorldDatabase.Query(
-                "SELECT {}, name, icon, rarity, source FROM dc_pet_definitions", idCol);
+            std::string spellCol;
+            if (WorldColumnExists("dc_pet_definitions", "pet_spell_id"))
+                spellCol = "pet_spell_id";
+            else if (WorldColumnExists("dc_pet_definitions", "spell_id"))
+                spellCol = "spell_id";
+            else if (WorldColumnExists("dc_pet_definitions", "spellId"))
+                spellCol = "spellId";
+
+            std::string displayCol;
+            if (WorldColumnExists("dc_pet_definitions", "display_id"))
+                displayCol = "display_id";
+            else if (WorldColumnExists("dc_pet_definitions", "displayId"))
+                displayCol = "displayId";
+
+            // Legacy schemas may not have pet_entry; fall back to selecting a spell id / pet_entry-like column.
+            if (entryCol.empty())
+            {
+                if (!spellCol.empty())
+                    entryCol = spellCol;
+                else
+                    entryCol = "pet_entry";
+            }
+
+            bool entryIsItemId = (entryCol == "pet_entry" || entryCol == "item_id");
+            bool hasSpellCol = !spellCol.empty() && spellCol != entryCol;
+            bool hasDisplayCol = !displayCol.empty();
+
+            std::string query = "SELECT " + entryCol + ", name, icon, rarity, source";
+            if (hasSpellCol)
+                query += ", " + spellCol;
+            if (hasDisplayCol)
+                query += ", " + displayCol;
+            query += " FROM dc_pet_definitions";
+
+            QueryResult r = WorldDatabase.Query(query);
             if (r)
             {
                 do
                 {
                     Field* f = r->Fetch();
-                    uint32 id = f[0].Get<uint32>();
-                    addDef(
-                        id,
-                        f[1].Get<std::string>(),
-                        f[2].Get<std::string>(),
-                        f[3].Get<uint32>(),
-                        f[4].Get<std::string>(),
-                        -1,
-                        0);
+                    uint32 raw = f[0].Get<uint32>();
+                    uint32 itemId = 0;
+                    uint32 spellId = 0;
+                    uint32 creatureId = 0;
+                    uint32 displayId = 0;
+                    uint32 displayIdFromTable = 0;
+
+                    uint32 idx = 5;
+                    if (hasSpellCol)
+                        spellId = f[idx++].Get<uint32>();
+                    if (hasDisplayCol)
+                        displayIdFromTable = f[idx++].Get<uint32>();
+
+                    if (entryIsItemId)
+                        itemId = raw;
+                    else
+                        spellId = spellId ? spellId : raw;
+
+                    if (spellId && !itemId)
+                        itemId = FindCompanionItemIdForSpell(spellId);
+
+                    if (!spellId && itemId)
+                    {
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
+                        {
+                            if (proto->Class == 15 && proto->SubClass == 2)
+                            {
+                                uint32 candidateSpells[5] = { proto->Spells[0].SpellId, proto->Spells[1].SpellId, proto->Spells[2].SpellId, proto->Spells[3].SpellId, proto->Spells[4].SpellId };
+                                for (uint32 s : candidateSpells)
+                                {
+                                    if (s)
+                                    {
+                                        spellId = s;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (SpellInfo const* spellInfo = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr)
+                    {
+                        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                        {
+                            if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON)
+                            {
+                                creatureId = spellInfo->Effects[i].MiscValue;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (creatureId)
+                    {
+                        if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                        {
+                            if (!cInfo->Models.empty())
+                                displayId = cInfo->Models[0].CreatureDisplayID;
+                        }
+                    }
+                    if (!displayId && displayIdFromTable)
+                        displayId = displayIdFromTable;
+
+                    if (!itemId)
+                        continue;
+
+                    DCAddon::JsonValue d;
+                    d.SetObject();
+                    d.Set("name", f[1].Get<std::string>());
+                    d.Set("icon", f[2].Get<std::string>());
+                    d.Set("rarity", f[3].Get<uint32>());
+                    d.Set("itemId", itemId);
+                    if (spellId)
+                        d.Set("spellId", spellId);
+                    if (creatureId)
+                        d.Set("creatureId", creatureId);
+                    if (displayId)
+                        d.Set("displayId", displayId);
+
+                    std::string source = f[4].Get<std::string>();
+                    if (!source.empty())
+                    {
+                        DCAddon::JsonValue srcVal = parseSourceValue(source);
+                        if (isUnknownSource(srcVal) && itemId)
+                            srcVal = buildSourceForItemCached(itemId);
+                        d.Set("source", srcVal);
+                    }
+                    else
+                    {
+                        d.Set("source", buildSourceForItemCached(itemId));
+                    }
+
+                    defs.Set(std::to_string(itemId), d);
                     loadedAny = true;
                 } while (r->NextRow());
             }
@@ -3114,6 +3377,11 @@ namespace DCCollection
                 {
                     Field* f = r->Fetch();
                     uint32 itemId = f[0].Get<uint32>();
+                    
+                    uint32 displayId = 0;
+                    if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
+                        displayId = proto->DisplayInfoID;
+
                     addDef(
                         itemId,
                         f[1].Get<std::string>(),
@@ -3121,7 +3389,8 @@ namespace DCCollection
                         f[3].Get<uint32>(),
                         f[4].Get<std::string>(),
                         -1,
-                        itemId);
+                        itemId,
+                        displayId);
                     loadedAny = true;
                 } while (r->NextRow());
             }
@@ -3136,6 +3405,11 @@ namespace DCCollection
                 {
                     Field* f = r->Fetch();
                     uint32 itemId = f[0].Get<uint32>();
+
+                    uint32 displayId = 0;
+                    if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
+                        displayId = proto->DisplayInfoID;
+
                     addDef(
                         itemId,
                         f[1].Get<std::string>(),
@@ -3143,7 +3417,8 @@ namespace DCCollection
                         0,
                         std::string(),
                         -1,
-                        itemId);
+                        itemId,
+                        displayId);
                     loadedAny = true;
                 } while (r->NextRow());
             }
@@ -3629,13 +3904,16 @@ namespace DCCollection
             ItemTemplate const* fakeProto = sObjectMgr->GetItemTemplate(fakeEntry);
             if (fakeEntry && fakeProto)
             {
-                TransmogAppearanceDef appearance;
+                TransmogAppearanceVariant appearance;
                 appearance.canonicalItemId = fakeEntry;
                 appearance.displayId = fakeProto->DisplayInfoID;
                 appearance.inventoryType = fakeProto->InventoryType;
                 appearance.itemClass = fakeProto->Class;
                 appearance.itemSubClass = fakeProto->SubClass;
                 appearance.quality = fakeProto->Quality;
+                appearance.itemLevel = fakeProto->ItemLevel;
+                appearance.itemIds.clear();
+                appearance.itemIds.push_back(fakeEntry);
 
                 if (!IsAppearanceCompatible(slot, equippedProto, appearance))
                 {

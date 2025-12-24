@@ -621,7 +621,26 @@ function DC:HandleStatsResponse(data)
         self.collectionStats.mounts = { collected = data.mounts.collected or 0, total = data.mounts.total or 0 }
     end
     if data.pets then
-        self.collectionStats.pets = { collected = data.pets.collected or 0, total = data.pets.total or 0 }
+        local collected = data.pets.collected or 0
+        local total = data.pets.total or 0
+
+        -- Prefer local companion ownership if the server stats aren't synced yet.
+        if self.PetModule and type(self.PetModule.GetStats) == "function" then
+            if type(self.PetModule.RefreshKnownPetsCache) == "function" then
+                pcall(self.PetModule.RefreshKnownPetsCache, self.PetModule)
+            end
+            local ok, stats = pcall(self.PetModule.GetStats, self.PetModule)
+            if ok and type(stats) == "table" then
+                if type(stats.owned) == "number" and stats.owned > collected then
+                    collected = stats.owned
+                end
+                if (not total or total == 0) and type(stats.total) == "number" and stats.total > 0 then
+                    total = stats.total
+                end
+            end
+        end
+
+        self.collectionStats.pets = { collected = collected, total = total }
     end
     if data.transmog then
         self.collectionStats.transmog = { collected = data.transmog.collected or 0, total = data.transmog.total or 0 }
@@ -630,7 +649,22 @@ function DC:HandleStatsResponse(data)
         self.collectionStats.titles = { collected = data.titles.collected or 0, total = data.titles.total or 0 }
     end
     if data.heirlooms then
-        self.collectionStats.heirlooms = { collected = data.heirlooms.collected or 0, total = data.heirlooms.total or 0 }
+        local collected = data.heirlooms.collected or 0
+        local total = data.heirlooms.total or 0
+
+        if self.HeirloomModule and type(self.HeirloomModule.GetStats) == "function" then
+            local ok, stats = pcall(self.HeirloomModule.GetStats, self.HeirloomModule)
+            if ok and type(stats) == "table" then
+                if type(stats.owned) == "number" and stats.owned > collected then
+                    collected = stats.owned
+                end
+                if (not total or total == 0) and type(stats.total) == "number" and stats.total > 0 then
+                    total = stats.total
+                end
+            end
+        end
+
+        self.collectionStats.heirlooms = { collected = collected, total = total }
     end
     if data.toys then
         self.collectionStats.toys = { collected = data.toys.collected or 0, total = data.toys.total or 0 }

@@ -18,6 +18,13 @@ local L = DC.L
 local HeirloomModule = {}
 DC.HeirloomModule = HeirloomModule
 
+local HEIRLOOM_ITEMID_MAX = 2000000
+
+local function IsValidHeirloomItemId(itemId)
+    itemId = tonumber(itemId)
+    return itemId ~= nil and itemId > 0 and itemId <= HEIRLOOM_ITEMID_MAX
+end
+
 -- ============================================================================
 -- SLOT TYPE CONSTANTS
 -- ============================================================================
@@ -61,7 +68,21 @@ function HeirloomModule:GetHeirloomDefinition(itemId)
 end
 
 function HeirloomModule:IsHeirloomCollected(itemId)
-    return DC.collections.heirlooms and DC.collections.heirlooms[itemId] ~= nil
+    itemId = tonumber(itemId)
+    if not itemId or not IsValidHeirloomItemId(itemId) then
+        return false
+    end
+
+    if DC.collections.heirlooms and DC.collections.heirlooms[itemId] ~= nil then
+        return true
+    end
+
+    -- Fallback: if server collection isn't synced yet, detect by actual ownership.
+    if type(GetItemCount) == "function" then
+        return (GetItemCount(itemId, true) or 0) > 0
+    end
+
+    return false
 end
 
 -- ============================================================================
@@ -76,8 +97,9 @@ function HeirloomModule:GetFilteredHeirlooms(filters)
     local collection = self:GetHeirlooms()
     
     for itemId, def in pairs(definitions) do
-        local collected = collection[itemId] ~= nil
-        local collData = collection[itemId]
+        if IsValidHeirloomItemId(itemId) then
+            local collected = self:IsHeirloomCollected(itemId)
+            local collData = collection[itemId]
         
         local include = true
         
@@ -106,19 +128,20 @@ function HeirloomModule:GetFilteredHeirlooms(filters)
             end
         end
         
-        if include then
-            table.insert(results, {
-                id = itemId,
-                name = def.name,
-                icon = def.icon,
-                rarity = def.rarity,
-                slotType = def.slotType,
-                source = def.source,
-                collected = collected,
-                is_favorite = collData and collData.is_favorite,
-                upgrade_level = collData and collData.upgrade_level or 0,
-                definition = def,
-            })
+            if include then
+                table.insert(results, {
+                    id = itemId,
+                    name = def.name,
+                    icon = def.icon,
+                    rarity = def.rarity,
+                    slotType = def.slotType,
+                    source = def.source,
+                    collected = collected,
+                    is_favorite = collData and collData.is_favorite,
+                    upgrade_level = collData and collData.upgrade_level or 0,
+                    definition = def,
+                })
+            end
         end
     end
     
@@ -168,15 +191,17 @@ function HeirloomModule:GetStats()
     local collection = self:GetHeirlooms()
     
     for itemId, def in pairs(definitions) do
-        total = total + 1
+        if IsValidHeirloomItemId(itemId) then
+            total = total + 1
         
         local slot = def.slotType or 0
         bySlot[slot] = bySlot[slot] or { owned = 0, total = 0 }
         bySlot[slot].total = bySlot[slot].total + 1
         
-        if collection[itemId] then
-            owned = owned + 1
-            bySlot[slot].owned = bySlot[slot].owned + 1
+            if self:IsHeirloomCollected(itemId) then
+                owned = owned + 1
+                bySlot[slot].owned = bySlot[slot].owned + 1
+            end
         end
     end
     

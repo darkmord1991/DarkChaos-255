@@ -146,7 +146,7 @@ local typeIcons = {
 
 local typeTitles = {
     mounts     = "New Mount Collected!",
-    pets       = "New Pet Collected!",
+    pets       = "New Companion Collected!",
     titles     = "New Title Earned!",
     heirlooms  = "New Heirloom Collected!",
     transmog   = "New Appearance Collected!",

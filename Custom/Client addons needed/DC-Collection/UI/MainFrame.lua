@@ -332,7 +332,7 @@ function DC:CreateTabBar(parent)
         { key = "overview",     text = "My Collection",       icon = "Interface\\Icons\\INV_Misc_Book_09" },
         { key = "wardrobe",     text = "Wardrobe",            icon = "Interface\\Icons\\INV_Chest_Cloth_17" },
         { key = "mounts",       text = L["TAB_MOUNTS"] or "Mounts",       icon = "Interface\\Icons\\Ability_Mount_RidingHorse" },
-        { key = "pets",         text = L["TAB_PETS"] or "Pets",         icon = "Interface\\Icons\\INV_Box_PetCarrier_01" },
+        { key = "pets",         text = L["TAB_PETS"] or "Companions",   icon = "Interface\\Icons\\INV_Box_PetCarrier_01" },
         { key = "heirlooms",    text = L["TAB_HEIRLOOMS"] or "Heirlooms",    icon = "Interface\\Icons\\INV_Sword_43" },
         { key = "titles",       text = L["TAB_TITLES"] or "Titles",       icon = "Interface\\Icons\\INV_Scroll_11" },
         { key = "achievements", text = L["TAB_ACHIEVEMENTS"] or "Achievements", icon = "Interface\\Icons\\Achievement_General" },

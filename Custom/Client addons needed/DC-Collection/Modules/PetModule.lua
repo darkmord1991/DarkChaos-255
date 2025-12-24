@@ -24,6 +24,29 @@ DC.PetModule = PetModule
 
 function PetModule:Init()
     DC:Debug("PetModule initialized")
+
+    -- Ensure tables exist.
+    DC.definitions = DC.definitions or {}
+    DC.collections = DC.collections or {}
+    DC.definitions.pets = DC.definitions.pets or {}
+    DC.collections.pets = DC.collections.pets or {}
+
+    -- Cache the player's known companions so collected/not-collected works even
+    -- when the server doesn't provide (or hasn't yet synced) collection data.
+    self:RefreshKnownPetsCache()
+
+    -- If server definitions are missing/empty, seed from client so the Pets UI
+    -- isn't empty and owned pets are correctly marked.
+    if not next(DC.definitions.pets) then
+        self:SeedFromClientKnownPets()
+    else
+        -- Even with server definitions, make sure client-owned pets are marked owned.
+        self:SeedFromClientKnownPets()
+    end
+end
+
+function PetModule:RefreshKnownPetsCache()
+    self._knownPets = self:ScanKnownPets() or {}
 end
 
 -- ============================================================================
@@ -38,16 +61,47 @@ function PetModule:GetPetDefinitions()
     return DC.definitions.pets or {}
 end
 
-function PetModule:GetPet(spellId)
-    return DC.collections.pets and DC.collections.pets[spellId]
+function PetModule:GetPet(petId)
+    return DC.collections.pets and DC.collections.pets[petId]
 end
 
-function PetModule:GetPetDefinition(spellId)
-    return DC.definitions.pets and DC.definitions.pets[spellId]
+function PetModule:GetPetDefinition(petId)
+    return DC.definitions.pets and DC.definitions.pets[petId]
 end
 
-function PetModule:IsPetCollected(spellId)
-    return DC.collections.pets and DC.collections.pets[spellId] ~= nil
+function PetModule:IsPetCollected(petId)
+    if DC.collections.pets and DC.collections.pets[petId] ~= nil then
+        return true
+    end
+
+    -- Fallback for older server schemas / before sync completes: detect via client companion list.
+    local def = self:GetPetDefinition(petId)
+    if def then
+        local creatureId = def.creatureId or def.creature_id
+        local spellId = def.spellId or def.spell_id
+        if creatureId and self._knownPetsByCreatureId and self._knownPetsByCreatureId[creatureId] then
+            return true
+        end
+        if spellId and self._knownPetsBySpellId and self._knownPetsBySpellId[spellId] then
+            return true
+        end
+    end
+
+    if petId and self._knownPetsByCreatureId and self._knownPetsByCreatureId[petId] then
+        return true
+    end
+    return false
+end
+
+function PetModule:UsesItemIdKeys()
+    local defs = self:GetPetDefinitions()
+    for k, def in pairs(defs) do
+        local itemId = def and (def.itemId or def.item_id)
+        if itemId and tostring(k) == tostring(itemId) then
+            return true
+        end
+    end
+    return false
 end
 
 -- ============================================================================
@@ -61,9 +115,13 @@ function PetModule:GetFilteredPets(filters)
     local definitions = self:GetPetDefinitions()
     local collection = self:GetPets()
     
-    for spellId, def in pairs(definitions) do
-        local collected = collection[spellId] ~= nil
-        local collData = collection[spellId]
+    local count = 0
+    for _ in pairs(definitions) do count = count + 1 end
+    -- DC:Debug("GetFilteredPets: definitions count = " .. count)
+
+    for petId, def in pairs(definitions) do
+        local collected = self:IsPetCollected(petId)
+        local collData = collection[petId]
         
         local include = true
         
@@ -102,7 +160,7 @@ function PetModule:GetFilteredPets(filters)
         
         if include then
             table.insert(results, {
-                id = spellId,
+                id = petId,
                 name = def.name,
                 icon = def.icon,
                 rarity = def.rarity,
@@ -115,6 +173,7 @@ function PetModule:GetFilteredPets(filters)
         end
     end
     
+    -- DC:Debug("GetFilteredPets: results count = " .. #results)
     return results
 end
 
@@ -122,22 +181,49 @@ end
 -- PET ACTIONS
 -- ============================================================================
 
-function PetModule:SummonPet(spellId)
-    if not spellId then
+function PetModule:SummonPet(petId)
+    if not petId then
         DC:Print(L["ERR_NO_PET"] or "No pet specified")
         return
     end
     
-    if not self:IsPetCollected(spellId) then
+    if not self:IsPetCollected(petId) then
         DC:Print(L["ERR_NOT_OWNED"])
         return
     end
-    
-    DC:RequestSummonPet(spellId, false)
+
+    -- Prefer client-side summoning on 3.3.5a: the server handler may not support PET use.
+    local def = self:GetPetDefinition(petId) or {}
+    local spellId = def.spellId or def.spell_id
+    local creatureId = def.creatureId or def.creature_id
+
+    if spellId or creatureId then
+        local num = GetNumCompanions("CRITTER")
+        for i = 1, num do
+            local cID, _, sID = GetCompanionInfo("CRITTER", i)
+            if (spellId and sID == spellId) or (creatureId and cID == creatureId) then
+                CallCompanion("CRITTER", i)
+                return
+            end
+        end
+    end
+
+    -- Fallback: try the server request path.
+    if DC and DC.RequestSummonPet then
+        DC:RequestSummonPet(petId, false)
+    end
 end
 
 function PetModule:SummonRandomPet()
-    DC:RequestSummonPet(nil, true)
+    local num = GetNumCompanions and GetNumCompanions("CRITTER") or 0
+    if num and num > 0 and CallCompanion then
+        CallCompanion("CRITTER", math.random(1, num))
+        return
+    end
+
+    if DC and DC.RequestSummonPet then
+        DC:RequestSummonPet(nil, true)
+    end
 end
 
 function PetModule:SummonRandomFavoritePet()
@@ -181,17 +267,17 @@ function PetModule:GetStats()
     local definitions = self:GetPetDefinitions()
     local collection = self:GetPets()
     
-    for spellId, def in pairs(definitions) do
+    for petId, def in pairs(definitions) do
         total = total + 1
-        
-        if collection[spellId] then
+
+        if self:IsPetCollected(petId) then
             owned = owned + 1
         end
         
         local rarity = def.rarity or 1
         byRarity[rarity] = byRarity[rarity] or { owned = 0, total = 0 }
         byRarity[rarity].total = byRarity[rarity].total + 1
-        if collection[spellId] then
+        if self:IsPetCollected(petId) then
             byRarity[rarity].owned = byRarity[rarity].owned + 1
         end
     end
@@ -210,19 +296,28 @@ end
 
 function PetModule:ScanKnownPets()
     local knownPets = {}
+    local knownByCreature = {}
+    local knownBySpell = {}
     
     local numPets = GetNumCompanions("CRITTER")
     for i = 1, numPets do
         local creatureID, creatureName, spellID, icon, active = GetCompanionInfo("CRITTER", i)
-        if spellID then
-            knownPets[spellID] = {
+        if creatureID then
+            knownPets[creatureID] = {
                 name = creatureName,
                 icon = icon,
                 spellId = spellID,
                 creatureId = creatureID,
             }
+            knownByCreature[creatureID] = true
+            if spellID then
+                knownBySpell[spellID] = true
+            end
         end
     end
+
+    self._knownPetsByCreatureId = knownByCreature
+    self._knownPetsBySpellId = knownBySpell
     
     return knownPets
 end
@@ -239,18 +334,42 @@ function PetModule:SeedFromClientKnownPets()
     DC.collections.pets = DC.collections.pets or {}
 
     local changed = false
-    for spellId, data in pairs(pets) do
-        if spellId then
-            if not DC.definitions.pets[spellId] then
-                DC.definitions.pets[spellId] = {
-                    name = data.name,
-                    icon = data.icon,
-                }
+
+    -- If server definitions are keyed by teaching itemId, prefer marking collected using that key.
+    if self:UsesItemIdKeys() then
+        for petId, def in pairs(DC.definitions.pets) do
+            local creatureId = def and (def.creatureId or def.creature_id)
+            local spellId = def and (def.spellId or def.spell_id)
+            local known = false
+
+            if creatureId and self._knownPetsByCreatureId and self._knownPetsByCreatureId[creatureId] then
+                known = true
+            elseif spellId and self._knownPetsBySpellId and self._knownPetsBySpellId[spellId] then
+                known = true
+            end
+
+            if known and not DC.collections.pets[petId] then
+                DC.collections.pets[petId] = { owned = true }
                 changed = true
             end
-            if not DC.collections.pets[spellId] then
-                DC.collections.pets[spellId] = { owned = true }
-                changed = true
+        end
+    else
+        -- Legacy fallback: seed by creatureId.
+        for creatureId, data in pairs(pets) do
+            if creatureId then
+                if not DC.definitions.pets[creatureId] then
+                    DC.definitions.pets[creatureId] = {
+                        name = data.name,
+                        icon = data.icon,
+                        creatureId = data.creatureId,
+                        spellId = data.spellId,
+                    }
+                    changed = true
+                end
+                if not DC.collections.pets[creatureId] then
+                    DC.collections.pets[creatureId] = { owned = true }
+                    changed = true
+                end
             end
         end
     end
@@ -277,15 +396,35 @@ end
 -- ============================================================================
 
 function PetModule:OnPetLearned(spellId)
-    if not DC.collections.pets[spellId] then
-        DC.collections.pets[spellId] = {
-            obtained_date = time(),
-            is_favorite = false,
-            times_used = 0,
-        }
-        DC:Debug("Pet learned: " .. spellId)
-        
-        if not DC.definitions.pets[spellId] then
+    -- In the current schema, pets are keyed by teaching itemId on the server.
+    -- Avoid inserting creatureId-keyed entries client-side; just request a resync.
+    if self:UsesItemIdKeys() then
+        if DC and DC.RequestDefinitions then
+            DC:RequestDefinitions("pets")
+        end
+        if DC and DC.RequestCollection then
+            DC:RequestCollection("pets")
+        end
+        return
+    end
+
+    -- Legacy fallback: keep old behavior when definitions are keyed by creatureId.
+    local creatureId = nil
+    if spellId then
+        for i = 1, GetNumCompanions("CRITTER") do
+            local cID, _, sID = GetCompanionInfo("CRITTER", i)
+            if sID == spellId then
+                creatureId = cID
+                break
+            end
+        end
+    end
+    creatureId = creatureId or spellId
+
+    if creatureId and not DC.collections.pets[creatureId] then
+        DC.collections.pets[creatureId] = { obtained_date = time(), is_favorite = false, times_used = 0 }
+        DC:Debug("Pet learned (legacy): " .. tostring(creatureId))
+        if not DC.definitions.pets[creatureId] and DC and DC.RequestDefinitions then
             DC:RequestDefinitions("pets")
         end
     end
@@ -295,9 +434,8 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("COMPANION_LEARNED")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "COMPANION_LEARNED" then
-        local pets = PetModule:ScanKnownPets()
-        for spellId, data in pairs(pets) do
-            PetModule:OnPetLearned(spellId)
-        end
+        PetModule:RefreshKnownPetsCache()
+        local spellId = ...
+        PetModule:OnPetLearned(spellId)
     end
 end)

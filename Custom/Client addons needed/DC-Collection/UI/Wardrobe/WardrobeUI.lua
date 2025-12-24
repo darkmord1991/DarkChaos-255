@@ -119,6 +119,78 @@ function Wardrobe:CreateFrame()
 end
 
 -- ============================================================================
+-- TOOLTIP HELPERS (Wardrobe)
+-- ============================================================================
+
+function Wardrobe:_GetFixedTooltipAnchor()
+    -- Prefer anchoring to the Wardrobe frame so tooltip stays near the UI.
+    return (self.frame and self.frame.IsShown and self.frame:IsShown() and self.frame) or UIParent
+end
+
+function Wardrobe:ShowFixedItemTooltip(owner, itemId, extraLineFn)
+    if not itemId then
+        return
+    end
+
+    local anchor = self:_GetFixedTooltipAnchor()
+
+    GameTooltip:Hide()
+    GameTooltip:SetOwner(anchor, "ANCHOR_NONE")
+    GameTooltip:ClearAllPoints()
+    GameTooltip:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 18, 60)
+    GameTooltip:SetClampedToScreen(true)
+
+    GameTooltip:SetHyperlink("item:" .. tostring(itemId))
+    if type(extraLineFn) == "function" then
+        extraLineFn(GameTooltip)
+    end
+    GameTooltip:Show()
+end
+
+function Wardrobe:ShowSlotFilterMenu(anchorButton)
+    if not anchorButton then
+        return
+    end
+
+    local dropdown = CreateFrame("Frame", "DCWardrobeSlotFilterMenu", UIParent, "UIDropDownMenuTemplate")
+    local menu = {}
+
+    table.insert(menu, {
+        text = "All Slots",
+        notCheckable = true,
+        func = function()
+            self.selectedSlotFilter = nil
+            if self.frame and self.frame.slotFilterButtons then
+                for _, b in ipairs(self.frame.slotFilterButtons) do
+                    if b.selected then b.selected:Hide() end
+                end
+            end
+            self:RefreshGrid()
+        end,
+    })
+
+    for i, filter in ipairs(self.SLOT_FILTERS or {}) do
+        table.insert(menu, {
+            text = "Slot Filter " .. tostring(i),
+            notCheckable = true,
+            func = function()
+                self.selectedSlotFilter = filter
+                if self.frame and self.frame.slotFilterButtons then
+                    for j, b in ipairs(self.frame.slotFilterButtons) do
+                        if b.selected then
+                            if j == i then b.selected:Show() else b.selected:Hide() end
+                        end
+                    end
+                end
+                self:RefreshGrid()
+            end,
+        })
+    end
+
+    EasyMenu(menu, dropdown, anchorButton, 0, 0, "MENU")
+end
+
+-- ============================================================================
 -- LEFT PANEL
 -- ============================================================================
 
@@ -352,7 +424,10 @@ function Wardrobe:CreateRightPanel(parent)
     filterBtn:SetSize(60, 20)
     filterBtn:SetPoint("RIGHT", searchBox, "LEFT", -5, 0)
     filterBtn:SetText("Filter")
-    filterBtn:SetScript("OnClick", function() end)
+    -- Filter should be equipment slot/type based (not item sets). Provide a quick slot filter menu.
+    filterBtn:SetScript("OnClick", function()
+        Wardrobe:ShowSlotFilterMenu(filterBtn)
+    end)
     parent.filterBtn = filterBtn
 
     local orderBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
@@ -410,10 +485,12 @@ function Wardrobe:CreateRightPanel(parent)
             table.sort(invTypes)
 
             if #invTypes == 0 then
-                GameTooltip:AddLine("Unknown", 1, 1, 1)
+                GameTooltip:AddLine("Misc / Cosmetic", 1, 1, 1)
             else
                 for _, invType in ipairs(invTypes) do
-                    GameTooltip:AddLine(string.format("%s (invType %d)", GetInvTypeLabel(invType), invType), 1, 1, 1)
+                    local label = GetInvTypeLabel(invType)
+                    if invType == 0 then label = "Misc / Cosmetic" end
+                    GameTooltip:AddLine(string.format("%s", label), 1, 1, 1)
                 end
             end
 
@@ -527,8 +604,8 @@ function Wardrobe:CreateRightPanel(parent)
                 end
 
                 -- If collected, also apply (keeps the existing workflow, but adds preview).
-                if selfBtn.itemData.collected and selfBtn.itemData.itemId then
-                    Wardrobe:ApplyAppearance(selfBtn.itemData.itemId)
+                if selfBtn.itemData.collected then
+                    Wardrobe:ApplyAppearance(selfBtn.itemData)
                 end
             else
                 Wardrobe:ShowAppearanceContextMenu(selfBtn.itemData)
@@ -537,27 +614,74 @@ function Wardrobe:CreateRightPanel(parent)
 
         btn:SetScript("OnEnter", function(selfBtn)
             if not selfBtn.itemData then return end
-            GameTooltip:SetOwner(selfBtn, "ANCHOR_RIGHT")
-            if selfBtn.itemData.itemId then
-                GameTooltip:SetHyperlink("item:" .. selfBtn.itemData.itemId)
-            end
-            GameTooltip:AddLine(" ")
-            if selfBtn.itemData.collected then
-                GameTooltip:AddLine("You've collected this appearance", 0.1, 1, 0.1)
-            else
-                if Wardrobe:IsWishlistedTransmog(selfBtn.itemData.itemId) then
-                    GameTooltip:AddLine("Wishlisted", 1, 0.82, 0)
+            Wardrobe:ShowFixedItemTooltip(selfBtn, selfBtn.itemData.itemId, function(tip)
+                tip:AddLine(" ")
+
+                if selfBtn.itemData.displayId then
+                    tip:AddLine("DisplayId: " .. tostring(selfBtn.itemData.displayId), 0.85, 0.85, 0.85)
                 end
+
+                local ids = selfBtn.itemData.itemIds
+                local idsTotal = selfBtn.itemData.itemIdsTotal
+                if type(idsTotal) == "string" then idsTotal = tonumber(idsTotal) end
+                if type(ids) == "table" and (#ids > 0 or idsTotal) then
+                    local shown = {}
+                    local maxShow = 10
+                    local n = 0
+                    for _, v in ipairs(ids) do
+                        if n >= maxShow then break end
+                        local iv = type(v) == "string" and tonumber(v) or v
+                        if iv and not shown[iv] then
+                            shown[iv] = true
+                            n = n + 1
+                        end
+                    end
+
+                    local list = {}
+                    for iv in pairs(shown) do
+                        table.insert(list, iv)
+                    end
+                    table.sort(list)
+
+                    local line = "Variants: "
+                    if #list > 0 then
+                        for i = 1, #list do
+                            if i > 1 then line = line .. ", " end
+                            line = line .. tostring(list[i])
+                        end
+                    end
+
+                    if idsTotal and idsTotal > #ids then
+                        line = line .. string.format(" (+%d more)", (idsTotal - #ids))
+                    end
+                    tip:AddLine(line, 0.85, 0.85, 0.85)
+                end
+
+                if selfBtn.itemData.collected then
+                    tip:AddLine("You've collected this appearance", 0.1, 1, 0.1)
+                else
+                    if Wardrobe:IsWishlistedTransmog(selfBtn.itemData.itemId) then
+                        tip:AddLine("Wishlisted", 1, 0.82, 0)
+                    end
+                end
+                tip:AddLine("Left-click to preview", 0.7, 0.7, 0.7)
+                if selfBtn.itemData.collected then
+                    tip:AddLine("(Also applies if collected)", 0.7, 0.7, 0.7)
+                end
+                tip:AddLine("Right-click for options", 0.7, 0.7, 0.7)
+                tip:AddLine("Shift-click to toggle wishlist", 0.7, 0.7, 0.7)
+            end)
+
+            if selfBtn.itemData.itemId and Wardrobe.ShowTooltipPreview then
+                Wardrobe:ShowTooltipPreview(selfBtn.itemData.itemId)
             end
-            GameTooltip:AddLine("Left-click to preview", 0.7, 0.7, 0.7)
-            if selfBtn.itemData.collected then
-                GameTooltip:AddLine("(Also applies if collected)", 0.7, 0.7, 0.7)
-            end
-            GameTooltip:AddLine("Right-click for options", 0.7, 0.7, 0.7)
-            GameTooltip:AddLine("Shift-click to toggle wishlist", 0.7, 0.7, 0.7)
-            GameTooltip:Show()
         end)
-        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        btn:SetScript("OnLeave", function() 
+            GameTooltip:Hide() 
+            if Wardrobe.HideTooltipPreview then
+                Wardrobe:HideTooltipPreview()
+            end
+        end)
 
         btn:Hide()
         table.insert(parent.gridButtons, btn)
@@ -676,4 +800,63 @@ function Wardrobe:CreateBottomBar(parent)
     end
 
     parent.bottomBar = bottom
+end
+
+-- ============================================================================
+-- TOOLTIP PREVIEW
+-- ============================================================================
+
+function Wardrobe:ShowTooltipPreview(itemId)
+    if not itemId then return end
+    
+    -- Create the preview frame if it doesn't exist
+    if not self.tooltipPreview then
+        local parent = self.frame or UIParent
+        local frame = CreateFrame("Frame", "DCWardrobeTooltipPreview", parent)
+        frame:SetSize(260, 300)
+        frame:SetFrameStrata("TOOLTIP")
+
+        frame:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        })
+        frame:SetBackdropColor(0, 0, 0, 0.95)
+
+        frame.innerBg = frame:CreateTexture(nil, "BACKGROUND", nil, -6)
+        frame.innerBg:SetPoint("TOPLEFT", 12, -12)
+        frame.innerBg:SetPoint("BOTTOMRIGHT", -12, 12)
+        frame.innerBg:SetTexture(0.05, 0.05, 0.05, 0.85)
+
+        local model = CreateFrame("DressUpModel", nil, frame)
+        model:SetPoint("TOPLEFT", 18, -20)
+        model:SetPoint("BOTTOMRIGHT", -18, 18)
+        model:SetUnit("player")
+        model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+
+        frame.model = model
+        self.tooltipPreview = frame
+    end
+    
+    local frame = self.tooltipPreview
+    frame:Show()
+    
+    -- Fixed location: bottom-right of the Wardrobe frame for consistent preview.
+    frame:ClearAllPoints()
+    local anchor = self:_GetFixedTooltipAnchor()
+    frame:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -18, 18)
+    
+    -- Update model
+    frame.model:SetUnit("player")
+    frame.model:Undress()
+    local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
+    frame.model:TryOn(link)
+    frame.model:SetFacing(0)
+end
+
+function Wardrobe:HideTooltipPreview()
+    if self.tooltipPreview then
+        self.tooltipPreview:Hide()
+    end
 end

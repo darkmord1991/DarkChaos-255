@@ -113,7 +113,7 @@ function Wardrobe:SafeGetText(key, fallback)
 end
 
 function Wardrobe:GetSlotIcon(slotKey)
-    local invSlotId = GetInventorySlotInfo(slotKey)
+    local invSlotId, textureName = GetInventorySlotInfo(slotKey)
     if invSlotId then
         local itemId = GetInventoryItemID("player", invSlotId)
         if itemId then
@@ -121,6 +121,10 @@ function Wardrobe:GetSlotIcon(slotKey)
             if texture then
                 return texture
             end
+        end
+        -- Return the default slot texture if no item is equipped
+        if textureName then
+            return textureName
         end
     end
     return "Interface\\Icons\\INV_Misc_QuestionMark"

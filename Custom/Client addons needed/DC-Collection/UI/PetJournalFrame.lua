@@ -54,8 +54,14 @@ local function GetPetIcon(spellId, def)
     end
 
     -- Try spell texture
-    if spellId and GetSpellTexture then
-        local tex = GetSpellTexture(spellId)
+    local sid = nil
+    if def then
+        sid = def.spellId or def.spell_id
+    end
+    sid = sid or spellId
+
+    if sid and GetSpellTexture then
+        local tex = GetSpellTexture(sid)
         if tex and tex ~= "" then
             return tex
         end
@@ -103,7 +109,7 @@ function PetJournal:Create(parent)
     self.frame = frame
     self.currentPage = 1
     self.selectedPet = nil
-    self.filteredPets = {}
+    self.filteredPets = nil -- Initialize as nil to force first update
 
     return frame
 end
@@ -360,7 +366,68 @@ function PetJournal:CreatePetButton(parent, index)
     btn.selected:SetTexture(0.4, 0.4, 0.8, 0.5)
     btn.selected:Hide()
 
-    btn:SetScript("OnClick", function()
+    local function ShowPetContextMenu(petData)
+        if not petData then
+            return
+        end
+
+        local id = petData.id
+        local menu = {
+            { text = petData.name or "Pet", isTitle = true, notCheckable = true },
+        }
+
+        if petData.collected then
+            if petData.is_favorite then
+                table.insert(menu, {
+                    text = (L and L["UNFAVORITE"]) or "Unfavorite",
+                    notCheckable = true,
+                    func = function()
+                        DC:RequestToggleFavorite("pets", id)
+                        PetJournal:UpdatePetList()
+                    end,
+                })
+            else
+                table.insert(menu, {
+                    text = (L and L["FAVORITE"]) or "Favorite",
+                    notCheckable = true,
+                    func = function()
+                        DC:RequestToggleFavorite("pets", id)
+                        PetJournal:UpdatePetList()
+                    end,
+                })
+            end
+        else
+            local inWishlist = DC.IsInWishlist and DC:IsInWishlist("pets", id) or false
+            if inWishlist then
+                table.insert(menu, {
+                    text = (L and (L["REMOVE_FROM_WISHLIST"] or L["REMOVE_WISHLIST"])) or "Remove from wishlist",
+                    notCheckable = true,
+                    func = function()
+                        DC:RequestRemoveWishlist("pets", id)
+                    end,
+                })
+            else
+                table.insert(menu, {
+                    text = (L and (L["ADD_TO_WISHLIST"] or L["WISHLIST"])) or "Add to wishlist",
+                    notCheckable = true,
+                    func = function()
+                        DC:RequestAddWishlist("pets", id)
+                    end,
+                })
+            end
+        end
+
+        table.insert(menu, { text = (L and L["CANCEL"]) or "Cancel", notCheckable = true })
+
+        local dropdown = CreateFrame("Frame", "DCPetContextMenu", UIParent, "UIDropDownMenuTemplate")
+        EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
+    end
+
+    btn:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            ShowPetContextMenu(btn.petData)
+            return
+        end
         PetJournal:SelectPet(btn.petData)
     end)
 
@@ -502,8 +569,15 @@ function PetJournal:RefreshList()
         local btn = self:CreatePetButton(scrollChild, btnIndex)
 
         btn.petData = pet
+        
+        -- Use definition name if available, otherwise fallback to "Unknown"
+        local name = pet.name
+        if (not name or name == "") and pet.definition then
+            name = pet.definition.name
+        end
+        btn.name:SetText(name or "Unknown")
+
         btn.icon:SetTexture(GetPetIcon(pet.id, pet.definition))
-        btn.name:SetText(pet.name or "Unknown")
 
         local r, g, b = GetRarityColor(pet.rarity)
         btn.name:SetTextColor(r, g, b)
@@ -552,7 +626,8 @@ function PetJournal:SelectPet(petData)
     local infoFrame = self.frame.modelFrame.infoFrame
     local model = self.frame.modelFrame.model
 
-    infoFrame.icon:SetTexture(GetPetIcon(petData.id, petData.definition))
+    local def = petData.definition or {}
+    infoFrame.icon:SetTexture(GetPetIcon(def.spellId or def.spell_id, def))
     infoFrame.name:SetText(petData.name or "Unknown")
 
     local r, g, b = GetRarityColor(petData.rarity)
@@ -571,42 +646,60 @@ function PetJournal:SelectPet(petData)
     end
 
     -- Display 3D model
-    -- Try various definition keys for display ID
-    local def = petData.definition or {}
-    local displayId = def.displayId or def.displayID or def.display_id 
-                   or def.creatureDisplayId or def.creature_display_id
-                   or def.modelId or def.model_id
-    
-    -- Convert to number if string
-    if type(displayId) == "string" then
-        displayId = tonumber(displayId)
-    end
-    
-    if displayId and displayId > 0 then
-        model:ClearModel()
-        model:SetDisplayInfo(displayId)
-        model:SetFacing(0)
+    -- IMPORTANT (WotLK 3.3.5a): PlayerModel does NOT have SetDisplayInfo.
+    -- Prefer creatureId/spellId-based preview; only call SetDisplayInfo if the API exists.
+    local function ResetModelPose()
+        if model.SetFacing then model:SetFacing(0) end
         model.rotation = 0
         model.zoom = 0
-        model:SetPosition(0, 0, 0)
+        if model.SetPosition then model:SetPosition(0, 0, 0) end
+    end
+
+    local creatureId = def.creatureId or def.creature_id or def.creatureEntry
+    if type(creatureId) == "string" then
+        creatureId = tonumber(creatureId)
+    end
+
+    if creatureId and creatureId > 0 then
+        model:ClearModel()
+        model:SetCreature(creatureId)
+        ResetModelPose()
     else
-        -- Try using spell ID to spawn creature via SetCreature (may work for some companions)
-        local spellId = petData.id
-        if spellId and type(model.SetCreature) == "function" then
-            -- Some WoW 3.3.5a models support SetCreature with creature entry
-            local creatureId = def.creatureId or def.creature_id or def.creatureEntry
-            if creatureId and creatureId > 0 then
-                model:ClearModel()
-                model:SetCreature(creatureId)
-                model:SetFacing(0)
-                model.rotation = 0
-                model.zoom = 0
-                model:SetPosition(0, 0, 0)
-            else
-                model:ClearModel()
+        -- Fallback: try to infer creature id from the player's companion list by spellId.
+        local spellId = def.spellId or def.spell_id
+        if type(spellId) == "string" then
+            spellId = tonumber(spellId)
+        end
+
+        local inferredCreatureId = nil
+        if spellId and GetNumCompanions and GetCompanionInfo then
+            for i = 1, GetNumCompanions("CRITTER") do
+                local cID, _, sID = GetCompanionInfo("CRITTER", i)
+                if sID == spellId then
+                    inferredCreatureId = cID
+                    break
+                end
             end
-        else
+        end
+
+        if inferredCreatureId and inferredCreatureId > 0 then
             model:ClearModel()
+            model:SetCreature(inferredCreatureId)
+            ResetModelPose()
+        else
+            -- Last resort: only use displayId if the model supports it (some custom clients do).
+            local displayId = def.displayId or def.displayID or def.display_id
+                           or def.creatureDisplayId or def.creature_display_id
+                           or def.modelId or def.model_id
+            if type(displayId) == "string" then
+                displayId = tonumber(displayId)
+            end
+
+            model:ClearModel()
+            if displayId and displayId > 0 and model.SetDisplayInfo then
+                model:SetDisplayInfo(displayId)
+                ResetModelPose()
+            end
         end
     end
 
@@ -621,6 +714,7 @@ function PetJournal:SelectPet(petData)
 
     self:RefreshList()
 end
+
 
 -- ============================================================================
 -- PAGINATION

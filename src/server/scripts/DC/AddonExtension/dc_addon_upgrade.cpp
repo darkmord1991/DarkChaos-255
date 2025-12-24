@@ -136,9 +136,10 @@ namespace Upgrade
         uint32 upgradeLevel = 0;
         uint32 tier = 1;
 
-        // Get tier from database
+        // Get tier from database (authoritative source: dc_item_templates_upgrade)
+        // Note: baseEntry is always used for tier lookup (clones resolve to base via dc_item_upgrade_clones)
         QueryResult tierLookup = WorldDatabase.Query(
-            "SELECT tier_id FROM dc_item_upgrade_tier_items WHERE item_id = {}",
+            "SELECT tier_id FROM dc_item_templates_upgrade WHERE item_id = {} AND season = 1 AND is_active = 1",
             baseEntry);
         if (tierLookup)
             tier = (*tierLookup)[0].Get<uint32>();
@@ -268,7 +269,7 @@ namespace Upgrade
 
             // Check if item has upgrade path
             QueryResult tierResult = WorldDatabase.Query(
-                "SELECT tier_id FROM dc_item_upgrade_tier_items WHERE item_id = {}",
+                "SELECT tier_id FROM dc_item_templates_upgrade WHERE item_id = {} AND season = 1 AND is_active = 1",
                 baseEntry);
 
             if (tierResult)
@@ -304,7 +305,7 @@ namespace Upgrade
                     baseEntry = (*baseResult)[0].Get<uint32>();
 
                 QueryResult tierResult = WorldDatabase.Query(
-                    "SELECT tier_id FROM dc_item_upgrade_tier_items WHERE item_id = {}",
+                    "SELECT tier_id FROM dc_item_templates_upgrade WHERE item_id = {} AND season = 1 AND is_active = 1",
                     baseEntry);
 
                 if (tierResult)

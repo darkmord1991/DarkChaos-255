@@ -49,6 +49,9 @@ function Wardrobe:ShowItemsContent()
         if self.frame.collectedFrame then
             self.frame.collectedFrame:Show()
         end
+        if self.frame.showUncollectedCheck then
+            self.frame.showUncollectedCheck:Show()
+        end
         if self.frame.gridFrame then
             self.frame.gridFrame:Show()
         end
@@ -69,6 +72,12 @@ function Wardrobe:ShowOutfitsContent()
     if self.frame then
         for _, btn in ipairs(self.frame.slotFilterButtons or {}) do
             btn:Hide()
+        end
+        if self.frame.collectedFrame then
+            self.frame.collectedFrame:Hide()
+        end
+        if self.frame.showUncollectedCheck then
+            self.frame.showUncollectedCheck:Hide()
         end
     end
     self:RefreshOutfitsGrid()
@@ -251,15 +260,44 @@ function Wardrobe:BuildAppearanceList()
     local defs = (DC.definitions and (DC.definitions.transmog or DC.definitions.wardrobe)) or {}
     local col = (DC.collections and (DC.collections.transmog or DC.collections.wardrobe)) or {}
 
-    local seenKeys = {}
-    local totalMatched = 0
-    local collectedMatched = 0
+    -- For transmog we want to show unique appearances, not one entry per item.
+    -- Servers can send multiple items sharing the same appearance (displayId) and
+    -- Lua's pairs() iteration order is arbitrary. Track the "best" representative
+    -- per appearance so we don't end up showing only low-level/low-quality items.
+    local byKey = {}
 
     local search = self.searchText
     if search and search ~= "" then
         search = string.lower(search)
     else
         search = nil
+    end
+
+    local function GetItemScore(itemId)
+        -- Higher score is "better". Prefer quality, then item level.
+        if not itemId or type(GetItemInfo) ~= "function" then
+            return 0, 0
+        end
+        local _, _, quality, itemLevel = GetItemInfo(itemId)
+        return tonumber(quality) or 0, tonumber(itemLevel) or 0
+    end
+
+    local function IsBetterRepresentative(newItemId, oldItemId)
+        if not oldItemId then
+            return true
+        end
+        if not newItemId then
+            return false
+        end
+        local nq, nl = GetItemScore(newItemId)
+        local oq, ol = GetItemScore(oldItemId)
+        if nq ~= oq then
+            return nq > oq
+        end
+        if nl ~= ol then
+            return nl > ol
+        end
+        return (tonumber(newItemId) or 0) > (tonumber(oldItemId) or 0)
     end
 
     for id, def in pairs(defs) do
@@ -307,36 +345,68 @@ function Wardrobe:BuildAppearanceList()
         end
 
         if valid then
-            local key = displayId
-            if not key then
-                key = (type(itemId) == "number" and itemId) or (type(id) == "number" and id) or tostring(id)
+            -- Avoid collisions across slots: some datasets reuse displayId across different invTypes.
+            local key
+            if displayId then
+                key = tostring(invType or 0) .. ":" .. tostring(displayId)
+            else
+                key = tostring(invType or 0) .. ":" .. tostring((type(itemId) == "number" and itemId) or (type(id) == "number" and id) or tostring(id))
             end
 
-            if not seenKeys[key] then
-                seenKeys[key] = true
+            -- Collections and definitions don't always use the same key (some servers key by displayId).
+            local collected = col[id] ~= nil
+            if not collected and displayId then
+                collected = col[displayId] ~= nil
+            end
 
-                -- Collections and definitions don't always use the same key (some servers key by displayId).
-                local collected = col[id] ~= nil
-                if not collected and displayId then
-                    collected = col[displayId] ~= nil
-                end
+            local existing = byKey[key]
+            if not existing then
+                local itemIds = def.itemIds or def.item_ids
+                local itemIdsTotal = def.itemIdsTotal or def.item_ids_total or def.itemIds_count or def.itemIdsCount
 
-                totalMatched = totalMatched + 1
+                byKey[key] = {
+                    id = id,
+                    itemId = itemId,
+                    name = def.name or "",
+                    collected = collected,
+                    inventoryType = invType,
+                    displayId = displayId,
+                    itemIds = itemIds,
+                    itemIdsTotal = itemIdsTotal,
+                }
+            else
+                -- If any variant is collected, mark collected.
                 if collected then
-                    collectedMatched = collectedMatched + 1
+                    existing.collected = true
                 end
 
-                if self.showUncollected or collected then
-                    table.insert(results, {
-                        id = id,
-                        itemId = itemId,
-                        name = def.name or "",
-                        collected = collected,
-                        inventoryType = invType,
-                        displayId = displayId,
-                    })
+                if not existing.itemIds and (def.itemIds or def.item_ids) then
+                    existing.itemIds = def.itemIds or def.item_ids
+                end
+                if not existing.itemIdsTotal and (def.itemIdsTotal or def.item_ids_total or def.itemIdsCount or def.itemIds_count) then
+                    existing.itemIdsTotal = def.itemIdsTotal or def.item_ids_total or def.itemIdsCount or def.itemIds_count
+                end
+                -- Prefer a better representative itemId for the tooltip/model preview.
+                if IsBetterRepresentative(itemId, existing.itemId) then
+                    existing.id = id
+                    existing.itemId = itemId
+                    existing.name = (def.name or existing.name or "")
+                    existing.inventoryType = invType
+                    existing.displayId = displayId
                 end
             end
+        end
+    end
+
+    local totalMatched = 0
+    local collectedMatched = 0
+    for _, entry in pairs(byKey) do
+        totalMatched = totalMatched + 1
+        if entry.collected then
+            collectedMatched = collectedMatched + 1
+        end
+        if self.showUncollected or entry.collected then
+            table.insert(results, entry)
         end
     end
 
@@ -403,9 +473,7 @@ function Wardrobe:ShowAppearanceContextMenu(appearance)
             text = "Apply",
             notCheckable = true,
             func = function()
-                if appearance.itemId then
-                    Wardrobe:ApplyAppearance(appearance.itemId)
-                end
+                Wardrobe:ApplyAppearance(appearance)
             end,
         })
     end
@@ -416,8 +484,8 @@ function Wardrobe:ShowAppearanceContextMenu(appearance)
     EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
 end
 
-function Wardrobe:ApplyAppearance(itemId)
-    if not itemId then return end
+function Wardrobe:ApplyAppearance(appearance)
+    if not appearance then return end
 
     local slot = self.selectedSlot
     if not slot then
@@ -437,8 +505,18 @@ function Wardrobe:ApplyAppearance(itemId)
         return
     end
 
+    local appearanceId = appearance.displayId or appearance.appearanceId or appearance.appearance_id
+    if type(appearanceId) == "string" then
+        appearanceId = tonumber(appearanceId)
+    end
+
+    -- Fallback for older servers that expect itemId.
+    if not appearanceId then
+        appearanceId = appearance.itemId
+    end
+
     if DC and DC.RequestSetTransmog then
-        DC:RequestSetTransmog(invSlotId, itemId)
+        DC:RequestSetTransmog(invSlotId, appearanceId)
     end
 end
 
