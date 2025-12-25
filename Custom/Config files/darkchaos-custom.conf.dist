@@ -3026,6 +3026,56 @@ DCCollection.Transmog.UnlockOnCreate = 1
 #
 DCCollection.Transmog.UnlockOnSoulbind = 0
 
+#
+#    DCCollection.Transmog.UnlockOnLoot
+#        Description: Automatically unlock transmog appearances when looting items
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.UnlockOnLoot = 0
+
+#
+#    DCCollection.Transmog.UnlockOnQuestReward
+#        Description: Automatically unlock transmog appearances from quest reward items
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.UnlockOnQuestReward = 0
+
+# -------------------------------------------------------------------------
+# DCCollection Transmog: Login Scanning
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Transmog.LoginScan.Enable
+#        Description: Scan player's equipped items, bags, and bank on login to unlock transmog appearances
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.LoginScan.Enable = 0
+
+#
+#    DCCollection.Transmog.LoginScan.IncludeBank
+#        Description: Include bank slots and bank bags when scanning inventory on login
+#        Default:     1 (Enabled)
+#
+DCCollection.Transmog.LoginScan.IncludeBank = 1
+
+# -------------------------------------------------------------------------
+# DCCollection Transmog: Session & Quality Settings
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Transmog.SessionNotificationDedup
+#        Description: Prevent duplicate unlock notifications when multiple events trigger for the same appearance
+#        Default:     1 (Enabled)
+#
+DCCollection.Transmog.SessionNotificationDedup = 1
+
+#
+#    DCCollection.Transmog.MinQuality
+#        Description: Minimum item quality required to unlock transmog appearances (0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)
+#        Default:     0 (All qualities)
+#
+DCCollection.Transmog.MinQuality = 0
+
 # -------------------------------------------------------------------------
 # DCCollection: Leaderboard Integration
 # -------------------------------------------------------------------------

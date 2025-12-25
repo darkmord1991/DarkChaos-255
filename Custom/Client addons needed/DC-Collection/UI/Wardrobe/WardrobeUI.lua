@@ -253,7 +253,12 @@ function Wardrobe:CreateLeftPanel(parent)
     model:EnableMouse(true)
     model.rotating = false
     model.rotation = 0
+    model.cameraDistance = 1.0
+    model.cameraX = 0
+    model.cameraY = 0
+    model.cameraZ = 0
 
+    -- Mouse rotation (drag)
     model:SetScript("OnMouseDown", function(selfModel, button)
         if button == "LeftButton" then
             selfModel.rotating = true
@@ -266,10 +271,26 @@ function Wardrobe:CreateLeftPanel(parent)
     model:SetScript("OnUpdate", function(selfModel)
         if selfModel.rotating then
             local x = GetCursorPosition()
-            local delta = (x - (selfModel.prevX or x)) * 0.01
+            local rotSpeed = Wardrobe.CAMERA_ROTATION_SPEED or 0.01
+            local delta = (x - (selfModel.prevX or x)) * rotSpeed
             selfModel.rotation = (selfModel.rotation or 0) + delta
             selfModel:SetFacing(selfModel.rotation)
             selfModel.prevX = x
+        end
+    end)
+
+    -- Mouse wheel zoom
+    model:SetScript("OnMouseWheel", function(selfModel, delta)
+        local step = Wardrobe.CAMERA_ZOOM_STEP or 0.1
+        local minZoom = Wardrobe.CAMERA_ZOOM_MIN or 0.3
+        local maxZoom = Wardrobe.CAMERA_ZOOM_MAX or 3.0
+        selfModel.cameraDistance = math.max(minZoom, math.min(maxZoom, selfModel.cameraDistance - (delta * step)))
+        
+        if selfModel.SetPosition then
+            local x = selfModel.cameraX * selfModel.cameraDistance
+            local y = selfModel.cameraY
+            local z = selfModel.cameraZ
+            selfModel:SetPosition(x, y, z)
         end
     end)
 
@@ -304,6 +325,11 @@ function Wardrobe:CreateLeftPanel(parent)
         btn.highlight:SetAllPoints()
         btn.highlight:SetTexture(1, 0.82, 0, 0.3)
         btn.highlight:Hide()
+        
+        btn.hoverGlow = btn:CreateTexture(nil, "HIGHLIGHT")
+        btn.hoverGlow:SetAllPoints()
+        btn.hoverGlow:SetTexture(1, 1, 1, 0.2)
+        btn.hoverGlow:SetBlendMode("ADD")
 
         btn.transmogApplied = btn:CreateTexture(nil, "BORDER")
         btn.transmogApplied:SetPoint("TOPLEFT", -2, 2)
@@ -313,18 +339,64 @@ function Wardrobe:CreateLeftPanel(parent)
         btn.transmogApplied:SetVertexColor(1, 0.6, 0)
         btn.transmogApplied:Hide()
 
-        btn:SetScript("OnClick", function()
-            Wardrobe:SelectSlot(slotDef)
+        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+        btn:SetScript("OnClick", function(selfBtn, button)
+            if button == "LeftButton" then
+                -- Ctrl+Click: Show Wowhead link
+                if IsControlKeyDown and IsControlKeyDown() then
+                    local invSlotId = GetInventorySlotInfo(slotDef.key)
+                    if invSlotId then
+                        local itemId = GetInventoryItemID("player", invSlotId)
+                        if itemId then
+                            local _, itemLink = GetItemInfo(itemId)
+                            if itemLink then
+                                if ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow() then
+                                    ChatEdit_InsertLink(itemLink)
+                                else
+                                    DEFAULT_CHAT_FRAME.editBox:Show()
+                                    ChatEdit_InsertLink(itemLink)
+                                end
+                            end
+                        end
+                    end
+                else
+                    -- Regular click: Select slot and update camera
+                    Wardrobe:SelectSlot(slotDef)
+                end
+            elseif button == "RightButton" then
+                -- Right-click: Reset transmog for this slot
+                Wardrobe:ShowSlotContextMenu(slotDef)
+            end
         end)
 
         btn:SetScript("OnEnter", function(selfBtn)
             GameTooltip:SetOwner(selfBtn, "ANCHOR_RIGHT")
-            GameTooltip:AddLine(slotDef.label)
+            GameTooltip:AddLine(slotDef.label, 1, 1, 1)
             local invSlotId = GetInventorySlotInfo(slotDef.key)
             if invSlotId then
                 local itemId = GetInventoryItemID("player", invSlotId)
                 if itemId then
                     GameTooltip:SetHyperlink("item:" .. itemId)
+                    GameTooltip:AddLine(" ")
+                    
+                    -- Show transmog status
+                    local eqSlot = invSlotId - 1
+                    local state = DC.transmogState or {}
+                    local applied = state[tostring(eqSlot)] and tonumber(state[tostring(eqSlot)]) ~= 0
+                    if applied then
+                        GameTooltip:AddLine("Transmogrified", 1, 0.82, 0)
+                    end
+                else
+                    GameTooltip:AddLine("No item equipped", 0.8, 0.8, 0.8)
+                end
+            end
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Click to select and preview", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Ctrl+Click to link item", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Right-click for options", 0.7, 0.7, 0.7)
+            GameTooltip:Show()
+        end)
                 end
             end
             GameTooltip:Show()
@@ -394,8 +466,38 @@ function Wardrobe:CreateRightPanel(parent)
         table.insert(parent.tabButtons, tab)
     end
 
+    -- Search type dropdown
+    local searchTypeDropdown = CreateFrame("Frame", "DCWardrobeSearchTypeDropdown", right, "UIDropDownMenuTemplate")
+    searchTypeDropdown:SetPoint("TOPRIGHT", right, "TOPRIGHT", -140, -35)
+    UIDropDownMenu_SetWidth(searchTypeDropdown, 80)
+    
+    local searchTypes = {
+        {text = "Name", value = "name"},
+        {text = "ID", value = "id"},
+        {text = "DisplayID", value = "displayid"},
+    }
+    
+    UIDropDownMenu_Initialize(searchTypeDropdown, function(self, level)
+        for _, typeInfo in ipairs(searchTypes) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = typeInfo.text
+            info.value = typeInfo.value
+            info.func = function(btn)
+                Wardrobe.searchType = btn.value
+                UIDropDownMenu_SetText(searchTypeDropdown, btn:GetText())
+                CloseDropDownMenus()
+            end
+            info.checked = (Wardrobe.searchType == typeInfo.value)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    
+    Wardrobe.searchType = Wardrobe.searchType or "name"
+    UIDropDownMenu_SetText(searchTypeDropdown, "Name")
+    parent.searchTypeDropdown = searchTypeDropdown
+
     local searchBox = CreateFrame("EditBox", "DCWardrobeSearchBox", right, "InputBoxTemplate")
-    searchBox:SetSize(150, 20)
+    searchBox:SetSize(120, 20)
     searchBox:SetPoint("TOPRIGHT", right, "TOPRIGHT", -10, -35)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(50)
@@ -418,11 +520,53 @@ function Wardrobe:CreateRightPanel(parent)
         Wardrobe.searchText = ""
         Wardrobe:RefreshGrid()
     end)
+    searchBox:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Search Options:", 1, 0.82, 0)
+        GameTooltip:AddLine("• Name: Enter item name", 1, 1, 1)
+        GameTooltip:AddLine("• ID: Enter item ID", 1, 1, 1)
+        GameTooltip:AddLine("• DisplayID: Enter display ID", 1, 1, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Press Enter to search", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    searchBox:SetScript("OnLeave", function() GameTooltip:Hide() end)
     parent.searchBox = searchBox
+
+    -- Quality filter dropdown
+    local qualityDropdown = CreateFrame("Frame", "DCWardrobeQualityDropdown", right, "UIDropDownMenuTemplate")
+    qualityDropdown:SetPoint("RIGHT", searchBox, "LEFT", -90, 0)
+    UIDropDownMenu_SetWidth(qualityDropdown, 90)
+    
+    UIDropDownMenu_Initialize(qualityDropdown, function(self, level)
+        for _, qualInfo in ipairs(Wardrobe.QUALITY_FILTERS or {}) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = qualInfo.text
+            info.value = qualInfo.id
+            info.func = function(btn)
+                Wardrobe.selectedQualityFilter = btn.value
+                UIDropDownMenu_SetText(qualityDropdown, btn:GetText())
+                CloseDropDownMenus()
+                Wardrobe:RefreshGrid()
+            end
+            info.checked = (Wardrobe.selectedQualityFilter == qualInfo.id)
+            if qualInfo.color then
+                info.colorCode = string.format("|cff%02x%02x%02x", 
+                    (qualInfo.color.r or 1) * 255, 
+                    (qualInfo.color.g or 1) * 255, 
+                    (qualInfo.color.b or 1) * 255)
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    
+    Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or 0
+    UIDropDownMenu_SetText(qualityDropdown, "All Qualities")
+    parent.qualityDropdown = qualityDropdown
 
     local filterBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
     filterBtn:SetSize(60, 20)
-    filterBtn:SetPoint("RIGHT", searchBox, "LEFT", -5, 0)
+    filterBtn:SetPoint("RIGHT", qualityDropdown, "LEFT", -10, 0)
     filterBtn:SetText("Filter")
     -- Filter should be equipment slot/type based (not item sets). Provide a quick slot filter menu.
     filterBtn:SetScript("OnClick", function()
@@ -560,6 +704,11 @@ function Wardrobe:CreateRightPanel(parent)
         btn.icon:SetPoint("TOPLEFT", 3, -3)
         btn.icon:SetPoint("BOTTOMRIGHT", -3, 3)
         btn.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        
+        btn.hoverHighlight = btn:CreateTexture(nil, "HIGHLIGHT")
+        btn.hoverHighlight:SetAllPoints()
+        btn.hoverHighlight:SetTexture(1, 1, 1, 0.3)
+        btn.hoverHighlight:SetBlendMode("ADD")
 
         btn.selected = btn:CreateTexture(nil, "OVERLAY")
         btn.selected:SetPoint("TOPLEFT", -2, 2)
@@ -758,6 +907,67 @@ function Wardrobe:CreateBottomBar(parent)
         Wardrobe:ShowSaveOutfitDialog()
     end)
     parent.saveOutfitBtn = saveBtn
+    
+    -- Preview mode slider (Grid vs Full 3D Model)
+    local previewModeFrame = CreateFrame("Frame", nil, bottom)
+    previewModeFrame:SetSize(180, 20)
+    previewModeFrame:SetPoint("LEFT", saveBtn, "RIGHT", 15, 0)
+    
+    previewModeFrame.label = previewModeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    previewModeFrame.label:SetPoint("LEFT", previewModeFrame, "LEFT", 0, 0)
+    previewModeFrame.label:SetText("Preview:")
+    
+    local slider = CreateFrame("Slider", nil, previewModeFrame)
+    slider:SetSize(100, 16)
+    slider:SetPoint("LEFT", previewModeFrame.label, "RIGHT", 8, 0)
+    slider:SetOrientation("HORIZONTAL")
+    slider:SetMinMaxValues(0, 1)
+    slider:SetValueStep(1)
+    slider:SetObeyStepOnDrag(true)
+    slider:SetValue(Wardrobe.previewMode == "grid" and 0 or 1)
+    
+    slider.bg = slider:CreateTexture(nil, "BACKGROUND")
+    slider.bg:SetAllPoints()
+    slider.bg:SetTexture(0, 0, 0, 0.5)
+    
+    local thumb = slider:CreateTexture(nil, "OVERLAY")
+    thumb:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+    thumb:SetSize(20, 20)
+    slider:SetThumbTexture(thumb)
+    
+    slider.lowText = slider:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    slider.lowText:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -2)
+    slider.lowText:SetText("Grid")
+    slider.lowText:SetTextColor(0.7, 0.7, 0.7)
+    
+    slider.highText = slider:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    slider.highText:SetPoint("TOPRIGHT", slider, "BOTTOMRIGHT", 0, -2)
+    slider.highText:SetText("Full 3D")
+    slider.highText:SetTextColor(0.7, 0.7, 0.7)
+    
+    slider:SetScript("OnValueChanged", function(self, value)
+        if value == 0 then
+            Wardrobe.previewMode = "grid"
+            slider.lowText:SetTextColor(1, 0.82, 0)
+            slider.highText:SetTextColor(0.7, 0.7, 0.7)
+        else
+            Wardrobe.previewMode = "full"
+            slider.lowText:SetTextColor(0.7, 0.7, 0.7)
+            slider.highText:SetTextColor(1, 0.82, 0)
+        end
+    end)
+    
+    slider:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Tooltip Preview Mode", 1, 0.82, 0)
+        GameTooltip:AddLine("Grid: Show small icon previews in tooltip", 1, 1, 1)
+        GameTooltip:AddLine("Full 3D: Show character with item in tooltip", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    slider:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    
+    parent.previewModeSlider = slider
+    Wardrobe.previewMode = Wardrobe.previewMode or "full"
 
     parent.outfitSlots = {}
 
@@ -834,8 +1044,14 @@ function Wardrobe:ShowTooltipPreview(itemId)
         model:SetPoint("BOTTOMRIGHT", -18, 18)
         model:SetUnit("player")
         model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
-
         frame.model = model
+        
+        -- Grid mode icon
+        local icon = frame:CreateTexture(nil, "ARTWORK")
+        icon:SetPoint("CENTER")
+        icon:SetSize(180, 180)
+        frame.gridIcon = icon
+        
         self.tooltipPreview = frame
     end
     
@@ -847,16 +1063,103 @@ function Wardrobe:ShowTooltipPreview(itemId)
     local anchor = self:_GetFixedTooltipAnchor()
     frame:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -18, 18)
     
-    -- Update model
-    frame.model:SetUnit("player")
-    frame.model:Undress()
-    local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
-    frame.model:TryOn(link)
-    frame.model:SetFacing(0)
+    -- Toggle between grid (icon) and full (3D model) preview modes
+    if self.previewMode == "grid" then
+        frame.model:Hide()
+        frame.gridIcon:Show()
+        
+        local icon = nil
+        if type(GetItemIcon) == "function" then
+            icon = GetItemIcon(itemId)
+        end
+        if not icon and GetItemInfo then
+            icon = select(10, GetItemInfo(itemId))
+        end
+        
+        if icon and icon ~= "" then
+            frame.gridIcon:SetTexture(icon)
+        else
+            frame.gridIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        end
+    else
+        frame.gridIcon:Hide()
+        frame.model:Show()
+        
+        frame.model:SetUnit("player")
+        frame.model:Undress()
+        local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
+        frame.model:TryOn(link)
+        frame.model:SetFacing(0)
+    end
 end
 
 function Wardrobe:HideTooltipPreview()
     if self.tooltipPreview then
         self.tooltipPreview:Hide()
     end
+end
+-- ============================================================================
+-- SLOT CONTEXT MENU
+-- ============================================================================
+
+function Wardrobe:ShowSlotContextMenu(slotDef)
+    if not slotDef then return end
+    
+    local invSlotId = GetInventorySlotInfo(slotDef.key)
+    if not invSlotId then return end
+    
+    local itemId = GetInventoryItemID("player", invSlotId)
+    local eqSlot = invSlotId - 1
+    local state = DC.transmogState or {}
+    local hasTransmog = state[tostring(eqSlot)] and tonumber(state[tostring(eqSlot)]) ~= 0
+    
+    local menu = {
+        { text = slotDef.label, isTitle = true, notCheckable = true },
+    }
+    
+    if hasTransmog then
+        table.insert(menu, {
+            text = "Reset Transmog",
+            notCheckable = true,
+            func = function()
+                -- Send reset command to server
+                if DC and DC.Protocol and DC.Protocol.RequestTransmogSlotReset then
+                    DC.Protocol:RequestTransmogSlotReset(eqSlot)
+                end
+            end,
+        })
+    end
+    
+    if itemId then
+        table.insert(menu, {
+            text = "Link Item",
+            notCheckable = true,
+            func = function()
+                local _, itemLink = GetItemInfo(itemId)
+                if itemLink then
+                    if ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow() then
+                        ChatEdit_InsertLink(itemLink)
+                    else
+                        DEFAULT_CHAT_FRAME.editBox:Show()
+                        ChatEdit_InsertLink(itemLink)
+                    end
+                end
+            end,
+        })
+    end
+    
+    table.insert(menu, {
+        text = "Reset Camera",
+        notCheckable = true,
+        func = function()
+            if self.frame and self.frame.model then
+                self:ResetCameraPosition(self.frame.model)
+            end
+        end,
+    })
+    
+    table.insert(menu, { text = "Cancel", notCheckable = true })
+    
+    local dropdown = CreateFrame("Frame", "DCWardrobeSlotContextMenu", UIParent, "UIDropDownMenuTemplate")
+    EasyMenu(menu, dropdown, "cursor", 0, 0, "MENU")
 end

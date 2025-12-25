@@ -71,6 +71,18 @@ namespace DCCollection
         constexpr const char* TRANSMOG_UNLOCK_ON_CREATE = "DCCollection.Transmog.UnlockOnCreate";
         constexpr const char* TRANSMOG_UNLOCK_ON_EQUIP = "DCCollection.Transmog.UnlockOnEquip";
         constexpr const char* TRANSMOG_UNLOCK_ON_SOULBIND = "DCCollection.Transmog.UnlockOnSoulbind";
+        constexpr const char* TRANSMOG_UNLOCK_ON_LOOT = "DCCollection.Transmog.UnlockOnLoot";
+        constexpr const char* TRANSMOG_UNLOCK_ON_QUEST_REWARD = "DCCollection.Transmog.UnlockOnQuestReward";
+
+        // Login scanning (automatic unlock from inventory/bank on login)
+        constexpr const char* TRANSMOG_LOGIN_SCAN_ENABLED = "DCCollection.Transmog.LoginScan.Enable";
+        constexpr const char* TRANSMOG_LOGIN_SCAN_INCLUDE_BANK = "DCCollection.Transmog.LoginScan.IncludeBank";
+
+        // Session notification deduplication (prevent spam from multiple events)
+        constexpr const char* TRANSMOG_SESSION_NOTIFICATION_DEDUP = "DCCollection.Transmog.SessionNotificationDedup";
+
+        // Quality filtering
+        constexpr const char* TRANSMOG_MIN_QUALITY = "DCCollection.Transmog.MinQuality";
 
         // Legacy import (scan items owned by old characters)
         constexpr const char* TRANSMOG_LEGACY_IMPORT_ENABLED = "DCCollection.Transmog.LegacyImport.Enable";
@@ -770,6 +782,7 @@ namespace DCCollection
         if (!initialized)
         {
             auto const& appearances = GetTransmogAppearanceIndexCached();
+            (void)appearances;
             std::vector<std::tuple<uint32, uint32, uint32, uint32, std::string>> tmp;
             tmp.reserve(appearances.size());
 
@@ -923,6 +936,7 @@ namespace DCCollection
         if (result)
         {
             auto const& appearances = GetTransmogAppearanceIndexCached();
+            (void)appearances;
             do
             {
                 Field* fields = result->Fetch();
@@ -1098,12 +1112,22 @@ namespace DCCollection
         return true;
     }
 
-    void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string_view sourceType)
+    // Session notification tracking (per-player GUID -> set of displayIds notified this session)
+    // This map is cleaned up on logout, but we also limit size to prevent memory bloat
+    static std::unordered_map<uint32, std::unordered_set<uint32>> sessionNotifiedAppearances;
+    constexpr size_t MAX_NOTIFIED_APPEARANCES_PER_PLAYER = 10000; // Safety limit
+
+    void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string_view sourceType, bool notifyPlayer = true)
     {
         if (!player || !player->GetSession() || !proto)
             return;
 
         if (!IsItemEligibleForTransmogUnlock(proto))
+            return;
+
+        // Quality filtering
+        uint32 minQuality = sConfigMgr->GetOption<uint32>(Config::TRANSMOG_MIN_QUALITY, 0);
+        if (proto->Quality < minQuality)
             return;
 
         uint32 accountId = GetAccountId(player);
@@ -1113,6 +1137,28 @@ namespace DCCollection
         uint32 displayId = GetItemDisplayId(proto);
         if (!displayId)
             return;
+
+        // Session notification deduplication
+        bool shouldNotify = notifyPlayer;
+        if (sConfigMgr->GetOption<bool>(Config::TRANSMOG_SESSION_NOTIFICATION_DEDUP, true))
+        {
+            uint32 guid = player->GetGUID().GetCounter();
+            auto& playerNotifications = sessionNotifiedAppearances[guid];
+            
+            if (playerNotifications.count(displayId) > 0)
+            {
+                shouldNotify = false;
+            }
+            else
+            {
+                // Safety check: don't let the set grow unbounded
+                if (playerNotifications.size() < MAX_NOTIFIED_APPEARANCES_PER_PLAYER)
+                {
+                    playerNotifications.insert(displayId);
+                }
+                // If we hit the limit, still notify but don't track (edge case for ultra-spam)
+            }
+        }
 
         // Store as a generic collection item: type=TRANSMOG, entry_id=displayId
         std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
@@ -1124,6 +1170,13 @@ namespace DCCollection
             "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
             "VALUES ({}, {}, {}, '{}', 1, NOW())",
             itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId, std::string(sourceType));
+
+        // Notify player if this is a new unlock and notifications enabled
+        if (shouldNotify)
+        {
+            // Future: Add actual notification to player
+            // For now, session dedup will prevent spam
+        }
     }
 
     // Load wishlist
@@ -2632,6 +2685,7 @@ namespace DCCollection
         bool hasSearch = !searchLower.empty();
 
         auto const& appearances = GetTransmogAppearanceIndexCached();
+        (void)appearances;
         std::vector<uint32> matchingItemIds;
         matchingItemIds.reserve(128);  // Pre-allocate for performance
 
@@ -2663,15 +2717,46 @@ namespace DCCollection
                         continue;
                 }
 
-                // Apply search filter if provided
+                // Apply search filter if provided (supports partial matching on name, displayId, and itemId)
                 if (hasSearch)
                 {
+                    bool matchFound = false;
+
+                    // Try name match (case-insensitive)
                     std::string nameLower = def.name;
                     std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
-                    if (nameLower.find(searchLower) == std::string::npos &&
-                        std::to_string(displayId).find(searchFilter) == std::string::npos)
+                    if (nameLower.find(searchLower) != std::string::npos)
+                    {
+                        matchFound = true;
+                    }
+
+                    // Try displayId partial match (e.g., searching "123" finds displayId 12345)
+                    if (!matchFound && std::to_string(displayId).find(searchFilter) != std::string::npos)
+                    {
+                        matchFound = true;
+                    }
+
+                    // Try itemId partial match for all variants of this appearance
+                    if (!matchFound)
+                    {
+                        for (uint32 itemId : def.itemIds)
+                        {
+                            if (std::to_string(itemId).find(searchFilter) != std::string::npos)
+                            {
+                                matchFound = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!matchFound)
                         continue;
                 }
+
+                // Quality filtering (if configured)
+                uint32 minQuality = sConfigMgr->GetOption<uint32>(Config::TRANSMOG_MIN_QUALITY, 0);
+                if (def.quality < minQuality)
+                    continue;
 
                 matchingItemIds.push_back(def.canonicalItemId);
             }
@@ -2774,6 +2859,7 @@ namespace DCCollection
         items.SetArray();
 
         auto const& appearances = GetTransmogAppearanceIndexCached();
+        (void)appearances;
         for (uint32 displayId : collectedDisplayIds)
         {
             auto it = appearances.find(displayId);
@@ -2818,8 +2904,6 @@ namespace DCCollection
         DCAddon::JsonValue preview = json["preview"];
         uint32 accountId = GetAccountId(player);
         uint32 guid = player->GetGUID().GetCounter();
-        auto const& appearances = GetTransmogAppearanceIndexCached();
-
         // Process each slot in the preview
         for (auto const& kv : preview.AsObject())
         {
@@ -3791,6 +3875,67 @@ namespace DCCollection
 
             // Push current transmog state so the UI can show applied slots
             SendTransmogState(player);
+
+            // Optional: scan player's equipment and bags to unlock transmogs at login
+            if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_LOGIN_SCAN_ENABLED, false))
+                return;
+
+            bool includeBank = sConfigMgr->GetOption<bool>(Config::TRANSMOG_LOGIN_SCAN_INCLUDE_BANK, true);
+
+            // Scan equipped items (slots EQUIPMENT_SLOT_START..EQUIPMENT_SLOT_END-1)
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            {
+                Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                if (item)
+                {
+                    ItemTemplate const* proto = item->GetTemplate();
+                    if (proto)
+                        UnlockTransmogAppearance(player, proto, "LOGIN_SCAN", false); // Don't spam notifications
+                }
+            }
+
+            // Scan normal bags
+            for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
+            {
+                Bag* bag = player->GetBagByPos(bagSlot);
+                if (!bag)
+                    continue;
+                for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+                {
+                    Item* item = bag->GetItemByPos(static_cast<uint8>(i));
+                    if (item)
+                    {
+                        ItemTemplate const* proto = item->GetTemplate();
+                        if (proto)
+                            UnlockTransmogAppearance(player, proto, "LOGIN_SCAN", false);
+                    }
+                }
+            }
+
+            // Optionally scan bank bags
+            if (includeBank)
+            {
+                for (uint8 bankBag = BANK_SLOT_BAG_START; bankBag < BANK_SLOT_BAG_END; ++bankBag)
+                {
+                    Bag* bag = player->GetBagByPos(bankBag);
+                    if (!bag)
+                        continue;
+                    for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+                    {
+                        Item* item = bag->GetItemByPos(static_cast<uint8>(i));
+                        if (item)
+                        {
+                            ItemTemplate const* proto = item->GetTemplate();
+                            if (proto)
+                                UnlockTransmogAppearance(player, proto, "LOGIN_SCAN", false);
+                        }
+                    }
+                }
+            }
+
+            // Clear session notification cache on login
+            uint32 guid = player->GetGUID().GetCounter();
+            sessionNotifiedAppearances[guid].clear();
         }
 
         void OnPlayerLearnSpell(Player* player, uint32 spellId) override
@@ -3960,6 +4105,49 @@ namespace DCCollection
 
             if (unlockOnSoulbind && it->IsSoulBound())
                 UnlockTransmogAppearance(player, proto, "SOULBOUND");
+        }
+
+        void OnPlayerLootItem(Player* player, Item* item, uint32 /*count*/, ObjectGuid /*lootguid*/) override
+        {
+            if (!player || !item)
+                return;
+
+            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+                return;
+
+            if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ON_LOOT, false))
+                return;
+
+            ItemTemplate const* proto = item->GetTemplate();
+            if (proto)
+                UnlockTransmogAppearance(player, proto, "LOOTED");
+        }
+
+        void OnPlayerQuestRewardItem(Player* player, Item* item, uint32 /*count*/) override
+        {
+            if (!player || !item)
+                return;
+
+            if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
+                return;
+
+            if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_UNLOCK_ON_QUEST_REWARD, false))
+                return;
+
+            ItemTemplate const* proto = item->GetTemplate();
+            if (proto)
+                UnlockTransmogAppearance(player, proto, "QUEST_REWARD");
+        }
+
+
+        void OnPlayerLogout(Player* player) override
+        {
+            if (!player)
+                return;
+
+            // Clear session notification cache on logout
+            uint32 guid = player->GetGUID().GetCounter();
+            sessionNotifiedAppearances.erase(guid);
         }
     };
 

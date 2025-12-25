@@ -3,6 +3,14 @@
     ==========================================
 
     Wardrobe core: constants, state, shared helpers, slash commands, and events.
+    
+    Advanced Features:
+    - Per-slot camera positioning (race/gender specific)
+    - Mouse drag rotation
+    - Mouse wheel zoom (0.3x - 3.0x)
+    - Ctrl+Click slot to link item
+    - Right-click slot for options
+    - Enhanced visual feedback and highlighting
 
     This file is loaded after UI/WardrobeFrame.lua (entrypoint).
 ]]
@@ -27,6 +35,12 @@ Wardrobe.GRID_ICON_SIZE = 46
 Wardrobe.GRID_COLS = 8
 Wardrobe.GRID_ROWS = 4
 Wardrobe.ITEMS_PER_PAGE = Wardrobe.GRID_COLS * Wardrobe.GRID_ROWS
+
+-- Camera control constants
+Wardrobe.CAMERA_ZOOM_MIN = 0.3
+Wardrobe.CAMERA_ZOOM_MAX = 3.0
+Wardrobe.CAMERA_ZOOM_STEP = 0.1
+Wardrobe.CAMERA_ROTATION_SPEED = 0.01
 
 Wardrobe.EQUIPMENT_SLOTS = {
     -- Left column (top to bottom)
@@ -62,9 +76,9 @@ Wardrobe.SLOT_FILTERS = {
     { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Legs",     invTypes = { [7] = true } },
     { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Feet",     invTypes = { [8] = true } },
     { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest",    invTypes = { [16] = true } }, -- Back uses chest icon
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand", invTypes = { [13] = true, [17] = true, [21] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-SecondaryHand", invTypes = { [14] = true, [22] = true, [23] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ranged",   invTypes = { [15] = true, [25] = true, [26] = true } },
+    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand", invTypes = { [13] = true, [17] = true, [21] = true } }, -- Weapon, 2H, MainHand
+    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-SecondaryHand", invTypes = { [13] = true, [14] = true, [17] = true, [22] = true, [23] = true } }, -- Weapon, Shield, 2H, OffHand, Holdable
+    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ranged",   invTypes = { [15] = true, [25] = true, [26] = true, [28] = true } }, -- Ranged, Thrown, RangedRight, Relic
 }
 
 Wardrobe.VISUAL_SLOTS = {
@@ -91,6 +105,7 @@ Wardrobe.VISUAL_SLOTS = {
 Wardrobe.currentTab = Wardrobe.currentTab or "items" -- "items", "sets", "outfits"
 Wardrobe.selectedSlot = Wardrobe.selectedSlot or nil
 Wardrobe.selectedSlotFilter = Wardrobe.selectedSlotFilter or nil
+Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or 0  -- 0 = all qualities
 Wardrobe.currentPage = Wardrobe.currentPage or 1
 Wardrobe.totalPages = Wardrobe.totalPages or 1
 Wardrobe.searchText = Wardrobe.searchText or ""
@@ -100,6 +115,16 @@ Wardrobe.totalCount = Wardrobe.totalCount or 0
 Wardrobe.transmogDisabled = Wardrobe.transmogDisabled or false
 Wardrobe.spellVisualsDisabled = Wardrobe.spellVisualsDisabled or false
 Wardrobe.showUncollected = (Wardrobe.showUncollected ~= nil) and Wardrobe.showUncollected or true
+
+-- Quality filter constants (matches server-side ITEM_QUALITY)
+Wardrobe.QUALITY_FILTERS = {
+    { id = 0, text = "All Qualities", color = { r = 1, g = 1, b = 1 } },
+    { id = 1, text = "Common+", color = { r = 1, g = 1, b = 1 } },           -- Poor (0) excluded
+    { id = 2, text = "Uncommon+", color = { r = 0.12, g = 1, b = 0 } },      -- Green+
+    { id = 3, text = "Rare+", color = { r = 0, g = 0.44, b = 0.87 } },       -- Blue+
+    { id = 4, text = "Epic+", color = { r = 0.64, g = 0.21, b = 0.93 } },    -- Purple+
+    { id = 5, text = "Legendary", color = { r = 1, g = 0.5, b = 0 } },       -- Orange
+}
 
 -- ============================================================================
 -- SHARED HELPERS

@@ -101,6 +101,45 @@ function Wardrobe:SelectSlot(slotDef)
         end
     end
 
+    -- Apply per-slot camera positioning for optimal preview
+    if self.frame and self.frame.model and slotDef then
+        -- Cache camera position per slot to avoid repeated lookups
+        if not self.cachedCameraPositions then
+            self.cachedCameraPositions = {}
+        end
+        
+        local cameraPos = self.cachedCameraPositions[slotDef.label]
+        if not cameraPos then
+            cameraPos = self:GetCameraPosition(slotDef.label)
+            self.cachedCameraPositions[slotDef.label] = cameraPos
+        end
+        
+        if cameraPos then
+            local model = self.frame.model
+            
+            -- Store camera position in model for zoom functionality
+            model.cameraX = cameraPos.x
+            model.cameraY = cameraPos.y
+            model.cameraZ = cameraPos.z
+            model.cameraDistance = 1.0 -- Reset zoom on slot change
+            
+            -- Apply position
+            self:ApplyCameraPosition(model, cameraPos)
+            
+            -- Reset rotation to facing angle for this slot
+            if model.SetFacing then
+                model:SetFacing(cameraPos.facing)
+                model.rotation = cameraPos.facing
+            end
+        end
+    end
+
+    self:BuildAppearanceList()
+    self:RefreshGrid()
+end
+        end
+    end
+
     for i, filter in ipairs(self.SLOT_FILTERS or {}) do
         if filter.invTypes[slotDef.invType] then
             self.selectedSlotFilter = filter
@@ -240,6 +279,7 @@ local _EQUIPLOC_TO_INVTYPE = {
     INVTYPE_RANGED = 15,
     INVTYPE_RANGEDRIGHT = 26,
     INVTYPE_RELIC = 28,
+    INVTYPE_THROWN = 25,
 }
 
 function Wardrobe:InferInventoryTypeFromItemId(itemId)
@@ -267,10 +307,14 @@ function Wardrobe:BuildAppearanceList()
     local byKey = {}
 
     local search = self.searchText
+    local searchType = self.searchType or "name"  -- name, id, displayid
+    local searchNum = nil
     if search and search ~= "" then
         search = string.lower(search)
+        searchNum = tonumber(search)
     else
         search = nil
+        searchNum = nil
     end
 
     local function GetItemScore(itemId)
@@ -337,9 +381,38 @@ function Wardrobe:BuildAppearanceList()
             end
         end
 
+        -- Quality filtering
+        if valid and self.selectedQualityFilter and self.selectedQualityFilter > 0 then
+            local quality = def.quality or def.Quality or 0
+            if type(quality) == "string" then
+                quality = tonumber(quality) or 0
+            end
+            if quality < self.selectedQualityFilter then
+                valid = false
+            end
+        end
+
         if valid and search then
-            local name = def.name or ""
-            if not string.find(string.lower(name), search, 1, true) then
+            local matchFound = false
+            
+            if searchType == "name" then
+                local name = def.name or ""
+                if string.find(string.lower(name), search, 1, true) then
+                    matchFound = true
+                end
+            elseif searchType == "id" and searchNum and itemId then
+                -- Match if search number appears in itemId
+                if tostring(itemId):find(tostring(searchNum), 1, true) then
+                    matchFound = true
+                end
+            elseif searchType == "displayid" and searchNum and displayId then
+                -- Match if search number appears in displayId
+                if tostring(displayId):find(tostring(searchNum), 1, true) then
+                    matchFound = true
+                end
+            end
+            
+            if not matchFound then
                 valid = false
             end
         end
@@ -437,6 +510,36 @@ function Wardrobe:PreviewAppearance(itemId)
         -- Prefer a link form; it tends to be more reliable for cached/uncached items.
         local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
         model:TryOn(link)
+    end
+    
+    -- Apply slot-specific camera positioning if a slot is selected
+    if self.selectedSlot then
+        -- Use cached position if available
+        if not self.cachedCameraPositions then
+            self.cachedCameraPositions = {}
+        end
+        
+        local cameraPos = self.cachedCameraPositions[self.selectedSlot.label]
+        if not cameraPos then
+            cameraPos = self:GetCameraPosition(self.selectedSlot.label)
+            self.cachedCameraPositions[self.selectedSlot.label] = cameraPos
+        end
+        
+        if cameraPos then
+            -- Store camera position for zoom
+            model.cameraX = cameraPos.x
+            model.cameraY = cameraPos.y
+            model.cameraZ = cameraPos.z
+            
+            -- Apply with current zoom level
+            local zoomedPos = {
+                x = cameraPos.x * (model.cameraDistance or 1.0),
+                y = cameraPos.y,
+                z = cameraPos.z,
+                facing = cameraPos.facing
+            }
+            self:ApplyCameraPosition(model, zoomedPos)
+        end
     end
 end
 
