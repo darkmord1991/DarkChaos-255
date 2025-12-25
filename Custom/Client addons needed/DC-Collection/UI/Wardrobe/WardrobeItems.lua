@@ -432,9 +432,23 @@ function Wardrobe:BuildAppearanceList()
 
         -- Quality filtering
         if valid and self.selectedQualityFilter and self.selectedQualityFilter > 0 then
-            local quality = def.quality or def.Quality or 0
-            if type(quality) == "string" then
-                quality = tonumber(quality) or 0
+            -- Server definitions commonly use "rarity" (and some use "quality").
+            -- Fall back to the client item cache (GetItemInfo) if the definition is missing it.
+            local quality = def.quality
+                or def.Quality
+                or def.rarity
+                or def.Rarity
+                or def.itemQuality
+                or def.item_quality
+                or 0
+            if type(quality) == "string" then quality = tonumber(quality) end
+            quality = tonumber(quality) or 0
+
+            if quality <= 0 and itemId and GetItemInfo then
+                local _, _, itemQuality = GetItemInfo(itemId)
+                if itemQuality then
+                    quality = tonumber(itemQuality) or quality
+                end
             end
             if quality < self.selectedQualityFilter then
                 valid = false

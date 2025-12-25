@@ -363,6 +363,14 @@ end
 -- ============================================================================
 
 function DC:Toggle()
+    -- Always go through the MainFrame show/hide helpers so the UI
+    -- performs initial data requests and tab/layout selection.
+    if type(self.ToggleMainFrame) == "function" then
+        self:ToggleMainFrame()
+        return
+    end
+
+    -- Fallback (shouldn't happen): keep previous behavior.
     if self.MainFrame then
         if self.MainFrame:IsShown() then
             self.MainFrame:Hide()
@@ -378,6 +386,13 @@ function DC:Toggle()
 end
 
 function DC:Show()
+    -- Prefer the managed show path so the frame isn't displayed "half-initialized".
+    if type(self.ShowMainFrame) == "function" then
+        self:ShowMainFrame()
+        return
+    end
+
+    -- Fallback
     if not self.MainFrame then
         self:CreateMainFrame()
     end
@@ -387,6 +402,11 @@ function DC:Show()
 end
 
 function DC:Hide()
+    if type(self.HideMainFrame) == "function" then
+        self:HideMainFrame()
+        return
+    end
+
     if self.MainFrame then
         self.MainFrame:Hide()
     end

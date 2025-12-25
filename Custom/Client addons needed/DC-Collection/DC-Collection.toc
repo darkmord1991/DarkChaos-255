@@ -22,6 +22,7 @@ DebugCommands.lua
 # Modules
 Modules\HeirloomModule.lua
 Modules\MountModule.lua
+Data\CompanionItemSeeds.lua
 Modules\PetModule.lua
 Modules\TitleModule.lua
 Modules\ToyModule.lua

@@ -283,8 +283,8 @@ end
 
 function DC:CreateHeader(parent)
     local header = CreateFrame("Frame", nil, parent)
-    header:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -30)
-    header:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, -30)
+    header:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -20)
+    header:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, -20)
     header:SetHeight(HEADER_HEIGHT)
     
     -- Stats display
@@ -318,8 +318,8 @@ end
 
 function DC:CreateTabBar(parent)
     local tabBar = CreateFrame("Frame", nil, parent)
-    tabBar:SetPoint("TOPLEFT", parent.Header, "BOTTOMLEFT", 0, -5)
-    tabBar:SetPoint("TOPRIGHT", parent.Header, "BOTTOMRIGHT", 0, -5)
+    tabBar:SetPoint("TOPLEFT", parent.Header, "BOTTOMLEFT", 0, 0)
+    tabBar:SetPoint("TOPRIGHT", parent.Header, "BOTTOMRIGHT", 0, 0)
     tabBar:SetHeight(TAB_HEIGHT)
     
     -- Tab background
@@ -402,8 +402,8 @@ end
 
 function DC:CreateFilterBar(parent)
     local filterBar = CreateFrame("Frame", nil, parent)
-    filterBar:SetPoint("TOPLEFT", parent.TabBar, "BOTTOMLEFT", 0, -5)
-    filterBar:SetPoint("TOPRIGHT", parent.TabBar, "BOTTOMRIGHT", 0, -5)
+    filterBar:SetPoint("TOPLEFT", parent.TabBar, "BOTTOMLEFT", 0, 0)
+    filterBar:SetPoint("TOPRIGHT", parent.TabBar, "BOTTOMRIGHT", 0, 0)
     filterBar:SetHeight(FILTER_HEIGHT)
     
     -- Background
@@ -588,9 +588,10 @@ function DC:UpdateFilterBarForTab(tabKey)
     local isTransmog = (tabKey == "transmog")
     local isOverview = (tabKey == "overview")
     local isAchievements = (tabKey == "achievements")
+    local isWardrobe = (tabKey == "wardrobe")
     
-    -- Hide filter bar for overview and achievements tabs
-    if isOverview or isAchievements then
+    -- Hide filter bar for overview/achievements/wardrobe (wardrobe has its own filtering UI)
+    if isOverview or isAchievements or isWardrobe then
         fb:Hide()
     else
         fb:Show()
@@ -1410,7 +1411,8 @@ function DC:ShowMainFrame()
     end
     
     -- Select the active tab to ensure correct layout (List vs Grid)
-    self:SelectTab(self.activeTab or "mounts")
+    -- First open should default to the Overview (My Collection) tab.
+    self:SelectTab(self.activeTab or "overview")
     self:UpdateHeader()
 end
 
@@ -1437,14 +1439,6 @@ DC.ToggleMainUI = DC.ToggleMainUI or DC.ToggleMainFrame
 -- ============================================================================
 
 function DC:SelectTab(tabKey)
-    -- Wardrobe opens a separate standalone window
-    if tabKey == "wardrobe" then
-        if DC.Wardrobe then
-            DC.Wardrobe:Show()
-        end
-        return
-    end
-    
     self.activeTab = tabKey
 
     self:UpdateFilterBarForTab(tabKey)
@@ -1456,6 +1450,20 @@ function DC:SelectTab(tabKey)
     
     -- Toggle Frames based on tab
     local content = self.MainFrame.Content
+
+    -- Adjust content height when the footer is hidden (wardrobe embeds and uses the extra space).
+    local footer = self.MainFrame.Footer
+    if tabKey == "wardrobe" then
+        if footer then footer:Hide() end
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", self.MainFrame.FilterBar, "BOTTOMLEFT", 0, 0)
+        content:SetPoint("BOTTOMRIGHT", self.MainFrame, "BOTTOMRIGHT", -10, 10)
+    else
+        if footer then footer:Show() end
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", self.MainFrame.FilterBar, "BOTTOMLEFT", 0, -5)
+        content:SetPoint("BOTTOMRIGHT", self.MainFrame, "BOTTOMRIGHT", -10, FOOTER_HEIGHT + 5)
+    end
     
     -- Hide everything first
     content.details:Hide()
@@ -1463,6 +1471,7 @@ function DC:SelectTab(tabKey)
     if content.modelPanel then content.modelPanel:Hide() end
     content.mountList:Hide()
     content.mountPreview:Hide()
+    if content.wardrobeHost then content.wardrobeHost:Hide() end
     
     if DC.AchievementsUI then DC.AchievementsUI:Hide() end
     if DC.MyCollection then DC.MyCollection:Hide() end
@@ -1494,7 +1503,9 @@ function DC:SelectTab(tabKey)
             if not DC.PetJournal.frame then
                 DC.PetJournal:Create(content)
             end
-            DC.PetJournal.frame:Show()
+            -- Use the PetJournal's Show() so it can request data, seed fallbacks,
+            -- and auto-select the first pet for preview.
+            DC.PetJournal:Show()
         end
     elseif tabKey == "achievements" then
         -- Show Achievements UI
@@ -1509,6 +1520,32 @@ function DC:SelectTab(tabKey)
         content.scrollFrame:Show()
     end
 
+    if tabKey == "wardrobe" then
+        content.details:Hide()
+        content.scrollFrame:Hide()
+        if content.modelPanel then content.modelPanel:Hide() end
+        if content.modelStatsPanel then content.modelStatsPanel:Hide() end
+
+        if not content.wardrobeHost then
+            local host = CreateFrame("Frame", nil, content)
+            host:SetAllPoints(content)
+            host:Hide()
+            content.wardrobeHost = host
+        end
+        content.wardrobeHost:Show()
+
+        if DC.Wardrobe and type(DC.Wardrobe.ShowEmbedded) == "function" then
+            DC.Wardrobe:ShowEmbedded(content.wardrobeHost)
+        elseif DC.Wardrobe and type(DC.Wardrobe.Show) == "function" then
+            -- Fallback to existing behavior if embedded support is unavailable.
+            DC.Wardrobe:Show()
+        end
+    else
+        if DC.Wardrobe and DC.Wardrobe.frame then
+            DC.Wardrobe:Hide()
+        end
+    end
+
     -- Clear current page
     self.currentPage = 1
 
@@ -1519,6 +1556,8 @@ function DC:SelectTab(tabKey)
         -- My Collection handles its own update
         self:UpdateHeader()
     elseif tabKey == "achievements" then
+        self:UpdateHeader()
+    elseif tabKey == "wardrobe" then
         self:UpdateHeader()
     else
         self:RefreshCurrentTab()
@@ -1550,28 +1589,53 @@ function DC:RequestRefreshCurrentTab(delay)
 
     delay = delay or 0.10
 
+    -- Avoid relying on After() for UI refresh scheduling; use a dedicated OnUpdate timer.
+    self._refreshCurrentTabDelayFrame = self._refreshCurrentTabDelayFrame or CreateFrame("Frame")
+    local f = self._refreshCurrentTabDelayFrame
+
+    -- If a refresh is already pending, just mark dirty and push the debounce window.
     if self._refreshCurrentTabPending then
         self._refreshCurrentTabDirty = true
-        return
-    end
-
-    if not (self.After and type(self.After) == "function") then
-        self:RefreshCurrentTab()
+        self._refreshCurrentTabDelayRemaining = delay
         return
     end
 
     self._refreshCurrentTabPending = true
     self._refreshCurrentTabDirty = false
+    self._refreshCurrentTabDelayRemaining = delay
 
-    self.After(delay, function()
-        self._refreshCurrentTabPending = nil
-        if self._refreshCurrentTabDirty then
-            self._refreshCurrentTabDirty = false
-            self:RequestRefreshCurrentTab(delay)
+    if f._dcRefreshHooked then
+        return
+    end
+
+    f._dcRefreshHooked = true
+    f:SetScript("OnUpdate", function(_, elapsed)
+        if not DC.MainFrame or not DC.MainFrame:IsShown() then
+            DC._refreshCurrentTabPending = nil
+            DC._refreshCurrentTabDirty = nil
+            DC._refreshCurrentTabDelayRemaining = nil
             return
         end
 
-        self:RefreshCurrentTab()
+        if not DC._refreshCurrentTabPending then
+            return
+        end
+
+        DC._refreshCurrentTabDelayRemaining = (DC._refreshCurrentTabDelayRemaining or 0) - (elapsed or 0)
+        if DC._refreshCurrentTabDelayRemaining > 0 then
+            return
+        end
+
+        local runAgain = DC._refreshCurrentTabDirty
+        DC._refreshCurrentTabPending = nil
+        DC._refreshCurrentTabDirty = nil
+        DC._refreshCurrentTabDelayRemaining = nil
+
+        DC:RefreshCurrentTab()
+
+        if runAgain then
+            DC:RequestRefreshCurrentTab(delay)
+        end
     end)
 end
 

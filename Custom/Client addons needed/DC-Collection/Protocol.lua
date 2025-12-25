@@ -263,6 +263,40 @@ end
 -- Updated to match C++ opcodes in DCAddonNamespace.h
 -- ============================================================================
 
+-- Debounce helper for passive requests (definitions/collections/stats/etc).
+-- "Latest call wins" without requiring cancellable timers.
+function DC:_DebounceRequest(key, delaySeconds, fn)
+    if type(fn) ~= "function" then
+        return
+    end
+
+    delaySeconds = delaySeconds or 0.25
+
+    if not (self.After and type(self.After) == "function") then
+        fn()
+        return
+    end
+
+    self._debounceTokens = self._debounceTokens or {}
+    local token = (self._debounceTokens[key] or 0) + 1
+    self._debounceTokens[key] = token
+
+    self.After(delaySeconds, function()
+        if self._debounceTokens and self._debounceTokens[key] == token then
+            fn()
+        end
+    end)
+end
+
+function DC:_MarkInflight(key, value)
+    self._inflightRequests = self._inflightRequests or {}
+    self._inflightRequests[key] = value
+end
+
+function DC:_IsInflight(key)
+    return self._inflightRequests and self._inflightRequests[key]
+end
+
 -- Perform initial handshake with server
 function DC:RequestHandshake()
     local hash = self:ComputeCollectionHash()
@@ -286,65 +320,164 @@ end
 
 -- Request collection statistics
 function DC:RequestStats()
-    return self:SendMessage(self.Opcodes.CMSG_GET_STATS, {})
+    local key = "req:stats"
+    if self:_IsInflight(key) then
+        return false
+    end
+
+    self:_DebounceRequest(key, 0.30, function()
+        if self:_IsInflight(key) then
+            return
+        end
+        self:_MarkInflight(key, true)
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_STATS, {})
+        if not ok then
+            self:_MarkInflight(key, nil)
+        end
+    end)
+    return true
 end
 
 -- Request active bonuses (mount speed, etc.)
 function DC:RequestBonuses()
-    return self:SendMessage(self.Opcodes.CMSG_GET_BONUSES, {})
+    local key = "req:bonuses"
+    if self:_IsInflight(key) then
+        return false
+    end
+
+    self:_DebounceRequest(key, 0.30, function()
+        if self:_IsInflight(key) then
+            return
+        end
+        self:_MarkInflight(key, true)
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_BONUSES, {})
+        if not ok then
+            self:_MarkInflight(key, nil)
+        end
+    end)
+    return true
 end
 
 -- Request type definitions (e.g. "mounts", "pets", "transmog")
 -- If collType is nil, requests all supported types (Core.lua compatibility).
 function DC:RequestDefinitions(collType)
     if not collType then
-        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "mounts" })
-        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pets" })
+        self:RequestDefinitions("mounts")
+        self:RequestDefinitions("pets")
         -- Compatibility: some servers use singular type names.
-        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pet" })
-        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "heirlooms" })
-        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "titles" })
+        self:RequestDefinitions("pet")
+        self:RequestDefinitions("heirlooms")
+        self:RequestDefinitions("titles")
         -- Transmog definitions can be huge; fetch on-demand (and paged) when the Transmog tab is opened.
         return
     end
 
+    local reqKey = "req:defs:" .. tostring(collType)
+
+    -- Avoid spamming the same request while waiting for a response.
+    if self:_IsInflight(reqKey) then
+        return false
+    end
+
     if collType == "pets" or collType == "pet" then
-        self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pets" })
-        return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pet" })
+        self:_DebounceRequest(reqKey, 0.25, function()
+            if self:_IsInflight(reqKey) then
+                return
+            end
+            self:_MarkInflight("req:defs:pets", true)
+            self:_MarkInflight("req:defs:pet", true)
+            local ok1 = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pets" })
+            local ok2 = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pet" })
+            if not ok1 then self:_MarkInflight("req:defs:pets", nil) end
+            if not ok2 then self:_MarkInflight("req:defs:pet", nil) end
+        end)
+        return true
     end
 
     if collType == "transmog" then
-        self._transmogDefOffset = 0
-        self._transmogDefLimit = self._transmogDefLimit or 2000  -- Increased from 1000 to match server chunk size
-        self._transmogDefLoading = true
-        self._transmogDefLastRequestedOffset = 0
-        self._transmogDefLastRequestedLimit = self._transmogDefLimit
-        self._transmogDefPagesFetched = 0
-        return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = 0, limit = self._transmogDefLimit })
+        -- Don't restart a transmog paging run while already loading.
+        if self._transmogDefLoading then
+            return false
+        end
+
+        self:_DebounceRequest(reqKey, 0.35, function()
+            if self._transmogDefLoading then
+                return
+            end
+            self:_MarkInflight("req:defs:transmog", true)
+            self._transmogDefOffset = 0
+            self._transmogDefLimit = self._transmogDefLimit or 2000  -- Match server chunk size
+            self._transmogDefLoading = true
+            self._transmogDefLastRequestedOffset = 0
+            self._transmogDefLastRequestedLimit = self._transmogDefLimit
+            self._transmogDefPagesFetched = 0
+            local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = 0, limit = self._transmogDefLimit })
+            if not ok then
+                self._transmogDefLoading = nil
+                self:_MarkInflight("req:defs:transmog", nil)
+            end
+        end)
+        return true
     end
 
-    return self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = collType })
+    self:_DebounceRequest(reqKey, 0.25, function()
+        if self:_IsInflight(reqKey) then
+            return
+        end
+        self:_MarkInflight(reqKey, true)
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = collType })
+        if not ok then
+            self:_MarkInflight(reqKey, nil)
+        end
+    end)
+    return true
 end
 
 -- Request type collection items (e.g. "mounts", "pets", "transmog")
 -- If collType is nil, requests all supported types.
 function DC:RequestCollection(collType)
     if not collType then
-        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "mounts" })
-        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pets" })
+        self:RequestCollection("mounts")
+        self:RequestCollection("pets")
         -- Compatibility: some servers use singular type names.
-        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pet" })
-        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "heirlooms" })
-        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "titles" })
-        return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "transmog" })
+        self:RequestCollection("pet")
+        self:RequestCollection("heirlooms")
+        self:RequestCollection("titles")
+        self:RequestCollection("transmog")
+        return
+    end
+
+    local reqKey = "req:coll:" .. tostring(collType)
+    if self:_IsInflight(reqKey) then
+        return false
     end
 
     if collType == "pets" or collType == "pet" then
-        self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pets" })
-        return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pet" })
+        self:_DebounceRequest(reqKey, 0.25, function()
+            if self:_IsInflight(reqKey) then
+                return
+            end
+            self:_MarkInflight("req:coll:pets", true)
+            self:_MarkInflight("req:coll:pet", true)
+            local ok1 = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pets" })
+            local ok2 = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pet" })
+            if not ok1 then self:_MarkInflight("req:coll:pets", nil) end
+            if not ok2 then self:_MarkInflight("req:coll:pet", nil) end
+        end)
+        return true
     end
 
-    return self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = collType })
+    self:_DebounceRequest(reqKey, 0.25, function()
+        if self:_IsInflight(reqKey) then
+            return
+        end
+        self:_MarkInflight(reqKey, true)
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = collType })
+        if not ok then
+            self:_MarkInflight(reqKey, nil)
+        end
+    end)
+    return true
 end
 
 -- Core.lua expects these names
@@ -363,9 +496,24 @@ end
 
 -- Request shop items (optional category filter)
 function DC:RequestShopItems(category)
-    return self:SendMessage(self.Opcodes.CMSG_GET_SHOP, {
-        category = category or "all",
-    })
+    local reqKey = "req:shop:" .. tostring(category or "all")
+    if self:_IsInflight(reqKey) then
+        return false
+    end
+
+    self:_DebounceRequest(reqKey, 0.35, function()
+        if self:_IsInflight(reqKey) then
+            return
+        end
+        self:_MarkInflight(reqKey, true)
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_SHOP, {
+            category = category or "all",
+        })
+        if not ok then
+            self:_MarkInflight(reqKey, nil)
+        end
+    end)
+    return true
 end
 
 -- Request shop purchase
@@ -756,6 +904,8 @@ end
 -- Handle stats response
 function DC:HandleStatsLegacy(data)
     self:Debug("Received stats")
+
+    self:_MarkInflight("req:stats", nil)
     
     if data.stats then
         self.stats = data.stats
@@ -780,6 +930,8 @@ end
 -- Handle bonuses response
 function DC:HandleBonuses(data)
     self:Debug("Received bonuses")
+
+    self:_MarkInflight("req:bonuses", nil)
     
     self.bonuses = {
         mountSpeedBonus = data.mountSpeedBonus or 0,
@@ -848,6 +1000,11 @@ end
 -- Handle shop data
 function DC:HandleShopData(data)
     self:Debug("Received shop data")
+
+    -- Release shop inflight guard (category can vary; clear common keys).
+    self._inflightRequests = self._inflightRequests or {}
+    self._inflightRequests["req:shop:all"] = nil
+    self._inflightRequests["req:shop:default"] = nil
 
         self.shopCategory = data.category or "default"
     self.currency = self.currency or { tokens = 0, emblems = 0 }
@@ -1059,6 +1216,8 @@ end
 function DC:HandleCurrencies(data)
     self:Debug("Received currencies")
 
+    self:_MarkInflight("req:currency", nil)
+
     self.currency = self.currency or { tokens = 0, emblems = 0 }
     local tokens = data.tokens or data.token or 0
     local emblems = data.emblems or data.essence or data.emblem or 0
@@ -1264,6 +1423,13 @@ function DC:HandleDefinitions(data)
     end
     self:SaveCache()
 
+    -- Release inflight guard for this type.
+    self:_MarkInflight("req:defs:" .. tostring(collType), nil)
+    if collType == "pets" then
+        self:_MarkInflight("req:defs:pet", nil)
+        self:_MarkInflight("req:defs:pets", nil)
+    end
+
     -- Debug: how many transmog definitions are missing inventoryType on this page
     if collType == "transmog" then
         local total = 0
@@ -1303,6 +1469,9 @@ function DC:HandleDefinitions(data)
 
     -- Transmog definitions can be very large; server may send them in pages.
     if collType == "transmog" then
+        -- Slow down paging a bit to avoid disconnects on some servers/clients.
+        self._transmogPagingInterval = self._transmogPagingInterval or 0.75
+
         local requestedOffset = tonumber(data.offset or data.off) or tonumber(self._transmogDefLastRequestedOffset) or 0
         local requestedLimit = tonumber(data.limit or data.lim) or tonumber(self._transmogDefLastRequestedLimit) or tonumber(self._transmogDefLimit) or 1000
         local total = tonumber(data.total or data.count) or nil
@@ -1369,12 +1538,19 @@ function DC:HandleDefinitions(data)
                 
                 self._transmogPagingDelayFrame:SetScript("OnUpdate", function(frame, elapsed)
                     frame.elapsed = frame.elapsed + elapsed
-                    if frame.elapsed >= 0.5 and frame.pendingRequest then
+                    local interval = DC._transmogPagingInterval or 0.75
+                    if frame.elapsed >= interval and frame.pendingRequest then
                         local req = frame.pendingRequest
+                        -- Pause paging if user isn't actively viewing the transmog tab.
+                        if not (DC.MainFrame and DC.MainFrame:IsShown() and DC.activeTab == "transmog") then
+                            frame.elapsed = 0
+                            return
+                        end
+
                         frame.pendingRequest = nil
                         frame.elapsed = 0
                         frame:Hide()
-                        
+
                         DC:SendMessage(DC.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = req.offset, limit = req.limit })
                     end
                 end)
@@ -1391,6 +1567,7 @@ function DC:HandleDefinitions(data)
                 (self._transmogDefPagesFetched or 0) + 1,
                 tostring(total)))
             self._transmogDefLoading = nil
+            self:_MarkInflight("req:defs:transmog", nil)
         end
     end
 end
@@ -1402,6 +1579,13 @@ function DC:HandleCollection(data)
     
     self:CacheMergeCollection(collType, items)
     self:SaveCache()
+
+    -- Release inflight guard for this type.
+    self:_MarkInflight("req:coll:" .. tostring(collType), nil)
+    if collType == "pets" then
+        self:_MarkInflight("req:coll:pet", nil)
+        self:_MarkInflight("req:coll:pets", nil)
+    end
     
     -- Notify UI if open
     if self.MainFrame and self.MainFrame:IsShown() then

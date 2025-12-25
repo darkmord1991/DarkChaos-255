@@ -25,6 +25,8 @@ DC.PetModule = PetModule
 function PetModule:Init()
     DC:Debug("PetModule initialized")
 
+    self._initialized = true
+
     -- Ensure tables exist.
     DC.definitions = DC.definitions or {}
     DC.collections = DC.collections or {}
@@ -38,6 +40,9 @@ function PetModule:Init()
     -- If server definitions are missing/empty, seed from client so the Pets UI
     -- isn't empty and owned pets are correctly marked.
     if not next(DC.definitions.pets) then
+        -- 1) Try seeding a broad list of companion items (if configured)
+        -- 2) Always seed from the player's actually-known companions
+        self:SeedFromCompanionItemSeeds()
         self:SeedFromClientKnownPets()
     else
         -- Even with server definitions, make sure client-owned pets are marked owned.
@@ -69,27 +74,134 @@ function PetModule:GetPetDefinition(petId)
     return DC.definitions.pets and DC.definitions.pets[petId]
 end
 
+local function _num(x)
+    if x == nil then return nil end
+    if type(x) == "number" then return x end
+    if type(x) == "string" then
+        local n = tonumber(x)
+        return n
+    end
+    return nil
+end
+
+function PetModule:_ResolveSpellIdForDef(def)
+    if type(def) ~= "table" then
+        return nil
+    end
+
+    local existing = _num(def.spellId or def.spell_id)
+    if existing then
+        return existing
+    end
+
+    local itemId = _num(def.itemId or def.item_id)
+    if not itemId or type(GetItemSpell) ~= "function" then
+        return nil
+    end
+
+    -- Cache the result on the definition to avoid repeated lookups during filtering.
+    if def._dcResolvedSpellId ~= nil then
+        return _num(def._dcResolvedSpellId)
+    end
+
+    local _, spellId = GetItemSpell(itemId)
+    spellId = _num(spellId)
+    def._dcResolvedSpellId = spellId or false
+
+    if spellId then
+        def.spellId = def.spellId or spellId
+    end
+
+    return spellId
+end
+
+function PetModule:_GetCollectionEntryByKey(key)
+    if key == nil or not (DC.collections and DC.collections.pets) then
+        return nil
+    end
+
+    local coll = DC.collections.pets
+    if coll[key] ~= nil then
+        return coll[key]
+    end
+
+    local n = _num(key)
+    if n ~= nil and coll[n] ~= nil then
+        return coll[n]
+    end
+
+    local s = tostring(key)
+    if s ~= nil and coll[s] ~= nil then
+        return coll[s]
+    end
+
+    return nil
+end
+
+function PetModule:GetCollectionEntryForPet(petId, def)
+    -- Collections may be keyed by itemId, spellId, or creatureId depending on server schema.
+    -- Try the common identifiers (and normalize string/number keys).
+    local entry = self:_GetCollectionEntryByKey(petId)
+    if entry ~= nil then
+        return entry
+    end
+
+    def = def or self:GetPetDefinition(petId)
+    if def then
+        entry = self:_GetCollectionEntryByKey(def.itemId or def.item_id)
+        if entry ~= nil then return entry end
+
+        -- Prefer explicit spellId; if missing, resolve from itemId if possible.
+        entry = self:_GetCollectionEntryByKey(def.spellId or def.spell_id)
+        if entry ~= nil then return entry end
+
+        local resolvedSpellId = self:_ResolveSpellIdForDef(def)
+        if resolvedSpellId then
+            entry = self:_GetCollectionEntryByKey(resolvedSpellId)
+            if entry ~= nil then return entry end
+        end
+
+        entry = self:_GetCollectionEntryByKey(def.creatureId or def.creature_id)
+        if entry ~= nil then return entry end
+    end
+
+    return nil
+end
+
 function PetModule:IsPetCollected(petId)
-    if DC.collections.pets and DC.collections.pets[petId] ~= nil then
+    -- 1) If server collection is present, match by any supported key.
+    local def = self:GetPetDefinition(petId)
+    if self:GetCollectionEntryForPet(petId, def) ~= nil then
         return true
     end
 
-    -- Fallback for older server schemas / before sync completes: detect via client companion list.
-    local def = self:GetPetDefinition(petId)
+    -- 2) Fallback: detect via client companion list (covers missing/unsynced server collection).
     if def then
         local creatureId = def.creatureId or def.creature_id
         local spellId = def.spellId or def.spell_id
-        if creatureId and self._knownPetsByCreatureId and self._knownPetsByCreatureId[creatureId] then
+
+        local creatureN = _num(creatureId)
+        local spellN = _num(spellId)
+        if not spellN then
+            spellN = self:_ResolveSpellIdForDef(def)
+        end
+
+        if creatureN and self._knownPetsByCreatureId and self._knownPetsByCreatureId[creatureN] then
             return true
         end
-        if spellId and self._knownPetsBySpellId and self._knownPetsBySpellId[spellId] then
+        if spellN and self._knownPetsBySpellId and self._knownPetsBySpellId[spellN] then
             return true
         end
     end
 
-    if petId and self._knownPetsByCreatureId and self._knownPetsByCreatureId[petId] then
+    local petN = _num(petId)
+    if petN and self._knownPetsByCreatureId and self._knownPetsByCreatureId[petN] then
         return true
     end
+    if petN and self._knownPetsBySpellId and self._knownPetsBySpellId[petN] then
+        return true
+    end
+
     return false
 end
 
@@ -121,7 +233,7 @@ function PetModule:GetFilteredPets(filters)
 
     for petId, def in pairs(definitions) do
         local collected = self:IsPetCollected(petId)
-        local collData = collection[petId]
+        local collData = self:GetCollectionEntryForPet(petId, def)
         
         local include = true
         
@@ -248,7 +360,12 @@ end
 -- ============================================================================
 
 function PetModule:ToggleFavorite(spellId)
-    DC:RequestToggleFavorite("pets", spellId)
+    -- Server schemas vary: collections often key pets by spellId even when definitions are keyed by itemId.
+    -- Accept either petId or spellId here; prefer definition spellId when available.
+    local petId = spellId
+    local def = self:GetPetDefinition(petId)
+    local key = (def and (_num(def.spellId or def.spell_id))) or _num(petId) or petId
+    DC:RequestToggleFavorite("pets", key)
 end
 
 function PetModule:GetFavorites()
@@ -346,6 +463,12 @@ function PetModule:SeedFromClientKnownPets()
                 known = true
             elseif spellId and self._knownPetsBySpellId and self._knownPetsBySpellId[spellId] then
                 known = true
+            else
+                -- Many servers only provide itemId/name/icon; resolve spellId from the teaching item.
+                local resolvedSpellId = self:_ResolveSpellIdForDef(def)
+                if resolvedSpellId and self._knownPetsBySpellId and self._knownPetsBySpellId[resolvedSpellId] then
+                    known = true
+                end
             end
 
             if known and not DC.collections.pets[petId] then
@@ -370,6 +493,72 @@ function PetModule:SeedFromClientKnownPets()
                     DC.collections.pets[creatureId] = { owned = true }
                     changed = true
                 end
+            end
+        end
+    end
+
+    if changed then
+        if DC.stats and DC.stats.pets then
+            if type(DC.CountDefinitions) == "function" then
+                DC.stats.pets.total = DC:CountDefinitions("pets")
+            end
+            if type(DC.CountCollection) == "function" then
+                DC.stats.pets.owned = DC:CountCollection("pets")
+            end
+        end
+        if type(DC.SaveCache) == "function" then
+            DC:SaveCache()
+        end
+    end
+
+    return changed
+end
+
+-- Optional broad fallback: seed companion definitions from a configured list of
+-- companion *item IDs* (WotLK Misc -> Companions). This is useful when:
+-- - server pet definitions are missing
+-- - the character has 0 learned companions
+--
+-- This does NOT attempt to guess creature display IDs; instead it resolves the
+-- teaching spell via GetItemSpell(itemId) when possible.
+function PetModule:SeedFromCompanionItemSeeds()
+    local seedList = (DCCollectionDB and DCCollectionDB.companionItemSeeds) or DC.COMPANION_ITEM_SEEDS
+    if type(seedList) ~= "table" or #seedList == 0 then
+        return false
+    end
+
+    DC.definitions.pets = DC.definitions.pets or {}
+    DC.collections.pets = DC.collections.pets or {}
+
+    local changed = false
+
+    for _, itemId in ipairs(seedList) do
+        itemId = tonumber(itemId)
+        if itemId then
+            if not DC.definitions.pets[itemId] then
+                local name, _, quality, _, reqLevel, class, subclass, _, _, texture = GetItemInfo(itemId)
+                local spellName, spellId = nil, nil
+                if type(GetItemSpell) == "function" then
+                    spellName, spellId = GetItemSpell(itemId)
+                end
+
+                DC.definitions.pets[itemId] = {
+                    itemId = itemId,
+                    name = name or spellName or ("Item " .. tostring(itemId)),
+                    icon = texture or "Interface\\Icons\\INV_Box_PetCarrier_01",
+                    rarity = quality,
+                    spellId = spellId,
+                    source = "seed",
+                }
+                changed = true
+            end
+
+            -- If the player already knows the companion (by spellId), mark it owned.
+            local def = DC.definitions.pets[itemId]
+            local spellId = def and (def.spellId or def.spell_id)
+            if spellId and self._knownPetsBySpellId and self._knownPetsBySpellId[spellId] and not DC.collections.pets[itemId] then
+                DC.collections.pets[itemId] = { owned = true }
+                changed = true
             end
         end
     end

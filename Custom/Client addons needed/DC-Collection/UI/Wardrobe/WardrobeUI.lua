@@ -41,6 +41,30 @@ local function GetInvTypeLabel(invType)
     return INVTYPE_LABELS[invType] or ("InvType " .. tostring(invType))
 end
 
+local function SetSpecialFrameRegistered(frameName, shouldRegister)
+    if type(frameName) ~= "string" or frameName == "" or not UISpecialFrames then
+        return
+    end
+
+    local foundIndex = nil
+    for i = 1, #UISpecialFrames do
+        if UISpecialFrames[i] == frameName then
+            foundIndex = i
+            break
+        end
+    end
+
+    if shouldRegister then
+        if not foundIndex then
+            tinsert(UISpecialFrames, frameName)
+        end
+    else
+        if foundIndex then
+            table.remove(UISpecialFrames, foundIndex)
+        end
+    end
+end
+
 -- ============================================================================
 -- FRAME CREATION
 -- ============================================================================
@@ -110,12 +134,184 @@ function Wardrobe:CreateFrame()
     self:CreateRightPanel(frame)
     self:CreateBottomBar(frame)
 
-    tinsert(UISpecialFrames, "DCWardrobeFrame")
+    SetSpecialFrameRegistered("DCWardrobeFrame", true)
 
     self:HookItemTooltip()
 
     self.frame = frame
     return frame
+end
+
+function Wardrobe:SetEmbeddedMode(isEmbedded, host)
+    local frame = self.frame
+    if not frame then
+        return
+    end
+
+    self.isEmbedded = isEmbedded and true or false
+
+    if self.isEmbedded then
+        if host then
+            frame:SetParent(host)
+            frame:ClearAllPoints()
+            frame:SetAllPoints(host)
+        end
+
+        frame:SetMovable(false)
+        frame:RegisterForDrag(nil)
+        frame:SetScript("OnDragStart", nil)
+        frame:SetScript("OnDragStop", nil)
+
+        -- Hide standalone window chrome when embedded.
+        if frame.closeBtn then frame.closeBtn:Hide() end
+        if frame.backBtn then frame.backBtn:Hide() end
+        if frame.title then frame.title:Hide() end
+        if frame.portrait then frame.portrait:Hide() end
+        if frame.portraitBorder then frame.portraitBorder:Hide() end
+        if frame.bg then frame.bg:Hide() end
+
+        frame:SetBackdrop(nil)
+
+        -- Embedded: don't treat as a special frame (ESC should close main frame, not just the embedded sub-frame).
+        SetSpecialFrameRegistered("DCWardrobeFrame", false)
+
+        if self._ApplyEmbeddedLayout then
+            self:_ApplyEmbeddedLayout()
+        end
+    else
+        frame:SetParent(UIParent)
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER")
+        frame:SetSize(self.FRAME_WIDTH, self.FRAME_HEIGHT)
+
+        frame:SetMovable(true)
+        frame:RegisterForDrag("LeftButton")
+        frame:SetScript("OnDragStart", frame.StartMoving)
+        frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+
+        if frame.closeBtn then frame.closeBtn:Show() end
+        if frame.backBtn then frame.backBtn:Show() end
+        if frame.title then frame.title:Show() end
+        if frame.portrait then frame.portrait:Show() end
+        if frame.portraitBorder then frame.portraitBorder:Show() end
+        if frame.bg then frame.bg:Show() end
+
+        frame:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        })
+        frame:SetBackdropColor(0, 0, 0, 1)
+
+        SetSpecialFrameRegistered("DCWardrobeFrame", true)
+
+        if self._ApplyStandaloneLayout then
+            self:_ApplyStandaloneLayout()
+        end
+    end
+end
+
+function Wardrobe:_EnsurePreviewHost()
+    if not self.frame then return end
+    if self.frame.previewHost then return end
+
+    local host = CreateFrame("Frame", nil, self.frame)
+    host:SetFrameStrata("HIGH")
+    host:Hide()
+
+    self.frame.previewHost = host
+end
+
+function Wardrobe:_ApplyEmbeddedLayout()
+    local frame = self.frame
+    if not frame then return end
+
+    self:_EnsurePreviewHost()
+
+    local left = frame.leftPanel
+    local right = frame.rightPanel
+    local bottom = frame.bottomBar
+    local previewHost = frame.previewHost
+
+    if not left or not right or not bottom or not previewHost then
+        return
+    end
+
+    local insetX = 18
+    local insetY = 2
+    local gap = 20
+    local bottomBarHeight = 50
+    local previewWidth = 240
+
+    -- Right-side reserved area for tooltip/model preview.
+    previewHost:ClearAllPoints()
+    previewHost:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -insetX, -insetY)
+    previewHost:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, insetY)
+    previewHost:SetWidth(previewWidth)
+    previewHost:Show()
+
+    -- Left panel: use the top space (no -50 header offset) and reserve room for the bottom bar.
+    left:ClearAllPoints()
+    left:SetPoint("TOPLEFT", frame, "TOPLEFT", insetX, -insetY)
+    left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insetX, insetY + bottomBarHeight + gap)
+    -- Make sure the top row of buttons (Disable/Visuals/Refresh) fits without spilling into the right panel.
+    left:SetWidth(self.MODEL_WIDTH + 150)
+
+    -- Bottom bar: keep fully inside the frame, aligned to the left panel width.
+    bottom:ClearAllPoints()
+    bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insetX, insetY)
+    bottom:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", 0, insetY)
+    bottom:SetHeight(bottomBarHeight)
+
+    -- Right panel: fill the space between left panel and preview host.
+    right:ClearAllPoints()
+    right:SetPoint("TOPLEFT", left, "TOPRIGHT", gap, 0)
+    right:SetPoint("BOTTOMRIGHT", previewHost, "BOTTOMLEFT", -gap, 0)
+
+    -- If the tooltip preview already exists, re-parent + re-anchor it.
+    if self.tooltipPreview and self.tooltipPreview.SetParent then
+        self.tooltipPreview:SetParent(previewHost)
+        self.tooltipPreview:ClearAllPoints()
+        self.tooltipPreview:SetPoint("TOPLEFT", previewHost, "TOPLEFT", 0, 0)
+    end
+end
+
+function Wardrobe:_ApplyStandaloneLayout()
+    local frame = self.frame
+    if not frame then return end
+
+    self:_EnsurePreviewHost()
+    if frame.previewHost then
+        frame.previewHost:Hide()
+    end
+
+    local left = frame.leftPanel
+    local right = frame.rightPanel
+    local bottom = frame.bottomBar
+
+    if not left or not right or not bottom then
+        return
+    end
+
+    -- Restore original standalone anchors/sizes.
+    left:ClearAllPoints()
+    left:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -50)
+    left:SetSize(self.MODEL_WIDTH + 100, self.FRAME_HEIGHT - 120)
+
+    right:ClearAllPoints()
+    right:SetPoint("TOPLEFT", frame, "TOPLEFT", self.MODEL_WIDTH + 170, -50)
+    right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 70)
+
+    bottom:ClearAllPoints()
+    bottom:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 50, 0)
+    bottom:SetSize(self.MODEL_WIDTH, 50)
+
+    if self.tooltipPreview and self.tooltipPreview.SetParent then
+        self.tooltipPreview:SetParent(frame)
+        self.tooltipPreview:ClearAllPoints()
+        self.tooltipPreview:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18)
+    end
 end
 
 -- ============================================================================
@@ -1013,7 +1209,7 @@ function Wardrobe:ShowTooltipPreview(itemId)
     
     -- Create the preview frame if it doesn't exist
     if not self.tooltipPreview then
-        local parent = self.frame or UIParent
+        local parent = (self.isEmbedded and self.frame and self.frame.previewHost) or self.frame or UIParent
         local frame = CreateFrame("Frame", "DCWardrobeTooltipPreview", parent)
         frame:SetSize(200, 200)
         frame:SetFrameStrata("TOOLTIP")
@@ -1046,10 +1242,18 @@ function Wardrobe:ShowTooltipPreview(itemId)
     local frame = self.tooltipPreview
     frame:Show()
     
-    -- Fixed location: bottom-right of the Wardrobe frame
+    -- Fixed location:
+    -- - embedded: in the reserved right-side preview host area
+    -- - standalone: bottom-right of the Wardrobe frame
     frame:ClearAllPoints()
-    local anchor = self:_GetFixedTooltipAnchor()
-    frame:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -18, 18)
+    if self.isEmbedded and self.frame and self.frame.previewHost then
+        frame:SetParent(self.frame.previewHost)
+        frame:SetPoint("TOPLEFT", self.frame.previewHost, "TOPLEFT", 0, 0)
+    else
+        frame:SetParent(self.frame or UIParent)
+        local anchor = self:_GetFixedTooltipAnchor()
+        frame:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -18, 18)
+    end
     
     -- Show item on model
     frame.model:Show()

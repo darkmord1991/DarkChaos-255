@@ -255,7 +255,11 @@ function PetJournal:CreateModelPreview(parent)
     favBtn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     favBtn:SetScript("OnClick", function()
         if PetJournal.selectedPet then
-            DC:RequestToggleFavorite("pets", PetJournal.selectedPet.id)
+            if DC and DC.PetModule and type(DC.PetModule.ToggleFavorite) == "function" then
+                DC.PetModule:ToggleFavorite(PetJournal.selectedPet.id)
+            else
+                DC:RequestToggleFavorite("pets", PetJournal.selectedPet.id)
+            end
             PetJournal:RefreshList()
         end
     end)
@@ -465,6 +469,13 @@ function PetJournal:UpdatePetList()
         showNotCollected = true
     end
 
+    if not DC.PetModule or type(DC.PetModule.GetFilteredPets) ~= "function" then
+        self.filteredPets = {}
+        self.currentPage = 1
+        self:RefreshList()
+        return
+    end
+
     local pets = DC.PetModule:GetFilteredPets({
         search = searchText,
     })
@@ -523,38 +534,46 @@ function PetJournal:RefreshList()
         scrollChild.loadingText:Hide()
     end
     
-    -- Check if we're still loading data
+    -- Check if we're still loading data / no results
     if #pets == 0 then
         local defs = DC.definitions["pets"] or {}
         local defCount = 0
         for _ in pairs(defs) do defCount = defCount + 1 end
-        
+
+        if not scrollChild.loadingText then
+            scrollChild.loadingText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+            scrollChild.loadingText:SetPoint("CENTER", scrollChild, "CENTER", 0, 50)
+        end
+
         -- If definitions are empty, try a client-side fallback first (known companion spells).
         if defCount == 0 then
+            local seeded = false
             if DC.PetModule and type(DC.PetModule.SeedFromClientKnownPets) == "function" then
-                if DC.PetModule:SeedFromClientKnownPets() then
-                    self:UpdatePetList()
-                    return
-                end
+                seeded = DC.PetModule:SeedFromClientKnownPets() and true or false
             end
 
-            -- Still empty: show loading message and keep asking the server.
-            if not scrollChild.loadingText then
-                scrollChild.loadingText = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-                scrollChild.loadingText:SetPoint("CENTER", scrollChild, "CENTER", 0, 50)
+            if seeded then
+                self:UpdatePetList()
+                return
             end
-            
-            scrollChild.loadingText:SetText("Loading pets data...")
+
+            -- Still empty: show an actionable message and keep asking the server.
+            scrollChild.loadingText:SetText("No companion data yet.\nLearn a pet or wait for server definitions.")
             scrollChild.loadingText:Show()
-            
-            -- Request definitions again if needed
+
             if type(DC.RequestDefinitions) == "function" then
                 DC:RequestDefinitions("pets")
             end
-            
-            self.frame.listFrame.pageFrame.pageText:SetText("Loading...")
+
+            self.frame.listFrame.pageFrame.pageText:SetText("...")
             return
         end
+
+        -- Definitions exist but filtering yielded 0.
+        scrollChild.loadingText:SetText("No companions match your filters.")
+        scrollChild.loadingText:Show()
+        self.frame.listFrame.pageFrame.pageText:SetText("0/0")
+        return
     end
 
     local totalPages = math.max(1, math.ceil(#pets / ITEMS_PER_PAGE))
@@ -761,6 +780,11 @@ end
 function PetJournal:Show()
     if not self.frame then
         self:Create()
+    end
+
+    -- Ensure the PetModule is initialized (load-order / error safe).
+    if DC.PetModule and not DC.PetModule._initialized and type(DC.PetModule.Init) == "function" then
+        pcall(DC.PetModule.Init, DC.PetModule)
     end
 
     -- If server-side pet definitions are not configured, seed from client-known companions.

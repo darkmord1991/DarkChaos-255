@@ -32,8 +32,8 @@ Wardrobe.FRAME_HEIGHT = 650
 Wardrobe.MODEL_WIDTH = 250
 Wardrobe.SLOT_SIZE = 36
 Wardrobe.GRID_ICON_SIZE = 46
-Wardrobe.GRID_COLS = 6
-Wardrobe.GRID_ROWS = 3
+Wardrobe.GRID_COLS = 5
+Wardrobe.GRID_ROWS = 5
 Wardrobe.ITEMS_PER_PAGE = Wardrobe.GRID_COLS * Wardrobe.GRID_ROWS
 
 -- Camera control constants
@@ -232,6 +232,11 @@ function Wardrobe:Show()
     local frame = self:CreateFrame()
     if not frame then return end
 
+    if self.isEmbedded then
+        frame:Show()
+        return
+    end
+
     if DC.MainFrame and DC.MainFrame:IsShown() then
         local point, relativeTo, relativePoint, xOfs, yOfs = DC.MainFrame:GetPoint()
         if point then
@@ -261,6 +266,45 @@ function Wardrobe:Show()
 
     self:SelectTab("items")
 
+    self:UpdateSlotButtons()
+    self:UpdateOutfitSlots()
+
+    frame:Show()
+end
+
+function Wardrobe:ShowEmbedded(host)
+    local frame = self:CreateFrame()
+    if not frame then return end
+
+    if type(self.SetEmbeddedMode) == "function" then
+        self:SetEmbeddedMode(true, host)
+    else
+        if host then
+            frame:SetParent(host)
+            frame:ClearAllPoints()
+            frame:SetAllPoints(host)
+        end
+    end
+
+    -- Only request definitions on first open or if explicitly refreshing
+    if not Wardrobe.definitionsLoaded and DC and DC.RequestDefinitions then
+        Wardrobe.definitionsLoaded = true
+        DC:RequestDefinitions("transmog")
+        DC:RequestDefinitions("itemSets")
+    end
+    if DC and DC.RequestCollection then
+        DC:RequestCollection("transmog")
+    end
+    if DC and DC.RequestWishlist then
+        DC:RequestWishlist()
+    end
+
+    if frame.model then
+        frame.model:SetUnit("player")
+        frame.model:SetFacing(0)
+    end
+
+    self:SelectTab("items")
     self:UpdateSlotButtons()
     self:UpdateOutfitSlots()
 
