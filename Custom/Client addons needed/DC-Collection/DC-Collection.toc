@@ -17,6 +17,7 @@ Cache.lua
 Protocol.lua
 Bonuses.lua
 Wishlist.lua
+DebugCommands.lua
 
 # Modules
 Modules\HeirloomModule.lua

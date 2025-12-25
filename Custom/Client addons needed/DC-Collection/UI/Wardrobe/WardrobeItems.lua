@@ -55,6 +55,9 @@ function Wardrobe:ShowItemsContent()
         if self.frame.gridFrame then
             self.frame.gridFrame:Show()
         end
+        if self.frame.modelPanel then
+            self.frame.modelPanel:Show()
+        end
     end
     self:RefreshGrid()
 end
@@ -63,6 +66,9 @@ function Wardrobe:ShowSetsContent()
     if self.frame then
         for _, btn in ipairs(self.frame.slotFilterButtons or {}) do
             btn:Hide()
+        end
+        if self.frame.modelPanel then
+            self.frame.modelPanel:Show()
         end
     end
     self:RefreshSetsGrid()
@@ -79,6 +85,9 @@ function Wardrobe:ShowOutfitsContent()
         if self.frame.showUncollectedCheck then
             self.frame.showUncollectedCheck:Hide()
         end
+        if self.frame.modelPanel then
+            self.frame.modelPanel:Show()
+        end
     end
     self:RefreshOutfitsGrid()
 end
@@ -90,6 +99,7 @@ end
 function Wardrobe:SelectSlot(slotDef)
     self.selectedSlot = slotDef
     self.currentPage = 1
+    self.selectedAppearanceItemId = nil
 
     if self.frame and self.frame.slotButtons then
         for _, btn in ipairs(self.frame.slotButtons) do
@@ -134,12 +144,7 @@ function Wardrobe:SelectSlot(slotDef)
         end
     end
 
-    self:BuildAppearanceList()
-    self:RefreshGrid()
-end
-        end
-    end
-
+    -- Update slot filter based on selected slot
     for i, filter in ipairs(self.SLOT_FILTERS or {}) do
         if filter.invTypes[slotDef.invType] then
             self.selectedSlotFilter = filter
@@ -156,6 +161,7 @@ end
         end
     end
 
+    self:BuildAppearanceList()
     self:RefreshGrid()
 end
 
@@ -214,6 +220,14 @@ function Wardrobe:RefreshGrid()
             btn:Show()
             btn.itemData = item
 
+            if btn.selected then
+                if self.selectedAppearanceItemId and item.itemId == self.selectedAppearanceItemId then
+                    btn.selected:Show()
+                else
+                    btn.selected:Hide()
+                end
+            end
+
             local icon = nil
             if type(GetItemIcon) == "function" and item.itemId then
                 icon = GetItemIcon(item.itemId)
@@ -250,6 +264,42 @@ function Wardrobe:RefreshGrid()
         else
             btn:Hide()
             btn.itemData = nil
+        end
+    end
+    
+    -- Preload items from adjacent pages to cache them in advance
+    self:PreloadAdjacentPages(list)
+end
+
+-- Preload item data for previous and next pages
+function Wardrobe:PreloadAdjacentPages(list)
+    if not list or not GetItemInfo then return end
+    
+    local startIdxPrev = (self.currentPage - 2) * self.ITEMS_PER_PAGE + 1
+    local endIdxPrev = startIdxPrev + self.ITEMS_PER_PAGE - 1
+    
+    local startIdxNext = self.currentPage * self.ITEMS_PER_PAGE + 1
+    local endIdxNext = startIdxNext + self.ITEMS_PER_PAGE - 1
+    
+    -- Preload previous page
+    if self.currentPage > 1 then
+        for i = startIdxPrev, endIdxPrev do
+            local item = list[i]
+            if item and item.itemId then
+                -- Just calling GetItemInfo triggers the cache
+                GetItemInfo(item.itemId)
+            end
+        end
+    end
+    
+    -- Preload next page
+    if self.currentPage < self.totalPages then
+        for i = startIdxNext, endIdxNext do
+            local item = list[i]
+            if item and item.itemId then
+                -- Just calling GetItemInfo triggers the cache
+                GetItemInfo(item.itemId)
+            end
         end
     end
 end
@@ -307,7 +357,6 @@ function Wardrobe:BuildAppearanceList()
     local byKey = {}
 
     local search = self.searchText
-    local searchType = self.searchType or "name"  -- name, id, displayid
     local searchNum = nil
     if search and search ~= "" then
         search = string.lower(search)
@@ -395,18 +444,21 @@ function Wardrobe:BuildAppearanceList()
         if valid and search then
             local matchFound = false
             
-            if searchType == "name" then
-                local name = def.name or ""
-                if string.find(string.lower(name), search, 1, true) then
-                    matchFound = true
-                end
-            elseif searchType == "id" and searchNum and itemId then
-                -- Match if search number appears in itemId
+            -- Check name match
+            local name = def.name or ""
+            if string.find(string.lower(name), search, 1, true) then
+                matchFound = true
+            end
+            
+            -- Check itemID match (if search is numeric)
+            if not matchFound and searchNum and itemId then
                 if tostring(itemId):find(tostring(searchNum), 1, true) then
                     matchFound = true
                 end
-            elseif searchType == "displayid" and searchNum and displayId then
-                -- Match if search number appears in displayId
+            end
+            
+            -- Check displayID match (if search is numeric)
+            if not matchFound and searchNum and displayId then
                 if tostring(displayId):find(tostring(searchNum), 1, true) then
                     matchFound = true
                 end
@@ -502,14 +554,54 @@ end
 
 function Wardrobe:PreviewAppearance(itemId)
     if not itemId or not self.frame or not self.frame.model then return end
+    
+    -- Validate item exists and has data cached
+    local itemName, itemLink = GetItemInfo(itemId)
+    if not itemName then
+        -- Item not cached yet, queue for later
+        if not self.pendingPreviews then
+            self.pendingPreviews = {}
+        end
+        self.pendingPreviews[itemId] = true
+        return
+    end
+
+    self.selectedAppearanceItemId = itemId
 
     local model = self.frame.model
+    
+    -- Reset model to player with all current equipment
     model:SetUnit("player")
-
-    if model.TryOn then
-        -- Prefer a link form; it tends to be more reliable for cached/uncached items.
-        local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
-        model:TryOn(link)
+    
+    -- Only preview the specific slot if one is selected
+    if self.selectedSlot and model.Undress and model.TryOn then
+        -- Undress only the selected slot, keep everything else
+        model:Undress()
+        
+        -- Re-apply all equipped items (with error protection)
+        for slot = 1, 19 do
+            local itemID = GetInventoryItemID("player", slot)
+            if itemID then
+                pcall(function()
+                    local link = "item:" .. tostring(itemID) .. ":0:0:0:0:0:0:0"
+                    model:TryOn(link)
+                end)
+            end
+        end
+        
+        -- Now try on ONLY the selected slot's new appearance (with error protection)
+        pcall(function()
+            local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
+            model:TryOn(link)
+        end)
+    else
+        -- Fallback: full character preview (with error protection)
+        if model.TryOn then
+            pcall(function()
+                local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
+                model:TryOn(link)
+            end)
+        end
     end
     
     -- Apply slot-specific camera positioning if a slot is selected

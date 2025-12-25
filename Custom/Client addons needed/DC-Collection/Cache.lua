@@ -12,6 +12,38 @@
 local DC = DCCollection
 
 -- ============================================================================
+-- REVISION TRACKING (UI performance)
+-- ============================================================================
+-- A cheap way for UI code to know whether definitions/collections changed
+-- without doing deep table comparisons.
+
+local function EnsureRevisions(self)
+    if not self._revisions then
+        self._revisions = { definitions = {}, collections = {} }
+    end
+end
+
+function DC:_BumpDefinitionsRevision(typeName)
+    EnsureRevisions(self)
+    self._revisions.definitions[typeName] = (self._revisions.definitions[typeName] or 0) + 1
+end
+
+function DC:_BumpCollectionsRevision(typeName)
+    EnsureRevisions(self)
+    self._revisions.collections[typeName] = (self._revisions.collections[typeName] or 0) + 1
+end
+
+function DC:GetDefinitionsRevision(typeName)
+    EnsureRevisions(self)
+    return self._revisions.definitions[typeName] or 0
+end
+
+function DC:GetCollectionsRevision(typeName)
+    EnsureRevisions(self)
+    return self._revisions.collections[typeName] or 0
+end
+
+-- ============================================================================
 -- CACHE STRUCTURE
 -- ============================================================================
 
@@ -252,6 +284,8 @@ function DC:CacheAddItem(collectionType, itemId, itemData)
     local normalizedId = NormalizeId(itemId)
     self.collections[typeName] = self.collections[typeName] or {}
     self.collections[typeName][normalizedId] = itemData
+
+    self:_BumpCollectionsRevision(typeName)
     
     -- Update stats
     if self.stats[typeName] then
@@ -274,6 +308,7 @@ function DC:CacheUpdateItem(collectionType, itemId, updates)
         for key, value in pairs(updates) do
             self.collections[typeName][normalizedId][key] = value
         end
+        self:_BumpCollectionsRevision(typeName)
         self.cacheNeedsSave = true
     end
 end
@@ -288,6 +323,8 @@ function DC:CacheAddDefinition(collectionType, itemId, defData)
     local normalizedId = NormalizeId(itemId)
     self.definitions[typeName] = self.definitions[typeName] or {}
     self.definitions[typeName][normalizedId] = defData
+
+    self:_BumpDefinitionsRevision(typeName)
     
     -- Update total stats
     if self.stats[typeName] then
@@ -312,12 +349,19 @@ function DC:CacheMergeDefinitions(collectionType, definitions)
         end
         self.definitions[typeName][normalizedId] = defData
     end
+
+    if added > 0 then
+        self:_BumpDefinitionsRevision(typeName)
+    end
     
-    if self.stats[typeName] then
-        self.stats[typeName].total = self:CountDefinitions(typeName)
+    if self.stats[typeName] and added > 0 then
+        self.stats[typeName].total = (self.stats[typeName].total or 0) + added
     end
     
     self:Debug(string.format("Merged %d definitions for %s", added, typeName))
+    if added > 0 then
+        self.cacheNeedsSave = true
+    end
 end
 
 -- Batch update collection
@@ -337,9 +381,13 @@ function DC:CacheMergeCollection(collectionType, items)
         end
         self.collections[typeName][normalizedId] = itemData
     end
+
+    if added > 0 then
+        self:_BumpCollectionsRevision(typeName)
+    end
     
-    if self.stats[typeName] then
-        self.stats[typeName].owned = self:CountCollection(typeName)
+    if self.stats[typeName] and added > 0 then
+        self.stats[typeName].owned = (self.stats[typeName].owned or 0) + added
     end
     
     self:Debug(string.format("Merged %d items for %s collection", added, typeName))
@@ -529,6 +577,8 @@ function DC:SetCollection(collectionType, items)
     if self.stats[typeName] then
         self.stats[typeName].owned = self:CountCollection(typeName)
     end
+
+    self:_BumpCollectionsRevision(typeName)
     
     self.cacheNeedsSave = true
     self:Debug(string.format("Set collection %s with %d items", 
@@ -547,6 +597,8 @@ function DC:AddToCollection(collectionType, itemId, itemData)
     
     if not self.collections[typeName][normalizedId] then
         self.collections[typeName][normalizedId] = itemData or { owned = true }
+
+        self:_BumpCollectionsRevision(typeName)
         
         -- Update stats
         if self.stats[typeName] then
@@ -570,6 +622,8 @@ function DC:RemoveFromCollection(collectionType, itemId)
     local normalizedId = NormalizeId(itemId)
     if self.collections[typeName] and self.collections[typeName][normalizedId] then
         self.collections[typeName][normalizedId] = nil
+
+        self:_BumpCollectionsRevision(typeName)
         
         -- Update stats
         if self.stats[typeName] then

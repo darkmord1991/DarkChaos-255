@@ -48,10 +48,21 @@ local function CreateCharacterFrameButton()
 
     -- Click handler
     button:SetScript("OnClick", function(self)
+        -- Prefer the canonical API.
+        if type(DC.ToggleMainFrame) == "function" then
+            DC:ToggleMainFrame()
+            return
+        end
+
         if DC.MainFrame and DC.MainFrame:IsShown() then
             DC.MainFrame:Hide()
         else
-            DC:ShowMainUI()
+            if type(DC.ShowMainFrame) == "function" then
+                DC:ShowMainFrame()
+            elseif type(DC.ShowMainUI) == "function" then
+                -- Backward/forward-compat alias.
+                DC:ShowMainUI()
+            end
         end
     end)
 

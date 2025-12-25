@@ -304,8 +304,9 @@ namespace DCCollection
             accountId);
     }
 
-    // Forward declaration: ensure GetAccountId is visible at call sites
+    // Forward declarations: ensure functions are visible at call sites
     inline uint32 GetAccountId(Player* player);
+    bool WorldTableExists(std::string const& tableName);
 
     void ImportExistingCollections(Player* player)
     {
@@ -381,8 +382,10 @@ namespace DCCollection
                     break;
                 }
 
-                if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON &&
-                    spellInfo->Effects[i].MiscValueB == 0)
+                // Companion pets commonly use SPELL_EFFECT_SUMMON_PET (56) rather than SPELL_EFFECT_SUMMON (28).
+                // We keep the stricter MiscValueB==0 check for SUMMON, but accept SUMMON_PET too.
+                if ((spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON && spellInfo->Effects[i].MiscValueB == 0) ||
+                    (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET))
                 {
                     isPetSpell = true;
                 }
@@ -407,6 +410,78 @@ namespace DCCollection
                     "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
                     itemsEntryCol, accountId, static_cast<uint8>(CollectionType::PET), itemId);
+            }
+        }
+
+        // Import heirlooms already owned by the character into account-wide collections.
+        // This relies on the custom world table dc_heirloom_definitions (item_id list).
+        if (WorldTableExists("dc_heirloom_definitions"))
+        {
+            std::unordered_set<uint32> heirloomDefs;
+            QueryResult defRes = WorldDatabase.Query("SELECT item_id FROM dc_heirloom_definitions");
+            if (defRes)
+            {
+                do
+                {
+                    heirloomDefs.insert(defRes->Fetch()[0].Get<uint32>());
+                } while (defRes->NextRow());
+            }
+
+            if (!heirloomDefs.empty())
+            {
+                std::unordered_set<uint32> foundHeirlooms;
+
+                auto considerHeirloomItem = [&](Item* item)
+                {
+                    if (!item)
+                        return;
+
+                    uint32 itemId = item->GetEntry();
+                    if (!itemId)
+                        return;
+
+                    if (heirloomDefs.find(itemId) == heirloomDefs.end())
+                        return;
+
+                    foundHeirlooms.insert(itemId);
+                };
+
+                // Equipped slots.
+                for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+                    considerHeirloomItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+
+                // Backpack.
+                for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+                    considerHeirloomItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+
+                // Bags.
+                for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
+                {
+                    if (Bag* bag = player->GetBagByPos(bagSlot))
+                        for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+                            considerHeirloomItem(bag->GetItemByPos(static_cast<uint8>(i)));
+                }
+
+                // Bank slots.
+                for (uint8 slot = BANK_SLOT_ITEM_START; slot < BANK_SLOT_ITEM_END; ++slot)
+                    considerHeirloomItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+
+                // Bank bags.
+                for (uint8 bagSlot = BANK_SLOT_BAG_START; bagSlot < BANK_SLOT_BAG_END; ++bagSlot)
+                {
+                    if (Bag* bag = player->GetBagByPos(bagSlot))
+                        for (uint32 i = 0; i < bag->GetBagSize(); ++i)
+                            considerHeirloomItem(bag->GetItemByPos(static_cast<uint8>(i)));
+                }
+
+                for (uint32 itemId : foundHeirlooms)
+                {
+                    trans->Append(
+                        "INSERT IGNORE INTO dc_collection_items "
+                        "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
+                        "VALUES ({}, {}, {}, 'IMPORT_ITEMSCAN', 1, NOW())",
+                        itemsEntryCol, accountId, static_cast<uint8>(CollectionType::HEIRLOOM), itemId);
+                }
             }
         }
 
@@ -3117,7 +3192,7 @@ namespace DCCollection
             auto const& keys = GetTransmogAppearanceVariantKeysCached();
 
             if (limit == 0)
-                limit = 200;
+                limit = 2000;  // Increased from 200 to handle large transmog databases efficiently
 
             uint32 total = static_cast<uint32>(keys.size());
             if (offset > total)
@@ -3398,7 +3473,8 @@ namespace DCCollection
                     {
                         for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
                         {
-                            if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON)
+                            // Companion pets commonly use SPELL_EFFECT_SUMMON_PET (56) rather than SPELL_EFFECT_SUMMON (28).
+                            if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON || spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET)
                             {
                                 creatureId = spellInfo->Effects[i].MiscValue;
                                 break;
@@ -3410,8 +3486,8 @@ namespace DCCollection
                     {
                         if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
                         {
-                            if (!cInfo->Models.empty())
-                                displayId = cInfo->Models[0].CreatureDisplayID;
+                            if (CreatureModel const* m = cInfo->GetFirstValidModel())
+                                displayId = m->CreatureDisplayID;
                         }
                     }
                     if (!displayId && displayIdFromTable)

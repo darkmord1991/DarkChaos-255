@@ -647,7 +647,8 @@ function PetJournal:SelectPet(petData)
 
     -- Display 3D model
     -- IMPORTANT (WotLK 3.3.5a): PlayerModel does NOT have SetDisplayInfo.
-    -- Prefer creatureId/spellId-based preview; only call SetDisplayInfo if the API exists.
+    -- Blizzard flow for collected companions: GetCompanionInfo("CRITTER", i) -> SetCreature(creatureID)
+    -- (where creatureID is the model identifier used by the client).
     local function ResetModelPose()
         if model.SetFacing then model:SetFacing(0) end
         model.rotation = 0
@@ -660,46 +661,60 @@ function PetJournal:SelectPet(petData)
         creatureId = tonumber(creatureId)
     end
 
-    if creatureId and creatureId > 0 then
-        model:ClearModel()
-        model:SetCreature(creatureId)
-        ResetModelPose()
-    else
-        -- Fallback: try to infer creature id from the player's companion list by spellId.
-        local spellId = def.spellId or def.spell_id
-        if type(spellId) == "string" then
-            spellId = tonumber(spellId)
+    -- Many datasets store only a CreatureDisplayInfoID (displayId). In WotLK,
+    -- Model:SetCreature(displayId) is typically the correct API (SetDisplayInfo
+    -- often doesn't exist). Keep this as a strong fallback.
+    local displayId = def.displayId or def.displayID or def.display_id
+                   or def.creatureDisplayId or def.creature_display_id
+                   or def.modelId or def.model_id
+    if type(displayId) == "string" then
+        displayId = tonumber(displayId)
+    end
+
+    local spellId = def.spellId or def.spell_id
+    if type(spellId) == "string" then
+        spellId = tonumber(spellId)
+    end
+
+    local function FindCollectedCompanionCreatureIdBySpellId(sId)
+        if not sId or not GetNumCompanions or not GetCompanionInfo then
+            return nil
         end
 
-        local inferredCreatureId = nil
-        if spellId and GetNumCompanions and GetCompanionInfo then
-            for i = 1, GetNumCompanions("CRITTER") do
-                local cID, _, sID = GetCompanionInfo("CRITTER", i)
-                if sID == spellId then
-                    inferredCreatureId = cID
-                    break
-                end
+        for i = 1, GetNumCompanions("CRITTER") do
+            local cID, _, sID = GetCompanionInfo("CRITTER", i)
+            if sID == sId then
+                return cID
             end
         end
 
-        if inferredCreatureId and inferredCreatureId > 0 then
-            model:ClearModel()
-            model:SetCreature(inferredCreatureId)
+        return nil
+    end
+
+    -- Priority rules:
+    -- 1) If collected, prefer Blizzard creatureID from companion list.
+    -- 2) If not collected OR not found in companion list, fall back to server-provided displayId.
+    -- 3) Keep legacy creatureId as a last-ditch fallback to avoid regressions if some datasets still only provide it.
+    local resolvedCreatureId = nil
+    if petData.collected then
+        resolvedCreatureId = FindCollectedCompanionCreatureIdBySpellId(spellId)
+    end
+    if (not resolvedCreatureId or resolvedCreatureId <= 0) and displayId and displayId > 0 then
+        resolvedCreatureId = displayId
+    end
+    if (not resolvedCreatureId or resolvedCreatureId <= 0) and creatureId and creatureId > 0 then
+        resolvedCreatureId = creatureId
+    end
+
+    model:ClearModel()
+    if resolvedCreatureId and resolvedCreatureId > 0 then
+        if model.SetCreature then
+            model:SetCreature(resolvedCreatureId)
             ResetModelPose()
-        else
-            -- Last resort: only use displayId if the model supports it (some custom clients do).
-            local displayId = def.displayId or def.displayID or def.display_id
-                           or def.creatureDisplayId or def.creature_display_id
-                           or def.modelId or def.model_id
-            if type(displayId) == "string" then
-                displayId = tonumber(displayId)
-            end
-
-            model:ClearModel()
-            if displayId and displayId > 0 and model.SetDisplayInfo then
-                model:SetDisplayInfo(displayId)
-                ResetModelPose()
-            end
+        elseif model.SetDisplayInfo and displayId and displayId > 0 then
+            -- Some custom clients expose SetDisplayInfo; keep it as a fallback.
+            model:SetDisplayInfo(displayId)
+            ResetModelPose()
         end
     end
 

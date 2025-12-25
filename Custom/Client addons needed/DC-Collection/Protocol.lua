@@ -315,7 +315,7 @@ function DC:RequestDefinitions(collType)
 
     if collType == "transmog" then
         self._transmogDefOffset = 0
-        self._transmogDefLimit = self._transmogDefLimit or 1000
+        self._transmogDefLimit = self._transmogDefLimit or 2000  -- Increased from 1000 to match server chunk size
         self._transmogDefLoading = true
         self._transmogDefLastRequestedOffset = 0
         self._transmogDefLastRequestedLimit = self._transmogDefLimit
@@ -769,7 +769,11 @@ function DC:HandleStatsLegacy(data)
     end
 
     if self.MainFrame and self.MainFrame:IsShown() then
-        self:RefreshCurrentTab()
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        else
+            self:RefreshCurrentTab()
+        end
     end
 end
 
@@ -845,7 +849,7 @@ end
 function DC:HandleShopData(data)
     self:Debug("Received shop data")
 
-    self.shopCategory = data.category
+        self.shopCategory = data.category or "default"
     self.currency = self.currency or { tokens = 0, emblems = 0 }
     self.currency.tokens = data.tokens or data.token or self.currency.tokens or 0
     self.currency.emblems = data.emblems or data.essence or data.emblem or self.currency.emblems or 0
@@ -935,7 +939,7 @@ function DC:HandleShopData(data)
         self.shopNeedsCacheWarm = true
         -- Use C_Timer or simple delayed call
         if self.After and type(self.After) == "function" then
-            self:After(0.5, function()
+            self.After(0.5, function()
                 self.shopNeedsCacheWarm = nil
                 self:RefreshShopIcons()
             end)
@@ -949,7 +953,11 @@ function DC:HandleShopData(data)
 
     -- Refresh MainFrame if open
     if self.MainFrame and self.MainFrame:IsShown() then
-        self:RefreshCurrentTab()
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        else
+            self:RefreshCurrentTab()
+        end
     end
 end
 
@@ -1001,7 +1009,7 @@ function DC:RefreshShopIcons()
         self._shopIconRefreshAttempts = (self._shopIconRefreshAttempts or 0) + 1
         if self._shopIconRefreshAttempts <= 6 and self.After and type(self.After) == "function" then
             local delay = 0.5 + (self._shopIconRefreshAttempts * 0.25)
-            self:After(delay, function()
+            self.After(delay, function()
                 self:RefreshShopIcons()
             end)
         end
@@ -1010,7 +1018,11 @@ function DC:RefreshShopIcons()
     end
     
     if needsRefresh and self.MainFrame and self.MainFrame:IsShown() and self.activeTab == "shop" then
-        self:RefreshCurrentTab()
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        else
+            self:RefreshCurrentTab()
+        end
     end
 end
 
@@ -1109,7 +1121,7 @@ function DC:HandleWishlistUpdated(data)
     self:Debug(string.format("Wishlist updated: action=%s, success=%s", 
         data.action or "unknown", tostring(data.success)))
     
-    if data.success then
+        if data.success and data.action then
         if data.action == "added" then
             self:Print("|cff00ff00Item added to wishlist!|r")
         elseif data.action == "removed" then
@@ -1224,6 +1236,7 @@ end
 function DC:HandleDefinitions(data)
     local rawType = data.type
     local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
+    
     local definitions = data.definitions or {}
     local syncVersion = data.syncVersion
 
@@ -1269,7 +1282,11 @@ function DC:HandleDefinitions(data)
     
     -- Notify UI if open
     if self.MainFrame and self.MainFrame:IsShown() then
-        self:RefreshCurrentTab()
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        else
+            self:RefreshCurrentTab()
+        end
     end
     
     -- Notify Wardrobe if open (transmog or itemSets data)
@@ -1296,7 +1313,7 @@ function DC:HandleDefinitions(data)
         if moreFlag == nil then moreFlag = data.morePages end
 
         local receivedCount = self:TableCount(definitions)
-
+        
         local hasMore = false
         if moreFlag == true or moreFlag == 1 or moreFlag == "1" then
             hasMore = true
@@ -1310,7 +1327,7 @@ function DC:HandleDefinitions(data)
                 hasMore = true
             end
         end
-
+        
         -- During the settings "Test server collections" run, do not auto-page transmog.
         if self._serverTestNoTransmogPaging then
             hasMore = false
@@ -1343,14 +1360,36 @@ function DC:HandleDefinitions(data)
                 return
             end
 
-            if type(self.After) == "function" then
-                self:After(0.05, function()
-                    self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = nextOffset, limit = requestedLimit })
+            -- Use frame-based delay to prevent server overload and disconnects
+            -- Create delay frame if it doesn't exist
+            if not self._transmogPagingDelayFrame then
+                self._transmogPagingDelayFrame = CreateFrame("Frame")
+                self._transmogPagingDelayFrame.elapsed = 0
+                self._transmogPagingDelayFrame.pendingRequest = nil
+                
+                self._transmogPagingDelayFrame:SetScript("OnUpdate", function(frame, elapsed)
+                    frame.elapsed = frame.elapsed + elapsed
+                    if frame.elapsed >= 0.5 and frame.pendingRequest then
+                        local req = frame.pendingRequest
+                        frame.pendingRequest = nil
+                        frame.elapsed = 0
+                        frame:Hide()
+                        
+                        DC:SendMessage(DC.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = req.offset, limit = req.limit })
+                    end
                 end)
-            else
-                self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = nextOffset, limit = requestedLimit })
             end
+            
+            -- Queue the next request with delay
+            self._transmogPagingDelayFrame.pendingRequest = { offset = nextOffset, limit = requestedLimit }
+            self._transmogPagingDelayFrame.elapsed = 0
+            self._transmogPagingDelayFrame:Show()
         else
+            self:Print(string.format(
+                "[Transmog Paging] Complete - Loaded %d definitions in %d pages (Total on server: %s)",
+                self:TableCount(self._transmogDefinitions),
+                (self._transmogDefPagesFetched or 0) + 1,
+                tostring(total)))
             self._transmogDefLoading = nil
         end
     end
@@ -1366,7 +1405,11 @@ function DC:HandleCollection(data)
     
     -- Notify UI if open
     if self.MainFrame and self.MainFrame:IsShown() then
-        self:RefreshCurrentTab()
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        else
+            self:RefreshCurrentTab()
+        end
     end
     
     -- Notify Wardrobe if open (transmog data)
@@ -1422,7 +1465,11 @@ function DC:HandleFavoriteToggled(data)
     
     -- Refresh UI if showing
     if self.MainFrame and self.MainFrame:IsShown() then
-        self:RefreshCurrentTab()
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        else
+            self:RefreshCurrentTab()
+        end
     end
 end
 
@@ -1563,7 +1610,11 @@ function DC:HandleStats(data)
     
     -- Notify legacy UI
     if self.MainFrame and self.MainFrame:IsShown() then
-        self:RefreshCurrentTab()
+        if type(self.RequestRefreshCurrentTab) == "function" then
+            self:RequestRefreshCurrentTab()
+        else
+            self:RefreshCurrentTab()
+        end
     end
     
     -- Notify My Collection overview

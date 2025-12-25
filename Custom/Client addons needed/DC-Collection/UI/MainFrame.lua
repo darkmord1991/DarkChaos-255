@@ -1107,7 +1107,7 @@ function DC:UpdateDetailsPanel(item)
             else
                 d.line2:SetText("Loading item data...")
                 if DC and type(DC.After) == "function" then
-                    DC:After(0.3, function()
+                    DC.After(0.3, function()
                         if self.selectedItem and self.selectedItem.id == item.id then
                             self:UpdateDetailsPanel(item)
                         end
@@ -1124,27 +1124,12 @@ function DC:UpdateDetailsPanel(item)
     local statsPanel = self.MainFrame.Content.modelStatsPanel
     if modelPanel and (collType == "mounts" or collType == "pets" or collType == "transmog" or collType == "heirlooms") then
         local displayId = item.definition and (item.definition.displayId or item.definition.display_id or item.definition.creatureId)
-        
-        modelPanel:Show()
-        local model = modelPanel.model
-        model:ClearModel()
-        model.rotation = 0
-        model.zoom = 0
 
-        if collType == "transmog" or collType == "heirlooms" then
-            -- Transmog/Heirlooms: Show player and try on item
-            model:SetUnit("player")
-            if model.Undress then
-                model:Undress()
-            end
-            if model.SetPortraitZoom then
-                model:SetPortraitZoom(0)
-            end
-            if collType == "heirlooms" and model.SetCamDistanceScale then
-                -- Zoom out further to avoid head-only closeups.
-                model:SetCamDistanceScale(2.8)
-            elseif model.SetCamDistanceScale then
-                model:SetCamDistanceScale(1.6)
+        -- Heirlooms: use the framed Wardrobe-style preview panel and hide the standard modelPanel.
+        if collType == "heirlooms" then
+            modelPanel:Hide()
+            if modelPanel.model then
+                modelPanel.model:ClearModel()
             end
 
             local itemId = item.definition and (item.definition.itemId or item.definition.item_id or item.definition.itemID) or item.id
@@ -1152,43 +1137,106 @@ function DC:UpdateDetailsPanel(item)
 
             -- Avoid spamming "cannot be equipped" for non-equippable heirloom tokens.
             local canTryOn = true
-            if collType == "heirlooms" and type(GetItemInfo) == "function" and type(itemId) == "number" then
+            if type(GetItemInfo) == "function" and type(itemId) == "number" then
                 local equipLoc = select(9, GetItemInfo(itemId))
                 if equipLoc == nil or equipLoc == "" or equipLoc == "INVTYPE_NON_EQUIP" then
                     canTryOn = false
                 end
             end
 
-            if itemId and model.TryOn and canTryOn then
-                local tryOnArg = itemId
-                if type(itemId) == "number" then
-                    tryOnArg = "item:" .. itemId
-                end
-                model:TryOn(tryOnArg)
-            end
-            model:SetCamera(0)
-        elseif (collType == "mounts" or collType == "pets") and displayId and displayId > 0 then
-            if model.SetCreature then
-                model:SetCreature(displayId)
-            elseif model.SetDisplayInfo then
-                model:SetDisplayInfo(displayId)
-            end
-            model:SetCamera(0)
-        elseif displayId and displayId > 0 and model.SetDisplayInfo then
-            model:SetDisplayInfo(displayId)
-            model:SetCamera(0)
-        elseif collType == "mounts" then
-            -- If we don't have a display ID, we can't show the mount.
-            modelPanel:Hide()
-            return
-        elseif collType == "pets" then
-            -- For pets, if displayId missing, hide model
-            modelPanel:Hide()
-            return
-        end
+            self:ShowHeirloomPreview(itemId, { canTryOn = canTryOn, undress = canTryOn })
+        else
+            -- Any non-heirloom type: ensure heirloom preview is hidden.
+            self:HideHeirloomPreview()
 
-        model:SetFacing(0)
-        model:SetPosition(0, 0, 0)
+            modelPanel:Show()
+            local model = modelPanel.model
+            model:ClearModel()
+            model.rotation = 0
+            model.zoom = 0
+
+            if collType == "transmog" then
+                -- Transmog: Show player and try on item
+                model:SetUnit("player")
+                if model.Undress then
+                    model:Undress()
+                end
+                if model.SetPortraitZoom then
+                    model:SetPortraitZoom(0)
+                end
+                if model.SetCamDistanceScale then
+                    model:SetCamDistanceScale(1.6)
+                end
+
+                -- Add interactive camera controls (zoom/rotation)
+                if not model.cameraDistance then
+                    model.cameraDistance = 1.0
+                end
+
+                -- Mouse wheel zoom
+                model:EnableMouseWheel(true)
+                model:SetScript("OnMouseWheel", function(self, delta)
+                    self.cameraDistance = math.max(0.3, math.min(3.0, (self.cameraDistance or 1.0) - delta * 0.1))
+                    if self.SetCamDistanceScale then
+                        self:SetCamDistanceScale(1.6 * self.cameraDistance)
+                    end
+                end)
+
+                -- Mouse drag rotation
+                model:SetScript("OnUpdate", function(self, elapsed)
+                    if self.isRotating then
+                        local cursorX = GetCursorPosition()
+                        local dx = cursorX - (self.lastCursorX or cursorX)
+                        self.lastCursorX = cursorX
+                        self.rotation = (self.rotation or 0) + dx * 0.01
+                        if self.SetRotation then
+                            self:SetRotation(self.rotation)
+                        end
+                    end
+                end)
+
+                model:SetScript("OnMouseDown", function(self, button)
+                    if button == "LeftButton" then
+                        self.isRotating = true
+                        self.lastCursorX = GetCursorPosition()
+                    end
+                end)
+
+                model:SetScript("OnMouseUp", function(self, button)
+                    if button == "LeftButton" then
+                        self.isRotating = false
+                    end
+                end)
+
+                local itemId = item.definition and (item.definition.itemId or item.definition.item_id or item.definition.itemID) or item.id
+                itemId = tonumber(itemId) or itemId
+                if itemId and model.TryOn then
+                    model:TryOn(itemId)
+                end
+                model:SetCamera(0)
+            elseif (collType == "mounts" or collType == "pets") and displayId and displayId > 0 then
+                if model.SetCreature then
+                    model:SetCreature(displayId)
+                elseif model.SetDisplayInfo then
+                    model:SetDisplayInfo(displayId)
+                end
+                model:SetCamera(0)
+            elseif displayId and displayId > 0 and model.SetDisplayInfo then
+                model:SetDisplayInfo(displayId)
+                model:SetCamera(0)
+            elseif collType == "mounts" then
+                -- If we don't have a display ID, we can't show the mount.
+                modelPanel:Hide()
+                return
+            elseif collType == "pets" then
+                -- For pets, if displayId missing, hide model
+                modelPanel:Hide()
+                return
+            end
+
+            model:SetFacing(0)
+            model:SetPosition(0, 0, 0)
+        end
 
         -- Heirlooms: show tooltip stats under the preview panel
         if statsPanel then
@@ -1227,7 +1275,7 @@ function DC:UpdateDetailsPanel(item)
                     else
                         statsPanel.text:SetText("Loading item data...")
                         if DC and type(DC.After) == "function" then
-                            DC:After(0.3, function()
+                            DC.After(0.3, function()
                                 if self.selectedItem and self.selectedItem.id == item.id then
                                     self:UpdateDetailsPanel(item)
                                 end
@@ -1246,6 +1294,7 @@ function DC:UpdateDetailsPanel(item)
         end
     elseif modelPanel then
         modelPanel:Hide()
+        self:HideHeirloomPreview()
         if statsPanel then
             statsPanel:Hide()
             if statsPanel.text then
@@ -1379,6 +1428,10 @@ function DC:ToggleMainFrame()
     end
 end
 
+-- Compatibility aliases (some UI entry points call these names)
+DC.ShowMainUI = DC.ShowMainUI or DC.ShowMainFrame
+DC.ToggleMainUI = DC.ToggleMainUI or DC.ToggleMainFrame
+
 -- ============================================================================
 -- TAB SELECTION
 -- ============================================================================
@@ -1490,6 +1543,38 @@ function DC:RefreshCurrentTab()
     end
 end
 
+function DC:RequestRefreshCurrentTab(delay)
+    if not self.MainFrame or not self.MainFrame:IsShown() then
+        return
+    end
+
+    delay = delay or 0.10
+
+    if self._refreshCurrentTabPending then
+        self._refreshCurrentTabDirty = true
+        return
+    end
+
+    if not (self.After and type(self.After) == "function") then
+        self:RefreshCurrentTab()
+        return
+    end
+
+    self._refreshCurrentTabPending = true
+    self._refreshCurrentTabDirty = false
+
+    self.After(delay, function()
+        self._refreshCurrentTabPending = nil
+        if self._refreshCurrentTabDirty then
+            self._refreshCurrentTabDirty = false
+            self:RequestRefreshCurrentTab(delay)
+            return
+        end
+
+        self:RefreshCurrentTab()
+    end)
+end
+
 -- ============================================================================
 -- HEADER UPDATE
 -- ============================================================================
@@ -1583,9 +1668,6 @@ function DC:PopulateMountList()
             return
         end
     end
-    
-    -- Sort items
-    self:SortItems(items)
     
     -- Pagination - use configurable items per page for better browsing
     local itemsPerPage = MOUNT_ITEMS_PER_PAGE
@@ -1849,7 +1931,10 @@ function DC:CreateItemCard(parent, item, col, row, size, spacing)
     
     -- Tooltip
     card:SetScript("OnEnter", function(self)
-        DC:UpdateDetailsPanel(item)
+        -- For heirlooms we preview on click (not hover) to match the requested UX.
+        if not (item and item.type == "heirlooms") then
+            DC:UpdateDetailsPanel(item)
+        end
         DC:ShowItemTooltip(self, item)
     end)
     card:SetScript("OnLeave", function()
@@ -1870,13 +1955,36 @@ function DC:GetFilteredItems()
     if collType == "shop" then
         return self.shopItems or {}
     end
-    
-    local definitions = self.definitions[collType] or {}
-    local collection = self.collections[collType] or {}
-    
+
+    -- Cache filtered/sorted results to avoid re-scanning & sorting on every UI refresh.
+    -- Keyed by filter inputs + current sort + cache revisions.
+    local defsRev = (type(self.GetDefinitionsRevision) == "function") and (self:GetDefinitionsRevision(collType) or 0) or 0
+    local collRev = (type(self.GetCollectionsRevision) == "function") and (self:GetCollectionsRevision(collType) or 0) or 0
+
     local searchText = string.lower(self.MainFrame.FilterBar.searchBox:GetText() or "")
     local showCollected = self.MainFrame.FilterBar.collectedCheck:GetChecked()
     local showNotCollected = self.MainFrame.FilterBar.notCollectedCheck:GetChecked()
+    local sortKey = self.currentSort or "name"
+    local slotName = (collType == "transmog") and (DC.transmogSelectedSlotName or "") or ""
+
+    local cacheKey = table.concat({
+        tostring(defsRev),
+        tostring(collRev),
+        tostring(sortKey),
+        tostring(showCollected and 1 or 0),
+        tostring(showNotCollected and 1 or 0),
+        tostring(slotName),
+        searchText,
+    }, "|")
+
+    self._filteredItemsCache = self._filteredItemsCache or {}
+    local cacheEntry = self._filteredItemsCache[collType]
+    if cacheEntry and cacheEntry.key == cacheKey and type(cacheEntry.items) == "table" then
+        return cacheEntry.items
+    end
+    
+    local definitions = self.definitions[collType] or {}
+    local collection = self.collections[collType] or {}
     
     -- Deduplication for appearance-based collections (transmog)
     local seenAppearances = {}
@@ -1989,7 +2097,8 @@ function DC:GetFilteredItems()
     
     -- Sort
     self:SortItems(items)
-    
+
+    self._filteredItemsCache[collType] = { key = cacheKey, items = items }
     return items
 end
 
@@ -2064,6 +2173,12 @@ function DC:OnItemLeftClick(item)
         return
     end
 
+    -- Heirlooms: click-to-preview even if not collected.
+    if item.type == "heirlooms" then
+        self:UpdateDetailsPanel(item)
+        return
+    end
+
     if not item.collected then
         -- Not collected - show where to get it
         return
@@ -2073,10 +2188,6 @@ function DC:OnItemLeftClick(item)
         self:RequestSummonMount(item.id)
     elseif item.type == "pets" then
         self:RequestSummonPet(item.id)
-    elseif item.type == "heirlooms" then
-        -- Don't auto-summon on click; show preview/scaling in the details panel.
-        self:UpdateDetailsPanel(item)
-        return
     elseif item.type == "titles" then
         self:RequestSetTitle(item.id)
     elseif item.type == "transmog" then
@@ -2343,6 +2454,142 @@ function DC:ShowItemTooltip(anchor, item)
     GameTooltip:AddLine(LT("RIGHT_CLICK_MENU", "Right-click for options"), 0.5, 0.5, 0.5)
     
     GameTooltip:Show()
+end
+
+-- ============================================================================
+-- HEIRLOOM GRID HOVER PREVIEW (Wardrobe-style)
+-- ============================================================================
+
+function DC:ShowHeirloomPreview(itemId, options)
+    if not itemId then return end
+
+    options = options or {}
+    local parent = self.MainFrame and self.MainFrame.Content
+    if not parent then
+        return
+    end
+
+    -- Create the preview frame if it doesn't exist.
+    -- This is intentionally styled like the Wardrobe grid preview.
+    if not parent.heirloomPreviewFrame then
+        local frame = CreateFrame("Frame", "DCHeirloomPreview", parent)
+        frame:SetSize(200, 200)
+        -- Keep the preview away from the scroll bar so it doesn't look like the bar controls the model.
+        frame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -40, -90)
+        frame:SetFrameStrata("DIALOG")
+        frame:SetFrameLevel((parent:GetFrameLevel() or 0) + 20)
+        frame:EnableMouse(true)
+        frame:EnableMouseWheel(true)
+        frame:Hide()
+
+        frame:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        })
+        frame:SetBackdropColor(0, 0, 0, 0.95)
+
+        frame.innerBg = frame:CreateTexture(nil, "BACKGROUND", nil, -6)
+        frame.innerBg:SetPoint("TOPLEFT", 12, -12)
+        frame.innerBg:SetPoint("BOTTOMRIGHT", -12, 12)
+        frame.innerBg:SetTexture(0.05, 0.05, 0.05, 0.85)
+
+        local model = CreateFrame("DressUpModel", nil, frame)
+        model:SetPoint("TOPLEFT", 18, -20)
+        model:SetPoint("BOTTOMRIGHT", -18, 18)
+        model:SetUnit("player")
+        model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+
+        model:EnableMouse(true)
+        model:EnableMouseWheel(true)
+        model.rotation = 0
+        -- For DressUpModel (player/unit), SetCamDistanceScale is the most reliable zoom control.
+        -- Default a bit zoomed-out so the item is visible.
+        model.cameraDistance = 1.25
+
+        model:SetScript("OnMouseDown", function(selfModel, button)
+            if button == "LeftButton" then
+                selfModel.isRotating = true
+                selfModel.lastCursorX = GetCursorPosition()
+            end
+        end)
+
+        model:SetScript("OnMouseUp", function(selfModel, button)
+            if button == "LeftButton" then
+                selfModel.isRotating = false
+            end
+        end)
+
+        model:SetScript("OnUpdate", function(selfModel)
+            if selfModel.isRotating then
+                local cursorX = GetCursorPosition()
+                local dx = cursorX - (selfModel.lastCursorX or cursorX)
+                selfModel.lastCursorX = cursorX
+                selfModel.rotation = (selfModel.rotation or 0) + dx * 0.01
+                if selfModel.SetRotation then
+                    selfModel:SetRotation(selfModel.rotation)
+                elseif selfModel.SetFacing then
+                    selfModel:SetFacing(selfModel.rotation)
+                end
+            end
+        end)
+
+        model:SetScript("OnMouseWheel", function(selfModel, delta)
+            selfModel.cameraDistance = math.max(0.6, math.min(2.0, (selfModel.cameraDistance or 1.25) - delta * 0.08))
+            if selfModel.SetCamDistanceScale then
+                selfModel:SetCamDistanceScale(2.8 * selfModel.cameraDistance)
+            end
+        end)
+
+        -- Some UI layers (the list scrollframe) can eat wheel events; forward wheel events from the frame to the model.
+        frame:SetScript("OnMouseWheel", function(_, delta)
+            local handler = model:GetScript("OnMouseWheel")
+            if handler then
+                handler(model, delta)
+            end
+        end)
+
+        frame.model = model
+        parent.heirloomPreviewFrame = frame
+    end
+
+    local frame = parent.heirloomPreviewFrame
+    frame:Show()
+
+    -- Render
+    local model = frame.model
+    model:ClearModel()
+    model:SetUnit("player")
+    if (options.undress ~= false) and model.Undress then
+        model:Undress()
+    end
+
+    model.rotation = 0
+    model.cameraDistance = model.cameraDistance or 1.25
+    if model.SetCamDistanceScale then
+        model:SetCamDistanceScale(2.8 * model.cameraDistance)
+    end
+    if model.SetCamera then
+        model:SetCamera(0)
+    end
+
+    if options.canTryOn and model.TryOn then
+        model:TryOn(itemId)
+    end
+
+    if model.SetCamera then
+        model:SetCamera(0)
+    end
+    if model.SetFacing then
+        model:SetFacing(0)
+    end
+end
+
+function DC:HideHeirloomPreview()
+    if self.MainFrame and self.MainFrame.Content and self.MainFrame.Content.heirloomPreviewFrame then
+        self.MainFrame.Content.heirloomPreviewFrame:Hide()
+    end
 end
 
 -- ============================================================================

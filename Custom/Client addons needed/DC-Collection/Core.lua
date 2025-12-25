@@ -745,7 +745,7 @@ function DC:RunServerCollectionsTest()
     end
 
     if type(self.After) == "function" then
-        self:After(3, function()
+        self.After(3, function()
             local reportTypes = { "mounts", "pets", "heirlooms", "titles", "transmog" }
             self:Print("[DC-Collection] Server test results (client cache snapshot):")
             for _, t in ipairs(reportTypes) do

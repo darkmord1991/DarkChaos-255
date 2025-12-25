@@ -238,6 +238,27 @@ function Wardrobe:CreateLeftPanel(parent)
     end)
     parent.disableVisualsBtn = disableVisualsBtn
 
+    local refreshBtn = CreateFrame("Button", nil, left, "UIPanelButtonTemplate")
+    refreshBtn:SetSize(100, 22)
+    refreshBtn:SetPoint("LEFT", disableVisualsBtn, "RIGHT", 5, 0)
+    refreshBtn:SetText("Refresh Data")
+    refreshBtn:SetScript("OnClick", function(self)
+        if Wardrobe.isRefreshing then
+            -- Cancel refresh
+            Wardrobe:CancelRefresh()
+        else
+            Wardrobe:RefreshTransmogDefinitions()
+        end
+    end)
+    parent.refreshBtn = refreshBtn
+    
+    -- Add loading text below buttons
+    local refreshStatus = left:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    refreshStatus:SetPoint("TOPLEFT", disableTransmogBtn, "BOTTOMLEFT", 0, -5)
+    refreshStatus:SetTextColor(1, 0.82, 0)
+    refreshStatus:Hide()
+    parent.refreshStatus = refreshStatus
+
     local modelFrame = CreateFrame("Frame", nil, left)
     modelFrame:SetPoint("TOPLEFT", left, "TOPLEFT", 50, -30)
     modelFrame:SetSize(MODEL_WIDTH, 400)
@@ -397,10 +418,6 @@ function Wardrobe:CreateLeftPanel(parent)
             GameTooltip:AddLine("Right-click for options", 0.7, 0.7, 0.7)
             GameTooltip:Show()
         end)
-                end
-            end
-            GameTooltip:Show()
-        end)
         btn:SetScript("OnLeave", function()
             GameTooltip:Hide()
         end)
@@ -466,38 +483,9 @@ function Wardrobe:CreateRightPanel(parent)
         table.insert(parent.tabButtons, tab)
     end
 
-    -- Search type dropdown
-    local searchTypeDropdown = CreateFrame("Frame", "DCWardrobeSearchTypeDropdown", right, "UIDropDownMenuTemplate")
-    searchTypeDropdown:SetPoint("TOPRIGHT", right, "TOPRIGHT", -140, -35)
-    UIDropDownMenu_SetWidth(searchTypeDropdown, 80)
-    
-    local searchTypes = {
-        {text = "Name", value = "name"},
-        {text = "ID", value = "id"},
-        {text = "DisplayID", value = "displayid"},
-    }
-    
-    UIDropDownMenu_Initialize(searchTypeDropdown, function(self, level)
-        for _, typeInfo in ipairs(searchTypes) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = typeInfo.text
-            info.value = typeInfo.value
-            info.func = function(btn)
-                Wardrobe.searchType = btn.value
-                UIDropDownMenu_SetText(searchTypeDropdown, btn:GetText())
-                CloseDropDownMenus()
-            end
-            info.checked = (Wardrobe.searchType == typeInfo.value)
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end)
-    
-    Wardrobe.searchType = Wardrobe.searchType or "name"
-    UIDropDownMenu_SetText(searchTypeDropdown, "Name")
-    parent.searchTypeDropdown = searchTypeDropdown
-
+    -- Universal search box (searches name, itemID, and displayID simultaneously)
     local searchBox = CreateFrame("EditBox", "DCWardrobeSearchBox", right, "InputBoxTemplate")
-    searchBox:SetSize(120, 20)
+    searchBox:SetSize(200, 20)
     searchBox:SetPoint("TOPRIGHT", right, "TOPRIGHT", -10, -35)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(50)
@@ -522,10 +510,11 @@ function Wardrobe:CreateRightPanel(parent)
     end)
     searchBox:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Search Options:", 1, 0.82, 0)
-        GameTooltip:AddLine("• Name: Enter item name", 1, 1, 1)
-        GameTooltip:AddLine("• ID: Enter item ID", 1, 1, 1)
-        GameTooltip:AddLine("• DisplayID: Enter display ID", 1, 1, 1)
+        GameTooltip:SetText("Universal Search:", 1, 0.82, 0)
+        GameTooltip:AddLine("Searches across all fields:", 1, 1, 1)
+        GameTooltip:AddLine("• Item Name", 1, 1, 1)
+        GameTooltip:AddLine("• Item ID", 1, 1, 1)
+        GameTooltip:AddLine("• Display ID", 1, 1, 1)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Press Enter to search", 0.7, 0.7, 0.7)
         GameTooltip:Show()
@@ -535,7 +524,7 @@ function Wardrobe:CreateRightPanel(parent)
 
     -- Quality filter dropdown
     local qualityDropdown = CreateFrame("Frame", "DCWardrobeQualityDropdown", right, "UIDropDownMenuTemplate")
-    qualityDropdown:SetPoint("RIGHT", searchBox, "LEFT", -90, 0)
+    qualityDropdown:SetPoint("RIGHT", searchBox, "LEFT", -10, 0)
     UIDropDownMenu_SetWidth(qualityDropdown, 90)
     
     UIDropDownMenu_Initialize(qualityDropdown, function(self, level)
@@ -747,22 +736,30 @@ function Wardrobe:CreateRightPanel(parent)
             end
 
             if button == "LeftButton" then
-                -- Always preview on left-click.
+                -- Preview on left-click and keep tooltip visible
                 if selfBtn.itemData.itemId then
+                    selfBtn.keepPreviewOnClick = true
                     Wardrobe:PreviewAppearance(selfBtn.itemData.itemId)
+                    -- Keep showing the tooltip preview
+                    Wardrobe:ShowTooltipPreview(selfBtn.itemData.itemId)
                 end
-
-                -- If collected, also apply (keeps the existing workflow, but adds preview).
-                if selfBtn.itemData.collected then
-                    Wardrobe:ApplyAppearance(selfBtn.itemData)
-                end
+                -- Note: Don't auto-apply, let user apply manually to avoid confusion
             else
+                -- Hide preview on right-click for context menu
+                selfBtn.keepPreviewOnClick = false
+                Wardrobe:HideTooltipPreview()
                 Wardrobe:ShowAppearanceContextMenu(selfBtn.itemData)
             end
         end)
 
         btn:SetScript("OnEnter", function(selfBtn)
             if not selfBtn.itemData then return end
+            
+            -- Show tooltip preview
+            if selfBtn.itemData.itemId then
+                Wardrobe:ShowTooltipPreview(selfBtn.itemData.itemId)
+            end
+            
             Wardrobe:ShowFixedItemTooltip(selfBtn, selfBtn.itemData.itemId, function(tip)
                 tip:AddLine(" ")
 
@@ -814,21 +811,17 @@ function Wardrobe:CreateRightPanel(parent)
                     end
                 end
                 tip:AddLine("Left-click to preview", 0.7, 0.7, 0.7)
-                if selfBtn.itemData.collected then
-                    tip:AddLine("(Also applies if collected)", 0.7, 0.7, 0.7)
-                end
-                tip:AddLine("Right-click for options", 0.7, 0.7, 0.7)
+                tip:AddLine("Right-click to apply or add to wishlist", 0.7, 0.7, 0.7)
                 tip:AddLine("Shift-click to toggle wishlist", 0.7, 0.7, 0.7)
             end)
-
-            if selfBtn.itemData.itemId and Wardrobe.ShowTooltipPreview then
-                Wardrobe:ShowTooltipPreview(selfBtn.itemData.itemId)
-            end
         end)
-        btn:SetScript("OnLeave", function() 
+        btn:SetScript("OnLeave", function(selfBtn) 
             GameTooltip:Hide() 
             if Wardrobe.HideTooltipPreview then
-                Wardrobe:HideTooltipPreview()
+                -- Don't hide preview if it was clicked (keepPreviewOnClick flag)
+                if not selfBtn.keepPreviewOnClick then
+                    Wardrobe:HideTooltipPreview()
+                end
             end
         end)
 
@@ -908,13 +901,13 @@ function Wardrobe:CreateBottomBar(parent)
     end)
     parent.saveOutfitBtn = saveBtn
     
-    -- Preview mode slider (Grid vs Full 3D Model)
+    -- Preview mode slider (Grid vs Full 3D Model) - positioned on right side
     local previewModeFrame = CreateFrame("Frame", nil, bottom)
     previewModeFrame:SetSize(180, 20)
-    previewModeFrame:SetPoint("LEFT", saveBtn, "RIGHT", 15, 0)
+    previewModeFrame:SetPoint("BOTTOMRIGHT", bottom, "BOTTOMRIGHT", -10, 0)
     
     previewModeFrame.label = previewModeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    previewModeFrame.label:SetPoint("LEFT", previewModeFrame, "LEFT", 0, 0)
+    previewModeFrame.label:SetPoint("RIGHT", previewModeFrame, "RIGHT", -110, 0)
     previewModeFrame.label:SetText("Preview:")
     
     local slider = CreateFrame("Slider", nil, previewModeFrame)
@@ -923,7 +916,6 @@ function Wardrobe:CreateBottomBar(parent)
     slider:SetOrientation("HORIZONTAL")
     slider:SetMinMaxValues(0, 1)
     slider:SetValueStep(1)
-    slider:SetObeyStepOnDrag(true)
     slider:SetValue(Wardrobe.previewMode == "grid" and 0 or 1)
     
     slider.bg = slider:CreateTexture(nil, "BACKGROUND")
@@ -960,8 +952,8 @@ function Wardrobe:CreateBottomBar(parent)
     slider:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Tooltip Preview Mode", 1, 0.82, 0)
-        GameTooltip:AddLine("Grid: Show small icon previews in tooltip", 1, 1, 1)
-        GameTooltip:AddLine("Full 3D: Show character with item in tooltip", 1, 1, 1)
+        GameTooltip:AddLine("Grid: Zoomed view of slot area", 1, 1, 1)
+        GameTooltip:AddLine("Full 3D: Complete character with item", 1, 1, 1)
         GameTooltip:Show()
     end)
     slider:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1023,7 +1015,7 @@ function Wardrobe:ShowTooltipPreview(itemId)
     if not self.tooltipPreview then
         local parent = self.frame or UIParent
         local frame = CreateFrame("Frame", "DCWardrobeTooltipPreview", parent)
-        frame:SetSize(260, 300)
+        frame:SetSize(200, 200)
         frame:SetFrameStrata("TOOLTIP")
 
         frame:SetBackdrop({
@@ -1039,18 +1031,14 @@ function Wardrobe:ShowTooltipPreview(itemId)
         frame.innerBg:SetPoint("BOTTOMRIGHT", -12, 12)
         frame.innerBg:SetTexture(0.05, 0.05, 0.05, 0.85)
 
+        -- Preview model
         local model = CreateFrame("DressUpModel", nil, frame)
         model:SetPoint("TOPLEFT", 18, -20)
         model:SetPoint("BOTTOMRIGHT", -18, 18)
         model:SetUnit("player")
         model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
-        frame.model = model
         
-        -- Grid mode icon
-        local icon = frame:CreateTexture(nil, "ARTWORK")
-        icon:SetPoint("CENTER")
-        icon:SetSize(180, 180)
-        frame.gridIcon = icon
+        frame.model = model
         
         self.tooltipPreview = frame
     end
@@ -1058,38 +1046,41 @@ function Wardrobe:ShowTooltipPreview(itemId)
     local frame = self.tooltipPreview
     frame:Show()
     
-    -- Fixed location: bottom-right of the Wardrobe frame for consistent preview.
+    -- Fixed location: bottom-right of the Wardrobe frame
     frame:ClearAllPoints()
     local anchor = self:_GetFixedTooltipAnchor()
     frame:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -18, 18)
     
-    -- Toggle between grid (icon) and full (3D model) preview modes
-    if self.previewMode == "grid" then
-        frame.model:Hide()
-        frame.gridIcon:Show()
-        
-        local icon = nil
-        if type(GetItemIcon) == "function" then
-            icon = GetItemIcon(itemId)
-        end
-        if not icon and GetItemInfo then
-            icon = select(10, GetItemInfo(itemId))
-        end
-        
-        if icon and icon ~= "" then
-            frame.gridIcon:SetTexture(icon)
-        else
-            frame.gridIcon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-        end
-    else
-        frame.gridIcon:Hide()
-        frame.model:Show()
-        
-        frame.model:SetUnit("player")
-        frame.model:Undress()
+    -- Show item on model
+    frame.model:Show()
+    frame.model:SetUnit("player")
+    frame.model:Undress()
+    
+    -- Try on item with error protection
+    pcall(function()
         local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
         frame.model:TryOn(link)
+    end)
+    
+    -- Apply camera based on preview mode
+    if self.previewMode == "grid" then
+        -- Grid mode: Zoomed view of slot area using CameraDB
+        local selectedSlot = self.selectedSlot
+        if selectedSlot and CameraDB then
+            CameraDB:ApplyCameraPosition(frame.model, selectedSlot)
+        else
+            -- Fallback to close-up view if no slot selected
+            frame.model:SetFacing(0)
+            if frame.model.SetCamDistanceScale then
+                frame.model:SetCamDistanceScale(0.8)
+            end
+        end
+    else
+        -- Full 3D mode: Show complete character
         frame.model:SetFacing(0)
+        if frame.model.SetCamDistanceScale then
+            frame.model:SetCamDistanceScale(1.0)
+        end
     end
 end
 
