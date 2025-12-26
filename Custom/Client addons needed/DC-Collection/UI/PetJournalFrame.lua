@@ -710,6 +710,22 @@ function PetJournal:SelectPet(petData)
         return nil
     end
 
+    local function FindCollectedCompanionCreatureIdByName(petName)
+        if not petName or petName == "" or not GetNumCompanions or not GetCompanionInfo then
+            return nil
+        end
+
+        local want = string.lower(tostring(petName))
+        for i = 1, GetNumCompanions("CRITTER") do
+            local cID, cName = GetCompanionInfo("CRITTER", i)
+            if cName and string.lower(cName) == want then
+                return cID
+            end
+        end
+
+        return nil
+    end
+
     -- Priority rules:
     -- 1) If collected, prefer Blizzard creatureID from companion list.
     -- 2) If not collected OR not found in companion list, fall back to server-provided displayId.
@@ -717,6 +733,12 @@ function PetJournal:SelectPet(petData)
     local resolvedCreatureId = nil
     if petData.collected then
         resolvedCreatureId = FindCollectedCompanionCreatureIdBySpellId(spellId)
+
+        -- If spellId in definitions is a "teaching" spell (LEARN_*), it won't match the companion list.
+        -- Fall back to a name match so collected pets still get a model.
+        if (not resolvedCreatureId or resolvedCreatureId <= 0) then
+            resolvedCreatureId = FindCollectedCompanionCreatureIdByName(petData.name or def.name)
+        end
     end
     if (not resolvedCreatureId or resolvedCreatureId <= 0) and displayId and displayId > 0 then
         resolvedCreatureId = displayId

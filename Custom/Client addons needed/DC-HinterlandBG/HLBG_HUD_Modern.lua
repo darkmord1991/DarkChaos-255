@@ -15,6 +15,71 @@ if not HLBG.UI.ModernHUD or not _G['HLBG_ModernHUD'] then
     HLBG.UI.ModernHUD = CreateFrame("Frame", "HLBG_ModernHUD", UIParent)
 end
 local HUD = HLBG.UI.ModernHUD
+
+-- Shared zone predicate for Hinterlands / HLBG instance.
+local function IsInHLBGZone()
+    local zone = (type(GetRealZoneText) == "function" and GetRealZoneText()) or ""
+    local subzone = (type(GetSubZoneText) == "function" and GetSubZoneText()) or ""
+
+    -- Normalize to lowercase for robust matching (handles "Hinterland Defence" and subzones like "Aerie Peak").
+    local z = tostring(zone or ""):lower()
+    local sz = tostring(subzone or ""):lower()
+
+    if z == "the hinterlands" then
+        return true
+    end
+    if z:find("hinterland", 1, true) then
+        return true
+    end
+    if sz:find("hinterland", 1, true) or sz:find("azshara crater", 1, true) then
+        return true
+    end
+    return false
+end
+
+-- Canonical visibility decision used by both UpdateHUDVisibility and UpdateHUD.
+function HLBG.ShouldShowHUD()
+    if not HUD or not DCHLBGDB or not DCHLBGDB.hudEnabled then
+        return false
+    end
+
+    if DCHLBGDB.showHudEverywhere then
+        return true
+    end
+
+    local inZone = IsInHLBGZone()
+    local inBattleground = false
+
+    -- Only consider battlefield activity while we're already in-zone.
+    if inZone and type(GetBattlefieldStatus) == "function" then
+        for i = 1, 4 do
+            local status = GetBattlefieldStatus(i)
+            if status == "active" then
+                inBattleground = true
+                break
+            end
+        end
+    end
+
+    return inZone or inBattleground
+end
+
+-- Warmup payload handler (chat/addon messages). Accepts either a plain number of seconds
+-- or a string containing a number; updates HUD state without printing to chat.
+function HLBG.Warmup(payload)
+    local s = tostring(payload or "")
+    local n = tonumber(s:match("(%d+)") or s)
+    if not n then return end
+
+    HLBG._lastStatus = HLBG._lastStatus or {}
+    HLBG._lastStatus.phase = "WARMUP"
+    HLBG._lastStatus.DURATION = n
+    HLBG._timeLeft = n
+
+    if type(HLBG.UpdateHUD) == 'function' then
+        pcall(HLBG.UpdateHUD)
+    end
+end
 -- Simple debug print helper (only prints when devMode is enabled in saved vars)
 local function DebugPrint(msg)
     local enabled = (DCHLBGDB and DCHLBGDB.devMode) or HLBG.devMode
@@ -220,17 +285,17 @@ function HLBG.UpdateModernHUD(data)
     HUD.hordeText:SetText("Horde: " .. hordeRes)
     DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Set text: Alliance=%s Horde=%s",
             HUD.allianceText:GetText(), HUD.hordeText:GetText()))
-    -- Update player counts
-    local alliancePlayers = tonumber(data.alliancePlayers or data.APC or 0) or 0
-    local hordePlayers = tonumber(data.hordePlayers or data.HPC or 0) or 0
-    HUD.alliancePlayers:SetText("Players: " .. alliancePlayers)
-    HUD.hordePlayers:SetText("Players: " .. hordePlayers)
-    DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Players: Alliance=%d Horde=%d (APC=%s HPC=%s)",
-            alliancePlayers, hordePlayers, tostring(data.APC), tostring(data.HPC)))
+        -- Update player counts (optional). If not provided, show '-' instead of 0.
+        local alliancePlayers = tonumber(data.alliancePlayers or data.APC or "")
+        local hordePlayers = tonumber(data.hordePlayers or data.HPC or "")
+        HUD.alliancePlayers:SetText("Players: " .. (alliancePlayers ~= nil and tostring(alliancePlayers) or "-"))
+        HUD.hordePlayers:SetText("Players: " .. (hordePlayers ~= nil and tostring(hordePlayers) or "-"))
+        DebugPrint(string.format("|cFF00FF00[UpdateModernHUD]|r Players: Alliance=%s Horde=%s (APC=%s HPC=%s)",
+            tostring(alliancePlayers), tostring(hordePlayers), tostring(data.APC), tostring(data.HPC)))
 
-    local totalPlayers = alliancePlayers + hordePlayers
+        local totalPlayers = (alliancePlayers or 0) + (hordePlayers or 0)
     local phase = data.phase or "UNKNOWN"
-    local hasPlayerCounts = (data.alliancePlayers ~= nil) or (data.hordePlayers ~= nil) or (data.APC ~= nil) or (data.HPC ~= nil)
+        local hasPlayerCounts = (alliancePlayers ~= nil) or (hordePlayers ~= nil)
     local suppressActivePhase = hasPlayerCounts and (totalPlayers <= 0) and (phase == "WARMUP" or phase == "BATTLE" or phase == "LIVE")
     if suppressActivePhase then
         phase = "IDLE"
@@ -240,8 +305,16 @@ function HLBG.UpdateModernHUD(data)
     if not HLBG._timerSync then
         HLBG._timerSync = { lastServerEnd = 0, lastSyncTime = 0, clientOffset = 0 }
     end
-    local endTime = tonumber((not suppressActivePhase and (data.END or data.timeLeft)) or 0) or 0
     local currentTime = time()  -- Current epoch time
+    local rawTime = tonumber((not suppressActivePhase and (data.END or data.timeLeft)) or 0) or 0
+
+    -- Accept either:
+    -- - END as an epoch timestamp (preferred)
+    -- - timeLeft as remaining seconds (common from worldstate readers)
+    local endTime = rawTime
+    if rawTime > 0 and rawTime < 1000000000 then
+        endTime = currentTime + rawTime
+    end
     -- If we have a new END timestamp from server, resync
     if endTime > 0 and endTime ~= HLBG._timerSync.lastServerEnd then
         HLBG._timerSync.lastServerEnd = endTime
@@ -369,49 +442,14 @@ function HLBG.UpdateHUDVisibility()
         return
     end
     -- Check location restrictions
-    local shouldShow = false
-    if DCHLBGDB.showHudEverywhere then
-        shouldShow = true
-    else
-        -- Only show in specific zones/instances
-        local inHinterlands = false
-        local inBattleground = false
-        
-        -- Check player's ACTUAL zone (not the map they're viewing)
-        -- Use GetRealZoneText() which returns player position, not map view
-        if type(GetRealZoneText) == "function" then
-            local zone = GetRealZoneText()
-            inHinterlands = (zone == "The Hinterlands")
-        end
-        
-        -- Also check subzone as fallback
-        if not inHinterlands and type(GetSubZoneText) == "function" then
-            local subzone = GetSubZoneText()
-            if subzone and (subzone:match("Hinterland") or subzone:match("Azshara Crater")) then
-                inHinterlands = true
-            end
-        end
-        
-        -- Also check battlefield/activity/status as a fallback indicator
-        -- IMPORTANT: Only use battlefield status if we're already in Hinterlands zone
-        -- This prevents HUD staying visible after leaving the BG zone
-        if inHinterlands and type(GetBattlefieldStatus) == "function" then
-            for i = 1, 4 do
-                local status, _, instanceID = GetBattlefieldStatus(i)
-                if status == "active" then
-                    inBattleground = true
-                    break
-                end
-            end
-        end
-        -- Don't use _lastStatus as a fallback - it keeps HUD visible after leaving zone
-        shouldShow = inHinterlands or inBattleground
-        -- DEBUG: Log visibility decision (only if debug mode is enabled)
-        if DCHLBGDB and DCHLBGDB.debugMode and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-            local zone = GetRealZoneText and GetRealZoneText() or "unknown"
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00[HUD Visibility]|r Zone=%s inHinterlands=%s inBG=%s shouldShow=%s",
-                zone, tostring(inHinterlands), tostring(inBattleground), tostring(shouldShow)))
-        end
+    local shouldShow = (type(HLBG.ShouldShowHUD) == 'function') and HLBG.ShouldShowHUD() or false
+
+    -- DEBUG: Log visibility decision (dev only)
+    if DCHLBGDB and DCHLBGDB.devMode and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        local zone = GetRealZoneText and GetRealZoneText() or "unknown"
+        local sub = GetSubZoneText and GetSubZoneText() or ""
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00[HUD Visibility]|r Zone=%s Sub=%s shouldShow=%s",
+            tostring(zone), tostring(sub), tostring(shouldShow)))
     end
     if shouldShow then
         HUD:Show()
@@ -460,27 +498,29 @@ function HLBG.ReadWorldstateData()
             -- Map known worldstate IDs for HLBG (using correct server worldstate IDs)
             if wsType then
                 if wsType == 3680 then -- Alliance Resources (WORLD_STATE_BATTLEFIELD_WG_VEHICLE_A)
-                    data.allianceResources = tonumber(text) or data.allianceResources or 0
+                    data.allianceResources = tonumber(state) or tonumber(text) or data.allianceResources or 0
                 elseif wsType == 3490 then -- Horde Resources (WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H)
-                    data.hordeResources = tonumber(text) or data.hordeResources or 0
+                    data.hordeResources = tonumber(state) or tonumber(text) or data.hordeResources or 0
                 elseif wsType == 3681 then -- Alliance Players (estimated based on pattern)
-                    data.alliancePlayers = tonumber(text) or data.alliancePlayers or 0
+                    data.alliancePlayers = tonumber(state) or tonumber(text) or data.alliancePlayers or 0
                 elseif wsType == 3491 then -- Horde Players (estimated based on pattern)
-                    data.hordePlayers = tonumber(text) or data.hordePlayers or 0
+                    data.hordePlayers = tonumber(state) or tonumber(text) or data.hordePlayers or 0
                 elseif wsType == 3781 then -- Time Left (WORLD_STATE_BATTLEFIELD_WG_CLOCK)
                     -- This is epoch time, convert to remaining seconds
                     local currentTime = time()
-                    local endTime = tonumber(text) or currentTime
+                    local endTime = tonumber(state) or tonumber(text) or currentTime
                     data.timeLeft = math.max(0, endTime - currentTime)
                 elseif wsType == 4354 then -- Clock text (WORLD_STATE_BATTLEFIELD_WG_CLOCK_TEXTS)
                     -- Alternative time source
                     local currentTime = time()
-                    local endTime = tonumber(text) or currentTime
+                    local endTime = tonumber(state) or tonumber(text) or currentTime
                     data.timeLeft = math.max(0, endTime - currentTime)
                 elseif wsType == 3695 then -- Custom affix worldstate (if implemented)
-                    data.affixName = tostring(text or data.affixName or "None")
+                    data.affixId = tonumber(state) or tonumber(text) or data.affixId
                 elseif wsType == 3674 then -- WG Active state (can indicate phase)
-                    data.phase = (tonumber(text) == 0 and "IN_PROGRESS") or "IDLE"
+                    local v = tonumber(state) or tonumber(text)
+                    -- Server seeds WG_ACTIVE=0 during wartime (active battle).
+                    data.phase = (v == 0 and "BATTLE") or "IDLE"
                 end
             end
         end
@@ -531,14 +571,16 @@ HLBG.UpdateHUD = function()
         allianceResources = hudData.allianceResources or status.A or status.allianceResources or res.A or 450,
         hordeResources = hudData.hordeResources or status.H or status.hordeResources or res.H or 450,
         timeLeft = hudData.timeLeft or status.DURATION or status.timeLeft or HLBG._timeLeft or res.END or 1800,
-        alliancePlayers = hudData.alliancePlayers or status.APC or status.APlayers or 0,
-        hordePlayers = hudData.hordePlayers or status.HPC or status.HPlayers or 0,
+        -- Player counts are optional; do not default to 0.
+        alliancePlayers = hudData.alliancePlayers or status.APC or status.APlayers,
+        hordePlayers = hudData.hordePlayers or status.HPC or status.HPlayers,
         affixName = hudData.affixName or status.AFF or status.affixName or HLBG._affixText or "None",
-        phase = hudData.phase or status.phase or "ACTIVE"
+        -- Use a phase token UpdateModernHUD understands.
+        phase = hudData.phase or status.phase or "BATTLE"
     }
     -- EXTENSIVE DEBUG: Log final combined data
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFAA[UpdateHUD FINAL]|r A=%d H=%d Time=%d",
+    if DCHLBGDB and DCHLBGDB.devMode then
+        DebugPrint(string.format("|cFF00FFAA[UpdateHUD FINAL]|r A=%d H=%d Time=%d",
             finalData.allianceResources, finalData.hordeResources, finalData.timeLeft))
     end
     -- Update HLBG._lastStatus to keep status command in sync
@@ -546,15 +588,15 @@ HLBG.UpdateHUD = function()
     HLBG._lastStatus.A = finalData.allianceResources
     HLBG._lastStatus.H = finalData.hordeResources
     HLBG._lastStatus.DURATION = finalData.timeLeft
-    HLBG._lastStatus.APC = finalData.alliancePlayers
-    HLBG._lastStatus.HPC = finalData.hordePlayers
+    if finalData.alliancePlayers ~= nil then HLBG._lastStatus.APC = finalData.alliancePlayers end
+    if finalData.hordePlayers ~= nil then HLBG._lastStatus.HPC = finalData.hordePlayers end
     -- Update the HUD with stable, non-blinking data
     if type(HLBG.UpdateModernHUD) == 'function' then
         DebugPrint("|cFF00FFAA[UpdateHUD]|r Calling UpdateModernHUD with finalData")
         
         -- ONLY show HUD if we should show it (zone check)
         if HUD then
-            local shouldShowHUD = HLBG.ShouldShowHUD and HLBG.ShouldShowHUD() or false
+            local shouldShowHUD = (type(HLBG.ShouldShowHUD) == 'function') and HLBG.ShouldShowHUD() or false
             if shouldShowHUD then
                 HUD:Show()
                 HUD:SetAlpha(DCHLBGDB.hudAlpha or 0.9)
@@ -591,14 +633,9 @@ wsFrame:SetScript("OnEvent", function(self, event)
         if HLBG._testDataActive then
             return -- Skip worldstate updates when test data is active
         end
-        -- Aggressive throttle for worldstate updates (max once per 3 seconds)
-        local now = GetTime()
-        self._lastWSUpdate = self._lastWSUpdate or 0
-        if (now - self._lastWSUpdate) < 3.0 then
-            return -- Skip this update, too frequent
-        end
-        self._lastWSUpdate = now
-        -- Update HUD when worldstates change
+        -- Update HUD when worldstates change.
+        -- NOTE: HLBG.UpdateHUD already throttles to 1s; keep this handler unthrottled
+        -- so resource changes feel near real-time without adding extra latency.
         if HLBG.UpdateHUD then
             HLBG.UpdateHUD()
         end

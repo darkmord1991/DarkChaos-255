@@ -136,8 +136,23 @@ function HLBG.ShowDebugWindow()
 end
 -- Zone watcher: show/hide HUD when entering Hinterlands
 local function InHinterlands()
-    local z = (type(HLBG) == 'table' and type(HLBG.safeGetRealZoneText) == 'function') and HLBG.safeGetRealZoneText() or (GetRealZoneText and GetRealZoneText() or "")
-    return z == "The Hinterlands"
+    local z = (type(HLBG) == 'table' and type(HLBG.safeGetRealZoneText) == 'function')
+        and HLBG.safeGetRealZoneText()
+        or (GetRealZoneText and GetRealZoneText() or "")
+    local sz = (GetSubZoneText and GetSubZoneText() or "")
+
+    local zl = tostring(z or ""):lower()
+    local szl = tostring(sz or ""):lower()
+    if zl == "the hinterlands" then
+        return true
+    end
+    if zl:find("hinterland", 1, true) then
+        return true
+    end
+    if szl:find("hinterland", 1, true) or szl:find("azshara crater", 1, true) then
+        return true
+    end
+    return false
 end
 local zoneWatcher = CreateFrame("Frame")
 zoneWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -341,6 +356,8 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         local H = tonumber(msg:match("H=(%d+)") or 0) or 0
         local ENDt = tonumber(msg:match("END=(%d+)") or 0) or 0
         local LOCK = tonumber(msg:match("LOCK=(%d+)") or 0) or 0
+        local APC = tonumber(msg:match("APC=(%d+)") or "")
+        local HPC = tonumber(msg:match("HPC=(%d+)") or "")
         -- EXTENSIVE DEBUG: Log parsed values
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
             DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FFFF[HLBG STATUS PARSED]|r A=%d H=%d END=%d LOCK=%d", A, H, ENDt, LOCK))
@@ -351,6 +368,8 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         HLBG._lastStatus.A = A
         HLBG._lastStatus.H = H
         HLBG._lastStatus.DURATION = ENDt
+        if APC ~= nil then HLBG._lastStatus.APC = APC end
+        if HPC ~= nil then HLBG._lastStatus.HPC = HPC end
         HLBG._lastStatus.allianceResources = A
         HLBG._lastStatus.hordeResources = H
         HLBG._lastStatus.timeLeft = ENDt
@@ -451,6 +470,45 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         return
     end
 end)
+
+-- Filter raw HLBG payload spam from chat (system/say/etc). Parsing is handled separately.
+local function _ShouldFilterHLBGChatMessage(msg)
+    if type(msg) ~= 'string' then return false end
+
+    -- Tagged payloads
+    if msg:find('[HLBG_', 1, true) then
+        return true
+    end
+
+    -- Known malformed warmup string (server-side formatting mistake)
+    local ml = msg:lower()
+    if ml:find('warmup:', 1, true) and ml:find('seconds remaining', 1, true) and ml:find('{}', 1, true) then
+        return true
+    end
+
+    return false
+end
+
+pcall(function()
+    if type(ChatFrame_AddMessageEventFilter) ~= 'function' then return end
+    local function _hlbgFilter(_, _, msg)
+        if _ShouldFilterHLBGChatMessage(msg) then
+            return true
+        end
+        return false
+    end
+
+    ChatFrame_AddMessageEventFilter('CHAT_MSG_SYSTEM', _hlbgFilter)
+    ChatFrame_AddMessageEventFilter('CHAT_MSG_SAY', _hlbgFilter)
+    ChatFrame_AddMessageEventFilter('CHAT_MSG_YELL', _hlbgFilter)
+    ChatFrame_AddMessageEventFilter('CHAT_MSG_GUILD', _hlbgFilter)
+    ChatFrame_AddMessageEventFilter('CHAT_MSG_PARTY', _hlbgFilter)
+    ChatFrame_AddMessageEventFilter('CHAT_MSG_PARTY_LEADER', _hlbgFilter)
+    ChatFrame_AddMessageEventFilter('CHAT_MSG_RAID', _hlbgFilter)
+    ChatFrame_AddMessageEventFilter('CHAT_MSG_RAID_LEADER', _hlbgFilter)
+    ChatFrame_AddMessageEventFilter('CHAT_MSG_WHISPER', _hlbgFilter)
+end)
+
 -- Some servers send HLBG payloads to regular chat (not addon channel). Listen broadly
 local chatFrame = CreateFrame('Frame')
 chatFrame:RegisterEvent('CHAT_MSG_SAY')

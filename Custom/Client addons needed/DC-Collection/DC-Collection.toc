@@ -33,7 +33,6 @@ Shop\ShopModule.lua
 UI\MyCollectionFrame.lua
 UI\MainFrame.lua
 UI\AchievementsFrame.lua
-UI\TransmogFrame.lua
 UI\WardrobeFrame.lua
 UI\Wardrobe\WardrobeCore.lua
 UI\Wardrobe\CameraDB.lua

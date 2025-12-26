@@ -162,6 +162,58 @@ function Wardrobe:IsAppearanceCollected(itemId)
     return DC.collections.transmog[itemId] ~= nil
 end
 
+function Wardrobe:GetAppearanceDisplayIdForItemId(itemId)
+    if not itemId or itemId == 0 or not DC then
+        return nil
+    end
+
+    self.itemIdToDisplayId = self.itemIdToDisplayId or {}
+    if self.itemIdToDisplayId[itemId] ~= nil then
+        return self.itemIdToDisplayId[itemId]
+    end
+
+    local function ExtractDisplayId(def)
+        if type(def) ~= "table" then
+            return nil
+        end
+        local displayId = def.displayId or def.displayID or def.display_id or def.itemDisplayId
+            or def.appearanceId or def.appearance_id
+        if type(displayId) == "string" then
+            displayId = tonumber(displayId)
+        end
+        return displayId
+    end
+
+    -- Fast path: some servers key definitions by itemId.
+    local defs = DC.definitions and DC.definitions.transmog
+    if type(defs) == "table" then
+        local direct = ExtractDisplayId(defs[itemId])
+        if direct and direct > 0 then
+            self.itemIdToDisplayId[itemId] = direct
+            return direct
+        end
+
+        -- Build a reverse map once from defs (itemId -> displayId)
+        if not self.itemIdToDisplayIdBuilt then
+            for _, def in pairs(defs) do
+                if type(def) == "table" then
+                    local sourceItemId = def.itemId or def.item_id or def.entryId or def.entry_id
+                    if type(sourceItemId) == "string" then
+                        sourceItemId = tonumber(sourceItemId)
+                    end
+                    local displayId = ExtractDisplayId(def)
+                    if sourceItemId and displayId and displayId > 0 then
+                        self.itemIdToDisplayId[sourceItemId] = displayId
+                    end
+                end
+            end
+            self.itemIdToDisplayIdBuilt = true
+        end
+    end
+
+    return self.itemIdToDisplayId[itemId]
+end
+
 function Wardrobe:IsWishlistedTransmog(itemId)
     if not itemId or not DC or type(DC.wishlist) ~= "table" then
         return false
@@ -193,13 +245,54 @@ end
 function Wardrobe:HookItemTooltip()
     if self.tooltipHooked then return end
 
+    if DC and DC.RequestCollectedAppearances then
+        DC:RequestCollectedAppearances()
+    end
+
+    local function TooltipHasLine(tooltip, text)
+        local name = tooltip and tooltip.GetName and tooltip:GetName()
+        if not name then return false end
+
+        for i = 1, 30 do
+            local left = _G[name .. "TextLeft" .. i]
+            if left then
+                local t = left:GetText()
+                if t == text then
+                    return true
+                end
+            end
+        end
+
+        return false
+    end
+
     local function AddCollectedLine(tooltip, itemId)
         if not itemId or itemId == 0 then return end
 
-        if self:IsAppearanceCollected(itemId) then
-            tooltip:AddLine(" ")
-            tooltip:AddLine("You've collected this appearance", 0.1, 1, 0.1)
-            tooltip:Show()
+        local displayId = self:GetAppearanceDisplayIdForItemId(itemId)
+
+        local collected = false
+        if displayId and displayId > 0 and DC and DC.IsAppearanceCollected then
+            collected = DC:IsAppearanceCollected(displayId) and true or false
+        end
+
+        -- Compatibility: some UIs cache transmog collection keyed by displayId.
+        if not collected and DC and DC.collections and DC.collections.transmog and displayId then
+            collected = DC.collections.transmog[displayId] ~= nil
+        end
+
+        -- Legacy fallback (old behavior): collection keyed by itemId.
+        if not collected then
+            collected = self:IsAppearanceCollected(itemId)
+        end
+
+        if collected then
+            local text = "Appearance collected"
+            if not TooltipHasLine(tooltip, text) then
+                tooltip:AddLine(" ")
+                tooltip:AddLine(text, 0.1, 1, 0.1)
+                tooltip:Show()
+            end
         end
     end
 

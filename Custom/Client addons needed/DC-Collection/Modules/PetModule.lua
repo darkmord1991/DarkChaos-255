@@ -226,6 +226,62 @@ function PetModule:GetFilteredPets(filters)
     
     local definitions = self:GetPetDefinitions()
     local collection = self:GetPets()
+
+    -- If the server hasn't provided pet definitions yet, but we do have a collection,
+    -- build a minimal list from collected entries so the UI isn't empty and counters work.
+    if (not definitions or next(definitions) == nil) and collection and next(collection) ~= nil then
+        for entryId, collData in pairs(collection) do
+            local id = _num(entryId) or entryId
+            local def = { itemId = id }
+
+            if type(GetItemInfo) == "function" and _num(id) then
+                local name, _, _, _, _, _, _, _, _, icon = GetItemInfo(id)
+                if name and name ~= "" then
+                    def.name = name
+                end
+                if icon and icon ~= "" then
+                    def.icon = icon
+                end
+            end
+
+            table.insert(results, {
+                id = id,
+                name = def.name,
+                icon = def.icon,
+                rarity = def.rarity,
+                source = def.source,
+                collected = true,
+                is_favorite = type(collData) == "table" and collData.is_favorite,
+                times_used = (type(collData) == "table" and collData.times_used) or 0,
+                definition = def,
+            })
+        end
+
+        -- Apply filters to the collected-only fallback list.
+        if filters.search and filters.search ~= "" then
+            local filtered = {}
+            local searchLower = string.lower(filters.search)
+            for _, p in ipairs(results) do
+                local nameLower = string.lower(p.name or "")
+                if string.find(nameLower, searchLower, 1, true) then
+                    table.insert(filtered, p)
+                end
+            end
+            results = filtered
+        end
+
+        if filters.favoritesOnly then
+            local filtered = {}
+            for _, p in ipairs(results) do
+                if p.is_favorite then
+                    table.insert(filtered, p)
+                end
+            end
+            results = filtered
+        end
+
+        return results
+    end
     
     local count = 0
     for _ in pairs(definitions) do count = count + 1 end
@@ -397,6 +453,15 @@ function PetModule:GetStats()
         if self:IsPetCollected(petId) then
             byRarity[rarity].owned = byRarity[rarity].owned + 1
         end
+    end
+
+    -- If we have no definitions yet, fall back to the size of the collection so
+    -- UI counters don't misleadingly show 0/0 even though pets are collected.
+    if total == 0 and collection then
+        for _ in pairs(collection) do
+            owned = owned + 1
+        end
+        total = owned
     end
     
     return {

@@ -70,11 +70,19 @@ class BasicEvent
         uint8 m_eventGroup{0};
 };
 
+#include <type_traits>
+#include <utility>
+
 template<typename T>
 class LambdaBasicEvent : public BasicEvent
 {
     public:
-        LambdaBasicEvent(T&& callback) : BasicEvent(), _callback(std::move(callback)) { }
+        // Store a decayed copy of the callback so we don't end up with reference-member cases
+        // when T is deduced as an lvalue reference. Accepts any callable via a forwarding ctor.
+        using CallbackType = std::decay_t<T>;
+
+        template<typename U>
+        LambdaBasicEvent(U&& callback) : BasicEvent(), _callback(std::forward<U>(callback)) { }
 
         bool Execute(uint64, uint32) override
         {
@@ -84,7 +92,7 @@ class LambdaBasicEvent : public BasicEvent
 
     private:
 
-        T _callback;
+        CallbackType _callback;
 };
 
 template<typename T>

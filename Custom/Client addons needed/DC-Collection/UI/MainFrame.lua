@@ -1472,6 +1472,7 @@ function DC:SelectTab(tabKey)
     content.mountList:Hide()
     content.mountPreview:Hide()
     if content.wardrobeHost then content.wardrobeHost:Hide() end
+    self:HideHeirloomPreview()
     
     if DC.AchievementsUI then DC.AchievementsUI:Hide() end
     if DC.MyCollection then DC.MyCollection:Hide() end
@@ -2570,7 +2571,7 @@ function DC:ShowHeirloomPreview(itemId, options)
         model.rotation = 0
         -- For DressUpModel (player/unit), SetCamDistanceScale is the most reliable zoom control.
         -- Default a bit zoomed-out so the item is visible.
-        model.cameraDistance = 1.25
+        model.cameraDistance = 1.6
 
         model:SetScript("OnMouseDown", function(selfModel, button)
             if button == "LeftButton" then
@@ -2600,9 +2601,9 @@ function DC:ShowHeirloomPreview(itemId, options)
         end)
 
         model:SetScript("OnMouseWheel", function(selfModel, delta)
-            selfModel.cameraDistance = math.max(0.6, math.min(2.0, (selfModel.cameraDistance or 1.25) - delta * 0.08))
+            selfModel.cameraDistance = math.max(0.6, math.min(2.5, (selfModel.cameraDistance or 1.6) - delta * 0.08))
             if selfModel.SetCamDistanceScale then
-                selfModel:SetCamDistanceScale(2.8 * selfModel.cameraDistance)
+                selfModel:SetCamDistanceScale(2.5 * selfModel.cameraDistance)
             end
         end)
 
@@ -2630,9 +2631,9 @@ function DC:ShowHeirloomPreview(itemId, options)
     end
 
     model.rotation = 0
-    model.cameraDistance = model.cameraDistance or 1.25
+    model.cameraDistance = model.cameraDistance or 1.6
     if model.SetCamDistanceScale then
-        model:SetCamDistanceScale(2.8 * model.cameraDistance)
+        model:SetCamDistanceScale(2.5 * model.cameraDistance)
     end
     if model.SetCamera then
         model:SetCamera(0)

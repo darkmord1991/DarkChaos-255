@@ -317,12 +317,11 @@
 
     void OutdoorPvPHL::Whisper(Player* player, std::string const& msg) const
     {
-        if (!player)
-            return;
-        if (WorldSession* session = player->GetSession())
-        {
-            ChatHandler(session).SendSysMessage(msg.c_str());
-        }
+        // Chat output disabled for HLBG (zone should be HUD-driven, no chat spam).
+        // NOTE: This suppresses all HLBG whispers (welcome, AFK warnings, reward notices, etc.).
+        (void)player;
+        (void)msg;
+        return;
     }
 
     bool OutdoorPvPHL::IsBossNpcEntry(uint32 entry) const

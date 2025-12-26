@@ -135,6 +135,32 @@ AoELoot.AutoCreditGold = 1
 
 #
 #    AoELoot.Extensions.Enable
+
+# Performance knobs for the login sync.
+# If players occasionally disconnect on login, increase DelayMs and/or reduce BatchSize.
+#
+# Delay in milliseconds before running the DB scan/teach work after login.
+DCCollection.Accountwide.SyncToCharacterOnLogin.DelayMs = 1000
+# How many spells to teach per tick.
+DCCollection.Accountwide.SyncToCharacterOnLogin.BatchSize = 200
+# Delay in milliseconds between teaching batches.
+DCCollection.Accountwide.SyncToCharacterOnLogin.BatchDelayMs = 250
+
+# ---------------------------------------------------------------------------
+# DC-Collection: Pet definition maintenance
+# ---------------------------------------------------------------------------
+# Optional: rebuild/update dc_pet_definitions using local server data (item_template + Spell/SummonProperties DBC).
+# This is useful if dc_pet_definitions.pet_spell_id was filled with placeholders (e.g. same spell for many rows).
+# Runs once at server startup when enabled.
+DCCollection.Pets.RebuildDefinitionsOnStartup = 0
+# If enabled, TRUNCATE dc_pet_definitions before rebuilding.
+DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate = 0
+
+# Rebuild performance options:
+# Prefer querying only companion items (class=15, subclass=2) from item_template (fast).
+DCCollection.Pets.RebuildDefinitionsOnStartup.UseDbItemFilter = 1
+# Also scan Spell.dbc for spell-only minipet summons with no teaching item (slower).
+DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly = 0
 #        Description: Master toggle for AoE Loot Extensions
 #        Default:     1 (Enabled)
 #
@@ -2840,6 +2866,19 @@ DCCollection.Enable = 1
 #        Default:     0 (Disabled)
 #
 DCCollection.Debug = 0
+
+# -------------------------------------------------------------------------
+# DCCollection: Accountwide -> Character Sync
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Accountwide.SyncToCharacterOnLogin
+#        Description: On login, teach accountwide unlocks to the character so they are usable in the default Blizzard UI.
+#                     This primarily affects mounts, companions (non-battle pets), and titles.
+#                     Note: WotLK 3.3.5a has no native Blizzard collection UI for Transmog/Heirlooms; those remain addon-driven.
+#        Default:     1 (Enabled)
+#
+DCCollection.Accountwide.SyncToCharacterOnLogin = 1
 
 # -------------------------------------------------------------------------
 # DCCollection: Module Toggles

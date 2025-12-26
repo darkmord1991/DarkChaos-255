@@ -565,7 +565,29 @@ local function CreateTransmogPanel()
     frame:Hide()
 
     -- Background inset similar to default panels
-    local inset = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
+    local inset
+    local ok = false
+    -- Some 3.3.5 clients don't ship certain XML templates (e.g. InsetFrameTemplate)
+    -- so fall back gracefully instead of erroring at load time.
+    if CreateFrame then
+        ok, inset = pcall(CreateFrame, "Frame", nil, frame, "InsetFrameTemplate")
+    end
+    if not ok or not inset then
+        inset = CreateFrame("Frame", nil, frame)
+        -- Basic inset-ish styling without relying on templates
+        if inset.SetBackdrop then
+            inset:SetBackdrop({
+                bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tile = true,
+                tileSize = 16,
+                edgeSize = 16,
+                insets = { left = 4, right = 4, top = 4, bottom = 4 },
+            })
+            inset:SetBackdropColor(0, 0, 0, 0.4)
+            inset:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+        end
+    end
     inset:SetPoint("TOPLEFT", 18, -84)
     inset:SetPoint("BOTTOMRIGHT", -30, 36)
 
@@ -1043,7 +1065,9 @@ end
 
 local function OnEvent(self, event)
     if event == "PLAYER_LOGIN" then
-        CreateCharacterFrameTab()
+        -- CharacterFrame embedding is intentionally disabled.
+        -- Wardrobe should be opened from the DC-Collection UI.
+        return
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "UNIT_INVENTORY_CHANGED" then
         if UI.frame and UI.frame:IsShown() and UI.frame.slotButtons then
             for _, b in ipairs(UI.frame.slotButtons) do
@@ -1058,7 +1082,12 @@ local function OnEvent(self, event)
 end
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-eventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
-eventFrame:SetScript("OnEvent", OnEvent)
+-- Only register the embedded CharacterFrame events if the feature is enabled.
+-- (Default: disabled; Wardrobe is opened from the DC-Collection UI.)
+local ENABLE_CHARACTERFRAME_TRANSMOG_TAB = false
+if ENABLE_CHARACTERFRAME_TRANSMOG_TAB then
+    eventFrame:RegisterEvent("PLAYER_LOGIN")
+    eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+    eventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
+    eventFrame:SetScript("OnEvent", OnEvent)
+end

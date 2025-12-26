@@ -91,7 +91,18 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
         }
         // Deterministic HUD update: whisper addon message
         SendAffixAddonToPlayer(player);
-        SendStatusAddonToPlayer(player);
+        uint32 apc = 0;
+        uint32 hpc = 0;
+        ForEachPlayerInZone([&](Player* p)
+        {
+            if (!p)
+                return;
+            if (p->GetTeamId() == TEAM_ALLIANCE)
+                ++apc;
+            else if (p->GetTeamId() == TEAM_HORDE)
+                ++hpc;
+        });
+        SendStatusAddonToPlayer(player, apc, hpc);
     }
     OutdoorPvP::HandlePlayerEnterZone(player, zone);
 

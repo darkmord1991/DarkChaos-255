@@ -87,6 +87,22 @@ local function GetRecentAdditions()
     return recent
 end
 
+local function OpenWardrobeInMainUI()
+    if not DC then
+        return
+    end
+
+    if type(DC.ShowMainFrame) == "function" then
+        DC:ShowMainFrame()
+    elseif type(DC.ShowMainUI) == "function" then
+        DC:ShowMainUI()
+    end
+
+    if type(DC.SelectTab) == "function" then
+        DC:SelectTab("wardrobe")
+    end
+end
+
 -- ============================================================================
 -- FRAME CREATION
 -- ============================================================================
@@ -240,9 +256,7 @@ function MyCollection:CreateStatCards(parent)
         -- Click to open that collection tab
         card:SetScript("OnClick", function()
             if typeDef.key == "transmog" then
-                if DC.Wardrobe then
-                    DC.Wardrobe:Show()
-                end
+                OpenWardrobeInMainUI()
             elseif DC.SelectTab then
                 DC:SelectTab(typeDef.key)
             end
@@ -373,9 +387,7 @@ function MyCollection:CreateRecentIcons(parent)
             
             -- Navigate to that collection type
             if data.type == "transmog" then
-                if DC.Wardrobe then
-                    DC.Wardrobe:Show()
-                end
+                OpenWardrobeInMainUI()
             elseif DC.SelectTab then
                 DC:SelectTab(data.type)
             end

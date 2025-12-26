@@ -1693,8 +1693,30 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 		return;
 	end
 
-	local current = data.currentUpgrade or 0;
-	local maxUpgrade = data.maxUpgrade or DC.MAX_UPGRADE_LEVEL or 15;
+	-- Skip upgrade/tier lines for items that are not considered upgradeable.
+	-- (e.g. heirlooms, bags, and non-weapon/armor items)
+	local _, itemLink = tooltip:GetItem();
+	if itemLink then
+		local _, _, quality, _, _, itemType, _, _, equipLoc = GetItemInfo(itemLink);
+		if quality == 7 then
+			return;
+		end
+		if itemType ~= "Armor" and itemType ~= "Weapon" then
+			return;
+		end
+		if equipLoc == "INVTYPE_BAG" or equipLoc == "INVTYPE_QUIVER" then
+			return;
+		end
+		if itemType == "Container" then
+			return;
+		end
+	end
+
+	local current = tonumber(data.currentUpgrade) or 0;
+	local maxUpgrade = tonumber(data.maxUpgrade) or 0;
+	if maxUpgrade <= 0 and current <= 0 then
+		return;
+	end
 	local statMultiplier = data.statMultiplier or 1.0;
 	local totalBonus = (statMultiplier - 1.0) * 100;
 	local currentEntry = data.currentEntry or data.baseEntry or 0;
@@ -1706,7 +1728,7 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	tooltip:AddLine(" ");
 	
 	-- Always show item entry ID (useful for debugging)
-	tooltip:AddLine(string.format("|cff888888Entry: %d (Tier %d)|r", currentEntry, tier));
+	tooltip:AddLine(string.format("|cff888888Entry: %d|r", currentEntry));
 	
 	-- Show upgrade info if item has upgrades
 	if current > 0 then

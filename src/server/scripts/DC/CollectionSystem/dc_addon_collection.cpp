@@ -38,6 +38,7 @@
 #include "ItemTemplate.h"
 #include "Bag.h"
 #include "ScriptMgr.h"
+#include "DBCStores.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeSeasonResolver.h"
 #include <string>
@@ -48,6 +49,7 @@
 #include <functional>
 #include <algorithm>
 #include <vector>
+#include <chrono>
 
 namespace DCCollection
 {
@@ -88,6 +90,33 @@ namespace DCCollection
         constexpr const char* TRANSMOG_LEGACY_IMPORT_ENABLED = "DCCollection.Transmog.LegacyImport.Enable";
         constexpr const char* TRANSMOG_LEGACY_IMPORT_INCLUDE_BANK = "DCCollection.Transmog.LegacyImport.IncludeBank";
         constexpr const char* TRANSMOG_LEGACY_IMPORT_REQUIRE_SOULBOUND = "DCCollection.Transmog.LegacyImport.RequireSoulbound";
+
+        // When enabled, characters will be granted the account-wide collection entries
+        // (so mounts/companions/titles are usable in the default Blizzard UI).
+        constexpr const char* SYNC_TO_CHARACTER_ON_LOGIN = "DCCollection.Accountwide.SyncToCharacterOnLogin";
+
+        // Performance: defer + batch the login sync to avoid long synchronous work during the login handshake.
+        constexpr const char* SYNC_TO_CHARACTER_DELAY_MS = "DCCollection.Accountwide.SyncToCharacterOnLogin.DelayMs";
+        constexpr const char* SYNC_TO_CHARACTER_BATCH_SIZE = "DCCollection.Accountwide.SyncToCharacterOnLogin.BatchSize";
+        constexpr const char* SYNC_TO_CHARACTER_BATCH_DELAY_MS = "DCCollection.Accountwide.SyncToCharacterOnLogin.BatchDelayMs";
+
+        // Performance: learning many mount/pet spells can update a large amount of achievement criteria.
+        // By default these are saved on logout, which can cause a noticeable delay.
+        // When enabled, we flush achievement progress once the accountwide sync completes.
+        constexpr const char* SYNC_TO_CHARACTER_FLUSH_ACHIEVEMENTS_ON_COMPLETE = "DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete";
+
+        // Optional maintenance: rebuild dc_pet_definitions from local data (item_template + Spell/SummonProperties DBC).
+        // This avoids relying on external sources and fixes incorrect placeholder pet_spell_id values.
+        constexpr const char* PET_DEFINITIONS_REBUILD_ON_STARTUP = "DCCollection.Pets.RebuildDefinitionsOnStartup";
+        constexpr const char* PET_DEFINITIONS_REBUILD_TRUNCATE = "DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate";
+
+        // When rebuilding, prefer pulling the item list from the DB with a WHERE filter (fast) instead
+        // of iterating the full in-memory item_template store (~270k rows).
+        constexpr const char* PET_DEFINITIONS_REBUILD_USE_DB_ITEM_FILTER = "DCCollection.Pets.RebuildDefinitionsOnStartup.UseDbItemFilter";
+
+        // Optional: also include spell-only minipet summon spells (pet_entry = spellId) if no teaching item exists.
+        // Disabled by default; iterates Spell.dbc which can add startup time.
+        constexpr const char* PET_DEFINITIONS_REBUILD_INCLUDE_SPELL_ONLY = "DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly";
     }
 
     // Collection types - matches client-side
@@ -128,6 +157,12 @@ namespace DCCollection
     // Utility Functions
     // =======================================================================
 
+    // Forward declarations for helpers defined later in this file
+    bool WorldTableExists(std::string const& tableName);
+    bool WorldColumnExists(std::string const& tableName, std::string const& columnName);
+    std::string const& GetWorldEntryColumn(std::string const& tableName);
+    uint32 FindCompanionSpellIdForItem(uint32 itemId);
+
     uint32 FindCompanionItemIdForSpell(uint32 spellId)
     {
         // Companion pets in 3.3.5a are typically taught by item_template (class=15, subclass=2).
@@ -145,6 +180,307 @@ namespace DCCollection
         if (f[0].IsNull())
             return 0;
         return f[0].Get<uint32>();
+    }
+
+    bool IsCompanionSpell(SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return false;
+
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        {
+            // WotLK non-combat pets can be summoned via SPELL_EFFECT_SUMMON or SPELL_EFFECT_SUMMON_PET
+            // with SummonProperties Type = MINIPET.
+            if (spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON &&
+                spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON_PET)
+                continue;
+
+            SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+            if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                return true;
+        }
+        return false;
+    }
+
+    uint32 ResolveCompanionSummonSpellFromSpell(uint32 spellId)
+    {
+        if (!spellId)
+            return 0;
+
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+        if (!spellInfo)
+            return 0;
+
+        if (IsCompanionSpell(spellInfo))
+            return spellId;
+
+        // Teaching spells: follow LEARN_* effects to the taught summon spell.
+        for (uint8 eff = 0; eff < MAX_SPELL_EFFECTS; ++eff)
+        {
+            if (spellInfo->Effects[eff].Effect != SPELL_EFFECT_LEARN_SPELL &&
+                spellInfo->Effects[eff].Effect != SPELL_EFFECT_LEARN_PET_SPELL)
+                continue;
+
+            uint32 taughtSpellId = spellInfo->Effects[eff].TriggerSpell;
+            if (!taughtSpellId)
+                continue;
+
+            if (SpellInfo const* taughtInfo = sSpellMgr->GetSpellInfo(taughtSpellId))
+            {
+                if (IsCompanionSpell(taughtInfo))
+                    return taughtSpellId;
+            }
+        }
+
+        return 0;
+    }
+
+    void RebuildPetDefinitionsFromLocalData()
+    {
+        if (!WorldTableExists("dc_pet_definitions"))
+        {
+            LOG_WARN("module", "DC-Collection: dc_pet_definitions missing; skipping pet definition rebuild.");
+            return;
+        }
+
+        bool truncate = sConfigMgr->GetOption<bool>(Config::PET_DEFINITIONS_REBUILD_TRUNCATE, false);
+        if (truncate)
+        {
+            WorldDatabase.Execute("TRUNCATE TABLE dc_pet_definitions");
+        }
+
+        uint32 insertedOrUpdated = 0;
+        uint32 skippedNoSpell = 0;
+        uint32 spellOnlyInsertedOrUpdated = 0;
+
+        auto rebuildFromItemId = [&](uint32 itemId)
+        {
+            if (!itemId)
+                return;
+
+            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(itemId);
+            if (!itemTemplate)
+                return;
+
+            if (itemTemplate->Class != 15 || itemTemplate->SubClass != 2)
+                return;
+
+            uint32 summonSpellId = FindCompanionSpellIdForItem(itemId);
+            if (!summonSpellId)
+            {
+                ++skippedNoSpell;
+                return;
+            }
+
+            uint32 creatureId = 0;
+            uint32 displayId = 0;
+            if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(summonSpellId))
+            {
+                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                {
+                    if (spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON &&
+                        spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON_PET)
+                        continue;
+
+                    SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+                    if (!properties || properties->Type != SUMMON_TYPE_MINIPET)
+                        continue;
+
+                    creatureId = spellInfo->Effects[i].MiscValue;
+                    break;
+                }
+            }
+
+            if (creatureId)
+            {
+                if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                {
+                    if (CreatureModel const* m = cInfo->GetFirstValidModel())
+                        displayId = m->CreatureDisplayID;
+                }
+            }
+
+            std::string name = itemTemplate->Name1;
+            WorldDatabase.EscapeString(name);
+
+            uint32 rarity = std::min<uint32>(itemTemplate->Quality, 4u);
+
+            WorldDatabase.Execute(
+                "INSERT INTO dc_pet_definitions (pet_entry, name, pet_type, pet_spell_id, rarity, display_id) "
+                "VALUES ({}, '{}', 'companion', {}, {}, {}) "
+                "ON DUPLICATE KEY UPDATE name = VALUES(name), pet_type = VALUES(pet_type), pet_spell_id = VALUES(pet_spell_id), rarity = VALUES(rarity), display_id = VALUES(display_id)",
+                itemId,
+                name,
+                summonSpellId,
+                rarity,
+                displayId);
+
+            ++insertedOrUpdated;
+        };
+
+        bool useDbFilter = sConfigMgr->GetOption<bool>(Config::PET_DEFINITIONS_REBUILD_USE_DB_ITEM_FILTER, true);
+        if (useDbFilter)
+        {
+            QueryResult r = WorldDatabase.Query(
+                "SELECT entry FROM item_template WHERE class = 15 AND subclass = 2");
+
+            if (r)
+            {
+                do
+                {
+                    uint32 itemId = r->Fetch()[0].Get<uint32>();
+                    rebuildFromItemId(itemId);
+                } while (r->NextRow());
+            }
+        }
+        else
+        {
+            // Slowest mode (still disabled unless rebuild is enabled): iterate full item_template store.
+            ItemTemplateContainer const* items = sObjectMgr->GetItemTemplateStore();
+            if (items)
+            {
+                for (auto const& [entry, itemTemplate] : *items)
+                {
+                    (void)entry;
+                    if (itemTemplate.Class != 15 || itemTemplate.SubClass != 2)
+                        continue;
+                    rebuildFromItemId(itemTemplate.ItemId);
+                }
+            }
+        }
+
+        // Optional: include spell-only minipets (pet_entry = summon spellId) if no teaching item exists.
+        if (sConfigMgr->GetOption<bool>(Config::PET_DEFINITIONS_REBUILD_INCLUDE_SPELL_ONLY, false))
+        {
+            for (SpellEntry const* spellEntry : sSpellStore)
+            {
+                if (!spellEntry)
+                    continue;
+
+                uint32 spellId = spellEntry->Id;
+                if (!spellId)
+                    continue;
+
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+                if (!IsCompanionSpell(spellInfo))
+                    continue;
+
+                // Skip spells that already have a teaching item.
+                if (FindCompanionItemIdForSpell(spellId))
+                    continue;
+
+                uint32 creatureId = 0;
+                uint32 displayId = 0;
+                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                {
+                    if (spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON &&
+                        spellInfo->Effects[i].Effect != SPELL_EFFECT_SUMMON_PET)
+                        continue;
+
+                    SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+                    if (!properties || properties->Type != SUMMON_TYPE_MINIPET)
+                        continue;
+
+                    creatureId = spellInfo->Effects[i].MiscValue;
+                    break;
+                }
+
+                if (creatureId)
+                {
+                    if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                    {
+                        if (CreatureModel const* m = cInfo->GetFirstValidModel())
+                            displayId = m->CreatureDisplayID;
+                    }
+                }
+
+                std::string name;
+                if (spellInfo && spellInfo->SpellName[0])
+                    name = spellInfo->SpellName[0];
+                WorldDatabase.EscapeString(name);
+
+                WorldDatabase.Execute(
+                    "INSERT INTO dc_pet_definitions (pet_entry, name, pet_type, pet_spell_id, rarity, display_id) "
+                    "VALUES ({}, '{}', 'companion', {}, 0, {}) "
+                    "ON DUPLICATE KEY UPDATE name = VALUES(name), pet_type = VALUES(pet_type), pet_spell_id = VALUES(pet_spell_id), display_id = VALUES(display_id)",
+                    spellId,
+                    name,
+                    spellId,
+                    displayId);
+
+                ++spellOnlyInsertedOrUpdated;
+            }
+        }
+
+        LOG_INFO(
+            "module",
+            "DC-Collection: Pet definition rebuild complete ({} item rows inserted/updated, {} companion items skipped: no summon spell, {} spell-only rows inserted/updated).",
+            insertedOrUpdated,
+            skippedNoSpell,
+            spellOnlyInsertedOrUpdated);
+    }
+
+    uint32 FindCompanionSpellIdForItem(uint32 itemId)
+    {
+        if (!itemId)
+            return 0;
+
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+        if (!proto)
+            return 0;
+
+        // Prefer an item spell that is itself the summon spell.
+        for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+        {
+            uint32 spellId = proto->Spells[i].SpellId;
+            if (!spellId)
+                continue;
+
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+            if (IsCompanionSpell(spellInfo))
+                return spellId;
+
+            // Many companion "teaching" items cast a spell that teaches the real summon spell.
+            // In that case, look for LEARN_* effects and return the taught spell if it's a companion summon.
+            if (spellInfo)
+            {
+                for (uint8 eff = 0; eff < MAX_SPELL_EFFECTS; ++eff)
+                {
+                    if (spellInfo->Effects[eff].Effect != SPELL_EFFECT_LEARN_SPELL &&
+                        spellInfo->Effects[eff].Effect != SPELL_EFFECT_LEARN_PET_SPELL)
+                        continue;
+
+                    uint32 taughtSpellId = spellInfo->Effects[eff].TriggerSpell;
+                    if (!taughtSpellId)
+                        continue;
+
+                    if (SpellInfo const* taughtInfo = sSpellMgr->GetSpellInfo(taughtSpellId))
+                    {
+                        if (IsCompanionSpell(taughtInfo))
+                            return taughtSpellId;
+                    }
+                }
+            }
+        }
+
+        // Fallback: If this is explicitly a companion item (Class 15, Subclass 2),
+        // only return a spell that actually resolves to a companion summon.
+        // Important: many DBs store a generic placeholder (e.g. 55884 "Learning") in spellid_1,
+        // so returning the first non-zero spell here can produce bogus/"unknown" companions.
+        if (proto->Class == 15 && proto->SubClass == 2)
+        {
+            for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
+            {
+                uint32 spellId = proto->Spells[i].SpellId;
+                if (!spellId)
+                    continue;
+
+                if (uint32 resolved = ResolveCompanionSummonSpellFromSpell(spellId))
+                    return resolved;
+            }
+        }
+
+        return 0;
     }
 
     // Forward declarations used by early migration helpers.
@@ -370,7 +706,7 @@ namespace DCCollection
                 continue;
 
             bool isMount = false;
-            bool isPetSpell = false;
+            uint32 companionSummonSpellId = 0;
 
             for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
             {
@@ -381,15 +717,11 @@ namespace DCCollection
                     isMount = true;
                     break;
                 }
-
-                // Companion pets commonly use SPELL_EFFECT_SUMMON_PET (56) rather than SPELL_EFFECT_SUMMON (28).
-                // We keep the stricter MiscValueB==0 check for SUMMON, but accept SUMMON_PET too.
-                if ((spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON && spellInfo->Effects[i].MiscValueB == 0) ||
-                    (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET))
-                {
-                    isPetSpell = true;
-                }
             }
+
+            // Companion pets (non-combat minipets) are reliably detected via SummonProperties (MINIPET)
+            // and/or via teaching spells that LEARN the summon spell.
+            companionSummonSpellId = ResolveCompanionSummonSpellFromSpell(spellId);
 
             if (isMount)
             {
@@ -399,9 +731,9 @@ namespace DCCollection
                     "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
                     itemsEntryCol, accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
             }
-            else if (isPetSpell)
+            else if (companionSummonSpellId)
             {
-                uint32 itemId = FindCompanionItemIdForSpell(spellId);
+                uint32 itemId = FindCompanionItemIdForSpell(companionSummonSpellId);
                 if (!itemId)
                     continue;
 
@@ -575,6 +907,255 @@ namespace DCCollection
         }
 
         CharacterDatabase.CommitTransaction(trans);
+    }
+
+    void SyncAccountWideCollectionsToCharacter(Player* player)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        if (!sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_ON_LOGIN, true))
+            return;
+
+        // NOTE: This sync can be large for accounts with many mounts/pets.
+        // Doing it synchronously inside the login handler risks blocking the login handshake.
+        // We therefore (1) defer the DB scan slightly, and (2) teach spells in batches.
+
+        auto const delayMs = sConfigMgr->GetOption<uint32>(Config::SYNC_TO_CHARACTER_DELAY_MS, 1000);
+        auto const batchSize = sConfigMgr->GetOption<uint32>(Config::SYNC_TO_CHARACTER_BATCH_SIZE, 200);
+        auto const batchDelayMs = sConfigMgr->GetOption<uint32>(Config::SYNC_TO_CHARACTER_BATCH_DELAY_MS, 250);
+
+        player->m_Events.AddEventAtOffset([player, batchSize, batchDelayMs]()
+        {
+            if (!player || !player->GetSession())
+                return;
+
+            uint32 accountId = GetAccountId(player);
+            if (!accountId)
+                return;
+
+            std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+            if (itemsEntryCol.empty())
+                return;
+
+            std::vector<uint32> spellsToTeach;
+            spellsToTeach.reserve(256);
+
+            // Titles are cheap to apply and don't need batching.
+            uint32 titlesApplied = 0;
+
+            auto considerSpell = [&](uint32 spellId)
+            {
+                if (!spellId)
+                    return;
+                if (player->HasSpell(spellId))
+                    return;
+                if (!player->IsSpellFitByClassAndRace(spellId))
+                    return;
+                spellsToTeach.push_back(spellId);
+            };
+
+            // One DB pass for mounts/pets/titles.
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT collection_type, {} FROM dc_collection_items "
+                "WHERE account_id = {} AND collection_type IN ({}, {}, {}) AND unlocked = 1",
+                itemsEntryCol,
+                accountId,
+                static_cast<uint8>(CollectionType::MOUNT),
+                static_cast<uint8>(CollectionType::PET),
+                static_cast<uint8>(CollectionType::TITLE));
+
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    uint8 collectionType = fields[0].Get<uint8>();
+                    uint32 entryId = fields[1].Get<uint32>();
+                    if (!entryId)
+                        continue;
+
+                    switch (static_cast<CollectionType>(collectionType))
+                    {
+                        case CollectionType::MOUNT:
+                        {
+                            // Stored as mount spellIds
+                            considerSpell(entryId);
+                            break;
+                        }
+                        case CollectionType::PET:
+                        {
+                            // Stored as teaching itemId (preferred) or a spellId (legacy).
+                            // Disambiguate by checking for an item template first.
+                            uint32 spellId = 0;
+                            if (sObjectMgr->GetItemTemplate(entryId))
+                                spellId = FindCompanionSpellIdForItem(entryId);
+                            else
+                                spellId = ResolveCompanionSummonSpellFromSpell(entryId);
+
+                            considerSpell(spellId);
+                            break;
+                        }
+                        case CollectionType::TITLE:
+                        {
+                            CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(entryId);
+                            if (!titleEntry)
+                                break;
+
+                            if (player->HasTitle(titleEntry))
+                                break;
+
+                            player->SetTitle(titleEntry, false);
+                            ++titlesApplied;
+                            break;
+                        }
+                        default:
+                            break;
+                    }
+
+                } while (result->NextRow());
+            }
+
+            if (spellsToTeach.empty())
+            {
+                // No spells to teach; still report titles applied if any
+                if (titlesApplied > 0)
+                {
+                    if (WorldSession* session = player->GetSession())
+                    {
+                        ChatHandler handler(session);
+                        handler.PSendSysMessage(
+                            "DC-Collection: Accountwide sync complete ({} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
+                            titlesApplied);
+                    }
+                }
+                return;
+            }
+
+            // Dedupe (mount + pet spell collisions can happen in custom content)
+            std::sort(spellsToTeach.begin(), spellsToTeach.end());
+            spellsToTeach.erase(std::unique(spellsToTeach.begin(), spellsToTeach.end()), spellsToTeach.end());
+
+            uint32 const effectiveBatchSize = std::max<uint32>(1u, batchSize);
+            uint32 const effectiveBatchDelayMs = std::max<uint32>(1u, batchDelayMs);
+
+            auto spellsPtr = std::make_shared<std::vector<uint32>>(std::move(spellsToTeach));
+            auto indexPtr = std::make_shared<size_t>(0);
+            auto tickPtr = std::make_shared<std::function<void()>>();
+            auto taughtTotalPtr = std::make_shared<uint32>(0);
+
+            *tickPtr = [player, spellsPtr, indexPtr, taughtTotalPtr, effectiveBatchSize, effectiveBatchDelayMs, tickPtr, titlesApplied]()
+            {
+                if (!player || !player->GetSession())
+                    return;
+
+                size_t idx = *indexPtr;
+                size_t const total = spellsPtr->size();
+                uint32 taughtThisTick = 0;
+                std::vector<uint32> taughtSpellIds;
+                taughtSpellIds.reserve(effectiveBatchSize);
+
+                while (idx < total && taughtThisTick < effectiveBatchSize)
+                {
+                    uint32 spellId = (*spellsPtr)[idx++];
+                    if (!spellId)
+                        continue;
+
+                    if (player->HasSpell(spellId))
+                        continue;
+
+                    if (!player->IsSpellFitByClassAndRace(spellId))
+                        continue;
+
+                    // Add silently (no "You have learned..." spam).
+                    player->addSpell(spellId, SPEC_MASK_ALL, true, false, false);
+                    ++taughtThisTick;
+                    ++(*taughtTotalPtr);
+                    taughtSpellIds.push_back(spellId);
+                }
+
+                // Persist taught spells now, so logout doesn't need to flush a huge spell delta.
+                // Also mark them as UNCHANGED to avoid SaveToDB doing redundant INSERTs.
+                if (!taughtSpellIds.empty())
+                {
+                    auto trans = CharacterDatabase.BeginTransaction();
+
+                    std::ostringstream sql;
+                    sql << "INSERT INTO character_spell (guid, spell, specMask) VALUES ";
+
+                    ObjectGuid::LowType const guidLow = player->GetGUID().GetCounter();
+                    bool first = true;
+                    for (uint32 taughtSpellId : taughtSpellIds)
+                    {
+                        if (!taughtSpellId)
+                            continue;
+
+                        // Ensure it actually got added.
+                        if (!player->HasSpell(taughtSpellId))
+                            continue;
+
+                        if (!first)
+                            sql << ",";
+                        first = false;
+                        sql << "(" << guidLow << "," << taughtSpellId << "," << uint32(SPEC_MASK_ALL) << ")";
+
+                        // Mark as unchanged to prevent redundant saving later.
+                        PlayerSpellMap& spellMap = const_cast<PlayerSpellMap&>(player->GetSpellMap());
+                        auto it = spellMap.find(taughtSpellId);
+                        if (it != spellMap.end() && it->second && (it->second->State == PLAYERSPELL_NEW || it->second->State == PLAYERSPELL_CHANGED))
+                            it->second->State = PLAYERSPELL_UNCHANGED;
+                    }
+
+                    // Ensure specMask is updated if the row already exists.
+                    sql << " ON DUPLICATE KEY UPDATE specMask = VALUES(specMask)";
+
+                    if (!first)
+                        trans->Append(sql.str());
+
+                    CharacterDatabase.CommitTransaction(trans);
+                }
+
+                *indexPtr = idx;
+
+                if (idx < total)
+                {
+                    player->m_Events.AddEventAtOffset(*tickPtr, std::chrono::milliseconds(effectiveBatchDelayMs));
+                }
+                else
+                {
+                    // If we taught many spells at once, AchievementMgr may have accumulated a lot of changed criteria.
+                    // Flushing those changes here can significantly reduce the time spent during logout SaveToDB.
+                    if (*taughtTotalPtr > 0 && sConfigMgr->GetOption<bool>(Config::SYNC_TO_CHARACTER_FLUSH_ACHIEVEMENTS_ON_COMPLETE, true))
+                    {
+                        if (AchievementMgr* achievementMgr = player->GetAchievementMgr())
+                        {
+                            auto const t0 = std::chrono::steady_clock::now();
+
+                            auto trans = CharacterDatabase.BeginTransaction();
+                            achievementMgr->SaveToDB(trans);
+                            CharacterDatabase.CommitTransaction(trans);
+
+                            auto const dtMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+                            if (dtMs >= 250)
+                                LOG_INFO("module", "DC-Collection: Flushed achievement progress after accountwide sync in {} ms.", dtMs);
+                        }
+                    }
+
+                    if (WorldSession* session = player->GetSession())
+                    {
+                        ChatHandler handler(session);
+                        handler.PSendSysMessage(
+                            "DC-Collection: Accountwide sync complete ({} spells taught, {} titles applied). Please relog or /reload to see mounts/companions in the default UI.",
+                            *taughtTotalPtr,
+                            titlesApplied);
+                    }
+                }
+            };
+
+            // Kick off immediately (still outside the login handler).
+            (*tickPtr)();
+
+        }, std::chrono::milliseconds(delayMs));
     }
 
     // Generate simple hash for delta sync comparison
@@ -1213,6 +1794,10 @@ namespace DCCollection
         if (!displayId)
             return;
 
+        // Only notify (and only insert) if this is a new unlock.
+        if (HasTransmogAppearanceUnlocked(accountId, displayId))
+            return;
+
         // Session notification deduplication
         bool shouldNotify = notifyPlayer;
         if (sConfigMgr->GetOption<bool>(Config::TRANSMOG_SESSION_NOTIFICATION_DEDUP, true))
@@ -1249,8 +1834,11 @@ namespace DCCollection
         // Notify player if this is a new unlock and notifications enabled
         if (shouldNotify)
         {
-            // Future: Add actual notification to player
-            // For now, session dedup will prevent spam
+            if (WorldSession* session = player->GetSession())
+            {
+                ChatHandler handler(session);
+                handler.PSendSysMessage("DC-Collection: Appearance collected: {} (appearance {}).", proto->Name1, displayId);
+            }
         }
     }
 
@@ -3192,7 +3780,7 @@ namespace DCCollection
             auto const& keys = GetTransmogAppearanceVariantKeysCached();
 
             if (limit == 0)
-                limit = 2000;  // Increased from 200 to handle large transmog databases efficiently
+                limit = 1000;  // Increased from 200 to handle large transmog databases efficiently
 
             uint32 total = static_cast<uint32>(keys.size());
             if (offset > total)
@@ -3274,6 +3862,8 @@ namespace DCCollection
         // Non-transmog: try curated per-type tables first; fall back to the generic index; fall back to owned-only.
         CollectionType ct = static_cast<CollectionType>(type);
 
+        std::unordered_set<uint32> sentIds;
+
         auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity, std::string const& source, int32 extraType, uint32 itemIdForSource = 0, uint32 displayId = 0)
         {
             DCAddon::JsonValue d;
@@ -3304,6 +3894,7 @@ namespace DCCollection
                 d.Set("mountType", static_cast<uint32>(extraType));
 
             defs.Set(std::to_string(id), d);
+            sentIds.insert(id);
         };
 
         bool loadedAny = false;
@@ -3377,6 +3968,7 @@ namespace DCCollection
                         d.Set("itemId", itemId);
 
                     defs.Set(std::to_string(spellId), d);
+                    sentIds.insert(spellId);
                     loadedAny = true;
                 } while (r->NextRow());
             }
@@ -3447,40 +4039,65 @@ namespace DCCollection
                     else
                         spellId = spellId ? spellId : raw;
 
-                    if (spellId && !itemId)
-                        itemId = FindCompanionItemIdForSpell(spellId);
-
-                    if (!spellId && itemId)
+                    // Validate Item ID: If it's not a companion item, check if it's actually a spell ID.
+                    if (itemId)
                     {
-                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
+                        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+                        if (!proto || (proto->Class != 15 || proto->SubClass != 2))
                         {
-                            if (proto->Class == 15 && proto->SubClass == 2)
+                            // Not a standard companion item.
+                            // If we don't have a spellId yet, maybe this "itemId" is actually a spellId?
+                            if (!spellId)
                             {
-                                uint32 candidateSpells[5] = { proto->Spells[0].SpellId, proto->Spells[1].SpellId, proto->Spells[2].SpellId, proto->Spells[3].SpellId, proto->Spells[4].SpellId };
-                                for (uint32 s : candidateSpells)
+                                if (sSpellMgr->GetSpellInfo(itemId))
                                 {
-                                    if (s)
-                                    {
-                                        spellId = s;
-                                        break;
-                                    }
+                                    spellId = itemId;
+                                    itemId = 0; // Reset invalid item ID
                                 }
                             }
                         }
+                    }
+
+                    if (spellId && !itemId)
+                        itemId = FindCompanionItemIdForSpell(spellId);
+
+                    // Always resolve the actual companion summon spell from the teaching itemId.
+                    // This avoids relying on dc_pet_definitions.pet_spell_id, which can be placeholder/wrong (e.g. the same value for many rows).
+                    if (itemId)
+                    {
+                        if (uint32 resolved = FindCompanionSpellIdForItem(itemId))
+                            spellId = resolved;
                     }
 
                     if (SpellInfo const* spellInfo = spellId ? sSpellMgr->GetSpellInfo(spellId) : nullptr)
                     {
                         for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
                         {
-                            // Companion pets commonly use SPELL_EFFECT_SUMMON_PET (56) rather than SPELL_EFFECT_SUMMON (28).
-                            if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON || spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET)
+                            if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON ||
+                                spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET)
                             {
                                 creatureId = spellInfo->Effects[i].MiscValue;
-                                break;
+                                // If we find a MINIPET type, prefer it and stop.
+                                // Otherwise keep the first summon we found (or overwrite if we find a better one).
+                                SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+                                if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                                    break;
                             }
                         }
                     }
+
+                    std::string name = f[1].Get<std::string>();
+                    std::string icon = f[2].Get<std::string>();
+                    uint32 rarity = f[3].Get<uint32>();
+
+                    auto isUnknownName = [](std::string const& n) -> bool
+                    {
+                        if (n.empty())
+                            return true;
+                        std::string lower = n;
+                        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                        return lower == "unknown" || n == "???" || n == "?";
+                    };
 
                     if (creatureId)
                     {
@@ -3488,20 +4105,46 @@ namespace DCCollection
                         {
                             if (CreatureModel const* m = cInfo->GetFirstValidModel())
                                 displayId = m->CreatureDisplayID;
+                            
+                            // Fallback name from creature if still missing
+                            if (isUnknownName(name))
+                                name = cInfo->Name;
                         }
                     }
                     if (!displayId && displayIdFromTable)
                         displayId = displayIdFromTable;
 
-                    if (!itemId)
+                    if (!itemId && !spellId)
                         continue;
+
+                    if (itemId)
+                    {
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
+                        {
+                            if (isUnknownName(name))
+                                name = proto->Name1;
+                            if (rarity == 0)
+                                rarity = std::min<uint32>(proto->Quality, 4u);
+                        }
+                    }
+                    else if (spellId)
+                    {
+                        // Fallback: If we still don't have a valid Item ID, but we have a Spell ID, use the spell name.
+                        // This handles cases where the DB has spell IDs in the item column and we couldn't map them to items.
+                        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId))
+                        {
+                            if (isUnknownName(name))
+                                name = spellInfo->SpellName[0];
+                        }
+                    }
 
                     DCAddon::JsonValue d;
                     d.SetObject();
-                    d.Set("name", f[1].Get<std::string>());
-                    d.Set("icon", f[2].Get<std::string>());
-                    d.Set("rarity", f[3].Get<uint32>());
-                    d.Set("itemId", itemId);
+                    d.Set("name", name);
+                    d.Set("icon", icon);
+                    d.Set("rarity", rarity);
+                    if (itemId)
+                        d.Set("itemId", itemId);
                     if (spellId)
                         d.Set("spellId", spellId);
                     if (creatureId)
@@ -3522,7 +4165,8 @@ namespace DCCollection
                         d.Set("source", buildSourceForItemCached(itemId));
                     }
 
-                    defs.Set(std::to_string(itemId), d);
+                    defs.Set(std::to_string(itemId ? itemId : spellId), d);
+                    sentIds.insert(itemId ? itemId : spellId);
                     loadedAny = true;
                 } while (r->NextRow());
             }
@@ -3650,29 +4294,165 @@ namespace DCCollection
             }
         }
 
-        if (!loadedAny)
+        // Always ensure owned items have definitions, even if the DB table was incomplete.
         {
-            // Last-resort: send definitions only for owned items so the UI isn't empty.
             uint32 accountId = GetAccountId(player);
             if (accountId)
             {
                 auto owned = LoadPlayerCollection(accountId, ct);
                 for (uint32 entryId : owned)
                 {
-                    std::string name;
+                    if (sentIds.count(entryId))
+                        continue;
 
-                    if (ct == CollectionType::MOUNT || ct == CollectionType::PET)
+                    std::string name;
+                    std::string icon;
+                    uint32 rarity = 1;
+                    uint32 displayId = 0;
+                    uint32 itemId = 0;
+
+                    if (ct == CollectionType::MOUNT)
                     {
                         if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(entryId))
                         {
                             if (spellInfo->SpellName[0])
                                 name = spellInfo->SpellName[0];
+                            
+                            // Try to find displayId
+                            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                            {
+                                if (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED)
+                                {
+                                    displayId = spellInfo->Effects[i].MiscValue;
+                                    break;
+                                }
+                            }
                         }
+                    }
+                    else if (ct == CollectionType::PET)
+                    {
+                        // entryId is usually itemId
+                        itemId = entryId;
+                        uint32 spellId = 0;
+                        uint32 creatureId = 0;
+                        bool isValidCompanion = false;
+                        
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                        {
+                            // Validate this is actually a companion item (Class 15, Subclass 2)
+                            if (proto->Class == 15 && proto->SubClass == 2)
+                            {
+                                name = proto->Name1;
+                                rarity = std::min<uint32>(proto->Quality, 4u);
+                                
+                                // Try to find spellId -> creatureId -> displayId
+                                spellId = FindCompanionSpellIdForItem(entryId);
+                                if (spellId)
+                                {
+                                    // Verify the spell is actually a companion summon
+                                    if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId))
+                                    {
+                                        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                                        {
+                                            if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON ||
+                                                spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET)
+                                            {
+                                                SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+                                                if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                                                {
+                                                    isValidCompanion = true;
+                                                    creatureId = spellInfo->Effects[i].MiscValue;
+                                                    if (creatureId)
+                                                    {
+                                                        if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                                                        {
+                                                            if (CreatureModel const* m = cInfo->GetFirstValidModel())
+                                                                displayId = m->CreatureDisplayID;
+                                                            
+                                                            // Fallback name from creature if item name is missing/unknown
+                                                            if (name.empty() || name == "Unknown")
+                                                                name = cInfo->Name;
+                                                        }
+                                                    }
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(entryId))
+                        {
+                            // Fallback if entryId is actually a spellId (legacy)
+                            // But only if it's a valid companion summon spell
+                            spellId = entryId;
+                            
+                            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                            {
+                                if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON ||
+                                    spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON_PET)
+                                {
+                                    SummonPropertiesEntry const* properties = sSummonPropertiesStore.LookupEntry(spellInfo->Effects[i].MiscValueB);
+                                    if (properties && properties->Type == SUMMON_TYPE_MINIPET)
+                                    {
+                                        isValidCompanion = true;
+                                        if (spellInfo->SpellName[0])
+                                            name = spellInfo->SpellName[0];
+                                        
+                                        creatureId = spellInfo->Effects[i].MiscValue;
+                                        if (creatureId)
+                                        {
+                                            if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(creatureId))
+                                            {
+                                                if (CreatureModel const* m = cInfo->GetFirstValidModel())
+                                                    displayId = m->CreatureDisplayID;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Skip this entry if it's not actually a valid companion
+                        if (!isValidCompanion)
+                        {
+                            LOG_WARN("module", "DC-Collection: Skipping invalid companion entry {} for account {}", entryId, accountId);
+                            continue;
+                        }
+                        
+                        // Build the definition with all resolved IDs
+                        DCAddon::JsonValue d;
+                        d.SetObject();
+                        if (!name.empty())
+                            d.Set("name", name);
+                        if (!icon.empty())
+                            d.Set("icon", icon);
+                        if (rarity > 0)
+                            d.Set("rarity", rarity);
+                        if (itemId > 0)
+                            d.Set("itemId", itemId);
+                        if (spellId > 0)
+                            d.Set("spellId", spellId);
+                        if (creatureId > 0)
+                            d.Set("creatureId", creatureId);
+                        if (displayId > 0)
+                            d.Set("displayId", displayId);
+                        
+                        defs.Set(std::to_string(entryId), d);
+                        sentIds.insert(entryId);
+                        continue; // Skip the generic addDef call below
                     }
                     else if (ct == CollectionType::TOY || ct == CollectionType::HEIRLOOM)
                     {
+                        itemId = entryId;
                         if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
+                        {
                             name = proto->Name1;
+                            rarity = std::min<uint32>(proto->Quality, 4u);
+                            displayId = proto->DisplayInfoID;
+                        }
                     }
                     else if (ct == CollectionType::TITLE)
                     {
@@ -3685,7 +4465,7 @@ namespace DCCollection
                         }
                     }
 
-                    addDef(entryId, name, std::string(), 0, std::string(), -1);
+                    addDef(entryId, name, icon, rarity, std::string(), -1, itemId, displayId);
                 }
             }
         }
@@ -3946,6 +4726,10 @@ namespace DCCollection
             // Seed account-wide collections from already-known mounts/pets/titles.
             ImportExistingCollections(player);
 
+            // Make account-wide collections usable on this character in default UI.
+            // (Mounts/Companions are spells; Titles are known-title flags.)
+            SyncAccountWideCollectionsToCharacter(player);
+
             // Apply mount speed bonus on login
             UpdateMountSpeedBonus(player);
 
@@ -4031,7 +4815,6 @@ namespace DCCollection
 
             // Check for mount effect
             bool isMount = false;
-            bool isPet = false;
 
             for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
             {
@@ -4041,13 +4824,6 @@ namespace DCCollection
                 {
                     isMount = true;
                     break;
-                }
-                // Check for companion pet summon
-                if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON &&
-                    spellInfo->Effects[i].MiscValueB == 0)  // Non-combat pet
-                {
-                    // Additional checks could be added here
-                    isPet = true;
                 }
             }
 
@@ -4067,9 +4843,13 @@ namespace DCCollection
                 SendItemLearned(player, CollectionType::MOUNT, spellId);
                 UpdateMountSpeedBonus(player);
             }
-            else if (isPet)
+            else
             {
-                uint32 itemId = FindCompanionItemIdForSpell(spellId);
+                uint32 companionSummonSpellId = ResolveCompanionSummonSpellFromSpell(spellId);
+                if (!companionSummonSpellId)
+                    return;
+
+                uint32 itemId = FindCompanionItemIdForSpell(companionSummonSpellId);
                 if (!itemId)
                     return;
 
@@ -4259,7 +5039,7 @@ namespace DCCollection
     public:
         CollectionWorldScript() : WorldScript("dc_collection_world") {}
 
-        void OnAfterConfigLoad(bool /*reload*/) override
+        void OnAfterConfigLoad(bool reload) override
         {
             // Register module as enabled/disabled based on config
             bool enabled = sConfigMgr->GetOption<bool>(Config::ENABLED, true);
@@ -4268,6 +5048,12 @@ namespace DCCollection
             if (enabled)
             {
                 LOG_INFO("module", "DC-Collection: Module enabled");
+            }
+
+            // Optional maintenance task. Run only at startup (not on config reload).
+            if (!reload && enabled && sConfigMgr->GetOption<bool>(Config::PET_DEFINITIONS_REBUILD_ON_STARTUP, false))
+            {
+                RebuildPetDefinitionsFromLocalData();
             }
         }
     };

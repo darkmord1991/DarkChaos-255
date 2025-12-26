@@ -296,7 +296,8 @@
             void SendAffixAddonToPlayer(Player* player) const;
             void SendAffixAddonToZone() const;
             // Addon messaging: send current resources and timer status to client HUD
-            void SendStatusAddonToPlayer(Player* player) const;
+            // APC/HPC are optional per-player counts (defaults to 0 when unknown)
+            void SendStatusAddonToPlayer(Player* player, uint32 apc = 0, uint32 hpc = 0) const;
             void SendStatusAddonToZone() const;
 
             // Group auto-invite helpers (battleground-like raid management)

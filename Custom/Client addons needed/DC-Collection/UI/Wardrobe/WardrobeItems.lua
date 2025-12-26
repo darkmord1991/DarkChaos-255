@@ -172,6 +172,117 @@ end
 function Wardrobe:RefreshGrid()
     if not self.frame then return end
 
+    -- The Sets/Outfits tabs repurpose the shared grid and overwrite button handlers.
+    -- Always restore the Items handlers when rendering the items grid.
+    local function ConfigureGridButtonForItems(btn)
+        if not btn then
+            return
+        end
+
+        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+        btn:SetScript("OnClick", function(selfBtn, button)
+            if not selfBtn.itemData then return end
+
+            if IsShiftKeyDown and IsShiftKeyDown() then
+                local itemId = selfBtn.itemData.itemId
+                if not itemId then return end
+                if DC and DC.RequestAddWishlist and DC.RequestRemoveWishlist then
+                    if Wardrobe:IsWishlistedTransmog(itemId) then
+                        DC:RequestRemoveWishlist("transmog", itemId)
+                    else
+                        DC:RequestAddWishlist("transmog", itemId)
+                    end
+                end
+                return
+            end
+
+            if button == "LeftButton" then
+                if selfBtn.itemData.itemId then
+                    selfBtn.keepPreviewOnClick = true
+                    Wardrobe:PreviewAppearance(selfBtn.itemData.itemId)
+                    Wardrobe:ShowTooltipPreview(selfBtn.itemData.itemId)
+                end
+            else
+                selfBtn.keepPreviewOnClick = false
+                Wardrobe:HideTooltipPreview()
+                Wardrobe:ShowAppearanceContextMenu(selfBtn.itemData)
+            end
+        end)
+
+        btn:SetScript("OnEnter", function(selfBtn)
+            if not selfBtn.itemData then return end
+
+            if selfBtn.itemData.itemId then
+                Wardrobe:ShowTooltipPreview(selfBtn.itemData.itemId)
+            end
+
+            Wardrobe:ShowFixedItemTooltip(selfBtn, selfBtn.itemData.itemId, function(tip)
+                tip:AddLine(" ")
+
+                if selfBtn.itemData.displayId then
+                    tip:AddLine("DisplayId: " .. tostring(selfBtn.itemData.displayId), 0.85, 0.85, 0.85)
+                end
+
+                local ids = selfBtn.itemData.itemIds
+                local idsTotal = selfBtn.itemData.itemIdsTotal
+                if type(idsTotal) == "string" then idsTotal = tonumber(idsTotal) end
+                if type(ids) == "table" and (#ids > 0 or idsTotal) then
+                    local shown = {}
+                    local maxShow = 10
+                    local n = 0
+                    for _, v in ipairs(ids) do
+                        if n >= maxShow then break end
+                        local iv = type(v) == "string" and tonumber(v) or v
+                        if iv and not shown[iv] then
+                            shown[iv] = true
+                            n = n + 1
+                        end
+                    end
+
+                    local list = {}
+                    for iv in pairs(shown) do
+                        table.insert(list, iv)
+                    end
+                    table.sort(list)
+
+                    local line = "Variants: "
+                    if #list > 0 then
+                        for i = 1, #list do
+                            if i > 1 then line = line .. ", " end
+                            line = line .. tostring(list[i])
+                        end
+                    end
+
+                    if idsTotal and idsTotal > #ids then
+                        line = line .. string.format(" (+%d more)", (idsTotal - #ids))
+                    end
+                    tip:AddLine(line, 0.85, 0.85, 0.85)
+                end
+
+                if selfBtn.itemData.collected then
+                    tip:AddLine("Appearance collected", 0.1, 1, 0.1)
+                else
+                    if Wardrobe:IsWishlistedTransmog(selfBtn.itemData.itemId) then
+                        tip:AddLine("Wishlisted", 1, 0.82, 0)
+                    end
+                end
+                tip:AddLine("Left-click to preview", 0.7, 0.7, 0.7)
+                tip:AddLine("Right-click to apply or add to wishlist", 0.7, 0.7, 0.7)
+                tip:AddLine("Shift-click to toggle wishlist", 0.7, 0.7, 0.7)
+            end)
+        end)
+
+        btn:SetScript("OnLeave", function(selfBtn)
+            GameTooltip:Hide()
+            if Wardrobe.HideTooltipPreview then
+                if not selfBtn.keepPreviewOnClick then
+                    Wardrobe:HideTooltipPreview()
+                end
+            end
+        end)
+    end
+
     local list = self:BuildAppearanceList()
     self.appearanceList = list
 
@@ -213,6 +324,7 @@ function Wardrobe:RefreshGrid()
     local startIdx = (self.currentPage - 1) * self.ITEMS_PER_PAGE + 1
 
     for i, btn in ipairs(self.frame.gridButtons) do
+        ConfigureGridButtonForItems(btn)
         local idx = startIdx + (i - 1)
         local item = list[idx]
 

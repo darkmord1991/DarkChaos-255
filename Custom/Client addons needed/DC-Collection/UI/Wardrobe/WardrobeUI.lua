@@ -233,41 +233,51 @@ function Wardrobe:_ApplyEmbeddedLayout()
     local right = frame.rightPanel
     local bottom = frame.bottomBar
     local previewHost = frame.previewHost
+    local previewModeFrame = frame.previewModeFrame
 
     if not left or not right or not bottom or not previewHost then
         return
     end
 
     local insetX = 18
-    local insetY = 2
+    local topInset = 0      -- Move content UP to the top edge
+    local bottomInset = 40  -- Move bottom bar UP from the bottom edge
     local gap = 20
     local bottomBarHeight = 50
     local previewWidth = 240
 
     -- Right-side reserved area for tooltip/model preview.
     previewHost:ClearAllPoints()
-    previewHost:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -insetX, -insetY)
-    previewHost:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, insetY)
+    previewHost:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -insetX, -topInset)
+    previewHost:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, bottomInset)
     previewHost:SetWidth(previewWidth)
     previewHost:Show()
 
-    -- Left panel: use the top space (no -50 header offset) and reserve room for the bottom bar.
+    -- Left panel: use the top space
     left:ClearAllPoints()
-    left:SetPoint("TOPLEFT", frame, "TOPLEFT", insetX, -insetY)
-    left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insetX, insetY + bottomBarHeight + gap)
+    left:SetPoint("TOPLEFT", frame, "TOPLEFT", insetX, -topInset)
+    left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insetX, bottomInset + bottomBarHeight + gap)
     -- Make sure the top row of buttons (Disable/Visuals/Refresh) fits without spilling into the right panel.
     left:SetWidth(self.MODEL_WIDTH + 150)
 
     -- Bottom bar: keep fully inside the frame, aligned to the left panel width.
     bottom:ClearAllPoints()
-    bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insetX, insetY)
-    bottom:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", 0, insetY)
+    bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insetX, bottomInset)
+    bottom:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", 0, bottomInset)
     bottom:SetHeight(bottomBarHeight)
 
     -- Right panel: fill the space between left panel and preview host.
     right:ClearAllPoints()
     right:SetPoint("TOPLEFT", left, "TOPRIGHT", gap, 0)
     right:SetPoint("BOTTOMRIGHT", previewHost, "BOTTOMLEFT", -gap, 0)
+
+    -- Move Preview Toggle to Bottom Right (near page controls)
+    if previewModeFrame then
+        previewModeFrame:ClearAllPoints()
+        previewModeFrame:SetParent(frame)
+        previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, 5)
+        previewModeFrame:SetFrameStrata("HIGH")
+    end
 
     -- If the tooltip preview already exists, re-parent + re-anchor it.
     if self.tooltipPreview and self.tooltipPreview.SetParent then
@@ -289,6 +299,7 @@ function Wardrobe:_ApplyStandaloneLayout()
     local left = frame.leftPanel
     local right = frame.rightPanel
     local bottom = frame.bottomBar
+    local previewModeFrame = frame.previewModeFrame
 
     if not left or not right or not bottom then
         return
@@ -296,16 +307,22 @@ function Wardrobe:_ApplyStandaloneLayout()
 
     -- Restore original standalone anchors/sizes.
     left:ClearAllPoints()
-    left:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -50)
+    left:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -20)
     left:SetSize(self.MODEL_WIDTH + 100, self.FRAME_HEIGHT - 120)
 
     right:ClearAllPoints()
-    right:SetPoint("TOPLEFT", frame, "TOPLEFT", self.MODEL_WIDTH + 170, -50)
+    right:SetPoint("TOPLEFT", frame, "TOPLEFT", self.MODEL_WIDTH + 170, -20)
     right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 70)
 
     bottom:ClearAllPoints()
     bottom:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 50, 0)
     bottom:SetSize(self.MODEL_WIDTH, 50)
+
+    if previewModeFrame then
+        previewModeFrame:SetParent(bottom)
+        previewModeFrame:ClearAllPoints()
+        previewModeFrame:SetPoint("BOTTOMRIGHT", bottom, "BOTTOMRIGHT", -10, 0)
+    end
 
     if self.tooltipPreview and self.tooltipPreview.SetParent then
         self.tooltipPreview:SetParent(frame)
@@ -456,7 +473,7 @@ function Wardrobe:CreateLeftPanel(parent)
     parent.refreshStatus = refreshStatus
 
     local modelFrame = CreateFrame("Frame", nil, left)
-    modelFrame:SetPoint("TOPLEFT", left, "TOPLEFT", 50, -30)
+    modelFrame:SetPoint("TOPLEFT", left, "TOPLEFT", 50, -25)
     modelFrame:SetSize(MODEL_WIDTH, 400)
 
     modelFrame.bg = modelFrame:CreateTexture(nil, "BACKGROUND")
@@ -526,7 +543,15 @@ function Wardrobe:CreateLeftPanel(parent)
         elseif slotDef.side == "right" then
             btn:SetPoint("TOPLEFT", modelFrame, "TOPRIGHT", 5, -(slotDef.row - 1) * (SLOT_SIZE + 5) - 10)
         elseif slotDef.side == "bottom" then
-            btn:SetPoint("TOP", modelFrame, "BOTTOM", (slotDef.row - 2) * (SLOT_SIZE + 5), -5)
+            -- Weapons: centered under the model, grouped together.
+            if slotDef.key == "MainHandSlot" then
+                btn:SetPoint("TOPRIGHT", modelFrame, "BOTTOM", -2, -10)
+            elseif slotDef.key == "SecondaryHandSlot" then
+                btn:SetPoint("TOPLEFT", modelFrame, "BOTTOM", 2, -10)
+            else
+                -- Ranged / fallback: centered under the weapons.
+                btn:SetPoint("TOP", modelFrame, "BOTTOM", 0, -10 - SLOT_SIZE - 5)
+            end
         end
 
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
@@ -682,7 +707,7 @@ function Wardrobe:CreateRightPanel(parent)
     -- Universal search box (searches name, itemID, and displayID simultaneously)
     local searchBox = CreateFrame("EditBox", "DCWardrobeSearchBox", right, "InputBoxTemplate")
     searchBox:SetSize(200, 20)
-    searchBox:SetPoint("TOPRIGHT", right, "TOPRIGHT", -10, -35)
+    searchBox:SetPoint("TOPRIGHT", right, "TOPRIGHT", -5, -50)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(50)
 
@@ -718,9 +743,9 @@ function Wardrobe:CreateRightPanel(parent)
     searchBox:SetScript("OnLeave", function() GameTooltip:Hide() end)
     parent.searchBox = searchBox
 
-    -- Quality filter dropdown
+    -- Quality filter dropdown (moved to top-right to avoid stacking with other controls)
     local qualityDropdown = CreateFrame("Frame", "DCWardrobeQualityDropdown", right, "UIDropDownMenuTemplate")
-    qualityDropdown:SetPoint("RIGHT", searchBox, "LEFT", -10, 0)
+    qualityDropdown:SetPoint("TOPRIGHT", right, "TOPRIGHT", -220, -48)
     UIDropDownMenu_SetWidth(qualityDropdown, 90)
     
     UIDropDownMenu_Initialize(qualityDropdown, function(self, level)
@@ -751,7 +776,7 @@ function Wardrobe:CreateRightPanel(parent)
 
     local filterBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
     filterBtn:SetSize(60, 20)
-    filterBtn:SetPoint("RIGHT", qualityDropdown, "LEFT", -10, 0)
+    filterBtn:SetPoint("TOPRIGHT", right, "TOPRIGHT", -320, -50)
     filterBtn:SetText("Filter")
     -- Filter should be equipment slot/type based (not item sets). Provide a quick slot filter menu.
     filterBtn:SetScript("OnClick", function()
@@ -761,13 +786,13 @@ function Wardrobe:CreateRightPanel(parent)
 
     local orderBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
     orderBtn:SetSize(70, 20)
-    orderBtn:SetPoint("RIGHT", filterBtn, "LEFT", -5, 0)
+    orderBtn:SetPoint("TOPRIGHT", right, "TOPRIGHT", -390, -50)
     orderBtn:SetText("Order By")
     orderBtn:SetScript("OnClick", function() end)
     parent.orderBtn = orderBtn
 
     local slotFilterFrame = CreateFrame("Frame", nil, right)
-    slotFilterFrame:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -65)
+    slotFilterFrame:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -80)
     slotFilterFrame:SetSize(right:GetWidth(), 32)
 
     parent.slotFilterButtons = {}
@@ -1000,7 +1025,7 @@ function Wardrobe:CreateRightPanel(parent)
                 end
 
                 if selfBtn.itemData.collected then
-                    tip:AddLine("You've collected this appearance", 0.1, 1, 0.1)
+                    tip:AddLine("Appearance collected", 0.1, 1, 0.1)
                 else
                     if Wardrobe:IsWishlistedTransmog(selfBtn.itemData.itemId) then
                         tip:AddLine("Wishlisted", 1, 0.82, 0)
@@ -1155,6 +1180,7 @@ function Wardrobe:CreateBottomBar(parent)
     slider:SetScript("OnLeave", function() GameTooltip:Hide() end)
     
     parent.previewModeSlider = slider
+    parent.previewModeFrame = previewModeFrame
     Wardrobe.previewMode = Wardrobe.previewMode or "full"
 
     parent.outfitSlots = {}

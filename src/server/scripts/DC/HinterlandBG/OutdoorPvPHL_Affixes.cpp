@@ -81,7 +81,7 @@ void OutdoorPvPHL::SendAffixAddonToZone() const
     ForEachPlayerInZone([&](Player* p){ SendAffixAddonToPlayer(p); });
 }
 
-void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player) const
+void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player, uint32 apc, uint32 hpc) const
 {
     if (!player)
         return;
@@ -91,7 +91,9 @@ void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player) const
     std::string message = "HLBG\tSTATUS|A=" + std::to_string(_ally_gathered)
                         + "|H=" + std::to_string(_horde_gathered)
                         + "|END=" + std::to_string(endEpoch)
-                        + "|LOCK=" + std::to_string(lock);
+                        + "|LOCK=" + std::to_string(lock)
+                        + "|APC=" + std::to_string(apc)
+                        + "|HPC=" + std::to_string(hpc);
     if (player->GetSession())
     {
         WorldPacket data;
@@ -102,7 +104,19 @@ void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player) const
 
 void OutdoorPvPHL::SendStatusAddonToZone() const
 {
-    ForEachPlayerInZone([&](Player* p){ SendStatusAddonToPlayer(p); });
+    uint32 apc = 0;
+    uint32 hpc = 0;
+    ForEachPlayerInZone([&](Player* p)
+    {
+        if (!p)
+            return;
+        if (p->GetTeamId() == TEAM_ALLIANCE)
+            ++apc;
+        else if (p->GetTeamId() == TEAM_HORDE)
+            ++hpc;
+    });
+
+    ForEachPlayerInZone([&](Player* p){ SendStatusAddonToPlayer(p, apc, hpc); });
 }
 
 // Compute effective spells/weather, preferring per-affix overrides

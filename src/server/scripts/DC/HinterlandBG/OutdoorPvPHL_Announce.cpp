@@ -19,14 +19,16 @@ std::string OutdoorPvPHL::GetBgChatPrefix() const
 
 void OutdoorPvPHL::HandleWinMessage(const char* message)
 {
-    std::string full = GetBgChatPrefix() + std::string(message);
-    if (Map* m = GetMap())
-        for (uint8 i = 0; i < OutdoorPvPHLBuffZonesNum; ++i)
-            m->SendZoneText(OutdoorPvPHLBuffZones[i], full.c_str());
+    // Chat output disabled for HLBG.
+    (void)message;
+    return;
 }
 
 void OutdoorPvPHL::BroadcastStatusToZone()
 {
+    // Chat output disabled for HLBG.
+    return;
+
     uint32 now = NowSec();
     // Throttle status broadcasts to once per second per map instance to avoid spam
     if (now - _lastZoneAnnounceEpoch < 1)

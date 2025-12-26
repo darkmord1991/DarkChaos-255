@@ -1625,133 +1625,101 @@ static bool SpawnHotspot()
            << hotspot.x << ", " << hotspot.y << ", " << hotspot.z << ")"
            << "! (+" << sHotspotsConfig.experienceBonus << "% XP)";
 
-      sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
-
-      // Send a structured message for addons to parse reliably
-      // Format: HOTSPOT_ADDON|map:<mapId>|zone:<zoneId>|x:<x>|y:<y>|z:<z>|id:<id>|dur:<seconds>|icon:<spellId>
+        // Send a structured message for addons to parse reliably
+        // Format: HOTSPOT_ADDON|map:<mapId>|zone:<zoneId>|x:<x>|y:<y>|z:<z>|id:<id>|dur:<seconds>|icon:<spellId>
         std::string rawPayload = BuildHotspotAddonPayload(hotspot, static_cast<int32>(sHotspotsConfig.duration * MINUTE));
         std::string addonMsg = std::string("HOTSPOT\t") + rawPayload;
 
-      // Broadcast only to players on the same map and (optionally) within announce radius
-      WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
-      const float announceRadius = sHotspotsConfig.announceRadius;
-      const float announceRadius2 = announceRadius * announceRadius;
-      int announcedCount = 0;
-      for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
-      {
-          WorldSession* sess = itr->second;
-          if (!sess)
-              continue;
-          Player* plr = sess->GetPlayer();
-          if (!plr)
-              continue;
-
-          // Only notify players on the same map
-          if (plr->GetMapId() != hotspot.mapId)
-              continue;
-
-          bool shouldAnnounce = false;
-          // If announceRadius <= 0, notify all players on the same map
-          if (announceRadius <= 0.0f)
-          {
-              shouldAnnounce = true;
-          }
-          else
-          {
-              // Distance squared check (3D)
-              float dx = plr->GetPositionX() - hotspot.x;
-              float dy = plr->GetPositionY() - hotspot.y;
-              float dz = plr->GetPositionZ() - hotspot.z;
-              float dist2 = dx*dx + dy*dy + dz*dz;
-              if (dist2 <= announceRadius2)
-              {
-                  shouldAnnounce = true;
-              }
-          }
-
-          if (shouldAnnounce)
-          {
-              // Send system message so players know a hotspot appeared
-              sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str(), plr);
-
-              // Optionally send addon packet to enable addon visualization (disabled by default)
-              if (sHotspotsConfig.sendAddonPackets)
-              {
-                  // Guard payload length to avoid sending oversized addon messages that
-                  // could break some clients. If payload is too large, skip the ADDON packet
-                  // and rely on the system-text fallback which was already sent above.
-                  const size_t MAX_ADDON_PAYLOAD = 512; // conservative limit in bytes
-                  // Build a trimmed payload that omits optional texture tokens (|tex:... and |texid:...) to keep ADDON packets compact
-                  std::string trimmedPayload = TrimAddonPayload(rawPayload);
-
-                  if (trimmedPayload.size() <= MAX_ADDON_PAYLOAD)
-                  {
-                      std::string addonMsgTrimmed = std::string("HOTSPOT\t") + trimmedPayload;
-                      WorldPacket pkt;
-                      ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsgTrimmed);
-                      plr->SendDirectMessage(&pkt);
-                  }
-                  else
-                  {
-                      LOG_WARN("scripts", "Hotspot #{} trimmed payload too long ({} bytes) — skipping CHAT_MSG_ADDON send to {}", hotspot.id, trimmedPayload.size(), plr->GetName());
-                      std::string preview = rawPayload.substr(0, std::min<size_t>(rawPayload.size(), 400));
-                      LOG_INFO("scripts", "Hotspot #{} payload preview (first {} chars): {}", hotspot.id, preview.size(), EscapeBraces(preview));
-                  }
-              }
-              announcedCount++;
-              // INFO log for operator visibility: indicate this player was notified
-              LOG_INFO("scripts", "Hotspot #{} announce: sent payload to player {} (guid {}) on map {}", hotspot.id, plr->GetName(), plr->GetGUID().ToString(), plr->GetMapId());
-          }
-      }
-      LOG_DEBUG("scripts", "Hotspot #{} broadcast: {} players notified on map {}", hotspot.id, announcedCount, hotspot.mapId);
-
-    // Send a WRLD update containing this hotspot (spawn action) to players on same map/within announce radius
-    {
-        DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
-        DCAddon::JsonValue h; h.SetObject();
-        h.Set("id", DCAddon::JsonValue(static_cast<int32>(hotspot.id)));
-        h.Set("mapId", DCAddon::JsonValue(static_cast<int32>(hotspot.mapId)));
-        h.Set("zoneId", DCAddon::JsonValue(static_cast<int32>(hotspot.zoneId)));
-        // Zone name
-        {
-            std::string zname = "Unknown";
-            if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
-            {
-                if (area->area_name[0] && area->area_name[0][0]) zname = area->area_name[0];
-            }
-            h.Set("zoneName", DCAddon::JsonValue(zname));
-        }
-        h.Set("x", DCAddon::JsonValue(hotspot.x));
-        h.Set("y", DCAddon::JsonValue(hotspot.y));
-        h.Set("z", DCAddon::JsonValue(hotspot.z));
-        h.Set("timeRemaining", DCAddon::JsonValue(static_cast<int32>(hotspot.expireTime - GameTime::GetGameTime().count())));
-        h.Set("bonusPercent", DCAddon::JsonValue(static_cast<int32>(GetHotspotXPBonusPercentage())));
-        h.Set("name", DCAddon::JsonValue("Hotspot"));
-        h.Set("action", DCAddon::JsonValue("spawn"));
-        hotspotsArr.Push(h);
-
-        DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
-        wmsg.Set("hotspots", hotspotsArr);
-
+        // Broadcast only to players on the same map AND in the same zone (zone-only behavior requested)
+        WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
+        int announcedCount = 0;
         for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
         {
             WorldSession* sess = itr->second;
-            if (!sess) continue;
+            if (!sess)
+                continue;
             Player* plr = sess->GetPlayer();
-            if (!plr) continue;
-            if (plr->GetMapId() != hotspot.mapId) continue;
-            if (announceRadius > 0.0f)
+            if (!plr)
+                continue;
+
+            // Only notify players on the same map and in the same zone
+            if (plr->GetMapId() != hotspot.mapId || plr->GetZoneId() != hotspot.zoneId)
+                continue;
+
+            // Send system message so players know a hotspot appeared
+            sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str(), plr);
+
+            // Optionally send addon packet to enable addon visualization (disabled by default)
+            if (sHotspotsConfig.sendAddonPackets)
             {
-                float dx = plr->GetPositionX() - hotspot.x;
-                float dy = plr->GetPositionY() - hotspot.y;
-                float dz = plr->GetPositionZ() - hotspot.z;
-                float dist2 = dx*dx + dy*dy + dz*dz;
-                if (dist2 > announceRadius2) continue;
+                // Guard payload length to avoid sending oversized addon messages that
+                // could break some clients. If payload is too large, skip the ADDON packet
+                // and rely on the system-text fallback which was already sent above.
+                const size_t MAX_ADDON_PAYLOAD = 512; // conservative limit in bytes
+                // Build a trimmed payload that omits optional texture tokens (|tex:... and |texid:...) to keep ADDON packets compact
+                std::string trimmedPayload = TrimAddonPayload(rawPayload);
+
+                if (trimmedPayload.size() <= MAX_ADDON_PAYLOAD)
+                {
+                    std::string addonMsgTrimmed = std::string("HOTSPOT\t") + trimmedPayload;
+                    WorldPacket pkt;
+                    ChatHandler::BuildChatPacket(pkt, CHAT_MSG_ADDON, LANG_ADDON, plr, plr, addonMsgTrimmed);
+                    plr->SendDirectMessage(&pkt);
+                }
+                else
+                {
+                    LOG_WARN("scripts", "Hotspot #{} trimmed payload too long ({} bytes) — skipping CHAT_MSG_ADDON send to {}", hotspot.id, trimmedPayload.size(), plr->GetName());
+                    std::string preview = rawPayload.substr(0, std::min<size_t>(rawPayload.size(), 400));
+                    LOG_INFO("scripts", "Hotspot #{} payload preview (first {} chars): {}", hotspot.id, preview.size(), EscapeBraces(preview));
+                }
             }
-            wmsg.Send(plr);
+            announcedCount++;
+            // INFO log for operator visibility: indicate this player was notified
+            LOG_INFO("scripts", "Hotspot #{} announce: sent payload to player {} (guid {}) on map {} zone {}", hotspot.id, plr->GetName(), plr->GetGUID().ToString(), plr->GetMapId(), plr->GetZoneId());
+        }
+        LOG_DEBUG("scripts", "Hotspot #{} broadcast: {} players notified on map {} zone {}", hotspot.id, announcedCount, hotspot.mapId, hotspot.zoneId);
+
+        // Send a WRLD update containing this hotspot (spawn action) to ALL players so UI addons (e.g., DC-InfoBar) can show all hotspots regardless of zone
+        {
+            WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
+            DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
+            DCAddon::JsonValue h; h.SetObject();
+            h.Set("id", DCAddon::JsonValue(static_cast<int32>(hotspot.id)));
+            h.Set("mapId", DCAddon::JsonValue(static_cast<int32>(hotspot.mapId)));
+            h.Set("zoneId", DCAddon::JsonValue(static_cast<int32>(hotspot.zoneId)));
+            // Zone name
+            {
+                std::string zname = "Unknown";
+                if (const AreaTableEntry* area = sAreaTableStore.LookupEntry(hotspot.zoneId))
+                {
+                    if (area->area_name[0] && area->area_name[0][0]) zname = area->area_name[0];
+                }
+                h.Set("zoneName", DCAddon::JsonValue(zname));
+            }
+            h.Set("x", DCAddon::JsonValue(hotspot.x));
+            h.Set("y", DCAddon::JsonValue(hotspot.y));
+            h.Set("z", DCAddon::JsonValue(hotspot.z));
+            h.Set("timeRemaining", DCAddon::JsonValue(static_cast<int32>(hotspot.expireTime - GameTime::GetGameTime().count())));
+            h.Set("bonusPercent", DCAddon::JsonValue(static_cast<int32>(GetHotspotXPBonusPercentage())));
+            h.Set("name", DCAddon::JsonValue("Hotspot"));
+            h.Set("action", DCAddon::JsonValue("spawn"));
+            hotspotsArr.Push(h);
+
+            DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
+            wmsg.Set("hotspots", hotspotsArr);
+
+            for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+            {
+                WorldSession* sess = itr->second;
+                if (!sess) continue;
+                Player* plr = sess->GetPlayer();
+                if (!plr) continue;
+                wmsg.Send(plr);
+            }
         }
     }
-    }
+
+
 
     return true;
 }
@@ -1826,7 +1794,18 @@ static void CleanupExpiredHotspots()
             {
                 std::ostringstream ss;
                 ss << "|cFFFFD700[Hotspot]|r A Hotspot has expired.";
-                sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str());
+                // Only notify players in the same zone to avoid global spam
+                // Zone-only expire messages: notify players in the same zone
+                WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
+                for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+                {
+                    WorldSession* sess = itr->second;
+                    if (!sess) continue;
+                    Player* player = sess->GetPlayer();
+                    if (!player || !player->IsInWorld() || !player->GetSession()) continue;
+                    if (player->GetZoneId() != it->zoneId) continue;
+                    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str(), player);
+                }
             }
 
             it = sActiveHotspots.erase(it);
