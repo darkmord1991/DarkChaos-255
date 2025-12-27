@@ -1727,8 +1727,12 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	tooltip.__dcUpgradeProcessing = true;
 	tooltip:AddLine(" ");
 	
-	-- Always show item entry ID (useful for debugging)
-	tooltip:AddLine(string.format("|cff888888Entry: %d|r", currentEntry));
+	-- Only show Entry if it differs from the base item ID (upgraded items have different entry)
+	-- Item ID is already shown by Core.lua, so we skip redundant display
+	local baseItemId = data.baseEntry or 0;
+	if currentEntry > 0 and currentEntry ~= baseItemId and baseItemId > 0 then
+		tooltip:AddLine(string.format("|cff888888Upgraded Entry: %d|r", currentEntry));
+	end
 	
 	-- Show upgrade info if item has upgrades
 	if current > 0 then

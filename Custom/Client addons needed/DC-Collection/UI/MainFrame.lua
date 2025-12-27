@@ -664,9 +664,24 @@ function DC:CreateContentArea(parent)
     details.useBtn:SetPoint("BOTTOMLEFT", details, "BOTTOMLEFT", 10, 8)
     details.useBtn:SetText(L["SUMMON"] or "Summon")
     details.useBtn:SetScript("OnClick", function()
-        if DC.selectedItem then
-            DC:OnItemLeftClick(DC.selectedItem)
+        local item = DC.selectedItem
+        if not item then
+            return
         end
+
+        -- Heirlooms: the UX button says "Add to bags". Use the same request
+        -- as the context-menu action (RequestSummonHeirloom).
+        local collType = item.type
+        if collType == "shop" then
+            collType = item.collectionTypeName
+        end
+
+        if collType == "heirlooms" and item.collected then
+            DC:RequestSummonHeirloom(item.id)
+            return
+        end
+
+        DC:OnItemLeftClick(item)
     end)
     details.useBtn:Hide()
 
@@ -1034,7 +1049,9 @@ function DC:UpdateDetailsPanel(item)
     if item.type == "shop" then
         local priceTokens = item.priceTokens or 0
         local priceEmblems = item.priceEmblems or 0
-        d.line2:SetText(string.format("Price: %d tokens, %d emblems", priceTokens, priceEmblems))
+        local tokensName = (L and L.CURRENCY_TOKENS) or "tokens"
+        local essenceName = (L and L.CURRENCY_EMBLEMS) or "essence"
+        d.line2:SetText(string.format("Price: %d %s, %d %s", priceTokens, tokensName, priceEmblems, essenceName))
     else
         d.line2:SetText(item.collected and (L["COLLECTED"] or "Collected") or (L["NOT_COLLECTED"] or "Not collected"))
     end

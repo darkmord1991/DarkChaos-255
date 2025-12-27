@@ -162,21 +162,23 @@ end
 -- ============================================================================
 
 function DC:SaveCache()
+    -- Skip saving if nothing has changed (dirty tracking)
+    -- Note: On logout we always save to be safe, caller sets cacheNeedsSave = true
+    if not self.cacheNeedsSave then
+        self:Debug("Cache unchanged, skipping save")
+        return
+    end
+
     DCCollectionDB = DCCollectionDB or {}
     DCCollectionDB.cacheVersion = CACHE_VERSION
     DCCollectionDB.lastSyncTime = time()
     
-    -- Save definitions
-    DCCollectionDB.definitionCache = {}
-    for collType, defs in pairs(self.definitions) do
-        DCCollectionDB.definitionCache[collType] = defs
-    end
+    -- Save definitions - use direct reference instead of copying
+    -- (tables are passed by reference in Lua, so this is efficient)
+    DCCollectionDB.definitionCache = self.definitions
     
-    -- Save collections
-    DCCollectionDB.collectionCache = {}
-    for collType, items in pairs(self.collections) do
-        DCCollectionDB.collectionCache[collType] = items
-    end
+    -- Save collections - direct reference
+    DCCollectionDB.collectionCache = self.collections
     
     -- Save currency
     DCCollectionDB.currencyCache = {
@@ -184,14 +186,8 @@ function DC:SaveCache()
         emblems = self.currency.emblems,
     }
     
-    -- Save stats
-    DCCollectionDB.statsCache = {}
-    for collType, stats in pairs(self.stats) do
-        DCCollectionDB.statsCache[collType] = {
-            owned = stats.owned,
-            total = stats.total,
-        }
-    end
+    -- Save stats - direct reference
+    DCCollectionDB.statsCache = self.stats
     
     -- Save mount speed bonus
     DCCollectionDB.mountSpeedBonus = self.mountSpeedBonus
@@ -199,6 +195,7 @@ function DC:SaveCache()
     -- Save wishlist
     DCCollectionDB.wishlistCache = self.wishlist
     
+    self.cacheNeedsSave = false
     self:Debug("Cache saved")
 end
 
@@ -669,7 +666,7 @@ local SAVE_INTERVAL = 60  -- Save every 60 seconds if needed
 local function CheckAutoSave()
     if DC.cacheNeedsSave then
         DC:SaveCache()
-        DC.cacheNeedsSave = false
+        -- cacheNeedsSave is cleared by SaveCache
     end
 end
 

@@ -983,13 +983,28 @@ public:
                 uint32 nextPrestige = prestigeLevel + 1;
                 uint32 nextBonus = nextPrestige * statBonusPercent;
 
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Current Prestige Level: {}/{}", prestigeLevel, maxPrestige), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Current Bonus: {}% all stats", prestigeLevel * statBonusPercent), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
-                AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("Required Level to Prestige: {}", requiredLevel), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                // Alt Bonus Info
+                uint32 altBonus = PrestigeAPI::GetAltBonusPercent(player);
+                uint32 maxLevelChars = PrestigeAPI::GetAccountMaxLevelCount(player->GetSession()->GetAccountId());
+                uint32 currentStatBonus = prestigeLevel * statBonusPercent;
+
+                AddGossipItemFor(player, GOSSIP_ICON_DOT, Acore::StringFormat("Prestige Level: {} / {}", prestigeLevel, maxPrestige), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                AddGossipItemFor(player, GOSSIP_ICON_DOT, Acore::StringFormat("Current Bonus: {}% (Stats)", currentStatBonus), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                
+                if (altBonus > 0)
+                {
+                    AddGossipItemFor(player, GOSSIP_ICON_DOT, Acore::StringFormat("Alt Bonus: {}% XP ({} Max-Level Chars)", altBonus, maxLevelChars), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                }
+                else
+                {
+                     AddGossipItemFor(player, GOSSIP_ICON_DOT, "Alt Bonus: 0% XP (No Max-Level Chars)", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                }
+
+                AddGossipItemFor(player, GOSSIP_ICON_DOT, Acore::StringFormat("Required Level to Prestige: {}", requiredLevel), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
 
                 if (PrestigeAPI::CanPrestige(player))
                 {
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("|cff00ff00Prestige {} available: {}% bonus after reset|r", nextPrestige, nextBonus), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                    AddGossipItemFor(player, GOSSIP_ICON_BATTLE, Acore::StringFormat("|cff00ff00[Prestige Now ({}% Bonus)]|r", nextBonus), GOSSIP_SENDER_MAIN, ACTION_PRESTIGE_WARNINGS);
                 }
                 else if (prestigeLevel >= maxPrestige)
                 {
@@ -997,7 +1012,7 @@ public:
                 }
                 else
                 {
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff888888Requirements not yet met for the next prestige.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cff888888Requirements not yet met.|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
                 }
             }
 

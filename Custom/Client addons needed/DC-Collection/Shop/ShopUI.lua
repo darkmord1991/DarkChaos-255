@@ -65,10 +65,11 @@ function DC:CreateShopUI()
     
     -- Get icons from DCCentral if available, else use fallback
     local central = rawget(_G, "DCAddonProtocol")
-    local tokenIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.TOKEN_ITEM_ID or 300311))
-                      or "Interface\\Icons\\INV_Misc_Token_ArgentCrusade"
-    local emblemIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.ESSENCE_ITEM_ID or 300312))
-                       or "Interface\\Icons\\INV_Misc_Herb_Draenethisle"
+        local tokenIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.TOKEN_ITEM_ID or 300311))
+        tokenIcon = DC:NormalizeTexturePath(tokenIcon, "Interface\\Icons\\INV_Misc_Token_ArgentCrusade")
+
+        local essenceIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.ESSENCE_ITEM_ID or 300312))
+        essenceIcon = DC:NormalizeTexturePath(essenceIcon, "Interface\\Icons\\INV_Misc_Herb_Draenethisle")
     
     -- Tokens
     local tokensIcon = currencyFrame:CreateTexture(nil, "ARTWORK")
@@ -78,7 +79,7 @@ function DC:CreateShopUI()
     
     local tokensLabel = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     tokensLabel:SetPoint("LEFT", tokensIcon, "RIGHT", 5, 0)
-    tokensLabel:SetText(L["TOKENS"] or "Tokens:")
+        tokensLabel:SetText((L and L.CURRENCY_TOKENS) and (L.CURRENCY_TOKENS .. ":") or "Tokens:")
     
     local tokensValue = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     tokensValue:SetPoint("LEFT", tokensLabel, "RIGHT", 5, 0)
@@ -89,11 +90,11 @@ function DC:CreateShopUI()
     local emblemsIcon = currencyFrame:CreateTexture(nil, "ARTWORK")
     emblemsIcon:SetSize(20, 20)
     emblemsIcon:SetPoint("LEFT", tokensValue, "RIGHT", 20, 0)
-    emblemsIcon:SetTexture(emblemIcon)
+        emblemsIcon:SetTexture(essenceIcon)
     
     local emblemsLabel = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     emblemsLabel:SetPoint("LEFT", emblemsIcon, "RIGHT", 5, 0)
-    emblemsLabel:SetText(L["EMBLEMS"] or "Emblems:")
+        emblemsLabel:SetText((L and L.CURRENCY_EMBLEMS) and (L.CURRENCY_EMBLEMS .. ":") or "Essence:")
     
     local emblemsValue = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     emblemsValue:SetPoint("LEFT", emblemsLabel, "RIGHT", 5, 0)
@@ -252,9 +253,10 @@ function DC:CreateShopItemFrame(parent, index)
     -- Cost (get icons from DCCentral if available)
     local central = rawget(_G, "DCAddonProtocol")
     local itemTokenIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.TOKEN_ITEM_ID or 300311))
-                          or "Interface\\Icons\\INV_Misc_Token_ArgentCrusade"
-    local itemEmblemIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.ESSENCE_ITEM_ID or 300312))
-                           or "Interface\\Icons\\INV_Misc_Herb_Draenethisle"
+    itemTokenIcon = DC:NormalizeTexturePath(itemTokenIcon, "Interface\\Icons\\INV_Misc_Token_ArgentCrusade")
+
+    local itemEssenceIcon = (central and central.GetTokenIcon and central:GetTokenIcon(central.ESSENCE_ITEM_ID or 300312))
+    itemEssenceIcon = DC:NormalizeTexturePath(itemEssenceIcon, "Interface\\Icons\\INV_Misc_Herb_Draenethisle")
     
     frame.costFrame = CreateFrame("Frame", nil, frame)
     frame.costFrame:SetSize(120, 40)
@@ -272,7 +274,7 @@ function DC:CreateShopItemFrame(parent, index)
     frame.costEmblemsIcon = frame.costFrame:CreateTexture(nil, "ARTWORK")
     frame.costEmblemsIcon:SetSize(16, 16)
     frame.costEmblemsIcon:SetPoint("TOPLEFT", frame.costTokensIcon, "BOTTOMLEFT", 0, -5)
-    frame.costEmblemsIcon:SetTexture(itemEmblemIcon)
+    frame.costEmblemsIcon:SetTexture(itemEssenceIcon)
     
     frame.costEmblemsText = frame.costFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     frame.costEmblemsText:SetPoint("LEFT", frame.costEmblemsIcon, "RIGHT", 3, 0)
@@ -314,12 +316,13 @@ end
 
 function DC:UpdateShopCurrencyDisplay()
     if not self.ShopUI then return end
+
+    local tokens, essence = (type(self.GetCurrencyBalances) == "function") and self:GetCurrencyBalances() or nil
+    tokens = tonumber(tokens) or (self.currency and self.currency.tokens) or 0
+    essence = tonumber(essence) or (self.currency and self.currency.emblems) or 0
     
-    local tokens = (self.currency and self.currency.tokens) or 0
-    local emblems = (self.currency and self.currency.emblems) or 0
-    
-    self.ShopUI.tokensValue:SetText(tokens)
-    self.ShopUI.emblemsValue:SetText(emblems)
+        self.ShopUI.tokensValue:SetText(tokens)
+        self.ShopUI.emblemsValue:SetText(essence)
 end
 
 -- Compatibility: Protocol.lua may call ShopUI:UpdateCurrencyDisplay()
@@ -390,13 +393,15 @@ function DC:UpdateShopItemFrame(frame, item)
     frame.itemData = item
     
     -- Icon
-    local icon = item.icon
+    local icon = DC:NormalizeTexturePath(item.icon, nil)
     if not icon or icon == "" then
-        local anyId = item.itemId or item.entryId or item.entry_id or item.spellId
+        local anyId = item.itemId or item.itemID or item.item_id or item.entryId or item.entry_id or item.entry or item.spellId or item.spellID
         if type(anyId) == "string" then anyId = tonumber(anyId) end
 
-        -- Mounts often use a spell ID
-        if (item.itemType == (DC.SHOP_ITEM_TYPES and DC.SHOP_ITEM_TYPES.MOUNT) or item.itemType == 2) and anyId and type(GetSpellTexture) == "function" then
+        -- Mounts and pets often use a spell ID
+        if (item.itemType == (DC.SHOP_ITEM_TYPES and DC.SHOP_ITEM_TYPES.MOUNT) or item.itemType == 2
+            or item.itemType == (DC.SHOP_ITEM_TYPES and DC.SHOP_ITEM_TYPES.PET) or item.itemType == 3)
+            and anyId and type(GetSpellTexture) == "function" then
             icon = GetSpellTexture(anyId)
             if (not item.name or item.name == "" or item.name == "Unknown") and type(GetSpellInfo) == "function" then
                 local n = GetSpellInfo(anyId)
@@ -414,7 +419,7 @@ function DC:UpdateShopItemFrame(frame, item)
             end
         end
     end
-    frame.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    frame.icon:SetTexture(DC:NormalizeTexturePath(icon, "Interface\\Icons\\INV_Misc_QuestionMark"))
     
     -- Name with rarity color
     local rarityColors = DC.RarityColors or {}

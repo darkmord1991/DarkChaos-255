@@ -10,6 +10,7 @@ http://rochet2.github.io/
 #include <set>
 #include <sstream>
 #include <string>
+#include <algorithm>
 #include "Chat.h"
 #include "GameObject.h"
 #include "Language.h"
@@ -67,8 +68,14 @@ void GOMove::SendAdd(Player * player, ObjectGuid::LowType lowguid)
     GameObjectTemplate const* temp = sObjectMgr->GetGameObjectTemplate(data->id);
     if (!temp)
         return;
-    char msg[256];
-    snprintf(msg, 256, "ADD|%u|%s|%u", lowguid, temp->name.c_str(), data->id);
+    
+    std::string name = temp->name;
+    if (name.empty())
+        name = "Unknown Object";
+    std::replace(name.begin(), name.end(), '|', ' ');
+
+    char msg[512];
+    snprintf(msg, 512, "ADD|%u|%s|%u|%.4f|%.4f|%.4f", lowguid, name.c_str(), data->id, data->posX, data->posY, data->posZ);
     SendAddonMessage(player, msg);
 }
 

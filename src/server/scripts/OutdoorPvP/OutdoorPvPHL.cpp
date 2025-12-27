@@ -146,8 +146,8 @@
     // Default NPC classifications (can be overridden by config)
     _npcBossEntriesAlliance = { Alliance_Boss };
     _npcBossEntriesHorde    = { Horde_Boss };
-    _npcNormalEntriesAlliance = { Alliance_Healer, Alliance_Infantry, Alliance_Squadleader };
-    _npcNormalEntriesHorde    = { Horde_Heal, Horde_Infantry, Horde_Squadleader };
+    _npcNormalEntriesAlliance = { Alliance_Healer, Alliance_Infantry, Alliance_Squadleader, Alliance_Battlewarden, Alliance_Sentry, Alliance_Scout };
+    _npcNormalEntriesHorde    = { Horde_Heal, Horde_Infantry, Horde_Squadleader, Horde_Warcaller, Horde_Watchblade, Horde_Spiritmender };
     // Resource loss defaults
     _resourcesLossPlayerKill = PointsLoseOnPvPKill; // 5
     _resourcesLossNpcNormal = 5;

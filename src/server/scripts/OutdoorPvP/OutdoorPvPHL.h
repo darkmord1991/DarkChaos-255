@@ -127,6 +127,9 @@
             Alliance_Boss = 810003,         // updated DC-WoW
             Alliance_Infantry = 810000,     // updated DC-WoW
             Alliance_Squadleader = 600011,
+            Alliance_Battlewarden = 810009,
+            Alliance_Sentry = 810010,
+            Alliance_Scout = 810011,
     };
 
     enum HordeNpcs
@@ -135,6 +138,9 @@
             Horde_Squadleader = 600008,
             Horde_Infantry = 810001,        // updated DC-WoW
             Horde_Boss = 810002,            // updated DC-WoW
+            Horde_Warcaller = 810006,
+            Horde_Watchblade = 810007,
+            Horde_Spiritmender = 810008,
     };
 
 /* OutdoorPvPHL Related */

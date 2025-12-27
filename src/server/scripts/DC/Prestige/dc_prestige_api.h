@@ -15,6 +15,8 @@ namespace PrestigeAPI
     bool CanPrestige(Player* player);
     void ApplyPrestigeBuffs(Player* player);
     void PerformPrestige(Player* player);
+    uint32 GetAltBonusPercent(Player* player);
+    uint32 GetAccountMaxLevelCount(uint32 accountId);
 }
 
 #endif // AZEROTHCORE_DC_PRESTIGE_API_H

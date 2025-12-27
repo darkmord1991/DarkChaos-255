@@ -272,16 +272,23 @@ function Wardrobe:HookItemTooltip()
         local displayId = self:GetAppearanceDisplayIdForItemId(itemId)
 
         local collected = false
+        
+        -- Method 1: Check server-provided collected appearances (keyed by displayId)
         if displayId and displayId > 0 and DC and DC.IsAppearanceCollected then
             collected = DC:IsAppearanceCollected(displayId) and true or false
         end
 
-        -- Compatibility: some UIs cache transmog collection keyed by displayId.
+        -- Method 2: Check local transmog collection cache (keyed by displayId)
         if not collected and DC and DC.collections and DC.collections.transmog and displayId then
             collected = DC.collections.transmog[displayId] ~= nil
         end
 
-        -- Legacy fallback (old behavior): collection keyed by itemId.
+        -- Method 3: Check local transmog collection cache (keyed by itemId - legacy)
+        if not collected and DC and DC.collections and DC.collections.transmog then
+            collected = DC.collections.transmog[itemId] ~= nil
+        end
+
+        -- Method 4: Check via Wardrobe helper (also keyed by itemId)
         if not collected then
             collected = self:IsAppearanceCollected(itemId)
         end
@@ -695,10 +702,16 @@ end
 -- ============================================================================
 
 local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
-eventFrame:SetScript("OnEvent", function()
-    if Wardrobe.frame and Wardrobe.frame:IsShown() then
+eventFrame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
+        -- Hook item tooltip early so "Appearance collected" shows without needing to open wardrobe first
+        -- Try both events in case one fires before the other
+        Wardrobe:HookItemTooltip()
+    elseif Wardrobe.frame and Wardrobe.frame:IsShown() then
         Wardrobe:UpdateSlotButtons()
         Wardrobe:UpdateModel()
     end

@@ -196,6 +196,71 @@ function DC:FormatCurrency(tokens, emblems)
     return table.concat(parts, " + ")
 end
 
+-- Centralized currency getter.
+-- Prefers DCAddonProtocol's shared balance (when present), falls back to DC.currency.
+function DC:GetCurrencyBalances()
+    local tokens, essence
+
+    local central = rawget(_G, "DCAddonProtocol")
+    if central then
+        -- Common patterns used across DC addons.
+        local getters = {
+            central.GetServerCurrencyBalance,
+            central.GetCurrencyBalance,
+            central.GetCurrencyBalances,
+        }
+
+        for _, getter in ipairs(getters) do
+            if type(getter) == "function" then
+                local ok, a, b = pcall(getter, central)
+                if ok then
+                    tokens = a
+                    essence = b
+                    break
+                end
+            end
+        end
+
+        -- Some builds expose the helpers under central.DCCentral.
+        if (tokens == nil or essence == nil) and type(central.DCCentral) == "table" then
+            local c = central.DCCentral
+            local getter = c.GetServerCurrencyBalance or c.GetCurrencyBalance or c.GetCurrencyBalances
+            if type(getter) == "function" then
+                local ok, a, b = pcall(getter, c)
+                if ok then
+                    tokens = tokens or a
+                    essence = essence or b
+                end
+            end
+        end
+    end
+
+    tokens = tonumber(tokens) or (self.currency and self.currency.tokens) or 0
+    essence = tonumber(essence) or (self.currency and self.currency.emblems) or 0
+    return tokens, essence
+end
+
+-- Normalize texture paths across 3.3.5a APIs.
+-- Some servers/helpers provide icon names like "INV_Misc_QuestionMark" instead of full paths.
+function DC:NormalizeTexturePath(texture, fallback)
+    if type(texture) ~= "string" then
+        return fallback
+    end
+
+    local tex = texture
+    if tex == "" then
+        return fallback
+    end
+
+    -- Already a full path (Interface\\Icons\\...) or any other path.
+    if string.find(tex, "\\", 1, true) or string.find(tex, "/", 1, true) then
+        return tex
+    end
+
+    -- Common icon name -> full path
+    return "Interface\\Icons\\" .. tex
+end
+
 -- ============================================================================
 -- SOURCE FORMATTING
 -- ============================================================================

@@ -25,8 +25,8 @@ end
 local FavFrame, SelFrame
 
 GOMove.SelL = {NameWidth = 30}
-function GOMove.SelL:Add(name, guid, entry)
-    table.insert(self, 1, {name, guid, entry})
+function GOMove.SelL:Add(name, guid, entry, x, y, z)
+    table.insert(self, 1, {name, guid, entry, x, y, z})
 end
 function GOMove.SelL:Del(guid)
     for k,v in ipairs(self) do
@@ -137,6 +137,22 @@ RadiusFinalizeFrame:SetScript("OnUpdate", function(self)
         if (count <= 0) then
             return
         end
+
+        -- Sort by distance if coordinates are available
+        local px, py, pz = UnitPosition("player")
+        if (px and py and pz) then
+            table.sort(GOMove.SelL, function(a, b)
+                local ax, ay, az = tonumber(a[4]), tonumber(a[5]), tonumber(a[6])
+                local bx, by, bz = tonumber(b[4]), tonumber(b[5]), tonumber(b[6])
+                if (ax and ay and az and bx and by and bz) then
+                    local distA = (ax - px)^2 + (ay - py)^2 + (az - pz)^2
+                    local distB = (bx - px)^2 + (by - py)^2 + (bz - pz)^2
+                    return distA < distB
+                end
+                return false
+            end)
+        end
+
         -- Always open the selection window when radius results are available.
         SelFrame:Show()
 
@@ -881,7 +897,7 @@ EventFrame:SetScript("OnEvent",
             -- Legacy behaviour: original GOMove channel uses prefix "GOMOVE"
             if Sender ~= UnitName("player") then return end
             if MSG ~= "GOMOVE" then return end
-            local ID, ENTRYORGUID, ARG2, ARG3 = MSG2:match("^(.+)|([%a%d]+)|(.*)|([%a%d]+)$")
+            local ID, ENTRYORGUID, ARG2, ARG3, ARG4, ARG5, ARG6 = strsplit("|", MSG2)
             if(ID) then
                 --if(ID == "USED") then
                 --    for k,v in ipairs(GOMove.UseL) do
@@ -920,7 +936,7 @@ EventFrame:SetScript("OnEvent",
                             end
                         end
                         if (not exists) then
-                            GOMove.SelL:Add(ARG2, guid, ARG3)
+                            GOMove.SelL:Add(ARG2, guid, ARG3, ARG4, ARG5, ARG6)
                         end
                         scheduleRadiusFinalize()
                         GOMove:Update()
@@ -948,7 +964,7 @@ EventFrame:SetScript("OnEvent",
                         end
                     end
                     if(not exists) then
-                        GOMove.SelL:Add(ARG2, guid, ARG3)
+                        GOMove.SelL:Add(ARG2, guid, ARG3, ARG4, ARG5, ARG6)
                     end
                     GOMove:Update()
                     if (UpdateMainHeader) then

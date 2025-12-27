@@ -85,7 +85,7 @@ L.SHOP_ERROR_REQUIREMENT = "Requirements not met: %s"
 L.SHOP_ERROR_LIMIT = "Purchase limit reached!"
 L.SHOP_ERROR_STOCK = "Out of stock!"
 L.SHOP_TOKENS = "Collection Tokens"
-L.SHOP_EMBLEMS = "Collector's Emblems"
+L.SHOP_EMBLEMS = "Essence"
 L.SHOP_REQUIRES = "Requires:"
 L.SHOP_REQUIRES_MOUNTS = "%d mounts collected"
 L.SHOP_REQUIRES_PETS = "%d companions collected"
@@ -93,7 +93,7 @@ L.SHOP_REQUIRES_TOTAL = "%d total collectibles"
 
 -- Currency
 L.CURRENCY_TOKENS = "Tokens"
-L.CURRENCY_EMBLEMS = "Emblems"
+L.CURRENCY_EMBLEMS = "Essence"
 
 -- Statistics
 L.STATS_TOTAL = "Total: %d"
@@ -160,7 +160,7 @@ if GetLocale() == "deDE" then
     L.SHOP_TITLE = "Sammler-Shop"
     L.SHOP_BUY = "Kaufen"
     L.SHOP_TOKENS = "Sammelmarken"
-    L.SHOP_EMBLEMS = "Sammlerembleme"
+    L.SHOP_EMBLEMS = "Essenz"
     
     L.STATS_COLLECTED = "Gesammelt: %d / %d"
     L.STATS_PROGRESS = "%.1f%% Abgeschlossen"

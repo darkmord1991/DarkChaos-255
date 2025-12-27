@@ -239,12 +239,13 @@ function Wardrobe:_ApplyEmbeddedLayout()
         return
     end
 
-    local insetX = 18
+    local insetX = 15
     local topInset = 0      -- Move content UP to the top edge
     local bottomInset = 40  -- Move bottom bar UP from the bottom edge
-    local gap = 20
+    local gap = 15
     local bottomBarHeight = 50
-    local previewWidth = 240
+    local previewWidth = 280  -- Larger preview area to match bigger tooltip preview
+    local leftPanelWidth = self.MODEL_WIDTH + 130  -- Width for slots + model + slots
 
     -- Right-side reserved area for tooltip/model preview.
     previewHost:ClearAllPoints()
@@ -253,12 +254,11 @@ function Wardrobe:_ApplyEmbeddedLayout()
     previewHost:SetWidth(previewWidth)
     previewHost:Show()
 
-    -- Left panel: use the top space
+    -- Left panel: slots + model + slots arrangement
     left:ClearAllPoints()
     left:SetPoint("TOPLEFT", frame, "TOPLEFT", insetX, -topInset)
     left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insetX, bottomInset + bottomBarHeight + gap)
-    -- Make sure the top row of buttons (Disable/Visuals/Refresh) fits without spilling into the right panel.
-    left:SetWidth(self.MODEL_WIDTH + 150)
+    left:SetWidth(leftPanelWidth)
 
     -- Bottom bar: keep fully inside the frame, aligned to the left panel width.
     bottom:ClearAllPoints()
@@ -283,7 +283,8 @@ function Wardrobe:_ApplyEmbeddedLayout()
     if self.tooltipPreview and self.tooltipPreview.SetParent then
         self.tooltipPreview:SetParent(previewHost)
         self.tooltipPreview:ClearAllPoints()
-        self.tooltipPreview:SetPoint("TOPLEFT", previewHost, "TOPLEFT", 0, 0)
+        -- Bottom of preview host for embedded mode
+        self.tooltipPreview:SetPoint("BOTTOM", previewHost, "BOTTOM", 0, 10)
     end
 end
 
@@ -306,17 +307,18 @@ function Wardrobe:_ApplyStandaloneLayout()
     end
 
     -- Restore original standalone anchors/sizes.
+    local panelWidth = self.MODEL_WIDTH + 120  -- Slots on both sides of model
     left:ClearAllPoints()
-    left:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -20)
-    left:SetSize(self.MODEL_WIDTH + 100, self.FRAME_HEIGHT - 120)
+    left:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -20)
+    left:SetSize(panelWidth, self.FRAME_HEIGHT - 100)
 
     right:ClearAllPoints()
-    right:SetPoint("TOPLEFT", frame, "TOPLEFT", self.MODEL_WIDTH + 170, -20)
+    right:SetPoint("TOPLEFT", frame, "TOPLEFT", 380, -20)
     right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 70)
 
     bottom:ClearAllPoints()
-    bottom:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 50, 0)
-    bottom:SetSize(self.MODEL_WIDTH, 50)
+    bottom:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 45, 10)
+    bottom:SetSize(self.MODEL_WIDTH + 50, 50)
 
     if previewModeFrame then
         previewModeFrame:SetParent(bottom)
@@ -327,7 +329,8 @@ function Wardrobe:_ApplyStandaloneLayout()
     if self.tooltipPreview and self.tooltipPreview.SetParent then
         self.tooltipPreview:SetParent(frame)
         self.tooltipPreview:ClearAllPoints()
-        self.tooltipPreview:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18)
+        -- Bottom-right position to avoid overlapping with slot icons
+        self.tooltipPreview:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 80)
     end
 end
 
@@ -350,7 +353,8 @@ function Wardrobe:ShowFixedItemTooltip(owner, itemId, extraLineFn)
     GameTooltip:Hide()
     GameTooltip:SetOwner(anchor, "ANCHOR_NONE")
     GameTooltip:ClearAllPoints()
-    GameTooltip:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 18, 60)
+    -- Position tooltip in the lower-center area to avoid overlapping with slot icons
+    GameTooltip:SetPoint("BOTTOM", anchor, "BOTTOM", 0, 80)
     GameTooltip:SetClampedToScreen(true)
 
     GameTooltip:SetHyperlink("item:" .. tostring(itemId))
@@ -410,13 +414,19 @@ end
 function Wardrobe:CreateLeftPanel(parent)
     local MODEL_WIDTH = self.MODEL_WIDTH
     local SLOT_SIZE = self.SLOT_SIZE
+    local SLOT_GAP = 6  -- Gap between slots
+    local LEFT_SLOTS = 7  -- HeadSlot through WristSlot
+    local RIGHT_SLOTS = 4 -- HandsSlot through FeetSlot
+    local SLOT_COLUMN_WIDTH = SLOT_SIZE + 10
+    local PANEL_WIDTH = SLOT_COLUMN_WIDTH + MODEL_WIDTH + SLOT_COLUMN_WIDTH + 40
 
     local left = CreateFrame("Frame", nil, parent)
-    left:SetPoint("TOPLEFT", parent, "TOPLEFT", 20, -50)
-    left:SetSize(MODEL_WIDTH + 100, self.FRAME_HEIGHT - 120)
+    left:SetPoint("TOPLEFT", parent, "TOPLEFT", 15, -35)
+    left:SetSize(PANEL_WIDTH, self.FRAME_HEIGHT - 80)
 
+    -- Button bar at very top of left panel
     local disableTransmogBtn = CreateFrame("Button", nil, left, "UIPanelButtonTemplate")
-    disableTransmogBtn:SetSize(130, 22)
+    disableTransmogBtn:SetSize(110, 20)
     disableTransmogBtn:SetPoint("TOPLEFT", left, "TOPLEFT", 0, 0)
     disableTransmogBtn:SetText("Disable Transmog")
     disableTransmogBtn:SetScript("OnClick", function()
@@ -437,8 +447,8 @@ function Wardrobe:CreateLeftPanel(parent)
     parent.disableTransmogBtn = disableTransmogBtn
 
     local disableVisualsBtn = CreateFrame("Button", nil, left, "UIPanelButtonTemplate")
-    disableVisualsBtn:SetSize(140, 22)
-    disableVisualsBtn:SetPoint("LEFT", disableTransmogBtn, "RIGHT", 5, 0)
+    disableVisualsBtn:SetSize(120, 20)
+    disableVisualsBtn:SetPoint("LEFT", disableTransmogBtn, "RIGHT", 3, 0)
     disableVisualsBtn:SetText("Disable Spell Visuals")
     disableVisualsBtn:SetScript("OnClick", function()
         Wardrobe.spellVisualsDisabled = not Wardrobe.spellVisualsDisabled
@@ -452,8 +462,8 @@ function Wardrobe:CreateLeftPanel(parent)
     parent.disableVisualsBtn = disableVisualsBtn
 
     local refreshBtn = CreateFrame("Button", nil, left, "UIPanelButtonTemplate")
-    refreshBtn:SetSize(100, 22)
-    refreshBtn:SetPoint("LEFT", disableVisualsBtn, "RIGHT", 5, 0)
+    refreshBtn:SetSize(85, 20)
+    refreshBtn:SetPoint("LEFT", disableVisualsBtn, "RIGHT", 3, 0)
     refreshBtn:SetText("Refresh Data")
     refreshBtn:SetScript("OnClick", function(self)
         if Wardrobe.isRefreshing then
@@ -472,9 +482,12 @@ function Wardrobe:CreateLeftPanel(parent)
     refreshStatus:Hide()
     parent.refreshStatus = refreshStatus
 
+    -- Center the model between left and right slot columns
+    local modelX = SLOT_COLUMN_WIDTH + 10  -- After left slot column
+    local modelHeight = 320  -- Slightly smaller model height
     local modelFrame = CreateFrame("Frame", nil, left)
-    modelFrame:SetPoint("TOPLEFT", left, "TOPLEFT", 50, -25)
-    modelFrame:SetSize(MODEL_WIDTH, 400)
+    modelFrame:SetPoint("TOPLEFT", left, "TOPLEFT", modelX, -28)
+    modelFrame:SetSize(MODEL_WIDTH, modelHeight)
 
     modelFrame.bg = modelFrame:CreateTexture(nil, "BACKGROUND")
     modelFrame.bg:SetAllPoints()
@@ -533,24 +546,39 @@ function Wardrobe:CreateLeftPanel(parent)
 
     parent.slotButtons = {}
 
+    -- Calculate vertical positions for slots distributed along model height
+    -- Left slots: 7 slots evenly spaced from top to bottom of model
+    -- Right slots: 4 slots evenly spaced in the upper portion
+    local slotStartY = 0  -- Start at top of model
+
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
         local btn = CreateFrame("Button", nil, left)
         btn:SetSize(SLOT_SIZE, SLOT_SIZE)
         btn.slotDef = slotDef
 
         if slotDef.side == "left" then
-            btn:SetPoint("TOPRIGHT", modelFrame, "TOPLEFT", -5, -(slotDef.row - 1) * (SLOT_SIZE + 5) - 10)
+            -- Left column: 7 slots distributed vertically along model left edge
+            -- Spacing: (modelHeight - SLOT_SIZE) / (7-1) = even distribution
+            local spacing = (modelHeight - SLOT_SIZE - 20) / 6
+            local yPos = -(slotDef.row - 1) * spacing - 10
+            btn:SetPoint("TOPRIGHT", modelFrame, "TOPLEFT", -5, yPos)
         elseif slotDef.side == "right" then
-            btn:SetPoint("TOPLEFT", modelFrame, "TOPRIGHT", 5, -(slotDef.row - 1) * (SLOT_SIZE + 5) - 10)
+            -- Right column: 4 slots distributed in upper portion of model
+            local spacing = (modelHeight - SLOT_SIZE - 20) / 4
+            local yPos = -(slotDef.row - 1) * spacing - 10
+            btn:SetPoint("TOPLEFT", modelFrame, "TOPRIGHT", 5, yPos)
         elseif slotDef.side == "bottom" then
-            -- Weapons: centered under the model, grouped together.
+            -- Weapons: packed together horizontally centered under the model
+            local weaponGap = 4  -- Gap between weapon slots
+            local totalWidth = (SLOT_SIZE * 3) + (weaponGap * 2)  -- 3 slots + 2 gaps
+            local startX = -(totalWidth / 2) + (SLOT_SIZE / 2)  -- Center offset
             if slotDef.key == "MainHandSlot" then
-                btn:SetPoint("TOPRIGHT", modelFrame, "BOTTOM", -2, -10)
+                btn:SetPoint("TOP", modelFrame, "BOTTOM", startX, -8)
             elseif slotDef.key == "SecondaryHandSlot" then
-                btn:SetPoint("TOPLEFT", modelFrame, "BOTTOM", 2, -10)
+                btn:SetPoint("TOP", modelFrame, "BOTTOM", 0, -8)
             else
-                -- Ranged / fallback: centered under the weapons.
-                btn:SetPoint("TOP", modelFrame, "BOTTOM", 0, -10 - SLOT_SIZE - 5)
+                -- Ranged slot
+                btn:SetPoint("TOP", modelFrame, "BOTTOM", -startX, -8)
             end
         end
 
@@ -660,7 +688,8 @@ function Wardrobe:CreateRightPanel(parent)
     local ITEMS_PER_PAGE = self.ITEMS_PER_PAGE
 
     local right = CreateFrame("Frame", nil, parent)
-    right:SetPoint("TOPLEFT", parent, "TOPLEFT", self.MODEL_WIDTH + 170, -50)
+    -- Position right panel after the wider left panel (slots + model + slots)
+    right:SetPoint("TOPLEFT", parent, "TOPLEFT", 380, -50)
     right:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -20, 70)
 
     local tabs = {
@@ -704,10 +733,60 @@ function Wardrobe:CreateRightPanel(parent)
         table.insert(parent.tabButtons, tab)
     end
 
+    -- Filter controls row (Order By, Filter, Quality dropdown, Search box)
+    local filterControlsY = -30  -- Position below tabs
+    
+    local orderBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
+    orderBtn:SetSize(70, 22)
+    orderBtn:SetPoint("TOPLEFT", right, "TOPLEFT", 0, filterControlsY)
+    orderBtn:SetText("Order By")
+    orderBtn:SetScript("OnClick", function() end)
+    parent.orderBtn = orderBtn
+
+    local filterBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
+    filterBtn:SetSize(55, 22)
+    filterBtn:SetPoint("LEFT", orderBtn, "RIGHT", 5, 0)
+    filterBtn:SetText("Filter")
+    filterBtn:SetScript("OnClick", function()
+        Wardrobe:ShowSlotFilterMenu(filterBtn)
+    end)
+    parent.filterBtn = filterBtn
+
+    -- Quality filter dropdown
+    local qualityDropdown = CreateFrame("Frame", "DCWardrobeQualityDropdown", right, "UIDropDownMenuTemplate")
+    qualityDropdown:SetPoint("LEFT", filterBtn, "RIGHT", -5, -2)
+    UIDropDownMenu_SetWidth(qualityDropdown, 90)
+    
+    UIDropDownMenu_Initialize(qualityDropdown, function(self, level)
+        for _, qualInfo in ipairs(Wardrobe.QUALITY_FILTERS or {}) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = qualInfo.text
+            info.value = qualInfo.id
+            info.func = function(btn)
+                Wardrobe.selectedQualityFilter = btn.value
+                UIDropDownMenu_SetText(qualityDropdown, btn:GetText())
+                CloseDropDownMenus()
+                Wardrobe:RefreshGrid()
+            end
+            info.checked = (Wardrobe.selectedQualityFilter == qualInfo.id)
+            if qualInfo.color then
+                info.colorCode = string.format("|cff%02x%02x%02x", 
+                    (qualInfo.color.r or 1) * 255, 
+                    (qualInfo.color.g or 1) * 255, 
+                    (qualInfo.color.b or 1) * 255)
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    
+    Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or 0
+    UIDropDownMenu_SetText(qualityDropdown, "All Qualities")
+    parent.qualityDropdown = qualityDropdown
+
     -- Universal search box (searches name, itemID, and displayID simultaneously)
     local searchBox = CreateFrame("EditBox", "DCWardrobeSearchBox", right, "InputBoxTemplate")
-    searchBox:SetSize(200, 20)
-    searchBox:SetPoint("TOPRIGHT", right, "TOPRIGHT", -5, -50)
+    searchBox:SetSize(130, 20)
+    searchBox:SetPoint("LEFT", qualityDropdown, "RIGHT", 10, 2)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(50)
 
@@ -743,56 +822,9 @@ function Wardrobe:CreateRightPanel(parent)
     searchBox:SetScript("OnLeave", function() GameTooltip:Hide() end)
     parent.searchBox = searchBox
 
-    -- Quality filter dropdown (moved to top-right to avoid stacking with other controls)
-    local qualityDropdown = CreateFrame("Frame", "DCWardrobeQualityDropdown", right, "UIDropDownMenuTemplate")
-    qualityDropdown:SetPoint("TOPRIGHT", right, "TOPRIGHT", -220, -48)
-    UIDropDownMenu_SetWidth(qualityDropdown, 90)
-    
-    UIDropDownMenu_Initialize(qualityDropdown, function(self, level)
-        for _, qualInfo in ipairs(Wardrobe.QUALITY_FILTERS or {}) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = qualInfo.text
-            info.value = qualInfo.id
-            info.func = function(btn)
-                Wardrobe.selectedQualityFilter = btn.value
-                UIDropDownMenu_SetText(qualityDropdown, btn:GetText())
-                CloseDropDownMenus()
-                Wardrobe:RefreshGrid()
-            end
-            info.checked = (Wardrobe.selectedQualityFilter == qualInfo.id)
-            if qualInfo.color then
-                info.colorCode = string.format("|cff%02x%02x%02x", 
-                    (qualInfo.color.r or 1) * 255, 
-                    (qualInfo.color.g or 1) * 255, 
-                    (qualInfo.color.b or 1) * 255)
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
-    end)
-    
-    Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or 0
-    UIDropDownMenu_SetText(qualityDropdown, "All Qualities")
-    parent.qualityDropdown = qualityDropdown
-
-    local filterBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
-    filterBtn:SetSize(60, 20)
-    filterBtn:SetPoint("TOPRIGHT", right, "TOPRIGHT", -320, -50)
-    filterBtn:SetText("Filter")
-    -- Filter should be equipment slot/type based (not item sets). Provide a quick slot filter menu.
-    filterBtn:SetScript("OnClick", function()
-        Wardrobe:ShowSlotFilterMenu(filterBtn)
-    end)
-    parent.filterBtn = filterBtn
-
-    local orderBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
-    orderBtn:SetSize(70, 20)
-    orderBtn:SetPoint("TOPRIGHT", right, "TOPRIGHT", -390, -50)
-    orderBtn:SetText("Order By")
-    orderBtn:SetScript("OnClick", function() end)
-    parent.orderBtn = orderBtn
-
+    -- Slot filter icons (below the filter controls row)
     local slotFilterFrame = CreateFrame("Frame", nil, right)
-    slotFilterFrame:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -80)
+    slotFilterFrame:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -60)
     slotFilterFrame:SetSize(right:GetWidth(), 32)
 
     parent.slotFilterButtons = {}
@@ -892,9 +924,25 @@ function Wardrobe:CreateRightPanel(parent)
     end)
     parent.showUncollectedCheck = showUncollectedCheck
 
-    local gridFrame = CreateFrame("Frame", nil, right)
-    gridFrame:SetPoint("TOPLEFT", collectedFrame, "BOTTOMLEFT", 0, -10)
-    gridFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, 40)
+    -- Create a decorative frame around the grid area (like in the Transmog System UI)
+    local gridContainer = CreateFrame("Frame", nil, right)
+    gridContainer:SetPoint("TOPLEFT", collectedFrame, "BOTTOMLEFT", 0, -5)
+    gridContainer:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", -10, 65)
+    
+    -- Add backdrop for visual separation
+    gridContainer:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 16,
+        insets = { left = 5, right = 5, top = 5, bottom = 5 }
+    })
+    gridContainer:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+    gridContainer:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
+    parent.gridContainer = gridContainer
+
+    local gridFrame = CreateFrame("Frame", nil, gridContainer)
+    gridFrame:SetPoint("TOPLEFT", gridContainer, "TOPLEFT", 16, -16)
+    gridFrame:SetPoint("BOTTOMRIGHT", gridContainer, "BOTTOMRIGHT", -16, 16)
 
     parent.gridButtons = {}
 
@@ -1053,9 +1101,8 @@ function Wardrobe:CreateRightPanel(parent)
     parent.gridFrame = gridFrame
 
     local pageFrame = CreateFrame("Frame", nil, right)
-    pageFrame:SetPoint("BOTTOMLEFT", right, "BOTTOMLEFT", 0, 0)
-    pageFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, 0)
-    pageFrame:SetHeight(30)
+    pageFrame:SetPoint("BOTTOMLEFT", right, "BOTTOMLEFT", 0, 30)
+    pageFrame:SetSize(200, 25)
 
     parent.pageText = pageFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     parent.pageText:SetPoint("CENTER", pageFrame, "CENTER", 0, 0)
@@ -1063,7 +1110,7 @@ function Wardrobe:CreateRightPanel(parent)
 
     parent.prevBtn = CreateFrame("Button", nil, pageFrame)
     parent.prevBtn:SetSize(24, 24)
-    parent.prevBtn:SetPoint("RIGHT", parent.pageText, "LEFT", -20, 0)
+    parent.prevBtn:SetPoint("RIGHT", parent.pageText, "LEFT", -5, 0)
     parent.prevBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
     parent.prevBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
     parent.prevBtn:SetDisabledTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
@@ -1083,7 +1130,7 @@ function Wardrobe:CreateRightPanel(parent)
 
     parent.nextBtn = CreateFrame("Button", nil, pageFrame)
     parent.nextBtn:SetSize(24, 24)
-    parent.nextBtn:SetPoint("LEFT", parent.pageText, "RIGHT", 20, 0)
+    parent.nextBtn:SetPoint("LEFT", parent.pageText, "RIGHT", 5, 0)
     parent.nextBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
     parent.nextBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
     parent.nextBtn:SetDisabledTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled")
@@ -1122,17 +1169,17 @@ function Wardrobe:CreateBottomBar(parent)
     end)
     parent.saveOutfitBtn = saveBtn
     
-    -- Preview mode slider (Grid vs Full 3D Model) - positioned on right side
-    local previewModeFrame = CreateFrame("Frame", nil, bottom)
-    previewModeFrame:SetSize(180, 20)
-    previewModeFrame:SetPoint("BOTTOMRIGHT", bottom, "BOTTOMRIGHT", -10, 0)
+    -- Preview mode slider (Grid vs Full 3D Model) - positioned below page controls
+    local previewModeFrame = CreateFrame("Frame", nil, parent.rightPanel or bottom)
+    previewModeFrame:SetSize(150, 20)
+    previewModeFrame:SetPoint("BOTTOM", parent.rightPanel or bottom, "BOTTOM", 0, 5)
     
     previewModeFrame.label = previewModeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    previewModeFrame.label:SetPoint("RIGHT", previewModeFrame, "RIGHT", -110, 0)
+    previewModeFrame.label:SetPoint("LEFT", previewModeFrame, "LEFT", 0, 0)
     previewModeFrame.label:SetText("Preview:")
     
     local slider = CreateFrame("Slider", nil, previewModeFrame)
-    slider:SetSize(100, 16)
+    slider:SetSize(80, 12)
     slider:SetPoint("LEFT", previewModeFrame.label, "RIGHT", 8, 0)
     slider:SetOrientation("HORIZONTAL")
     slider:SetMinMaxValues(0, 1)
@@ -1145,16 +1192,16 @@ function Wardrobe:CreateBottomBar(parent)
     
     local thumb = slider:CreateTexture(nil, "OVERLAY")
     thumb:SetTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    thumb:SetSize(20, 20)
+    thumb:SetSize(18, 18)
     slider:SetThumbTexture(thumb)
     
     slider.lowText = slider:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    slider.lowText:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -2)
+    slider.lowText:SetPoint("LEFT", slider, "LEFT", 0, 0)
     slider.lowText:SetText("Grid")
     slider.lowText:SetTextColor(0.7, 0.7, 0.7)
     
     slider.highText = slider:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    slider.highText:SetPoint("TOPRIGHT", slider, "BOTTOMRIGHT", 0, -2)
+    slider.highText:SetPoint("RIGHT", slider, "RIGHT", 0, 0)
     slider.highText:SetText("Full 3D")
     slider.highText:SetTextColor(0.7, 0.7, 0.7)
     
@@ -1172,9 +1219,12 @@ function Wardrobe:CreateBottomBar(parent)
     
     slider:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Tooltip Preview Mode", 1, 0.82, 0)
-        GameTooltip:AddLine("Grid: Zoomed view of slot area", 1, 1, 1)
-        GameTooltip:AddLine("Full 3D: Complete character with item", 1, 1, 1)
+        GameTooltip:SetText("Item Preview Mode", 1, 0.82, 0)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Click on an item in the grid to preview it.", 1, 1, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Grid: Zoomed camera on the equipment slot", 0.7, 1, 0.7)
+        GameTooltip:AddLine("Full 3D: Full character view with item", 0.7, 1, 0.7)
         GameTooltip:Show()
     end)
     slider:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1237,26 +1287,26 @@ function Wardrobe:ShowTooltipPreview(itemId)
     if not self.tooltipPreview then
         local parent = (self.isEmbedded and self.frame and self.frame.previewHost) or self.frame or UIParent
         local frame = CreateFrame("Frame", "DCWardrobeTooltipPreview", parent)
-        frame:SetSize(200, 200)
+        frame:SetSize(200, 240)  -- Smaller preview
         frame:SetFrameStrata("TOOLTIP")
 
         frame:SetBackdrop({
             bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
             edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true, tileSize = 32, edgeSize = 32,
-            insets = { left = 11, right = 12, top = 12, bottom = 11 }
+            tile = true, tileSize = 32, edgeSize = 24,
+            insets = { left = 8, right = 8, top = 8, bottom = 8 }
         })
         frame:SetBackdropColor(0, 0, 0, 0.95)
 
         frame.innerBg = frame:CreateTexture(nil, "BACKGROUND", nil, -6)
-        frame.innerBg:SetPoint("TOPLEFT", 12, -12)
-        frame.innerBg:SetPoint("BOTTOMRIGHT", -12, 12)
+        frame.innerBg:SetPoint("TOPLEFT", 10, -10)
+        frame.innerBg:SetPoint("BOTTOMRIGHT", -10, 10)
         frame.innerBg:SetTexture(0.05, 0.05, 0.05, 0.85)
 
         -- Preview model
         local model = CreateFrame("DressUpModel", nil, frame)
-        model:SetPoint("TOPLEFT", 18, -20)
-        model:SetPoint("BOTTOMRIGHT", -18, 18)
+        model:SetPoint("TOPLEFT", 12, -12)
+        model:SetPoint("BOTTOMRIGHT", -12, 12)
         model:SetUnit("player")
         model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
         
@@ -1268,17 +1318,15 @@ function Wardrobe:ShowTooltipPreview(itemId)
     local frame = self.tooltipPreview
     frame:Show()
     
-    -- Fixed location:
-    -- - embedded: in the reserved right-side preview host area
-    -- - standalone: bottom-right of the Wardrobe frame
+    -- Position at the right edge of the main frame, lower
     frame:ClearAllPoints()
     if self.isEmbedded and self.frame and self.frame.previewHost then
         frame:SetParent(self.frame.previewHost)
-        frame:SetPoint("TOPLEFT", self.frame.previewHost, "TOPLEFT", 0, 0)
+        frame:SetPoint("BOTTOMRIGHT", self.frame.previewHost, "BOTTOMRIGHT", -5, 10)
     else
         frame:SetParent(self.frame or UIParent)
-        local anchor = self:_GetFixedTooltipAnchor()
-        frame:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -18, 18)
+        -- Right edge, positioned in lower portion
+        frame:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", -10, 70)
     end
     
     -- Show item on model
@@ -1299,25 +1347,27 @@ function Wardrobe:ShowTooltipPreview(itemId)
         if selectedSlot and selectedSlot.label and type(self.GetCameraPosition) == "function" and type(self.ApplyCameraPosition) == "function" then
             local cameraPos = self:GetCameraPosition(selectedSlot.label)
             if cameraPos then
-                frame.model.cameraX = cameraPos.x or 0
-                frame.model.cameraY = cameraPos.y or 0
-                frame.model.cameraZ = cameraPos.z or 0
-                frame.model.cameraDistance = 1.0
                 self:ApplyCameraPosition(frame.model, cameraPos)
+            else
+                -- Fallback: zoomed in close-up
+                if frame.model.SetPosition then
+                    frame.model:SetPosition(0.5, 0, 0)
+                end
+                frame.model:SetFacing(0)
             end
         else
             -- Fallback to close-up view if no slot selected
-            frame.model:SetFacing(0)
-            if frame.model.SetCamDistanceScale then
-                frame.model:SetCamDistanceScale(0.8)
+            if frame.model.SetPosition then
+                frame.model:SetPosition(0.5, 0, 0)
             end
+            frame.model:SetFacing(0)
         end
     else
-        -- Full 3D mode: Show complete character
-        frame.model:SetFacing(0)
-        if frame.model.SetCamDistanceScale then
-            frame.model:SetCamDistanceScale(1.0)
+        -- Full 3D mode: Show complete character from distance
+        if frame.model.SetPosition then
+            frame.model:SetPosition(1.5, 0, 0)
         end
+        frame.model:SetFacing(0)
     end
 end
 

@@ -333,6 +333,19 @@ namespace
     };
 }
 
+namespace PrestigeAPI
+{
+    uint32 GetAltBonusPercent(Player* player)
+    {
+        return PrestigeAltBonusSystem::instance()->CalculateXPBonus(player);
+    }
+
+    uint32 GetAccountMaxLevelCount(uint32 accountId)
+    {
+        return PrestigeAltBonusSystem::instance()->GetMaxLevelCharCount(accountId);
+    }
+}
+
 void AddSC_dc_prestige_alt_bonus()
 {
     new PrestigeAltBonusPlayerScript();

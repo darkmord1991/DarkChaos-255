@@ -224,6 +224,30 @@ local function AddNpcLines(tooltip, unit)
     tooltip:Show()
 end
 
+local function TooltipIsShowingItemOrSpell(tooltip)
+    if not tooltip then
+        return false
+    end
+
+    -- If the tooltip is for an item or spell, never add NPC info lines.
+    -- This prevents contamination of item tooltips (e.g., bag items, links).
+    if type(tooltip.GetItem) == "function" then
+        local _, itemLink = tooltip:GetItem()
+        if itemLink then
+            return true
+        end
+    end
+
+    if type(tooltip.GetSpell) == "function" then
+        local spellName = tooltip:GetSpell()
+        if spellName then
+            return true
+        end
+    end
+
+    return false
+end
+
 -- --- Target Frame Integration ---
 -- Removed as requested
 -- local targetInfoFrame = CreateFrame("Frame", "DCWelcomeTargetInfo", TargetFrame)
@@ -293,6 +317,9 @@ local function HookTooltip()
     if type(hooksecurefunc) == "function" and type(GameTooltip.SetUnit) == "function" then
         pcall(function()
             hooksecurefunc(GameTooltip, "SetUnit", function(self, unit)
+                if TooltipIsShowingItemOrSpell(self) then
+                    return
+                end
                 if unit and UnitExists(unit) then
                     AddNpcLines(self, unit)
                 end
@@ -301,6 +328,10 @@ local function HookTooltip()
     end
 
     GameTooltip:HookScript("OnTooltipSetUnit", function(self)
+        if TooltipIsShowingItemOrSpell(self) then
+            return
+        end
+
         local _, unit = self:GetUnit()
 
         if (not unit) or (not UnitExists(unit)) then
@@ -333,14 +364,13 @@ local function HookTooltip()
 
     -- Fallback: ensure we still try when tooltip is shown but unit isn't reported.
     GameTooltip:HookScript("OnShow", function(self)
-        local _, unit = self:GetUnit()
-        if (not unit) or (not UnitExists(unit)) then
-            if UnitExists("mouseover") then
-                unit = "mouseover"
-            elseif UnitExists("target") then
-                unit = "target"
-            end
+        if TooltipIsShowingItemOrSpell(self) then
+            return
         end
+
+        local _, unit = self:GetUnit()
+
+        -- Only act when the tooltip itself is a unit tooltip.
         if unit and UnitExists(unit) then
             AddNpcLines(self, unit)
         end

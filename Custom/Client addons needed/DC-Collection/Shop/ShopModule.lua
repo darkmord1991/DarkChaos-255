@@ -121,11 +121,13 @@ end
 -- ============================================================================
 
 function ShopModule:GetTokens()
-    return DC.currency.tokens or 0
+    local tokens = (type(DC.GetCurrencyBalances) == "function") and select(1, DC:GetCurrencyBalances()) or nil
+    return tonumber(tokens) or (DC.currency and DC.currency.tokens) or 0
 end
 
 function ShopModule:GetEmblems()
-    return DC.currency.emblems or 0
+    local _, essence = (type(DC.GetCurrencyBalances) == "function") and DC:GetCurrencyBalances() or nil
+    return tonumber(essence) or (DC.currency and DC.currency.emblems) or 0
 end
 
 function ShopModule:CanAfford(item)

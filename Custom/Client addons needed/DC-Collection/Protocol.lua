@@ -380,22 +380,7 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
         return false
     end
 
-    if collType == "pets" or collType == "pet" then
-        self:_DebounceRequest(reqKey, 0.25, function()
-            if self:_IsInflight(reqKey) then
-                return
-            end
-            self:_MarkInflight("req:defs:pets", true)
-            self:_MarkInflight("req:defs:pet", true)
-            local ok1 = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pets" })
-            local ok2 = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "pet" })
-            if not ok1 then self:_MarkInflight("req:defs:pets", nil) end
-            if not ok2 then self:_MarkInflight("req:defs:pet", nil) end
-        end)
-        return true
-    end
-
-    if collType == "transmog" then
+    if serverType == "transmog" then
         -- Don't restart a transmog paging run while already loading.
         if self._transmogDefLoading then
             return false
@@ -405,7 +390,7 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             if self._transmogDefLoading then
                 return
             end
-            self:_MarkInflight("req:defs:transmog", true)
+            self:_MarkInflight(reqKey, true)
             self._transmogDefOffset = 0
             self._transmogDefLimit = self._transmogDefLimit or 2000  -- Match server chunk size
             self._transmogDefLoading = true
@@ -421,7 +406,7 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
                 v = tonumber(v)
             end
 
-            local payload = { type = "transmog", offset = 0, limit = self._transmogDefLimit }
+            local payload = { type = serverType, offset = 0, limit = self._transmogDefLimit }
             if v and v > 0 then
                 payload.syncVersion = v
             end
@@ -429,22 +414,23 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, payload)
             if not ok then
                 self._transmogDefLoading = nil
-                self:_MarkInflight("req:defs:transmog", nil)
+                self:_MarkInflight(reqKey, nil)
             end
         end)
         return true
     end
 
+    -- Generic request for other types (mount, pet, heirloom, title)
     self:_DebounceRequest(reqKey, 0.25, function()
         if self:_IsInflight(reqKey) then
             return
         end
         self:_MarkInflight(reqKey, true)
 
-        local payload = { type = collType }
+        local payload = { type = serverType }
         local v = clientSyncVersion
         if v == nil then
-            v = self:GetSyncVersion(collType)
+            v = self:GetSyncVersion(serverType)
         end
         if type(v) ~= "number" then
             v = tonumber(v)
@@ -463,44 +449,38 @@ end
 
 -- Request type collection items (e.g. "mounts", "pets", "transmog")
 -- If collType is nil, requests all supported types.
+-- NOTE: Server uses SINGULAR forms (pet, mount, heirloom, title, transmog)
 function DC:RequestCollection(collType)
     if not collType then
-        self:RequestCollection("mounts")
-        self:RequestCollection("pets")
-        -- Compatibility: some servers use singular type names.
+        -- Only request each type ONCE using the form the server expects
+        self:RequestCollection("mount")
         self:RequestCollection("pet")
-        self:RequestCollection("heirlooms")
-        self:RequestCollection("titles")
+        self:RequestCollection("heirloom")
+        self:RequestCollection("title")
         self:RequestCollection("transmog")
         return
     end
 
-    local reqKey = "req:coll:" .. tostring(collType)
+    -- Normalize to singular form for server compatibility
+    local serverType = collType
+    if collType == "mounts" then serverType = "mount"
+    elseif collType == "pets" then serverType = "pet"
+    elseif collType == "heirlooms" then serverType = "heirloom"
+    elseif collType == "titles" then serverType = "title"
+    end
+
+    local reqKey = "req:coll:" .. serverType
     if self:_IsInflight(reqKey) then
         return false
     end
 
-    if collType == "pets" or collType == "pet" then
-        self:_DebounceRequest(reqKey, 0.25, function()
-            if self:_IsInflight(reqKey) then
-                return
-            end
-            self:_MarkInflight("req:coll:pets", true)
-            self:_MarkInflight("req:coll:pet", true)
-            local ok1 = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pets" })
-            local ok2 = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = "pet" })
-            if not ok1 then self:_MarkInflight("req:coll:pets", nil) end
-            if not ok2 then self:_MarkInflight("req:coll:pet", nil) end
-        end)
-        return true
-    end
-
+    -- Generic request - no special handling needed, just use normalized type
     self:_DebounceRequest(reqKey, 0.25, function()
         if self:_IsInflight(reqKey) then
             return
         end
         self:_MarkInflight(reqKey, true)
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = collType })
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = serverType })
         if not ok then
             self:_MarkInflight(reqKey, nil)
         end
@@ -1068,6 +1048,7 @@ function DC:HandleShopData(data)
             entryId = it.entryId,
             appearanceId = it.appearanceId,
             itemId = it.itemId,
+            spellId = it.spellId or it.spellID or it.spell,
             priceTokens = it.priceTokens or 0,
             priceEmblems = it.priceEmblems or 0,
             discount = it.discount or 0,
@@ -1081,20 +1062,31 @@ function DC:HandleShopData(data)
             icon = nil, -- Will be resolved below
         }
 
-        -- Server sends icon as displayInfoId or spellIconId string - resolve to actual texture
+        -- Server may send an icon name (e.g. "INV_...") or a full texture path.
         local serverIcon = it.icon
+        local normalizedServerIcon = self:NormalizeTexturePath(serverIcon, nil)
         
         -- Resolve icon from server data or game API
         if typeName == "mounts" then
-            -- Server sends spell icon ID; use GetSpellTexture for mounts
-            if it.entryId and GetSpellTexture then
-                local tex = GetSpellTexture(it.entryId)
+            -- Prefer spellId for mounts (some servers send spellId separately)
+            local spellId = it.spellId or it.spellID or it.entryId
+            if spellId and GetSpellTexture then
+                local tex = GetSpellTexture(spellId)
                 if tex then card.icon = tex end
             end
             -- Fallback to GetSpellInfo for name
-            if (not card.name or card.name == "") and it.entryId and GetSpellInfo then
-                local name = GetSpellInfo(it.entryId)
+            if (not card.name or card.name == "") and spellId and GetSpellInfo then
+                local name = GetSpellInfo(spellId)
                 if name then card.name = name end
+            end
+
+            -- If this mount is represented by an item template, try item icon/name.
+            local itemIdToUse = it.itemId or it.entryId
+            if (not card.icon or card.icon == "Interface\\Icons\\INV_Misc_QuestionMark") and itemIdToUse and GetItemInfo then
+                local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(itemIdToUse)
+                if texture then card.icon = texture end
+                if name and (not card.name or card.name == "") then card.name = name end
+                if quality then card.rarity = quality end
             end
         elseif typeName == "pets" or typeName == "heirlooms" or typeName == "transmog" then
             -- Use GetItemInfo for items (returns texture as 10th value)
@@ -1105,13 +1097,33 @@ function DC:HandleShopData(data)
                 if name and (not card.name or card.name == "") then card.name = name end
                 if quality then card.rarity = quality end
             end
+
+            -- Pets can also be represented via spells.
+            if (not card.icon or card.icon == "Interface\\Icons\\INV_Misc_QuestionMark") then
+                local spellId = it.spellId or it.spellID
+                if spellId and GetSpellTexture then
+                    local tex = GetSpellTexture(spellId)
+                    if tex then card.icon = tex end
+                end
+                if (not card.name or card.name == "") and spellId and GetSpellInfo then
+                    local n = GetSpellInfo(spellId)
+                    if n then card.name = n end
+                end
+            end
         elseif typeName == "titles" then
             -- Titles use static icon
             card.icon = "Interface\\Icons\\INV_Scroll_11"
         end
 
+        -- Use server-provided icon if we still don't have a good one.
+        if (not card.icon) or card.icon == "" or card.icon == "Interface\\Icons\\INV_Misc_QuestionMark" then
+            if normalizedServerIcon then
+                card.icon = normalizedServerIcon
+            end
+        end
+
         -- Final fallbacks
-        card.icon = card.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+        card.icon = self:NormalizeTexturePath(card.icon, "Interface\\Icons\\INV_Misc_QuestionMark")
         card.name = card.name or "Shop Item"
 
         table.insert(mapped, card)
@@ -1476,7 +1488,7 @@ function DC:HandleDefinitions(data)
     if syncVersion ~= nil then
         self:SetSyncVersion(collType, syncVersion)
     end
-    self:SaveCache()
+    -- Cache will be saved by auto-save timer or on logout
 
     -- Release inflight guard for this type.
     self:_MarkInflight("req:defs:" .. tostring(collType), nil)
@@ -1640,7 +1652,7 @@ function DC:HandleCollection(data)
     local items = data.items or {}
     
     self:CacheMergeCollection(collType, items)
-    self:SaveCache()
+    -- Cache will be saved by auto-save timer or on logout
 
     -- Release inflight guard for this type.
     self:_MarkInflight("req:coll:" .. tostring(collType), nil)
