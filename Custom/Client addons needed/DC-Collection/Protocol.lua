@@ -360,7 +360,8 @@ end
 
 -- Request type definitions (e.g. "mounts", "pets", "transmog")
 -- If collType is nil, requests all supported types (Core.lua compatibility).
-function DC:RequestDefinitions(collType)
+-- clientSyncVersion is optional; if provided, server may reply with upToDate=true.
+function DC:RequestDefinitions(collType, clientSyncVersion)
     if not collType then
         self:RequestDefinitions("mounts")
         self:RequestDefinitions("pets")
@@ -411,7 +412,21 @@ function DC:RequestDefinitions(collType)
             self._transmogDefLastRequestedOffset = 0
             self._transmogDefLastRequestedLimit = self._transmogDefLimit
             self._transmogDefPagesFetched = 0
-            local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = 0, limit = self._transmogDefLimit })
+
+            local v = clientSyncVersion
+            if v == nil then
+                v = self:GetSyncVersion("transmog")
+            end
+            if type(v) ~= "number" then
+                v = tonumber(v)
+            end
+
+            local payload = { type = "transmog", offset = 0, limit = self._transmogDefLimit }
+            if v and v > 0 then
+                payload.syncVersion = v
+            end
+
+            local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, payload)
             if not ok then
                 self._transmogDefLoading = nil
                 self:_MarkInflight("req:defs:transmog", nil)
@@ -425,7 +440,20 @@ function DC:RequestDefinitions(collType)
             return
         end
         self:_MarkInflight(reqKey, true)
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = collType })
+
+        local payload = { type = collType }
+        local v = clientSyncVersion
+        if v == nil then
+            v = self:GetSyncVersion(collType)
+        end
+        if type(v) ~= "number" then
+            v = tonumber(v)
+        end
+        if v and v > 0 then
+            payload.syncVersion = v
+        end
+
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, payload)
         if not ok then
             self:_MarkInflight(reqKey, nil)
         end
@@ -1372,14 +1400,40 @@ end
 
 -- Handle all collected appearances (for tooltip highlighting)
 function DC:HandleCollectedAppearances(data)
-    local appearances = data.appearances or {}
+    local appearances = data.appearances
+    local items = data.items
+
     self.collectedAppearances = {}
-    
-    for _, displayId in ipairs(appearances) do
-        self.collectedAppearances[displayId] = true
+
+    -- Preferred field: appearances = { displayId, ... }
+    if type(appearances) == "table" and #appearances > 0 then
+        for _, displayId in ipairs(appearances) do
+            self.collectedAppearances[displayId] = true
+        end
+        self:Debug(string.format("Received %d collected appearances", #appearances))
+    elseif type(items) == "table" and #items > 0 then
+        -- Backwards/alternate schema: items = { itemId, ... }
+        -- Try to map itemId -> displayId using Wardrobe helper when available.
+        local mapped = 0
+        if DC.Wardrobe and type(DC.Wardrobe.GetAppearanceDisplayIdForItemId) == "function" then
+            for _, itemId in ipairs(items) do
+                local displayId = DC.Wardrobe:GetAppearanceDisplayIdForItemId(itemId)
+                if displayId then
+                    self.collectedAppearances[displayId] = true
+                    mapped = mapped + 1
+                end
+            end
+        else
+            -- Fallback: treat numbers as displayIds to avoid hard-failing.
+            for _, v in ipairs(items) do
+                self.collectedAppearances[v] = true
+                mapped = mapped + 1
+            end
+        end
+        self:Debug(string.format("Received collected appearances via items (mapped %d)", mapped))
+    else
+        self:Debug("Received 0 collected appearances")
     end
-    
-    self:Debug(string.format("Received %d collected appearances", #appearances))
     
     -- Fire callback
     if self.callbacks.onCollectedAppearances then
@@ -1398,6 +1452,7 @@ function DC:HandleDefinitions(data)
     
     local definitions = data.definitions or {}
     local syncVersion = data.syncVersion
+    local upToDate = data.upToDate or data.up_to_date or data.uptodate
 
     -- Some servers send definitions as an array of records instead of a map.
     -- Normalize arrays into an id->def map so the rest of the UI can iterate reliably.
@@ -1469,6 +1524,13 @@ function DC:HandleDefinitions(data)
 
     -- Transmog definitions can be very large; server may send them in pages.
     if collType == "transmog" then
+        if upToDate == true or upToDate == 1 or upToDate == "1" then
+            self:Debug("Transmog definitions up-to-date; skipping download")
+            self._transmogDefLoading = nil
+            self:_MarkInflight("req:defs:transmog", nil)
+            return
+        end
+
         -- Slow down paging a bit to avoid disconnects on some servers/clients.
         self._transmogPagingInterval = self._transmogPagingInterval or 0.75
 

@@ -1296,8 +1296,15 @@ function Wardrobe:ShowTooltipPreview(itemId)
     if self.previewMode == "grid" then
         -- Grid mode: Zoomed view of slot area using CameraDB
         local selectedSlot = self.selectedSlot
-        if selectedSlot and CameraDB then
-            CameraDB:ApplyCameraPosition(frame.model, selectedSlot)
+        if selectedSlot and selectedSlot.label and type(self.GetCameraPosition) == "function" and type(self.ApplyCameraPosition) == "function" then
+            local cameraPos = self:GetCameraPosition(selectedSlot.label)
+            if cameraPos then
+                frame.model.cameraX = cameraPos.x or 0
+                frame.model.cameraY = cameraPos.y or 0
+                frame.model.cameraZ = cameraPos.z or 0
+                frame.model.cameraDistance = 1.0
+                self:ApplyCameraPosition(frame.model, cameraPos)
+            end
         else
             -- Fallback to close-up view if no slot selected
             frame.model:SetFacing(0)

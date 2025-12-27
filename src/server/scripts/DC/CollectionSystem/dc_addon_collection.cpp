@@ -86,6 +86,10 @@ namespace DCCollection
         // Quality filtering
         constexpr const char* TRANSMOG_MIN_QUALITY = "DCCollection.Transmog.MinQuality";
 
+        // Paging: number of transmog items returned per slot page.
+        // Higher values reduce message spam; keep reasonable to avoid overly large addon payloads.
+        constexpr const char* TRANSMOG_SLOT_ITEMS_PAGE_SIZE = "DCCollection.Transmog.SlotItemsPageSize";
+
         // Legacy import (scan items owned by old characters)
         constexpr const char* TRANSMOG_LEGACY_IMPORT_ENABLED = "DCCollection.Transmog.LegacyImport.Enable";
         constexpr const char* TRANSMOG_LEGACY_IMPORT_INCLUDE_BANK = "DCCollection.Transmog.LegacyImport.IncludeBank";
@@ -1466,6 +1470,58 @@ namespace DCCollection
         return keys;
     }
 
+    // Stable per-server-process syncVersion/hash for transmog definitions.
+    // This lets clients skip re-downloading definitions when unchanged.
+    uint32 GetTransmogDefinitionsSyncVersionCached()
+    {
+        static uint32 version = 0;
+        static bool initialized = false;
+        if (initialized)
+            return version;
+
+        // 32-bit FNV-1a over a stable ordering of (displayId, invType, class, subClass, canonicalItemId, itemIdsTotal).
+        uint32 h = 2166136261u;
+        auto fnvMixU32 = [&](uint32 v)
+        {
+            for (int i = 0; i < 4; ++i)
+            {
+                h ^= (v & 0xFFu);
+                h *= 16777619u;
+                v >>= 8;
+            }
+        };
+
+        auto const& appearances = GetTransmogAppearanceIndexCached();
+
+        std::vector<std::tuple<uint32, uint32, uint32, uint32, uint32, uint32>> tmp;
+        tmp.reserve(appearances.size());
+
+        for (auto const& [displayId, variants] : appearances)
+        {
+            for (auto const& v : variants)
+            {
+                tmp.emplace_back(displayId, v.inventoryType, v.itemClass, v.itemSubClass, v.canonicalItemId,
+                    static_cast<uint32>(v.itemIds.size()));
+            }
+        }
+
+        std::sort(tmp.begin(), tmp.end());
+
+        for (auto const& t : tmp)
+        {
+            fnvMixU32(std::get<0>(t));
+            fnvMixU32(std::get<1>(t));
+            fnvMixU32(std::get<2>(t));
+            fnvMixU32(std::get<3>(t));
+            fnvMixU32(std::get<4>(t));
+            fnvMixU32(std::get<5>(t));
+        }
+
+        version = h;
+        initialized = true;
+        return version;
+    }
+
     bool IsInvTypeCompatibleForSlot(uint8 slot, uint32 invType)
     {
         switch (slot)
@@ -1564,17 +1620,53 @@ namespace DCCollection
         return true;
     }
 
+    // Per-account cache of unlocked transmog appearance displayIds.
+    // This avoids doing a DB roundtrip per appearance during slot/search enumeration.
+    static std::unordered_map<uint32, std::unordered_set<uint32>> s_AccountUnlockedTransmogAppearances;
+
+    static std::unordered_set<uint32> const& GetAccountUnlockedTransmogAppearances(uint32 accountId)
+    {
+        auto it = s_AccountUnlockedTransmogAppearances.find(accountId);
+        if (it != s_AccountUnlockedTransmogAppearances.end())
+            return it->second;
+
+        std::unordered_set<uint32> unlocked;
+
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (!itemsEntryCol.empty())
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT {} FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND unlocked = 1",
+                itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG));
+
+            if (result)
+            {
+                do
+                {
+                    Field* fields = result->Fetch();
+                    uint32 unlockedDisplayId = fields[0].Get<uint32>();
+                    if (unlockedDisplayId)
+                        unlocked.insert(unlockedDisplayId);
+                } while (result->NextRow());
+            }
+        }
+
+        auto [insertedIt, _] = s_AccountUnlockedTransmogAppearances.emplace(accountId, std::move(unlocked));
+        return insertedIt->second;
+    }
+
+    static void InvalidateAccountUnlockedTransmogAppearances(uint32 accountId)
+    {
+        s_AccountUnlockedTransmogAppearances.erase(accountId);
+    }
+
     bool HasTransmogAppearanceUnlocked(uint32 accountId, uint32 displayId)
     {
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (itemsEntryCol.empty())
+        if (!accountId || !displayId)
             return false;
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND {} = {} AND unlocked = 1 LIMIT 1",
-            accountId, static_cast<uint8>(CollectionType::TRANSMOG), itemsEntryCol, displayId);
-
-        return result != nullptr;
+        auto const& unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+        return unlocked.find(displayId) != unlocked.end();
     }
 
     void SendTransmogState(Player* player)
@@ -1830,6 +1922,12 @@ namespace DCCollection
             "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
             "VALUES ({}, {}, {}, '{}', 1, NOW())",
             itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId, std::string(sourceType));
+
+        // Keep the in-memory cache consistent for the rest of this session.
+        // (If the cache wasn't built yet, we don't force-build it here.)
+        auto cacheIt = s_AccountUnlockedTransmogAppearances.find(accountId);
+        if (cacheIt != s_AccountUnlockedTransmogAppearances.end())
+            cacheIt->second.insert(displayId);
 
         // Notify player if this is a new unlock and notifications enabled
         if (shouldNotify)
@@ -3433,7 +3531,9 @@ namespace DCCollection
                                         std::vector<uint32> const& matchingItemIds,
                                         std::string const& searchFilter = "")
     {
-        uint32 pageSize = 6;  // Match Eluna's SLOTS = 6
+        uint32 pageSize = sConfigMgr->GetOption<uint32>(Config::TRANSMOG_SLOT_ITEMS_PAGE_SIZE, 24);
+        if (pageSize < 6)
+            pageSize = 6;
         uint32 totalCount = static_cast<uint32>(matchingItemIds.size());
         uint32 startIdx = (page > 0) ? (page - 1) * pageSize : 0;
         bool hasMore = (startIdx + pageSize) < totalCount;
@@ -3517,6 +3617,15 @@ namespace DCCollection
         // Get all collected transmog displayIds
         std::vector<uint32> collectedDisplayIds = LoadPlayerCollection(accountId, CollectionType::TRANSMOG);
 
+        // Send both:
+        // - appearances: displayIds (what the UI expects for highlighting)
+        // - items: canonical itemIds (useful for tooltip/itemlink support)
+        DCAddon::JsonValue appearancesArr;
+        appearancesArr.SetArray();
+
+        for (uint32 displayId : collectedDisplayIds)
+            appearancesArr.Push(DCAddon::JsonValue(displayId));
+
         // Also get all items that share these displayIds for tooltip support
         DCAddon::JsonValue items;
         items.SetArray();
@@ -3535,6 +3644,7 @@ namespace DCCollection
 
         DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COLLECTED_APPEARANCES);
         response.Set("count", static_cast<uint32>(collectedDisplayIds.size()));
+        response.Set("appearances", appearancesArr);
         response.Set("items", items);
         response.Send(player);
     }
@@ -3850,7 +3960,7 @@ namespace DCCollection
             DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
             msg.Set("type", typeName);
             msg.Set("definitions", defs);
-            msg.Set("syncVersion", 1);
+            msg.Set("syncVersion", GetTransmogDefinitionsSyncVersionCached());
             msg.Set("offset", offset);
             msg.Set("limit", limit);
             msg.Set("total", total);
@@ -4600,6 +4710,7 @@ namespace DCCollection
         uint8 type = 0;
         uint32 offset = 0;
         uint32 limit = 0;
+        uint32 clientSyncVersion = 0;
 
         if (json.HasKey("type"))
         {
@@ -4624,11 +4735,41 @@ namespace DCCollection
         if (json.HasKey("limit"))
             limit = json["limit"].AsUInt32();
 
+        // Optional: client can send a syncVersion/hash to skip re-downloading when unchanged.
+        if (json.HasKey("syncVersion"))
+            clientSyncVersion = json["syncVersion"].AsUInt32();
+        else if (json.HasKey("version"))
+            clientSyncVersion = json["version"].AsUInt32();
+
         // Handle itemSets separately (from DBC, not stored collection)
         if (type == static_cast<uint8>(CollectionType::ITEM_SET))
         {
             SendItemSetDefinitions(player);
             return;
+        }
+
+        // Transmog definitions are large: allow a client syncVersion short-circuit.
+        if (type == static_cast<uint8>(CollectionType::TRANSMOG))
+        {
+            uint32 serverSyncVersion = GetTransmogDefinitionsSyncVersionCached();
+            if (clientSyncVersion != 0 && clientSyncVersion == serverSyncVersion && offset == 0)
+            {
+                auto const& keys = GetTransmogAppearanceVariantKeysCached();
+                DCAddon::JsonValue empty;
+                empty.SetObject();
+
+                DCAddon::JsonMessage ack(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
+                ack.Set("type", "transmog");
+                ack.Set("definitions", empty);
+                ack.Set("syncVersion", serverSyncVersion);
+                ack.Set("upToDate", true);
+                ack.Set("offset", 0);
+                ack.Set("limit", limit ? limit : 0);
+                ack.Set("total", static_cast<uint32>(keys.size()));
+                ack.Set("more", false);
+                ack.Send(player);
+                return;
+            }
         }
 
         if (type >= 1 && type <= 6 && type != static_cast<uint8>(CollectionType::TOY))
@@ -5000,6 +5141,11 @@ namespace DCCollection
         {
             if (!player)
                 return;
+
+            // Drop per-account transmog unlock cache (rebuilt on next request/login).
+            uint32 accountId = GetAccountId(player);
+            if (accountId)
+                InvalidateAccountUnlockedTransmogAppearances(accountId);
 
             // Clear session notification cache on logout
             uint32 guid = player->GetGUID().GetCounter();
