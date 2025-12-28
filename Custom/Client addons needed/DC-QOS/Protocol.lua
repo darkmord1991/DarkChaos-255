@@ -29,6 +29,7 @@ protocol.Opcodes = {
     CMSG_GET_NPC_INFO       = 0x04,  -- Request custom NPC info (DB GUID, spawn info)
     CMSG_GET_SPELL_INFO     = 0x05,  -- Request custom spell info
     CMSG_REQUEST_FEATURE    = 0x06,  -- Request specific feature data
+    CMSG_COLLECT_ALL_MAIL   = 0x07,  -- Request to collect all mail
     
     -- Server -> Client (0x10-0x1F)
     SMSG_SETTINGS_SYNC      = 0x10,  -- Full settings sync from server
@@ -170,6 +171,11 @@ function protocol:RequestItemUpgradeInfo(bag, slot)
         slot = slot,
         type = "upgrade",  -- Specifies we want upgrade data, not just basic info
     })
+end
+
+-- Request server to collect all mail
+function protocol:RequestCollectAllMail()
+    return self:Send(self.Opcodes.CMSG_COLLECT_ALL_MAIL)
 end
 
 -- ============================================================

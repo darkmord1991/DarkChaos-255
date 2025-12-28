@@ -31,6 +31,8 @@ local tabOrder = {
     "GTFO",
     "ItemScore",
     "Bags",
+    "Cooldowns",
+    "Mail",
     "Communication",
 }
 

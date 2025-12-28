@@ -22,3 +22,5 @@ Modules\Interface.lua
 Modules\GTFO.lua
 Modules\ItemScore.lua
 Modules\BagEnhancements.lua
+Modules\Cooldowns.lua
+Modules\Mail.lua

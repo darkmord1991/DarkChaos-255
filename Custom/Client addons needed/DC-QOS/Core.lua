@@ -112,6 +112,15 @@ addon.defaults = {
         autoDeclineDuels = false,
         autoDeclineGuildInvites = false,
         autoAcceptPartyInvites = false,
+        autoAcceptQuests = false,
+        autoTurnInQuests = false,
+    },
+    
+    -- Cooldown settings
+    cooldowns = {
+        enabled = true,
+        minDuration = 2, -- Minimum duration to show text
+        fontSize = 18,
     },
     
     -- Chat settings

@@ -259,6 +259,30 @@ DCWelcome.RegisteredAddons = {
         end,
     },
     {
+        id = "dc-qos",
+        name = "Quality of Service",
+        description = "QoL features: Auto-Quest, Cooldown Text, Auto-Repair, Auto-Sell, and Mail Collection.",
+        icon = "Interface\\Icons\\Trade_Engineering",
+        color = {1.0, 0.82, 0.0},  -- Gold
+        category = "Settings",
+        minLevel = 1,
+        openCommand = nil,
+        settingsCommand = "/dcqos",
+        openFunc = nil,  -- No main window, just settings
+        settingsFunc = function()
+            if DCQOS and DCQOS.ToggleSettings then
+                DCQOS:ToggleSettings()
+            elseif SlashCmdList["DCQOS"] then
+                SlashCmdList["DCQOS"]("")
+            else
+                DCWelcome.Print("DC-QoS addon not loaded")
+            end
+        end,
+        isLoaded = function()
+            return DCQOS ~= nil or SlashCmdList["DCQOS"] ~= nil
+        end,
+    },
+    {
         id = "dc-hinterlandbg",
         name = "Hinterland BG",
         description = "Open-world PvP battleground in The Hinterlands zone.",

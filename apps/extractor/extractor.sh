@@ -37,12 +37,45 @@ function All {
     Menu
 }
 
+function SingleMap {
+    read -rp "Enter Map ID: " MAP_ID
+    if [[ -z "$MAP_ID" ]]; then
+        echo "No Map ID entered."
+        Menu
+        return
+    fi
+    echo "Extracting Map $MAP_ID..."
+    
+    # Base
+    # Note: map_extractor handles its own optional cleaning if specific map?? 
+    # Actually, for single map, we probably SHOULD NOT delete everything
+    # But current extractor tools overwrite anyway.
+    # We should NOT run 'rm -rf' here.
+    
+    ./map_extractor -m "$MAP_ID"
+    
+    # VMaps
+    echo "Extracting VMaps for Map $MAP_ID..."
+    mkdir -p Buildings vmaps
+    ./vmap4_extractor -m "$MAP_ID"
+    ./vmap4_assembler Buildings vmaps "$MAP_ID"
+    # Don't delete Buildings folder as it might contain other maps' data if not cleaned?
+    # Or cleaner to just let it be.
+    
+    # MMaps
+    echo "Extracting MMaps for Map $MAP_ID..."
+    mkdir -p mmaps
+    ./mmaps_generator "$MAP_ID"
+    
+    Menu
+}
+
 function Menu {
 echo ""
 echo "..............................................."
 echo "AzerothCore dbc, maps, vmaps, mmaps extractor"
 echo "..............................................."
-echo "PRESS 1, 2, 3 OR 4 to select your task, or 5 to EXIT."
+echo "PRESS 1, 2, 3, 4 OR 6 to select your task, or 5 to EXIT."
 echo "..............................................."
 echo ""
 echo "WARNING! when extracting the vmaps extractor will"
@@ -54,15 +87,16 @@ echo "Couldn't open RootWmo!!!"
 echo "Done!"
 echo " .........................................."
 echo ""
-echo "Press 1, 2, 3 or 4 to start extracting or 5 to exit."
+echo "Press 1, 2, 3, 4 or 6 to start extracting or 5 to exit."
 echo "1 - Extract base files (NEEDED) and cameras."
 echo "2 - Extract vmaps (needs maps to be extracted before you run this) (OPTIONAL, highly recommended)"
 echo "3 - Extract mmaps (needs vmaps to be extracted before you run this, may take hours) (OPTIONAL, highly recommended)"
 echo "4 - Extract all (may take hours)"
 echo "5 - EXIT"
+echo "6 - Extract Specific Map (Maps, VMaps, MMaps)"
 echo ""
 
-read -rp "Type 1, 2, 3, 4 or 5 then press ENTER: " choice
+read -rp "Type 1-6 then press ENTER: " choice
 
 case $choice in
     1) Base ;;
@@ -70,7 +104,8 @@ case $choice in
     3) MMaps ;;
     4) All ;;
     5) exit 0;;
-    *) echo "Invalid choice."; read -rp "Type 1, 2, 3, 4 or 5 then press ENTER: " choice ;;
+    6) SingleMap ;;
+    *) echo "Invalid choice."; read -rp "Type 1-6 then press ENTER: " choice ;;
 esac
 }
 

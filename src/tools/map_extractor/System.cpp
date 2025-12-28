@@ -87,10 +87,12 @@ enum Extract
 };
 
 // Select data for extract
+// Select data for extract
 int   CONF_extract = EXTRACT_MAP | EXTRACT_DBC | EXTRACT_CAMERA;
 // This option allow limit minimum height to some value (Allow save some memory)
 bool  CONF_allow_height_limit = true;
 float CONF_use_minHeight = -500.0f;
+int   CONF_extract_mapid = -1;
 
 // This option allow use float to int conversion
 bool  CONF_allow_float_to_int   = true;
@@ -163,6 +165,7 @@ void Usage(char* prg)
         "-o set output path\n"\
         "-e extract only MAP(1)/DBC(2)/Camera(4) - standard: all(7)\n"\
         "-f height stored as int (less map size but lost some accuracy) 1 by default\n"\
+        "-m map_id (extract only specific map)\n"\
         "Example: %s -f 0 -i \"c:\\games\\game\"", prg, prg);
     exit(1);
 }
@@ -176,6 +179,7 @@ void HandleArgs(int argc, char* arg[])
         // e - extract only MAP(1)/DBC(2) - standard both(3)
         // f - use float to int conversion
         // h - limit minimum height
+        // m - map id
         if (arg[c][0] != '-')
         {
             Usage(arg[0]);
@@ -223,6 +227,16 @@ void HandleArgs(int argc, char* arg[])
                     {
                         Usage(arg[0]);
                     }
+                }
+                else
+                {
+                    Usage(arg[0]);
+                }
+                break;
+            case 'm':
+                if (c + 1 < argc)                           // all ok
+                {
+                    CONF_extract_mapid = atoi(arg[(c++) + 1]);
                 }
                 else
                 {
@@ -282,15 +296,22 @@ uint32 ReadMapDBC()
     }
 
     std::size_t map_count = dbc.getRecordCount();
-    map_ids.resize(map_count);
+    map_ids.clear();
+    map_ids.reserve(map_count);
     for (uint32 x = 0; x < map_count; ++x)
     {
-        map_ids[x].id = dbc.getRecord(x).getUInt(0);
-        std::strncpy(map_ids[x].name, dbc.getRecord(x).getString(1), sizeof(map_ids[x].name) - 1);
-        map_ids[x].name[sizeof(map_ids[x].name) - 1] = '\0';
+        map_id newMap;
+        newMap.id = dbc.getRecord(x).getUInt(0);
+
+        if (CONF_extract_mapid != -1 && newMap.id != uint32(CONF_extract_mapid))
+            continue;
+
+        std::strncpy(newMap.name, dbc.getRecord(x).getString(1), sizeof(newMap.name) - 1);
+        newMap.name[sizeof(newMap.name) - 1] = '\0';
+        map_ids.push_back(newMap);
     }
-    printf("Done! (%u maps loaded)\n", (uint32)map_count);
-    return map_count;
+    printf("Done! (%lu maps loaded)\n", map_ids.size());
+    return map_ids.size();
 }
 
 void ReadLiquidTypeTableDBC()

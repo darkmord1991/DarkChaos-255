@@ -217,6 +217,37 @@ local function SetupAutoAcceptPartyInvites()
 end
 
 -- ============================================================
+-- Auto Quest (Accept/Turn-in)
+-- ============================================================
+local function SetupAutoQuest()
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("QUEST_DETAIL")
+    frame:RegisterEvent("QUEST_ACCEPT_CONFIRM")
+    frame:RegisterEvent("QUEST_PROGRESS")
+    frame:RegisterEvent("QUEST_COMPLETE")
+    
+    frame:SetScript("OnEvent", function(self, event)
+        local settings = addon.settings.automation
+        if not settings.enabled then return end
+        
+        -- Don't automate if holding Shift
+        if IsShiftKeyDown() then return end
+        
+        if (event == "QUEST_DETAIL" or event == "QUEST_ACCEPT_CONFIRM") and settings.autoAcceptQuests then
+            AcceptQuest()
+        elseif event == "QUEST_PROGRESS" and settings.autoTurnInQuests then
+            if IsQuestCompletable() then
+                CompleteQuest()
+            end
+        elseif event == "QUEST_COMPLETE" and settings.autoTurnInQuests then
+            if GetNumQuestChoices() <= 1 then
+                GetQuestReward(1)
+            end
+        end
+    end)
+end
+
+-- ============================================================
 -- Module Callbacks
 -- ============================================================
 function Automation.OnInitialize()
@@ -234,6 +265,7 @@ function Automation.OnEnable()
     SetupAutoDeclineDuels()
     SetupAutoDeclineGuildInvites()
     SetupAutoAcceptPartyInvites()
+    SetupAutoQuest()
 end
 
 function Automation.OnDisable()
@@ -267,6 +299,26 @@ function Automation.CreateSettings(parent)
     local merchantHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     merchantHeader:SetPoint("TOPLEFT", 16, yOffset)
     merchantHeader:SetText("Merchant Automation")
+    yOffset = yOffset - 25
+
+    -- Auto Accept Quests
+    local questAcceptCb = addon:CreateCheckbox(parent)
+    questAcceptCb:SetPoint("TOPLEFT", 16, yOffset)
+    questAcceptCb.Text:SetText("Auto Accept Quests")
+    questAcceptCb:SetChecked(settings.autoAcceptQuests)
+    questAcceptCb:SetScript("OnClick", function(self)
+        addon:SetSetting("automation.autoAcceptQuests", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    -- Auto Turn-In Quests
+    local questTurnInCb = addon:CreateCheckbox(parent)
+    questTurnInCb:SetPoint("TOPLEFT", 16, yOffset)
+    questTurnInCb.Text:SetText("Auto Turn-In Quests")
+    questTurnInCb:SetChecked(settings.autoTurnInQuests)
+    questTurnInCb:SetScript("OnClick", function(self)
+        addon:SetSetting("automation.autoTurnInQuests", self:GetChecked())
+    end)
     yOffset = yOffset - 25
     
     -- Auto Repair
