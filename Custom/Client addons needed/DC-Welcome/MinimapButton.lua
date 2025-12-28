@@ -17,8 +17,8 @@ DCWelcome = DCWelcome or {}
 
 local BUTTON_RADIUS = 80          -- Distance from minimap center
 local BUTTON_SIZE = 32            -- Button size in pixels
-local ICON_TEXTURE = "Interface\\AddOns\\DC-Welcome\\Textures\\DCWelcomeIcon.tga"  -- Custom Icon
--- local ICON_TEXTURE = "Interface\\Icons\\INV_Letter_02"  -- Fallback
+local ICON_TEXTURE = DCWelcome.ADDON_PATH .. "Textures\\DCWelcomeIcon.blp"  -- Custom Icon
+-- local ICON_TEXTURE = DCWelcome.ADDON_PATH .. "Textures\\DCWelcomeIcon.blp"  -- Custom Icon
 local HIGHLIGHT_TEXTURE = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
 
 -- =============================================================================

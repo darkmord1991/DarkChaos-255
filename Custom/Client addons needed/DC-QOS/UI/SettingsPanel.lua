@@ -41,10 +41,10 @@ local tabOrder = {
 -- ============================================================
 
 -- Create a tab button
-local function CreateTabButton(parent, index, name, displayName)
+local function CreateTabButton(parent, x, y, name, displayName)
     local button = CreateFrame("Button", "DCQoSTab" .. name, parent)
     button:SetSize(TAB_WIDTH, TAB_HEIGHT)
-    button:SetPoint("TOPLEFT", parent, "TOPLEFT", PANEL_PADDING + (index - 1) * (TAB_WIDTH + 4), -60)
+    button:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     
     -- Background textures
     button.bg = button:CreateTexture(nil, "BACKGROUND")
@@ -318,6 +318,10 @@ function addon:CreateSettingsPanel()
         ["Communication"] = "Sync",
     }
     
+    local MAX_WIDTH = 550
+    local currentX = PANEL_PADDING
+    local currentY = -60
+
     for i, tabName in ipairs(tabOrder) do
         local module = self.modules[tabName]
         -- For "Bags" tab, try BagEnhancements module
@@ -327,11 +331,20 @@ function addon:CreateSettingsPanel()
         
         local displayName = tabDisplayNames[tabName] or (module and module.displayName) or tabName
         
+        -- Wrap logic
+        if currentX + TAB_WIDTH > MAX_WIDTH then
+            currentX = PANEL_PADDING
+            currentY = currentY - TAB_HEIGHT - 4
+        end
+
         -- Create tab button
-        self.tabButtons[tabName] = CreateTabButton(panel, i, tabName, displayName)
+        self.tabButtons[tabName] = CreateTabButton(panel, currentX, currentY, tabName, displayName)
         
         -- Create tab content frame
         self.tabFrames[tabName] = CreateTabFrame(panel, tabName)
+
+        -- Advance X
+        currentX = currentX + TAB_WIDTH + 4
         
         -- Populate tab with module settings
         if module and module.CreateSettings then
@@ -345,6 +358,12 @@ function addon:CreateSettingsPanel()
                 self.tabFrames[tabName].content:SetHeight(math.max(1, -y + 30))
             end
         end
+    end
+
+    -- Update all tab frames anchors to account for button rows
+    local contentTopY = currentY - TAB_HEIGHT - 10
+    for _, frame in pairs(self.tabFrames) do
+        frame:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PADDING, contentTopY)
     end
     
     -- Show first tab by default

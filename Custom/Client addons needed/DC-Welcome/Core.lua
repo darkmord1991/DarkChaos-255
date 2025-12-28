@@ -16,8 +16,17 @@
     Updated: December 2025 - Added Plugin API and Event Bus
 ]]
 
+local addonNameGlobal, _ = ...
 local addonName = "DC-Welcome"
 DCWelcome = DCWelcome or {}
+
+-- Detect actual installation path (handles "DC-Welcome-2.0.0" vs "DC-Welcome")
+-- Use the addon name passed by the client loader (ARG1) which corresponds to the folder name
+if not addonNameGlobal or addonNameGlobal == "" then
+    addonNameGlobal = "DC-Welcome" -- Fallback
+end
+DCWelcome.ADDON_PATH = "Interface\\AddOns\\" .. addonNameGlobal .. "\\"
+print("DC-Welcome: Path detected as: " .. DCWelcome.ADDON_PATH)
 
 -- Version
 DCWelcome.VERSION = "2.0.0"

@@ -16,6 +16,7 @@ WelcomeFrame.lua
 ChallengePrestigeUI.lua
 FAQ.lua
 MinimapButton.lua
+## MicroMenu.lua
 
 ## Integrated utility modules (previously standalone addons)
 TitleFix.lua

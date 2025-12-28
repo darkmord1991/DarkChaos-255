@@ -38,7 +38,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-mythicplus",
         name = "Mythic+ Suite",
         description = "HUD, Group Finder, Live Runs Spectator, Keystone Activation, and Scheduled Events",
-        icon = "Interface\\Icons\\Achievement_challengemode_gold",
+        icon = "Interface\\Icons\\Achievement_Boss_Archimonde",
         color = {0.2, 0.8, 1.0},  -- Cyan
         category = "Dungeons",
         minLevel = 1,
@@ -72,7 +72,7 @@ DCWelcome.RegisteredAddons = {
         -- Great Vault Button
         hasSecondButton = true,
         secondButtonName = "Great Vault",
-        secondButtonIcon = "Interface\\Icons\\INV_Box_04",
+        secondButtonIcon = DCWelcome.ADDON_PATH .. "Textures\\DCHeirloomIcon.tga",
         secondButtonFunc = function()
             if DCMythicPlusHUD and DCMythicPlusHUD.GreatVault and DCMythicPlusHUD.GreatVault.Toggle then
                 DCMythicPlusHUD.GreatVault:Toggle()
@@ -87,7 +87,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-leaderboards",
         name = "Leaderboards",
         description = "M+, PvP, and seasonal rankings browser",
-        icon = "Interface\\Icons\\Achievement_Arena_5v5_7",
+        icon = "Interface\\Icons\\Achievement_Arena_2v2_1",
         color = {1, 0.84, 0},  -- Gold
         category = "Competition",
         minLevel = 1,
@@ -111,7 +111,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-hotspot",
         name = "Hotspot Map",
         description = "Shows dynamic XP zones on the world map. Type /dchotspot for options.",
-        icon = "Interface\\Icons\\INV_Misc_Map01",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\DCUpgradeIcon.tga",
         color = {0, 0.8, 1},  -- Cyan
         category = "World",
         minLevel = 1,
@@ -135,7 +135,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-itemupgrade",
         name = "Item Upgrades",
         description = "Upgrade gear with tokens from M+ and raids",
-        icon = "Interface\\Icons\\INV_Enchant_VoidSphere",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\DCUpgradeIcon.tga",
         color = {0, 0.44, 0.87},  -- Blue
         category = "Gear",
         minLevel = 1,
@@ -143,7 +143,7 @@ DCWelcome.RegisteredAddons = {
         settingsCommand = "/dcu settings",
         hasSecondButton = true,  -- Special: has heirloom button
         secondButtonName = "Heirlooms",
-        secondButtonIcon = "Interface\\Icons\\INV_Chest_Plate16",
+        secondButtonIcon = DCWelcome.ADDON_PATH .. "Textures\\DCHeirloomIcon.tga",
         secondButtonFunc = function()
             -- /dcu heirloom opens heirloom upgrade window
             if DarkChaos_ItemUpgrade then
@@ -259,10 +259,33 @@ DCWelcome.RegisteredAddons = {
         end,
     },
     {
+        id = "dc-collection",
+        name = "Collections",
+        description = "Mounts, Pets, Toys, and Appearances interface.",
+        icon = "Interface\\Icons\\Ability_Mount_RidingHorse",
+        color = {0.1, 0.8, 0.2},  -- Fel Green
+        category = "World",
+        minLevel = 1,
+        openCommand = "/dcc",
+        settingsCommand = nil,
+        openFunc = function()
+            if DCCollection and DCCollection.Toggle then
+                DCCollection:Toggle()
+            elseif SlashCmdList["DCCOLLECTION"] then
+                SlashCmdList["DCCOLLECTION"]("")
+            else
+                DCWelcome.Print("Collections addon not loaded")
+            end
+        end,
+        isLoaded = function()
+            return DCCollection ~= nil or SlashCmdList["DCCOLLECTION"] ~= nil
+        end,
+    },
+    {
         id = "dc-qos",
         name = "Quality of Service",
         description = "QoL features: Auto-Quest, Cooldown Text, Auto-Repair, Auto-Sell, and Mail Collection.",
-        icon = "Interface\\Icons\\Trade_Engineering",
+        icon = "Interface\\Icons\\INV_Enchant_VoidSphere",
         color = {1.0, 0.82, 0.0},  -- Gold
         category = "Settings",
         minLevel = 1,
@@ -286,7 +309,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-hinterlandbg",
         name = "Hinterland BG",
         description = "Open-world PvP battleground in The Hinterlands zone.",
-        icon = "Interface\\Icons\\Achievement_bg_winAB",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\DCDungeonIcon.tga",
         color = {1, 0, 0},  -- Red
         category = "PvP",
         minLevel = 80,
