@@ -72,7 +72,6 @@ namespace DCQoS
     namespace Config
     {
         constexpr const char* ENABLED = "DC.AddonProtocol.QoS.Enable";
-        constexpr const char* DEBUG = "DC.AddonProtocol.QoS.Debug";
     }
 
     // =======================================================================
@@ -122,11 +121,6 @@ namespace DCQoS
     static bool IsEnabled()
     {
         return sConfigMgr->GetOption<bool>(Config::ENABLED, true);
-    }
-
-    static bool IsDebugEnabled()
-    {
-        return sConfigMgr->GetOption<bool>(Config::DEBUG, false);
     }
 
     // =======================================================================
@@ -278,7 +272,7 @@ namespace DCQoS
         msg.Set("buyPrice", itemTemplate->BuyPrice);
 
         // Check for custom item data
-        QueryResult customResult = CharacterDatabase.Query(
+        QueryResult customResult = WorldDatabase.Query(
             "SELECT custom_note, custom_source, is_custom FROM dc_item_custom_data WHERE item_id = {}",
             itemId
         );
@@ -326,8 +320,8 @@ namespace DCQoS
             msg.Set("upgradeLevel", static_cast<int32>(upgradeLevel));
 
             // Get tier max level from dc_item_upgrade_tiers
-            QueryResult tierResult = CharacterDatabase.Query(
-                "SELECT max_level, stat_per_level FROM dc_item_upgrade_tiers WHERE tier_id = {}",
+            QueryResult tierResult = WorldDatabase.Query(
+                "SELECT max_upgrade_level, stat_multiplier_max FROM dc_item_upgrade_tiers WHERE tier_id = {}",
                 tierId
             );
 
@@ -335,12 +329,16 @@ namespace DCQoS
             {
                 Field* tierFields = tierResult->Fetch();
                 uint32 maxLevel = tierFields[0].Get<uint32>();
-                float statPerLevel = tierFields[1].Get<float>();
+                float statMultiplierMax = tierFields[1].Get<float>();
 
                 msg.Set("maxUpgrade", static_cast<int32>(maxLevel));
 
-                // Calculate stat multiplier: 1.0 + (upgradeLevel * statPerLevel / 100)
-                float statMultiplier = 1.0f + (static_cast<float>(upgradeLevel) * statPerLevel / 100.0f);
+                // Calculate stat multiplier: 1.0 + (upgradeLevel * (statMultiplierMax - 1.0) / maxLevel)
+                float statMultiplier = 1.0f;
+                if (maxLevel > 0)
+                {
+                    statMultiplier = 1.0f + (static_cast<float>(upgradeLevel) * (statMultiplierMax - 1.0f) / static_cast<float>(maxLevel));
+                }
                 msg.Set("statMultiplier", statMultiplier);
             }
             else
@@ -448,8 +446,9 @@ namespace DCQoS
 
         // Get spawn information if available
         QueryResult spawnResult = WorldDatabase.Query(
-            "SELECT guid, map, position_x, position_y, position_z, spawntimesecs FROM creature WHERE id = {} LIMIT 1",
-            entry
+            "SELECT guid, map, position_x, position_y, position_z, spawntimesecs "
+            "FROM creature WHERE id1 = {} OR id2 = {} OR id3 = {} LIMIT 1",
+            entry, entry, entry
         );
 
         // Try to get live spawn information from active creatures
@@ -515,7 +514,7 @@ namespace DCQoS
         msg.Set("category", spellInfo->GetCategory());
 
         // Check for custom spell modifications
-        QueryResult customResult = CharacterDatabase.Query(
+        QueryResult customResult = WorldDatabase.Query(
             "SELECT custom_note, modified_values FROM dc_spell_custom_data WHERE spell_id = {}",
             spellId
         );
@@ -623,10 +622,10 @@ namespace DCQoS
         {
             itemId = static_cast<uint32>(json["itemId"].AsNumber());
         }
-        else if (msg.dataFields.size() > 0)
+        else if (msg.GetDataCount() > 0)
         {
             // Simple format: QOS|0x03|itemId
-            itemId = std::stoul(msg.dataFields[0]);
+            itemId = msg.GetUInt32(0);
         }
 
         if (itemId > 0)
@@ -647,9 +646,9 @@ namespace DCQoS
         {
             guidStr = json["guid"].AsString();
         }
-        else if (msg.dataFields.size() > 0)
+        else if (msg.GetDataCount() > 0)
         {
-            guidStr = msg.dataFields[0];
+            guidStr = msg.GetString(0);
         }
 
         if (!guidStr.empty())
@@ -670,9 +669,9 @@ namespace DCQoS
         {
             spellId = static_cast<uint32>(json["spellId"].AsNumber());
         }
-        else if (msg.dataFields.size() > 0)
+        else if (msg.GetDataCount() > 0)
         {
-            spellId = std::stoul(msg.dataFields[0]);
+            spellId = msg.GetUInt32(0);
         }
 
         if (spellId > 0)
@@ -726,7 +725,7 @@ class DCQoSPlayerScript : public PlayerScript
 public:
     DCQoSPlayerScript() : PlayerScript("DCQoSPlayerScript") {}
 
-    void OnLogin(Player* player) override
+    void OnLogin(Player* player)
     {
         if (!DCQoS::IsEnabled() || !player)
             return;
@@ -746,16 +745,17 @@ namespace DCAddon
         using namespace DCQoS;
 
         // Register module "QOS" handlers
-        RegisterHandler(MODULE, Opcode::CMSG_SYNC_SETTINGS, HandleSyncSettings);
-        RegisterHandler(MODULE, Opcode::CMSG_UPDATE_SETTING, HandleUpdateSetting);
-        RegisterHandler(MODULE, Opcode::CMSG_GET_ITEM_INFO, HandleGetItemInfo);
-        RegisterHandler(MODULE, Opcode::CMSG_GET_NPC_INFO, HandleGetNpcInfo);
-        RegisterHandler(MODULE, Opcode::CMSG_GET_SPELL_INFO, HandleGetSpellInfo);
-        RegisterHandler(MODULE, Opcode::CMSG_REQUEST_FEATURE, HandleRequestFeature);
+        DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_SYNC_SETTINGS, HandleSyncSettings);
+        DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_UPDATE_SETTING, HandleUpdateSetting);
+        DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_GET_ITEM_INFO, HandleGetItemInfo);
+        DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_GET_NPC_INFO, HandleGetNpcInfo);
+        DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_GET_SPELL_INFO, HandleGetSpellInfo);
+        DCAddon::MessageRouter::Instance().RegisterHandler(MODULE, DCQoS::Opcode::CMSG_REQUEST_FEATURE, HandleRequestFeature);
     }
 }
 
 void AddDCQoSScripts()
 {
+    DCAddon::RegisterQoSHandlers();
     new DCQoSPlayerScript();
 }

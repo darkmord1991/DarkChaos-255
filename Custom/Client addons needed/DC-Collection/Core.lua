@@ -983,8 +983,25 @@ function events:ADDON_LOADED(addonName)
         DC.isLoaded = true
         DC:Print(string.format(L.ADDON_LOADED, DC.VERSION))
         
-        -- Request initial data after a short delay
-        After(2, function()
+        -- If cache is fresh (recent reload), skip the heavy server requests entirely.
+        local cacheFresh = (type(DC.IsCacheFresh) == "function") and DC:IsCacheFresh()
+        local hasDefs = (type(DC.HasCachedDefinitions) == "function") and DC:HasCachedDefinitions()
+        
+        if cacheFresh and hasDefs then
+            DC:Debug("Cache is fresh on ADDON_LOADED; using cached data")
+            DC._initialDataRequested = true
+            -- Still fetch lightweight currency/stats after a short delay
+            After(0.5, function()
+                if DC:IsProtocolReady() then
+                    DC:RequestCurrency()
+                    DC:RequestStats()
+                end
+            end)
+            return
+        end
+        
+        -- Request initial data after a short delay (reduced from 2s to 1s)
+        After(1, function()
             if not DC:GetSetting("autoSyncOnLogin") then
                 return
             end
@@ -1004,7 +1021,8 @@ function events:PLAYER_LOGIN()
     DC:ApplyMountSpeedBonus()
 
     -- Fallback: some clients/protocols only become ready after PLAYER_LOGIN.
-    After(2, function()
+    -- Reduced delay from 2s to 1s.
+    After(1, function()
         if not DC:GetSetting("autoSyncOnLogin") then
             return
         end
@@ -1022,7 +1040,8 @@ function events:PLAYER_LOGIN()
 end
 
 function events:PLAYER_LOGOUT()
-    -- Save any pending data
+    -- Ensure cache is marked for save and saved on logout
+    DC.cacheNeedsSave = true
     DC:SaveCache()
 end
 
@@ -1110,13 +1129,26 @@ function DC:IsProtocolReady()
     return type(DCAddonProtocol.Request) == "function" or type(DCAddonProtocol.SendJSON) == "function" or type(DCAddonProtocol.Send) == "function"
 end
 
-function DC:RequestInitialData(skipHandshake)
+function DC:RequestInitialData(skipHandshake, forceRefresh)
     DC:Debug("Requesting initial collection data...")
 
     self._initialDataRequested = true
 
     if not self:IsProtocolReady() then
         self:Debug("Protocol not ready (or server sync disabled)")
+        return
+    end
+
+    -- If cache is fresh and we have definitions, skip heavy requests on reload/relog.
+    -- This dramatically speeds up /reload scenarios.
+    local cacheFresh = (type(self.IsCacheFresh) == "function") and self:IsCacheFresh()
+    local hasDefs = (type(self.HasCachedDefinitions) == "function") and self:HasCachedDefinitions()
+
+    if cacheFresh and hasDefs and not forceRefresh then
+        self:Debug("Cache is fresh; skipping heavy server requests (definitions/collections)")
+        -- Only request lightweight data: currency + stats (for live balance updates).
+        self:RequestCurrency()
+        self:RequestStats()
         return
     end
 
@@ -1185,7 +1217,7 @@ function DC:RequestFullSync()
     DCCollectionDB.syncVersion = 0
     self._handshakeRequested = nil
     self._handshakeAcked = nil
-    self:RequestInitialData(false)
+    self:RequestInitialData(false, true)  -- forceRefresh = true
 end
 
 -- Placeholder functions (implemented in Protocol.lua)

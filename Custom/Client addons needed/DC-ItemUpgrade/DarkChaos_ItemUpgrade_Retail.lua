@@ -2461,12 +2461,15 @@ local STAT_LABEL_OVERRIDES = {
 };
 
 local STAT_ORDER = {
+	-- Armor (always first)
 	"ITEM_MOD_ARMOR_SHORT",
-	"ITEM_MOD_STAMINA_SHORT",
-	"ITEM_MOD_INTELLECT_SHORT",
-	"ITEM_MOD_SPIRIT_SHORT",
+	-- Primary Stats
 	"ITEM_MOD_STRENGTH_SHORT",
 	"ITEM_MOD_AGILITY_SHORT",
+	"ITEM_MOD_INTELLECT_SHORT",
+	"ITEM_MOD_STAMINA_SHORT",
+	"ITEM_MOD_SPIRIT_SHORT",
+	-- Secondary Stats (offensive)
 	"ITEM_MOD_ATTACK_POWER_SHORT",
 	"ITEM_MOD_RANGED_ATTACK_POWER_SHORT",
 	"ITEM_MOD_FERAL_ATTACK_POWER_SHORT",
@@ -2478,14 +2481,17 @@ local STAT_ORDER = {
 	"ITEM_MOD_EXPERTISE_RATING_SHORT",
 	"ITEM_MOD_ARMOR_PENETRATION_RATING_SHORT",
 	"ITEM_MOD_SPELL_PENETRATION_SHORT",
+	-- Secondary Stats (defensive)
 	"ITEM_MOD_RESILIENCE_RATING_SHORT",
 	"ITEM_MOD_DEFENSE_SKILL_RATING_SHORT",
 	"ITEM_MOD_DODGE_RATING_SHORT",
 	"ITEM_MOD_PARRY_RATING_SHORT",
 	"ITEM_MOD_BLOCK_RATING_SHORT",
 	"ITEM_MOD_BLOCK_VALUE_SHORT",
+	-- Regen/Procs
 	"ITEM_MOD_HEALTH_REGENERATION_SHORT",
 	"ITEM_MOD_MANA_REGENERATION_SHORT",
+	-- Resistances (last)
 	"RESISTANCE1_NAME",
 	"RESISTANCE2_NAME",
 	"RESISTANCE3_NAME",
@@ -3195,7 +3201,7 @@ end
 function DarkChaos_ItemBrowser_Update()
 	local items = {};
 	
-	print("[DC-ItemUpgrade] ItemBrowser_Update called");
+	DC.Debug("ItemBrowser_Update called");
 	
 	-- Collect items from bags
 	for bag = 0, 4 do
@@ -3242,7 +3248,7 @@ function DarkChaos_ItemBrowser_Update()
 		end
 	end
 	
-	print("[DC-ItemUpgrade] Found " .. #items .. " items");
+	DC.Debug("Found " .. #items .. " items");
 	
 	local scrollFrame = DarkChaos_ItemBrowserFrame.ScrollFrame;
 	if not scrollFrame then
@@ -3254,12 +3260,12 @@ function DarkChaos_ItemBrowser_Update()
 		return;
 	end
 	
-	print("[DC-ItemUpgrade] ScrollFrame OK, buttons count: " .. #scrollFrame.buttons);
+	DC.Debug("ScrollFrame OK, buttons count: " .. #scrollFrame.buttons);
 	
 	FauxScrollFrame_Update(scrollFrame, #items, 10, 32);
 	
 	local offset = FauxScrollFrame_GetOffset(scrollFrame);
-	print("[DC-ItemUpgrade] Offset: " .. offset);
+	DC.Debug("Offset: " .. offset);
 	
 	for i = 1, 10 do
 		local index = offset + i;
@@ -3267,7 +3273,7 @@ function DarkChaos_ItemBrowser_Update()
 		if button then
 			if index <= #items then
 				local item = items[index];
-				print("[DC-ItemUpgrade] Button " .. i .. ": showing item " .. tostring(item.name));
+				DC.Debug("Button " .. i .. ": showing item " .. tostring(item.name));
 				
 				-- Set icon
 				if button.Icon then
@@ -3435,18 +3441,18 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 	DC.Debug("Sending perform command: "..command);
 	local itemLabel = DC.currentItem.link or DC.currentItem.name or "item";
 	local projectedTokens = (totals.tokens or 0) > 0 and totals.tokens or requiredTokens;
-	print(string.format("|cff00ff00Upgrading %s to level %d/%d...|r", itemLabel, targetLevel, maxUpgrade));
+	DC.Debug(string.format("Upgrading %s to level %d/%d...", itemLabel, targetLevel, maxUpgrade));
 	if isHeirloomShirt then
 		local pkg = DC.STAT_PACKAGES[packageId];
 		if pkg then
-			print(string.format("|cff00ccff[Stat Package]|r %s - %s", pkg.name, table.concat(pkg.stats, ", ")));
+			DC.Debug(string.format("[Stat Package] %s - %s", pkg.name, table.concat(pkg.stats, ", ")));
 		end
 	end
 	if projectedTokens > 0 then
-		print(string.format("|cff00ff00Projected total to reach level %d:|r %d Tokens", targetLevel, projectedTokens));
+		DC.Debug(string.format("Projected total to reach level %d: %d Tokens", targetLevel, projectedTokens));
 	end
 	if singleCost and (singleCost.tokens or 0) > 0 then
-		print(string.format("|cff00ff00Immediate cost for this step:|r %d Tokens", singleCost.tokens));
+		DC.Debug(string.format("Immediate cost for this step: %d Tokens", singleCost.tokens));
 	end
 	SendChatMessage(command, "SAY");
 end
@@ -3703,7 +3709,7 @@ end
 function DarkChaos_ItemUpgrade_UpdateUI()
 	local frame = DarkChaos_ItemUpgradeFrame;
 	if not frame then return end
-	if not (frame.ItemSlot and frame.ItemInfo and frame.PlayerCurrencies) then return end
+	if not (frame.ItemSlot and frame.ItemInfo) then return end
 	-- Use global dropdown name for WoW 3.3.5 compatibility
 	local dropdown = _G["DarkChaos_ItemUpgradeFrameDropdown"] or (frame.DropdownContainer and frame.DropdownContainer.Dropdown) or frame.Dropdown;
 
@@ -3722,6 +3728,11 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	end
 
 	if not DC.currentItem then
+		-- Ensure key UI elements are visible (they may have been hidden by package selection mode)
+		if frame.ItemSlot then frame.ItemSlot:Show(); end
+		if frame.ItemInfo then frame.ItemInfo:Show(); end
+		if frame.UpgradeButton then frame.UpgradeButton:Show(); end
+		
 		frame.ItemSlot.EmptyGlow:Show();
 		SetItemButtonTexture(frame.ItemSlot, nil);
 		local normalTexture = _G[frame.ItemSlot:GetName().."NormalTexture"];
@@ -3780,6 +3791,12 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	local maxPotential = ResolveUpgradeItemLevel(item, maxUpgrade, baseLevel);
 
 	currentLevel = math.max(baseLevel, currentLevel);
+	
+	-- Ensure key UI elements are visible (they may have been hidden by package selection mode or other states)
+	if frame.ItemSlot then frame.ItemSlot:Show(); end
+	if frame.ItemInfo then frame.ItemInfo:Show(); end
+	if frame.UpgradeButton then frame.UpgradeButton:Show(); end
+	if frame.CostFrame then frame.CostFrame:Show(); end
 	
 	-- Update Item Slot
 	frame.ItemSlot.EmptyGlow:Hide();

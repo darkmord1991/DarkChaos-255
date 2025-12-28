@@ -169,7 +169,7 @@ function Chat.CreateSettings(parent)
     local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetText("Configure chat enhancements and appearance options.")
-    desc:SetWidth(parent:GetWidth() - 32)
+    desc:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     desc:SetJustifyH("LEFT")
     
     local yOffset = -70
@@ -183,7 +183,7 @@ function Chat.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Hide Channel Names
-    local hideChannelsCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local hideChannelsCb = addon:CreateCheckbox(parent)
     hideChannelsCb:SetPoint("TOPLEFT", 16, yOffset)
     hideChannelsCb.Text:SetText("Shorten Channel Names")
     hideChannelsCb:SetChecked(settings.hideChannelNames)
@@ -194,7 +194,7 @@ function Chat.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Hide Social Buttons
-    local hideSocialCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local hideSocialCb = addon:CreateCheckbox(parent)
     hideSocialCb:SetPoint("TOPLEFT", 16, yOffset)
     hideSocialCb.Text:SetText("Hide Social Buttons")
     hideSocialCb:SetChecked(settings.hideSocialButtons)
@@ -213,7 +213,7 @@ function Chat.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Sticky Channels
-    local stickyCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local stickyCb = addon:CreateCheckbox(parent)
     stickyCb:SetPoint("TOPLEFT", 16, yOffset)
     stickyCb.Text:SetText("Sticky Chat Channels")
     stickyCb:SetChecked(settings.stickyChannels)

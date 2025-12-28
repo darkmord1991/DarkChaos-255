@@ -95,6 +95,35 @@ local function CreateTabFrame(parent, name)
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
     frame.bg:SetTexture(0, 0, 0, 0.3)
+
+    -- Scrollable content area so settings never render outside the frame.
+    -- NOTE: UIPanelScrollFrameTemplate relies on a named frame (self:GetName())
+    -- in 3.3.5a's UIPanelTemplates.lua ScrollFrame_OnLoad.
+    local safeName = tostring(name or "")
+    safeName = safeName:gsub("[^%w_]", "")
+    if safeName == "" then
+        safeName = tostring(GetTime()):gsub("%.", "")
+    end
+    local scroll = CreateFrame("ScrollFrame", "DCQoSTabScrollFrame" .. safeName, frame, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6)
+    scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -28, 6)
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
+    content:SetSize(1, 1)
+    scroll:SetScrollChild(content)
+
+    frame.scrollFrame = scroll
+    frame.content = content
+
+    -- Keep content width synced (prevents widgets from overflowing horizontally).
+    frame:SetScript("OnSizeChanged", function(self)
+        if not self.content or not self.scrollFrame then return end
+        local w = self.scrollFrame:GetWidth()
+        if w and w > 0 then
+            self.content:SetWidth(w)
+        end
+    end)
     
     return frame
 end
@@ -159,7 +188,7 @@ local function CreateCommunicationSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Sync Settings
-    local autoSyncCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local autoSyncCb = addon:CreateCheckbox(parent, "DCQoSAutoSync")
     autoSyncCb:SetPoint("TOPLEFT", 16, yOffset)
     autoSyncCb.Text:SetText("Auto-sync Settings with Server")
     autoSyncCb:SetChecked(settings.autoSync ~= false)
@@ -191,7 +220,7 @@ local function CreateCommunicationSettings(parent)
     yOffset = yOffset - 25
     
     -- Debug Mode
-    local debugCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local debugCb = addon:CreateCheckbox(parent, "DCQoSDebugMode")
     debugCb:SetPoint("TOPLEFT", 16, yOffset)
     debugCb.Text:SetText("Enable Debug Mode")
     debugCb:SetChecked(settings.debugMode)
@@ -201,7 +230,7 @@ local function CreateCommunicationSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Protocol Messages
-    local protocolCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local protocolCb = addon:CreateCheckbox(parent, "DCQoSProtocolMsgs")
     protocolCb:SetPoint("TOPLEFT", 16, yOffset)
     protocolCb.Text:SetText("Show Protocol Messages")
     protocolCb:SetChecked(settings.showProtocolMessages)
@@ -270,7 +299,7 @@ function addon:CreateSettingsPanel()
     local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     desc:SetPoint("TOPLEFT", version, "BOTTOMLEFT", 0, -8)
     desc:SetText("Comprehensive Quality of Life improvements for your gameplay experience.")
-    desc:SetWidth(panel:GetWidth() - 32)
+    desc:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
     desc:SetJustifyH("LEFT")
     
     -- Create tab buttons and frames
@@ -304,9 +333,15 @@ function addon:CreateSettingsPanel()
         
         -- Populate tab with module settings
         if module and module.CreateSettings then
-            module.CreateSettings(self.tabFrames[tabName])
+            local y = module.CreateSettings(self.tabFrames[tabName].content)
+            if type(y) == "number" then
+                self.tabFrames[tabName].content:SetHeight(math.max(1, -y + 30))
+            end
         elseif tabName == "Communication" then
-            CreateCommunicationSettings(self.tabFrames[tabName])
+            local y = CreateCommunicationSettings(self.tabFrames[tabName].content)
+            if type(y) == "number" then
+                self.tabFrames[tabName].content:SetHeight(math.max(1, -y + 30))
+            end
         end
     end
     

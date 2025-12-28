@@ -26,6 +26,55 @@ addon.initialized = false   -- Initialization flag
 addon.events = {}           -- Event callbacks
 
 -- ============================================================
+-- Reload UI Prompt
+-- ============================================================
+
+addon._reloadUIPending = false
+addon._reloadUIPrefixes = addon._reloadUIPrefixes or {}
+
+function addon:RegisterReloadUIPrefix(prefix)
+    if not prefix or prefix == "" then return end
+    table.insert(self._reloadUIPrefixes, prefix)
+end
+
+local function EnsureReloadPopup()
+    if StaticPopupDialogs and not StaticPopupDialogs["DCQOS_RELOAD_UI"] then
+        StaticPopupDialogs["DCQOS_RELOAD_UI"] = {
+            text = "DC-QoS: Some changes require a UI reload to take effect.",
+            button1 = RELOADUI or "Reload UI",
+            button2 = LATER or "Later",
+            OnAccept = function()
+                ReloadUI()
+            end,
+            OnCancel = function()
+                -- Allow future prompts in case the user keeps changing settings.
+                if DCQOS then
+                    DCQOS._reloadUIPending = false
+                end
+            end,
+            timeout = 0,
+            whileDead = 1,
+            hideOnEscape = 1,
+            preferredIndex = 3,
+        }
+    end
+end
+
+function addon:PromptReloadUI()
+    if self._reloadUIPending then return end
+    self._reloadUIPending = true
+    EnsureReloadPopup()
+    if StaticPopup_Show then
+        local shown = StaticPopup_Show("DCQOS_RELOAD_UI")
+        if not shown then
+            self._reloadUIPending = false
+        end
+    else
+        self._reloadUIPending = false
+    end
+end
+
+-- ============================================================
 -- Settings Framework
 -- ============================================================
 addon.defaults = {
@@ -126,6 +175,55 @@ function addon:DelayedCall(delay, func)
             func()
         end
     end)
+end
+
+-- Helper to create a checkbox with 3.3.5a compatibility
+function addon:CreateCheckbox(parent, name)
+    local cb = CreateFrame("CheckButton", name, parent, "InterfaceOptionsCheckButtonTemplate")
+    
+    -- Fix for 3.3.5a: find the text fontstring and assign it to .Text
+    local cbName = cb:GetName()
+    if cbName then
+        cb.Text = _G[cbName .. "Text"]
+    else
+        -- For anonymous frames, find the fontstring region
+        for _, region in ipairs({cb:GetRegions()}) do
+            if region:GetObjectType() == "FontString" then
+                cb.Text = region
+                break
+            end
+        end
+    end
+    
+    return cb
+end
+
+-- Helper to create a slider with 3.3.5a compatibility
+function addon:CreateSlider(parent, name)
+    local slider = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
+    
+    -- Fix for 3.3.5a: find the fontstring regions and assign them
+    local sliderName = slider:GetName()
+    if sliderName then
+        slider.Text = _G[sliderName .. "Text"]
+        slider.Low = _G[sliderName .. "Low"]
+        slider.High = _G[sliderName .. "High"]
+    else
+        -- For anonymous frames, find the fontstring regions
+        for _, region in ipairs({slider:GetRegions()}) do
+            if region:GetObjectType() == "FontString" then
+                local rName = region:GetName()
+                if rName then
+                    if rName:find("Text$") then slider.Text = region
+                    elseif rName:find("Low$") then slider.Low = region
+                    elseif rName:find("High$") then slider.High = region
+                    end
+                end
+            end
+        end
+    end
+    
+    return slider
 end
 
 -- Deep copy table
@@ -284,6 +382,23 @@ function addon:SetSetting(path, value)
     
     -- Fire setting changed event
     self:FireEvent("SETTING_CHANGED", path, value)
+
+    -- If the setting commonly needs a reload, prompt once.
+    -- 1) Module enable toggles (e.g. "bags.enabled")
+    if type(path) == "string" and string.match(path, "^%w+%.enabled$") then
+        self:PromptReloadUI()
+        return
+    end
+
+    -- 2) Any registered prefixes (modules can opt-in)
+    if type(path) == "string" and self._reloadUIPrefixes then
+        for _, prefix in ipairs(self._reloadUIPrefixes) do
+            if prefix and prefix ~= "" and string.sub(path, 1, string.len(prefix)) == prefix then
+                self:PromptReloadUI()
+                return
+            end
+        end
+    end
 end
 
 -- ============================================================

@@ -66,7 +66,12 @@ function GOMove:CreateFrame(name, width, height, DataTable, both, rowHeight)
                         local guid = tostring(DataTable[value][2] or "")
                         local entry = tostring(DataTable[value][3] or "")
                         local extra = entry ~= "" and (" ["..entry.."]") or ""
-                        Button:SetText(guid..extra.." "..Label)
+                        local dist = DataTable[value][7]
+                        if (type(dist) == "number") then
+                            Button:SetText(guid..extra.." "..Label.."\n"..string.format("%.1f yd", dist))
+                        else
+                            Button:SetText(guid..extra.." "..Label)
+                        end
                     end
                     
                     -- Adjust text alignment for taller rows

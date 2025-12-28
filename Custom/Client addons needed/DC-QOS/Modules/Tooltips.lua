@@ -151,6 +151,16 @@ local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
     if not addon.settings.tooltips.showUpgradeInfo then return end
     if not itemLink then return end
     
+    -- Skip if DC-ItemUpgrade is handling this tooltip
+    if tooltip.__dcUpgradeProcessing or tooltip._dcItemUpgradeShown then
+        return
+    end
+    
+    -- Skip if DarkChaos_ItemUpgrade addon is loaded (it has its own tooltip handling)
+    if DarkChaos_ItemUpgradeFrame then
+        return
+    end
+    
     -- Only show for armor/weapons
     local _, _, quality, _, _, itemType, _, _, equipLoc = GetItemInfo(itemLink)
     if quality == 7 then return end  -- Skip heirlooms (handled separately)
@@ -368,6 +378,23 @@ end
 local function AddItemLevel(tooltip, itemLink)
     if not addon.settings.tooltips.showItemLevel then return end
     if not itemLink then return end
+
+    -- If the tooltip already shows item level (client or another addon), don't add a duplicate.
+    local tipName = tooltip and tooltip.GetName and tooltip:GetName()
+    if tipName and tooltip.NumLines then
+        for i = 1, tooltip:NumLines() do
+            local left = _G[tipName .. "TextLeft" .. i]
+            if left and left.GetText then
+                local text = left:GetText()
+                if text then
+                    -- Keep this intentionally simple: WotLK strings are typically "Item Level".
+                    if string.find(text, "Item Level", 1, true) then
+                        return
+                    end
+                end
+            end
+        end
+    end
     
     local _, _, _, itemLevel = GetItemInfo(itemLink)
     if itemLevel and itemLevel > 0 then
@@ -381,9 +408,17 @@ end
 local function AddSpellId(tooltip, spellId)
     if not addon.settings.tooltips.showSpellId then return end
     if not spellId then return end
+
+    -- Prevent duplicates when multiple hooks fire for the same tooltip.
+    local sid = tonumber(spellId)
+    if not sid then return end
+    if tooltip._dcqosSpellIdShown == sid then
+        return
+    end
+    tooltip._dcqosSpellIdShown = sid
     
     tooltip:AddLine(" ")
-    tooltip:AddDoubleLine("Spell ID:", "|cffffffff" .. spellId .. "|r", 0.5, 0.5, 0.5)
+    tooltip:AddDoubleLine("Spell ID:", "|cffffffff" .. sid .. "|r", 0.5, 0.5, 0.5)
 end
 
 -- ============================================================
@@ -520,13 +555,13 @@ local function AddNpcId(tooltip, unit)
         tooltip:AddDoubleLine("Entry:", "|cffffffff" .. entry .. "|r", 0.5, 0.5, 0.5)
     end
     
-    -- Show DB GUID (from server or parsed)
+    -- Show Spawn (from server or parsed)
     if dbGuid then
-        tooltip:AddDoubleLine("DB GUID:", "|cffffffff" .. dbGuid .. "|r", 0.5, 0.5, 0.5)
+        tooltip:AddDoubleLine("Spawn:", "|cffffffff" .. dbGuid .. "|r", 0.5, 0.5, 0.5)
     elseif cachedInfo == nil then
-        tooltip:AddDoubleLine("DB GUID:", "|cff888888Fetching...|r", 0.5, 0.5, 0.5)
+        tooltip:AddDoubleLine("Spawn:", "|cff888888Fetching...|r", 0.5, 0.5, 0.5)
     elseif localSpawnId then
-        tooltip:AddDoubleLine("DB GUID:", "|cffffff88~" .. localSpawnId .. "|r", 0.5, 0.5, 0.5)
+        tooltip:AddDoubleLine("Spawn:", "|cffffff88~" .. localSpawnId .. "|r", 0.5, 0.5, 0.5)
     end
     
     -- Show raw GUID if debug mode
@@ -786,6 +821,7 @@ local function HookUnitTooltips()
     GameTooltip:HookScript("OnTooltipCleared", function(self)
         self._dcqosNpcGuid = nil
         self._dcqosUpgradeShown = nil
+        self._dcqosSpellIdShown = nil
     end)
     
     addon:Debug("Unit tooltip hooks installed")
@@ -795,12 +831,39 @@ end
 -- Spell Tooltip Hooks
 -- ============================================================
 local function HookSpellTooltips()
+    -- Most spell tooltips (action buttons, racials, etc.) fire this script.
+    -- This is the most reliable way to capture spell IDs in 3.3.5a.
+    if not GameTooltip._dcqosHookedOnTooltipSetSpell then
+        GameTooltip._dcqosHookedOnTooltipSetSpell = true
+        GameTooltip:HookScript("OnTooltipSetSpell", function(self)
+            local name, rank, spellId = self:GetSpell()
+            if not spellId and name then
+                -- WotLK fallback: resolve by name.
+                spellId = select(7, GetSpellInfo(name))
+            end
+            AddSpellId(self, spellId)
+            self:Show()
+        end)
+    end
+
     -- Hook SetSpell (action bar)
     local origSetSpell = GameTooltip.SetSpell
     if origSetSpell then
         GameTooltip.SetSpell = function(self, spellBook, spellBookType, ...)
             local result = origSetSpell(self, spellBook, spellBookType, ...)
-            local _, _, _, _, _, _, spellId = GetSpellInfo(spellBook, spellBookType)
+            -- In 3.3.5a, spellBook/spellBookType are spellbook indices, not GetSpellInfo args.
+            local spellName
+            if GetSpellBookItemName then
+                spellName = GetSpellBookItemName(spellBook, spellBookType)
+            end
+            local spellId
+            if spellName then
+                spellId = select(7, GetSpellInfo(spellName))
+            end
+            if not spellId then
+                local name, _, id = self:GetSpell()
+                spellId = id or (name and select(7, GetSpellInfo(name)))
+            end
             AddSpellId(self, spellId)
             self:Show()
             return result
@@ -812,11 +875,13 @@ local function HookSpellTooltips()
     if origSetUnitBuff then
         GameTooltip.SetUnitBuff = function(self, unit, index, filter, ...)
             local result = origSetUnitBuff(self, unit, index, filter, ...)
-            local name, _, _, _, _, _, _, _, _, _, spellId = UnitBuff(unit, index, filter)
-            if spellId then
-                AddSpellId(self, spellId)
-                self:Show()
+            -- WotLK UnitBuff doesn't reliably return spellId; resolve via tooltip spell.
+            local name, _, spellId = self:GetSpell()
+            if not spellId and name then
+                spellId = select(7, GetSpellInfo(name))
             end
+            AddSpellId(self, spellId)
+            self:Show()
             return result
         end
     end
@@ -826,11 +891,13 @@ local function HookSpellTooltips()
     if origSetUnitDebuff then
         GameTooltip.SetUnitDebuff = function(self, unit, index, filter, ...)
             local result = origSetUnitDebuff(self, unit, index, filter, ...)
-            local name, _, _, _, _, _, _, _, _, _, spellId = UnitDebuff(unit, index, filter)
-            if spellId then
-                AddSpellId(self, spellId)
-                self:Show()
+            -- WotLK UnitDebuff doesn't reliably return spellId; resolve via tooltip spell.
+            local name, _, spellId = self:GetSpell()
+            if not spellId and name then
+                spellId = select(7, GetSpellInfo(name))
             end
+            AddSpellId(self, spellId)
+            self:Show()
             return result
         end
     end
@@ -924,7 +991,7 @@ function Tooltips.CreateSettings(parent)
     local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetText("Configure tooltip enhancements including item IDs, NPC IDs, upgrade info, and positioning.")
-    desc:SetWidth(parent:GetWidth() - 32)
+    desc:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     desc:SetJustifyH("LEFT")
     
     local yOffset = -70
@@ -938,7 +1005,7 @@ function Tooltips.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Item ID
-    local itemIdCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local itemIdCb = addon:CreateCheckbox(parent)
     itemIdCb:SetPoint("TOPLEFT", 16, yOffset)
     itemIdCb.Text:SetText("Show Item ID")
     itemIdCb:SetChecked(settings.showItemId)
@@ -950,7 +1017,7 @@ function Tooltips.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Item Level
-    local itemLevelCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local itemLevelCb = addon:CreateCheckbox(parent)
     itemLevelCb:SetPoint("TOPLEFT", 16, yOffset)
     itemLevelCb.Text:SetText("Show Item Level")
     itemLevelCb:SetChecked(settings.showItemLevel)
@@ -962,7 +1029,7 @@ function Tooltips.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Upgrade Info
-    local upgradeInfoCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local upgradeInfoCb = addon:CreateCheckbox(parent)
     upgradeInfoCb:SetPoint("TOPLEFT", 16, yOffset)
     upgradeInfoCb.Text:SetText("Show Upgrade Info")
     upgradeInfoCb:SetChecked(settings.showUpgradeInfo ~= false)
@@ -974,7 +1041,7 @@ function Tooltips.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show NPC ID
-    local npcIdCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local npcIdCb = addon:CreateCheckbox(parent)
     npcIdCb:SetPoint("TOPLEFT", 16, yOffset)
     npcIdCb.Text:SetText("Show NPC ID")
     npcIdCb:SetChecked(settings.showNpcId)
@@ -982,11 +1049,11 @@ function Tooltips.CreateSettings(parent)
         addon:SetSetting("tooltips.showNpcId", self:GetChecked())
     end)
     AddSettingTooltip(npcIdCb, "Show NPC ID",
-        "Shows the Entry ID and Database GUID for NPCs in tooltips. Entry ID identifies the NPC type, while DB GUID identifies the specific spawn. Essential for reporting bugs or referencing specific creatures.")
+        "Shows the Entry ID and Spawn for NPCs in tooltips. Entry ID identifies the NPC type, while Spawn identifies the specific creature spawn. Useful for reporting bugs or referencing specific creatures.")
     yOffset = yOffset - 25
     
     -- Show Spell ID
-    local spellIdCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local spellIdCb = addon:CreateCheckbox(parent)
     spellIdCb:SetPoint("TOPLEFT", 16, yOffset)
     spellIdCb.Text:SetText("Show Spell ID")
     spellIdCb:SetChecked(settings.showSpellId)
@@ -1006,7 +1073,7 @@ function Tooltips.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Guild Rank
-    local guildRankCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local guildRankCb = addon:CreateCheckbox(parent)
     guildRankCb:SetPoint("TOPLEFT", 16, yOffset)
     guildRankCb.Text:SetText("Show Guild Ranks")
     guildRankCb:SetChecked(settings.showGuildRank)
@@ -1018,7 +1085,7 @@ function Tooltips.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Target
-    local targetCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local targetCb = addon:CreateCheckbox(parent)
     targetCb:SetPoint("TOPLEFT", 16, yOffset)
     targetCb.Text:SetText("Show Unit Target")
     targetCb:SetChecked(settings.showTarget)
@@ -1030,7 +1097,7 @@ function Tooltips.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Hide Health Bar
-    local healthBarCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local healthBarCb = addon:CreateCheckbox(parent)
     healthBarCb:SetPoint("TOPLEFT", 16, yOffset)
     healthBarCb.Text:SetText("Hide Health Bar")
     healthBarCb:SetChecked(settings.hideHealthBar)
@@ -1051,7 +1118,7 @@ function Tooltips.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Hide in Combat
-    local hideCombatCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local hideCombatCb = addon:CreateCheckbox(parent)
     hideCombatCb:SetPoint("TOPLEFT", 16, yOffset)
     hideCombatCb.Text:SetText("Hide Tooltips in Combat")
     hideCombatCb:SetChecked(settings.hideInCombat)
@@ -1063,7 +1130,7 @@ function Tooltips.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show with Shift
-    local shiftCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local shiftCb = addon:CreateCheckbox(parent)
     shiftCb:SetPoint("TOPLEFT", 36, yOffset)
     shiftCb.Text:SetText("Show with Shift key in combat")
     shiftCb:SetChecked(settings.showWithShift)
@@ -1082,12 +1149,11 @@ function Tooltips.CreateSettings(parent)
     scaleHeader:SetText("Tooltip Scale")
     yOffset = yOffset - 25
     
-    local scaleSlider = CreateFrame("Slider", "DCQoSTooltipScaleSlider", parent, "OptionsSliderTemplate")
+    local scaleSlider = addon:CreateSlider(parent, "DCQoSTooltipScaleSlider")
     scaleSlider:SetPoint("TOPLEFT", 20, yOffset)
     scaleSlider:SetWidth(200)
     scaleSlider:SetMinMaxValues(0.5, 2.0)
     scaleSlider:SetValueStep(0.05)
-    scaleSlider:SetObeyStepOnDrag(true)
     scaleSlider:SetValue(settings.scale or 1.0)
     scaleSlider.Low:SetText("50%")
     scaleSlider.High:SetText("200%")

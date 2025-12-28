@@ -107,6 +107,7 @@ struct DCAddonProtocolConfig
     bool EnableHotspot;
     bool EnableWorld;
     bool EnableEvents;
+    bool EnableQoS;
 
     // Security settings
     bool EnableDebugLog;
@@ -140,6 +141,7 @@ static void LoadAddonConfig()
     s_AddonConfig.EnableHotspot     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Hotspot.Enable", true);
     s_AddonConfig.EnableWorld       = sConfigMgr->GetOption<bool>("DC.AddonProtocol.World.Enable", true);
     s_AddonConfig.EnableEvents      = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Events.Enable", true);
+    s_AddonConfig.EnableQoS         = sConfigMgr->GetOption<bool>("DC.AddonProtocol.QoS.Enable", true);
 
     s_AddonConfig.EnableDebugLog        = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Debug.Enable", false);
     s_AddonConfig.EnableProtocolLogging = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Logging.Enable", false);
@@ -171,6 +173,7 @@ static void LoadAddonConfig()
     router.SetModuleEnabled(DCAddon::Module::HOTSPOT, s_AddonConfig.EnableHotspot);
     router.SetModuleEnabled(DCAddon::Module::WORLD, s_AddonConfig.EnableWorld);
     router.SetModuleEnabled(DCAddon::Module::EVENTS, s_AddonConfig.EnableEvents);
+    router.SetModuleEnabled(DCAddon::Module::QOS, s_AddonConfig.EnableQoS);
     router.SetModuleMinSecurity(DCAddon::Module::GOMOVE, s_AddonConfig.MinGOMoveSecurity);
 }
 
@@ -551,6 +554,7 @@ static void HandleCoreFeatureQuery(Player* player, const DCAddon::ParsedMessage&
     featureMsg.Add(s_AddonConfig.EnableSeasonal);
     featureMsg.Add(s_AddonConfig.EnableHinterlandBG);
     featureMsg.Add(s_AddonConfig.EnableWorld);
+    featureMsg.Add(s_AddonConfig.EnableQoS);
     featureMsg.Send(player);
 }
 
@@ -715,6 +719,7 @@ public:
         LOG_INFO("dc.addon", "  Leaderboard: {}", s_AddonConfig.EnableLeaderboard ? "Yes" : "No");
         LOG_INFO("dc.addon", "  Events:      {}", s_AddonConfig.EnableEvents ? "Yes" : "No");
         LOG_INFO("dc.addon", "  World:       {}", s_AddonConfig.EnableWorld ? "Yes" : "No");
+        LOG_INFO("dc.addon", "  QoS:         {}", s_AddonConfig.EnableQoS ? "Yes" : "No");
         LOG_INFO("dc.addon", "  DB Logging:  {}", s_AddonConfig.EnableProtocolLogging ? "Yes" : "No");
         LOG_INFO("dc.addon", "===========================================");
     }

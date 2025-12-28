@@ -88,23 +88,98 @@ local KnownBadSpells = {
     [72754] = ALERT_TYPE.HIGH,  -- Defile (heroic)
     
     -- Ulduar
-    [62548] = ALERT_TYPE.HIGH,  -- Scorch
-    [63476] = ALERT_TYPE.HIGH,  -- Shockwave
+    [62548] = ALERT_TYPE.HIGH,  -- Scorch (Ignis)
+    [63476] = ALERT_TYPE.HIGH,  -- Scorch (Ignis)
     [64234] = ALERT_TYPE.HIGH,  -- Tantrum
+    [62549] = ALERT_TYPE.HIGH,  -- Scorch
+    [63475] = ALERT_TYPE.HIGH,  -- Scorch
+    [64851] = ALERT_TYPE.HIGH,  -- Flaming Rune
+    [64989] = ALERT_TYPE.HIGH,  -- Flaming Rune
+    [62466] = ALERT_TYPE.HIGH,  -- Lightning Charge (Thorim)
+    [62451] = ALERT_TYPE.HIGH,  -- Unstable Energy (Freya)
+    [62865] = ALERT_TYPE.HIGH,  -- Unstable Energy (Freya)
+    [63346] = ALERT_TYPE.HIGH,  -- Focused Eyebeam (Kologarn)
+    [63976] = ALERT_TYPE.HIGH,  -- Focused Eyebeam (Kologarn)
+    [64566] = ALERT_TYPE.HIGH,  -- Flames (Mimiron)
     
     -- Naxxramas
     [28542] = ALERT_TYPE.HIGH,  -- Frost Aura (Sapphiron)
     [28796] = ALERT_TYPE.HIGH,  -- Poison Cloud
     [29213] = ALERT_TYPE.HIGH,  -- Frost Blast
+    [29371] = ALERT_TYPE.HIGH,  -- Eruption (Heigan)
+    [54362] = ALERT_TYPE.HIGH,  -- Poison (Grobbulus)
+    [28158] = ALERT_TYPE.HIGH,  -- Poison (Grobbulus)
+    [53400] = ALERT_TYPE.HIGH,  -- Acid Cloud
     
-    -- ToC
+    -- ToC / Crusader
+    [66881] = ALERT_TYPE.HIGH,  -- Slime Pool (Northrend Beasts)
+    [67639] = ALERT_TYPE.HIGH,  -- Slime Pool
+    [66320] = ALERT_TYPE.HIGH,  -- Fire Bomb
+    [67473] = ALERT_TYPE.HIGH,  -- Fire Bomb
+    [66877] = ALERT_TYPE.HIGH,  -- Legion Flame (Jaraxxus)
+    [67071] = ALERT_TYPE.HIGH,  -- Legion Flame
+    [66496] = ALERT_TYPE.HIGH,  -- Fel Inferno
+    [68717] = ALERT_TYPE.HIGH,  -- Fel Inferno
+    [67594] = ALERT_TYPE.HIGH,  -- Poison Bottle
+    [65775] = ALERT_TYPE.HIGH,  -- Acid-Drenched Mandibles
+    
+    -- ICC
+    [69633] = ALERT_TYPE.LOW,   -- Ice Pulse
+    [70362] = ALERT_TYPE.HIGH,  -- Coldflame (Marrowgar)
+    [72109] = ALERT_TYPE.HIGH,  -- Death and Decay (Deathwhisper)
+    [71225] = ALERT_TYPE.HIGH,  -- Death and Decay
+    [69029] = ALERT_TYPE.HIGH,  -- Bone Storm (Marrowgar)
+    [70914] = ALERT_TYPE.HIGH,  -- Uncontrolled Ooze (Rotface)
+    [69774] = ALERT_TYPE.HIGH,  -- Sticky Ooze
+    [70341] = ALERT_TYPE.HIGH,  -- Slime Spray
+    [72456] = ALERT_TYPE.HIGH,  -- Mutated Plague
+    [70447] = ALERT_TYPE.HIGH,  -- Volatile Ooze Adhesive
+    [72836] = ALERT_TYPE.HIGH,  -- Volatile Ooze Adhesive
+    [70672] = ALERT_TYPE.HIGH,  -- Gaseous Bloat
+    [72455] = ALERT_TYPE.HIGH,  -- Gaseous Bloat
+    [71255] = ALERT_TYPE.HIGH,  -- Gaseous Bloat
+    [72832] = ALERT_TYPE.HIGH,  -- Gaseous Bloat
+    [70084] = ALERT_TYPE.HIGH,  -- Frost Breath (Sindragosa)
+    [69649] = ALERT_TYPE.HIGH,  -- Frost Breath
+    [71056] = ALERT_TYPE.HIGH,  -- Frost Breath
+    [73061] = ALERT_TYPE.HIGH,  -- Frost Breath
+    [70123] = ALERT_TYPE.HIGH,  -- Blistering Cold
+    [71047] = ALERT_TYPE.HIGH,  -- Blistering Cold
+    [70126] = ALERT_TYPE.HIGH,  -- Frost Beacon
+    [70157] = ALERT_TYPE.HIGH,  -- Ice Tomb
+    [72762] = ALERT_TYPE.HIGH,  -- Defile (Lich King)
+    [73785] = ALERT_TYPE.HIGH,  -- Defile
+    [73786] = ALERT_TYPE.HIGH,  -- Defile
+    [73787] = ALERT_TYPE.HIGH,  -- Defile
+    [68980] = ALERT_TYPE.HIGH,  -- Remorseless Winter
+    [72259] = ALERT_TYPE.HIGH,  -- Remorseless Winter
+    [72260] = ALERT_TYPE.HIGH,  -- Remorseless Winter
+    -- 70541 (Infest base) already defined in Generic Hazards section
+    [73779] = ALERT_TYPE.HIGH,  -- Infest (10H/25N/25H variants)
+    [73780] = ALERT_TYPE.HIGH,  -- Infest
+    [73781] = ALERT_TYPE.HIGH,  -- Infest
+    [72149] = ALERT_TYPE.HIGH,  -- Shockwave (Lich King)
+    [73791] = ALERT_TYPE.HIGH,  -- Shockwave
+    [73792] = ALERT_TYPE.HIGH,  -- Shockwave
+    [73793] = ALERT_TYPE.HIGH,  -- Shockwave
+    
+    -- Ruby Sanctum
+    [74562] = ALERT_TYPE.HIGH,  -- Fiery Combustion (Halion)
+    [74792] = ALERT_TYPE.HIGH,  -- Soul Consumption
+    [74648] = ALERT_TYPE.HIGH,  -- Meteor Strike
+    [74769] = ALERT_TYPE.HIGH,  -- Twilight Cutter
+    
+    -- Dungeons
+    [59321] = ALERT_TYPE.HIGH,  -- Spirit Fount (Ymiron)
+    [59116] = ALERT_TYPE.HIGH,  -- Poison Cloud (Old Kingdom)
+    [56926] = ALERT_TYPE.HIGH,  -- Thundershock (Jedoga)
+    [51103] = ALERT_TYPE.HIGH,  -- Frostbomb (Urom)
     [66331] = ALERT_TYPE.HIGH,  -- Legion Flame
     [67049] = ALERT_TYPE.HIGH,  -- Infernal Volcano
     [67050] = ALERT_TYPE.HIGH,  -- Fel Inferno
     
-    -- Lower damage/avoidable
-    [69633] = ALERT_TYPE.LOW,   -- Ice Pulse
-    [65775] = ALERT_TYPE.LOW,   -- Acidic Wound
+    -- Lower damage/avoidable (supplemental entries)
+    -- Note: 69633 (Ice Pulse) and 65775 already defined above in ICC/ToC sections
     [55826] = ALERT_TYPE.LOW,   -- Venom Spit
     [55836] = ALERT_TYPE.LOW,   -- Poison Splash
     
@@ -379,7 +454,7 @@ function GTFO.CreateSettings(parent)
     local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetText("Get The F* Out - Warns you when standing in damaging areas.")
-    desc:SetWidth(parent:GetWidth() - 32)
+    desc:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     desc:SetJustifyH("LEFT")
     
     local yOffset = -70
@@ -387,7 +462,7 @@ function GTFO.CreateSettings(parent)
     -- ============================================================
     -- Enable Section
     -- ============================================================
-    local enableCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local enableCb = addon:CreateCheckbox(parent)
     enableCb:SetPoint("TOPLEFT", 16, yOffset)
     enableCb.Text:SetText("Enable GTFO Alerts")
     enableCb:SetChecked(settings.enabled)
@@ -405,7 +480,7 @@ function GTFO.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- High Damage Alert
-    local highCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local highCb = addon:CreateCheckbox(parent)
     highCb:SetPoint("TOPLEFT", 16, yOffset)
     highCb.Text:SetText("High Damage Alerts (> 30% health)")
     highCb:SetChecked(settings.highDamageAlert)
@@ -415,7 +490,7 @@ function GTFO.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Low Damage Alert
-    local lowCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local lowCb = addon:CreateCheckbox(parent)
     lowCb:SetPoint("TOPLEFT", 16, yOffset)
     lowCb.Text:SetText("Low Damage Alerts (10-30% health)")
     lowCb:SetChecked(settings.lowDamageAlert)
@@ -425,7 +500,7 @@ function GTFO.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Fail Alert
-    local failCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local failCb = addon:CreateCheckbox(parent)
     failCb:SetPoint("TOPLEFT", 16, yOffset)
     failCb.Text:SetText("Mechanic Fail Alerts")
     failCb:SetChecked(settings.failAlert)
@@ -435,7 +510,7 @@ function GTFO.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Friendly Fire Alert
-    local friendlyCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local friendlyCb = addon:CreateCheckbox(parent)
     friendlyCb:SetPoint("TOPLEFT", 16, yOffset)
     friendlyCb.Text:SetText("Friendly Fire Alerts (standing in your own AoE)")
     friendlyCb:SetChecked(settings.friendlyFireAlert)
@@ -453,7 +528,7 @@ function GTFO.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Visual Flash
-    local flashCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local flashCb = addon:CreateCheckbox(parent)
     flashCb:SetPoint("TOPLEFT", 16, yOffset)
     flashCb.Text:SetText("Screen Flash on Alert")
     flashCb:SetChecked(settings.visualFlash)
@@ -470,12 +545,11 @@ function GTFO.CreateSettings(parent)
     volumeHeader:SetText("Alert Volume")
     yOffset = yOffset - 25
     
-    local volumeSlider = CreateFrame("Slider", "DCQoSGTFOVolumeSlider", parent, "OptionsSliderTemplate")
+    local volumeSlider = addon:CreateSlider(parent, "DCQoSGTFOVolumeSlider")
     volumeSlider:SetPoint("TOPLEFT", 20, yOffset)
     volumeSlider:SetWidth(200)
     volumeSlider:SetMinMaxValues(0, 1.0)
     volumeSlider:SetValueStep(0.1)
-    volumeSlider:SetObeyStepOnDrag(true)
     volumeSlider:SetValue(settings.volume)
     volumeSlider.Low:SetText("0%")
     volumeSlider.High:SetText("100%")
@@ -494,12 +568,11 @@ function GTFO.CreateSettings(parent)
     cooldownHeader:SetText("Alert Cooldown")
     yOffset = yOffset - 25
     
-    local cooldownSlider = CreateFrame("Slider", "DCQoSGTFOCooldownSlider", parent, "OptionsSliderTemplate")
+    local cooldownSlider = addon:CreateSlider(parent, "DCQoSGTFOCooldownSlider")
     cooldownSlider:SetPoint("TOPLEFT", 20, yOffset)
     cooldownSlider:SetWidth(200)
     cooldownSlider:SetMinMaxValues(0.25, 3.0)
     cooldownSlider:SetValueStep(0.25)
-    cooldownSlider:SetObeyStepOnDrag(true)
     cooldownSlider:SetValue(settings.cooldown)
     cooldownSlider.Low:SetText("0.25s")
     cooldownSlider.High:SetText("3.0s")

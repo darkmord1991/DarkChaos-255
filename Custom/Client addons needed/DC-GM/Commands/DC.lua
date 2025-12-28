@@ -736,7 +736,7 @@ function AzerothAdmin:ExportDCHandlers()
   if not ma_dchandlers_export_popup.bg then
     ma_dchandlers_export_popup.bg = ma_dchandlers_export_popup:CreateTexture(nil, "BACKGROUND")
     ma_dchandlers_export_popup.bg:SetAllPoints(true)
-    ma_dchandlers_export_popup.bg:SetColorTexture(0, 0, 0, 0.8)
+    ma_dchandlers_export_popup.bg:SetTexture(0, 0, 0, 0.8)
   end
   if not ma_dchandlers_export_popup.title then
     ma_dchandlers_export_popup.title = ma_dchandlers_export_popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

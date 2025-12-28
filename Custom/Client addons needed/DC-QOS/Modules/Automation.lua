@@ -256,7 +256,7 @@ function Automation.CreateSettings(parent)
     local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetText("Configure automatic actions to streamline gameplay.")
-    desc:SetWidth(parent:GetWidth() - 32)
+    desc:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     desc:SetJustifyH("LEFT")
     
     local yOffset = -70
@@ -270,7 +270,7 @@ function Automation.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Repair
-    local repairCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local repairCb = addon:CreateCheckbox(parent)
     repairCb:SetPoint("TOPLEFT", 16, yOffset)
     repairCb.Text:SetText("Auto Repair")
     repairCb:SetChecked(settings.autoRepair)
@@ -280,7 +280,7 @@ function Automation.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Use Guild Funds
-    local guildRepairCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local guildRepairCb = addon:CreateCheckbox(parent)
     guildRepairCb:SetPoint("TOPLEFT", 36, yOffset)
     guildRepairCb.Text:SetText("Use Guild Funds when available")
     guildRepairCb:SetChecked(settings.autoRepairGuild)
@@ -290,7 +290,7 @@ function Automation.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Sell Junk
-    local sellJunkCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local sellJunkCb = addon:CreateCheckbox(parent)
     sellJunkCb:SetPoint("TOPLEFT", 16, yOffset)
     sellJunkCb.Text:SetText("Auto Sell Junk (Grey Items)")
     sellJunkCb:SetChecked(settings.autoSellJunk)
@@ -308,7 +308,7 @@ function Automation.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Accept Summon
-    local summonCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local summonCb = addon:CreateCheckbox(parent)
     summonCb:SetPoint("TOPLEFT", 16, yOffset)
     summonCb.Text:SetText("Auto Accept Summons")
     summonCb:SetChecked(settings.autoAcceptSummon)
@@ -318,7 +318,7 @@ function Automation.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Accept Resurrect
-    local resCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local resCb = addon:CreateCheckbox(parent)
     resCb:SetPoint("TOPLEFT", 16, yOffset)
     resCb.Text:SetText("Auto Accept Resurrections (out of combat)")
     resCb:SetChecked(settings.autoAcceptResurrect)
@@ -328,7 +328,7 @@ function Automation.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Accept Party (Friends/Guild)
-    local partyCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local partyCb = addon:CreateCheckbox(parent)
     partyCb:SetPoint("TOPLEFT", 16, yOffset)
     partyCb.Text:SetText("Auto Accept Party Invites (Friends/Guild only)")
     partyCb:SetChecked(settings.autoAcceptPartyInvites)
@@ -346,7 +346,7 @@ function Automation.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Decline Duels
-    local duelCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local duelCb = addon:CreateCheckbox(parent)
     duelCb:SetPoint("TOPLEFT", 16, yOffset)
     duelCb.Text:SetText("Auto Decline Duels")
     duelCb:SetChecked(settings.autoDeclineDuels)
@@ -356,7 +356,7 @@ function Automation.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Decline Guild Invites
-    local guildInvCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local guildInvCb = addon:CreateCheckbox(parent)
     guildInvCb:SetPoint("TOPLEFT", 16, yOffset)
     guildInvCb.Text:SetText("Auto Decline Guild Invites")
     guildInvCb:SetChecked(settings.autoDeclineGuildInvites)
@@ -374,7 +374,7 @@ function Automation.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Dismount
-    local dismountCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local dismountCb = addon:CreateCheckbox(parent)
     dismountCb:SetPoint("TOPLEFT", 16, yOffset)
     dismountCb.Text:SetText("Auto Dismount on action")
     dismountCb:SetChecked(settings.autoDismount)

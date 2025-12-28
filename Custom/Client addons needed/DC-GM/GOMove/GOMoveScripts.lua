@@ -139,15 +139,34 @@ RadiusFinalizeFrame:SetScript("OnUpdate", function(self)
         end
 
         -- Sort by distance if coordinates are available
-        local px, py, pz = UnitPosition("player")
+        local px, py, pz
+        px, py, pz = GOMove._radiusOriginX, GOMove._radiusOriginY, GOMove._radiusOriginZ
+        if (not (px and py and pz) and type(UnitPosition) == "function") then
+            px, py, pz = UnitPosition("player")
+        end
+
         if (px and py and pz) then
+            -- Cache distance (row[7]) and squared distance (row[8]) once per search.
+            for _, row in ipairs(GOMove.SelL) do
+                local rx, ry, rz = tonumber(row[4]), tonumber(row[5]), tonumber(row[6])
+                if (rx and ry and rz) then
+                    local dist2 = (rx - px)^2 + (ry - py)^2 + (rz - pz)^2
+                    row[8] = dist2
+                    row[7] = math.sqrt(dist2)
+                else
+                    row[8] = nil
+                    row[7] = nil
+                end
+            end
+
             table.sort(GOMove.SelL, function(a, b)
-                local ax, ay, az = tonumber(a[4]), tonumber(a[5]), tonumber(a[6])
-                local bx, by, bz = tonumber(b[4]), tonumber(b[5]), tonumber(b[6])
-                if (ax and ay and az and bx and by and bz) then
-                    local distA = (ax - px)^2 + (ay - py)^2 + (az - pz)^2
-                    local distB = (bx - px)^2 + (by - py)^2 + (bz - pz)^2
-                    return distA < distB
+                local da = a[8]
+                local db = b[8]
+                if (da and db) then
+                    return da < db
+                end
+                if (da and not db) then
+                    return true
                 end
                 return false
             end)
@@ -414,6 +433,14 @@ function SELECTALLNEAR:OnClick()
     clearAllSelected()
     clearSelectionList()
     GOMove._radiusSelecting = true
+
+    -- Snapshot player position at click time, so distances are computed once per search.
+    if (type(UnitPosition) == "function") then
+        GOMove._radiusOriginX, GOMove._radiusOriginY, GOMove._radiusOriginZ = UnitPosition("player")
+    else
+        GOMove._radiusOriginX, GOMove._radiusOriginY, GOMove._radiusOriginZ = nil, nil, nil
+    end
+
     GOMove:Move("SELECTALLNEAR", RADIUS:GetNumber())
 end
 

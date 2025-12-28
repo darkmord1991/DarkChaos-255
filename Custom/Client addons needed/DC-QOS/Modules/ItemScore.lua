@@ -26,6 +26,7 @@ local defaults = {
         showScore = true,
         showStatWeights = false,
         showComparison = true,
+        currentSpec = nil,  -- Auto-detect if nil
         arrowColor = { r = 0.0, g = 1.0, b = 0.0 },
         downgradeColor = { r = 1.0, g = 0.0, b = 0.0 },
         sideGradeColor = { r = 1.0, g = 1.0, b = 0.0 },
@@ -38,149 +39,59 @@ for k, v in pairs(defaults) do
 end
 
 -- ============================================================
--- Stat Weights by Class/Spec
+-- Stat Weights by Class/Spec (Based on Wowhead/Pawn)
 -- ============================================================
--- These are baseline weights; server can override per-character
 local StatWeights = {
-    -- Weights per class (1 = worst, 3 = best for primary stat)
     WARRIOR = {
-        STRENGTH = 2.5,
-        AGILITY = 1.0,
-        STAMINA = 1.5,
-        INTELLECT = 0.0,
-        SPIRIT = 0.0,
-        ATTACKPOWER = 1.0,
-        CRIT = 1.8,
-        HIT = 2.0,
-        EXPERTISE = 2.0,
-        HASTE = 1.2,
-        ARMOR_PENETRATION = 1.5,
-        RESILIENCE = 0.5,
-        DEFENSE = 1.0,
-        DODGE = 1.0,
-        PARRY = 1.0,
-        BLOCK = 0.8,
+        Arms = { STRENGTH=1.07, HIT=1.56, EXPERTISE=0.63, CRIT=0.93, AGILITY=0.78, ARMOR_PENETRATION=0.83, HASTE=0.34, ATTACKPOWER=0.49, DPS=6.05 },
+        Fury = { EXPERTISE=2.5, STRENGTH=3.25, CRIT=1.88, AGILITY=1.25, ARMOR_PENETRATION=3.13, HIT=2.5, HASTE=1.88, ATTACKPOWER=1.25, DPS=27.5 },
+        Tank = { STAMINA=2.0, DODGE=1.4, DEFENSE=1.6, BLOCK_VALUE=1.18, AGILITY=1.2, PARRY=1.16, BLOCK=0.7, STRENGTH=0.66, EXPERTISE=1.34, HIT=0.4, ARMOR_PENETRATION=0.4, CRIT=0.4, ARMOR=0.1, DPS=20.0 },
     },
     PALADIN = {
-        STRENGTH = 2.5,
-        AGILITY = 0.5,
-        STAMINA = 1.5,
-        INTELLECT = 1.5,
-        SPIRIT = 0.5,
-        ATTACKPOWER = 1.0,
-        SPELLPOWER = 1.5,
-        CRIT = 1.5,
-        HIT = 2.0,
-        HASTE = 1.2,
-        MANA_PER_5 = 1.0,
-        DEFENSE = 1.0,
-        DODGE = 1.0,
-        PARRY = 1.0,
-        BLOCK = 0.8,
+        Holy = { INTELLECT=3.26, MANA_PER_5=2.37, SPELLPOWER=2.37, CRIT=2.67, HASTE=1.78, STAMINA=0.1 },
+        Tank = { STAMINA=2.5, AGILITY=1.9, EXPERTISE=1.98, DODGE=2.35, DEFENSE=2.15, PARRY=2.15, ARMOR=0.15, BLOCK=1.3, BLOCK_VALUE=2.15, SPELLPOWER=0.15, HIT=1.45, DPS=12.5 },
+        Retribution = { DPS=5.99, HIT=2.7, STRENGTH=2.99, EXPERTISE=4.49, CRIT=2.16, ATTACKPOWER=1.23, AGILITY=2.1, HASTE=2.04, ARMOR_PENETRATION=1.89, SPELLPOWER=1.2 },
     },
     HUNTER = {
-        STRENGTH = 0.5,
-        AGILITY = 2.5,
-        STAMINA = 1.0,
-        INTELLECT = 0.5,
-        SPIRIT = 0.0,
-        ATTACKPOWER = 1.0,
-        RANGED_ATTACKPOWER = 1.2,
-        CRIT = 2.0,
-        HIT = 2.5,
-        HASTE = 1.5,
-        ARMOR_PENETRATION = 1.8,
+        BeastMastery = { DPS=12.5, HIT=3.25, AGILITY=2.5, CRIT=1.75, INTELLECT=0.1, ATTACKPOWER=1.0, ARMOR_PENETRATION=1.75, HASTE=2.75, STAMINA=0.1 },
+        Marksman = { DPS=12.5, HIT=3.25, AGILITY=2.5, CRIT=1.75, INTELLECT=0.1, ARMOR_PENETRATION=1.75, HASTE=2.75, STAMINA=0.1 },
+        Survival = { DPS=12.5, HIT=3.25, AGILITY=2.5, CRIT=1.75, INTELLECT=0.1, ATTACKPOWER=1.0, ARMOR_PENETRATION=1.75, HASTE=2.75, STAMINA=0.1 },
     },
     ROGUE = {
-        STRENGTH = 0.5,
-        AGILITY = 2.5,
-        STAMINA = 1.0,
-        INTELLECT = 0.0,
-        SPIRIT = 0.0,
-        ATTACKPOWER = 1.0,
-        CRIT = 2.0,
-        HIT = 2.5,
-        EXPERTISE = 2.0,
-        HASTE = 1.5,
-        ARMOR_PENETRATION = 2.0,
+        Assassination = { DPS=8.0, AGILITY=2.3, EXPERTISE=2.0, HIT=2.0, CRIT=1.5, ATTACKPOWER=1.0, ARMOR_PENETRATION=1.5, HASTE=1.8, STRENGTH=1.1 },
+        Combat = { DPS=8.0, AGILITY=2.3, EXPERTISE=2.0, HIT=2.0, CRIT=1.5, ATTACKPOWER=1.0, ARMOR_PENETRATION=1.5, HASTE=1.8, STRENGTH=1.1 },
+        Subtlety = { DPS=8.0, AGILITY=2.3, EXPERTISE=2.0, HIT=2.0, CRIT=1.5, ATTACKPOWER=1.0, ARMOR_PENETRATION=1.5, HASTE=1.8, STRENGTH=1.1 },
     },
     PRIEST = {
-        STRENGTH = 0.0,
-        AGILITY = 0.0,
-        STAMINA = 0.8,
-        INTELLECT = 2.5,
-        SPIRIT = 2.0,
-        SPELLPOWER = 1.5,
-        CRIT = 1.5,
-        HIT = 1.8,
-        HASTE = 2.0,
-        MANA_PER_5 = 1.2,
+        Discipline = { SPELLPOWER=2.67, MANA_PER_5=3.33, INTELLECT=2.33, HASTE=4.0, CRIT=1.33, SPIRIT=2.33 },
+        Holy = { SPELLPOWER=2.67, MANA_PER_5=3.33, INTELLECT=2.33, HASTE=4.0, CRIT=1.33, SPIRIT=2.33 },
+        Shadow = { HIT=3.33, SPELLPOWER=3.33, CRIT=3.33, HASTE=3.33, SPIRIT=0.33, INTELLECT=0.17 },
     },
     DEATHKNIGHT = {
-        STRENGTH = 2.5,
-        AGILITY = 0.5,
-        STAMINA = 1.5,
-        INTELLECT = 0.0,
-        SPIRIT = 0.0,
-        ATTACKPOWER = 1.0,
-        CRIT = 1.5,
-        HIT = 2.0,
-        EXPERTISE = 2.0,
-        HASTE = 1.2,
-        ARMOR_PENETRATION = 1.5,
-        DEFENSE = 1.0,
-        DODGE = 1.0,
-        PARRY = 1.0,
+        BloodTank = { DPS=20.0, STAMINA=2.0, DEFENSE=1.6, AGILITY=1.2, DODGE=1.4, PARRY=1.16, EXPERTISE=1.34, STRENGTH=0.66, ARMOR_PENETRATION=0.4, CRIT=0.4, ARMOR=0.1, HIT=1.34 },
+        FrostDPS = { DPS=62.5, HIT=1.25, STRENGTH=2.6, EXPERTISE=1.25, ARMOR_PENETRATION=1.25, CRIT=1.25, ATTACKPOWER=1.25, HASTE=1.25, ARMOR=1.0 },
+        UnholyDPS = { DPS=62.5, HIT=1.25, STRENGTH=2.6, EXPERTISE=1.25, ARMOR_PENETRATION=1.25, CRIT=1.25, ATTACKPOWER=1.25, HASTE=1.25, ARMOR=1.0 },
     },
     SHAMAN = {
-        STRENGTH = 0.5,
-        AGILITY = 2.0,
-        STAMINA = 1.0,
-        INTELLECT = 2.5,
-        SPIRIT = 1.0,
-        ATTACKPOWER = 1.0,
-        SPELLPOWER = 1.5,
-        CRIT = 1.8,
-        HIT = 2.0,
-        HASTE = 1.5,
-        MANA_PER_5 = 1.2,
+        Elemental = { HIT=3.33, SPELLPOWER=3.33, HASTE=3.33, CRIT=3.33, INTELLECT=0.57 },
+        Enhancement = { DPS=16.67, HIT=1.34, EXPERTISE=4.51, AGILITY=2.23, INTELLECT=0.55, CRIT=0.32, HASTE=3.08, STRENGTH=2.0, ATTACKPOWER=1.67, SPELLPOWER=0.76, ARMOR_PENETRATION=3.0 },
+        Restoration = { MANA_PER_5=4.62, INTELLECT=3.85, SPELLPOWER=3.85, CRIT=3.85, HASTE=4.62 },
     },
     MAGE = {
-        STRENGTH = 0.0,
-        AGILITY = 0.0,
-        STAMINA = 0.5,
-        INTELLECT = 2.5,
-        SPIRIT = 1.5,
-        SPELLPOWER = 2.0,
-        CRIT = 1.8,
-        HIT = 2.5,
-        HASTE = 2.0,
+        Arcane = { HIT=2.73, HASTE=3.03, SPELLPOWER=3.33, CRIT=2.42, INTELLECT=2.12, SPIRIT=0.61, MANA_PER_5=1.52 },
+        Fire = { HIT=4.17, HASTE=3.06, SPELLPOWER=3.33, CRIT=2.5, INTELLECT=1.39, MANA_PER_5=1.39, SPIRIT=0.56 },
+        Frost = { HIT=5.15, HASTE=4.39, SPELLPOWER=3.33, CRIT=2.14, INTELLECT=0.62, MANA_PER_5=1.46, SPIRIT=0.56 },
     },
     WARLOCK = {
-        STRENGTH = 0.0,
-        AGILITY = 0.0,
-        STAMINA = 0.8,
-        INTELLECT = 2.5,
-        SPIRIT = 1.5,
-        SPELLPOWER = 2.0,
-        CRIT = 1.5,
-        HIT = 2.5,
-        HASTE = 2.0,
+        Affliction = { HIT=4.67, SPELLPOWER=3.33, HASTE=3.67, CRIT=2.0, INTELLECT=0.67 },
+        Demonology = { HIT=5.33, HASTE=4.0, SPELLPOWER=3.33, CRIT=2.67, INTELLECT=1.33 },
+        Destruction = { HIT=5.33, HASTE=4.0, SPELLPOWER=3.33, CRIT=2.67, INTELLECT=1.33 },
     },
     DRUID = {
-        STRENGTH = 1.0,
-        AGILITY = 2.0,
-        STAMINA = 1.5,
-        INTELLECT = 2.0,
-        SPIRIT = 1.5,
-        ATTACKPOWER = 1.0,
-        SPELLPOWER = 1.5,
-        CRIT = 1.5,
-        HIT = 2.0,
-        HASTE = 1.5,
-        ARMOR_PENETRATION = 1.2,
-        DEFENSE = 1.0,
-        DODGE = 1.2,
+        Balance = { HIT=4.0, SPELLPOWER=3.33, HASTE=2.67, CRIT=2.0, SPIRIT=1.0, INTELLECT=1.33, MANA_PER_5=2.0 },
+        FeralDPS = { AGILITY=2.76, ARMOR_PENETRATION=2.59, STRENGTH=2.27, CRIT=1.62, EXPERTISE=2.41, HIT=2.41, ATTACKPOWER=1.0, HASTE=0.93 },
+        FeralTank = { AGILITY=1.48, STAMINA=1.56, DODGE=0.24, DEFENSE=0.23, EXPERTISE=2.28, STRENGTH=1.13, ARMOR=0.29, HIT=1.12, HASTE=0.83, ATTACKPOWER=0.5, CRIT=1.01, ARMOR_PENETRATION=0.88 },
+        Restoration = { SPELLPOWER=3.13, MANA_PER_5=1.56, HASTE=3.13, INTELLECT=0.89, SPIRIT=1.24, CRIT=0.31 },
     },
 }
 
@@ -235,8 +146,10 @@ local STAT_PATTERNS = {
     { pattern = "%+(%d+) Dodge Rating", stat = "DODGE" },
     { pattern = "%+(%d+) Parry Rating", stat = "PARRY" },
     { pattern = "%+(%d+) Block Rating", stat = "BLOCK" },
+    { pattern = "(%d+) Block Value", stat = "BLOCK_VALUE" },
     { pattern = "(%d+) Armor", stat = "ARMOR", onlyFirst = true },
     { pattern = "Restores (%d+) mana per 5", stat = "MANA_PER_5" },
+    { pattern = "(%d+%.?%d*) Damage Per Second", stat = "DPS" },
 }
 
 -- Scan hidden tooltip for stats
@@ -288,7 +201,25 @@ end
 -- ============================================================
 local function GetPlayerWeights()
     local _, class = UnitClass("player")
-    return StatWeights[class] or StatWeights.WARRIOR
+    local classWeights = StatWeights[class]
+    if not classWeights then return StatWeights.WARRIOR.Arms end
+    
+    -- Default to first spec found or a specific one if we could detect it
+    -- For now, we'll just pick the first one or "Arms"/"Holy"/etc if available
+    -- A real implementation would let the user choose via settings
+    
+    -- Simple heuristic: Check if we have a saved spec preference
+    local spec = addon.settings.itemScore.currentSpec
+    if spec and classWeights[spec] then
+        return classWeights[spec]
+    end
+    
+    -- Fallback: Return the first table found
+    for _, weights in pairs(classWeights) do
+        return weights
+    end
+    
+    return classWeights -- Should be nil if we got here
 end
 
 local function CalculateScore(itemStats)
@@ -539,7 +470,7 @@ function ItemScore.CreateSettings(parent)
     local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetText("Pawn-style item upgrade detection and scoring based on stat weights for your class.")
-    desc:SetWidth(parent:GetWidth() - 32)
+    desc:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     desc:SetJustifyH("LEFT")
     
     local yOffset = -70
@@ -547,7 +478,7 @@ function ItemScore.CreateSettings(parent)
     -- ============================================================
     -- Enable Section
     -- ============================================================
-    local enableCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local enableCb = addon:CreateCheckbox(parent)
     enableCb:SetPoint("TOPLEFT", 16, yOffset)
     enableCb.Text:SetText("Enable Item Scoring")
     enableCb:SetChecked(settings.enabled)
@@ -565,7 +496,7 @@ function ItemScore.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Upgrade Arrows
-    local arrowsCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local arrowsCb = addon:CreateCheckbox(parent)
     arrowsCb:SetPoint("TOPLEFT", 16, yOffset)
     arrowsCb.Text:SetText("Show Upgrade/Downgrade Arrows")
     arrowsCb:SetChecked(settings.showUpgradeArrows)
@@ -575,7 +506,7 @@ function ItemScore.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Score
-    local scoreCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local scoreCb = addon:CreateCheckbox(parent)
     scoreCb:SetPoint("TOPLEFT", 16, yOffset)
     scoreCb.Text:SetText("Show Item Score")
     scoreCb:SetChecked(settings.showScore)
@@ -585,7 +516,7 @@ function ItemScore.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Comparison
-    local compCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local compCb = addon:CreateCheckbox(parent)
     compCb:SetPoint("TOPLEFT", 16, yOffset)
     compCb.Text:SetText("Show Comparison with Equipped")
     compCb:SetChecked(settings.showComparison)
@@ -595,7 +526,7 @@ function ItemScore.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Show Stat Weights
-    local weightsCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local weightsCb = addon:CreateCheckbox(parent)
     weightsCb:SetPoint("TOPLEFT", 16, yOffset)
     weightsCb.Text:SetText("Show Stat Weight Breakdown (verbose)")
     weightsCb:SetChecked(settings.showStatWeights)
@@ -613,7 +544,7 @@ function ItemScore.CreateSettings(parent)
     yOffset = yOffset - 20
     
     local _, playerClass = UnitClass("player")
-    local weights = StatWeights[playerClass] or {}
+    local weights = GetPlayerWeights()
     
     local classInfo = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     classInfo:SetPoint("TOPLEFT", 16, yOffset)
@@ -628,8 +559,45 @@ function ItemScore.CreateSettings(parent)
     weightText = weightText .. table.concat(primaryStats, ", ")
     
     classInfo:SetText(weightText)
-    classInfo:SetWidth(parent:GetWidth() - 32)
+    classInfo:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     classInfo:SetJustifyH("LEFT")
+    yOffset = yOffset - 40
+
+    -- Spec Selection Dropdown (Simple implementation)
+    local specHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    specHeader:SetPoint("TOPLEFT", 16, yOffset)
+    specHeader:SetText("Select Spec")
+    yOffset = yOffset - 25
+
+    local specDropdown = CreateFrame("Frame", "DCQoSItemScoreSpecDropdown", parent, "UIDropDownMenuTemplate")
+    specDropdown:SetPoint("TOPLEFT", 0, yOffset)
+    UIDropDownMenu_SetWidth(specDropdown, 150)
+    UIDropDownMenu_SetText(specDropdown, settings.currentSpec or "Auto")
+
+    UIDropDownMenu_Initialize(specDropdown, function(self, level, menuList)
+        local info = UIDropDownMenu_CreateInfo()
+        local classWeights = StatWeights[playerClass]
+        if classWeights then
+            for specName, _ in pairs(classWeights) do
+                info.text = specName
+                info.func = function()
+                    addon:SetSetting("itemScore.currentSpec", specName)
+                    UIDropDownMenu_SetText(specDropdown, specName)
+                    -- Refresh weights display
+                    local newWeights = GetPlayerWeights()
+                    local newPrimaryStats = {}
+                    for stat, weight in pairs(newWeights) do
+                        if weight >= 2.0 then
+                            table.insert(newPrimaryStats, stat)
+                        end
+                    end
+                    classInfo:SetText("Class: " .. playerClass .. "\nPrimary Stats: " .. table.concat(newPrimaryStats, ", "))
+                end
+                info.checked = (settings.currentSpec == specName)
+                UIDropDownMenu_AddButton(info)
+            end
+        end
+    end)
     
     return yOffset - 60
 end

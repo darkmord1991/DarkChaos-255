@@ -58,17 +58,18 @@ namespace Hotspot
     static JsonValue BuildHotspotObject(uint32 id, uint32 mapId, uint32 zoneId, std::string const& zoneName,
         float x, float y, float z, uint32 timeRemaining, uint32 bonusPercent)
     {
+        // Use short key names to reduce payload size (saves ~100-150 bytes per hotspot)
+        // Client maps: i=id, m=mapId, z=zoneId, n=zoneName, x/y/h=coords, t=timeRemaining, b=bonusPercent
         JsonValue h; h.SetObject();
-        h.Set("id", JsonValue(id));
-        h.Set("mapId", JsonValue(mapId));
-        h.Set("zoneId", JsonValue(zoneId));
-        h.Set("zoneName", JsonValue(zoneName));
+        h.Set("i", JsonValue(id));
+        h.Set("m", JsonValue(mapId));
+        h.Set("z", JsonValue(zoneId));
+        h.Set("n", JsonValue(zoneName));
         h.Set("x", JsonValue(x));
         h.Set("y", JsonValue(y));
-        h.Set("z", JsonValue(z));
-        h.Set("timeRemaining", JsonValue(timeRemaining));
-        h.Set("bonusPercent", JsonValue(bonusPercent));
-        h.Set("name", JsonValue("Hotspot"));
+        h.Set("h", JsonValue(z));  // 'h' for height (z was taken by zoneId)
+        h.Set("t", JsonValue(timeRemaining));
+        h.Set("b", JsonValue(bonusPercent));
         return h;
     }
 

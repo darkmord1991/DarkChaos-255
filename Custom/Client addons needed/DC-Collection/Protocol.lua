@@ -265,12 +265,14 @@ end
 
 -- Debounce helper for passive requests (definitions/collections/stats/etc).
 -- "Latest call wins" without requiring cancellable timers.
+-- NOTE: Short delays (0.05-0.15s) are used to batch rapid-fire calls without
+-- adding noticeable latency to initial load.
 function DC:_DebounceRequest(key, delaySeconds, fn)
     if type(fn) ~= "function" then
         return
     end
 
-    delaySeconds = delaySeconds or 0.25
+    delaySeconds = delaySeconds or 0.10  -- default 100ms (was 250ms)
 
     if not (self.After and type(self.After) == "function") then
         fn()
@@ -345,7 +347,7 @@ function DC:RequestBonuses()
         return false
     end
 
-    self:_DebounceRequest(key, 0.30, function()
+    self:_DebounceRequest(key, 0.10, function()
         if self:_IsInflight(key) then
             return
         end
@@ -386,7 +388,7 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             return false
         end
 
-        self:_DebounceRequest(reqKey, 0.35, function()
+        self:_DebounceRequest(reqKey, 0.10, function()
             if self._transmogDefLoading then
                 return
             end
@@ -421,7 +423,7 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
     end
 
     -- Generic request for other types (mount, pet, heirloom, title)
-    self:_DebounceRequest(reqKey, 0.25, function()
+    self:_DebounceRequest(reqKey, 0.10, function()
         if self:_IsInflight(reqKey) then
             return
         end
@@ -475,7 +477,7 @@ function DC:RequestCollection(collType)
     end
 
     -- Generic request - no special handling needed, just use normalized type
-    self:_DebounceRequest(reqKey, 0.25, function()
+    self:_DebounceRequest(reqKey, 0.10, function()
         if self:_IsInflight(reqKey) then
             return
         end
@@ -509,7 +511,7 @@ function DC:RequestShopItems(category)
         return false
     end
 
-    self:_DebounceRequest(reqKey, 0.35, function()
+    self:_DebounceRequest(reqKey, 0.15, function()
         if self:_IsInflight(reqKey) then
             return
         end
@@ -1543,8 +1545,7 @@ function DC:HandleDefinitions(data)
             return
         end
 
-        -- Slow down paging a bit to avoid disconnects on some servers/clients.
-        self._transmogPagingInterval = self._transmogPagingInterval or 0.75
+        -- Slow down paging a bit to avoid disconnects on some servers/clients.\n        -- Reduced from 0.75s to 0.35s for faster loading while still being safe.\n        self._transmogPagingInterval = self._transmogPagingInterval or 0.35
 
         local requestedOffset = tonumber(data.offset or data.off) or tonumber(self._transmogDefLastRequestedOffset) or 0
         local requestedLimit = tonumber(data.limit or data.lim) or tonumber(self._transmogDefLastRequestedLimit) or tonumber(self._transmogDefLimit) or 1000

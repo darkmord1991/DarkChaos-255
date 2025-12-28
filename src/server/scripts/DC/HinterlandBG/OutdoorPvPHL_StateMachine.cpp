@@ -150,7 +150,7 @@ void OutdoorPvPHL::UpdateWarmupState(uint32 diff)
         uint32 remainingSeconds = _warmupTimeRemaining / IN_MILLISECONDS;
         if (remainingSeconds == 60 || remainingSeconds == 30 || remainingSeconds == 10)
         {
-            BroadcastToZone("Hinterland BG warmup: {} seconds remaining!", remainingSeconds);
+            BroadcastToZone("Hinterland BG warmup: %u seconds remaining!", remainingSeconds);
         }
     }
 }
@@ -162,7 +162,7 @@ void OutdoorPvPHL::EnterInProgressState()
     _matchEndTime = _matchStartTime + _matchDurationSeconds;
 
     // Announce battle start
-    BroadcastToZone("Hinterland BG: Battle has begun! Current affix: {}", GetAffixName(_activeAffix));
+    BroadcastToZone("Hinterland BG: Battle has begun! Current affix: %s", GetAffixName(_activeAffix));
 
     // Apply affix effects if enabled
     if (_affixEnabled)
@@ -258,7 +258,7 @@ void OutdoorPvPHL::EnterFinishedState()
     TeamId winner = GetLastWinnerTeamId();
     if (winner != TEAM_NEUTRAL)
     {
-        BroadcastToZone("Hinterland BG: {} wins!", winner == TEAM_ALLIANCE ? "Alliance" : "Horde");
+        BroadcastToZone("Hinterland BG: %s wins!", winner == TEAM_ALLIANCE ? "Alliance" : "Horde");
         HandleRewards(winner);
     }
     else

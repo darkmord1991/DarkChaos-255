@@ -2285,6 +2285,20 @@ PhasedDuels.MaxPhaseId = 2147483647
 DC.AddonProtocol.Core.Enable = 1
 
 #
+#    DC.AddonProtocol.QoS.Enable
+#        Description: Enable DC-QoS addon support (settings sync + extended item/NPC/spell info)
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.QoS.Enable = 1
+
+#
+#    DC.AddonProtocol.QoS.Debug
+#        Description: Enable debug logging for the DC-QoS addon handler
+#        Default:     0 (Disabled)
+#
+DC.AddonProtocol.QoS.Debug = 0
+
+#
 #    DC.AddonProtocol.AOELoot.Enable
 #        Description: Enable DCAOE prefix handling for AOE Loot addon sync
 #        Default:     1 (Enabled)
@@ -2814,11 +2828,11 @@ DCWelcome.WebsiteUrl = "https://github.com/darkmord1991/DarkChaos-255"
 DCWelcome.WikiUrl = "https://github.com/darkmord1991/DarkChaos-255"
 
 #
-#    DCWelcome.Progressive.Enable
+#    DCWelcome.Progressive.Enabled
 #        Description: Enable progressive feature introduction
 #        Default:     1 (Enabled)
 #
-DCWelcome.Progressive.Enable = 1
+DCWelcome.Progressive.Enabled = 1
 
 
 ###########################################################################

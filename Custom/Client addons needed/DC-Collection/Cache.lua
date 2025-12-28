@@ -82,6 +82,35 @@ end
 
 local CACHE_VERSION = 1
 
+-- Cache freshness: consider data "fresh" if loaded within this many seconds.
+-- This allows skipping redundant server requests on /reload or quick relog.
+local CACHE_FRESH_SECONDS = 300  -- 5 minutes
+
+-- Check if cached data is fresh enough to skip a full server sync.
+-- Returns true if cache was saved within CACHE_FRESH_SECONDS ago.
+function DC:IsCacheFresh()
+    DCCollectionDB = DCCollectionDB or {}
+    local lastSave = DCCollectionDB.lastSyncTime or 0
+    if lastSave <= 0 then
+        return false
+    end
+    local age = time() - lastSave
+    return age < CACHE_FRESH_SECONDS
+end
+
+-- Check if we have any cached definitions (meaning cache isn't empty).
+function DC:HasCachedDefinitions()
+    if not self.definitions then
+        return false
+    end
+    for _, defs in pairs(self.definitions) do
+        if next(defs) then
+            return true
+        end
+    end
+    return false
+end
+
 -- ============================================================================
 -- LOAD CACHE
 -- ============================================================================
@@ -152,6 +181,12 @@ function DC:LoadCache()
         if DCCollectionCharDB and DCCollectionCharDB.outfits then
             self.outfits = DCCollectionCharDB.outfits
         end
+    end
+
+    -- If we loaded actual definitions, mark data as ready so the UI can show immediately.
+    if self:HasCachedDefinitions() then
+        self.isDataReady = true
+        self:Debug("Cache has definitions; isDataReady = true")
     end
     
     self:Debug("Cache loaded successfully")
@@ -657,25 +692,76 @@ function DC:ComputeCollectionHash()
 end
 
 -- ============================================================================
--- AUTO-SAVE TIMER
+-- AUTO-SAVE (event-driven, not constant OnUpdate)
 -- ============================================================================
 
-local saveTimer = nil
 local SAVE_INTERVAL = 60  -- Save every 60 seconds if needed
+local autoSaveScheduled = false
 
-local function CheckAutoSave()
-    if DC.cacheNeedsSave then
-        DC:SaveCache()
-        -- cacheNeedsSave is cleared by SaveCache
+local function ScheduleAutoSave()
+    if autoSaveScheduled then
+        return
+    end
+    autoSaveScheduled = true
+
+    -- Use DC.After if available, otherwise create a simple timer frame.
+    if DC.After and type(DC.After) == "function" then
+        DC.After(SAVE_INTERVAL, function()
+            autoSaveScheduled = false
+            if DC.cacheNeedsSave then
+                DC:SaveCache()
+            end
+        end)
+    else
+        local timerFrame = CreateFrame("Frame")
+        timerFrame.elapsed = 0
+        timerFrame:SetScript("OnUpdate", function(self, elapsed)
+            self.elapsed = self.elapsed + elapsed
+            if self.elapsed >= SAVE_INTERVAL then
+                self:Hide()
+                self:SetScript("OnUpdate", nil)
+                autoSaveScheduled = false
+                if DC.cacheNeedsSave then
+                    DC:SaveCache()
+                end
+            end
+        end)
     end
 end
 
--- Start auto-save timer
-local timerFrame = CreateFrame("Frame")
-timerFrame:SetScript("OnUpdate", function(self, elapsed)
-    self.elapsed = (self.elapsed or 0) + elapsed
-    if self.elapsed >= SAVE_INTERVAL then
-        self.elapsed = 0
-        CheckAutoSave()
+-- Hook into cacheNeedsSave to schedule auto-save when data becomes dirty.
+local origCacheAddItem = DC.CacheAddItem
+function DC:CacheAddItem(...)
+    local result = origCacheAddItem(self, ...)
+    if self.cacheNeedsSave then
+        ScheduleAutoSave()
     end
-end)
+    return result
+end
+
+local origCacheUpdateItem = DC.CacheUpdateItem
+function DC:CacheUpdateItem(...)
+    local result = origCacheUpdateItem(self, ...)
+    if self.cacheNeedsSave then
+        ScheduleAutoSave()
+    end
+    return result
+end
+
+local origCacheMergeCollection = DC.CacheMergeCollection
+function DC:CacheMergeCollection(...)
+    local result = origCacheMergeCollection(self, ...)
+    if self.cacheNeedsSave then
+        ScheduleAutoSave()
+    end
+    return result
+end
+
+local origCacheUpdateCurrency = DC.CacheUpdateCurrency
+function DC:CacheUpdateCurrency(...)
+    local result = origCacheUpdateCurrency(self, ...)
+    if self.cacheNeedsSave then
+        ScheduleAutoSave()
+    end
+    return result
+end

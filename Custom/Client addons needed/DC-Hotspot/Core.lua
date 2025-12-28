@@ -146,24 +146,25 @@ local function BuildHotspotRecord(payload)
         payload = payload.hotspot
     end
 
-    local id = NormalizeNumber(payload.id)
+    -- Support short keys (i,m,z,n,h,t,b) and long keys for backward compatibility
+    local id = NormalizeNumber(payload.i or payload.id)
     if not id then return nil end
 
-    local dur = NormalizeNumber(payload.dur or payload.timeRemaining) or 0
+    local dur = NormalizeNumber(payload.t or payload.dur or payload.timeRemaining) or 0
     local nowSession = GetTime()
     local nowEpoch = NowEpoch()
-    local zoneId = NormalizeNumber(payload.zone or payload.zoneId)
+    local zoneId = NormalizeNumber(payload.z or payload.zone or payload.zoneId)
     local record = {
         id = id,
-        map = NormalizeNumber(payload.map or payload.mapId),
+        map = NormalizeNumber(payload.m or payload.map or payload.mapId),
         zoneId = zoneId,
-        zone = ResolveZoneName(zoneId, payload.zonename or payload.zoneName),
+        zone = ResolveZoneName(zoneId, payload.n or payload.zonename or payload.zoneName),
         x = NormalizeNumber(payload.x),
         y = NormalizeNumber(payload.y),
-        z = NormalizeNumber(payload.z),
+        z = NormalizeNumber(payload.h or payload.z),  -- 'h' for height in short form
         nx = NormalizeNumber(payload.nx),
         ny = NormalizeNumber(payload.ny),
-        bonus = NormalizeNumber(payload.bonus or payload.bonusPercent) or state.config.experienceBonus,
+        bonus = NormalizeNumber(payload.b or payload.bonus or payload.bonusPercent) or state.config.experienceBonus,
         icon = NormalizeNumber(payload.icon),
         tex = payload.tex,
         texid = NormalizeNumber(payload.texid),
@@ -597,7 +598,7 @@ end
 -- Also request on entering world (covers some relog/teleport edge cases)
 function Core:PLAYER_ENTERING_WORLD()
     -- Avoid spamming: PLAYER_ENTERING_WORLD can fire multiple times.
-    self:MaybeRequestHotspots("enter_world", 10)
+    self:MaybeRequestHotspots("enter_world", 60)
 end
 
 -- Request hotspot list from server using protocol fallback chain (JSON standard)
@@ -668,26 +669,26 @@ end
 
 -- Track zone changes to refresh hotspots
 function Core:ZONE_CHANGED_NEW_AREA()
-    self:MaybeRequestHotspots("zone_change", 10)
+    self:MaybeRequestHotspots("zone_change", 60)
 end
 
 -- Request on group roster changes ("join"/"leave"), useful if hotspots are party/raid-scoped
 function Core:GROUP_ROSTER_UPDATE()
-    self:MaybeRequestHotspots("group_roster", 10)
+    self:MaybeRequestHotspots("group_roster", 120)
 end
 
 -- WotLK compatibility (some clients fire PARTY_MEMBERS_CHANGED instead)
 function Core:PARTY_MEMBERS_CHANGED()
-    self:MaybeRequestHotspots("party_members", 10)
+    self:MaybeRequestHotspots("party_members", 120)
 end
 
 -- WotLK raid roster updates
 function Core:RAID_ROSTER_UPDATE()
-    self:MaybeRequestHotspots("raid_roster", 10)
+    self:MaybeRequestHotspots("raid_roster", 120)
 end
 
 function Core:MaybeRequestHotspots(reason, minInterval)
-    minInterval = minInterval or 30
+    minInterval = minInterval or 60  -- Default 60 seconds to reduce spam
     local now = GetTime()
     local lastRequest = self.lastHotspotRequest or 0
     if (now - lastRequest) < minInterval then
@@ -718,10 +719,10 @@ function Core:HookWorldMap()
     
     if WorldMapFrame then
         WorldMapFrame:HookScript("OnShow", function()
-            -- Only request if it's been a while since last request (30 sec cooldown)
+            -- Only request if it's been a while since last request (60 sec cooldown)
             local now = GetTime()
             local lastRequest = Core.lastHotspotRequest or 0
-            if (now - lastRequest) >= 30 then
+            if (now - lastRequest) >= 60 then
                 Core:RequestHotspotList()
             end
         end)

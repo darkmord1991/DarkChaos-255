@@ -67,7 +67,8 @@ local function SetupQuestLevelText()
     
     -- Hook the quest log title button update
     hooksecurefunc("QuestLog_Update", function()
-        for i = 1, QUESTS_DISPLAYED do
+        local numQuests = QUESTS_DISPLAYED or 6
+        for i = 1, numQuests do
             local questLogTitle = _G["QuestLogTitle" .. i]
             if questLogTitle then
                 local questIndex = questLogTitle:GetID()
@@ -174,7 +175,7 @@ function Interface.CreateSettings(parent)
     local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetText("Configure interface enhancements and UI modifications.")
-    desc:SetWidth(parent:GetWidth() - 32)
+    desc:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     desc:SetJustifyH("LEFT")
     
     local yOffset = -70
@@ -188,7 +189,7 @@ function Interface.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Combat Nameplates
-    local combatPlatesCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local combatPlatesCb = addon:CreateCheckbox(parent)
     combatPlatesCb:SetPoint("TOPLEFT", 16, yOffset)
     combatPlatesCb.Text:SetText("Show Enemy Nameplates in Combat Only")
     combatPlatesCb:SetChecked(settings.combatPlates)
@@ -207,7 +208,7 @@ function Interface.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Auto Quest Watch
-    local autoQuestCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local autoQuestCb = addon:CreateCheckbox(parent)
     autoQuestCb:SetPoint("TOPLEFT", 16, yOffset)
     autoQuestCb.Text:SetText("Auto-add Quests to Watch List")
     autoQuestCb:SetChecked(settings.autoQuestWatch)
@@ -218,7 +219,7 @@ function Interface.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Quest Level Text
-    local questLevelCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local questLevelCb = addon:CreateCheckbox(parent)
     questLevelCb:SetPoint("TOPLEFT", 16, yOffset)
     questLevelCb.Text:SetText("Show Quest Levels in Quest Log")
     questLevelCb:SetChecked(settings.questLevelText)
@@ -237,7 +238,7 @@ function Interface.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Hide Gryphons
-    local hideGryphonsCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local hideGryphonsCb = addon:CreateCheckbox(parent)
     hideGryphonsCb:SetPoint("TOPLEFT", 16, yOffset)
     hideGryphonsCb.Text:SetText("Hide Action Bar Gryphons")
     hideGryphonsCb:SetChecked(settings.hideGryphons)
@@ -248,7 +249,7 @@ function Interface.CreateSettings(parent)
     yOffset = yOffset - 25
     
     -- Larger World Map
-    local largerMapCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    local largerMapCb = addon:CreateCheckbox(parent)
     largerMapCb:SetPoint("TOPLEFT", 16, yOffset)
     largerMapCb.Text:SetText("Movable World Map")
     largerMapCb:SetChecked(settings.largerWorldMap)

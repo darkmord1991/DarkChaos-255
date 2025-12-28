@@ -1,12 +1,7 @@
 -- ============================================================
--- DC-QoS: BagEnhancements Module (Bagnon-inspired)
+-- DC-QoS: BagEnhancements Module (Hybrid Support)
 -- ============================================================
--- Bag quality of life improvements
--- - Item quality borders
--- - Search/filter functionality  
--- - Item count totals
--- - Junk highlighting
--- - New item highlighting
+-- Supports both Unified (OneBag) and Default (Blizzard) views.
 -- ============================================================
 
 local addon = DCQOS
@@ -26,585 +21,739 @@ local BagEnhancements = {
 local defaults = {
     bags = {
         enabled = true,
+        oneBag = true,          -- Enable unified bag view
         qualityBorders = true,
-        borderSize = 2,
         junkHighlight = true,
-        junkColor = { r = 0.5, g = 0.5, b = 0.5, a = 0.7 },
         newItemGlow = true,
-        newItemDuration = 30,  -- seconds to show "new" glow
-        itemCount = true,
+        newItemDuration = 30,
         searchHighlight = true,
         fadeNonMatch = true,
-        fadeAlpha = 0.3,
+        fadeAlpha = 0.2,
         showIlvl = true,
-        showBindStatus = false,
-        sortByQuality = false,
+        columns = 10,           -- Number of columns in inventory
+        bankColumns = 14,       -- Number of columns in bank
+        scale = 1.0,
     },
 }
 
--- Merge defaults
-for k, v in pairs(defaults) do
-    addon.defaults[k] = v
-end
+for k, v in pairs(defaults) do addon.defaults[k] = v end
 
 -- ============================================================
--- Quality Colors
+-- Constants & State
 -- ============================================================
-local QualityColors = {
-    [0] = { r = 0.62, g = 0.62, b = 0.62 },  -- Poor (gray)
-    [1] = { r = 1.00, g = 1.00, b = 1.00 },  -- Common (white)
-    [2] = { r = 0.12, g = 1.00, b = 0.00 },  -- Uncommon (green)
-    [3] = { r = 0.00, g = 0.44, b = 0.87 },  -- Rare (blue)
-    [4] = { r = 0.64, g = 0.21, b = 0.93 },  -- Epic (purple)
-    [5] = { r = 1.00, g = 0.50, b = 0.00 },  -- Legendary (orange)
-    [6] = { r = 0.90, g = 0.80, b = 0.50 },  -- Artifact (gold)
-    [7] = { r = 0.00, g = 0.80, b = 1.00 },  -- Heirloom (cyan)
+local FRAMES = {
+    inventory = {
+        name = "Inventory",
+        bags = {0, 1, 2, 3, 4},
+        title = "Inventory",
+        colsSetting = "columns",
+    },
+    bank = {
+        name = "Bank",
+        bags = {-1, 5, 6, 7, 8, 9, 10, 11},
+        title = "Bank",
+        colsSetting = "bankColumns",
+    }
 }
 
--- ============================================================
--- State Variables
--- ============================================================
-local newItems = {}           -- Track newly acquired items
-local searchText = ""         -- Current search filter
-local itemBorders = {}        -- Created border frames
-local itemOverlays = {}       -- Created overlay frames
+local frames = {}       -- [name] = Frame
+local bagProxies = {}   -- [bagID] = Frame
+local itemButtons = {}  -- [bagID][slot] = Button
+local newItems = {}     -- [bag:slot] = time
+local searchBoxes = {}  -- [frameName] = EditBox
 
 -- ============================================================
--- Item Tracking
+-- Helper Functions
 -- ============================================================
-local function GetItemKey(bag, slot)
-    return bag .. ":" .. slot
-end
-
-local function MarkItemAsNew(bag, slot)
-    local key = GetItemKey(bag, slot)
-    newItems[key] = GetTime()
-end
+local function GetItemKey(bag, slot) return bag .. ":" .. slot end
 
 local function IsItemNew(bag, slot)
     local settings = addon.settings.bags
     if not settings.newItemGlow then return false end
-    
     local key = GetItemKey(bag, slot)
     local acquireTime = newItems[key]
     if not acquireTime then return false end
-    
-    local elapsed = GetTime() - acquireTime
-    if elapsed > settings.newItemDuration then
+    if (GetTime() - acquireTime) > settings.newItemDuration then
         newItems[key] = nil
         return false
     end
-    
     return true
 end
 
-local function ClearNewItem(bag, slot)
-    local key = GetItemKey(bag, slot)
-    newItems[key] = nil
-end
-
 -- ============================================================
--- Quality Border Creation
+-- Visuals (Shared)
 -- ============================================================
-local function CreateQualityBorder(button)
-    if button._dcqosBorder then return button._dcqosBorder end
+local function CreateButtonVisuals(button)
+    if button._dcqosVisuals then return button._dcqosVisuals end
     
-    local border = CreateFrame("Frame", nil, button)
-    border:SetAllPoints()
-    border:SetFrameLevel(button:GetFrameLevel() + 1)
+    local visuals = {}
     
-    -- Create border textures
-    border.top = border:CreateTexture(nil, "OVERLAY")
-    border.top:SetHeight(2)
-    border.top:SetPoint("TOPLEFT", border, "TOPLEFT", 0, 0)
-    border.top:SetPoint("TOPRIGHT", border, "TOPRIGHT", 0, 0)
-    
-    border.bottom = border:CreateTexture(nil, "OVERLAY")
-    border.bottom:SetHeight(2)
-    border.bottom:SetPoint("BOTTOMLEFT", border, "BOTTOMLEFT", 0, 0)
-    border.bottom:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 0, 0)
-    
-    border.left = border:CreateTexture(nil, "OVERLAY")
-    border.left:SetWidth(2)
-    border.left:SetPoint("TOPLEFT", border, "TOPLEFT", 0, 0)
-    border.left:SetPoint("BOTTOMLEFT", border, "BOTTOMLEFT", 0, 0)
-    
-    border.right = border:CreateTexture(nil, "OVERLAY")
-    border.right:SetWidth(2)
-    border.right:SetPoint("TOPRIGHT", border, "TOPRIGHT", 0, 0)
-    border.right:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 0, 0)
-    
+    -- Border
+    local border = button:CreateTexture(nil, "OVERLAY")
+    border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    border:SetBlendMode("ADD")
+    border:SetAlpha(0.8)
+    border:SetWidth(button:GetWidth() * 1.7)
+    border:SetHeight(button:GetHeight() * 1.7)
+    border:SetPoint("CENTER", button, "CENTER", 0, 0)
     border:Hide()
-    button._dcqosBorder = border
+    visuals.border = border
     
-    return border
+    -- Dim (Junk)
+    local dim = button:CreateTexture(nil, "OVERLAY")
+    dim:SetAllPoints()
+    dim:SetTexture(0, 0, 0, 0.6)
+    dim:Hide()
+    visuals.dim = dim
+    
+    -- New Item Glow
+    local glow = button:CreateTexture(nil, "OVERLAY")
+    glow:SetAllPoints()
+    glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    glow:SetBlendMode("ADD")
+    glow:SetVertexColor(0.2, 1.0, 0.2, 0.6)
+    glow:Hide()
+    visuals.glow = glow
+    
+    -- ILvl
+    local ilvl = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    ilvl:SetPoint("TOPLEFT", 2, -2)
+    ilvl:SetTextColor(1, 1, 0)
+    ilvl:Hide()
+    visuals.ilvl = ilvl
+    
+    button._dcqosVisuals = visuals
+    return visuals
 end
 
-local function SetBorderColor(border, r, g, b, a)
-    border.top:SetTexture(r, g, b, a or 1)
-    border.bottom:SetTexture(r, g, b, a or 1)
-    border.left:SetTexture(r, g, b, a or 1)
-    border.right:SetTexture(r, g, b, a or 1)
-end
-
-local function UpdateBorderSize(border, size)
-    border.top:SetHeight(size)
-    border.bottom:SetHeight(size)
-    border.left:SetWidth(size)
-    border.right:SetWidth(size)
-end
-
--- ============================================================
--- Overlay Creation (for junk/new highlighting)
--- ============================================================
-local function CreateItemOverlay(button)
-    if button._dcqosOverlay then return button._dcqosOverlay end
-    
-    local overlay = CreateFrame("Frame", nil, button)
-    overlay:SetAllPoints()
-    overlay:SetFrameLevel(button:GetFrameLevel() + 2)
-    
-    -- Junk/dim overlay
-    overlay.dim = overlay:CreateTexture(nil, "OVERLAY")
-    overlay.dim:SetAllPoints()
-    overlay.dim:SetTexture(0.5, 0.5, 0.5, 0.7)
-    overlay.dim:SetBlendMode("MOD")
-    overlay.dim:Hide()
-    
-    -- New item glow
-    overlay.glow = overlay:CreateTexture(nil, "OVERLAY")
-    overlay.glow:SetAllPoints()
-    overlay.glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-    overlay.glow:SetBlendMode("ADD")
-    overlay.glow:SetVertexColor(0.3, 1, 0.3, 0.5)
-    overlay.glow:Hide()
-    
-    -- Item level text
-    overlay.ilvl = overlay:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-    overlay.ilvl:SetPoint("TOPLEFT", 2, -2)
-    overlay.ilvl:SetTextColor(1, 1, 0)
-    overlay.ilvl:Hide()
-    
-    -- Bind status text
-    overlay.bind = overlay:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-    overlay.bind:SetPoint("BOTTOMLEFT", 2, 2)
-    overlay.bind:SetTextColor(1, 0.5, 0)
-    overlay.bind:Hide()
-    
-    button._dcqosOverlay = overlay
-    
-    return overlay
-end
-
--- ============================================================
--- Button Update Handler
--- ============================================================
-local function UpdateBagButton(button, bag, slot)
+local function UpdateButtonVisuals(button, bag, slot, searchText)
     local settings = addon.settings.bags
     if not settings.enabled then return end
     
-    local itemLink = GetContainerItemLink(bag, slot)
-    local border = CreateQualityBorder(button)
-    local overlay = CreateItemOverlay(button)
+    local visuals = CreateButtonVisuals(button)
     
-    -- Reset state
-    border:Hide()
-    overlay.dim:Hide()
-    overlay.glow:Hide()
-    overlay.ilvl:Hide()
-    overlay.bind:Hide()
+    visuals.border:Hide()
+    visuals.dim:Hide()
+    visuals.glow:Hide()
+    visuals.ilvl:Hide()
+    button:SetAlpha(1)
     
-    if not itemLink then
-        return
+    local texture, count, locked, quality, readable, lootable, link = GetContainerItemInfo(bag, slot)
+    
+    if not texture then return end
+    
+    -- Quality Fallback
+    if (not quality or quality < 0) and link then
+        local _, _, q = GetItemInfo(link)
+        if q then quality = q end
     end
     
-    -- Get item info
-    local itemName, _, itemQuality, itemLevel, _, _, _, _, _, itemTexture = GetItemInfo(itemLink)
-    if not itemName then return end
+    -- 1. Quality Border
+    if settings.qualityBorders and quality and quality >= 1 then
+        local r, g, b = GetItemQualityColor(quality)
+        visuals.border:SetVertexColor(r, g, b)
+        visuals.border:Show()
+    end
     
-    -- Quality border
-    if settings.qualityBorders and itemQuality and itemQuality >= 2 then
-        local color = QualityColors[itemQuality]
-        if color then
-            SetBorderColor(border, color.r, color.g, color.b, 1)
-            UpdateBorderSize(border, settings.borderSize)
-            border:Show()
+    -- 2. Junk
+    if settings.junkHighlight and quality and quality == 0 then
+        visuals.dim:Show()
+    end
+    
+    -- 3. New Item
+    if IsItemNew(bag, slot) then
+        visuals.glow:Show()
+    end
+    
+    -- 4. ILvl
+    if settings.showIlvl and link then
+        local _, _, _, itemLevel = GetItemInfo(link)
+        if itemLevel and itemLevel > 1 then
+            visuals.ilvl:SetText(itemLevel)
+            visuals.ilvl:Show()
         end
     end
     
-    -- Junk highlighting
-    if settings.junkHighlight and itemQuality == 0 then
-        local c = settings.junkColor
-        overlay.dim:SetTexture(c.r, c.g, c.b, c.a)
-        overlay.dim:Show()
-    end
-    
-    -- New item glow
-    if IsItemNew(bag, slot) then
-        overlay.glow:Show()
-    end
-    
-    -- Item level display
-    if settings.showIlvl and itemLevel and itemLevel > 1 then
-        overlay.ilvl:SetText(itemLevel)
-        overlay.ilvl:Show()
-    end
-    
-    -- Search highlighting
-    if settings.searchHighlight and searchText ~= "" then
-        local nameLower = itemName:lower()
-        local searchLower = searchText:lower()
+    -- 5. Search
+    if settings.searchHighlight and searchText and searchText ~= "" then
+        local match = false
+        if link then
+            local name, _, _, _, _, type, subtype, _, equipLoc = GetItemInfo(link)
+            local search = searchText:lower()
+            
+            if name and name:lower():find(search) then match = true end
+            if type and type:lower():find(search) then match = true end
+            if subtype and subtype:lower():find(search) then match = true end
+            if equipLoc and _G[equipLoc] and _G[equipLoc]:lower():find(search) then match = true end
+        end
         
-        if not nameLower:find(searchLower) then
-            -- Item doesn't match search
+        if not match then
             if settings.fadeNonMatch then
                 button:SetAlpha(settings.fadeAlpha)
+                visuals.border:Hide()
             end
         else
             button:SetAlpha(1)
         end
-    else
-        button:SetAlpha(1)
     end
 end
 
 -- ============================================================
--- Bag Frame Hooks
+-- OneBag Implementation
 -- ============================================================
-local function HookContainerFrame(frame)
-    if frame._dcqosHooked then return end
-    frame._dcqosHooked = true
+local function CreateBagProxy(bagID, parent)
+    if bagProxies[bagID] then return bagProxies[bagID] end
+    local f = CreateFrame("Frame", "DCQoS_BagProxy_" .. bagID, parent)
+    f:SetID(bagID)
+    bagProxies[bagID] = f
+    return f
+end
+
+local function GetOrCreateButton(bag, slot, parentFrame)
+    if not itemButtons[bag] then itemButtons[bag] = {} end
+    if itemButtons[bag][slot] then return itemButtons[bag][slot] end
     
-    -- Hook item button updates
-    local origUpdate = frame.Update
-    if origUpdate then
-        frame.Update = function(self, ...)
-            local result = origUpdate(self, ...)
-            
-            -- Update all item buttons in this bag
-            local bag = self:GetID()
-            local numSlots = GetContainerNumSlots(bag)
-            for slot = 1, numSlots do
-                local buttonName = "ContainerFrame" .. self:GetID() .. "Item" .. slot
-                local button = _G[buttonName]
-                if button then
-                    UpdateBagButton(button, bag, slot)
-                end
-            end
-            
-            return result
+    local proxy = CreateBagProxy(bag, parentFrame)
+    local name = "DCQoS_Item_" .. bag .. "_" .. slot
+    
+    local button = CreateFrame("Button", name, proxy, "ContainerFrameItemButtonTemplate")
+    button:SetID(slot)
+    button.bag = bag  -- Store bag ID for tooltip/click handling
+    
+    -- Setup click handlers (like Bagnon's item.lua)
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:RegisterForDrag("LeftButton")
+    
+    button:SetScript("OnClick", function(self, mouseButton)
+        local bagID = self.bag
+        local slotID = self:GetID()
+        local link = GetContainerItemLink(bagID, slotID)
+        
+        -- Handle modified clicks (Shift+Click for link, Ctrl+Click for dressing room)
+        if link and HandleModifiedItemClick(link) then
+            return
         end
-    end
-end
-
-local function HookAllContainerFrames()
-    for i = 1, NUM_CONTAINER_FRAMES or 5 do
-        local frame = _G["ContainerFrame" .. i]
-        if frame then
-            HookContainerFrame(frame)
-        end
-    end
-end
-
--- ============================================================
--- Search Box
--- ============================================================
-local searchBox = nil
-
-local function CreateSearchBox()
-    if searchBox then return searchBox end
-    
-    -- Create search box that appears above the backpack
-    searchBox = CreateFrame("EditBox", "DCQoSBagSearchBox", UIParent, "InputBoxTemplate")
-    searchBox:SetSize(120, 20)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetMaxLetters(50)
-    searchBox:Hide()
-    
-    -- Position above backpack when it opens
-    searchBox:SetScript("OnTextChanged", function(self)
-        searchText = self:GetText() or ""
-        -- Refresh all bag buttons
-        for i = 1, NUM_CONTAINER_FRAMES or 5 do
-            local frame = _G["ContainerFrame" .. i]
-            if frame and frame:IsShown() then
-                local bag = frame:GetID()
-                local numSlots = GetContainerNumSlots(bag)
-                for slot = 1, numSlots do
-                    local buttonName = "ContainerFrame" .. i .. "Item" .. slot
-                    local button = _G[buttonName]
-                    if button then
-                        UpdateBagButton(button, bag, slot)
-                    end
-                end
+        
+        -- Split stack with Shift+Click on stackable items
+        if IsShiftKeyDown() and not CursorHasItem() then
+            local texture, itemCount = GetContainerItemInfo(bagID, slotID)
+            if itemCount and itemCount > 1 then
+                OpenStackSplitFrame(itemCount, self, "BOTTOMRIGHT", "TOPRIGHT")
+                return
             end
         end
-    end)
-    
-    searchBox:SetScript("OnEscapePressed", function(self)
-        self:SetText("")
-        self:ClearFocus()
-    end)
-    
-    searchBox:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-    end)
-    
-    -- Add placeholder text
-    local placeholder = searchBox:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    placeholder:SetPoint("LEFT", 5, 0)
-    placeholder:SetText("Search...")
-    searchBox.placeholder = placeholder
-    
-    searchBox:SetScript("OnEditFocusGained", function(self)
-        self.placeholder:Hide()
-    end)
-    
-    searchBox:SetScript("OnEditFocusLost", function(self)
-        if self:GetText() == "" then
-            self.placeholder:Show()
+        
+        if mouseButton == "RightButton" then
+            UseContainerItem(bagID, slotID)
+        else
+            PickupContainerItem(bagID, slotID)
         end
     end)
     
-    return searchBox
+    button:SetScript("OnDragStart", function(self)
+        PickupContainerItem(self.bag, self:GetID())
+    end)
+    
+    button:SetScript("OnReceiveDrag", function(self)
+        PickupContainerItem(self.bag, self:GetID())
+    end)
+    
+    -- Stack split callback (called by StackSplitFrame)
+    button.SplitStack = function(self, split)
+        SplitContainerItem(self.bag, self:GetID(), split)
+    end
+    
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetBagItem(self.bag, self:GetID())
+        GameTooltip:Show()
+    end)
+    
+    button:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+    
+    itemButtons[bag][slot] = button
+    return button
 end
 
-local function PositionSearchBox()
-    if not searchBox then return end
+-- Update the item display on a button (texture, count, quality)
+local function UpdateButtonItem(button, bag, slot)
+    local texture, count, locked, quality, readable, lootable, link = GetContainerItemInfo(bag, slot)
     
-    -- Find the backpack frame
-    local backpack = ContainerFrame1
-    if backpack and backpack:IsShown() then
-        searchBox:ClearAllPoints()
-        searchBox:SetPoint("BOTTOMLEFT", backpack, "TOPLEFT", 10, 2)
-        searchBox:Show()
-    else
-        searchBox:Hide()
+    -- Set item texture
+    SetItemButtonTexture(button, texture)
+    
+    -- Set item count
+    SetItemButtonCount(button, count)
+    
+    -- Set locked state (grayed out)
+    SetItemButtonDesaturated(button, locked)
+    
+    -- Update cooldown
+    local cooldown = _G[button:GetName() .. "Cooldown"]
+    if cooldown then
+        local start, duration, enable = GetContainerItemCooldown(bag, slot)
+        CooldownFrame_SetTimer(cooldown, start, duration, enable)
+    end
+    
+    -- Update normal texture for empty slots
+    local normalTexture = _G[button:GetName() .. "NormalTexture"]
+    if normalTexture then
+        if texture then
+            normalTexture:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+        else
+            normalTexture:SetTexture("Interface\\Buttons\\UI-Quickslot")
+        end
     end
 end
 
+local function LayoutFrame(frameDefName)
+    local frame = frames[frameDefName]
+    if not frame then return end
+    
+    local def = FRAMES[frameDefName]
+    local settings = addon.settings.bags
+    local cols = settings[def.colsSetting] or 10
+    local size = 37
+    local spacing = 2
+    local padding = 10
+    
+    local col, row = 0, 0
+    local searchText = frame.searchBox:GetText()
+    
+    for _, bag in ipairs(def.bags) do
+        local numSlots = GetContainerNumSlots(bag)
+        for slot = 1, numSlots do
+            local button = GetOrCreateButton(bag, slot, frame)
+            button:SetParent(frame)
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT", frame, "TOPLEFT", padding + (col * (size + spacing)), -padding - 40 - (row * (size + spacing)))
+            button:Show()
+            
+            -- Update base item display (texture, count, cooldown)
+            UpdateButtonItem(button, bag, slot)
+            -- Update visual overlays (borders, glows, search)
+            UpdateButtonVisuals(button, bag, slot, searchText)
+            
+            col = col + 1
+            if col >= cols then
+                col = 0
+                row = row + 1
+            end
+        end
+    end
+    
+    if col == 0 then row = row - 1 end
+    local width = (cols * (size + spacing)) + (padding * 2) - spacing
+    local height = ((row + 1) * (size + spacing)) + padding + 40 + 5  -- Reduced bottom padding since info/money moved to top
+    
+    frame:SetSize(width, height)
+    
+    -- Update Info
+    if frame.infoText then
+        local free, total = 0, 0
+        for _, bag in ipairs(def.bags) do
+            local f, t = GetContainerNumFreeSlots(bag), GetContainerNumSlots(bag)
+            free = free + f
+            total = total + t
+        end
+        frame.infoText:SetText(string.format("Free: %d / %d", free, total))
+    end
+    
+    -- Update Money
+    if frameDefName == "inventory" and frame.moneyFrame then
+        MoneyFrame_Update(frame.moneyFrame:GetName(), GetMoney())
+    end
+end
+
+local function CreateBagFrame(frameDefName)
+    if frames[frameDefName] then return frames[frameDefName] end
+    
+    local def = FRAMES[frameDefName]
+    local f = CreateFrame("Frame", "DCQoS_" .. frameDefName, UIParent)
+    f:SetFrameStrata("HIGH")
+    f:SetToplevel(true)
+    f:EnableMouse(true)
+    f:SetMovable(true)
+    f:SetClampedToScreen(true)
+    
+    f:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    f:SetBackdropColor(0, 0, 0, 0.8)
+    f:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+    
+    f:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" then self:StartMoving() end
+    end)
+    f:SetScript("OnMouseUp", function(self) self:StopMovingOrSizing() end)
+    
+    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -2, -2)
+    
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 10, -10)
+    title:SetText(def.title)
+    
+    -- Search
+    local search = CreateFrame("EditBox", "DCQoS_"..frameDefName.."_Search", f, "InputBoxTemplate")
+    search:SetSize(120, 20)
+    search:SetPoint("TOPRIGHT", -30, -8)
+    search:SetAutoFocus(false)
+    search:SetScript("OnTextChanged", function(self)
+        LayoutFrame(frameDefName)
+    end)
+    search:SetScript("OnEscapePressed", function(self) self:ClearFocus() self:SetText("") end)
+    f.searchBox = search
+    
+    local ph = search:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    ph:SetPoint("LEFT", 5, 0)
+    ph:SetText("Search...")
+    search:SetScript("OnEditFocusGained", function() ph:Hide() end)
+    search:SetScript("OnEditFocusLost", function(self) if self:GetText()=="" then ph:Show() end end)
+    
+    -- Info (moved to top bar, next to title)
+    local info = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    info:SetPoint("LEFT", title, "RIGHT", 10, 0)
+    f.infoText = info
+    
+    -- Money (moved to top bar, anchored after info with fixed width spacing)
+    if frameDefName == "inventory" then
+        local money = CreateFrame("Frame", "DCQoS_MoneyFrame", f, "SmallMoneyFrameTemplate")
+        money:SetPoint("LEFT", info, "RIGHT", 15, 0)  -- Fixed position after info text
+        f.moneyFrame = money
+    end
+    
+    -- Position at bottom-right (like Blizzard bags)
+    f:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -20, 120)
+    f:Hide()
+    
+    -- Register for Escape key closing
+    tinsert(UISpecialFrames, f:GetName())
+    
+    frames[frameDefName] = f
+    return f
+end
+
 -- ============================================================
--- Item Tracking Events
+-- Default Frame Support (Fallback)
 -- ============================================================
-local function OnBagUpdate(bag)
-    -- Track new items
+local function UpdateDefaultContainerFrame(frame)
+    local settings = addon.settings.bags
+    if settings.oneBag then return end -- Don't touch if OneBag is on
+    
+    local bag = frame:GetID()
+    local name = frame:GetName()
+    
+    if not bag or not name then return end
+    
     local numSlots = GetContainerNumSlots(bag)
     for slot = 1, numSlots do
-        local itemLink = GetContainerItemLink(bag, slot)
-        local key = GetItemKey(bag, slot)
-        
-        -- Check if this is a new item (link changed and wasn't empty before)
-        -- This is simplified; a full implementation would track item IDs
-        if itemLink and not newItems[key] then
-            -- Could mark as new here, but need to distinguish from existing items
-            -- For now, mark items acquired during session as "new"
+        local button = _G[name .. "Item" .. slot]
+        if button then
+            UpdateButtonVisuals(button, bag, slot, "")
+        end
+    end
+end
+
+local function UpdateDefaultBankFrame()
+    local settings = addon.settings.bags
+    if settings.oneBag then return end
+    
+    local bag = -1
+    for slot = 1, 28 do
+        local button = _G["BankFrameItem" .. slot]
+        if button then
+            UpdateButtonVisuals(button, bag, slot, "")
         end
     end
 end
 
 -- ============================================================
--- Module Callbacks
+-- Event Handlers
+-- ============================================================
+local function OnBagUpdate(bag)
+    local settings = addon.settings.bags
+    
+    if settings.oneBag then
+        -- OneBag Mode
+        for name, def in pairs(FRAMES) do
+            for _, b in ipairs(def.bags) do
+                if b == bag then
+                    if frames[name] and frames[name]:IsShown() then
+                        LayoutFrame(name)
+                    end
+                    return
+                end
+            end
+        end
+    else
+        -- Default Mode
+        for i = 1, 13 do
+            local frame = _G["ContainerFrame" .. i]
+            if frame and frame:IsShown() and frame:GetID() == bag then
+                UpdateDefaultContainerFrame(frame)
+            end
+        end
+        if bag == -1 and BankFrame and BankFrame:IsShown() then
+            UpdateDefaultBankFrame()
+        end
+    end
+end
+
+local function OpenInventory()
+    if not addon.settings.bags.oneBag then return end
+    local f = CreateBagFrame("inventory")
+    f:Show()
+    LayoutFrame("inventory")
+    
+    -- Hide default bags
+    for i = 1, 13 do
+        local def = _G["ContainerFrame"..i]
+        if def then def:Hide() end
+    end
+end
+
+local function CloseInventory()
+    if frames.inventory then frames.inventory:Hide() end
+end
+
+local function OpenBank()
+    if not addon.settings.bags.oneBag then return end
+    local f = CreateBagFrame("bank")
+    f:Show()
+    LayoutFrame("bank")
+end
+
+local function CloseBank()
+    if frames.bank then frames.bank:Hide() end
+end
+
+-- ============================================================
+-- Module Lifecycle
 -- ============================================================
 function BagEnhancements.OnInitialize()
-    addon:Debug("BagEnhancements module initializing")
-    CreateSearchBox()
+    addon:Debug("BagEnhancements initialized")
 end
 
 function BagEnhancements.OnEnable()
-    addon:Debug("BagEnhancements module enabling")
+    local settings = addon.settings.bags
     
-    -- Hook container frames
-    HookAllContainerFrames()
-    
-    -- Create event handler
-    local eventFrame = CreateFrame("Frame")
-    eventFrame:RegisterEvent("BAG_UPDATE")
-    eventFrame:RegisterEvent("BAG_OPEN")
-    eventFrame:RegisterEvent("BAG_CLOSED")
-    eventFrame:RegisterEvent("ITEM_LOCK_CHANGED")
-    
-    eventFrame:SetScript("OnEvent", function(self, event, ...)
-        if event == "BAG_UPDATE" then
-            local bag = ...
-            OnBagUpdate(bag)
-            
-            -- Update bag buttons
-            for i = 1, NUM_CONTAINER_FRAMES or 5 do
-                local frame = _G["ContainerFrame" .. i]
-                if frame and frame:IsShown() and frame:GetID() == bag then
-                    local numSlots = GetContainerNumSlots(bag)
-                    for slot = 1, numSlots do
-                        local buttonName = "ContainerFrame" .. i .. "Item" .. slot
-                        local button = _G[buttonName]
-                        if button then
-                            UpdateBagButton(button, bag, slot)
-                        end
+    -- ============================================================
+    -- OneBag Mode: Replace bag functions (like Bagnon)
+    -- ============================================================
+    if settings.oneBag then
+        -- Store original functions
+        local oOpenBackpack = OpenBackpack
+        local oToggleBackpack = ToggleBackpack
+        local oToggleBag = ToggleBag
+        local oOpenAllBags = OpenAllBags
+        local oOpenBag = OpenBag
+        
+        -- Hide all default container frames
+        local function HideDefaultBags()
+            for i = 1, 13 do
+                local f = _G["ContainerFrame"..i]
+                if f then f:Hide() end
+            end
+        end
+        
+        -- Replace OpenBackpack
+        OpenBackpack = function()
+            if settings.oneBag then
+                OpenInventory()
+                HideDefaultBags()
+            else
+                oOpenBackpack()
+            end
+        end
+        
+        -- Replace ToggleBackpack
+        ToggleBackpack = function()
+            if settings.oneBag then
+                if frames.inventory and frames.inventory:IsShown() then
+                    CloseInventory()
+                else
+                    OpenInventory()
+                    HideDefaultBags()
+                end
+            else
+                oToggleBackpack()
+            end
+        end
+        
+        -- Replace ToggleBag
+        ToggleBag = function(bagSlot)
+            if settings.oneBag then
+                -- Check if it's an inventory bag (0-4)
+                local isInv = false
+                for _, b in ipairs(FRAMES.inventory.bags) do
+                    if b == bagSlot then isInv = true break end
+                end
+                
+                if isInv then
+                    if frames.inventory and frames.inventory:IsShown() then
+                        CloseInventory()
+                    else
+                        OpenInventory()
+                        HideDefaultBags()
                     end
+                else
+                    -- Bank bag, let it through for now
+                    oToggleBag(bagSlot)
                 end
+            else
+                oToggleBag(bagSlot)
             end
-        elseif event == "BAG_OPEN" then
-            PositionSearchBox()
-        elseif event == "BAG_CLOSED" then
-            -- Hide search if no bags are open
-            local anyOpen = false
-            for i = 1, NUM_CONTAINER_FRAMES or 5 do
-                local frame = _G["ContainerFrame" .. i]
-                if frame and frame:IsShown() then
-                    anyOpen = true
-                    break
+        end
+        
+        -- Replace OpenAllBags
+        OpenAllBags = function(force)
+            if settings.oneBag then
+                if force or not (frames.inventory and frames.inventory:IsShown()) then
+                    OpenInventory()
+                    HideDefaultBags()
+                else
+                    CloseInventory()
                 end
+            else
+                oOpenAllBags(force)
             end
-            if not anyOpen then
-                searchBox:Hide()
-                searchBox:SetText("")
-                searchText = ""
+        end
+        
+        -- Replace OpenBag
+        OpenBag = function(bagSlot)
+            if settings.oneBag then
+                -- Check if it's an inventory bag (0-4)
+                local isInv = false
+                for _, b in ipairs(FRAMES.inventory.bags) do
+                    if b == bagSlot then isInv = true break end
+                end
+                
+                if isInv then
+                    OpenInventory()
+                    HideDefaultBags()
+                else
+                    -- Bank bag
+                    oOpenBag(bagSlot)
+                end
+            else
+                oOpenBag(bagSlot)
             end
+        end
+        
+        -- Hook CloseAllBags (cannot replace, needed for combat/game menu)
+        hooksecurefunc("CloseAllBags", function()
+            if settings.oneBag then
+                CloseInventory()
+            end
+        end)
+        
+        -- Hook CloseBackpack
+        hooksecurefunc("CloseBackpack", function()
+            if settings.oneBag then
+                CloseInventory()
+            end
+        end)
+    end
+    
+    -- Default Frame Hooks (Fallback for non-OneBag mode)
+    hooksecurefunc("ContainerFrame_Update", function(frame)
+        if not settings.oneBag then
+            UpdateDefaultContainerFrame(frame)
         end
     end)
     
-    BagEnhancements.eventFrame = eventFrame
+    if BankFrame_UpdateItems then
+        hooksecurefunc("BankFrame_UpdateItems", function()
+            if not settings.oneBag then
+                UpdateDefaultBankFrame()
+            end
+        end)
+    end
     
-    -- Hook bag opening
-    hooksecurefunc("OpenBag", function()
-        PositionSearchBox()
-    end)
+    -- Events
+    local ev = CreateFrame("Frame")
+    ev:RegisterEvent("BAG_UPDATE")
+    ev:RegisterEvent("PLAYER_MONEY")
+    ev:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    ev:RegisterEvent("BANKFRAME_OPENED")
+    ev:RegisterEvent("BANKFRAME_CLOSED")
     
-    hooksecurefunc("OpenAllBags", function()
-        PositionSearchBox()
+    ev:SetScript("OnEvent", function(self, event, ...)
+        if event == "BAG_UPDATE" then
+            OnBagUpdate(...)
+        elseif event == "PLAYER_MONEY" then
+            if frames.inventory and frames.inventory:IsShown() then
+                MoneyFrame_Update(frames.inventory.moneyFrame:GetName(), GetMoney())
+            end
+        elseif event == "GET_ITEM_INFO_RECEIVED" then
+            if settings.oneBag then
+                if frames.inventory and frames.inventory:IsShown() then LayoutFrame("inventory") end
+                if frames.bank and frames.bank:IsShown() then LayoutFrame("bank") end
+            else
+                -- Refresh defaults
+                for i = 1, 13 do
+                    local f = _G["ContainerFrame"..i]
+                    if f and f:IsShown() then UpdateDefaultContainerFrame(f) end
+                end
+            end
+        elseif event == "BANKFRAME_OPENED" then
+            if settings.oneBag then
+                OpenBank()
+                OpenInventory()
+            end
+        elseif event == "BANKFRAME_CLOSED" then
+            if settings.oneBag then
+                CloseBank()
+                CloseInventory()
+            end
+        end
     end)
+    BagEnhancements.eventFrame = ev
+    
+    print("|cff00ff00DC-QoS:|r Bag Enhancements Loaded. OneBag Mode: " .. tostring(settings.oneBag))
 end
 
 function BagEnhancements.OnDisable()
-    addon:Debug("BagEnhancements module disabling")
-    
-    if BagEnhancements.eventFrame then
-        BagEnhancements.eventFrame:UnregisterAllEvents()
-    end
-    
-    if searchBox then
-        searchBox:Hide()
-    end
+    if frames.inventory then frames.inventory:Hide() end
+    if frames.bank then frames.bank:Hide() end
 end
 
 -- ============================================================
--- Settings Panel Creation
+-- Settings
 -- ============================================================
 function BagEnhancements.CreateSettings(parent)
     local settings = addon.settings.bags
+    local yOffset = -20
     
-    -- Title
-    local title = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Bag Enhancement Settings")
+    local function CreateCb(text, key)
+        local cb = addon:CreateCheckbox(parent)
+        cb:SetPoint("TOPLEFT", 16, yOffset)
+        cb.Text:SetText(text)
+        cb:SetChecked(settings[key])
+        cb:SetScript("OnClick", function(self)
+            addon:SetSetting("bags." .. key, self:GetChecked())
+            -- Force refresh
+            if key == "oneBag" then
+                ReloadUI() -- Safest way to switch modes
+            end
+        end)
+        yOffset = yOffset - 30
+        return cb
+    end
     
-    -- Description
-    local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    desc:SetText("Bagnon-inspired bag improvements including quality borders, search, and item highlighting.")
-    desc:SetWidth(parent:GetWidth() - 32)
-    desc:SetJustifyH("LEFT")
+    CreateCb("Enable OneBag View (Requires Reload)", "oneBag")
+    CreateCb("Show Quality Borders", "qualityBorders")
+    CreateCb("Dim Junk Items", "junkHighlight")
+    CreateCb("Show Item Level", "showIlvl")
+    CreateCb("Enable Search", "searchHighlight")
     
-    local yOffset = -70
-    
-    -- ============================================================
-    -- Enable Section
-    -- ============================================================
-    local enableCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-    enableCb:SetPoint("TOPLEFT", 16, yOffset)
-    enableCb.Text:SetText("Enable Bag Enhancements")
-    enableCb:SetChecked(settings.enabled)
-    enableCb:SetScript("OnClick", function(self)
-        addon:SetSetting("bags.enabled", self:GetChecked())
-    end)
-    yOffset = yOffset - 35
-    
-    -- ============================================================
-    -- Quality Borders Section
-    -- ============================================================
-    local borderHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    borderHeader:SetPoint("TOPLEFT", 16, yOffset)
-    borderHeader:SetText("Item Quality")
-    yOffset = yOffset - 25
-    
-    -- Quality Borders
-    local qualityCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-    qualityCb:SetPoint("TOPLEFT", 16, yOffset)
-    qualityCb.Text:SetText("Show Quality Borders (green+)")
-    qualityCb:SetChecked(settings.qualityBorders)
-    qualityCb:SetScript("OnClick", function(self)
-        addon:SetSetting("bags.qualityBorders", self:GetChecked())
-    end)
-    yOffset = yOffset - 25
-    
-    -- Junk Highlighting
-    local junkCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-    junkCb:SetPoint("TOPLEFT", 16, yOffset)
-    junkCb.Text:SetText("Dim Junk Items (gray)")
-    junkCb:SetChecked(settings.junkHighlight)
-    junkCb:SetScript("OnClick", function(self)
-        addon:SetSetting("bags.junkHighlight", self:GetChecked())
-    end)
-    yOffset = yOffset - 25
-    
-    -- Show Item Level
-    local ilvlCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-    ilvlCb:SetPoint("TOPLEFT", 16, yOffset)
-    ilvlCb.Text:SetText("Show Item Level on Items")
-    ilvlCb:SetChecked(settings.showIlvl)
-    ilvlCb:SetScript("OnClick", function(self)
-        addon:SetSetting("bags.showIlvl", self:GetChecked())
-    end)
-    yOffset = yOffset - 35
-    
-    -- ============================================================
-    -- New Items Section
-    -- ============================================================
-    local newHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    newHeader:SetPoint("TOPLEFT", 16, yOffset)
-    newHeader:SetText("New Items")
-    yOffset = yOffset - 25
-    
-    -- New Item Glow
-    local glowCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-    glowCb:SetPoint("TOPLEFT", 16, yOffset)
-    glowCb.Text:SetText("Glow on New Items")
-    glowCb:SetChecked(settings.newItemGlow)
-    glowCb:SetScript("OnClick", function(self)
-        addon:SetSetting("bags.newItemGlow", self:GetChecked())
-    end)
-    yOffset = yOffset - 35
-    
-    -- ============================================================
-    -- Search Section
-    -- ============================================================
-    local searchHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    searchHeader:SetPoint("TOPLEFT", 16, yOffset)
-    searchHeader:SetText("Search & Filter")
-    yOffset = yOffset - 25
-    
-    -- Search Highlight
-    local searchCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-    searchCb:SetPoint("TOPLEFT", 16, yOffset)
-    searchCb.Text:SetText("Enable Search Box")
-    searchCb:SetChecked(settings.searchHighlight)
-    searchCb:SetScript("OnClick", function(self)
-        addon:SetSetting("bags.searchHighlight", self:GetChecked())
-    end)
-    yOffset = yOffset - 25
-    
-    -- Fade Non-Match
-    local fadeCb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
-    fadeCb:SetPoint("TOPLEFT", 16, yOffset)
-    fadeCb.Text:SetText("Fade Non-Matching Items")
-    fadeCb:SetChecked(settings.fadeNonMatch)
-    fadeCb:SetScript("OnClick", function(self)
-        addon:SetSetting("bags.fadeNonMatch", self:GetChecked())
-    end)
-    
-    return yOffset - 50
+    return yOffset
 end
 
--- ============================================================
--- Register Module
--- ============================================================
 addon:RegisterModule("BagEnhancements", BagEnhancements)

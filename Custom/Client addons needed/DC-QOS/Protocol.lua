@@ -121,8 +121,17 @@ function protocol:SendJson(opcode, data)
         addon:Debug("Cannot send - protocol not connected")
         return false
     end
-    
-    self.DC:SendJson(self.MODULE_ID, opcode, data)
+
+    -- DC-AddonProtocol exposes SendJSON (capital JSON). Keep this wrapper name
+    -- for backwards-compat with the rest of DC-QOS.
+    if type(self.DC.SendJSON) == "function" then
+        self.DC:SendJSON(self.MODULE_ID, opcode, data)
+    elseif type(self.DC.SendJson) == "function" then
+        self.DC:SendJson(self.MODULE_ID, opcode, data)
+    else
+        addon:Debug("DCAddonProtocol missing SendJSON/SendJson")
+        return false
+    end
     return true
 end
 
