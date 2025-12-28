@@ -33,17 +33,24 @@ if ITEM_QUALITY_COLORS then
 	end
 end
 
--- Setting for showing Item IDs in tooltips (default: true)
-DC.showItemIDsInTooltips = true;
+-- Setting for showing Item IDs in tooltips 
+-- DISABLED: Now handled by DC-QoS addon (Tooltips.lua)
+-- DC.showItemIDsInTooltips = true;
+DC.showItemIDsInTooltips = false; -- DC-QoS handles this
 
 --[[=====================================================
-	ITEM ID TOOLTIP HELPER
-	Shows item ID on all item tooltips regardless of upgrade status
+	ITEM ID TOOLTIP HELPER (DEPRECATED)
+	Item ID display is now handled by DC-QoS addon.
+	This code remains for backwards compatibility but is disabled.
 =======================================================]]
 
 -- Helper function to add item ID line to any tooltip
--- This is called before upgrade info, so we check if we already added it
+-- DEPRECATED: DC-QoS Tooltips.lua now handles this - keeping for API compatibility
 local function DC_AddItemIDToTooltip(tooltip, itemId, itemLink)
+	-- Skip if DC-QoS is handling tooltips (preferred)
+	if DCQOS and DCQOS.settings and DCQOS.settings.tooltips and DCQOS.settings.tooltips.showItemId then
+		return false; -- DC-QoS will handle it
+	end
 	if not tooltip or not DC.showItemIDsInTooltips then
 		return false;
 	end

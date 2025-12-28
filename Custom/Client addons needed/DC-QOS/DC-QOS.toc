@@ -1,0 +1,24 @@
+## Interface: 30300
+## Title: |cff00ff00DC|r QoS - Quality of Service
+## Notes: Comprehensive Quality of Life improvements for DarkChaos-255
+## Author: DarkChaos Team
+## Version: 1.0.0
+## SavedVariables: DCQoSDB
+## Dependencies: DC-AddonProtocol
+## OptionalDeps: DC-AOESettings, DC-ItemUpgrade
+
+# Core Framework
+Core.lua
+Protocol.lua
+
+# Settings UI
+UI\SettingsPanel.lua
+
+# Feature Modules
+Modules\Tooltips.lua
+Modules\Automation.lua
+Modules\Chat.lua
+Modules\Interface.lua
+Modules\GTFO.lua
+Modules\ItemScore.lua
+Modules\BagEnhancements.lua

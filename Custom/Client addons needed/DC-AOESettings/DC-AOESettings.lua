@@ -37,6 +37,9 @@ addon.defaults = {
     autoVendorPoor = false,
     goldOnly = false,    -- Only loot gold (quest items still looted)
     debugMessages = false, -- Verbose debug messages (sync status etc)
+    -- Fast Looting settings (adapted from Leatrix Plus)
+    fastLoot = true,         -- Enable faster looting
+    fastLootDelay = 0.3,     -- Delay between loot attempts (seconds)
     -- Note: Range is controlled by server config, not per-player
 }
 
@@ -629,6 +632,26 @@ function addon:CreateOptionsPanel()
         xPos, yPos, "goldOnly")
     yPos = yPos - 40
     
+    -- Fast Loot Section Header
+    local fastLootHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    fastLootHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+    fastLootHeader:SetText("|cffffd700Fast Looting (Client-Side)|r")
+    yPos = yPos - 25
+    
+    -- Fast Loot Enable checkbox
+    local fastLootCB = self:CreateOptionsCheckbox(panel, "Enable Fast Looting", 
+        "Speed up looting by automatically clicking loot items. Works alongside AoE Loot.",
+        xPos, yPos, "fastLoot")
+    yPos = yPos - 30
+    
+    -- Fast Loot Info
+    local fastLootInfo = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    fastLootInfo:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    fastLootInfo:SetWidth(300)
+    fastLootInfo:SetJustifyH("LEFT")
+    fastLootInfo:SetText("|cff888888Automatically loots items when you open a corpse. Works with Auto-Loot enabled.|r")
+    yPos = yPos - 30
+
     -- Minimum Quality Label
     local qualityLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     qualityLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
@@ -890,7 +913,7 @@ function addon:CreateMainFrame()
     -- Create base frame without template (3.3.5a doesn't have BasicFrameTemplateWithInset)
     local frame = CreateFrame("Frame", "DCAoELootSettingsFrame", UIParent)
     frame:SetWidth(350)
-    frame:SetHeight(370)
+    frame:SetHeight(430)  -- Increased height for Fast Loot section
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -979,8 +1002,23 @@ function addon:CreateMainFrame()
             self:SaveSettingsLocal()
             self:SyncSettingToServer("goldOnly", checked)
         end)
-    yPos = yPos - 40
+    yPos = yPos - 35
     
+    -- Fast Loot Section
+    local fastLootLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    fastLootLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", xPos, yPos)
+    fastLootLabel:SetText("|cffffd700Fast Looting:|r")
+    yPos = yPos - 25
+    
+    -- Fast Loot checkbox
+    self.checkboxes.fastLoot = self:CreateCheckbox(frame, "Enable Fast Looting (Client-Side)", xPos, yPos,
+        function(checked) 
+            self.settings.fastLoot = checked 
+            self:Confirm("Fast Looting", checked)
+            self:SaveSettingsLocal()
+        end)
+    yPos = yPos - 30
+
     -- Minimum Quality dropdown label
     local qualityLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     qualityLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", xPos, yPos)
@@ -1091,6 +1129,9 @@ function addon:UpdateUI()
     end
     if self.checkboxes.goldOnly then
         self.checkboxes.goldOnly:SetChecked(self.settings.goldOnly)
+    end
+    if self.checkboxes.fastLoot then
+        self.checkboxes.fastLoot:SetChecked(self.settings.fastLoot)
     end
     
     self:UpdateQualityButtons()
@@ -1227,3 +1268,157 @@ end
 
 -- Initialize on load
 DCAoELootSettings:Initialize()
+
+-- ============================================================
+-- FAST LOOTING SYSTEM (Adapted from Leatrix Plus)
+-- ============================================================
+-- Speeds up looting by automatically clicking loot buttons
+-- Works with both regular looting and AoE loot
+-- ============================================================
+
+do
+    local addon = DCAoELootSettings
+    
+    -- Fast loot state
+    local fastLootFrame = CreateFrame("Frame", "DCAoEFastLootFrame", UIParent)
+    local isLooting = false
+    local lootDelay = 0
+    local lastLootTime = 0
+    
+    -- Sound files for errors
+    local errorSounds = {
+        ["Interface\\AddOns\\DC-AOESettings\\Sounds\\error.ogg"] = true,
+    }
+    
+    -- Function to perform fast looting
+    local function ProcessLoot()
+        local settings = addon.settings
+        if not settings.fastLoot then return end
+        
+        -- Check if enough time has passed since last loot
+        local now = GetTime()
+        local delay = settings.fastLootDelay or 0.3
+        if now - lastLootTime < delay then
+            return
+        end
+        lastLootTime = now
+        
+        -- Get number of loot items
+        local numItems = GetNumLootItems()
+        if numItems == 0 then return end
+        
+        -- Check if we have bag space
+        local hasBagSpace = false
+        for bag = 0, 4 do
+            local numFreeSlots = GetContainerNumFreeSlots(bag)
+            if numFreeSlots and numFreeSlots > 0 then
+                hasBagSpace = true
+                break
+            end
+        end
+        
+        -- If no bag space, only loot gold/currency
+        if not hasBagSpace then
+            for i = numItems, 1, -1 do
+                local lootIcon, lootName, lootQuantity, currencyID, lootQuality, locked, isQuestItem, questId, isActive = GetLootSlotInfo(i)
+                local slotType = GetLootSlotType(i)
+                
+                -- Only loot currency (gold) if no bag space
+                if slotType == LOOT_SLOT_MONEY or currencyID then
+                    LootSlot(i)
+                end
+            end
+        else
+            -- Normal fast looting - loot all items
+            for i = numItems, 1, -1 do
+                local lootIcon, lootName, lootQuantity, currencyID, lootQuality, locked, isQuestItem, questId, isActive = GetLootSlotInfo(i)
+                
+                -- Skip locked items (need roll, etc)
+                if not locked then
+                    LootSlot(i)
+                end
+            end
+        end
+    end
+    
+    -- Event handler for loot window opening
+    fastLootFrame:RegisterEvent("LOOT_READY")
+    fastLootFrame:RegisterEvent("LOOT_OPENED")
+    fastLootFrame:RegisterEvent("LOOT_CLOSED")
+    
+    fastLootFrame:SetScript("OnEvent", function(self, event, ...)
+        local settings = addon.settings
+        if not settings.fastLoot then return end
+        
+        if event == "LOOT_READY" or event == "LOOT_OPENED" then
+            -- Auto loot is handled by WoW's auto-loot setting
+            -- We just speed up the looting process
+            isLooting = true
+            
+            -- Process loot immediately
+            ProcessLoot()
+            
+        elseif event == "LOOT_CLOSED" then
+            isLooting = false
+        end
+    end)
+    
+    -- OnUpdate for continuous looting (some items may not loot on first try)
+    local updateElapsed = 0
+    fastLootFrame:SetScript("OnUpdate", function(self, elapsed)
+        if not isLooting then return end
+        if not addon.settings.fastLoot then return end
+        
+        updateElapsed = updateElapsed + elapsed
+        if updateElapsed >= (addon.settings.fastLootDelay or 0.3) then
+            updateElapsed = 0
+            ProcessLoot()
+        end
+    end)
+    
+    -- Function to add fast loot UI to the options panel
+    function addon:AddFastLootOptions(panel, yPos, xPos)
+        -- Fast Loot Section Header
+        local fastLootHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        fastLootHeader:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+        fastLootHeader:SetText("|cffffd700Fast Looting|r")
+        yPos = yPos - 25
+        
+        -- Fast Loot Enable checkbox
+        local fastLootCB = self:CreateOptionsCheckbox(panel, "Enable Fast Looting", 
+            "Speed up looting by automatically clicking loot items.",
+            xPos, yPos, "fastLoot")
+        yPos = yPos - 30
+        
+        -- Fast Loot Delay slider
+        local delayLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        delayLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos, yPos)
+        delayLabel:SetText("Loot Speed:")
+        
+        local delaySlider = CreateFrame("Slider", "DCAoEFastLootDelaySlider", panel, "OptionsSliderTemplate")
+        delaySlider:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 80, yPos + 5)
+        delaySlider:SetWidth(150)
+        delaySlider:SetMinMaxValues(0.1, 0.5)
+        delaySlider:SetValueStep(0.05)
+        delaySlider:SetObeyStepOnDrag(true)
+        delaySlider:SetValue(self.settings.fastLootDelay or 0.3)
+        
+        local low = _G["DCAoEFastLootDelaySliderLow"]
+        local high = _G["DCAoEFastLootDelaySliderHigh"]
+        local text = _G["DCAoEFastLootDelaySliderText"]
+        
+        if low then low:SetText("Fast") end
+        if high then high:SetText("Slow") end
+        if text then text:SetText(string.format("%.2fs", self.settings.fastLootDelay or 0.3)) end
+        
+        delaySlider:SetScript("OnValueChanged", function(self, value)
+            addon.settings.fastLootDelay = value
+            addon:SaveSettingsLocal()
+            if text then text:SetText(string.format("%.2fs", value)) end
+        end)
+        
+        return yPos - 40
+    end
+    
+    addon:Print("Fast Looting system loaded", false)
+end

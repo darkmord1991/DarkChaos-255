@@ -1,5 +1,14 @@
 -- DC-Welcome: NPC tooltip extension (Entry + Spawn ID)
--- Adds two lines to unit tooltips for creatures/vehicles.
+-- DEPRECATED: This functionality is now handled by DC-QoS addon (Tooltips.lua)
+-- This file is kept for backwards compatibility but will check for DC-QoS first.
+
+-- Check if DC-QoS is handling NPC tooltips - if so, skip all our code
+local function IsDCQosHandlingNpcTooltips()
+    if DCQOS and DCQOS.settings and DCQOS.settings.tooltips and DCQOS.settings.tooltips.showNpcId then
+        return true
+    end
+    return false
+end
 
 local DC = _G.DCAddonProtocol
 local npcInfoCache = {}
@@ -7,6 +16,9 @@ local pendingRequests = {}
 local UpdateTargetInfo -- Forward declaration
 
 function DCWelcome.GetNPCInfo(guid)
+    -- Skip if DC-QoS is handling NPC tooltips
+    if IsDCQosHandlingNpcTooltips() then return end
+    
     -- Re-check global if nil (in case of load order issues)
     if not DC then DC = _G.DCAddonProtocol end
     
@@ -162,6 +174,10 @@ local function ParseNPCIdsFromGuid(guid)
 end
 
 local function ShouldShowNpcTooltip()
+    -- Skip entirely if DC-QoS is handling NPC tooltips
+    if IsDCQosHandlingNpcTooltips() then
+        return false
+    end
     if type(DCWelcomeDB) == "table" and DCWelcomeDB.showTooltips == false then
         return false
     end
@@ -169,6 +185,9 @@ local function ShouldShowNpcTooltip()
 end
 
 local function AddNpcLines(tooltip, unit)
+    -- Skip if DC-QoS is handling NPC tooltips
+    if IsDCQosHandlingNpcTooltips() then return end
+    
     if not tooltip or not unit or not UnitExists(unit) then
         return
     end

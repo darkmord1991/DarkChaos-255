@@ -80,6 +80,7 @@ namespace DCAddon
         constexpr const char* EVENTS        = "EVNT";   // Dynamic events (invasions, rifts, etc.)
         constexpr const char* WORLD         = "WRLD";   // World Content (world bosses, hotspots, rares)
         constexpr const char* COLLECTION    = "COLL";   // Collection System (mounts, pets, toys, transmog, etc.)
+        constexpr const char* QOS           = "QOS";    // Quality of Service (QoL settings, tooltips, automation)
     }
 
     // ========================================================================
