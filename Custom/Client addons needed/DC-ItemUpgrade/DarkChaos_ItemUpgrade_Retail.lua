@@ -516,7 +516,8 @@ function DarkChaos_ItemUpgrade_RequestCurrencies(force)
 	end
 
 	lastCurrencyRequestTime = now;
-	SendChatMessage(".dcupgrade init", "SAY");
+	lastCurrencyRequestTime = now;
+	DC.RequestCurrencySync();
 end
 
 DarkChaos_ItemUpgrade_RequestItemInfo = function()
@@ -1347,8 +1348,9 @@ function DC.GetScannedItems()
 	for _, slotID in ipairs(EQUIPMENT_SLOTS) do
 		local link = GetInventoryItemLink("player", slotID);
 		if link then
-			local name, _, quality = GetItemInfo(link);
-			if quality and quality >= 2 then -- Only uncommon and above
+			local name, _, quality, _, _, _, _, _, equipLoc = GetItemInfo(link);
+			-- Include common+ equipment (tier-1 items can be common). Avoid caching non-equippable items.
+			if quality and quality >= 1 and equipLoc and equipLoc ~= "" then
 				local serverBag = GetServerBagFromClient(BAG_EQUIPPED);
 				local serverSlot = GetServerSlotFromClient(BAG_EQUIPPED, slotID);
 				local key = BuildLocationKey(serverBag, serverSlot);
@@ -1373,8 +1375,9 @@ function DC.GetScannedItems()
 		for slot = 1, GetContainerNumSlots(bag) do
 			local link = GetContainerItemLink(bag, slot);
 			if link then
-				local name, _, quality = GetItemInfo(link);
-				if quality and quality >= 2 then -- Only uncommon and above
+				local name, _, quality, _, _, _, _, _, equipLoc = GetItemInfo(link);
+				-- Include common+ equipment (tier-1 items can be common). Avoid caching non-equippable items.
+				if quality and quality >= 1 and equipLoc and equipLoc ~= "" then
 					local serverBag = GetServerBagFromClient(bag);
 					local serverSlot = GetServerSlotFromClient(bag, slot);
 					local key = BuildLocationKey(serverBag, serverSlot);
@@ -1587,8 +1590,8 @@ function DarkChaos_ItemUpgrade_StartNextQuery()
 	end
 
 	DC.queryInFlight = nextRequest;
-	DC.Debug("StartNextQuery: Sending query - " .. nextRequest.command);
-	SendChatMessage(nextRequest.command, "SAY");
+	DC.Debug("StartNextQuery: Sending query for " .. nextRequest.key);
+	DC.RequestItemInfo(nextRequest.serverBag, nextRequest.serverSlot);
 end
 
 function DarkChaos_ItemUpgrade_CompleteQuery()
@@ -1618,7 +1621,7 @@ function DarkChaos_ItemUpgrade_QueueQuery(serverBag, serverSlot, context)
 		key = key,
 		serverBag = serverBag,
 		serverSlot = serverSlot,
-		command = string.format(".dcupgrade query %d %d", serverBag, serverSlot),
+		-- command removed (using direct call in StartNextQuery)
 		contexts = { context },
 		type = "item",
 	};
@@ -1720,14 +1723,19 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	end
 
 	local current = tonumber(data.currentUpgrade) or 0;
+	local tier = tonumber(data.tier) or 0;
 	local maxUpgrade = tonumber(data.maxUpgrade) or 0;
+	-- Some server responses omit maxUpgrade for tier-1 items; fall back to tier defaults.
+	if maxUpgrade <= 0 and tier > 0 and DC.GetMaxUpgradeLevelForTier then
+		maxUpgrade = tonumber(DC.GetMaxUpgradeLevelForTier(tier)) or 0;
+	end
 	if maxUpgrade <= 0 and current <= 0 then
 		return;
 	end
 	local statMultiplier = data.statMultiplier or 1.0;
 	local totalBonus = (statMultiplier - 1.0) * 100;
 	local currentEntry = data.currentEntry or data.baseEntry or 0;
-	local tier = data.tier or 0;
+	-- tier is computed above
 	local HEIRLOOM_SHIRT_ENTRY = 300365;
 	local isHeirloom = (currentEntry == HEIRLOOM_SHIRT_ENTRY) or (data.baseEntry == HEIRLOOM_SHIRT_ENTRY);
 
@@ -3168,8 +3176,8 @@ local function IsUpgradeableItem(link)
 		return false;
 	end
 	
-	-- Must be at least uncommon (green) quality
-	if not quality or quality < 2 then
+	-- Tier-1 items can be common (white). Exclude poor (gray) and unknown.
+	if not quality or quality < 1 then
 		return false;
 	end
 	
@@ -3420,9 +3428,16 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 	
 	-- Use different command for heirloom shirt upgrades (includes package ID)
 	if isHeirloomShirt then
-		command = string.format(".dcheirloom upgrade %d %d %d %d", serverBag, serverSlot, targetLevel, packageId);
+		if DCProtocol and DC.useDCProtocol then
+			local data = string.format("%d|%d|%d|%d", serverBag, serverSlot, targetLevel, packageId)
+			DCProtocol:Send("UPG", 0x07, data) -- CMSG_HEIRLOOM_UPGRADE
+			DC.Debug("Sending heirloom upgrade: " .. data)
+		else
+			command = string.format(".dcheirloom upgrade %d %d %d %d", serverBag, serverSlot, targetLevel, packageId);
+			SendChatMessage(command, "SAY");
+		end
 	else
-		command = string.format(".dcupgrade perform %d %d %d", serverBag, serverSlot, targetLevel);
+		DC.RequestUpgrade(serverBag, serverSlot, targetLevel);
 	end
 	
 	DC.pendingUpgrade = {
@@ -3438,7 +3453,7 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 			tokens = totals.tokens or requiredTokens,
 		},
 	};
-	DC.Debug("Sending perform command: "..command);
+	-- DC.Debug("Sending perform command: "..command); -- Legacy debug
 	local itemLabel = DC.currentItem.link or DC.currentItem.name or "item";
 	local projectedTokens = (totals.tokens or 0) > 0 and totals.tokens or requiredTokens;
 	DC.Debug(string.format("Upgrading %s to level %d/%d...", itemLabel, targetLevel, maxUpgrade));
@@ -3454,7 +3469,7 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 	if singleCost and (singleCost.tokens or 0) > 0 then
 		DC.Debug(string.format("Immediate cost for this step: %d Tokens", singleCost.tokens));
 	end
-	SendChatMessage(command, "SAY");
+	-- SendChatMessage(command, "SAY"); -- Moved inside block above
 end
 
 function DarkChaos_ItemUpgrade_CancelButton_OnClick(self)
@@ -3589,9 +3604,20 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	pooledItem.level = level;
 	pooledItem.baseLevel = level;
 	pooledItem.upgradedLevel = level;
-	pooledItem.tier = 1;
+	
+	-- SPECIAL HANDLING: Heirloom Adventurer's Shirt (300365)
+	-- Force tier 3 with 15 max levels immediately for UI responsiveness
+	local HEIRLOOM_SHIRT_ID = 300365;
+	if itemID == HEIRLOOM_SHIRT_ID then
+		pooledItem.tier = 3;  -- TIER_HEIRLOOM
+		pooledItem.maxUpgrade = 15;
+		DC.Debug("SelectItemBySlot: Initialized heirloom shirt with tier 3, max 15 levels");
+	else
+		pooledItem.tier = 1;
+		pooledItem.maxUpgrade = DC.GetMaxUpgradeLevelForTier(1);  -- Default to tier 1, will be updated when data arrives
+	end
+	
 	pooledItem.currentUpgrade = 0;
-	pooledItem.maxUpgrade = DC.GetMaxUpgradeLevelForTier(1);  -- Default to tier 1, will be updated when data arrives
 	pooledItem.statMultiplier = GetStatMultiplierForLevel(0, pooledItem.tier);
 	pooledItem.ilevelStep = GetItemLevelBonus(1, pooledItem.tier);
 	pooledItem.statPerLevel = GetStatBonusPercent(1, pooledItem.tier) - GetStatBonusPercent(0, pooledItem.tier);
@@ -3626,8 +3652,12 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	local HEIRLOOM_SHIRT_ID = 300365;
 	if itemID == HEIRLOOM_SHIRT_ID then
 		DC.Debug("SelectItemBySlot: Sending heirloom query for item 300365");
-		local heirloomCmd = string.format(".dcheirloom query %d %d", serverBag, serverSlot);
-		SendChatMessage(heirloomCmd, "SAY");
+		if DCProtocol and DC.useDCProtocol then
+			DCProtocol:Send("UPG", 0x06, string.format("%d|%d", serverBag, serverSlot)) -- CMSG_HEIRLOOM_QUERY
+		else
+			local heirloomCmd = string.format(".dcheirloom query %d %d", serverBag, serverSlot);
+			SendChatMessage(heirloomCmd, "SAY");
+		end
 	end
 	
 	DarkChaos_ItemUpgrade_UpdateUI();

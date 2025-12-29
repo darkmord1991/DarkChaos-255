@@ -152,20 +152,7 @@ namespace
         LOG_DEBUG("server.scripts", "DC-Leaderboards: All caches cleared");
     }
 
-    // Clear cache for a specific category
-    void ClearCategoryCache(const std::string& category)
-    {
-        std::lock_guard<std::mutex> lock(g_cacheMutex);
-        auto it = g_leaderboardCache.begin();
-        while (it != g_leaderboardCache.end())
-        {
-            if (it->first.rfind(category + "_", 0) == 0)
-                it = g_leaderboardCache.erase(it);
-            else
-                ++it;
-        }
-        LOG_DEBUG("server.scripts", "DC-Leaderboards: Cache cleared for category {}", category);
-    }
+
 
     // Forward declarations
     uint32 GetCurrentSeasonId();

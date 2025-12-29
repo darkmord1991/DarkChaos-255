@@ -266,16 +266,31 @@ function LocationPlugin:OnUpdate(elapsed)
     self._subzone = GetSubZoneText() or ""
     
     -- Get coordinates (3.3.5a method)
-    -- First set map to current zone for accurate coordinates
-    SetMapToCurrentZone()
-    local x, y = GetPlayerMapPosition("player")
-    
-    -- Fallback: if coordinates are 0,0, try world map coordinates
-    if (not x or x == 0) and (not y or y == 0) then
-        -- Try using WorldMapFrame if available
-        if WorldMapFrame and WorldMapFrame:IsShown() then
-            x, y = GetPlayerMapPosition("player")
+    -- In WoW 3.3.5, GetPlayerMapPosition() often needs the internal map state
+    -- to be set to the player's current zone. HOWEVER, calling SetMapToCurrentZone()
+    -- while the world map is open will hijack the user's map browsing (zoom-out/planning).
+    -- So: only set the map when the world map is CLOSED, and restore afterwards.
+    local worldMapShown = WorldMapFrame and WorldMapFrame:IsShown()
+    local previousMapId
+    local didChangeMap = false
+    if not worldMapShown and SetMapToCurrentZone then
+        if GetCurrentMapAreaID then
+            previousMapId = GetCurrentMapAreaID()
         end
+        SetMapToCurrentZone()
+        didChangeMap = true
+    end
+
+    local x, y = GetPlayerMapPosition("player")
+
+    if didChangeMap and previousMapId and SetMapByID then
+        SetMapByID(previousMapId)
+    end
+    
+    -- Fallback: if coordinates are 0,0 and the world map is open, re-read once.
+    -- (We still don't change map state here.)
+    if (not x or x == 0) and (not y or y == 0) and worldMapShown then
+        x, y = GetPlayerMapPosition("player")
     end
     
     self._x = x or 0

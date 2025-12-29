@@ -410,28 +410,34 @@ static const std::map<uint8, ClassGearSet> TEST_GEAR_SETS = {
 // Factory Function Implementations (Optimized for Singleton Access)
 // =====================================================================
 
-ArtifactMasteryManager* GetArtifactMasteryManager()
+namespace DarkChaos
 {
-    static ArtifactMasteryManagerImpl instance;
-    return &instance;
-}
+    namespace ItemUpgrade
+    {
+        ArtifactMasteryManager* GetArtifactMasteryManager()
+        {
+            static ArtifactMasteryManagerImpl instance;
+            return &instance;
+        }
 
-LevelCapManager* GetLevelCapManager()
-{
-    static LevelCapManagerImpl instance;
-    return &instance;
-}
+        LevelCapManager* GetLevelCapManager()
+        {
+            static LevelCapManagerImpl instance;
+            return &instance;
+        }
 
-CostScalingManager* GetCostScalingManager()
-{
-    static CostScalingManagerImpl instance;
-    return &instance;
-}
+        CostScalingManager* GetCostScalingManager()
+        {
+            static CostScalingManagerImpl instance;
+            return &instance;
+        }
 
-TierProgressionManager* GetTierProgressionManager()
-{
-    static TierProgressionManager instance;
-    return &instance;
+        TierProgressionManager* GetTierProgressionManager()
+        {
+            static TierProgressionManager instance;
+            return &instance;
+        }
+    }
 }
 
 // =====================================================================

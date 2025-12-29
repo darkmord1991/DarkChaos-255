@@ -25,6 +25,15 @@ namespace DarkChaos
         namespace UI
         {
             // =====================================================================
+            // HEIRLOOM CONSTANTS
+            // =====================================================================
+            constexpr uint32 HEIRLOOM_SHIRT_ENTRY = 300365;
+            constexpr uint32 HEIRLOOM_MAX_PACKAGE_ID = 12;
+            constexpr uint32 HEIRLOOM_MAX_LEVEL = 15;
+            constexpr uint32 HEIRLOOM_ENCHANT_BASE_ID = 900000;
+            constexpr uint32 HEIRLOOM_TIER = 3;
+
+            // =====================================================================
             // COLOR CODES FOR WoW CHAT
             // =====================================================================
 
@@ -274,6 +283,59 @@ namespace DarkChaos
                     ss << "  " << COLOR_GOLD << "Essence: " << FormatCurrency(essenceCost) << COLOR_RESET;
 
                 return ss.str();
+            }
+
+            /**
+             * Translates addon-specific bag/slot IDs to server-side bag/slot.
+             * @param extBag Bag ID from addon (0-11, where 0=backpack, 1-4=bags, 5-11=bank)
+             * @param extSlot Slot ID from addon (0-indexed)
+             * @param bagOut Server bag ID
+             * @param slotOut Server slot ID
+             * @return True if translation was successful
+             */
+            inline bool TranslateAddonBagSlot(uint32 extBag, uint32 extSlot, uint8& bagOut, uint8& slotOut)
+            {
+                if (extSlot > 255)
+                    return false;
+
+                // Handle server-side bag constants passed directly
+                if (extBag == 255 /*INVENTORY_SLOT_BAG_0*/ ||
+                    (extBag >= 19 && extBag < 23) /*INVENTORY_SLOT_BAG_START..END*/ ||
+                    (extBag >= 67 && extBag < 74) /*BANK_SLOT_BAG_START..END*/)
+                {
+                    bagOut = static_cast<uint8>(extBag);
+                    slotOut = static_cast<uint8>(extSlot);
+                    return true;
+                }
+
+                if (extBag == 0)
+                {
+                    // Backpack
+                    uint32 const backpackSlots = 16; // INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START
+                    if (extSlot >= backpackSlots)
+                        return false;
+                    bagOut = 255; // INVENTORY_SLOT_BAG_0
+                    slotOut = static_cast<uint8>(23 + extSlot); // INVENTORY_SLOT_ITEM_START + extSlot
+                    return true;
+                }
+
+                if (extBag >= 1 && extBag <= 4)
+                {
+                    // Bags 1-4
+                    bagOut = static_cast<uint8>(19 + (extBag - 1)); // INVENTORY_SLOT_BAG_START + (extBag - 1)
+                    slotOut = static_cast<uint8>(extSlot);
+                    return true;
+                }
+
+                if (extBag >= 5 && extBag <= 11)
+                {
+                    // Bank bags 1-7 (addon uses 5-11)
+                    bagOut = static_cast<uint8>(67 + (extBag - 5)); // BANK_SLOT_BAG_START + (extBag - 5)
+                    slotOut = static_cast<uint8>(extSlot);
+                    return true;
+                }
+
+                return false;
             }
 
         } // namespace UI

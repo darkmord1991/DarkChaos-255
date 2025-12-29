@@ -182,8 +182,9 @@ function DC.GetScannedItems()
 	for _, slotID in ipairs(EQUIPMENT_SLOTS) do
 		local link = GetInventoryItemLink("player", slotID);
 		if link then
-			local name, _, quality = GetItemInfo(link);
-			if quality and quality >= 2 then -- Only uncommon and above
+			local name, _, quality, _, _, _, _, _, equipLoc = GetItemInfo(link);
+			-- Include common+ equipment (tier-1 items can be common). Avoid caching non-equippable items.
+			if quality and quality >= 1 and equipLoc and equipLoc ~= "" then
 				local serverBag = DC.GetServerBagFromClient(BAG_EQUIPPED);
 				local serverSlot = DC.GetServerSlotFromClient(BAG_EQUIPPED, slotID);
 				local key = DC.BuildLocationKey(serverBag, serverSlot);
@@ -208,8 +209,9 @@ function DC.GetScannedItems()
 		for slot = 1, GetContainerNumSlots(bag) do
 			local link = GetContainerItemLink(bag, slot);
 			if link then
-				local name, _, quality = GetItemInfo(link);
-				if quality and quality >= 2 then -- Only uncommon and above
+				local name, _, quality, _, _, _, _, _, equipLoc = GetItemInfo(link);
+				-- Include common+ equipment (tier-1 items can be common). Avoid caching non-equippable items.
+				if quality and quality >= 1 and equipLoc and equipLoc ~= "" then
 					local serverBag = DC.GetServerBagFromClient(bag);
 					local serverSlot = DC.GetServerSlotFromClient(bag, slot);
 					local key = DC.BuildLocationKey(serverBag, serverSlot);

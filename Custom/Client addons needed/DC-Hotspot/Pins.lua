@@ -45,15 +45,18 @@ local function ActiveWorldMapId()
                 return mapId
             end
         end
-        if WorldMapFrame.mapID and WorldMapFrame.mapID ~= 0 then
-            return WorldMapFrame.mapID
-        end
     end
     if GetCurrentMapAreaID then
         local mapId = GetCurrentMapAreaID()
         if mapId and mapId ~= 0 then
             return mapId
         end
+    end
+    -- Some client builds expose WorldMapFrame.mapID but (depending on UI/mods)
+    -- it can resolve to continent/world IDs (e.g. 1/571) even when zoomed into a zone.
+    -- Only use it as a last resort.
+    if WorldMapFrame and WorldMapFrame.mapID and WorldMapFrame.mapID ~= 0 then
+        return WorldMapFrame.mapID
     end
     return nil
 end
@@ -176,10 +179,6 @@ local CONTINENT_MAP_IDS = {
     [14] = true,   -- Eastern Kingdoms continent view
     [466] = true,  -- Outland continent view
     [485] = true,  -- Northrend continent view
-    -- Also include raw server continent IDs as fallback
-    [1] = true,    -- Kalimdor server ID
-    [530] = true,  -- Outland server ID  
-    [571] = true,  -- Northrend server ID
 }
 
 local function HotspotMatchesMap(hotspot, mapId, showAll)
@@ -304,13 +303,12 @@ local function PlayerNormalizedPosition(state)
     end
     if GetPlayerMapPosition then
         local worldMapShown = WorldMapFrame and WorldMapFrame:IsShown()
-        local lockMap = true
-        if state and state.db and state.db.lockWorldMap ~= nil then
-            lockMap = state.db.lockWorldMap
-        end
         local previousMapId
         local shouldRestore = false
-        if SetMapToCurrentZone and (not worldMapShown or not lockMap) then
+        -- Never change the viewed world map while it is open.
+        -- In WoW 3.3.5, GetPlayerMapPosition() often requires the internal map state to be set
+        -- to the player's current zone; we do that ONLY when the world map is closed.
+        if SetMapToCurrentZone and not worldMapShown then
             if worldMapShown and GetCurrentMapAreaID then
                 previousMapId = GetCurrentMapAreaID()
                 shouldRestore = true

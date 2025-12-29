@@ -20,62 +20,14 @@
 #include "SpellMgr.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeMechanics.h"
+#include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
 
 namespace DCAddon
 {
 namespace Upgrade
 {
-    // Constants
-    constexpr uint32 HEIRLOOM_SHIRT_ENTRY = 300365;
-    constexpr uint32 HEIRLOOM_MAX_PACKAGE_ID = 12;
-    constexpr uint32 HEIRLOOM_MAX_LEVEL = 15;
-    constexpr uint32 HEIRLOOM_ENCHANT_BASE_ID = 900000;
-    constexpr uint32 HEIRLOOM_TIER = 3;
-
-    // Player package selections (migrated from itemupgrade_communication.lua)
-    static std::unordered_map<uint32, uint32> s_PlayerPackageSelections;
-
-    // Translate addon bag/slot to server format
-    static bool TranslateAddonBagSlot(uint32 extBag, uint32 extSlot, uint8& bagOut, uint8& slotOut)
-    {
-        if (extSlot > 255)
-            return false;
-
-        if (extBag == INVENTORY_SLOT_BAG_0 ||
-            (extBag >= INVENTORY_SLOT_BAG_START && extBag < INVENTORY_SLOT_BAG_END) ||
-            (extBag >= BANK_SLOT_BAG_START && extBag < BANK_SLOT_BAG_END))
-        {
-            bagOut = static_cast<uint8>(extBag);
-            slotOut = static_cast<uint8>(extSlot);
-            return true;
-        }
-
-        if (extBag == 0)
-        {
-            uint32 const backpackSlots = INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START;
-            if (extSlot >= backpackSlots)
-                return false;
-            bagOut = INVENTORY_SLOT_BAG_0;
-            slotOut = static_cast<uint8>(INVENTORY_SLOT_ITEM_START + extSlot);
-            return true;
-        }
-
-        if (extBag >= 1 && extBag <= 4)
-        {
-            bagOut = static_cast<uint8>(INVENTORY_SLOT_BAG_START + (extBag - 1));
-            slotOut = static_cast<uint8>(extSlot);
-            return true;
-        }
-
-        if (extBag >= 5 && extBag <= 11)
-        {
-            bagOut = static_cast<uint8>(BANK_SLOT_BAG_START + (extBag - 5));
-            slotOut = static_cast<uint8>(extSlot);
-            return true;
-        }
-
-        return false;
-    }
+    using namespace DarkChaos::ItemUpgrade::UI;
+    static std::map<uint32, uint32> s_PlayerPackageSelections;
 
     // Send currency update to client
     void SendCurrencyUpdate(Player* player)
@@ -100,7 +52,7 @@ namespace Upgrade
         uint32 extSlot = msg.GetUInt32(1);
 
         uint8 bag = 0, slot = 0;
-        if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
+        if (!DarkChaos::ItemUpgrade::UI::TranslateAddonBagSlot(extBag, extSlot, bag, slot))
         {
             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
                 .Add(0)  // error
@@ -125,7 +77,7 @@ namespace Upgrade
         uint32 baseEntry = currentEntry;
 
         // Special Case: Heirloom Shirt
-        if (currentEntry == HEIRLOOM_SHIRT_ENTRY)
+        if (currentEntry == DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
         {
              QueryResult heirloomResult = CharacterDatabase.Query(
                 "SELECT upgrade_level FROM dc_heirloom_upgrades WHERE item_guid = {}",
@@ -135,27 +87,28 @@ namespace Upgrade
             if (heirloomResult)
                 upgradeLevel = (*heirloomResult)[0].Get<uint32>();
             
-            float statMultiplier = 1.0f + (0.025f * upgradeLevel); // Simplified estimate
+            float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
+                static_cast<uint8>(upgradeLevel), static_cast<uint8>(DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER));
 
             // Heirloom doesn't use clones, but client expects clone map
             std::string cloneMap;
-            for (uint32 i = 0; i <= HEIRLOOM_MAX_LEVEL; ++i)
+            for (uint32 i = 0; i <= DarkChaos::ItemUpgrade::UI::HEIRLOOM_MAX_LEVEL; ++i)
             {
                 if (i > 0) cloneMap += ",";
-                cloneMap += std::to_string(i) + "-" + std::to_string(HEIRLOOM_SHIRT_ENTRY);
+                cloneMap += std::to_string(i) + "-" + std::to_string(DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY);
             }
 
             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
                 .Add(1)
                 .Add(itemGUID)
                 .Add(upgradeLevel)
-                .Add(HEIRLOOM_TIER)
-                .Add(HEIRLOOM_MAX_LEVEL)
+                .Add(DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
+                .Add(DarkChaos::ItemUpgrade::UI::HEIRLOOM_MAX_LEVEL)
                 .Add(baseItemLevel) // base ilvl
                 .Add(baseItemLevel) // upgraded ilvl (heirlooms don't change ilvl usually, just stats)
                 .Add(statMultiplier)
-                .Add(HEIRLOOM_SHIRT_ENTRY)
-                .Add(HEIRLOOM_SHIRT_ENTRY)
+                .Add(DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
+                .Add(DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
                 .Add(cloneMap)
                 .Send(player);
             return;

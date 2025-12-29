@@ -997,6 +997,16 @@ namespace PrestigeAPI
         PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
     }
 
+    void RemovePrestigeBuffs(Player* player)
+    {
+        PrestigeSystem::instance()->RemovePrestigeBuffs(player);
+    }
+
+    void SetPrestigeLevel(Player* player, uint32 level)
+    {
+        PrestigeSystem::instance()->SetPrestigeLevel(player, level);
+    }
+
     bool PerformPrestige(Player* player)
     {
         return PrestigeSystem::instance()->PerformPrestige(player);

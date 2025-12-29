@@ -1004,64 +1004,61 @@ end
 =======================================================]]
 
 -- Protocol-aware request functions with fallback chain
-function DC.RequestItemInfo(itemId, itemLink)
+function DC.RequestItemInfo(bag, slot, itemLink)
 	-- Try DC Protocol first
 	if DCProtocol and DC.useDCProtocol then
-		local data = tostring(itemId)
-		if itemLink then
-			data = data .. "|" .. itemLink
-		end
-		DCProtocol:Send("UPG", 0x01, data) -- CMSG_REQUEST_ITEM_INFO
+		local data = string.format("%d|%d", bag, slot)
+		DCProtocol:Send("UPG", 0x01, data) -- CMSG_GET_ITEM_INFO
 		DC.Debug("Sent item info request via DC protocol: " .. data)
 		return
 	end
 	
 	-- Fallback to AIO
 	if DC.hasAIO and AIO and AIO.Handle then
-		AIO.Handle("DC_ItemUpgrade", "RequestItemInfo", itemId, itemLink)
+		AIO.Handle("DC_ItemUpgrade", "RequestItemInfo", bag, slot)
 		DC.Debug("Sent item info request via AIO")
 		return
 	end
 	
 	-- Final fallback to chat command
 	if DC_ItemUpgrade_Settings.useChatFallback ~= false then
-		SendChatMessage(".dcupgrade info " .. tostring(itemId), "SAY")
+		SendChatMessage(string.format(".dcupgrade query %d %d", bag, slot), "SAY")
 		DC.Debug("Sent item info request via chat command")
 	end
 end
 
-function DC.RequestUpgrade(itemId, targetLevel)
+function DC.RequestUpgrade(bag, slot, targetLevel)
 	-- Try DC Protocol first
 	if DCProtocol and DC.useDCProtocol then
-		local data = string.format("%d|%d", itemId, targetLevel or 1)
-		DCProtocol:Send("UPG", 0x02, data) -- CMSG_REQUEST_UPGRADE
+		local data = string.format("%d|%d|%d", bag, slot, targetLevel or 1)
+		DCProtocol:Send("UPG", 0x02, data) -- CMSG_DO_UPGRADE
 		DC.Debug("Sent upgrade request via DC protocol: " .. data)
 		return
 	end
 	
 	-- Fallback to AIO
 	if DC.hasAIO and AIO and AIO.Handle then
-		AIO.Handle("DC_ItemUpgrade", "RequestUpgrade", itemId, targetLevel)
+		AIO.Handle("DC_ItemUpgrade", "RequestUpgrade", bag, slot, targetLevel)
 		DC.Debug("Sent upgrade request via AIO")
 		return
 	end
 	
 	-- Final fallback to chat command
 	if DC_ItemUpgrade_Settings.useChatFallback ~= false then
-		local cmd = ".dcupgrade upgrade " .. tostring(itemId)
-		if targetLevel then
-			cmd = cmd .. " " .. tostring(targetLevel)
-		end
+		local cmd = string.format(".dcupgrade perform %d %d %d", bag, slot, targetLevel or 1)
 		SendChatMessage(cmd, "SAY")
 		DC.Debug("Sent upgrade request via chat command")
 	end
 end
 
 function DC.RequestCurrencySync()
+	-- Deprecated: Server pushes currency updates based on events.
+	-- Keeping for AIO/Legacy fallback just in case.
+	
 	-- Try DC Protocol first
 	if DCProtocol and DC.useDCProtocol then
-		DCProtocol:Send("UPG", 0x04, "") -- CMSG_REQUEST_CURRENCY
-		DC.Debug("Sent currency sync request via DC protocol")
+		-- DCProtocol:Send("UPG", 0x04, "") -- CMSG_GET_COSTS (Requires args, not currency sync)
+		-- DC.Debug("Currency request suppressed (Server managed)")
 		return
 	end
 	

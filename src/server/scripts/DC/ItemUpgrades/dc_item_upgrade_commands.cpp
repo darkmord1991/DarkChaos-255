@@ -835,7 +835,7 @@ public:
         return true;
     }
 
-    static bool HandleProgWeekCapCommand(ChatHandler* handler, const char* args)
+    static bool HandleProgWeekCapCommand(ChatHandler* handler, const char* /*args*/)
     {
         Player* player = handler->GetSession()->GetPlayer();
         if (!player) return false;
@@ -857,13 +857,13 @@ public:
         return true;
     }
 
-    static bool HandleProgTierCapCommand(ChatHandler* handler, const char* args)
+    static bool HandleProgTierCapCommand(ChatHandler* handler, const char* /*args*/)
     {
          handler->SendSysMessage("Not implemented.");
          return true;
     }
 
-    static bool HandleProgTestSetCommand(ChatHandler* handler, const char* args)
+    static bool HandleProgTestSetCommand(ChatHandler* handler, const char* /*args*/)
     {
          handler->SendSysMessage("Not implemented.");
          return true;
@@ -1027,6 +1027,8 @@ public:
 
         return true;
     }
+
+
 };
 
 void AddSC_ItemUpgradeCommands()
