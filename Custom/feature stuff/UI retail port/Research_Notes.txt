@@ -1,0 +1,29 @@
+Research References & Assets
+============================
+
+User Provided Paths:
+--------------------
+1. Retail FrameXML Dump:
+   K:\Dark-Chaos\WoW 11.2.7 FrameXML
+
+2. PTR Interface Extract:
+   K:\Dark-Chaos\WoW 11.2.5 PTR interface extract
+
+3. Reference Repository:
+   https://github.com/Noa-1995/WoW-Retail-Interface
+
+4. Inspiration / Shop:
+   https://zagan.framer.ai/shop/interface-custom-v3
+
+Key Findings from "Noa-1995" & Similar Projects:
+------------------------------------------------
+- Texture Atlases: Essential for performance and managing the thousands of small retail UI assets.
+- Virtual Frames: Used extensively to replicate the "template" system of Retail XML.
+- Lighting: `model:SetLight` is crucial for the "modern" look of character models.
+- Font: Custom fonts (Friz Quadrata with specific spacing) make a huge difference.
+
+Next Steps for Implementation:
+------------------------------
+1. Copy the `RetailUI_Config.lua` to your Interface patch.
+2. Extract textures from `K:\Dark-Chaos\WoW 11.2.7 FrameXML\Interface` and convert to BLP.
+3. Begin rewriting `AccountLogin.xml` using the structure defined in `Retail_Interface_Porting_Guide.md`.
