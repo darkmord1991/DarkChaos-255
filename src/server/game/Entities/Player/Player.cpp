@@ -12126,6 +12126,9 @@ void Player::learnQuestRewardedSpells(Quest const* quest)
     if (!found)
         return;
 
+    if (!SatisfyQuestSkill(quest, false))
+        return;
+
     CastSpell(this, spellId, true);
 }
 
