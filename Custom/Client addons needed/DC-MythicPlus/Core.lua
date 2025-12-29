@@ -90,6 +90,18 @@ DCMythicPlusHUDDB.position = DCMythicPlusHUDDB.position or { point = "CENTER", r
 DCMythicPlusHUDDB.locked = DCMythicPlusHUDDB.locked or false
 DCMythicPlusHUDDB.hidden = DCMythicPlusHUDDB.hidden or false
 
+-- Cache structure for static/weekly data
+DCMythicPlusHUDDB.cache = DCMythicPlusHUDDB.cache or {}
+DCMythicPlusHUDDB.cache.affixes = DCMythicPlusHUDDB.cache.affixes or {}
+DCMythicPlusHUDDB.cache.affixesTime = DCMythicPlusHUDDB.cache.affixesTime or 0
+DCMythicPlusHUDDB.cache.affixesWeek = DCMythicPlusHUDDB.cache.affixesWeek or 0
+DCMythicPlusHUDDB.cache.dungeons = DCMythicPlusHUDDB.cache.dungeons or {}
+DCMythicPlusHUDDB.cache.dungeonsTime = DCMythicPlusHUDDB.cache.dungeonsTime or 0
+
+-- Cache TTL constants
+local CACHE_TTL_AFFIXES = 86400    -- 24 hours (affixes change weekly)
+local CACHE_TTL_DUNGEONS = 604800  -- 1 week (dungeons are seasonal)
+
 local activeState
 local frame
 local countdownText
@@ -1255,21 +1267,31 @@ if DC then
         
         if type(args[1]) == "table" then
             local json = args[1]
-            local weekNum = json.weekNumber or "?"
+            local weekNum = json.weekNumber or 0
             Print("Week " .. weekNum .. " affixes:")
             -- Parse affixes array if present
+            local affixesToCache = {}
             if json.affixes and type(json.affixes) == "table" then
                 local affixNames = {}
                 for _, affix in ipairs(json.affixes) do
                     if type(affix) == "table" and affix.name then
                         table.insert(affixNames, affix.name)
+                        table.insert(affixesToCache, affix)
                     elseif type(affix) == "string" then
                         table.insert(affixNames, affix)
+                        table.insert(affixesToCache, { name = affix })
                     end
                 end
                 if #affixNames > 0 then
                     Print("  " .. table.concat(affixNames, ", "))
                 end
+            end
+            
+            -- Persist to SavedVariables
+            if DCMythicPlusHUDDB and DCMythicPlusHUDDB.cache then
+                DCMythicPlusHUDDB.cache.affixes = affixesToCache
+                DCMythicPlusHUDDB.cache.affixesTime = time()
+                DCMythicPlusHUDDB.cache.affixesWeek = weekNum
             end
         else
             -- Pipe-delimited format: id:name:desc;id:name:desc;...

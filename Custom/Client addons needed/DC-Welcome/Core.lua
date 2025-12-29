@@ -179,12 +179,34 @@ end
 -- Initialization
 -- =============================================================================
 
+-- Cache TTL constants (seconds)
+local CACHE_TTL_SERVER_INFO = 86400  -- 24 hours (server info rarely changes)
+local CACHE_TTL_FAQ = 86400          -- 24 hours (FAQ rarely changes)
+
 local function LoadSettings()
     DCWelcomeDB = DCWelcomeDB or {}
     for key, value in pairs(defaults) do
         if DCWelcomeDB[key] == nil then
             DCWelcomeDB[key] = value
         end
+    end
+    
+    -- Initialize persistent cache structure
+    DCWelcomeDB.cache = DCWelcomeDB.cache or {}
+    DCWelcomeDB.cache.serverInfo = DCWelcomeDB.cache.serverInfo or {}
+    DCWelcomeDB.cache.serverInfoTime = DCWelcomeDB.cache.serverInfoTime or 0
+    DCWelcomeDB.cache.faq = DCWelcomeDB.cache.faq or {}
+    DCWelcomeDB.cache.faqTime = DCWelcomeDB.cache.faqTime or 0
+    
+    -- Restore cached server info if still fresh
+    local now = time()
+    if next(DCWelcomeDB.cache.serverInfo) and (now - DCWelcomeDB.cache.serverInfoTime) < CACHE_TTL_SERVER_INFO then
+        serverInfo = DCWelcomeDB.cache.serverInfo
+    end
+    
+    -- Restore cached FAQ if still fresh
+    if #(DCWelcomeDB.cache.faq) > 0 and (now - DCWelcomeDB.cache.faqTime) < CACHE_TTL_FAQ then
+        DCWelcome.ServerFAQ = DCWelcomeDB.cache.faq
     end
 end
 
@@ -210,6 +232,17 @@ function DCWelcome:GetCurrentSeason()
 end
 
 function DCWelcome:RequestServerInfo()
+    -- Check cache first
+    local now = time()
+    if DCWelcomeDB and DCWelcomeDB.cache and DCWelcomeDB.cache.serverInfoTime then
+        if (now - DCWelcomeDB.cache.serverInfoTime) < CACHE_TTL_SERVER_INFO then
+             if next(DCWelcomeDB.cache.serverInfo) then
+                 DebugPrint("Using cached server info")
+                 return
+             end
+        end
+    end
+
     if DC and self:IsCommunicationEnabled() then
         DC:Request(self.Module, self.Opcode.CMSG_GET_SERVER_INFO, {})
         DebugPrint("Requested server info")
@@ -217,6 +250,17 @@ function DCWelcome:RequestServerInfo()
 end
 
 function DCWelcome:RequestFAQ(category)
+    -- Check cache first
+    local now = time()
+    if DCWelcomeDB and DCWelcomeDB.cache and DCWelcomeDB.cache.faqTime then
+        if (now - DCWelcomeDB.cache.faqTime) < CACHE_TTL_FAQ then
+             if #(DCWelcomeDB.cache.faq) > 0 then
+                 DebugPrint("Using cached FAQ data")
+                 return
+             end
+        end
+    end
+
     if DC and self:IsCommunicationEnabled() then
         DC:Request(self.Module, self.Opcode.CMSG_GET_FAQ, { category = category or "all" })
         DebugPrint("Requested FAQ data")
@@ -316,6 +360,12 @@ local function RegisterHandlers()
             if data.season then
                 currentSeason = data.season
             end
+            
+            -- Cache the data
+            if DCWelcomeDB and DCWelcomeDB.cache then
+                DCWelcomeDB.cache.serverInfo = data
+                DCWelcomeDB.cache.serverInfoTime = time()
+            end
         end
     end)
     
@@ -379,7 +429,13 @@ local function RegisterHandlers()
                 DCWelcome:MergeFAQ(data.entries)
             end
             
-            DebugPrint("Received " .. (data.count or 0) .. " FAQ entries from server")
+            -- Cache the data
+            if DCWelcomeDB and DCWelcomeDB.cache then
+                DCWelcomeDB.cache.faq = data.entries
+                DCWelcomeDB.cache.faqTime = time()
+            end
+            
+            DebugPrint("Received " .. (data.count or 0) .. " FAQ entries from server (cached)")
         end
     end)
     

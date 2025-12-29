@@ -24,8 +24,9 @@
 #include <iomanip>
 #include <cstdlib>
 
+namespace DarkChaos { namespace ItemUpgrade {
+
 using namespace Acore::ChatCommands;
-using namespace DarkChaos::ItemUpgrade;
 
 // =====================================================================
 // Respec Manager Implementation
@@ -210,6 +211,41 @@ public:
             out_essence = config.partial_respec_cost / 2;
         }
     }
+};
+
+// =====================================================================
+// Missing Manager Implementations (Stubs)
+// =====================================================================
+
+class TradingManagerImpl : public TradingManager
+{
+public:
+    bool CanTradeItem(uint32 /*player_guid*/, uint32 /*item_guid*/) override { return false; }
+    bool ExecuteTrade(uint32 /*player_from*/, uint32 /*item_from_guid*/, uint32 /*player_to*/, uint32 /*item_to_guid*/) override { return false; }
+    std::vector<TradeRecord> GetTradeHistory(uint32 /*player_guid*/, uint32 /*limit*/) override { return {}; }
+    bool CanTradeAgain(uint32 /*player_guid*/) override { return true; }
+};
+
+class TransmogManagerImpl : public TransmogManager
+{
+public:
+    uint32 CreateTransmogPreset(const UpgradeTransmogPreset& /*preset*/) override { return 0; }
+    std::vector<UpgradeTransmogPreset> GetTransmogPresets(uint32 /*player_guid*/) override { return {}; }
+    bool ApplyTransmogPreset(uint32 /*player_guid*/, uint32 /*preset_id*/) override { return false; }
+    bool WillUpgradesTransmog(uint32 /*source_item*/, uint32 /*target_item*/) override { return true; }
+    bool TransferUpgrades(uint32 /*source_item_guid*/, uint32 /*target_item_guid*/) override { return false; }
+};
+
+class OptimizationManagerImpl : public OptimizationManager
+{
+public:
+    uint32 CreateLoadout(const StatLoadout& /*loadout*/) override { return 0; }
+    std::vector<StatLoadout> GetPlayerLoadouts(uint32 /*player_guid*/) override { return {}; }
+    StatLoadout* GetActiveLoadout(uint32 /*player_guid*/) override { return nullptr; }
+    bool SwitchLoadout(uint32 /*player_guid*/, uint32 /*loadout_id*/) override { return false; }
+    void AutoOptimizeLoadout(uint32 /*loadout_id*/) override {}
+    float CalculateTotalStatBonus(const StatLoadout& /*loadout*/) override { return 0.0f; }
+    void SaveLoadout(const StatLoadout& /*loadout*/) override {}
 };
 
 // =====================================================================
@@ -548,10 +584,6 @@ public:
     }
 };
 
-// =====================================================================
-// Advanced Feature Commands
-// =====================================================================
-
 class ItemUpgradeAdvancedCommands : public CommandScript
 {
 public:
@@ -559,16 +591,16 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
-        static ChatCommandTable upgradeAdvancedCommandTable =
+        static ChatCommandTable upgradeAdvCommandTable =
         {
-            { "respec",       HandleRespecCommand,      SEC_PLAYER, Console::No },
-            { "achievements", HandleAchievementsCommand, SEC_PLAYER, Console::No },
-            { "guild",        HandleGuildStatsCommand,   SEC_PLAYER, Console::No }
+            { "respec",       HandleRespecCommand,        SEC_PLAYER, Console::No },
+            { "achievements", HandleAchievementsCommand,  SEC_PLAYER, Console::No },
+            { "guildstats",   HandleGuildStatsCommand,    SEC_PLAYER, Console::No },
         };
 
         static ChatCommandTable commandTable =
         {
-            { "upgradeadv", upgradeAdvancedCommandTable }
+            { "upgradeadv", upgradeAdvCommandTable }
         };
 
         return commandTable;
@@ -580,14 +612,12 @@ public:
         if (!player)
             return false;
 
-        RespecManagerImpl respecMgr;
+        RespecManager& respecMgr = *GetRespecManager();
+        uint32 cooldown = respecMgr.GetRespecCooldown(player->GetGUID().GetCounter());
+        uint32 count_today = respecMgr.GetRespecCountToday(player->GetGUID().GetCounter());
 
         if (!*args)
         {
-            // Show respec info
-            uint32 cooldown = respecMgr.GetRespecCooldown(player->GetGUID().GetCounter());
-            uint32 count_today = respecMgr.GetRespecCountToday(player->GetGUID().GetCounter());
-
             handler->PSendSysMessage("|cffffd700===== Respec Information =====|r");
             handler->PSendSysMessage("|cff00ff00Respecs Today:|r %u / %u",
                 count_today, respecMgr.GetConfig().daily_respec_limit);
@@ -703,10 +733,48 @@ public:
 };
 
 // =====================================================================
-// Script Registration
+// Factory Function Implementations (Optimized for Singleton Access)
 // =====================================================================
+
+RespecManager* GetRespecManager()
+{
+    static RespecManagerImpl instance;
+    return &instance;
+}
+
+AchievementManager* GetAchievementManager()
+{
+    static AchievementManagerImpl instance;
+    return &instance;
+}
+
+GuildProgressionManager* GetGuildProgressionManager()
+{
+    static GuildProgressionManagerImpl instance;
+    return &instance;
+}
+
+TradingManager* GetTradingManager()
+{
+    static TradingManagerImpl instance;
+    return &instance;
+}
+
+TransmogManager* GetTransmogManager()
+{
+    static TransmogManagerImpl instance;
+    return &instance;
+}
+
+OptimizationManager* GetOptimizationManager()
+{
+    static OptimizationManagerImpl instance;
+    return &instance;
+}
+
+} } // namespace DarkChaos::ItemUpgrade
 
 void AddSC_ItemUpgradeAdvanced()
 {
-    new ItemUpgradeAdvancedCommands();
+    new DarkChaos::ItemUpgrade::ItemUpgradeAdvancedCommands();
 }

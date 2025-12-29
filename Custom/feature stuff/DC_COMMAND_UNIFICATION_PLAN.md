@@ -4,11 +4,14 @@
 
 This document outlines the effort required to rename all DarkChaos commands to use a unified `.dc` prefix and consolidate command files into the DC scripts directory.
 
+**Last Updated:** 2025-12-29  
+**Status:** Planning/Evaluation
+
 ---
 
 ## Current State Analysis
 
-### Commands Already in DC Scripts Directory (20 files)
+### Commands Already in DC Scripts Directory (20+ files)
 
 | File | Current Command | Proposed Command | Location |
 |------|-----------------|------------------|----------|
@@ -38,7 +41,7 @@ This document outlines the effort required to rename all DarkChaos commands to u
 ### Commands in `/src/server/scripts/Commands/` (Need Moving)
 
 | File | Current Command | Proposed Command | Target Location |
-|------|-----------------|------------------|-----------------|
+|------|-----------------|------------------|--------------------|
 | `cs_dcrxp.cpp` | `.dcrxp` / `.dcxrp` | Merge into `.dc` | DC/Commands/ |
 | `cs_dc_addons.cpp` | `.dc` | Already `.dc` (hub) | DC/Commands/ |
 | `cs_dc_dungeonquests.cpp` | `.dcquests` | `.dc quests` | DC/Commands/ |
@@ -110,40 +113,119 @@ This document outlines the effort required to rename all DarkChaos commands to u
 
 ---
 
-## Implementation Approach Options
+## Recommended Implementation Strategy
 
-### Option A: Single Hub File (Not Recommended)
-- Create one massive `cs_dc_hub.cpp` with all command routing
-- **Pros:** Single point of registration
-- **Cons:** Huge file, hard to maintain, merge conflicts
+> [!IMPORTANT]
+> After analyzing the existing codebase, the recommended approach is **Option D: Subtable Export Pattern** which provides the cleanest architecture with minimal code changes.
 
-### Option B: Hub + Delegate Pattern (Recommended)
-- Create `DC/Commands/cs_dc_hub.cpp` as central router
-- Each subsystem keeps its command handlers
-- Hub file imports and registers subtables from other files
-- **Pros:** Clean separation, each module maintains its commands
-- **Cons:** Requires cross-file subtable exports
+### Option D: Subtable Export Pattern (Recommended ⭐)
 
-### Option C: Nested Auto-Registration
-- Each command script registers itself under `.dc` namespace
-- Use static initialization to build command tree
-- **Pros:** Minimal changes to existing files
-- **Cons:** Complex initialization order, harder to debug
+This approach leverages AzerothCore's native `ChatCommandTable` nesting while keeping each module self-contained.
 
----
+#### How It Works
 
-## Phase-by-Phase Implementation
+1. **Each module exposes its command subtable** via a public function in a header file
+2. **The hub file imports all subtables** and registers them under `.dc`
+3. **Legacy aliases are registered separately** for backwards compatibility
+4. **No file moving required** - just add exports and hub registration
 
-### Phase 1: Create DC Commands Directory & Hub (2-3 hours)
+#### Architecture Diagram
 
-1. Create directory: `src/server/scripts/DC/Commands/`
-2. Create `cs_dc_hub.cpp` - central command router
-3. Update `DC/CMakeLists.txt` to include new directory
-4. Register hub in script loader
+```mermaid
+graph TD
+    subgraph Hub["DC Hub (cs_dc_hub.cpp)"]
+        DC[".dc command"]
+    end
+    
+    subgraph Modules["Module Command Files"]
+        A["mythic_plus_commands.cpp<br/>GetMPlusCommandTable()"]
+        B["dc_prestige_system.cpp<br/>GetPrestigeCommandTable()"]
+        C["SeasonalRewardCommands.cpp<br/>GetSeasonCommandTable()"]
+        D["dc_phased_duels.cpp<br/>GetDuelCommandTable()"]
+        E["...other modules"]
+    end
+    
+    subgraph Legacy["Legacy Alias Script"]
+        L[".mplus, .prestige, etc."]
+    end
+    
+    DC --> A
+    DC --> B
+    DC --> C
+    DC --> D
+    DC --> E
+    
+    L -.->|"Deprecated aliases"| A
+    L -.->|"Deprecated aliases"| B
+```
 
-**Hub file structure:**
+#### Example Implementation
+
+**Step 1: Create header for exports** (`DC/Commands/dc_command_exports.h`)
 ```cpp
-// cs_dc_hub.cpp
+#pragma once
+#include "ChatCommand.h"
+
+namespace DC::Commands {
+    // Each module exports its subtable
+    Acore::ChatCommands::ChatCommandTable& GetMPlusCommandTable();
+    Acore::ChatCommands::ChatCommandTable& GetPrestigeCommandTable();
+    Acore::ChatCommands::ChatCommandTable& GetSeasonCommandTable();
+    Acore::ChatCommands::ChatCommandTable& GetHotspotsCommandTable();
+    Acore::ChatCommands::ChatCommandTable& GetDuelCommandTable();
+    Acore::ChatCommands::ChatCommandTable& GetUpgradeCommandTable();
+    Acore::ChatCommands::ChatCommandTable& GetHLBGCommandTable();
+    // ... etc
+}
+```
+
+**Step 2: Modify module files** (example: `mythic_plus_commands.cpp`)
+```cpp
+// ADD: Export function at the end of file
+namespace DC::Commands {
+    Acore::ChatCommands::ChatCommandTable& GetMPlusCommandTable()
+    {
+        static ChatCommandTable vaultTable =
+        {
+            { "generate", HandleMPlusVaultGenerateCommand, SEC_GAMEMASTER, Console::No },
+            { "addrun",   HandleMPlusVaultAddRunCommand,   SEC_GAMEMASTER, Console::No },
+            { "reset",    HandleMPlusVaultResetCommand,    SEC_GAMEMASTER, Console::No },
+        };
+        
+        static ChatCommandTable mplusTable =
+        {
+            { "keystone", HandleMPlusKeystoneCommand, SEC_GAMEMASTER, Console::No },
+            { "give",     HandleMPlusGiveCommand,     SEC_GAMEMASTER, Console::No },
+            { "vault",    vaultTable },
+            { "affix",    HandleMPlusAffixCommand,    SEC_GAMEMASTER, Console::No },
+            { "scaling",  HandleMPlusScalingCommand,  SEC_GAMEMASTER, Console::No },
+            { "season",   HandleMPlusSeasonCommand,   SEC_GAMEMASTER, Console::No },
+            { "info",     HandleMPlusInfoCommand,     SEC_PLAYER,     Console::No },
+            { "cancel",   HandleMPlusCancelCommand,   SEC_PLAYER,     Console::No }
+        };
+        return mplusTable;
+    }
+}
+
+// MODIFY: GetCommands() to use export
+ChatCommandTable GetCommands() const override
+{
+    static ChatCommandTable commandTable =
+    {
+        { "mplus", DC::Commands::GetMPlusCommandTable() }  // Legacy alias
+    };
+    return commandTable;
+}
+```
+
+**Step 3: Create hub file** (`DC/Commands/cs_dc_hub.cpp`)
+```cpp
+#include "CommandScript.h"
+#include "Chat.h"
+#include "dc_command_exports.h"
+
+using namespace Acore::ChatCommands;
+
 class dc_hub_commandscript : public CommandScript
 {
 public:
@@ -151,121 +233,81 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
-        // Import subtables from other files (via extern or static accessors)
-        static ChatCommandTable dcCommandTable =
+        static ChatCommandTable dcTable =
         {
-            { "prestige",    GetPrestigeSubTable() },
-            { "season",      GetSeasonSubTable() },
-            { "mplus",       GetMPlusSubTable() },
-            { "spectate",    GetSpectateSubTable() },
-            { "hotspots",    GetHotspotsSubTable() },
-            { "loot",        GetLootSubTable() },
-            { "duel",        GetDuelSubTable() },
-            { "upgrade",     GetUpgradeSubTable() },
-            { "hlbg",        GetHLBGSubTable() },
-            // ... etc
+            { "mplus",       DC::Commands::GetMPlusCommandTable() },
+            { "prestige",    DC::Commands::GetPrestigeCommandTable() },
+            { "season",      DC::Commands::GetSeasonCommandTable() },
+            { "hotspots",    DC::Commands::GetHotspotsCommandTable() },
+            { "duel",        DC::Commands::GetDuelCommandTable() },
+            { "upgrade",     DC::Commands::GetUpgradeCommandTable() },
+            { "hlbg",        DC::Commands::GetHLBGCommandTable() },
+            // ... all other modules
         };
 
         static ChatCommandTable commandTable =
         {
-            { "dc", dcCommandTable }
+            { "dc", dcTable }
         };
         return commandTable;
     }
 };
-```
 
-### Phase 2: Modify Existing Command Files (3-4 hours)
-
-For each command file, change from registering top-level to exporting subtable:
-
-**Before:**
-```cpp
-ChatCommandTable GetCommands() const override
+void AddSC_dc_hub_commandscript()
 {
-    static ChatCommandTable prestigeSubTable = { ... };
-    static ChatCommandTable commandTable =
-    {
-        { "prestige", prestigeSubTable }
-    };
-    return commandTable;
+    new dc_hub_commandscript();
 }
 ```
 
-**After:**
-```cpp
-// Export subtable for hub
-ChatCommandTable& GetPrestigeSubTable()
-{
-    static ChatCommandTable prestigeSubTable = { ... };
-    return prestigeSubTable;
-}
+---
 
-// No longer register top-level command
-// (or keep as legacy alias during transition)
-```
+## Implementation Phases
 
-**Files to modify:**
-1. `dc_prestige_system.cpp`
-2. `dc_prestige_challenges.cpp`
-3. `dc_prestige_alt_bonus.cpp`
-4. `SeasonalRewardCommands.cpp`
-5. `mythic_plus_commands.cpp`
-6. `keystone_admin_commands.cpp`
-7. `dc_mythic_spectator.cpp`
-8. `ac_hotspots.cpp`
-9. `ac_aoeloot.cpp`
-10. `dc_aoeloot_extensions.cpp`
-11. `dc_phased_duels.cpp`
-12. `DungeonQuestMasterFollower.cpp`
-13. `dc_challenge_modes_customized.cpp`
-14. `ItemUpgradeGMCommands.cpp`
-15. `ItemUpgradeProgressionImpl.cpp`
-16. `ItemUpgradeAdvancedImpl.cpp`
-17. `ItemUpgradeSeasonalImpl.cpp`
-18. `ItemUpgradeAddonHandler.cpp`
-19. `aio_bridge.cpp`
-20. `cs_gps_test.cpp`
-21. `cs_flighthelper_test.cpp`
-22. `hlbg_native_broadcast.cpp`
+### Phase 1: Foundation (1-2 hours)
 
-### Phase 3: Move Files from Commands/ to DC/ (1-2 hours)
+| Task | Description | Files |
+|------|-------------|-------|
+| Create exports header | Define all GetXxxCommandTable() declarations | `DC/Commands/dc_command_exports.h` |
+| Create hub script | Central `.dc` command registration | `DC/Commands/cs_dc_hub.cpp` |
+| Update CMake | Add new directory and files | `DC/CMakeLists.txt`, `DC/Commands/CMakeLists.txt` |
+| Register hub | Add to script loader | `dc_script_loader.cpp` |
 
-| Source | Destination |
-|--------|-------------|
-| `Commands/cs_dcrxp.cpp` | Merge into `DC/Commands/cs_dc_hub.cpp` |
-| `Commands/cs_dc_addons.cpp` | Merge into `DC/Commands/cs_dc_hub.cpp` |
-| `Commands/cs_dc_dungeonquests.cpp` | `DC/DungeonQuests/` or `DC/Commands/` |
-| `Commands/cs_hl_bg.cpp` | `DC/HinterlandBG/` |
+### Phase 2: Module Migration (3-4 hours)
 
-**CMake updates needed:**
-1. `src/server/scripts/Commands/CMakeLists.txt` - Remove moved files
-2. `src/server/scripts/DC/CMakeLists.txt` - Add Commands subdirectory
-3. `src/server/scripts/DC/Commands/CMakeLists.txt` - Create new
+For each module, apply these changes:
 
-### Phase 4: Update Script Loader (30 min)
+1. **Add export function** that returns the module's `ChatCommandTable&`
+2. **Keep legacy registration** in `GetCommands()` for backwards compatibility
+3. **Update handlers** to be accessible from namespace (may need `static` removal)
 
-Modify `cs_script_loader.cpp` to remove old AddSC calls and add new ones.
+| Module | Priority | Estimated Time |
+|--------|----------|----------------|
+| Mythic+ (`mythic_plus_commands.cpp`) | High | 20 min |
+| Prestige (`dc_prestige_system.cpp`) | High | 20 min |
+| Seasons (`SeasonalRewardCommands.cpp`) | Medium | 15 min |
+| Hotspots (`ac_hotspots.cpp`) | Medium | 15 min |
+| Duels (`dc_phased_duels.cpp`) | Low | 10 min |
+| Item Upgrades (4 files) | Medium | 40 min |
+| HLBG (`cs_hl_bg.cpp`) | Medium | 20 min |
+| AoE Loot (2 files) | Low | 20 min |
+| Others | Low | 1 hour |
 
-### Phase 5: Legacy Alias Support (1 hour)
+### Phase 3: Consolidate cs_dc_addons.cpp (30 min)
 
-Keep old commands working during transition:
-```cpp
-// In hub or separate alias file
-static ChatCommandTable legacyAliases =
-{
-    { "prestige", GetPrestigeSubTable() },  // .prestige still works
-    { "mplus",    GetMPlusSubTable() },     // .mplus still works
-    { "hlbg",     GetHLBGSubTable() },      // .hlbg still works
-    // etc
-};
-```
+The existing `cs_dc_addons.cpp` already handles some `.dc` subcommands:
+- Move its direct handlers into the hub or keep as-is
+- Ensure no conflicts with new hub registration
 
-### Phase 6: Documentation & Testing (1 hour)
+### Phase 4: Legacy Alias Deprecation (Optional)
 
-1. Update `Custom/Commands.md`
-2. Update any addon Lua code that uses old commands
-3. Test all commands in-game
+> [!TIP]
+> Keep legacy aliases (`.mplus`, `.prestige`, etc.) working indefinitely via the existing module registrations. Only remove when confirmed safe.
+
+### Phase 5: Testing & Documentation (1 hour)
+
+1. **Test all commands** via in-game execution
+2. **Update `Custom/Commands.md`** with new `.dc` prefix documentation
+3. **Update addon Lua code** if any addons call commands via SendChatMessage
 
 ---
 
@@ -273,13 +315,23 @@ static ChatCommandTable legacyAliases =
 
 | Phase | Description | Estimated Time |
 |-------|-------------|----------------|
-| 1 | Create hub structure | 2-3 hours |
-| 2 | Modify existing command files | 3-4 hours |
-| 3 | Move files to DC directory | 1-2 hours |
-| 4 | Update script loader | 30 min |
-| 5 | Add legacy aliases | 1 hour |
-| 6 | Documentation & testing | 1 hour |
-| **Total** | | **8-11 hours** |
+| 1 | Foundation (header, hub, CMake) | 1-2 hours |
+| 2 | Module migration (export functions) | 3-4 hours |
+| 3 | Consolidate cs_dc_addons.cpp | 30 min |
+| 4 | Legacy aliases (optional) | 0 min (keep as-is) |
+| 5 | Testing & documentation | 1 hour |
+| **Total** | | **5-7 hours** |
+
+---
+
+## Comparison of Approaches
+
+| Approach | Pros | Cons | Effort |
+|----------|------|------|--------|
+| **A: Single Hub File** | Single point of registration | Massive file, merge conflicts | High |
+| **B: Hub + Delegate** | Clean separation | Complex cross-file exports | Medium |
+| **C: Nested Auto-Registration** | Minimal changes to existing | Complex init order, debugging hard | Medium |
+| **D: Subtable Export (Recommended)** | Clean, modular, AzerothCore-native pattern | Requires header file | **Low** |
 
 ---
 
@@ -287,39 +339,11 @@ static ChatCommandTable legacyAliases =
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
-| Breaking player macros using old commands | High | Keep legacy aliases for 2-3 patches |
-| Breaking addon code expecting old responses | Medium | Test addon communication thoroughly |
-| Build failures from moved files | Low | Careful CMake updates, incremental changes |
+| Breaking player macros | High | Keep legacy aliases indefinitely |
+| Breaking addon code | Medium | Test addon communication thoroughly |
+| Build failures from moved files | Low | Incremental changes, careful CMake |
 | Command conflicts with AzerothCore base | Low | `.dc` prefix ensures uniqueness |
-| Initialization order issues | Medium | Use lazy initialization for subtables |
-
----
-
-## Alternative: Minimal Effort Approach
-
-If full unification is too much work, consider:
-
-1. **Just add `.dc` aliases** without moving files
-2. Keep existing commands working as-is
-3. Document `.dc` as the "preferred" prefix
-
-**Changes needed:**
-- Modify `cs_dc_addons.cpp` to add subtable routing
-- Each existing file adds one line to expose subtable
-- No file moving required
-
-**Effort:** 2-3 hours total
-
----
-
-## Decision Points
-
-Before proceeding, decide:
-
-1. **Full unification vs minimal aliases?**
-2. **Keep legacy commands forever or deprecate after X patches?**
-3. **Move files immediately or leave in place?**
-4. **Update addons simultaneously or after server changes?**
+| Initialization order issues | Low | Static tables with lazy init |
 
 ---
 
@@ -328,22 +352,37 @@ Before proceeding, decide:
 ### New Files to Create
 - `src/server/scripts/DC/Commands/CMakeLists.txt`
 - `src/server/scripts/DC/Commands/cs_dc_hub.cpp`
-- `src/server/scripts/DC/Commands/dc_command_exports.h` (optional, for subtable declarations)
+- `src/server/scripts/DC/Commands/dc_command_exports.h`
 
 ### Files to Modify
-- All 22 command files listed in Phase 2
-- `src/server/scripts/DC/CMakeLists.txt`
-- `src/server/scripts/Commands/CMakeLists.txt`
-- `src/server/scripts/Commands/cs_script_loader.cpp`
-- `Custom/Commands.md`
+- All 22+ command files (add export function)
+- `src/server/scripts/DC/CMakeLists.txt` (add subdirectory)
+- `src/server/scripts/DC/dc_script_loader.cpp` (register hub)
 
-### Files to Move/Merge
-- `cs_dcrxp.cpp` → merge
-- `cs_dc_addons.cpp` → merge
-- `cs_dc_dungeonquests.cpp` → move
-- `cs_hl_bg.cpp` → move
+### Files to Keep As-Is
+- `src/server/scripts/Commands/cs_dc_addons.cpp` (existing `.dc` handlers)
+- All module files in their current locations
 
 ---
 
-*Document created: 2025-11-30*
-*Status: Planning/Evaluation*
+## Quick Start Implementation Order
+
+1. Create `DC/Commands/` directory
+2. Create `dc_command_exports.h` with all forward declarations
+3. Create `cs_dc_hub.cpp` with empty tables initially
+4. Update CMake files
+5. Migrate one module (e.g., mythic_plus) as proof of concept
+6. Test `.dc mplus info` works
+7. Gradually migrate remaining modules
+8. Final testing round
+
+---
+
+## Decision Checklist
+
+Before proceeding:
+
+- [ ] Confirm approach: Subtable Export Pattern (Option D)
+- [ ] Keep legacy commands forever or deprecate after N patches?
+- [ ] Update addons simultaneously or after server changes?
+- [ ] Priority modules to migrate first?

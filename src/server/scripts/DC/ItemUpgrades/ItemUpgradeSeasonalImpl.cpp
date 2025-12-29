@@ -24,8 +24,9 @@
 #include <algorithm>
 #include <cstdlib>
 
+namespace DarkChaos { namespace ItemUpgrade {
+
 using namespace Acore::ChatCommands;
-using namespace DarkChaos::ItemUpgrade;
 
 // =====================================================================
 // Season Reset Manager Implementation
@@ -475,180 +476,43 @@ public:
 // Seasonal Commands
 // =====================================================================
 
-class ItemUpgradeSeasonalCommands : public CommandScript
-{
-public:
-    ItemUpgradeSeasonalCommands() : CommandScript("ItemUpgradeSeasonalCommands") { }
+        // =====================================================================
+        // Factory Function Implementations (Optimized for Singleton Access)
+        // =====================================================================
 
-    ChatCommandTable GetCommands() const override
-    {
-        static ChatCommandTable upgradeSeasonalCommandTable =
+        SeasonResetManager* GetSeasonResetManager()
         {
-            { "info",       HandleSeasonInfoCommand,    SEC_PLAYER, Console::No },
-            { "leaderboard", HandleLeaderboardCommand,   SEC_PLAYER, Console::No },
-            { "history",    HandleHistoryCommand,       SEC_PLAYER, Console::No },
-            { "reset",      HandleSeasonResetCommand,   SEC_ADMINISTRATOR, Console::No }
-        };
-
-        static ChatCommandTable commandTable =
-        {
-            { "upgradeseason", upgradeSeasonalCommandTable }
-        };
-
-        return commandTable;
-    }
-
-    static bool HandleSeasonInfoCommand(ChatHandler* handler, const char* /*args*/)
-    {
-        // Get current season
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT season_id, season_name, start_timestamp FROM dc_seasons WHERE is_active = 1");
-
-        if (!result)
-        {
-            handler->PSendSysMessage("No active season found.");
-            return false;
+            static SeasonResetManagerImpl instance;
+            return &instance;
         }
 
-        Field* fields = result->Fetch();
-        uint32 season_id = fields[0].Get<uint32>();
-        std::string season_name = fields[1].Get<std::string>();
-        uint64 start_time = fields[2].Get<uint64>();
-
-        time_t now = time(nullptr);
-        uint64 season_duration = now - start_time;
-        uint32 days = season_duration / 86400;
-
-        handler->PSendSysMessage("|cffffd700===== Season Information =====|r");
-        handler->PSendSysMessage("|cff00ff00Current Season:|r %s (ID: %u)", season_name.c_str(), season_id);
-        handler->PSendSysMessage("|cff00ff00Season Duration:|r %u days", days);
-
-        // Get player's season stats
-        Player* player = handler->GetSession()->GetPlayer();
-        if (player)
+        HistoryManager* GetHistoryManager()
         {
-            result = CharacterDatabase.Query(
-                "SELECT essence_earned, tokens_earned, essence_spent, tokens_spent, "
-                "items_upgraded, upgrades_applied FROM dc_player_season_data "
-                "WHERE player_guid = {} AND season_id = {}",
-                player->GetGUID().GetCounter(), season_id);
-
-            if (result)
-            {
-                fields = result->Fetch();
-                handler->PSendSysMessage("");
-                handler->PSendSysMessage("|cffffd700=== Your Season Stats ===|r");
-                handler->PSendSysMessage("|cff00ff00Essence Earned:|r %u (Spent: %u)",
-                    fields[0].Get<uint32>(), fields[2].Get<uint32>());
-                handler->PSendSysMessage("|cff00ff00Tokens Earned:|r %u (Spent: %u)",
-                    fields[1].Get<uint32>(), fields[3].Get<uint32>());
-                handler->PSendSysMessage("|cff00ff00Items Upgraded:|r %u", fields[4].Get<uint32>());
-                handler->PSendSysMessage("|cff00ff00Total Upgrades:|r %u", fields[5].Get<uint32>());
-            }
+            static HistoryManagerImpl instance;
+            return &instance;
         }
 
-        return true;
-    }
-
-    static bool HandleLeaderboardCommand(ChatHandler* handler, const char* args)
-    {
-        std::string type = "upgrades";
-        if (*args)
-            type = args;
-
-        // Get current season
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT season_id FROM dc_seasons WHERE is_active = 1");
-
-        if (!result)
+        LeaderboardManager* GetLeaderboardManager()
         {
-            handler->PSendSysMessage("No active season found.");
-            return false;
+            static LeaderboardManagerImpl instance;
+            return &instance;
         }
 
-        uint32 season_id = result->Fetch()[0].Get<uint32>();
-
-        LeaderboardManagerImpl leaderboardMgr;
-        std::vector<LeaderboardEntry> entries;
-
-        if (type == "prestige")
-            entries = leaderboardMgr.GetPrestigeLeaderboard(season_id, 10);
-        else if (type == "efficiency")
-            entries = leaderboardMgr.GetEfficiencyLeaderboard(season_id, 10);
-        else
-            entries = leaderboardMgr.GetUpgradeLeaderboard(season_id, 10);
-
-        handler->PSendSysMessage("|cffffd700===== %s Leaderboard =====|r", type.c_str());
-        handler->PSendSysMessage("");
-
-        for (auto const& entry : entries)
+        BalanceManager* GetBalanceManager()
         {
-            handler->PSendSysMessage("#%u - %s (Score: %u, Items: %u, Prestige: %u)",
-                entry.rank, entry.player_name.c_str(), entry.score,
-                entry.items_upgraded, entry.prestige_points);
+             static BalanceManager instance;
+             return &instance;
         }
 
-        return true;
-    }
-
-    static bool HandleHistoryCommand(ChatHandler* handler, const char* args)
-    {
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-
-        uint32 limit = 10;
-        if (*args)
-            limit = static_cast<uint32>(std::strtoul(args, nullptr, 10));
-
-        HistoryManagerImpl historyMgr;
-        auto history = historyMgr.GetPlayerHistory(player->GetGUID().GetCounter(), limit);
-
-        handler->PSendSysMessage("|cffffd700===== Your Upgrade History =====|r");
-        handler->PSendSysMessage("(Showing last %u upgrades)", limit);
-        handler->PSendSysMessage("");
-
-        for (auto const& entry : history)
+        SeasonManager* GetSeasonManager()
         {
-            time_t timestamp = entry.timestamp;
-            char time_buf[64];
-            strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M", localtime(&timestamp));
-
-            handler->PSendSysMessage("%s: Item %u (%u→%u) | Cost: %uE/%uT | iLvl: %u→%u",
-                time_buf, entry.item_id, entry.upgrade_from, entry.upgrade_to,
-                entry.essence_cost, entry.token_cost, entry.old_ilvl, entry.new_ilvl);
+            static SeasonManager instance;
+            return &instance;
         }
 
-        return true;
-    }
-
-    static bool HandleSeasonResetCommand(ChatHandler* handler, const char* args)
-    {
-        if (!*args)
-        {
-            handler->PSendSysMessage("Usage: .season reset <new_season_id>");
-            handler->PSendSysMessage("WARNING: This will reset all player progress!");
-            return false;
-        }
-
-        uint32 new_season_id = static_cast<uint32>(std::strtoul(args, nullptr, 10));
-
-        handler->PSendSysMessage("Starting global season reset to Season %u...", new_season_id);
-
-        SeasonResetManagerImpl resetMgr;
-        resetMgr.ExecuteGlobalSeasonReset(new_season_id);
-
-        handler->PSendSysMessage("Season reset complete! Season %u is now active.", new_season_id);
-
-        return true;
-    }
-};
-
-// =====================================================================
-// Script Registration
-// =====================================================================
+} } // namespace DarkChaos::ItemUpgrade
 
 void AddSC_ItemUpgradeSeasonal()
 {
-    new ItemUpgradeSeasonalCommands();
+    // No scripts to add, but function must exist for loader
 }

@@ -413,5 +413,14 @@ namespace DarkChaos
             }
         };
 
+        // =====================================================================
+        // Factory Functions
+        // =====================================================================
+
+        ArtifactMasteryManager* GetArtifactMasteryManager();
+        LevelCapManager* GetLevelCapManager();
+        CostScalingManager* GetCostScalingManager();
+        TierProgressionManager* GetTierProgressionManager();
+
     } // namespace ItemUpgrade
 } // namespace DarkChaos

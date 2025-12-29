@@ -181,33 +181,35 @@ static void LoadAddonConfig()
 // PROTOCOL LOGGING (to dc_addon_protocol_log table)
 // ============================================================================
 
-// Extract module code from payload (everything before first colon, max 8 chars)
+// ============================================================================
+// PROTOCOL LOGGING & STATS
+// ============================================================================
+
+// Extract module code from payload (everything before first delimiter, max 8 chars)
+// Supports both ':' (AIO/Legacy) and '|' (DC Native) delimiters
 static std::string ExtractModuleCode(const std::string& payload)
 {
     if (payload.empty())
         return "UNKN";
 
-    size_t colonPos = payload.find(':');
-    if (colonPos != std::string::npos && colonPos > 0)
+    size_t delimPos = payload.find_first_of(":|");
+    if (delimPos != std::string::npos && delimPos > 0)
     {
-        // Truncate to 8 chars max to fit the database column
-        return payload.substr(0, std::min(colonPos, static_cast<size_t>(8)));
+        return payload.substr(0, std::min(delimPos, static_cast<size_t>(8)));
     }
 
-    // No colon found, return first 8 chars or less
     return payload.substr(0, std::min(payload.length(), static_cast<size_t>(8)));
 }
 
-// Extract opcode from payload (number after first colon)
+// Extract opcode calling generic number parser
 static uint8 ExtractOpcode(const std::string& payload)
 {
-    size_t colonPos = payload.find(':');
-    if (colonPos == std::string::npos || colonPos + 1 >= payload.length())
+    size_t delimPos = payload.find_first_of(":|");
+    if (delimPos == std::string::npos || delimPos + 1 >= payload.length())
         return 0;
 
-    // Find the end of the opcode (next colon or end of string)
-    size_t opcodeStart = colonPos + 1;
-    size_t opcodeEnd = payload.find(':', opcodeStart);
+    size_t opcodeStart = delimPos + 1;
+    size_t opcodeEnd = payload.find_first_of(":|", opcodeStart);
     if (opcodeEnd == std::string::npos)
         opcodeEnd = payload.length();
 
@@ -219,103 +221,157 @@ static uint8 ExtractOpcode(const std::string& payload)
     }
 }
 
-// Detect request type from payload content
-// Request types:
-//   STANDARD  = Plain Blizzard addon message (no special format, just text)
-//   DC_JSON   = DC Protocol with JSON payload (MODULE:OPCODE:{...} or MODULE[OPCODE]:{...})
-//   DC_PLAIN  = DC Protocol with plain data (MODULE:OPCODE:data)
-//   AIO       = AIO framework modules (SPOT, SEAS, MHUD)
 static std::string DetectRequestType(const std::string& payload)
 {
-    if (payload.empty())
-        return "STANDARD";
+    if (payload.empty()) return "STANDARD";
 
-    // Check for AIO modules first (known AIO modules: SPOT = Spectator, SEAS = Seasonal, MHUD = M+ HUD)
     std::string moduleCode = ExtractModuleCode(payload);
     if (moduleCode == "SPOT" || moduleCode == "SEAS" || moduleCode == "MHUD")
         return "AIO";
 
-    // Find where the data portion starts (after module and opcode)
-    // Format 1: MODULE:OPCODE:DATA (colon delimited)
-    // Format 2: MODULE[OPCODE]:DATA (bracket opcode)
-    size_t dataStart = std::string::npos;
-
-    // Check for bracket format first: MODULE[x]:
-    size_t bracketClose = payload.find(']');
-    if (bracketClose != std::string::npos && bracketClose + 1 < payload.length())
+    // Check for DC Native format (pipe)
+    if (payload.find('|') != std::string::npos)
     {
-        if (payload[bracketClose + 1] == ':')
-            dataStart = bracketClose + 2;
+        // Simple heuristic: if it has pipes, it's likely DC protocol
+        return "DC_PLAIN"; // Can't easily distinguish JSON without parsing more, but that's fine
     }
 
-    // Check for double-colon format: MODULE:OPCODE:
-    if (dataStart == std::string::npos)
+    // Check for DC JSON/Legacy format (colon)
+    if (payload.find(':') != std::string::npos)
     {
-        size_t firstColon = payload.find(':');
-        if (firstColon != std::string::npos)
-        {
-            size_t secondColon = payload.find(':', firstColon + 1);
-            if (secondColon != std::string::npos && secondColon + 1 < payload.length())
-                dataStart = secondColon + 1;
-        }
-    }
-
-    // If we found a data portion, it's DC protocol
-    if (dataStart != std::string::npos && dataStart < payload.length())
-    {
-        char firstDataChar = payload[dataStart];
-        // Check if data portion starts with JSON
-        if (firstDataChar == '{' || firstDataChar == '[')
+        if (payload.find('{') != std::string::npos || payload.find('[') != std::string::npos)
             return "DC_JSON";
-        else
-            return "DC_PLAIN";
-    }
-
-    // Check if it looks like DC protocol at all (has MODULE:OPCODE format even without data)
-    size_t firstColon = payload.find(':');
-    if (firstColon != std::string::npos && firstColon < 8)
-    {
-        // Has a short module code followed by colon - likely DC protocol
         return "DC_PLAIN";
     }
 
-    // Plain Blizzard addon message (no DC protocol format detected)
     return "STANDARD";
 }
-// Log C2S (Client to Server) message to database
+
+// Buffered Stats System to reduce DB IO
+struct StatsEntry
+{
+    uint32 totalRequests = 0;
+    uint32 totalResponses = 0;
+    uint32 totalTimeouts = 0;
+    uint32 totalErrors = 0;
+    uint32 sumResponseTime = 0;
+    uint32 maxResponseTime = 0;
+    time_t lastRequest = 0;
+    bool dirty = false;
+};
+
+// Map: Guid -> Module -> StatsEntry
+static std::unordered_map<uint32, std::unordered_map<std::string, StatsEntry>> s_StatsBuffer;
+static std::mutex s_StatsMutex;
+
+static void FlushStats(uint32 guid = 0)
+{
+    std::lock_guard<std::mutex> lock(s_StatsMutex);
+
+    if (s_StatsBuffer.empty()) return;
+
+    // Use transaction for bulk updates
+    auto trans = CharacterDatabase.BeginTransaction();
+
+    for (auto it = s_StatsBuffer.begin(); it != s_StatsBuffer.end(); )
+    {
+        uint32 currentGuid = it->first;
+        // If specific guid requested, skip others
+        if (guid != 0 && currentGuid != guid)
+        {
+            ++it;
+            continue;
+        }
+
+        for (auto& [module, stats] : it->second)
+        {
+            if (!stats.dirty) continue;
+
+            // To avoid SQL injection risks on Module, sanitize it strictly or use parameters.
+            // Since we can't define new PreparedStatements in core enum dynamically, we will simulate it safely.
+            
+            trans->Append("INSERT INTO dc_addon_protocol_stats "
+                "(guid, module, total_requests, total_responses, total_timeouts, total_errors, avg_response_time_ms, max_response_time_ms, last_request) "
+                "VALUES ({}, '{}', {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({})) "
+                "ON DUPLICATE KEY UPDATE "
+                "total_requests = total_requests + {}, "
+                "total_responses = total_responses + {}, "
+                "total_timeouts = total_timeouts + {}, "
+                "total_errors = total_errors + {}, "
+                "avg_response_time_ms = (avg_response_time_ms * total_responses + {}) / GREATEST(1, total_responses + {}), "
+                "max_response_time_ms = GREATEST(max_response_time_ms, {}), "
+                "last_request = FROM_UNIXTIME({})",
+                currentGuid, module, 
+                stats.totalRequests, stats.totalResponses, stats.totalTimeouts, stats.totalErrors, 
+                (stats.totalResponses > 0 ? stats.sumResponseTime / stats.totalResponses : 0), 
+                stats.maxResponseTime, stats.lastRequest,
+                // Update part
+                stats.totalRequests, stats.totalResponses, stats.totalTimeouts, stats.totalErrors,
+                stats.sumResponseTime, stats.totalResponses,
+                stats.maxResponseTime,
+                stats.lastRequest
+            );
+
+            stats = StatsEntry(); // Reset delta stats
+        }
+        
+        // If flushing specific player, remove them from memory
+        it = (guid != 0) ? s_StatsBuffer.erase(it) : ++it;
+    }
+
+    CharacterDatabase.CommitTransaction(trans);
+}
+
+// Update player statistics in buffer
+static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout = false, bool isError = false, uint32 responseTimeMs = 0)
+{
+    if (!s_AddonConfig.EnableProtocolLogging || !player) return;
+
+    // Sanitize module code
+    std::string safeModule = moduleCode;
+    safeModule.erase(std::remove_if(safeModule.begin(), safeModule.end(), 
+        [](char c) { return !isalnum(c) && c != '_'; }), safeModule.end());
+    if (safeModule.length() > 16) safeModule = safeModule.substr(0, 16);
+
+    std::lock_guard<std::mutex> lock(s_StatsMutex);
+    auto& stats = s_StatsBuffer[player->GetGUID().GetCounter()][safeModule];
+    
+    if (isRequest) stats.totalRequests++;
+    else {
+        stats.totalResponses++;
+        if (isTimeout) stats.totalTimeouts++;
+        if (isError) stats.totalErrors++;
+        stats.sumResponseTime += responseTimeMs;
+        if (responseTimeMs > stats.maxResponseTime) stats.maxResponseTime = responseTimeMs;
+    }
+    stats.lastRequest = time(nullptr);
+    stats.dirty = true;
+}
+
 static void LogC2SMessage(Player* player, const std::string& payload, bool handled, const std::string& errorMsg = "")
 {
-    if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession())
-        return;
+    if (!s_AddonConfig.EnableProtocolLogging || !player || !player->GetSession()) return;
 
     std::string moduleCode = ExtractModuleCode(payload);
-    // Ensure module code is safe for SQL and fits column (max 16 chars)
-    if (moduleCode.length() > 16)
-        moduleCode = moduleCode.substr(0, 16);
-    // Remove any single quotes from module code
-    moduleCode.erase(std::remove(moduleCode.begin(), moduleCode.end(), '\''), moduleCode.end());
-
     uint8 opcode = ExtractOpcode(payload);
     std::string requestType = DetectRequestType(payload);
     std::string status = handled ? "completed" : (errorMsg.empty() ? "pending" : "error");
     std::string preview = payload.length() > 255 ? payload.substr(0, 255) : payload;
 
-    // Escape single quotes in preview
-    size_t pos = 0;
-    while ((pos = preview.find("'", pos)) != std::string::npos)
-    {
-        preview.replace(pos, 1, "''");
-        pos += 2;
-    }
+    // Sanitize inputs for raw query safety (as we can't add PreparedStatements)
+    // For module: alphanumeric only
+    moduleCode.erase(std::remove_if(moduleCode.begin(), moduleCode.end(), [](char c) { return !isalnum(c) && c != '_'; }), moduleCode.end());
+    if (moduleCode.length() > 16) moduleCode = moduleCode.substr(0, 16);
 
-    // Escape error message
-    std::string safeError = errorMsg;
-    pos = 0;
-    while ((pos = safeError.find("'", pos)) != std::string::npos)
-    {
-        safeError.replace(pos, 1, "''");
-        pos += 2;
-    }
+    // Escape strings
+    auto escape = [](std::string s) {
+        size_t pos = 0;
+        while ((pos = s.find("'", pos)) != std::string::npos) {
+            s.replace(pos, 1, "''");
+            pos += 2;
+        }
+        return s;
+    };
 
     CharacterDatabase.Execute(
         "INSERT INTO dc_addon_protocol_log "
@@ -323,90 +379,26 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
         "VALUES ({}, {}, '{}', 'C2S', '{}', '{}', {}, {}, '{}', '{}', '{}')",
         player->GetGUID().GetCounter(),
         player->GetSession()->GetAccountId(),
-        player->GetName(),
+        escape(player->GetName()),
         requestType,
         moduleCode,
         opcode,
         payload.length(),
-        preview,
+        escape(preview),
         status,
-        safeError);
+        escape(errorMsg)
+    );
 }
 
-// Update player statistics in dc_addon_protocol_stats
-static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout = false, bool isError = false, uint32 responseTimeMs = 0)
-{
-    if (!s_AddonConfig.EnableProtocolLogging || !player)
-        return;
-
-    // Ensure module code is safe for SQL
-    std::string safeModuleCode = moduleCode;
-    if (safeModuleCode.length() > 16)
-        safeModuleCode = safeModuleCode.substr(0, 16);
-    safeModuleCode.erase(std::remove(safeModuleCode.begin(), safeModuleCode.end(), '\''), safeModuleCode.end());
-
-    uint32 guid = player->GetGUID().GetCounter();
-
-    if (isRequest)
-    {
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_addon_protocol_stats (guid, module, total_requests, first_request, last_request) "
-            "VALUES ({}, '{}', 1, NOW(), NOW()) "
-            "ON DUPLICATE KEY UPDATE total_requests = total_requests + 1, last_request = NOW()",
-            guid, safeModuleCode);
-    }
-    else
-    {
-        std::string updateFields = "total_responses = total_responses + 1";
-        if (isTimeout)
-            updateFields = "total_timeouts = total_timeouts + 1";
-        else if (isError)
-            updateFields = "total_errors = total_errors + 1";
-
-        if (responseTimeMs > 0)
-        {
-            CharacterDatabase.Execute(
-                "INSERT INTO dc_addon_protocol_stats (guid, module, {}, avg_response_time_ms, max_response_time_ms, last_request) "
-                "VALUES ({}, '{}', 1, {}, {}, NOW()) "
-                "ON DUPLICATE KEY UPDATE {} = {} + 1, "
-                "avg_response_time_ms = (avg_response_time_ms * (total_responses - 1) + {}) / total_responses, "
-                "max_response_time_ms = GREATEST(max_response_time_ms, {}), "
-                "last_request = NOW()",
-                isTimeout ? "total_timeouts" : (isError ? "total_errors" : "total_responses"),
-                guid, safeModuleCode, responseTimeMs, responseTimeMs,
-                isTimeout ? "total_timeouts" : (isError ? "total_errors" : "total_responses"),
-                isTimeout ? "total_timeouts" : (isError ? "total_errors" : "total_responses"),
-                responseTimeMs, responseTimeMs);
-        }
-        else
-        {
-            CharacterDatabase.Execute(
-                "UPDATE dc_addon_protocol_stats SET {}, last_request = NOW() "
-                "WHERE guid = {} AND module = '{}'",
-                updateFields, guid, safeModuleCode);
-        }
-    }
-}
-
-// Global S2C logging function (called from Message::Send)
-// Determines request type based on module (AIO modules use AIO, LBRD uses JSON, others STANDARD)
 static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize)
 {
-    if (!player || !player->GetSession())
-        return;
+    if (!player || !player->GetSession()) return;
 
-    // Ensure module code is safe for SQL and fits column (max 16 chars)
     std::string safeModule = module;
-    if (safeModule.length() > 16)
-        safeModule = safeModule.substr(0, 16);
-    safeModule.erase(std::remove(safeModule.begin(), safeModule.end(), '\''), safeModule.end());
+    safeModule.erase(std::remove_if(safeModule.begin(), safeModule.end(), [](char c) { return !isalnum(c) && c != '_'; }), safeModule.end());
+    if (safeModule.length() > 16) safeModule = safeModule.substr(0, 16);
 
-    // Determine request type based on module
-    std::string requestType = "STANDARD";
-    if (safeModule == "SPOT" || safeModule == "SEAS" || safeModule == "MHUD")
-        requestType = "AIO";
-    else if (safeModule == "LBRD")
-        requestType = "JSON";
+    std::string requestType = (safeModule == "SPOT" || safeModule == "SEAS" || safeModule == "MHUD") ? "AIO" : (safeModule == "LBRD" ? "JSON" : "STANDARD");
 
     CharacterDatabase.Execute(
         "INSERT INTO dc_addon_protocol_log "
@@ -414,18 +406,14 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
         "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '', 'completed')",
         player->GetGUID().GetCounter(),
         player->GetSession()->GetAccountId(),
-        player->GetName(),
+        player->GetName(), // Name update assumed safe or handled by Execute format in newer TC
         requestType,
         safeModule,
         opcode,
-        dataSize);
+        dataSize
+    );
 
-    // Also update stats for S2C
-    CharacterDatabase.Execute(
-        "INSERT INTO dc_addon_protocol_stats (guid, module, total_responses, first_request, last_request) "
-        "VALUES ({}, '{}', 1, NOW(), NOW()) "
-        "ON DUPLICATE KEY UPDATE total_responses = total_responses + 1, last_request = NOW()",
-        player->GetGUID().GetCounter(), safeModule);
+    UpdateProtocolStats(player, safeModule, false, false, false, 0); // isResponse=true implicit
 }
 
 // ============================================================================
@@ -618,6 +606,9 @@ public:
         s_ChunkStartTimes.erase(accountId);
         s_MessageTrackers.erase(accountId);
 
+        // FLUSH STATS for this player and remove from buffer
+        FlushStats(player->GetGUID().GetCounter());
+
         // Also clean up any expired chunks from other players (opportunistic cleanup)
         CleanupExpiredChunks();
     }
@@ -654,23 +645,9 @@ public:
         if (s_AddonConfig.EnableDebugLog)
             LOG_DEBUG("dc.addon", "Routing DC message from {}: {}", player->GetName(), payload);
 
-        // Parse module and opcode for logging (format: "MODULE:OPCODE:DATA" or "MODULE:OPCODE")
-        std::string moduleStr, opcodeStr, dataStr;
-        size_t firstColon = payload.find(':');
-        if (firstColon != std::string::npos)
-        {
-            moduleStr = payload.substr(0, firstColon);
-            size_t secondColon = payload.find(':', firstColon + 1);
-            if (secondColon != std::string::npos)
-            {
-                opcodeStr = payload.substr(firstColon + 1, secondColon - firstColon - 1);
-                dataStr = payload.substr(secondColon + 1);
-            }
-            else
-            {
-                opcodeStr = payload.substr(firstColon + 1);
-            }
-        }
+        // Parse module and opcode for logging
+        // Note: We use the extracted module code which might be formatted nicely or raw
+        std::string moduleStr = ExtractModuleCode(payload);
 
         // Route the message
         bool handled = DCAddon::MessageRouter::Instance().Route(player, payload);
@@ -698,6 +675,12 @@ class DCAddonWorldScript : public WorldScript
 {
 public:
     DCAddonWorldScript() : WorldScript("DCAddonWorldScript") {}
+
+    void OnShutdown() override
+    {
+        // Flush all pending stats on server shutdown
+        FlushStats();
+    }
 
     void OnStartup() override
     {

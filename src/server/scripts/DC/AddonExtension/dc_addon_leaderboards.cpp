@@ -30,6 +30,7 @@
 #include <sstream>
 #include <unordered_set>
 #include <utility>  // for std::pair
+#include <mutex>    // for cache thread safety
 
 namespace
 {
@@ -47,6 +48,7 @@ namespace
         constexpr uint8 CMSG_TEST_TABLES = 0x05;
         constexpr uint8 CMSG_GET_SEASONS = 0x06;
         constexpr uint8 CMSG_GET_MPLUS_DUNGEONS = 0x07;  // v1.3.0: Get available M+ dungeons
+        constexpr uint8 CMSG_GET_ACCOUNT_STATS = 0x08;   // v1.5.0: Get account-wide statistics
 
         // Server -> Client
         constexpr uint8 SMSG_LEADERBOARD_DATA = 0x10;
@@ -55,12 +57,115 @@ namespace
         constexpr uint8 SMSG_TEST_RESULTS = 0x15;
         constexpr uint8 SMSG_SEASONS_LIST = 0x16;
         constexpr uint8 SMSG_MPLUS_DUNGEONS = 0x17;      // v1.3.0: M+ dungeon list response
+        constexpr uint8 SMSG_ACCOUNT_STATS = 0x18;       // v1.5.0: Account statistics response
         constexpr uint8 SMSG_ERROR = 0x1F;
     }
 
     // Maximum entries per page
     constexpr uint32 MAX_ENTRIES_PER_PAGE = 50;
     constexpr uint32 DEFAULT_ENTRIES_PER_PAGE = 25;
+
+    // ========================================================================
+    // SERVER-SIDE CACHING
+    // ========================================================================
+
+    // Cache configuration
+    constexpr uint32 CACHE_LIFETIME_SECONDS = 60;           // 1 minute cache lifetime
+    constexpr uint32 ACCOUNT_CACHE_LIFETIME_SECONDS = 120;  // 2 minutes for account stats
+    constexpr uint32 MAX_CACHE_ENTRIES = 100;               // Max cached leaderboards
+
+    struct LeaderboardEntry
+    {
+        uint32 rank;
+        std::string name;
+        std::string className;
+        uint32 score;
+        std::string extra;
+        // Extended fields for v1.3.0
+        std::string score_str;   // For gold (uint64) sent as string
+        uint32 mapId = 0;        // For M+ per-dungeon display
+
+        // Extended fields consumed by the client UI
+        // HLBG expects these for seasonal W/L and for all-time K/D displays
+        bool hasWinsLosses = false;
+        uint32 wins = 0;
+        uint32 losses = 0;
+
+        bool hasKD = false;
+        uint32 kills = 0;
+        uint32 deaths = 0;
+        double kdRatio = 0.0;
+
+        // AOE Loot expects separate quality columns in v1.4.0
+        bool hasQuality = false;
+        uint32 qLeg = 0;
+        uint32 qEpic = 0;
+        uint32 qRare = 0;
+        uint32 qUncommon = 0;
+    };
+
+    // Structure for cached leaderboard data
+    struct LeaderboardCacheEntry
+    {
+        std::vector<LeaderboardEntry> entries;
+        uint32 totalEntries;
+        time_t lastUpdate;
+        
+        bool IsValid() const
+        {
+            return (time(nullptr) - lastUpdate) < CACHE_LIFETIME_SECONDS;
+        }
+    };
+
+    // Structure for cached account stats
+    struct AccountStatsCacheEntry
+    {
+        std::string jsonResponse;
+        time_t lastUpdate;
+        
+        bool IsValid() const
+        {
+            return (time(nullptr) - lastUpdate) < ACCOUNT_CACHE_LIFETIME_SECONDS;
+        }
+    };
+
+    // Global cache maps
+    // Key format: "category_subcategory_seasonId_page_limit"
+    std::unordered_map<std::string, LeaderboardCacheEntry> g_leaderboardCache;
+    std::unordered_map<uint32, AccountStatsCacheEntry> g_accountStatsCache;  // Key: accountId
+    std::mutex g_cacheMutex;  // Thread safety
+
+    // Helper to generate cache key
+    std::string MakeCacheKey(const std::string& category, const std::string& subcategory, 
+                             uint32 seasonId, uint32 page, uint32 limit)
+    {
+        return category + "_" + subcategory + "_" + std::to_string(seasonId) + 
+               "_" + std::to_string(page) + "_" + std::to_string(limit);
+    }
+
+    // Clear all caches
+    void ClearAllCaches()
+    {
+        std::lock_guard<std::mutex> lock(g_cacheMutex);
+        g_leaderboardCache.clear();
+        g_accountStatsCache.clear();
+        LOG_DEBUG("server.scripts", "DC-Leaderboards: All caches cleared");
+    }
+
+    // Clear cache for a specific category
+    void ClearCategoryCache(const std::string& category)
+    {
+        std::lock_guard<std::mutex> lock(g_cacheMutex);
+        auto it = g_leaderboardCache.begin();
+        while (it != g_leaderboardCache.end())
+        {
+            if (it->first.rfind(category + "_", 0) == 0)
+                it = g_leaderboardCache.erase(it);
+            else
+                ++it;
+        }
+        LOG_DEBUG("server.scripts", "DC-Leaderboards: Cache cleared for category {}", category);
+    }
 
     // Forward declarations
     uint32 GetCurrentSeasonId();
@@ -108,35 +213,6 @@ namespace
     // LEADERBOARD DATA FETCHERS
     // ========================================================================
 
-    struct LeaderboardEntry
-    {
-        uint32 rank;
-        std::string name;
-        std::string className;
-        uint32 score;
-        std::string extra;
-        // Extended fields for v1.3.0
-        std::string score_str;   // For gold (uint64) sent as string
-        uint32 mapId = 0;        // For M+ per-dungeon display
-
-        // Extended fields consumed by the client UI
-        // HLBG expects these for seasonal W/L and for all-time K/D displays
-        bool hasWinsLosses = false;
-        uint32 wins = 0;
-        uint32 losses = 0;
-
-        bool hasKD = false;
-        uint32 kills = 0;
-        uint32 deaths = 0;
-        double kdRatio = 0.0;
-
-        // AOE Loot expects separate quality columns in v1.4.0
-        bool hasQuality = false;
-        uint32 qLeg = 0;
-        uint32 qEpic = 0;
-        uint32 qRare = 0;
-        uint32 qUncommon = 0;
-    };
 
     // Helper to get class name from class ID
     std::string GetClassNameFromId(uint8 classId)
@@ -1170,8 +1246,32 @@ namespace
         // Calculate offset
         uint32 offset = (page - 1) * limit;
 
-        // Get entries based on category
+        // ===== CACHE CHECK =====
+        std::string cacheKey = MakeCacheKey(category, subcategory, seasonId, page, limit);
+        bool useCache = false;
         std::vector<LeaderboardEntry> entries;
+        uint32 totalEntries = 0;
+        uint32 totalPages = 1;
+
+        {
+            std::lock_guard<std::mutex> lock(g_cacheMutex);
+            auto it = g_leaderboardCache.find(cacheKey);
+            if (it != g_leaderboardCache.end() && it->second.IsValid())
+            {
+                // Cache hit!
+                entries = it->second.entries;
+                totalEntries = it->second.totalEntries;
+                totalPages = (totalEntries + limit - 1) / limit;
+                if (totalPages < 1) totalPages = 1;
+                useCache = true;
+                LOG_DEBUG("server.scripts", "DC-Leaderboards: Cache HIT for {}", cacheKey);
+            }
+        }
+
+        if (!useCache)
+        {
+            LOG_DEBUG("server.scripts", "DC-Leaderboards: Cache MISS for {}", cacheKey);
+            // ===== FETCH FROM DATABASE =====
 
         if (category == "mplus")
         {
@@ -1209,9 +1309,41 @@ namespace
             entries = GetAchievementLeaderboard(subcategory, limit, offset);
 
         // Get total count for pagination
-        uint32 totalEntries = GetTotalEntryCount(category, subcategory, seasonId);
-        uint32 totalPages = (totalEntries + limit - 1) / limit;
+        totalEntries = GetTotalEntryCount(category, subcategory, seasonId);
+        totalPages = (totalEntries + limit - 1) / limit;
         if (totalPages < 1) totalPages = 1;
+
+            // ===== STORE IN CACHE =====
+            {
+                std::lock_guard<std::mutex> lock(g_cacheMutex);
+                
+                // Evict old entries if cache is too large
+                if (g_leaderboardCache.size() >= MAX_CACHE_ENTRIES)
+                {
+                    // Simple eviction: remove oldest entries
+                    time_t oldest = time(nullptr);
+                    std::string oldestKey;
+                    for (auto& [key, entry] : g_leaderboardCache)
+                    {
+                        if (entry.lastUpdate < oldest)
+                        {
+                            oldest = entry.lastUpdate;
+                            oldestKey = key;
+                        }
+                    }
+                    if (!oldestKey.empty())
+                        g_leaderboardCache.erase(oldestKey);
+                }
+                
+                LeaderboardCacheEntry cacheEntry;
+                cacheEntry.entries = entries;
+                cacheEntry.totalEntries = totalEntries;
+                cacheEntry.lastUpdate = time(nullptr);
+                g_leaderboardCache[cacheKey] = std::move(cacheEntry);
+                
+                LOG_DEBUG("server.scripts", "DC-Leaderboards: Cached {} entries for {}", entries.size(), cacheKey);
+            }
+        }  // End of if (!useCache)
 
         // Build JSON response
         DCAddon::JsonMessage response(MODULE_LEADERBOARD, Opcode::SMSG_LEADERBOARD_DATA);
@@ -1334,7 +1466,10 @@ namespace
         if (!player)
             return;
 
-        // Nothing to do server-side for refresh, client will re-request data
+        // Clear all server-side caches on refresh
+        ClearAllCaches();
+        LOG_DEBUG("server.scripts", "DC-Leaderboards: Player {} requested refresh, caches cleared", player->GetName());
+
         DCAddon::JsonMessage response(MODULE_LEADERBOARD, Opcode::SMSG_LEADERBOARD_DATA);
         response.Set("refreshed", true);
         response.Send(player);
@@ -1573,6 +1708,183 @@ namespace
         player->SendDirectMessage(&data);
     }
 
+    // v1.5.0: Handle request for account-wide statistics
+    void HandleGetAccountStats(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        LOG_DEBUG("server.scripts", "DC-Leaderboards: Getting account stats for account {}", accountId);
+
+        // ===== CACHE CHECK =====
+        {
+            std::lock_guard<std::mutex> lock(g_cacheMutex);
+            auto it = g_accountStatsCache.find(accountId);
+            if (it != g_accountStatsCache.end() && it->second.IsValid())
+            {
+                // Cache hit! Send cached response
+                LOG_DEBUG("server.scripts", "DC-Leaderboards: Account stats cache HIT for account {}", accountId);
+                
+                std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(Opcode::SMSG_ACCOUNT_STATS) + "|J|" + it->second.jsonResponse;
+                
+                WorldPacket data;
+                std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
+                player->SendDirectMessage(&data);
+                return;
+            }
+        }
+
+        LOG_DEBUG("server.scripts", "DC-Leaderboards: Account stats cache MISS for account {}", accountId);
+
+        // Build characters array - get all characters on this account
+        std::string charactersJson = "[";
+        bool first = true;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT c.guid, c.name, c.class, c.level, c.race "
+            "FROM characters c "
+            "WHERE c.account = {} "
+            "ORDER BY c.level DESC, c.name ASC",
+            accountId);
+
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                uint32 guid = fields[0].Get<uint32>();
+                std::string name = fields[1].Get<std::string>();
+                uint8 classId = fields[2].Get<uint8>();
+                uint8 level = fields[3].Get<uint8>();
+
+                std::string className = GetClassNameFromId(classId);
+
+                // Try to get best rank for this character across any category
+                // For simplicity, just check M+ score as "best rank"
+                uint32 bestRank = 0;
+                std::string bestCategory = "";
+
+                // Check M+ best rank
+                QueryResult rankResult = CharacterDatabase.Query(
+                    "SELECT COUNT(*) + 1 FROM dc_mplus_scores s1 "
+                    "WHERE s1.season_id = (SELECT MAX(season_id) FROM dc_mplus_scores) "
+                    "AND s1.best_level > ("
+                    "    SELECT COALESCE(MAX(s2.best_level), 0) FROM dc_mplus_scores s2 WHERE s2.character_guid = {}"
+                    ")",
+                    guid);
+
+                if (rankResult)
+                {
+                    uint32 mplusRank = rankResult->Fetch()[0].Get<uint32>();
+                    if (mplusRank > 0 && (bestRank == 0 || mplusRank < bestRank))
+                    {
+                        bestRank = mplusRank;
+                        bestCategory = "M+";
+                    }
+                }
+
+                if (!first) charactersJson += ",";
+                first = false;
+
+                charactersJson += "{";
+                charactersJson += "\"name\":\"" + JsonEscape(name) + "\",";
+                charactersJson += "\"class\":\"" + className + "\",";
+                charactersJson += "\"level\":" + std::to_string(level) + ",";
+                charactersJson += "\"bestRank\":" + std::to_string(bestRank) + ",";
+                charactersJson += "\"bestCategory\":\"" + bestCategory + "\"";
+                charactersJson += "}";
+
+            } while (result->NextRow());
+        }
+
+        charactersJson += "]";
+
+        // Build totals object - aggregate stats across all account characters
+        std::string totalsJson = "{";
+
+        // Total M+ runs
+        result = CharacterDatabase.Query(
+            "SELECT COALESCE(SUM(s.total_runs), 0) "
+            "FROM dc_mplus_scores s "
+            "JOIN characters c ON s.character_guid = c.guid "
+            "WHERE c.account = {}",
+            accountId);
+
+        uint32 totalMplusRuns = 0;
+        if (result)
+            totalMplusRuns = result->Fetch()[0].Get<uint32>();
+
+        totalsJson += "\"Total M+ Runs\":" + std::to_string(totalMplusRuns);
+
+        // Total gold looted (AOE Loot)
+        result = CharacterDatabase.Query(
+            "SELECT COALESCE(SUM(a.gold_looted), 0) "
+            "FROM dc_aoeloot_detailed_stats a "
+            "JOIN characters c ON a.guid = c.guid "
+            "WHERE c.account = {}",
+            accountId);
+
+        uint64 totalGold = 0;
+        if (result)
+            totalGold = result->Fetch()[0].Get<uint64>();
+
+        totalsJson += ",\"Total Gold Looted\":" + std::to_string(totalGold / 10000);  // Convert copper to gold
+
+        // Total items looted
+        result = CharacterDatabase.Query(
+            "SELECT COALESCE(SUM(a.items_looted), 0) "
+            "FROM dc_aoeloot_detailed_stats a "
+            "JOIN characters c ON a.guid = c.guid "
+            "WHERE c.account = {}",
+            accountId);
+
+        uint32 totalItems = 0;
+        if (result)
+            totalItems = result->Fetch()[0].Get<uint32>();
+
+        totalsJson += ",\"Total Items Looted\":" + std::to_string(totalItems);
+
+        // HLBG total wins
+        result = CharacterDatabase.Query(
+            "SELECT COALESCE(SUM(h.battles_won), 0) "
+            "FROM dc_hlbg_player_stats h "
+            "JOIN characters c ON h.player_guid = c.guid "
+            "WHERE c.account = {}",
+            accountId);
+
+        uint32 totalBgWins = 0;
+        if (result)
+            totalBgWins = result->Fetch()[0].Get<uint32>();
+
+        totalsJson += ",\"Total BG Wins\":" + std::to_string(totalBgWins);
+
+        totalsJson += "}";
+
+        // Build full JSON response
+        std::string fullJson = "{\"characters\":" + charactersJson + ",\"totals\":" + totalsJson + "}";
+
+        // ===== STORE IN CACHE =====
+        {
+            std::lock_guard<std::mutex> lock(g_cacheMutex);
+            AccountStatsCacheEntry cacheEntry;
+            cacheEntry.jsonResponse = fullJson;
+            cacheEntry.lastUpdate = time(nullptr);
+            g_accountStatsCache[accountId] = std::move(cacheEntry);
+            LOG_DEBUG("server.scripts", "DC-Leaderboards: Cached account stats for account {}", accountId);
+        }
+
+        // Send raw JSON message
+        std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(Opcode::SMSG_ACCOUNT_STATS) + "|J|" + fullJson;
+
+        WorldPacket data;
+        std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
+        player->SendDirectMessage(&data);
+    }
+
     // Error handler for future use
     [[maybe_unused]] void HandleError(Player* player, const std::string& message)
     {
@@ -1599,6 +1911,7 @@ namespace
         router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_TEST_TABLES, HandleTestTables);
         router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_GET_SEASONS, HandleGetSeasons);
         router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_GET_MPLUS_DUNGEONS, HandleGetMythicPlusDungeons);
+        router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_GET_ACCOUNT_STATS, HandleGetAccountStats);
 
         LOG_INFO("server.scripts", "DC-Leaderboards: Addon protocol handlers registered");
     }

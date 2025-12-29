@@ -62,7 +62,7 @@ void AddBattleForGilneasScripts();            // Gilneas\BattlegroundBFG.cpp
 // --- Hinterland Battleground System ---
 void AddSC_npc_thrall_hinterlandbg();         // HinterlandBG\npc_thrall_warchief.cpp
 void AddSC_hinterlandbg_Varian_wrynn();       // HinterlandBG\npc_Varian_hinterlandbg.cpp
-void AddSC_hlbg_commandscript();              // Commands\cs_hl_bg.cpp (Note: in Commands folder)
+void AddSC_hlbg_commandscript();              // HinterlandBG/cs_hl_bg.cpp
 void AddSC_hl_scoreboard();                   // HinterlandBG\HL_ScoreboardNPC.cpp
 void AddSC_hlbg_addon();                      // HLBG chat fallback (in AddonExtension/dc_addon_hlbg.cpp)
 void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG\npc_hinterlands_battlemaster.cpp
@@ -71,7 +71,9 @@ void AddSC_outdoorpvp_hl_dc();                // HinterlandBG\outdoorpvp_hl_regi
 // Note: HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
 
 // --- Prestige System ---
+// --- Prestige System ---
 void AddSC_dc_prestige_system();              // Prestige\dc_prestige_system.cpp
+void AddSC_dc_prestige_chat();            // Prestige\dc_prestige_chat.cpp
 void AddSC_dc_prestige_spells();              // Prestige\dc_prestige_spells.cpp
 void AddSC_dc_prestige_alt_bonus();           // Prestige\dc_prestige_alt_bonus.cpp
 void AddSC_dc_prestige_challenges();          // Prestige\dc_prestige_challenges.cpp
@@ -93,20 +95,21 @@ void AddSC_dc_addon_collection();             // CollectionSystem\dc_addon_colle
 void AddSC_GOMove_commandscript();            // GOMove\GOMoveScripts.cpp
 
 // --- Item Upgrade System ---
-void AddItemUpgradeGMCommandScript();         // ItemUpgrades\ItemUpgradeGMCommands.cpp
+void AddItemUpgradeGMCommandScript();         // ItemUpgrades\ItemUpgradeGMCommands.cpp (Deprecated)
 void AddSC_ItemUpgradeMechanicsImpl();        // ItemUpgrades\ItemUpgradeMechanicsImpl.cpp (MUST load first)
-void AddSC_ItemUpgradeMechanicsCommands();    // ItemUpgrades\ItemUpgradeMechanicsCommands.cpp
-void AddSC_ItemUpgradeAddonHandler();         // ItemUpgrades\ItemUpgradeAddonHandler.cpp
+void AddSC_ItemUpgradeMechanicsCommands();    // ItemUpgrades\ItemUpgradeMechanicsCommands.cpp (Deprecated)
+
 void AddSC_ItemUpgradeVendor();               // ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator();              // ItemUpgrades\ItemUpgradeNPC_Curator.cpp
-void AddSC_ItemUpgradeProgression();          // ItemUpgrades\ItemUpgradeProgressionImpl.cpp
-void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades\ItemUpgradeSeasonalImpl.cpp
-void AddSC_ItemUpgradeAdvanced();             // ItemUpgrades\ItemUpgradeAdvancedImpl.cpp
+void AddSC_ItemUpgradeProgression();          // ItemUpgrades\ItemUpgradeProgressionImpl.cpp (Deprecated)
+void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades\ItemUpgradeSeasonalImpl.cpp (Deprecated)
+void AddSC_ItemUpgradeAdvanced();             // ItemUpgrades\ItemUpgradeAdvancedImpl.cpp (Deprecated)
 void AddSC_ItemUpgradeTransmutation();        // ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
 void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades\ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades\ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades\ItemUpgradeStatApplication.cpp
 void AddSC_ItemUpgradeQuestRewardHook();      // ItemUpgrades\ItemUpgradeQuestRewardHook.cpp
+void AddSC_ItemUpgradeCommands();             // ItemUpgrades\dc_item_upgrade_commands.cpp (Consolidated)
 
 // --- Mythic+ Dungeon System ---
 void AddMythicPlusScripts();                  // MythicPlus\mythic_plus_loader.cpp
@@ -135,6 +138,10 @@ void AddSC_dc_firststart();                   // Integration\\dc_firststart.cpp
 // --- Cross-System Integration Framework ---
 void AddSC_dc_cross_system_scripts();         // CrossSystem\\CrossSystemScripts.cpp
 void AddSC_dc_teleporter();                   // Teleporters\\dc_teleporter.cpp
+
+// --- DC Commands (Unified command hub) ---
+void AddSC_dc_addons_commandscript();         // Commands/cs_dc_addons.cpp
+void AddSC_dc_dungeonquests_commandscript();  // Commands/cs_dc_dungeonquests.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -322,11 +329,12 @@ void AddDCScripts()
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_prestige_system();
+        AddSC_dc_prestige_chat();
         AddSC_dc_prestige_spells();
         AddSC_dc_prestige_alt_bonus();
         AddSC_dc_prestige_challenges();
         AddSC_spell_prestige_alt_bonus_aura();
-        LOG_INFO("scripts", ">>   ✓ Prestige mechanics, spells, alt bonus, challenges, and visual buffs loaded");
+        LOG_INFO("scripts", ">>   ✓ Prestige mechanics, commands, spells, alt bonus, challenges, and visual buffs loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Prestige System: {}", e.what());
     } catch (...) {
@@ -389,7 +397,7 @@ void AddDCScripts()
 
     try {
         AddSC_ItemUpgradeMechanicsCommands();
-        LOG_INFO("scripts", ">>   ✓ Mechanics commands loaded");
+        LOG_INFO("scripts", ">>   ✓ Mechanics commands loaded (Deprecated)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in mechanics commands: {}", e.what());
     } catch (...) {
@@ -398,7 +406,7 @@ void AddDCScripts()
 
     try {
         AddItemUpgradeGMCommandScript();
-        LOG_INFO("scripts", ">>   ✓ GM commands loaded");
+        LOG_INFO("scripts", ">>   ✓ GM commands loaded (Deprecated)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in GM commands: {}", e.what());
     } catch (...) {
@@ -406,13 +414,15 @@ void AddDCScripts()
     }
 
     try {
-        AddSC_ItemUpgradeAddonHandler();
-        LOG_INFO("scripts", ">>   ✓ Addon handler loaded");
+        AddSC_ItemUpgradeCommands();
+        LOG_INFO("scripts", ">>   ✓ Consolidated Item Upgrade commands loaded");
     } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in addon handler: {}", e.what());
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Item Upgrade commands: {}", e.what());
     } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in addon handler");
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Item Upgrade commands");
     }
+
+
 
     try {
         AddSC_ItemUpgradeVendor();
@@ -678,4 +688,21 @@ void AddDCScripts()
         LOG_ERROR("scripts", "║   ✗ CRASH in Dungeon Quest System");
     }
     LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DC COMMANDS (Unified command system)
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts", ">> DC Commands (Unified .dc command hub)");
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_addons_commandscript();
+        AddSC_dc_dungeonquests_commandscript();
+        LOG_INFO("scripts", ">>   ✓ DC addon commands and dungeon quest commands loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in DC Commands: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in DC Commands");
+    }
+    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
 }

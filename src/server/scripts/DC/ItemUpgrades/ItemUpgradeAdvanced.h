@@ -449,5 +449,16 @@ namespace DarkChaos
             virtual uint8 GetGuildTier(uint32 guild_id) = 0;
         };
 
+        // =====================================================================
+        // Factory Functions
+        // =====================================================================
+
+        OptimizationManager* GetOptimizationManager();
+        TransmogManager* GetTransmogManager();
+        AchievementManager* GetAchievementManager();
+        TradingManager* GetTradingManager();
+        RespecManager* GetRespecManager();
+        GuildProgressionManager* GetGuildProgressionManager();
+
     } // namespace ItemUpgrade
 } // namespace DarkChaos

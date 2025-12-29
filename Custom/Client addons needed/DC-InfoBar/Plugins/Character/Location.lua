@@ -52,11 +52,41 @@ local LocationPlugin = {
     _currentHotspots = nil,   -- All hotspots matching current zone/area
     _hotspotBonus = 0,        -- Current bonus percentage
     _hotspotsLoaded = false,
+    _lastHotspotListRequest = 0,  -- Timestamp of last full list request
     _blinkTimer = 0,
     _blinkState = false,
 }
 
-local function PlayerCanGainXP()
+-- Cache TTL in seconds (avoid re-requesting full list within this window)
+local HOTSPOT_CACHE_TTL = 60
+
+local PlayerCanGainXP -- forward declaration
+
+-- Normalize a hotspot record from server (handles abbreviated keys)
+-- Server may send: i (id), m (mapId), z (zoneId), n (zoneName), b (bonus), t (timeRemaining), x, y, h (z coord)
+local function NormalizeHotspot(h)
+    if not h or type(h) ~= "table" then return nil end
+    
+    local id = tonumber(h.id or h.i or h.hotspotId)
+    if not id then return nil end
+    
+    return {
+        id = id,
+        name = h.name or h.n or "Hotspot",
+        mapId = tonumber(h.mapId or h.m or h.map) or 0,
+        zoneId = tonumber(h.zoneId or h.z or h.zone) or 0,
+        zoneName = h.zoneName or h.n or h.zone or "Unknown Zone",
+        areaId = tonumber(h.areaId) or 0,
+        x = tonumber(h.x) or 0,
+        y = tonumber(h.y) or 0,
+        z = tonumber(h.z or h.h) or 0, -- 'h' is used for height in server
+        bonusPercent = tonumber(h.bonusPercent or h.bonus or h.b) or 0,
+        bonus = tonumber(h.bonusPercent or h.bonus or h.b) or 0, -- alias
+        timeRemaining = tonumber(h.timeRemaining or h.timeLeft or h.dur or h.t) or 0,
+    }
+end
+
+PlayerCanGainXP = function()
     if IsXPUserDisabled and IsXPUserDisabled() then
         return false
     end
@@ -125,50 +155,66 @@ function LocationPlugin:OnActivate()
     if DC then
         -- SMSG_HOTSPOT_LIST (0x10) - List of active hotspots
         DC:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_LIST, function(data)
+            local normalized = {}
+            local rawList = nil
+            
             if data and data.hotspots then
-                LocationPlugin._hotspots = data.hotspots
-                LocationPlugin._hotspotsLoaded = true
-                DCInfoBar.serverData.hotspots = data.hotspots
+                rawList = data.hotspots
             elseif data and type(data) == "table" and #data > 0 then
                 -- Data might be the array directly
-                LocationPlugin._hotspots = data
-                LocationPlugin._hotspotsLoaded = true
-                DCInfoBar.serverData.hotspots = data
+                rawList = data
             end
+            
+            if rawList then
+                for _, h in ipairs(rawList) do
+                    local rec = NormalizeHotspot(h)
+                    if rec then
+                        table.insert(normalized, rec)
+                    end
+                end
+            end
+            
+            LocationPlugin._hotspots = normalized
+            LocationPlugin._hotspotsLoaded = true
+            DCInfoBar.serverData.hotspots = normalized
         end)
         
         -- SMSG_HOTSPOT_INFO (0x11) - Single hotspot info
         DC:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_INFO, function(data)
-            if data then
+            local rec = NormalizeHotspot(data)
+            if rec then
                 -- Update or add hotspot
                 local found = false
                 for i, hs in ipairs(LocationPlugin._hotspots) do
-                    if hs.id == data.id then
-                        LocationPlugin._hotspots[i] = data
+                    if hs.id == rec.id then
+                        LocationPlugin._hotspots[i] = rec
                         found = true
                         break
                     end
                 end
                 if not found then
-                    table.insert(LocationPlugin._hotspots, data)
+                    table.insert(LocationPlugin._hotspots, rec)
                 end
             end
         end)
         
         -- SMSG_HOTSPOT_SPAWN (0x12) - New hotspot spawned
         DC:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_SPAWN, function(data)
-            if data then
-                table.insert(LocationPlugin._hotspots, data)
+            local rec = NormalizeHotspot(data)
+            if rec then
+                table.insert(LocationPlugin._hotspots, rec)
                 -- Notify player
-                DCInfoBar:Print("|cff00ff00New Hotspot:|r " .. (data.name or "Unknown") .. " in " .. (data.zoneName or "Unknown Zone"))
+                DCInfoBar:Print("|cff00ff00New Hotspot:|r " .. (rec.name or "Unknown") .. " in " .. (rec.zoneName or "Unknown Zone"))
             end
         end)
         
         -- SMSG_HOTSPOT_EXPIRE (0x13) - Hotspot expired
         DC:RegisterHandler("SPOT", SPOT_SMSG_HOTSPOT_EXPIRE, function(data)
-            if data and data.id then
+            -- For expire, we only need the ID
+            local id = tonumber(data and (data.id or data.i or data.hotspotId))
+            if id then
                 for i, hs in ipairs(LocationPlugin._hotspots) do
-                    if hs.id == data.id then
+                    if hs.id == id then
                         table.remove(LocationPlugin._hotspots, i)
                         break
                     end
@@ -176,12 +222,17 @@ function LocationPlugin:OnActivate()
             end
         end)
         
-        -- Request initial hotspot list
-        DC:Request("SPOT", SPOT_CMSG_GET_LIST, {})
-        
-        -- Also use helper if available
-        if DC.Hotspot and DC.Hotspot.GetList then
-            DC.Hotspot.GetList()
+        -- Request initial hotspot list (only if cache is stale)
+        local now = GetTime and GetTime() or 0
+        local cacheAge = now - LocationPlugin._lastHotspotListRequest
+        if cacheAge >= HOTSPOT_CACHE_TTL or not LocationPlugin._hotspotsLoaded then
+            LocationPlugin._lastHotspotListRequest = now
+            DC:Request("SPOT", SPOT_CMSG_GET_LIST, {})
+            
+            -- Also use helper if available
+            if DC.Hotspot and DC.Hotspot.GetList then
+                DC.Hotspot.GetList()
+            end
         end
     else
         -- Fallback: Try to request hotspots after a delay when DC loads
@@ -193,9 +244,15 @@ function LocationPlugin:OnActivate()
                 self:SetScript("OnUpdate", nil)
                 local DC = rawget(_G, "DCAddonProtocol")
                 if DC then
-                    DC:Request("SPOT", 0x01, {})
-                    if DC.Hotspot and DC.Hotspot.GetList then
-                        DC.Hotspot.GetList()
+                    -- Only request if cache is stale
+                    local now = GetTime and GetTime() or 0
+                    local cacheAge = now - LocationPlugin._lastHotspotListRequest
+                    if cacheAge >= HOTSPOT_CACHE_TTL or not LocationPlugin._hotspotsLoaded then
+                        LocationPlugin._lastHotspotListRequest = now
+                        DC:Request("SPOT", 0x01, {})
+                        if DC.Hotspot and DC.Hotspot.GetList then
+                            DC.Hotspot.GetList()
+                        end
                     end
                 end
             end

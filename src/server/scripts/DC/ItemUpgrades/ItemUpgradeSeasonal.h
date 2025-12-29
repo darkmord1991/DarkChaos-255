@@ -488,5 +488,14 @@ namespace DarkChaos
             virtual void UpdateLeaderboards(uint32 season_id) = 0;
         };
 
+        // =====================================================================
+        // Factory Functions
+        // =====================================================================
+        SeasonManager* GetSeasonManager();
+        SeasonResetManager* GetSeasonResetManager();
+        BalanceManager* GetBalanceManager();
+        HistoryManager* GetHistoryManager();
+        LeaderboardManager* GetLeaderboardManager();
+
     } // namespace ItemUpgrade
 } // namespace DarkChaos

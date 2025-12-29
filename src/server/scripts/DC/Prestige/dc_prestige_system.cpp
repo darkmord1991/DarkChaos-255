@@ -225,10 +225,10 @@ public:
         return true;
     }
 
-    void PerformPrestige(Player* player)
+    bool PerformPrestige(Player* player)
     {
         if (!CanPrestige(player))
-            return;
+            return false;
 
         uint32 currentPrestige = GetPrestigeLevel(player);
         uint32 newPrestige = currentPrestige + 1;
@@ -248,16 +248,17 @@ public:
                 if (keepGear)
                 {
                     ChatHandler(player->GetSession()).PSendSysMessage("Free slots: {}. Needed: {}.", freeSlots, requiredStacks);
+                    return false;
                 }
                 else
                 {
-                    ChatHandler(player->GetSession()).PSendSysMessage(
-                        "You must have at least {} free backpack slots (bags will be removed when Prestige.KeepGear=0).", requiredStacks);
+                    ChatHandler(player->GetSession()).PSendSysMessage("Backpack free slots: {}. Needed: {}.", freeSlots, requiredStacks);
+                    return false;
                 }
 
                 if (debug)
                     LOG_DEBUG("scripts", "Prestige: Blocked prestige for {} due to bag space (free={}, required={})", player->GetName(), freeSlots, requiredStacks);
-                return;
+                return false;
             }
         }
 
@@ -362,6 +363,8 @@ public:
 
         // Teleport to starting location
         TeleportToStartingLocation(player);
+
+        return true;
     }
 
     void TeleportToStartingLocation(Player* player)
@@ -890,205 +893,6 @@ public:
     }
 };
 
-// Command script for .prestige command
-class PrestigeCommandScript : public CommandScript
-{
-public:
-    PrestigeCommandScript() : CommandScript("PrestigeCommandScript") { }
-
-    ChatCommandTable GetCommands() const override
-    {
-        static ChatCommandTable prestigeCommandTable =
-        {
-            ChatCommandBuilder("info",    HandlePrestigeInfoCommand,    SEC_PLAYER,      Console::No),
-            ChatCommandBuilder("reset",   HandlePrestigeResetCommand,   SEC_PLAYER,      Console::No),
-            ChatCommandBuilder("confirm", HandlePrestigeConfirmCommand, SEC_PLAYER,      Console::No),
-            ChatCommandBuilder("disable", HandlePrestigeDisableCommand, SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("admin",   HandlePrestigeAdminCommand,   SEC_ADMINISTRATOR, Console::No)
-        };
-
-        static ChatCommandTable commandTable =
-        {
-            ChatCommandBuilder("prestige", prestigeCommandTable)
-        };
-
-        return commandTable;
-    }
-
-    static bool HandlePrestigeInfoCommand(ChatHandler* handler, char const* /*args*/)
-    {
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-
-        if (!PrestigeSystem::instance()->IsEnabled())
-        {
-            handler->SendSysMessage("Prestige system is currently disabled.");
-            return true;
-        }
-
-        uint32 prestigeLevel = PrestigeSystem::instance()->GetPrestigeLevel(player);
-        uint32 maxPrestige = PrestigeSystem::instance()->GetMaxPrestigeLevel();
-        uint32 requiredLevel = PrestigeSystem::instance()->GetRequiredLevel();
-        uint32 statBonus = prestigeLevel * PrestigeSystem::instance()->GetStatBonusPercent();
-
-        handler->PSendSysMessage("=== Prestige System ===");
-        handler->PSendSysMessage("Your Prestige Level: {}/{}", prestigeLevel, maxPrestige);
-        handler->PSendSysMessage("Current Stat Bonus: {}%", statBonus);
-        handler->PSendSysMessage("Required Level to Prestige: {}", requiredLevel);
-
-        if (PrestigeSystem::instance()->CanPrestige(player))
-        {
-            handler->PSendSysMessage("|cFF00FF00You can prestige! Type .prestige reset to begin.|r");
-        }
-        else if (player->GetLevel() < requiredLevel)
-        {
-            handler->PSendSysMessage("You need to be level {} to prestige. Current level: {}", requiredLevel, player->GetLevel());
-        }
-        else if (prestigeLevel >= maxPrestige)
-        {
-            handler->PSendSysMessage("|cFFFFD700You have reached maximum prestige level!|r");
-        }
-
-        return true;
-    }
-
-    static bool HandlePrestigeResetCommand(ChatHandler* handler, char const* /*args*/)
-    {
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-
-        if (!PrestigeSystem::instance()->IsEnabled())
-        {
-            handler->SendSysMessage("Prestige system is currently disabled.");
-            return true;
-        }
-
-        if (!PrestigeSystem::instance()->CanPrestige(player))
-        {
-            handler->SendSysMessage("You cannot prestige at this time.");
-            return true;
-        }
-
-        uint32 nextPrestige = PrestigeSystem::instance()->GetPrestigeLevel(player) + 1;
-        uint32 newBonus = nextPrestige * PrestigeSystem::instance()->GetStatBonusPercent();
-        uint32 resetLevel = PrestigeSystem::instance()->GetResetLevel();
-
-        handler->PSendSysMessage("|cFFFF0000WARNING: Prestiging will:|r");
-        handler->PSendSysMessage("- Reset you to level {}", resetLevel);
-        handler->PSendSysMessage("- Grant you Prestige Level {} with {}% permanent stat bonus", nextPrestige, newBonus);
-        handler->PSendSysMessage("- Grant you an exclusive title");
-        handler->PSendSysMessage("|cFFFFD700Type .prestige confirm to proceed.|r");
-
-        return true;
-    }
-
-    static bool HandlePrestigeConfirmCommand(ChatHandler* handler, char const* /*args*/)
-    {
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-
-        if (!PrestigeSystem::instance()->CanPrestige(player))
-        {
-            handler->SendSysMessage("You cannot prestige at this time.");
-            return true;
-        }
-
-        // No need to store player GUID here; session's player pointer will be re-queried after PerformPrestige
-
-        try
-        {
-            PrestigeSystem::instance()->PerformPrestige(player);
-            return true;
-        }
-        catch (std::exception const& e)
-        {
-            LOG_ERROR("scripts", "Prestige: Exception in PerformPrestige for player {}: {}", handler->GetNameLink(), e.what());
-            handler->SendSysMessage("An internal error occurred while processing prestige. Check server logs.");
-            return true;
-        }
-        catch (...)
-        {
-            LOG_ERROR("scripts", "Prestige: Unknown exception in PerformPrestige for player {}", handler->GetNameLink());
-            handler->SendSysMessage("An internal error occurred while processing prestige. Check server logs.");
-            return true;
-        }
-    }
-
-    static bool HandlePrestigeDisableCommand(ChatHandler* handler, char const* args)
-    {
-        if (!*args)
-        {
-            handler->SendSysMessage("Usage: .prestige disable <playername>");
-            return true;
-        }
-
-        std::string playerName = args;
-        Player* target = ObjectAccessor::FindPlayerByName(playerName);
-
-        if (!target)
-        {
-            handler->PSendSysMessage("Player {} not found.", playerName);
-            return true;
-        }
-
-        // Remove all prestige buffs
-        PrestigeSystem::instance()->RemovePrestigeBuffs(target);
-
-        handler->PSendSysMessage("Removed prestige buffs from {}.", playerName);
-        ChatHandler(target->GetSession()).PSendSysMessage("Your prestige buffs have been removed by a GM.");
-
-        return true;
-    }
-
-    static bool HandlePrestigeAdminCommand(ChatHandler* handler, char const* args)
-    {
-        if (!*args)
-            return false;
-
-        std::stringstream ss(args);
-        std::string token;
-        std::vector<std::string> tokens;
-        while (ss >> token)
-            tokens.push_back(token);
-
-        if (tokens.empty())
-            return false;
-
-        std::string subCommand = tokens[0];
-
-        if (subCommand == "set" && tokens.size() == 3)
-        {
-            std::string playerName = tokens[1];
-            if (Optional<uint32> level = Acore::StringTo<uint32>(tokens[2]))
-            {
-                Player* target = ObjectAccessor::FindPlayerByName(playerName);
-                if (!target)
-                {
-                    handler->PSendSysMessage("Player {} not found.", playerName);
-                    return true;
-                }
-
-                uint32 maxLevel = PrestigeSystem::instance()->GetMaxPrestigeLevel();
-                uint32 clampedLevel = std::min(*level, maxLevel);
-
-                PrestigeSystem::instance()->SetPrestigeLevel(target, clampedLevel);
-                PrestigeSystem::instance()->RemovePrestigeBuffs(target);
-                PrestigeSystem::instance()->ApplyPrestigeBuffs(target);
-
-                handler->PSendSysMessage("Set {}'s prestige level to {}.", playerName, clampedLevel);
-                ChatHandler(target->GetSession()).PSendSysMessage("Your prestige level has been set to {} by a GM.", clampedLevel);
-                return true;
-            }
-        }
-
-        handler->SendSysMessage("Usage: .prestige admin set <player> <level>");
-        return true;
-    }
-};
-
 // World script for loading config
 class PrestigeWorldScript : public WorldScript
 {
@@ -1153,7 +957,6 @@ public:
 void AddSC_dc_prestige_system()
 {
     new PrestigePlayerScript();
-    new PrestigeCommandScript();
     new PrestigeWorldScript();
 }
 
@@ -1194,8 +997,8 @@ namespace PrestigeAPI
         PrestigeSystem::instance()->ApplyPrestigeBuffs(player);
     }
 
-    void PerformPrestige(Player* player)
+    bool PerformPrestige(Player* player)
     {
-        PrestigeSystem::instance()->PerformPrestige(player);
+        return PrestigeSystem::instance()->PerformPrestige(player);
     }
 }

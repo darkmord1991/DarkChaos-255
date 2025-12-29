@@ -273,68 +273,16 @@ namespace
             LOG_INFO("scripts", "Prestige Alt Bonus: System initialized");
         }
     };
-
-    class PrestigeAltBonusCommandScript : public CommandScript
-    {
-    public:
-        PrestigeAltBonusCommandScript() : CommandScript("PrestigeAltBonusCommandScript") { }
-
-        Acore::ChatCommands::ChatCommandTable GetCommands() const override
-        {
-            static Acore::ChatCommands::ChatCommandTable altBonusCommandTable =
-            {
-                { "info", HandleAltBonusInfoCommand, SEC_PLAYER, Acore::ChatCommands::Console::No }
-            };
-
-            static Acore::ChatCommands::ChatCommandTable prestigeCommandTable =
-            {
-                { "altbonus", altBonusCommandTable }
-            };
-
-            static Acore::ChatCommands::ChatCommandTable commandTable =
-            {
-                { "prestige", prestigeCommandTable }
-            };
-
-            return commandTable;
-        }
-
-        static bool HandleAltBonusInfoCommand(ChatHandler* handler, char const* /*args*/)
-        {
-            Player* player = handler->GetSession()->GetPlayer();
-            if (!player)
-                return false;
-
-            if (!PrestigeAltBonusSystem::instance()->IsEnabled())
-            {
-                handler->SendSysMessage("Alt bonus system is currently disabled.");
-                return true;
-            }
-
-            uint32 accountId = player->GetSession()->GetAccountId();
-            uint32 maxLevelCount = PrestigeAltBonusSystem::instance()->GetMaxLevelCharCount(accountId);
-            uint32 bonusPercent = PrestigeAltBonusSystem::instance()->CalculateXPBonus(player);
-
-            handler->PSendSysMessage("|cFFFFD700=== Alt-Friendly XP Bonus ===|r");
-            handler->PSendSysMessage("Max-level characters on account: |cFF00FF00{}|r", maxLevelCount);
-
-            if (player->GetLevel() >= PrestigeAltBonusSystem::instance()->GetMaxLevel())
-            {
-                handler->PSendSysMessage("|cFFFFFF00You are max level and do not receive the bonus.|r");
-            }
-            else
-            {
-                handler->PSendSysMessage("Current XP bonus: |cFF00FF00{}%|r", bonusPercent);
-                handler->PSendSysMessage("(5% per max-level character, max 25%)");
-            }
-
-            return true;
-        }
-    };
 }
 
 namespace PrestigeAPI
 {
+    // API Implementations
+    bool IsAltBonusEnabled()
+    {
+        return PrestigeAltBonusSystem::instance()->IsEnabled();
+    }
+
     uint32 GetAltBonusPercent(Player* player)
     {
         return PrestigeAltBonusSystem::instance()->CalculateXPBonus(player);
@@ -350,5 +298,4 @@ void AddSC_dc_prestige_alt_bonus()
 {
     new PrestigeAltBonusPlayerScript();
     new PrestigeAltBonusWorldScript();
-    new PrestigeAltBonusCommandScript();
 }

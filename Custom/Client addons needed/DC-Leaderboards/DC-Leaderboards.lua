@@ -75,6 +75,7 @@ LB.Opcode = {
     CMSG_TEST_TABLES = 0x05,          -- Test database tables
     CMSG_GET_SEASONS = 0x06,          -- Get available seasons
     CMSG_GET_MPLUS_DUNGEONS = 0x07,   -- v1.3.0: Get M+ dungeons list
+    CMSG_GET_ACCOUNT_STATS = 0x08,    -- v1.5.0: Get account-wide statistics
     
     -- Server -> Client
     SMSG_LEADERBOARD_DATA = 0x10,     -- Leaderboard response
@@ -83,6 +84,7 @@ LB.Opcode = {
     SMSG_TEST_RESULTS = 0x15,         -- Test results response
     SMSG_SEASONS_LIST = 0x16,         -- Available seasons list
     SMSG_MPLUS_DUNGEONS = 0x17,       -- v1.3.0: M+ dungeon list
+    SMSG_ACCOUNT_STATS = 0x18,        -- v1.5.0: Account-wide stats
     SMSG_ERROR = 0x1F,                -- Error response
 }
 
@@ -186,6 +188,16 @@ LB.Categories = {
             { id = "achieve_progress", name = "Total Progress" },
         }
     },
+    {
+        id = "statistics",
+        name = "Statistics",
+        icon = "Interface\\Icons\\INV_Misc_Book_09",
+        color = "ffffff",
+        subcats = {
+            { id = "stats_char", name = "Character Overview" },
+            { id = "stats_account", name = "Account Overview" },
+        }
+    },
 }
 
 -- Default settings
@@ -236,7 +248,16 @@ LB.Cache = {
     timestamps = {},    -- When each cache was last updated
     myRanks = {},       -- Player's own rank in each category
     playerRank = nil,   -- Player's overall rank info
+    accountStats = nil, -- v1.5.0: Account-wide statistics
 }
+
+-- =====================================================================
+-- CACHE TTL CONSTANTS (seconds)
+-- =====================================================================
+
+local CACHE_TTL_SEASONS = 3600       -- 1 hour (seasons rarely change)
+local CACHE_TTL_DUNGEONS = 86400     -- 24 hours (dungeons only change on season reset)
+local CACHE_TTL_CATEGORIES = 86400   -- 24 hours (categories are static)
 
 -- =====================================================================
 -- UI FRAMES
@@ -254,6 +275,28 @@ function LB:InitializeSettings()
         if DCLeaderboardsDB[key] == nil then
             DCLeaderboardsDB[key] = value
         end
+    end
+    
+    -- Initialize persistent cache structure
+    DCLeaderboardsDB.cache = DCLeaderboardsDB.cache or {}
+    DCLeaderboardsDB.cache.seasons = DCLeaderboardsDB.cache.seasons or {}
+    DCLeaderboardsDB.cache.seasonsTime = DCLeaderboardsDB.cache.seasonsTime or 0
+    DCLeaderboardsDB.cache.dungeons = DCLeaderboardsDB.cache.dungeons or {}
+    DCLeaderboardsDB.cache.dungeonsTime = DCLeaderboardsDB.cache.dungeonsTime or 0
+    DCLeaderboardsDB.cache.dungeonsSeasonId = DCLeaderboardsDB.cache.dungeonsSeasonId or 0
+    
+    -- Restore cached seasons if still fresh
+    local now = time()
+    if #DCLeaderboardsDB.cache.seasons > 0 and (now - DCLeaderboardsDB.cache.seasonsTime) < CACHE_TTL_SEASONS then
+        LB.AvailableSeasons = { { id = 0, name = "Current Season (Auto)" } }
+        for _, s in ipairs(DCLeaderboardsDB.cache.seasons) do
+            table.insert(LB.AvailableSeasons, s)
+        end
+    end
+    
+    -- Restore cached dungeons if still fresh
+    if #DCLeaderboardsDB.cache.dungeons > 0 and (now - DCLeaderboardsDB.cache.dungeonsTime) < CACHE_TTL_DUNGEONS then
+        LB.MythicPlusDungeons = DCLeaderboardsDB.cache.dungeons
     end
 end
 
@@ -401,12 +444,41 @@ end
 
 -- v1.3.0: Request M+ dungeons for current season
 function LB:RequestMythicPlusDungeons()
+    local seasonId = self:GetSetting("selectedSeasonId") or 0
+    
+    -- Check cache first
+    local now = time()
+    if DCLeaderboardsDB and DCLeaderboardsDB.cache and DCLeaderboardsDB.cache.dungeonsTime then
+       local cachedSeasonId = DCLeaderboardsDB.cache.dungeonsSeasonId or 0
+       if (now - DCLeaderboardsDB.cache.dungeonsTime) < CACHE_TTL_DUNGEONS and cachedSeasonId == seasonId then
+           if #DCLeaderboardsDB.cache.dungeons > 0 then
+               LB.MythicPlusDungeons = DCLeaderboardsDB.cache.dungeons
+               Print("Using cached M+ dungeons list")
+               if LB.Frames.dungeonDropdown and LB.currentCategory == "mplus" then
+                    LB:UpdateDungeonDropdownItems()
+               end
+               return true
+           end
+       end
+    end
+
     if not DC then return false end
     
-    local seasonId = self:GetSetting("selectedSeasonId") or 0
     DC:Request(self.MODULE, self.Opcode.CMSG_GET_MPLUS_DUNGEONS, {
         seasonId = seasonId,
     })
+    return true
+end
+
+-- v1.5.0: Request account-wide statistics
+function LB:RequestAccountStats()
+    if not DC then 
+        Print("|cffff0000DCAddonProtocol not available|r")
+        return false
+    end
+    
+    Print("|cff00ccffRequesting account-wide statistics...|r")
+    DC:Request(self.MODULE, self.Opcode.CMSG_GET_ACCOUNT_STATS, {})
     return true
 end
 
@@ -496,6 +568,11 @@ function LB:RegisterHandlers()
         LB:OnMythicPlusDungeons(...)
     end)
     
+    -- v1.5.0: Account stats response
+    DC:RegisterHandler(self.MODULE, self.Opcode.SMSG_ACCOUNT_STATS, function(...)
+        LB:OnAccountStats(...)
+    end)
+    
     -- Error response
     DC:RegisterHandler(self.MODULE, self.Opcode.SMSG_ERROR, function(...)
         LB:OnError(...)
@@ -541,16 +618,25 @@ function LB:OnSeasonsList(data)
         { id = 0, name = "Current Season (Auto)" },
     }
     
+    local seasonsToCache = {}
     if data.seasons then
         for _, season in ipairs(data.seasons) do
-            table.insert(LB.AvailableSeasons, {
+            local entry = {
                 id = season.id,
                 name = "Season " .. season.id .. (season.active and " (Active)" or ""),
-            })
+            }
+            table.insert(LB.AvailableSeasons, entry)
+            table.insert(seasonsToCache, entry)
         end
     end
     
-    Print("|cff00ff00Received " .. #LB.AvailableSeasons .. " seasons|r")
+    -- Persist to SavedVariables
+    if DCLeaderboardsDB and DCLeaderboardsDB.cache then
+        DCLeaderboardsDB.cache.seasons = seasonsToCache
+        DCLeaderboardsDB.cache.seasonsTime = time()
+    end
+    
+    Print("|cff00ff00Received " .. #LB.AvailableSeasons .. " seasons (cached)|r")
     
     -- Update dropdown if it exists
     if LB.Frames.seasonDropdown then
@@ -577,11 +663,40 @@ function LB:OnMythicPlusDungeons(data)
         end
     end
     
-    Print("|cff00ff00Received " .. #LB.MythicPlusDungeons .. " M+ dungeons for season " .. (data.seasonId or "?") .. "|r")
+    -- Persist to SavedVariables
+    if DCLeaderboardsDB and DCLeaderboardsDB.cache then
+        DCLeaderboardsDB.cache.dungeons = LB.MythicPlusDungeons
+        DCLeaderboardsDB.cache.dungeonsTime = time()
+        DCLeaderboardsDB.cache.dungeonsSeasonId = data.seasonId or 0
+    end
+    
+    Print("|cff00ff00Received " .. #LB.MythicPlusDungeons .. " M+ dungeons for season " .. (data.seasonId or "?") .. " (cached)|r")
     
     -- Update dungeon dropdown if it exists
     if LB.Frames.dungeonDropdown and LB.currentCategory == "mplus" then
         LB:UpdateDungeonDropdownItems()
+    end
+end
+
+-- v1.5.0: Handler for account statistics
+function LB:OnAccountStats(data)
+    if type(data) ~= "table" then
+        Print("|cffff0000Account Stats: Invalid data received|r")
+        return
+    end
+    
+    -- Store in cache
+    -- Expected format: { characters = { {name, class, ...}, ... }, totals = { ... }, bestRanks = { ... } }
+    self.Cache.accountStats = data
+    
+    Print("|cff00ff00Received account statistics|r")
+    if data.characters then
+        Print("  Characters: " .. #data.characters)
+    end
+    
+    -- Update UI if on Account Overview
+    if self.Frames.main and self.Frames.main:IsShown() and self.currentSubCategory == "stats_account" then
+        self:UpdateStatisticsDisplay()
     end
 end
 
@@ -598,6 +713,31 @@ end
 
 -- Request available seasons
 function LB:RequestSeasons()
+    -- Check cache first
+    local now = time()
+    if DCLeaderboardsDB and DCLeaderboardsDB.cache and DCLeaderboardsDB.cache.seasonsTime then
+       if (now - DCLeaderboardsDB.cache.seasonsTime) < CACHE_TTL_SEASONS then
+           if #DCLeaderboardsDB.cache.seasons > 0 then
+                -- Already have valid seasons, ensure LB.AvailableSeasons is synced
+                local found = false
+                if #LB.AvailableSeasons > 1 then found = true end
+                
+                if not found then
+                    LB.AvailableSeasons = { { id = 0, name = "Current Season (Auto)" } }
+                    for _, s in ipairs(DCLeaderboardsDB.cache.seasons) do
+                        table.insert(LB.AvailableSeasons, s)
+                    end
+                end
+                
+                if LB.Frames.seasonDropdown then
+                    LB:UpdateSeasonDropdown()
+                end
+                Print("Using cached seasons list")
+                return
+           end
+       end
+    end
+
     if not DC then
         Print("|cffff0000DCAddonProtocol not available|r")
         return
@@ -873,6 +1013,14 @@ function LB:CreateContentArea(parent)
     content:SetSize(700, 520)
     content:SetPoint("TOPRIGHT", -15, -50)
     self.Frames.content = content
+    
+    -- Statistics Frame (Hidden by default)
+    local statsFrame = CreateFrame("Frame", nil, content)
+    statsFrame:SetAllPoints()
+    statsFrame:Hide()
+    self.Frames.statsFrame = statsFrame
+    
+    self:CreateStatisticsUI(statsFrame)
     
     -- Subcategory tabs (top of content)
     local subTabFrame = CreateFrame("Frame", nil, content)
@@ -1484,6 +1632,23 @@ function LB:SelectSubCategory(subcategoryId)
         end
     end
     
+    -- Check if we're in statistics mode
+    if self.currentCategory == "statistics" then
+        if self.Frames.scrollChild then self.Frames.scrollChild:GetParent():Hide() end
+        if self.Frames.headers then self.Frames.headers:Hide() end
+        if self.Frames.bottomBar then self.Frames.bottomBar:Hide() end
+        if self.Frames.statsFrame then 
+            self.Frames.statsFrame:Show()
+            self:UpdateStatisticsDisplay()
+        end
+        return
+    else
+        if self.Frames.scrollChild then self.Frames.scrollChild:GetParent():Show() end
+        if self.Frames.headers then self.Frames.headers:Show() end
+        if self.Frames.bottomBar then self.Frames.bottomBar:Show() end
+        if self.Frames.statsFrame then self.Frames.statsFrame:Hide() end
+    end
+
     -- Update header text
     self:UpdateHeaderText()
     
@@ -2467,4 +2632,251 @@ local toggleBtn = CreateFrame("Button", "DCLeaderboardsToggle", UIParent, "Secur
 toggleBtn:SetScript("OnClick", function()
     LB:Toggle()
 end)
+
+-- =====================================================================
+-- STATISTICS UI
+-- =====================================================================
+
+function LB:CreateStatisticsUI(parent)
+    -- Scroll frame for statistics
+    local scrollFrame = CreateFrame("ScrollFrame", "DCLeaderboardsStatsScroll", parent, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetSize(660, 440)
+    scrollFrame:SetPoint("TOP", 0, -40)
+    
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetSize(640, 1) -- Height grows with content
+    scrollFrame:SetScrollChild(scrollChild)
+    self.Frames.statsScrollChild = scrollChild
+    
+    -- Sub-header
+    local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    header:SetPoint("TOPLEFT", 10, -10)
+    header:SetText("Statistics Overview")
+    self.Frames.statsHeader = header
+    
+    -- Entry pool
+    self.statsEntryPool = {}
+end
+
+function LB:GetOrCreateStatsEntry(index)
+    if self.statsEntryPool[index] then
+        self.statsEntryPool[index]:Show()
+        return self.statsEntryPool[index]
+    end
+    
+    local parent = self.Frames.statsScrollChild
+    local entry = CreateFrame("Frame", nil, parent)
+    entry:SetSize(640, 24)
+    entry:SetPoint("TOPLEFT", 5, -(index - 1) * 26)
+    
+    local bg = entry:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture(0.1, 0.1, 0.1, (index % 2 == 0) and 0.4 or 0.2)
+    entry.bg = bg
+    
+    -- Category Name
+    entry.catName = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    entry.catName:SetPoint("LEFT", 5, 0)
+    entry.catName:SetWidth(150)
+    entry.catName:SetJustifyH("LEFT")
+    entry.catName:SetTextColor(0.7, 0.7, 0.7)
+    
+    -- Subcategory Name
+    entry.subName = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    entry.subName:SetPoint("LEFT", 160, 0)
+    entry.subName:SetWidth(180)
+    entry.subName:SetJustifyH("LEFT")
+    
+    -- Rank
+    entry.rank = entry:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    entry.rank:SetPoint("LEFT", 350, 0)
+    entry.rank:SetWidth(80)
+    entry.rank:SetJustifyH("RIGHT")
+    
+    -- Score/Value
+    entry.score = entry:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    entry.score:SetPoint("LEFT", 440, 0)
+    entry.score:SetWidth(120)
+    entry.score:SetJustifyH("RIGHT")
+    
+    -- Percentile
+    entry.pct = entry:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    entry.pct:SetPoint("LEFT", 570, 0)
+    entry.pct:SetWidth(60)
+    entry.pct:SetJustifyH("RIGHT")
+    entry.pct:SetTextColor(0.5, 0.5, 0.5)
+    
+    self.statsEntryPool[index] = entry
+    return entry
+end
+
+function LB:UpdateStatisticsDisplay()
+    local container = self.Frames.statsScrollChild
+    if not container then return end
+    
+    -- Hide all existing
+    for _, f in pairs(self.statsEntryPool) do f:Hide() end
+    
+    local subcat = self.currentSubCategory
+    
+    if subcat == "stats_account" then
+        self.Frames.statsHeader:SetText("Account Overview")
+        
+        local accountData = self.Cache.accountStats
+        
+        -- If no data yet, request it
+        if not accountData then
+            local entry = self:GetOrCreateStatsEntry(1)
+            entry.catName:SetText("")
+            entry.subName:SetText("|cff888888Loading account data...|r")
+            entry.rank:SetText("-")
+            entry.score:SetText("-")
+            entry.pct:SetText("")
+            
+            -- Request account stats
+            self:RequestAccountStats()
+            return
+        end
+        
+        local index = 1
+        
+        -- Display characters
+        if accountData.characters and #accountData.characters > 0 then
+            -- Header row
+            local headerEntry = self:GetOrCreateStatsEntry(index)
+            headerEntry.catName:SetText("|cffffd700Character|r")
+            headerEntry.subName:SetText("|cffffd700Class|r")
+            headerEntry.rank:SetText("|cffffd700Level|r")
+            headerEntry.score:SetText("|cffffd700Best Rank|r")
+            headerEntry.pct:SetText("")
+            index = index + 1
+            
+            for _, char in ipairs(accountData.characters) do
+                local entry = self:GetOrCreateStatsEntry(index)
+                
+                -- Character name with class color
+                local classColor = CLASS_COLORS[char.class] or "FFFFFF"
+                entry.catName:SetText("|cff" .. classColor .. (char.name or "Unknown") .. "|r")
+                
+                -- Class
+                entry.subName:SetText(char.class or "Unknown")
+                
+                -- Level
+                entry.rank:SetText(tostring(char.level or 0))
+                entry.rank:SetTextColor(1, 1, 1)
+                
+                -- Best rank (if available)
+                if char.bestRank and char.bestRank > 0 then
+                    entry.score:SetText("#" .. char.bestRank)
+                else
+                    entry.score:SetText("-")
+                end
+                
+                -- Best category (if available)
+                entry.pct:SetText(char.bestCategory or "")
+                
+                index = index + 1
+            end
+        else
+            local entry = self:GetOrCreateStatsEntry(index)
+            entry.catName:SetText("")
+            entry.subName:SetText("|cff888888No characters found|r")
+            entry.rank:SetText("-")
+            entry.score:SetText("-")
+            entry.pct:SetText("")
+            index = index + 1
+        end
+        
+        -- Display totals if available
+        if accountData.totals then
+            index = index + 1 -- Spacer
+            local totalsHeader = self:GetOrCreateStatsEntry(index)
+            totalsHeader.catName:SetText("|cffffd700Account Totals|r")
+            totalsHeader.subName:SetText("")
+            totalsHeader.rank:SetText("")
+            totalsHeader.score:SetText("")
+            totalsHeader.pct:SetText("")
+            index = index + 1
+            
+            for statName, statValue in pairs(accountData.totals) do
+                local entry = self:GetOrCreateStatsEntry(index)
+                entry.catName:SetText("")
+                entry.subName:SetText(statName)
+                entry.rank:SetText("")
+                entry.score:SetText(FormatNumber(statValue))
+                entry.pct:SetText("")
+                index = index + 1
+            end
+        end
+        
+        container:SetSize(640, index * 26)
+        return
+    end
+    
+    self.Frames.statsHeader:SetText("Character Overview")
+    
+    local index = 1
+    
+    -- Iterate all known categories
+    for _, cat in ipairs(self.Categories) do
+        if cat.id ~= "statistics" then
+            for _, sub in ipairs(cat.subcats) do
+                -- Display row
+                local entry = self:GetOrCreateStatsEntry(index)
+                
+                -- Set labels
+                entry.catName:SetText(cat.name)
+                entry.subName:SetText(sub.name)
+                
+                -- Check myRank cache
+                local key = cat.id .. "_" .. sub.id
+                local myData = self.Cache.myRanks[key]
+                
+                if myData then
+                    -- Rank
+                    if myData.rank and myData.rank > 0 then
+                        entry.rank:SetText("#" .. myData.rank)
+                        entry.rank:SetTextColor(0, 1, 0) -- Green
+                    else
+                        entry.rank:SetText("-")
+                        entry.rank:SetTextColor(0.5, 0.5, 0.5)
+                    end
+                    
+                    -- Score
+                    local valStr = "-"
+                    if myData.score then
+                        if sub.id:find("_time") then
+                            valStr = FormatTime(tonumber(myData.score))
+                        elseif sub.id:find("_gold") then
+                             -- Handle gold formatting if needed
+                             local copperVal = tonumber(myData.score) or 0
+                             valStr = FormatMoney(copperVal)
+                        else
+                            valStr = FormatNumber(myData.score)
+                        end
+                    end
+                    entry.score:SetText(valStr)
+                    
+                    -- Percentile
+                    if myData.percentile then
+                        entry.pct:SetText(string.format("Top %.1f%%", myData.percentile))
+                    else
+                        entry.pct:SetText("")
+                    end
+                else
+                    entry.rank:SetText("...")
+                    entry.score:SetText("...")
+                    entry.pct:SetText("")
+                    
+                    -- Request it
+                    self:RequestMyRank(cat.id, sub.id)
+                end
+                
+                index = index + 1
+            end
+        end
+    end
+    
+    container:SetSize(640, index * 26)
+end
 

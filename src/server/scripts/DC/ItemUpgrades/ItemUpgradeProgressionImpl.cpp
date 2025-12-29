@@ -16,6 +16,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Chat.h"
+#include "ChatCommand.h"
 #include "DatabaseEnv.h"
 #include "Item.h"
 #include "ItemUpgradeManager.h"
@@ -406,6 +407,34 @@ static const std::map<uint8, ClassGearSet> TEST_GEAR_SETS = {
 };
 
 // =====================================================================
+// Factory Function Implementations (Optimized for Singleton Access)
+// =====================================================================
+
+ArtifactMasteryManager* GetArtifactMasteryManager()
+{
+    static ArtifactMasteryManagerImpl instance;
+    return &instance;
+}
+
+LevelCapManager* GetLevelCapManager()
+{
+    static LevelCapManagerImpl instance;
+    return &instance;
+}
+
+CostScalingManager* GetCostScalingManager()
+{
+    static CostScalingManagerImpl instance;
+    return &instance;
+}
+
+TierProgressionManager* GetTierProgressionManager()
+{
+    static TierProgressionManager instance;
+    return &instance;
+}
+
+// =====================================================================
 // Progression Commands
 // =====================================================================
 
@@ -418,11 +447,8 @@ public:
     {
         static ChatCommandTable upgradeProgressionCommandTable =
         {
-            { "mastery",    HandleMasteryCommand,       SEC_PLAYER, Console::No },
-            { "unlocktier", HandleUnlockTierCommand,    SEC_GAMEMASTER, Console::No },
-            { "weekcap",    HandleWeekCapCommand,       SEC_PLAYER, Console::No },
-            { "tiercap",    HandleTierCapCommand,       SEC_GAMEMASTER, Console::No },
-            { "testset",    HandleTestSetCommand,       SEC_GAMEMASTER, Console::No }
+            { "tiercap", HandleTierCapCommand, SEC_GAMEMASTER, Console::No },
+            { "testset", HandleTestSetCommand, SEC_GAMEMASTER, Console::No }
         };
 
         static ChatCommandTable commandTable =
@@ -431,99 +457,6 @@ public:
         };
 
         return commandTable;
-    }
-
-    static bool HandleMasteryCommand(ChatHandler* handler, const char* /*args*/)
-    {
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-
-        ArtifactMasteryManagerImpl masteryMgr;
-        PlayerArtifactMasteryInfo* info = masteryMgr.GetMasteryInfo(player->GetGUID().GetCounter());
-
-        if (!info)
-        {
-            handler->PSendSysMessage("Unable to load artifact mastery information.");
-            return false;
-        }
-
-        handler->PSendSysMessage("|cffffd700===== Your Artifact Mastery Status =====|r");
-        handler->PSendSysMessage("|cff00ff00Mastery Rank:|r %u (%s)",
-            info->mastery_rank, info->mastery_title.c_str());
-        handler->PSendSysMessage("|cff00ff00Total Mastery Points:|r %u", info->total_mastery_points);
-        handler->PSendSysMessage("|cff00ff00Progress to Next Rank:|r %u%% (%u/1000)",
-            info->GetProgressToNextRank(), info->mastery_points_this_rank);
-        handler->PSendSysMessage("|cff00ff00Fully Upgraded Items:|r %u", info->items_fully_upgraded);
-        handler->PSendSysMessage("|cff00ff00Total Upgrades Applied:|r %u", info->total_upgrades_applied);
-
-        uint32 leaderboard_rank = masteryMgr.GetPlayerMasteryRank(player->GetGUID().GetCounter());
-        handler->PSendSysMessage("|cff00ff00Leaderboard Rank:|r #%u", leaderboard_rank);
-
-        return true;
-    }
-
-    static bool HandleUnlockTierCommand(ChatHandler* handler, const char* args)
-    {
-        Player* target = handler->getSelectedPlayer();
-        if (!target)
-        {
-            handler->PSendSysMessage("No player selected.");
-            return false;
-        }
-
-        if (!*args)
-        {
-            handler->PSendSysMessage("Usage: .upgradeprog unlocktier <tier_id>");
-            return false;
-        }
-
-        uint8 tier_id = static_cast<uint8>(std::strtoul(args, nullptr, 10));
-        if (tier_id < 1 || tier_id > 5)
-        {
-            handler->PSendSysMessage("Invalid tier ID. Use 1-5.");
-            return false;
-        }
-
-        LevelCapManagerImpl capMgr;
-        capMgr.UnlockTier(target->GetGUID().GetCounter(), tier_id);
-
-        TierProgressionManager tierMgr;
-        handler->PSendSysMessage("Unlocked %s tier for %s.",
-            tierMgr.GetTierName(tier_id).c_str(), target->GetName().c_str());
-
-        return true;
-    }
-
-    static bool HandleWeekCapCommand(ChatHandler* handler, const char* /*args*/)
-    {
-        Player* player = handler->GetSession()->GetPlayer();
-        if (!player)
-            return false;
-
-        CostScalingManagerImpl scalingMgr;
-
-        uint32 essence_spent = scalingMgr.GetWeeklySpending(
-            player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE);
-        uint32 tokens_spent = scalingMgr.GetWeeklySpending(
-            player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN);
-
-        uint32 essence_remaining = scalingMgr.GetWeeklyRemainingBudget(
-            player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE);
-        uint32 tokens_remaining = scalingMgr.GetWeeklyRemainingBudget(
-            player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN);
-
-        handler->PSendSysMessage("|cffffd700===== Weekly Spending Caps =====|r");
-        handler->PSendSysMessage("|cff00ff00Essence Spent This Week:|r %u / %u (Soft Cap)",
-            essence_spent, scalingMgr.GetConfig().softcap_weekly_essence);
-        handler->PSendSysMessage("|cff00ff00Essence Remaining:|r %u (Hard Cap: %u)",
-            essence_remaining, scalingMgr.GetConfig().hardcap_weekly_essence);
-        handler->PSendSysMessage("|cff00ff00Tokens Spent This Week:|r %u / %u (Soft Cap)",
-            tokens_spent, scalingMgr.GetConfig().softcap_weekly_tokens);
-        handler->PSendSysMessage("|cff00ff00Tokens Remaining:|r %u (Hard Cap: %u)",
-            tokens_remaining, scalingMgr.GetConfig().hardcap_weekly_tokens);
-
-        return true;
     }
 
     static bool HandleTierCapCommand(ChatHandler* handler, const char* args)

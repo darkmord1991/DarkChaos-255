@@ -162,6 +162,9 @@ namespace DCAddon
             constexpr uint8 CMSG_LIST_UPGRADEABLE  = 0x03;
             constexpr uint8 CMSG_GET_COSTS         = 0x04;
             constexpr uint8 CMSG_PACKAGE_SELECT    = 0x05;  // Heirloom package selection
+            constexpr uint8 CMSG_HEIRLOOM_QUERY    = 0x06;  // Query heirloom state
+            constexpr uint8 CMSG_HEIRLOOM_UPGRADE  = 0x07;  // Upgrade heirloom item
+            constexpr uint8 CMSG_GET_PACKAGES      = 0x08;  // Request available packages
 
             constexpr uint8 SMSG_ITEM_INFO         = 0x10;
             constexpr uint8 SMSG_UPGRADE_RESULT    = 0x11;
@@ -169,6 +172,9 @@ namespace DCAddon
             constexpr uint8 SMSG_COST_INFO         = 0x13;
             constexpr uint8 SMSG_CURRENCY_UPDATE   = 0x14;
             constexpr uint8 SMSG_PACKAGE_SELECTED  = 0x15;  // Confirm package selection
+            constexpr uint8 SMSG_HEIRLOOM_INFO     = 0x16;  // Heirloom state response
+            constexpr uint8 SMSG_HEIRLOOM_RESULT   = 0x17;  // Heirloom upgrade result
+            constexpr uint8 SMSG_PACKAGE_LIST      = 0x18;  // List of available packages
 
             // Transmutation Opcodes
             constexpr uint8 CMSG_GET_TRANSMUTE_INFO = 0x20; // Get recipes and status

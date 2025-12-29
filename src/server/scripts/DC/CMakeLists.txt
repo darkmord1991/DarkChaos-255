@@ -1,8 +1,9 @@
-# CMakeLists.txt for DC scripts
+# CMakeLists.txt for DC scripts (Updated to force re-scan)
 
 # Prestige System scripts
 set(SCRIPTS_DC_Prestige
     Prestige/dc_prestige_system.cpp
+    Prestige/dc_prestige_chat.cpp
     Prestige/dc_prestige_spells.cpp
     Prestige/dc_prestige_alt_bonus.cpp
     Prestige/dc_prestige_challenges.cpp
@@ -89,6 +90,7 @@ set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/OutdoorPvPHL_Utils.cpp
     HinterlandBG/OutdoorPvPHL_Performance.cpp
     HinterlandBG/OutdoorPvPHL_Affixes.cpp
+    HinterlandBG/cs_hl_bg.cpp
 )
 
 # DC Gilneas Battle for Gilneas implementation
@@ -111,16 +113,15 @@ set(SCRIPTS_DC_ItemUpgrade_Phase3
     ItemUpgrades/ItemUpgradeNPC_Vendor.cpp
     ItemUpgrades/ItemUpgradeNPC_Curator.cpp
     ItemUpgrades/ItemUpgradeTokenHooks.cpp
-    ItemUpgrades/ItemUpgradeGMCommands.cpp
 )
 
 # Phase 4A: Item Upgrade Mechanics
 set(SCRIPTS_DC_ItemUpgrade_Phase4A
     ItemUpgrades/ItemUpgradeManager.cpp
     ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
-    ItemUpgrades/ItemUpgradeMechanicsCommands.cpp
     ItemUpgrades/ItemUpgradeStatApplication.cpp
     ItemUpgrades/ItemUpgradeProcScaling.cpp
+    ItemUpgrades/dc_item_upgrade_commands.cpp
 )
 
 # Phase 4B: Progression System (Artifact Mastery)
@@ -140,8 +141,8 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4D
 
 # Phase 4E: Client Communication
 set(SCRIPTS_DC_ItemUpgrade_Phase4E
-    ItemUpgrades/ItemUpgradeCommunication.cpp
-    ItemUpgrades/ItemUpgradeAddonHandler.cpp
+    # ItemUpgrades/ItemUpgradeCommunication.cpp (Removed)
+    # ItemUpgrades/ItemUpgradeAddonHandler.cpp (Removed)
 )
 
 # Phase 4F: Transmutation System
@@ -237,6 +238,12 @@ set(SCRIPTS_DC_CrossSystem
     CrossSystem/CrossSystemScripts.cpp
 )
 
+# DC Commands - Unified command hub
+set(SCRIPTS_DC_Commands
+    Commands/cs_dc_addons.cpp
+    Commands/cs_dc_dungeonquests.cpp
+)
+
 set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase3}
     ${SCRIPTS_DC_ItemUpgrade_Phase4A}
@@ -272,6 +279,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_FirstStart}
     ${SCRIPTS_DC_GOMove}
     ${SCRIPTS_DC_CrossSystem}
+    ${SCRIPTS_DC_Commands}
 )
 
 # The DC HinterlandBG config was merged into the consolidated

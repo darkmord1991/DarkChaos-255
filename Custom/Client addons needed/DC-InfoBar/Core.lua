@@ -1010,11 +1010,10 @@ function DCInfoBar:RequestServerData(opts)
     
     DC:Request("MPLUS", MPLUS_CMSG_GET_KEY_INFO, {})
     
-    -- Request hotspot list
-    DC:Request("SPOT", 0x01, {})
-    if DC.Hotspot and DC.Hotspot.GetList then
-        DC.Hotspot.GetList()
-    end
+    -- Hotspot list is now requested by Location.lua with TTL-based caching.
+    -- The WRLD module below also includes hotspots in its response.
+    -- Removed redundant direct SPOT request to reduce bandwidth.
+    -- DC:Request("SPOT", 0x01, {})
 
     -- Request aggregated world content snapshot (includes hotspots, bosses, events)
     DC:Request("WRLD", 0x01, {})

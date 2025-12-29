@@ -112,6 +112,53 @@ function DC:HasCachedDefinitions()
 end
 
 -- ============================================================================
+-- DATA PACKING (Optimized Storage)
+-- ============================================================================
+-- Pack transmog definition into a compact string to save disk space and write time.
+-- Format: name^icon^quality^displayId^inventoryType^class^subclass^visualSlot^itemId^spellId
+
+local DELIMITER = "^"
+
+local function PackTransmogDefinition(def)
+    if type(def) ~= "table" then return def end
+    
+    return table.concat({
+        def.name or "",
+        def.icon or "",
+        def.quality or def.rarity or "1",
+        def.displayId or "",
+        def.inventoryType or "",
+        def.class or "",
+        def.subclass or "",
+        def.visualSlot or "",
+        def.itemId or "",
+        def.spellId or ""
+    }, DELIMITER)
+end
+
+-- Unpack string back into a table
+local function UnpackTransmogDefinition(str)
+    if type(str) ~= "string" then return str end
+    
+    -- Fast split
+    local parts = { strsplit(DELIMITER, str) }
+    
+    return {
+        name = (parts[1] ~= "" and parts[1]) or nil,
+        icon = (parts[2] ~= "" and parts[2]) or nil,
+        quality = tonumber(parts[3]) or 1,
+        rarity = tonumber(parts[3]) or 1, -- alias
+        displayId = tonumber(parts[4]),
+        inventoryType = tonumber(parts[5]),
+        class = (parts[6] ~= "" and parts[6]) or nil,
+        subclass = (parts[7] ~= "" and parts[7]) or nil,
+        visualSlot = tonumber(parts[8]),
+        itemId = tonumber(parts[9]),
+        spellId = tonumber(parts[10]),
+    }
+end
+
+-- ============================================================================
 -- LOAD CACHE
 -- ============================================================================
 
@@ -129,7 +176,20 @@ function DC:LoadCache()
     -- Load definitions
     if DCCollectionDB.definitionCache then
         for collType, defs in pairs(DCCollectionDB.definitionCache) do
-            self.definitions[collType] = defs
+            -- If types are packed (transmog), unpack them now.
+            if collType == "transmog" or collType == "itemSets" then
+                local unpackedDefs = {}
+                for id, data in pairs(defs) do
+                    if type(data) == "string" then
+                        unpackedDefs[id] = UnpackTransmogDefinition(data)
+                    else
+                        unpackedDefs[id] = data
+                    end
+                end
+                self.definitions[collType] = unpackedDefs
+            else
+                self.definitions[collType] = defs
+            end
         end
         self:Debug("Loaded " .. self:CountDefinitions() .. " cached definitions")
     end
@@ -210,7 +270,27 @@ function DC:SaveCache()
     
     -- Save definitions - use direct reference instead of copying
     -- (tables are passed by reference in Lua, so this is efficient)
-    DCCollectionDB.definitionCache = self.definitions
+    
+    -- OPTIMIZATION: Pack large datasets (transmog) into strings BEFORE saving.
+    -- This drastically reduces file size and write time (solving slow logout)
+    -- while keeping the data persistent (solving re-download needs).
+    local defsToSave = {}
+    if self.definitions then
+        for k, v in pairs(self.definitions) do
+            if k == "transmog" then -- Only pack transmog for now
+                local packedTransmog = {}
+                for id, def in pairs(v) do
+                    packedTransmog[id] = PackTransmogDefinition(def)
+                end
+                defsToSave[k] = packedTransmog
+            else
+                 -- Save other definitions (mounts, pets, itemSets) as normal tables.
+                 -- They are not large enough to cause logout freezes.
+                 defsToSave[k] = v
+            end
+        end
+    end
+    DCCollectionDB.definitionCache = defsToSave
     
     -- Save collections - direct reference
     DCCollectionDB.collectionCache = self.collections
