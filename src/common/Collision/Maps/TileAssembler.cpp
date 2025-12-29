@@ -52,8 +52,8 @@ namespace VMAP
 
     //=================================================================
 
-    TileAssembler::TileAssembler(const std::string& pSrcDirName, const std::string& pDestDirName, int mapID /*= -1*/)
-        : iDestDir(pDestDirName), iSrcDir(pSrcDirName), filterMapID(mapID)
+    TileAssembler::TileAssembler(const std::string& pSrcDirName, const std::string& pDestDirName)
+        : iDestDir(pDestDirName), iSrcDir(pSrcDirName)
     {
         boost::filesystem::create_directory(iDestDir);
         //init();
@@ -243,10 +243,6 @@ namespace VMAP
             {
                 break;
             }
-
-            // Filter maps
-            if (filterMapID != -1 && mapID != uint32(filterMapID))
-                continue;
 
             MapSpawns* current;
             MapData::iterator map_iter = mapData.find(mapID);

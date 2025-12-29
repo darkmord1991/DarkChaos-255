@@ -97,10 +97,9 @@ namespace VMAP
         G3D::Table<std::string, unsigned int > iUniqueNameIds;
         MapData mapData;
         std::set<std::string> spawnedModelFiles;
-        int filterMapID;
 
     public:
-        TileAssembler(const std::string& pSrcDirName, const std::string& pDestDirName, int mapID = -1);
+        TileAssembler(const std::string& pSrcDirName, const std::string& pDestDirName);
         virtual ~TileAssembler();
 
         bool convertWorld2();

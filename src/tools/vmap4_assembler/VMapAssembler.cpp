@@ -24,11 +24,10 @@ int main(int argc, char* argv[])
 {
     std::string src = "Buildings";
     std::string dest = "vmaps";
-    int mapID = -1;
 
-    if (argc > 4)
+    if (argc > 3)
     {
-        std::cout << "usage: " << argv[0] << " <raw data dir> <vmap dest dir> [mapid]" << std::endl;
+        std::cout << "usage: " << argv[0] << " <raw data dir> <vmap dest dir>" << std::endl;
         return 1;
     }
     else
@@ -37,16 +36,11 @@ int main(int argc, char* argv[])
             src = argv[1];
         if (argc > 2)
             dest = argv[2];
-        if (argc > 3)
-            mapID = atoi(argv[3]);
     }
 
-    std::cout << "using " << src << " as source directory and writing output to " << dest;
-    if (mapID != -1)
-        std::cout << " for Map " << mapID;
-    std::cout << std::endl;
+    std::cout << "using " << src << " as source directory and writing output to " << dest << std::endl;
 
-    VMAP::TileAssembler* ta = new VMAP::TileAssembler(src, dest, mapID);
+    VMAP::TileAssembler* ta = new VMAP::TileAssembler(src, dest);
 
     if (!ta->convertWorld2())
     {

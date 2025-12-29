@@ -95,43 +95,6 @@ void strToLower(char* str)
     }
 }
 
-
-
-#ifdef WIN32
-void GetFileList(std::string const& dir, std::vector<std::string>& fileList)
-{
-    WIN32_FIND_DATA ffd;
-    HANDLE hFind = INVALID_HANDLE_VALUE;
-    std::string searchPath = dir + "/*";
-    hFind = FindFirstFile(searchPath.c_str(), &ffd);
-    if (hFind == INVALID_HANDLE_VALUE) return;
-    do
-    {
-        if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-            fileList.push_back(ffd.cFileName);
-    }
-    while (FindNextFile(hFind, &ffd) != 0);
-    FindClose(hFind);
-}
-#else
-#include <dirent.h>
-void GetFileList(std::string const& dir, std::vector<std::string>& fileList)
-{
-    DIR* dp;
-    struct dirent* ep;
-    dp = opendir(dir.c_str());
-    if (dp != nullptr)
-    {
-        while ((ep = readdir(dp)))
-        {
-            if (ep->d_type != DT_DIR)
-                fileList.push_back(ep->d_name);
-        }
-        closedir(dp);
-    }
-}
-#endif
-
 bool ExtractSingleWmo(std::string& fname)
 {
     // Copy files from archive
@@ -372,49 +335,6 @@ bool fillArchiveNameVector(std::vector<std::string>& pArchiveNames)
     if (!scan_patches(path, pArchiveNames))
         return (false);
 
-    // Custom: Scan for any other MPQ files in the directory
-    printf("Scanning for additional MPQ files in data directory.\n");
-    std::vector<std::string> fileList;
-    GetFileList(input_path, fileList);
-    // Sort alphabetically to ensure deterministic load order for custom patches
-    std::sort(fileList.begin(), fileList.end());
-
-    for (const auto& filename : fileList)
-    {
-        // basic extension check
-        if (filename.length() < 4)
-            continue;
-        
-        std::string ext = filename.substr(filename.length() - 4);
-        strToLower(&ext[0]);
-        if (ext != ".mpq")
-            continue;
-
-        std::string fullPath = std::string(input_path) + filename;
-
-        // Check if already added (case-insensitive check for robustness, though paths should match)
-        bool alreadyAdded = false;
-        std::string fullPathLower = fullPath;
-        strToLower(&fullPathLower[0]);
-
-        for (const auto& existing : pArchiveNames)
-        {
-            std::string existingLower = existing;
-            strToLower(&existingLower[0]);
-            if (existingLower == fullPathLower)
-            {
-                alreadyAdded = true;
-                break;
-            }
-        }
-
-        if (!alreadyAdded)
-        {
-            printf("Found extra patch: %s\n", filename.c_str());
-            pArchiveNames.push_back(fullPath);
-        }
-    }
-
     // now, scan for the patch levels in locale dirs
     printf("Scanning patch levels from locale directories.\n");
     bool foundOne = false;
@@ -441,8 +361,6 @@ bool fillArchiveNameVector(std::vector<std::string>& pArchiveNames)
 
     return true;
 }
-
-int CONF_extract_mapid = -1;
 
 bool processArgv(int argc, char** argv, const char* versionString)
 {
@@ -471,18 +389,6 @@ bool processArgv(int argc, char** argv, const char* versionString)
                 result = false;
             }
         }
-        else if (strcmp("-m", argv[i]) == 0)
-        {
-            if ((i + 1) < argc)
-            {
-                CONF_extract_mapid = atoi(argv[i + 1]);
-                ++i;
-            }
-            else
-            {
-                result = false;
-            }
-        }
         else if (strcmp("-?", argv[1]) == 0)
         {
             result = false;
@@ -500,11 +406,10 @@ bool processArgv(int argc, char** argv, const char* versionString)
     if (!result)
     {
         printf("Extract %s.\n", versionString);
-        printf("%s [-?][-s][-l][-d <path>] [-m <map_id>]\n", argv[0]);
+        printf("%s [-?][-s][-l][-d <path>]\n", argv[0]);
         printf("   -s : (default) small size (data size optimization), ~500MB less vmap data.\n");
         printf("   -l : large size, ~500MB more vmap data. (might contain more details)\n");
         printf("   -d <path>: Path to the vector data source folder.\n");
-        printf("   -m <map_id>: Extract only specific map.\n");
         printf("   -? : This message.\n");
     }
     return result;
@@ -582,14 +487,12 @@ int main(int argc, char** argv)
         }
         map_count = dbc->getRecordCount();
         map_ids.resize(map_count);
-        std::vector<map_id> all_maps;
-        all_maps.resize(map_count);
         for (unsigned int x = 0; x < map_count; ++x)
         {
-            all_maps[x].id = dbc->getRecord(x).getUInt(0);
+            map_ids[x].id = dbc->getRecord(x).getUInt(0);
 
             char const* map_name = dbc->getRecord(x).getString(1);
-            std::size_t max_map_name_length = sizeof(all_maps[x].name);
+            std::size_t max_map_name_length = sizeof(map_ids[x].name);
             if (strlen(map_name) >= max_map_name_length)
             {
                 delete dbc;
@@ -597,30 +500,10 @@ int main(int argc, char** argv)
                 return 1;
             }
 
-            strncpy(all_maps[x].name, map_name, max_map_name_length);
-            all_maps[x].name[max_map_name_length - 1] = '\0';
+            strncpy(map_ids[x].name, map_name, max_map_name_length);
+            map_ids[x].name[max_map_name_length - 1] = '\0';
+            printf("Map - %s\n", map_ids[x].name);
         }
-        
-        // Filter maps if needed
-        if (CONF_extract_mapid != -1)
-        {
-            for (const auto& m : all_maps)
-            {
-                if (m.id == uint32(CONF_extract_mapid))
-                {
-                    map_ids.push_back(m);
-                    printf("Map - %s\n", m.name);
-                    break;
-                }
-            }
-        }
-        else
-        {
-             map_ids = all_maps;
-             for (const auto& m : map_ids)
-                printf("Map - %s\n", m.name);
-        }
-        map_count = map_ids.size();
 
         delete dbc;
         ParsMapFiles();
