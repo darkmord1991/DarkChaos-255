@@ -32,9 +32,9 @@ Core.state = state
 
 local function DebugPrint(...)
     if Debug and Debug.PrintMulti then
-        Debug:PrintMulti("DC-Hotspot", (state.db and state.db.debug) or false, ...)
+        Debug:PrintMulti("DC-Mapupgrades", (state.db and state.db.debug) or false, ...)
     elseif state.db and state.db.debug and DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[DC-Hotspot]|r " .. table.concat({...}, " "))
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[DC-Mapupgrades]|r " .. table.concat({...}, " "))
     end
 end
 
@@ -56,7 +56,375 @@ local defaults = {
     pinIconStyle = "xp",  -- Default to golden orb (XP themed)
     customIconTexture = "",
     useDCProtocolJSON = true,  -- Use JSON format when available
+
+    -- Entity pins (world bosses / rares)
+    showWorldBossPins = true,
+    showRarePins = true,
+    entityActiveDuration = 900, -- seconds to consider an entity "active" after being seen
+    entities = { nextId = 1000000, list = {} },
+    entityStatus = {},
 }
+
+local function EnsureEntityTables(db)
+    if not db then return end
+    if type(db.entities) ~= "table" then
+        db.entities = { nextId = 1000000, list = {} }
+    end
+    if type(db.entities.list) ~= "table" then
+        db.entities.list = {}
+    end
+    if type(db.entities.nextId) ~= "number" then
+        db.entities.nextId = 1000000
+    end
+    if type(db.entityStatus) ~= "table" then
+        db.entityStatus = {}
+    end
+end
+
+local function NormalizeNameForMatch(name)
+    if not name then return nil end
+    name = tostring(name)
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then return nil end
+    return name:lower()
+end
+
+local function GetDCInfoBar()
+    return rawget(_G, "DCInfoBar")
+end
+
+local function BossIsActiveFromInfoBarRecord(boss)
+    if type(boss) ~= "table" then
+        return false
+    end
+    local now = (GetTime and GetTime()) or 0
+    local st = string.lower(tostring(boss.status or boss.state or ""))
+    if st == "active" then
+        local hpPct = tonumber(boss.hp)
+        if hpPct ~= nil and hpPct <= 0 then
+            return false
+        end
+        return true
+    end
+    if boss.justSpawnedUntil and now < tonumber(boss.justSpawnedUntil) then
+        return true
+    end
+    if boss.active == true then
+        return true
+    end
+    return false
+end
+
+local function BossIsInactiveFromInfoBarRecord(boss)
+    if type(boss) ~= "table" then
+        return false
+    end
+    local st = string.lower(tostring(boss.status or boss.state or ""))
+    if st == "inactive" then
+        return true
+    end
+    if boss.active == false then
+        return true
+    end
+    local hpPct = tonumber(boss.hp)
+    if hpPct ~= nil and hpPct <= 0 then
+        return true
+    end
+    return false
+end
+
+local function GetPlayerMapPosNormalized(lockWorldMap)
+    local worldMapShown = WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
+    local mapId
+
+    if C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition then
+        mapId = C_Map.GetBestMapForUnit("player")
+        if mapId then
+            local pos = C_Map.GetPlayerMapPosition(mapId, "player")
+            if pos and pos.x and pos.y and pos.x > 0 and pos.y > 0 then
+                return pos.x, pos.y, mapId
+            end
+        end
+    end
+
+    if GetPlayerMapPosition then
+        if SetMapToCurrentZone and not worldMapShown and lockWorldMap then
+            pcall(SetMapToCurrentZone)
+        end
+        local x, y = GetPlayerMapPosition("player")
+        if x and y and x > 0 and y > 0 then
+            if GetCurrentMapAreaID then
+                mapId = GetCurrentMapAreaID()
+            end
+            return x, y, mapId
+        end
+    end
+    return nil
+end
+
+function Core:FindEntityByName(name)
+    local db = state.db
+    if not db or not db.entities or not db.entities.list then
+        return nil
+    end
+    local needle = NormalizeNameForMatch(name)
+    if not needle then return nil end
+
+    for _, ent in ipairs(db.entities.list) do
+        if ent and ent.name and NormalizeNameForMatch(ent.name) == needle then
+            return ent
+        end
+    end
+    return nil
+end
+
+function Core:GetEntityStatus(entityId)
+    local db = state.db
+    if not db or not db.entityStatus then return nil end
+    return db.entityStatus[tonumber(entityId) or entityId]
+end
+
+function Core:SetEntityActive(entityId, active, reason)
+    if not state.db then return false end
+    EnsureEntityTables(state.db)
+    local id = tonumber(entityId)
+    if not id then return false end
+
+    local st = state.db.entityStatus[id] or {}
+    local now = NowEpoch()
+    if active then
+        local dur = tonumber(state.db.entityActiveDuration) or 900
+        st.activeUntil = now + dur
+        st.lastSeen = now
+        st.lastSeenReason = reason or "manual"
+    else
+        st.activeUntil = 0
+        st.lastKilled = now
+        st.lastKilledReason = reason or "manual"
+    end
+    state.db.entityStatus[id] = st
+
+    if Pins and Pins.Refresh then
+        Pins:Refresh()
+    end
+    return true
+end
+
+function Core:AddEntity(kind, name)
+    if not state.db then return nil, "settings_not_loaded" end
+    EnsureEntityTables(state.db)
+    kind = (kind or ""):lower()
+    if kind ~= "boss" and kind ~= "rare" then
+        return nil, "invalid_kind"
+    end
+
+    local trimmed = tostring(name or "")
+    trimmed = trimmed:gsub("^%s+", ""):gsub("%s+$", "")
+    if trimmed == "" then
+        return nil, "missing_name"
+    end
+
+    local nx, ny, mapId = GetPlayerMapPosNormalized(state.db.lockWorldMap)
+    if not nx or not ny or not mapId then
+        return nil, "no_player_position"
+    end
+
+    local id = state.db.entities.nextId
+    state.db.entities.nextId = id + 1
+
+    local ent = {
+        id = id,
+        kind = kind,
+        name = trimmed,
+        mapId = mapId,
+        nx = nx,
+        ny = ny,
+        entry = nil,
+        spawnId = nil,
+        zoneLabel = nil,
+        created = NowEpoch(),
+    }
+    table.insert(state.db.entities.list, ent)
+
+    if Pins and Pins.Refresh then
+        Pins:Refresh()
+    end
+    return ent
+end
+
+function Core:SetEntityPosition(entityId)
+    if not state.db then return false, "settings_not_loaded" end
+    EnsureEntityTables(state.db)
+    local id = tonumber(entityId)
+    if not id then return false, "invalid_id" end
+
+    local nx, ny, mapId = GetPlayerMapPosNormalized(state.db.lockWorldMap)
+    if not nx or not ny or not mapId then
+        return false, "no_player_position"
+    end
+
+    for _, ent in ipairs(state.db.entities.list) do
+        if ent and ent.id == id then
+            ent.mapId = mapId
+            ent.nx = nx
+            ent.ny = ny
+            if Pins and Pins.Refresh then
+                Pins:Refresh()
+            end
+            return true
+        end
+    end
+    return false, "not_found"
+end
+
+function Core:ImportWorldBossesFromInfoBar()
+    if not state.db then return 0, "settings_not_loaded" end
+    EnsureEntityTables(state.db)
+
+    local info = GetDCInfoBar()
+    if not info or type(info.serverData) ~= "table" then
+        return 0, "dcinfobar_not_available"
+    end
+
+    local bosses = info.serverData.worldBosses
+    if type(bosses) ~= "table" then
+        return 0, "no_boss_data"
+    end
+
+    local added = 0
+
+    local function findBySpawnOrEntryOrName(spawnId, entry, name)
+        for _, ent in ipairs(state.db.entities.list) do
+            if ent and ent.kind == "boss" then
+                if spawnId and ent.spawnId and tonumber(ent.spawnId) == tonumber(spawnId) then
+                    return ent
+                end
+                if entry and ent.entry and tonumber(ent.entry) == tonumber(entry) then
+                    return ent
+                end
+                if name and ent.name and NormalizeNameForMatch(ent.name) == NormalizeNameForMatch(name) then
+                    return ent
+                end
+            end
+        end
+        return nil
+    end
+
+    for _, b in ipairs(bosses) do
+        if type(b) == "table" then
+            local spawnId = tonumber(b.spawnId) or nil
+            local entry = tonumber(b.entry) or nil
+            local name = b.name
+            local zoneLabel = b.zone
+
+            local existing = findBySpawnOrEntryOrName(spawnId, entry, name)
+            if existing then
+                if name and name ~= "" then existing.name = name end
+                if zoneLabel and zoneLabel ~= "" then existing.zoneLabel = zoneLabel end
+                if spawnId then existing.spawnId = spawnId end
+                if entry then existing.entry = entry end
+            else
+                local id = state.db.entities.nextId
+                state.db.entities.nextId = id + 1
+                table.insert(state.db.entities.list, {
+                    id = id,
+                    kind = "boss",
+                    name = name or (entry and tostring(entry)) or (spawnId and tostring(spawnId)) or "World Boss",
+                    mapId = nil,
+                    nx = nil,
+                    ny = nil,
+                    entry = entry,
+                    spawnId = spawnId,
+                    zoneLabel = zoneLabel,
+                    created = NowEpoch(),
+                })
+                added = added + 1
+            end
+        end
+    end
+
+    if Pins and Pins.Refresh then
+        Pins:Refresh()
+    end
+    return added
+end
+
+function Core:SyncWorldBossStatusFromInfoBar()
+    if not state.db then return end
+    EnsureEntityTables(state.db)
+
+    local info = GetDCInfoBar()
+    if not info or type(info.serverData) ~= "table" then
+        return
+    end
+    local bosses = info.serverData.worldBosses
+    if type(bosses) ~= "table" then
+        return
+    end
+
+    local changed = false
+    for _, boss in ipairs(bosses) do
+        if type(boss) == "table" then
+            local spawnId = tonumber(boss.spawnId) or nil
+            local entry = tonumber(boss.entry) or nil
+            local name = boss.name
+
+            local matched
+            for _, ent in ipairs(state.db.entities.list) do
+                if ent and ent.kind == "boss" then
+                    if spawnId and ent.spawnId and tonumber(ent.spawnId) == tonumber(spawnId) then
+                        matched = ent
+                        break
+                    end
+                    if entry and ent.entry and tonumber(ent.entry) == tonumber(entry) then
+                        matched = ent
+                        break
+                    end
+                    if name and ent.name and NormalizeNameForMatch(ent.name) == NormalizeNameForMatch(name) then
+                        matched = ent
+                        break
+                    end
+                end
+            end
+
+            if matched then
+                if BossIsActiveFromInfoBarRecord(boss) then
+                    local ok = self:SetEntityActive(matched.id, true, "dcinfobar")
+                    if ok then changed = true end
+                elseif BossIsInactiveFromInfoBarRecord(boss) then
+                    local ok = self:SetEntityActive(matched.id, false, "dcinfobar")
+                    if ok then changed = true end
+                end
+            end
+        end
+    end
+
+    if changed and Pins and Pins.Refresh then
+        Pins:Refresh()
+    end
+end
+
+function Core:RemoveEntity(entityId)
+    if not state.db then return false end
+    EnsureEntityTables(state.db)
+    local id = tonumber(entityId)
+    if not id then return false end
+
+    local list = state.db.entities.list
+    for i = #list, 1, -1 do
+        if list[i] and list[i].id == id then
+            table.remove(list, i)
+            break
+        end
+    end
+    if state.db.entityStatus then
+        state.db.entityStatus[id] = nil
+    end
+    if Pins and Pins.Refresh then
+        Pins:Refresh()
+    end
+    return true
+end
 
 local function NowEpoch()
     if GetServerTime then
@@ -519,12 +887,18 @@ end
 function Core:ADDON_LOADED(name)
     if name ~= addonName then return end
 
-    if type(DCHotspotDB) ~= "table" then
-        DCHotspotDB = {}
+    -- SavedVariables migration: prefer new DB but keep old settings if present.
+    -- TOC includes both `DCMapupgradesDB` and legacy `DCHotspotDB`.
+    if type(DCMapupgradesDB) ~= "table" then
+        DCMapupgradesDB = {}
     end
-    CopyInto(defaults, DCHotspotDB)
-    state.db = DCHotspotDB
+    if type(DCHotspotDB) == "table" then
+        CopyInto(DCHotspotDB, DCMapupgradesDB)
+    end
+    CopyInto(defaults, DCMapupgradesDB)
+    state.db = DCMapupgradesDB
     state.db.cache = state.db.cache or {}
+    EnsureEntityTables(state.db)
 
     if RegisterAddonMessagePrefix then
         RegisterAddonMessagePrefix("HOTSPOT")
@@ -556,6 +930,43 @@ function Core:ADDON_LOADED(name)
 
     self:RestoreCachedHotspots()
     DebugPrint("Addon loaded, protocol mode:", Core.protocolMode)
+end
+
+function Core:PLAYER_TARGET_CHANGED()
+    if not state.db then return end
+    local name = UnitName and UnitName("target")
+    if not name or name == "" then return end
+    local ent = self:FindEntityByName(name)
+    if not ent then return end
+    self:SetEntityActive(ent.id, true, "target")
+end
+
+function Core:COMBAT_LOG_EVENT_UNFILTERED(...)
+    if not state.db then return end
+    local eventType
+    local destName
+
+    if CombatLogGetCurrentEventInfo then
+        local _, subevent, _, _, _, _, _, _, dn = CombatLogGetCurrentEventInfo()
+        eventType = subevent
+        destName = dn
+    else
+        -- WotLK signature
+        local args = {...}
+        eventType = args[2]
+        destName = args[9]
+    end
+
+    if eventType ~= "UNIT_DIED" and eventType ~= "PARTY_KILL" then
+        return
+    end
+    if not destName or destName == "" then
+        return
+    end
+
+    local ent = self:FindEntityByName(destName)
+    if not ent then return end
+    self:SetEntityActive(ent.id, false, "combatlog")
 end
 
 function Core:PLAYER_LOGIN()
@@ -750,6 +1161,8 @@ SafeRegister(eventFrame, "ZONE_CHANGED_NEW_AREA")
 SafeRegister(eventFrame, "GROUP_ROSTER_UPDATE")
 SafeRegister(eventFrame, "PARTY_MEMBERS_CHANGED")
 SafeRegister(eventFrame, "RAID_ROSTER_UPDATE")
+SafeRegister(eventFrame, "PLAYER_TARGET_CHANGED")
+SafeRegister(eventFrame, "COMBAT_LOG_EVENT_UNFILTERED")
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if Core[event] then
@@ -768,6 +1181,13 @@ eventFrame:SetScript("OnUpdate", function(_, elapsed)
     end
     Core.elapsed = 0
     Core:PruneExpiredHotspots()
+
+    -- Sync world boss active/inactive from DC-InfoBar if available.
+    Core._bossSyncElapsed = (Core._bossSyncElapsed or 0) + 1
+    if Core._bossSyncElapsed >= 2 then
+        Core._bossSyncElapsed = 0
+        Core:SyncWorldBossStatusFromInfoBar()
+    end
     
     -- Periodic refresh: re-request hotspot list every 3 minutes to catch server-side removals
     Core.refreshElapsed = (Core.refreshElapsed or 0) + 1
@@ -832,7 +1252,7 @@ function Core:RegisterProtocolHandlers()
     
     local function DebugProtocol(...)
         if state.db and state.db.debug then
-            print("|cff33ff99[DC-Hotspot Protocol]|r", ...)
+            print("|cff33ff99[DC-Mapupgrades Protocol]|r", ...)
         end
     end
     

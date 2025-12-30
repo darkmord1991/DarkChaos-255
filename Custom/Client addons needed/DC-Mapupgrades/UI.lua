@@ -44,7 +44,7 @@ end
 
 -- Create the hotspot active indicator (shows when player is IN a hotspot)
 local function CreateHotspotIndicator()
-    local frame = CreateFrame("Frame", "DCHotspotActiveIndicator", UIParent)
+    local frame = CreateFrame("Frame", "DCMapupgradesActiveIndicator", UIParent)
     frame:SetSize(80, 80)
     frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -200, -20)
     frame:EnableMouse(true)
@@ -159,8 +159,180 @@ function UI:Init(state)
         end
     end)
 
-    SLASH_DCHOTSPOT1 = "/dchotspot"
-    SLASH_DCHOTSPOT2 = "/dchs"
+    SLASH_DCMAP1 = "/dcmap"
+    SLASH_DCMAP2 = "/dcmapu"
+    SLASH_DCHOTSPOT1 = "/dchotspot" -- legacy alias
+    SLASH_DCHOTSPOT2 = "/dchs"      -- legacy alias
+
+    local function Print(msg)
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[DC-Mapupgrades]|r " .. (msg or ""))
+        end
+    end
+
+    local function Words(s)
+        s = tostring(s or "")
+        local out = {}
+        for w in s:gmatch("%S+") do
+            table.insert(out, w)
+        end
+        return out
+    end
+
+    local function JoinFrom(tbl, startIndex)
+        local parts = {}
+        for i = startIndex, #tbl do
+            table.insert(parts, tbl[i])
+        end
+        return table.concat(parts, " ")
+    end
+
+    local function HandleMapCommand(msg)
+        local args = Words(msg)
+        local sub = (args[1] or ""):lower()
+
+        if sub == "add" then
+            local kind = (args[2] or ""):lower()
+            local name = JoinFrom(args, 3)
+            local Core = addonTable and addonTable.Core
+            if not Core or not Core.AddEntity then
+                Print("Core not ready")
+                return
+            end
+            local ent, err = Core:AddEntity(kind, name)
+            if not ent then
+                Print("Add failed: " .. tostring(err))
+                Print("Usage: /dcmap add boss <name>  OR  /dcmap add rare <name>")
+                return
+            end
+            Print(string.format("Added %s #%d: %s", tostring(ent.kind), tonumber(ent.id) or 0, tostring(ent.name)))
+            return
+        end
+
+        if sub == "list" then
+            local db = UI.state and UI.state.db
+            local list = db and db.entities and db.entities.list
+            if type(list) ~= "table" or #list == 0 then
+                Print("No entities saved yet.")
+                Print("Tip: /dcmap add boss <name> (adds at your current position)")
+                return
+            end
+            Print("Saved entities:")
+            for _, ent in ipairs(list) do
+                if ent and ent.id and ent.kind and ent.name then
+                    local coordText
+                    if ent.mapId and ent.nx and ent.ny then
+                        coordText = string.format("map %s @ %.3f, %.3f", tostring(ent.mapId), tonumber(ent.nx) or 0, tonumber(ent.ny) or 0)
+                    else
+                        coordText = "(no position set)"
+                    end
+                    local extra = ""
+                    if ent.spawnId then extra = extra .. " spawnId=" .. tostring(ent.spawnId) end
+                    if ent.entry then extra = extra .. " entry=" .. tostring(ent.entry) end
+                    Print(string.format("  #%d  %s  %s  %s%s", ent.id, ent.kind, ent.name, coordText, extra))
+                end
+            end
+            return
+        end
+
+        if sub == "setpos" then
+            local id = tonumber(args[2] or "")
+            if not id then
+                Print("Usage: /dcmap setpos <id>")
+                return
+            end
+            local Core = addonTable and addonTable.Core
+            if not Core or not Core.SetEntityPosition then
+                Print("Core not ready")
+                return
+            end
+            local ok, err = Core:SetEntityPosition(id)
+            if ok then
+                Print("Updated position for entity #" .. tostring(id))
+            else
+                Print("Setpos failed: " .. tostring(err))
+            end
+            return
+        end
+
+        if sub == "importbosses" or (sub == "import" and ((args[2] or ""):lower() == "bosses" or (args[2] or ""):lower() == "worldbosses")) then
+            local Core = addonTable and addonTable.Core
+            if not Core or not Core.ImportWorldBossesFromInfoBar then
+                Print("Core not ready")
+                return
+            end
+            local added, err = Core:ImportWorldBossesFromInfoBar()
+            if err then
+                Print("Import failed: " .. tostring(err))
+                Print("DC-InfoBar must be installed and receiving boss data.")
+                return
+            end
+            Print(string.format("Imported world bosses: %d added/updated.", tonumber(added) or 0))
+            Print("Next: stand at each spawn and run /dcmap setpos <id>")
+            return
+        end
+
+        if sub == "del" or sub == "delete" or sub == "remove" then
+            local id = tonumber(args[2] or "")
+            if not id then
+                Print("Usage: /dcmap del <id>")
+                return
+            end
+            local Core = addonTable and addonTable.Core
+            if Core and Core.RemoveEntity and Core:RemoveEntity(id) then
+                Print("Removed entity #" .. tostring(id))
+            else
+                Print("Remove failed for #" .. tostring(id))
+            end
+            return
+        end
+
+        if sub == "active" or sub == "inactive" then
+            local id = tonumber(args[2] or "")
+            if not id then
+                Print("Usage: /dcmap active <id>  OR  /dcmap inactive <id>")
+                return
+            end
+            local Core = addonTable and addonTable.Core
+            if not Core or not Core.SetEntityActive then
+                Print("Core not ready")
+                return
+            end
+            local ok = Core:SetEntityActive(id, sub == "active", "manual")
+            if ok then
+                Print(string.format("Entity #%d marked %s", id, sub))
+            else
+                Print("Failed to update entity #" .. tostring(id))
+            end
+            return
+        end
+
+        if sub == "help" or sub == "" then
+            Print("Commands:")
+            Print("  /dcmap add boss <name>   (adds spawn at your position)")
+            Print("  /dcmap add rare <name>")
+            Print("  /dcmap importbosses      (import boss list/status from DC-InfoBar)")
+            Print("  /dcmap list")
+            Print("  /dcmap del <id>")
+            Print("  /dcmap setpos <id>       (set pin position to your current location)")
+            Print("  /dcmap active <id>")
+            Print("  /dcmap inactive <id>")
+            Print("  /dchotspot  (toggle hotspot list; legacy)")
+            return
+        end
+
+        -- If we don't recognize it, fall back to hotspot command behavior.
+        return false
+    end
+
+    SlashCmdList["DCMAP"] = function(msg)
+        local handled = HandleMapCommand(msg)
+        if handled == false then
+            -- fallthrough: treat as hotspot UI toggle
+            SlashCmdList["DCHOTSPOT"](msg)
+        end
+    end
+
     SlashCmdList["DCHOTSPOT"] = function(msg)
         local command = (msg or ""):lower()
         if command == "options" or command == "config" or command == "settings" then
@@ -178,7 +350,7 @@ function UI:Init(state)
             if UI.state and UI.state.hotspots then
                 for id in pairs(UI.state.hotspots) do count = count + 1 end
             end
-            print("|cffFFD700[DC-Hotspot] Diagnostic:|r")
+            print("|cffFFD700[DC-Mapupgrades] Diagnostic:|r")
             print(string.format("  Active hotspots: %d", count))
             print(string.format("  In hotspot: %s", tostring(playerInHotspot)))
             print(string.format("  Settings loaded: %s", tostring(UI.state and UI.state.db ~= nil)))
@@ -206,10 +378,10 @@ function UI:Init(state)
             if self.indicator then
                 if self.indicator:IsShown() then
                     self.indicator:Hide()
-                    print("|cffFFD700[DC-Hotspot]|r Indicator hidden")
+                    print("|cffFFD700[DC-Mapupgrades]|r Indicator hidden")
                 else
                     self.indicator:Show()
-                    print("|cffFFD700[DC-Hotspot]|r Indicator shown (for testing)")
+                    print("|cffFFD700[DC-Mapupgrades]|r Indicator shown (for testing)")
                 end
             end
             return
@@ -290,7 +462,7 @@ end
 
 function UI:EnsurePopup()
     if self.popup then return end
-    local frame = CreateFrame("Frame", "DCHotspotPopup", UIParent)
+    local frame = CreateFrame("Frame", "DCMapupgradesPopup", UIParent)
     frame:SetSize(320, 90)
     frame:SetPoint("TOP", UIParent, "TOP", 0, -160)
     frame:SetBackdrop({
@@ -348,7 +520,7 @@ end
 
 function UI:EnsureListFrame()
     if self.listFrame then return end
-    local f = CreateFrame("Frame", "DCHotspotList", UIParent)
+    local f = CreateFrame("Frame", "DCMapupgradesList", UIParent)
     f:SetSize(320, 220)
     f:SetPoint("CENTER", UIParent, "CENTER")
     f:SetBackdrop({

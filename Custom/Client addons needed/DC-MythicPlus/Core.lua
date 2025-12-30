@@ -128,6 +128,29 @@ local function Trim(str)
     return (str and str:match("^%s*(.-)%s*$")) or str
 end
 
+-- 3.3.5a safety: wipe/CopyTable may not exist in some client builds
+if type(wipe) ~= "function" then
+    function wipe(t)
+        if type(t) ~= "table" then
+            return
+        end
+        for k in pairs(t) do
+            t[k] = nil
+        end
+    end
+end
+
+local function CopyTableShallow(src)
+    if type(src) ~= "table" then
+        return {}
+    end
+    local dst = {}
+    for k, v in pairs(src) do
+        dst[k] = v
+    end
+    return dst
+end
+
 local function FormatSeconds(seconds)
     if not seconds or seconds <= 0 then
         return "00:00"
@@ -137,6 +160,583 @@ local function FormatSeconds(seconds)
     local remain = s % 60
     return string.format("%02d:%02d", minutes, remain)
 end
+
+local function ParseTimeSeconds(input)
+    if not input or input == "" then
+        return nil
+    end
+    input = Trim(tostring(input))
+    local mm, ss = input:match("^(%d+)%s*:%s*(%d+)$")
+    if mm and ss then
+        mm = tonumber(mm)
+        ss = tonumber(ss)
+        if mm and ss then
+            return (mm * 60) + ss
+        end
+    end
+    local n = tonumber(input)
+    if n then
+        return math.floor(n)
+    end
+    return nil
+end
+
+local function GetCharKey()
+    local name = UnitName("player") or "?"
+    local realm = (type(GetRealmName) == "function" and GetRealmName()) or ""
+    if realm and realm ~= "" then
+        return name .. "-" .. realm
+    end
+    return name
+end
+
+local function EnsurePersonalDB()
+    DCMythicPlusHUDDB.personal = DCMythicPlusHUDDB.personal or {}
+    local charKey = GetCharKey()
+    DCMythicPlusHUDDB.personal[charKey] = DCMythicPlusHUDDB.personal[charKey] or {}
+    local db = DCMythicPlusHUDDB.personal[charKey]
+    db.pb = db.pb or {}
+    db.goals = db.goals or {}
+    return db
+end
+
+local function GetMapIdFromState(data)
+    return data and (data.map or data.mapId or data.dungeonId)
+end
+
+local function GetKeystoneFromState(data)
+    return data and (data.keystone or data.keyLevel or data.level)
+end
+
+local function GetRunKey(mapId, keystone)
+    if not mapId or not keystone then
+        return nil
+    end
+    return tostring(mapId) .. ":" .. tostring(keystone)
+end
+
+local function GetCurrentRunKey()
+    local mapId = GetMapIdFromState(activeState) or GetMapIdFromState(lastPayload)
+    local keystone = GetKeystoneFromState(activeState) or GetKeystoneFromState(lastPayload)
+    return GetRunKey(mapId, keystone), mapId, keystone
+end
+
+-- =====================================================================
+-- RUN TRACKING: per-player deaths + death locations, PB + goals
+-- =====================================================================
+
+local runTracker = {
+    active = false,
+    endLogged = false,
+    runKey = nil,
+    mapId = nil,
+    keystone = nil,
+    startedAt = 0,
+    deathSeq = 0,
+    deathsByGuid = {},
+    deathsByName = {},
+    deathLocations = {},
+    lastRun = nil,
+}
+
+local groupGuidToName = {}
+
+local function UpdateGroupRosterCache()
+    wipe(groupGuidToName)
+
+    local function addUnit(unit)
+        if not unit or not UnitExists(unit) then
+            return
+        end
+        local guid = UnitGUID(unit)
+        local name = UnitName(unit)
+        if guid and name then
+            groupGuidToName[guid] = name
+        end
+    end
+
+    addUnit("player")
+    if UnitInRaid and UnitInRaid("player") then
+        for i = 1, 40 do
+            addUnit("raid" .. i)
+        end
+    else
+        for i = 1, 4 do
+            addUnit("party" .. i)
+        end
+    end
+end
+
+local function FindUnitIdByGUID(guid)
+    if not guid then
+        return nil
+    end
+    local function check(unit)
+        if UnitExists(unit) and UnitGUID(unit) == guid then
+            return unit
+        end
+        return nil
+    end
+    local unit = check("player")
+    if unit then
+        return unit
+    end
+    if UnitInRaid and UnitInRaid("player") then
+        for i = 1, 40 do
+            unit = check("raid" .. i)
+            if unit then
+                return unit
+            end
+        end
+    else
+        for i = 1, 4 do
+            unit = check("party" .. i)
+            if unit then
+                return unit
+            end
+        end
+    end
+    return nil
+end
+
+local function ResetRunTracking(runKey, mapId, keystone)
+    runTracker.active = true
+    runTracker.endLogged = false
+    runTracker.runKey = runKey
+    runTracker.mapId = mapId
+    runTracker.keystone = keystone
+    runTracker.startedAt = time()
+    runTracker.deathSeq = 0
+    wipe(runTracker.deathsByGuid)
+    wipe(runTracker.deathsByName)
+    wipe(runTracker.deathLocations)
+    runTracker._lastHit = {}
+    if namespace and type(namespace.ScheduleDeathPinUpdate) == "function" then
+        namespace.ScheduleDeathPinUpdate()
+    end
+end
+
+local function StopRunTracking(success, elapsedSeconds)
+    runTracker.active = false
+    runTracker.endLogged = true
+    runTracker.lastRun = {
+        runKey = runTracker.runKey,
+        mapId = runTracker.mapId,
+        keystone = runTracker.keystone,
+        success = success and true or false,
+        elapsed = elapsedSeconds,
+        endedAt = time(),
+        deathsByName = CopyTableShallow(runTracker.deathsByName),
+        deathLocations = CopyTableShallow(runTracker.deathLocations),
+    }
+    if namespace and type(namespace.ScheduleDeathPinUpdate) == "function" then
+        namespace.ScheduleDeathPinUpdate()
+    end
+end
+
+local function AddPersonalBestIfImproved(mapId, keystone, elapsedSeconds)
+    if not mapId or not keystone or not elapsedSeconds or elapsedSeconds <= 0 then
+        return false
+    end
+    local db = EnsurePersonalDB()
+    local key = GetRunKey(mapId, keystone)
+    local prev = tonumber(db.pb[key] or 0) or 0
+    if prev == 0 or elapsedSeconds < prev then
+        db.pb[key] = math.floor(elapsedSeconds)
+        return true
+    end
+    return false
+end
+
+local function GetPersonalBest(mapId, keystone)
+    local db = EnsurePersonalDB()
+    return tonumber(db.pb[GetRunKey(mapId, keystone)] or 0) or 0
+end
+
+local function GetGoal(mapId, keystone)
+    local db = EnsurePersonalDB()
+    return tonumber(db.goals[GetRunKey(mapId, keystone)] or 0) or 0
+end
+
+local function SetGoal(mapId, keystone, goalSeconds)
+    local db = EnsurePersonalDB()
+    local key = GetRunKey(mapId, keystone)
+    if not key then
+        return false
+    end
+    if not goalSeconds or goalSeconds <= 0 then
+        db.goals[key] = nil
+    else
+        db.goals[key] = math.floor(goalSeconds)
+    end
+    return true
+end
+
+local function GetTopDeathSummary(maxPlayers)
+    maxPlayers = maxPlayers or 3
+    local rows = {}
+    for name, count in pairs(runTracker.deathsByName) do
+        if count and count > 0 then
+            table.insert(rows, { name = name, count = count })
+        end
+    end
+    table.sort(rows, function(a, b)
+        if a.count == b.count then
+            return a.name < b.name
+        end
+        return a.count > b.count
+    end)
+    local parts = {}
+    for i = 1, math.min(maxPlayers, #rows) do
+        table.insert(parts, string.format("%s(%d)", rows[i].name, rows[i].count))
+    end
+    return table.concat(parts, " ")
+end
+
+local trackerFrame = CreateFrame("Frame")
+trackerFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+trackerFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+trackerFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+trackerFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
+        UpdateGroupRosterCache()
+        return
+    end
+
+    if event ~= "COMBAT_LOG_EVENT_UNFILTERED" then
+        return
+    end
+    if not runTracker.active then
+        return
+    end
+
+    -- COMBAT_LOG_EVENT_UNFILTERED signature differs slightly across clients,
+    -- but for 3.3.5 we can rely on positional args.
+    local timestamp, subevent, hideCaster,
+        sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
+        destGUID, destName, destFlags, destRaidFlags = ...
+
+    -- Track recent damage to attribute likely killing blow on UNIT_DIED.
+    -- (UNIT_DIED itself does not include killer/spell.)
+    runTracker._lastHit = runTracker._lastHit or {}
+    local lastHit = runTracker._lastHit
+
+    local function isGroupMember(guid)
+        return guid and groupGuidToName[guid]
+    end
+
+    local function rememberHit(destGuid, hit)
+        if not destGuid then
+            return
+        end
+        hit.t = time()
+        lastHit[destGuid] = hit
+    end
+
+    if (subevent == "SWING_DAMAGE" or subevent == "RANGE_DAMAGE" or subevent == "SPELL_DAMAGE" or subevent == "SPELL_PERIODIC_DAMAGE" or subevent == "ENVIRONMENTAL_DAMAGE") and isGroupMember(destGUID) then
+        local spellName
+        local amount
+        local overkill
+        local school
+
+        if subevent == "SWING_DAMAGE" then
+            -- ... destRaidFlags, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing
+            amount, overkill, school = select(10, ...)
+            spellName = "Melee"
+        elseif subevent == "ENVIRONMENTAL_DAMAGE" then
+            -- ... destRaidFlags, environmentalType, amount, overkill, school, resisted, blocked, absorbed, critical, glancing, crushing
+            local envType
+            envType, amount, overkill, school = select(10, ...)
+            spellName = tostring(envType or "Environmental")
+        else
+            -- ... destRaidFlags, spellId, spellName, spellSchool, amount, overkill, ...
+            local spellId
+            spellId, spellName, school, amount, overkill = select(10, ...)
+        end
+
+        rememberHit(destGUID, {
+            event = subevent,
+            sourceName = sourceName,
+            sourceGUID = sourceGUID,
+            spellName = spellName,
+            amount = tonumber(amount),
+            overkill = tonumber(overkill),
+            school = school,
+        })
+        return
+    end
+
+    if subevent ~= "UNIT_DIED" then
+        return
+    end
+
+    if not isGroupMember(destGUID) then
+        return
+    end
+
+    local name = destName or groupGuidToName[destGUID] or "?"
+    runTracker.deathsByGuid[destGUID] = (runTracker.deathsByGuid[destGUID] or 0) + 1
+    runTracker.deathsByName[name] = (runTracker.deathsByName[name] or 0) + 1
+    runTracker.deathSeq = (runTracker.deathSeq or 0) + 1
+
+    local worldMapShown = WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
+    local unit = FindUnitIdByGUID(destGUID)
+    local x, y = 0, 0
+    local mapId
+    if unit and type(GetPlayerMapPosition) == "function" then
+        if type(SetMapToCurrentZone) == "function" and not worldMapShown then
+            pcall(SetMapToCurrentZone)
+        end
+        x, y = GetPlayerMapPosition(unit)
+        if type(GetCurrentMapAreaID) == "function" then
+            mapId = GetCurrentMapAreaID()
+        end
+    end
+
+    local killer
+    local hit = lastHit[destGUID]
+    if hit and hit.t and (time() - hit.t) <= 5 then
+        killer = hit
+    end
+
+    table.insert(runTracker.deathLocations, 1, {
+        id = runTracker.deathSeq,
+        runKey = runTracker.runKey,
+        t = time(),
+        elapsed = activeState and activeState.elapsed or nil,
+        name = name,
+        guid = destGUID,
+        mapId = mapId,
+        zone = GetZoneText and GetZoneText() or nil,
+        subzone = GetSubZoneText and GetSubZoneText() or nil,
+        x = x,
+        y = y,
+        killer = killer,
+    })
+    if #runTracker.deathLocations > 200 then
+        table.remove(runTracker.deathLocations)
+    end
+
+    if namespace and type(namespace.ScheduleDeathPinUpdate) == "function" then
+        namespace.ScheduleDeathPinUpdate()
+    end
+end)
+
+-- =====================================================================
+-- WorldMap death pins (simple overlay like DC-Mapupgrades)
+-- =====================================================================
+
+local function ActiveWorldMapId()
+    if WorldMapFrame then
+        if WorldMapFrame.GetMapID then
+            local ok, mapId = pcall(WorldMapFrame.GetMapID, WorldMapFrame)
+            if ok and mapId and mapId ~= 0 then
+                return mapId
+            end
+        end
+        if WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer.GetMapID then
+            local ok, mapId = pcall(WorldMapFrame.ScrollContainer.GetMapID, WorldMapFrame.ScrollContainer)
+            if ok and mapId and mapId ~= 0 then
+                return mapId
+            end
+        end
+    end
+    if type(GetCurrentMapAreaID) == "function" then
+        local mapId = GetCurrentMapAreaID()
+        if mapId and mapId ~= 0 then
+            return mapId
+        end
+    end
+    if WorldMapFrame and WorldMapFrame.mapID and WorldMapFrame.mapID ~= 0 then
+        return WorldMapFrame.mapID
+    end
+    return nil
+end
+
+local function WorldMapParent()
+    return WorldMapButton or (WorldMapFrame and WorldMapFrame.ScrollContainer) or WorldMapFrame
+end
+
+local deathPins = {
+    pins = {},
+    pending = false,
+    elapsed = 0,
+    lastMapId = nil,
+}
+
+local function DestroyDeathPin(id)
+    local pin = deathPins.pins[id]
+    if not pin then
+        return
+    end
+    pin:Hide()
+    pin:SetScript("OnEnter", nil)
+    pin:SetScript("OnLeave", nil)
+    pin:SetParent(nil)
+    deathPins.pins[id] = nil
+end
+
+local function AcquireDeathPin(id)
+    local pin = deathPins.pins[id]
+    if pin then
+        return pin
+    end
+    if not WorldMapFrame then
+        return nil
+    end
+    local parent = WorldMapParent()
+    if not parent then
+        return nil
+    end
+    pin = CreateFrame("Button", "DCMythicPlusDeathPin" .. tostring(id), parent)
+    pin:SetSize(18, 18)
+    pin.texture = pin:CreateTexture(nil, "OVERLAY")
+    pin.texture:SetAllPoints()
+    pin.texture:SetTexture("Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8")
+    pin:SetFrameStrata("HIGH")
+    pin:Hide()
+    pin.deathId = id
+
+    pin:SetScript("OnEnter", function(self)
+        local entry
+        for _, e in ipairs(runTracker.deathLocations or {}) do
+            if e and e.id == self.deathId then
+                entry = e
+                break
+            end
+        end
+        if not entry then
+            return
+        end
+
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine("Death #" .. tostring(entry.id or "?"), 1, 0.2, 0.2)
+        GameTooltip:AddLine(string.format("Victim: %s", tostring(entry.name or "?")), 1, 1, 1)
+
+        if entry.killer and (entry.killer.sourceName or entry.killer.spellName) then
+            local killerName = entry.killer.sourceName or "Unknown"
+            local spell = entry.killer.spellName or ""
+            local amount = entry.killer.amount
+            local extra = ""
+            if amount and amount > 0 then
+                extra = string.format(" (%d)", amount)
+            end
+            if spell ~= "" then
+                GameTooltip:AddLine(string.format("Killing blow: %s - %s%s", tostring(killerName), tostring(spell), extra), 1, 0.82, 0)
+            else
+                GameTooltip:AddLine(string.format("Killing blow: %s%s", tostring(killerName), extra), 1, 0.82, 0)
+            end
+        else
+            GameTooltip:AddLine("Killing blow: (unknown)", 0.8, 0.8, 0.8)
+        end
+
+        if entry.elapsed then
+            GameTooltip:AddLine("Time: " .. FormatSeconds(entry.elapsed), 0.7, 0.9, 1)
+        end
+        local place = entry.subzone and entry.subzone ~= "" and entry.subzone or entry.zone
+        if place and place ~= "" then
+            GameTooltip:AddLine("Location: " .. tostring(place), 0.7, 0.7, 0.9)
+        end
+        if entry.x and entry.y and (entry.x > 0 or entry.y > 0) then
+            GameTooltip:AddLine(string.format("Coords: %.1f, %.1f", entry.x * 100, entry.y * 100), 0.7, 0.7, 0.9)
+        end
+
+        GameTooltip:Show()
+    end)
+    pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    deathPins.pins[id] = pin
+    return pin
+end
+
+local function UpdateDeathPinsInternal()
+    if not WorldMapFrame or not (WorldMapFrame.IsShown and WorldMapFrame:IsShown()) then
+        for _, pin in pairs(deathPins.pins) do
+            pin:Hide()
+        end
+        return
+    end
+
+    -- Only show pins for the currently active run.
+    if not runTracker.active or not runTracker.runKey then
+        for _, pin in pairs(deathPins.pins) do
+            pin:Hide()
+        end
+        return
+    end
+
+    local parent = WorldMapParent()
+    if not parent then
+        return
+    end
+
+    local activeMapId = ActiveWorldMapId()
+    if activeMapId == deathPins.lastMapId and not deathPins.forceUpdate then
+        return
+    end
+    deathPins.lastMapId = activeMapId
+    deathPins.forceUpdate = nil
+
+    local shown = {}
+    local shownCount = 0
+    local maxPins = 30
+    for i = 1, #runTracker.deathLocations do
+        local e = runTracker.deathLocations[i]
+        if e and e.id and e.runKey == runTracker.runKey and e.mapId and tonumber(e.mapId) == tonumber(activeMapId) and e.x and e.y and (e.x > 0 or e.y > 0) then
+            local pin = AcquireDeathPin(e.id)
+            if pin then
+                local px = e.x * (parent:GetWidth() or 0)
+                local py = e.y * (parent:GetHeight() or 0)
+                pin:ClearAllPoints()
+                pin:SetPoint("CENTER", parent, "TOPLEFT", px, -py)
+                pin:Show()
+                shown[e.id] = true
+                shownCount = shownCount + 1
+                if shownCount >= maxPins then
+                    break
+                end
+            end
+        end
+    end
+
+    for id, pin in pairs(deathPins.pins) do
+        if not shown[id] then
+            pin:Hide()
+        end
+    end
+end
+
+function namespace.ScheduleDeathPinUpdate()
+    deathPins.pending = true
+    deathPins.elapsed = 0
+    deathPins.forceUpdate = true
+end
+
+local deathPinWatcher = CreateFrame("Frame")
+deathPinWatcher:RegisterEvent("WORLD_MAP_UPDATE")
+deathPinWatcher:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+deathPinWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
+deathPinWatcher:SetScript("OnEvent", function()
+    namespace.ScheduleDeathPinUpdate()
+end)
+
+if WorldMapFrame and WorldMapFrame.HookScript then
+    WorldMapFrame:HookScript("OnShow", function() namespace.ScheduleDeathPinUpdate() end)
+    WorldMapFrame:HookScript("OnSizeChanged", function() namespace.ScheduleDeathPinUpdate() end)
+end
+
+local deathPinTicker = CreateFrame("Frame")
+deathPinTicker:SetScript("OnUpdate", function(_, elapsed)
+    if not deathPins.pending then
+        return
+    end
+    deathPins.elapsed = deathPins.elapsed + elapsed
+    if deathPins.elapsed >= 0.1 then
+        deathPins.elapsed = 0
+        deathPins.pending = false
+        UpdateDeathPinsInternal()
+    end
+end)
 
 local function SafelyGetSpellName(spellId)
     if not spellId then
@@ -767,15 +1367,39 @@ local function UpdateFrameFromState(data)
     local f = EnsureFrame()
     ApplySavedPosition()
 
+    local mapId = GetMapIdFromState(data)
+    local keystone = GetKeystoneFromState(data)
+    local runKey = GetRunKey(mapId, keystone)
+    if data and data.inProgress then
+        if not runTracker.active then
+            ResetRunTracking(runKey or "unknown", mapId, keystone)
+        elseif runKey and runTracker.runKey ~= runKey then
+            ResetRunTracking(runKey, mapId, keystone)
+        end
+    elseif (not data or not data.inProgress) and runTracker.active and not runTracker.endLogged then
+        StopRunTracking(false, data and data.elapsed or nil)
+    end
+
     local mapName = data.mapName or MapNameForId(data.map)
-    local keystone = data.keystone or 0
-    headerText:SetText(string.format("%s |cffffaa33+%d|r", mapName, keystone))
+    local keystoneDisplay = tonumber(data.keystone) or tonumber(keystone) or 0
+    headerText:SetText(string.format("%s |cffffaa33+%d|r", mapName, keystoneDisplay))
 
     local elapsed = FormatSeconds(data.elapsed)
     local remaining = FormatSeconds(data.remaining)
     local timerLine = string.format("Timer: %s elapsed | %s left", elapsed, remaining)
     if data.bestTime and data.bestTime > 0 then
         timerLine = timerLine .. string.format(" | Best: %s", FormatSeconds(data.bestTime))
+    end
+
+    if mapId and keystone then
+        local pb = GetPersonalBest(mapId, keystone)
+        if pb and pb > 0 then
+            timerLine = timerLine .. string.format(" | PB: %s", FormatSeconds(pb))
+        end
+        local goal = GetGoal(mapId, keystone)
+        if goal and goal > 0 then
+            timerLine = timerLine .. string.format(" | Goal: %s", FormatSeconds(goal))
+        end
     end
     timerText:SetText(timerLine)
 
@@ -784,7 +1408,14 @@ local function UpdateFrameFromState(data)
     deathText:SetText(string.format("Deaths: %d | Wipes: %d", data.deaths or 0, data.wipes or 0))
 
     local playerCount = CountTableValues(data.participants)
-    playerText:SetText(string.format("Players: %d", playerCount))
+    local playerLine = string.format("Players: %d", playerCount)
+    if data and data.inProgress and runTracker.active then
+        local top = GetTopDeathSummary(3)
+        if top and top ~= "" then
+            playerLine = playerLine .. " | Deaths: " .. top
+        end
+    end
+    playerText:SetText(playerLine)
 
     bossText:SetText(BuildBossLine(data.bossesKilled or 0, data.bossesTotal or 0))
 
@@ -803,6 +1434,16 @@ local function UpdateFrameFromState(data)
         SetFrameVisibility(true)
     else
         SetFrameVisibility(false)
+    end
+
+    if data and data.completed and mapId and keystone and not runTracker.endLogged then
+        local improved = AddPersonalBestIfImproved(mapId, keystone, data.elapsed)
+        if improved then
+            Print(string.format("New Personal Best for %s +%d: %s", mapName or "Dungeon", tonumber(keystone) or 0, FormatSeconds(data.elapsed)))
+        end
+        StopRunTracking(true, data.elapsed)
+    elseif data and data.failed and not runTracker.endLogged then
+        StopRunTracking(false, data.elapsed)
     end
 end
 
@@ -909,13 +1550,21 @@ SlashCmdList.DCGF = function(msg)
 end
 
 SlashCmdList.DCM = function(msg)
-    msg = Trim((msg or "")):lower()
-    if msg == "lock" then
+    local raw = Trim(msg or "")
+    local lowered = raw:lower()
+    local cmd, rest = lowered:match("^(%S+)%s*(.-)$")
+
+    if raw == "" then
+        ToggleVisibility()
+        return
+    end
+
+    if cmd == "lock" then
         ToggleLock()
-    elseif msg == "unlock" then
+    elseif cmd == "unlock" then
         DCMythicPlusHUDDB.locked = false
         Print("Frame unlocked")
-    elseif msg == "show" then
+    elseif cmd == "show" then
         DCMythicPlusHUDDB.hidden = false
         -- Only show if a run is active
         if IsInMythicOrMythicPlusInstance() then
@@ -925,69 +1574,164 @@ SlashCmdList.DCM = function(msg)
             Print("HUD will show when you enter a Mythic/Mythic+ dungeon with an active run")
         end
         RequestServerSnapshot("slash")
-    elseif msg == "hide" then
+    elseif cmd == "hide" then
         DCMythicPlusHUDDB.hidden = true
         SetFrameVisibility(false)
         Print("HUD hidden")
-    elseif msg == "refresh" or msg == "sync" then
+    elseif cmd == "refresh" or cmd == "sync" then
         RequestServerSnapshot("slash")
         Print("Requested latest HUD snapshot")
-    elseif msg == "reset" then
+    elseif cmd == "reset" then
         DCMythicPlusHUDDB.position = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 120 }
         ApplySavedPosition()
         Print("HUD position reset")
-    elseif msg == "json" then
-        -- Toggle JSON mode for DC protocol
+    elseif cmd == "json" then
         DCMythicPlusHUDDB.useDCProtocolJSON = not (DCMythicPlusHUDDB.useDCProtocolJSON == true)
         Print("DC Protocol JSON mode: " .. (DCMythicPlusHUDDB.useDCProtocolJSON and "ON" or "OFF"))
-    elseif msg == "key" then
-        -- Request keystone info via DC protocol
+    elseif cmd == "key" then
         if namespace.RequestKeyInfo then
             namespace.RequestKeyInfo()
             Print("Requesting keystone info...")
         else
             Print("DC protocol not available")
         end
-    elseif msg == "affixes" then
-        -- Request affixes via DC protocol
+    elseif cmd == "affixes" then
         if namespace.RequestAffixes then
             namespace.RequestAffixes()
             Print("Requesting weekly affixes...")
         else
             Print("DC protocol not available")
         end
-    elseif msg == "best" or msg == "runs" then
-        -- Request best runs via DC protocol
+    elseif cmd == "best" or cmd == "runs" then
         if namespace.RequestBestRuns then
             namespace.RequestBestRuns()
             Print("Requesting best runs...")
         else
             Print("DC protocol not available")
         end
-    elseif msg == "protocol" then
-        -- Show protocol status
+    elseif cmd == "pb" then
+        local sub = rest and rest:match("^(%S+)") or ""
+        if sub == "clear" then
+            local db = EnsurePersonalDB()
+            wipe(db.pb)
+            Print("Personal bests cleared")
+        elseif sub == "all" then
+            local db = EnsurePersonalDB()
+            Print("Personal bests:")
+            local rows = {}
+            for key, val in pairs(db.pb) do
+                table.insert(rows, { key = key, val = tonumber(val) or 0 })
+            end
+            table.sort(rows, function(a, b) return a.key < b.key end)
+            for _, r in ipairs(rows) do
+                local mapIdStr, keyLvlStr = tostring(r.key):match("^(.-):(.-)$")
+                local name = (mapIdStr and MapNameForId and MapNameForId(tonumber(mapIdStr))) or ("Dungeon " .. (mapIdStr or "?"))
+                Print(string.format("  %s +%s: %s", name, keyLvlStr or "?", FormatSeconds(r.val)))
+            end
+            if #rows == 0 then
+                Print("  (none)")
+            end
+        else
+            local runKeyNow, mapId, keyLevel = GetCurrentRunKey()
+            if not runKeyNow then
+                Print("No active dungeon/key context for PB")
+                return
+            end
+            local pb = GetPersonalBest(mapId, keyLevel)
+            if pb and pb > 0 then
+                Print(string.format("PB for %s +%d: %s", (MapNameForId and MapNameForId(mapId)) or "Dungeon", tonumber(keyLevel) or 0, FormatSeconds(pb)))
+            else
+                Print("No PB recorded yet for this dungeon/key")
+            end
+        end
+    elseif cmd == "goal" then
+        local sub = rest and Trim(rest) or ""
+        local runKeyNow, mapId, keyLevel = GetCurrentRunKey()
+        if not runKeyNow then
+            Print("No active dungeon/key context for goal")
+            return
+        end
+        if sub == "" then
+            local goal = GetGoal(mapId, keyLevel)
+            if goal and goal > 0 then
+                Print(string.format("Goal for %s +%d: %s", (MapNameForId and MapNameForId(mapId)) or "Dungeon", tonumber(keyLevel) or 0, FormatSeconds(goal)))
+            else
+                Print("No goal set for this dungeon/key")
+            end
+        elseif sub == "clear" then
+            SetGoal(mapId, keyLevel, 0)
+            Print("Goal cleared")
+        else
+            local goalSeconds = ParseTimeSeconds(sub)
+            if not goalSeconds or goalSeconds <= 0 then
+                Print("Invalid goal time. Use mm:ss (e.g. 12:34) or seconds")
+                return
+            end
+            SetGoal(mapId, keyLevel, goalSeconds)
+            Print(string.format("Goal set for %s +%d: %s", (MapNameForId and MapNameForId(mapId)) or "Dungeon", tonumber(keyLevel) or 0, FormatSeconds(goalSeconds)))
+        end
+    elseif cmd == "deaths" or cmd == "death" then
+        local sub, arg = rest:match("^(%S+)%s*(.-)$")
+        sub = sub or ""
+        if sub == "loc" or sub == "location" or sub == "locations" then
+            local n = tonumber(arg) or 10
+            n = math.max(1, math.min(n, 50))
+            Print("Death locations (latest " .. n .. "):")
+            for i = 1, math.min(n, #runTracker.deathLocations) do
+                local e = runTracker.deathLocations[i]
+                local xy = ""
+                if e.x and e.y and (e.x > 0 or e.y > 0) then
+                    xy = string.format(" (%.0f%%, %.0f%%)", e.x * 100, e.y * 100)
+                end
+                local when = e.elapsed and FormatSeconds(e.elapsed) or "--:--"
+                local zone = e.subzone and e.subzone ~= "" and e.subzone or (e.zone or "")
+                Print(string.format("  %s %s - %s%s", when, e.name or "?", zone, xy))
+            end
+            if #runTracker.deathLocations == 0 then
+                Print("  (no deaths recorded)")
+            end
+        else
+            Print("Deaths by player (this run):")
+            local rows = {}
+            for name, count in pairs(runTracker.deathsByName) do
+                table.insert(rows, { name = name, count = count })
+            end
+            table.sort(rows, function(a, b)
+                if a.count == b.count then
+                    return a.name < b.name
+                end
+                return a.count > b.count
+            end)
+            for i = 1, #rows do
+                if rows[i].count and rows[i].count > 0 then
+                    Print(string.format("  %s: %d", rows[i].name, rows[i].count))
+                end
+            end
+            if #rows == 0 then
+                Print("  (no deaths recorded)")
+            end
+        end
+    elseif cmd == "protocol" then
         local dcAvail = rawget(_G, "DCAddonProtocol") and "YES" or "NO"
         local aioAvail = rawget(_G, "AIO") and "YES" or "NO"
         Print("Protocol status:")
         Print("  DCAddonProtocol: " .. dcAvail)
         Print("  AIO: " .. aioAvail)
         Print("  JSON mode: " .. (DCMythicPlusHUDDB.useDCProtocolJSON and "ON" or "OFF"))
-    elseif msg == "vault" then
+    elseif cmd == "vault" then
         if namespace.GreatVault then
             namespace.GreatVault:Toggle()
         else
             Print("Great Vault UI not loaded")
         end
-    elseif msg == "finder" or msg == "gf" then
-        -- Open Group Finder
+    elseif cmd == "finder" or cmd == "gf" then
         if namespace.GroupFinder then
             namespace.GroupFinder:Toggle()
         else
             Print("Group Finder not loaded yet")
         end
-    elseif msg == "keystone" or msg == "activation" then
-        -- Show keystone activation UI (for testing)
-        if namespace.KeystoneUI then
+    elseif cmd == "keystone" or cmd == "activation" then
+        if namespace.KeystoneUI and type(namespace.KeystoneUI.Show) == "function" then
             namespace.KeystoneUI:Show({
                 dungeon = "Test Dungeon",
                 level = 15,
@@ -1000,7 +1744,7 @@ SlashCmdList.DCM = function(msg)
         else
             Print("Keystone UI not loaded")
         end
-    elseif msg == "help" then
+    elseif cmd == "help" then
         Print("Commands:")
         Print("  /dcm - Toggle HUD visibility")
         Print("  /dcm lock/unlock - Lock/unlock HUD position")
@@ -1011,6 +1755,10 @@ SlashCmdList.DCM = function(msg)
         Print("  /dcm key - Show your keystone info")
         Print("  /dcm affixes - Show weekly affixes")
         Print("  /dcm best - Show your best runs")
+        Print("  /dcm pb [all|clear] - Show/clear personal bests")
+        Print("  /dcm goal [mm:ss|clear] - Set/clear goal for current dungeon/key")
+        Print("  /dcm deaths - Show deaths by player")
+        Print("  /dcm deaths loc [n] - Show last death locations")
         Print("  /dcm protocol - Show protocol status")
         Print("  /dcm finder - Open Group Finder")
         Print("  /dcgf - Open Group Finder (shortcut)")
@@ -1521,25 +2269,25 @@ if DC then
             local status = data.status or "unknown"
             if status == "accepted" then
                 Print("|cff00ff00Your application was accepted!|r")
-            elseif status == "declined" then
+            elseif cmd == "vault" then
                 Print("|cffff0000Your application was declined.|r")
             else
                 Print("Application status: " .. status)
             end
             if namespace.GroupFinder then
-                namespace.GroupFinder:OnApplicationStatusChanged(data)
+            elseif cmd == "finder" then
             end
         end
     end)
     
     -- SMSG_NEW_APPLICATION (0x33) - Leader: new applicant
-    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_NEW_APPLICATION or 0x33, function(...)
+            elseif cmd == "keystone" then
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
             Print("|cffffff00New applicant:|r " .. (data.playerName or "Unknown") .. " (" .. (data.role or "?") .. ")")
             if namespace.GroupFinder then
-                namespace.GroupFinder:OnNewApplication(data)
+            elseif cmd == "help" then
             end
         end
     end)

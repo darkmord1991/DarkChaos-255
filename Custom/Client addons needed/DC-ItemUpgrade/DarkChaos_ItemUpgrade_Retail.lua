@@ -829,6 +829,8 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu heirloom|r - Open heirloom upgrade window");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu packages|r - List available stat packages");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu package <id>|r - Select stat package (1-12)");
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu history [n]|r - Show last N upgrades (default 20)");
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu history clear|r - Clear upgrade history");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu settings|r - Open settings panel");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu debug|r - Toggle debug mode");
 		DEFAULT_CHAT_FRAME:AddMessage("|cffffcc00/dcu sound|r - Toggle sound effects");
@@ -875,6 +877,33 @@ SlashCmdList["DCUPGRADE"] = function(msg)
 			return;
 		end
 		DarkChaos_ItemUpgrade_SelectStatPackage(pkgId);
+		
+	elseif subcmd == "history" then
+		if args[2] == "clear" then
+			if DC.ClearUpgradeHistory then
+				DC.ClearUpgradeHistory();
+			end
+			DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DC ItemUpgrade:|r Upgrade history cleared.");
+			return;
+		end
+
+		local count = tonumber(args[2]) or 20;
+		if count < 1 then count = 1; end
+		if count > 200 then count = 200; end
+
+		local history = DC.GetUpgradeHistory and DC.GetUpgradeHistory() or nil;
+		if not history or #history == 0 then
+			DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00DC ItemUpgrade:|r No upgrade history yet.");
+			return;
+		end
+
+		DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff=== Upgrade History (showing %d of %d) ===|r", math.min(count, #history), #history));
+		for i = 1, math.min(count, #history) do
+			local line = (DC.FormatUpgradeHistoryEntry and DC.FormatUpgradeHistoryEntry(history[i])) or "";
+			if line ~= "" then
+				DEFAULT_CHAT_FRAME:AddMessage(line);
+			end
+		end
 		
 	elseif subcmd == "settings" or subcmd == "config" or subcmd == "options" then
 		-- Open settings panel
@@ -4017,6 +4046,64 @@ end
 function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 	if not message then return end
 	
+	local function MaybeLogStandardUpgradeFromQuery(locationKey, data)
+		if not locationKey or type(data) ~= "table" then
+			return;
+		end
+		-- If DCAddonProtocol is active, Core.lua already logs via UPG 0x11
+		if DCProtocol and DC.useDCProtocol then
+			return;
+		end
+
+		-- Ignore heirloom shirt (handled by DCHEIRLOOM_SUCCESS)
+		if tonumber(data.baseEntry) == 300365 then
+			return;
+		end
+
+		local pending = DC.pendingUpgrade;
+		if not pending or pending.isHeirloom then
+			return;
+		end
+
+		local pendingKey = tostring(pending.bag) .. ":" .. tostring(pending.serverSlot);
+		if pendingKey ~= locationKey then
+			return;
+		end
+
+		local newLevel = tonumber(data.currentUpgrade);
+		if not newLevel then
+			return;
+		end
+
+		local target = tonumber(pending.target);
+		if target and newLevel < target then
+			return;
+		end
+
+		local baseEntry = tonumber(data.baseEntry) or tonumber(data.currentEntry);
+		local itemName, itemLink = nil, nil;
+		if baseEntry then
+			itemName, itemLink = GetItemInfo(baseEntry);
+		end
+
+		if DC.AddUpgradeHistoryEntry then
+			DC.AddUpgradeHistoryEntry({
+				source = "chat_query",
+				mode = "STANDARD",
+				itemId = baseEntry,
+				itemName = itemName,
+				itemLink = itemLink,
+				guid = data.guid,
+				fromLevel = pending.startLevel,
+				toLevel = newLevel,
+				tier = tonumber(data.tier) or pending.tier,
+				maxUpgrade = data.maxUpgrade,
+			});
+		end
+
+		DC.pendingUpgrade = nil;
+	end
+	
 	-- Debug: Log all incoming messages that might be ours
 	if string.find(message, "^DCUPGRADE_") or string.find(message, "^DCHEIRLOOM_") then
 		DC.Debug("OnChatMessage received: " .. string.sub(message, 1, 80) .. "...");
@@ -4180,6 +4267,7 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 						-- This response IS for our in-flight query
 						DC.itemLocationCache[locationKey] = guid;
 						DC.Debug("In-flight query matched: " .. locationKey .. " -> guid " .. tostring(guid));
+						MaybeLogStandardUpgradeFromQuery(locationKey, data);
 						matchedInFlight = true;
 						
 						-- Apply to current item if it matches
@@ -4232,6 +4320,7 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 							local locationKey = serverBag .. ":" .. serverSlot;
 							DC.itemLocationCache[locationKey] = guid;
 							DC.Debug("Matched entry " .. tostring(currentEntry) .. " to slot " .. slotID .. " (key: " .. locationKey .. ")");
+							MaybeLogStandardUpgradeFromQuery(locationKey, data);
 							matched = true;
 							break;
 						end
@@ -4251,6 +4340,7 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 									local locationKey = bag .. ":" .. serverSlot;
 									DC.itemLocationCache[locationKey] = guid;
 									DC.Debug("Matched entry " .. tostring(currentEntry) .. " to bag " .. bag .. " slot " .. slot .. " (key: " .. locationKey .. ")");
+									MaybeLogStandardUpgradeFromQuery(locationKey, data);
 									matched = true;
 									break;
 								end
@@ -4300,6 +4390,26 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			-- Clear pending upgrade
 			local pending = DC.pendingUpgrade;
 			DC.pendingUpgrade = nil;
+
+			-- Record history
+			local heirloomItemId = 300365;
+			local fromLevel = pending and pending.startLevel or nil;
+			local itemName, itemLink = GetItemInfo(heirloomItemId)
+			if DC.AddUpgradeHistoryEntry then
+				DC.AddUpgradeHistoryEntry({
+					source = "heirloom_chat",
+					mode = "HEIRLOOM",
+					itemId = heirloomItemId,
+					itemName = itemName,
+					itemLink = itemLink,
+					itemGUID = itemGUID,
+					fromLevel = fromLevel,
+					toLevel = newLevel,
+					tier = 3,
+					packageId = packageId,
+					enchantId = enchantId,
+				});
+			end
 			
 			-- Show success message
 			print(string.format("|cff00ff00[Heirloom Upgrade Success!]|r Level %d with |cff00ccff%s|r package", newLevel, packageName));

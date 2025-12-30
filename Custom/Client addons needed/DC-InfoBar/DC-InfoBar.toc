@@ -29,6 +29,7 @@ Plugins\Server\Events.lua
 
 # Character plugins (WoW API only)
 Plugins\Character\Location.lua
+Plugins\Character\XPRep.lua
 Plugins\Character\Gold.lua
 Plugins\Character\Durability.lua
 Plugins\Character\Bags.lua

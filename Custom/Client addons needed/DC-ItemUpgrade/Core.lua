@@ -147,6 +147,108 @@ function DC.InitializeSettings()
 	DC.batchQueryDelay = DC_ItemUpgrade_Settings.batchQueryDelay or DC.DEFAULT_SETTINGS.batchQueryDelay;
 end
 
+--[[=====================================================
+	UPGRADE HISTORY (PER-CHARACTER)
+=======================================================]]
+
+DC.UPGRADE_HISTORY_DEFAULT_MAX = 200;
+
+function DC.EnsureUpgradeHistory()
+	if not DC_ItemUpgrade_CharSettings then
+		DC_ItemUpgrade_CharSettings = {};
+	end
+
+	if type(DC_ItemUpgrade_CharSettings.upgradeHistory) ~= "table" then
+		DC_ItemUpgrade_CharSettings.upgradeHistory = {};
+	end
+
+	-- Optional index: last upgrade per item (keyed by guid if available, else itemId)
+	if type(DC_ItemUpgrade_CharSettings.upgradeHistoryMap) ~= "table" then
+		DC_ItemUpgrade_CharSettings.upgradeHistoryMap = {};
+	end
+
+	local maxEntries = tonumber(DC_ItemUpgrade_CharSettings.upgradeHistoryMax) or DC.UPGRADE_HISTORY_DEFAULT_MAX;
+	if maxEntries < 10 then
+		maxEntries = 10;
+	end
+	if maxEntries > 1000 then
+		maxEntries = 1000;
+	end
+	DC_ItemUpgrade_CharSettings.upgradeHistoryMax = maxEntries;
+
+	return DC_ItemUpgrade_CharSettings.upgradeHistory, maxEntries;
+end
+
+function DC.AddUpgradeHistoryEntry(entry)
+	if type(entry) ~= "table" then
+		return;
+	end
+
+	local history, maxEntries = DC.EnsureUpgradeHistory();
+	entry.ts = tonumber(entry.ts) or time();
+
+	-- Update per-item map (last entry)
+	local key = entry.itemGUID or entry.guid or entry.itemId;
+	if key then
+		DC_ItemUpgrade_CharSettings.upgradeHistoryMap[tostring(key)] = entry;
+	end
+
+	table.insert(history, 1, entry);
+	while #history > maxEntries do
+		table.remove(history);
+	end
+end
+
+function DC.ClearUpgradeHistory()
+	if DC_ItemUpgrade_CharSettings and type(DC_ItemUpgrade_CharSettings.upgradeHistory) == "table" then
+		DC_ItemUpgrade_CharSettings.upgradeHistory = {};
+	end
+	if DC_ItemUpgrade_CharSettings and type(DC_ItemUpgrade_CharSettings.upgradeHistoryMap) == "table" then
+		DC_ItemUpgrade_CharSettings.upgradeHistoryMap = {};
+	end
+end
+
+function DC.GetUpgradeHistory()
+	local history = DC.EnsureUpgradeHistory();
+	return history;
+end
+
+function DC.FormatUpgradeHistoryEntry(entry)
+	if type(entry) ~= "table" then
+		return "";
+	end
+
+	local ts = entry.ts and date("%m-%d %H:%M", entry.ts) or "?";
+	local itemText = entry.itemLink or entry.itemName or (entry.itemId and ("ItemID " .. tostring(entry.itemId)) or "Item");
+	local fromLevel = entry.fromLevel;
+	local toLevel = entry.toLevel;
+	local tier = entry.tier;
+	local mode = entry.mode;
+
+	local parts = {};
+	table.insert(parts, "|cff888888[" .. ts .. "]|r");
+	table.insert(parts, itemText);
+
+	if fromLevel and toLevel then
+		table.insert(parts, string.format("lvl %d->%d", fromLevel, toLevel));
+	elseif toLevel then
+		table.insert(parts, string.format("lvl %d", toLevel));
+	end
+
+	if tier then
+		table.insert(parts, "tier " .. tostring(tier));
+	end
+	if mode then
+		table.insert(parts, "(" .. tostring(mode) .. ")");
+	end
+
+	if entry.packageId then
+		table.insert(parts, "pkg " .. tostring(entry.packageId));
+	end
+
+	return table.concat(parts, " - ");
+end
+
 -- Settings reference (alias for convenience)
 DC.Settings = DC_ItemUpgrade_Settings;
 
@@ -593,6 +695,13 @@ function DC.RegisterDCProtocolHandlers()
 		
 		if success then
 			-- Upgrade successful
+			local prevLevel, tier, maxUpgrade
+			if DC.itemUpgradeCache and DC.itemUpgradeCache[itemId] then
+				prevLevel = DC.itemUpgradeCache[itemId].currentUpgrade
+				tier = DC.itemUpgradeCache[itemId].tier
+				maxUpgrade = DC.itemUpgradeCache[itemId].maxUpgrade
+			end
+
 			DC.PlaySound("LEVELUPSOUND");
 			
 			-- Update cache
@@ -601,6 +710,22 @@ function DC.RegisterDCProtocolHandlers()
 				if newEntry then
 					DC.itemUpgradeCache[itemId].currentEntry = newEntry;
 				end
+			end
+
+			-- Record history (standard upgrades only; heirloom shirt handled by DCHEIRLOOM_SUCCESS)
+			if itemId ~= 300365 then
+				local itemName, itemLink = GetItemInfo(itemId)
+				DC.AddUpgradeHistoryEntry({
+					source = "protocol",
+					mode = "STANDARD",
+					itemId = itemId,
+					itemName = itemName,
+					itemLink = itemLink,
+					fromLevel = prevLevel,
+					toLevel = newLevel,
+					tier = tier,
+					maxUpgrade = maxUpgrade,
+				});
 			end
 			
 			-- Show celebration

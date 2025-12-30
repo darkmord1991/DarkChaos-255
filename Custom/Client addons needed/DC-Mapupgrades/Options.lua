@@ -23,6 +23,8 @@ local ICON_CHOICES = {
 local CHECKBOXES = {
     { key = "showMinimapPins", label = "Show minimap pins", desc = "Display hotspot markers on the minimap." },
     { key = "showWorldPins", label = "Show world map pins", desc = "Display hotspot markers on the world map." },
+    { key = "showWorldBossPins", label = "Show world boss pins", desc = "Display world boss spawn markers on the maps." },
+    { key = "showRarePins", label = "Show rare pins", desc = "Display rare mob spawn markers on the maps." },
     { key = "showWorldLabels", label = "Show world pin labels", desc = "Render bonus text beneath each world map pin." },
     { key = "showPopup", label = "Show spawn popup", desc = "Play the banner + sound when a hotspot is announced." },
     { key = "announce", label = "Announce in chat", desc = "Print chat messages when hotspots spawn." },
@@ -41,7 +43,7 @@ end
 
 local function Print(msg)
     if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[DC-Hotspot]|r " .. (msg or ""))
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[DC-Mapupgrades]|r " .. (msg or ""))
     end
 end
 
@@ -55,8 +57,8 @@ function Options:Init(state)
     end
 
     local container = InterfaceOptionsFramePanelContainer or UIParent
-    local panel = CreateFrame("Frame", "DCHotspotOptionsPanel", container)
-    panel.name = "DC Hotspot"
+    local panel = CreateFrame("Frame", "DCMapupgradesOptionsPanel", container)
+    panel.name = "DC Mapupgrades"
     panel:Hide()
 
     panel:SetScript("OnShow", function(frame)
@@ -76,11 +78,11 @@ function Options:Build(panel)
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16)
-    title:SetText("DC Hotspot")
+    title:SetText("DC Mapupgrades")
 
     local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    subtitle:SetText("Configure how hotspots render on your maps and announcements.")
+    subtitle:SetText("Configure XP hotspots and custom map pins (world bosses/rares).")
 
     local anchorY = -60
     for _, entry in ipairs(CHECKBOXES) do
@@ -233,7 +235,7 @@ function Options:CreateCommPanel()
     if not InterfaceOptions_AddCategory or not self.panel then return end
     if self.commPanel then return end
     
-    local commPanel = CreateFrame('Frame', 'DCHotspot_CommOptions', self.panel)
+    local commPanel = CreateFrame('Frame', 'DCMapupgrades_CommOptions', self.panel)
     commPanel.name = 'Communication'
     commPanel.parent = self.panel.name
     commPanel:Hide()
@@ -279,10 +281,10 @@ function Options:CreateCommPanel()
         y = y - 26
         
         -- JSON Toggle
-        local jsonCheck = CreateFrame("CheckButton", "DCHotspot_Opt_JSONMode", commPanel, "InterfaceOptionsCheckButtonTemplate")
+        local jsonCheck = CreateFrame("CheckButton", "DCMapupgrades_Opt_JSONMode", commPanel, "InterfaceOptionsCheckButtonTemplate")
         jsonCheck:SetPoint("TOPLEFT", 16, y)
         jsonCheck:SetHitRectInsets(0, -200, 0, 0)
-        _G["DCHotspot_Opt_JSONModeText"]:SetText("Use JSON Protocol (recommended)")
+        _G["DCMapupgrades_Opt_JSONModeText"]:SetText("Use JSON Protocol (recommended)")
         jsonCheck:SetChecked(db.useDCProtocolJSON ~= false)
         jsonCheck:SetScript("OnClick", function(self)
             if Options.state and Options.state.db then

@@ -14,10 +14,39 @@ local function DebugPrint(...)
         if Pins.state and Pins.state.db and Pins.state.db.debug then
             enabled = true
         end
-        Debug:PrintMulti("DC-Hotspot", enabled, ...)
+        Debug:PrintMulti("DC-Mapupgrades", enabled, ...)
     elseif DEBUG_FLAG and DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[DC-Hotspot]|r " .. table.concat({...}, " "))
+        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[DC-Mapupgrades]|r " .. table.concat({...}, " "))
     end
+end
+
+local function NowEpoch()
+    if GetServerTime then
+        return GetServerTime()
+    end
+    return time()
+end
+
+local function EntityTexture(kind)
+    if kind == "boss" then
+        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8" -- Skull
+    end
+    if kind == "rare" then
+        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_1" -- Star
+    end
+    return "Interface\\Icons\\INV_Misc_Map_01"
+end
+
+local function EntityIsActive(state, entityId)
+    local db = state and state.db
+    if not db or type(db.entityStatus) ~= "table" then
+        return false
+    end
+    local st = db.entityStatus[entityId]
+    if not st or not st.activeUntil then
+        return false
+    end
+    return tonumber(st.activeUntil) and tonumber(st.activeUntil) > NowEpoch()
 end
 
 local function PlayerCanGainXP()
@@ -426,6 +455,8 @@ function Pins:Init(state)
     self.state = state
     self.worldPins = {}
     self.minimapPins = {}
+    self.entityWorldPins = {}
+    self.entityMinimapPins = {}
     self.minimapUpdate = 0
     self.worldPinUpdate = 0  -- Debounce for world pins
     self.pendingWorldUpdate = false  -- Flag for pending update
@@ -434,18 +465,18 @@ function Pins:Init(state)
     -- Check Astrolabe status
     local Astrolabe = _G.HotspotDisplay_Astrolabe
     if Astrolabe then
-        print("|cff00ff00[DC-Hotspot] Astrolabe loaded|r")
+        print("|cff00ff00[DC-Mapupgrades] Astrolabe loaded|r")
         if Astrolabe.MapBounds then
             local count = 0
             for mapId in pairs(Astrolabe.MapBounds) do
                 count = count + 1
             end
-            print(string.format("|cff00ff00[DC-Hotspot] Map bounds defined for %d continents|r", count))
+            print(string.format("|cff00ff00[DC-Mapupgrades] Map bounds defined for %d continents|r", count))
         else
-            print("|cffff0000[DC-Hotspot] ERROR: Astrolabe.MapBounds is nil!|r")
+            print("|cffff0000[DC-Mapupgrades] ERROR: Astrolabe.MapBounds is nil!|r")
         end
     else
-        print("|cffff0000[DC-Hotspot] ERROR: Astrolabe not loaded!|r")
+        print("|cffff0000[DC-Mapupgrades] ERROR: Astrolabe not loaded!|r")
     end
 
     if WorldMapFrame then
@@ -525,12 +556,99 @@ function Pins:DestroyPin(collection, id)
     end
 end
 
+function Pins:AcquireEntityWorldPin(id, entity)
+    local pin = self.entityWorldPins[id]
+    if pin then return pin end
+    if not WorldMapFrame then return nil end
+    local parent = WorldMapButton or (WorldMapFrame and WorldMapFrame.ScrollContainer) or WorldMapFrame
+    pin = CreateFrame("Button", "DCMapupgradesEntityWorldPin" .. id, parent)
+    pin:SetSize(22, 22)
+    pin.texture = pin:CreateTexture(nil, "OVERLAY")
+    pin.texture:SetAllPoints()
+    pin:SetFrameStrata("HIGH")
+    pin:Hide()
+    pin.entityId = id
+    pin:SetScript("OnEnter", function(self)
+        local db = Pins.state and Pins.state.db
+        local list = db and db.entities and db.entities.list
+        if type(list) ~= "table" then return end
+        local ent
+        for _, e in ipairs(list) do
+            if e and e.id == self.entityId then ent = e break end
+        end
+        if not ent then return end
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        local kindLabel = (ent.kind == "boss" and "World Boss") or (ent.kind == "rare" and "Rare") or "Entity"
+        GameTooltip:AddLine(ent.name or (kindLabel .. " #" .. tostring(self.entityId)))
+        GameTooltip:AddLine(kindLabel, 0.7, 0.7, 0.9)
+
+        if ent.spawnId then
+            GameTooltip:AddLine(string.format("spawnId: %s", tostring(ent.spawnId)), 0.9, 0.9, 0.9)
+        end
+        if ent.entry then
+            GameTooltip:AddLine(string.format("entry: %s", tostring(ent.entry)), 0.9, 0.9, 0.9)
+        end
+        if ent.zoneLabel then
+            GameTooltip:AddLine(string.format("zone: %s", tostring(ent.zoneLabel)), 0.9, 0.9, 0.9)
+        end
+
+        local active = EntityIsActive(Pins.state, self.entityId)
+        if active then
+            GameTooltip:AddLine("Status: ACTIVE", 0, 1, 0)
+        else
+            GameTooltip:AddLine("Status: inactive", 1, 0.82, 0)
+        end
+        if ent.mapId then
+            GameTooltip:AddLine(string.format("Map: %s", tostring(ent.mapId)), 1, 1, 1)
+        end
+        if ent.nx and ent.ny then
+            GameTooltip:AddLine(string.format("Pos: %.3f, %.3f", ent.nx, ent.ny), 1, 1, 1)
+        end
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(string.format("/dcmap active %d", self.entityId), 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(string.format("/dcmap inactive %d", self.entityId), 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    self.entityWorldPins[id] = pin
+    return pin
+end
+
+function Pins:AcquireEntityMinimapPin(id, entity)
+    local pin = self.entityMinimapPins[id]
+    if pin then return pin end
+    if not Minimap then return nil end
+    pin = CreateFrame("Frame", "DCMapupgradesEntityMinimapPin" .. id, Minimap)
+    pin:SetSize(16, 16)
+    pin.texture = pin:CreateTexture(nil, "OVERLAY")
+    pin.texture:SetAllPoints()
+    pin:SetFrameStrata("HIGH")
+    pin:Hide()
+    pin.entityId = id
+    pin:SetScript("OnEnter", function(self)
+        local db = Pins.state and Pins.state.db
+        local list = db and db.entities and db.entities.list
+        if type(list) ~= "table" then return end
+        local ent
+        for _, e in ipairs(list) do
+            if e and e.id == self.entityId then ent = e break end
+        end
+        if not ent then return end
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine(ent.name or ("Entity #" .. tostring(self.entityId)))
+        GameTooltip:Show()
+    end)
+    pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    self.entityMinimapPins[id] = pin
+    return pin
+end
+
 function Pins:AcquireWorldPin(id, data)
     local pin = self.worldPins[id]
     if pin then return pin end
     if not WorldMapFrame then return nil end
     local parent = WorldMapButton or (WorldMapFrame and WorldMapFrame.ScrollContainer) or WorldMapFrame
-    pin = CreateFrame("Button", "DCHotspotWorldPin" .. id, parent)
+    pin = CreateFrame("Button", "DCMapupgradesWorldPin" .. id, parent)
     pin:SetSize(26, 26)
     pin.texture = pin:CreateTexture(nil, "OVERLAY")
     pin.texture:SetAllPoints()
@@ -565,7 +683,7 @@ function Pins:AcquireMinimapPin(id, data)
     local pin = self.minimapPins[id]
     if pin then return pin end
     if not Minimap then return nil end
-    pin = CreateFrame("Frame", "DCHotspotMinimapPin" .. id, Minimap)
+    pin = CreateFrame("Frame", "DCMapupgradesMinimapPin" .. id, Minimap)
     pin:SetSize(18, 18)
     pin.texture = pin:CreateTexture(nil, "OVERLAY")
     pin.texture:SetAllPoints()
@@ -594,11 +712,7 @@ function Pins:UpdateWorldPinsInternal()
         for id, pin in pairs(self.worldPins) do
             pin:Hide()
         end
-        return
-    end
-
-    if not PlayerCanGainXP() then
-        for _, pin in pairs(self.worldPins) do
+        for id, pin in pairs(self.entityWorldPins) do
             pin:Hide()
         end
         return
@@ -625,62 +739,108 @@ function Pins:UpdateWorldPinsInternal()
         for id, pin in pairs(self.worldPins) do
             pin:Hide()
         end
+        for id, pin in pairs(self.entityWorldPins) do
+            pin:Hide()
+        end
         return
     end
+
+    local canShowHotspots = PlayerCanGainXP()
     
     for id, hotspot in pairs(self.state.hotspots) do
         local pin = self:AcquireWorldPin(id, hotspot)
         if pin then
-            local matches = HotspotMatchesMap(hotspot, activeMapId, showAll)
-            
-            if not matches then
+            if not canShowHotspots then
                 pin:Hide()
             else
-                local nx, ny = NormalizeCoords(hotspot)
-                if nx and ny then
-                    visibleCount = visibleCount + 1
-                    DebugPrint("Showing hotspot", id, "on map", activeMapId, "- coords:", nx, ny)
-                    local parent = WorldMapButton or (WorldMapFrame and WorldMapFrame.ScrollContainer) or WorldMapFrame
-                    if parent then
-                        local px, py
-                        if Astrolabe and Astrolabe.WorldToMapPixels then
-                            px, py = Astrolabe.WorldToMapPixels(parent, nx, ny)
-                        else
-                            local width = parent:GetWidth()
-                            local height = parent:GetHeight()
-                            px = nx * width
-                            py = ny * height
-                        end
-
-                        pin:ClearAllPoints()
-                        pin:SetPoint("CENTER", parent, "TOPLEFT", px, -py)
-
-                        -- Set pin texture
-                        local texture = ResolveTexture(self.state, hotspot)
-                        pin.texture:SetTexture(texture)
-
-                        if db.showWorldLabels and not pin.label then
-                            pin.label = pin:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                            pin.label:SetPoint("TOP", pin, "BOTTOM", 0, -2)
-                            pin.label:SetTextColor(1, 0.84, 0)
-                        end
-                        if pin.label then
-                            local bonusText = hotspot.bonus and ("+" .. hotspot.bonus .. "% XP") or "XP"
-                            pin.label:SetText(bonusText)
-                            if db.showWorldLabels then
-                                pin.label:Show()
+                local matches = HotspotMatchesMap(hotspot, activeMapId, showAll)
+            
+                if not matches then
+                    pin:Hide()
+                else
+                    local nx, ny = NormalizeCoords(hotspot)
+                    if nx and ny then
+                        visibleCount = visibleCount + 1
+                        DebugPrint("Showing hotspot", id, "on map", activeMapId, "- coords:", nx, ny)
+                        local parent = WorldMapButton or (WorldMapFrame and WorldMapFrame.ScrollContainer) or WorldMapFrame
+                        if parent then
+                            local px, py
+                            if Astrolabe and Astrolabe.WorldToMapPixels then
+                                px, py = Astrolabe.WorldToMapPixels(parent, nx, ny)
                             else
-                                pin.label:Hide()
+                                local width = parent:GetWidth()
+                                local height = parent:GetHeight()
+                                px = nx * width
+                                py = ny * height
                             end
-                        end
 
-                        pin:Show()
-                        seen[id] = true
+                            pin:ClearAllPoints()
+                            pin:SetPoint("CENTER", parent, "TOPLEFT", px, -py)
+
+                            -- Set pin texture
+                            local texture = ResolveTexture(self.state, hotspot)
+                            pin.texture:SetTexture(texture)
+
+                            if db.showWorldLabels and not pin.label then
+                                pin.label = pin:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                                pin.label:SetPoint("TOP", pin, "BOTTOM", 0, -2)
+                                pin.label:SetTextColor(1, 0.84, 0)
+                            end
+                            if pin.label then
+                                local bonusText = hotspot.bonus and ("+" .. hotspot.bonus .. "% XP") or "XP"
+                                pin.label:SetText(bonusText)
+                                if db.showWorldLabels then
+                                    pin.label:Show()
+                                else
+                                    pin.label:Hide()
+                                end
+                            end
+
+                            pin:Show()
+                            seen[id] = true
+                        else
+                            pin:Hide()
+                        end
                     else
                         pin:Hide()
                     end
-                else
-                    pin:Hide()
+                end
+            end
+        end
+    end
+
+    -- Entities (world bosses / rares)
+    local entSeen = {}
+    local list = db.entities and db.entities.list
+    if type(list) == "table" then
+        local parent = WorldMapButton or (WorldMapFrame and WorldMapFrame.ScrollContainer) or WorldMapFrame
+        for _, ent in ipairs(list) do
+            if ent and ent.id and ent.mapId and ent.nx and ent.ny then
+                local kind = ent.kind
+                local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins)
+                if enabled and (showAll or tonumber(ent.mapId) == tonumber(activeMapId)) then
+                    local pin = self:AcquireEntityWorldPin(ent.id, ent)
+                    if pin and parent then
+                        local px, py
+                        if Astrolabe and Astrolabe.WorldToMapPixels then
+                            px, py = Astrolabe.WorldToMapPixels(parent, ent.nx, ent.ny)
+                        else
+                            px = ent.nx * parent:GetWidth()
+                            py = ent.ny * parent:GetHeight()
+                        end
+                        pin:ClearAllPoints()
+                        pin:SetPoint("CENTER", parent, "TOPLEFT", px, -py)
+
+                        pin.texture:SetTexture(EntityTexture(kind))
+                        if EntityIsActive(self.state, ent.id) then
+                            pin.texture:SetVertexColor(1, 1, 1, 1)
+                        else
+                            pin.texture:SetVertexColor(0.7, 0.7, 0.7, 0.45)
+                        end
+
+                        pin:Show()
+                        entSeen[ent.id] = true
+                    end
                 end
             end
         end
@@ -701,19 +861,19 @@ function Pins:UpdateWorldPinsInternal()
             end
         end
     end
+
+    for id, pin in pairs(self.entityWorldPins) do
+        if not entSeen[id] then
+            pin:Hide()
+        end
+    end
 end
 
 function Pins:UpdateMinimapPins()
     local db = self.state.db
     if not db or not db.showMinimapPins or not Minimap then
         for id in pairs(self.minimapPins) do self:DestroyPin(self.minimapPins, id) end
-        return
-    end
-
-    if not PlayerCanGainXP() then
-        for _, pin in pairs(self.minimapPins) do
-            pin:Hide()
-        end
+        for id in pairs(self.entityMinimapPins) do self:DestroyPin(self.entityMinimapPins, id) end
         return
     end
 
@@ -724,24 +884,65 @@ function Pins:UpdateMinimapPins()
     end
 
     local seen = {}
-    for id, hotspot in pairs(self.state.hotspots) do
-        if not playerMap or not hotspot.map or tonumber(hotspot.map) == tonumber(playerMap) then
-            local targetNx, targetNy = NormalizeCoords(hotspot)
-            if targetNx and targetNy then
-                local offsetX, offsetY
-                if Astrolabe and Astrolabe.WorldToMinimapOffset then
-                    offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, targetNx, targetNy)
-                else
-                    offsetX = (targetNx - px) * Minimap:GetWidth()
-                    offsetY = (py - targetNy) * Minimap:GetHeight()
+    local canShowHotspots = PlayerCanGainXP()
+    if canShowHotspots then
+        for id, hotspot in pairs(self.state.hotspots) do
+            if not playerMap or not hotspot.map or tonumber(hotspot.map) == tonumber(playerMap) then
+                local targetNx, targetNy = NormalizeCoords(hotspot)
+                if targetNx and targetNy then
+                    local offsetX, offsetY
+                    if Astrolabe and Astrolabe.WorldToMinimapOffset then
+                        offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, targetNx, targetNy)
+                    else
+                        offsetX = (targetNx - px) * Minimap:GetWidth()
+                        offsetY = (py - targetNy) * Minimap:GetHeight()
+                    end
+                    local pin = self:AcquireMinimapPin(id, hotspot)
+                    if pin then
+                        pin.texture:SetTexture(ResolveTexture(self.state, hotspot))
+                        pin:ClearAllPoints()
+                        pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
+                        pin:Show()
+                        seen[id] = true
+                    end
                 end
-                local pin = self:AcquireMinimapPin(id, hotspot)
-                if pin then
-                    pin.texture:SetTexture(ResolveTexture(self.state, hotspot))
-                    pin:ClearAllPoints()
-                    pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
-                    pin:Show()
-                    seen[id] = true
+            end
+        end
+    else
+        for _, pin in pairs(self.minimapPins) do
+            pin:Hide()
+        end
+    end
+
+    -- Entities on minimap (only when on same map as player)
+    local entSeen = {}
+    local list = db.entities and db.entities.list
+    if type(list) == "table" and playerMap then
+        for _, ent in ipairs(list) do
+            if ent and ent.id and ent.mapId and ent.nx and ent.ny and tonumber(ent.mapId) == tonumber(playerMap) then
+                local kind = ent.kind
+                local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins)
+                if enabled then
+                    local offsetX, offsetY
+                    if Astrolabe and Astrolabe.WorldToMinimapOffset then
+                        offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, ent.nx, ent.ny)
+                    else
+                        offsetX = (ent.nx - px) * Minimap:GetWidth()
+                        offsetY = (py - ent.ny) * Minimap:GetHeight()
+                    end
+                    local pin = self:AcquireEntityMinimapPin(ent.id, ent)
+                    if pin then
+                        pin.texture:SetTexture(EntityTexture(kind))
+                        if EntityIsActive(self.state, ent.id) then
+                            pin.texture:SetVertexColor(1, 1, 1, 1)
+                        else
+                            pin.texture:SetVertexColor(0.7, 0.7, 0.7, 0.45)
+                        end
+                        pin:ClearAllPoints()
+                        pin:SetPoint("CENTER", Minimap, "CENTER", offsetX, offsetY)
+                        pin:Show()
+                        entSeen[ent.id] = true
+                    end
                 end
             end
         end
@@ -749,6 +950,10 @@ function Pins:UpdateMinimapPins()
 
     for id, pin in pairs(self.minimapPins) do
         if not seen[id] then pin:Hide() end
+    end
+
+    for id, pin in pairs(self.entityMinimapPins) do
+        if not entSeen[id] then pin:Hide() end
     end
 end
 
