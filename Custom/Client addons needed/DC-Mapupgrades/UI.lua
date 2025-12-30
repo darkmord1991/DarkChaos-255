@@ -255,6 +255,26 @@ function UI:Init(state)
             return
         end
 
+        if sub == "resolve" then
+            local id = tonumber(args[2] or "")
+            if not id then
+                Print("Usage: /dcmap resolve <id>")
+                return
+            end
+            local Core = addonTable and addonTable.Core
+            if not Core or not Core.ResolveEntityPosition then
+                Print("Core not ready")
+                return
+            end
+            local ok, err = Core:ResolveEntityPosition(id)
+            if ok then
+                Print("Requested resolve for entity #" .. tostring(id) .. " (waiting for server response)")
+            else
+                Print("Resolve request failed: " .. tostring(err))
+            end
+            return
+        end
+
         if sub == "importbosses" or (sub == "import" and ((args[2] or ""):lower() == "bosses" or (args[2] or ""):lower() == "worldbosses")) then
             local Core = addonTable and addonTable.Core
             if not Core or not Core.ImportWorldBossesFromInfoBar then
@@ -315,6 +335,7 @@ function UI:Init(state)
             Print("  /dcmap list")
             Print("  /dcmap del <id>")
             Print("  /dcmap setpos <id>       (set pin position to your current location)")
+            Print("  /dcmap resolve <id>      (ask server to resolve coords via spawnId/entry)")
             Print("  /dcmap active <id>")
             Print("  /dcmap inactive <id>")
             Print("  /dchotspot  (toggle hotspot list; legacy)")

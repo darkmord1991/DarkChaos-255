@@ -237,6 +237,7 @@ set(SCRIPTS_DC_CrossSystem
     CrossSystem/RewardDistributor.cpp
     CrossSystem/CrossSystemManager.cpp
     CrossSystem/CrossSystemScripts.cpp
+    CrossSystem/DCSpawnResolver.cpp
 )
 
 # DC Commands - Unified command hub

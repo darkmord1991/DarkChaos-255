@@ -435,8 +435,10 @@ namespace DCAddon
         namespace World
         {
             constexpr uint8 CMSG_GET_CONTENT = 0x01; // Request all world content
+            constexpr uint8 CMSG_RESOLVE_SPAWN = 0x02; // Resolve spawn position by spawnId/entry (JSON)
             constexpr uint8 SMSG_CONTENT     = 0x10; // Full content (JSON)
             constexpr uint8 SMSG_UPDATE      = 0x11; // Partial update/push
+            constexpr uint8 SMSG_RESOLVE_RESULT = 0x12; // Resolve result (JSON)
         }
 
         // Collection System opcodes (mounts, pets, toys, transmog, titles, heirlooms)

@@ -137,6 +137,7 @@ end
 -- IMPORTANT: Must be defined before HotspotMatchesMap function
 local CUSTOM_ZONE_MAPPING = {
     [614] = 268,  -- Azshara Crater: WoW reports map 614, but zone is 268
+    [1405] = 5006, -- Slippy Quagmire (custom): client MapAreaID 1405, server zoneId 5006
     -- Add more custom zones here as needed
 }
 
@@ -305,6 +306,35 @@ local function HotspotMatchesMap(hotspot, mapId, showAll)
     -- Don't show pins that don't match - removed the aggressive continent matching
     -- that was showing pins everywhere
     return false
+end
+
+local function EntityMatchesMap(entity, activeMapId, showAll)
+    if not entity then return false end
+    if not activeMapId or activeMapId == 0 then return false end
+    if CONTINENT_MAP_IDS[activeMapId] then return false end
+    if showAll then return true end
+
+    local entMapId = tonumber(entity.mapId)
+    if not entMapId then return false end
+
+    -- Server-provided entities (bosses/deaths) use server zone/area ID in mapId.
+    if entity.kind == "boss" or entity.kind == "death" then
+        local expectedZone = MAP_TO_ZONE[activeMapId]
+        if expectedZone and expectedZone == entMapId then
+            return true
+        end
+        local resolvedZoneId = CUSTOM_ZONE_MAPPING[activeMapId] or activeMapId
+        if resolvedZoneId == entMapId then
+            return true
+        end
+        if entMapId == activeMapId then
+            return true
+        end
+        return false
+    end
+
+    -- Manual entities (e.g., rares) store client mapId directly.
+    return entMapId == tonumber(activeMapId)
 end
 
 local function ResolveTexture(state, hotspot)
@@ -928,11 +958,15 @@ function Pins:UpdateWorldPinsInternal()
     local list = db.entities and db.entities.list
     if type(list) == "table" then
         local parent = WorldMapButton or (WorldMapFrame and WorldMapFrame.ScrollContainer) or WorldMapFrame
+        local totalEntities, missingPos = 0, 0
         for _, ent in ipairs(list) do
+            if ent and ent.id then
+                totalEntities = totalEntities + 1
+            end
             if ent and ent.id and ent.mapId and ent.nx and ent.ny then
                 local kind = ent.kind
                 local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins) or (kind == "death")
-                if enabled and (showAll or tonumber(ent.mapId) == tonumber(activeMapId)) then
+                if enabled and EntityMatchesMap(ent, activeMapId, showAll) then
                     local pin = self:AcquireEntityWorldPin(ent.id, ent)
                     if pin and parent then
                         local px, py
@@ -956,7 +990,13 @@ function Pins:UpdateWorldPinsInternal()
                         entSeen[ent.id] = true
                     end
                 end
+            elseif ent and ent.id and (ent.kind == "boss" or ent.kind == "rare") then
+                missingPos = missingPos + 1
             end
+        end
+
+        if db.debug and totalEntities > 0 and missingPos > 0 then
+            DebugPrint("Entities loaded:", totalEntities, "missing positions:", missingPos, "(pins require mapId+nx+ny)")
         end
     end
 
@@ -1033,7 +1073,7 @@ function Pins:UpdateMinimapPins()
     local list = db.entities and db.entities.list
     if type(list) == "table" and playerMap then
         for _, ent in ipairs(list) do
-            if ent and ent.id and ent.mapId and ent.nx and ent.ny and tonumber(ent.mapId) == tonumber(playerMap) then
+            if ent and ent.id and ent.mapId and ent.nx and ent.ny and EntityMatchesMap(ent, playerMap, false) then
                 local kind = ent.kind
                 local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins) or (kind == "death")
                 if enabled then

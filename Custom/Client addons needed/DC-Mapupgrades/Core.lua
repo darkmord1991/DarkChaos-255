@@ -317,8 +317,7 @@ function Core:ImportWorldBossesFromInfoBar()
             local name = b.name
             local zoneLabel = b.zone
             local mapId = tonumber(b.mapId) or nil
-            local nx = tonumber(b.nx) or nil
-            local ny = tonumber(b.ny) or nil
+            local nx, ny = NormalizePossibleNormalizedPos(b.nx, b.ny)
 
             local existing = findBySpawnOrEntryOrName(spawnId, entry, name)
             if existing then
@@ -453,11 +452,123 @@ function Core:RemoveEntity(entityId)
     return true
 end
 
+function Core:ResolveEntityPosition(entityId)
+    if not state.db then return false, "settings_not_loaded" end
+    EnsureEntityTables(state.db)
+
+    local id = tonumber(entityId)
+    if not id then return false, "invalid_id" end
+
+    local ent
+    for _, e in ipairs(state.db.entities.list) do
+        if e and tonumber(e.id) == id then
+            ent = e
+            break
+        end
+    end
+    if not ent then return false, "not_found" end
+
+    local spawnId = tonumber(ent.spawnId)
+    local entry = tonumber(ent.entry)
+    if not spawnId and not entry then
+        return false, "missing_spawn_or_entry"
+    end
+
+    DC = rawget(_G, "DCAddonProtocol")
+    if not (DC and DC.Request) then
+        return false, "dcprotocol_not_available"
+    end
+
+    local payload = {
+        entityId = id,
+        spawnId = spawnId,
+        entry = entry,
+    }
+
+    DC:Request("WRLD", 0x02, payload)
+    return true
+end
+
+function Core:HandleWorldResolveResult(data)
+    if type(data) ~= "table" or not state.db then return end
+    EnsureEntityTables(state.db)
+
+    if data.success ~= true then
+        local msg = "Resolve failed: " .. tostring(data.error or "unknown")
+        DebugPrint(msg)
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[DC-Mapupgrades]|r " .. msg)
+        end
+        return
+    end
+
+    local entityId = tonumber(data.entityId)
+    local spawnId = tonumber(data.spawnId)
+    local entry = tonumber(data.entry)
+    local mapId = tonumber(data.mapId)
+    local nx, ny = NormalizePossibleNormalizedPos(data.nx, data.ny)
+
+    if not mapId or not nx or not ny then
+        DebugPrint("Resolve result missing coords:", "mapId=", tostring(mapId), "nx=", tostring(data.nx), "ny=", tostring(data.ny), "error=", tostring(data.error))
+        return
+    end
+
+    local ent
+    if entityId then
+        for _, e in ipairs(state.db.entities.list) do
+            if e and tonumber(e.id) == entityId then
+                ent = e
+                break
+            end
+        end
+    end
+
+    if not ent then
+        for _, e in ipairs(state.db.entities.list) do
+            if e and (e.kind == "boss" or e.kind == "rare") then
+                if spawnId and e.spawnId and tonumber(e.spawnId) == spawnId then ent = e break end
+                if entry and e.entry and tonumber(e.entry) == entry then ent = e break end
+            end
+        end
+    end
+
+    if not ent then
+        DebugPrint("Resolve result: no matching entity to update")
+        return
+    end
+
+    ent.mapId = mapId
+    ent.nx = nx
+    ent.ny = ny
+
+    if Pins and Pins.Refresh then
+        Pins:Refresh()
+    end
+end
+
 local function NowEpoch()
     if GetServerTime then
         return GetServerTime()
     end
     return time()
+end
+
+local function NormalizePossibleNormalizedPos(nx, ny)
+    nx = tonumber(nx)
+    ny = tonumber(ny)
+    if not nx or not ny then return nil, nil end
+
+    -- Avoid placing unknown positions at top-left.
+    if nx == 0 and ny == 0 then return nil, nil end
+
+    -- Accept percentage coords (0-100) and normalize.
+    if (nx > 1 or ny > 1) and nx <= 100 and ny <= 100 then
+        nx = nx / 100
+        ny = ny / 100
+    end
+
+    if nx < 0 or nx > 1 or ny < 0 or ny > 1 then return nil, nil end
+    return nx, ny
 end
 
 -- Execute a server command (e.g., .hotspot list) by simulating chat input
@@ -1058,8 +1169,7 @@ local function UpsertBossEntityFromServerRecord(b)
     local zoneLabel = b.zone or b.zoneName
 
     local mapId = tonumber(b.mapId) or nil
-    local nx = tonumber(b.nx) or nil
-    local ny = tonumber(b.ny) or nil
+    local nx, ny = NormalizePossibleNormalizedPos(b.nx, b.ny)
 
     local function findExisting()
         for _, ent in ipairs(state.db.entities.list) do
@@ -1744,6 +1854,9 @@ function Core:RegisterProtocolHandlers()
         DC:RegisterJSONHandler("WRLD", 0x11, function(data)
             Core:HandleWorldUpdate(data)
         end)
+        DC:RegisterJSONHandler("WRLD", 0x12, function(data)
+            Core:HandleWorldResolveResult(data)
+        end)
     else
         -- Fallback: JSON-by-default still tends to call RegisterHandler with a decoded table.
         DC:RegisterHandler("WRLD", 0x10, function(data)
@@ -1751,6 +1864,9 @@ function Core:RegisterProtocolHandlers()
         end)
         DC:RegisterHandler("WRLD", 0x11, function(data)
             Core:HandleWorldUpdate(data)
+        end)
+        DC:RegisterHandler("WRLD", 0x12, function(data)
+            Core:HandleWorldResolveResult(data)
         end)
     end
     

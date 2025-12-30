@@ -25,6 +25,7 @@
 #include "GameObject.h"
 #include "ObjectAccessor.h"
 #include "DBCStores.h"
+#include "DC/CrossSystem/DCMapCoords.h"
 #include "../AddonExtension/DCAddonNamespace.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
@@ -698,23 +699,9 @@ static void ClearPlayerHotspotTracking(Player* player)
 // Returns true if normalized coords were computed, false if caller should fallback.
 static bool ComputeNormalizedCoords(uint32 mapId, uint32 zoneId, float x, float y, float& outNx, float& outNy)
 {
-
-    // First, try to use DBC-provided zone->map helpers to compute zone-relative coords
-    // Map2ZoneCoordinates converts world map coords into zone-relative percentages (0..100).
-    {
-        float tx = x;
-        float ty = y;
-        Map2ZoneCoordinates(tx, ty, zoneId);
-        // If Map2ZoneCoordinates found a mapping, tx/ty should be in ~0..100 range.
-        if (tx >= 0.0f && tx <= 100.0f && ty >= 0.0f && ty <= 100.0f)
-        {
-            outNx = tx / 100.0f;
-            outNy = ty / 100.0f;
-            outNx = std::max(0.0f, std::min(1.0f, outNx));
-            outNy = std::max(0.0f, std::min(1.0f, outNy));
-            return true;
-        }
-    }
+    // Prefer DBC-provided zone->map helpers to compute zone-relative coords
+    if (DC::MapCoords::TryComputeNormalized(zoneId, x, y, outNx, outNy))
+        return true;
 
     // Use CSV/DBC-derived sMapBounds if present
     auto it = sMapBounds.find(mapId);

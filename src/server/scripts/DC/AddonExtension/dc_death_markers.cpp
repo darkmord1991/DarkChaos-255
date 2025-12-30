@@ -2,8 +2,7 @@
 
 #include "DCAddonNamespace.h"
 
-#include "DBCStore.h"
-#include "DBCStructure.h"
+#include "DC/CrossSystem/DCMapCoords.h"
 #include "DBCStores.h"
 #include "GameTime.h"
 #include "ObjectMgr.h"
@@ -15,10 +14,6 @@
 #include <algorithm>
 #include <string>
 #include <vector>
-
-// Some builds comment out sWorldMapAreaStore in DBCStores.h, but still define it in DBCStores.cpp.
-// Declare it here in the global namespace so we link against the correct symbol.
-extern DBCStorage<WorldMapAreaEntry> sWorldMapAreaStore;
 
 namespace DCAddon
 {
@@ -64,17 +59,14 @@ namespace DeathMarkers
                 g_markers.end());
         }
 
-        Optional<std::pair<float, float>> TryGetNormalizedCoords(uint32 mapId, float x, float y)
+        Optional<std::pair<float, float>> TryGetNormalizedCoords(uint32 zoneId, float x, float y)
         {
-            if (mapId == 0)
+            float nx = 0.0f;
+            float ny = 0.0f;
+            if (!DC::MapCoords::TryComputeNormalized(zoneId, x, y, nx, ny))
                 return {};
 
-            // If we have a DBC WorldMapArea entry for this map, use zone conversion into 0..100.
-            if (!::sWorldMapAreaStore.LookupEntry(mapId))
-                return {};
-
-            Map2ZoneCoordinates(x, y, mapId);
-            return std::make_pair(x / 100.0f, y / 100.0f);
+            return std::make_pair(nx, ny);
         }
 
         JsonValue Serialize(DeathMarker const& m)
@@ -146,7 +138,8 @@ namespace DeathMarkers
         marker.victimLevel = static_cast<uint8>(victim->GetLevel());
         marker.victimClass = static_cast<uint8>(victim->getClass());
 
-        marker.mapId = victim->GetMapId();
+        // Note: for client display, mapId is the server zone/area id.
+        marker.mapId = victim->GetZoneId();
         marker.diedAt = now;
         marker.expiresAt = now + MARKER_TTL_SECONDS;
 

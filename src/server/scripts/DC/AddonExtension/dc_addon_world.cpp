@@ -19,6 +19,9 @@
 #include "DatabaseEnv.h"
 #include "ObjectMgr.h"
 
+#include "DC/CrossSystem/DCMapCoords.h"
+#include "DC/CrossSystem/DCSpawnResolver.h"
+
 #include "dc_world_bosses.h"
 #include "dc_death_markers.h"
 
@@ -189,23 +192,21 @@ namespace World
         for (size_t i = 0; i < DCAddon::WorldBosses::GIANT_ISLES_BOSSES_COUNT; ++i)
         {
             BossDef const& def = DCAddon::WorldBosses::GIANT_ISLES_BOSSES[i];
-            uint32 mapId = 0;
+            uint32 spawnMapId = 0;
+            uint32 zoneId = 0;
             Optional<float> nx;
             Optional<float> ny;
             if (CreatureData const* cData = sObjectMgr->GetCreatureData(def.spawnId))
             {
-                mapId = cData->mapid;
+                spawnMapId = cData->mapid;
+                zoneId = sMapMgr->GetZoneId(cData->phaseMask, spawnMapId, cData->posX, cData->posY, cData->posZ);
 
-                // Provide boss pin coordinates (0..1) when possible.
-                // We use WorldMapArea bounds (DBC) keyed by the map/area id.
-                // If no bounds exist, we omit nx/ny and clients can fall back to manual positioning.
-                if (mapId != 0 && ::sWorldMapAreaStore.LookupEntry(mapId))
+                float outNx = 0.0f;
+                float outNy = 0.0f;
+                if (DC::MapCoords::TryComputeNormalized(zoneId, cData->posX, cData->posY, outNx, outNy))
                 {
-                    float x = cData->posX;
-                    float y = cData->posY;
-                    Map2ZoneCoordinates(x, y, mapId);
-                    nx = x / 100.0f;
-                    ny = y / 100.0f;
+                    nx = outNx;
+                    ny = outNy;
                 }
             }
 
@@ -215,7 +216,8 @@ namespace World
             b.Set("spawnId", JsonValue(def.spawnId));
             b.Set("name", JsonValue(def.name));
             b.Set("zone", JsonValue(def.zone));
-            b.Set("mapId", JsonValue(static_cast<int32>(mapId)));
+            // Note: for client display, mapId is the server zone/area id (used to match client map views).
+            b.Set("mapId", JsonValue(static_cast<int32>(zoneId)));
             if (nx && ny)
             {
                 b.Set("nx", JsonValue(*nx));
@@ -224,7 +226,7 @@ namespace World
 
             // Determine status per spawnId. If there's a future respawnTime row, the boss is dead.
             // If there is no row (or respawnTime <= now), assume the boss is alive/active.
-            Optional<int32> respawnIn = (mapId != 0) ? TryGetRespawnInSeconds(def.spawnId, mapId) : Optional<int32>();
+            Optional<int32> respawnIn = (spawnMapId != 0) ? TryGetRespawnInSeconds(def.spawnId, spawnMapId) : Optional<int32>();
             if (respawnIn)
             {
                 b.Set("active", JsonValue(false));
@@ -310,9 +312,64 @@ namespace World
         SendWorldContentSnapshot(player);
     }
 
+    static void HandleResolveSpawn(Player* player, const ParsedMessage& msg)
+    {
+        using namespace DCAddon;
+
+        JsonValue req = GetJsonData(msg);
+        if (!req.IsObject())
+        {
+            JsonMessage err(Module::WORLD, Opcode::World::SMSG_RESOLVE_RESULT);
+            err.Set("success", JsonValue(false));
+            err.Set("error", JsonValue("bad_format"));
+            err.Send(player);
+            return;
+        }
+
+        uint32 entityId = req.HasKey("entityId") ? req["entityId"].AsUInt32() : 0;
+        uint32 spawnId = req.HasKey("spawnId") ? req["spawnId"].AsUInt32() : 0;
+        uint32 entry = req.HasKey("entry") ? req["entry"].AsUInt32() : 0;
+
+        // Centralized spawn position resolution.
+        // preferLive=true helps when the target is currently moving and loaded near the player.
+        DC::SpawnResolver::ResolvedPosition resolved = DC::SpawnResolver::ResolveAny(
+            DC::SpawnResolver::Type::Creature, player, spawnId, entry, true);
+
+        JsonMessage reply(Module::WORLD, Opcode::World::SMSG_RESOLVE_RESULT);
+        reply.Set("entityId", JsonValue(entityId));
+        reply.Set("spawnId", JsonValue(resolved.spawnId));
+        reply.Set("entry", JsonValue(resolved.entry));
+
+        if (!resolved.found)
+        {
+            reply.Set("success", JsonValue(false));
+            reply.Set("error", JsonValue("not_found"));
+            reply.Send(player);
+            return;
+        }
+
+        // For client display, mapId is the server zone/area id (used to match client map views).
+        reply.Set("success", JsonValue(true));
+        uint32 mapKey = resolved.zoneId != 0 ? resolved.zoneId : resolved.areaId;
+        reply.Set("mapId", JsonValue(static_cast<int32>(mapKey)));
+
+        if (resolved.hasNormalized)
+        {
+            reply.Set("nx", JsonValue(resolved.nx));
+            reply.Set("ny", JsonValue(resolved.ny));
+        }
+        else
+        {
+            reply.Set("error", JsonValue("no_bounds"));
+        }
+
+        reply.Send(player);
+    }
+
     void RegisterHandlers()
     {
         DC_REGISTER_HANDLER(MODULE_WORLD, Opcode::World::CMSG_GET_CONTENT, HandleGetContent);
+        DC_REGISTER_HANDLER(MODULE_WORLD, Opcode::World::CMSG_RESOLVE_SPAWN, HandleResolveSpawn);
         LOG_INFO("dc.addon", "World (WRLD) module handlers registered");
     }
 
