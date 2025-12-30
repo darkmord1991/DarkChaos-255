@@ -34,6 +34,9 @@ local function EntityTexture(kind)
     if kind == "rare" then
         return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_1" -- Star
     end
+    if kind == "death" then
+        return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_7" -- X
+    end
     return "Interface\\Icons\\INV_Misc_Map_01"
 end
 
@@ -43,10 +46,49 @@ local function EntityIsActive(state, entityId)
         return false
     end
     local st = db.entityStatus[entityId]
+    if st and st.serverActive ~= nil then
+        return st.serverActive == true
+    end
     if not st or not st.activeUntil then
         return false
     end
     return tonumber(st.activeUntil) and tonumber(st.activeUntil) > NowEpoch()
+end
+
+local function FormatDuration(seconds)
+    seconds = tonumber(seconds)
+    if not seconds or seconds < 0 then
+        return nil
+    end
+    local s = math.floor(seconds)
+    local h = math.floor(s / 3600)
+    local m = math.floor((s % 3600) / 60)
+    local sec = math.floor(s % 60)
+    if h > 0 then
+        return string.format("%dh %dm %ds", h, m, sec)
+    end
+    if m > 0 then
+        return string.format("%dm %ds", m, sec)
+    end
+    return string.format("%ds", sec)
+end
+
+local CLASS_ID_TO_NAME = {
+    [1] = "Warrior",
+    [2] = "Paladin",
+    [3] = "Hunter",
+    [4] = "Rogue",
+    [5] = "Priest",
+    [6] = "Death Knight",
+    [7] = "Shaman",
+    [8] = "Mage",
+    [9] = "Warlock",
+    [11] = "Druid",
+}
+
+local function SafeClassName(classId)
+    classId = tonumber(classId)
+    return (classId and CLASS_ID_TO_NAME[classId]) or (classId and ("Class " .. tostring(classId))) or "Unknown"
 end
 
 local function PlayerCanGainXP()
@@ -578,25 +620,94 @@ function Pins:AcquireEntityWorldPin(id, entity)
         end
         if not ent then return end
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        local kindLabel = (ent.kind == "boss" and "World Boss") or (ent.kind == "rare" and "Rare") or "Entity"
-        GameTooltip:AddLine(ent.name or (kindLabel .. " #" .. tostring(self.entityId)))
-        GameTooltip:AddLine(kindLabel, 0.7, 0.7, 0.9)
+        if ent.kind == "death" then
+            GameTooltip:AddLine(ent.name or ("Death #" .. tostring(self.entityId)))
+            GameTooltip:AddLine("Death Marker", 0.85, 0.7, 0.7)
 
-        if ent.spawnId then
-            GameTooltip:AddLine(string.format("spawnId: %s", tostring(ent.spawnId)), 0.9, 0.9, 0.9)
-        end
-        if ent.entry then
-            GameTooltip:AddLine(string.format("entry: %s", tostring(ent.entry)), 0.9, 0.9, 0.9)
-        end
-        if ent.zoneLabel then
-            GameTooltip:AddLine(string.format("zone: %s", tostring(ent.zoneLabel)), 0.9, 0.9, 0.9)
-        end
+            if ent.modeLabel and ent.modeLabel ~= "" then
+                GameTooltip:AddLine("Mode: " .. tostring(ent.modeLabel), 0.9, 0.9, 0.9)
+            end
 
-        local active = EntityIsActive(Pins.state, self.entityId)
-        if active then
-            GameTooltip:AddLine("Status: ACTIVE", 0, 1, 0)
+            local victim = ent.victimName or "Unknown"
+            local level = tonumber(ent.victimLevel)
+            local className = SafeClassName(ent.victimClass)
+            if level then
+                GameTooltip:AddLine(string.format("Victim: %s (Lv %d %s)", tostring(victim), level, className), 1, 1, 1)
+            else
+                GameTooltip:AddLine(string.format("Victim: %s (%s)", tostring(victim), className), 1, 1, 1)
+            end
+
+            local kt = tostring(ent.killerType or "unknown")
+            if kt == "creature" then
+                local kName = ent.killerName or "Creature"
+                if ent.killerEntry then
+                    GameTooltip:AddLine(string.format("Killed by: %s (entry %s)", tostring(kName), tostring(ent.killerEntry)), 0.95, 0.95, 0.95)
+                else
+                    GameTooltip:AddLine("Killed by: " .. tostring(kName), 0.95, 0.95, 0.95)
+                end
+            elseif kt == "player" then
+                local kName = ent.killerName or "Player"
+                GameTooltip:AddLine("Killed by: " .. tostring(kName), 0.95, 0.95, 0.95)
+            elseif kt == "environment" then
+                GameTooltip:AddLine("Killed by: Environment", 0.95, 0.95, 0.95)
+            else
+                GameTooltip:AddLine("Killed by: Unknown", 0.95, 0.95, 0.95)
+            end
+
+            local now = NowEpoch()
+            local diedAt = tonumber(ent.diedAt)
+            local expiresAt = tonumber(ent.expiresAt)
+            if diedAt then
+                local ago = FormatDuration(now - diedAt)
+                if ago then
+                    GameTooltip:AddLine("Died: " .. ago .. " ago", 1, 0.82, 0)
+                end
+            end
+            if expiresAt then
+                local remaining = FormatDuration(expiresAt - now)
+                if remaining then
+                    GameTooltip:AddLine("Expires in: " .. remaining, 1, 0.82, 0)
+                end
+            end
         else
-            GameTooltip:AddLine("Status: inactive", 1, 0.82, 0)
+            local kindLabel = (ent.kind == "boss" and "World Boss") or (ent.kind == "rare" and "Rare") or "Entity"
+            GameTooltip:AddLine(ent.name or (kindLabel .. " #" .. tostring(self.entityId)))
+            GameTooltip:AddLine(kindLabel, 0.7, 0.7, 0.9)
+
+            if ent.spawnId then
+                GameTooltip:AddLine(string.format("spawnId: %s", tostring(ent.spawnId)), 0.9, 0.9, 0.9)
+            end
+            if ent.entry then
+                GameTooltip:AddLine(string.format("entry: %s", tostring(ent.entry)), 0.9, 0.9, 0.9)
+            end
+            if ent.zoneLabel then
+                GameTooltip:AddLine(string.format("zone: %s", tostring(ent.zoneLabel)), 0.9, 0.9, 0.9)
+            end
+
+            local st = Pins.state and Pins.state.db and Pins.state.db.entityStatus and Pins.state.db.entityStatus[self.entityId]
+            if st and st.serverStatus and st.serverStatus ~= "" then
+                local serverStatus = string.upper(tostring(st.serverStatus))
+                if serverStatus == "ACTIVE" then
+                    GameTooltip:AddLine("Status: ACTIVE", 0, 1, 0)
+                elseif serverStatus == "SPAWNING" then
+                    local durText = FormatDuration(st.serverSpawnIn)
+                    if durText then
+                        GameTooltip:AddLine("Status: SPAWNING", 1, 0.82, 0)
+                        GameTooltip:AddLine("Respawn in: " .. durText, 1, 0.82, 0)
+                    else
+                        GameTooltip:AddLine("Status: SPAWNING", 1, 0.82, 0)
+                    end
+                else
+                    GameTooltip:AddLine("Status: " .. serverStatus, 1, 0.82, 0)
+                end
+            else
+                local active = EntityIsActive(Pins.state, self.entityId)
+                if active then
+                    GameTooltip:AddLine("Status: ACTIVE", 0, 1, 0)
+                else
+                    GameTooltip:AddLine("Status: inactive", 1, 0.82, 0)
+                end
+            end
         end
         if ent.mapId then
             GameTooltip:AddLine(string.format("Map: %s", tostring(ent.mapId)), 1, 1, 1)
@@ -604,9 +715,12 @@ function Pins:AcquireEntityWorldPin(id, entity)
         if ent.nx and ent.ny then
             GameTooltip:AddLine(string.format("Pos: %.3f, %.3f", ent.nx, ent.ny), 1, 1, 1)
         end
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(string.format("/dcmap active %d", self.entityId), 0.8, 0.8, 0.8)
-        GameTooltip:AddLine(string.format("/dcmap inactive %d", self.entityId), 0.8, 0.8, 0.8)
+
+        if ent.kind ~= "death" then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(string.format("/dcmap active %d", self.entityId), 0.8, 0.8, 0.8)
+            GameTooltip:AddLine(string.format("/dcmap inactive %d", self.entityId), 0.8, 0.8, 0.8)
+        end
         GameTooltip:Show()
     end)
     pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -817,7 +931,7 @@ function Pins:UpdateWorldPinsInternal()
         for _, ent in ipairs(list) do
             if ent and ent.id and ent.mapId and ent.nx and ent.ny then
                 local kind = ent.kind
-                local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins)
+                local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins) or (kind == "death")
                 if enabled and (showAll or tonumber(ent.mapId) == tonumber(activeMapId)) then
                     local pin = self:AcquireEntityWorldPin(ent.id, ent)
                     if pin and parent then
@@ -921,7 +1035,7 @@ function Pins:UpdateMinimapPins()
         for _, ent in ipairs(list) do
             if ent and ent.id and ent.mapId and ent.nx and ent.ny and tonumber(ent.mapId) == tonumber(playerMap) then
                 local kind = ent.kind
-                local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins)
+                local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins) or (kind == "death")
                 if enabled then
                     local offsetX, offsetY
                     if Astrolabe and Astrolabe.WorldToMinimapOffset then

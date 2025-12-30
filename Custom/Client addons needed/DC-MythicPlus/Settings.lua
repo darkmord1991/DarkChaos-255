@@ -6,6 +6,26 @@ local addonName = "DC-MythicPlus"
 local namespace = _G.DCMythicPlusHUD or {}
 _G.DCMythicPlusHUD = namespace
 
+-- WoTLK (3.3.5) compatibility: Texture:SetColorTexture doesn't exist.
+-- Provide a polyfill so UI code can call :SetColorTexture(r,g,b,a) safely.
+do
+    local ok, tex = pcall(function()
+        return UIParent and UIParent:CreateTexture(nil, "BACKGROUND")
+    end)
+
+    if ok and tex and not tex.SetColorTexture then
+        local mt = getmetatable(tex)
+        local idx = mt and mt.__index
+        if type(idx) == "table" and not idx.SetColorTexture then
+            idx.SetColorTexture = function(self, r, g, b, a)
+                if self and self.SetTexture then
+                    self:SetTexture(r, g, b, a or 1)
+                end
+            end
+        end
+    end
+end
+
 -- Default settings (comprehensive)
 namespace.DefaultSettings = {
     -- HUD Settings

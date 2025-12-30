@@ -268,7 +268,7 @@ function UI:Init(state)
                 return
             end
             Print(string.format("Imported world bosses: %d added/updated.", tonumber(added) or 0))
-            Print("Next: stand at each spawn and run /dcmap setpos <id>")
+            Print("If a boss shows '(no position set)', stand at its spawn and run /dcmap setpos <id> (optional override).")
             return
         end
 
@@ -311,7 +311,7 @@ function UI:Init(state)
             Print("Commands:")
             Print("  /dcmap add boss <name>   (adds spawn at your position)")
             Print("  /dcmap add rare <name>")
-            Print("  /dcmap importbosses      (import boss list/status from DC-InfoBar)")
+            Print("  /dcmap importbosses      (optional: import boss list/status from DC-InfoBar)")
             Print("  /dcmap list")
             Print("  /dcmap del <id>")
             Print("  /dcmap setpos <id>       (set pin position to your current location)")

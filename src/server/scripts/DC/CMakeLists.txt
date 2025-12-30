@@ -203,6 +203,7 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_spectator.cpp
     AddonExtension/dc_addon_hotspot.cpp
     AddonExtension/dc_addon_world.cpp
+    AddonExtension/dc_death_markers.cpp
     AddonExtension/dc_addon_hlbg.cpp
     AddonExtension/dc_addon_seasons.cpp
     AddonExtension/dc_addon_leaderboards.cpp

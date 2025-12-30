@@ -2269,25 +2269,26 @@ if DC then
             local status = data.status or "unknown"
             if status == "accepted" then
                 Print("|cff00ff00Your application was accepted!|r")
-            elseif cmd == "vault" then
+            elseif status == "declined" or status == "rejected" then
                 Print("|cffff0000Your application was declined.|r")
             else
                 Print("Application status: " .. status)
             end
-            if namespace.GroupFinder then
-            elseif cmd == "finder" then
+
+            if namespace.GroupFinder and namespace.GroupFinder.OnApplicationStatusChanged then
+                namespace.GroupFinder:OnApplicationStatusChanged(data)
             end
         end
     end)
     
     -- SMSG_NEW_APPLICATION (0x33) - Leader: new applicant
-            elseif cmd == "keystone" then
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_NEW_APPLICATION or 0x33, function(...)
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
             Print("|cffffff00New applicant:|r " .. (data.playerName or "Unknown") .. " (" .. (data.role or "?") .. ")")
-            if namespace.GroupFinder then
-            elseif cmd == "help" then
+            if namespace.GroupFinder and namespace.GroupFinder.OnNewApplication then
+                namespace.GroupFinder:OnNewApplication(data)
             end
         end
     end)

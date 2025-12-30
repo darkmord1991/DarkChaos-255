@@ -316,6 +316,9 @@ function Core:ImportWorldBossesFromInfoBar()
             local entry = tonumber(b.entry) or nil
             local name = b.name
             local zoneLabel = b.zone
+            local mapId = tonumber(b.mapId) or nil
+            local nx = tonumber(b.nx) or nil
+            local ny = tonumber(b.ny) or nil
 
             local existing = findBySpawnOrEntryOrName(spawnId, entry, name)
             if existing then
@@ -323,6 +326,13 @@ function Core:ImportWorldBossesFromInfoBar()
                 if zoneLabel and zoneLabel ~= "" then existing.zoneLabel = zoneLabel end
                 if spawnId then existing.spawnId = spawnId end
                 if entry then existing.entry = entry end
+
+                -- Only fill position if it's missing. Respect manual user positioning.
+                if mapId and nx and ny and (not existing.mapId or not existing.nx or not existing.ny) then
+                    existing.mapId = mapId
+                    existing.nx = nx
+                    existing.ny = ny
+                end
             else
                 local id = state.db.entities.nextId
                 state.db.entities.nextId = id + 1
@@ -330,9 +340,9 @@ function Core:ImportWorldBossesFromInfoBar()
                     id = id,
                     kind = "boss",
                     name = name or (entry and tostring(entry)) or (spawnId and tostring(spawnId)) or "World Boss",
-                    mapId = nil,
-                    nx = nil,
-                    ny = nil,
+                    mapId = mapId,
+                    nx = nx,
+                    ny = ny,
                     entry = entry,
                     spawnId = spawnId,
                     zoneLabel = zoneLabel,
@@ -360,6 +370,23 @@ function Core:SyncWorldBossStatusFromInfoBar()
     local bosses = info.serverData.worldBosses
     if type(bosses) ~= "table" then
         return
+    end
+
+    -- If the user has no boss entities yet, seed them automatically from DC-InfoBar.
+    -- This makes default world boss pins appear without requiring a manual import command.
+    if not state._autoImportedBosses then
+        local hasBossEntity = false
+        for _, ent in ipairs(state.db.entities.list or {}) do
+            if ent and ent.kind == "boss" then
+                hasBossEntity = true
+                break
+            end
+        end
+
+        if (not hasBossEntity) and #bosses > 0 and Core.ImportWorldBossesFromInfoBar then
+            Core:ImportWorldBossesFromInfoBar()
+        end
+        state._autoImportedBosses = true
     end
 
     local changed = false
@@ -1002,8 +1029,299 @@ function Core:PLAYER_LOGIN()
             self:SetScript("OnUpdate", nil)
             DebugPrint("Auto-requesting hotspot list...")
             Core:RequestHotspotList("login")
+            Core:RequestWorldContent("login")
         end
     end)
+end
+
+-- Request world content (bosses/events/hotspots aggregate) from server.
+-- This keeps world boss pins in sync even if DC-InfoBar isn't installed.
+function Core:RequestWorldContent(reason)
+    DebugPrint("Requesting world content from server via", Core.protocolMode, reason and ("reason=" .. tostring(reason)) or "")
+
+    if Core.useDCProtocol and DC and DC.Request then
+        DC:Request("WRLD", 0x01, {})
+        return true
+    end
+
+    -- No reliable fallback for WRLD without DCAddonProtocol.
+    return false
+end
+
+local function UpsertBossEntityFromServerRecord(b)
+    if type(b) ~= "table" or not state.db then return nil end
+    EnsureEntityTables(state.db)
+
+    local spawnId = tonumber(b.spawnId) or nil
+    local entry = tonumber(b.entry or b.npcEntry or b.creatureEntry) or nil
+    local name = b.name
+    local zoneLabel = b.zone or b.zoneName
+
+    local mapId = tonumber(b.mapId) or nil
+    local nx = tonumber(b.nx) or nil
+    local ny = tonumber(b.ny) or nil
+
+    local function findExisting()
+        for _, ent in ipairs(state.db.entities.list) do
+            if ent and ent.kind == "boss" then
+                if spawnId and ent.spawnId and tonumber(ent.spawnId) == spawnId then
+                    return ent
+                end
+                if entry and ent.entry and tonumber(ent.entry) == entry then
+                    return ent
+                end
+                if name and ent.name and NormalizeNameForMatch(ent.name) == NormalizeNameForMatch(name) then
+                    return ent
+                end
+            end
+        end
+        return nil
+    end
+
+    local ent = findExisting()
+    if ent then
+        if name and name ~= "" then ent.name = name end
+        if zoneLabel and zoneLabel ~= "" then ent.zoneLabel = zoneLabel end
+        if spawnId then ent.spawnId = spawnId end
+        if entry then ent.entry = entry end
+
+        -- Only fill position if it's missing. Respect manual user positioning.
+        if mapId and nx and ny and (not ent.mapId or not ent.nx or not ent.ny) then
+            ent.mapId = mapId
+            ent.nx = nx
+            ent.ny = ny
+        end
+        return ent
+    end
+
+    local id = state.db.entities.nextId
+    state.db.entities.nextId = id + 1
+    ent = {
+        id = id,
+        kind = "boss",
+        name = name or (entry and tostring(entry)) or (spawnId and tostring(spawnId)) or "World Boss",
+        mapId = mapId,
+        nx = nx,
+        ny = ny,
+        entry = entry,
+        spawnId = spawnId,
+        zoneLabel = zoneLabel,
+        created = NowEpoch(),
+    }
+    table.insert(state.db.entities.list, ent)
+    return ent
+end
+
+local function ApplyBossStatusToEntity(entityId, boss)
+    if not state.db or not entityId then return end
+    EnsureEntityTables(state.db)
+
+    local now = NowEpoch()
+    local st = state.db.entityStatus[entityId] or {}
+    st.serverUpdatedAt = now
+    st.serverStatus = tostring(boss.status or boss.state or "")
+    st.serverActive = (boss.active == true) or (tostring(st.serverStatus):lower() == "active")
+    st.serverSpawnIn = tonumber(boss.spawnIn or boss.timeLeft) or nil
+
+    -- Keep activeUntil in sync so existing UI logic (green pin) still works.
+    if st.serverActive then
+        st.activeUntil = now + 15
+        st.lastSeen = now
+        st.lastSeenReason = "server"
+    end
+
+    state.db.entityStatus[entityId] = st
+end
+
+-- Death markers (challenge-mode deaths)
+local DEATH_ENTITY_ID_BASE = 3000000
+
+local function PruneExpiredDeathEntities()
+    if not state.db then return end
+    EnsureEntityTables(state.db)
+
+    local now = NowEpoch()
+    local list = state.db.entities.list
+    for i = #list, 1, -1 do
+        local ent = list[i]
+        if ent and ent.kind == "death" then
+            local expiresAt = tonumber(ent.expiresAt)
+            if expiresAt and expiresAt <= now then
+                local id = tonumber(ent.id)
+                table.remove(list, i)
+                if id and state.db.entityStatus then
+                    state.db.entityStatus[id] = nil
+                end
+            end
+        end
+    end
+end
+
+local function RemoveAllDeathEntities()
+    if not state.db then return end
+    EnsureEntityTables(state.db)
+
+    local list = state.db.entities.list
+    for i = #list, 1, -1 do
+        local ent = list[i]
+        if ent and ent.kind == "death" then
+            local id = tonumber(ent.id)
+            table.remove(list, i)
+            if id and state.db.entityStatus then
+                state.db.entityStatus[id] = nil
+            end
+        end
+    end
+end
+
+local function ValidNormalizedPos(nx, ny)
+    nx = tonumber(nx)
+    ny = tonumber(ny)
+    if not nx or not ny then return nil, nil end
+
+    -- Server uses 0.0/0.0 when it cannot normalize; avoid placing at top-left.
+    if nx == 0 and ny == 0 then return nil, nil end
+    if nx < 0 or nx > 1 or ny < 0 or ny > 1 then return nil, nil end
+    return nx, ny
+end
+
+local function UpsertDeathEntityFromServerRecord(d)
+    if type(d) ~= "table" or not state.db then return nil end
+    EnsureEntityTables(state.db)
+
+    local markerId = tonumber(d.markerId)
+    if not markerId then return nil end
+
+    local id = DEATH_ENTITY_ID_BASE + markerId
+    local ent
+    for _, e in ipairs(state.db.entities.list) do
+        if e and e.id == id and e.kind == "death" then
+            ent = e
+            break
+        end
+    end
+
+    local mapId = tonumber(d.mapId)
+    local nx, ny = ValidNormalizedPos(d.nx, d.ny)
+
+    if not ent then
+        ent = {
+            id = id,
+            kind = "death",
+            created = NowEpoch(),
+        }
+        table.insert(state.db.entities.list, ent)
+    end
+
+    ent.markerId = markerId
+    ent.modeId = d.modeId
+    ent.modeLabel = d.modeLabel
+
+    ent.victimGuid = tonumber(d.victimGuid)
+    ent.victimName = d.victimName
+    ent.victimLevel = tonumber(d.victimLevel)
+    ent.victimClass = tonumber(d.victimClass)
+
+    ent.killerType = d.killerType
+    ent.killerEntry = tonumber(d.killerEntry)
+    ent.killerName = d.killerName
+
+    ent.diedAt = tonumber(d.diedAt)
+    ent.expiresAt = tonumber(d.expiresAt)
+
+    -- Entity display fields
+    local victim = (ent.victimName and tostring(ent.victimName) ~= "" and tostring(ent.victimName)) or "Unknown"
+    ent.name = "Death: " .. victim
+
+    -- Position (only if valid; otherwise do not place a pin)
+    ent.mapId = mapId
+    ent.nx = nx
+    ent.ny = ny
+
+    return ent
+end
+
+local function ApplyDeathStatusToEntity(entityId, death)
+    if not state.db or not entityId then return end
+    EnsureEntityTables(state.db)
+
+    local now = NowEpoch()
+    local st = state.db.entityStatus[entityId] or {}
+    st.serverUpdatedAt = now
+    st.serverStatus = "death"
+
+    local expiresAt = tonumber(death.expiresAt)
+    if expiresAt and expiresAt > 0 then
+        st.activeUntil = expiresAt
+        st.serverActive = expiresAt > now
+    else
+        st.serverActive = true
+    end
+
+    state.db.entityStatus[entityId] = st
+end
+
+function Core:HandleWorldContent(data)
+    if type(data) ~= "table" or not state.db then return end
+
+    -- Death markers are snapshot-owned: replace on full content.
+    if type(data.deaths) == "table" then
+        RemoveAllDeathEntities()
+        for _, d in ipairs(data.deaths) do
+            local ent = UpsertDeathEntityFromServerRecord(d)
+            if ent and ent.id then
+                ApplyDeathStatusToEntity(ent.id, d)
+            end
+        end
+        PruneExpiredDeathEntities()
+        if Pins and Pins.Refresh then
+            Pins:Refresh()
+        end
+    end
+
+    -- Bosses
+    if type(data.bosses) == "table" then
+        for _, b in ipairs(data.bosses) do
+            local ent = UpsertBossEntityFromServerRecord(b)
+            if ent and ent.id then
+                ApplyBossStatusToEntity(ent.id, b)
+            end
+        end
+        if Pins and Pins.Refresh then
+            Pins:Refresh()
+        end
+    end
+
+    -- Hotspots can also be included in WRLD snapshots; process if present.
+    if type(data.hotspots) == "table" then
+        for _, hs in ipairs(data.hotspots) do
+            Core:ProcessHotspotPayload(hs)
+        end
+        if Pins and Pins.Refresh then
+            Pins:Refresh()
+        end
+    end
+end
+
+function Core:HandleWorldUpdate(data)
+    if type(data) ~= "table" or not state.db then return end
+
+    -- Death updates are incremental: only upsert what we got.
+    if type(data.deaths) == "table" then
+        PruneExpiredDeathEntities()
+        for _, d in ipairs(data.deaths) do
+            local ent = UpsertDeathEntityFromServerRecord(d)
+            if ent and ent.id then
+                ApplyDeathStatusToEntity(ent.id, d)
+            end
+        end
+        if Pins and Pins.Refresh then
+            Pins:Refresh()
+        end
+    end
+
+    -- Updates can be partial (e.g., bosses only). Treat them like content.
+    self:HandleWorldContent(data)
 end
 
 -- Also request on entering world (covers some relog/teleport edge cases)
@@ -1415,6 +1733,26 @@ function Core:RegisterProtocolHandlers()
             print("|cffff0000[DC-Hotspot]|r Teleport failed: " .. (message or "Unknown error"))
         end
     end)
+
+    -- =================================================================
+    -- WRLD: World content (bosses/hotspots/events)
+    -- =================================================================
+    if DC.RegisterJSONHandler then
+        DC:RegisterJSONHandler("WRLD", 0x10, function(data)
+            Core:HandleWorldContent(data)
+        end)
+        DC:RegisterJSONHandler("WRLD", 0x11, function(data)
+            Core:HandleWorldUpdate(data)
+        end)
+    else
+        -- Fallback: JSON-by-default still tends to call RegisterHandler with a decoded table.
+        DC:RegisterHandler("WRLD", 0x10, function(data)
+            Core:HandleWorldContent(data)
+        end)
+        DC:RegisterHandler("WRLD", 0x11, function(data)
+            Core:HandleWorldUpdate(data)
+        end)
+    end
     
     DebugPrint("DCAddonProtocol handlers registered")
 end

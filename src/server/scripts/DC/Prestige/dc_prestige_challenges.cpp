@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "dc_prestige_api.h"
+#include "../AddonExtension/dc_death_markers.h"
 #include <sstream>
 
 namespace
@@ -272,13 +273,15 @@ namespace
                 player->GetName(), static_cast<uint32>(challengeType));
         }
 
-        void OnDeath(Player* player)
+        void OnDeath(Player* player, Unit* killer)
         {
             if (!player || !ironEnabled)
                 return;
 
             if (HasActiveChallenge(player, CHALLENGE_IRON))
             {
+                // Emit a death marker for Iron Prestige (hardcore-style).
+                DCAddon::DeathMarkers::RecordChallengeDeath(player, killer, "iron_prestige", "Iron Prestige");
                 FailChallenge(player, CHALLENGE_IRON, "You died");
             }
         }
@@ -480,14 +483,14 @@ namespace
             }
         }
 
-        void OnPlayerKilledByCreature(Creature* /*killer*/, Player* player) override
+        void OnPlayerKilledByCreature(Creature* killer, Player* player) override
         {
-            PrestigeChallengeSystem::instance()->OnDeath(player);
+            PrestigeChallengeSystem::instance()->OnDeath(player, killer);
         }
 
-        void OnPlayerPVPKill(Player* /*killer*/, Player* victim) override
+        void OnPlayerPVPKill(Player* killer, Player* victim) override
         {
-            PrestigeChallengeSystem::instance()->OnDeath(victim);
+            PrestigeChallengeSystem::instance()->OnDeath(victim, killer);
         }
 
         void OnPlayerJoinedGroup(Player* player, Group* /*group*/)

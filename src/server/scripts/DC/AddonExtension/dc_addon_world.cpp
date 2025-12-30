@@ -9,6 +9,8 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "DBCStores.h"
+#include "DBCStore.h"
+#include "DBCStructure.h"
 #include "GameTime.h"
 #include "World.h"
 #include "WorldState.h"
@@ -17,7 +19,14 @@
 #include "DatabaseEnv.h"
 #include "ObjectMgr.h"
 
+#include "dc_world_bosses.h"
+#include "dc_death_markers.h"
+
 #include <ctime>
+
+// Some builds comment out sWorldMapAreaStore in DBCStores.h, but still define it in DBCStores.cpp.
+// Declare it here in the global namespace so we link against the correct symbol.
+extern DBCStorage<WorldMapAreaEntry> sWorldMapAreaStore;
 
 // Local includes to reuse hotspot helper functions
 extern uint32 GetHotspotXPBonusPercentage();
@@ -137,22 +146,7 @@ namespace World
             return secondsUntilNextMidnight;
         };
 
-        struct BossDef
-        {
-            uint32 entry;
-            int32 spawnId;
-            char const* id;
-            char const* name;
-            char const* zone;
-        };
-
-        // Giant Isles DB spawn ids (requested): Thok=9000189, Oondasta=9000190, Nalak=9000191.
-        static constexpr BossDef GIANT_ISLES_BOSSES[] =
-        {
-            { 400100, 9000190, "oondasta", "Oondasta, King of Dinosaurs", "Devilsaur Gorge" },
-            { 400101, 9000189, "thok",     "Thok the Bloodthirsty",     "Raptor Ridge" },
-            { 400102, 9000191, "nalak",    "Nalak the Storm Lord",      "Thundering Peaks" },
-        };
+        using DCAddon::WorldBosses::BossDef;
 
         auto TryGetRespawnInSeconds = [](ObjectGuid::LowType spawnId, uint32 mapId) -> Optional<int32>
         {
@@ -192,11 +186,28 @@ namespace World
             return static_cast<int32>(diff);
         };
 
-        for (BossDef const& def : GIANT_ISLES_BOSSES)
+        for (size_t i = 0; i < DCAddon::WorldBosses::GIANT_ISLES_BOSSES_COUNT; ++i)
         {
+            BossDef const& def = DCAddon::WorldBosses::GIANT_ISLES_BOSSES[i];
             uint32 mapId = 0;
+            Optional<float> nx;
+            Optional<float> ny;
             if (CreatureData const* cData = sObjectMgr->GetCreatureData(def.spawnId))
+            {
                 mapId = cData->mapid;
+
+                // Provide boss pin coordinates (0..1) when possible.
+                // We use WorldMapArea bounds (DBC) keyed by the map/area id.
+                // If no bounds exist, we omit nx/ny and clients can fall back to manual positioning.
+                if (mapId != 0 && ::sWorldMapAreaStore.LookupEntry(mapId))
+                {
+                    float x = cData->posX;
+                    float y = cData->posY;
+                    Map2ZoneCoordinates(x, y, mapId);
+                    nx = x / 100.0f;
+                    ny = y / 100.0f;
+                }
+            }
 
             JsonValue b; b.SetObject();
             b.Set("id", JsonValue(def.id));
@@ -205,6 +216,11 @@ namespace World
             b.Set("name", JsonValue(def.name));
             b.Set("zone", JsonValue(def.zone));
             b.Set("mapId", JsonValue(static_cast<int32>(mapId)));
+            if (nx && ny)
+            {
+                b.Set("nx", JsonValue(*nx));
+                b.Set("ny", JsonValue(*ny));
+            }
 
             // Determine status per spawnId. If there's a future respawnTime row, the boss is dead.
             // If there is no row (or respawnTime <= now), assume the boss is alive/active.
@@ -260,6 +276,7 @@ namespace World
         JsonValue hotspots = BuildHotspotArray();
         JsonValue bosses = BuildBossArray();
         JsonValue events = BuildEventsArray();
+        JsonValue deaths = DCAddon::DeathMarkers::BuildDeathMarkersArray();
 
         JsonMessage response(Module::WORLD, Opcode::World::SMSG_CONTENT);
         response.Set("schemaVersion", JsonValue(WORLD_SCHEMA_VERSION));
@@ -267,6 +284,7 @@ namespace World
         response.Set("hotspots", hotspots);
         response.Set("bosses", bosses);
         response.Set("events", events);
+        response.Set("deaths", deaths);
         response.Send(player);
 
         // Compatibility / robustness:

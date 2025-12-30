@@ -717,6 +717,9 @@ function DCInfoBar:HandleWorldContent(data)
             record.zone = b.zone or b.zoneName or (b.mapId and ("Map " .. tostring(b.mapId))) or "Unknown"
             record.spawnId = tonumber(b.spawnId) or nil
             record.entry = tonumber(b.entry or b.npcEntry or b.creatureEntry) or nil
+            record.mapId = tonumber(b.mapId) or nil
+            record.nx = tonumber(b.nx) or nil
+            record.ny = tonumber(b.ny) or nil
             -- Map status: prefer explicit status field, otherwise derive from active/action
             if b.status or b.state then
                 record.status = b.status or b.state
