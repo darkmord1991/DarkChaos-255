@@ -1,5 +1,5 @@
 ## Interface: 30300
-## Title: DC-ItemUpgrade (Retail Style)
+## Title: |cffFFCC00DC|r Item Upgrade
 ## Notes: Item Upgrade System - Retail 11.2.7 Backport for 3.3.5a
 ## Author: DarkChaos
 ## Version: 2.3-protocol

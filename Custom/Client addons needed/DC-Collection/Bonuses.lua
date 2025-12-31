@@ -218,3 +218,23 @@ function DC:UpdateBonusStatusFrame(frame)
         frame:Hide()
     end
 end
+
+-- ============================================================================
+-- BONUS APPLICATION (CLIENT -> SERVER TRIGGER)
+-- ============================================================================
+
+-- Called on PLAYER_LOGIN from Core.lua.
+-- In this project, bonuses are applied server-side; the client triggers the
+-- server to refresh/apply them by requesting stats/bonuses.
+function DC:ApplyMountSpeedBonus()
+    if type(self.IsProtocolReady) ~= "function" or not self:IsProtocolReady() then
+        return
+    end
+
+    if type(self.RequestStats) == "function" then
+        self:RequestStats()
+    end
+    if type(self.RequestBonuses) == "function" then
+        self:RequestBonuses()
+    end
+end

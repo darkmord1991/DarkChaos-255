@@ -637,11 +637,9 @@ function LB:OnSeasonsList(data)
     end
     
     Print("|cff00ff00Received " .. #LB.AvailableSeasons .. " seasons (cached)|r")
-    
-    -- Update dropdown if it exists
-    if LB.Frames.seasonDropdown then
-        LB:UpdateSeasonDropdown()
-    end
+
+    -- Update any season UI that exists (main selector and/or settings panel)
+    LB:UpdateSeasonDropdown()
 end
 
 -- v1.3.0: Handler for M+ dungeons list
@@ -729,9 +727,7 @@ function LB:RequestSeasons()
                     end
                 end
                 
-                if LB.Frames.seasonDropdown then
-                    LB:UpdateSeasonDropdown()
-                end
+                LB:UpdateSeasonDropdown()
                 Print("Using cached seasons list")
                 return
            end
@@ -2240,6 +2236,10 @@ function LB:CreateCommunicationPanel()
     end
     
     local function SeasonDropdown_Initialize(self, level)
+        level = level or 1
+        if level ~= 1 then
+            return
+        end
         for _, season in ipairs(LB.AvailableSeasons) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = season.name
@@ -2252,7 +2252,8 @@ function LB:CreateCommunicationPanel()
     
     UIDropDownMenu_Initialize(seasonDropdown, SeasonDropdown_Initialize)
     UIDropDownMenu_SetText(seasonDropdown, "Current Season (Auto)")
-    LB.Frames.seasonDropdown = seasonDropdown
+    -- Keep separate from the main-frame custom season dropdown (LB.Frames.seasonDropdown)
+    LB.Frames.commSeasonDropdown = seasonDropdown
     
     -- Refresh seasons button
     local refreshSeasonsBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
@@ -2420,8 +2421,6 @@ function LB:TestConnection()
 end
 
 function LB:UpdateSeasonDropdown()
-    if not self.Frames.seasonDropdown then return end
-    
     local seasonId = self:GetSetting("selectedSeasonId") or 0
     local seasonName = "Current Season (Auto)"
     for _, season in ipairs(self.AvailableSeasons) do
@@ -2430,7 +2429,20 @@ function LB:UpdateSeasonDropdown()
             break
         end
     end
-    UIDropDownMenu_SetText(self.Frames.seasonDropdown, seasonName)
+
+    -- Settings panel (UIDropDownMenuTemplate)
+    if self.Frames.commSeasonDropdown then
+        UIDropDownMenu_SetText(self.Frames.commSeasonDropdown, seasonName)
+    end
+
+    -- Main frame (custom season selector)
+    if self.Frames.seasonText then
+        if seasonId == 0 then
+            self.Frames.seasonText:SetText("|cff00ff00Current (Auto)|r")
+        else
+            self.Frames.seasonText:SetText("|cff00ccff" .. seasonName .. "|r")
+        end
+    end
 end
 
 -- =====================================================================

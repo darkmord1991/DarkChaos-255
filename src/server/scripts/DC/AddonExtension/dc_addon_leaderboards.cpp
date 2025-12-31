@@ -1807,10 +1807,11 @@ namespace
         totalsJson += "\"Total M+ Runs\":" + std::to_string(totalMplusRuns);
 
         // Total gold looted (AOE Loot)
+        // Schema: dc_aoeloot_detailed_stats.player_guid + total_gold (copper)
         result = CharacterDatabase.Query(
-            "SELECT COALESCE(SUM(a.gold_looted), 0) "
+            "SELECT COALESCE(SUM(a.total_gold), 0) "
             "FROM dc_aoeloot_detailed_stats a "
-            "JOIN characters c ON a.guid = c.guid "
+            "JOIN characters c ON a.player_guid = c.guid "
             "WHERE c.account = {}",
             accountId);
 
@@ -1821,10 +1822,11 @@ namespace
         totalsJson += ",\"Total Gold Looted\":" + std::to_string(totalGold / 10000);  // Convert copper to gold
 
         // Total items looted
+        // Schema: dc_aoeloot_detailed_stats.total_items
         result = CharacterDatabase.Query(
-            "SELECT COALESCE(SUM(a.items_looted), 0) "
+            "SELECT COALESCE(SUM(a.total_items), 0) "
             "FROM dc_aoeloot_detailed_stats a "
-            "JOIN characters c ON a.guid = c.guid "
+            "JOIN characters c ON a.player_guid = c.guid "
             "WHERE c.account = {}",
             accountId);
 

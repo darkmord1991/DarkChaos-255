@@ -1,5 +1,5 @@
 ## Interface: 30300
-## Title: DC-Collection
+## Title: |cffFFCC00DC|r Collection
 ## Notes: Account-wide mount, pet, and transmog collection system for DarkChaos-255
 ## Author: DarkChaos-255
 ## Version: 1.0.0

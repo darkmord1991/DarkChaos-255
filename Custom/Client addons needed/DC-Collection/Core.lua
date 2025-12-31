@@ -73,6 +73,15 @@ local defaults = {
     enableServerSync = true,
     autoSyncOnLogin = true,
     debugMode = false,
+
+    -- Wardrobe/transmog background sync
+    -- When enabled, the addon will periodically check for transmog updates and allow paging
+    -- to continue even if the UI is not open.
+    backgroundWardrobeSync = false,
+
+    -- Network error/timeout log (SavedVariables ring buffer)
+    -- Stores only recent events to help diagnose refresh failures.
+    netEventLogMaxEntries = 200,
     
     -- Cache
     lastSyncTime = 0,
@@ -759,9 +768,22 @@ function DC:CreateOptionsPanel()
     )
 
     CommCheckbox(
+        "Background wardrobe sync",
+        "When enabled, transmog (wardrobe) data can sync in the background (even if the UI is closed).",
+        -120,
+        function() return self:GetSetting("backgroundWardrobeSync") end,
+        function(v)
+            self:SaveSetting("backgroundWardrobeSync", v)
+            if v then
+                self:StartBackgroundWardrobeSync()
+            end
+        end
+    )
+
+    CommCheckbox(
         "Debug mode",
         "Enables verbose debug output in chat.",
-        -120,
+        -150,
         function() return self:GetSetting("debugMode") end,
         function(v) self:SaveSetting("debugMode", v) end
     )
@@ -969,8 +991,170 @@ end
 -- Expose After function for other modules (e.g., Protocol.lua)
 DC.After = After
 
+-- ============================================================================
+-- BACKGROUND WARDROBE SYNC
+-- ============================================================================
+
+function DC:IsBackgroundWardrobeSyncEnabled()
+    return (DCCollectionDB and DCCollectionDB.backgroundWardrobeSync) and true or false
+end
+
+function DC:StartBackgroundWardrobeSync()
+    if self._bgWardrobeSyncLoopActive then
+        return
+    end
+
+    self._bgWardrobeSyncLoopActive = true
+
+    local function Tick()
+        -- Stop the loop if the setting was disabled.
+        if not self:IsBackgroundWardrobeSyncEnabled() then
+            self._bgWardrobeSyncLoopActive = nil
+            return
+        end
+
+        -- Default cadence: keep it conservative to avoid hammering the server.
+        -- This is primarily a "keep it updated" check; if upToDate, the server should respond quickly.
+        local delaySeconds = 30 * 60
+
+        if not self:IsProtocolReady() then
+            -- Retry sooner while waiting for protocol readiness.
+            delaySeconds = 30
+        else
+            -- Avoid stacking requests while a paged transmog download is already running.
+            local pagingBusy = (self._transmogDefLoading ~= nil)
+                or (self._transmogPagingDelayFrame and self._transmogPagingDelayFrame.pendingRequest ~= nil)
+
+            if not pagingBusy then
+                self:Debug("Background wardrobe sync tick")
+                DCCollectionDB = DCCollectionDB or {}
+                if DCCollectionDB.transmogDefsIncomplete and type(self.ResumeTransmogDefinitions) == "function" then
+                    self:ResumeTransmogDefinitions("bg_sync")
+                elseif type(self.RequestDefinitions) == "function" then
+                    self:RequestDefinitions("transmog")
+                end
+                if type(self.RequestCollection) == "function" then
+                    self:RequestCollection("transmog")
+                end
+            else
+                -- If we're already paging, poll more frequently so we can continue once the run finishes.
+                delaySeconds = 60
+            end
+        end
+
+        -- Add small jitter so multiple clients don't sync at exactly the same time.
+        if type(self.Rand) == "function" then
+            local jitter = (self:Rand(21) - 11) -- [-10..+10]
+            delaySeconds = delaySeconds + jitter
+        end
+        if delaySeconds < 10 then
+            delaySeconds = 10
+        end
+
+        After(delaySeconds, Tick)
+    end
+
+    -- Start shortly after enabling/login.
+    After(5, Tick)
+end
+
+function DC:MaybeResumeTransmogDefinitionsOnLogin()
+    DCCollectionDB = DCCollectionDB or {}
+    if not DCCollectionDB.transmogDefsIncomplete then
+        return
+    end
+
+    if not self:IsProtocolReady() then
+        return
+    end
+
+    -- Don't interrupt an already-running paging run.
+    if self._transmogDefLoading then
+        return
+    end
+
+    if type(self.ResumeTransmogDefinitions) == "function" then
+        self:ResumeTransmogDefinitions("login_resume")
+    elseif type(self.RequestDefinitions) == "function" then
+        -- Fallback: restart from scratch (forced) if the resume helper isn't available.
+        self:RequestDefinitions("transmog", 0)
+    end
+end
+
+-- ============================================================================
+-- RNG (DEFENSIVE)
+-- ============================================================================
+
+-- WoW 3.3.5a normally exposes math.randomseed, but some UIs/sandboxes/addons can
+-- clobber it. Provide an addon-local PRNG so random features still work.
+local function SeedFallbackRNG()
+    if DC._prngSeed and DC._prngSeed > 0 then
+        return
+    end
+
+    local t = 0
+    if type(time) == "function" then
+        t = time() or 0
+    end
+    local gt = 0
+    if type(GetTime) == "function" then
+        gt = GetTime() or 0
+    end
+
+    local seed = math.floor((t * 1000) + (gt * 1000))
+    seed = seed % 2147483647
+    if seed <= 0 then
+        seed = 1234567
+    end
+    DC._prngSeed = seed
+end
+
+-- Park–Miller minimal standard PRNG step (mod 2^31-1).
+local function NextFallbackRand()
+    SeedFallbackRNG()
+
+    local seed = DC._prngSeed or 1
+    local hi = math.floor(seed / 127773)
+    local lo = seed - hi * 127773
+    local test = 16807 * lo - 2836 * hi
+    if test <= 0 then
+        test = test + 2147483647
+    end
+    DC._prngSeed = test
+    return test
+end
+
+-- Returns integer in [1, max].
+function DC:Rand(max)
+    max = tonumber(max)
+    if not max or max < 1 then
+        return 1
+    end
+
+    -- Prefer WoW/Lua's RNG when available.
+    if type(math) == "table" and type(math.random) == "function" then
+        return math.random(1, max)
+    end
+
+    local r = NextFallbackRand()
+    return (r % max) + 1
+end
+
 function events:ADDON_LOADED(addonName)
     if addonName == "DC-Collection" then
+        -- Ensure math.random is not deterministic across sessions.
+        -- Some client environments may not expose math.randomseed; guard it.
+        if not DC._rngSeeded then
+            DC._rngSeeded = true
+            if type(math) == "table" and type(math.randomseed) == "function" then
+                math.randomseed(time())
+                -- Warm-up calls improve distribution in some Lua implementations.
+                if type(math.random) == "function" then
+                    math.random(); math.random(); math.random()
+                end
+            end
+        end
+
         DC:LoadSettings()
         DC:CreateOptionsPanel()
         DC:InitializeCache()
@@ -982,6 +1166,14 @@ function events:ADDON_LOADED(addonName)
         
         DC.isLoaded = true
         DC:Print(string.format(L.ADDON_LOADED, DC.VERSION))
+
+        -- Background wardrobe sync can be enabled independently of autoSyncOnLogin.
+        -- Start its loop here; it will no-op until protocol becomes ready.
+        After(2, function()
+            if DC:IsBackgroundWardrobeSyncEnabled() then
+                DC:StartBackgroundWardrobeSync()
+            end
+        end)
         
         -- If cache is fresh (recent reload), skip the heavy server requests entirely.
         local cacheFresh = (type(DC.IsCacheFresh) == "function") and DC:IsCacheFresh()
@@ -1035,6 +1227,20 @@ function events:PLAYER_LOGIN()
         elseif DC:IsProtocolReady() then
             DC._initialDataRequested = true
             DC:RequestInitialData(false)
+        end
+    end)
+
+    -- Fallback: ensure background wardrobe sync loop starts even if ADDON_LOADED path early-returned.
+    After(3, function()
+        if DC:IsBackgroundWardrobeSyncEnabled() then
+            DC:StartBackgroundWardrobeSync()
+        end
+    end)
+
+    -- Automatic resume for interrupted transmog paging runs.
+    After(6, function()
+        if DC:IsProtocolReady() then
+            DC:MaybeResumeTransmogDefinitionsOnLogin()
         end
     end)
 end
@@ -1215,6 +1421,7 @@ function DC:RequestFullSync()
     -- Force a complete resync
     DCCollectionDB.lastSyncTime = 0
     DCCollectionDB.syncVersion = 0
+    DCCollectionDB.syncVersions = nil
     self._handshakeRequested = nil
     self._handshakeAcked = nil
     self:RequestInitialData(false, true)  -- forceRefresh = true

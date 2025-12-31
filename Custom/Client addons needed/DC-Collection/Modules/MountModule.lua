@@ -161,6 +161,24 @@ function MountModule:SummonMount(spellId)
 end
 
 function MountModule:SummonRandomMount(mountType)
+    -- Prefer client-side random selection from collected mounts so it works
+    -- consistently and includes favorites as normal eligible mounts.
+    local filters = { collected = true }
+    if mountType then
+        filters.mountType = mountType
+    end
+
+    local collected = self:GetFilteredMounts(filters)
+    if collected and #collected > 0 then
+        local idx = (DC and type(DC.Rand) == "function") and DC:Rand(#collected) or 1
+        local mount = collected[idx]
+        if mount and mount.id then
+            self:SummonMount(mount.id)
+            return
+        end
+    end
+
+    -- Fallback: if we don't have definitions loaded yet, ask the server.
     DC:RequestSummonMount(nil, true)
 end
 
@@ -174,7 +192,8 @@ function MountModule:SummonRandomFavoriteMount()
     end
     
     -- Pick random
-    local mount = favorites[math.random(#favorites)]
+    local idx = (DC and type(DC.Rand) == "function") and DC:Rand(#favorites) or 1
+    local mount = favorites[idx]
     self:SummonMount(mount.id)
 end
 

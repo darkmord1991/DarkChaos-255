@@ -526,6 +526,12 @@ function Return_enUS()
     ["tt_WayWipe"]                    = "Clear all waypoints",
     ["ma_WayRun"]                     = "Run Path",
     ["tt_WayRun"]                     = "Start moving on the path",
+
+    -- DC Waypoints: wander-distance controls
+    ["ma_WayWander30"]                = "Wander 30",
+    ["tt_WayWander30"]                = "Set selected spawn wander distance to 30 (spawndist)",
+    ["ma_WayWanderOff"]               = "Wander Off",
+    ["tt_WayWanderOff"]               = "Disable wandering for selected spawn (spawndist 0)",
   --[[Other]]
 
 

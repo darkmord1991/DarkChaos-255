@@ -482,6 +482,28 @@ function Wardrobe:CreateLeftPanel(parent)
     refreshStatus:Hide()
     parent.refreshStatus = refreshStatus
 
+    -- Transmog definitions loading progress bar
+    local loadBar = CreateFrame("StatusBar", nil, left)
+    loadBar:SetSize(PANEL_WIDTH - 10, 12)
+    loadBar:SetPoint("TOPLEFT", refreshStatus, "BOTTOMLEFT", 0, -4)
+    loadBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    loadBar:SetMinMaxValues(0, 1)
+    loadBar:SetValue(0)
+    loadBar:Hide()
+    loadBar:SetFrameLevel((left:GetFrameLevel() or 1) + 20)
+    parent.loadBar = loadBar
+
+    local loadBarBg = loadBar:CreateTexture(nil, "BACKGROUND")
+    loadBarBg:SetAllPoints(loadBar)
+    loadBarBg:SetTexture(0, 0, 0, 0.45)
+    loadBar.bg = loadBarBg
+
+    local loadText = loadBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    loadText:SetPoint("CENTER", loadBar, "CENTER", 0, 0)
+    loadText:SetTextColor(1, 0.82, 0)
+    loadText:SetText("")
+    parent.loadText = loadText
+
     -- Center the model between left and right slot columns
     local modelX = SLOT_COLUMN_WIDTH + 10  -- After left slot column
     local modelHeight = 320  -- Slightly smaller model height

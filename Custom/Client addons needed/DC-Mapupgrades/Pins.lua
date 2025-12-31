@@ -27,6 +27,31 @@ local function NowEpoch()
     return time()
 end
 
+local function NormalizeZoneNameForMatch(name)
+    if not name then return nil end
+    name = tostring(name)
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then return nil end
+    return name:lower()
+end
+
+local function MaybeLearnZoneMapping(state, activeMapId, zoneId, zoneLabel)
+    local db = state and state.db
+    if not db or not activeMapId or not zoneId or not zoneLabel then return end
+    if CONTINENT_MAP_IDS and CONTINENT_MAP_IDS[activeMapId] then return end
+
+    db.customZoneMapping = db.customZoneMapping or {}
+    if db.customZoneMapping[activeMapId] then return end
+
+    local curZone = (GetZoneText and GetZoneText()) or nil
+    if not curZone or curZone == "" then return end
+
+    if NormalizeZoneNameForMatch(curZone) == NormalizeZoneNameForMatch(zoneLabel) then
+        db.customZoneMapping[activeMapId] = tonumber(zoneId)
+        DebugPrint("Learned custom map mapping:", tostring(activeMapId), "->", tostring(zoneId), "(zone:", tostring(zoneLabel) .. ")")
+    end
+end
+
 local function EntityTexture(kind)
     if kind == "boss" then
         return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_8" -- Skull
@@ -138,6 +163,10 @@ end
 local CUSTOM_ZONE_MAPPING = {
     [614] = 268,  -- Azshara Crater: WoW reports map 614, but zone is 268
     [1405] = 5006, -- Slippy Quagmire (custom): client MapAreaID 1405, server zoneId 5006
+    -- Slippy Quagmire / Isles of Giants (custom): clients may report any of these map IDs depending on UI / floors
+    [1100] = 5006,
+    [1101] = 5006,
+    [1102] = 5006,
     -- Add more custom zones here as needed
 }
 
@@ -291,7 +320,9 @@ local function HotspotMatchesMap(hotspot, mapId, showAll)
     end
     
     -- Strategy 2: Check custom zone mappings (for special zones like Azshara Crater)
-    local resolvedZoneId = CUSTOM_ZONE_MAPPING[mapId] or mapId
+    local db = Pins.state and Pins.state.db
+    local learned = db and db.customZoneMapping and db.customZoneMapping[mapId]
+    local resolvedZoneId = learned or CUSTOM_ZONE_MAPPING[mapId] or mapId
     if hotspotZone == resolvedZoneId then
         DebugPrint("Match via custom mapping: map", mapId, "-> zone", resolvedZoneId)
         return true
@@ -319,11 +350,13 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
 
     -- Server-provided entities (bosses/deaths) use server zone/area ID in mapId.
     if entity.kind == "boss" or entity.kind == "death" then
+        local db = Pins.state and Pins.state.db
+        local learned = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
         local expectedZone = MAP_TO_ZONE[activeMapId]
         if expectedZone and expectedZone == entMapId then
             return true
         end
-        local resolvedZoneId = CUSTOM_ZONE_MAPPING[activeMapId] or activeMapId
+        local resolvedZoneId = learned or CUSTOM_ZONE_MAPPING[activeMapId] or activeMapId
         if resolvedZoneId == entMapId then
             return true
         end
@@ -739,17 +772,12 @@ function Pins:AcquireEntityWorldPin(id, entity)
                 end
             end
         end
-        if ent.mapId then
-            GameTooltip:AddLine(string.format("Map: %s", tostring(ent.mapId)), 1, 1, 1)
+        local db2 = Pins.state and Pins.state.db
+        if db2 and db2.debug and ent.mapId then
+            GameTooltip:AddLine(string.format("MapId: %s", tostring(ent.mapId)), 0.75, 0.75, 0.75)
         end
         if ent.nx and ent.ny then
             GameTooltip:AddLine(string.format("Pos: %.3f, %.3f", ent.nx, ent.ny), 1, 1, 1)
-        end
-
-        if ent.kind ~= "death" then
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(string.format("/dcmap active %d", self.entityId), 0.8, 0.8, 0.8)
-            GameTooltip:AddLine(string.format("/dcmap inactive %d", self.entityId), 0.8, 0.8, 0.8)
         end
         GameTooltip:Show()
     end)
@@ -762,13 +790,14 @@ function Pins:AcquireEntityMinimapPin(id, entity)
     local pin = self.entityMinimapPins[id]
     if pin then return pin end
     if not Minimap then return nil end
-    pin = CreateFrame("Frame", "DCMapupgradesEntityMinimapPin" .. id, Minimap)
+    pin = CreateFrame("Button", "DCMapupgradesEntityMinimapPin" .. id, Minimap)
     pin:SetSize(16, 16)
     pin.texture = pin:CreateTexture(nil, "OVERLAY")
     pin.texture:SetAllPoints()
     pin:SetFrameStrata("HIGH")
     pin:Hide()
     pin.entityId = id
+    pin:EnableMouse(true)
     pin:SetScript("OnEnter", function(self)
         local db = Pins.state and Pins.state.db
         local list = db and db.entities and db.entities.list
@@ -779,7 +808,50 @@ function Pins:AcquireEntityMinimapPin(id, entity)
         end
         if not ent then return end
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine(ent.name or ("Entity #" .. tostring(self.entityId)))
+        if ent.kind == "death" then
+            GameTooltip:AddLine(ent.name or ("Death #" .. tostring(self.entityId)))
+            GameTooltip:AddLine("Death Marker", 0.85, 0.7, 0.7)
+        else
+            local kindLabel = (ent.kind == "boss" and "World Boss") or (ent.kind == "rare" and "Rare") or "Entity"
+            GameTooltip:AddLine(ent.name or (kindLabel .. " #" .. tostring(self.entityId)))
+            GameTooltip:AddLine(kindLabel, 0.7, 0.7, 0.9)
+        end
+
+        if ent.spawnId then
+            GameTooltip:AddLine(string.format("spawnId: %s", tostring(ent.spawnId)), 0.9, 0.9, 0.9)
+        end
+        if ent.entry then
+            GameTooltip:AddLine(string.format("entry: %s", tostring(ent.entry)), 0.9, 0.9, 0.9)
+        end
+        if ent.zoneLabel then
+            GameTooltip:AddLine(string.format("zone: %s", tostring(ent.zoneLabel)), 0.9, 0.9, 0.9)
+        end
+
+        local st = Pins.state and Pins.state.db and Pins.state.db.entityStatus and Pins.state.db.entityStatus[self.entityId]
+        if st and st.serverStatus and st.serverStatus ~= "" then
+            local serverStatus = string.upper(tostring(st.serverStatus))
+            if serverStatus == "ACTIVE" then
+                GameTooltip:AddLine("Status: ACTIVE", 0, 1, 0)
+            elseif serverStatus == "SPAWNING" then
+                local durText = FormatDuration(st.serverSpawnIn)
+                if durText then
+                    GameTooltip:AddLine("Status: SPAWNING", 1, 0.82, 0)
+                    GameTooltip:AddLine("Respawn in: " .. durText, 1, 0.82, 0)
+                else
+                    GameTooltip:AddLine("Status: SPAWNING", 1, 0.82, 0)
+                end
+            else
+                GameTooltip:AddLine("Status: " .. serverStatus, 1, 0.82, 0)
+            end
+        end
+
+        local db2 = Pins.state and Pins.state.db
+        if db2 and db2.debug and ent.mapId then
+            GameTooltip:AddLine(string.format("MapId: %s", tostring(ent.mapId)), 0.75, 0.75, 0.75)
+        end
+        if ent.nx and ent.ny then
+            GameTooltip:AddLine(string.format("Pos: %.3f, %.3f", ent.nx, ent.ny), 1, 1, 1)
+        end
         GameTooltip:Show()
     end)
     pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -959,14 +1031,45 @@ function Pins:UpdateWorldPinsInternal()
     if type(list) == "table" then
         local parent = WorldMapButton or (WorldMapFrame and WorldMapFrame.ScrollContainer) or WorldMapFrame
         local totalEntities, missingPos = 0, 0
+        local totalBoss, enabledBoss, matchedBoss, shownBoss = 0, 0, 0, 0
+        local sampleBoss
+        local learnedActive = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
+        local resolvedZoneId = learnedActive or CUSTOM_ZONE_MAPPING[activeMapId] or MAP_TO_ZONE[activeMapId] or activeMapId
         for _, ent in ipairs(list) do
             if ent and ent.id then
                 totalEntities = totalEntities + 1
             end
             if ent and ent.id and ent.mapId and ent.nx and ent.ny then
                 local kind = ent.kind
+
+                if (kind == "boss" or kind == "death") and ent.zoneLabel and activeMapId then
+                    MaybeLearnZoneMapping(self.state, activeMapId, ent.mapId, ent.zoneLabel)
+                    learnedActive = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
+                    resolvedZoneId = learnedActive or CUSTOM_ZONE_MAPPING[activeMapId] or MAP_TO_ZONE[activeMapId] or activeMapId
+                end
+
                 local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins) or (kind == "death")
-                if enabled and EntityMatchesMap(ent, activeMapId, showAll) then
+                if kind == "boss" then
+                    totalBoss = totalBoss + 1
+                    if enabled then
+                        enabledBoss = enabledBoss + 1
+                    end
+                end
+
+                local matches = enabled and EntityMatchesMap(ent, activeMapId, showAll)
+                if kind == "boss" and matches then
+                    matchedBoss = matchedBoss + 1
+                elseif kind == "boss" and (not sampleBoss) then
+                    sampleBoss = {
+                        id = ent.id,
+                        entMapId = tonumber(ent.mapId),
+                        activeMapId = tonumber(activeMapId),
+                        resolvedZoneId = tonumber(resolvedZoneId),
+                        showWorldBossPins = db.showWorldBossPins,
+                    }
+                end
+
+                if matches then
                     local pin = self:AcquireEntityWorldPin(ent.id, ent)
                     if pin and parent then
                         local px, py
@@ -988,10 +1091,35 @@ function Pins:UpdateWorldPinsInternal()
 
                         pin:Show()
                         entSeen[ent.id] = true
+
+                        if kind == "boss" then
+                            shownBoss = shownBoss + 1
+                        end
                     end
                 end
             elseif ent and ent.id and (ent.kind == "boss" or ent.kind == "rare") then
                 missingPos = missingPos + 1
+            end
+        end
+
+        if db.debug then
+            DebugPrint("Entities debug:",
+                "activeMapId=" .. tostring(activeMapId),
+                "resolvedZoneId=" .. tostring(resolvedZoneId),
+                "bossTotal=" .. tostring(totalBoss),
+                "bossEnabled=" .. tostring(enabledBoss),
+                "bossMatched=" .. tostring(matchedBoss),
+                "bossShown=" .. tostring(shownBoss))
+            if sampleBoss then
+                DebugPrint("Boss sample:",
+                    "id=" .. tostring(sampleBoss.id),
+                    "entMapId=" .. tostring(sampleBoss.entMapId),
+                    "activeMapId=" .. tostring(sampleBoss.activeMapId),
+                    "resolvedZoneId=" .. tostring(sampleBoss.resolvedZoneId),
+                    "showWorldBossPins=" .. tostring(sampleBoss.showWorldBossPins))
+            end
+            if parent and parent.GetWidth then
+                DebugPrint("WorldMap parent size:", tostring(parent:GetWidth()), tostring(parent:GetHeight()))
             end
         end
 
@@ -1075,15 +1203,15 @@ function Pins:UpdateMinimapPins()
         for _, ent in ipairs(list) do
             if ent and ent.id and ent.mapId and ent.nx and ent.ny and EntityMatchesMap(ent, playerMap, false) then
                 local kind = ent.kind
-                local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins) or (kind == "death")
+                local enabled = (kind == "boss" and db.showMinimapBossPins and db.showWorldBossPins)
+                    or (kind == "rare" and db.showRarePins)
+                    or (kind == "death")
                 if enabled then
                     local offsetX, offsetY
-                    if Astrolabe and Astrolabe.WorldToMinimapOffset then
-                        offsetX, offsetY = Astrolabe.WorldToMinimapOffset(Minimap, px, py, ent.nx, ent.ny)
-                    else
-                        offsetX = (ent.nx - px) * Minimap:GetWidth()
-                        offsetY = (py - ent.ny) * Minimap:GetHeight()
-                    end
+                    -- Use normalized delta math for entities.
+                    -- Some Astrolabe builds expect world coords, which can yield (0,0) offsets with normalized inputs.
+                    offsetX = (ent.nx - px) * Minimap:GetWidth()
+                    offsetY = (py - ent.ny) * Minimap:GetHeight()
                     local pin = self:AcquireEntityMinimapPin(ent.id, ent)
                     if pin then
                         pin.texture:SetTexture(EntityTexture(kind))

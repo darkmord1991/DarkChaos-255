@@ -327,6 +327,7 @@ function DC:ClearCache()
     DCCollectionDB.mountSpeedBonus = nil
     DCCollectionDB.lastSyncTime = 0
     DCCollectionDB.syncVersion = 0
+    DCCollectionDB.syncVersions = nil
     
     -- Clear in-memory data
     for collType in pairs(self.collections) do
@@ -335,6 +336,9 @@ function DC:ClearCache()
     for collType in pairs(self.definitions) do
         self.definitions[collType] = {}
     end
+
+    -- Keep transmog alias consistent for Wardrobe/protocol callers.
+    self._transmogDefinitions = self.definitions.transmog
     self.currency = { tokens = 0, emblems = 0 }
     self.wishlist = {}
     self.mountSpeedBonus = 0
@@ -452,6 +456,16 @@ function DC:CacheMergeDefinitions(collectionType, definitions)
     end
 
     self.definitions[typeName] = self.definitions[typeName] or {}
+
+    -- For transmog, a few UI/protocol paths still read from DC._transmogDefinitions.
+    -- Keep that pointing at the same table as DC.definitions.transmog.
+    if typeName == "transmog" then
+        if type(self._transmogDefinitions) == "table" and self._transmogDefinitions ~= self.definitions[typeName] then
+            self.definitions[typeName] = self._transmogDefinitions
+        else
+            self._transmogDefinitions = self.definitions[typeName]
+        end
+    end
     
     local added = 0
     for itemId, defData in pairs(definitions) do
@@ -831,6 +845,15 @@ end
 local origCacheMergeCollection = DC.CacheMergeCollection
 function DC:CacheMergeCollection(...)
     local result = origCacheMergeCollection(self, ...)
+    if self.cacheNeedsSave then
+        ScheduleAutoSave()
+    end
+    return result
+end
+
+local origCacheMergeDefinitions = DC.CacheMergeDefinitions
+function DC:CacheMergeDefinitions(...)
+    local result = origCacheMergeDefinitions(self, ...)
     if self.cacheNeedsSave then
         ScheduleAutoSave()
     end

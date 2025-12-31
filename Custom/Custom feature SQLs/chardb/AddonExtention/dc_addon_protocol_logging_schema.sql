@@ -9,6 +9,7 @@
 DROP TABLE IF EXISTS `dc_addon_protocol_log`;
 DROP TABLE IF EXISTS `dc_addon_protocol_stats`;
 DROP TABLE IF EXISTS `dc_addon_protocol_daily`;
+DROP TABLE IF EXISTS `dc_addon_protocol_errors`;
 
 -- ============================================================================
 -- dc_addon_protocol_log - Logs every C2S/S2C message
@@ -83,6 +84,33 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_daily` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Daily aggregated statistics for trend analysis';
 
+-- =========================================================================
+-- dc_addon_protocol_errors - Discrete error/timeout events
+-- =========================================================================
+-- This table is meant to answer: "what went wrong" (unhandled module/opcode,
+-- dropped messages, partial chunk abandoned, etc.)
+CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `guid` INT UNSIGNED NULL COMMENT 'Character GUID (if known)',
+    `account_id` INT UNSIGNED NULL,
+    `character_name` VARCHAR(48) NULL,
+    `direction` ENUM('C2S', 'S2C') NOT NULL DEFAULT 'C2S',
+    `request_type` ENUM('STANDARD', 'DC_JSON', 'DC_PLAIN', 'AIO') NOT NULL DEFAULT 'DC_PLAIN',
+    `module` VARCHAR(16) NOT NULL DEFAULT 'UNKN',
+    `opcode` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    `event_type` VARCHAR(32) NOT NULL COMMENT 'Short category (unhandled, parse_error, rate_limited, chunk_abandoned, etc.)',
+    `message` VARCHAR(255) NOT NULL COMMENT 'Human-readable error/timeout message',
+    `payload_preview` VARCHAR(255) DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    INDEX `idx_timestamp` (`timestamp`),
+    INDEX `idx_guid` (`guid`),
+    INDEX `idx_account` (`account_id`),
+    INDEX `idx_module` (`module`),
+    INDEX `idx_event_type` (`event_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Discrete addon protocol error/timeout events (debugging)';
+
 -- ============================================================================
 -- Stored Procedures
 -- ============================================================================
@@ -123,7 +151,7 @@ BEGIN
         SUM(CASE WHEN `direction` = 'C2S' THEN 1 ELSE 0 END) as total_c2s,
         SUM(CASE WHEN `direction` = 'S2C' THEN 1 ELSE 0 END) as total_s2c,
         COUNT(DISTINCT `guid`) as unique_players,
-        SUM(CASE WHEN `status` = 'error' THEN 1 ELSE 0 END) as error_count,
+        SUM(CASE WHEN `status` IN ('error', 'timeout') THEN 1 ELSE 0 END) as error_count,
         AVG(`processing_time_ms`) as avg_response_time_ms,
         (
             SELECT HOUR(sub.`timestamp`)

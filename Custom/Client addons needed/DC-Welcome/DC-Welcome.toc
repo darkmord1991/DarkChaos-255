@@ -1,11 +1,11 @@
 ## Interface: 30300
-## Title: DC-Welcome
+## Title: |cffFFCC00DC|r Welcome
 ## Notes: First-login welcome, progress tracking, addons hub, and seasons tracker for DarkChaos-255
 ## Author: DarkChaos-255
 ## Version: 2.0.0
+## SavedVariables: DCWelcomeDB
 ## Dependencies: DC-AddonProtocol
 ## OptionalDeps: AIO_Client
-## SavedVariables: DCWelcomeDB
 
 ## Core modules
 Localization.lua

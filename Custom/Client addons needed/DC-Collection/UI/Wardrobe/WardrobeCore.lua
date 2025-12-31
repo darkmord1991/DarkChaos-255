@@ -155,6 +155,90 @@ function Wardrobe:GetSlotIcon(slotKey)
     return "Interface\\Icons\\INV_Misc_QuestionMark"
 end
 
+function Wardrobe:GetTransmogDefinitionsLoadedCount()
+    if not DC then
+        return 0
+    end
+
+    local defs = DC._transmogDefinitions
+    if type(defs) ~= "table" then
+        defs = (DC.definitions and DC.definitions.transmog) or nil
+    end
+
+    if type(DC.TableCount) == "function" and type(defs) == "table" then
+        return DC:TableCount(defs)
+    end
+
+    if type(defs) == "table" then
+        local c = 0
+        for _ in pairs(defs) do c = c + 1 end
+        return c
+    end
+
+    return 0
+end
+
+function Wardrobe:GetTransmogDefinitionsTotalCount()
+    if not DC then
+        return nil
+    end
+
+    local total = tonumber(DC._transmogDefTotal)
+    if total and total > 0 then
+        return total
+    end
+
+    local statsTotal = DC.stats and DC.stats.transmog and (DC.stats.transmog.total or DC.stats.transmog.count)
+    statsTotal = tonumber(statsTotal)
+    if statsTotal and statsTotal > 0 then
+        return statsTotal
+    end
+
+    return nil
+end
+
+function Wardrobe:UpdateTransmogLoadingProgressUI(forceShow)
+    local bar, text
+    if DC and DC.MainFrame and DC.MainFrame.topLoadBar and DC.MainFrame.topLoadText then
+        bar, text = DC.MainFrame.topLoadBar, DC.MainFrame.topLoadText
+    elseif self.frame and self.frame.loadBar and self.frame.loadText then
+        bar, text = self.frame.loadBar, self.frame.loadText
+    else
+        return
+    end
+
+    if not DC then
+        bar:Hide()
+        return
+    end
+
+    local pending = DC._transmogPagingDelayFrame and DC._transmogPagingDelayFrame.pendingRequest
+    local isLoading = (DC._transmogDefLoading and true or false) or (pending and true or false)
+    if not isLoading and not forceShow then
+        bar:Hide()
+        return
+    end
+
+    local loaded = self:GetTransmogDefinitionsLoadedCount()
+    local total = self:GetTransmogDefinitionsTotalCount()
+
+    bar:Show()
+
+    if total and total > 0 then
+        if loaded > total then
+            total = loaded
+        end
+        bar:SetMinMaxValues(0, total)
+        bar:SetValue(math.min(loaded, total))
+        local pct = math.floor((loaded / total) * 100)
+        text:SetText(string.format("Loading: %d/%d (%d%%)", loaded, total, pct))
+    else
+        bar:SetMinMaxValues(0, math.max(loaded, 1))
+        bar:SetValue(math.max(loaded, 1))
+        text:SetText(string.format("Loading: %d (total unknown)", loaded))
+    end
+end
+
 function Wardrobe:IsAppearanceCollected(itemId)
     if not DC or not DC.collections or not DC.collections.transmog then
         return false
@@ -444,6 +528,17 @@ function Wardrobe:CancelRefresh()
             end
         end)
     end
+
+    if type(self.UpdateTransmogLoadingProgressUI) == "function" then
+        self:UpdateTransmogLoadingProgressUI(false)
+    end
+
+    -- Ensure the protocol isn't left in an "inflight" stuck state if the server never replied.
+    if DC and type(DC.AbortTransmogDefinitionsPaging) == "function" then
+        -- If we cancel, do not allow a later offset=0 response to wipe cached defs.
+        DC._transmogClearOnFirstPage = nil
+        DC:AbortTransmogDefinitionsPaging("wardrobe_cancel")
+    end
     
     DC:Print("[Wardrobe] Refresh cancelled")
     
@@ -470,33 +565,34 @@ function Wardrobe:RefreshTransmogDefinitions()
         self.frame.refreshStatus:SetText("Starting refresh...")
         self.frame.refreshStatus:Show()
     end
-    
-    -- Clear transmog definitions cache
-    if DC._transmogDefinitions then
-        DC._transmogDefinitions = {}
+
+    if type(self.UpdateTransmogLoadingProgressUI) == "function" then
+        self:UpdateTransmogLoadingProgressUI(true)
     end
     
-    if DC.definitions and DC.definitions.transmog then
-        DC.definitions.transmog = {}
+    -- IMPORTANT: do NOT wipe local transmog definitions immediately.
+    -- If the server doesn't reply, wiping here leaves the user with an empty wardrobe and
+    -- can make refresh look "broken".
+    -- Instead, request a forced re-download and wipe in-place only when the first page arrives.
+    DC._transmogClearOnFirstPage = true
+    
+    -- Reset any stuck paging/inflight state before requesting.
+    if type(DC.AbortTransmogDefinitionsPaging) == "function" then
+        DC:AbortTransmogDefinitionsPaging("wardrobe_refresh")
+    else
+        -- Best-effort fallback.
+        DC._transmogDefLoading = nil
+        if DC._transmogPagingDelayFrame then
+            DC._transmogPagingDelayFrame:Hide()
+            DC._transmogPagingDelayFrame.pendingRequest = nil
+        end
     end
     
-    -- Reset paging state
-    DC._transmogDefOffset = 0
-    DC._transmogDefLimit = 2000
-    DC._transmogDefLoading = nil
-    DC._transmogDefLastRequestedOffset = nil
-    DC._transmogDefLastRequestedLimit = nil
-    DC._transmogDefPagesFetched = 0
-    
-    -- Clear delay frame if exists
-    if DC._transmogPagingDelayFrame then
-        DC._transmogPagingDelayFrame:Hide()
-        DC._transmogPagingDelayFrame.pendingRequest = nil
-    end
-    
-    -- Request fresh data from server
-    DC:Print("[Wardrobe] Refreshing transmog definitions from server (this may take ~5 seconds)...")
-    DC:RequestDefinitions("transmog")
+    -- Request fresh data from server.
+    -- Force: do NOT send syncVersion here; otherwise server may reply upToDate=true and send nothing,
+    -- which looks like a stuck refresh after we just cleared the local cache.
+    DC:Print("[Wardrobe] Refreshing transmog definitions from server...")
+    local sent = DC:RequestDefinitions("transmog", 0)
     
     -- Set up completion handler
     local checkFrame = CreateFrame("Frame")
@@ -504,7 +600,12 @@ function Wardrobe:RefreshTransmogDefinitions()
     checkFrame.lastCount = 0
     checkFrame.stableChecks = 0
     checkFrame.totalTime = 0
-    checkFrame.maxWaitTime = 15 -- Timeout after 15 seconds
+    checkFrame.maxWaitNoData = 45    -- seconds until we retry if NOTHING arrives
+    checkFrame.maxWaitAfterData = 120 -- seconds before we stop waiting but keep background paging
+    checkFrame.gotAny = false
+    checkFrame.retryCount = 0
+    checkFrame.maxRetries = 3
+    checkFrame.nextRetryAt = 12
     
     checkFrame:SetScript("OnUpdate", function(frame, elapsed)
         if not Wardrobe.isRefreshing then
@@ -514,11 +615,66 @@ function Wardrobe:RefreshTransmogDefinitions()
         
         frame.elapsed = frame.elapsed + elapsed
         frame.totalTime = frame.totalTime + elapsed
+
+        -- If the initial request couldn't be sent (e.g., protocol not ready), retry periodically.
+        if sent == false and frame.totalTime >= frame.nextRetryAt and not frame.gotAny then
+            frame.retryCount = frame.retryCount + 1
+            frame.nextRetryAt = frame.nextRetryAt + 12
+            if type(DC.AbortTransmogDefinitionsPaging) == "function" then
+                DC:AbortTransmogDefinitionsPaging("wardrobe_retry_no_send")
+            end
+            sent = DC:RequestDefinitions("transmog", 0)
+        end
         
-        -- Timeout check
-        if frame.totalTime >= frame.maxWaitTime then
-            DC:Print("[Wardrobe] Refresh timed out after 15 seconds")
-            Wardrobe:CancelRefresh()
+        -- No-data retry: if nothing arrives for a while, the request may have been dropped.
+        -- Abort any stuck inflight state and resend (limited retries).
+        if not frame.gotAny and frame.totalTime >= (frame.maxWaitNoData or 45) then
+            frame.retryCount = (frame.retryCount or 0) + 1
+
+            if frame.retryCount <= (frame.maxRetries or 3) then
+                DC:Print(string.format("[Wardrobe] No data yet; retrying request (%d/%d)", frame.retryCount, frame.maxRetries or 3))
+                if type(DC.AbortTransmogDefinitionsPaging) == "function" then
+                    DC:AbortTransmogDefinitionsPaging("wardrobe_retry_no_data")
+                end
+                sent = DC:RequestDefinitions("transmog", 0)
+                frame.totalTime = 0
+                frame.elapsed = 0
+                frame.lastCount = 0
+                frame.stableChecks = 0
+            else
+                if DC and type(DC.LogNetEvent) == "function" then
+                    DC:LogNetEvent("timeout", "wardrobe", "Refresh failed (no data received)", {
+                        retries = frame.retryCount,
+                        maxRetries = frame.maxRetries,
+                    })
+                end
+                DC:Print("[Wardrobe] Refresh failed (no data received)")
+                Wardrobe:CancelRefresh()
+                frame:Hide()
+                return
+            end
+        end
+
+        -- If we have started receiving data, don't auto-cancel. If it's still paging for a long time,
+        -- stop the active 'refresh' UI state but allow paging/progress to continue in the background.
+        if frame.gotAny and frame.totalTime >= (frame.maxWaitAfterData or 120) then
+            Wardrobe.isRefreshing = false
+
+            if Wardrobe.frame and Wardrobe.frame.refreshBtn then
+                Wardrobe.frame.refreshBtn:SetText("Refresh Data")
+                Wardrobe.frame.refreshBtn:Enable()
+            end
+            if Wardrobe.frame and Wardrobe.frame.refreshStatus then
+                Wardrobe.frame.refreshStatus:SetText("Continuing in background...")
+                C_Timer.After(4, function()
+                    if Wardrobe.frame and Wardrobe.frame.refreshStatus then
+                        Wardrobe.frame.refreshStatus:Hide()
+                    end
+                end)
+            end
+
+            -- Keep the protocol progress bar behavior (it will hide when loading completes).
+            Wardrobe:RefreshGrid()
             frame:Hide()
             return
         end
@@ -527,12 +683,24 @@ function Wardrobe:RefreshTransmogDefinitions()
         if frame.elapsed >= 0.5 then
             frame.elapsed = 0
             
-            local currentCount = DC:TableCount(DC._transmogDefinitions or {})
+            local currentCount = Wardrobe:GetTransmogDefinitionsLoadedCount()
+            if currentCount > 0 then
+                frame.gotAny = true
+            end
             
             -- Update status
             if Wardrobe.frame and Wardrobe.frame.refreshStatus then
-                local progress = math.floor((currentCount / 19085) * 100)
-                Wardrobe.frame.refreshStatus:SetText(string.format("Loading: %d/%d (%d%%)", currentCount, 19085, progress))
+                local total = Wardrobe.GetTransmogDefinitionsTotalCount and Wardrobe:GetTransmogDefinitionsTotalCount() or nil
+                if total and total > 0 then
+                    local progress = math.floor((currentCount / total) * 100)
+                    Wardrobe.frame.refreshStatus:SetText(string.format("Loading: %d/%d (%d%%)", currentCount, total, progress))
+                else
+                    Wardrobe.frame.refreshStatus:SetText(string.format("Loading: %d...", currentCount))
+                end
+            end
+
+            if type(Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                Wardrobe:UpdateTransmogLoadingProgressUI(true)
             end
             
             -- Check if loading is complete (count hasn't changed and not currently loading)
@@ -558,6 +726,10 @@ function Wardrobe:RefreshTransmogDefinitions()
                     end
                     
                     DC:Print(string.format("[Wardrobe] Refresh complete - %d transmog definitions loaded", currentCount))
+
+                    if type(Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                        Wardrobe:UpdateTransmogLoadingProgressUI(false)
+                    end
                     
                     -- Refresh the grid
                     Wardrobe:RefreshGrid()
@@ -581,110 +753,6 @@ function Wardrobe:Toggle()
     else
         self:Show()
     end
-end
-
-function Wardrobe:RefreshTransmogDefinitions()
-    if not DC then return end
-    
-    -- Set refreshing flag
-    self.isRefreshing = true
-    
-    -- Update UI
-    if self.frame and self.frame.refreshBtn then
-        self.frame.refreshBtn:SetText("Refreshing...")
-        self.frame.refreshBtn:Disable()
-    end
-    
-    if self.frame and self.frame.refreshStatus then
-        self.frame.refreshStatus:SetText("Loading definitions...")
-        self.frame.refreshStatus:Show()
-    end
-    
-    -- Clear transmog definitions cache
-    if DC._transmogDefinitions then
-        DC._transmogDefinitions = {}
-    end
-    
-    if DC.definitions and DC.definitions.transmog then
-        DC.definitions.transmog = {}
-    end
-    
-    -- Reset paging state
-    DC._transmogDefOffset = 0
-    DC._transmogDefLimit = 2000
-    DC._transmogDefLoading = nil
-    DC._transmogDefLastRequestedOffset = nil
-    DC._transmogDefLastRequestedLimit = nil
-    DC._transmogDefPagesFetched = 0
-    
-    -- Clear delay frame if exists
-    if DC._transmogPagingDelayFrame then
-        DC._transmogPagingDelayFrame:Hide()
-        DC._transmogPagingDelayFrame.pendingRequest = nil
-    end
-    
-    -- Request fresh data from server
-    DC:Print("[Wardrobe] Refreshing transmog definitions from server...")
-    DC:RequestDefinitions("transmog")
-    
-    -- Set up completion handler
-    local checkFrame = CreateFrame("Frame")
-    checkFrame.elapsed = 0
-    checkFrame.lastCount = 0
-    checkFrame.stableChecks = 0
-    
-    checkFrame:SetScript("OnUpdate", function(frame, elapsed)
-        frame.elapsed = frame.elapsed + elapsed
-        
-        -- Check every 0.5 seconds
-        if frame.elapsed >= 0.5 then
-            frame.elapsed = 0
-            
-            local currentCount = DC:TableCount(DC._transmogDefinitions or {})
-            
-            -- Update status
-            if Wardrobe.frame and Wardrobe.frame.refreshStatus then
-                Wardrobe.frame.refreshStatus:SetText(string.format("Loaded %d definitions...", currentCount))
-            end
-            
-            -- Check if loading is complete (count hasn't changed)
-            if currentCount == frame.lastCount and currentCount > 0 then
-                frame.stableChecks = frame.stableChecks + 1
-                
-                -- If stable for 2 checks (1 second), we're done
-                if frame.stableChecks >= 2 then
-                    Wardrobe.isRefreshing = false
-                    
-                    if Wardrobe.frame and Wardrobe.frame.refreshBtn then
-                        Wardrobe.frame.refreshBtn:SetText("Refresh Data")
-                        Wardrobe.frame.refreshBtn:Enable()
-                    end
-                    
-                    if Wardrobe.frame and Wardrobe.frame.refreshStatus then
-                        Wardrobe.frame.refreshStatus:SetText(string.format("Complete! %d definitions loaded", currentCount))
-                        C_Timer.After(3, function()
-                            if Wardrobe.frame and Wardrobe.frame.refreshStatus then
-                                Wardrobe.frame.refreshStatus:Hide()
-                            end
-                        end)
-                    end
-                    
-                    DC:Print(string.format("[Wardrobe] Refresh complete - %d transmog definitions loaded", currentCount))
-                    
-                    -- Refresh the grid
-                    Wardrobe:RefreshGrid()
-                    
-                    frame:Hide()
-                end
-            else
-                frame.stableChecks = 0
-            end
-            
-            frame.lastCount = currentCount
-        end
-    end)
-    
-    checkFrame:Show()
 end
 
 -- ============================================================================

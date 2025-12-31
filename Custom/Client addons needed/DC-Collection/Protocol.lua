@@ -135,6 +135,62 @@ DC.isConnected = false
 DC.lastPing = 0
 
 -- ============================================================================
+-- CLIENT-SIDE ERROR/TIMEOUT LOG
+-- ============================================================================
+
+function DC:LogNetEvent(level, tag, message, extra)
+    DCCollectionDB = DCCollectionDB or {}
+    local log = DCCollectionDB.netEventLog
+    if type(log) ~= "table" then
+        log = {}
+        DCCollectionDB.netEventLog = log
+    end
+
+    local entry = {
+        t = time(),
+        level = tostring(level or "info"),
+        tag = tostring(tag or ""),
+        msg = tostring(message or ""),
+        extra = extra,
+    }
+    log[#log + 1] = entry
+
+    local maxEntries = tonumber(DCCollectionDB.netEventLogMaxEntries) or 200
+    if maxEntries < 10 then maxEntries = 10 end
+    while #log > maxEntries do
+        table.remove(log, 1)
+    end
+end
+
+function DC:ClearNetEventLog()
+    DCCollectionDB = DCCollectionDB or {}
+    DCCollectionDB.netEventLog = {}
+end
+
+function DC:DumpNetEventLog(count)
+    DCCollectionDB = DCCollectionDB or {}
+    local log = DCCollectionDB.netEventLog
+    if type(log) ~= "table" or #log == 0 then
+        self:Print("[NetLog] (empty)")
+        return
+    end
+
+    local n = tonumber(count) or 20
+    if n < 1 then n = 1 end
+    if n > #log then n = #log end
+
+    self:Print(string.format("[NetLog] Showing last %d/%d entries", n, #log))
+    for i = #log - n + 1, #log do
+        local e = log[i]
+        local ts = (e and e.t and date("%H:%M:%S", e.t)) or "??:??:??"
+        local lvl = (e and e.level) or "?"
+        local tg = (e and e.tag and e.tag ~= "" and ("/" .. e.tag) or "") or ""
+        local msg = (e and e.msg) or ""
+        self:Print(string.format("[NetLog] %s [%s%s] %s", ts, lvl, tg, msg))
+    end
+end
+
+-- ============================================================================
 -- PROTOCOL INITIALIZATION
 -- ============================================================================
 
@@ -230,6 +286,9 @@ function DC:SendMessage(opcode, data)
             }
         else
             self:Debug("Failed to send message")
+            if type(self.LogNetEvent) == "function" then
+                self:LogNetEvent("error", "send", "Failed to send message (legacy)", { opcode = opcode })
+            end
         end
 
         return success
@@ -255,6 +314,9 @@ function DC:SendMessage(opcode, data)
     end
 
     self:Debug("Failed to send message: " .. tostring(err))
+    if type(self.LogNetEvent) == "function" then
+        self:LogNetEvent("error", "send", "Failed to send message", { opcode = opcode, err = tostring(err) })
+    end
     return false
 end
 
@@ -375,7 +437,23 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
         return
     end
 
-    local reqKey = "req:defs:" .. tostring(collType)
+    -- Normalize + map to server type name.
+    local normalizedType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(collType)) or collType
+
+    -- Server commonly uses singular names (mount, pet, heirloom, title, transmog).
+    local serverType = normalizedType
+    if normalizedType == "mounts" then
+        serverType = "mount"
+    elseif normalizedType == "pets" then
+        serverType = "pet"
+    elseif normalizedType == "heirlooms" then
+        serverType = "heirloom"
+    elseif normalizedType == "titles" then
+        serverType = "title"
+    end
+
+    -- Canonical inflight key uses the normalized (canonical) type.
+    local reqKey = "req:defs:" .. tostring(normalizedType)
 
     -- Avoid spamming the same request while waiting for a response.
     if self:_IsInflight(reqKey) then
@@ -394,11 +472,19 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             end
             self:_MarkInflight(reqKey, true)
             self._transmogDefOffset = 0
-            self._transmogDefLimit = self._transmogDefLimit or 2000  -- Match server chunk size
+            -- Transmog definitions are huge; smaller pages reduce client/server load and lower disconnect risk.
+            self._transmogDefLimit = self._transmogDefLimit or 1000
             self._transmogDefLoading = true
+            self._transmogDefTotal = nil
             self._transmogDefLastRequestedOffset = 0
             self._transmogDefLastRequestedLimit = self._transmogDefLimit
             self._transmogDefPagesFetched = 0
+            self._transmogDefStartedAt = (type(GetTime) == "function" and GetTime()) or time()
+            self._transmogDefLastReceivedAt = nil
+
+            if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                self.Wardrobe:UpdateTransmogLoadingProgressUI(true)
+            end
 
             local v = clientSyncVersion
             if v == nil then
@@ -417,6 +503,12 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             if not ok then
                 self._transmogDefLoading = nil
                 self:_MarkInflight(reqKey, nil)
+                self._transmogDefStartedAt = nil
+                self._transmogDefLastReceivedAt = nil
+
+                if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                    self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
+                end
             end
         end)
         return true
@@ -429,23 +521,125 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
         end
         self:_MarkInflight(reqKey, true)
 
-        local payload = { type = serverType }
-        local v = clientSyncVersion
-        if v == nil then
-            v = self:GetSyncVersion(serverType)
-        end
-        if type(v) ~= "number" then
-            v = tonumber(v)
-        end
-        if v and v > 0 then
-            payload.syncVersion = v
+        -- Some servers expect plural type names; others expect singular.
+        -- If they differ, send BOTH once to maximize compatibility.
+        local typesToTry = { serverType }
+        if normalizedType and normalizedType ~= serverType then
+            typesToTry[#typesToTry + 1] = normalizedType
         end
 
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, payload)
-        if not ok then
+        local anyOk = false
+        for _, tName in ipairs(typesToTry) do
+            local payload = { type = tName }
+            local v = clientSyncVersion
+            if v == nil then
+                v = self:GetSyncVersion(tName)
+            end
+            if type(v) ~= "number" then
+                v = tonumber(v)
+            end
+            if v and v > 0 then
+                payload.syncVersion = v
+            end
+            local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, payload)
+            anyOk = anyOk or (ok and true or false)
+        end
+        if not anyOk then
             self:_MarkInflight(reqKey, nil)
         end
     end)
+    return true
+end
+
+-- Abort any in-progress transmog definitions paging.
+-- This is used by Wardrobe refresh retry logic to recover from dropped/never-replied requests.
+function DC:AbortTransmogDefinitionsPaging(reason)
+    -- Clear paging state
+    self._transmogDefLoading = nil
+    self._transmogDefOffset = nil
+    self._transmogDefLastRequestedOffset = nil
+    self._transmogDefLastRequestedLimit = nil
+    self._transmogDefPagesFetched = 0
+    self._transmogDefStartedAt = nil
+    self._transmogDefLastReceivedAt = nil
+    -- Do not clear _transmogClearOnFirstPage here: retries during a manual refresh
+    -- should still clear when the first page arrives. Callers can unset it when needed.
+
+    if self._transmogPagingDelayFrame then
+        self._transmogPagingDelayFrame:Hide()
+        self._transmogPagingDelayFrame.pendingRequest = nil
+        self._transmogPagingDelayFrame.elapsed = 0
+    end
+
+    -- Clear inflight guard
+    if type(self._MarkInflight) == "function" then
+        self:_MarkInflight("req:defs:transmog", nil)
+    end
+
+    if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+        self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
+    end
+
+    if reason and type(self.Debug) == "function" then
+        self:Debug("Aborted transmog definitions paging: " .. tostring(reason))
+    end
+end
+
+-- Resume a previously interrupted transmog definitions paging run.
+-- Uses persisted paging offset/limit stored in SavedVariables (DCCollectionDB).
+function DC:ResumeTransmogDefinitions(reason)
+    if self._transmogDefLoading then
+        return false
+    end
+    if type(self.IsProtocolReady) == "function" and not self:IsProtocolReady() then
+        return false
+    end
+    if not (self.Opcodes and self.Opcodes.CMSG_GET_DEFINITIONS) then
+        return false
+    end
+
+    DCCollectionDB = DCCollectionDB or {}
+    if not DCCollectionDB.transmogDefsIncomplete then
+        return false
+    end
+
+    local offset = tonumber(DCCollectionDB.transmogDefsResumeOffset) or 0
+    local limit = tonumber(DCCollectionDB.transmogDefsResumeLimit) or tonumber(self._transmogDefLimit) or 1000
+    if offset < 0 then offset = 0 end
+    if limit < 1 then limit = 1000 end
+
+    -- Start (or restart) paging from the saved offset without syncVersion.
+    -- We only set syncVersion when paging fully completes.
+    local reqKey = "req:defs:transmog"
+    if type(self._MarkInflight) == "function" then
+        self:_MarkInflight(reqKey, true)
+    end
+
+    self._transmogDefOffset = offset
+    self._transmogDefLimit = limit
+    self._transmogDefLoading = true
+    self._transmogDefStartedAt = (type(GetTime) == "function" and GetTime()) or time()
+    self._transmogDefLastReceivedAt = nil
+    self._transmogDefLastRequestedOffset = offset
+    self._transmogDefLastRequestedLimit = limit
+    self._transmogDefPagesFetched = 0
+
+    if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+        self.Wardrobe:UpdateTransmogLoadingProgressUI(true)
+    end
+
+    if reason and type(self.Debug) == "function" then
+        self:Debug("Resuming transmog definitions paging: " .. tostring(reason) .. " (offset=" .. tostring(offset) .. ", limit=" .. tostring(limit) .. ")")
+    end
+
+    local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = offset, limit = limit })
+    if not ok then
+        self._transmogDefLoading = nil
+        if type(self._MarkInflight) == "function" then
+            self:_MarkInflight(reqKey, nil)
+        end
+        return false
+    end
     return true
 end
 
@@ -454,36 +648,51 @@ end
 -- NOTE: Server uses SINGULAR forms (pet, mount, heirloom, title, transmog)
 function DC:RequestCollection(collType)
     if not collType then
-        -- Only request each type ONCE using the form the server expects
+        -- Request both singular and plural forms to support different servers.
         self:RequestCollection("mount")
+        self:RequestCollection("mounts")
         self:RequestCollection("pet")
+        self:RequestCollection("pets")
         self:RequestCollection("heirloom")
+        self:RequestCollection("heirlooms")
         self:RequestCollection("title")
+        self:RequestCollection("titles")
         self:RequestCollection("transmog")
         return
     end
 
-    -- Normalize to singular form for server compatibility
-    local serverType = collType
-    if collType == "mounts" then serverType = "mount"
-    elseif collType == "pets" then serverType = "pet"
-    elseif collType == "heirlooms" then serverType = "heirloom"
-    elseif collType == "titles" then serverType = "title"
+    local normalizedType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(collType)) or collType
+
+    -- Server commonly uses singular names.
+    local serverType = normalizedType
+    if normalizedType == "mounts" then serverType = "mount"
+    elseif normalizedType == "pets" then serverType = "pet"
+    elseif normalizedType == "heirlooms" then serverType = "heirloom"
+    elseif normalizedType == "titles" then serverType = "title"
     end
 
-    local reqKey = "req:coll:" .. serverType
+    local reqKey = "req:coll:" .. tostring(normalizedType)
     if self:_IsInflight(reqKey) then
         return false
     end
 
-    -- Generic request - no special handling needed, just use normalized type
     self:_DebounceRequest(reqKey, 0.10, function()
         if self:_IsInflight(reqKey) then
             return
         end
         self:_MarkInflight(reqKey, true)
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = serverType })
-        if not ok then
+
+        local typesToTry = { serverType }
+        if normalizedType and normalizedType ~= serverType then
+            typesToTry[#typesToTry + 1] = normalizedType
+        end
+
+        local anyOk = false
+        for _, tName in ipairs(typesToTry) do
+            local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = tName })
+            anyOk = anyOk or (ok and true or false)
+        end
+        if not anyOk then
             self:_MarkInflight(reqKey, nil)
         end
     end)
@@ -1357,6 +1566,10 @@ function DC:HandleError(data)
     
     self:Debug(string.format("Error received: code=%d, msg=%s", errorCode, errorMsg))
     self:Print("|cffff0000Error:|r " .. errorMsg)
+
+    if type(self.LogNetEvent) == "function" then
+        self:LogNetEvent("error", "server", errorMsg, { code = errorCode })
+    end
     
     -- Fire callback
     if self.callbacks.onError then
@@ -1486,9 +1699,42 @@ function DC:HandleDefinitions(data)
         end
     end
     
+    -- If a manual wardrobe refresh is in progress, delay-clearing the transmog table until the
+    -- FIRST page arrives. This avoids wiping local data if the server never responds.
+    if collType == "transmog" then
+        local requestedOffset = tonumber(data.offset or data.off) or 0
+        if requestedOffset == 0 and self._transmogClearOnFirstPage then
+            self._transmogClearOnFirstPage = nil
+
+            self.definitions = self.definitions or {}
+            if type(self._transmogDefinitions) ~= "table" then
+                self._transmogDefinitions = self.definitions.transmog
+            end
+            if type(self._transmogDefinitions) ~= "table" then
+                self._transmogDefinitions = {}
+            end
+            self.definitions.transmog = self._transmogDefinitions
+
+            for k in pairs(self._transmogDefinitions) do
+                self._transmogDefinitions[k] = nil
+            end
+            if type(self._BumpDefinitionsRevision) == "function" then
+                self:_BumpDefinitionsRevision("transmog")
+            end
+            self.cacheNeedsSave = true
+        end
+
+        self._transmogDefLastReceivedAt = (type(GetTime) == "function" and GetTime()) or time()
+    end
+
     self:CacheMergeDefinitions(collType, definitions)
     if syncVersion ~= nil then
-        self:SetSyncVersion(collType, syncVersion)
+        if collType == "transmog" then
+            self._pendingSyncVersions = self._pendingSyncVersions or {}
+            self._pendingSyncVersions.transmog = syncVersion
+        else
+            self:SetSyncVersion(collType, syncVersion)
+        end
     end
     -- Cache will be saved by auto-save timer or on logout
 
@@ -1545,11 +1791,17 @@ function DC:HandleDefinitions(data)
             return
         end
 
-        -- Slow down paging a bit to avoid disconnects on some servers/clients.\n        -- Reduced from 0.75s to 0.35s for faster loading while still being safe.\n        self._transmogPagingInterval = self._transmogPagingInterval or 0.35
+        -- Slow down paging to avoid disconnects on some servers/clients.
+        -- Default to 0.75s unless overridden elsewhere.
+        self._transmogPagingInterval = self._transmogPagingInterval or 0.75
 
         local requestedOffset = tonumber(data.offset or data.off) or tonumber(self._transmogDefLastRequestedOffset) or 0
         local requestedLimit = tonumber(data.limit or data.lim) or tonumber(self._transmogDefLastRequestedLimit) or tonumber(self._transmogDefLimit) or 1000
         local total = tonumber(data.total or data.count) or nil
+
+        if total and total > 0 then
+            self._transmogDefTotal = total
+        end
 
         local moreFlag = data.more
         if moreFlag == nil then moreFlag = data.hasMore end
@@ -1597,6 +1849,14 @@ function DC:HandleDefinitions(data)
             self._transmogDefLastRequestedLimit = requestedLimit
             self._transmogDefPagesFetched = (self._transmogDefPagesFetched or 0) + 1
 
+            -- Persist resume state so we can continue after disconnect/relog.
+            DCCollectionDB = DCCollectionDB or {}
+            DCCollectionDB.transmogDefsIncomplete = true
+            DCCollectionDB.transmogDefsResumeOffset = nextOffset
+            DCCollectionDB.transmogDefsResumeLimit = requestedLimit
+            DCCollectionDB.transmogDefsResumeTotal = self._transmogDefTotal
+            DCCollectionDB.transmogDefsResumeUpdatedAt = time()
+
             -- Safety valve: prevent infinite loops if the server keeps repeating the same page.
             if (self._transmogDefPagesFetched or 0) > 500 then
                 self:Debug("Stopping transmog definitions paging: too many pages (possible server loop)")
@@ -1613,11 +1873,26 @@ function DC:HandleDefinitions(data)
                 
                 self._transmogPagingDelayFrame:SetScript("OnUpdate", function(frame, elapsed)
                     frame.elapsed = frame.elapsed + elapsed
+                    local wardrobeVisible = (DC.Wardrobe and DC.Wardrobe.frame and DC.Wardrobe.frame:IsShown())
+                    local mainTabVisible = (DC.MainFrame and DC.MainFrame:IsShown() and (DC.activeTab == "wardrobe" or DC.activeTab == "transmog"))
+                    local allowBackground = false
+                    if type(DC.IsBackgroundWardrobeSyncEnabled) == "function" then
+                        allowBackground = DC:IsBackgroundWardrobeSyncEnabled() and true or false
+                    elseif DCCollectionDB and DCCollectionDB.backgroundWardrobeSync then
+                        allowBackground = true
+                    end
+
                     local interval = DC._transmogPagingInterval or 0.75
+                    -- If we're paging while the UI is not visible, be extra conservative.
+                    if not (wardrobeVisible or mainTabVisible) then
+                        interval = math.max(interval, 1.25)
+                    end
+
                     if frame.elapsed >= interval and frame.pendingRequest then
                         local req = frame.pendingRequest
-                        -- Pause paging if user isn't actively viewing the transmog tab.
-                        if not (DC.MainFrame and DC.MainFrame:IsShown() and DC.activeTab == "transmog") then
+                        -- Pause paging if user isn't actively viewing Wardrobe/transmog UI,
+                        -- unless background wardrobe sync is enabled.
+                        if not (wardrobeVisible or mainTabVisible) and not allowBackground then
                             frame.elapsed = 0
                             return
                         end
@@ -1635,14 +1910,36 @@ function DC:HandleDefinitions(data)
             self._transmogPagingDelayFrame.pendingRequest = { offset = nextOffset, limit = requestedLimit }
             self._transmogPagingDelayFrame.elapsed = 0
             self._transmogPagingDelayFrame:Show()
+
+            if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                self.Wardrobe:UpdateTransmogLoadingProgressUI(true)
+            end
         else
+            -- Paging complete: commit syncVersion only now (prevents upToDate when we only had partial data).
+            if self._pendingSyncVersions and self._pendingSyncVersions.transmog ~= nil then
+                self:SetSyncVersion("transmog", self._pendingSyncVersions.transmog)
+                self._pendingSyncVersions.transmog = nil
+            end
+
+            -- Clear persisted resume state.
+            DCCollectionDB = DCCollectionDB or {}
+            DCCollectionDB.transmogDefsIncomplete = nil
+            DCCollectionDB.transmogDefsResumeOffset = nil
+            DCCollectionDB.transmogDefsResumeLimit = nil
+            DCCollectionDB.transmogDefsResumeTotal = nil
+            DCCollectionDB.transmogDefsResumeUpdatedAt = nil
+
             self:Print(string.format(
                 "[Transmog Paging] Complete - Loaded %d definitions in %d pages (Total on server: %s)",
-                self:TableCount(self._transmogDefinitions),
+                self:TableCount(self.definitions and self.definitions.transmog),
                 (self._transmogDefPagesFetched or 0) + 1,
                 tostring(total)))
             self._transmogDefLoading = nil
             self:_MarkInflight("req:defs:transmog", nil)
+
+            if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
+            end
         end
     end
 end
@@ -1995,6 +2292,9 @@ end
 -- ============================================================================
 
 function DC:TableCount(t)
+    if type(t) ~= "table" then
+        return 0
+    end
     local count = 0
     for _ in pairs(t) do
         count = count + 1

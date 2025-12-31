@@ -246,6 +246,25 @@ function DC:CreateMainFrame()
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     frame.title:SetPoint("TOP", frame, "TOP", 0, -12)
     frame.title:SetText(L["ADDON_NAME"] or "DC Collection")
+
+    -- Top-bar loading/progress bar (used by Wardrobe transmog paging)
+    frame.topLoadBar = CreateFrame("StatusBar", nil, frame)
+    frame.topLoadBar:SetHeight(10)
+    frame.topLoadBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 90, -32)  -- avoid portrait
+    frame.topLoadBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -35, -32) -- avoid close button
+    frame.topLoadBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    frame.topLoadBar:SetMinMaxValues(0, 1)
+    frame.topLoadBar:SetValue(0)
+    frame.topLoadBar:Hide()
+
+    frame.topLoadBar.bg = frame.topLoadBar:CreateTexture(nil, "BACKGROUND")
+    frame.topLoadBar.bg:SetAllPoints(frame.topLoadBar)
+    frame.topLoadBar.bg:SetTexture(0, 0, 0, 0.45)
+
+    frame.topLoadText = frame.topLoadBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.topLoadText:SetPoint("CENTER", frame.topLoadBar, "CENTER", 0, 0)
+    frame.topLoadText:SetTextColor(1, 0.82, 0)
+    frame.topLoadText:SetText("")
     
     -- Close button hook
     frame.Close = _G[frame:GetName() .. "Close"]
@@ -725,6 +744,13 @@ function DC:CreateContentArea(parent)
     mountPreview.model:SetAllPoints() -- Fill the preview area
     mountPreview.model:EnableMouse(true)
     mountPreview.model:EnableMouseWheel(true)
+    mountPreview.model.rotation = 0
+    -- Camera controls: keep these in a range known to behave well on 3.3.5a DressUpModel.
+    mountPreview.model.cameraDistance = 1.6
+    -- Base camera distance multiplier; adjusted in UpdateMountPreview for mount vs player.
+    mountPreview.model.baseCamDistanceScale = 2.5
+    -- Camera id to use; player models often look better with camera 1 (avoids head close-up).
+    mountPreview.model._dcCameraId = 0
     
     -- Info Overlay (Retail style: Icon, Name, Source inside the model frame)
     local infoFrame = CreateFrame("Frame", nil, mountPreview)
@@ -747,6 +773,8 @@ function DC:CreateContentArea(parent)
     infoFrame.source:SetText("")
     
     mountPreview.info = infoFrame
+    -- Make sure overlay UI is above the model (the model is mouse-enabled and can eat clicks).
+    infoFrame:SetFrameLevel((mountPreview.model:GetFrameLevel() or (mountPreview:GetFrameLevel() + 1)) + 5)
     
     mountPreview.model:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
@@ -769,29 +797,54 @@ function DC:CreateContentArea(parent)
         end
     end)
     mountPreview.model:SetScript("OnMouseWheel", function(self, delta)
-        local zoom = self.zoom or 0
-        zoom = zoom + delta * 0.1
-        zoom = math.max(-1, math.min(1, zoom))
-        self.zoom = zoom
-        self:SetCamera(0)
-        self:SetPosition(zoom, 0, 0)
+        -- Prefer camera distance scaling over moving the model around.
+        -- Moving the model (SetPosition) often results in extreme head close-ups on player models.
+        local minDist = self._dcMinCamDist or 0.8
+        local maxDist = self._dcMaxCamDist or 4.0
+        local step = self._dcCamStep or 0.15
+        self.cameraDistance = (self.cameraDistance or 1.6) - delta * step
+        if self.cameraDistance < minDist then
+            self.cameraDistance = minDist
+        elseif self.cameraDistance > maxDist then
+            self.cameraDistance = maxDist
+        end
+
+        if self.SetCamDistanceScale then
+            self:SetCamDistanceScale((self.baseCamDistanceScale or 3.0) * self.cameraDistance)
+            if self.SetCamera and self._dcCameraId ~= nil then
+                pcall(function() self:SetCamera(self._dcCameraId) end)
+            end
+        else
+            -- Fallback: keep old behavior but bias toward Z to reduce "head zoom".
+            local z = (self.cameraDistance or 1.0) - 1.0
+            self:SetCamera(0)
+            self:SetPosition(0, 0, z)
+        end
     end)
     
     -- Summon Button
     mountPreview.summonBtn = CreateFrame("Button", nil, mountPreview, "UIPanelButtonTemplate")
     mountPreview.summonBtn:SetSize(140, 22)
-    mountPreview.summonBtn:SetPoint("BOTTOM", mountPreview, "BOTTOM", 0, 10)
     mountPreview.summonBtn:SetText(L["SUMMON"] or "Summon")
     mountPreview.summonBtn:SetScript("OnClick", function()
         if DC.selectedItem then
             DC:OnItemLeftClick(DC.selectedItem)
         end
     end)
+
+    -- Random Mount Button
+    mountPreview.randomBtn = CreateFrame("Button", nil, mountPreview, "UIPanelButtonTemplate")
+    mountPreview.randomBtn:SetSize(140, 22)
+    mountPreview.randomBtn:SetText(L["RANDOM_MOUNT"] or "Random Mount")
+    mountPreview.randomBtn:SetScript("OnClick", function()
+        if DC and DC.MountModule and type(DC.MountModule.SummonRandomMount) == "function" then
+            DC.MountModule:SummonRandomMount()
+        end
+    end)
     
     -- Favorite Button
     mountPreview.favBtn = CreateFrame("Button", nil, mountPreview)
     mountPreview.favBtn:SetSize(30, 30)
-    mountPreview.favBtn:SetPoint("LEFT", mountPreview.summonBtn, "RIGHT", 10, 0)
     mountPreview.favBtn:SetNormalTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
     mountPreview.favBtn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     mountPreview.favBtn:SetScript("OnClick", function()
@@ -805,7 +858,8 @@ function DC:CreateContentArea(parent)
     -- Toggle Player Checkbox
     local togglePlayer = CreateFrame("CheckButton", nil, mountPreview, "UICheckButtonTemplate")
     togglePlayer:SetSize(24, 24)
-    togglePlayer:SetPoint("BOTTOMRIGHT", mountPreview, "BOTTOMRIGHT", -10, 10)
+    togglePlayer:SetPoint("BOTTOMRIGHT", mountPreview, "BOTTOMRIGHT", -10, 44)
+    togglePlayer:SetFrameLevel((mountPreview.model:GetFrameLevel() or (mountPreview:GetFrameLevel() + 1)) + 5)
     
     togglePlayer.text = togglePlayer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     togglePlayer.text:SetPoint("RIGHT", togglePlayer, "LEFT", -2, 0)
@@ -819,6 +873,12 @@ function DC:CreateContentArea(parent)
     end)
     
     mountPreview.togglePlayer = togglePlayer
+
+    -- Mount action buttons are positioned in the footer (CreateFooter) so they align with Sync.
+    -- Hide them here to avoid overlapping the model hit-rect before footer anchors them.
+    mountPreview.favBtn:Hide()
+    mountPreview.summonBtn:Hide()
+    mountPreview.randomBtn:Hide()
     
     content.mountPreview = mountPreview
 
@@ -974,26 +1034,72 @@ function DC:UpdateMountPreview(item)
     
     -- Model
     p.model:ClearModel()
-    local displayId = item.definition and (item.definition.displayId or item.definition.display_id or item.definition.creatureId)
-    
-    -- Fallback: check if item itself has displayId
-    if not displayId and item.displayId then
-        displayId = item.displayId
-    end
+    -- Reset interactive zoom/rotation so new selections don't inherit odd camera state.
+    p.model.zoom = 0
+    p.model.rotation = 0
+    p.model.cameraDistance = 1.6
 
-    if displayId and displayId > 0 then
-        if p.model.SetCreature then
-            p.model:SetCreature(displayId)
-        elseif p.model.SetDisplayInfo then
-            p.model:SetDisplayInfo(displayId)
+    -- Toggle between showing the mount model and the player's model.
+    -- Note: 3.3.5a cannot render "player mounted on the mount" in this simple preview;
+    -- this is a pragmatic toggle so the checkbox has an effect.
+    if self.showPlayerInMountPreview then
+        if p.model.SetUnit then
+            p.model:SetUnit("player")
+            -- Show the equipped character (not naked).
+            if p.model.Dress then
+                p.model:Dress()
+            end
+            if p.model.SetPortraitZoom then
+                p.model:SetPortraitZoom(0)
+            end
+            -- Player models: use a wider zoom-out range and avoid portrait-style cameras.
+            p.model.baseCamDistanceScale = 3.4
+            p.model.cameraDistance = 2.6
+            p.model._dcCameraId = 0
+            p.model._dcMinCamDist = 1.4
+            p.model._dcMaxCamDist = 6.5
+            p.model._dcCamStep = 0.20
+            if p.model.SetCamDistanceScale then
+                p.model:SetCamDistanceScale(p.model.baseCamDistanceScale * (p.model.cameraDistance or 2.6))
+            end
+            if p.model.SetCamera then
+                pcall(function() p.model:SetCamera(p.model._dcCameraId or 0) end)
+            end
+            p.model:SetPosition(0, 0, 0)
+            p.model:SetFacing(0)
         end
-        p.model:SetCamera(0) -- Reset camera
+        -- Still update buttons below.
     else
-        -- If no display ID, maybe show a generic model or nothing?
-        -- For now, just ensure it's cleared.
+        local displayId = item.definition and (item.definition.displayId or item.definition.display_id or item.definition.creatureId)
+    
+        -- Fallback: check if item itself has displayId
+        if not displayId and item.displayId then
+            displayId = item.displayId
+        end
+
+        if displayId and displayId > 0 then
+            if p.model.SetCreature then
+                p.model:SetCreature(displayId)
+            elseif p.model.SetDisplayInfo then
+                p.model:SetDisplayInfo(displayId)
+            end
+            -- Creature models can use a slightly closer base than player models.
+            p.model.baseCamDistanceScale = 2.5
+            p.model.cameraDistance = 1.4
+            p.model._dcCameraId = 0
+            p.model._dcMinCamDist = 0.7
+            p.model._dcMaxCamDist = 4.0
+            p.model._dcCamStep = 0.15
+            if p.model.SetCamDistanceScale then
+                p.model:SetCamDistanceScale(p.model.baseCamDistanceScale * (p.model.cameraDistance or 1.4))
+            end
+            if p.model.SetCamera then
+                pcall(function() p.model:SetCamera(p.model._dcCameraId or 0) end)
+            end
+        end
+        p.model:SetPosition(0, 0, 0)
+        p.model:SetFacing(0)
     end
-    p.model:SetPosition(0, 0, 0)
-    p.model:SetFacing(0)
     
     -- Buttons
     if item.collected then
@@ -1374,6 +1480,36 @@ function DC:CreateFooter(parent)
     
     footer.prevBtn = prevBtn
     footer.nextBtn = nextBtn
+
+    -- Mounts: action buttons live in the footer row (aligned with Sync).
+    local mp = parent.Content and parent.Content.mountPreview
+    if mp and mp.summonBtn and mp.randomBtn and mp.favBtn then
+        mp.summonBtn:SetParent(footer)
+        mp.randomBtn:SetParent(footer)
+        mp.favBtn:SetParent(footer)
+
+        -- Match footer row height.
+        mp.summonBtn:SetSize(120, 22)
+        mp.randomBtn:SetSize(120, 22)
+        mp.favBtn:SetSize(22, 22)
+
+        mp.favBtn:ClearAllPoints()
+        mp.summonBtn:ClearAllPoints()
+        mp.randomBtn:ClearAllPoints()
+
+        mp.favBtn:SetPoint("RIGHT", footer, "RIGHT", -5, 0)
+        mp.summonBtn:SetPoint("RIGHT", mp.favBtn, "LEFT", -8, 0)
+        mp.randomBtn:SetPoint("RIGHT", mp.summonBtn, "LEFT", -8, 0)
+
+        local level = (footer:GetFrameLevel() or 1) + 10
+        mp.favBtn:SetFrameLevel(level)
+        mp.summonBtn:SetFrameLevel(level)
+        mp.randomBtn:SetFrameLevel(level)
+
+        footer.mountFavBtn = mp.favBtn
+        footer.mountSummonBtn = mp.summonBtn
+        footer.mountRandomBtn = mp.randomBtn
+    end
     
     parent.Footer = footer
 end
@@ -1389,10 +1525,19 @@ function DC:ShowMainFrame()
     
     -- Sync position with Wardrobe if it's open
     if DC.Wardrobe and DC.Wardrobe.frame and DC.Wardrobe.frame:IsShown() then
-        local point, relativeTo, relativePoint, xOfs, yOfs = DC.Wardrobe.frame:GetPoint()
-        if point then
+        -- Avoid anchoring MainFrame relative to Wardrobe directly.
+        -- Wardrobe can be embedded/parented to MainFrame, which would make Wardrobe
+        -- "dependent" on MainFrame and cause SetPoint() to error.
+        local cx, cy = DC.Wardrobe.frame:GetCenter()
+        if cx and cy then
             self.MainFrame:ClearAllPoints()
-            self.MainFrame:SetPoint(point, relativeTo, relativePoint, xOfs, yOfs)
+            self.MainFrame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cx, cy)
+        else
+            local point, relativeTo, relativePoint, xOfs, yOfs = DC.Wardrobe.frame:GetPoint()
+            if point and (relativeTo ~= self.MainFrame) then
+                self.MainFrame:ClearAllPoints()
+                self.MainFrame:SetPoint(point, relativeTo, relativePoint, xOfs, yOfs)
+            end
         end
         DC.Wardrobe:Hide()
     end
@@ -1507,6 +1652,12 @@ function DC:SelectTab(tabKey)
     elseif tabKey == "mounts" then
         content.mountList:Show()
         content.mountPreview:Show()
+
+        if footer then
+            if footer.mountFavBtn then footer.mountFavBtn:Show() end
+            if footer.mountSummonBtn then footer.mountSummonBtn:Show() end
+            if footer.mountRandomBtn then footer.mountRandomBtn:Show() end
+        end
     elseif tabKey == "shop" then
         -- Shop uses its own UI; avoid stacking with the generic details + scroll grid.
         content.details:Hide()
@@ -1536,6 +1687,12 @@ function DC:SelectTab(tabKey)
     else
         content.details:Show()
         content.scrollFrame:Show()
+    end
+
+    if tabKey ~= "mounts" and footer then
+        if footer.mountFavBtn then footer.mountFavBtn:Hide() end
+        if footer.mountSummonBtn then footer.mountSummonBtn:Hide() end
+        if footer.mountRandomBtn then footer.mountRandomBtn:Hide() end
     end
 
     if tabKey == "wardrobe" then
@@ -2679,10 +2836,32 @@ end
 -- ============================================================================
 
 function DC:ShowShopContent()
-    -- Request shop items if not loaded
-    if not self.shopItems or #self.shopItems == 0 then
+    -- NOTE: This file defines ShowShopContent() to support the embedded Shop tab.
+    -- Ensure we actually create/show the Shop UI; otherwise the tab appears black.
+    if not self.MainFrame then
+        self:CreateMainFrame()
+    end
+
+    if not self.ShopUI then
+        self:CreateShopUI()
+    end
+
+    self.ShopUI:Show()
+
+    -- Request data if needed (use ShopModule when available).
+    if self.ShopModule and type(self.ShopModule.RefreshShopItems) == "function" then
+        self.ShopModule:RefreshShopItems()
+    else
         self:RequestShopItems()
     end
-    
-    self:RefreshCurrentTab()
+
+    if self.ShopModule and type(self.ShopModule.RefreshCurrency) == "function" then
+        self.ShopModule:RefreshCurrency()
+    elseif type(self.RequestCurrency) == "function" then
+        self:RequestCurrency()
+    end
+
+    if type(self.UpdateShopUI) == "function" then
+        self:UpdateShopUI()
+    end
 end

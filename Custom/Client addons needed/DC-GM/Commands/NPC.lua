@@ -413,6 +413,27 @@ function WayRun()
     end
 end
 
+-- DC Waypoints helpers: control random wander distance for the selected spawn.
+-- Uses AzerothCore command: `.npc set spawndist <yards>`.
+local function WaySetSpawnDist(dist)
+    local player = UnitName("target") or UnitName("player")
+    dist = tonumber(dist) or 0
+    if dist < 0 then dist = 0 end
+    AzerothAdmin:ChatMsg(".npc set spawndist " .. tostring(dist))
+    AzerothAdmin:LogAction("Set NPC spawndist " .. tostring(dist) .. " for player " .. player .. ".")
+    if AzerothAdmin and AzerothAdmin.UpdateWaypointInfo then
+        AzerothAdmin:UpdateWaypointInfo()
+    end
+end
+
+function WayWander30()
+    WaySetSpawnDist(30)
+end
+
+function WayWanderOff()
+    WaySetSpawnDist(0)
+end
+
 function NPCUnFreeze_Way()
     local player = UnitName("target") or UnitName("player")
     AzerothAdmin:ChatMsg(".npc set movetype way NODEL")

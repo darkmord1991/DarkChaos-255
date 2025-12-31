@@ -1,14 +1,12 @@
 ## Interface: 30300
-## Title: DC-HLBG Addon
+## Title: |cffFFCC00DC|r Hinterland BG
 ## Notes: Battleground addon with HUD, statistics, and match history
 ## Author: DC-255
 ## Version: 1.4.0
-## Dependencies: AIO_Client
-## OptionalDeps: DC-AddonProtocol
-## LoadAfter: AIO_Client
-## DefaultState: enabled
 ## SavedVariables: DCHLBGDB
-## OptionalDeps: DC_DebugUtils
+## OptionalDeps: DC-AddonProtocol, AIO_Client, DC_DebugUtils
+## LoadAfter: DC-AddonProtocol, AIO_Client
+## DefaultState: enabled
 
 # Core compatibility and utilities
 ..\DC_DebugUtils.lua

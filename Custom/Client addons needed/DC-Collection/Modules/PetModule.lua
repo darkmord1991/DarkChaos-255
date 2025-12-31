@@ -385,7 +385,8 @@ end
 function PetModule:SummonRandomPet()
     local num = GetNumCompanions and GetNumCompanions("CRITTER") or 0
     if num and num > 0 and CallCompanion then
-        CallCompanion("CRITTER", math.random(1, num))
+        local idx = (DC and type(DC.Rand) == "function") and DC:Rand(num) or 1
+        CallCompanion("CRITTER", idx)
         return
     end
 
@@ -402,7 +403,8 @@ function PetModule:SummonRandomFavoritePet()
         return
     end
     
-    local pet = favorites[math.random(#favorites)]
+    local idx = (DC and type(DC.Rand) == "function") and DC:Rand(#favorites) or 1
+    local pet = favorites[idx]
     self:SummonPet(pet.id)
 end
 

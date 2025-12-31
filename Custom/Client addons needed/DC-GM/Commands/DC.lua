@@ -406,7 +406,7 @@ function AzerothAdmin:OpenDCWaypoints()
   local color = { bg = AzerothAdmin.db.account.style.color.backgrounds, btn = AzerothAdmin.db.account.style.color.buttons }
   local transparency = { bg = AzerothAdmin.db.account.style.transparency.backgrounds, btn = AzerothAdmin.db.account.style.transparency.buttons }
 
-  local windowW, windowH = 260, 195
+  local windowW, windowH = 260, 215
   local pad = 10
   local btnH = 18
   local rowH = 18
@@ -460,8 +460,12 @@ function AzerothAdmin:OpenDCWaypoints()
   WpBtn("ma_dcwp_move", Locale["ma_WayMove"], pad, baseY - ((btnH + 2) * 3), Locale["tt_WayMove"], function() WayModifyMove() end)
   WpBtn("ma_dcwp_wipe", Locale["ma_WayWipe"], col2X, baseY - ((btnH + 2) * 3), Locale["tt_WayWipe"], function() WayWipe() end)
 
+  -- Wander-distance controls (spawn random movement radius)
+  WpBtn("ma_dcwp_wander30", Locale["ma_WayWander30"] or "Wander 30", pad, baseY - ((btnH + 2) * 4), Locale["tt_WayWander30"] or "Set wander distance to 30", function() WayWander30() end)
+  WpBtn("ma_dcwp_wanderoff", Locale["ma_WayWanderOff"] or "Wander Off", col2X, baseY - ((btnH + 2) * 4), Locale["tt_WayWanderOff"] or "Disable wandering", function() WayWanderOff() end)
+
   -- Start creature movement along its waypoint path.
-  local runY = baseY - ((btnH + 2) * 4)
+  local runY = baseY - ((btnH + 2) * 5)
   FrameLib:BuildButton({ name = "ma_dcwp_run", parent = ma_dcwaypoints_window, texture = { color = {color.btn.r, color.btn.g, color.btn.b, transparency.btn} }, size = { width = contentW, height = btnH }, setpoint = { pos = "TOPLEFT", offX = pad, offY = runY }, text = Locale["ma_WayRun"] or "Run Path" })
   AzerothAdmin:PrepareScript(ma_dcwp_run, Locale["tt_WayRun"] or "Start waypoint movement", function() WayRun() end)
 

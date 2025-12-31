@@ -1,5 +1,5 @@
 ## Interface: 30300
-## Title: |cff00ff00DC|r QoS - Quality of Service
+## Title: |cffFFCC00DC|r QoS
 ## Notes: Comprehensive Quality of Life improvements for DarkChaos-255
 ## Author: DarkChaos Team
 ## Version: 1.0.0

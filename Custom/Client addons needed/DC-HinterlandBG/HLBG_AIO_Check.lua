@@ -1,4 +1,5 @@
-﻿-- HLBG_AIO_Check.lua - Ensures AIO is loaded before initializing HLBG
+﻿-- HLBG_AIO_Check.lua - Ensures a client transport is available before initializing HLBG
+-- Transport priority: DCAddonProtocol (preferred) -> AIO (legacy)
 -- Track that this file was loaded
 if _G.HLBG_RecordFileLoad then
     _G.HLBG_RecordFileLoad("HLBG_AIO_Check.lua")
@@ -10,26 +11,40 @@ local aioCheckFrame = CreateFrame("Frame")
 aioCheckFrame.retryCount = 0
 aioCheckFrame.maxRetries = 10
 aioCheckFrame.initialized = false
--- Function to check if AIO is available and initialize our addon
+-- Function to check if a supported transport is available and initialize our addon
 local function CheckAIO()
     if aioCheckFrame.initialized then
         return
     end
-        if _G.AIO and type(_G.AIO) == "table" and type(_G.AIO.Handle) == "function" then
-        -- AIO is available, we can initialize
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    local hasDC = (DC ~= nil)
+    local hasAIO = (_G.AIO and type(_G.AIO) == "table" and type(_G.AIO.Handle) == "function")
+
+    if hasDC or hasAIO then
+        -- At least one transport is available, we can initialize
         aioCheckFrame.initialized = true
         -- Log success (defensive)
         HLBG = HLBG or {}
         if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
             if type(HLBG.SafePrint) == 'function' then
-                HLBG.SafePrint("|cFF00FF00HLBG:|r AIO dependency verified, initializing addon")
+                if hasDC then
+                    HLBG.SafePrint("|cFF00FF00HLBG:|r DCAddonProtocol verified, initializing addon")
+                else
+                    HLBG.SafePrint("|cFF00FF00HLBG:|r AIO available, initializing addon")
+                end
             else
-                DEFAULT_CHAT_FRAME:AddMessage(tostring("|cFF00FF00HLBG:|r AIO dependency verified, initializing addon"))
+                if hasDC then
+                    DEFAULT_CHAT_FRAME:AddMessage(tostring("|cFF00FF00HLBG:|r DCAddonProtocol verified, initializing addon"))
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage(tostring("|cFF00FF00HLBG:|r AIO available, initializing addon"))
+                end
             end
         end
         -- Record in the load state
         if _G.HLBG_LoadState then
-            _G.HLBG_LoadState.aioVerified = true
+            _G.HLBG_LoadState.aioVerified = hasAIO and true or false
+            _G.HLBG_LoadState.dcVerified = hasDC and true or false
         end
         -- Unregister the update script
         aioCheckFrame:SetScript("OnUpdate", nil)
@@ -40,9 +55,9 @@ local function CheckAIO()
         if type(HLBG.InitializeAfterAIO) == "function" then
             pcall(HLBG.InitializeAfterAIO)
         end
-        -- Register with AIO, but only when AIO.AddHandlers isn't present.
+        -- Register with AIO (legacy), but only when AIO.AddHandlers isn't present.
         -- If AddHandlers exists, another module (central binder) will attach handlers for "HLBG".
-        if _G.AIO and _G.AIO.RegisterEvent and not _G.AIO.AddHandlers then
+        if hasAIO and _G.AIO and _G.AIO.RegisterEvent and not _G.AIO.AddHandlers then
             -- Avoid double attempts from multiple files by using a shared in-progress flag
             HLBG._aioRegistered = HLBG._aioRegistered or false
             if not HLBG._aioRegistered and not HLBG._aioRegistering then
@@ -86,7 +101,7 @@ local function CheckAIO()
             else
                 if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cFF88AA88HLBG:|r Skipping RegisterEvent hookup (another module is registering)") end
             end
-        else
+        elseif hasAIO then
             -- Modern AIO.AddHandlers method
             if _G.AIO and _G.AIO.AddHandlers then
                 if not HLBG._aioHandlersRegistered then
@@ -160,25 +175,26 @@ local function CheckAIO()
         end
         return true
     else
-        -- AIO not available yet, increment retry counter
+        -- Neither transport is available yet, increment retry counter
         aioCheckFrame.retryCount = aioCheckFrame.retryCount + 1
         if aioCheckFrame.retryCount >= aioCheckFrame.maxRetries then
-            -- Too many retries, give up and show error
+            -- Too many retries, give up and show a warning (addon may still be usable via chat/.hlbg)
             aioCheckFrame:SetScript("OnUpdate", nil)
             if DEFAULT_CHAT_FRAME then
-                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r Required dependency AIO_Client not found after " .. tostring(aioCheckFrame.maxRetries) .. " attempts. Please ensure AIO_Client addon is installed and enabled.")
+                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r No transport detected (DC-AddonProtocol or AIO_Client). HLBG will run in limited mode until one is loaded.")
             end
             -- Record error in the load state
             if _G.HLBG_LoadState then
                 _G.HLBG_LoadState.errors = _G.HLBG_LoadState.errors or {}
-                table.insert(_G.HLBG_LoadState.errors, "AIO_Client dependency not found after " .. aioCheckFrame.maxRetries .. " attempts")
+                table.insert(_G.HLBG_LoadState.errors, "No transport detected (DC-AddonProtocol or AIO_Client) after " .. aioCheckFrame.maxRetries .. " attempts")
                 _G.HLBG_LoadState.aioVerified = false
+                _G.HLBG_LoadState.dcVerified = false
             end
             return false
         end
         -- If this is the first retry, show message
         if aioCheckFrame.retryCount == 1 and DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Waiting for AIO_Client dependency to load...")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Waiting for DC-AddonProtocol or AIO_Client to load...")
         end
         return false
     end
@@ -193,13 +209,18 @@ aioCheckFrame:SetScript("OnUpdate", function(self, elapsed)
         CheckAIO()
     end
 end)
--- Also register for ADDON_LOADED event for AIO_Client
+-- Also register for ADDON_LOADED event for transports
 aioCheckFrame:RegisterEvent("ADDON_LOADED")
 aioCheckFrame:SetScript("OnEvent", function(self, event, addonName)
-    if event == "ADDON_LOADED" and addonName == "AIO_Client" then
-        -- AIO_Client loaded, check if it's ready
+    if event ~= "ADDON_LOADED" then
+        return
+    end
+    if addonName == "AIO_Client" or addonName == "DC-AddonProtocol" then
         CheckAIO()
-        self:UnregisterEvent("ADDON_LOADED")
+        -- Unregister once initialized to avoid extra work
+        if aioCheckFrame.initialized then
+            self:UnregisterEvent("ADDON_LOADED")
+        end
     end
 end)
 -- Store the check function globally for use by other files

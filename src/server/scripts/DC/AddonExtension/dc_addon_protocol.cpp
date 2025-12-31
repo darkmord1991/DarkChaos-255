@@ -247,6 +247,17 @@ static std::string DetectRequestType(const std::string& payload)
     return "STANDARD";
 }
 
+static std::string EscapeSQLString(std::string s)
+{
+    size_t pos = 0;
+    while ((pos = s.find("'", pos)) != std::string::npos)
+    {
+        s.replace(pos, 1, "''");
+        pos += 2;
+    }
+    return s;
+}
+
 // Buffered Stats System to reduce DB IO
 struct StatsEntry
 {
@@ -289,7 +300,7 @@ static void FlushStats(uint32 guid = 0)
 
             // To avoid SQL injection risks on Module, sanitize it strictly or use parameters.
             // Since we can't define new PreparedStatements in core enum dynamically, we will simulate it safely.
-            
+
             trans->Append("INSERT INTO dc_addon_protocol_stats "
                 "(guid, module, total_requests, total_responses, total_timeouts, total_errors, avg_response_time_ms, max_response_time_ms, last_request) "
                 "VALUES ({}, '{}', {}, {}, {}, {}, {}, {}, FROM_UNIXTIME({})) "
@@ -301,9 +312,9 @@ static void FlushStats(uint32 guid = 0)
                 "avg_response_time_ms = (avg_response_time_ms * total_responses + {}) / GREATEST(1, total_responses + {}), "
                 "max_response_time_ms = GREATEST(max_response_time_ms, {}), "
                 "last_request = FROM_UNIXTIME({})",
-                currentGuid, module, 
-                stats.totalRequests, stats.totalResponses, stats.totalTimeouts, stats.totalErrors, 
-                (stats.totalResponses > 0 ? stats.sumResponseTime / stats.totalResponses : 0), 
+                currentGuid, module,
+                stats.totalRequests, stats.totalResponses, stats.totalTimeouts, stats.totalErrors,
+                (stats.totalResponses > 0 ? stats.sumResponseTime / stats.totalResponses : 0),
                 stats.maxResponseTime, stats.lastRequest,
                 // Update part
                 stats.totalRequests, stats.totalResponses, stats.totalTimeouts, stats.totalErrors,
@@ -314,11 +325,10 @@ static void FlushStats(uint32 guid = 0)
 
             stats = StatsEntry(); // Reset delta stats
         }
-        
+
         // If flushing specific player, remove them from memory
         it = (guid != 0) ? s_StatsBuffer.erase(it) : ++it;
     }
-
     CharacterDatabase.CommitTransaction(trans);
 }
 
@@ -329,23 +339,67 @@ static void UpdateProtocolStats(Player* player, const std::string& moduleCode, b
 
     // Sanitize module code
     std::string safeModule = moduleCode;
-    safeModule.erase(std::remove_if(safeModule.begin(), safeModule.end(), 
+    safeModule.erase(std::remove_if(safeModule.begin(), safeModule.end(),
         [](char c) { return !isalnum(c) && c != '_'; }), safeModule.end());
     if (safeModule.length() > 16) safeModule = safeModule.substr(0, 16);
 
     std::lock_guard<std::mutex> lock(s_StatsMutex);
     auto& stats = s_StatsBuffer[player->GetGUID().GetCounter()][safeModule];
-    
-    if (isRequest) stats.totalRequests++;
-    else {
+
+    if (isRequest)
+        stats.totalRequests++;
+    else
         stats.totalResponses++;
-        if (isTimeout) stats.totalTimeouts++;
-        if (isError) stats.totalErrors++;
+
+    if (isTimeout)
+        stats.totalTimeouts++;
+    if (isError)
+        stats.totalErrors++;
+
+    if (!isRequest)
+    {
         stats.sumResponseTime += responseTimeMs;
         if (responseTimeMs > stats.maxResponseTime) stats.maxResponseTime = responseTimeMs;
     }
     stats.lastRequest = time(nullptr);
     stats.dirty = true;
+}
+
+static void LogProtocolErrorEvent(Player* player, const std::string& payload, const std::string& eventType, const std::string& message)
+{
+    if (!s_AddonConfig.EnableProtocolLogging)
+        return;
+
+    std::string moduleCode = ExtractModuleCode(payload);
+    uint8 opcode = ExtractOpcode(payload);
+    std::string requestType = DetectRequestType(payload);
+    std::string preview = payload.length() > 255 ? payload.substr(0, 255) : payload;
+
+    moduleCode.erase(std::remove_if(moduleCode.begin(), moduleCode.end(), [](char c) { return !isalnum(c) && c != '_'; }), moduleCode.end());
+    if (moduleCode.length() > 16) moduleCode = moduleCode.substr(0, 16);
+
+    std::string safeEventType = eventType;
+    safeEventType.erase(std::remove_if(safeEventType.begin(), safeEventType.end(), [](char c) { return !isalnum(c) && c != '_' && c != '-'; }), safeEventType.end());
+    if (safeEventType.length() > 32) safeEventType = safeEventType.substr(0, 32);
+
+    uint32 guidCounter = player ? player->GetGUID().GetCounter() : 0;
+    uint32 accountId = (player && player->GetSession()) ? player->GetSession()->GetAccountId() : 0;
+    std::string name = player ? player->GetName() : std::string();
+
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_addon_protocol_errors "
+        "(guid, account_id, character_name, direction, request_type, module, opcode, event_type, message, payload_preview) "
+        "VALUES ({}, {}, '{}', 'C2S', '{}', '{}', {}, '{}', '{}', '{}')",
+        guidCounter,
+        accountId,
+        EscapeSQLString(name),
+        requestType,
+        moduleCode,
+        opcode,
+        EscapeSQLString(safeEventType),
+        EscapeSQLString(message),
+        EscapeSQLString(preview)
+    );
 }
 
 static void LogC2SMessage(Player* player, const std::string& payload, bool handled, const std::string& errorMsg = "")
@@ -363,30 +417,20 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
     moduleCode.erase(std::remove_if(moduleCode.begin(), moduleCode.end(), [](char c) { return !isalnum(c) && c != '_'; }), moduleCode.end());
     if (moduleCode.length() > 16) moduleCode = moduleCode.substr(0, 16);
 
-    // Escape strings
-    auto escape = [](std::string s) {
-        size_t pos = 0;
-        while ((pos = s.find("'", pos)) != std::string::npos) {
-            s.replace(pos, 1, "''");
-            pos += 2;
-        }
-        return s;
-    };
-
     CharacterDatabase.Execute(
         "INSERT INTO dc_addon_protocol_log "
         "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status, error_message) "
         "VALUES ({}, {}, '{}', 'C2S', '{}', '{}', {}, {}, '{}', '{}', '{}')",
         player->GetGUID().GetCounter(),
         player->GetSession()->GetAccountId(),
-        escape(player->GetName()),
+        EscapeSQLString(player->GetName()),
         requestType,
         moduleCode,
         opcode,
         payload.length(),
-        escape(preview),
+        EscapeSQLString(preview),
         status,
-        escape(errorMsg)
+        EscapeSQLString(errorMsg)
     );
 }
 
@@ -602,6 +646,22 @@ public:
     {
         // Clean up any pending chunked messages for this player
         uint32 accountId = player->GetSession()->GetAccountId();
+
+        // If this player had an in-flight chunked message, record it as an event
+        if (s_AddonConfig.EnableProtocolLogging && s_ChunkStartTimes.find(accountId) != s_ChunkStartTimes.end())
+        {
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_addon_protocol_errors "
+                "(guid, account_id, character_name, direction, request_type, module, opcode, event_type, message) "
+                "VALUES ({}, {}, '{}', 'C2S', 'DC_PLAIN', 'CHUNK', 0, 'chunk_abandoned', 'Player logout with incomplete chunked message')",
+                player->GetGUID().GetCounter(),
+                accountId,
+                EscapeSQLString(player->GetName())
+            );
+
+            UpdateProtocolStats(player, "CHUNK", true, true, false);
+        }
+
         s_ChunkedMessages.erase(accountId);
         s_ChunkStartTimes.erase(accountId);
         s_MessageTrackers.erase(accountId);
@@ -655,8 +715,15 @@ public:
         // Log to database if protocol logging is enabled
         if (s_AddonConfig.EnableProtocolLogging && !moduleStr.empty())
         {
-            LogC2SMessage(player, payload, handled);
-            UpdateProtocolStats(player, moduleStr, true);  // true = isRequest
+            std::string errorMsg;
+            if (!handled)
+                errorMsg = "No handler for module/opcode";
+
+            LogC2SMessage(player, payload, handled, errorMsg);
+            UpdateProtocolStats(player, moduleStr, true, false, !handled);  // request-side errors are tracked
+
+            if (!handled)
+                LogProtocolErrorEvent(player, payload, "unhandled", errorMsg);
         }
 
         if (handled)

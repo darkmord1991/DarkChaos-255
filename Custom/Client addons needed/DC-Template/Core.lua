@@ -14,10 +14,15 @@ end)
 function NS:OnLoad()
     print("|cffFFCC00" .. addonName .. "|r loaded.")
     
-    -- Register Protocol
-    if DCAddonProtocol then
-        -- Register a unique prefix for this addon (max 16 chars)
-        DCAddonProtocol:RegisterPrefix("DCTEMP") 
+    -- DCAddonProtocol integration
+    -- Note: DCAddonProtocol uses a shared addon-message prefix (usually "DC")
+    -- and routes messages by MODULE/OPCODE. It does not require per-addon prefix registration.
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC then
+        -- 3.3.5a requires prefixes be registered before SendAddonMessage/CHAT_MSG_ADDON works.
+        if type(RegisterAddonMessagePrefix) == "function" then
+            pcall(RegisterAddonMessagePrefix, DC.PREFIX or "DC")
+        end
     end
     
     -- Initialize UI

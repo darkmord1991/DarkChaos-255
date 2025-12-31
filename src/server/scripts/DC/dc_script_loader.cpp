@@ -200,7 +200,8 @@ void AddDCScripts()
     try {
         AddSC_giant_isles_zone();
         AddSC_giant_isles_cannon_quest();
-        AddSC_giant_isles_invasion();
+        // AddSC_giant_isles_invasion();
+        // Disabled for now: invasion script needs a rewrite (random spawns).
         AddSC_boss_oondasta();
         AddSC_boss_thok();
         AddSC_boss_nalak();

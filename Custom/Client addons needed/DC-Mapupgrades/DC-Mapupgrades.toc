@@ -1,12 +1,12 @@
 ## Interface: 30300
-## Title: DC Mapupgrades
+## Title: |cffFFCC00DC|r Map Upgrades
 ## Notes: XP hotspots + custom map pins for world bosses and rares.
 ## Author: DarkChaos Team
 ## Version: 1.2.0
+## SavedVariables: DCMapupgradesDB, DCHotspotDB
+## OptionalDeps: DC-AddonProtocol, AIO_Client, DC-InfoBar
 ## DefaultState: Enabled
 ## LoadOnDemand: 0
-## SavedVariables: DCMapupgradesDB, DCHotspotDB
-## OptionalDeps: DC-AddonProtocol, AIO, DC-InfoBar
 
 Libs\DC_DebugUtils.lua
 Libs\HotspotDisplay_Astrolabe.lua

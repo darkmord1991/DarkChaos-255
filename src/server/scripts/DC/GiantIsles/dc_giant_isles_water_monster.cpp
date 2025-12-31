@@ -10,6 +10,7 @@
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "MoveSplineInit.h"
+#include "ObjectMgr.h"
 #include "../AddonExtension/DCAddonNamespace.h"
 #include <fmt/format.h>
 
@@ -144,6 +145,29 @@ public:
             // Intro: a scream is heard, the monster appears after 10 seconds and swims in.
             player->SendSystemMessage("A terrifying scream echoes from the deep...");
 
+            // Preflight template/model checks. Missing models will cause SummonCreature to fail.
+            CreatureTemplate const* tpl = sObjectMgr->GetCreatureTemplate(NPC_GIANT_WATER_MONSTER);
+            if (!tpl)
+            {
+                player->SendSystemMessage("Failed to summon Ancient Terror (missing creature_template entry). See server logs.");
+                LOG_ERROR("go_ancient_stone", "Missing CreatureTemplate for entry {} (player={}, goEntry={}, map={}).",
+                    NPC_GIANT_WATER_MONSTER, player->GetName(), go->GetEntry(), go->GetMapId());
+                return true;
+            }
+
+            CreatureModel const* chosenModel = ObjectMgr::ChooseDisplayId(tpl, nullptr);
+            if (!chosenModel || chosenModel->CreatureDisplayID == 0)
+            {
+                player->SendSystemMessage("Failed to summon Ancient Terror (no model configured). Check creature_template_model for entry 400350.");
+                LOG_ERROR("go_ancient_stone", "CreatureTemplate {} has no valid model (Models.size={} chosenModel={} displayId={}). Player={}.",
+                    NPC_GIANT_WATER_MONSTER,
+                    tpl->Models.size(),
+                    (chosenModel ? "yes" : "no"),
+                    (chosenModel ? chosenModel->CreatureDisplayID : 0u),
+                    player->GetName());
+                return true;
+            }
+
             // Spawn at the start of the water path (boss AI handles the delayed appearance + pathing)
             Position const& start = GiantWaterMonsterPath[0];
             if (Creature* monster = go->SummonCreature(NPC_GIANT_WATER_MONSTER, start.GetPositionX(), start.GetPositionY(), start.GetPositionZ(), start.GetOrientation(), TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 10 * MINUTE * IN_MILLISECONDS))
@@ -163,7 +187,9 @@ public:
             else
             {
                 player->SendSystemMessage("Failed to summon Ancient Terror.");
-                LOG_ERROR("go_ancient_stone", "SummonCreature returned null for {}.", player->GetName());
+                LOG_ERROR("go_ancient_stone", "SummonCreature returned null (entry={}, map={}, goEntry={}, player={}, pos=({}, {}, {})).",
+                    NPC_GIANT_WATER_MONSTER, go->GetMapId(), go->GetEntry(), player->GetName(),
+                    start.GetPositionX(), start.GetPositionY(), start.GetPositionZ());
             }
         }
         else

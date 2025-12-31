@@ -343,22 +343,18 @@ DCWelcome.RegisteredAddons = {
                         tab:GetScript("OnClick")(tab)
                     end
                 end
-                -- Request data via AIO if available
-                if _G.AIO and _G.AIO.Handle then
-                    local season = (HLBG._getSeason and HLBG._getSeason()) or 0
-                    _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, 25, "id", "DESC")
-                    _G.AIO.Handle("HLBG", "Request", "STATS")
-                    _G.AIO.Handle("HLBG", "Request", "STATS", season)
+                -- Prime data (prefers DCAddonProtocol -> AIO -> dot-command)
+                local season = (HLBG._getSeason and HLBG._getSeason()) or 0
+                if type(HLBG.RequestHistoryUI) == 'function' then
+                    HLBG.RequestHistoryUI(1, 20, season, 'id', 'DESC')
+                elseif type(HLBG.RequestHistory) == 'function' then
+                    HLBG.RequestHistory()
                 end
-                -- Fallback: request data via dot commands
-                local sendDot = HLBG.SendServerDot or _G.HLBG_SendServerDot
-                if type(sendDot) == 'function' then
-                    local season = (HLBG._getSeason and HLBG._getSeason()) or 0
-                    sendDot('.hlbg live players')
-                    sendDot('.hlbg historyui 1 25 id DESC')
-                    sendDot('.hlbg statsui')
-                    if season > 0 then
-                        sendDot(string.format('.hlbg statsui %d', season))
+                if type(HLBG.RequestStats) == 'function' then
+                    if season and season > 0 then
+                        HLBG.RequestStats(season)
+                    else
+                        HLBG.RequestStats()
                     end
                 end
             elseif SlashCmdList["HLBGSHOW"] then

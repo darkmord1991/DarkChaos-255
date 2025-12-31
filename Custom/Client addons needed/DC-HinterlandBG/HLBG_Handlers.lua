@@ -169,6 +169,70 @@ zoneWatcher:SetScript("OnEvent", function()
         if type(HLBG.UnhideBlizzHUDDeep) == 'function' then pcall(HLBG.UnhideBlizzHUDDeep) end
     end
 end)
+
+-- =====================================================================
+-- Unified request helpers (DCAddonProtocol -> AIO -> dot-command)
+-- =====================================================================
+
+function HLBG.RequestHistoryUI(page, per, season, sortKey, sortDir)
+    page = tonumber(page) or 1
+    per = tonumber(per) or 25
+    if page < 1 then page = 1 end
+    if per < 1 then per = 1 end
+    if per > 20 then per = 20 end
+
+    season = tonumber(season) or 0
+    sortKey = tostring(sortKey or "id")
+    sortDir = tostring(sortDir or "DESC")
+
+    -- Keep UI state in sync so response handlers can render correctly
+    HLBG.UI = HLBG.UI or {}
+    HLBG.UI.History = HLBG.UI.History or {}
+    HLBG.UI.History.page = page
+    HLBG.UI.History.per = per
+    HLBG.UI.History.sortKey = sortKey
+    HLBG.UI.History.sortDir = sortDir
+
+    local DC = rawget(_G, "DCAddonProtocol")
+    if DC and type(DC.Send) == "function" then
+        -- HLBG extended opcode: CMSG_REQUEST_HISTORY_UI (0x23)
+        DC:Send("HLBG", 0x23, tostring(page), tostring(per), tostring(season), sortKey, sortDir)
+        return true
+    end
+
+    if _G.AIO and _G.AIO.Handle then
+        _G.AIO.Handle("HLBG", "Request", "HISTORY", page, per, season, sortKey, sortDir)
+        return true
+    end
+
+    local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
+    if type(sendDot) == 'function' then
+        if season and season > 0 then
+            sendDot(string.format('.hlbg historyui %d %d %d %s %s', page, per, season, sortKey, sortDir))
+        else
+            sendDot(string.format('.hlbg historyui %d %d %s %s', page, per, sortKey, sortDir))
+        end
+        return true
+    end
+
+    if type(HLBG.safeExecSlash) == 'function' then
+        if season and season > 0 then
+            HLBG.safeExecSlash(string.format('.hlbg historyui %d %d %d %s %s', page, per, season, sortKey, sortDir))
+        else
+            HLBG.safeExecSlash(string.format('.hlbg historyui %d %d %s %s', page, per, sortKey, sortDir))
+        end
+        return true
+    end
+
+    return false
+end
+
+-- Backwards-compatible alias used by some UI code
+HLBG.RequestHistory = HLBG.RequestHistory or function()
+    local hist = (HLBG and HLBG.UI and HLBG.UI.History) or {}
+    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
+    return HLBG.RequestHistoryUI(hist.page or 1, hist.per or 25, season, hist.sortKey or "id", hist.sortDir or "DESC")
+end
 -- Ensure PvP tab/button helpers (lazy creation)
 local function EnsurePvPTab()
     local _pvp = _G["PVPParentFrame"] or _G["PVPFrame"]
@@ -1730,6 +1794,23 @@ if DC then
             local total, wins, losses, kills, deaths, obj, season = args[1], args[2], args[3], args[4], args[5], args[6], args[7]
             HLBGPrint(string.format("Stats: %d matches, %d wins, %d losses",
                 tonumber(total) or 0, tonumber(wins) or 0, tonumber(losses) or 0))
+        end
+    end)
+
+    -- SMSG_HISTORY_TSV (0x33) - Match history UI
+    DC:RegisterHandler("HLBG", 0x33, function(...)
+        local args = {...}
+        local total = tonumber(args[1]) or 0
+        local tsv = args[2] or ""
+
+        local hist = (HLBG and HLBG.UI and HLBG.UI.History) or {}
+        local page = hist.page or 1
+        local per = hist.per or 25
+        local sortKey = hist.sortKey or "id"
+        local sortDir = hist.sortDir or "DESC"
+
+        if type(HLBG.HistoryStr) == 'function' then
+            pcall(HLBG.HistoryStr, tsv, page, per, total, sortKey, sortDir)
         end
     end)
     

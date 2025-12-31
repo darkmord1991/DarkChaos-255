@@ -35,6 +35,50 @@ local function MapName(mapId)
     return string.format("Map %d", mapId)
 end
 
+local function NormalizeZoneNameForMatch(name)
+    if not name then return nil end
+    name = tostring(name)
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then return nil end
+    return name:lower()
+end
+
+local function PlayerZoneNameForMatch()
+    local name = (GetRealZoneText and GetRealZoneText()) or (GetZoneText and GetZoneText()) or nil
+    return NormalizeZoneNameForMatch(name)
+end
+
+function UI:HotspotMatchesPlayerZone(info)
+    if type(info) ~= "table" then
+        return false
+    end
+
+    local playerZone = PlayerZoneNameForMatch()
+    if not playerZone then
+        return false
+    end
+
+    local zoneId = tonumber(info.zoneId)
+    local playerMapId = (GetCurrentMapAreaID and tonumber(GetCurrentMapAreaID())) or nil
+    if zoneId and playerMapId and zoneId > 0 and playerMapId > 0 and zoneId == playerMapId then
+        return true
+    end
+
+    local hotspotZone = NormalizeZoneNameForMatch(info.zone)
+    if hotspotZone and hotspotZone == playerZone then
+        return true
+    end
+
+    if zoneId and GetMapNameByID then
+        local zoneName = GetMapNameByID(zoneId)
+        if NormalizeZoneNameForMatch(zoneName) == playerZone then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function FormatHotspotLine(id, info)
     local remain = info.expire and math.max(0, math.floor(info.expire - GetTime())) or 0
     local zone = info.zone or MapName(info.map)
@@ -650,24 +694,19 @@ function UI:OnHotspotSpawn(id, info, shouldAnnounce)
     end
     
     -- Only announce if explicitly allowed (prevents spam on login)
-    if shouldAnnounce and self.state.db.announce then
+    if shouldAnnounce and self.state.db.announce and self:HotspotMatchesPlayerZone(info) then
         local zone = info.zone or MapName(info.map)
         local bonus = info.bonus or (self.state.config and self.state.config.experienceBonus) or 0
-        
-        -- Check if hotspot is in player's current zone (only show center announce for same zone)
-        local playerZoneId = GetCurrentMapAreaID and GetCurrentMapAreaID() or 0
-        local hotspotZoneId = info.zoneId or 0
-        local sameZone = (hotspotZoneId > 0 and playerZoneId > 0 and hotspotZoneId == playerZoneId)
-        
+
         local message = string.format("|cFFFFD700[Hotspot]|r %s (+%d%% XP)", zone, bonus)
-        
-        -- Always show in chat
+
+        -- Show in chat
         if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage(message)
         end
-        
-        -- Only show center announce (RaidWarning) if hotspot is in same zone
-        if sameZone and RaidNotice_AddMessage then
+
+        -- Center announce (RaidWarning)
+        if RaidNotice_AddMessage then
             RaidNotice_AddMessage(RaidWarningFrame, message, ChatTypeInfo["RAID_WARNING"])
         end
         SafePlaySound(self.state.db.spawnSound)
@@ -684,7 +723,7 @@ function UI:OnHotspotSpawn(id, info, shouldAnnounce)
     self:RefreshList()
 end
 
-function UI:OnHotspotExpire(id)
+function UI:OnHotspotExpire(id, info)
     if not self.state or not self.state.db then
         return
     end
@@ -692,10 +731,13 @@ function UI:OnHotspotExpire(id)
     if not PlayerCanGainXP() then
         return
     end
-    if self.state.db.announceExpire and DEFAULT_CHAT_FRAME then
+    if self.state.db.announceExpire and DEFAULT_CHAT_FRAME and self:HotspotMatchesPlayerZone(info) then
         DEFAULT_CHAT_FRAME:AddMessage("|cFFFFA000[Hotspot]|r One of the XP hotspots expired.")
     end
-    SafePlaySound(self.state.db.expireSound)
+
+    if self:HotspotMatchesPlayerZone(info) then
+        SafePlaySound(self.state.db.expireSound)
+    end
     self:RefreshList()
 end
 

@@ -1309,6 +1309,38 @@ local function CreateSettingsPanel()
     end)
     yPos = yPos - 40
 
+    -- Season HUD checkbox
+    local seasonHudCheck = CreateFrame("CheckButton", "DCWelcome_SeasonHUD", content, "InterfaceOptionsCheckButtonTemplate")
+    seasonHudCheck:SetPoint("TOPLEFT", 24, yPos)
+    seasonHudCheck:SetHitRectInsets(0, -260, 0, 0)
+    _G["DCWelcome_SeasonHUDText"]:SetText("Show Season HUD (tracker)")
+    seasonHudCheck:SetScript("OnClick", function(self)
+        DCWelcomeDB = DCWelcomeDB or {}
+        DCWelcomeDB.seasons = DCWelcomeDB.seasons or {}
+        DCWelcomeDB.seasons.autoShowTracker = self:GetChecked()
+
+        if DCWelcome and DCWelcome.Seasons then
+            if self:GetChecked() then
+                if DCWelcome.Seasons.CreateProgressTracker then
+                    DCWelcome.Seasons:CreateProgressTracker()
+                end
+                if DCWelcome.Seasons.UpdateProgressTracker then
+                    DCWelcome.Seasons:UpdateProgressTracker()
+                end
+                local tracker = _G["DCWelcome_SeasonTracker"]
+                if tracker and tracker.Show then
+                    tracker:Show()
+                end
+            else
+                local tracker = _G["DCWelcome_SeasonTracker"]
+                if tracker and tracker.Hide then
+                    tracker:Hide()
+                end
+            end
+        end
+    end)
+    yPos = yPos - 40
+
     -- Quick Actions Section
     local actionsHeader = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     actionsHeader:SetPoint("TOPLEFT", 16, yPos)
@@ -1378,6 +1410,12 @@ local function CreateSettingsPanel()
         showMilestonesCheck:SetChecked(DCWelcomeDB.showMilestones ~= false)
         showTooltipsCheck:SetChecked(DCWelcomeDB.showTooltips ~= false)
         commCheck:SetChecked(DCWelcomeDB.enableCommunication ~= false)
+
+        local seasonHudEnabled = false
+        if type(DCWelcomeDB.seasons) == "table" then
+            seasonHudEnabled = (DCWelcomeDB.seasons.autoShowTracker == true)
+        end
+        seasonHudCheck:SetChecked(seasonHudEnabled)
         
         local info = DCWelcome:GetServerInfo()
         local season = DCWelcome:GetCurrentSeason()

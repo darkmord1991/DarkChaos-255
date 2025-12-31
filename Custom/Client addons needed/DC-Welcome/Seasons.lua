@@ -27,7 +27,7 @@ DCWelcome.Seasons = DCWelcome.Seasons or {}
 local function GetSettings()
     DCWelcomeDB = DCWelcomeDB or {}
     DCWelcomeDB.seasons = DCWelcomeDB.seasons or {
-        autoShowTracker = true,
+        autoShowTracker = false,
         enableSounds = true
     }
     return DCWelcomeDB.seasons

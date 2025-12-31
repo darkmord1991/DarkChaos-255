@@ -24,6 +24,7 @@ local CHECKBOXES = {
     { key = "showMinimapPins", label = "Show minimap pins", desc = "Display hotspot markers on the minimap." },
     { key = "showWorldPins", label = "Show world map pins", desc = "Display hotspot markers on the world map." },
     { key = "showWorldBossPins", label = "Show world boss pins", desc = "Display world boss spawn markers on the maps." },
+    { key = "showMinimapBossPins", label = "Show world boss pins on minimap", desc = "Display world boss markers on the minimap (off by default)." },
     { key = "showRarePins", label = "Show rare pins", desc = "Display rare mob spawn markers on the maps." },
     { key = "showWorldLabels", label = "Show world pin labels", desc = "Render bonus text beneath each world map pin." },
     { key = "showPopup", label = "Show spawn popup", desc = "Play the banner + sound when a hotspot is announced." },

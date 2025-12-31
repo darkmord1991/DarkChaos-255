@@ -40,6 +40,12 @@
 #include <unordered_map>
 #include <vector>
 
+// Forward declarations for helpers defined later in this TU.
+namespace HLBGAddonFallback
+{
+    static std::string BuildHistoryTsv(QueryResult& rs);
+}
+
 namespace DCAddon
 {
 namespace HLBG
@@ -85,33 +91,44 @@ namespace HLBG
     };
 
     // Client message opcodes
+    // IMPORTANT: Keep aligned with DCAddonNamespace.h (DCAddon::Opcode::HLBG)
     enum ClientOpcodes : uint8
     {
-        CMSG_REQUEST_STATUS         = 0x00,
-        CMSG_REQUEST_RESOURCES      = 0x01,
-        CMSG_REQUEST_OBJECTIVE      = 0x02,
-        CMSG_QUICK_QUEUE            = 0x03,
-        CMSG_LEAVE_QUEUE            = 0x04,
-        CMSG_REQUEST_STATS          = 0x05,
-        CMSG_GET_LEADERBOARD        = 0x06,
-        CMSG_GET_PLAYER_STATS       = 0x07,
-        CMSG_GET_ALLTIME_STATS      = 0x08,
+        CMSG_REQUEST_STATUS         = 0x01,
+        CMSG_REQUEST_RESOURCES      = 0x02,
+        CMSG_REQUEST_OBJECTIVE      = 0x03,
+        CMSG_QUICK_QUEUE            = 0x04,
+        CMSG_LEAVE_QUEUE            = 0x05,
+        CMSG_REQUEST_STATS          = 0x06,
+
+        // Extended/legacy JSON requests (not part of the canonical HLBG opcode set).
+        // Kept in a non-conflicting range to avoid overlap with the live BG opcodes.
+        CMSG_GET_LEADERBOARD        = 0x20,
+        CMSG_GET_PLAYER_STATS       = 0x21,
+        CMSG_GET_ALLTIME_STATS      = 0x22,
+        CMSG_REQUEST_HISTORY_UI     = 0x23,
     };
 
     // Server message opcodes
+    // IMPORTANT: Keep aligned with DCAddonNamespace.h (DCAddon::Opcode::HLBG)
     enum ServerOpcodes : uint8
     {
         SMSG_STATUS                 = 0x10,
         SMSG_RESOURCES              = 0x11,
-        SMSG_QUEUE_UPDATE           = 0x12,
-        SMSG_TIMER_SYNC             = 0x13,
-        SMSG_TEAM_SCORE             = 0x14,
-        SMSG_AFFIX_INFO             = 0x15,
-        SMSG_MATCH_END              = 0x16,
-        SMSG_OBJECTIVE              = 0x17,
-        SMSG_LEADERBOARD_DATA       = 0x18,
-        SMSG_PLAYER_STATS           = 0x19,
-        SMSG_ALLTIME_STATS          = 0x1A,
+        SMSG_OBJECTIVE              = 0x12,
+        SMSG_QUEUE_UPDATE           = 0x13,
+        SMSG_TIMER_SYNC             = 0x14,
+        SMSG_TEAM_SCORE             = 0x15,
+        SMSG_STATS                  = 0x16,
+        SMSG_AFFIX_INFO             = 0x17,
+        SMSG_MATCH_END              = 0x18,
+
+        // Extended/legacy JSON responses (non-canonical, kept separate)
+        SMSG_LEADERBOARD_DATA       = 0x30,
+        SMSG_PLAYER_STATS           = 0x31,
+        SMSG_ALLTIME_STATS          = 0x32,
+        SMSG_HISTORY_TSV            = 0x33,
+
         SMSG_ERROR                  = 0x1F,
     };
 
@@ -564,15 +581,83 @@ namespace HLBG
             return;
         }
 
-        Message response(Module::HINTERLAND, SMSG_PLAYER_STATS);
+        Message response(Module::HINTERLAND, SMSG_STATS);
+        response.Add("J");
         response.Add(statsJson);
         response.Send(player);
+    }
+
+    static void HandleRequestHistoryUI(Player* player, const ParsedMessage& msg)
+    {
+        if (!player)
+            return;
+
+        if (IsRateLimited(player, 800))
+            return;
+
+        uint32 page = msg.GetUInt32(0);
+        uint32 per = msg.GetUInt32(1);
+        uint32 seasonOverride = msg.GetUInt32(2);
+        std::string sort = msg.GetString(3);
+        std::string dir = msg.GetString(4);
+
+        page = std::max<uint32>(1u, page);
+        per = std::max<uint32>(1u, per);
+        per = std::min<uint32>(per, 20u);
+
+        if (!(sort == "id" || sort == "occurred_at" || sort == "season"))
+            sort = "id";
+        std::string odir = (dir == "ASC" ? "ASC" : "DESC");
+
+        OutdoorPvPHL* hl = GetHL();
+        uint32 season = seasonOverride > 0 ? seasonOverride : (hl ? hl->GetSeason() : 0u);
+
+        uint32 offset = (page - 1) * per;
+
+        std::string sortCol = "id";
+        if (sort == "occurred_at")
+            sortCol = "occurred_at";
+        else if (sort == "season")
+            sortCol = "season";
+
+        std::string query = "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM dc_hlbg_winner_history";
+        if (season > 0)
+            query += " WHERE season=" + std::to_string(season);
+        query += " ORDER BY " + sortCol + " " + odir;
+        query += " LIMIT " + std::to_string(per) + " OFFSET " + std::to_string(offset);
+
+        std::string countQuery = "SELECT COUNT(*) FROM dc_hlbg_winner_history";
+        if (season > 0)
+            countQuery += " WHERE season=" + std::to_string(season);
+
+        uint32 totalRows = 0;
+        if (QueryResult countRes = CharacterDatabase.Query(countQuery))
+            totalRows = countRes->Fetch()[0].Get<uint32>();
+
+        QueryResult rs = CharacterDatabase.Query(query);
+        std::string tsv;
+        if (rs)
+        {
+            tsv = HLBGAddonFallback::BuildHistoryTsv(rs);
+            // Protocol delimiter is '|', so ensure we never include it in a payload field.
+            // The legacy TSV uses "||" between rows; convert to newlines.
+            size_t pos = 0;
+            while ((pos = tsv.find("||", pos)) != std::string::npos)
+            {
+                tsv.replace(pos, 2, "\n");
+                pos += 1;
+            }
+        }
+
+        Message packet(Module::HINTERLAND, SMSG_HISTORY_TSV);
+        packet.Add(std::to_string(totalRows));
+        packet.Add(tsv);
+        packet.Send(player);
     }
 
     // Leaderboard and stats handlers
     static void HandleGetLeaderboard(Player* player, const ParsedMessage& msg)
     {
-        std::string data = msg.GetString(0);
         if (!player) return;
 
         if (IsRateLimited(player, 800))
@@ -582,24 +667,40 @@ namespace HLBG
         uint32 season = 0;
         uint32 limit = 100;
 
-        // Simple JSON parsing for request parameters
-        if (data.find("\"leaderboardType\"") != std::string::npos)
+        // Accept either positional args (preferred) or a JSON blob (legacy).
+        // Positional: leaderboardType|season|limit
+        if (msg.GetDataCount() >= 1)
+            leaderboardType = msg.GetUInt32(0);
+        if (msg.GetDataCount() >= 2)
+            season = msg.GetUInt32(1);
+        if (msg.GetDataCount() >= 3)
+            limit = msg.GetUInt32(2);
+
+        // Legacy JSON: data may be {..} or J|{..}
+        std::string data = msg.GetString(0);
+        if (data == "J")
+            data = msg.GetString(1);
+
+        if (!data.empty() && data[0] == '{')
         {
-            int val = 0;
-            if (sscanf(data.c_str(), "\"leaderboardType\":%d", &val) == 1)
-                leaderboardType = val;
-        }
-        if (data.find("\"season\"") != std::string::npos)
-        {
-            int val = 0;
-            if (sscanf(data.c_str(), "\"season\":%d", &val) == 1)
-                season = val;
-        }
-        if (data.find("\"limit\"") != std::string::npos)
-        {
-            int val = 100;
-            if (sscanf(data.c_str(), "\"limit\":%d", &val) == 1)
-                limit = val;
+            if (data.find("\"leaderboardType\"") != std::string::npos)
+            {
+                int val = 0;
+                if (sscanf(data.c_str(), "{\"leaderboardType\":%d", &val) == 1 || sscanf(data.c_str(), "\"leaderboardType\":%d", &val) == 1)
+                    leaderboardType = val;
+            }
+            if (data.find("\"season\"") != std::string::npos)
+            {
+                int val = 0;
+                if (sscanf(data.c_str(), "\"season\":%d", &val) == 1)
+                    season = val;
+            }
+            if (data.find("\"limit\"") != std::string::npos)
+            {
+                int val = 100;
+                if (sscanf(data.c_str(), "\"limit\":%d", &val) == 1)
+                    limit = val;
+            }
         }
 
         if (season == 0)
@@ -649,18 +750,30 @@ namespace HLBG
 
     static void HandleGetPlayerStats(Player* player, const ParsedMessage& msg)
     {
-        std::string data = msg.GetString(0);
         if (!player) return;
 
         if (IsRateLimited(player, 800))
             return;
 
         uint32 season = 0;
-        if (data.find("\"season\"") != std::string::npos)
+
+        // Preferred positional: season
+        if (msg.GetDataCount() >= 1)
+            season = msg.GetUInt32(0);
+
+        // Legacy JSON: data may be {..} or J|{..}
+        std::string data = msg.GetString(0);
+        if (data == "J")
+            data = msg.GetString(1);
+
+        if (!data.empty() && data[0] == '{')
         {
-            int val = 0;
-            if (sscanf(data.c_str(), "\"season\":%d", &val) == 1)
-                season = val;
+            if (data.find("\"season\"") != std::string::npos)
+            {
+                int val = 0;
+                if (sscanf(data.c_str(), "\"season\":%d", &val) == 1)
+                    season = val;
+            }
         }
 
         if (season == 0)
@@ -726,6 +839,7 @@ namespace HLBG
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_QUICK_QUEUE, HandleQuickQueue);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_LEAVE_QUEUE, HandleLeaveQueue);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_REQUEST_STATS, HandleRequestStats);
+        DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_REQUEST_HISTORY_UI, HandleRequestHistoryUI);
 
         // Leaderboard and stats handlers (JSON-based)
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_GET_LEADERBOARD, HandleGetLeaderboard);

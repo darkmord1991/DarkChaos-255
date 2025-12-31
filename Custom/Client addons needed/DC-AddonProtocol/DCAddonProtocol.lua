@@ -66,9 +66,203 @@ DCAddonProtocol = {
     -- Performance optimization: logging is disabled by default
     -- Enable with DC:EnableLogging(true) or when debug panel is opened
     _loggingEnabled = false,
+
+    -- SavedVariables-backed settings and net event log
+    _settings = nil,
 }
 
 local DC = DCAddonProtocol
+
+-- ============================================================================
+-- SAVED VARIABLES (Settings + NetLog)
+-- ============================================================================
+
+local DEFAULT_DB = {
+    -- Controls detailed request/response logging. Keep off by default for performance.
+    loggingEnabled = false,
+
+    -- Chat output controls
+    chatOnError = true,
+    chatOnRequestTimeout = true,
+    chatOnChunkTimeout = true,
+
+    -- Timeout thresholds
+    requestTimeoutSec = 30,
+    chunkTimeoutSec = 10,
+
+    -- NetLog ring buffer
+    netLogEnabled = true,
+    netLogMaxEntries = 200,
+}
+
+function DC:_InitDB()
+    DCAddonProtocolDB = DCAddonProtocolDB or {}
+    for k, v in pairs(DEFAULT_DB) do
+        if DCAddonProtocolDB[k] == nil then
+            DCAddonProtocolDB[k] = v
+        end
+    end
+    if type(DCAddonProtocolDB.netLog) ~= "table" then
+        DCAddonProtocolDB.netLog = {}
+    end
+
+    self._settings = DCAddonProtocolDB
+    -- Apply persisted loggingEnabled on load.
+    self._loggingEnabled = (DCAddonProtocolDB.loggingEnabled and true or false)
+end
+
+function DC:GetSetting(key)
+    if not self._settings then
+        self:_InitDB()
+    end
+    return self._settings and self._settings[key]
+end
+
+function DC:SetSetting(key, value)
+    if not self._settings then
+        self:_InitDB()
+    end
+    if not self._settings then return end
+    self._settings[key] = value
+
+    if key == "loggingEnabled" then
+        self._loggingEnabled = value and true or false
+    end
+end
+
+function DC:LogNetEvent(level, tag, message, extra)
+    if not self._settings then
+        self:_InitDB()
+    end
+    if not (self._settings and self._settings.netLogEnabled) then
+        return
+    end
+
+    local log = self._settings.netLog
+    if type(log) ~= "table" then
+        log = {}
+        self._settings.netLog = log
+    end
+
+    log[#log + 1] = {
+        t = time(),
+        level = tostring(level or "info"),
+        tag = tostring(tag or ""),
+        msg = tostring(message or ""),
+        extra = extra,
+    }
+
+    local maxEntries = tonumber(self._settings.netLogMaxEntries) or 200
+    if maxEntries < 10 then maxEntries = 10 end
+    while #log > maxEntries do
+        table.remove(log, 1)
+    end
+end
+
+function DC:DumpNetLog(n)
+    if not self._settings then
+        self:_InitDB()
+    end
+    local log = self._settings and self._settings.netLog
+    if type(log) ~= "table" or #log == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r NetLog: (empty)")
+        return
+    end
+
+    n = tonumber(n) or 20
+    if n < 1 then n = 1 end
+    if n > #log then n = #log end
+
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ccff[DC]|r NetLog: last %d/%d", n, #log))
+    for i = #log - n + 1, #log do
+        local e = log[i]
+        local ts = (e and e.t and date("%H:%M:%S", e.t)) or "??:??:??"
+        local lvl = (e and e.level) or "?"
+        local tg = (e and e.tag and e.tag ~= "" and ("/" .. e.tag) or "") or ""
+        local msg = (e and e.msg) or ""
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff888888[DC NetLog]|r %s [%s%s] %s", ts, lvl, tg, msg))
+    end
+end
+
+function DC:ClearNetLog()
+    if not self._settings then
+        self:_InitDB()
+    end
+    if self._settings then
+        self._settings.netLog = {}
+    end
+end
+
+function DC:_ChatNotifyTimeout(kind, module, opcode, ageSec)
+    module = tostring(module or "?")
+    opcode = tonumber(opcode) or 0
+    ageSec = tonumber(ageSec) or 0
+    DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff4444[DC] %s timeout:|r %s op=%d (age=%ds)", tostring(kind or "Request"), module, opcode, ageSec))
+end
+
+function DC:_CheckRequestTimeouts()
+    if not self._pendingRequests then
+        return
+    end
+
+    local timeoutSec = tonumber(self:GetSetting("requestTimeoutSec")) or 30
+    if timeoutSec < 3 then timeoutSec = 3 end
+
+    local now = time()
+    for key, entry in pairs(self._pendingRequests) do
+        if entry and entry.status == "pending" then
+            local age = now - (entry.timestamp or now)
+            if age >= timeoutSec then
+                entry.status = "timeout"
+                entry.responseTime = age
+
+                -- Stats
+                if type(self.UpdateStats) == "function" then
+                    self:UpdateStats("timeout", entry)
+                else
+                    self._stats.totalTimeouts = (self._stats.totalTimeouts or 0) + 1
+                end
+
+                -- NetLog + Chat
+                self:LogNetEvent("timeout", "request", string.format("%s op=%d timed out", tostring(entry.module or "?"), tonumber(entry.opcode) or 0), {
+                    module = entry.module,
+                    opcode = entry.opcode,
+                    age = age,
+                })
+
+                if self:GetSetting("chatOnRequestTimeout") then
+                    self:_ChatNotifyTimeout("Request", entry.module, entry.opcode, age)
+                end
+
+                self._pendingRequests[key] = nil
+            end
+        end
+    end
+end
+
+function DC:_CleanupChunkBuffers()
+    if not self._chunkBuffers then
+        return
+    end
+
+    local timeoutSec = tonumber(self:GetSetting("chunkTimeoutSec")) or 10
+    if timeoutSec < 2 then timeoutSec = 2 end
+
+    local now = time()
+    for sender, buf in pairs(self._chunkBuffers) do
+        if buf and buf.ts and (now - buf.ts) > timeoutSec then
+            self._chunkBuffers[sender] = nil
+            self:LogNetEvent("timeout", "chunk", "Chunked message reassembly timed out", {
+                sender = sender,
+                received = buf.received,
+                total = buf.total,
+            })
+            if self:GetSetting("chatOnChunkTimeout") then
+                DEFAULT_CHAT_FRAME:AddMessage(string.format("|cffff4444[DC] Chunk timeout:|r sender=%s (%d/%d)", tostring(sender), tonumber(buf.received) or 0, tonumber(buf.total) or 0))
+            end
+        end
+    end
+end
 
 -- Ensure the addon-message prefix is registered (required for SendAddonMessage/CHAT_MSG_ADDON)
 if type(RegisterAddonMessagePrefix) == "function" then
@@ -342,7 +536,7 @@ end
 
 -- Enable or disable detailed logging (for performance)
 function DC:EnableLogging(enabled)
-    self._loggingEnabled = enabled
+    self:SetSetting("loggingEnabled", enabled and true or false)
     if enabled then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Detailed logging enabled")
     else
@@ -1262,6 +1456,19 @@ DC.GroupFinder = {
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("PLAYER_LOGIN")
+frame:SetScript("OnUpdate", function(self, elapsed)
+    DC._tick = (DC._tick or 0) + (elapsed or 0)
+    if DC._tick < 1.0 then
+        return
+    end
+    DC._tick = 0
+    if type(DC._CheckRequestTimeouts) == "function" then
+        DC:_CheckRequestTimeouts()
+    end
+    if type(DC._CleanupChunkBuffers) == "function" then
+        DC:_CleanupChunkBuffers()
+    end
+end)
 frame:SetScript("OnEvent", function()
     if event == "CHAT_MSG_ADDON" then
         -- Accept DC protocol whispers regardless of sender name.
@@ -1283,7 +1490,9 @@ frame:SetScript("OnEvent", function()
 
                         local buf = DC._chunkBuffers[sender]
                         -- Reset buffer if incompatible or stale
-                        if not buf or buf.total ~= total or (buf.ts and now - buf.ts > 10) then
+                        local staleSec = tonumber(DC:GetSetting("chunkTimeoutSec")) or 10
+                        if staleSec < 2 then staleSec = 2 end
+                        if not buf or buf.total ~= total or (buf.ts and now - buf.ts > staleSec) then
                             buf = { total = total, parts = {}, received = 0, seen = {}, ts = now }
                             DC._chunkBuffers[sender] = buf
                         else
@@ -1339,8 +1548,15 @@ frame:SetScript("OnEvent", function()
                     for _, h in ipairs(DC._globalErrorHandlers) do
                         pcall(h, module, errCode, errMsg, opcode)
                     end
-                    -- Default behavior: display error in chat
-                    DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC] Error:|r " .. module .. ": " .. (errMsg or "Unknown error"))
+                    -- Default behavior: display error in chat (configurable)
+                    DC:LogNetEvent("error", "server", module .. ": " .. tostring(errMsg or "Unknown error"), {
+                        module = module,
+                        opcode = opcode,
+                        code = errCode,
+                    })
+                    if DC:GetSetting("chatOnError") then
+                        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC] Error:|r " .. module .. ": " .. (errMsg or "Unknown error"))
+                    end
                     -- Log response
                     DC:LogResponse(module, opcode, {errCode, errMsg}, nil)
                     return
@@ -1422,6 +1638,8 @@ frame:SetScript("OnEvent", function()
             end
         end
     elseif event == "PLAYER_LOGIN" then
+        DC:_InitDB()
+        DC._stats.sessionStart = time()
         DC:Send("CORE", 1, DC.VERSION)
     end
 end)
@@ -1447,6 +1665,52 @@ SlashCmdList["DC"] = function(msg)
     elseif cmd == "debug" then
         DC._debug = not DC._debug
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Debug mode: " .. (DC._debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+    elseif cmd == "netlog" then
+        local n = tonumber(args[2]) or 20
+        DC:DumpNetLog(n)
+    elseif cmd == "netlogclear" then
+        DC:ClearNetLog()
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r NetLog cleared")
+    elseif cmd == "timeout" then
+        local sec = tonumber(args[2])
+        if sec then
+            DC:SetSetting("requestTimeoutSec", sec)
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Request timeout set to " .. tostring(sec) .. "s")
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("Usage: /dc timeout <seconds>")
+        end
+    elseif cmd == "chaterrors" then
+        local v = string.lower(args[2] or "")
+        if v == "on" or v == "1" or v == "true" then
+            DC:SetSetting("chatOnError", true)
+        elseif v == "off" or v == "0" or v == "false" then
+            DC:SetSetting("chatOnError", false)
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Chat on error: " .. (DC:GetSetting("chatOnError") and "ON" or "OFF"))
+    elseif cmd == "chattimeouts" then
+        local v = string.lower(args[2] or "")
+        if v == "on" or v == "1" or v == "true" then
+            DC:SetSetting("chatOnRequestTimeout", true)
+        elseif v == "off" or v == "0" or v == "false" then
+            DC:SetSetting("chatOnRequestTimeout", false)
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Chat on request timeout: " .. (DC:GetSetting("chatOnRequestTimeout") and "ON" or "OFF"))
+    elseif cmd == "chatchunks" then
+        local v = string.lower(args[2] or "")
+        if v == "on" or v == "1" or v == "true" then
+            DC:SetSetting("chatOnChunkTimeout", true)
+        elseif v == "off" or v == "0" or v == "false" then
+            DC:SetSetting("chatOnChunkTimeout", false)
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Chat on chunk timeout: " .. (DC:GetSetting("chatOnChunkTimeout") and "ON" or "OFF"))
+    elseif cmd == "netlogenable" then
+        local v = string.lower(args[2] or "")
+        if v == "on" or v == "1" or v == "true" then
+            DC:SetSetting("netLogEnabled", true)
+        elseif v == "off" or v == "0" or v == "false" then
+            DC:SetSetting("netLogEnabled", false)
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r NetLog: " .. (DC:GetSetting("netLogEnabled") and "ON" or "OFF"))
     elseif cmd == "status" then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r v" .. DC.VERSION)
         DEFAULT_CHAT_FRAME:AddMessage("  Connected: " .. (DC._connected and "|cff00ff00Yes|r" or "|cffff0000No|r"))
@@ -1561,6 +1825,13 @@ SlashCmdList["DC"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /dc responses - Show recent responses")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc pending - Show pending requests")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc clearlog - Clear all logs")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc netlog [n] - Show recent NetLog entries")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc netlogclear - Clear NetLog")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc timeout <sec> - Set request timeout")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc chaterrors on|off - Chat prints for server errors")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc chattimeouts on|off - Chat prints for request timeouts")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc chatchunks on|off - Chat prints for chunk timeouts")
+        DEFAULT_CHAT_FRAME:AddMessage("  /dc netlogenable on|off - Enable/disable NetLog")
     end
 end
 
@@ -1581,20 +1852,22 @@ end
 -- ============================================================
 
 local function CreateSettingsPanel()
+    DC:_InitDB()
+
     local panel = CreateFrame("Frame", "DCProtocolSettingsPanel", UIParent)
     panel.name = "DC Protocol"
     
     -- Title
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("|cff00ff00DC Addon Protocol|r - Debug & Testing")
+    title:SetText("|cff00ff00DC Addon Protocol|r - Settings")
     
     -- Description
     local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetWidth(560)
     desc:SetJustifyH("LEFT")
-    desc:SetText("Test server communication, send custom JSON messages, and debug protocol handlers.")
+    desc:SetText("Protocol status and logging/alert settings. Use the 'Testing' subpanel for JSON message testing.")
     
     local yPos = -70
     
@@ -1624,13 +1897,237 @@ local function CreateSettingsPanel()
             "Debug Mode: " .. debug
         )
     end
+
+    -- Settings Section
+    local settingsHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    settingsHeader:SetPoint("TOPLEFT", 330, yPos + 45)
+    settingsHeader:SetText("|cffffd700Logging & Alerts|r")
+
+    local function CreateCheckbox(text, tooltip, x, y, getFn, setFn)
+        local cb = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", x, y)
+
+        -- 3.3.5a compatibility: InterfaceOptionsCheckButtonTemplate may not provide a .Text region.
+        local label = cb.Text
+        if not label and cb.GetName and cb:GetName() then
+            label = _G[cb:GetName() .. "Text"]
+        end
+        if not label then
+            label = cb:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+            label:SetPoint("LEFT", cb, "RIGHT", 0, 1)
+            cb._label = label
+        end
+        label:SetText(text)
+
+        cb.tooltipText = tooltip
+        cb:SetScript("OnClick", function(self)
+            local checked = self:GetChecked() and true or false
+            if setFn then setFn(checked) end
+        end)
+        cb.Refresh = function()
+            if getFn then
+                cb:SetChecked(getFn() and true or false)
+            end
+        end
+        cb:Refresh()
+        return cb
+    end
+
+    local function CreateNumberInput(labelText, tooltip, x, y, width, getFn, setFn)
+        local label = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        label:SetPoint("TOPLEFT", x, y)
+        label:SetText(labelText)
+
+        local input = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+        input:SetPoint("LEFT", label, "RIGHT", 8, 0)
+        input:SetWidth(width or 50)
+        input:SetHeight(20)
+        input:SetAutoFocus(false)
+        input:SetMaxLetters(6)
+        input.tooltipText = tooltip
+
+        local function refresh()
+            local v = getFn and getFn() or nil
+            input:SetText(tostring(v or ""))
+        end
+
+        local function apply()
+            local v = tonumber(input:GetText())
+            if v and setFn then
+                setFn(v)
+            end
+            refresh()
+        end
+
+        input:SetScript("OnEnterPressed", function(self)
+            self:ClearFocus()
+            apply()
+        end)
+        input:SetScript("OnEditFocusLost", function()
+            apply()
+        end)
+        input.Refresh = refresh
+        refresh()
+        return input
+    end
+
+    local cbLogging = CreateCheckbox(
+        "Detailed logging",
+        "Enables request/response logging (may reduce performance)",
+        330,
+        yPos + 25,
+        function() return DC:GetSetting("loggingEnabled") end,
+        function(v) DC:EnableLogging(v) end
+    )
+
+    local cbNetLog = CreateCheckbox(
+        "NetLog enabled",
+        "Stores recent protocol events (timeouts/errors) for debugging",
+        330,
+        yPos + 5,
+        function() return DC:GetSetting("netLogEnabled") end,
+        function(v) DC:SetSetting("netLogEnabled", v) end
+    )
+
+    local cbChatError = CreateCheckbox(
+        "Chat on server error",
+        "Prints server error messages to chat",
+        330,
+        yPos - 15,
+        function() return DC:GetSetting("chatOnError") end,
+        function(v) DC:SetSetting("chatOnError", v) end
+    )
+
+    local cbChatReqTO = CreateCheckbox(
+        "Chat on request timeout",
+        "Prints request timeouts to chat",
+        330,
+        yPos - 35,
+        function() return DC:GetSetting("chatOnRequestTimeout") end,
+        function(v) DC:SetSetting("chatOnRequestTimeout", v) end
+    )
+
+    local cbChatChunkTO = CreateCheckbox(
+        "Chat on chunk timeout",
+        "Prints chunk reassembly timeouts to chat",
+        330,
+        yPos - 55,
+        function() return DC:GetSetting("chatOnChunkTimeout") end,
+        function(v) DC:SetSetting("chatOnChunkTimeout", v) end
+    )
+
+    local inputReqTO = CreateNumberInput(
+        "Req timeout (s):",
+        "Seconds before a pending request is considered timed out",
+        330,
+        yPos - 80,
+        40,
+        function() return tonumber(DC:GetSetting("requestTimeoutSec")) or 30 end,
+        function(v)
+            if v < 3 then v = 3 end
+            DC:SetSetting("requestTimeoutSec", v)
+        end
+    )
+
+    local inputChunkTO = CreateNumberInput(
+        "Chunk timeout (s):",
+        "Seconds before an incomplete chunked message is dropped",
+        330,
+        yPos - 105,
+        40,
+        function() return tonumber(DC:GetSetting("chunkTimeoutSec")) or 10 end,
+        function(v)
+            if v < 2 then v = 2 end
+            DC:SetSetting("chunkTimeoutSec", v)
+        end
+    )
+
+    local inputNetLogMax = CreateNumberInput(
+        "NetLog max:",
+        "Maximum number of NetLog entries to keep",
+        330,
+        yPos - 130,
+        50,
+        function() return tonumber(DC:GetSetting("netLogMaxEntries")) or 200 end,
+        function(v)
+            if v < 10 then v = 10 end
+            DC:SetSetting("netLogMaxEntries", v)
+        end
+    )
     
+    -- Refresh status on show
+    panel:SetScript("OnShow", function()
+        cbLogging:Refresh()
+        cbNetLog:Refresh()
+        cbChatError:Refresh()
+        cbChatReqTO:Refresh()
+        cbChatChunkTO:Refresh()
+        inputReqTO:Refresh()
+        inputChunkTO:Refresh()
+        inputNetLogMax:Refresh()
+        UpdateStatus()
+    end)
+    
+    -- Initial status update
+    UpdateStatus()
+    
+    -- Register with interface options
+    InterfaceOptions_AddCategory(panel)
+    
+    return panel
+end
+
+local function CreateTestingPanel()
+    local panel = CreateFrame("Frame", "DCProtocolTestingPanel", UIParent)
+    panel.name = "Testing"
+    panel.parent = "DC Protocol"
+
+    -- Title
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("|cff00ff00DC Addon Protocol|r - Debug & Testing")
+
+    -- Description
+    local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetWidth(560)
+    desc:SetJustifyH("LEFT")
+    desc:SetText("Test server communication, send custom JSON messages, and debug protocol handlers.")
+
+    local yPos = -70
+
+    -- Status Section
+    local statusHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    statusHeader:SetPoint("TOPLEFT", 16, yPos)
+    statusHeader:SetText("|cffffd700Protocol Status|r")
+    yPos = yPos - 20
+
+    local statusText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    statusText:SetPoint("TOPLEFT", 16, yPos)
+    statusText:SetWidth(300)
+    statusText:SetJustifyH("LEFT")
+    yPos = yPos - 50
+
+    local function UpdateStatus()
+        local connected = DC._connected and "|cff00ff00Connected|r" or "|cffff0000Disconnected|r"
+        local version = DC._serverVersion or "Unknown"
+        local handlers = DC:CountHandlers()
+        local debug = DC._debug and "|cff00ff00ON|r" or "|cffff0000OFF|r"
+        statusText:SetText(
+            "Status: " .. connected .. "\n" ..
+            "Client Version: |cff00ccff" .. DC.VERSION .. "|r\n" ..
+            "Server Version: |cff00ccff" .. version .. "|r\n" ..
+            "Handlers: |cffffff00" .. handlers .. "|r\n" ..
+            "Debug Mode: " .. debug
+        )
+    end
+
     -- Quick Actions Row
     local actionHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     actionHeader:SetPoint("TOPLEFT", 16, yPos)
     actionHeader:SetText("|cffffd700Quick Actions|r")
     yPos = yPos - 25
-    
+
     local function CreateButton(text, tooltip, onClick, xOffset)
         local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
         btn:SetWidth(120)
@@ -1646,7 +2143,7 @@ local function CreateSettingsPanel()
         btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
         return btn
     end
-    
+
     CreateButton("Reconnect", "Send handshake to server", function()
         DC._connected = false
         DC._handshakeSent = false
@@ -1654,20 +2151,20 @@ local function CreateSettingsPanel()
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handshake sent")
         UpdateStatus()
     end, 0)
-    
+
     CreateButton("Toggle Debug", "Enable/disable debug output", function()
         DC._debug = not DC._debug
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Debug: " .. (DC._debug and "ON" or "OFF"))
         UpdateStatus()
     end, 130)
-    
+
     CreateButton("List Handlers", "Show all registered handlers", function()
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Registered handlers:")
         for key, _ in pairs(DC._handlers) do
             DEFAULT_CHAT_FRAME:AddMessage("  - " .. key)
         end
     end, 260)
-    
+
     CreateButton("Test JSON", "Test JSON encode/decode", function()
         local t = {name = "Test", level = 80, nested = {a = 1, b = 2}}
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Encode: " .. DC:EncodeJSON(t))
@@ -1676,20 +2173,20 @@ local function CreateSettingsPanel()
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Decode OK: name=" .. tostring(decoded.name))
         end
     end, 390)
-    
+
     yPos = yPos - 40
-    
+
     -- JSON Editor Section
     local editorHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     editorHeader:SetPoint("TOPLEFT", 16, yPos)
     editorHeader:SetText("|cffffd700Send Custom JSON Message|r")
     yPos = yPos - 20
-    
+
     -- Module dropdown
     local moduleLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     moduleLabel:SetPoint("TOPLEFT", 16, yPos)
     moduleLabel:SetText("Module:")
-    
+
     local moduleInput = CreateFrame("EditBox", "DCProtocolModuleInput", panel, "InputBoxTemplate")
     moduleInput:SetPoint("LEFT", moduleLabel, "RIGHT", 10, 0)
     moduleInput:SetWidth(60)
@@ -1697,12 +2194,12 @@ local function CreateSettingsPanel()
     moduleInput:SetAutoFocus(false)
     moduleInput:SetText("CORE")
     moduleInput:SetMaxLetters(10)
-    
+
     -- Opcode input
     local opcodeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     opcodeLabel:SetPoint("LEFT", moduleInput, "RIGHT", 20, 0)
     opcodeLabel:SetText("Opcode:")
-    
+
     local opcodeInput = CreateFrame("EditBox", "DCProtocolOpcodeInput", panel, "InputBoxTemplate")
     opcodeInput:SetPoint("LEFT", opcodeLabel, "RIGHT", 10, 0)
     opcodeInput:SetWidth(50)
@@ -1710,26 +2207,25 @@ local function CreateSettingsPanel()
     opcodeInput:SetAutoFocus(false)
     opcodeInput:SetText("99")
     opcodeInput:SetMaxLetters(5)
-    
+
     yPos = yPos - 30
-    
+
     -- JSON text area label
     local jsonLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     jsonLabel:SetPoint("TOPLEFT", 16, yPos)
     jsonLabel:SetText("JSON Data (enter valid JSON object):")
     yPos = yPos - 18
-    
+
     -- JSON text area with scrollframe
     local scrollFrame = CreateFrame("ScrollFrame", "DCProtocolJSONScroll", panel, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 16, yPos)
     scrollFrame:SetWidth(540)
     scrollFrame:SetHeight(80)
-    
-    -- Create background (3.3.5 compatible - use solid texture)
+
     local jsonBg = scrollFrame:CreateTexture(nil, "BACKGROUND")
     jsonBg:SetAllPoints()
-    jsonBg:SetTexture(0, 0, 0, 0.5)  -- 3.3.5 uses SetTexture with RGBA values
-    
+    jsonBg:SetTexture(0, 0, 0, 0.5)
+
     local jsonEditBox = CreateFrame("EditBox", "DCProtocolJSONInput", scrollFrame)
     jsonEditBox:SetMultiLine(true)
     jsonEditBox:SetFontObject(ChatFontNormal)
@@ -1738,9 +2234,9 @@ local function CreateSettingsPanel()
     jsonEditBox:SetText('{"action":"test","timestamp":0}')
     jsonEditBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     scrollFrame:SetScrollChild(jsonEditBox)
-    
+
     yPos = yPos - 90
-    
+
     -- Send buttons
     local sendJsonBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     sendJsonBtn:SetWidth(150)
@@ -1751,8 +2247,7 @@ local function CreateSettingsPanel()
         local module = moduleInput:GetText() or "CORE"
         local opcode = tonumber(opcodeInput:GetText()) or 99
         local jsonText = jsonEditBox:GetText() or "{}"
-        
-        -- Try to decode to validate
+
         local data = DC:DecodeJSON(jsonText)
         if data then
             DC:Request(module, opcode, data)
@@ -1762,7 +2257,7 @@ local function CreateSettingsPanel()
             DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[DC]|r Invalid JSON! Check syntax.")
         end
     end)
-    
+
     local sendRawBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     sendRawBtn:SetWidth(150)
     sendRawBtn:SetHeight(24)
@@ -1772,12 +2267,11 @@ local function CreateSettingsPanel()
         local module = moduleInput:GetText() or "CORE"
         local opcode = tonumber(opcodeInput:GetText()) or 99
         local rawData = jsonEditBox:GetText() or ""
-        
-        -- Send as raw pipe-delimited (for legacy testing)
+
         DC:Send(module, opcode, rawData)
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Sent raw to " .. module .. "|" .. opcode .. "|" .. rawData)
     end)
-    
+
     local validateBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     validateBtn:SetWidth(120)
     validateBtn:SetHeight(24)
@@ -1788,7 +2282,6 @@ local function CreateSettingsPanel()
         local data = DC:DecodeJSON(jsonText)
         if data then
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r JSON is valid!")
-            -- Pretty print keys
             local keys = {}
             for k, v in pairs(data) do
                 table.insert(keys, k .. "=" .. tostring(v))
@@ -1798,15 +2291,15 @@ local function CreateSettingsPanel()
             DEFAULT_CHAT_FRAME:AddMessage("|cffff0000[DC]|r Invalid JSON syntax!")
         end
     end)
-    
+
     yPos = yPos - 40
-    
+
     -- Preset buttons
     local presetHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     presetHeader:SetPoint("TOPLEFT", 16, yPos)
     presetHeader:SetText("|cffffd700Quick Presets|r")
     yPos = yPos - 25
-    
+
     local presets = {
         { label = "Handshake", module = "CORE", opcode = 1, json = '{"version":"' .. DC.VERSION .. '"}' },
         { label = "Get AOE Settings", module = "AOE", opcode = 6, json = '{"action":"get_settings"}' },
@@ -1814,9 +2307,9 @@ local function CreateSettingsPanel()
         { label = "Get Season Info", module = "SEAS", opcode = 1, json = '{}' },
         { label = "Get M+ Key", module = "MPLUS", opcode = 1, json = '{}' },
     }
-    
+
     local xOffset = 0
-    for i, preset in ipairs(presets) do
+    for _, preset in ipairs(presets) do
         local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
         btn:SetWidth(100)
         btn:SetHeight(20)
@@ -1833,39 +2326,35 @@ local function CreateSettingsPanel()
             yPos = yPos - 25
         end
     end
-    
+
     yPos = yPos - 40
-    
+
     -- Message Log Section
     local logHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     logHeader:SetPoint("TOPLEFT", 16, yPos)
     logHeader:SetText("|cffffd700Recent Messages|r (check chat for full log)")
     yPos = yPos - 18
-    
+
     local logInfo = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     logInfo:SetPoint("TOPLEFT", 16, yPos)
     logInfo:SetWidth(560)
     logInfo:SetJustifyH("LEFT")
     logInfo:SetText("Enable debug mode (/dc debug) to see all incoming/outgoing messages in chat.\n" ..
-                    "Use /dc handlers to list all registered message handlers.\n" ..
-                    "Use /dc status for quick protocol status check.")
-    
-    -- Refresh status on show
+        "Use /dc handlers to list all registered message handlers.\n" ..
+        "Use /dc status for quick protocol status check.")
+
     panel:SetScript("OnShow", function()
         UpdateStatus()
     end)
-    
-    -- Initial status update
     UpdateStatus()
-    
-    -- Register with interface options
+
     InterfaceOptions_AddCategory(panel)
-    
     return panel
 end
 
 -- Create settings panel on load
 DC.SettingsPanel = CreateSettingsPanel()
+DC.TestingPanel = CreateTestingPanel()
 
 -- Slash command to open settings
 SLASH_DCPANEL1 = "/dcpanel"

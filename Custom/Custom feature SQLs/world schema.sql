@@ -914,7 +914,7 @@ CREATE TABLE IF NOT EXISTS `creature` (
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id1`)
-) ENGINE=InnoDB AUTO_INCREMENT=9000385 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
+) ENGINE=InnoDB AUTO_INCREMENT=9000414 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 CREATE TABLE IF NOT EXISTS `creature_addon` (
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -944,6 +944,12 @@ CREATE TABLE IF NOT EXISTS `creature_classlevelstats` (
   `comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`level`,`class`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `creature_default_trainer` (
+  `CreatureId` int unsigned NOT NULL,
+  `TrainerId` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`CreatureId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS `creature_equip_template` (
   `CreatureID` int unsigned NOT NULL DEFAULT '0',
@@ -1093,10 +1099,6 @@ CREATE TABLE IF NOT EXISTS `creature_template` (
   `unit_flags2` int unsigned NOT NULL DEFAULT '0',
   `dynamicflags` int unsigned NOT NULL DEFAULT '0',
   `family` tinyint NOT NULL DEFAULT '0',
-  `trainer_type` tinyint NOT NULL DEFAULT '0',
-  `trainer_spell` int unsigned NOT NULL DEFAULT '0',
-  `trainer_class` tinyint unsigned NOT NULL DEFAULT '0',
-  `trainer_race` tinyint unsigned NOT NULL DEFAULT '0',
   `type` tinyint unsigned NOT NULL DEFAULT '0',
   `type_flags` int unsigned NOT NULL DEFAULT '0',
   `lootid` int unsigned NOT NULL DEFAULT '0',
@@ -1693,6 +1695,14 @@ CREATE TABLE IF NOT EXISTS `dc_hotspots_active` (
   KEY `idx_map_zone` (`map_id`,`zone_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='DarkChaos Hotspots - Active hotspots for crash persistence';
 
+CREATE TABLE IF NOT EXISTS `dc_item_custom_data` (
+  `item_id` int unsigned NOT NULL COMMENT 'Item entry ID',
+  `custom_note` text COLLATE utf8mb4_unicode_ci COMMENT 'Custom text to show in tooltip',
+  `custom_source` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Custom source text (e.g. "World Boss Drop")',
+  `is_custom` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Flag for custom items',
+  PRIMARY KEY (`item_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Custom item metadata for QoS tooltips';
+
 CREATE TABLE IF NOT EXISTS `dc_item_proc_spells` (
   `spell_id` int unsigned NOT NULL,
   `item_entry` int unsigned NOT NULL DEFAULT '0',
@@ -1745,19 +1755,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   PRIMARY KEY (`tier_id`,`upgrade_level`,`season`),
   UNIQUE KEY `idx_tier_level` (`tier_id`,`upgrade_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS `dc_item_upgrade_stage` (
-  `tier_id` tinyint unsigned NOT NULL,
-  `item_id` int unsigned NOT NULL,
-  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `item_level` smallint unsigned DEFAULT NULL,
-  `required_level` tinyint unsigned DEFAULT NULL,
-  `inventory_type` tinyint unsigned DEFAULT NULL,
-  `quality` tinyint unsigned DEFAULT NULL,
-  `item_class` tinyint unsigned DEFAULT NULL,
-  `item_subclass` tinyint unsigned DEFAULT NULL,
-  PRIMARY KEY (`tier_id`,`item_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Staging rows loaded from tier dumps for validation';
 
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_state` (
   `item_guid` int unsigned NOT NULL COMMENT 'From item_instance.guid',
@@ -2161,6 +2158,13 @@ CREATE TABLE IF NOT EXISTS `dc_seasonal_reward_multipliers` (
   PRIMARY KEY (`id`),
   KEY `idx_season_type` (`season_id`,`multiplier_type`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Flexible multiplier overrides for balancing';
+
+CREATE TABLE IF NOT EXISTS `dc_spell_custom_data` (
+  `spell_id` int unsigned NOT NULL COMMENT 'Spell ID',
+  `custom_note` text COLLATE utf8mb4_unicode_ci COMMENT 'Custom text to show in tooltip',
+  `modified_values` text COLLATE utf8mb4_unicode_ci COMMENT 'JSON or comma-separated list of modified values',
+  PRIMARY KEY (`spell_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Custom spell metadata for QoS tooltips';
 
 CREATE TABLE IF NOT EXISTS `dc_synthesis_recipes` (
   `recipe_id` int unsigned NOT NULL,
@@ -2737,7 +2741,7 @@ CREATE TABLE IF NOT EXISTS `gameobject` (
   `VerifiedBuild` int DEFAULT NULL,
   `Comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`guid`)
-) ENGINE=InnoDB AUTO_INCREMENT=5531701 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
+) ENGINE=InnoDB AUTO_INCREMENT=5714438 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
 
 CREATE TABLE IF NOT EXISTS `gameobject_addon` (
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -4157,17 +4161,6 @@ CREATE TABLE IF NOT EXISTS `npc_text_locale` (
   `Text7_0` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `Text7_1` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`ID`,`Locale`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS `npc_trainer` (
-  `ID` int unsigned NOT NULL DEFAULT '0',
-  `SpellID` int NOT NULL DEFAULT '0',
-  `MoneyCost` int unsigned NOT NULL DEFAULT '0',
-  `ReqSkillLine` smallint unsigned NOT NULL DEFAULT '0',
-  `ReqSkillRank` smallint unsigned NOT NULL DEFAULT '0',
-  `ReqLevel` tinyint unsigned NOT NULL DEFAULT '0',
-  `ReqSpell` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`ID`,`SpellID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `npc_vendor` (
@@ -6162,6 +6155,37 @@ CREATE TABLE IF NOT EXISTS `totemcategory_dbc` (
   `TotemCategoryMask` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `trainer` (
+  `Id` int unsigned NOT NULL DEFAULT '0',
+  `Type` tinyint unsigned NOT NULL DEFAULT '2',
+  `Requirement` mediumint unsigned NOT NULL DEFAULT '0',
+  `Greeting` mediumtext COLLATE utf8mb4_general_ci,
+  `VerifiedBuild` int DEFAULT '0',
+  PRIMARY KEY (`Id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `trainer_locale` (
+  `Id` int unsigned NOT NULL DEFAULT '0',
+  `locale` varchar(4) COLLATE utf8mb4_general_ci NOT NULL,
+  `Greeting_lang` mediumtext COLLATE utf8mb4_general_ci,
+  `VerifiedBuild` int DEFAULT '0',
+  PRIMARY KEY (`Id`,`locale`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `trainer_spell` (
+  `TrainerId` int unsigned NOT NULL DEFAULT '0',
+  `SpellId` int unsigned NOT NULL DEFAULT '0',
+  `MoneyCost` int unsigned NOT NULL DEFAULT '0',
+  `ReqSkillLine` int unsigned NOT NULL DEFAULT '0',
+  `ReqSkillRank` int unsigned NOT NULL DEFAULT '0',
+  `ReqAbility1` int unsigned NOT NULL DEFAULT '0',
+  `ReqAbility2` int unsigned NOT NULL DEFAULT '0',
+  `ReqAbility3` int unsigned NOT NULL DEFAULT '0',
+  `ReqLevel` tinyint unsigned NOT NULL DEFAULT '0',
+  `VerifiedBuild` int DEFAULT '0',
+  PRIMARY KEY (`TrainerId`,`SpellId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS `transportanimation_dbc` (
   `ID` int NOT NULL DEFAULT '0',

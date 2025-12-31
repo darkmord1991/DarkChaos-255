@@ -1,5 +1,5 @@
 ## Interface: 30300
-## Title: DC-InfoBar
+## Title: |cffFFCC00DC|r Info Bar
 ## Notes: Server information bar for DarkChaos-255
 ## Author: DarkChaos Development Team
 ## Version: 1.0.0

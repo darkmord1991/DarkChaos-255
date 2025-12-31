@@ -38,6 +38,13 @@ local function DebugPrint(...)
     end
 end
 
+local function NowEpoch()
+    if GetServerTime then
+        return GetServerTime()
+    end
+    return time()
+end
+
 local defaults = {
     version = 1,
     showMinimapPins = true,
@@ -57,8 +64,12 @@ local defaults = {
     customIconTexture = "",
     useDCProtocolJSON = true,  -- Use JSON format when available
 
+    -- Map view id -> server zone id learned at runtime (helps custom maps where clients report odd ids)
+    customZoneMapping = {},
+
     -- Entity pins (world bosses / rares)
     showWorldBossPins = true,
+    showMinimapBossPins = false,
     showRarePins = true,
     entityActiveDuration = 900, -- seconds to consider an entity "active" after being seen
     entities = { nextId = 1000000, list = {} },
@@ -546,13 +557,6 @@ function Core:HandleWorldResolveResult(data)
     end
 end
 
-local function NowEpoch()
-    if GetServerTime then
-        return GetServerTime()
-    end
-    return time()
-end
-
 local function NormalizePossibleNormalizedPos(nx, ny)
     nx = tonumber(nx)
     ny = tonumber(ny)
@@ -876,7 +880,7 @@ function Core:RemoveHotspot(id, reason)
     end
     if UI then
         if reason == "expire" and UI.OnHotspotExpire then
-            UI:OnHotspotExpire(id)
+            UI:OnHotspotExpire(id, existing)
         elseif UI.OnHotspotsChanged then
             UI:OnHotspotsChanged()
         end
@@ -1374,6 +1378,13 @@ end
 function Core:HandleWorldContent(data)
     if type(data) ~= "table" or not state.db then return end
 
+    if state.db.debug then
+        local bossesN = (type(data.bosses) == "table") and #data.bosses or 0
+        local deathsN = (type(data.deaths) == "table") and #data.deaths or 0
+        local hotspotsN = (type(data.hotspots) == "table") and #data.hotspots or 0
+        DebugPrint("WRLD content:", "bosses=" .. tostring(bossesN), "deaths=" .. tostring(deathsN), "hotspots=" .. tostring(hotspotsN))
+    end
+
     -- Death markers are snapshot-owned: replace on full content.
     if type(data.deaths) == "table" then
         RemoveAllDeathEntities()
@@ -1391,11 +1402,23 @@ function Core:HandleWorldContent(data)
 
     -- Bosses
     if type(data.bosses) == "table" then
+        local withPos, missingPos = 0, 0
         for _, b in ipairs(data.bosses) do
             local ent = UpsertBossEntityFromServerRecord(b)
             if ent and ent.id then
                 ApplyBossStatusToEntity(ent.id, b)
             end
+
+            local mapId = tonumber(b.mapId)
+            local nx, ny = NormalizePossibleNormalizedPos(b.nx, b.ny)
+            if mapId and nx and ny then
+                withPos = withPos + 1
+            else
+                missingPos = missingPos + 1
+            end
+        end
+        if state.db.debug then
+            DebugPrint("WRLD bosses:", "withPos=" .. tostring(withPos), "missingPos=" .. tostring(missingPos))
         end
         if Pins and Pins.Refresh then
             Pins:Refresh()
