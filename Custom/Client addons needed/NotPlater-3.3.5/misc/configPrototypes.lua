@@ -515,12 +515,6 @@ function ConfigPrototypes:LoadConfigPrototypes()
             name = L["Mode"],
             values = {["hdps"] = L["Healer / DPS"], ["tank"] = L["Tank"]},
         },
-        enableMouseoverUpdate = {
-            order = 1,
-            type = "toggle",
-            name = L["Enable Mouseover Nameplate Threat Update"],
-            width = "double",
-        },
     }
     ConfigPrototypes.ThreatNameplateColors = {
         general = {
@@ -533,12 +527,6 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     order = 0,
                     type = "toggle",
                     name = L["Enable"],
-                },
-                useClassColors = {
-                    order = 0,
-                    type = "toggle",
-                    width = "double",
-                    name = L["Use Class Colors when Possible"],
                 },
             }
         },
@@ -586,12 +574,28 @@ function ConfigPrototypes:LoadConfigPrototypes()
         min = 1, max = 100, step = 1,
     }
     ConfigPrototypes.HealthBar = ConfigPrototypes:GetGeneralisedStatusBarConfig()
+    ConfigPrototypes.HealthBar.general.args.useClassColors = {
+        order = 0.5,
+        type = "toggle",
+        width = "double",
+        name = L["Use Class Colors when Possible"],
+    }
     ConfigPrototypes.HealthText = ConfigPrototypes:GetGeneralisedColorFontConfig()
     ConfigPrototypes.HealthText.general.args.displayType = {
         order = 1,
         type = "select",
         name = L["Display Type"],
-        values = {["none"] = L["None"], ["minmax"] = L["Min / Max"], ["both"] = L["Both"], ["percent"] = L["Percent"]},
+        values = {["none"] = L["None"], ["minmax"] = L["Min / Max"], ["minmaxpercent"] = L["Min / Max"] .. " / " .. L["Percent"], ["both"] = L["Both"], ["percent"] = L["Percent"]},
+    }
+    ConfigPrototypes.HealthText.general.args.showDecimalNumbers = {
+        order = 1.1,
+        type = "toggle",
+        name = L["Show Decimals"] .. " (" .. L["Min / Max"] .. ")",
+    }
+    ConfigPrototypes.HealthText.general.args.showDecimalPercent = {
+        order = 1.2,
+        type = "toggle",
+        name = L["Show Decimals"] .. " (" .. L["Percent"] .. ")",
     }
     ConfigPrototypes.NameText = ConfigPrototypes:GetGeneralisedFontConfig()
     ConfigPrototypes.NameText.general.args.useClassColor = {
@@ -861,6 +865,7 @@ function ConfigPrototypes:LoadConfigPrototypes()
                     name = L["Opacity"],
                     min = 0, max = 1, step = 0.01,
                 },
+                border = ConfigPrototypes:GetGeneralisedBorderConfig(),
             },
         },
     }

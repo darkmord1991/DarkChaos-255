@@ -51,6 +51,14 @@
 local ADDON_NAME = "DC-Leaderboards"
 local VERSION = "1.4.0"
 
+local addonNameGlobal = ...
+if not addonNameGlobal or addonNameGlobal == "" then
+    addonNameGlobal = ADDON_NAME
+end
+local ADDON_PATH = "Interface\\AddOns\\" .. addonNameGlobal .. "\\"
+local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
 -- Namespace
 DCLeaderboards = DCLeaderboards or {}
 local LB = DCLeaderboards
@@ -865,10 +873,15 @@ function LB:CreateMainFrame()
     end
     
     -- Background
-    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
     bg:SetAllPoints()
-    bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background")
-    bg:SetVertexColor(0.1, 0.1, 0.1, 0.95)
+    bg:SetTexture(BG_FELLEATHER)
+    if bg.SetHorizTile then bg:SetHorizTile(false) end
+    if bg.SetVertTile then bg:SetVertTile(false) end
+
+    local bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    bgTint:SetAllPoints()
+    bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
     
     -- Border
     local border = CreateFrame("Frame", nil, frame)

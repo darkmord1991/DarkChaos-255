@@ -646,7 +646,7 @@ function DC:HandleStatsResponse(data)
                 if type(stats.owned) == "number" and stats.owned > collected then
                     collected = stats.owned
                 end
-                if (not total or total == 0) and type(stats.total) == "number" and stats.total > 0 then
+                if type(stats.total) == "number" and stats.total > 0 and stats.total > (total or 0) then
                     total = stats.total
                 end
             end

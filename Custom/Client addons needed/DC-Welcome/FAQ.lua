@@ -26,7 +26,7 @@ DCWelcome.FAQCategories = {
     { id = "mythicplus", name = "Mythic+", icon = "Interface\\Icons\\Achievement_challengemode_gold" },
     { id = "prestige", name = "Prestige", icon = "Interface\\Icons\\Achievement_level_80" },
     { id = "systems", name = "Server Systems", icon = "Interface\\Icons\\Trade_Engineering" },
-    { id = "community", name = "Community", icon = "Interface\\Icons\\Achievement_guildperk_everybodysfriend" },
+    { id = "community", name = "Community", icon = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\ServerPortal_64.tga" },
 }
 
 -- Extended FAQ entries with categories

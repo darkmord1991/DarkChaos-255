@@ -586,7 +586,7 @@
         </Anchors>
         <Layers>
             <Layer level="BACKGROUND">
-                <Texture name="$parentIcon" file="Interface\Icons\Trade_Engineering">
+                <Texture name="$parentIcon" file="Interface\AddOns\DC-ItemUpgrade\Textures\Icons\ItemUpgrade_64.tga">
                     <Size x="28" y="28"/>
                     <Anchors>
                         <Anchor point="CENTER"/>
@@ -630,7 +630,7 @@
         </Anchors>
         <Layers>
             <Layer level="BACKGROUND">
-                <Texture name="$parentIcon" file="Interface\Icons\INV_Misc_Book_09">
+                <Texture name="$parentIcon" file="Interface\AddOns\DC-ItemUpgrade\Textures\Icons\Heirloom_64.tga">
                     <Size x="28" y="28"/>
                     <Anchors>
                         <Anchor point="CENTER"/>

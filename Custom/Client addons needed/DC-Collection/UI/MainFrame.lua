@@ -11,6 +11,11 @@
 local DC = DCCollection
 local L = DC.L
 
+local addonNameGlobal = ...
+local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection") .. "\\"
+local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
 local function SetWidgetEnabled(widget, enabled)
     if not widget then
         return
@@ -212,11 +217,31 @@ function DC:CreateMainFrame()
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
 
-    -- Premium Black Background Overlay
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
-    frame.bg:SetPoint("TOPLEFT", 10, -10)
-    frame.bg:SetPoint("BOTTOMRIGHT", -10, 10)
-    frame.bg:SetTexture(0, 0, 0, 0.95)
+    -- Hide the template's default background so our FelLeather + tint matches DC-Welcome.
+    local frameName = frame:GetName()
+    if frameName then
+        local templateBg = _G[frameName .. "Bg"] or _G[frameName .. "Background"] or _G[frameName .. "DialogBG"]
+        if templateBg and templateBg.SetAlpha then
+            templateBg:SetAlpha(0)
+        end
+    end
+    if frame.SetBackdropColor then
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+
+    -- FelLeather background (stretched)
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    frame.bg:SetPoint("TOPLEFT", 12, -12)
+    frame.bg:SetPoint("BOTTOMRIGHT", -12, 12)
+    frame.bg:SetTexture(BG_FELLEATHER)
+    if frame.bg.SetHorizTile then frame.bg:SetHorizTile(false) end
+    if frame.bg.SetVertTile then frame.bg:SetVertTile(false) end
+
+    -- Dark tint overlay for readability
+    frame.bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    frame.bgTint:SetPoint("TOPLEFT", 12, -12)
+    frame.bgTint:SetPoint("BOTTOMRIGHT", -12, 12)
+    frame.bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
 
     -- Portrait (Retail style)
     local portrait = frame:CreateTexture(nil, "ARTWORK")

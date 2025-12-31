@@ -17,6 +17,17 @@ local addonName = "DC-Welcome"
 DCWelcome = DCWelcome or {}
 local L = DCWelcome.L
 
+local SERVER_PORTAL_ICON = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\ServerPortal_64.tga"
+
+local ICON_MYTHICPLUS = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\MythicPlus_64.tga"
+local ICON_MAPUPGRADES = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\Mapupgrades_64.tga"
+local ICON_ITEMUPGRADE = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\ItemUpgrade_64.tga"
+local ICON_AOESETTINGS = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\AOESettings_64.tga"
+local ICON_HINTERLANDBG = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\HinterlandBG_64.tga"
+
+local BG_FELLEATHER = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
 -- =============================================================================
 -- Frame Dimensions
 -- =============================================================================
@@ -89,6 +100,7 @@ local function CreateTabButton(parent, id, label, icon, xOffset)
     
     -- Label
     local txt = CreateFontString(btn, "GameFontNormalSmall", label)
+    txt:SetWordWrap(false)
     if icon then
         txt:SetPoint("LEFT", btn.icon, "RIGHT", 5, 0)
     else
@@ -471,7 +483,7 @@ local function PopulateFeatures(scrollChild)
         {
             id = "mythicplus",
             name = L["FEATURE_MYTHIC"].name,
-            icon = L["FEATURE_MYTHIC"].icon,
+            icon = ICON_MYTHICPLUS,
             color = {1, 0.5, 0},  -- Orange
             shortDesc = "Scale dungeon difficulty with keystones for better rewards!",
             fullDesc = L["FEATURE_MYTHIC"].desc,
@@ -512,7 +524,7 @@ local function PopulateFeatures(scrollChild)
         {
             id = "hotspots",
             name = L["FEATURE_HOTSPOTS"].name,
-            icon = L["FEATURE_HOTSPOTS"].icon,
+            icon = ICON_MAPUPGRADES,
             color = {0, 0.8, 1},  -- Cyan
             shortDesc = "Rotating world zones with bonus XP and special events!",
             fullDesc = L["FEATURE_HOTSPOTS"].desc,
@@ -533,7 +545,7 @@ local function PopulateFeatures(scrollChild)
         {
             id = "itemupgrade",
             name = L["FEATURE_UPGRADE"].name,
-            icon = L["FEATURE_UPGRADE"].icon,
+            icon = ICON_ITEMUPGRADE,
             color = {0, 0.44, 0.87},  -- Blue
             shortDesc = "Enhance your gear beyond normal item level limits!",
             fullDesc = L["FEATURE_UPGRADE"].desc,
@@ -574,7 +586,7 @@ local function PopulateFeatures(scrollChild)
         {
             id = "aoeloot",
             name = L["FEATURE_AOE_LOOT"].name,
-            icon = L["FEATURE_AOE_LOOT"].icon,
+            icon = ICON_AOESETTINGS,
             color = {0, 1, 0},  -- Green
             shortDesc = "Loot multiple corpses at once with smart filtering!",
             fullDesc = L["FEATURE_AOE_LOOT"].desc,
@@ -595,7 +607,7 @@ local function PopulateFeatures(scrollChild)
         {
             id = "hlbg",
             name = L["FEATURE_HLBG"] and L["FEATURE_HLBG"].name or "|cffff0000Hinterland Battleground|r",
-            icon = L["FEATURE_HLBG"] and L["FEATURE_HLBG"].icon or "Interface\\Icons\\Achievement_bg_winAB",
+            icon = ICON_HINTERLANDBG,
             color = {1, 0, 0},  -- Red
             shortDesc = "Open-world PvP with objectives and raid-style gameplay!",
             fullDesc = L["FEATURE_HLBG"] and L["FEATURE_HLBG"].desc or "Open-world PvP zone with objective-based gameplay.",
@@ -893,7 +905,22 @@ function DCWelcome:CreateWelcomeFrame()
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    frame:SetBackdropColor(0, 0, 0, 1) -- Black background
+    -- Keep the default bgFile fully transparent; we draw our own stretched background below.
+    frame:SetBackdropColor(0, 0, 0, 0)
+
+    local felBg = frame:CreateTexture(nil, "BACKGROUND")
+    felBg:SetPoint("TOPLEFT", 12, -12)
+    felBg:SetPoint("BOTTOMRIGHT", -12, 12)
+    felBg:SetTexture(BG_FELLEATHER)
+    if felBg.SetHorizTile then felBg:SetHorizTile(false) end
+    if felBg.SetVertTile then felBg:SetVertTile(false) end
+    frame.felBg = felBg
+
+    local felBgTint = frame:CreateTexture(nil, "BACKGROUND")
+    felBgTint:SetPoint("TOPLEFT", 12, -12)
+    felBgTint:SetPoint("BOTTOMRIGHT", -12, 12)
+    felBgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+    frame.felBgTint = felBgTint
     
     -- Title Header Background
     local titleBg = frame:CreateTexture(nil, "ARTWORK")
@@ -913,6 +940,16 @@ function DCWelcome:CreateWelcomeFrame()
     subtitle:SetPoint("TOP", title, "BOTTOM", 0, -2)
     subtitle:SetText(L["WELCOME_SUBTITLE"])
     subtitle:SetTextColor(0.7, 0.7, 0.7)
+
+    -- Fit the header texture to the longest line (within frame bounds)
+    local function Clamp(v, minv, maxv)
+        if v < minv then return minv end
+        if v > maxv then return maxv end
+        return v
+    end
+    local maxTextWidth = math.max(title:GetStringWidth() or 0, subtitle:GetStringWidth() or 0)
+    local desired = math.floor(maxTextWidth + 70)
+    titleBg:SetWidth(Clamp(desired, 350, FRAME_WIDTH - 80))
     
     -- Close button
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -932,17 +969,24 @@ function DCWelcome:CreateWelcomeFrame()
         { id = "addons", label = L["TAB_ADDONS"] or "Addons", icon = "Interface\\Icons\\Trade_Engineering" },
         { id = "progress", label = L["TAB_PROGRESS"] or "Progress", icon = "Interface\\Icons\\Achievement_challengemode_gold" },
         { id = "faq", label = L["TAB_FAQ"], icon = "Interface\\Icons\\INV_Misc_QuestionMark" },
-        { id = "community", label = L["TAB_LINKS"], icon = "Interface\\Icons\\INV_Letter_15" },
+        { id = "community", label = L["TAB_LINKS"], icon = SERVER_PORTAL_ICON },
     }
     
     frame.tabs = {}
     local tabX = 0
-    local TAB_BUTTON_WIDTH = 95
+    local tabSpacing = 2
+    local containerWidth = tabContainer:GetWidth() or (FRAME_WIDTH - 30)
+    local tabCount = #tabs
+    local TAB_BUTTON_WIDTH = math.floor((containerWidth - (tabSpacing * (tabCount - 1))) / tabCount)
     for _, tabInfo in ipairs(tabs) do
         local tab = CreateTabButton(tabContainer, tabInfo.id, tabInfo.label, tabInfo.icon, tabX)
         tab:SetWidth(TAB_BUTTON_WIDTH)
+
+        -- Prevent long labels from wrapping/overlapping other tabs
+        local textPadding = tab.icon and 30 or 10
+        tab.text:SetWidth(math.max(10, TAB_BUTTON_WIDTH - textPadding))
         frame.tabs[tabInfo.id] = tab
-        tabX = tabX + TAB_BUTTON_WIDTH + 2
+        tabX = tabX + TAB_BUTTON_WIDTH + tabSpacing
     end
     
     -- Create content frames

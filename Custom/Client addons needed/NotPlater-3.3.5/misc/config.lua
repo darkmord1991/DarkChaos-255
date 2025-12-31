@@ -359,7 +359,7 @@ local function NotifyAuraOptions()
 end
 
 local function RefreshAuraModule()
-	local module = NotPlater.GetAuraModule and NotPlater:GetAuraModule()
+	local module = NotPlater.Auras
 	if module and module.ApplyProfile then
 		module:ApplyProfile()
 	end
@@ -1264,6 +1264,13 @@ function Config:OpenConfig()
 			cHint .. "For updates visit:|r " .. link
 
 		frame:SetStatusText(text)
+	end
+
+	if frame and not frame.npCloseHooked then
+		frame.npCloseHooked = true
+		frame.frame:HookScript("OnHide", function()
+			NotPlater:HideSimulatorFrame()
+		end)
 	end
 
 end

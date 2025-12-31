@@ -37,13 +37,11 @@ function NotPlater:LoadDefaultConfig()
 		profile = {
             threat = {
                 general = {
-                    mode = "hdps",
-                    enableMouseoverUpdate = true
+                    mode = "hdps"
                 },
                 nameplateColors = {
                     general = {
                         enable = true,
-                        useClassColors = false,
                     },
                     colors = {
                         tank = {
@@ -274,6 +272,7 @@ function NotPlater:LoadDefaultConfig()
                         enable = true,
                         color = {0.5, 0.5, 1, 1},
                         texture = "NotPlater HealthBar",
+                        useClassColors = false,
                     },
                     background = {
                         enable = true,
@@ -294,6 +293,8 @@ function NotPlater:LoadDefaultConfig()
                     general = {
                         enable = true,
                         displayType = "both",
+                        showDecimalNumbers = true,
+                        showDecimalPercent = false,
                         color = {1, 1, 1, 1},
                         name = "Arial Narrow",
                         size = 10,
@@ -529,7 +530,12 @@ function NotPlater:LoadDefaultConfig()
                 },
                 mouseoverHighlight = {
                     enable = true,
-                    opacity = 0.5
+                    opacity = 0.5,
+                    border = {
+                        enable = false,
+                        color = {1, 1, 1, 1},
+                        thickness = 2
+                    },
                 },
                 targetTargetText = {
                     general = {

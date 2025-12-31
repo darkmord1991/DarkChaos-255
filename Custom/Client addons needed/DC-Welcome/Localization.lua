@@ -53,14 +53,22 @@ L["PROGRESS_REFRESH"] = "Refresh"
 -- =============================================================================
 
 L["WHATS_NEW_HEADER"] = "Season %d is LIVE!"
-L["WHATS_NEW_INTRO"] = "Welcome to DarkChaos-255, a custom WotLK 3.3.5a server with unique features!"
+L["WHATS_NEW_INTRO"] = "Welcome to DarkChaos-255, a heavily customized WotLK 3.3.5a server with custom systems and modern endgame features!"
 
 L["WHATS_NEW_FEATURES"] = {
-    "|cff00ff00Mythic+ Dungeons|r - Challenge yourself with scaling difficulty!",
-    "|cffff8000Prestige System|r - Reset and earn permanent bonuses!",
-    "|cff00ccffHotspots|r - Dynamic world events with bonus rewards!",
-    "|cffa335eeItem Upgrades|r - Enhance your gear beyond normal limits!",
-    "|cfffff000Seasonal Content|r - New rewards and challenges each season!",
+    "|cffffd700Level 255 Cap|r - Extended level system with custom stats.",
+    "|cff00ff99All Races/Classes|r - Every race can be any class combination.",
+    "|cff66ccffEluna Scripting + AIO|r - Modern scripted systems and addon communication.",
+    "|cff00ff00AOE Loot System|r - Loot multiple corpses at once with filters and auto-skinning.",
+    "|cff00ccffTeleporter NPCs|r - Mobile and stationary teleporters with many destinations.",
+    "|cffff8000Mythic+ Dungeons|r - Keystones, affixes, scaling rewards, and leaderboards.",
+    "|cffa335eeItem Upgrade System|r - Tier-based upgrades using token currency.",
+    "|cffff0000Hinterland Battleground|r - Open-world PvP with objectives and raid support.",
+    "|cffff66ffPrestige & Seasons|r - Long-term progression and competitive seasonal rewards.",
+    "|cffff6600Challenge Modes|r - Hardcore, Iron Man, Self-Crafted, and more.",
+    "|cff00ff99Dungeon Quest System|r - Daily/weekly dungeon objectives with token rewards.",
+    "|cff00ccffHotspot XP System|r - Rotating bonus XP zones with map integration.",
+    "|cffa335eeItem Vault System|r - Weekly reward caches based on your activity.",
 }
 
 -- =============================================================================

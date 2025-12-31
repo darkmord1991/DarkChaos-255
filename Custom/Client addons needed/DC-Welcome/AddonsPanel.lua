@@ -38,10 +38,11 @@ DCWelcome.RegisteredAddons = {
         id = "dc-mythicplus",
         name = "Mythic+ Suite",
         description = "HUD, Group Finder, Live Runs Spectator, Keystone Activation, and Scheduled Events",
-        icon = "Interface\\Icons\\Achievement_Boss_Archimonde",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\MythicPlus_64.tga",
         color = {0.2, 0.8, 1.0},  -- Cyan
         category = "Dungeons",
         minLevel = 1,
+        openButtonIcon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\MythicPlus_64.tga",
         openCommand = "/dcgf",
         settingsCommand = "/dcm settings",
         openFunc = function()
@@ -72,7 +73,7 @@ DCWelcome.RegisteredAddons = {
         -- Great Vault Button
         hasSecondButton = true,
         secondButtonName = "Great Vault",
-        secondButtonIcon = DCWelcome.ADDON_PATH .. "Textures\\DCHeirloomIcon.tga",
+        secondButtonIcon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\MythicPlus_64.tga",
         secondButtonFunc = function()
             if DCMythicPlusHUD and DCMythicPlusHUD.GreatVault and DCMythicPlusHUD.GreatVault.Toggle then
                 DCMythicPlusHUD.GreatVault:Toggle()
@@ -87,7 +88,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-leaderboards",
         name = "Leaderboards",
         description = "M+, PvP, and seasonal rankings browser",
-        icon = "Interface\\Icons\\Achievement_Arena_2v2_1",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\Leaderboards_64.tga",
         color = {1, 0.84, 0},  -- Gold
         category = "Competition",
         minLevel = 1,
@@ -111,7 +112,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-hotspot",
         name = "Hotspot Map",
         description = "Shows dynamic XP zones on the world map. Type /dchotspot for options.",
-        icon = DCWelcome.ADDON_PATH .. "Textures\\DCUpgradeIcon.tga",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\Mapupgrades_64.tga",
         color = {0, 0.8, 1},  -- Cyan
         category = "World",
         minLevel = 1,
@@ -135,15 +136,16 @@ DCWelcome.RegisteredAddons = {
         id = "dc-itemupgrade",
         name = "Item Upgrades",
         description = "Upgrade gear with tokens from M+ and raids",
-        icon = DCWelcome.ADDON_PATH .. "Textures\\DCUpgradeIcon.tga",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\ItemUpgrade_64.tga",
         color = {0, 0.44, 0.87},  -- Blue
         category = "Gear",
         minLevel = 1,
+        openButtonIcon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\ItemUpgrade_64.tga",
         openCommand = "/dcu",
         settingsCommand = "/dcu settings",
         hasSecondButton = true,  -- Special: has heirloom button
         secondButtonName = "Heirlooms",
-        secondButtonIcon = DCWelcome.ADDON_PATH .. "Textures\\DCHeirloomIcon.tga",
+        secondButtonIcon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\HeirloomUpgrade_64.tga",
         secondButtonFunc = function()
             -- /dcu heirloom opens heirloom upgrade window
             if DarkChaos_ItemUpgrade then
@@ -203,7 +205,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-aoesettings",
         name = "AOE Loot Settings",
         description = "Configure mass looting, filters, and auto-sell",
-        icon = "Interface\\Icons\\INV_Misc_Bag_09",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\AOESettings_64.tga",
         color = {0, 1, 0},  -- Green
         category = "Settings",
         minLevel = 1,
@@ -230,7 +232,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-infobar",
         name = "Info Bar",
         description = "Top/Bottom info bar (season, keystone, events, character stats).",
-        icon = "Interface\\Icons\\INV_Misc_PocketWatch_01",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\InfoBar_64.tga",
         color = {0.2, 0.8, 1.0},
         category = "UI",
         minLevel = 1,
@@ -262,7 +264,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-collection",
         name = "Collections",
         description = "Mounts, Pets, Toys, and Appearances interface.",
-        icon = "Interface\\Icons\\Ability_Mount_RidingHorse",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\Collection_64.tga",
         color = {0.1, 0.8, 0.2},  -- Fel Green
         category = "World",
         minLevel = 1,
@@ -285,7 +287,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-qos",
         name = "Quality of Service",
         description = "QoL features: Auto-Quest, Cooldown Text, Auto-Repair, Auto-Sell, and Mail Collection.",
-        icon = "Interface\\Icons\\INV_Enchant_VoidSphere",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\QOS_64.tga",
         color = {1.0, 0.82, 0.0},  -- Gold
         category = "Settings",
         minLevel = 1,
@@ -309,7 +311,7 @@ DCWelcome.RegisteredAddons = {
         id = "dc-hinterlandbg",
         name = "Hinterland BG",
         description = "Open-world PvP battleground in The Hinterlands zone.",
-        icon = DCWelcome.ADDON_PATH .. "Textures\\DCDungeonIcon.tga",
+        icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\HinterlandBG_64.tga",
         color = {1, 0, 0},  -- Red
         category = "PvP",
         minLevel = 80,
@@ -555,7 +557,13 @@ local function CreateAddonCard(parent, addonInfo, yOffset)
         local openIcon = openBtn:CreateTexture(nil, "ARTWORK")
         openIcon:SetSize(20, 20)
         openIcon:SetPoint("CENTER", 0, 0)
-        openIcon:SetTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
+        local openTex = addonInfo.openButtonIcon or addonInfo.icon
+        if openTex then
+            openIcon:SetTexture(openTex)
+            openIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        else
+            openIcon:SetTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
+        end
         openBtn.icon = openIcon
         
         openBtn:SetScript("OnEnter", function(self)

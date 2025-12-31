@@ -237,30 +237,6 @@ function Auras:RefreshConfig()
 	self.general.showAnimations = self.general.showAnimations ~= false
 	self.db.auraFrame1 = self.db.auraFrame1 or {}
 	self.db.auraFrame2 = self.db.auraFrame2 or {}
-	local legacyPerRow = self.db.aurasPerRow
-	if legacyPerRow then
-		if legacyPerRow.frame1 and self.db.auraFrame1.rowCount == nil then
-			self.db.auraFrame1.rowCount = legacyPerRow.frame1
-		end
-		if legacyPerRow.frame2 and self.db.auraFrame2.rowCount == nil then
-			self.db.auraFrame2.rowCount = legacyPerRow.frame2
-		end
-		self.db.aurasPerRow = nil
-	end
-	local legacySize1 = self.db.auraSize1
-	if legacySize1 then
-		self.db.auraFrame1.width = self.db.auraFrame1.width or legacySize1.width
-		self.db.auraFrame1.height = self.db.auraFrame1.height or legacySize1.height
-		self.db.auraFrame1.borderThickness = self.db.auraFrame1.borderThickness or legacySize1.borderThickness
-		self.db.auraSize1 = nil
-	end
-	local legacySize2 = self.db.auraSize2
-	if legacySize2 then
-		self.db.auraFrame2.width = self.db.auraFrame2.width or legacySize2.width
-		self.db.auraFrame2.height = self.db.auraFrame2.height or legacySize2.height
-		self.db.auraFrame2.borderThickness = self.db.auraFrame2.borderThickness or legacySize2.borderThickness
-		self.db.auraSize2 = nil
-	end
 	self.auraFrameConfig = {
 		[1] = self.db.auraFrame1 or {},
 		[2] = self.db.auraFrame2 or {},
@@ -278,6 +254,12 @@ function Auras:RefreshConfig()
 	self.swipe.style = self.swipe.style or DEFAULT_COOLDOWN_STYLE
 	if self.tracker and self.tracker.ApplySettings then
 		self.tracker:ApplySettings()
+	end
+	if NotPlater and NotPlater.SetTrackedMatchUnits and self.tracker and self.tracker.trackedUnitList then
+		NotPlater:SetTrackedMatchUnits(self.tracker.trackedUnitList)
+		if NotPlater.UpdateAllFrameMatches then
+			NotPlater:UpdateAllFrameMatches()
+		end
 	end
 	self:UpdateMouseoverWatcher()
 	self:RebuildLists()
@@ -357,12 +339,6 @@ function Auras:AttachToFrame(frame)
 	if not frame.npAuras.frames[2] then
 		frame.npAuras.frames[2] = self:CreateContainer(frame, 2)
 	end
-	frame:HookScript("OnShow", function(f)
-		Auras:OnPlateShow(f)
-	end)
-	frame:HookScript("OnHide", function(f)
-		Auras:OnPlateHide(f)
-	end)
 	self:ConfigureFrame(frame)
 end
 
@@ -700,23 +676,19 @@ function Auras:UpdateFrameAuras(frame, forcedUnit)
 	if forcedUnit and not SafeUnit(forcedUnit) then
 		forcedUnit = nil
 	end
-	local unit = forcedUnit or self:IdentifyUnit(frame)
-	if unit and not SafeUnit(unit) then
-		unit = nil
-	end
+	local unit = forcedUnit or (frame.lastUnitMatch and SafeUnit(frame.lastUnitMatch) and frame.lastUnitMatch) or nil
 	if unit then
 		self:SetFrameUnit(frame, unit)
 	else
 		self:SetFrameUnit(frame, nil)
 	end
-	local guid = frame.lastGuidMatch or (unit and UnitGUID(unit)) or frame.npGUID
-	if not unit and not (self.tracker and self.tracker.enableCombatLogTracking) then
-		self:SetFrameGUID(frame, nil)
-		self:HideContainers(frame)
-		return
-	end
+	local guid = frame.lastGuidMatch or frame.npGUID or (unit and UnitGUID(unit)) or nil
 	if guid then
 		self:SetFrameGUID(frame, guid)
+	end
+	if not guid and not (self.tracker and self.tracker.enableCombatLogTracking) then
+		self:HideContainers(frame)
+		return
 	end
 	local targetIsPlayer = false
 	if guid then
@@ -747,21 +719,6 @@ function Auras:IdentifyUnit(frame)
 	local matched = frame.lastUnitMatch
 	if matched and SafeUnit(matched) then
 		return matched
-	end
-	local trackedList = (self.tracker and self.tracker.trackedUnitList and #self.tracker.trackedUnitList > 0) and self.tracker.trackedUnitList or DEFAULT_TRACKED_UNITS
-	for _, unit in ipairs(trackedList) do
-		if self:VerifyUnit(frame, unit) then
-			return unit
-		end
-	end
-	local group = NotPlater.raid or NotPlater.party
-	if group then
-		for _, unitID in pairs(group) do
-			local targetString = unitID .. "-target"
-			if self:VerifyUnit(frame, targetString) then
-				return targetString
-			end
-		end
 	end
 	return nil
 end

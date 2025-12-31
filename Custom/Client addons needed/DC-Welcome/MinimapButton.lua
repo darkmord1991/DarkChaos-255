@@ -16,9 +16,9 @@ DCWelcome = DCWelcome or {}
 -- =============================================================================
 
 local BUTTON_RADIUS = 80          -- Distance from minimap center
-local BUTTON_SIZE = 32            -- Button size in pixels
-local ICON_TEXTURE = DCWelcome.ADDON_PATH .. "Textures\\DCWelcomeIcon.blp"  -- Custom Icon
--- local ICON_TEXTURE = DCWelcome.ADDON_PATH .. "Textures\\DCWelcomeIcon.blp"  -- Custom Icon
+local BUTTON_SIZE = 31            -- Match common minimap button size (LibDBIcon style)
+local ICON_TEXTURE = DCWelcome.ADDON_PATH .. "Textures\\Icons\\Welcome_64.tga"  -- Custom Icon (embedded)
+local SERVER_ICON_TEXTURE = DCWelcome.ADDON_PATH .. "Textures\\Icons\\ServerPortal_64.tga"  -- Server icon (embedded)
 local HIGHLIGHT_TEXTURE = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
 
 -- =============================================================================
@@ -84,19 +84,22 @@ local function CreateMinimapButton()
     button:SetFrameStrata("MEDIUM")
     button:SetFrameLevel(8)
     button:SetClampedToScreen(true)
+    button:SetHighlightTexture(HIGHLIGHT_TEXTURE)
     
-    -- Button background (circular border)
-    local bg = button:CreateTexture(nil, "BACKGROUND")
-    bg:SetSize(BUTTON_SIZE + 4, BUTTON_SIZE + 4)
-    bg:SetPoint("CENTER")
-    bg:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    -- Circular border (tracking ring) - match LibDBIcon / GoMove style
+    local border = button:CreateTexture(nil, "OVERLAY")
+    border:SetWidth(53)
+    border:SetHeight(53)
+    border:SetPoint("TOPLEFT")
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
     
     -- Main icon
     local icon = button:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(BUTTON_SIZE - 6, BUTTON_SIZE - 6)
-    icon:SetPoint("CENTER", 0, 1)
+    icon:SetWidth(20)
+    icon:SetHeight(20)
+    icon:SetPoint("TOPLEFT", 7, -5)
     icon:SetTexture(ICON_TEXTURE)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- Trim edges
+    icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)  -- Standard minimap icon crop
     button.icon = icon
     
     -- Overlay for visual feedback (new notification dot)
@@ -106,14 +109,6 @@ local function CreateMinimapButton()
     overlay:SetTexture("Interface\\COMMON\\Indicator-Green")
     overlay:Hide()
     button.notificationDot = overlay
-    
-    -- Highlight texture
-    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
-    highlight:SetSize(BUTTON_SIZE + 8, BUTTON_SIZE + 8)
-    highlight:SetPoint("CENTER")
-    highlight:SetTexture(HIGHLIGHT_TEXTURE)
-    highlight:SetBlendMode("ADD")
-    highlight:SetAlpha(0.4)
     
     -- Set initial position
     local angle = GetButtonPosition()
@@ -180,7 +175,7 @@ local function CreateMinimapButton()
         -- Show server info if available
         local info = DCWelcome:GetServerInfo()
         if info and info.name then
-            GameTooltip:AddLine("|cffffd700Server:|r " .. info.name, 0.6, 0.8, 1)
+            GameTooltip:AddLine("|T" .. SERVER_ICON_TEXTURE .. ":14:14:0:0|t |cffffd700Server:|r " .. info.name)
         end
         
         local season = DCWelcome:GetCurrentSeason()
