@@ -774,7 +774,7 @@ private:
             if (player->HasSkill(skillId))
             {
                 player->SetSkill(skillId, 0, 0, 0);
-                player->RemoveSpell(GetSpellIdForSkill(skillId)); // Need a helper for this or just rely on SetSkill 0
+                player->removeSpell(GetSpellIdForSkill(skillId), 0xFF /*SPEC_MASK_ALL*/, false);
                 // Actually SetSkill 0/0/0 effectively unlearns it in most cores or sets it to 0/0.
                 // For a true reset, we often need to remove the spells.
                 // For simplicity here, we stick to the existing SetSkill logic but applied conditionally.
@@ -804,7 +804,7 @@ private:
         }
     }
 
-    uint32 GetSpellIdForSkill(uint32 skill)
+    uint32 GetSpellIdForSkill(uint32 /*skill*/)
     {
         // This is tricky without a full lookup table. 
         // For now, SetSkill(skill, 0, 0, 0) is the best we can do without massive switch cases.

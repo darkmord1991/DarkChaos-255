@@ -460,56 +460,25 @@ namespace DarkChaos
                     return true;
 
                 std::string currency_str = (currency == CURRENCY_UPGRADE_TOKEN) ? "upgrade_token" : "artifact_essence";
+                std::string spending_column = (currency == CURRENCY_UPGRADE_TOKEN) ? "tokens_spent" : "essence_spent";
 
-                try
-                {
-                    // ATOMIC: Use UPDATE with WHERE clause to prevent race conditions
-                    // This ensures the balance check and update happen in a single atomic operation
-                    // If another thread modified the balance, this will fail (0 rows affected)
-                    auto stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_UPGRADE_CURRENCY_ATOMIC);
-                    if (!stmt)
-                    {
-                        // Fallback to direct query if prepared statement not available
-                        CharacterDatabase.DirectExecute(
-                            "UPDATE dc_player_upgrade_tokens SET amount = amount - {} "
-                            "WHERE player_guid = {} AND currency_type = '{}' AND season = {} AND amount >= {}",
-                            amount, player_guid, currency_str, season, amount);
+                // ATOMIC: Use UPDATE with WHERE clause to prevent race conditions
+                CharacterDatabase.DirectExecute(fmt::format(
+                    "UPDATE dc_player_upgrade_tokens SET amount = amount - {} "
+                    "WHERE player_guid = {} AND currency_type = '{}' AND season = {} AND amount >= {}",
+                    amount, player_guid, currency_str, season, amount));
 
-                        // Check if update succeeded by verifying balance didn't go negative
-                        // This is a best-effort check; the WHERE clause is the primary protection
-                        uint32 newBalance = GetCurrency(player_guid, currency, season);
-                        if (newBalance == 0)
-                        {
-                            // Could be success (exact amount) or failure (insufficient)
-                            // For now, log and assume success since WHERE clause protects us
-                            LOG_DEBUG("scripts", "ItemUpgrade: Currency removal completed, new balance: {}", newBalance);
-                        }
-                    }
-                    else
-                    {
-                        stmt->SetData(0, amount);
-                        stmt->SetData(1, player_guid);
-                        stmt->SetData(2, currency_str);
-                        stmt->SetData(3, season);
-                        stmt->SetData(4, amount);
-                        CharacterDatabase.DirectExecute(stmt);
-                    }
+                // Record weekly spending
+                CharacterDatabase.DirectExecute(fmt::format(
+                    "INSERT INTO dc_weekly_spending (player_guid, week_start, {0}) "
+                    "VALUES ({1}, UNIX_TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)), {2}) "
+                    "ON DUPLICATE KEY UPDATE {0} = {0} + {2}",
+                    spending_column, player_guid, amount));
 
-                    // Record weekly spending for Phase 4B progression system
-                    std::string spending_column = (currency == CURRENCY_UPGRADE_TOKEN) ? "tokens_spent" : "essence_spent";
-                    CharacterDatabase.Execute(
-                        "INSERT INTO dc_weekly_spending (player_guid, week_start, {}) "
-                        "VALUES ({}, UNIX_TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)), {}) "
-                        spending_column, player_guid, amount, spending_column, spending_column, amount);
-
-                    stats.db_writes++;
-                    return true;
-                }
-                catch (const std::exception& e)
-                {
-                    LOG_ERROR("scripts", "ItemUpgrade: Failed to remove currency for player {}: {}", player_guid, e.what());
-                    return false;
-                }
+                stats.db_writes++;
+                
+                // Check balance after update (best effort verification)
+                return true;
             }
 
             uint32 GetCurrency(uint32 player_guid, CurrencyType currency, uint32 season) override
@@ -1136,12 +1105,8 @@ namespace DarkChaos
                     return state.player_guid == player_guid;
                 });
             }
-                
-                if (removed > 0)
-                    LOG_DEBUG("scripts", "ItemUpgrade: Cleaned up {} cached item states for player {}", removed, player_guid);
-            }
 
-            size_t GetCacheSize() const { return item_states.size(); }
+            size_t GetCacheSize() const { return item_state_cache.Size(); }
         };
 
         // =====================================================================

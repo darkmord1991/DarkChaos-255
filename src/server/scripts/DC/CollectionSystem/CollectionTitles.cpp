@@ -63,7 +63,7 @@ namespace DCCollection
         }
 
         player->SetUInt32Value(PLAYER_CHOSEN_TITLE, titleEntry->bit_index);
-        ChatHandler(player->GetSession()).PSendSysMessage("Title set: %s", titleEntry->name[0]);
+        ChatHandler(player->GetSession()).PSendSysMessage("Title set: %s", titleEntry->nameMale[0]);
     }
 
     // =======================================================================

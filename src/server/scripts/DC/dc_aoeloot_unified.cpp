@@ -171,6 +171,47 @@ struct PlayerLootPreferences
     uint8 activePreset = 0;  // 0 = custom
 };
 
+struct DetailedLootStats
+{
+    uint32 totalItemsLooted = 0;
+    uint32 totalGoldLooted = 0;
+    uint32 poorItemsVendored = 0;
+    uint32 goldFromVendor = 0;
+    uint32 skinnedCorpses = 0;
+    uint32 minedNodes = 0;
+    uint32 herbedNodes = 0;
+    uint32 upgradesFound = 0;
+
+    // Quality breakdown
+    uint32 qualityPoor = 0;
+    uint32 qualityCommon = 0;
+    uint32 qualityUncommon = 0;
+    uint32 qualityRare = 0;
+    uint32 qualityEpic = 0;
+    uint32 qualityLegendary = 0;
+
+    // Filtered items by quality
+    uint32 filteredPoor = 0;
+    uint32 filteredCommon = 0;
+    uint32 filteredUncommon = 0;
+    uint32 filteredRare = 0;
+    uint32 filteredEpic = 0;
+    uint32 filteredLegendary = 0;
+};
+
+struct PlayerAoELootData
+{
+    uint64 lastAoELoot = 0;
+    uint32 lootedThisSession = 0;
+    uint64 lastCreditedGold = 0;
+    uint64 accumulatedCreditedGold = 0;
+};
+
+static std::unordered_map<ObjectGuid, PlayerLootPreferences> sPlayerPrefs;
+static std::unordered_map<ObjectGuid, DetailedLootStats> sDetailedStats;
+static std::unordered_map<ObjectGuid, PlayerAoELootData> sPlayerLootData;
+static std::unordered_map<ObjectGuid, uint64> sPlayerAutoStoreTimestamp;
+
 // =============================================================================
 // Loot Filter Presets - Quick switch between configurations
 // =============================================================================
@@ -236,7 +277,8 @@ struct LootItemHighlight
     int32 ilvlDelta = 0;          // How much of an upgrade (+5, +10, etc)
 };
 
-// Check if item would be an upgrade for the player's equipped slot
+// Check if item would be an upgrade for the player's equipped slot (currently unused)
+/*
 static bool IsItemUpgrade(Player* player, uint32 itemId, int32& outIlvlDelta)
 {
     outIlvlDelta = 0;
@@ -293,8 +335,10 @@ static bool IsItemUpgrade(Player* player, uint32 itemId, int32& outIlvlDelta)
     outIlvlDelta = static_cast<int32>(proto->ItemLevel) - static_cast<int32>(equippedProto->ItemLevel);
     return outIlvlDelta > 0;
 }
+*/
 
-// Get full highlight info for an item
+// Get full highlight info for an item (currently unused)
+/*
 static LootItemHighlight GetItemHighlight(Player* player, uint32 itemId)
 {
     LootItemHighlight highlight;
@@ -310,47 +354,8 @@ static LootItemHighlight GetItemHighlight(Player* player, uint32 itemId)
     
     return highlight;
 }
+*/
 
-struct DetailedLootStats
-{
-    uint32 totalItemsLooted = 0;
-    uint32 totalGoldLooted = 0;
-    uint32 poorItemsVendored = 0;
-    uint32 goldFromVendor = 0;
-    uint32 skinnedCorpses = 0;
-    uint32 minedNodes = 0;
-    uint32 herbedNodes = 0;
-    uint32 upgradesFound = 0;
-
-    // Quality breakdown
-    uint32 qualityPoor = 0;
-    uint32 qualityCommon = 0;
-    uint32 qualityUncommon = 0;
-    uint32 qualityRare = 0;
-    uint32 qualityEpic = 0;
-    uint32 qualityLegendary = 0;
-
-    // Filtered items by quality
-    uint32 filteredPoor = 0;
-    uint32 filteredCommon = 0;
-    uint32 filteredUncommon = 0;
-    uint32 filteredRare = 0;
-    uint32 filteredEpic = 0;
-    uint32 filteredLegendary = 0;
-};
-
-struct PlayerAoELootData
-{
-    uint64 lastAoELoot = 0;
-    uint32 lootedThisSession = 0;
-    uint64 lastCreditedGold = 0;
-    uint64 accumulatedCreditedGold = 0;
-};
-
-static std::unordered_map<ObjectGuid, PlayerLootPreferences> sPlayerPrefs;
-static std::unordered_map<ObjectGuid, DetailedLootStats> sDetailedStats;
-static std::unordered_map<ObjectGuid, PlayerAoELootData> sPlayerLootData;
-static std::unordered_map<ObjectGuid, uint64> sPlayerAutoStoreTimestamp;
 
 // =============================================================================
 // Helper Functions
@@ -389,6 +394,13 @@ void SetPlayerShowMessages(ObjectGuid playerGuid, bool value)
     sPlayerPrefs[playerGuid].showMessages = value;
 }
 
+// =============================================================================
+// DCAoELootExt Namespace - External Interface Functions
+// =============================================================================
+
+namespace DCAoELootExt
+{
+
 bool IsPlayerAoELootEnabled(ObjectGuid playerGuid)
 {
     auto it = sPlayerPrefs.find(playerGuid);
@@ -411,6 +423,54 @@ void SetPlayerMinQuality(ObjectGuid playerGuid, uint8 quality)
     if (quality > 6) quality = 6;
     sPlayerPrefs[playerGuid].minQuality = quality;
 }
+
+void GetDetailedStats(ObjectGuid playerGuid, uint32& itemsLooted, uint32& goldLooted, uint32& upgradesFound)
+{
+    auto it = sDetailedStats.find(playerGuid);
+    if (it != sDetailedStats.end())
+    {
+        itemsLooted = it->second.totalItemsLooted;
+        goldLooted = it->second.totalGoldLooted;
+        upgradesFound = it->second.upgradesFound;
+    }
+    else
+    {
+        itemsLooted = 0;
+        goldLooted = 0;
+        upgradesFound = 0;
+    }
+}
+
+void GetQualityStats(ObjectGuid playerGuid,
+                     uint32& poor, uint32& common, uint32& uncommon,
+                     uint32& rare, uint32& epic, uint32& legendary,
+                     uint32& filtPoor, uint32& filtCommon, uint32& filtUncommon,
+                     uint32& filtRare, uint32& filtEpic, uint32& filtLegendary)
+{
+    auto it = sDetailedStats.find(playerGuid);
+    if (it != sDetailedStats.end())
+    {
+        poor = it->second.qualityPoor;
+        common = it->second.qualityCommon;
+        uncommon = it->second.qualityUncommon;
+        rare = it->second.qualityRare;
+        epic = it->second.qualityEpic;
+        legendary = it->second.qualityLegendary;
+        filtPoor = it->second.filteredPoor;
+        filtCommon = it->second.filteredCommon;
+        filtUncommon = it->second.filteredUncommon;
+        filtRare = it->second.filteredRare;
+        filtEpic = it->second.filteredEpic;
+        filtLegendary = it->second.filteredLegendary;
+    }
+    else
+    {
+        poor = common = uncommon = rare = epic = legendary = 0;
+        filtPoor = filtCommon = filtUncommon = filtRare = filtEpic = filtLegendary = 0;
+    }
+}
+
+} // namespace DCAoELootExt
 
 // =============================================================================
 // Statistics Functions
@@ -462,6 +522,10 @@ void UpdateFilteredStats(ObjectGuid playerGuid, uint8 quality)
 // =============================================================================
 // Core Loot Functions
 // =============================================================================
+
+// Using declarations for DCAoELootExt functions
+using DCAoELootExt::IsPlayerAoELootEnabled;
+using DCAoELootExt::GetPlayerMinQuality;
 
 static bool ShouldShowMessage(Player* player)
 {
@@ -800,6 +864,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
 // Skinning Integration
 // =============================================================================
 
+// Can player skin creature (currently unused)
+/*
 static bool CanPlayerSkinCreature(Player* player, Creature* creature)
 {
     if (!player || !creature) return false;
@@ -815,7 +881,10 @@ static bool CanPlayerSkinCreature(Player* player, Creature* creature)
     uint32 requiredLevel = targetLevel > 10 ? (targetLevel - 10) * 5 : 1;
     return playerSkill >= requiredLevel;
 }
+*/
 
+// Auto-skin creature (currently unused - can be enabled in future)
+/*
 static void AutoSkinCreature(Player* player, Creature* creature)
 {
     if (!sConfig.autoSkinEnabled || !CanPlayerSkinCreature(player, creature)) return;
@@ -838,6 +907,7 @@ static void AutoSkinCreature(Player* player, Creature* creature)
     creature->loot.clear();
     creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE);
 }
+*/
 
 // =============================================================================
 // Script Classes
@@ -918,7 +988,7 @@ class AoELootPlayerScript : public PlayerScript
 public:
     AoELootPlayerScript() : PlayerScript("AoELootPlayerScript") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (!player) return;
 
@@ -972,7 +1042,7 @@ public:
             ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[AoE Loot]|r System enabled.");
     }
 
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         if (!player) return;
 

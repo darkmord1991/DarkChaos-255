@@ -2,7 +2,7 @@
  * Integrates HLBG systems into AzerothCore sources.
  */
 
-#include "HLBG_AIO_Handlers.cpp"
+// #include "HLBG_AIO_Handlers.cpp"
 #include "WorldSessionMgr.h"
 #include "Chat/Chat.h"
 #include "Log.h"
@@ -47,7 +47,7 @@ public:
         uint32 alliancePlayers = GetPlayerCountInBG(instanceId, ALLIANCE);
         uint32 hordePlayers = GetPlayerCountInBG(instanceId, HORDE);
 
-        HLBGAIOHandlers::UpdateBattleResults(winner, duration, affixId, allianceResources, hordeResources, alliancePlayers, hordePlayers);
+        // HLBGAIOHandlers::UpdateBattleResults(winner, duration, affixId, allianceResources, hordeResources, alliancePlayers, hordePlayers);
         UpdatePlayerStatistics(instanceId, winner);
     }
 

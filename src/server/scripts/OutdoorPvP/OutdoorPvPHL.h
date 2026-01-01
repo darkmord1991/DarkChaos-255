@@ -149,6 +149,7 @@
         public:
             OutdoorPvPHL();
             ~OutdoorPvPHL() override; // ensure key function for vtable emission
+            void LoadPersistedBGState();
 
             // Public affix enum (used by DC helper sources and tests)
             // Declared early so it is visible to all subsequent member declarations
@@ -582,6 +583,12 @@
             std::map<ObjectGuid, uint32> _playerLastMove; // ms since start
             std::map<ObjectGuid, bool> _playerWarnedBeforeTeleport;
             std::map<ObjectGuid, Position> _playerLastPos;
+            
+            // State Machine variables
+            uint32 _allianceScore;
+            uint32 _hordeScore;
+            uint32 _matchTimeRemaining; // ms
+
             // Group management: track battleground raid groups per faction
             std::vector<ObjectGuid> _teamRaidGroups[2];
         // Track when a member of a tracked raid group went offline (epoch seconds)

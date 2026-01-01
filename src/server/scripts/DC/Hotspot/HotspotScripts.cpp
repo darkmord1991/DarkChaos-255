@@ -57,13 +57,13 @@ class HotspotsPlayerScript : public PlayerScript
 public:
     HotspotsPlayerScript() : PlayerScript("HotspotsPlayerScript") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (sHotspotsConfig.enabled)
             sHotspotMgr->CheckPlayerHotspotStatus(player);
     }
     
-    void OnUpdate(Player* player, uint32 /*diff*/) override
+    void OnPlayerUpdate(Player* player, uint32 /*diff*/) override
     {
         if (!sHotspotsConfig.enabled || !player) return;
         
@@ -89,10 +89,6 @@ public:
         if (sHotspotsConfig.enabled) sHotspotMgr->CheckPlayerHotspotStatus(player);
     }
     
-    void OnTeleport(Player* player, uint32, float, float, float, float, uint32, Unit*) override
-    {
-        if (sHotspotsConfig.enabled) sHotspotMgr->CheckPlayerHotspotStatus(player);
-    }
 };
 
 class HotspotsPlayerGainXP : public PlayerScript

@@ -870,11 +870,8 @@
         sWorldState->setWorldState(0xDD0008, _affixNextChangeEpoch);
     }
 
-    void OutdoorPvPHL::_persistState() const
-    {
-        if (_persistenceEnabled)
-            SaveRequiredWorldStates();
-    }
+    // State persistence is now handled in OutdoorPvPHL_StateMachine.cpp
+    // void OutdoorPvPHL::_persistState() const - removed duplicate
 
     // --- Affix system (scaffolding) ---
     void OutdoorPvPHL::_tickAffix(uint32 diff)
@@ -1165,4 +1162,20 @@
                 if (Weather* w = m->GetOrGenerateZoneDefaultWeather(zoneId))
                     w->SetWeather(static_cast<WeatherType>(weather), 0.5f);
         });
+    }
+
+    // ============================================================================
+    // Stub implementations for removed functions (now handled by addon)
+    // ============================================================================
+    
+    void OutdoorPvPHL::UpdateWorldStatesAllPlayers()
+    {
+        // HUD worldstates removed - now handled by DC-Mapupgrades addon
+        // Function kept for compatibility with older code paths
+    }
+    
+    void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& /*packet*/)
+    {
+        // HUD worldstates removed - now handled by DC-Mapupgrades addon
+        // Function kept for compatibility with base class override
     }

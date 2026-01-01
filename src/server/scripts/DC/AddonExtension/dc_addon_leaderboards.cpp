@@ -1325,7 +1325,7 @@ namespace
                 std::lock_guard<std::mutex> lock(g_cacheMutex);
                 
                 // Evict old entries if cache is too large
-                if (g_leaderboardCache.size() >= MAX_CACHE_ENTRIES)
+                if (g_leaderboardCache.size() >= s_CacheConfig.maxCacheEntries)
                 {
                     // Simple eviction: remove oldest entries
                     time_t oldest = time(nullptr);

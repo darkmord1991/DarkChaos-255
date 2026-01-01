@@ -812,7 +812,7 @@ class DCQoSPlayerScript : public PlayerScript
 public:
     DCQoSPlayerScript() : PlayerScript("DCQoSPlayerScript") {}
 
-    void OnLogin(Player* player)
+    void OnPlayerLogin(Player* player) override
     {
         if (!DCQoS::IsEnabled() || !player)
             return;

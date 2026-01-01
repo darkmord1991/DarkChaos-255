@@ -1482,12 +1482,6 @@ public:
             sMythicSpectator.StopSpectating(player);
     }
 
-    void OnPlayerLeaveWorld(Player* player) override
-    {
-        if (sMythicSpectator.IsSpectating(player))
-            sMythicSpectator.StopSpectating(player);
-    }
-
     // Note: Spectator map change cleanup is handled by the spectator system itself
     // when teleportation occurs via StopSpectating/StartSpectating
 };

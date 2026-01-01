@@ -15,6 +15,7 @@
 #include "GameTime.h"
 #include "DBCStores.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 
 // External functions from ac_hotspots.cpp
 extern uint32 GetHotspotXPBonusPercentage();
@@ -235,9 +236,8 @@ namespace Hotspot
         msg.Set("hotspot", hs);
         
         // Send to all online players
-        sWorld->DoForAllSessions([&msg](WorldSession* session) {
-            if (Player* player = session->GetPlayer())
-                msg.Send(player);
+        sWorldSessionMgr->DoForAllOnlinePlayers([&msg](Player* player) {
+            msg.Send(player);
         });
         
         LOG_DEBUG("dc.addon", "Broadcast hotspot spawn: id={} map={} zone={}", id, mapId, zoneId);
@@ -250,9 +250,8 @@ namespace Hotspot
         msg.Set("id", id);
         
         // Send to all online players
-        sWorld->DoForAllSessions([&msg](WorldSession* session) {
-            if (Player* player = session->GetPlayer())
-                msg.Send(player);
+        sWorldSessionMgr->DoForAllOnlinePlayers([&msg](Player* player) {
+            msg.Send(player);
         });
         
         LOG_DEBUG("dc.addon", "Broadcast hotspot expire: id={}", id);

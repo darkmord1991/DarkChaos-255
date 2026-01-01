@@ -40,6 +40,7 @@ namespace DCCollection
         constexpr const char* TRANSMOG_APPEARANCES_ENABLED = "DCCollection.Transmog.Appearances.Enable";
         constexpr const char* ACCOUNTWIDE_ENABLED = "DCCollection.Accountwide.Enable";
         constexpr const char* PETS_REBUILD_ON_STARTUP = "DCCollection.Pets.RebuildDefinitionsOnStartup";
+        constexpr const char* PETS_REBUILD_ON_STARTUP_TRUNCATE = "DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate";
     }
 
     // =======================================================================
@@ -196,5 +197,8 @@ namespace DCCollection
 
 // Script registration
 void AddSC_dc_addon_collection();
+
+// Helper to get character GUID column name - consistent with legacy/modern schema
+inline std::string GetCharEntryColumn(std::string const& /*tableName*/) { return "guid"; }
 
 #endif // DC_COLLECTION_CORE_H

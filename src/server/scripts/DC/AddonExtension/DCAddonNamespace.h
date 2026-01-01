@@ -614,6 +614,150 @@ namespace DCAddon
         }
     }
 
+
+    // ========================================================================
+    // ParsedMessage - Core parser for incoming DC addon messages
+    // ========================================================================
+
+    class ParsedMessage
+    {
+    public:
+        ParsedMessage(const std::string& raw)
+        {
+            Parse(raw);
+        }
+
+        bool IsValid() const { return _valid; }
+        const std::string& GetModule() const { return _module; }
+        uint8 GetOpcode() const { return _opcode; }
+        size_t GetDataCount() const { return _data.size(); }
+        bool HasMore() const { return _currentIndex < _data.size(); }
+
+        // Get data at index with type conversion
+        std::string GetString(size_t index) const
+        {
+            return (index < _data.size()) ? _data[index] : "";
+        }
+
+        // Sequential read methods for parser-style access
+        std::string NextString()
+        {
+            return HasMore() ? _data[_currentIndex++] : "";
+        }
+
+        int32 GetInt32(size_t index) const
+        {
+            try {
+                return (index < _data.size()) ? std::stoi(_data[index]) : 0;
+            } catch (...) {
+                return 0;
+            }
+        }
+
+        uint32 GetUInt32(size_t index) const
+        {
+            try {
+                return (index < _data.size()) ? static_cast<uint32>(std::stoul(_data[index])) : 0;
+            } catch (...) {
+                return 0;
+            }
+        }
+
+        float GetFloat(size_t index) const
+        {
+            try {
+                return (index < _data.size()) ? std::stof(_data[index]) : 0.0f;
+            } catch (...) {
+                return 0.0f;
+            }
+        }
+
+        bool GetBool(size_t index) const
+        {
+            return GetString(index) == "1";
+        }
+
+        uint64 GetUInt64(size_t index) const
+        {
+            try {
+                return (index < _data.size()) ? std::stoull(_data[index]) : 0;
+            } catch (...) {
+                return 0;
+            }
+        }
+
+    private:
+        void Parse(const std::string& raw)
+        {
+            std::stringstream ss(raw);
+            std::string token;
+            std::vector<std::string> tokens;
+
+            while (std::getline(ss, token, DELIMITER))
+            {
+                tokens.push_back(token);
+            }
+
+            if (tokens.size() < 2)
+            {
+                _valid = false;
+                return;
+            }
+
+            _module = tokens[0];
+            try {
+                _opcode = static_cast<uint8>(std::stoi(tokens[1]));
+            } catch (...) {
+                _valid = false;
+                return;
+            }
+
+            // Remaining tokens are data
+            for (size_t i = 2; i < tokens.size(); ++i)
+            {
+                _data.push_back(tokens[i]);
+            }
+
+            _valid = true;
+        }
+
+        bool _valid = false;
+        std::string _module;
+        uint8 _opcode = 0;
+        std::vector<std::string> _data;
+        mutable size_t _currentIndex = 0;
+    };
+
+    // Parser - alias for ParsedMessage with sequential read support
+    class Parser
+    {
+    public:
+        Parser(const ParsedMessage& msg) : _msg(msg), _index(0) {}
+
+        uint8 GetOpcode() const { return _msg.GetOpcode(); }
+        bool HasMore() const { return _index < _msg.GetDataCount(); }
+
+        std::string GetString() { return _msg.GetString(_index++); }
+        int32 GetInt32() { return _msg.GetInt32(_index++); }
+        uint32 GetUInt32() { return _msg.GetUInt32(_index++); }
+        float GetFloat() { return _msg.GetFloat(_index++); }
+        bool GetBool() { return _msg.GetBool(_index++); }
+        uint64 GetUInt64() { return _msg.GetUInt64(_index++); }
+
+        // Peek at next without consuming
+        std::string PeekString() const { return HasMore() ? _msg.GetString(_index) : ""; }
+
+        // Skip N fields
+        void Skip(size_t count = 1) { _index += count; }
+
+        // Reset to beginning of data
+        void Reset() { _index = 0; }
+
+    private:
+        const ParsedMessage& _msg;
+        size_t _index;
+    };
+
     // ========================================================================
     // BATCH MESSAGE SUPPORT (DC|BATCH|count|MOD1|op|data|MOD2|op|data|...)
     // ========================================================================
@@ -777,147 +921,6 @@ namespace DCAddon
 
     // Quick permission helper: ensure module enabled and player has minimum security
     // (Moved below MessageRouter declaration to avoid forward-declare/ordering issues)
-
-    // Parse incoming message
-    class ParsedMessage
-    {
-    public:
-        ParsedMessage(const std::string& raw)
-        {
-            Parse(raw);
-        }
-
-        bool IsValid() const { return _valid; }
-        const std::string& GetModule() const { return _module; }
-        uint8 GetOpcode() const { return _opcode; }
-        size_t GetDataCount() const { return _data.size(); }
-        bool HasMore() const { return _currentIndex < _data.size(); }
-
-        // Get data at index with type conversion
-        std::string GetString(size_t index) const
-        {
-            return (index < _data.size()) ? _data[index] : "";
-        }
-
-        // Sequential read methods for parser-style access
-        std::string NextString()
-        {
-            return HasMore() ? _data[_currentIndex++] : "";
-        }
-
-        int32 GetInt32(size_t index) const
-        {
-            try {
-                return (index < _data.size()) ? std::stoi(_data[index]) : 0;
-            } catch (...) {
-                return 0;
-            }
-        }
-
-        uint32 GetUInt32(size_t index) const
-        {
-            try {
-                return (index < _data.size()) ? static_cast<uint32>(std::stoul(_data[index])) : 0;
-            } catch (...) {
-                return 0;
-            }
-        }
-
-        float GetFloat(size_t index) const
-        {
-            try {
-                return (index < _data.size()) ? std::stof(_data[index]) : 0.0f;
-            } catch (...) {
-                return 0.0f;
-            }
-        }
-
-        bool GetBool(size_t index) const
-        {
-            return GetString(index) == "1";
-        }
-
-        uint64 GetUInt64(size_t index) const
-        {
-            try {
-                return (index < _data.size()) ? std::stoull(_data[index]) : 0;
-            } catch (...) {
-                return 0;
-            }
-        }
-
-    private:
-        void Parse(const std::string& raw)
-        {
-            std::stringstream ss(raw);
-            std::string token;
-            std::vector<std::string> tokens;
-
-            while (std::getline(ss, token, DELIMITER))
-            {
-                tokens.push_back(token);
-            }
-
-            if (tokens.size() < 2)
-            {
-                _valid = false;
-                return;
-            }
-
-            _module = tokens[0];
-            try {
-                _opcode = static_cast<uint8>(std::stoi(tokens[1]));
-            } catch (...) {
-                _valid = false;
-                return;
-            }
-
-            // Remaining tokens are data
-            for (size_t i = 2; i < tokens.size(); ++i)
-            {
-                _data.push_back(tokens[i]);
-            }
-
-            _valid = true;
-        }
-
-        bool _valid = false;
-        std::string _module;
-        uint8 _opcode = 0;
-        std::vector<std::string> _data;
-        mutable size_t _currentIndex = 0;
-    };
-
-    // Parser - alias for ParsedMessage with sequential read support
-    // Used by module handlers for convenient data extraction
-    class Parser
-    {
-    public:
-        Parser(const ParsedMessage& msg) : _msg(msg), _index(0) {}
-
-        uint8 GetOpcode() const { return _msg.GetOpcode(); }
-        bool HasMore() const { return _index < _msg.GetDataCount(); }
-
-        std::string GetString() { return _msg.GetString(_index++); }
-        int32 GetInt32() { return _msg.GetInt32(_index++); }
-        uint32 GetUInt32() { return _msg.GetUInt32(_index++); }
-        float GetFloat() { return _msg.GetFloat(_index++); }
-        bool GetBool() { return _msg.GetBool(_index++); }
-        uint64 GetUInt64() { return _msg.GetUInt64(_index++); }
-
-        // Peek at next without consuming
-        std::string PeekString() const { return HasMore() ? _msg.GetString(_index) : ""; }
-
-        // Skip N fields
-        void Skip(size_t count = 1) { _index += count; }
-
-        // Reset to beginning of data
-        void Reset() { _index = 0; }
-
-    private:
-        const ParsedMessage& _msg;
-        size_t _index;
-    };
 
     // ========================================================================
     // MESSAGE HANDLER REGISTRATION

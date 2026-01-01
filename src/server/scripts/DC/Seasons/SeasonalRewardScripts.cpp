@@ -26,7 +26,7 @@ public:
     SeasonalRewardPlayerScript() : PlayerScript("SeasonalRewardPlayerScript") {}
 
     // Check weekly reset on login
-    void OnLogin(Player* player)
+    void OnPlayerLogin(Player* player) override
     {
         if (!sSeasonalRewards->GetConfig().enabled)
             return;

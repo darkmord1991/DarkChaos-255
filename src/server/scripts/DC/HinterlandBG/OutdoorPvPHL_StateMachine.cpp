@@ -75,7 +75,7 @@ void OutdoorPvPHL::TransitionToState(BGState newState)
         static_cast<uint32>(oldState), static_cast<uint32>(newState));
 
     // Persist state to database for crash recovery
-    PersistBGState();
+    _persistState();
 
     // State entry actions
     switch (newState)
@@ -362,7 +362,7 @@ void OutdoorPvPHL::BroadcastToZone(const char* format, ...)
 // State Persistence for Crash Recovery
 // ============================================================================
 
-void OutdoorPvPHL::PersistBGState()
+void OutdoorPvPHL::_persistState() const
 {
     // Persist current BG state to database. On server restart, LoadPersistedBGState
     // can restore partial battles (e.g. IN_PROGRESS) and handle gracefully.
@@ -374,9 +374,9 @@ void OutdoorPvPHL::PersistBGState()
         "VALUES ({}, {}, {}, {}, {}, {}, {}, NOW())",
         OutdoorPvPHLBuffZones[0],
         static_cast<uint8>(_bgState),
-        _allianceScore,
-        _hordeScore,
-        _matchTimeRemaining,
+        limit_A,
+        limit_H,
+        (GetTimeRemainingSeconds() * 1000),
         _warmupTimeRemaining,
         static_cast<uint8>(_activeAffix)
     );

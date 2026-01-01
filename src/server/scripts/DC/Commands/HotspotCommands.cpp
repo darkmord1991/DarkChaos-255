@@ -3,9 +3,9 @@
 #include "CommandScript.h"
 #include "Player.h"
 #include "GameTime.h"
-#include "HotspotMgr.h"
-#include "HotspotDefines.h"
-#include "HotspotGrid.h"
+#include "../Hotspot/HotspotMgr.h"
+#include "../Hotspot/HotspotDefines.h"
+#include "../Hotspot/HotspotGrid.h"
 #include "../AddonExtension/DCAddonNamespace.h"
 
 class HotspotsCommandScript : public CommandScript
@@ -13,18 +13,19 @@ class HotspotsCommandScript : public CommandScript
 public:
     HotspotsCommandScript() : CommandScript("HotspotsCommandScript") { }
 
-    ChatCommandTable GetCommands() const override
+    Acore::ChatCommands::ChatCommandTable GetCommands() const override
     {
+        using namespace Acore::ChatCommands;
         static ChatCommandTable hotspotsCommandTable =
         {
-            ChatCommandBuilder("list",   HandleHotspotsListCommand,   SEC_GAMEMASTER,    Console::No),
-            ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("spawnhere", HandleHotspotsSpawnHereCommand, SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Console::No),
-            ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Console::No),
-            ChatCommandBuilder("status", HandleHotspotsStatusCommand, SEC_PLAYER, Console::No)
+            ChatCommandBuilder("list",   HandleHotspotsListCommand,   SEC_GAMEMASTER,    Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("spawn",  HandleHotspotsSpawnCommand,  SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("spawnhere", HandleHotspotsSpawnHereCommand, SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("dump",   HandleHotspotsDumpCommand,   SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("clear",  HandleHotspotsClearCommand,  SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("reload", HandleHotspotsReloadCommand, SEC_ADMINISTRATOR, Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("tp",     HandleHotspotsTeleportCommand, SEC_GAMEMASTER,  Acore::ChatCommands::Console::No),
+            ChatCommandBuilder("status", HandleHotspotsStatusCommand, SEC_PLAYER, Acore::ChatCommands::Console::No)
         };
 
         static ChatCommandTable commandTable =
@@ -151,7 +152,7 @@ public:
         return true;
     }
 
-    static bool HandleHotspotsTeleportCommand(ChatHandler* handler, char const* args)
+    static bool HandleHotspotsTeleportCommand(ChatHandler* handler, char const* /*args*/)
     {
         // ... (Teleport logic using grid) ...
         auto all = sHotspotMgr->GetGrid().GetAll();

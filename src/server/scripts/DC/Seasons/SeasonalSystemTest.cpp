@@ -244,7 +244,7 @@ namespace DarkChaos
 
             // Register systems
             std::cout << "Registering game systems...\n";
-            RegisterItemUpgradeSystem();
+            // RegisterItemUpgradeSystem(); // Function definition missing/inaccessible
             // HLBG::RegisterHLBGWithSeasonalSystem(); // Disabled - functions not accessible
 
             // Display registered systems

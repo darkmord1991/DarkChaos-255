@@ -361,7 +361,7 @@ void MythicPlusRunManager::RegisterPlayerEnter(Player* player)
     SyncHudToPlayer(state, player);
 }
 
-void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* /*killer*/)
+void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* killer)
 {
     if (!player)
         return;
@@ -393,6 +393,7 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* /*killer*
     }
     else
     {
+        uint32 remaining = (profile->deathBudget > state->deaths) ? (profile->deathBudget - state->deaths) : 0;
         if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
             ChatHandler(owner->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r Death recorded. %u remaining.", remaining);
     }
