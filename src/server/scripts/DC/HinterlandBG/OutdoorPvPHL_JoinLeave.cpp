@@ -19,6 +19,10 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     if (!player)
         return;
 
+    // Only process players in the Hinterland BG area (6738), not the entire Hinterlands zone (47)
+    if (player->GetAreaId() != 6738)
+        return;
+
     // Track player in zone set for optimized iteration
     _playersInHinterlands.insert(player->GetGUID());
 
@@ -117,6 +121,11 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
 void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
 {
     if (!player)
+        return;
+
+    // Only process players leaving the Hinterland BG area (6738)
+    // Note: This check ensures we only track players who were actually in the BG area
+    if (_playersInHinterlands.find(player->GetGUID()) == _playersInHinterlands.end())
         return;
 
     // Remove from tracked set
