@@ -16,7 +16,7 @@
  * Copyright (C) 2025 Dark Chaos Development Team
  */
 
-#include "ScriptMgr.h"
+#include "Scripting/ScriptMgr.h"
 #include "Player.h"
 #include "Chat.h"
 #include "Config.h"
@@ -24,7 +24,8 @@
 #include "DatabaseEnv.h"
 #include "ObjectMgr.h"
 #include "StringFormat.h"
-#include "DCAddonNamespace.h"
+#include "Common.h"
+#include "dc_addon_namespace.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 #include "OutdoorPvP/OutdoorPvPHL.h"
 #include "../HinterlandBG/HinterlandBGConstants.h"
@@ -40,6 +41,7 @@
 #include <unordered_map>
 #include <vector>
 #include "../CrossSystem/LeaderboardUtils.h"
+#include "dc_addon_hlbg.h"
 
 // Use shared utilities from LeaderboardUtils.h
 using DarkChaos::Leaderboard::GetClassNameFromId;
@@ -85,15 +87,7 @@ namespace HLBG
     // ENUMS & STRUCTURES
     // =====================================================================
 
-    // BG Status values
-    enum HLBGStatus : uint8
-    {
-        STATUS_NONE   = 0,
-        STATUS_QUEUED = 1,
-        STATUS_PREP   = 2, // Preparation countdown
-        STATUS_ACTIVE = 3,
-        STATUS_ENDED  = 4,
-    };
+    // HLBGStatus enum moved to header
 
     // Client message opcodes
     // IMPORTANT: Keep aligned with DCAddonNamespace.h (DCAddon::Opcode::HLBG)
@@ -179,13 +173,46 @@ namespace HLBG
         msg.Send(player);
     }
 
-    void SendQueueUpdate(Player* player, uint8 queueStatus, uint32 position, uint32 estimatedTime)
+    void SendQueueUpdate(Player* player, uint8 queueStatus, uint32 position, uint32 estimatedTime,
+                         uint32 totalQueued, uint32 allianceQueued, uint32 hordeQueued, 
+                         uint32 minPlayers, uint8 state)
     {
         Message msg(Module::HINTERLAND, SMSG_QUEUE_UPDATE);
         msg.Add(queueStatus);
         msg.Add(position);
         msg.Add(estimatedTime);
+        msg.Add(totalQueued);
+        msg.Add(allianceQueued);
+        msg.Add(hordeQueued);
+        msg.Add(minPlayers);
+        msg.Add(state);
         msg.Send(player);
+    }
+
+    // Helper to gather queue stats and send update
+    void SendQueueInfo(Player* player)
+    {
+        if (!player) return;
+
+        OutdoorPvPHL* hl = GetHL();
+        if (!hl)
+        {
+            SendQueueUpdate(player, 0, 0, 0, 0, 0, 0, 10, 0);
+            return;
+        }
+
+        uint8 queueStatus = hl->IsPlayerQueued(player) ? 1 : 0;
+        uint32 position = 0; // Position logic not yet exposed
+        uint32 estimatedTime = 0; 
+
+        uint32 totalQueued = hl->GetQueuedPlayerCount();
+        uint32 allianceQueued = hl->GetQueuedPlayerCountByTeam(TEAM_ALLIANCE);
+        uint32 hordeQueued = hl->GetQueuedPlayerCountByTeam(TEAM_HORDE);
+        uint32 minPlayers = hl->GetMinPlayersToStart();
+        uint8 state = static_cast<uint8>(hl->GetBGState());
+
+        SendQueueUpdate(player, queueStatus, position, estimatedTime, 
+                        totalQueued, allianceQueued, hordeQueued, minPlayers, state);
     }
 
     void SendTimerSync(Player* player, uint32 elapsedMs, uint32 maxMs)
@@ -550,7 +577,7 @@ namespace HLBG
         else
             ChatHandler(player->GetSession()).ParseCommands(".hlbg queue join");
 
-        SendQueueUpdate(player, 1, 0, 0);
+        SendQueueInfo(player);
     }
 
     static void HandleLeaveQueue(Player* player, const ParsedMessage& /*msg*/)
@@ -564,7 +591,7 @@ namespace HLBG
         else
             ChatHandler(player->GetSession()).ParseCommands(".hlbg queue leave");
 
-        SendQueueUpdate(player, 0, 0, 0);
+        SendQueueInfo(player);
     }
 
     static void HandleRequestStats(Player* player, const ParsedMessage& msg)

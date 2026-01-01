@@ -15,7 +15,7 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "StringFormat.h"
-#include "dc_prestige_api.h"
+#include "../Prestige/dc_prestige_api.h"
 #include <sstream>
 
 using namespace Acore::ChatCommands;
@@ -409,7 +409,7 @@ public:
     }
 };
 
-void AddSC_dc_prestige_chat()
+void AddSC_dc_prestige_commandscript()
 {
     new PrestigeUnifiedCommandScript();
 }

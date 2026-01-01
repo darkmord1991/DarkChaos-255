@@ -776,5 +776,5 @@ OptimizationManager* GetOptimizationManager()
 
 void AddSC_ItemUpgradeAdvanced()
 {
-    new DarkChaos::ItemUpgrade::ItemUpgradeAdvancedCommands();
+    // new DarkChaos::ItemUpgrade::ItemUpgradeAdvancedCommands();
 }

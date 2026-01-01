@@ -13,6 +13,7 @@
 #include "ScriptMgr.h"
 #include "GameTime.h"
 #include "ObjectAccessor.h"
+#include "../AddonExtension/DCAddonHLBG.h"
 
 #include <algorithm>
 
@@ -65,6 +66,7 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     uint32 queueSize = GetQueuedPlayerCount();
 
     ChatHandler(player->GetSession()).PSendSysMessage("You have joined the Hinterland BG queue. Position: {}", queueSize);
+    SendQueueStatusAIO(player);
 
     // Notify zone if we're getting close to battle start
     if (queueSize >= _minPlayersToStart && _bgState == BG_STATE_CLEANUP)
@@ -91,6 +93,7 @@ void OutdoorPvPHL::RemovePlayerFromQueue(Player* player)
     {
         _queuedPlayers.erase(it);
         ChatHandler(player->GetSession()).PSendSysMessage("You have left the Hinterland BG queue.");
+        SendQueueStatusAIO(player);
         LOG_DEBUG("bg.battleground", "Player {} left HLBG queue", player->GetName());
     }
     else
@@ -398,81 +401,14 @@ bool OutdoorPvPHL::RemoveGroupFromQueue(Player* leader)
 // ============================================================================
 
 // Send queue status to client via AIO (for HLBG addon Queue tab)
+// Send queue status to client via DC Addon Protocol
 void OutdoorPvPHL::SendQueueStatusAIO(Player* player)
 {
     if (!player)
         return;
 
-#ifdef HAS_AIO
-    // Build status packet
-    std::ostringstream oss;
-    oss << "QUEUE_STATUS|";
-    oss << "IN_QUEUE=" << (IsPlayerInQueue(player) ? "1" : "0") << "|";
-
-    uint32 position = 0;
-    uint32 waitTime = 0;
-
-    if (IsPlayerInQueue(player))
-    {
-        // Find player's position
-        auto it = std::find_if(_queuedPlayers.begin(), _queuedPlayers.end(),
-            [player](const QueueEntry& entry) {
-                return entry.playerGuid == player->GetGUID();
-            });
-
-        if (it != _queuedPlayers.end())
-        {
-            position = static_cast<uint32>(std::distance(_queuedPlayers.begin(), it) + 1);
-            waitTime = static_cast<uint32>(GameTime::GetGameTime().count() - it->joinTime);
-            oss << "POSITION=" << position << "|";
-            oss << "WAIT_TIME=" << waitTime << "|";
-        }
-    }
-
-    uint32 totalQueued = GetQueuedPlayerCount();
-    uint32 allianceQueued = GetQueuedPlayerCountByTeam(TEAM_ALLIANCE);
-    uint32 hordeQueued = GetQueuedPlayerCountByTeam(TEAM_HORDE);
-
-    oss << "TOTAL=" << totalQueued << "|";
-    oss << "ALLIANCE=" << allianceQueued << "|";
-    oss << "HORDE=" << hordeQueued << "|";
-    oss << "MIN_PLAYERS=" << _minPlayersToStart << "|";
-
-    // Calculate estimated time to start based on queue fill rate
-    uint32 playersNeeded = (totalQueued >= _minPlayersToStart) ? 0 : (_minPlayersToStart - totalQueued);
-    // Rough estimate: 30 seconds per missing player average
-    uint32 estWaitSeconds = playersNeeded * 30;
-    oss << "EST_WAIT=" << estWaitSeconds << "|";
-
-    // Send battle state
-    switch (_bgState)
-    {
-        case BG_STATE_WARMUP:
-            oss << "STATE=WARMUP";
-            break;
-        case BG_STATE_IN_PROGRESS:
-            oss << "STATE=IN_PROGRESS";
-            break;
-        case BG_STATE_PAUSED:
-            oss << "STATE=PAUSED";
-            break;
-        case BG_STATE_FINISHED:
-            oss << "STATE=ENDING";
-            break;
-        case BG_STATE_CLEANUP:
-        default:
-            oss << "STATE=WAITING";
-            break;
-    }
-
-    // Send via AIO to client
-    AIO().Msg(player, "HLBG", "QueueStatus", oss.str());
-
-    LOG_DEBUG("hlbg.queue", "Sent queue status to {}: {}", player->GetName(), oss.str());
-#else
-    // Fallback to chat command if AIO not available
-    ShowQueueStatus(player);
-#endif
+    // Use the optimized binary protocol
+    DCAddon::HLBG::SendQueueInfo(player);
 }
 
 // Send server config info to client via AIO (for HLBG addon Info tab)

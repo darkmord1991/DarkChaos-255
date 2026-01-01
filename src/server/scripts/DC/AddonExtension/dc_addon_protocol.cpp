@@ -8,7 +8,8 @@
  * Copyright (C) 2024 Dark Chaos Development Team
  */
 
-#include "DCAddonNamespace.h"
+#include "Common.h"
+#include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "WorldSession.h"

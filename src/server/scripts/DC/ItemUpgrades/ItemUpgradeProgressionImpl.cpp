@@ -583,5 +583,5 @@ public:
 
 void AddSC_ItemUpgradeProgression()
 {
-    new ItemUpgradeProgressionCommands();
+    // new ItemUpgradeProgressionCommands();
 }

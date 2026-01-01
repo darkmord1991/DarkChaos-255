@@ -1,6 +1,7 @@
-#include "dc_death_markers.h"
+#include "Common.h"
+#include "dc_addon_death_markers.h"
 
-#include "DCAddonNamespace.h"
+#include "dc_addon_namespace.h"
 
 #include "DC/CrossSystem/DCMapCoords.h"
 #include "DBCStores.h"

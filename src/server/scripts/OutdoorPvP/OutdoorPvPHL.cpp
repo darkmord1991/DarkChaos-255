@@ -107,6 +107,10 @@
     #include "DC/HinterlandBG/OutdoorPvPHLResetWorker.h"
     #include "DC/HinterlandBG/HLMovementHandlerScript.h"
 
+    #include "DC/HinterlandBG/HLMovementHandlerScript.h"
+
+    // HLZoneResetWorker moved to DC/HinterlandBG/OutdoorPvPHLResetWorker.h
+
 // HLZoneResetWorker moved to DC/HinterlandBG/OutdoorPvPHLResetWorker.h
 
     OutdoorPvPHL::OutdoorPvPHL()
@@ -458,7 +462,9 @@
         s_perfLogTimer += diff;
         if (s_perfLogTimer >= 300000) // 5 minutes
         {
-            LogPerformanceStats();
+        if (s_perfLogTimer >= 300000) // 5 minutes
+        {
+            // LogPerformanceStats(); // Disabled to reduce log spam unless needed
             s_perfLogTimer = 0;
         }
 
@@ -619,16 +625,7 @@
             {
                 _recordWinner(winner);
                 _LastWin = (winner == TEAM_ALLIANCE) ? ALLIANCE : HORDE;
-                // Reward winning team members in-zone and apply win/lose buffs
-                WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-                for (auto const& it : sessionMap)
-                {
-                    Player* p = it.second ? it.second->GetPlayer() : nullptr;
-                    if (!p || !p->IsInWorld() || p->GetZoneId() != OutdoorPvPHLBuffZones[0])
-                        continue;
-                    bool isWinner = (p->GetTeamId() == winner);
-                    // Buffs: winners get WinBuffs, losers get LoseBuffs
-                    HandleBuffs(p, !isWinner);
+                HandleBuffs(p, !isWinner);
                     // Rewards: only winners and not AFK/Deserter unless GM
                     if (isWinner)
                     {
@@ -640,7 +637,7 @@
                                 HandleRewards(p, _rewardMatchHonorTiebreaker, true, false, false);
                         }
                     }
-                }
+                }); // End lambda
             }
         }
 
@@ -716,22 +713,30 @@
         }
 
         _afkCheckTimerMs = 2000;
-        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-        for (auto const& it : sessionMap)
+    void OutdoorPvPHL::_tickAFK(uint32 diff)
+    {
+        // AFK tracking (movement-based + chat /afk): detect transitions and apply policy
+        if (_afkCheckTimerMs > diff)
         {
-            Player* p = it.second ? it.second->GetPlayer() : nullptr;
-            if (!p || !p->IsInWorld() || p->GetZoneId() != 47)
-                continue;
+            _afkCheckTimerMs -= diff;
+            return;
+        }
+
+        _afkCheckTimerMs = 2000;
+        uint32 nowSec = uint32(GameTime::GetGameTime().count());
+
+        // Optimized iteration using Map 0 players
+        ForEachPlayerInZone([&](Player* p)
+        {
             // Exempt GMs from AFK tracking entirely
             if (p->IsGameMaster())
             {
                 ClearAfkState(p);
-                continue;
+                return;
             }
             uint32 low = p->GetGUID().GetCounter();
             bool wasAfk = _afkFlagged.count(low) > 0;
             // movement-based check
-            uint32 nowSec = uint32(GameTime::GetGameTime().count());
             auto itLast = _playerLastMove.find(p->GetGUID());
             if (itLast == _playerLastMove.end())
             {
@@ -788,7 +793,7 @@
             {
                 _afkFlagged.erase(low);
             }
-        }
+        });
     }
 
     void OutdoorPvPHL::_tickHudRefresh(uint32 diff)
@@ -1178,4 +1183,27 @@
     {
         // HUD worldstates removed - now handled by DC-Mapupgrades addon
         // Function kept for compatibility with base class override
+    }
+
+    void OutdoorPvPHL::ForEachPlayerInZone(std::function<void(Player*)> f) const
+    {
+        uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+        // Optimized: Iterate locally tracked players (O(N_zone))
+        for (ObjectGuid const& guid : _playersInHinterlands)
+        {
+            if (Player* p = ObjectAccessor::FindPlayer(guid))
+            {
+                if (p->GetZoneId() == zoneId && p->IsInWorld())
+                    f(p);
+            }
+        }
+    }
+
+    void OutdoorPvPHL::CollectZonePlayers(std::vector<Player*>& players) const
+    {
+        players.clear();
+        ForEachPlayerInZone([&](Player* p)
+        {
+            players.push_back(p);
+        });
     }

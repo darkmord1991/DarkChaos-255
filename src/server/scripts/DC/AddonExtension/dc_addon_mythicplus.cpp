@@ -8,7 +8,8 @@
  * Copyright (C) 2024 Dark Chaos Development Team
  */
 
-#include "DCAddonNamespace.h"
+#include "Common.h"
+#include "dc_addon_namespace.h"
 #include "WorldSessionMgr.h"
 #include "ScriptMgr.h"
 #include "Player.h"
@@ -18,7 +19,7 @@
 #include "DBCStores.h"
 #include "../MythicPlus/MythicPlusRunManager.h"
 #include "../MythicPlus/MythicPlusConstants.h"
-#include "DCAddonMythicPlus.h"
+#include "dc_addon_mythicplus.h"
 
 #include <unordered_map>
 

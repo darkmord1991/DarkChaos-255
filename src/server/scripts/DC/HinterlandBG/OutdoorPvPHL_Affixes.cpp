@@ -36,44 +36,18 @@ void OutdoorPvPHL::UpdateAffixWorldstateAll()
     ForEachPlayerInZone([&](Player* p){ UpdateAffixWorldstateForPlayer(p); });
 }
 
-// Compose and send a CHAT_MSG_ADDON style packet that addons can consume via CHAT_MSG_ADDON
-// Prefix kept short for 3.3.5a limits; addon listens for prefix containing "HLBG"
+// Redirect legacy method: use new DCAddon::HLBG::SendAffixInfo
 void OutdoorPvPHL::SendAffixAddonToPlayer(Player* player) const
 {
     if (!player)
         return;
 
-    // Build payload: "AFFIX|<name>" optionally followed by "|WEATHER|<friendly>"
-    const char* aff = HL_AffixName(_activeAffix);
-    std::string payload = std::string("AFFIX|") + aff;
-    if (_affixWeatherEnabled)
-    {
-        // Try to derive a friendly weather name and percent
-        if (_activeAffix >= AFFIX_NONE && _activeAffix <= AFFIX_FOG)
-        {
-            uint32 wtype = _affixWeatherType[_activeAffix];
-            float  wint  = _affixWeatherIntensity[_activeAffix];
-            if (wtype)
-            {
-                const char* wname = GetExtendedWeatherName(wtype);
-                uint32 ipct = uint32(std::max(0.f, std::min(1.f, wint)) * 100.f + 0.5f);
-                payload += "|WEATHER|";
-                payload += wname;
-                payload += " ";
-                payload += std::to_string(ipct);
-                payload += "%";
-            }
-        }
-    }
-
-    // Compose as addon whisper "HLBG\t<payload>" so client fires CHAT_MSG_ADDON with prefix="HLBG"
-    std::string message = std::string("HLBG\t") + payload;
-    if (player->GetSession())
-    {
-        WorldPacket data;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
-        player->SendDirectMessage(&data);
-    }
+    // Map internal affix type to ID if needed (currently 1:1 for 1-6)
+    // 3 args for affixes (primary, secondary, tertiary) + season
+    // HLBG currently only uses one active affix.
+    uint32 affix1 = static_cast<uint32>(_activeAffix);
+    
+    DCAddon::HLBG::SendAffixInfo(player, affix1, 0, 0, _season);
 }
 
 void OutdoorPvPHL::SendAffixAddonToZone() const
@@ -81,41 +55,44 @@ void OutdoorPvPHL::SendAffixAddonToZone() const
     ForEachPlayerInZone([&](Player* p){ SendAffixAddonToPlayer(p); });
 }
 
+// Redirect legacy method: use new DCAddon::HLBG messages for status/resources
 void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player, uint32 apc, uint32 hpc) const
 {
     if (!player)
         return;
-    // LOCK=1 when in lock window (timer should show remaining lock time instead of match end)
-    uint32 endEpoch = GetHudEndEpoch();
-    uint32 lock = (_lockEnabled && _isLocked) ? 1u : 0u;
-    std::string message = "HLBG\tSTATUS|A=" + std::to_string(_ally_gathered)
-                        + "|H=" + std::to_string(_horde_gathered)
-                        + "|END=" + std::to_string(endEpoch)
-                        + "|LOCK=" + std::to_string(lock)
-                        + "|APC=" + std::to_string(apc)
-                        + "|HPC=" + std::to_string(hpc);
-    if (player->GetSession())
-    {
-        WorldPacket data;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, message);
-        player->SendDirectMessage(&data);
-    }
+
+    // Determine status
+    DCAddon::HLBG::HLBGStatus status = DCAddon::HLBG::STATUS_NONE;
+    if (GetBGState() == BG_STATE_WARMUP)
+        status = DCAddon::HLBG::STATUS_PREP;
+    else if (GetBGState() == BG_STATE_IN_PROGRESS)
+        status = DCAddon::HLBG::STATUS_ACTIVE;
+    else if (GetBGState() == BG_STATE_FINISHED)
+        status = DCAddon::HLBG::STATUS_ENDED;
+
+    // Map ID and Time Remaining
+    uint32 mapId = player->GetMapId();
+    uint32 timeRemaining = GetTimeRemainingSeconds();
+
+    // Send Status Packet
+    DCAddon::HLBG::SendStatus(player, status, mapId, timeRemaining);
+
+    // Send Resources Packet
+    DCAddon::HLBG::SendResources(player, _ally_gathered, _horde_gathered, 0, 0);
+
+    // Note: apc/hpc (player counts) are not currently sent in the new compact packets.
+    // If needed, we can add a new SMSG_PLAYER_COUNTS or extend Resources.
+    // For now, we omit them as they were mostly for debug/overlay.
 }
 
 void OutdoorPvPHL::SendStatusAddonToZone() const
 {
+    // Calculation of APC/HPC is preserved if we restore sending them later,
+    // or we can simplify this loop.
     uint32 apc = 0;
     uint32 hpc = 0;
-    ForEachPlayerInZone([&](Player* p)
-    {
-        if (!p)
-            return;
-        if (p->GetTeamId() == TEAM_ALLIANCE)
-            ++apc;
-        else if (p->GetTeamId() == TEAM_HORDE)
-            ++hpc;
-    });
-
+    
+    // Just reuse the per-player logic
     ForEachPlayerInZone([&](Player* p){ SendStatusAddonToPlayer(p, apc, hpc); });
 }
 

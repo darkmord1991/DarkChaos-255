@@ -15,6 +15,9 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "Common.h"
+#include "ScriptMgr.h"
+#include "Config.h"
 #include "Log.h"
 #include <exception>
 
@@ -24,9 +27,8 @@
 
 // --- Core AC Scripts ---
 void AddSC_ac_guard_npc();                    // AC\ac_guard_npc.cpp
-void AddSC_dc_login_announce();               // dc_login_announce.cpp
+void AddSC_dc_login_announce();               // Progression/FirstStart/dc_login_announce.cpp
 void AddSC_ac_quest_npc_800009();             // AC\ac_quest_npc_800009.cpp
-void AddSC_aio_bridge();                      // AIO\aio_bridge.cpp
 void AddSC_flightmasters();                   // AC\ac_flightmasters.cpp
 
 // --- Jadeforest Zone ---
@@ -45,8 +47,8 @@ void AddSC_dc_giant_isles_water_monster();    // GiantIsles\dc_giant_isles_water
 // --- Map Extension (DISABLED - requires AIO which is not compiled) ---
 
 // --- Heirloom System ---
-void AddSC_heirloom_scaling_255();            // heirloom_scaling_255.cpp
-void AddSC_go_heirloom_cache();               // go_heirloom_cache.cpp
+void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
+void AddSC_go_heirloom_cache();               // ItemUpgrades/go_heirloom_cache.cpp
 
 // --- AoE Loot System (Unified) ---
 void AddSC_dc_aoeloot_unified();              // dc_aoeloot_unified.cpp
@@ -61,7 +63,7 @@ void AddBattleForGilneasScripts();            // Gilneas\BattlegroundBFG.cpp
 // --- Hinterland Battleground System ---
 void AddSC_npc_thrall_hinterlandbg();         // HinterlandBG\npc_thrall_warchief.cpp
 void AddSC_hinterlandbg_Varian_wrynn();       // HinterlandBG\npc_Varian_hinterlandbg.cpp
-void AddSC_hlbg_commandscript();              // HinterlandBG/cs_hl_bg.cpp
+
 void AddSC_hl_scoreboard();                   // HinterlandBG\HL_ScoreboardNPC.cpp
 void AddSC_hlbg_addon();                      // HLBG chat fallback (in AddonExtension/dc_addon_hlbg.cpp)
 void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG\npc_hinterlands_battlemaster.cpp
@@ -70,45 +72,39 @@ void AddSC_outdoorpvp_hl_dc();                // HinterlandBG\outdoorpvp_hl_regi
 // Note: HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
 
 // --- Prestige System ---
-// --- Prestige System ---
-void AddSC_dc_prestige_system();              // Prestige\dc_prestige_system.cpp
-void AddSC_dc_prestige_chat();            // Prestige\dc_prestige_chat.cpp
-void AddSC_dc_prestige_spells();              // Prestige\dc_prestige_spells.cpp
-void AddSC_dc_prestige_alt_bonus();           // Prestige\dc_prestige_alt_bonus.cpp
-void AddSC_dc_prestige_challenges();          // Prestige\dc_prestige_challenges.cpp
-void AddSC_spell_prestige_alt_bonus_aura();   // Prestige\spell_prestige_alt_bonus_aura.cpp
+void AddSC_dc_prestige_system();              // Progression/Prestige/dc_prestige_system.cpp
+
+void AddSC_dc_prestige_spells();              // Progression/Prestige/dc_prestige_spells.cpp
+void AddSC_dc_prestige_alt_bonus();           // Progression/Prestige/dc_prestige_alt_bonus.cpp
+void AddSC_dc_prestige_challenges();          // Progression/Prestige/dc_prestige_challenges.cpp
+void AddSC_spell_prestige_alt_bonus_aura();   // Progression/Prestige/spell_prestige_alt_bonus_aura.cpp
 
 // --- Challenge Mode System ---
-void AddSC_dc_challenge_modes();              // ChallengeMode\dc_challenge_modes_customized.cpp
-void AddSC_dc_challenge_mode_equipment_restrictions(); // ChallengeMode\dc_challenge_mode_equipment_restrictions.cpp
-void AddSC_dc_challenge_mode_enforcement();   // ChallengeMode\dc_challenge_mode_enforcement.cpp
-void AddSC_spell_challenge_mode_auras();      // ChallengeMode\spell_challenge_mode_auras.cpp
+void AddSC_dc_challenge_modes();              // Progression/ChallengeMode/dc_challenge_modes_customized.cpp
+void AddSC_dc_challenge_mode_equipment_restrictions(); // Progression/ChallengeMode/dc_challenge_mode_equipment_restrictions.cpp
+void AddSC_dc_challenge_mode_enforcement();   // Progression/ChallengeMode/dc_challenge_mode_enforcement.cpp
+void AddSC_spell_challenge_mode_auras();      // Progression/ChallengeMode/spell_challenge_mode_auras.cpp
 
 // --- Custom Achievements ---
 void AddSC_dc_achievements();                 // Achievements\dc_achievements.cpp
 
 // --- Collection System ---
-void AddSC_dc_addon_collection();             // CollectionSystem\dc_addon_collection.cpp
+// void AddSC_dc_addon_collection(); // Moved to AddonExtension             // CollectionSystem\dc_addon_collection.cpp
 
 // --- GOMove System ---
 void AddSC_GOMove_commandscript();            // GOMove\GOMoveScripts.cpp
 
 // --- Item Upgrade System ---
-void AddItemUpgradeGMCommandScript();         // ItemUpgrades\ItemUpgradeGMCommands.cpp (Deprecated)
 void AddSC_ItemUpgradeMechanicsImpl();        // ItemUpgrades\ItemUpgradeMechanicsImpl.cpp (MUST load first)
-void AddSC_ItemUpgradeMechanicsCommands();    // ItemUpgrades\ItemUpgradeMechanicsCommands.cpp (Deprecated)
-
 void AddSC_ItemUpgradeVendor();               // ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator();              // ItemUpgrades\ItemUpgradeNPC_Curator.cpp
-void AddSC_ItemUpgradeProgression();          // ItemUpgrades\ItemUpgradeProgressionImpl.cpp (Deprecated)
 void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades\ItemUpgradeSeasonalImpl.cpp (Deprecated)
-void AddSC_ItemUpgradeAdvanced();             // ItemUpgrades\ItemUpgradeAdvancedImpl.cpp (Deprecated)
 void AddSC_ItemUpgradeTransmutation();        // ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
 void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades\ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades\ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades\ItemUpgradeStatApplication.cpp
 void AddSC_ItemUpgradeQuestRewardHook();      // ItemUpgrades\ItemUpgradeQuestRewardHook.cpp
-void AddSC_ItemUpgradeCommands();             // ItemUpgrades\dc_item_upgrade_commands.cpp (Consolidated)
+
 
 // --- Mythic+ Dungeon System ---
 void AddMythicPlusScripts();                  // MythicPlus\mythic_plus_loader.cpp
@@ -116,7 +112,7 @@ void AddSC_dc_mythic_spectator();             // MythicPlus\dc_mythic_spectator.
 
 // --- Seasonal Reward System ---
 void AddSC_SeasonalRewardScripts();           // Seasons\SeasonalRewardScripts.cpp
-void AddSC_SeasonalRewardCommands();          // Seasons\SeasonalRewardCommands.cpp
+
 
 // --- Phased Duels System ---
 void AddSC_dc_phased_duels();                 // PhasedDuels\dc_phased_duels.cpp
@@ -132,7 +128,7 @@ void AddSC_npc_dungeon_quest_daily_weekly();  // DungeonQuests\\npc_dungeon_ques
 void AddDCAddonExtensionScripts();            // AddonExtension\\dc_addon_extension_loader.cpp
 
 // --- Integration System (First-Start, Custom Login) ---
-void AddSC_dc_firststart();                   // Integration\\dc_firststart.cpp
+void AddSC_dc_firststart();                   // Progression/FirstStart/dc_firststart.cpp
 
 // --- Cross-System Integration Framework ---
 void AddSC_dc_cross_system_scripts();         // CrossSystem\\CrossSystemScripts.cpp
@@ -141,15 +137,21 @@ void AddSC_dc_teleporter();                   // Teleporters\\dc_teleporter.cpp
 // --- DC Commands (Unified command hub) ---
 void AddSC_dc_addons_commandscript();         // Commands/cs_dc_addons.cpp
 void AddSC_dc_dungeonquests_commandscript();  // Commands/cs_dc_dungeonquests.cpp
+void AddSC_hlbg_commandscript();              // Commands/cs_hl_bg.cpp
+void AddSC_mythic_plus_commands();            // Commands/mythic_plus_commands.cpp
+void AddSC_SeasonalRewardCommands();          // Commands/SeasonalRewardCommands.cpp
+void AddSC_dc_prestige_chat();                // Commands/dc_prestige_chat.cpp
+void AddSC_ItemUpgradeCommands();             // Commands/dc_item_upgrade_commands.cpp
+void AddSC_dc_hotspot_commandscript();        // Commands/cs_dc_hotspot.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddDCScripts()
 {
     // Top-level header for DarkChaos DC script loader
-    LOG_INFO("scripts", "╔══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", "║ DarkChaos: DC Script Loader — loading DC-specific systems");
-    LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", "╔══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", "║ DarkChaos: DC Script Loader — loading DC-specific systems");
+    LOG_INFO("scripts.dc", "╚══════════════════════════════════════════════════════════");
     // ═══════════════════════════════════════════════════════════════════════
     // CORE AC SCRIPTS (Overrides & Customizations)
     // ═══════════════════════════════════════════════════════════════════════
@@ -160,14 +162,13 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // DC CORE SERVICES
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> DC Core Services");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> DC Core Services");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_login_announce();
-        AddSC_aio_bridge();
         AddSC_dc_teleporter();
-        LOG_INFO("scripts", ">>   ✓ Login announce, AIO bridge, and Teleporter loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Login announce, and Teleporter loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in DC Core Services: {}", e.what());
     } catch (...) {
@@ -177,13 +178,13 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // JADEFOREST ZONE
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Jadeforest Zone Scripts");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Jadeforest Zone Scripts");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_jadeforest_flightmaster();
         AddSC_jadeforest_guards();
-        LOG_INFO("scripts", ">>   ✓ Jadeforest NPCs loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Jadeforest NPCs loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Jadeforest: {}", e.what());
     } catch (...) {
@@ -193,9 +194,9 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // GIANT ISLES ZONE (Ported from MoP Isle of Giants)
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Giant Isles Zone (Isle of Giants Port)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Giant Isles Zone (Isle of Giants Port)");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_giant_isles_zone();
         AddSC_giant_isles_cannon_quest();
@@ -205,9 +206,9 @@ void AddDCScripts()
         AddSC_boss_thok();
         AddSC_boss_nalak();
         AddSC_dc_giant_isles_water_monster();
-        LOG_INFO("scripts", ">>   ✓ Giant Isles zone scripts loaded");
-        LOG_INFO("scripts", ">>   ✓ Cannon quest loaded");
-        LOG_INFO("scripts", ">>   ✓ World bosses: Oondasta, Thok, Nalak loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Giant Isles zone scripts loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Cannon quest loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ World bosses: Oondasta, Thok, Nalak loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Giant Isles: {}", e.what());
     } catch (...) {
@@ -221,13 +222,13 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // HEIRLOOM SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Heirloom System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Heirloom System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_heirloom_scaling_255();
         AddSC_go_heirloom_cache();
-        LOG_INFO("scripts", ">>   ✓ Heirloom scaling and cache loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Heirloom scaling and cache loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Heirloom System: {}", e.what());
     } catch (...) {
@@ -237,12 +238,12 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // AOE LOOT SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> AoE Loot System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> AoE Loot System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_aoeloot_unified();
-        LOG_INFO("scripts", ">>   ✓ AoE Loot unified system loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ AoE Loot unified system loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in AoE Loot: {}", e.what());
     } catch (...) {
@@ -252,13 +253,13 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // HOTSPOTS SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Hotspots System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Hotspots System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_ac_hotspots();
         AddSC_spell_hotspot_buff_800001();
-        LOG_INFO("scripts", ">>   ✓ Hotspots detection, markers, and spell buffs loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Hotspots detection, markers, and spell buffs loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Hotspots System: {}", e.what());
     } catch (...) {
@@ -268,12 +269,12 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // BATTLE FOR GILNEAS
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Battle for Gilneas");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Battle for Gilneas");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddBattleForGilneasScripts();
-        LOG_INFO("scripts", ">>   ✓ Battle for Gilneas scripts loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Battle for Gilneas scripts loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Battle for Gilneas: {}", e.what());
     } catch (...) {
@@ -283,19 +284,19 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // HINTERLAND BATTLEGROUND SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Hinterland Battleground System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Hinterland Battleground System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_npc_thrall_hinterlandbg();
         AddSC_hinterlandbg_Varian_wrynn();
-        AddSC_hlbg_commandscript();
+
         AddSC_hl_scoreboard();
         AddSC_hlbg_addon();
         AddSC_npc_hinterlands_battlemaster();
         AddSC_hlbg_native_broadcast();
         AddSC_outdoorpvp_hl_dc();
-        LOG_INFO("scripts", ">>   ✓ Hinterland BG NPCs, commands, and OutdoorPvP loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Hinterland BG NPCs, commands, and OutdoorPvP loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Hinterland BG: {}", e.what());
     } catch (...) {
@@ -305,15 +306,15 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // CHALLENGE MODE SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Challenge Mode System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Challenge Mode System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_challenge_modes();
         AddSC_dc_challenge_mode_equipment_restrictions();
         AddSC_dc_challenge_mode_enforcement();
         AddSC_spell_challenge_mode_auras();
-        LOG_INFO("scripts", ">>   ✓ Challenge modes and auras loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Challenge modes and auras loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Challenge Mode: {}", e.what());
     } catch (...) {
@@ -323,17 +324,17 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // PRESTIGE SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Prestige System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Prestige System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_prestige_system();
-        AddSC_dc_prestige_chat();
+
         AddSC_dc_prestige_spells();
         AddSC_dc_prestige_alt_bonus();
         AddSC_dc_prestige_challenges();
         AddSC_spell_prestige_alt_bonus_aura();
-        LOG_INFO("scripts", ">>   ✓ Prestige mechanics, commands, spells, alt bonus, challenges, and visual buffs loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Prestige mechanics, commands, spells, alt bonus, challenges, and visual buffs loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Prestige System: {}", e.what());
     } catch (...) {
@@ -343,12 +344,12 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // CUSTOM ACHIEVEMENTS SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Custom Achievements System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Custom Achievements System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_achievements();
-        LOG_INFO("scripts", ">>   ✓ Custom achievements loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Custom achievements loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Custom Achievements: {}", e.what());
     } catch (...) {
@@ -358,12 +359,12 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // COLLECTION SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Collection System (Mounts, Pets, Heirlooms, Transmog)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Collection System (Mounts, Pets, Heirlooms, Transmog)");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
-        AddSC_dc_addon_collection();
-        LOG_INFO("scripts", ">>   ✓ Collection system handlers and scripts loaded");
+        // AddSC_dc_addon_collection(); // Moved to AddonExtension
+        LOG_INFO("scripts.dc", ">>   ✓ Collection system handlers and scripts loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Collection System: {}", e.what());
     } catch (...) {
@@ -373,48 +374,32 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // ITEM UPGRADE SYSTEM v2.0
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> DarkChaos Item Upgrade System v2.0 (Hybrid Scaling)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">>   Core Features:");
-    LOG_INFO("scripts", ">>     • Enchantment-Based Stat Scaling");
-    LOG_INFO("scripts", ">>     • UnitScript Proc Damage/Healing Scaling");
-    LOG_INFO("scripts", ">>     • 2 Tiers × 15 Levels = 30 Upgrade Paths");
-    LOG_INFO("scripts", ">>     • Mastery & Artifact Progression");
-    LOG_INFO("scripts", ">>     • Transmutation & Tier Conversion");
-    LOG_INFO("scripts", ">>     • Seasonal Content Support");
-    LOG_INFO("scripts", ">> ───────────────────────────────────────────────────────────");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> DarkChaos Item Upgrade System v2.0 (Hybrid Scaling)");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">>   Core Features:");
+    LOG_INFO("scripts.dc", ">>     • Enchantment-Based Stat Scaling");
+    LOG_INFO("scripts.dc", ">>     • UnitScript Proc Damage/Healing Scaling");
+    LOG_INFO("scripts.dc", ">>     • 2 Tiers × 15 Levels = 30 Upgrade Paths");
+    LOG_INFO("scripts.dc", ">>     • Mastery & Artifact Progression");
+    LOG_INFO("scripts.dc", ">>     • Transmutation & Tier Conversion");
+    LOG_INFO("scripts.dc", ">>     • Seasonal Content Support");
+    LOG_INFO("scripts.dc", ">> ───────────────────────────────────────────────────────────");
 
     try {
         AddSC_ItemUpgradeMechanicsImpl();
-        LOG_INFO("scripts", ">>   ✓ Core mechanics loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Core mechanics loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in core mechanics: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in core mechanics");
     }
 
-    try {
-        AddSC_ItemUpgradeMechanicsCommands();
-        LOG_INFO("scripts", ">>   ✓ Mechanics commands loaded (Deprecated)");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in mechanics commands: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in mechanics commands");
-    }
+
 
     try {
-        AddItemUpgradeGMCommandScript();
-        LOG_INFO("scripts", ">>   ✓ GM commands loaded (Deprecated)");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in GM commands: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in GM commands");
-    }
 
-    try {
-        AddSC_ItemUpgradeCommands();
-        LOG_INFO("scripts", ">>   ✓ Consolidated Item Upgrade commands loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Consolidated Item Upgrade commands loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Item Upgrade commands: {}", e.what());
     } catch (...) {
@@ -425,7 +410,7 @@ void AddDCScripts()
 
     try {
         AddSC_ItemUpgradeVendor();
-        LOG_INFO("scripts", ">>   ✓ Token vendor NPC loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Token vendor NPC loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in vendor: {}", e.what());
     } catch (...) {
@@ -434,43 +419,29 @@ void AddDCScripts()
 
     try {
         AddSC_ItemUpgradeCurator();
-        LOG_INFO("scripts", ">>   ✓ Artifact curator NPC loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Artifact curator NPC loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in curator: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in curator");
     }
 
-    try {
-        AddSC_ItemUpgradeProgression();
-        LOG_INFO("scripts", ">>   ✓ Progression system loaded");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in progression: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in progression");
-    }
+
 
     try {
         AddSC_ItemUpgradeSeasonal();
-        LOG_INFO("scripts", ">>   ✓ Seasonal system loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Seasonal system loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in seasonal: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in seasonal");
     }
 
-    try {
-        AddSC_ItemUpgradeAdvanced();
-        LOG_INFO("scripts", ">>   ✓ Advanced features loaded");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in advanced: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts", ">>   ✗ CRASH in advanced");
-    }
+
 
     try {
         AddSC_ItemUpgradeTransmutation();
-        LOG_INFO("scripts", ">>   ✓ Transmutation NPC loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Transmutation NPC loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in transmutation: {}", e.what());
     } catch (...) {
@@ -479,7 +450,7 @@ void AddDCScripts()
 
     try {
         AddSC_ItemUpgradeTokenHooks();
-        LOG_INFO("scripts", ">>   ✓ Token hooks loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Token hooks loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in token hooks: {}", e.what());
     } catch (...) {
@@ -488,7 +459,7 @@ void AddDCScripts()
 
     try {
         AddSC_ItemUpgradeProcScaling();
-        LOG_INFO("scripts", ">>   ✓ Proc scaling loaded (UnitScript hooks)");
+        LOG_INFO("scripts.dc", ">>   ✓ Proc scaling loaded (UnitScript hooks)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in proc scaling: {}", e.what());
     } catch (...) {
@@ -497,7 +468,7 @@ void AddDCScripts()
 
     try {
         AddSC_ItemUpgradeStatApplication();
-        LOG_INFO("scripts", ">>   ✓ Stat application loaded (enchantment-based)");
+        LOG_INFO("scripts.dc", ">>   ✓ Stat application loaded (enchantment-based)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in stat application: {}", e.what());
     } catch (...) {
@@ -506,26 +477,26 @@ void AddDCScripts()
 
     try {
         AddSC_ItemUpgradeQuestRewardHook();
-        LOG_INFO("scripts", ">>   ✓ Quest reward hooks loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Quest reward hooks loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in quest reward hooks: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in quest reward hooks");
     }
 
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Item Upgrade System: All modules loaded successfully");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Item Upgrade System: All modules loaded successfully");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
 
     // ═══════════════════════════════════════════════════════════════════════
     // MYTHIC+ DUNGEON SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Mythic+ Dungeon Scaling System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Mythic+ Dungeon Scaling System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddMythicPlusScripts();
-        LOG_INFO("scripts", ">>   ✓ Mythic+ dungeon scaling and keystone system loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Mythic+ dungeon scaling and keystone system loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Mythic+ System: {}", e.what());
     } catch (...) {
@@ -534,31 +505,31 @@ void AddDCScripts()
 
     try {
         AddSC_dc_mythic_spectator();
-        LOG_INFO("scripts", ">>   ✓ Mythic+ Spectator system loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Mythic+ Spectator system loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in M+ Spectator: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in M+ Spectator");
     }
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
 
     // ═══════════════════════════════════════════════════════════════════════
     // SEASONAL REWARD SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> DC Seasonal Reward System (C++ Core)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">>   Core Features:");
-    LOG_INFO("scripts", ">>     • Token & Essence Rewards (Quest/Creature/Boss)");
-    LOG_INFO("scripts", ">>     • Weekly Cap System (Configurable Limits)");
-    LOG_INFO("scripts", ">>     • Weekly Chest Rewards (3-Slot M+ Vault)");
-    LOG_INFO("scripts", ">>     • Achievement Auto-Tracking");
-    LOG_INFO("scripts", ">>     • AIO Client Communication (Eluna Bridge)");
-    LOG_INFO("scripts", ">>     • Admin Commands (.season)");
-    LOG_INFO("scripts", ">> ───────────────────────────────────────────────────────────");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> DC Seasonal Reward System (C++ Core)");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">>   Core Features:");
+    LOG_INFO("scripts.dc", ">>     • Token & Essence Rewards (Quest/Creature/Boss)");
+    LOG_INFO("scripts.dc", ">>     • Weekly Cap System (Configurable Limits)");
+    LOG_INFO("scripts.dc", ">>     • Weekly Chest Rewards (3-Slot M+ Vault)");
+    LOG_INFO("scripts.dc", ">>     • Achievement Auto-Tracking");
+    LOG_INFO("scripts.dc", ">>     • AIO Client Communication (Eluna Bridge)");
+    LOG_INFO("scripts.dc", ">>     • Admin Commands (.season)");
+    LOG_INFO("scripts.dc", ">> ───────────────────────────────────────────────────────────");
     try {
         AddSC_SeasonalRewardScripts();
-        LOG_INFO("scripts", ">>   ✓ Seasonal reward hooks and player scripts loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Seasonal reward hooks and player scripts loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in seasonal scripts: {}", e.what());
     } catch (...) {
@@ -566,76 +537,76 @@ void AddDCScripts()
     }
 
     try {
-        AddSC_SeasonalRewardCommands();
-        LOG_INFO("scripts", ">>   ✓ Seasonal admin commands loaded (.season)");
+
+        LOG_INFO("scripts.dc", ">>   ✓ Seasonal admin commands loaded (.season)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in seasonal commands: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in seasonal commands");
     }
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Seasonal Reward System: All modules loaded successfully");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Seasonal Reward System: All modules loaded successfully");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
 
     // ═══════════════════════════════════════════════════════════════════════
     // PHASED DUELS SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Phased Duels System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Phased Duels System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_phased_duels();
-        LOG_INFO("scripts", ">>   ✓ Phased duels isolation and statistics loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Phased duels isolation and statistics loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Phased Duels: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Phased Duels");
     }
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
 
     // DUNGEON QUEST SYSTEM will be loaded at the final stage (moved)
 
     // ═══════════════════════════════════════════════════════════════════════
     // ADDON EXTENSION SYSTEM (Communication Protocol)
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Addon Extension System (DC Unified Protocol)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Addon Extension System (DC Unified Protocol)");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddDCAddonExtensionScripts();
-        LOG_INFO("scripts", ">>   ✓ Addon communication protocol loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Addon communication protocol loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Addon Extension: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Addon Extension");
     }
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
 
     // ═══════════════════════════════════════════════════════════════════════
     // FIRST-START SYSTEM (Custom Login, Welcome Experience)
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> First-Start System (Custom Login, Welcome)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> First-Start System (Custom Login, Welcome)");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_firststart();
-        LOG_INFO("scripts", ">>   ✓ First-start experience loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ First-start experience loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in First-Start: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in First-Start");
     }
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
 
     // ═══════════════════════════════════════════════════════════════════════
     // GOMOVE SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> GOMove System");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> GOMove System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_GOMove_commandscript();
-        LOG_INFO("scripts", ">>   ✓ GOMove System loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ GOMove System loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in GOMove: {}", e.what());
     } catch (...) {
@@ -645,63 +616,70 @@ void AddDCScripts()
     // ═══════════════════════════════════════════════════════════════════════
     // CROSS-SYSTEM INTEGRATION FRAMEWORK (Loaded Last - Coordinates All Systems)
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> Cross-System Integration Framework");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Cross-System Integration Framework");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_cross_system_scripts();
-        LOG_INFO("scripts", ">>   ✓ Cross-System framework loaded");
-        LOG_INFO("scripts", ">>   ✓ Session context management active");
-        LOG_INFO("scripts", ">>   ✓ Event bus ready for system coordination");
-        LOG_INFO("scripts", ">>   ✓ Unified reward distributor active");
+        LOG_INFO("scripts.dc", ">>   ✓ Cross-System framework loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Session context management active");
+        LOG_INFO("scripts.dc", ">>   ✓ Event bus ready for system coordination");
+        LOG_INFO("scripts.dc", ">>   ✓ Unified reward distributor active");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Cross-System Framework: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Cross-System Framework");
     }
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
 
     // ═══════════════════════════════════════════════════════════════════════
     // ALL DC SCRIPTS LOADED
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", "╔══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", "║ DarkChaos: DC Scripts — All systems loaded successfully");
-    LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", "╔══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", "║ DarkChaos: DC Scripts — All systems loaded successfully");
+    LOG_INFO("scripts.dc", "╚══════════════════════════════════════════════════════════");
 
     // ═══════════════════════════════════════════════════════════════════════
     // DUNGEON QUEST SYSTEM (Loaded Last)
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", "╔══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", "║ Dungeon Quest System v3.0 (Enhanced UX + AC Standards) — Loaded Last");
-    LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", "╔══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", "║ Dungeon Quest System v3.0 (Enhanced UX + AC Standards) — Loaded Last");
+    LOG_INFO("scripts.dc", "╚══════════════════════════════════════════════════════════");
     try {
         AddSC_DungeonQuestSystem();
         AddSC_DungeonQuestPhasing();
         AddSC_DungeonQuestMasterFollower();
         AddSC_npc_dungeon_quest_master();
         AddSC_npc_dungeon_quest_daily_weekly();
-        LOG_INFO("scripts", "║   ✓ Dungeon quest mechanics and NPCs loaded");
+        LOG_INFO("scripts.dc", "║   ✓ Dungeon quest mechanics and NPCs loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", "║   ✗ EXCEPTION in Dungeon Quest System: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", "║   ✗ CRASH in Dungeon Quest System");
     }
-    LOG_INFO("scripts", "╚══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", "╚══════════════════════════════════════════════════════════");
 
     // ═══════════════════════════════════════════════════════════════════════
     // DC COMMANDS (Unified command system)
     // ═══════════════════════════════════════════════════════════════════════
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
-    LOG_INFO("scripts", ">> DC Commands (Unified .dc command hub)");
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> DC Commands (Unified .dc command hub)");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_addons_commandscript();
         AddSC_dc_dungeonquests_commandscript();
-        LOG_INFO("scripts", ">>   ✓ DC addon commands and dungeon quest commands loaded");
+        AddSC_hlbg_commandscript();
+        AddSC_mythic_plus_commands();
+        AddSC_SeasonalRewardCommands();
+        AddSC_dc_prestige_chat();
+        AddSC_ItemUpgradeCommands();
+        AddSC_dc_hotspot_commandscript();
+        LOG_INFO("scripts.dc", ">>   ✓ DC addon commands and dungeon quest commands loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Consolidated DC commands loaded (HLBG, M+, Season, Prestige, ItemUpgrade)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in DC Commands: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in DC Commands");
     }
-    LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
 }

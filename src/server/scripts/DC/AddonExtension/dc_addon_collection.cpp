@@ -22,13 +22,14 @@
  * Copyright (C) 2025 Dark Chaos Development Team
  */
 
+#include "Common.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "WorldSession.h"
 #include "Chat.h"
 #include "WorldPacket.h"
 #include "DatabaseEnv.h"
-#include "../AddonExtension/DCAddonNamespace.h"
+#include "dc_addon_namespace.h"
 #include "Config.h"
 #include "World.h"
 #include "SpellMgr.h"

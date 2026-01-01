@@ -5,7 +5,7 @@
  * Returns JSON payloads for DC-InfoBar World tab and emits updates
  */
 
-#include "DCAddonNamespace.h"
+#include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "DBCStores.h"
@@ -23,7 +23,7 @@
 #include "DC/CrossSystem/DCSpawnResolver.h"
 
 #include "dc_world_bosses.h"
-#include "dc_death_markers.h"
+#include "dc_addon_death_markers.h"
 
 #include <ctime>
 

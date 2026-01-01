@@ -5,8 +5,9 @@
  * Copyright (C) 2024-2025 Dark Chaos Development Team
  */
 
-#include "DCGroupFinderMgr.h"
-#include "DCAddonNamespace.h"
+#include "Common.h"
+#include "dc_addon_groupfinder_mgr.h"
+#include "dc_addon_namespace.h"
 #include "DatabaseEnv.h"
 #include "CharacterDatabase.h"
 #include "Config.h"

@@ -8,17 +8,18 @@
  * Copyright (C) 2024-2025 Dark Chaos Development Team
  */
 
-#include "DCAddonNamespace.h"
+#include "Common.h"
+#include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
-#include "DCGroupFinderMgr.h"
+#include "dc_addon_groupfinder_mgr.h"
 #include "Group.h"
 #include "DatabaseEnv.h"
 #include "Config.h"
 #include "Log.h"
 #include "GameTime.h"
 #include "DBCEnums.h"
-#include "DCAddonGroupFinder.h"
+#include "dc_addon_groupfinder.h"
 
 namespace DCAddon
 {

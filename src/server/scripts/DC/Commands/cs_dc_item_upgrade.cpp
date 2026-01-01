@@ -25,12 +25,12 @@
 #include "Chat.h"
 #include "Player.h"
 #include "Item.h"
-#include "ItemUpgradeManager.h"
-#include "ItemUpgradeMechanics.h"
-#include "ItemUpgradeProcScaling.h"
-#include "ItemUpgradeAdvanced.h"
-#include "ItemUpgradeProgression.h"
-#include "ItemUpgradeSeasonal.h"
+#include "../ItemUpgrades/ItemUpgradeManager.h"
+#include "../ItemUpgrades/ItemUpgradeMechanics.h"
+#include "../ItemUpgrades/ItemUpgradeProcScaling.h"
+#include "../ItemUpgrades/ItemUpgradeAdvanced.h"
+#include "../ItemUpgrades/ItemUpgradeProgression.h"
+#include "../ItemUpgrades/ItemUpgradeSeasonal.h"
 #include <sstream>
 #include <iomanip>
 
@@ -1027,11 +1027,9 @@ public:
 
         return true;
     }
-
-
 };
 
-void AddSC_ItemUpgradeCommands()
+void AddSC_dc_item_upgrade_commandscript()
 {
     new ItemUpgradeCommands();
 }

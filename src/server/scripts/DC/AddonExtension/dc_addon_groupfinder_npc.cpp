@@ -7,10 +7,11 @@
  * Copyright (C) 2024-2025 Dark Chaos Development Team
  */
 
+#include "Common.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
-#include "DCAddonGroupFinder.h"
+#include "dc_addon_groupfinder.h"
 
 namespace DCAddon
 {

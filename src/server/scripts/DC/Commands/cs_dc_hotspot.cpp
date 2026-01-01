@@ -175,7 +175,7 @@ public:
     }
 };
 
-void AddSC_HotspotCommands()
+void AddSC_dc_hotspot_commandscript()
 {
     new HotspotsCommandScript();
 }

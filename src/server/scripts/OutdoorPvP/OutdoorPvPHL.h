@@ -24,6 +24,7 @@
     #include "Time/GameTime.h"
     #include <unordered_map>
     #include <unordered_set>
+    #include <functional>
     #include <string>
     #include <vector>
     #include <map>
@@ -273,24 +274,14 @@
             BGState GetBGState() const { return _bgState; }
             bool IsInWarmup() const { return _bgState == BG_STATE_WARMUP; }
             uint32 GetMinLevel() const { return _minLevel; }
+            uint32 GetMinPlayersToStart() const { return _minPlayersToStart; }
             void TransitionToState(BGState newState);
             void PauseBattle();
             void ResumeBattle();
             void ForceFinishBattle(TeamId winner = TEAM_NEUTRAL);
             // Iterate all players currently in the Hinterlands and apply a functor
-            template <typename Func>
-            void ForEachPlayerInZone(Func f) const
-            {
-                uint32 const zoneId = OutdoorPvPHLBuffZones[0];
-                WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
-                for (auto const& it : sessionMap)
-                {
-                    Player* p = it.second ? it.second->GetPlayer() : nullptr;
-                    if (!p || !p->IsInWorld() || p->GetZoneId() != zoneId)
-                        continue;
-                    f(p);
-                }
-            }
+            // Optimized to use Map iteration instead of global session list
+            void ForEachPlayerInZone(std::function<void(Player*)> f) const;
 
             // Worldstate HUD helpers (timer/resources like Wintergrasp/AB-style)
             void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& packet) override;
@@ -597,6 +588,7 @@
         // std::map is used for portability without relying on a custom hasher for ObjectGuid.
         std::map<ObjectGuid, uint32> _playerScores;
         // Baseline of lifetime honorable kills at first sighting during a match (to compute per-match HKs)
-        std::map<ObjectGuid, uint32> _playerHKBaseline;
+        // Efficient optimization: track players locally by zone hooks to avoid Map iteration
+        std::unordered_set<ObjectGuid> _playersInHinterlands;
     };
     #endif

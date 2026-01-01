@@ -7,7 +7,7 @@
  * Date: November 22, 2025
  */
 
-#include "SeasonalRewardSystem.h"
+#include "../Seasons/SeasonalRewardSystem.h"
 #include "ScriptMgr.h"
 #include "Chat.h"
 #include "Player.h"
@@ -237,7 +237,7 @@ public:
 // Registration
 // =====================================================================
 
-void AddSC_SeasonalRewardCommands()
+void AddSC_dc_seasonal_rewards_commandscript()
 {
     new SeasonalRewardCommands();
 }

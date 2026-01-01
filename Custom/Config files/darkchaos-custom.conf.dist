@@ -23,6 +23,8 @@
 #   16. DC-Welcome Addon System
 #   17. Cross-System Integration Framework
 #   18. Collection System
+#   19. DC System Logging
+#   20. Invasion System
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
@@ -326,12 +328,7 @@ Hotspots.RespawnDelay = 30
 #
 Hotspots.InitialPopulateCount = 5
 
-#
-#    Hotspots.AuraSpell
-#        Description: DEPRECATED - No longer used.
-#        Default:     800001
-#
-Hotspots.AuraSpell = 800001
+
 
 #
 #    Hotspots.BuffSpell
@@ -646,12 +643,7 @@ HinterlandBG.Base.Horde.Y = -4684.51
 HinterlandBG.Base.Horde.Z = 5.14442
 HinterlandBG.Base.Horde.O = 1.12528
 
-#
-#    HinterlandBG.Reward.MatchHonor
-#        Description: [DEPRECATED] Legacy total honor amount
-#        Default:     50
-#
-HinterlandBG.Reward.MatchHonor = 50
+
 
 #
 #    HinterlandBG.Reward.MatchHonorDepletion
@@ -2408,6 +2400,20 @@ DC.AddonProtocol.Events.Enable = 1
 DC.AddonProtocol.GOMove.Enable = 1
 
 #
+#    DC.AddonProtocol.GOMove.MinSecurity
+#        Description: Minimum server security level required to issue GOMove addon commands
+#        Default:     1 (SEC_GAMEMASTER)
+#
+DC.AddonProtocol.GOMove.MinSecurity = 1
+
+#
+#    DC.AddonProtocol.GOMove.MinSecurityMove
+#        Description: Minimum server security level required to execute GOMove 'move' commands
+#        Default:     2 (SEC_GAMEMASTER)
+#
+DC.AddonProtocol.GOMove.MinSecurityMove = 2
+
+#
 #    DC.AddonProtocol.Teleports.Enable
 #        Description: Enable addon-based teleports integration
 #        Default:     1 (Enabled)
@@ -2440,13 +2446,6 @@ DC.AddonProtocol.World.Enable = 1
 # -------------------------------------------------------------------------
 
 #
-#    DC.AddonProtocol.Leaderboard.Enable
-#        Description: Enable DC addon protocol for Leaderboard system
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Leaderboard.Enable = 1
-
-#
 #    DC.Leaderboards.CacheLifetime
 #        Description: How long leaderboard data is cached in seconds
 #        Default:     60 (1 minute)
@@ -2467,33 +2466,7 @@ DC.Leaderboards.AccountCacheLifetime = 120
 #
 DC.Leaderboards.MaxCacheEntries = 100
 
-#
-#    DC.AddonProtocol.GOMove.MinSecurity
-#        Description: Minimum server security level required to issue GOMove addon commands
-#        Default:     1 (SEC_GAMEMASTER)
-#
-DC.AddonProtocol.GOMove.MinSecurity = 1
 
-#
-#    DC.AddonProtocol.GOMove.MinSecurityMove
-#        Description: Minimum server security level required to execute GOMove 'move' commands
-#        Default:     2 (SEC_GAMEMASTER)
-#
-DC.AddonProtocol.GOMove.MinSecurityMove = 2
-
-#
-#    Invasion.ChatSpawnMessages
-#        Description: Emit server chat messages whenever invader creatures spawn
-#        Default:     1 (Enabled)
-#
-Invasion.ChatSpawnMessages = 1
-
-#
-#    Invasion.SendAddonPackets
-#        Description: Send CHAT_MSG_ADDON JSON messages to clients
-#        Default:     0 (Disabled)
-#
-Invasion.SendAddonPackets = 0
 
 #
 #    DC.AddonProtocol.Debug.Enable
@@ -3236,6 +3209,67 @@ DCCollection.Transmog.LegacyImport.IncludeBank = 1
 #        Default:     0 (Disabled)
 #
 DCCollection.Transmog.LegacyImport.RequireSoulbound = 0
+
+
+###########################################################################
+#
+#    SECTION 20: INVASION SYSTEM
+#
+#    Configuration for the Giant Isles Invasion event system.
+#
+###########################################################################
+
+#
+#    Invasion.ChatSpawnMessages
+#        Description: Emit server chat messages whenever invader creatures spawn
+#        Default:     1 (Enabled)
+#
+Invasion.ChatSpawnMessages = 1
+
+#
+#    Invasion.SendAddonPackets
+#        Description: Send CHAT_MSG_ADDON JSON messages to clients
+#        Default:     0 (Disabled)
+#
+Invasion.SendAddonPackets = 0
+
+
+###########################################################################
+#
+#    SECTION 19: DC SYSTEM LOGGING
+#
+#    Dedicated file logging for Dark Chaos custom systems.
+#
+###########################################################################
+
+#
+# Appender.DC
+#    Defines the log file destination.
+#    Type: 2 (File), Level: 5 (Debug), Flags: 0, Filename: dcsystem.log, Mode: a (Append)
+#
+Appender.DC=2,5,0,dcsystem.log,a
+
+#
+# Loggers
+#    Routes specific log categories to the DC appender.
+#
+
+# General DC Scripts
+Logger.scripts.dc=5,Appender.DC
+
+# DC Addon Protocol
+Logger.dc.addon=5,Appender.DC
+
+# Mythic+ System
+Logger.mythic=5,Appender.DC
+Logger.mythic.run=5,Appender.DC
+
+# Hinterland BG
+Logger.hlbg=5,Appender.DC
+Logger.hlbg.aio=5,Appender.DC
+
+# Seasonal System
+Logger.seasonal=5,Appender.DC
 
 ###########################################################################
 # END OF CONFIGURATION FILE

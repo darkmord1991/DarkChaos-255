@@ -403,7 +403,7 @@ public:
     }
 };
 
-void AddSC_hlbg_commandscript()
+void AddSC_dc_hinterland_bg_commandscript()
 {
     new hlbg_commandscript();
 }

@@ -1,15 +1,36 @@
 ﻿-- HLBG_Queue_Client.lua
 -- Client-side queue system integration for Hinterland BG
--- Part of the DC HLBG Addon (merge into HLBG_Handlers.lua if you prefer a single file)
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
+
 -- Queue state tracking
 HLBG.IsInQueue = false
 HLBG.QueuePosition = 0
 HLBG.QueueTotal = 0
+HLBG.AllianceQueued = 0
+HLBG.HordeQueued = 0
+HLBG.MinPlayersToStart = 10
+HLBG.EstimatedWaitSeconds = 0
 HLBG.BattleState = "UNKNOWN"
+
+local BG_STATE_MAP = {
+    [0] = "WARMUP",
+    [1] = "IN_PROGRESS",
+    [2] = "PAUSED",
+    [3] = "ENDING",
+    [4] = "WAITING"
+}
+
 -- Request current queue status from server
 function HLBG.RequestQueueStatus()
-    if AIO and AIO.Handle then
+    local DC = _G.DCAddonProtocol
+    if DC and DC.Send then
+        -- Send via DC Protocol (HLBG module op 0x01 = CMSG_REQUEST_STATUS)
+        -- See DCAddonNamespace.h: CMSG_REQUEST_STATUS = 0x01
+        DC:Send("HLBG", 1) 
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting queue status via DC...")
+        end
+    elseif AIO and AIO.Handle then
         AIO.Handle("HLBG", "RequestQueueStatus", "")
         if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting queue status via AIO...")
@@ -27,9 +48,17 @@ function HLBG.RequestQueueStatus()
         end
     end
 end
+
 -- Join the battleground queue
 function HLBG.JoinQueue()
-    if AIO and AIO.Handle then
+    local DC = _G.DCAddonProtocol
+    if DC and DC.Send then
+        -- CMSG_QUICK_QUEUE = 0x04
+        DC:Send("HLBG", 4)
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Joining queue via DC...")
+        end
+    elseif AIO and AIO.Handle then
         AIO.Handle("HLBG", "JoinQueue", "")
         if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Joining queue via AIO...")
@@ -47,9 +76,17 @@ function HLBG.JoinQueue()
         end
     end
 end
+
 -- Leave the battleground queue
 function HLBG.LeaveQueue()
-    if AIO and AIO.Handle then
+    local DC = _G.DCAddonProtocol
+    if DC and DC.Send then
+        -- CMSG_LEAVE_QUEUE = 0x05
+        DC:Send("HLBG", 5)
+        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Leaving queue via DC...")
+        end
+    elseif AIO and AIO.Handle then
         AIO.Handle("HLBG", "LeaveQueue", "")
         if DEFAULT_CHAT_FRAME then
             DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Leaving queue via AIO...")
@@ -67,66 +104,18 @@ function HLBG.LeaveQueue()
         end
     end
 end
--- Handle QUEUE_STATUS response from server
-function HLBG.HandleQueueStatus(statusString)
-    if type(statusString) ~= 'string' then return end
-    -- Debug: Show what we received
-    if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG Queue Debug:|r Received status: %s", statusString))
-    end
-    -- Parse status packet - support multiple formats:
-    -- Format 1: "QUEUE_STATUS|IN_QUEUE=1|POSITION=5|WAIT_TIME=30|TOTAL=12|ALLIANCE=6|HORDE=6|MIN_PLAYERS=10|EST_WAIT=120|STATE=WAITING"
-    -- Format 2: Legacy simple text
-    local inQueue = false
-    local position = 0
-    local total = 0
-    local allianceCount = 0
-    local hordeCount = 0
-    local minPlayers = 10
-    local estWaitSeconds = 0
-    local waitTime = 0
-    local state = "UNKNOWN"
 
-    -- Try structured format first
-    if statusString:match("IN_QUEUE=") then
-        inQueue = statusString:match("IN_QUEUE=(%d)") == "1"
-        position = tonumber(statusString:match("POSITION=(%d+)")) or 0
-        total = tonumber(statusString:match("TOTAL=(%d+)")) or 0
-        allianceCount = tonumber(statusString:match("ALLIANCE=(%d+)")) or 0
-        hordeCount = tonumber(statusString:match("HORDE=(%d+)")) or 0
-        minPlayers = tonumber(statusString:match("MIN_PLAYERS=(%d+)")) or 10
-        estWaitSeconds = tonumber(statusString:match("EST_WAIT=(%d+)")) or 0
-        waitTime = tonumber(statusString:match("WAIT_TIME=(%d+)")) or 0
-        state = statusString:match("STATE=(%w+)") or "UNKNOWN"
-    -- Try simple text format
-    elseif statusString:lower():match("not in queue") or statusString:lower():match("not queued") then
-        inQueue = false
-        position = 0
-        total = 0
-        state = "NOT_QUEUED"
-    elseif statusString:match("(%d+)%s*/") or statusString:match("position[:%s]+(%d+)") then
-        inQueue = true
-        position = tonumber(statusString:match("(%d+)%s*/") or statusString:match("position[:%s]+(%d+)")) or 1
-        total = tonumber(statusString:match("/%s*(%d+)") or statusString:match("total[:%s]+(%d+)")) or position
-        state = "WAITING"
-    else
-        -- Unknown format - show as-is
-        if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00HLBG Queue:|r %s", statusString))
-        end
-        return
-    end
-
-    -- Update global state
-    HLBG.IsInQueue = inQueue
-    HLBG.QueuePosition = position
-    HLBG.QueueTotal = total
-    HLBG.AllianceQueued = allianceCount
-    HLBG.HordeQueued = hordeCount
-    HLBG.MinPlayersToStart = minPlayers
-    HLBG.EstimatedWaitSeconds = estWaitSeconds
-    HLBG.BattleState = state
-
+-- Update UI elements based on current state
+function HLBG.UpdateQueueUI()
+    local inQueue = HLBG.IsInQueue
+    local position = HLBG.QueuePosition
+    local total = HLBG.QueueTotal
+    local allianceCount = HLBG.AllianceQueued or 0
+    local hordeCount = HLBG.HordeQueued or 0
+    local minPlayers = HLBG.MinPlayersToStart or 10
+    local estWaitSeconds = HLBG.EstimatedWaitSeconds or 0
+    local state = HLBG.BattleState or "UNKNOWN"
+    
     -- Map state to friendly string
     local stateDisplay = state
     if state == "WAITING" then
@@ -138,7 +127,7 @@ function HLBG.HandleQueueStatus(statusString)
     elseif state == "ENDING" then
         stateDisplay = "|cFFFFAA00Battle ending|r"
     end
-
+    
     -- Format estimated wait time
     local estWaitDisplay = ""
     if estWaitSeconds > 0 then
@@ -205,6 +194,96 @@ function HLBG.HandleQueueStatus(statusString)
             end
         end
     end
+end
+
+-- Handle structured update from DC Protocol
+function HLBG.HandleQueueStatusRaw(queueStatus, position, estimatedTime, totalQueued, allianceQueued, hordeQueued, minPlayers, stateInt)
+    local inQueue = (tonumber(queueStatus) == 1)
+    local state = BG_STATE_MAP[tonumber(stateInt)] or "UNKNOWN"
+    
+    -- Update global state
+    HLBG.IsInQueue = inQueue
+    HLBG.QueuePosition = tonumber(position) or 0
+    HLBG.QueueTotal = tonumber(totalQueued) or 0
+    HLBG.AllianceQueued = tonumber(allianceQueued) or 0
+    HLBG.HordeQueued = tonumber(hordeQueued) or 0
+    HLBG.MinPlayersToStart = tonumber(minPlayers) or 10
+    HLBG.EstimatedWaitSeconds = tonumber(estimatedTime) or 0
+    -- Map old unknown states if needed, but for now trust the stateInt
+    HLBG.BattleState = state
+    
+    HLBG.UpdateQueueUI()
+    
+    -- Debug output
+    if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format(
+            "|cFF33FF99HLBG Queue(DC):|r InQueue=%s Pos=%d/%d A=%d H=%d Est=%ds State=%s",
+            tostring(inQueue), HLBG.QueuePosition, HLBG.QueueTotal, HLBG.AllianceQueued, HLBG.HordeQueued, HLBG.EstimatedWaitSeconds, HLBG.BattleState))
+    end
+end
+
+-- Handle QUEUE_STATUS response from server (Legacy AIO/String)
+function HLBG.HandleQueueStatus(statusString)
+    if type(statusString) ~= 'string' then return end
+    -- Debug: Show what we received
+    if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG Queue Debug:|r Received status: %s", statusString))
+    end
+    -- Parse status packet - support multiple formats:
+    -- Format 1: "QUEUE_STATUS|IN_QUEUE=1|POSITION=5|WAIT_TIME=30|TOTAL=12|ALLIANCE=6|HORDE=6|MIN_PLAYERS=10|EST_WAIT=120|STATE=WAITING"
+    -- Format 2: Legacy simple text
+    local inQueue = false
+    local position = 0
+    local total = 0
+    local allianceCount = 0
+    local hordeCount = 0
+    local minPlayers = 10
+    local estWaitSeconds = 0
+    local waitTime = 0
+    local state = "UNKNOWN"
+
+    -- Try structured format first
+    if statusString:match("IN_QUEUE=") then
+        inQueue = statusString:match("IN_QUEUE=(%d)") == "1"
+        position = tonumber(statusString:match("POSITION=(%d+)")) or 0
+        total = tonumber(statusString:match("TOTAL=(%d+)")) or 0
+        allianceCount = tonumber(statusString:match("ALLIANCE=(%d+)")) or 0
+        hordeCount = tonumber(statusString:match("HORDE=(%d+)")) or 0
+        minPlayers = tonumber(statusString:match("MIN_PLAYERS=(%d+)")) or 10
+        estWaitSeconds = tonumber(statusString:match("EST_WAIT=(%d+)")) or 0
+        waitTime = tonumber(statusString:match("WAIT_TIME=(%d+)")) or 0
+        state = statusString:match("STATE=(%w+)") or "UNKNOWN"
+    -- Try simple text format
+    elseif statusString:lower():match("not in queue") or statusString:lower():match("not queued") then
+        inQueue = false
+        position = 0
+        total = 0
+        state = "NOT_QUEUED"
+    elseif statusString:match("(%d+)%s*/") or statusString:match("position[:%s]+(%d+)") then
+        inQueue = true
+        position = tonumber(statusString:match("(%d+)%s*/") or statusString:match("position[:%s]+(%d+)")) or 1
+        total = tonumber(statusString:match("/%s*(%d+)") or statusString:match("total[:%s]+(%d+)")) or position
+        state = "WAITING"
+    else
+        -- Unknown format - show as-is
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00HLBG Queue:|r %s", statusString))
+        end
+        return
+    end
+
+    -- Update global state
+    HLBG.IsInQueue = inQueue
+    HLBG.QueuePosition = position
+    HLBG.QueueTotal = total
+    HLBG.AllianceQueued = allianceCount
+    HLBG.HordeQueued = hordeCount
+    HLBG.MinPlayersToStart = minPlayers
+    HLBG.EstimatedWaitSeconds = estWaitSeconds
+    HLBG.BattleState = state
+
+    HLBG.UpdateQueueUI()
+
     -- Debug output
     if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
         DEFAULT_CHAT_FRAME:AddMessage(string.format(
@@ -212,6 +291,7 @@ function HLBG.HandleQueueStatus(statusString)
             tostring(inQueue), position, total, allianceCount, hordeCount, estWaitSeconds, state))
     end
 end
+
 -- Auto-refresh queue status every 10 seconds if Queue tab is visible
 local lastQueueRefresh = 0
 local QUEUE_REFRESH_INTERVAL = 10  -- seconds
@@ -262,4 +342,3 @@ end
 if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
     DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00HLBG Debug:|r Queue client functions loaded. Type /hlbgq for commands.")
 end
-

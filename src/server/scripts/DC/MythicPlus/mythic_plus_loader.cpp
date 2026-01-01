@@ -22,7 +22,7 @@ void AddMythicPlusScripts()
     AddSC_go_mythic_plus_font_of_power();
     AddSC_npc_great_vault();
     AddSC_npc_mythic_token_vendor();
-    AddSC_mythic_plus_commands();
+    // AddSC_mythic_plus_commands(); // Moved to DC Commands section in dc_script_loader.cpp
     AddSC_npc_keystone_vendor();
     AddSC_item_mythic_keystone();
 }

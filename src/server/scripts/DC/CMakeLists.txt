@@ -3,21 +3,22 @@
 # Prestige System scripts
 set(SCRIPTS_DC_Prestige
     Prestige/dc_prestige_system.cpp
-    Prestige/dc_prestige_chat.cpp
+    Prestige/dc_prestige_system.cpp
+    # Prestige/dc_prestige_chat.cpp (Moved to Commands)
+    Prestige/dc_prestige_spells.cpp
     Prestige/dc_prestige_spells.cpp
     Prestige/dc_prestige_alt_bonus.cpp
     Prestige/dc_prestige_challenges.cpp
     Prestige/spell_prestige_alt_bonus_aura.cpp
 )
 
-# Challenge Mode scripts
 set(SCRIPTS_DC_ChallengeMode
-    ChallengeMode/dc_challenge_modes_customized.cpp
-    ChallengeMode/ChallengeModeScripts.cpp
-    ChallengeMode/dc_challenge_mode_database.cpp
-    ChallengeMode/dc_challenge_mode_equipment_restrictions.cpp
-    ChallengeMode/dc_challenge_mode_enforcement.cpp
-    ChallengeMode/spell_challenge_mode_auras.cpp
+    Progression/ChallengeMode/dc_challenge_modes_customized.cpp
+    Progression/ChallengeMode/ChallengeModeScripts.cpp
+    Progression/ChallengeMode/dc_challenge_mode_database.cpp
+    Progression/ChallengeMode/dc_challenge_mode_equipment_restrictions.cpp
+    Progression/ChallengeMode/dc_challenge_mode_enforcement.cpp
+    Progression/ChallengeMode/spell_challenge_mode_auras.cpp
 )
 
 # Hotspot System scripts
@@ -61,8 +62,6 @@ set(SCRIPTS_DC_PhasedDuels
 set(SCRIPTS_DC_AC
     dc_script_loader.cpp
     AC/ac_guard_npc.cpp
-    heirloom_scaling_255.cpp
-    dc_login_announce.cpp
     AC/ac_flightmasters.cpp
     AC/ac_quest_npc_800009.cpp
     HinterlandBG/npc_thrall_warchief.cpp
@@ -72,7 +71,6 @@ set(SCRIPTS_DC_AC
     # HinterlandBG/hlbg_addon.cpp (moved into AddonExtension/dc_addon_hlbg.cpp)
     HinterlandBG/hlbg_native_broadcast.cpp
     HinterlandBG/HL_ScoreboardNPC.cpp
-    AIO/aio_bridge.cpp
     # MapExtension/cs_gps_test.cpp  # DISABLED - requires AIO which is not compiled
 )
 
@@ -93,7 +91,7 @@ set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/OutdoorPvPHL_Utils.cpp
     HinterlandBG/OutdoorPvPHL_Performance.cpp
     HinterlandBG/OutdoorPvPHL_Affixes.cpp
-    HinterlandBG/cs_hl_bg.cpp
+    # HinterlandBG/cs_hl_bg.cpp (Moved to Commands)
 )
 
 # DC Gilneas Battle for Gilneas implementation
@@ -112,7 +110,6 @@ set(SCRIPTS_DC_DungeonQuests
 # DC Item Upgrade System implementation
 # Phase 3: Token System
 set(SCRIPTS_DC_ItemUpgrade_Phase3
-    ItemUpgrades/ItemUpgradeCommand.cpp
     ItemUpgrades/ItemUpgradeNPC_Vendor.cpp
     ItemUpgrades/ItemUpgradeNPC_Curator.cpp
     ItemUpgrades/ItemUpgradeTokenHooks.cpp
@@ -124,7 +121,10 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4A
     ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
     ItemUpgrades/ItemUpgradeStatApplication.cpp
     ItemUpgrades/ItemUpgradeProcScaling.cpp
-    ItemUpgrades/dc_item_upgrade_commands.cpp
+    ItemUpgrades/ItemUpgradeProcScaling.cpp
+    # ItemUpgrades/dc_item_upgrade_commands.cpp (Moved to Commands)
+    ItemUpgrades/heirloom_scaling_255.cpp
+    ItemUpgrades/go_heirloom_cache.cpp
 )
 
 # Phase 4B: Progression System (Artifact Mastery)
@@ -169,7 +169,7 @@ set(SCRIPTS_DC_SeasonalRewards
     Seasons/SeasonalRewardSystem.h
     Seasons/SeasonalRewardSystem.cpp
     Seasons/SeasonalRewardScripts.cpp
-    Seasons/SeasonalRewardCommands.cpp
+    # Seasons/SeasonalRewardCommands.cpp (Moved to Commands)
 )
 
 # DC Mythic+ System - Dungeon Scaling, Keystone System & Spectator
@@ -196,7 +196,6 @@ set(SCRIPTS_DC_GreatVault
 )
 
 # DC Addon Extension System - Unified client/server protocol
-set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_extension_loader.cpp
     AddonExtension/dc_addon_protocol.cpp
     AddonExtension/dc_addon_aoeloot.cpp
@@ -206,7 +205,7 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_spectator.cpp
     AddonExtension/dc_addon_hotspot.cpp
     AddonExtension/dc_addon_world.cpp
-    AddonExtension/dc_death_markers.cpp
+    AddonExtension/dc_addon_death_markers.cpp
     AddonExtension/dc_addon_hlbg.cpp
     AddonExtension/dc_addon_seasons.cpp
     AddonExtension/dc_addon_leaderboards.cpp
@@ -214,7 +213,9 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_duels.cpp
     AddonExtension/dc_addon_prestige.cpp
     AddonExtension/dc_addon_groupfinder.cpp
-    AddonExtension/npc_group_finder.cpp
+    AddonExtension/dc_addon_groupfinder_mgr.cpp
+    AddonExtension/dc_addon_groupfinder_npc.cpp
+    AddonExtension/dc_addon_collection.cpp
 )
 
 # DC Collection System - Retail-like collection management (Split Structure)
@@ -224,12 +225,11 @@ set(SCRIPTS_DC_CollectionSystem
     CollectionSystem/CollectionPets.cpp
     CollectionSystem/CollectionHeirlooms.cpp
     CollectionSystem/CollectionTitles.cpp
-    CollectionSystem/dc_addon_collection.cpp
 )
 
-# DC First Start System - First-start experience, login system
 set(SCRIPTS_DC_FirstStart
-    FirstStart/dc_firststart.cpp
+    Progression/FirstStart/dc_firststart.cpp
+    Progression/FirstStart/dc_login_announce.cpp
 )
 
 # GOMove System
@@ -252,6 +252,11 @@ set(SCRIPTS_DC_CrossSystem
 set(SCRIPTS_DC_Commands
     Commands/cs_dc_addons.cpp
     Commands/cs_dc_dungeonquests.cpp
+    Commands/cs_hl_bg.cpp
+    Commands/mythic_plus_commands.cpp
+    Commands/SeasonalRewardCommands.cpp
+    Commands/dc_prestige_chat.cpp
+    Commands/dc_item_upgrade_commands.cpp
 )
 
 set(SCRIPTS_DC_ItemUpgrade

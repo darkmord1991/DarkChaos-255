@@ -7,8 +7,9 @@
  * Copyright (C) 2025 Dark Chaos Development Team
  */
 
-#include "DCAddonNamespace.h"
-#include "DCAddonTransmutation.h"
+#include "Common.h"
+#include "dc_addon_namespace.h"
+#include "dc_addon_transmutation.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Item.h"

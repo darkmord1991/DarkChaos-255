@@ -19,6 +19,9 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     if (!player)
         return;
 
+    // Track player in zone set for optimized iteration
+    _playersInHinterlands.insert(player->GetGUID());
+
     // If zone is locked, redirect entrants to base and inform them
     if (_lockEnabled && _isLocked)
     {
@@ -115,6 +118,9 @@ void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
 {
     if (!player)
         return;
+
+    // Remove from tracked set
+    _playersInHinterlands.erase(player->GetGUID());
 
     if (_lockEnabled && _isLocked)
     {
