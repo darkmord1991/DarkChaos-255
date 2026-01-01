@@ -186,6 +186,25 @@ namespace DCCollection
         return f[0].Get<uint32>();
     }
 
+    uint32 FindMountItemIdForSpell(uint32 spellId)
+    {
+        // Mounts are typically taught by item_template (class=15, subclass=5).
+        QueryResult r = WorldDatabase.Query(
+            "SELECT MIN(entry) FROM item_template "
+            "WHERE class = 15 AND subclass = 5 AND ("
+            "  spellid_1 = {} OR spellid_2 = {} OR spellid_3 = {} OR spellid_4 = {} OR spellid_5 = {}"
+            ")",
+            spellId, spellId, spellId, spellId, spellId);
+
+        if (!r)
+            return 0;
+
+        Field* f = r->Fetch();
+        if (f[0].IsNull())
+            return 0;
+        return f[0].Get<uint32>();
+    }
+
     bool IsCompanionSpell(SpellInfo const* spellInfo)
     {
         if (!spellInfo)
@@ -1979,6 +1998,47 @@ namespace DCCollection
         return wishlist;
     }
 
+    struct RecentAddition
+    {
+        uint8 typeId = 0;
+        uint32 entryId = 0;
+        uint32 timestamp = 0;
+    };
+
+    std::vector<RecentAddition> LoadRecentAdditions(uint32 accountId, uint32 limit)
+    {
+        std::vector<RecentAddition> recent;
+
+        if (!accountId || limit == 0)
+            return recent;
+
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+            return recent;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT collection_type, {}, IFNULL(UNIX_TIMESTAMP(acquired_date), 0) "
+            "FROM dc_collection_items "
+            "WHERE account_id = {} AND unlocked = 1 "
+            "ORDER BY acquired_date DESC LIMIT {}",
+            itemsEntryCol, accountId, limit);
+
+        if (result)
+        {
+            do
+            {
+                Field* f = result->Fetch();
+                RecentAddition entry;
+                entry.typeId = f[0].Get<uint8>();
+                entry.entryId = f[1].Get<uint32>();
+                entry.timestamp = f[2].Get<uint32>();
+                recent.push_back(entry);
+            } while (result->NextRow());
+        }
+
+        return recent;
+    }
+
     // Check if item is on wishlist
     bool IsOnWishlist(uint32 accountId, CollectionType type, uint32 entryId)
     {
@@ -2186,7 +2246,7 @@ namespace DCCollection
         msg.Send(player);
     }
 
-    void SendStats(Player* player)
+    void SendStats(Player* player, bool includeRecent = false)
     {
         if (!player || !player->GetSession())
             return;
@@ -2228,6 +2288,108 @@ namespace DCCollection
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_STATS);
         msg.Set("stats", stats);
+
+        if (includeRecent)
+        {
+            constexpr uint32 RECENT_MAX_ITEMS = 12;
+            auto recentRows = LoadRecentAdditions(accountId, RECENT_MAX_ITEMS);
+
+            DCAddon::JsonValue recent;
+            recent.SetArray();
+
+            for (RecentAddition const& r : recentRows)
+            {
+                if (r.typeId == static_cast<uint8>(CollectionType::TOY))
+                    continue; // Toys are disabled
+
+                if (r.typeId > 6)
+                    continue;
+
+                std::string typeKey = typeNames[r.typeId];
+                if (typeKey.empty())
+                    continue;
+
+                DCAddon::JsonValue entry;
+                entry.SetObject();
+                entry.Set("type", typeKey);
+                entry.Set("id", r.entryId);
+                entry.Set("timestamp", r.timestamp);
+
+                // Help the client resolve icons/tooltips without requiring definitions.
+                if (r.typeId == static_cast<uint8>(CollectionType::MOUNT))
+                {
+                    entry.Set("spellId", r.entryId);
+                    if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(r.entryId))
+                    {
+                        if (spellInfo->SpellName[0])
+                            entry.Set("name", std::string(spellInfo->SpellName[0]));
+                    }
+
+                    // Prefer rarity from the teaching item when available.
+                    if (uint32 itemId = FindMountItemIdForSpell(r.entryId))
+                    {
+                        entry.Set("itemId", itemId);
+                        if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
+                            entry.Set("rarity", static_cast<uint32>(proto->Quality));
+                    }
+                }
+                else if (r.typeId == static_cast<uint8>(CollectionType::PET) || r.typeId == static_cast<uint8>(CollectionType::HEIRLOOM))
+                {
+                    entry.Set("itemId", r.entryId);
+                    if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(r.entryId))
+                    {
+                        entry.Set("name", std::string(proto->Name1));
+                        entry.Set("rarity", static_cast<uint32>(proto->Quality));
+                    }
+                }
+                else if (r.typeId == static_cast<uint8>(CollectionType::TITLE))
+                {
+                    if (CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(r.entryId))
+                    {
+                        std::string name;
+                        if (titleEntry->nameMale[0])
+                            name = titleEntry->nameMale[0];
+                        else if (titleEntry->nameFemale[0])
+                            name = titleEntry->nameFemale[0];
+
+                        if (!name.empty())
+                            entry.Set("name", name);
+                    }
+                }
+                else if (r.typeId == static_cast<uint8>(CollectionType::TRANSMOG))
+                {
+                    // Provide a representative item so the client can resolve name/icon via GetItemInfo.
+                    auto const& idx = GetTransmogAppearanceIndexCached();
+                    auto it = idx.find(r.entryId);
+                    if (it != idx.end() && !it->second.empty())
+                    {
+                        TransmogAppearanceVariant const* best = &it->second[0];
+                        for (TransmogAppearanceVariant const& v : it->second)
+                        {
+                            bool vNonCustom = v.canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
+                            bool bNonCustom = best->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
+                            if (IsBetterTransmogRepresentative(v.canonicalItemId, vNonCustom, v.quality, v.itemLevel,
+                                best->canonicalItemId, bNonCustom, best->quality, best->itemLevel))
+                            {
+                                best = &v;
+                            }
+                        }
+
+                        if (best->canonicalItemId)
+                            entry.Set("itemId", best->canonicalItemId);
+
+                        if (!best->name.empty())
+                            entry.Set("name", best->name);
+
+                        entry.Set("rarity", best->quality);
+                    }
+                }
+
+                recent.Push(entry);
+            }
+
+            msg.Set("recent", recent);
+        }
 
         msg.Send(player);
     }
@@ -3246,9 +3408,19 @@ namespace DCCollection
         SendFullCollection(player);
     }
 
-    void HandleGetStats(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    void HandleGetStats(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        SendStats(player);
+        // Include recent by default to keep the UI consistent across client versions
+        // (older clients may send an empty/non-JSON stats request).
+        bool includeRecent = true;
+        if (DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+            if (json.HasKey("includeRecent"))
+                includeRecent = json["includeRecent"].AsBool();
+        }
+
+        SendStats(player, includeRecent);
     }
 
     void HandleGetBonuses(Player* player, const DCAddon::ParsedMessage& /*msg*/)
