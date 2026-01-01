@@ -167,6 +167,7 @@ namespace CrossSystem
             uint64 totalHandlersInvoked = 0;
             uint64 asyncEventsQueued = 0;
             uint64 asyncEventsProcessed = 0;
+            uint64 asyncEventsDropped = 0;  // Events dropped due to queue overflow
             uint64 errors = 0;
             std::unordered_map<EventType, uint64> eventCounts;
             std::unordered_map<SystemId, uint64> systemHandlerCounts;

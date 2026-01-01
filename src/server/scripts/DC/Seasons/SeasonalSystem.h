@@ -214,9 +214,6 @@ namespace DarkChaos
         // Helper Functions
         // =====================================================================
 
-        // System registration helpers
-        bool RegisterItemUpgradeSystem();
-        bool RegisterHLBGSystem();
 
         // Season utilities
         std::string FormatSeasonTimeRemaining(time_t seconds);

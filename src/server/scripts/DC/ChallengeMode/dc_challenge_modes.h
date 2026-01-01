@@ -136,4 +136,12 @@ public:
 
 #define sChallengeModes ChallengeModes::instance()
 
+// Shared utility functions (implemented in dc_challenge_modes_customized.cpp)
+std::string GetChallengeExplanation(ChallengeModeSettings setting);
+std::string GetChallengeTitle(ChallengeModeSettings setting);
+
+// Script registration
+void AddSC_dc_challenge_modes();
+void AddSC_challenge_mode_shrine(); // ChallengeModeShrine.cpp
+
 #endif //AZEROTHCORE_DC_CHALLENGEMODES_H

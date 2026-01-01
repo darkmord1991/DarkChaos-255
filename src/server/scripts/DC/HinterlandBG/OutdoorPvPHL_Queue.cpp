@@ -409,6 +409,9 @@ void OutdoorPvPHL::SendQueueStatusAIO(Player* player)
     oss << "QUEUE_STATUS|";
     oss << "IN_QUEUE=" << (IsPlayerInQueue(player) ? "1" : "0") << "|";
 
+    uint32 position = 0;
+    uint32 waitTime = 0;
+
     if (IsPlayerInQueue(player))
     {
         // Find player's position
@@ -419,12 +422,27 @@ void OutdoorPvPHL::SendQueueStatusAIO(Player* player)
 
         if (it != _queuedPlayers.end())
         {
-            uint32 position = static_cast<uint32>(std::distance(_queuedPlayers.begin(), it) + 1);
+            position = static_cast<uint32>(std::distance(_queuedPlayers.begin(), it) + 1);
+            waitTime = static_cast<uint32>(GameTime::GetGameTime().count() - it->joinTime);
             oss << "POSITION=" << position << "|";
+            oss << "WAIT_TIME=" << waitTime << "|";
         }
     }
 
-    oss << "TOTAL=" << GetQueuedPlayerCount() << "|";
+    uint32 totalQueued = GetQueuedPlayerCount();
+    uint32 allianceQueued = GetQueuedPlayerCountByTeam(TEAM_ALLIANCE);
+    uint32 hordeQueued = GetQueuedPlayerCountByTeam(TEAM_HORDE);
+
+    oss << "TOTAL=" << totalQueued << "|";
+    oss << "ALLIANCE=" << allianceQueued << "|";
+    oss << "HORDE=" << hordeQueued << "|";
+    oss << "MIN_PLAYERS=" << _minPlayersToStart << "|";
+
+    // Calculate estimated time to start based on queue fill rate
+    uint32 playersNeeded = (totalQueued >= _minPlayersToStart) ? 0 : (_minPlayersToStart - totalQueued);
+    // Rough estimate: 30 seconds per missing player average
+    uint32 estWaitSeconds = playersNeeded * 30;
+    oss << "EST_WAIT=" << estWaitSeconds << "|";
 
     // Send battle state
     switch (_bgState)

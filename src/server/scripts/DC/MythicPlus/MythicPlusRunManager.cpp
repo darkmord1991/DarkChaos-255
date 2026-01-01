@@ -89,7 +89,9 @@ void MythicPlusRunManager::Reset()
 {
     _instanceStates.clear();
     CacheBossMetadata();
-    EnsureHudCacheTable();
+    _instanceStates.clear();
+    CacheBossMetadata();
+    // EnsureHudCacheTable(); // Moved to SQL migration
     CharacterDatabase.DirectExecute("DELETE FROM `{}`", HUD_CACHE_TABLE);
     LOG_INFO("mythic.run", "Mythic+ Run Manager reset complete");
 }
@@ -137,28 +139,7 @@ void MythicPlusRunManager::CacheBossMetadata()
              bossEntries, finalEntries, _mapBossEntries.size());
 }
 
-void MythicPlusRunManager::EnsureHudCacheTable()
-{
-    if (_hudCacheReady)
-        return;
-
-    CharacterDatabase.DirectExecute(
-        "CREATE TABLE IF NOT EXISTS `{}` ("
-        "`instance_key` BIGINT UNSIGNED NOT NULL,"
-        "`map_id` INT UNSIGNED NOT NULL,"
-        "`instance_id` INT UNSIGNED NOT NULL,"
-        "`owner_guid` INT UNSIGNED NOT NULL,"
-        "`keystone_level` TINYINT UNSIGNED NOT NULL,"
-        "`season_id` INT UNSIGNED NOT NULL,"
-        "`payload` LONGTEXT NOT NULL,"
-        "`updated_at` BIGINT UNSIGNED NOT NULL,"
-        "PRIMARY KEY (`instance_key`)"
-        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-        HUD_CACHE_TABLE);
-
-    _hudCacheReady = true;
-    LOG_INFO("mythic.hud", "Ensured Mythic+ HUD cache table `{}` exists", HUD_CACHE_TABLE);
-}
+// EnsureHudCacheTable removed - handled by SQL migration
 
 void MythicPlusRunManager::PersistHudSnapshot(InstanceState* state, std::string_view payload, bool forceUpdate)
 {
@@ -169,7 +150,7 @@ void MythicPlusRunManager::PersistHudSnapshot(InstanceState* state, std::string_
     if (!forceUpdate && state->lastHudPayload == serialized)
         return;
 
-    EnsureHudCacheTable();
+    // EnsureHudCacheTable(); // Moved to SQL migration
 
     state->lastHudPayload = serialized;
 
@@ -200,7 +181,7 @@ void MythicPlusRunManager::ClearHudSnapshot(InstanceState* state)
         return;
 
     state->lastHudPayload.clear();
-    EnsureHudCacheTable();
+    // EnsureHudCacheTable(); // Moved to SQL migration
     CharacterDatabase.DirectExecute(
         "DELETE FROM `{}` WHERE `instance_key` = {}",
         HUD_CACHE_TABLE,
@@ -224,6 +205,7 @@ bool MythicPlusRunManager::IsBossCreature(const Creature* creature) const
     if (creature->IsDungeonBoss())
         return true;
 
+    // Use cached metadata check
     Map const* map = creature->GetMap();
     if (!map)
         return false;
@@ -411,9 +393,22 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* /*killer*
     }
     else
     {
-        uint8 remaining = profile->deathBudget > state->deaths ? profile->deathBudget - state->deaths : 0;
         if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
             ChatHandler(owner->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r Death recorded. %u remaining.", remaining);
+    }
+    
+    // Track per-player deaths
+    state->deathsByPlayer[player->GetGUID().GetCounter()]++;
+
+    // Track per-boss deaths (if in combat with a boss)
+    // We check if any boss is currently in combat with the group
+    // This is a simplified check; a more robust one would check the player's threat list
+    // but for now, we can check if the player was killed by a boss or if a boss is engaged.
+    // However, finding the "active" boss without iterating all creatures is hard.
+    // For now, let's skip complex boss death association unless we have a specific boss reference.
+    if (killer && IsBossCreature(killer))
+    {
+        state->deathsByBoss[killer->GetEntry()]++;
     }
 }
 
@@ -969,12 +964,57 @@ void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool succ
 
     uint32 unsignedScore = static_cast<uint32>(scoreValue);
 
-    for (ObjectGuid::LowType guidLow : state->participants)
+    // Log the run result
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_mplus_runs (run_id, map_id, season_id, keystone_level, duration, completed, success, deaths, score, owner_guid, participants, completed_at) "
+        "VALUES ('{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', {})",
+        state->instanceKey, state->mapId, state->seasonId, state->keystoneLevel, duration, 
+        state->completed ? 1 : 0, success ? 1 : 0, state->deaths, unsignedScore, 
+        state->ownerGuid.GetCounter(), SerializeParticipants(state), now);
+
+    // Track Dungeon Statistics
+    // runs_started is incremented when keystone is activated (TODO: Add hook there too)
+    // Here we track completion/failure and times
+    std::string runsCompletedInc = success ? "runs_completed = runs_completed + 1" : "runs_completed = runs_completed";
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_mythic_dungeon_stats (season_id, map_id, keystone_level, runs_completed, total_time, deaths_total) "
+        "VALUES ({}, {}, {}, {}, {}, {}) "
+        "ON DUPLICATE KEY UPDATE {}, total_time = total_time + {}, deaths_total = deaths_total + {}",
+        state->seasonId, state->mapId, state->keystoneLevel, 
+        success ? 1 : 0, duration, state->deaths,
+        runsCompletedInc, duration, state->deaths);
+
+    // Track Weekly Best for all participants
+    // Only if successful run
+    if (success)
     {
-        InsertRunHistory(guidLow, seasonId, state->mapId, state->keystoneLevel, success, state->deaths, state->wipes, duration, unsignedScore, groupBlob);
-        UpdateScore(guidLow, seasonId, state->mapId, state->keystoneLevel, success, unsignedScore, duration);
-        if (success)
-            UpdateWeeklyVault(guidLow, seasonId, state->mapId, state->keystoneLevel, success, state->deaths, state->wipes, duration);
+        uint32 weekStart = GetWeekStartTimestamp();
+        
+        for (auto const& guidLow : state->participants)
+        {
+            // Check if this run is better than their current best
+            // Better defined as: Higher Key OR (Same Key AND Faster Time)
+            // SQL ON DUPLICATE doesn't support complex "IF" conditions easily for rows that exist
+            // So we do a read-check-write pattern or a clever SQL
+            
+            // We use a clever SQL:
+            // INSERT ... ON DUPLICATE KEY UPDATE 
+            // score = IF(VALUES(score) > score, VALUES(score), score),
+            // completion_time = IF(VALUES(score) > score, VALUES(completion_time), IF(VALUES(score) = score AND VALUES(completion_time) < completion_time, VALUES(completion_time), completion_time)),
+            // keystone_level = IF(VALUES(keystone_level) > keystone_level, VALUES(keystone_level), keystone_level)
+            
+            // Actually, simply tracking by score uses specific logic.
+            // For now, let's just insert/update if the score is higher.
+            
+            CharacterDatabase.Execute(
+                "INSERT INTO dc_mythic_weekly_best (week_start, player_guid, map_id, keystone_level, score, completion_time) "
+                "VALUES ({}, {}, {}, {}, {}, {}) "
+                "ON DUPLICATE KEY UPDATE "
+                "keystone_level = IF(VALUES(score) > score, VALUES(keystone_level), keystone_level), "
+                "completion_time = IF(VALUES(score) > score, VALUES(completion_time), IF(VALUES(score) = score AND VALUES(completion_time) < completion_time, VALUES(completion_time), completion_time)), "
+                "score = IF(VALUES(score) > score, VALUES(score), score)",
+                weekStart, guidLow, state->mapId, state->keystoneLevel, unsignedScore, duration);
+        }
     }
 
     if (success && duration > 0)

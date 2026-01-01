@@ -519,7 +519,170 @@ namespace DCAddon
         constexpr uint32 PERMISSION_DENIED = 1;
         constexpr uint32 MODULE_DISABLED   = 2;
         constexpr uint32 BAD_FORMAT        = 3;
+        constexpr uint32 VERSION_MISMATCH  = 4;
+        constexpr uint32 CAP_NOT_SUPPORTED = 5;
         constexpr uint32 UNKNOWN          = 255;
+    }
+
+    // ========================================================================
+    // PROTOCOL VERSIONING & CAPABILITY NEGOTIATION
+    // ========================================================================
+
+    namespace ProtocolVersion
+    {
+        // Semantic version components
+        constexpr uint8 MAJOR = 2;       // Breaking changes
+        constexpr uint8 MINOR = 0;       // New features (backwards compatible)
+        constexpr uint8 PATCH = 0;       // Bug fixes
+
+        // Combined version for comparison
+        constexpr uint32 VERSION = (MAJOR << 16) | (MINOR << 8) | PATCH;
+
+        // Capability flags - bitfield for feature negotiation
+        namespace Capability
+        {
+            constexpr uint32 NONE           = 0x00000000;
+            constexpr uint32 JSON_MESSAGES  = 0x00000001;  // JSON payload support
+            constexpr uint32 BATCH_MESSAGES = 0x00000002;  // Batch message support
+            constexpr uint32 COMPRESSION    = 0x00000004;  // zlib compression
+            constexpr uint32 BINARY_PROTO   = 0x00000008;  // Binary protocol option
+            constexpr uint32 ASYNC_QUERIES  = 0x00000010;  // Async DB query responses
+            constexpr uint32 DELTA_SYNC     = 0x00000020;  // Delta sync for collections
+            constexpr uint32 HOT_RELOAD     = 0x00000040;  // Module hot-reload support
+
+            // Default capabilities for current server version
+            constexpr uint32 SERVER_DEFAULT = JSON_MESSAGES | BATCH_MESSAGES;
+        }
+
+        // Version info structure for handshake
+        struct VersionInfo
+        {
+            uint8 major;
+            uint8 minor;
+            uint8 patch;
+            uint32 capabilities;
+
+            uint32 GetVersion() const { return (major << 16) | (minor << 8) | patch; }
+
+            bool IsCompatible(const VersionInfo& other) const
+            {
+                // Major version must match, minor can be >= 
+                return (major == other.major);
+            }
+
+            bool HasCapability(uint32 cap) const { return (capabilities & cap) != 0; }
+        };
+
+        // Get server version info
+        inline VersionInfo GetServerVersion()
+        {
+            return { MAJOR, MINOR, PATCH, Capability::SERVER_DEFAULT };
+        }
+
+        // Parse client version string "MAJOR.MINOR.PATCH" or "MAJOR.MINOR.PATCH|CAPS"
+        inline VersionInfo ParseClientVersion(const std::string& versionStr)
+        {
+            VersionInfo info = { 0, 0, 0, 0 };
+            size_t pipePos = versionStr.find('|');
+            std::string version = (pipePos != std::string::npos) 
+                                  ? versionStr.substr(0, pipePos) 
+                                  : versionStr;
+
+            // Parse "MAJOR.MINOR.PATCH"
+            sscanf(version.c_str(), "%hhu.%hhu.%hhu", &info.major, &info.minor, &info.patch);
+
+            // Parse capabilities if present
+            if (pipePos != std::string::npos)
+            {
+                try {
+                    info.capabilities = std::stoul(versionStr.substr(pipePos + 1));
+                } catch (...) {
+                    info.capabilities = 0;
+                }
+            }
+
+            return info;
+        }
+
+        // Build version string for client
+        inline std::string BuildVersionString(const VersionInfo& info)
+        {
+            return std::to_string(info.major) + "." + 
+                   std::to_string(info.minor) + "." + 
+                   std::to_string(info.patch) + "|" +
+                   std::to_string(info.capabilities);
+        }
+    }
+
+    // ========================================================================
+    // BATCH MESSAGE SUPPORT (DC|BATCH|count|MOD1|op|data|MOD2|op|data|...)
+    // ========================================================================
+
+    namespace Batch
+    {
+        constexpr const char* MODULE = "BATCH";
+        constexpr size_t MAX_MESSAGES_PER_BATCH = 10;
+
+        // Batch message is parsed as: BATCH|count|MOD|op|...|MOD|op|...
+        struct BatchEntry
+        {
+            std::string module;
+            uint8 opcode;
+            std::vector<std::string> data;
+        };
+
+        // Parse a batch message into individual entries
+        // Format: BATCH|count|MOD|op|d1|d2|...|MOD|op|d1|...
+        // Each sub-message ends when next MOD is found or end of data
+        inline std::vector<BatchEntry> ParseBatch(const ParsedMessage& msg)
+        {
+            std::vector<BatchEntry> entries;
+
+            // First data field is the count
+            if (msg.GetDataCount() < 1)
+                return entries;
+
+            uint32 declaredCount = msg.GetUInt32(0);
+            if (declaredCount == 0 || declaredCount > MAX_MESSAGES_PER_BATCH)
+                return entries;
+
+            // Parse remaining fields as sub-messages
+            size_t idx = 1;  // Start after count
+            while (idx < msg.GetDataCount() && entries.size() < declaredCount)
+            {
+                BatchEntry entry;
+
+                // Module
+                if (idx >= msg.GetDataCount()) break;
+                entry.module = msg.GetString(idx++);
+
+                // Opcode
+                if (idx >= msg.GetDataCount()) break;
+                entry.opcode = static_cast<uint8>(msg.GetUInt32(idx++));
+
+                // Data fields until next module keyword or end
+                // We detect a new sub-message when we see a known module ID
+                while (idx < msg.GetDataCount())
+                {
+                    std::string val = msg.GetString(idx);
+                    // Check if this looks like a module identifier (3-5 uppercase chars)
+                    bool isModule = (val.length() >= 3 && val.length() <= 5);
+                    if (isModule)
+                    {
+                        bool allUpper = true;
+                        for (char c : val) if (!isupper(c)) { allUpper = false; break; }
+                        if (allUpper && entries.size() < declaredCount - 1)
+                            break;  // Start of next sub-message
+                    }
+                    entry.data.push_back(val);
+                    idx++;
+                }
+
+                entries.push_back(entry);
+            }
+
+            return entries;
+        }
     }
 
     // ========================================================================

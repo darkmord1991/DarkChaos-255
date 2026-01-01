@@ -204,6 +204,7 @@ namespace CrossSystem
         ObjectGuid playerGuid;
         uint32 mapId = 0;
         uint32 instanceId = 0;
+        uint64 correlationId = 0;  // For tracking request/response pairs
 
         virtual ~EventData() = default;
     };

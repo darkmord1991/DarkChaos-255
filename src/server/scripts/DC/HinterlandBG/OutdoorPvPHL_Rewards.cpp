@@ -295,8 +295,8 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
         {
             rewardToMember(player);
         }
-        // Update HUD for all participants after resource change
-        UpdateWorldStatesAllPlayers();
+        // HUD worldstates removed - now handled by addon
+        // UpdateWorldStatesAllPlayers();
     }
     else // If is something besides a player
     {
@@ -381,7 +381,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
         // Per-kill NPC spell feedback (optional)
         if (_killSpellOnNpcKill)
             player->CastSpell(player, _killSpellOnNpcKill, true);
-        // Update HUD for all participants after resource change
-        UpdateWorldStatesAllPlayers();
+        // HUD worldstates removed - now handled by addon
+        // UpdateWorldStatesAllPlayers();
     }
 }

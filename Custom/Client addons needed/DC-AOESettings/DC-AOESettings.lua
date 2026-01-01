@@ -61,6 +61,41 @@ addon.qualityNames = {
     [5] = "|cffff8000Legendary|r",
 }
 
+-- Loot Filter Presets (quick-switch configurations)
+addon.presets = {
+    [0] = { name = "Everything",   minQuality = 0, color = "|cff9d9d9d" },
+    [1] = { name = "Vendor Trash", minQuality = 1, color = "|cffffffff" },
+    [2] = { name = "Adventurer",   minQuality = 2, color = "|cff1eff00" },
+    [3] = { name = "Raider",       minQuality = 3, color = "|cff0070dd" },
+    [4] = { name = "Collector",    minQuality = 4, color = "|cffa335ee" },
+    [5] = { name = "Custom",       minQuality = nil, color = "|cffffd700" },
+}
+
+-- Get preset name for display
+function addon:GetPresetName(presetId)
+    local preset = self.presets[presetId]
+    if preset then
+        return preset.color .. preset.name .. "|r"
+    end
+    return "|cff888888Unknown|r"
+end
+
+-- Apply preset (sets minQuality based on preset)
+function addon:ApplyPreset(presetId)
+    local preset = self.presets[presetId]
+    if not preset then return end
+    
+    self.settings.activePreset = presetId
+    if preset.minQuality ~= nil then
+        self.settings.minQuality = preset.minQuality
+    end
+    
+    self:UpdateUI()
+    self:SaveSettingsLocal()
+    self:SyncSettingToServer("minQuality", self.settings.minQuality)
+    self:Confirm("Loot Preset", self:GetPresetName(presetId))
+end
+
 -- UI elements
 addon.frame = nil
 addon.checkboxes = {}

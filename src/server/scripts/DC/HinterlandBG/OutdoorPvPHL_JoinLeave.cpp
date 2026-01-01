@@ -61,8 +61,8 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     // Record player participation in hlbg_player_stats for leaderboards
     HLBGPlayerStats::OnPlayerEnterBG(player);
 
-    // Seed HUD worldstates for the player entering
-    UpdateWorldStatesForPlayer(player);
+    // HUD worldstates removed - now handled by DC-HinterlandBG addon via DCAddonProtocol
+    // UpdateWorldStatesForPlayer(player);
     // Also seed the affix worldstate for HUD/addon, and apply the affix effect to late joiners
     if (_affixEnabled)
     {

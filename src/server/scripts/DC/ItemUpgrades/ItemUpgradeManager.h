@@ -11,6 +11,7 @@
 #pragma once
 
 #include "Define.h"
+#include "ItemUpgradeUtils.h"
 #include <map>
 #include <memory>
 #include <string>
@@ -201,6 +202,10 @@ namespace DarkChaos
             virtual void LoadUpgradeData(uint32 season = 1) = 0;
             virtual void SaveItemUpgrade(uint32 item_guid) = 0;
             virtual void SavePlayerCurrency(uint32 player_guid, uint32 season = 1) = 0;
+            
+            // Maintenance and Metrics
+            virtual void ClearCache() = 0;
+            virtual UpgradeStatistics GetStatistics() const = 0;
         };
 
         // =====================================================================

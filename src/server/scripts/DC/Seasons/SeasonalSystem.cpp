@@ -199,13 +199,49 @@ namespace DarkChaos
 
             bool TransitionSeason(uint32 from_season_id, uint32 to_season_id) override
             {
-                if (!EndSeason(from_season_id))
-                    return false;
+                auto from_season = GetSeason(from_season_id);
+                auto to_season = GetSeason(to_season_id);
 
-                if (!StartSeason(to_season_id))
+                if (!from_season || !to_season)
+                {
+                    LOG_ERROR("seasonal", "TransitionSeason: Invalid season IDs (from={}, to={})",
+                             from_season_id, to_season_id);
                     return false;
+                }
 
-                LOG_INFO("seasonal", "Transitioned from season {} to {}", from_season_id, to_season_id);
+                // Use SQLTransaction for atomicity - both operations succeed or both fail
+                SQLTransaction trans = CharacterDatabase.BeginTransaction();
+
+                try
+                {
+                    // End the old season
+                    trans->Append("UPDATE dc_seasons SET season_state = {} WHERE season_id = {}",
+                                 (int)SEASON_STATE_INACTIVE, from_season_id);
+
+                    // Start the new season
+                    trans->Append("UPDATE dc_seasons SET season_state = {} WHERE season_id = {}",
+                                 (int)SEASON_STATE_ACTIVE, to_season_id);
+
+                    // Commit the transaction - both updates happen atomically
+                    CharacterDatabase.CommitTransaction(trans);
+                }
+                catch (const std::exception& e)
+                {
+                    LOG_ERROR("seasonal", "TransitionSeason: Transaction failed: {}", e.what());
+                    // Transaction automatically rolls back on exception
+                    return false;
+                }
+
+                // Update in-memory state only after successful DB commit
+                from_season->season_state = SEASON_STATE_INACTIVE;
+                to_season->season_state = SEASON_STATE_ACTIVE;
+                active_season_id_ = to_season_id;
+
+                // Fire events after successful transition
+                FireSeasonEvent(from_season_id, SEASON_EVENT_END);
+                FireSeasonEvent(to_season_id, SEASON_EVENT_START);
+
+                LOG_INFO("seasonal", "Atomically transitioned from season {} to {}", from_season_id, to_season_id);
                 return true;
             }
 
@@ -443,6 +479,22 @@ namespace DarkChaos
                 return (season->end_timestamp > now) ? (season->end_timestamp - now) : 0;
             }
 
+            // =================================================================
+            // Cache Management
+            // =================================================================
+
+            void InvalidatePlayerData(uint32 player_guid)
+            {
+                auto it = player_data_.find(player_guid);
+                if (it != player_data_.end())
+                {
+                    player_data_.erase(it);
+                    LOG_DEBUG("seasonal", "Cleaned up cached season data for player {}", player_guid);
+                }
+            }
+
+            size_t GetPlayerCacheSize() const { return player_data_.size(); }
+
         private:
             void LoadSeasons()
             {
@@ -509,29 +561,13 @@ namespace DarkChaos
         // System Registration Helpers
         // =====================================================================
 
-        bool RegisterItemUpgradeSystem()
-        {
-            SystemRegistration reg;
-            reg.system_name = "item_upgrades";
-            reg.system_version = "4.0";
-            reg.priority = 100;
+        // =====================================================================
+        // System Registration Helpers - DEPRECATED
+        // Systems should now register themselves via GetSeasonalManager()->RegisterSystem()
+        // =====================================================================
 
-            // TODO: Implement callbacks for item upgrade system integration
+        // Legacy helpers removed to enforce self-registration pattern
 
-            return GetSeasonalManager()->RegisterSystem(reg);
-        }
-
-        bool RegisterHLBGSystem()
-        {
-            SystemRegistration reg;
-            reg.system_name = "hlbg";
-            reg.system_version = "1.0";
-            reg.priority = 90;
-
-            // TODO: Implement callbacks for HLBG system integration
-
-            return GetSeasonalManager()->RegisterSystem(reg);
-        }
 
         // =====================================================================
         // Utility Functions

@@ -14,6 +14,7 @@
 #include "Log.h"
 #include "GameTime.h"
 #include "DBCStores.h"
+#include "World.h"
 
 // External functions from ac_hotspots.cpp
 extern uint32 GetHotspotXPBonusPercentage();
@@ -223,30 +224,38 @@ namespace Hotspot
 
     // Broadcast hotspot spawn to all players
     void BroadcastHotspotSpawn(uint32 id, uint32 mapId, uint32 zoneId,
-                               const std::string& zoneName, float x, float y,
-                               uint32 duration, float bonus)
+                               const std::string& zoneName, float x, float y, float z,
+                               uint32 duration, uint32 bonus)
     {
+        // Build hotspot object with all fields
+        JsonValue hs = BuildHotspotObject(id, mapId, zoneId, zoneName, x, y, z, duration, bonus);
+        
         // Build message
-        (void)bonus;
         JsonMessage msg(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_SPAWN);
-        msg.Set("hotspot", BuildHotspotObject(id, mapId, zoneId, zoneName, x, y, 0.0f, duration, static_cast<uint32>(GetHotspotXPBonusPercentage())));
-
+        msg.Set("hotspot", hs);
+        
         // Send to all online players
-        // This would need access to SessionMgr - for now placeholder
-        // SessionMgr::Instance().DoForAllSessions([&msg](WorldSession* session) {
-        //     if (Player* player = session->GetPlayer())
-        //         msg.Send(player);
-        // });
+        sWorld->DoForAllSessions([&msg](WorldSession* session) {
+            if (Player* player = session->GetPlayer())
+                msg.Send(player);
+        });
+        
+        LOG_DEBUG("dc.addon", "Broadcast hotspot spawn: id={} map={} zone={}", id, mapId, zoneId);
     }
 
     // Broadcast hotspot expiration
     void BroadcastHotspotExpire(uint32 id)
     {
-        // Similar to spawn broadcast
         JsonMessage msg(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_EXPIRE);
         msg.Set("id", id);
-
+        
         // Send to all online players
+        sWorld->DoForAllSessions([&msg](WorldSession* session) {
+            if (Player* player = session->GetPlayer())
+                msg.Send(player);
+        });
+        
+        LOG_DEBUG("dc.addon", "Broadcast hotspot expire: id={}", id);
     }
 
     // Register all handlers

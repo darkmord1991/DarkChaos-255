@@ -107,7 +107,7 @@ void OutdoorPvPHL::HandleReset()
             }
         }
     }
-    UpdateWorldStatesAllPlayers();
+    // HUD worldstates removed - now handled by addon\n    // UpdateWorldStatesAllPlayers();
     UpdateAffixWorldstateAll();
     // Deterministic client HUD update via addon whisper
     SendAffixAddonToZone();

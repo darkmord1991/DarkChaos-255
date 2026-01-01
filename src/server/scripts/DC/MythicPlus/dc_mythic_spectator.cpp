@@ -516,7 +516,10 @@ void MythicSpectatorManager::StopSpectating(Player* player)
 
     _spectators.erase(it);
 
-    ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[M+ Spectator]|r You have stopped spectating.");
+    _spectators.erase(it);
+
+    if (player->GetSession())
+        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[M+ Spectator]|r You have stopped spectating.");
 
     LOG_DEBUG("scripts", "MythicSpectator: {} stopped spectating", player->GetName());
 }
@@ -707,7 +710,30 @@ void MythicSpectatorManager::Update(uint32 diff)
             BroadcastRunUpdate(instanceId);
     }
 
-    // Update spectator viewpoints
+    // Cleanup orphaned spectators (disconnected or crashed without proper logout)
+    // This prevents memory leaks from accumulating over time
+    std::vector<ObjectGuid> orphanedGuids;
+    for (auto const& [guid, state] : _spectators)
+    {
+        if (!ObjectAccessor::FindPlayer(guid))
+            orphanedGuids.push_back(guid);
+    }
+    for (ObjectGuid guid : orphanedGuids)
+    {
+        auto it = _spectators.find(guid);
+        if (it != _spectators.end())
+        {
+            // Remove from run's spectator list
+            auto runIt = _activeRuns.find(it->second.targetInstanceId);
+            if (runIt != _activeRuns.end())
+                runIt->second.spectators.erase(guid);
+
+            _spectators.erase(it);
+            LOG_DEBUG("scripts", "MythicSpectator: Cleaned up orphaned spectator {}", guid.ToString());
+        }
+    }
+
+    // Update spectator viewpoints for valid spectators
     for (auto& [guid, state] : _spectators)
     {
         Player* spectator = ObjectAccessor::FindPlayer(guid);
@@ -1451,6 +1477,12 @@ public:
     DCMythicSpectatorPlayerScript() : PlayerScript("DCMythicSpectatorPlayerScript") { }
 
     void OnPlayerLogout(Player* player) override
+    {
+        if (sMythicSpectator.IsSpectating(player))
+            sMythicSpectator.StopSpectating(player);
+    }
+
+    void OnPlayerLeaveWorld(Player* player) override
     {
         if (sMythicSpectator.IsSpectating(player))
             sMythicSpectator.StopSpectating(player);

@@ -19,6 +19,7 @@
 #include "ItemUpgradeSeasonal.h"
 #include "ItemUpgradeManager.h"
 #include "ItemUpgradeSeasonResolver.h"
+#include "../Seasons/SeasonalSystem.h" // Include Seasonal System
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -514,5 +515,42 @@ public:
 
 void AddSC_ItemUpgradeSeasonal()
 {
-    // No scripts to add, but function must exist for loader
+    // Register Item Upgrade System with Seasonal Manager
+    using namespace DarkChaos::Seasonal;
+
+    SystemRegistration reg;
+    reg.system_name = "item_upgrades";
+    reg.system_version = "4.0";
+    reg.priority = 100;
+
+    // Map Seasonal System events to Item Upgrade Manager logic
+    
+    // On Player Season Change
+    reg.on_player_season_change = [](uint32 player_guid, uint32 old_season, uint32 new_season) {
+        // We use the reset manager to handle the complex logic of resetting/archiving/carrying over
+        DarkChaos::ItemUpgrade::GetSeasonResetManager()->ResetPlayerForSeason(player_guid, new_season);
+    };
+
+    // On Season Event (Start/End)
+    reg.on_season_event = [](uint32 season_id, SeasonEventType event_type) {
+        if (event_type == SEASON_EVENT_START) {
+            // Trigger global reset logic if needed, simplify leaderboards
+             DarkChaos::ItemUpgrade::GetLeaderboardManager()->UpdateLeaderboards(season_id);
+        }
+    };
+
+    // Initialize - Ensure data exists if needed
+    reg.initialize_player_data = [](uint32 player_guid, uint32 season_id) {
+         // Create initial structure if missing
+         CharacterDatabase.Execute(
+            "INSERT IGNORE INTO dc_player_season_data "
+            "(player_guid, season_id, essence_earned, tokens_earned, "
+            "essence_spent, tokens_spent, first_upgrade_timestamp) "
+            "VALUES ({}, {}, 0, 0, 0, 0, UNIX_TIMESTAMP())",
+            player_guid, season_id);
+    };
+
+    if (GetSeasonalManager()) {
+        GetSeasonalManager()->RegisterSystem(reg);
+    }
 }

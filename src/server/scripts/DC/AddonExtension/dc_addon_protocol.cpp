@@ -26,6 +26,38 @@
 static bool g_S2CLoggingEnabled = false;
 static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize);
 
+// ============================================================================
+// PROTOCOL METRICS - Real-time statistics for monitoring
+// ============================================================================
+
+struct ProtocolMetrics
+{
+    std::atomic<uint64_t> messagesReceived{0};
+    std::atomic<uint64_t> messagesSent{0};
+    std::atomic<uint64_t> cacheHits{0};
+    std::atomic<uint64_t> cacheMisses{0};
+    std::atomic<uint64_t> rateLimitDrops{0};
+    std::atomic<uint64_t> parseErrors{0};
+    std::atomic<uint64_t> handlerErrors{0};
+    
+    void Reset()
+    {
+        messagesReceived = 0;
+        messagesSent = 0;
+        cacheHits = 0;
+        cacheMisses = 0;
+        rateLimitDrops = 0;
+        parseErrors = 0;
+        handlerErrors = 0;
+    }
+};
+
+static ProtocolMetrics g_ProtocolMetrics;
+
+// Accessor for external monitoring
+const ProtocolMetrics& GetProtocolMetrics() { return g_ProtocolMetrics; }
+
+
 namespace DCAddon
 {
     // ========================================================================
@@ -470,6 +502,8 @@ struct PlayerMessageTracker
     uint32 lastResetTime;
     bool isMuted;
     uint32 muteExpireTime;
+    uint32 violationCount;     // Track repeated violations for exponential backoff
+    uint32 lastViolationTime;  // For violation decay
 };
 
 static std::unordered_map<uint32, PlayerMessageTracker> s_MessageTrackers;
@@ -481,11 +515,24 @@ static bool CheckRateLimit(Player* player)
 
     auto& tracker = s_MessageTrackers[accountId];
 
-    // Check if muted
+    // Decay violation count if no violations in 5 minutes
+    if (tracker.violationCount > 0 && (now - tracker.lastViolationTime) > 300)
+    {
+        tracker.violationCount = 0;
+        LOG_DEBUG("dc.addon", "Rate limit violations decayed for player {}", player->GetName());
+    }
+
+    // Check if muted (exponential backoff in effect)
     if (tracker.isMuted && now < tracker.muteExpireTime)
+    {
+        g_ProtocolMetrics.rateLimitDrops++;
         return false;
+    }
     else if (tracker.isMuted)
+    {
         tracker.isMuted = false;
+        LOG_DEBUG("dc.addon", "Rate limit mute expired for player {}", player->GetName());
+    }
 
     // Reset counter if second has passed
     if (now > tracker.lastResetTime)
@@ -498,20 +545,33 @@ static bool CheckRateLimit(Player* player)
 
     if (tracker.messageCount > s_AddonConfig.MaxMessagesPerSecond)
     {
+        // Increment violation count for exponential backoff
+        tracker.violationCount++;
+        tracker.lastViolationTime = now;
+        g_ProtocolMetrics.rateLimitDrops++;
+
+        // Calculate mute duration with exponential backoff: 30s * 2^(violations-1), max 30 min
+        uint32 baseMuteSeconds = 30;
+        uint32 muteDuration = baseMuteSeconds * (1 << std::min(tracker.violationCount - 1, 6u));
+        muteDuration = std::min(muteDuration, 1800u);  // Cap at 30 minutes
+
         switch (s_AddonConfig.RateLimitAction)
         {
             case 1:  // Disconnect
                 player->GetSession()->KickPlayer("Addon message spam");
-                LOG_WARN("dc.addon", "Player {} kicked for addon message spam", player->GetName());
+                LOG_WARN("dc.addon", "Player {} kicked for addon message spam (violations: {})", 
+                        player->GetName(), tracker.violationCount);
                 break;
-            case 2:  // Mute for 60 seconds
+            case 2:  // Mute with exponential backoff
                 tracker.isMuted = true;
-                tracker.muteExpireTime = now + 60;
-                LOG_WARN("dc.addon", "Player {} muted for addon message spam", player->GetName());
+                tracker.muteExpireTime = now + muteDuration;
+                LOG_WARN("dc.addon", "Player {} muted for {}s (violations: {}, backoff active)",
+                        player->GetName(), muteDuration, tracker.violationCount);
                 break;
             default:  // Log and drop
                 if (s_AddonConfig.EnableDebugLog)
-                    LOG_DEBUG("dc.addon", "Rate limit exceeded for player {}", player->GetName());
+                    LOG_DEBUG("dc.addon", "Rate limit exceeded for player {} (violations: {})", 
+                             player->GetName(), tracker.violationCount);
                 break;
         }
         return false;
@@ -526,18 +586,41 @@ static bool CheckRateLimit(Player* player)
 
 static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& msg)
 {
-    // Client says hello, server acknowledges with version and enabled features
-    std::string clientVersion = msg.GetString(0);
+    // Client says hello with version string: "MAJOR.MINOR.PATCH" or "MAJOR.MINOR.PATCH|capabilities"
+    std::string clientVersionStr = msg.GetString(0);
+
+    // Parse client version with capability flags
+    auto clientVersion = DCAddon::ProtocolVersion::ParseClientVersion(clientVersionStr);
+    auto serverVersion = DCAddon::ProtocolVersion::GetServerVersion();
 
     if (s_AddonConfig.EnableDebugLog)
-        LOG_DEBUG("dc.addon", "Handshake from {} with client version {}",
-                  player->GetName(), clientVersion);
+        LOG_DEBUG("dc.addon", "Handshake from {} with client version {}.{}.{} caps=0x{:X}",
+                  player->GetName(), clientVersion.major, clientVersion.minor, 
+                  clientVersion.patch, clientVersion.capabilities);
 
-    // Send acknowledgment with server protocol version
+    // Check version compatibility (major must match)
+    bool compatible = serverVersion.IsCompatible(clientVersion);
+
+    // Negotiate capabilities (intersection of client and server)
+    uint32 negotiatedCaps = clientVersion.capabilities & serverVersion.capabilities;
+
+    // Send acknowledgment with server version and negotiated capabilities
     DCAddon::Message(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_HANDSHAKE_ACK)
-        .Add(s_AddonConfig.ProtocolVersion)
-        .Add(true)  // Handshake success
+        .Add(DCAddon::ProtocolVersion::BuildVersionString(serverVersion))
+        .Add(compatible)
+        .Add(negotiatedCaps)  // Negotiated capability flags
         .Send(player);
+
+    if (!compatible)
+    {
+        LOG_WARN("dc.addon", "Version mismatch for {}: client {}.{}.{} vs server {}.{}.{}",
+                 player->GetName(), clientVersion.major, clientVersion.minor, clientVersion.patch,
+                 serverVersion.major, serverVersion.minor, serverVersion.patch);
+        return;  // Don't send features if incompatible
+    }
+
+    // Store negotiated capabilities for this player (could use a map for per-player caps)
+    // For now, we log it - actual storage would be in PlayerScript or session
 
     // Automatically send feature list
     DCAddon::Message featureMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_FEATURE_LIST);
@@ -552,8 +635,7 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
     featureMsg.Add(s_AddonConfig.EnableWorld);
     featureMsg.Send(player);
 
-    // Proactively send WRLD content snapshot after handshake so clients reliably populate
-    // all world bosses even if an initial CMSG_GET_CONTENT gets dropped.
+    // Proactively send WRLD content snapshot after handshake
     if (s_AddonConfig.EnableWorld)
     {
         DCAddon::World::SendWorldContentSnapshot(player);
@@ -590,6 +672,45 @@ static void HandleCoreFeatureQuery(Player* player, const DCAddon::ParsedMessage&
     featureMsg.Send(player);
 }
 
+// ============================================================================
+// BATCH MESSAGE HANDLER
+// ============================================================================
+
+static void HandleBatch(Player* player, const DCAddon::ParsedMessage& msg)
+{
+    // Parse batch message into individual sub-messages
+    auto entries = DCAddon::Batch::ParseBatch(msg);
+
+    if (entries.empty())
+    {
+        if (s_AddonConfig.EnableDebugLog)
+            LOG_DEBUG("dc.addon", "Empty or invalid batch message from {}", player->GetName());
+        return;
+    }
+
+    if (s_AddonConfig.EnableDebugLog)
+        LOG_DEBUG("dc.addon", "Processing batch of {} messages from {}", 
+                  entries.size(), player->GetName());
+
+    // Route each sub-message through the normal handler
+    for (const auto& entry : entries)
+    {
+        // Reconstruct the message string: MODULE|OPCODE|data1|data2|...
+        std::string subMsg = entry.module + DCAddon::DELIMITER + std::to_string(entry.opcode);
+        for (const auto& d : entry.data)
+        {
+            subMsg += DCAddon::DELIMITER;
+            subMsg += d;
+        }
+
+        // Route through MessageRouter (excluding BATCH to prevent recursion)
+        if (entry.module != DCAddon::Batch::MODULE)
+        {
+            DCAddon::MessageRouter::Instance().Route(player, subMsg);
+        }
+    }
+}
+
 static void RegisterCoreHandlers()
 {
     using namespace DCAddon;
@@ -597,6 +718,9 @@ static void RegisterCoreHandlers()
     DC_REGISTER_HANDLER(Module::CORE, Opcode::Core::CMSG_HANDSHAKE, HandleCoreHandshake);
     DC_REGISTER_HANDLER(Module::CORE, Opcode::Core::CMSG_VERSION_CHECK, HandleCoreVersionCheck);
     DC_REGISTER_HANDLER(Module::CORE, Opcode::Core::CMSG_FEATURE_QUERY, HandleCoreFeatureQuery);
+
+    // Register BATCH handler - opcode 0x00 means "process batch"
+    DC_REGISTER_HANDLER(Batch::MODULE, 0x00, HandleBatch);
 }
 
 // ============================================================================

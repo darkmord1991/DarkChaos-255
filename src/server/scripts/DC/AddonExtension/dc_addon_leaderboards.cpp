@@ -26,6 +26,7 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Config.h"
+#include "../CrossSystem/LeaderboardUtils.h"
 #include <cstdio>  // for snprintf
 #include <sstream>
 #include <unordered_set>
@@ -69,10 +70,29 @@ namespace
     // SERVER-SIDE CACHING
     // ========================================================================
 
-    // Cache configuration
-    constexpr uint32 CACHE_LIFETIME_SECONDS = 60;           // 1 minute cache lifetime
-    constexpr uint32 ACCOUNT_CACHE_LIFETIME_SECONDS = 120;  // 2 minutes for account stats
-    constexpr uint32 MAX_CACHE_ENTRIES = 100;               // Max cached leaderboards
+    // Cache configuration - loaded from config, with defaults
+    struct LeaderboardCacheConfig
+    {
+        uint32 lifetimeSeconds = 60;           // Default: 1 minute
+        uint32 accountCacheLifetimeSeconds = 120;  // Default: 2 minutes for account stats
+        uint32 maxCacheEntries = 100;          // Default: Max cached leaderboards
+        
+        void Load()
+        {
+            lifetimeSeconds = sConfigMgr->GetOption<uint32>("DC.Leaderboards.CacheLifetime", 60);
+            accountCacheLifetimeSeconds = sConfigMgr->GetOption<uint32>("DC.Leaderboards.AccountCacheLifetime", 120);
+            maxCacheEntries = sConfigMgr->GetOption<uint32>("DC.Leaderboards.MaxCacheEntries", 100);
+            
+            LOG_DEBUG("server.scripts", "DC-Leaderboards: Cache config loaded (lifetime={}s, account={}s, max={})",
+                     lifetimeSeconds, accountCacheLifetimeSeconds, maxCacheEntries);
+        }
+    };
+    
+    static LeaderboardCacheConfig s_CacheConfig;
+    
+    // Helper to access cache lifetime (for IsValid() checks)
+    uint32 GetCacheLifetime() { return s_CacheConfig.lifetimeSeconds; }
+    uint32 GetAccountCacheLifetime() { return s_CacheConfig.accountCacheLifetimeSeconds; }
 
     struct LeaderboardEntry
     {
@@ -113,7 +133,7 @@ namespace
         
         bool IsValid() const
         {
-            return (time(nullptr) - lastUpdate) < CACHE_LIFETIME_SECONDS;
+            return (time(nullptr) - lastUpdate) < static_cast<time_t>(GetCacheLifetime());
         }
     };
 
@@ -125,7 +145,7 @@ namespace
         
         bool IsValid() const
         {
-            return (time(nullptr) - lastUpdate) < ACCOUNT_CACHE_LIFETIME_SECONDS;
+            return (time(nullptr) - lastUpdate) < static_cast<time_t>(GetAccountCacheLifetime());
         }
     };
 

@@ -48,9 +48,8 @@ void AddSC_dc_giant_isles_water_monster();    // GiantIsles\dc_giant_isles_water
 void AddSC_heirloom_scaling_255();            // heirloom_scaling_255.cpp
 void AddSC_go_heirloom_cache();               // go_heirloom_cache.cpp
 
-// --- AoE Loot System ---
-void AddSC_ac_aoeloot();                      // ac_aoeloot.cpp
-void AddSC_dc_aoeloot_extensions();           // dc_aoeloot_extensions.cpp
+// --- AoE Loot System (Unified) ---
+void AddSC_dc_aoeloot_unified();              // dc_aoeloot_unified.cpp
 
 // --- Hotspots System ---
 void AddSC_ac_hotspots();                     // Hotspot\ac_hotspots.cpp
@@ -242,9 +241,8 @@ void AddDCScripts()
     LOG_INFO("scripts", ">> AoE Loot System");
     LOG_INFO("scripts", ">> ═══════════════════════════════════════════════════════════");
     try {
-        AddSC_ac_aoeloot();
-        AddSC_dc_aoeloot_extensions();
-        LOG_INFO("scripts", ">>   ✓ AoE Loot base and extensions loaded");
+        AddSC_dc_aoeloot_unified();
+        LOG_INFO("scripts", ">>   ✓ AoE Loot unified system loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in AoE Loot: {}", e.what());
     } catch (...) {

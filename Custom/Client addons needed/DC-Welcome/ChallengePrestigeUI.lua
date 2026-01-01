@@ -57,6 +57,8 @@ UI.frame = nil
 UI.currentTab = "challenge" -- "overview" | "challenge" | "prestige"
 UI._gossipHidden = false
 UI._pendingUpdate = false
+UI.confirmationStep = 0 -- 0: none, 1: confirming
+UI.confirmationText = ""
 
 -- =============================================================================
 -- Helpers
@@ -668,6 +670,77 @@ function UI:Refresh()
 	local yDetail = -4
 	local handledIndices = {}
 
+	-- CONFIRMATION OVERLAY
+	if UI.confirmationStep == 1 then
+		local warn = self:AddDetailLine(rightChild, yDetail, "|cffff0000WARNING: PERMANENT ACTION|r")
+		table.insert(rightChild._items, warn)
+		yDetail = yDetail - (warn:GetStringHeight() + 8)
+
+		local desc1 = self:AddDetailLine(rightChild, yDetail, "You are about to Prestige. This will reset your level to 1.")
+		table.insert(rightChild._items, desc1)
+		yDetail = yDetail - (desc1:GetStringHeight() + 4)
+
+		local desc2 = self:AddDetailLine(rightChild, yDetail, "Gear, Gold, and Skills may be lost depending on server settings.")
+		table.insert(rightChild._items, desc2)
+		yDetail = yDetail - (desc2:GetStringHeight() + 12)
+
+		local desc3 = self:AddDetailLine(rightChild, yDetail, "Type |cffffd700PRESTIGE|r to confirm:")
+		table.insert(rightChild._items, desc3)
+		yDetail = yDetail - (desc3:GetStringHeight() + 8)
+
+		-- Input Box
+		if not self.confirmInput then
+			local eb = CreateFrame("EditBox", nil, rightChild)
+			eb:SetFontObject(GameFontHighlight)
+			eb:SetSize(140, 24)
+			eb:SetAutoFocus(false)
+			eb:SetMaxLetters(12)
+			eb:SetScript("OnEscapePressed", function() eb:ClearFocus() end)
+			eb:SetScript("OnEnterPressed", function()
+				if eb:GetText() == "PRESTIGE" then
+					-- Find the "Confirm" gossip option
+					for _, opt in ipairs(options) do
+						if IsNavAction(opt.text) and (string.find(opt.text, "CONFIRM") or string.find(opt.text, "Confirm")) then
+							SelectGossipOption(opt.index)
+							UI.confirmationStep = 0
+							UI:QueueRefresh()
+							return
+						end
+					end
+					-- Fallback if not found immediately (server might need a step)
+					UI.confirmationStep = 0
+					UI:QueueRefresh()
+				end
+			end)
+			
+			local bg = eb:CreateTexture(nil, "BACKGROUND")
+			bg:SetAllPoints()
+			bg:SetTexture(0.1, 0.1, 0.1, 1)
+			
+			self.confirmInput = eb
+		end
+		
+		self.confirmInput:SetParent(rightChild)
+		self.confirmInput:SetPoint("TOPLEFT", 10, yDetail)
+		self.confirmInput:Show()
+		self.confirmInput:SetText("")
+		self.confirmInput:SetFocus()
+		table.insert(rightChild._items, self.confirmInput)
+		yDetail = yDetail - 30
+
+		local cancelBtn = AcquireButton(rightChild:GetParent():GetParent(), rightChild)
+		cancelBtn:SetSize(100, 22)
+		cancelBtn:SetPoint("TOPLEFT", 10, yDetail)
+		cancelBtn._text:SetText("Cancel")
+		cancelBtn:SetScript("OnClick", function()
+			UI.confirmationStep = 0
+			UI:Refresh()
+		end)
+		yDetail = yDetail - 30
+
+		return -- Don't show other tabs while confirming
+	end
+
 	if self.currentTab == "overview" then
 		local title = self:AddDetailLine(rightChild, yDetail, "|cffffd700Player Overview|r")
 		table.insert(rightChild._items, title)
@@ -1004,4 +1077,24 @@ if DCWelcome and DCWelcome.EventBus and DCWelcome.EventBus.On then
 			UI:Refresh()
 		end
 	end)
+end
+	-- Add Season Preview Tab Logic if needed (Placeholder)
+
+	end
+end
+
+function UI:QueueRefresh()
+	if self._pendingUpdate then return end
+	self._pendingUpdate = true
+	After(0.1, function()
+		self._pendingUpdate = false
+		self:Refresh()
+	end)
+end
+
+function UI:Close()
+    if self.frame then
+        self.frame:Hide()
+    end
+    RestoreGossipFrameInput()
 end

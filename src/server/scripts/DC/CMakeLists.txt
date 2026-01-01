@@ -13,6 +13,7 @@ set(SCRIPTS_DC_Prestige
 # Challenge Mode scripts
 set(SCRIPTS_DC_ChallengeMode
     ChallengeMode/dc_challenge_modes_customized.cpp
+    ChallengeMode/ChallengeModeScripts.cpp
     ChallengeMode/dc_challenge_mode_database.cpp
     ChallengeMode/dc_challenge_mode_equipment_restrictions.cpp
     ChallengeMode/dc_challenge_mode_enforcement.cpp
@@ -22,6 +23,11 @@ set(SCRIPTS_DC_ChallengeMode
 # Hotspot System scripts
 set(SCRIPTS_DC_Hotspot
     Hotspot/ac_hotspots.cpp
+    Hotspot/HotspotDefines.cpp
+    Hotspot/HotspotGrid.cpp
+    Hotspot/HotspotMgr.cpp
+    Hotspot/HotspotScripts.cpp
+    Commands/HotspotCommands.cpp
     Hotspot/spell_hotspot_buff_800001.cpp
     Hotspot/spell_hotspot_xp_buff.cpp
 )
@@ -41,10 +47,9 @@ set(SCRIPTS_DC_GiantIsles
     GiantIsles/boss_nalak.cpp
 )
 
-# AoE Loot System (Base + Extensions)
+# AoE Loot System (Unified)
 set(SCRIPTS_DC_AoELoot
-    ac_aoeloot.cpp
-    dc_aoeloot_extensions.cpp
+    dc_aoeloot_unified.cpp
 )
 
 # Phased Duels System
@@ -67,7 +72,6 @@ set(SCRIPTS_DC_AC
     # HinterlandBG/hlbg_addon.cpp (moved into AddonExtension/dc_addon_hlbg.cpp)
     HinterlandBG/hlbg_native_broadcast.cpp
     HinterlandBG/HL_ScoreboardNPC.cpp
-    HinterlandBG/HLBG_AIO_Handlers.cpp
     AIO/aio_bridge.cpp
     # MapExtension/cs_gps_test.cpp  # DISABLED - requires AIO which is not compiled
 )
@@ -82,7 +86,6 @@ set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/OutdoorPvPHL_Groups.cpp
     HinterlandBG/OutdoorPvPHL_JoinLeave.cpp
     HinterlandBG/OutdoorPvPHL_Thresholds.cpp
-    HinterlandBG/OutdoorPvPHL_Worldstates.cpp
     HinterlandBG/OutdoorPvPHL_Admin.cpp
     HinterlandBG/OutdoorPvPHL_Queue.cpp
     HinterlandBG/OutdoorPvPHL_Commands.cpp
@@ -214,8 +217,13 @@ set(SCRIPTS_DC_AddonExtension
     AddonExtension/npc_group_finder.cpp
 )
 
-# DC Collection System - Retail-like collection management
+# DC Collection System - Retail-like collection management (Split Structure)
 set(SCRIPTS_DC_CollectionSystem
+    CollectionSystem/CollectionCore.cpp
+    CollectionSystem/CollectionMounts.cpp
+    CollectionSystem/CollectionPets.cpp
+    CollectionSystem/CollectionHeirlooms.cpp
+    CollectionSystem/CollectionTitles.cpp
     CollectionSystem/dc_addon_collection.cpp
 )
 

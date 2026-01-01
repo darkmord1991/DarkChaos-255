@@ -74,6 +74,9 @@ void OutdoorPvPHL::TransitionToState(BGState newState)
     LOG_INFO("outdoorpvp.hl", "[HL] State transition: {} -> {}",
         static_cast<uint32>(oldState), static_cast<uint32>(newState));
 
+    // Persist state to database for crash recovery
+    PersistBGState();
+
     // State entry actions
     switch (newState)
     {
@@ -118,8 +121,8 @@ void OutdoorPvPHL::EnterWarmupState()
         ClearQueue();
     }
 
-    // Initialize worldstates for warmup
-    UpdateWorldStatesAllPlayers();
+    // HUD worldstates removed - now handled by addon
+    // UpdateWorldStatesAllPlayers();
 }
 
 void OutdoorPvPHL::UpdateWarmupState(uint32 diff)
@@ -172,8 +175,8 @@ void OutdoorPvPHL::EnterInProgressState()
             ApplyAffixWeather();
     }
 
-    // Immediately update worldstates when battle starts
-    UpdateWorldStatesAllPlayers();
+    // HUD worldstates removed - now handled by addon
+    // UpdateWorldStatesAllPlayers();
 }
 
 void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
@@ -352,5 +355,120 @@ void OutdoorPvPHL::BroadcastToZone(const char* format, ...)
     {
         std::string msg = GetBgChatPrefix() + buffer;
         m->SendZoneText(OutdoorPvPHLBuffZones[0], msg.c_str());
+    }
+}
+
+// ============================================================================
+// State Persistence for Crash Recovery
+// ============================================================================
+
+void OutdoorPvPHL::PersistBGState()
+{
+    // Persist current BG state to database. On server restart, LoadPersistedBGState
+    // can restore partial battles (e.g. IN_PROGRESS) and handle gracefully.
+    // Key: zone_id, Values: state, alliance_score, horde_score, time_remaining
+
+    CharacterDatabase.Execute(
+        "REPLACE INTO dc_hlbg_state (zone_id, bg_state, alliance_score, horde_score, "
+        "match_time_remaining_ms, warmup_time_remaining_ms, affix_id, updated_at) "
+        "VALUES ({}, {}, {}, {}, {}, {}, {}, NOW())",
+        OutdoorPvPHLBuffZones[0],
+        static_cast<uint8>(_bgState),
+        _allianceScore,
+        _hordeScore,
+        _matchTimeRemaining,
+        _warmupTimeRemaining,
+        static_cast<uint8>(_activeAffix)
+    );
+}
+
+void OutdoorPvPHL::LoadPersistedBGState()
+{
+    // Load persisted state on server startup. If a battle was in progress,
+    // we can either resume or gracefully transition to cleanup.
+
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT bg_state, alliance_score, horde_score, match_time_remaining_ms, "
+        "warmup_time_remaining_ms, affix_id, UNIX_TIMESTAMP(updated_at) as updated_ts "
+        "FROM dc_hlbg_state WHERE zone_id = {} LIMIT 1",
+        OutdoorPvPHLBuffZones[0]
+    );
+
+    if (!result)
+    {
+        LOG_INFO("outdoorpvp.hl", "[HL] No persisted state found, starting fresh in CLEANUP");
+        _bgState = BG_STATE_CLEANUP;
+        return;
+    }
+
+    Field* fields = result->Fetch();
+    BGState savedState = static_cast<BGState>(fields[0].Get<uint8>());
+    uint32 savedAllianceScore = fields[1].Get<uint32>();
+    uint32 savedHordeScore = fields[2].Get<uint32>();
+    uint32 savedMatchTime = fields[3].Get<uint32>();
+    uint32 savedWarmupTime = fields[4].Get<uint32>();
+    uint8 savedAffix = fields[5].Get<uint8>();
+    uint32 savedTimestamp = fields[6].Get<uint32>();
+
+    uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
+    uint32 elapsed = now - savedTimestamp;
+
+    LOG_INFO("outdoorpvp.hl", "[HL] Loading persisted state: {} (saved {}s ago)",
+        static_cast<uint32>(savedState), elapsed);
+
+    // Handle edge cases based on saved state
+    switch (savedState)
+    {
+        case BG_STATE_IN_PROGRESS:
+        {
+            // If battle was in progress but more than 5 minutes elapsed, abandon it
+            if (elapsed > 300)
+            {
+                LOG_INFO("outdoorpvp.hl", "[HL] Battle expired during downtime, transitioning to CLEANUP");
+                _bgState = BG_STATE_CLEANUP;
+                HandleReset();
+            }
+            else
+            {
+                // Resume battle with adjusted time
+                _allianceScore = savedAllianceScore;
+                _hordeScore = savedHordeScore;
+                _matchTimeRemaining = (savedMatchTime > elapsed * 1000) ? savedMatchTime - elapsed * 1000 : 0;
+                _activeAffix = static_cast<AffixType>(savedAffix);
+                _bgState = BG_STATE_IN_PROGRESS;
+                LOG_INFO("outdoorpvp.hl", "[HL] Resuming battle with {} ms remaining", _matchTimeRemaining);
+            }
+            break;
+        }
+        case BG_STATE_WARMUP:
+        {
+            // If warmup, check if it should have expired
+            if (elapsed * 1000 >= savedWarmupTime)
+            {
+                LOG_INFO("outdoorpvp.hl", "[HL] Warmup expired during downtime, resetting to CLEANUP");
+                _bgState = BG_STATE_CLEANUP;
+            }
+            else
+            {
+                _warmupTimeRemaining = savedWarmupTime - elapsed * 1000;
+                _bgState = BG_STATE_WARMUP;
+            }
+            break;
+        }
+        case BG_STATE_FINISHED:
+        case BG_STATE_PAUSED:
+        {
+            // These states should transition to cleanup on restart
+            LOG_INFO("outdoorpvp.hl", "[HL] Saved state {} after restart, going to CLEANUP", static_cast<uint32>(savedState));
+            _bgState = BG_STATE_CLEANUP;
+            HandleReset();
+            break;
+        }
+        case BG_STATE_CLEANUP:
+        default:
+        {
+            _bgState = BG_STATE_CLEANUP;
+            break;
+        }
     }
 }

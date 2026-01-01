@@ -55,6 +55,8 @@ public:
         uint32 bossesKilled = 0;       // Boss creatures killed
         uint32 tokensAwarded = 0;      // Total tokens awarded to keystone owner
         std::vector<uint64> bossDeathTimes; // Timestamps of boss deaths for statistics
+        std::map<uint32, uint32> deathsByPlayer; // Player GUID Low -> Count
+        std::map<uint32, uint32> deathsByBoss;   // Boss Entry -> Count (deaths during encounter)
         uint8 upgradeLevel = 0;        // New keystone level after upgrade
         bool failed = false;
         bool completed = false;

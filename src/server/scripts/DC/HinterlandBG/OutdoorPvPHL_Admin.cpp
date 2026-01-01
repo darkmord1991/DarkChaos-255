@@ -32,7 +32,7 @@ void OutdoorPvPHL::SetResources(TeamId team, uint32 amount)
     else
         _horde_gathered = amount;
     // Reflect changes on clients in-zone
-    UpdateWorldStatesAllPlayers();
+    // HUD worldstates removed - now handled by addon\n    // UpdateWorldStatesAllPlayers();
 }
 
 // Return tracked battleground raid group GUIDs for the team (may be empty).

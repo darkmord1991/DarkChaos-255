@@ -39,6 +39,11 @@
 #include <tuple>
 #include <unordered_map>
 #include <vector>
+#include "../CrossSystem/LeaderboardUtils.h"
+
+// Use shared utilities from LeaderboardUtils.h
+using DarkChaos::Leaderboard::GetClassNameFromId;
+using DarkChaos::Leaderboard::JsonEscape;
 
 // Forward declarations for helpers defined later in this TU.
 namespace HLBGAddonFallback

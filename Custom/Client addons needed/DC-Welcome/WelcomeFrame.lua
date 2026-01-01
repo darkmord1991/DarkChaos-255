@@ -832,6 +832,93 @@ local function CreateLinkCard(parent, linkInfo, yOffset)
     return card
 end
 
+-- =============================================================================
+-- Season Preview Tab
+-- =============================================================================
+
+local function PopulateSeasonPreview(scrollChild)
+    local yOffset = -10
+    local season = DCWelcome:GetCurrentSeason() or { id = 1, name = "Season 1", endTimestamp = 0 }
+
+    -- Season Title Header
+    local header = CreateFontString(scrollChild, "GameFontNormalLarge")
+    header:SetPoint("TOP", 0, yOffset)
+    header:SetText(season.name or ("Season " .. (season.id or 1)))
+    header:SetTextColor(1, 0.82, 0) -- Gold
+    yOffset = yOffset - 30
+
+    -- Status / Time Remaining
+    local statusText = CreateFontString(scrollChild, "GameFontHighlight")
+    statusText:SetPoint("TOP", 0, yOffset)
+    if season.endTimestamp and season.endTimestamp > 0 then
+        -- Simple calculation, assuming os.time() matches server time roughly or just display date
+        local date = date("%Y-%m-%d", season.endTimestamp) 
+        statusText:SetText("Ends: " .. date)
+    else
+        statusText:SetText("Status: Active")
+    end
+    yOffset = yOffset - 40
+
+    -- Season Stats / Overview
+    local overviewHeader = CreateFontString(scrollChild, "GameFontNormal")
+    overviewHeader:SetPoint("TOPLEFT", 10, yOffset)
+    overviewHeader:SetText("|cffffd700Season Overview:|r")
+    yOffset = yOffset - 25
+
+    local stats = {
+        "Mythic+ Cap: Level 30",
+        "PVP Season: 14",
+        "Raid Tier: Citadel of Chaos",
+        "Prestige Cap: Rank 50"
+    }
+
+    for _, stat in ipairs(stats) do
+        local statText = CreateFontString(scrollChild, "GameFontHighlight")
+        statText:SetPoint("TOPLEFT", 20, yOffset)
+        statText:SetText("• " .. stat)
+        yOffset = yOffset - 20
+    end
+    yOffset = yOffset - 20
+
+    -- Rewards Section
+    local rewardHeader = CreateFontString(scrollChild, "GameFontNormal")
+    rewardHeader:SetPoint("TOPLEFT", 10, yOffset)
+    rewardHeader:SetText("|cffffd700Exclusive Rewards:|r")
+    yOffset = yOffset - 25
+
+    local rewards = {
+        { name = "Gladiator's Fel Drake", type = "Mount" },
+        { name = "Chaos-Forged Elite", type = "Title" },
+        { name = "Season 1 Weapon Enchant", type = "Cosmetic" },
+    }
+
+    for _, reward in ipairs(rewards) do
+        local rText = CreateFontString(scrollChild, "GameFontHighlight")
+        rText:SetPoint("TOPLEFT", 20, yOffset)
+        rText:SetText("• " .. reward.name .. " (" .. reward.type .. ")")
+        yOffset = yOffset - 20
+    end
+
+    -- Leaderboard Button (Functional Placeholder)
+    yOffset = yOffset - 30
+    local lbBtn = CreateFrame("Button", "DCWelcomeSeasonLBBtn", scrollChild, "UIPanelButtonTemplate")
+    lbBtn:SetSize(160, 30)
+    lbBtn:SetPoint("TOP", 0, yOffset)
+    lbBtn:SetText("View Leaderboards")
+    lbBtn:SetScript("OnClick", function()
+        -- Close welcome frame and execute command
+        if DCWelcomeFrame then DCWelcomeFrame:Hide() end
+        if SlashCmdList["LEADERBOARD"] then
+            SlashCmdList["LEADERBOARD"]("")
+        else
+            DCWelcome.Print("Leaderboard addon not loaded.")
+        end
+    end)
+    yOffset = yOffset - 40
+
+    scrollChild:SetHeight(math.abs(yOffset) + 20)
+end
+
 local function PopulateCommunity(scrollChild)
     local yOffset = -10
     
@@ -966,6 +1053,7 @@ function DCWelcome:CreateWelcomeFrame()
         { id = "features", label = L["TAB_FEATURES"], icon = "Interface\\Icons\\Spell_Nature_EnchantArmor" },
         { id = "addons", label = L["TAB_ADDONS"] or "Addons", icon = "Interface\\Icons\\Trade_Engineering" },
         { id = "progress", label = L["TAB_PROGRESS"] or "Progress", icon = "Interface\\Icons\\Achievement_challengemode_gold" },
+        { id = "season", label = L["TAB_SEASON"] or "Season", icon = "Interface\\Icons\\Achievement_Zone_Hyjal" },
         { id = "faq", label = L["TAB_FAQ"], icon = "Interface\\Icons\\INV_Misc_QuestionMark" },
         { id = "community", label = L["TAB_LINKS"], icon = SERVER_PORTAL_ICON },
     }
@@ -995,6 +1083,7 @@ function DCWelcome:CreateWelcomeFrame()
     contentFrames.progress = CreateScrollableContent(frame, "progress")
     contentFrames.faq = CreateScrollableContent(frame, "faq")
     contentFrames.community = CreateScrollableContent(frame, "community")
+    contentFrames.season = CreateScrollableContent(frame, "season")
     
     -- Store content frames reference for other modules
     DCWelcome.contentFrames = contentFrames
@@ -1012,6 +1101,7 @@ function DCWelcome:CreateWelcomeFrame()
     
     PopulateFAQ(contentFrames.faq.scrollChild)
     PopulateCommunity(contentFrames.community.scrollChild)
+    PopulateSeasonPreview(contentFrames.season.scrollChild)
     
     -- Bottom buttons
     local bottomBtns = CreateFrame("Frame", nil, frame)

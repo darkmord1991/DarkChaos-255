@@ -446,29 +446,64 @@ Hotspots.GmBypassLimit = 1
 Hotspots.AllowWorldwideSpawn = 1
 
 # -------------------------------------------------------------------------
-# Anti-Camping System
+# Dungeon Hotspots (Disabled by Default)
 # -------------------------------------------------------------------------
 
 #
-#    Hotspots.AntiCamping.Enabled
-#        Description: Enable diminishing returns for players camping in hotspots
+#    Hotspots.Dungeons.Enable
+#        Description: Enable hotspots to spawn inside dungeons and instances
+#        Default:     0 (Disabled)
+#
+Hotspots.Dungeons.Enable = 0
+
+#
+#    Hotspots.Dungeons.BonusMultiplier
+#        Description: Additional XP bonus % in dungeons (stacks with base bonus)
+#        Default:     50
+#
+Hotspots.Dungeons.BonusMultiplier = 50
+
+# -------------------------------------------------------------------------
+# Hotspot Objectives System
+# -------------------------------------------------------------------------
+
+#
+#    Hotspots.Objectives.Enable
+#        Description: Enable objective tracking (kills, survival time)
+#                     Results are shown to players when they leave or complete objectives
 #        Default:     1 (Enabled)
 #
-Hotspots.AntiCamping.Enabled = 1
+Hotspots.Objectives.Enable = 1
 
 #
-#    Hotspots.AntiCamping.Interval
-#        Description: Time in seconds before diminishing returns kick in
-#        Default:     600
+#    Hotspots.Objectives.KillGoal
+#        Description: Default kill count for "Kill X creatures" objective
+#        Default:     50
 #
-Hotspots.AntiCamping.Interval = 600
+Hotspots.Objectives.KillGoal = 50
 
 #
-#    Hotspots.AntiCamping.Tiers
-#        Description: Comma-separated multipliers for each diminishing returns tier
-#        Default:     "1.0,0.75,0.50,0.25"
+#    Hotspots.Objectives.SurviveMinutes
+#        Description: Default time for "Survive X minutes" objective
+#        Default:     5
 #
-Hotspots.AntiCamping.Tiers = "1.0,0.75,0.50,0.25"
+Hotspots.Objectives.SurviveMinutes = 5
+
+#
+#    Hotspots.Objectives.ShowProgress
+#        Description: Show progress messages to players as they complete kills
+#        Default:     1 (Enabled)
+#
+Hotspots.Objectives.ShowProgress = 1
+
+# -------------------------------------------------------------------------
+# [REMOVED] Anti-Camping System - Removed in January 2026
+# -------------------------------------------------------------------------
+# The anti-camping diminishing returns system has been removed from the 
+# Hotspots system. The following settings are no longer used:
+#   - Hotspots.AntiCamping.Enabled
+#   - Hotspots.AntiCamping.Interval
+#   - Hotspots.AntiCamping.Tiers
 
 
 ###########################################################################
@@ -2399,6 +2434,38 @@ DC.AddonProtocol.Hotspot.Enable = 1
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.World.Enable = 1
+
+# -------------------------------------------------------------------------
+# Leaderboard System Configuration
+# -------------------------------------------------------------------------
+
+#
+#    DC.AddonProtocol.Leaderboard.Enable
+#        Description: Enable DC addon protocol for Leaderboard system
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Leaderboard.Enable = 1
+
+#
+#    DC.Leaderboards.CacheLifetime
+#        Description: How long leaderboard data is cached in seconds
+#        Default:     60 (1 minute)
+#
+DC.Leaderboards.CacheLifetime = 60
+
+#
+#    DC.Leaderboards.AccountCacheLifetime
+#        Description: How long account statistics are cached in seconds
+#        Default:     120 (2 minutes)
+#
+DC.Leaderboards.AccountCacheLifetime = 120
+
+#
+#    DC.Leaderboards.MaxCacheEntries
+#        Description: Maximum number of leaderboards to keep cached
+#        Default:     100
+#
+DC.Leaderboards.MaxCacheEntries = 100
 
 #
 #    DC.AddonProtocol.GOMove.MinSecurity

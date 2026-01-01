@@ -248,7 +248,19 @@ namespace CrossSystem
 
     void EventBus::PublishAsync(std::unique_ptr<EventData> event, SystemId sourceSystem)
     {
+        constexpr size_t MAX_ASYNC_QUEUE_SIZE = 10000;  // Prevent unbounded queue growth
+
         std::lock_guard<std::mutex> lock(mutex_);
+
+        // Apply backpressure: drop events if queue is at capacity
+        if (asyncQueue_.size() >= MAX_ASYNC_QUEUE_SIZE)
+        {
+            LOG_WARN("dc.crosssystem.events", "Async event queue full ({} events), dropping event type {}",
+                     MAX_ASYNC_QUEUE_SIZE, static_cast<uint16>(event->type));
+            stats_.asyncEventsDropped++;
+            return;
+        }
+
         asyncQueue_.push({std::move(event), sourceSystem});
         stats_.asyncEventsQueued++;
     }
