@@ -10,6 +10,7 @@
 #include "WorldSession.h"
 #include "Chat.h"
 #include "HinterlandBGConstants.h"
+#include "../AddonExtension/dc_addon_hlbg.h"
 #include <algorithm>
 #include <string>
 
@@ -56,7 +57,7 @@ void OutdoorPvPHL::SendAffixAddonToZone() const
 }
 
 // Redirect legacy method: use new DCAddon::HLBG messages for status/resources
-void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player, uint32 apc, uint32 hpc) const
+void OutdoorPvPHL::SendStatusAddonToPlayer(Player* player, [[maybe_unused]] uint32 apc, [[maybe_unused]] uint32 hpc) const
 {
     if (!player)
         return;

@@ -23,7 +23,7 @@
 #include "ObjectAccessor.h"
 #include "Chat.h"
 #include "Log.h"
-#include "../AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 #include "../Seasons/SeasonalRewardSystem.h"
 #include <algorithm>
 #include "Random.h"

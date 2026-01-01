@@ -13,7 +13,7 @@
 #include "Config.h"
 #include "Log.h"
 #include "DatabaseEnv.h"
-#include "DCAddonNamespace.h"
+#include "dc_addon_namespace.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 
 namespace DCAddon

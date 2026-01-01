@@ -1,7 +1,7 @@
 #ifndef DC_ADDON_HLBG_H
 #define DC_ADDON_HLBG_H
 
-#include "DCAddonNamespace.h"
+#include "dc_addon_namespace.h"
 
 namespace DCAddon
 {

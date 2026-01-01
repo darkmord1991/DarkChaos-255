@@ -13,7 +13,7 @@
 #include "ScriptMgr.h"
 #include "GameTime.h"
 #include "ObjectAccessor.h"
-#include "../AddonExtension/DCAddonHLBG.h"
+#include "../AddonExtension/dc_addon_hlbg.h"
 
 #include <algorithm>
 

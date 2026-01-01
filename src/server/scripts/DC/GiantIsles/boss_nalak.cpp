@@ -24,7 +24,7 @@
 #include "GameTime.h"
 #include <algorithm>
 #include <random>
-#include "../AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 
 enum NalakSpells
 {

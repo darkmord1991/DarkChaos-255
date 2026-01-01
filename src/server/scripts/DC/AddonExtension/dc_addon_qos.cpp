@@ -31,7 +31,7 @@
 #include "Chat.h"
 #include "WorldPacket.h"
 #include "DatabaseEnv.h"
-#include "DCAddonNamespace.h"
+#include "dc_addon_namespace.h"
 #include "Config.h"
 #include "Creature.h"
 #include "GameObject.h"

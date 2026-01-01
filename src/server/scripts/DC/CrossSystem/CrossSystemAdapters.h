@@ -26,7 +26,7 @@
 #include "../MythicPlus/MythicPlusRunManager.h"
 #include "../Seasons/SeasonalRewardSystem.h"
 #include "../ItemUpgrades/ItemUpgradeManager.h"
-#include "../Prestige/dc_prestige_api.h"
+#include "../Progression/Prestige/dc_prestige_api.h"
 
 namespace DarkChaos {
 namespace CrossSystem {

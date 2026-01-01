@@ -22,7 +22,7 @@
 #include "Player.h"
 #include "StringFormat.h"
 #include "World.h"
-#include "../AddonExtension/DCGroupFinderMgr.h"
+#include "../AddonExtension/dc_addon_groupfinder_mgr.h"
 #include "DC/GreatVault/GreatVault.h"
 #ifdef HAS_AIO
 #include "AIO.h"

@@ -11,7 +11,7 @@
 #include "WorldSessionMgr.h"
 #include "MoveSplineInit.h"
 #include "ObjectMgr.h"
-#include "../AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 #include <fmt/format.h>
 
 using namespace std::chrono_literals;

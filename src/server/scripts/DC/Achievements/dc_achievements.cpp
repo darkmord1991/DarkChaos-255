@@ -19,7 +19,7 @@
 #include "Player.h"
 #include "Config.h"
 #include "Chat.h"
-#include "DC/Prestige/dc_prestige_api.h"
+#include "../Progression/Prestige/dc_prestige_api.h"
 #include "AchievementMgr.h"
 #include "Map.h"
 #include "Battleground.h"

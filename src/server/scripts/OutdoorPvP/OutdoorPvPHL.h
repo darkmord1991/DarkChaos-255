@@ -408,8 +408,10 @@
             void AddPlayerToQueue(Player* player);
             void RemovePlayerFromQueue(Player* player);
             bool IsPlayerInQueue(Player* player);
+public:
             uint32 GetQueuedPlayerCount();
             uint32 GetQueuedPlayerCountByTeam(TeamId teamId);
+public:
             void ShowQueueStatus(Player* player);
             void SendQueueStatusAIO(Player* player);  // Send queue status via AIO to client addon
             void SendConfigInfoAIO(Player* player);   // Send server config via AIO to Info panel
@@ -588,6 +590,7 @@
         // std::map is used for portability without relying on a custom hasher for ObjectGuid.
         std::map<ObjectGuid, uint32> _playerScores;
         // Baseline of lifetime honorable kills at first sighting during a match (to compute per-match HKs)
+        std::map<ObjectGuid, uint32> _playerHKBaseline;
         // Efficient optimization: track players locally by zone hooks to avoid Map iteration
         std::unordered_set<ObjectGuid> _playersInHinterlands;
     };

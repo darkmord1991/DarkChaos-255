@@ -15,7 +15,7 @@
 #include "ItemTemplate.h"
 #include "Bag.h"
 #include "DBCStores.h"
-#include "../AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeSeasonResolver.h"
 

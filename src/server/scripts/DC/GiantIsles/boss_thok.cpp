@@ -22,7 +22,7 @@
 #include "World.h"
 #include "Chat.h"
 #include "GameTime.h"
-#include "../AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 
 enum ThokSpells
 {

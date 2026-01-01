@@ -23,14 +23,14 @@
  * Copyright (C) 2025 DarkChaos Development Team
  */
 
-#include "DCAddonNamespace.h"
+#include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Config.h"
 #include "World.h"
-#include "../Prestige/dc_prestige_api.h"
+#include "../Progression/Prestige/dc_prestige_api.h"
 
 namespace DCPrestigeAddon
 {

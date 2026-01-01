@@ -1301,7 +1301,7 @@ namespace GroupFinder
 // WORLD SCRIPT: Manages GroupFinderMgr lifecycle
 // ============================================================================
 
-#include "DCGroupFinderMgr.h"
+#include "dc_addon_groupfinder_mgr.h"
 
 class GroupFinderWorldScript : public WorldScript
 {

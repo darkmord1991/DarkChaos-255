@@ -29,7 +29,7 @@
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "dc_prestige_api.h"
-#include "../AddonExtension/dc_addon_prestige_notify.h"
+#include "../../AddonExtension/dc_addon_prestige_notify.h"
 #include <sstream>
 
 using namespace Acore::ChatCommands;

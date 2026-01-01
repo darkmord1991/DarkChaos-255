@@ -22,7 +22,7 @@
 #include "DC/CrossSystem/DCMapCoords.h"
 #include "DC/CrossSystem/DCSpawnResolver.h"
 
-#include "dc_world_bosses.h"
+#include "dc_addon_world_bosses.h"
 #include "dc_addon_death_markers.h"
 
 #include <ctime>

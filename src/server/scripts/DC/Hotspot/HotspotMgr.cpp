@@ -15,7 +15,7 @@
 #include "DBCStores.h"
 #include "DBCStructure.h"
 #include "DC/CrossSystem/DCMapCoords.h"
-#include "../AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
 #include <sstream>

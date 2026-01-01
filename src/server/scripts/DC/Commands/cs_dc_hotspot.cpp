@@ -6,7 +6,7 @@
 #include "../Hotspot/HotspotMgr.h"
 #include "../Hotspot/HotspotDefines.h"
 #include "../Hotspot/HotspotGrid.h"
-#include "../AddonExtension/DCAddonNamespace.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 
 class HotspotsCommandScript : public CommandScript
 {
