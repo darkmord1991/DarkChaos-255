@@ -462,8 +462,6 @@
         s_perfLogTimer += diff;
         if (s_perfLogTimer >= 300000) // 5 minutes
         {
-        if (s_perfLogTimer >= 300000) // 5 minutes
-        {
             // LogPerformanceStats(); // Disabled to reduce log spam unless needed
             s_perfLogTimer = 0;
         }
@@ -625,7 +623,11 @@
             {
                 _recordWinner(winner);
                 _LastWin = (winner == TEAM_ALLIANCE) ? ALLIANCE : HORDE;
-                HandleBuffs(p, !isWinner);
+
+                ForEachPlayerInZone([&](Player* p)
+                {
+                    bool isWinner = (p->GetTeamId() == winner);
+                    HandleBuffs(p, !isWinner);
                     // Rewards: only winners and not AFK/Deserter unless GM
                     if (isWinner)
                     {
@@ -703,16 +705,6 @@
 
     // moved to DC/HinterlandBG/OutdoorPvPHL_Groups.cpp
 
-    void OutdoorPvPHL::_tickAFK(uint32 diff)
-    {
-        // AFK tracking (movement-based + chat /afk): detect transitions and apply policy
-        if (_afkCheckTimerMs > diff)
-        {
-            _afkCheckTimerMs -= diff;
-            return;
-        }
-
-        _afkCheckTimerMs = 2000;
     void OutdoorPvPHL::_tickAFK(uint32 diff)
     {
         // AFK tracking (movement-based + chat /afk): detect transitions and apply policy
@@ -1199,11 +1191,4 @@
         }
     }
 
-    void OutdoorPvPHL::CollectZonePlayers(std::vector<Player*>& players) const
-    {
-        players.clear();
-        ForEachPlayerInZone([&](Player* p)
-        {
-            players.push_back(p);
-        });
-    }
+

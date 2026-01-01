@@ -956,7 +956,8 @@ namespace HLBGAddonFallback
         std::string name;
         if (season > 0)
         {
-            QueryResult r = WorldDatabase.Query("SELECT name FROM dc_hlbg_seasons WHERE id=" + std::to_string(season));
+            // Fixed: use 'season' column instead of 'id'
+            QueryResult r = WorldDatabase.Query("SELECT name FROM dc_hlbg_seasons WHERE season={}", season);
             if (r)
                 name = r->Fetch()[0].Get<std::string>();
         }

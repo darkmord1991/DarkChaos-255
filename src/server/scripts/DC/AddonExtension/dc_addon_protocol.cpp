@@ -141,6 +141,7 @@ struct DCAddonProtocolConfig
     bool EnableWorld;
     bool EnableEvents;
     bool EnableQoS;
+    bool EnableCollection;
 
     // Security settings
     bool EnableDebugLog;
@@ -175,6 +176,7 @@ static void LoadAddonConfig()
     s_AddonConfig.EnableWorld       = sConfigMgr->GetOption<bool>("DC.AddonProtocol.World.Enable", true);
     s_AddonConfig.EnableEvents      = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Events.Enable", true);
     s_AddonConfig.EnableQoS         = sConfigMgr->GetOption<bool>("DC.AddonProtocol.QoS.Enable", true);
+    s_AddonConfig.EnableCollection  = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Collection.Enable", true);
 
     s_AddonConfig.EnableDebugLog        = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Debug.Enable", false);
     s_AddonConfig.EnableProtocolLogging = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Logging.Enable", false);
@@ -207,6 +209,7 @@ static void LoadAddonConfig()
     router.SetModuleEnabled(DCAddon::Module::WORLD, s_AddonConfig.EnableWorld);
     router.SetModuleEnabled(DCAddon::Module::EVENTS, s_AddonConfig.EnableEvents);
     router.SetModuleEnabled(DCAddon::Module::QOS, s_AddonConfig.EnableQoS);
+    router.SetModuleEnabled(DCAddon::Module::COLLECTION, s_AddonConfig.EnableCollection);
     router.SetModuleMinSecurity(DCAddon::Module::GOMOVE, s_AddonConfig.MinGOMoveSecurity);
 }
 

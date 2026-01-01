@@ -195,7 +195,10 @@ function HLBG.RequestHistoryUI(page, per, season, sortKey, sortDir)
 
     local DC = rawget(_G, "DCAddonProtocol")
     if DC and type(DC.Send) == "function" then
-        -- HLBG extended opcode: CMSG_REQUEST_HISTORY_UI (0x23)
+        -- HLBG extended opcode: CMSG_REQUEST_HISTORY_UI (0x23 = 35 decimal)
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Requesting history via DCAddonProtocol (opcode 35): page=%d, per=%d, season=%d", page, per, season))
+        end
         DC:Send("HLBG", 0x23, tostring(page), tostring(per), tostring(season), sortKey, sortDir)
         return true
     end

@@ -26,9 +26,9 @@ function HLBG.RequestQueueStatus()
     if DC and DC.Send then
         -- Send via DC Protocol (HLBG module op 0x01 = CMSG_REQUEST_STATUS)
         -- See DCAddonNamespace.h: CMSG_REQUEST_STATUS = 0x01
-        DC:Send("HLBG", 1) 
-        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting queue status via DC...")
+        DC:Send("HLBG", 1)
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting queue status via DCAddonProtocol (opcode 1)...")
         end
     elseif AIO and AIO.Handle then
         AIO.Handle("HLBG", "RequestQueueStatus", "")
@@ -55,8 +55,8 @@ function HLBG.JoinQueue()
     if DC and DC.Send then
         -- CMSG_QUICK_QUEUE = 0x04
         DC:Send("HLBG", 4)
-        if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Joining queue via DC...")
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Joining queue via DCAddonProtocol (opcode 4)...")
         end
     elseif AIO and AIO.Handle then
         AIO.Handle("HLBG", "JoinQueue", "")
@@ -65,14 +65,17 @@ function HLBG.JoinQueue()
         end
     else
         -- Fallback: use chat command
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r No DC Protocol or AIO found. Using command fallback...")
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Please type: |cFFFFFFFF.hlbgq join|r or talk to the Battlemaster NPC.")
+        end
+        
+        -- Try to execute command
         local cmd = ".hlbgq join"
         local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
         if editBox then
             editBox:SetText(cmd)
             ChatEdit_SendText(editBox, 0)
-        end
-        if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Joining queue via command...")
         end
     end
 end

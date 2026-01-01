@@ -26,6 +26,7 @@ void AddSC_npc_group_finder();
 void AddSC_dc_addon_duels();
 void AddSC_dc_addon_prestige();
 void AddDCQoSScripts();
+void AddSC_dc_addon_collection();
 
 namespace DCAddon { void AddTeleportScripts(); }
 
@@ -61,5 +62,8 @@ void AddDCAddonExtensionScripts()
 
     // QoS addon handler (Quality of Service - QoL settings)
     AddDCQoSScripts();
+
+    // Collection addon handler
+    AddSC_dc_addon_collection();
 
 }

@@ -338,6 +338,13 @@ Hotspots.InitialPopulateCount = 5
 Hotspots.BuffSpell = 800001
 
 #
+#    Hotspots.AuraSpell
+#        Description: Aura spell ID for secondary Hotspot effects
+#        Default:     800001
+#
+Hotspots.AuraSpell = 800001
+
+#
 #    Hotspots.MinimapIcon
 #        Description: Minimap icon type (1 = Golden arrow)
 #        Default:     1
@@ -644,6 +651,13 @@ HinterlandBG.Base.Horde.Z = 5.14442
 HinterlandBG.Base.Horde.O = 1.12528
 
 
+
+#
+#    HinterlandBG.Reward.MatchHonor
+#        Description: Base honor reward for match participation
+#        Default:     1500
+#
+HinterlandBG.Reward.MatchHonor = 1500
 
 #
 #    HinterlandBG.Reward.MatchHonorDepletion
@@ -2314,6 +2328,13 @@ DC.AddonProtocol.AOELoot.Enable = 1
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Spectator.Enable = 1
+
+#
+#    DC.AddonProtocol.Collection.Enable
+#        Description: Enable protocol routing for Collection System (COLL)
+#        Default:     1
+#
+DC.AddonProtocol.Collection.Enable = 1
 
 #
 #    DC.AddonProtocol.Upgrade.Enable

@@ -137,11 +137,11 @@ void AddSC_dc_teleporter();                   // Teleporters\\dc_teleporter.cpp
 // --- DC Commands (Unified command hub) ---
 void AddSC_dc_addons_commandscript();         // Commands/cs_dc_addons.cpp
 void AddSC_dc_dungeonquests_commandscript();  // Commands/cs_dc_dungeonquests.cpp
-void AddSC_hlbg_commandscript();              // Commands/cs_hl_bg.cpp
-void AddSC_mythic_plus_commands();            // Commands/mythic_plus_commands.cpp
-void AddSC_SeasonalRewardCommands();          // Commands/SeasonalRewardCommands.cpp
-void AddSC_dc_prestige_chat();                // Commands/dc_prestige_chat.cpp
-void AddSC_ItemUpgradeCommands();             // Commands/dc_item_upgrade_commands.cpp
+void AddSC_dc_hinterland_bg_commandscript();  // Commands/cs_dc_hinterland_bg.cpp
+void AddSC_dc_mythic_plus_commandscript();     // Commands/cs_dc_mythic_plus.cpp
+void AddSC_dc_seasonal_rewards_commandscript(); // Commands/cs_dc_seasonal_rewards.cpp
+void AddSC_dc_prestige_commandscript();        // Commands/cs_dc_prestige.cpp
+void AddSC_dc_item_upgrade_commandscript();    // Commands/cs_dc_item_upgrade.cpp
 void AddSC_dc_hotspot_commandscript();        // Commands/cs_dc_hotspot.cpp
 
 // The name of this function should match:
@@ -668,12 +668,11 @@ void AddDCScripts()
     try {
         AddSC_dc_addons_commandscript();
         AddSC_dc_dungeonquests_commandscript();
-        AddSC_hlbg_commandscript();
-        AddSC_mythic_plus_commands();
-        AddSC_SeasonalRewardCommands();
-        AddSC_dc_prestige_chat();
-        AddSC_ItemUpgradeCommands();
-        AddSC_dc_hotspot_commandscript();
+        AddSC_dc_hinterland_bg_commandscript();
+        AddSC_dc_mythic_plus_commandscript();
+        AddSC_dc_seasonal_rewards_commandscript();
+        AddSC_dc_prestige_commandscript();
+        AddSC_dc_item_upgrade_commandscript();
         LOG_INFO("scripts.dc", ">>   ✓ DC addon commands and dungeon quest commands loaded");
         LOG_INFO("scripts.dc", ">>   ✓ Consolidated DC commands loaded (HLBG, M+, Season, Prestige, ItemUpgrade)");
     } catch (std::exception& e) {

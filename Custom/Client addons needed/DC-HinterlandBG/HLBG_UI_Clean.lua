@@ -92,9 +92,23 @@ if not HLBG.UI.Frame then
     refreshBtn:SetPoint("TOPLEFT", HLBG.UI.Frame, "TOPLEFT", 8, -8)
     refreshBtn:SetText("↻")
     refreshBtn:SetScript("OnClick", function()
-        if HLBG and HLBG.RequestHistory then HLBG.RequestHistory() end
-        if HLBG and HLBG.RequestStats then HLBG.RequestStats() end
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Refresh requested.")
+        -- Show debug info
+        local DC = _G.DCAddonProtocol
+        local hasDC = DC and "YES" or "NO"
+        local hasAIO = _G.AIO and "YES" or "NO"
+        
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Refresh:|r DCAddonProtocol=" .. hasDC .. " AIO=" .. hasAIO)
+        
+        if HLBG and HLBG.RequestHistory then 
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting history data...")
+            HLBG.RequestHistory() 
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r RequestHistory function not found!")
+        end
+        
+        if HLBG and HLBG.RequestStats then 
+            HLBG.RequestStats() 
+        end
     end)
     refreshBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT"); GameTooltip:AddLine("Refresh data", 1,1,1); GameTooltip:Show()
@@ -175,17 +189,85 @@ if not HLBG.UI.History.Content then
         })
         HLBG.UI.History.Headers:SetBackdropColor(0.1, 0.2, 0.4, 0.8)
         HLBG.UI.History.Headers:SetBackdropBorderColor(0.4, 0.6, 0.8, 1)
+        
         local headerNames = {"ID", "S", "Timestamp", "Winner", "Affix", "Time", "Reason"}
         local headerWidths = {40, 40, 135, 65, 65, 55, 80}
+        local sortKeys = {"id", "season", "occurred_at", "winner_tid", "affix", "duration_seconds", "win_reason"}
         local xOffset = 8
+        
+        HLBG.UI.History.HeaderButtons = HLBG.UI.History.HeaderButtons or {}
+        
         for i, name in ipairs(headerNames) do
-            local header = HLBG.UI.History.Headers:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            header:SetPoint("LEFT", HLBG.UI.History.Headers, "LEFT", xOffset, 0)
-            header:SetWidth(headerWidths[i])
-            header:SetText(name)
-            header:SetTextColor(1, 0.82, 0, 1)  -- Gold color
-            header:SetJustifyH("LEFT")
+            -- Create clickable button for each header
+            local headerBtn = CreateFrame("Button", nil, HLBG.UI.History.Headers)
+            headerBtn:SetSize(headerWidths[i], 24)
+            headerBtn:SetPoint("LEFT", HLBG.UI.History.Headers, "LEFT", xOffset, 0)
+            
+            -- Header text
+            local headerText = headerBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            headerText:SetPoint("LEFT", headerBtn, "LEFT", 2, 0)
+            headerText:SetText(name)
+            headerText:SetTextColor(1, 0.82, 0, 1)  -- Gold color
+            headerBtn.text = headerText
+            
+            -- Sort arrow indicator
+            local arrow = headerBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            arrow:SetPoint("RIGHT", headerBtn, "RIGHT", -2, 0)
+            arrow:SetText("")
+            arrow:SetTextColor(0.2, 1, 0.2, 1)  -- Green
+            headerBtn.arrow = arrow
+            
+            -- Click handler for sorting
+            headerBtn:SetScript("OnClick", function(self)
+                local hist = HLBG.UI.History
+                local newSortKey = sortKeys[i]
+                
+                -- Toggle direction if clicking same column, otherwise default to DESC
+                if hist.sortKey == newSortKey then
+                    hist.sortDir = (hist.sortDir == "DESC") and "ASC" or "DESC"
+                else
+                    hist.sortKey = newSortKey
+                    hist.sortDir = "DESC"
+                end
+                
+                -- Update arrow indicators
+                for _, btn in ipairs(HLBG.UI.History.HeaderButtons) do
+                    btn.arrow:SetText("")
+                end
+                self.arrow:SetText(hist.sortDir == "DESC" and "▼" or "▲")
+                
+                -- Request new data with updated sort
+                if type(HLBG.RequestHistoryUI) == 'function' then
+                    HLBG.RequestHistoryUI(hist.page or 1, hist.per or 25, 0, hist.sortKey, hist.sortDir)
+                end
+            end)
+            
+            -- Hover effect
+            headerBtn:SetScript("OnEnter", function(self)
+                self.text:SetTextColor(1, 1, 1, 1)  -- White on hover
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:AddLine("Click to sort by " .. name, 1, 1, 1)
+                GameTooltip:Show()
+            end)
+            
+            headerBtn:SetScript("OnLeave", function(self)
+                local hist = HLBG.UI.History
+                if hist.sortKey == sortKeys[i] then
+                    self.text:SetTextColor(0.2, 1, 0.2, 1)  -- Green if active sort
+                else
+                    self.text:SetTextColor(1, 0.82, 0, 1)  -- Gold otherwise
+                end
+                GameTooltip:Hide()
+            end)
+            
+            HLBG.UI.History.HeaderButtons[i] = headerBtn
             xOffset = xOffset + headerWidths[i] + 3
+        end
+        
+        -- Set initial sort indicator
+        if HLBG.UI.History.HeaderButtons[1] then
+            HLBG.UI.History.HeaderButtons[1].arrow:SetText("▼")
+            HLBG.UI.History.HeaderButtons[1].text:SetTextColor(0.2, 1, 0.2, 1)
         end
     end
     HLBG.UI.History.Content = HLBG.UI.History.Content or CreateFrame("Frame", nil, HLBG.UI.History.Scroll)
@@ -193,6 +275,19 @@ if not HLBG.UI.History.Content then
     -- Anchor the content to the top-left of the scroll frame so child rows position predictably
     HLBG.UI.History.Content:SetPoint('TOPLEFT', HLBG.UI.History.Scroll, 'TOPLEFT', 0, 0)
     HLBG.UI.History.Scroll:SetScrollChild(HLBG.UI.History.Content)
+    
+    -- Auto-load history when History tab is shown
+    HLBG.UI.History:SetScript("OnShow", function()
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r History tab shown, requesting data...")
+        if type(HLBG.RequestHistory) == 'function' then
+            C_Timer.After(0.3, function()
+                pcall(HLBG.RequestHistory)
+            end)
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r RequestHistory function not found!")
+        end
+    end)
+    
     -- Ensure state fields exist
     HLBG.UI.History.rows = HLBG.UI.History.rows or {}
     HLBG.UI.History.page = HLBG.UI.History.page or 1
@@ -673,10 +768,13 @@ Check with server administrators for the current queue method.|r]])
     HLBG.UI.Queue.InfoText = infoText
     -- Auto-request queue status when tab is shown
     HLBG.UI.Queue:SetScript("OnShow", function()
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Queue tab shown, requesting status...")
         if type(HLBG.RequestQueueStatus) == 'function' then
             C_Timer.After(0.3, function()  -- Small delay to ensure AIO ready
                 pcall(HLBG.RequestQueueStatus)
             end)
+        else
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r RequestQueueStatus function not found!")
         end
     end)
     -- Initialize queue state

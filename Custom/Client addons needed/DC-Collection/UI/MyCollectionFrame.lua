@@ -487,7 +487,11 @@ function MyCollection:Update()
     if self.frame.loadingText then
         local shouldShow = not hasAnyTotals
         if type(self.frame.loadingText.SetShown) == "function" then
-            self.frame.loadingText:SetShown(shouldShow)
+            if shouldShow then
+                self.frame.loadingText:Show()
+            else
+                self.frame.loadingText:Hide()
+            end
         else
             if shouldShow then
                 self.frame.loadingText:Show()

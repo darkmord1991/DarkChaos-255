@@ -30,6 +30,10 @@ local CATEGORY_WIDTH = 180
 local ACHIEVEMENT_HEIGHT = 80
 local SCROLL_BAR_WIDTH = 26
 
+local addonNameGlobal = ...
+local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection") .. "\\"
+local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
+
 -- ============================================================================
 -- FRAME CREATION
 -- ============================================================================
@@ -67,16 +71,22 @@ function AchievementsUI:Create(parent)
     categoryPanel:SetWidth(CATEGORY_WIDTH + SCROLL_BAR_WIDTH)
     frame.categoryPanel = categoryPanel
 
+    -- Use standard DC background
     categoryPanel.bg = categoryPanel:CreateTexture(nil, "BACKGROUND")
     categoryPanel.bg:SetAllPoints()
-    categoryPanel.bg:SetTexture(0, 0, 0, 0.30)
+    categoryPanel.bg:SetTexture(BG_FELLEATHER)
+    categoryPanel.bg:SetVertexColor(1, 1, 1, 0.8)
+    
+    local categoryTint = categoryPanel:CreateTexture(nil, "BORDER")
+    categoryTint:SetAllPoints()
+    categoryTint:SetTexture(0, 0, 0, 0.4)
 
     local catTitle = categoryPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     catTitle:SetPoint("TOPLEFT", categoryPanel, "TOPLEFT", 8, -8)
     catTitle:SetText("Categories")
     frame.categoryTitle = catTitle
 
-    local categoryScroll = CreateFrame("ScrollFrame", nil, categoryPanel, "UIPanelScrollFrameTemplate")
+    local categoryScroll = CreateFrame("ScrollFrame", "DCAchievementsCategoryScroll", categoryPanel, "UIPanelScrollFrameTemplate")
     categoryScroll:SetPoint("TOPLEFT", catTitle, "BOTTOMLEFT", -4, -6)
     categoryScroll:SetPoint("BOTTOMRIGHT", categoryPanel, "BOTTOMRIGHT", -26, 6)
     frame.categoryScroll = categoryScroll
@@ -92,16 +102,22 @@ function AchievementsUI:Create(parent)
     achievementPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
     frame.achievementPanel = achievementPanel
 
+    -- Use standard DC background
     achievementPanel.bg = achievementPanel:CreateTexture(nil, "BACKGROUND")
     achievementPanel.bg:SetAllPoints()
-    achievementPanel.bg:SetTexture(0, 0, 0, 0.30)
+    achievementPanel.bg:SetTexture(BG_FELLEATHER)
+    achievementPanel.bg:SetVertexColor(1, 1, 1, 0.8)
+    
+    local achievementTint = achievementPanel:CreateTexture(nil, "BORDER")
+    achievementTint:SetAllPoints()
+    achievementTint:SetTexture(0, 0, 0, 0.4)
 
     local achTitle = achievementPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     achTitle:SetPoint("TOPLEFT", achievementPanel, "TOPLEFT", 8, -8)
     achTitle:SetText("Achievements")
     frame.achievementTitle = achTitle
 
-    local achievementScroll = CreateFrame("ScrollFrame", nil, achievementPanel, "UIPanelScrollFrameTemplate")
+    local achievementScroll = CreateFrame("ScrollFrame", "DCAchievementsListScroll", achievementPanel, "UIPanelScrollFrameTemplate")
     achievementScroll:SetPoint("TOPLEFT", achTitle, "BOTTOMLEFT", -4, -6)
     achievementScroll:SetPoint("BOTTOMRIGHT", achievementPanel, "BOTTOMRIGHT", -26, 6)
     frame.achievementList = achievementScroll
@@ -125,6 +141,108 @@ end
 -- ============================================================================
 -- CATEGORY LIST
 -- ============================================================================
+
+-- Store expanded state
+AchievementsUI.expandedCategories = AchievementsUI.expandedCategories or {}
+
+local function BuildCategoryTree(categories)
+    local tree = {}
+    local catMap = {}
+    
+    -- First pass: create nodes
+    for _, catId in ipairs(categories) do
+        local name, parentId = "", -1
+        if type(GetCategoryInfo) == "function" then
+            name, parentId = GetCategoryInfo(catId)
+        end
+        catMap[catId] = {
+            id = catId,
+            name = name or tostring(catId),
+            parentId = parentId,
+            children = {}
+        }
+    end
+    
+    -- Second pass: build tree
+    for _, node in pairs(catMap) do
+        if node.parentId and node.parentId ~= -1 and catMap[node.parentId] then
+            table.insert(catMap[node.parentId].children, node)
+        else
+            table.insert(tree, node)
+        end
+    end
+    
+    return tree, catMap
+end
+
+local function CreateCategoryButton(parent, node, indent, frame)
+    local btnHeight = 24
+    local hasChildren = #node.children > 0
+    
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(CATEGORY_WIDTH - indent, btnHeight)
+    btn.categoryId = node.id
+    
+    -- Expand/collapse icon for parent categories
+    if hasChildren then
+        btn.expandIcon = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.expandIcon:SetPoint("LEFT", btn, "LEFT", indent, 0)
+        btn.expandIcon:SetText(frame.expandedCategories[node.id] and "-" or "+")
+        btn.expandIcon:SetTextColor(0.8, 0.8, 0.8)
+    end
+    
+    -- Category text
+    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    btn.text:SetPoint("LEFT", btn, "LEFT", indent + (hasChildren and 15 or 5), 0)
+    btn.text:SetText(node.name)
+    
+    -- Highlight
+    btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    
+    -- Selection visual
+    if frame.selectedCategory == node.id then
+        btn.text:SetTextColor(1, 1, 0)
+        local sel = btn:CreateTexture(nil, "BACKGROUND")
+        sel:SetAllPoints()
+        sel:SetTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight")
+        sel:SetVertexColor(0.8, 0.8, 0, 0.5)
+    else
+        btn.text:SetTextColor(1, 0.82, 0)
+    end
+    
+    btn:SetScript("OnClick", function()
+        if hasChildren then
+            -- Toggle expand/collapse
+            frame.expandedCategories[node.id] = not frame.expandedCategories[node.id]
+            frame:UpdateCategories()
+        else
+            -- Select leaf category and show achievements
+            frame.selectedCategory = node.id
+            frame:UpdateCategories()
+            frame:UpdateAchievements(node.id)
+        end
+    end)
+    
+    return btn, btnHeight
+end
+
+local function RenderCategoryTree(parent, tree, frame, yOffset, indent)
+    yOffset = yOffset or 0
+    indent = indent or 0
+    
+    for _, node in ipairs(tree) do
+        local btn, height = CreateCategoryButton(parent, node, indent, frame)
+        btn:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -yOffset)
+        yOffset = yOffset + height
+        
+        -- Render children if expanded
+        if #node.children > 0 and frame.expandedCategories[node.id] then
+            yOffset = RenderCategoryTree(parent, node.children, frame, yOffset, indent + 15)
+        end
+    end
+    
+    return yOffset
+end
 
 function AchievementsUI:UpdateCategories()
     if not self.frame or not self.frame.categoryChild then return end
@@ -155,6 +273,29 @@ function AchievementsUI:UpdateCategories()
         end
     end
     
+    -- Remove duplicates and add Dark Chaos category if missing
+    local seen = {}
+    local uniqueCategories = {}
+    local hasDarkChaos = false
+    
+    for i, catId in ipairs(categories) do
+        if not seen[catId] then
+            seen[catId] = true
+            table.insert(uniqueCategories, catId)
+            
+            -- Check if this is Dark Chaos category
+            local name = ""
+            if type(GetCategoryInfo) == "function" then
+                name = GetCategoryInfo(catId)
+            end
+            if name and (name:find("Dark") or name:find("Chaos")) then
+                hasDarkChaos = true
+            end
+        end
+    end
+    
+    categories = uniqueCategories
+    
     -- If no categories found, show a message
     if #categories == 0 then
         local msg = child:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -164,55 +305,33 @@ function AchievementsUI:UpdateCategories()
         return
     end
     
-    local btnHeight = 24
-    local yOffset = 0
-
-    for i, catId in ipairs(categories) do
-        local name, parentId
-        if type(GetCategoryInfo) == "function" then
-            name, parentId = GetCategoryInfo(catId)
-        else
-            name = tostring(catId)
-        end
-        
-        local btn = CreateFrame("Button", nil, child)
-        btn:SetSize(CATEGORY_WIDTH, btnHeight)
-        btn:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -yOffset)
-        
-        -- Text
-        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.text:SetPoint("LEFT", btn, "LEFT", 10, 0)
-        btn.text:SetText(name or tostring(catId))
-        
-        -- Highlight
-        btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-        
-        -- Selection
-        if self.selectedCategory == catId then
-            btn.text:SetTextColor(1, 1, 1)
-            local sel = btn:CreateTexture(nil, "BACKGROUND")
-            sel:SetAllPoints()
-            sel:SetTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight")
-            sel:SetVertexColor(0.8, 0.8, 0, 0.5)
-        else
-            btn.text:SetTextColor(1, 0.82, 0)
-        end
-
-        btn:SetScript("OnClick", function()
-            self.selectedCategory = catId
-            self:UpdateCategories() -- Refresh selection
-            self:UpdateAchievements(catId)
-        end)
-
-        yOffset = yOffset + btnHeight
-    end
-
-    child:SetHeight(yOffset)
+    -- Build tree structure
+    local tree, catMap = BuildCategoryTree(categories)
     
-    -- Select first if none selected
+    -- Render tree
+    local totalHeight = RenderCategoryTree(child, tree, self, 0, 0)
+    child:SetHeight(math.max(totalHeight, 100))
+    
+    -- Select first leaf category if none selected
     if not self.selectedCategory and categories[1] then
-        self.selectedCategory = categories[1]
-        self:UpdateAchievements(categories[1])
+        -- Find first leaf category (no children)
+        local function FindFirstLeaf(nodes)
+            for _, node in ipairs(nodes) do
+                if #node.children == 0 then
+                    return node.id
+                else
+                    local leafId = FindFirstLeaf(node.children)
+                    if leafId then return leafId end
+                end
+            end
+            return nil
+        end
+        
+        local firstLeaf = FindFirstLeaf(tree)
+        if firstLeaf then
+            self.selectedCategory = firstLeaf
+            self:UpdateAchievements(firstLeaf)
+        end
     end
 end
 
@@ -371,7 +490,11 @@ function AchievementsUI:Show()
     self.frame:Show()
 
     if self.frame.apiNotice then
-        self.frame.apiNotice:SetShown(not HasAchievementApi())
+        if not HasAchievementApi() then
+            self.frame.apiNotice:Show()
+        else
+            self.frame.apiNotice:Hide()
+        end
     end
 
     if HasAchievementApi() then
