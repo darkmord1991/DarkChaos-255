@@ -133,7 +133,7 @@ void HotspotMgr::LoadConfig()
 void HotspotMgr::LoadFromDB()
 {
     // Implementation: Load existing hotspots from DB, add to _grid
-    QueryResult result = WorldDatabase.Query("SELECT id, mapId, zoneId, x, y, z, spawnTime, expireTime, gameObjectGuid FROM custom_hotspots");
+    QueryResult result = WorldDatabase.Query("SELECT id, map_id, zone_id, x, y, z, spawn_time, expire_time, gameobject_guid FROM dc_hotspots_active");
     if (!result) return;
 
     time_t now = GameTime::GetGameTime().count();
@@ -171,13 +171,13 @@ void HotspotMgr::LoadFromDB()
 
 void HotspotMgr::SaveHotspotToDB(Hotspot const& h)
 {
-    WorldDatabase.Execute("INSERT INTO custom_hotspots (id, mapId, zoneId, x, y, z, spawnTime, expireTime, gameObjectGuid) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})",
+    WorldDatabase.Execute("INSERT INTO dc_hotspots_active (id, map_id, zone_id, x, y, z, spawn_time, expire_time, gameobject_guid) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {})",
         h.id, h.mapId, h.zoneId, h.x, h.y, h.z, static_cast<uint64>(h.spawnTime), static_cast<uint64>(h.expireTime), h.gameObjectGuid.GetRawValue());
 }
 
 void HotspotMgr::DeleteHotspotFromDB(uint32 id)
 {
-    WorldDatabase.Execute("DELETE FROM custom_hotspots WHERE id = {}", id);
+    WorldDatabase.Execute("DELETE FROM dc_hotspots_active WHERE id = {}", id);
 }
 
 // Private Helper: GetRandomHotspotPosition

@@ -31,12 +31,13 @@ namespace DarkChaos
             std::map<uint32, PlayerSeasonData> player_data_;
             std::map<std::string, SystemRegistration> registered_systems_;
             uint32 active_season_id_;
+            bool _initialized;
 
         public:
-            SeasonalManagerImpl() : active_season_id_(0)
+            SeasonalManagerImpl() : active_season_id_(0), _initialized(false)
             {
-                LoadSeasons();
-                LoadActiveSeason();
+                // Defer database queries until EnsureInitialized() is called
+                // to avoid crash when database connection pool isn't ready yet
             }
 
             virtual ~SeasonalManagerImpl() = default;
@@ -47,6 +48,7 @@ namespace DarkChaos
 
             bool CreateSeason(const SeasonDefinition& season) override
             {
+                EnsureInitialized();
                 if (seasons_.find(season.season_id) != seasons_.end())
                     return false; // Season already exists
 
@@ -113,8 +115,7 @@ namespace DarkChaos
             }
 
             bool DeleteSeason(uint32 season_id) override
-            {
-                auto it = seasons_.find(season_id);
+            {                EnsureInitialized();                auto it = seasons_.find(season_id);
                 if (it == seasons_.end())
                     return false;
 
@@ -131,6 +132,7 @@ namespace DarkChaos
 
             SeasonDefinition* GetSeason(uint32 season_id) override
             {
+                EnsureInitialized();
                 auto it = seasons_.find(season_id);
                 return (it != seasons_.end()) ? &it->second : nullptr;
             }
@@ -141,8 +143,7 @@ namespace DarkChaos
             }
 
             std::vector<SeasonDefinition*> GetAllSeasons() override
-            {
-                std::vector<SeasonDefinition*> result;
+            {                const_cast<SeasonalManagerImpl*>(this)->EnsureInitialized();                std::vector<SeasonDefinition*> result;
                 for (auto& pair : seasons_)
                     result.push_back(&pair.second);
                 return result;
@@ -251,6 +252,8 @@ namespace DarkChaos
 
             bool RegisterSystem(const SystemRegistration& system) override
             {
+                // Do NOT call EnsureInitialized() here - this is called during script registration
+                // before the database is initialized
                 if (registered_systems_.find(system.system_name) != registered_systems_.end())
                     return false; // Already registered
 
@@ -284,6 +287,7 @@ namespace DarkChaos
 
             PlayerSeasonData* GetPlayerSeasonData(uint32 player_guid) override
             {
+                EnsureInitialized();
                 // Check cache first
                 auto it = player_data_.find(player_guid);
                 if (it != player_data_.end())
@@ -459,8 +463,7 @@ namespace DarkChaos
             // =================================================================
 
             uint32 GetCurrentSeasonId() override
-            {
-                return active_season_id_;
+            {                const_cast<SeasonalManagerImpl*>(this)->EnsureInitialized();                return active_season_id_;
             }
 
             bool IsSeasonActive(uint32 season_id) override
@@ -496,6 +499,16 @@ namespace DarkChaos
             size_t GetPlayerCacheSize() const { return player_data_.size(); }
 
         private:
+            void EnsureInitialized()
+            {
+                if (!_initialized)
+                {
+                    LoadSeasons();
+                    LoadActiveSeason();
+                    _initialized = true;
+                }
+            }
+
             void LoadSeasons()
             {
                 QueryResult result = CharacterDatabase.Query(

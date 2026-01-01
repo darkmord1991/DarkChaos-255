@@ -1078,10 +1078,8 @@ if DCWelcome and DCWelcome.EventBus and DCWelcome.EventBus.On then
 		end
 	end)
 end
-	-- Add Season Preview Tab Logic if needed (Placeholder)
 
-	end
-end
+-- Add Season Preview Tab Logic if needed (Placeholder)
 
 function UI:QueueRefresh()
 	if self._pendingUpdate then return end

@@ -44,8 +44,12 @@ public:
         stmt2->SetData(2, instanceId);
         CharacterDatabase.Execute(stmt2);
         */
+        // Mark unused parameters explicitly to avoid compiler warnings
+        (void)allianceResources; (void)hordeResources; (void)duration; (void)affixId;
+
         uint32 alliancePlayers = GetPlayerCountInBG(instanceId, ALLIANCE);
         uint32 hordePlayers = GetPlayerCountInBG(instanceId, HORDE);
+        (void)alliancePlayers; (void)hordePlayers;
 
         // HLBGAIOHandlers::UpdateBattleResults(winner, duration, affixId, allianceResources, hordeResources, alliancePlayers, hordePlayers);
         UpdatePlayerStatistics(instanceId, winner);

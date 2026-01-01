@@ -98,6 +98,7 @@ public:
 
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim, uint8 source) override
     {
+        (void)source;
         sHotspotMgr->OnPlayerGiveXP(player, amount, victim);
     }
 };

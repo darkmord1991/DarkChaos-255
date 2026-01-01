@@ -950,6 +950,7 @@ void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool succ
         return;
 
     uint32 seasonId = state->seasonId ? state->seasonId : GetCurrentSeasonId();
+    (void)seasonId; // Reserved for future use
     uint32 duration = 0;
     uint64 now = GameTime::GetGameTime().count();
     if (state->startedAt && now >= state->startedAt)

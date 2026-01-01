@@ -30,7 +30,7 @@ local function CreateCharacterFrameButton()
     local icon = button:CreateTexture(nil, "BACKGROUND")
     icon:SetSize(28, 28)
     icon:SetPoint("CENTER")
-    icon:SetTexture("Interface\\Icons\\INV_Misc_Book_11")  -- Collection book icon
+    icon:SetTexture("Interface\\AddOns\\DC-Collection\\Textures\\Icons\\Collection_64.tga")
     button.icon = icon
 
     -- Border

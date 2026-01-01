@@ -527,6 +527,7 @@ void AddSC_ItemUpgradeSeasonal()
     
     // On Player Season Change
     reg.on_player_season_change = [](uint32 player_guid, uint32 old_season, uint32 new_season) {
+        (void)old_season;
         // We use the reset manager to handle the complex logic of resetting/archiving/carrying over
         DarkChaos::ItemUpgrade::GetSeasonResetManager()->ResetPlayerForSeason(player_guid, new_season);
     };

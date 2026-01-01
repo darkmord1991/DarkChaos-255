@@ -432,11 +432,11 @@ Hotspots.IncludeTextureInAddon = 0
 Hotspots.BuffTexture = ""
 
 #
-#    Hotspots.GmBypassLimit
+#    Hotspots.GMBypassLimit
 #        Description: Allow GM/manual spawn commands to bypass MaxActive limit
 #        Default:     1 (Enabled)
 #
-Hotspots.GmBypassLimit = 1
+Hotspots.GMBypassLimit = 1
 
 #
 #    Hotspots.AllowWorldwideSpawn

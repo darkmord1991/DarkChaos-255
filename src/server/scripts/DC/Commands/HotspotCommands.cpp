@@ -168,7 +168,9 @@ public:
 
     static bool HandleHotspotsStatusCommand(ChatHandler* handler, char const* /*args*/)
     {
-        // ...
+        // Silence unused parameter warnings for now
+        (void)handler;
+        // TODO: Implement status output (hotspot list / player status)
         return true;
     }
 };

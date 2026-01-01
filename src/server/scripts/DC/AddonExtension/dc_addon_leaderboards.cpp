@@ -462,8 +462,8 @@ namespace
         }
         else if (subcat == "season_bosses")
         {
-            orderBy = "d.bosses_killed DESC";
-            selectField = "d.bosses_killed";
+            orderBy = "(d.dungeon_bosses_killed + d.world_bosses_killed) DESC";
+            selectField = "(d.dungeon_bosses_killed + d.world_bosses_killed)";
         }
 
         QueryResult result = CharacterDatabase.Query(
