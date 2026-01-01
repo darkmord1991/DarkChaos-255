@@ -909,16 +909,14 @@ function DCWelcome:CreateWelcomeFrame()
     frame:SetBackdropColor(0, 0, 0, 0)
 
     local felBg = frame:CreateTexture(nil, "BACKGROUND")
-    felBg:SetPoint("TOPLEFT", 12, -12)
-    felBg:SetPoint("BOTTOMRIGHT", -12, 12)
+    felBg:SetAllPoints()
     felBg:SetTexture(BG_FELLEATHER)
     if felBg.SetHorizTile then felBg:SetHorizTile(false) end
     if felBg.SetVertTile then felBg:SetVertTile(false) end
     frame.felBg = felBg
 
     local felBgTint = frame:CreateTexture(nil, "BACKGROUND")
-    felBgTint:SetPoint("TOPLEFT", 12, -12)
-    felBgTint:SetPoint("BOTTOMRIGHT", -12, 12)
+    felBgTint:SetAllPoints()
     felBgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
     frame.felBgTint = felBgTint
     

@@ -10,6 +10,38 @@
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
+local BG_FELLEATHER = "Interface\\AddOns\\DC-InfoBar\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
+local function ApplyLeaderboardsStyle(frame)
+    if not frame or frame.__dcLeaderboardsStyled then
+        return
+    end
+    frame.__dcLeaderboardsStyled = true
+
+    if frame.SetBackdrop then
+        frame:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true,
+            tileSize = 32,
+            edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 },
+        })
+    end
+    if frame.SetBackdropColor then
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+    bg:SetAllPoints()
+    bg:SetTexture(BG_FELLEATHER)
+
+    local tint = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+    tint:SetAllPoints(bg)
+    tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+end
+
 -- ============================================================================
 -- Options Panel Creation
 -- ============================================================================
@@ -753,10 +785,8 @@ function DCInfoBar:ShowPluginOptions(pluginId)
     popup:RegisterForDrag("LeftButton")
     popup:SetScript("OnDragStart", popup.StartMoving)
     popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
-    
-    popup.bg = popup:CreateTexture(nil, "BACKGROUND")
-    popup.bg:SetAllPoints()
-    popup.bg:SetColorTexture(0.08, 0.08, 0.1, 0.95)
+
+    ApplyLeaderboardsStyle(popup)
     
     -- Title
     local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

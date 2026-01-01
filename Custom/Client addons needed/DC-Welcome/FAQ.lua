@@ -221,12 +221,18 @@ function DCWelcome:CreateFAQPanel()
     faqFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     faqFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     faqFrame:Hide()
+
+    local BG_FELLEATHER = "Interface\\AddOns\\DC-Welcome\\Textures\\Backgrounds\\FelLeather_512.tga"
+    local BG_TINT_ALPHA = 0.60
     
     -- Background
-    local bg = faqFrame:CreateTexture(nil, "BACKGROUND")
+    local bg = faqFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
     bg:SetAllPoints()
-    bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background")
-    bg:SetVertexColor(0.06, 0.06, 0.08, 0.98)
+    bg:SetTexture(BG_FELLEATHER)
+
+    local bgTint = faqFrame:CreateTexture(nil, "BACKGROUND", nil, -7)
+    bgTint:SetAllPoints(bg)
+    bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
     
     -- Border
     local border = CreateFrame("Frame", nil, faqFrame)

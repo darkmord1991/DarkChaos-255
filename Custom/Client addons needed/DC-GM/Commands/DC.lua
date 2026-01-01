@@ -748,13 +748,18 @@ function AzerothAdmin:ExportDCHandlers()
     ma_dchandlers_export_popup.title:SetText("DC Handlers Export")
   end
   if not ma_dchandlers_export_popup.editbox then
-    local eb = CreateFrame("EditBox", nil, ma_dchandlers_export_popup, "InputScrollFrameTemplate")
+    local sf = CreateFrame("ScrollFrame", "ma_dchandlers_export_scrollframe", ma_dchandlers_export_popup, "InputScrollFrameTemplate")
+    sf:SetSize(560, 320)
+    sf:SetPoint("TOPLEFT", 20, -36)
+
+    local eb = _G[sf:GetName() .. "EditBox"]
     eb:SetFontObject(GameFontNormal)
     eb:SetMultiLine(true)
     eb:SetMaxLetters(32768)
-    eb:SetSize(560, 320)
-    eb:SetPoint("TOPLEFT", 20, -36)
+    eb:SetWidth(sf:GetWidth())
     eb:SetScript("OnEscapePressed", function(self) ma_dchandlers_export_popup:Hide() end)
+
+    ma_dchandlers_export_popup.scrollframe = sf
     ma_dchandlers_export_popup.editbox = eb
   end
   if not ma_dchandlers_export_popup.close then

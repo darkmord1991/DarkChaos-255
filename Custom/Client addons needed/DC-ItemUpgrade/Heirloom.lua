@@ -135,6 +135,9 @@ DC.inPackageSelectionMode = false;
 =======================================================]]
 
 function DarkChaos_ItemUpgrade_CreateStatPackageSelector(parent)
+	local BG_FELLEATHER = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Backgrounds\\FelLeather_512.tga";
+	local BG_TINT_ALPHA = 0.60;
+
 	-- Create full-size container frame that covers the parent completely
 	local selector = CreateFrame("Frame", "DarkChaos_StatPackageSelector", parent);
 	selector:SetAllPoints(parent);
@@ -151,11 +154,15 @@ function DarkChaos_ItemUpgrade_CreateStatPackageSelector(parent)
 	end);
 	selector:Hide();
 	
-	-- Solid dark background to completely hide parent content
+	-- Background to completely hide parent content
 	local overlay = selector:CreateTexture(nil, "BACKGROUND", nil, -8);
 	overlay:SetAllPoints();
-	overlay:SetTexture("Interface\\Buttons\\WHITE8X8");
-	overlay:SetVertexColor(0.05, 0.05, 0.08, 1);  -- Nearly black, fully opaque
+	overlay:SetTexture(BG_FELLEATHER);
+	overlay:SetVertexColor(1, 1, 1, 1);
+
+	local overlayTint = selector:CreateTexture(nil, "BACKGROUND", nil, -7);
+	overlayTint:SetAllPoints(overlay);
+	overlayTint:SetTexture(0, 0, 0, BG_TINT_ALPHA);
 	
 	-- Title
 	local title = selector:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge");

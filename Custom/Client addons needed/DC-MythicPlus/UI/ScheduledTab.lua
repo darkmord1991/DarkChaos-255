@@ -315,19 +315,27 @@ function GF:ShowCreateEventDialog()
     dialog:SetFrameStrata("DIALOG")
     dialog:SetToplevel(true)
     
-    dialog.bg = dialog:CreateTexture(nil, "BACKGROUND")
-    dialog.bg:SetAllPoints()
-    dialog.bg:SetColorTexture(0.05, 0.05, 0.1, 0.98)
-    
-    -- Border (3.3.5a compatible)
-    local border = CreateFrame("Frame", nil, dialog)
-    border:SetAllPoints()
-    border:SetBackdrop({
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    -- Background + border (match DC-Leaderboards)
+    dialog:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    border:SetBackdropBorderColor(0.4, 0.7, 1.0, 0.9)
+    dialog:SetBackdropColor(0, 0, 0, 0)
+
+    local bg = dialog:CreateTexture(nil, "BACKGROUND", nil, 0)
+    bg:SetAllPoints()
+        bg:SetTexture("Interface\\AddOns\\DC-MythicPlus\\Textures\\Backgrounds\\FelLeather_512.tga")
+    if bg.SetHorizTile then bg:SetHorizTile(false) end
+    if bg.SetVertTile then bg:SetVertTile(false) end
+
+    local tint = dialog:CreateTexture(nil, "BACKGROUND", nil, 1)
+    tint:SetAllPoints()
+    tint:SetTexture(0, 0, 0, 0.60)
+
+    dialog.__dcBg = bg
+    dialog.__dcTint = tint
     
     -- Title
     local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

@@ -86,10 +86,26 @@ local SelectedInfoPanel = CreateFrame("Frame", "GOMove_UI_SelectedInfo", MainFra
 SelectedInfoPanel:SetSize(250, 70)
 SelectedInfoPanel:SetPoint("TOPLEFT", MainFrame, "TOPRIGHT", 6, -8)
 SelectedInfoPanel:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", tile = true, tileSize = 16,
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
-    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", tile = true, tileSize = 32,
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border", edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 },
 })
+
+do
+    local bg = SelectedInfoPanel:CreateTexture(nil, "BACKGROUND", nil, 0)
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\AddOns\\DC-GM\\Textures\\Backgrounds\\FelLeather_512.tga")
+    if bg.SetHorizTile then bg:SetHorizTile(false) end
+    if bg.SetVertTile then bg:SetVertTile(false) end
+
+    local tint = SelectedInfoPanel:CreateTexture(nil, "BACKGROUND", nil, 1)
+    tint:SetAllPoints()
+    tint:SetTexture(0, 0, 0, 0.60)
+
+    SelectedInfoPanel:SetBackdropColor(0, 0, 0, 0)
+    SelectedInfoPanel.__dcBg = bg
+    SelectedInfoPanel.__dcTint = tint
+end
 SelectedInfoPanel:Hide()
 
 local SelInfoTitle = SelectedInfoPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")

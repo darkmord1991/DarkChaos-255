@@ -2747,6 +2747,57 @@ local function DarkChaos_ItemUpgrade_BuildStatComparison(item, targetLevel)
 end
 
 function DarkChaos_ItemUpgrade_OnLoad(self)
+	local BG_FELLEATHER = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Backgrounds\\FelLeather_512.tga";
+	local BG_TINT_ALPHA = 0.60;
+	local function ApplyLeaderboardsStyle(frame)
+		if not frame or frame.__dcLeaderboardsStyled then
+			return;
+		end
+		frame.__dcLeaderboardsStyled = true;
+
+		if frame.SetBackdropColor then
+			frame:SetBackdropColor(0, 0, 0, 0);
+		end
+
+		local bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8);
+		bg:SetAllPoints();
+		bg:SetTexture(BG_FELLEATHER);
+
+		local tint = frame:CreateTexture(nil, "BACKGROUND", nil, -7);
+		tint:SetAllPoints(bg);
+		tint:SetTexture(0, 0, 0, BG_TINT_ALPHA);
+	end
+
+	local function ApplyLeaderboardsInsetPanel(frame)
+		if not frame then
+			return;
+		end
+		if frame.SetBackdrop then
+			frame:SetBackdrop({
+				bgFile = "Interface\\Buttons\\WHITE8X8",
+				edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+				tile = true,
+				tileSize = 32,
+				edgeSize = 32,
+				insets = { left = 11, right = 12, top = 12, bottom = 11 },
+			});
+		end
+		if frame.SetBackdropColor then
+			frame:SetBackdropColor(0, 0, 0, 0);
+		end
+		if frame.SetBackdropBorderColor then
+			frame:SetBackdropBorderColor(1, 1, 1, 1);
+		end
+		ApplyLeaderboardsStyle(frame);
+	end
+
+	ApplyLeaderboardsStyle(self);
+	ApplyLeaderboardsInsetPanel(self.CurrentPanel);
+	ApplyLeaderboardsInsetPanel(self.UpgradePanel);
+
+	ApplyLeaderboardsStyle(_G["DarkChaos_ItemUpgrade_DebugFrame"]);
+	ApplyLeaderboardsStyle(_G["DarkChaos_ItemBrowserFrame"]);
+
 	self:RegisterForDrag("LeftButton");
 	self:SetMovable(true);
 	self:EnableMouse(true);

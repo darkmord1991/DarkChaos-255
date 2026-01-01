@@ -11,6 +11,28 @@ if not DC then return end
 DC.Wardrobe = DC.Wardrobe or {}
 local Wardrobe = DC.Wardrobe
 
+local BG_FELLEATHER = "Interface\\AddOns\\DC-Collection\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
+local function ApplyLeaderboardsStyle(frame)
+    if not frame or frame.__dcLeaderboardsStyled then
+        return
+    end
+    frame.__dcLeaderboardsStyled = true
+
+    if frame.SetBackdropColor then
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+
+    frame.bg = frame.bg or frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+    frame.bg:SetAllPoints()
+    frame.bg:SetTexture(BG_FELLEATHER)
+
+    frame.bgTint = frame.bgTint or frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+    frame.bgTint:SetAllPoints(frame.bg)
+    frame.bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+end
+
 local INVTYPE_LABELS = {
     [0]  = "Unknown",
     [1]  = "Head",
@@ -88,18 +110,24 @@ function Wardrobe:CreateFrame()
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
 
+    local BG_FELLEATHER = "Interface\\AddOns\\DC-Leaderboards\\Textures\\Backgrounds\\FelLeather_512.tga"
+    local BG_TINT_ALPHA = 0.60
+
     frame:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    frame:SetBackdropColor(0, 0, 0, 1)
+    frame:SetBackdropColor(0, 0, 0, 0)
 
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
-    frame.bg:SetPoint("TOPLEFT", 10, -10)
-    frame.bg:SetPoint("BOTTOMRIGHT", -10, 10)
-    frame.bg:SetTexture(0, 0, 0, 0.95)
+    frame.bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+    frame.bg:SetAllPoints()
+    frame.bg:SetTexture(BG_FELLEATHER)
+
+    frame.bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+    frame.bgTint:SetAllPoints(frame.bg)
+    frame.bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
 
     frame.portrait = frame:CreateTexture(nil, "ARTWORK")
     frame.portrait:SetSize(60, 60)
@@ -169,6 +197,7 @@ function Wardrobe:SetEmbeddedMode(isEmbedded, host)
         if frame.portrait then frame.portrait:Hide() end
         if frame.portraitBorder then frame.portraitBorder:Hide() end
         if frame.bg then frame.bg:Hide() end
+        if frame.bgTint then frame.bgTint:Hide() end
 
         frame:SetBackdrop(nil)
 
@@ -197,12 +226,14 @@ function Wardrobe:SetEmbeddedMode(isEmbedded, host)
         if frame.bg then frame.bg:Show() end
 
         frame:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+            bgFile = "Interface\\Buttons\\WHITE8X8",
             edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
             tile = true, tileSize = 32, edgeSize = 32,
             insets = { left = 11, right = 12, top = 12, bottom = 11 }
         })
-        frame:SetBackdropColor(0, 0, 0, 1)
+        frame:SetBackdropColor(0, 0, 0, 0)
+
+        ApplyLeaderboardsStyle(frame)
 
         SetSpecialFrameRegistered("DCWardrobeFrame", true)
 
@@ -953,13 +984,14 @@ function Wardrobe:CreateRightPanel(parent)
     
     -- Add backdrop for visual separation
     gridContainer:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 16,
-        insets = { left = 5, right = 5, top = 5, bottom = 5 }
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    gridContainer:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-    gridContainer:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
+    gridContainer:SetBackdropColor(0, 0, 0, 0)
+
+    ApplyLeaderboardsStyle(gridContainer)
     parent.gridContainer = gridContainer
 
     local gridFrame = CreateFrame("Frame", nil, gridContainer)
@@ -1313,17 +1345,14 @@ function Wardrobe:ShowTooltipPreview(itemId)
         frame:SetFrameStrata("TOOLTIP")
 
         frame:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+            bgFile = "Interface\\Buttons\\WHITE8X8",
             edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true, tileSize = 32, edgeSize = 24,
-            insets = { left = 8, right = 8, top = 8, bottom = 8 }
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 }
         })
-        frame:SetBackdropColor(0, 0, 0, 0.95)
+        frame:SetBackdropColor(0, 0, 0, 0)
 
-        frame.innerBg = frame:CreateTexture(nil, "BACKGROUND", nil, -6)
-        frame.innerBg:SetPoint("TOPLEFT", 10, -10)
-        frame.innerBg:SetPoint("BOTTOMRIGHT", -10, 10)
-        frame.innerBg:SetTexture(0.05, 0.05, 0.05, 0.85)
+        ApplyLeaderboardsStyle(frame)
 
         -- Preview model
         local model = CreateFrame("DressUpModel", nil, frame)

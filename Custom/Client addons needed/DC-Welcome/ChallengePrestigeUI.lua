@@ -419,6 +419,8 @@ function UI:EnsureFrame()
 	local f = CreateFrame("Frame", "DCWelcome_ChallengePrestigeFrame", UIParent)
 	f:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
 	f:SetPoint("CENTER", 0, 0)
+	local BG_FELLEATHER = "Interface\\AddOns\\DC-Welcome\\Textures\\Backgrounds\\FelLeather_512.tga"
+	local BG_TINT_ALPHA = 0.60
 	f:SetBackdrop({
 		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
 		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -427,7 +429,15 @@ function UI:EnsureFrame()
 		edgeSize = 32,
 		insets = { left = 11, right = 12, top = 12, bottom = 11 }
 	})
-	f:SetBackdropColor(0, 0, 0, 0.92)
+	f:SetBackdropColor(0, 0, 0, 0)
+
+	f.bg = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+	f.bg:SetAllPoints()
+	f.bg:SetTexture(BG_FELLEATHER)
+
+	f.bgTint = f:CreateTexture(nil, "BACKGROUND", nil, -7)
+	f.bgTint:SetAllPoints(f.bg)
+	f.bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
 	f:Hide()
 
 	f:SetMovable(true)

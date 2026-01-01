@@ -18,6 +18,32 @@ GF.TAB_NAMES = { "Mythic+", "Raids", "World", "Live Runs", "Scheduled", "My Queu
 GF.TABS = {}
 GF.currentTab = 1
 
+-- Match DC-Leaderboards UI style across DC addons
+local BG_FELLEATHER = "Interface\\AddOns\\DC-MythicPlus\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
+local function ApplyLeaderboardsStyle(frame)
+    if not frame or frame.__dcLeaderboardsStyle then return end
+    frame.__dcLeaderboardsStyle = true
+
+    if frame.SetBackdropColor then
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    bg:SetAllPoints()
+    bg:SetTexture(BG_FELLEATHER)
+    if bg.SetHorizTile then bg:SetHorizTile(false) end
+    if bg.SetVertTile then bg:SetVertTile(false) end
+
+    local tint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    tint:SetAllPoints()
+    tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+
+    frame.__dcBg = bg
+    frame.__dcTint = tint
+end
+
 -- =====================================================================
 -- Print Helper
 -- =====================================================================
@@ -56,7 +82,7 @@ function GF:CreateMainFrame()
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    frame:SetBackdropColor(0, 0, 0, 1)
+    ApplyLeaderboardsStyle(frame)
 
     -- Title Header Background
     local titleBg = frame:CreateTexture(nil, "ARTWORK")
@@ -389,7 +415,7 @@ function GF:ShowApplicationDialog(listingId, dungeonName)
             tile = true, tileSize = 32, edgeSize = 32,
             insets = { left = 11, right = 12, top = 12, bottom = 11 }
         })
-        frame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+        ApplyLeaderboardsStyle(frame)
         
         -- Title
         local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

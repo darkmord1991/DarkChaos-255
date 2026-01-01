@@ -8,6 +8,32 @@ _G.DCMythicPlusHUD = namespace
 local GF = namespace.GroupFinder
 if not GF then return end
 
+-- Match DC-Leaderboards UI style across DC addons
+local BG_FELLEATHER = "Interface\\AddOns\\DC-MythicPlus\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
+local function ApplyLeaderboardsStyle(frame)
+    if not frame or frame.__dcLeaderboardsStyle then return end
+    frame.__dcLeaderboardsStyle = true
+
+    if frame.SetBackdropColor then
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    bg:SetAllPoints()
+    bg:SetTexture(BG_FELLEATHER)
+    if bg.SetHorizTile then bg:SetHorizTile(false) end
+    if bg.SetVertTile then bg:SetVertTile(false) end
+
+    local tint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    tint:SetAllPoints()
+    tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+
+    frame.__dcBg = bg
+    frame.__dcTint = tint
+end
+
 -- =====================================================================
 -- Helper Functions for Friend/Guild checking
 -- =====================================================================
@@ -1683,20 +1709,13 @@ function GF:CreateApplicantPanel()
     frame:SetClampedToScreen(true)
     frame:Hide()
     
-    -- Background (3.3.5a compatible - use SetTexture with RGBA)
-    frame.bg = frame:CreateTexture(nil, "BACKGROUND")
-    frame.bg:SetAllPoints()
-    frame.bg:SetTexture(0.05, 0.05, 0.08, 0.95)
-    
-    -- Border (3.3.5a compatible - use SetBackdrop on frame directly)
     frame:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 14,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    frame:SetBackdropColor(0.05, 0.05, 0.08, 0.95)
-    frame:SetBackdropBorderColor(0.6, 0.5, 0.3, 1)
+    ApplyLeaderboardsStyle(frame)
     
     -- Title bar
     local titleBar = CreateFrame("Frame", nil, frame)

@@ -14,6 +14,7 @@ local L = DC.L
 local addonNameGlobal = ...
 local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection") .. "\\"
 local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
+local ICON_COLLECTION = ADDON_PATH .. "Textures\\Icons\\Collection_64.tga"
 local BG_TINT_ALPHA = 0.60
 
 local function SetWidgetEnabled(widget, enabled)
@@ -206,7 +207,8 @@ function DC:CreateMainFrame()
     end
     
     -- Create main frame
-    local frame = CreateFrame("Frame", "DCCollectionFrame", UIParent, "UIPanelDialogTemplate")
+    local frame = CreateFrame("Frame", "DCCollectionFrame", UIParent)
+    frame:SetFrameStrata("HIGH")
     frame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
@@ -217,43 +219,37 @@ function DC:CreateMainFrame()
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
 
-    -- Hide the template's default background so our FelLeather + tint matches DC-Welcome.
-    local frameName = frame:GetName()
-    if frameName then
-        local templateBg = _G[frameName .. "Bg"] or _G[frameName .. "Background"] or _G[frameName .. "DialogBG"]
-        if templateBg and templateBg.SetAlpha then
-            templateBg:SetAlpha(0)
-        end
-    end
-    if frame.SetBackdropColor then
-        frame:SetBackdropColor(0, 0, 0, 0)
-    end
-
-    -- FelLeather background (stretched)
+    -- Background (match DC-Leaderboards: full-frame texture + tint)
     frame.bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
-    frame.bg:SetPoint("TOPLEFT", 12, -12)
-    frame.bg:SetPoint("BOTTOMRIGHT", -12, 12)
+    frame.bg:SetAllPoints()
     frame.bg:SetTexture(BG_FELLEATHER)
     if frame.bg.SetHorizTile then frame.bg:SetHorizTile(false) end
     if frame.bg.SetVertTile then frame.bg:SetVertTile(false) end
 
-    -- Dark tint overlay for readability
     frame.bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    frame.bgTint:SetPoint("TOPLEFT", 12, -12)
-    frame.bgTint:SetPoint("BOTTOMRIGHT", -12, 12)
+    frame.bgTint:SetAllPoints()
     frame.bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
 
-    -- Portrait (Retail style)
-    local portrait = frame:CreateTexture(nil, "ARTWORK")
-    portrait:SetSize(60, 60)
-    portrait:SetPoint("TOPLEFT", -5, 7)
-    portrait:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
-    
-    -- Circular mask/border for portrait
+    -- Border (match DC-Leaderboards)
+    frame.border = CreateFrame("Frame", nil, frame)
+    frame.border:SetAllPoints()
+    frame.border:SetBackdrop({
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+
+    -- Portrait (fit inside circular border)
     local portraitFrame = frame:CreateTexture(nil, "OVERLAY")
     portraitFrame:SetSize(80, 80)
-    portraitFrame:SetPoint("TOPLEFT", -14, 14)
+    portraitFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -8)
     portraitFrame:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+
+    local portrait = frame:CreateTexture(nil, "ARTWORK")
+    portrait:SetSize(52, 52)
+    portrait:SetPoint("CENTER", portraitFrame, "CENTER", 0, 0)
+    portrait:SetTexture(ICON_COLLECTION)
+    portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     
     frame.portrait = portrait
 
@@ -291,11 +287,10 @@ function DC:CreateMainFrame()
     frame.topLoadText:SetTextColor(1, 0.82, 0)
     frame.topLoadText:SetText("")
     
-    -- Close button hook
-    frame.Close = _G[frame:GetName() .. "Close"]
-    if frame.Close then
-        frame.Close:SetScript("OnClick", function() DC:HideMainFrame() end)
-    end
+    -- Close button
+    frame.Close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    frame.Close:SetPoint("TOPRIGHT", -5, -5)
+    frame.Close:SetScript("OnClick", function() DC:HideMainFrame() end)
     
     -- Create header section
     self:CreateHeader(frame)
@@ -2747,17 +2742,20 @@ function DC:ShowHeirloomPreview(itemId, options)
         frame:Hide()
 
         frame:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+            bgFile = "Interface\\Buttons\\WHITE8X8",
             edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
             tile = true, tileSize = 32, edgeSize = 32,
             insets = { left = 11, right = 12, top = 12, bottom = 11 }
         })
-        frame:SetBackdropColor(0, 0, 0, 0.95)
+        frame:SetBackdropColor(0, 0, 0, 0)
 
-        frame.innerBg = frame:CreateTexture(nil, "BACKGROUND", nil, -6)
-        frame.innerBg:SetPoint("TOPLEFT", 12, -12)
-        frame.innerBg:SetPoint("BOTTOMRIGHT", -12, 12)
-        frame.innerBg:SetTexture(0.05, 0.05, 0.05, 0.85)
+        frame.bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+        frame.bg:SetAllPoints()
+        frame.bg:SetTexture(BG_FELLEATHER)
+
+        frame.bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+        frame.bgTint:SetAllPoints(frame.bg)
+        frame.bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
 
         local model = CreateFrame("DressUpModel", nil, frame)
         model:SetPoint("TOPLEFT", 18, -20)

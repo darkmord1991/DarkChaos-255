@@ -172,10 +172,26 @@ function MyCollection:Create(parent)
     recentContainer.bg = recentContainer:CreateTexture(nil, "BACKGROUND")
     recentContainer.bg:SetAllPoints()
     recentContainer.bg:SetTexture(0, 0, 0, 0.3)
+
+    recentContainer.emptyText = recentContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    recentContainer.emptyText:SetPoint("CENTER", recentContainer, "CENTER", 0, 0)
+    recentContainer.emptyText:SetTextColor(0.7, 0.7, 0.7)
+    recentContainer.emptyText:SetText("No recent additions yet.")
+    recentContainer.emptyText:Hide()
     
     frame.recentContainer = recentContainer
     frame.recentIcons = {}
     self:CreateRecentIcons(frame)
+
+    -- Refresh recent icons as item info streams in.
+    local itemInfoListener = CreateFrame("Frame", nil, frame)
+    itemInfoListener:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    itemInfoListener:SetScript("OnEvent", function()
+        if frame:IsShown() then
+            self:UpdateRecentIcons()
+        end
+    end)
+    frame.itemInfoListener = itemInfoListener
 
     self.frame = frame
     return frame
@@ -550,6 +566,14 @@ function MyCollection:UpdateRecentIcons()
         else
             btn:Hide()
             btn.itemData = nil
+        end
+    end
+
+    if self.frame.recentContainer and self.frame.recentContainer.emptyText then
+        if recent and #recent > 0 then
+            self.frame.recentContainer.emptyText:Hide()
+        else
+            self.frame.recentContainer.emptyText:Show()
         end
     end
 end

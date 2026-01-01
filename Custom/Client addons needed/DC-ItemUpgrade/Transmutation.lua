@@ -23,12 +23,36 @@ local OPCODE_SMSG_OPEN_TRANSMUTE_UI  = 0x32;
 local currentExchangeRates = { tokensToEssence = 100, essenceToTokens = 80 };
 local currentStatus = {};
 
+local BG_FELLEATHER = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Backgrounds\\FelLeather_512.tga";
+local BG_TINT_ALPHA = 0.60;
+
+local function ApplyLeaderboardsStyle(frame)
+    if not frame or frame.__dcLeaderboardsStyled then
+        return
+    end
+    frame.__dcLeaderboardsStyled = true
+
+    if frame.SetBackdropColor then
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+    bg:SetAllPoints()
+    bg:SetTexture(BG_FELLEATHER)
+
+    local tint = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+    tint:SetAllPoints(bg)
+    tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+end
+
 -- ============================================================================
 -- Initialization
 -- ============================================================================
 
 function DarkChaos_Transmutation_OnLoad(self)
     self:RegisterForDrag("LeftButton");
+
+    ApplyLeaderboardsStyle(self);
     
     -- Register with DCAddonProtocol if available
     local DCProtocol = rawget(_G, "DCAddonProtocol");

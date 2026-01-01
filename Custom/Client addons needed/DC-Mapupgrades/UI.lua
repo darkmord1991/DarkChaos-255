@@ -3,18 +3,49 @@ addonTable = addonTable or {}
 local UI = {}
 addonTable.UI = UI
 
+-- Match DC-Leaderboards UI style across DC addons
+local BG_FELLEATHER = "Interface\\AddOns\\DC-Mapupgrades\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
+local function ApplyLeaderboardsStyle(frame)
+    if not frame or frame.__dcLeaderboardsStyle then return end
+    frame.__dcLeaderboardsStyle = true
+
+    if frame.SetBackdropColor then
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    bg:SetAllPoints()
+    bg:SetTexture(BG_FELLEATHER)
+    if bg.SetHorizTile then bg:SetHorizTile(false) end
+    if bg.SetVertTile then bg:SetVertTile(false) end
+
+    local tint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    tint:SetAllPoints()
+    tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+
+    frame.__dcBg = bg
+    frame.__dcTint = tint
+end
+
 -- Track whether player is currently in a hotspot (based on server messages)
 local playerInHotspot = false
 local currentHotspotBonus = 100
 
 local function PlayerCanGainXP()
-    if IsXPUserDisabled and IsXPUserDisabled() then
-        return false
-    end
     if not UnitXPMax then
         return true
     end
     local xpMax = UnitXPMax("player")
+    -- On some servers (e.g., custom max level 255), the client can report 0 max XP at
+    -- cap. Hotspots can still be useful then, so don't treat 0 as "cannot show".
+    if xpMax == 0 then
+        return true
+    end
+    if IsXPUserDisabled and IsXPUserDisabled() then
+        return false
+    end
     return xpMax and xpMax > 0
 end
 
@@ -56,12 +87,6 @@ function UI:HotspotMatchesPlayerZone(info)
     local playerZone = PlayerZoneNameForMatch()
     if not playerZone then
         return false
-    end
-
-    local zoneId = tonumber(info.zoneId)
-    local playerMapId = (GetCurrentMapAreaID and tonumber(GetCurrentMapAreaID())) or nil
-    if zoneId and playerMapId and zoneId > 0 and playerMapId > 0 and zoneId == playerMapId then
-        return true
     end
 
     local hotspotZone = NormalizeZoneNameForMatch(info.zone)
@@ -371,8 +396,24 @@ function UI:Init(state)
             return
         end
 
+        if sub == "debug" then
+            -- Toggle debug mode
+            if UI.state and UI.state.db then
+                UI.state.db.debug = not UI.state.db.debug
+                Print("Debug mode: " .. tostring(UI.state.db.debug))
+                -- Force refresh of world pins to trigger debug output
+                if addonTable.Pins and addonTable.Pins.UpdateWorldPins then
+                    addonTable.Pins:UpdateWorldPins()
+                end
+            else
+                Print("Settings not loaded")
+            end
+            return
+        end
+
         if sub == "help" or sub == "" then
             Print("Commands:")
+            Print("  /dcmap debug             (toggle debug output)")
             Print("  /dcmap add boss <name>   (adds spawn at your position)")
             Print("  /dcmap add rare <name>")
             Print("  /dcmap importbosses      (optional: import boss list/status from DC-InfoBar)")
@@ -531,13 +572,12 @@ function UI:EnsurePopup()
     frame:SetSize(320, 90)
     frame:SetPoint("TOP", UIParent, "TOP", 0, -160)
     frame:SetBackdrop({
-        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    frame:SetBackdropColor(0, 0, 0, 0.85)
-    frame:SetBackdropBorderColor(1, 0.84, 0, 1)
+    ApplyLeaderboardsStyle(frame)
     frame:Hide()
 
     frame.icon = frame:CreateTexture(nil, "ARTWORK")
@@ -589,13 +629,12 @@ function UI:EnsureListFrame()
     f:SetSize(320, 220)
     f:SetPoint("CENTER", UIParent, "CENTER")
     f:SetBackdrop({
-        bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    f:SetBackdropColor(0, 0, 0, 0.85)
-    f:SetBackdropBorderColor(1, 0.84, 0, 1)
+    ApplyLeaderboardsStyle(f)
     f:Hide()
 
     f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -721,6 +760,10 @@ function UI:OnHotspotSpawn(id, info, shouldAnnounce)
     end
     
     self:RefreshList()
+
+    if addonTable and addonTable.Pins and addonTable.Pins.Refresh then
+        addonTable.Pins:Refresh()
+    end
 end
 
 function UI:OnHotspotExpire(id, info)
@@ -739,6 +782,10 @@ function UI:OnHotspotExpire(id, info)
         SafePlaySound(self.state.db.expireSound)
     end
     self:RefreshList()
+
+    if addonTable and addonTable.Pins and addonTable.Pins.Refresh then
+        addonTable.Pins:Refresh()
+    end
 end
 
 function UI:OnHotspotsChanged()
@@ -746,6 +793,10 @@ function UI:OnHotspotsChanged()
         return
     end
     self:RefreshList()
+
+    if addonTable and addonTable.Pins and addonTable.Pins.Refresh then
+        addonTable.Pins:Refresh()
+    end
 end
 
 return UI

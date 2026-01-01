@@ -650,20 +650,45 @@ local function NormalizeNumber(value)
     return tonumber(value)
 end
 
+local function LooksLikeZoneId(value)
+    local n = tonumber(value)
+    if not n then
+        return false
+    end
+    -- Zone/Area IDs are integers and typically not huge.
+    if n ~= math.floor(n) then
+        return false
+    end
+    return n > 0 and n < 1000000
+end
+
 local function BuildHotspotRecord(payload)
     if payload and type(payload) == "table" and type(payload.hotspot) == "table" then
         -- Server may wrap hotspot details in { hotspot = { ... } }
         payload = payload.hotspot
     end
 
-    -- Support short keys (i,m,z,n,h,t,b) and long keys for backward compatibility
+    -- Support short keys (i,m,z,n,h,t,b) and long keys for backward compatibility.
+    -- NOTE: Some payloads use `z` for height (world Z), not zoneId; prefer zone/zoneId.
     local id = NormalizeNumber(payload.i or payload.id)
     if not id then return nil end
 
     local dur = NormalizeNumber(payload.t or payload.dur or payload.timeRemaining) or 0
     local nowSession = GetTime()
     local nowEpoch = NowEpoch()
-    local zoneId = NormalizeNumber(payload.z or payload.zone or payload.zoneId)
+    local zoneId = NormalizeNumber(payload.zoneId or payload.zone)
+    if not zoneId and LooksLikeZoneId(payload.z) then
+        zoneId = NormalizeNumber(payload.z)
+    end
+
+    local heightZ = NormalizeNumber(payload.h or payload.height)
+    if not heightZ then
+        local z = NormalizeNumber(payload.z)
+        -- Only treat payload.z as height if it wasn't used as zoneId.
+        if z and (not zoneId or z ~= zoneId) and (not LooksLikeZoneId(z)) then
+            heightZ = z
+        end
+    end
     local record = {
         id = id,
         map = NormalizeNumber(payload.m or payload.map or payload.mapId),
@@ -671,7 +696,7 @@ local function BuildHotspotRecord(payload)
         zone = ResolveZoneName(zoneId, payload.n or payload.zonename or payload.zoneName),
         x = NormalizeNumber(payload.x),
         y = NormalizeNumber(payload.y),
-        z = NormalizeNumber(payload.h or payload.z),  -- 'h' for height in short form
+        z = heightZ,
         nx = NormalizeNumber(payload.nx),
         ny = NormalizeNumber(payload.ny),
         bonus = NormalizeNumber(payload.b or payload.bonus or payload.bonusPercent) or state.config.experienceBonus,

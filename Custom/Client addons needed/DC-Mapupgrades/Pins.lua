@@ -117,13 +117,18 @@ local function SafeClassName(classId)
 end
 
 local function PlayerCanGainXP()
-    if IsXPUserDisabled and IsXPUserDisabled() then
-        return false
-    end
     if not UnitXPMax then
         return true
     end
     local xpMax = UnitXPMax("player")
+    -- On some servers (e.g., custom max level 255), the client can report 0 max XP at
+    -- cap, which would incorrectly hide all hotspot pins.
+    if xpMax == 0 then
+        return true
+    end
+    if IsXPUserDisabled and IsXPUserDisabled() then
+        return false
+    end
     return xpMax and xpMax > 0
 end
 
@@ -272,10 +277,11 @@ end
 -- Continent map IDs in WoW 3.3.5 (these are the MapAreaIDs for continent-level views)
 -- IMPORTANT: GetCurrentMapAreaID returns different IDs than server continent IDs!
 -- When viewing the world map at continent level (zoomed out), these are the MapAreaIDs:
+-- NOTE: Do NOT include 0, 1, 530, 571 here - those are server continent IDs in hotspot.map,
+--       NOT client MapAreaIDs returned by GetCurrentMapAreaID()
 local CONTINENT_MAP_IDS = {
     -- WoW 3.3.5 continent view MapAreaIDs
     [-1] = true,   -- Cosmic/World view
-    [0] = true,    -- Azeroth (if used)
     [13] = true,   -- Kalimdor continent view (GetCurrentMapAreaID when zoomed out)
     [14] = true,   -- Eastern Kingdoms continent view
     [466] = true,  -- Outland continent view
@@ -333,6 +339,22 @@ local function HotspotMatchesMap(hotspot, mapId, showAll)
         DebugPrint("Direct match: map", mapId, "== zone", hotspotZone)
         return true
     end
+
+    -- Strategy 4: Name-based match (fallback)
+    -- Some servers send zone IDs that don't line up with our MAP_TO_ZONE table.
+    -- If the hotspot's resolved zone label matches the client map name for the
+    -- currently viewed map, treat it as a match.
+    if hotspot.zone and GetMapNameByID then
+        local mapName = GetMapNameByID(mapId)
+        if mapName and mapName ~= "" then
+            local a = string.lower(tostring(hotspot.zone))
+            local b = string.lower(tostring(mapName))
+            if a == b then
+                DebugPrint("Match via name: map", mapId, "name", mapName)
+                return true
+            end
+        end
+    end
     
     -- Don't show pins that don't match - removed the aggressive continent matching
     -- that was showing pins everywhere
@@ -378,8 +400,9 @@ local function ResolveTexture(state, hotspot)
         return custom
     end
     if style == "xp" then
-        -- Experience/bonus themed icons
-        return "Interface\\Icons\\Spell_Holy_SurgeOfLight"  -- Golden glowing orb
+        -- Experience/bonus themed icon (default)
+        -- Stored in this addon: Interface\AddOns\DC-Mapupgrades\Textures\MapIcons\Simple_XP\Icon_64.tga
+        return "Interface\\AddOns\\DC-Mapupgrades\\Textures\\MapIcons\\Simple_XP\\Icon_64"
     elseif style == "star" then
         return "Interface\\TARGETINGFRAME\\UI-RaidTargetingIcon_1"  -- Yellow star
     elseif style == "diamond" then
@@ -412,7 +435,7 @@ local function ResolveTexture(state, hotspot)
         local tex = GetSpellTexture(hotspot.icon)
         if tex then return tex end
     end
-    return "Interface\\Icons\\Spell_Holy_SurgeOfLight"  -- Default to golden orb
+    return "Interface\\AddOns\\DC-Mapupgrades\\Textures\\MapIcons\\Simple_XP\\Icon_64"
 end
 
 local function CopyTable(tbl)
@@ -923,7 +946,7 @@ end
 -- Internal function that actually updates the pins (called via debounce)
 function Pins:UpdateWorldPinsInternal()
     local db = self.state.db
-    if not db or not db.showWorldPins or not WorldMapFrame then
+    if not db or not db.showWorldPins or not WorldMapFrame or (WorldMapFrame.IsShown and not WorldMapFrame:IsShown()) then
         -- Hide all pins if world pins are disabled
         for id, pin in pairs(self.worldPins) do
             pin:Hide()
@@ -946,6 +969,10 @@ function Pins:UpdateWorldPinsInternal()
     local seen = {}
     local visibleCount = 0
     local showAll = db and db.showAllMaps
+
+    local dbgNoMatch, dbgNoCoords, dbgNoParent, dbgGated = 0, 0, 0, 0
+    local dbgSample
+    local dbgNoMatchSample
     
     DebugPrint("UpdateWorldPins: Processing", self:CountHotspots(), "hotspots for map", activeMapId)
     
@@ -962,16 +989,40 @@ function Pins:UpdateWorldPinsInternal()
     end
 
     local canShowHotspots = PlayerCanGainXP()
+    if db.debug and self._dbgXpGateMapId ~= activeMapId then
+        self._dbgXpGateMapId = activeMapId
+        local xpMax = UnitXPMax and UnitXPMax("player") or nil
+        local xpDisabled = (IsXPUserDisabled and IsXPUserDisabled()) or false
+        DebugPrint("Hotspot gate:", "xpMax=" .. tostring(xpMax), "xpDisabled=" .. tostring(xpDisabled), "canShowHotspots=" .. tostring(canShowHotspots))
+    end
     
     for id, hotspot in pairs(self.state.hotspots) do
         local pin = self:AcquireWorldPin(id, hotspot)
         if pin then
             if not canShowHotspots then
+                dbgGated = dbgGated + 1
                 pin:Hide()
             else
                 local matches = HotspotMatchesMap(hotspot, activeMapId, showAll)
             
                 if not matches then
+                    dbgNoMatch = dbgNoMatch + 1
+                    if db.debug and not dbgNoMatchSample then
+                        local expectedZone = MAP_TO_ZONE and MAP_TO_ZONE[activeMapId]
+                        local learned = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
+                        local resolvedZoneId = learned or CUSTOM_ZONE_MAPPING[activeMapId] or activeMapId
+                        local mapName = (GetMapNameByID and GetMapNameByID(activeMapId)) or nil
+                        dbgNoMatchSample = {
+                            id = id,
+                            hotspotZoneId = hotspot and hotspot.zoneId,
+                            hotspotMap = hotspot and hotspot.map,
+                            hotspotZone = hotspot and hotspot.zone,
+                            activeMapId = activeMapId,
+                            activeMapName = mapName,
+                            expectedZone = expectedZone,
+                            resolvedZoneId = resolvedZoneId,
+                        }
+                    end
                     pin:Hide()
                 else
                     local nx, ny = NormalizeCoords(hotspot)
@@ -1015,9 +1066,23 @@ function Pins:UpdateWorldPinsInternal()
                             pin:Show()
                             seen[id] = true
                         else
+                            dbgNoParent = dbgNoParent + 1
                             pin:Hide()
                         end
                     else
+                        dbgNoCoords = dbgNoCoords + 1
+                        if db.debug and not dbgSample then
+                            dbgSample = {
+                                id = id,
+                                zoneId = hotspot and hotspot.zoneId,
+                                map = hotspot and hotspot.map,
+                                x = hotspot and hotspot.x,
+                                y = hotspot and hotspot.y,
+                                nx = hotspot and hotspot.nx,
+                                ny = hotspot and hotspot.ny,
+                                zone = hotspot and hotspot.zone,
+                            }
+                        end
                         pin:Hide()
                     end
                 end
@@ -1129,6 +1194,38 @@ function Pins:UpdateWorldPinsInternal()
     end
 
     DebugPrint("UpdateWorldPins: Map", activeMapId, "- Showing", visibleCount, "of", self:CountHotspots(), "pins")
+
+    if db.debug then
+        DebugPrint("Hotspot summary:",
+            "total=" .. tostring(self:CountHotspots()),
+            "shown=" .. tostring(visibleCount),
+            "gated=" .. tostring(dbgGated),
+            "noMatch=" .. tostring(dbgNoMatch),
+            "noCoords=" .. tostring(dbgNoCoords),
+            "noParent=" .. tostring(dbgNoParent))
+        if dbgSample then
+            DebugPrint("Hotspot sample:",
+                "id=" .. tostring(dbgSample.id),
+                "zoneId=" .. tostring(dbgSample.zoneId),
+                "map=" .. tostring(dbgSample.map),
+                "x=" .. tostring(dbgSample.x),
+                "y=" .. tostring(dbgSample.y),
+                "nx=" .. tostring(dbgSample.nx),
+                "ny=" .. tostring(dbgSample.ny),
+                "zone=" .. tostring(dbgSample.zone))
+        end
+        if dbgNoMatchSample then
+            DebugPrint("NoMatch sample:",
+                "id=" .. tostring(dbgNoMatchSample.id),
+                "hs.zoneId=" .. tostring(dbgNoMatchSample.hotspotZoneId),
+                "hs.map=" .. tostring(dbgNoMatchSample.hotspotMap),
+                "hs.zone=" .. tostring(dbgNoMatchSample.hotspotZone),
+                "activeMapId=" .. tostring(dbgNoMatchSample.activeMapId),
+                "activeMapName=" .. tostring(dbgNoMatchSample.activeMapName),
+                "expectedZone=" .. tostring(dbgNoMatchSample.expectedZone),
+                "resolvedZoneId=" .. tostring(dbgNoMatchSample.resolvedZoneId))
+        end
+    end
 
     -- Hide or destroy pins for hotspots that no longer exist or don't match the map
     for id, pin in pairs(self.worldPins) do

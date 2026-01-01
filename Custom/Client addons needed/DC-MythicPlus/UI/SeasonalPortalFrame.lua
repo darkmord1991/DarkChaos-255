@@ -116,6 +116,32 @@ local function setButtonEnabled(button, enabled)
     end
 end
 
+-- Match DC-Leaderboards UI style across DC addons
+local BG_FELLEATHER = "Interface\\AddOns\\DC-MythicPlus\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
+local function ApplyLeaderboardsStyle(frame)
+    if not frame or frame.__dcLeaderboardsStyle then return end
+    frame.__dcLeaderboardsStyle = true
+
+    if frame.SetBackdropColor then
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    bg:SetAllPoints()
+    bg:SetTexture(BG_FELLEATHER)
+    if bg.SetHorizTile then bg:SetHorizTile(false) end
+    if bg.SetVertTile then bg:SetVertTile(false) end
+
+    local tint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    tint:SetAllPoints()
+    tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+
+    frame.__dcBg = bg
+    frame.__dcTint = tint
+end
+
 local function ensureFrame()
     if frame then return frame end
 
@@ -136,7 +162,7 @@ local function ensureFrame()
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    frame:SetBackdropColor(0, 0, 0, 1)
+    ApplyLeaderboardsStyle(frame)
 
     -- Close Button
     frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")

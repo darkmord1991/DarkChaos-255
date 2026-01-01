@@ -2592,11 +2592,17 @@ function DC:ShowLogPanel()
     frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     
-    -- Background
-    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    -- Background (match DC-Leaderboards)
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
     bg:SetAllPoints()
-    bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background")
-    bg:SetVertexColor(0.08, 0.08, 0.08, 0.98)
+    bg:SetTexture("Interface\\AddOns\\DC-AddonProtocol\\Textures\\Backgrounds\\FelLeather_512.tga")
+    if bg.SetHorizTile then bg:SetHorizTile(false) end
+    if bg.SetVertTile then bg:SetVertTile(false) end
+
+    local bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    bgTint:SetAllPoints()
+    bgTint:SetTexture(0, 0, 0, 0.60)
+    frame.__dcTint = bgTint
     
     -- Border
     local border = CreateFrame("Frame", nil, frame)

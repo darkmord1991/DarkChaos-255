@@ -254,12 +254,26 @@ function DCWelcome.Seasons:CreateProgressTracker()
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+
+    local BG_FELLEATHER = "Interface\\AddOns\\DC-Welcome\\Textures\\Backgrounds\\FelLeather_512.tga"
+    local BG_TINT_ALPHA = 0.60
     
     -- Background
-    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
     bg:SetAllPoints()
-    bg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Background")
-    bg:SetVertexColor(0, 0, 0, 0.85)
+    bg:SetTexture(BG_FELLEATHER)
+
+    local bgTint = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+    bgTint:SetAllPoints(bg)
+    bgTint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+
+    local border = CreateFrame("Frame", nil, frame)
+    border:SetAllPoints()
+    border:SetBackdrop({
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
     
     -- Season Title
     local seasonTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

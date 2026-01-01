@@ -19,6 +19,38 @@ local L = DC and DC.L or nil
 local UI = {}
 DC.TransmogUI = UI
 
+local BG_FELLEATHER = "Interface\\AddOns\\DC-Collection\\Textures\\Backgrounds\\FelLeather_512.tga"
+local BG_TINT_ALPHA = 0.60
+
+local function ApplyLeaderboardsStyle(frame, withBorder)
+    if not frame or frame.__dcLeaderboardsStyled then
+        return
+    end
+    frame.__dcLeaderboardsStyled = true
+
+    if withBorder and frame.SetBackdrop then
+        frame:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true,
+            tileSize = 32,
+            edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 },
+        })
+    end
+    if frame.SetBackdropColor then
+        frame:SetBackdropColor(0, 0, 0, 0)
+    end
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    bg:SetAllPoints()
+    bg:SetTexture(BG_FELLEATHER)
+
+    local tint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    tint:SetAllPoints(bg)
+    tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+end
+
 local function SafeGetText(key, fallback)
     if L and L[key] and L[key] ~= "" then
         return L[key]
@@ -590,6 +622,8 @@ local function CreateTransmogPanel()
     end
     inset:SetPoint("TOPLEFT", 18, -84)
     inset:SetPoint("BOTTOMRIGHT", -30, 36)
+
+    ApplyLeaderboardsStyle(inset, true)
 
     -- Left panel: model + slot buttons
     local left = CreateFrame("Frame", nil, inset)

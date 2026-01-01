@@ -34,8 +34,25 @@ if not HLBG.UI.Frame then
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left=8, right=8, top=8, bottom=8 }
     })
-    HLBG.UI.Frame:SetBackdropColor(0.12,0.12,0.15,1)
-    HLBG.UI.Frame:SetBackdropBorderColor(1,0.82,0,1)
+    HLBG.UI.Frame:SetBackdropColor(0, 0, 0, 0)
+
+    do
+        local BG_FELLEATHER = "Interface\\AddOns\\DC-HinterlandBG\\Textures\\Backgrounds\\FelLeather_512.tga"
+        local BG_TINT_ALPHA = 0.60
+
+        local bg = HLBG.UI.Frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+        bg:SetAllPoints()
+        bg:SetTexture(BG_FELLEATHER)
+        if bg.SetHorizTile then bg:SetHorizTile(false) end
+        if bg.SetVertTile then bg:SetVertTile(false) end
+
+        local tint = HLBG.UI.Frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+        tint:SetAllPoints()
+        tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
+
+        HLBG.UI.Frame.__dcBg = bg
+        HLBG.UI.Frame.__dcTint = tint
+    end
     HLBG.UI.Frame:ClearAllPoints()
     HLBG.UI.Frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     HLBG.UI.Frame:EnableMouse(true)
