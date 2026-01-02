@@ -13,7 +13,6 @@
 #include "World.h"
 #include "WorldSessionMgr.h"
 #include "SharedDefines.h"
-#include "HLBG_Integration_Helper.h"
 #include <algorithm>
 #include <cstdio>
 // Scoreboard helpers ---------------------------------------------------------

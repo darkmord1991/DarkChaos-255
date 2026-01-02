@@ -147,17 +147,14 @@ end
 
 -- Request stats from server
 HLBG.RequestStats = HLBG.RequestStats or function(season)
-    if _G.AIO and _G.AIO.Handle then
-        -- Use AIO if available
-        if season then
-            _G.AIO.Handle("HLBG", "Request", "STATS", season)
-        else
-            _G.AIO.Handle("HLBG", "Request", "STATS")
-        end
-    else
-        -- Fallback to chat command
-        local cmd = season and string.format('.hlbg statsui %d', season) or '.hlbg statsui'
-        SendChatMessage(cmd, "SAY")
+    -- Deprecated: HLBG stats/history UI moved to DC-Leaderboards.
+    if type(HLBG) == 'table' and type(HLBG.OpenLeaderboards) == 'function' then
+        HLBG.OpenLeaderboards()
+        return
+    end
+
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage('|cFFFFAA00HLBG:|r Stats UI moved to |cFF33FF99DC-Leaderboards|r. Use |cFFFFFFFF/leaderboard|r.')
     end
 end
 

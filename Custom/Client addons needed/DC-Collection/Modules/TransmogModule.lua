@@ -469,3 +469,180 @@ function DC:ShowOutfitMenu(parentMenu)
         table.insert(parentMenu, { text = "Delete", hasArrow = true, notCheckable = true, menuList = deleteList })
     end
 end
+
+-- ============================================================================
+-- OUTFIT SHARING (CHAT LINKS)
+-- ============================================================================
+
+-- Serialization Constants
+local OUTFIT_LINK_VER = "1"
+local OUTFIT_LINK_PREFIX = "dc:outfit"
+local SERIALIZATION_ORDER = {
+    DC.TRANSMOG_SLOTS.HEAD,
+    DC.TRANSMOG_SLOTS.SHOULDER,
+    DC.TRANSMOG_SLOTS.SHIRT,
+    DC.TRANSMOG_SLOTS.CHEST,
+    DC.TRANSMOG_SLOTS.WAIST,
+    DC.TRANSMOG_SLOTS.LEGS,
+    DC.TRANSMOG_SLOTS.FEET,
+    DC.TRANSMOG_SLOTS.WRIST,
+    DC.TRANSMOG_SLOTS.HANDS,
+    DC.TRANSMOG_SLOTS.BACK,
+    DC.TRANSMOG_SLOTS.MAIN_HAND,
+    DC.TRANSMOG_SLOTS.OFF_HAND,
+    DC.TRANSMOG_SLOTS.RANGED,
+    DC.TRANSMOG_SLOTS.TABARD,
+}
+
+local function HexEncode(num)
+    if not num or num == 0 then return "" end
+    return string.format("%x", num)
+end
+
+local function HexDecode(str)
+    if not str or str == "" then return 0 end
+    return tonumber(str, 16) or 0
+end
+
+function DC:GenerateOutfitLink(name, outfitData)
+    if not name or not outfitData or not outfitData.state then return nil end
+    
+    local parts = {}
+    table.insert(parts, OUTFIT_LINK_VER)
+    
+    -- Icon (not currently used in link but reserved)
+    table.insert(parts, "0")
+    
+    -- Name (URL encoded-ish to avoid separators)
+    local safeName = string.gsub(name, ":", "")
+    table.insert(parts, safeName)
+    
+    -- Slots
+    local slotData = {}
+    for _, slot in ipairs(SERIALIZATION_ORDER) do
+        local appearanceId = outfitData.state[tostring(slot)] or 0
+        table.insert(slotData, HexEncode(appearanceId))
+    end
+    
+    table.insert(parts, table.concat(slotData, "-"))
+    
+    -- Format: dc:outfit:VER:ICON:NAME:SLOT-SLOT-SLOT...
+    local linkData = table.concat(parts, ":")
+    local linkText = string.format("[%s: %s]", L and L.OUTFIT or "Outfit", name)
+    local color = "|cff71d5ff" -- Light Blue
+    
+    return string.format("%s|H%s|h%s|h|r", color, OUTFIT_LINK_PREFIX .. ":" .. linkData, linkText)
+end
+
+function DC:ParseOutfitLink(linkData)
+    -- remove prefix if present
+    linkData = string.gsub(linkData, "^" .. OUTFIT_LINK_PREFIX .. ":", "")
+    
+    local parts = { strsplit(":", linkData) }
+    if #parts < 4 then return nil end
+    
+    local ver = parts[1]
+    -- local icon = parts[2]
+    local name = parts[3]
+    local slotHexStr = parts[4]
+    
+    local slotHexs = { strsplit("-", slotHexStr) }
+    local state = {}
+    
+    for i, hex in ipairs(slotHexs) do
+        local slot = SERIALIZATION_ORDER[i]
+        if slot then
+            local val = HexDecode(hex)
+            if val and val > 0 then
+                state[tostring(slot)] = val
+            end
+        end
+    end
+    
+    return {
+        name = name,
+        state = state,
+        isShared = true
+    }
+end
+
+function DC:PreviewOutfitFromLink(linkData)
+    local outfit = self:ParseOutfitLink(linkData)
+    if not outfit then 
+        self:Print("Invalid outfit link.")
+        return 
+    end
+    
+    if DressUpFrame and DressUpFrame.Show then
+        DressUpFrame:Show()
+    end
+    
+    if DressUpModel and DressUpModel.Undress then
+        DressUpModel:Undress()
+    end
+    
+    for _, appearanceId in pairs(outfit.state) do
+        local app = tonumber(appearanceId)
+        if app and app ~= 0 then
+            local def = self.TransmogModule and self.TransmogModule:GetAppearanceDefinition(app)
+            local itemId = def and def.itemId
+            TryDressUpItemId(itemId)
+        end
+    end
+    
+    DC:Print("Previewing outfit: " .. (outfit.name or "Unknown"))
+end
+
+function DC:PreviewOutfitRaw(appearanceIds)
+    if not appearanceIds then return end
+    
+    if DressUpModel and DressUpModel.Undress then
+        if DressUpFrame and DressUpFrame.Show then
+            DressUpFrame:Show()
+        end
+        DressUpModel:Undress()
+    end
+
+    for _, app in ipairs(appearanceIds) do
+        DC:PreviewTransmogAppearance(app)
+    end
+end
+
+function DC:ApplyCommunityOutfit(itemsString)
+    -- Parse space-separated appearance IDs
+    local apps = {}
+    for id in string.gmatch(itemsString, "%d+") do
+        table.insert(apps, tonumber(id))
+    end
+    
+    -- Apply each appearance
+    -- Note: This requires mapping appearance -> slot.
+    -- We'll do a best-effort approach.
+    local count = 0
+    for _, app in ipairs(apps) do
+        local def = DC.TransmogModule and DC.TransmogModule:GetAppearanceDefinition(app)
+        if def and def.inventoryType then
+             -- Simple inventory type to slot mapping
+             -- This is incomplete but handles main armor.
+             local slot = nil
+             if def.inventoryType == 1 then slot = 1 -- Head
+             elseif def.inventoryType == 3 then slot = 3 -- Shoulder
+             elseif def.inventoryType == 16 then slot = 15 -- Back
+             elseif def.inventoryType == 5 or def.inventoryType == 20 then slot = 5 -- Chest
+             elseif def.inventoryType == 4 then slot = 4 -- Shirt
+             elseif def.inventoryType == 19 then slot = 19 -- Tabard
+             elseif def.inventoryType == 9 then slot = 9 -- Wrist
+             elseif def.inventoryType == 10 then slot = 10 -- Hands
+             elseif def.inventoryType == 6 then slot = 6 -- Waist
+             elseif def.inventoryType == 7 then slot = 7 -- Legs
+             elseif def.inventoryType == 8 then slot = 8 -- Feet
+             end
+             
+             if slot then
+                  DC:RequestSetTransmogByEquipmentSlot(slot - 1, app) -- Request uses 0-based
+                  count = count + 1
+             end
+        end
+    end
+    DC:Print("Applied " .. count .. " items from community outfit.")
+end

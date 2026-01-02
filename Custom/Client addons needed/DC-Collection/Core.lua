@@ -1464,3 +1464,87 @@ end
 if type(DC.SaveCache) ~= "function" then
     function DC:SaveCache() end
 end
+
+-- ============================================================================
+-- LINK HANDLING
+-- ============================================================================
+
+local orig_SetItemRef = SetItemRef
+function SetItemRef(link, text, button, chatFrame)
+    if type(link) == "string" then
+        if string.sub(link, 1, 9) == "dc:outfit" then
+            if DC.PreviewOutfitFromLink then
+                DC:PreviewOutfitFromLink(link)
+            end
+            return
+        elseif string.sub(link, 1, 11) == "dc:wishlist" then
+            if DC.RequestAddWishlist then
+                local _, _, itemID = string.find(link, "dc:wishlist:(%d+)")
+                if itemID then
+                    -- Assume Transmog (Type 6) for now, or encode type in link
+                    DC:RequestAddWishlist(6, tonumber(itemID))
+                end
+            end
+            return
+        end
+    end
+    
+    if orig_SetItemRef then
+        return orig_SetItemRef(link, text, button, chatFrame)
+    end
+end
+
+-- ============================================================================
+-- UNIT POPUP HOOK (Inspection)
+-- ============================================================================
+
+local function HookUnitPopup()
+    -- Add button definition
+    UnitPopupButtons["INSPECT_TRANSMOG"] = { text = "Inspect Transmog", dist = 0 }
+
+    -- Add to menus
+    -- Insert after "INSPECT" if possible, otherwise at end of safe buttons
+    for _, menu in pairs(UnitPopupMenus) do
+        local inserted = false
+        for i, button in ipairs(menu) do
+            if button == "INSPECT" then
+                table.insert(menu, i + 1, "INSPECT_TRANSMOG")
+                inserted = true
+                break
+            end
+        end
+        -- If INSPECT not found, maybe add to specific menus like PLAYER
+        if not inserted and (menu == UnitPopupMenus["PLAYER"] or menu == UnitPopupMenus["FRIEND"] or menu == UnitPopupMenus["PARTY"] or menu == UnitPopupMenus["RAID"]) then
+             -- Add before CANCEL or at end
+             table.insert(menu, #menu, "INSPECT_TRANSMOG")
+        end
+    end
+
+    -- Hook OnClick
+    hooksecurefunc("UnitPopup_OnClick", function(self)
+        local dropdownFrame = UIDROPDOWNMENU_INIT_MENU
+        local button = self.value
+        local unit = dropdownFrame.unit
+        local name = dropdownFrame.name
+        local server = dropdownFrame.server
+        
+        if button == "INSPECT_TRANSMOG" then
+            if unit and UnitExists(unit) and UnitIsPlayer(unit) then
+                if DC.RequestInspectTarget then
+                    DC:RequestInspectTarget(unit)
+                else
+                    DC:Print("Inspection not ready.")
+                end
+            else
+                DC:Print("Cannot inspect that target.")
+            end
+        end
+    end)
+end
+
+-- Initialize hooks on load
+local hookFrame = CreateFrame("Frame")
+hookFrame:RegisterEvent("PLAYER_LOGIN")
+hookFrame:SetScript("OnEvent", function()
+    HookUnitPopup()
+end)

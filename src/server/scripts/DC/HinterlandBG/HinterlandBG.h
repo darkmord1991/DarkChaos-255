@@ -11,4 +11,18 @@
 
 #include "OutdoorPvP/OutdoorPvPHL.h" // canonical class definition
 
+class Player;
+enum TeamId;
+
+// HLBG player stats integration (implementation in OutdoorPvPHL_Utils.cpp)
+class HLBGPlayerStats
+{
+public:
+	static void OnPlayerEnterBG(Player* player);
+	static void OnPlayerKill(Player* killer, Player* victim);
+	static void OnResourceCapture(Player* player, uint32 resourceAmount);
+	static void OnPlayerWin(Player* player);
+	static void OnTeamWin(TeamId winningTeam, uint32 zoneId);
+};
+
 #endif // DC_HINTERLANDBG_H

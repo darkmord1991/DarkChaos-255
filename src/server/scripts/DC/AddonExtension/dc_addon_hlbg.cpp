@@ -48,10 +48,7 @@ using DarkChaos::Leaderboard::GetClassNameFromId;
 using DarkChaos::Leaderboard::JsonEscape;
 
 // Forward declarations for helpers defined later in this TU.
-namespace HLBGAddonFallback
-{
-    static std::string BuildHistoryTsv(QueryResult& rs);
-}
+namespace HLBGAddonFallback {}
 
 namespace DCAddon
 {
@@ -597,25 +594,10 @@ namespace HLBG
     static void HandleRequestStats(Player* player, const ParsedMessage& msg)
     {
         if (!player) return;
-        uint32 seasonId = msg.GetUInt32(0);
-        if (seasonId == 0)
-            if (OutdoorPvPHL* hl = GetHL())
-                seasonId = hl->GetSeason();
-
-        // Query from unified schema
-        std::string statsJson;
-        std::string error;
-        if (!QueryPlayerSeasonalStats(player, seasonId, statsJson, error))
-        {
-            Message response(Module::HINTERLAND, SMSG_ERROR);
-            response.Add(error);
-            response.Send(player);
-            return;
-        }
-
-        Message response(Module::HINTERLAND, SMSG_STATS);
-        response.Add("J");
-        response.Add(statsJson);
+        (void)msg;
+        // Deprecated: redundant with CMSG_GET_PLAYER_STATS / CMSG_GET_ALLTIME_STATS and DC-Leaderboards.
+        Message response(Module::HINTERLAND, SMSG_ERROR);
+        response.Add(std::string("HLBG stats request is deprecated. Use DC-Leaderboards (/leaderboard)."));
         response.Send(player);
     }
 
@@ -624,67 +606,11 @@ namespace HLBG
         if (!player)
             return;
 
-        if (IsRateLimited(player, 800))
-            return;
-
-        uint32 page = msg.GetUInt32(0);
-        uint32 per = msg.GetUInt32(1);
-        uint32 seasonOverride = msg.GetUInt32(2);
-        std::string sort = msg.GetString(3);
-        std::string dir = msg.GetString(4);
-
-        page = std::max<uint32>(1u, page);
-        per = std::max<uint32>(1u, per);
-        per = std::min<uint32>(per, 20u);
-
-        if (!(sort == "id" || sort == "occurred_at" || sort == "season"))
-            sort = "id";
-        std::string odir = (dir == "ASC" ? "ASC" : "DESC");
-
-        OutdoorPvPHL* hl = GetHL();
-        uint32 season = seasonOverride > 0 ? seasonOverride : (hl ? hl->GetSeason() : 0u);
-
-        uint32 offset = (page - 1) * per;
-
-        std::string sortCol = "id";
-        if (sort == "occurred_at")
-            sortCol = "occurred_at";
-        else if (sort == "season")
-            sortCol = "season";
-
-        std::string query = "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM dc_hlbg_winner_history";
-        if (season > 0)
-            query += " WHERE season=" + std::to_string(season);
-        query += " ORDER BY " + sortCol + " " + odir;
-        query += " LIMIT " + std::to_string(per) + " OFFSET " + std::to_string(offset);
-
-        std::string countQuery = "SELECT COUNT(*) FROM dc_hlbg_winner_history";
-        if (season > 0)
-            countQuery += " WHERE season=" + std::to_string(season);
-
-        uint32 totalRows = 0;
-        if (QueryResult countRes = CharacterDatabase.Query(countQuery))
-            totalRows = countRes->Fetch()[0].Get<uint32>();
-
-        QueryResult rs = CharacterDatabase.Query(query);
-        std::string tsv;
-        if (rs)
-        {
-            tsv = HLBGAddonFallback::BuildHistoryTsv(rs);
-            // Protocol delimiter is '|', so ensure we never include it in a payload field.
-            // The legacy TSV uses "||" between rows; convert to newlines.
-            size_t pos = 0;
-            while ((pos = tsv.find("||", pos)) != std::string::npos)
-            {
-                tsv.replace(pos, 2, "\n");
-                pos += 1;
-            }
-        }
-
-        Message packet(Module::HINTERLAND, SMSG_HISTORY_TSV);
-        packet.Add(std::to_string(totalRows));
-        packet.Add(tsv);
-        packet.Send(player);
+        (void)msg;
+        // Deprecated: moved to DC-Leaderboards to avoid duplicate big transfers.
+        Message response(Module::HINTERLAND, SMSG_ERROR);
+        response.Add(std::string("HLBG history UI is deprecated. Use DC-Leaderboards (/leaderboard)."));
+        response.Send(player);
     }
 
     // Leaderboard and stats handlers
@@ -870,8 +796,9 @@ namespace HLBG
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_REQUEST_OBJECTIVE, HandleRequestObjective);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_QUICK_QUEUE, HandleQuickQueue);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_LEAVE_QUEUE, HandleLeaveQueue);
-        DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_REQUEST_STATS, HandleRequestStats);
-        DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_REQUEST_HISTORY_UI, HandleRequestHistoryUI);
+
+        // Legacy/extended requests intentionally no longer registered.
+        // (Stats/history moved to DC-Leaderboards to avoid duplicated code + transfers.)
 
         // Leaderboard and stats handlers (JSON-based)
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_GET_LEADERBOARD, HandleGetLeaderboard);
@@ -945,51 +872,7 @@ namespace HLBGAddonFallback
         return ss.str();
     }
 
-    static std::unordered_map<uint32, std::string> s_SeasonNameCache;
-
-    static std::string GetSeasonName(uint32 season)
-    {
-        auto it = s_SeasonNameCache.find(season);
-        if (it != s_SeasonNameCache.end())
-            return it->second;
-
-        std::string name;
-        if (season > 0)
-        {
-            // Fixed: use 'season' column instead of 'id'
-            QueryResult r = WorldDatabase.Query("SELECT name FROM dc_hlbg_seasons WHERE season={}", season);
-            if (r)
-                name = r->Fetch()[0].Get<std::string>();
-        }
-
-        s_SeasonNameCache[season] = name;
-        return name;
-    }
-
-    static std::string BuildHistoryTsv(QueryResult& rs)
-    {
-        std::ostringstream ss;
-        bool first = true;
-        do
-        {
-            Field* f = rs->Fetch();
-            uint32 id = f[0].Get<uint32>();
-            uint32 season = f[1].Get<uint32>();
-            std::string ts = f[2].Get<std::string>();
-            uint8 winner = f[3].Get<uint8>();
-            std::string reason = f[4].Get<std::string>();
-            uint32 affix = f[5].Get<uint32>();
-            std::string seasonName = GetSeasonName(season);
-
-            if (!first)
-                ss << "||";
-            first = false;
-            ss << id << '\t' << season << '\t' << EscapeJson(seasonName) << '\t'
-               << EscapeJson(ts) << '\t' << (unsigned)winner << '\t'
-               << EscapeJson(reason) << '\t' << affix;
-        } while (rs->NextRow());
-        return ss.str();
-    }
+    // (History/stats helpers removed; use DC-Leaderboards instead.)
 
     static std::string BuildLivePlayersJson(OutdoorPvPHL* hl, uint32 limit = 40)
     {
@@ -1133,106 +1016,24 @@ bool HandleHLBGHistoryUI(ChatHandler* handler, char const* args)
     if (!player)
         return false;
 
-    uint32 page = 1, per = 5;
-    uint32 seasonOverride = 0;
-    std::string sort = "id", dir = "DESC";
-    if (args && *args)
-    {
-        std::istringstream is(args);
-        std::vector<std::string> tokens;
-        for (std::string t; is >> t; )
-            tokens.push_back(t);
-        if (tokens.size() >= 1) page = std::max<uint32>(1u, (uint32)std::stoul(tokens[0]));
-        if (tokens.size() >= 2) per  = std::max<uint32>(1u, (uint32)std::stoul(tokens[1]));
-        if (tokens.size() >= 3)
-        {
-            bool allDigits = !tokens[2].empty() && std::all_of(tokens[2].begin(), tokens[2].end(), [](unsigned char c){ return std::isdigit(c) != 0; });
-            if (allDigits)
-                seasonOverride = (uint32)std::stoul(tokens[2]);
-        }
-        if (tokens.size() >= 4) sort = tokens[3];
-        if (tokens.size() >= 5) dir = tokens[4];
-    }
-
-    per = std::min<uint32>(per, 20u);
-    uint32 offset = (page - 1) * per;
-
-    if (!(sort == "id" || sort == "occurred_at" || sort == "season"))
-        sort = "id";
-    std::string odir = (dir == "ASC" ? "ASC" : "DESC");
-
-    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
-    uint32 season = seasonOverride > 0 ? seasonOverride : (hl ? hl->GetSeason() : 0u);
-
-    std::string sortCol = "id";
-    if (sort == "occurred_at") sortCol = "occurred_at";
-    else if (sort == "season") sortCol = "season";
-
-    std::string query = "SELECT id, season, occurred_at, winner_tid, win_reason, affix FROM dc_hlbg_winner_history";
-    if (season > 0)
-        query += " WHERE season=" + std::to_string(season);
-    query += " ORDER BY " + sortCol + " " + odir;
-    query += " LIMIT " + std::to_string(per) + " OFFSET " + std::to_string(offset);
-
-    std::string countQuery = "SELECT COUNT(*) FROM dc_hlbg_winner_history";
-    if (season > 0)
-        countQuery += " WHERE season=" + std::to_string(season);
-
-    uint32 totalRows = 0;
-    if (QueryResult countRes = CharacterDatabase.Query(countQuery))
-        totalRows = countRes->Fetch()[0].Get<uint32>();
-
-    QueryResult rs = CharacterDatabase.Query(query);
-    if (!rs)
-    {
-        ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_HISTORY_TSV] TOTAL=") + std::to_string(totalRows)).c_str());
-        return true;
-    }
-
-    std::string tsv = HLBGAddonFallback::BuildHistoryTsv(rs);
-    std::string msg = std::string("[HLBG_HISTORY_TSV] TOTAL=") + std::to_string(totalRows) + "||" + tsv;
-    ChatHandler(player->GetSession()).SendSysMessage(msg.c_str());
+    (void)player;
+    (void)args;
+    handler->SendSysMessage("HLBG: history UI is deprecated. Use /leaderboard.");
     return true;
 }
 
 bool HandleHLBGStatsUI(ChatHandler* handler, char const* args)
 {
-    // Keep the implementation in HLBG itself (DC/HinterlandBG/hlbg_addon.cpp previously).
-    // This handler remains here for link stability; it mirrors the older stats JSON.
+    // Deprecated: stats UI moved to DC-Leaderboards (/leaderboard).
     if (!handler || !handler->GetSession())
         return false;
     Player* player = handler->GetSession()->GetPlayer();
     if (!player)
         return false;
 
-    uint32 winA = 0, winH = 0, draws = 0;
-    uint32 avgDur = 0;
-    std::string seasonName;
-    OutdoorPvPHL* hl = HLBGAddonFallback::GetHL();
-    uint32 season = hl ? hl->GetSeason() : 0u;
-    if (args && *args)
-        season = (uint32)std::stoul(std::string(args));
-
-    std::string where = (season > 0) ? (" WHERE season=" + std::to_string(season)) : std::string();
-
-    if (QueryResult r = CharacterDatabase.Query("SELECT SUM(winner_tid=0), SUM(winner_tid=1), SUM(winner_tid=2) FROM dc_hlbg_winner_history" + where))
-    {
-        Field* f = r->Fetch();
-        winA = f[0].Get<uint32>();
-        winH = f[1].Get<uint32>();
-        draws = f[2].Get<uint32>();
-    }
-    if (QueryResult r2 = CharacterDatabase.Query("SELECT AVG(duration_seconds) FROM dc_hlbg_winner_history" + where + (where.empty() ? " WHERE " : " AND ") + "duration_seconds > 0"))
-        avgDur = (uint32)r2->Fetch()[0].Get<float>();
-
-    if (season > 0)
-        seasonName = HLBGAddonFallback::GetSeasonName(season);
-
-    std::ostringstream ss;
-    ss << "{\"counts\":{\"Alliance\":" << winA << ",\"Horde\":" << winH << "},";
-    ss << "\"draws\":" << draws << ",\"avgDuration\":" << avgDur << ",\"season\":" << season << ",";
-    ss << "\"seasonName\":\"" << HLBGAddonFallback::EscapeJson(seasonName) << "\"}";
-    ChatHandler(player->GetSession()).SendSysMessage((std::string("[HLBG_STATS_JSON] ") + ss.str()).c_str());
+    (void)player;
+    (void)args;
+    handler->SendSysMessage("HLBG: stats UI is deprecated. Use /leaderboard.");
     return true;
 }
 

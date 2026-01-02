@@ -140,6 +140,48 @@ function Wardrobe:RefreshOutfitsGrid()
             btn.icon:SetTexture(outfit.icon or "Interface\\Icons\\INV_Chest_Cloth_17")
             btn.icon:SetVertexColor(1, 1, 1)
             btn.notCollected:Hide()
+            
+            -- Override search hit highlighting if not needed, or keep it
+            
+            -- Hook scripts if not already done (assuming buttons are reused)
+            if not btn.dcOutfitScriptsHooked then
+                btn.dcOutfitScriptsHooked = true
+                
+                btn:SetScript("OnClick", function(self, button)
+                    if not self.itemData or not self.itemData.outfit then return end
+                    
+                    if IsModifiedClick("CHATLINK") then
+                        local link = DC:GenerateOutfitLink(self.itemData.outfit.name, self.itemData.outfit)
+                        if link then
+                            if ChatEdit_InsertLink then
+                                ChatEdit_InsertLink(link)
+                            end
+                        end
+                        return
+                    end
+                    
+                    if IsModifiedClick("DRESSUP") then
+                        DC:PreviewOutfit(self.itemData.outfit.name)
+                        return
+                    end
+                    
+                    -- Normal click: apply
+                    DC:ApplyOutfit(self.itemData.outfit.name)
+                end)
+                
+                btn:SetScript("OnEnter", function(self)
+                    if not self.itemData or not self.itemData.outfit then return end
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:AddLine(self.itemData.outfit.name, 1, 1, 1)
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine("Click to apply", 0.7, 0.7, 0.7)
+                    GameTooltip:AddLine("Ctrl-Click to preview", 0.7, 0.7, 0.7)
+                    GameTooltip:AddLine("Shift-Click to link", 0.7, 0.7, 0.7)
+                    GameTooltip:Show()
+                end)
+                
+                btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            end
         else
             btn:Hide()
             btn.itemData = nil

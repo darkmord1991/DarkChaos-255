@@ -179,12 +179,23 @@ end
 -- Helper to safely decode JSON with fallbacks
 function HLBG.tryDecodeJson(str)
     if type(str) ~= 'string' or str == '' then return nil end
+
+    -- Tiny cache for repeated identical payloads (common for status/live bursts)
+    -- Note: returns the same table instance; callers should treat decoded tables as read-only.
+    if HLBG._jsonCacheLastStr == str and HLBG._jsonCacheLastObj ~= nil then
+        return HLBG._jsonCacheLastObj
+    end
+
     local success, result = pcall(function()
         if type(json_decode) == 'function' then return json_decode(str) end
         if type(HLBG) == 'table' and type(HLBG.json_decode) == 'function' then return HLBG.json_decode(str) end
         return nil
     end)
-    if success then return result end
+    if success then
+        HLBG._jsonCacheLastStr = str
+        HLBG._jsonCacheLastObj = result
+        return result
+    end
     return nil
 end
 -- Test runner for JSON decoder

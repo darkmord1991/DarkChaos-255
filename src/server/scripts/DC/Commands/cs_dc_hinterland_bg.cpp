@@ -37,7 +37,7 @@
 
 using namespace Acore::ChatCommands;
 
-// Prototypes for addon/chat fallback handlers implemented in DC/HinterlandBG/hlbg_addon.cpp
+// Prototypes for addon/chat fallback handlers implemented in DC/AddonExtension/dc_addon_hlbg.cpp
 bool HandleHLBGLive(ChatHandler* handler, char const* args);
 bool HandleHLBGWarmup(ChatHandler* handler, char const* args);
 bool HandleHLBGResults(ChatHandler* handler, char const* args);
@@ -94,8 +94,7 @@ public:
 
             // Addon/UI fallback commands (exposed to players)
             { "live",    HandleHLBGLive,    SEC_PLAYER, Console::No },
-            { "historyui", HandleHLBGHistoryUI, SEC_PLAYER, Console::No },
-            { "statsui", HandleHLBGStatsUI, SEC_PLAYER, Console::No },
+            // historyui/statsui intentionally removed: use DC-Leaderboards (/leaderboard)
             { "warmup",  HandleHLBGWarmup,  SEC_GAMEMASTER, Console::No },
             { "results", HandleHLBGResults, SEC_GAMEMASTER, Console::No },
 

@@ -267,6 +267,18 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
     if type(tsv)=='string' and tsv~='' then
         tsv = sanitize_tsv(tsv)
         HLBG._lastSanitizedTSV = tsv
+
+        local cacheKey = tsv
+
+        -- Reuse parsed results if the payload is identical (common when reopening UI)
+        -- Important: we return a fresh array so sorting doesn't mutate the cached ordering.
+        if HLBG._historyTSVCache and HLBG._historyTSVCache.str == cacheKey and type(HLBG._historyTSVCache.rows) == 'table' then
+            local cached = HLBG._historyTSVCache.rows
+            local out = {}
+            for i=1,#cached do out[i] = cached[i] end
+            return HLBG.History(out, page, per, HLBG._historyTSVCache.total or reportedTotal, col, dir)
+        end
+
         pcall(function()
             if not debugEnabled then return end
             local cnt = 0
@@ -278,23 +290,23 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
             local spreview = table.concat(preview, ' | ')
             DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr sanitized lines=%d preview=%s', cnt, (spreview or '[none]')))
         end)
-        pcall(function()
+        -- Convert escaped sequences only once
+        do
             local escN = 0; tsv, escN = tsv:gsub('\\n', '\n')
             local escT = 0; tsv, escT = tsv:gsub('\\t', '\t')
             if debugEnabled and (escN > 0 or escT > 0) then
-                DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr converted escaped seqs: \n=%d \t=%d', escN, escT))
+                DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr converted escaped seqs: \\n=%d \\t=%d', escN, escT))
             end
-            local pipeCount = 0; for _ in tsv:gmatch('%|') do pipeCount = pipeCount + 1 end
-            local hasNewline = tsv:find('\n') and true or false
-            if pipeCount > 0 and not hasNewline then
-                tsv = tsv:gsub('%s*%|%s*', '\n')
-                HLBG._lastSanitizedTSV = tsv
-                if debugEnabled then
-                    DebugPrint(string.format('|cFF33FF99HLBG Debug|r HistoryStr fallback: converted %d pipes into newlines', pipeCount))
-                end
-            end
+        end
+
+        -- Only do pipe-to-newline fallback when necessary (avoid counting pipes)
+        if tsv:find('%|') and not tsv:find('\n') then
+            tsv = tsv:gsub('%s*%|%s*', '\n')
             HLBG._lastSanitizedTSV = tsv
-        end)
+            if debugEnabled then
+                DebugPrint('|cFF33FF99HLBG Debug|r HistoryStr fallback: converted pipes into newlines')
+            end
+        end
         local meta = tsv:match('^TOTAL=(%d+)%s*%|%|') or tsv:match('^TOTAL=(%d+)%s*')
         if meta then reportedTotal=tonumber(meta) or reportedTotal; tsv = tsv:gsub('^TOTAL=%d+%s*%|%|',''):gsub('^TOTAL=%d+%s*','') end
         local function split_fields(line)
@@ -377,6 +389,9 @@ HLBG.HistoryStr = HLBG.HistoryStr or function(a,b,c,d,e,f,g)
                 end
             end
         end
+
+        -- Save parse cache (keyed by the sanitized raw payload)
+        HLBG._historyTSVCache = { str = cacheKey, rows = rows, total = reportedTotal }
     end
     return HLBG.History(rows, page, per, reportedTotal, col, dir)
 end
@@ -399,5 +414,10 @@ if not HLBG.HistoryApplySort then
     end
 end
 -- Debug announce
-DebugPrint(string.format("|cFF00FF00HLBG Debug:|r History functions defined - History: %s, HistoryStr: %s", type(HLBG.History), type(HLBG.HistoryStr)))
+pcall(function()
+    local debugEnabled = HLBG.IsDebugEnabled and HLBG.IsDebugEnabled()
+    if debugEnabled then
+        DebugPrint(string.format("|cFF00FF00HLBG Debug:|r History functions defined - History: %s, HistoryStr: %s", type(HLBG.History), type(HLBG.HistoryStr)))
+    end
+end)
 

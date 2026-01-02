@@ -10,7 +10,6 @@
 #include "HinterlandBG.h"
 #include "ObjectAccessor.h"
 #include "GroupMgr.h"
-#include "HLBG_Integration_Helper.h"
 #include <algorithm>
 
 // Called when a player enters the Hinterlands zone managed by this OutdoorPvP.

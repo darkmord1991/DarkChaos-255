@@ -719,13 +719,58 @@ local function CreateTransmogPanel()
     end
 
     -- Right panel: search + grid + paging + actions
-    local right = CreateFrame("Frame", nil, inset)
-    right:SetPoint("TOPLEFT", left, "TOPRIGHT", 10, 0)
-    right:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", -6, 6)
+    -- Right panel: search + grid + paging + actions
+    local mainRight = CreateFrame("Frame", nil, inset)
+    mainRight:SetPoint("TOPLEFT", left, "TOPRIGHT", 10, 0)
+    mainRight:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", -6, 6)
 
-    local title = right:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOPLEFT", right, "TOPLEFT", 0, 0)
-    title:SetText(SafeGetText("TAB_TRANSMOG", "Transmog"))
+    -- Tab System
+    local tabTransmog = CreateFrame("Button", nil, mainRight, "OptionsButtonTemplate")
+    tabTransmog:SetSize(80, 22)
+    tabTransmog:SetPoint("TOPLEFT", mainRight, "TOPLEFT", 0, 0)
+    tabTransmog:SetText("Transmog")
+
+    local tabCommunity = CreateFrame("Button", nil, mainRight, "OptionsButtonTemplate")
+    tabCommunity:SetSize(80, 22)
+    tabCommunity:SetPoint("LEFT", tabTransmog, "RIGHT", 4, 0)
+    tabCommunity:SetText("Community")
+
+    -- Transmog Panel (Sub-frame)
+    local transmogPanel = CreateFrame("Frame", nil, mainRight)
+    transmogPanel:SetPoint("TOPLEFT", mainRight, "TOPLEFT", 0, -30)
+    transmogPanel:SetPoint("BOTTOMRIGHT", mainRight, "BOTTOMRIGHT", 0, 0)
+    frame.transmogPanel = transmogPanel
+
+    -- Variable shadowing: 'right' is now the transmog content panel.
+    -- This allows existing code below to parent to this panel automatically.
+    local right = transmogPanel 
+
+    -- Tab Selection Logic
+    local function SelectTab(id)
+        if id == 1 then
+            transmogPanel:Show()
+            if DC.CommunityUI and DC.CommunityUI.frame then DC.CommunityUI.frame:Hide() end
+        else
+            transmogPanel:Hide()
+            if DC.CommunityUI then
+                DC.CommunityUI:Initialize(mainRight)
+                -- Re-parent or re-point if Initialize doesn't set points flexibly
+                -- CommunityUI:Initialize sets AllPoints(). We need to adjust.
+                if DC.CommunityUI.frame then
+                     DC.CommunityUI.frame:ClearAllPoints()
+                     DC.CommunityUI.frame:SetPoint("TOPLEFT", mainRight, "TOPLEFT", 0, -30)
+                     DC.CommunityUI.frame:SetPoint("BOTTOMRIGHT", mainRight, "BOTTOMRIGHT", 0, 0)
+                     DC.CommunityUI.frame:Show()
+                     DC.CommunityUI:RequestList(nil) -- Refresh
+                end
+            end
+        end
+    end
+    tabTransmog:SetScript("OnClick", function() SelectTab(1) end)
+    tabCommunity:SetScript("OnClick", function() SelectTab(2) end)
+
+    -- NOTE: Removed local title "Transmog" as it's now a tab.
+
 
     local searchBox = CreateFrame("EditBox", nil, right, "InputBoxTemplate")
     searchBox:SetSize(160, 20)
@@ -768,6 +813,57 @@ local function CreateTransmogPanel()
         end
     end)
     frame.searchBox = searchBox
+    
+    -- Outfits Dropdown Button
+    local outfitBtn = CreateFrame("Button", "DCCollectionTransmogOutfitButton", right, "UIMenuButtonStretchTemplate")
+    outfitBtn:SetSize(80, 22)
+    outfitBtn:SetPoint("RIGHT", searchBox, "LEFT", -10, 0)
+    outfitBtn:SetText("Outfits")
+    
+    -- Dropdown frame for the menu
+    local outfitDropdown = CreateFrame("Frame", "DCCollectionTransmogOutfitDropdown", outfitBtn, "UIDropDownMenuTemplate")
+    
+    outfitBtn:SetScript("OnClick", function(self)
+        -- Build menu
+        local menu = {}
+        table.insert(menu, { text = "Saved Outfits", isTitle = true, notCheckable = true })
+        
+        local names = DC:GetOutfitNames()
+        if #names == 0 then
+             table.insert(menu, { text = "No saved outfits", notCheckable = true, disabled = true })
+        else
+            for _, name in ipairs(names) do
+                table.insert(menu, {
+                    text = name,
+                    notCheckable = true,
+                    func = function()
+                        DC:ApplyOutfit(name)
+                        if CloseDropDownMenus then CloseDropDownMenus() end
+                    end,
+                })
+            end
+        end
+        
+        table.insert(menu, { text = " ", isTitle = true, notCheckable = true })
+        table.insert(menu, { 
+            text = "Save current...", 
+            notCheckable = true, 
+            func = function() 
+                if DC.ShowOutfitMenu then -- Use the shared helper if available, else static popup
+                     StaticPopup_Show("DC_COLLECTION_OUTFIT_SAVE")
+                end
+            end 
+        })
+        
+        -- Custom simple EasyMenu since we might not have EasyMenu lib attached
+        if EasyMenu then
+            EasyMenu(menu, outfitDropdown, self, 0, 0, "MENU")
+        else
+            -- Fallback if EasyMenu not globally available (likely is in 3.3.5)
+            -- Use generic UIDropDownMenu_Initialize approach if needed, but EasyMenu is standard.
+        end
+    end)
+
 
     -- Collected / Not collected toggles (only affect local filtering, not server results)
     UI.filterCollected = true

@@ -216,6 +216,7 @@ set(SCRIPTS_DC_GreatVault
     AddonExtension/dc_addon_groupfinder_mgr.cpp
     AddonExtension/dc_addon_groupfinder_npc.cpp
     AddonExtension/dc_addon_collection.cpp
+    AddonExtension/dc_addon_wardrobe.cpp
 )
 
 # DC Collection System - Retail-like collection management (Split Structure)

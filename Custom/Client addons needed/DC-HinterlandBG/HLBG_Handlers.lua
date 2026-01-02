@@ -193,48 +193,22 @@ function HLBG.RequestHistoryUI(page, per, season, sortKey, sortDir)
     HLBG.UI.History.sortKey = sortKey
     HLBG.UI.History.sortDir = sortDir
 
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC and type(DC.Send) == "function" then
-        -- HLBG extended opcode: CMSG_REQUEST_HISTORY_UI (0x23 = 35 decimal)
-        if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Requesting history via DCAddonProtocol (opcode 35): page=%d, per=%d, season=%d", page, per, season))
-        end
-        DC:Send("HLBG", 0x23, tostring(page), tostring(per), tostring(season), sortKey, sortDir)
-        return true
+    -- Deprecated: history UI moved to DC-Leaderboards
+    if type(HLBG.OpenLeaderboards) == 'function' then
+        return HLBG.OpenLeaderboards()
     end
-
-    if _G.AIO and _G.AIO.Handle then
-        _G.AIO.Handle("HLBG", "Request", "HISTORY", page, per, season, sortKey, sortDir)
-        return true
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r History view moved to DC-Leaderboards. Use /leaderboard.")
     end
-
-    local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
-    if type(sendDot) == 'function' then
-        if season and season > 0 then
-            sendDot(string.format('.hlbg historyui %d %d %d %s %s', page, per, season, sortKey, sortDir))
-        else
-            sendDot(string.format('.hlbg historyui %d %d %s %s', page, per, sortKey, sortDir))
-        end
-        return true
-    end
-
-    if type(HLBG.safeExecSlash) == 'function' then
-        if season and season > 0 then
-            HLBG.safeExecSlash(string.format('.hlbg historyui %d %d %d %s %s', page, per, season, sortKey, sortDir))
-        else
-            HLBG.safeExecSlash(string.format('.hlbg historyui %d %d %s %s', page, per, sortKey, sortDir))
-        end
-        return true
-    end
-
     return false
 end
 
 -- Backwards-compatible alias used by some UI code
 HLBG.RequestHistory = HLBG.RequestHistory or function()
-    local hist = (HLBG and HLBG.UI and HLBG.UI.History) or {}
-    local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-    return HLBG.RequestHistoryUI(hist.page or 1, hist.per or 25, season, hist.sortKey or "id", hist.sortDir or "DESC")
+    if type(HLBG.OpenLeaderboards) == 'function' then
+        return HLBG.OpenLeaderboards()
+    end
+    return false
 end
 -- Ensure PvP tab/button helpers (lazy creation)
 local function EnsurePvPTab()
@@ -274,22 +248,10 @@ local function EnsurePvPTab()
         if PVPFrameRight then PVPFrameRight:Hide() end
         if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show() end
     if type(ShowTab) == 'function' then pcall(ShowTab, DCHLBGDB and DCHLBGDB.lastInnerTab or 1) end
-        if _G.AIO and _G.AIO.Handle then
-            local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 5, season, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
-            _G.AIO.Handle("HLBG", "Request", "STATS")
-            _G.AIO.Handle("HLBG", "Request", "STATS", season)
-        end
         -- chat fallbacks (use raw dot to server)
         local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
-        local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
         if type(sendDot) == 'function' then
             sendDot('.hlbg live players')
-            sendDot('.hlbg historyui 1 25 id DESC')
-            sendDot(string.format('.hlbg historyui %d %d %d %s %s', 1, 25, season, 'id', 'DESC'))
-            sendDot('.hlbg statsui')
-            sendDot(string.format('.hlbg statsui %d', season))
         end
     end)
 end
@@ -303,21 +265,9 @@ local function EnsurePvPHeaderButton()
     btn:SetScript("OnClick", function()
         if HLBG.UI and HLBG.UI.Frame then HLBG.UI.Frame:Show() end
     if type(ShowTab) == 'function' then pcall(ShowTab, DCHLBGDB and DCHLBGDB.lastInnerTab or 1) end
-        if _G.AIO and _G.AIO.Handle then
-            local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI and HLBG.UI.History and HLBG.UI.History.page or 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 25, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
-            _G.AIO.Handle("HLBG", "Request", "HISTORY", HLBG.UI and HLBG.UI.History and HLBG.UI.History.page or 1, HLBG.UI and HLBG.UI.History and HLBG.UI.History.per or 25, season, HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortKey or "id", HLBG.UI and HLBG.UI.History and HLBG.UI.History.sortDir or "DESC")
-            _G.AIO.Handle("HLBG", "Request", "STATS")
-            _G.AIO.Handle("HLBG", "Request", "STATS", season)
-        end
         local sendDot = (HLBG and HLBG.SendServerDot) or _G.HLBG_SendServerDot
-        local season = (HLBG and HLBG._getSeason and HLBG._getSeason()) or 0
         if type(sendDot) == 'function' then
             sendDot('.hlbg live players')
-            sendDot('.hlbg historyui 1 25 id DESC')
-            sendDot(string.format('.hlbg historyui %d %d %d %s %s', 1, 25, season, 'id', 'DESC'))
-            sendDot('.hlbg statsui')
-            sendDot(string.format('.hlbg statsui %d', season))
         end
     end)
     _pvp:HookScript("OnHide", function()
@@ -331,16 +281,6 @@ pvpWatcher:RegisterEvent("ADDON_LOADED")
 pvpWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
 pvpWatcher:SetScript("OnEvent", function(_, ev, name)
     EnsurePvPTab(); EnsurePvPHeaderButton()
-    -- When the PvP UI is shown, try to prime data if AIO is missing
-    if type(HLBG) == 'table' and type(HLBG.safeExecSlash) == 'function' then
-        local hist = (HLBG and HLBG.UI and HLBG.UI.History) or nil
-        local p = (hist and hist.page) or 1
-        local per = (hist and hist.per) or 5
-        local sk = (hist and hist.sortKey) or 'id'
-        local sd = (hist and hist.sortDir) or 'DESC'
-        HLBG.safeExecSlash(string.format('.hlbg historyui %d %d %s %s', p, per, sk, sd))
-        HLBG.safeExecSlash('.hlbg statsui')
-    end
 end)
 -- Also retry a few times after login in case of delayed creation
 do
@@ -484,11 +424,11 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     -- Results JSON
     local rj = msg:match('%[HLBG_RESULTS_JSON%]%s*(.*)')
     if rj then
-        local ok, decoded = pcall(function()
-            return (HLBG.json_decode and HLBG.json_decode(rj)) or (type(json_decode) == 'function' and json_decode(rj)) or nil
-        end)
-    pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('RESULTS_JSON', { raw = rj, parsed = ok and decoded or nil }) end end)
-        if ok and type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
+        local decoded = (type(HLBG.tryDecodeJson) == 'function' and HLBG.tryDecodeJson(rj))
+            or (HLBG.json_decode and HLBG.json_decode(rj))
+            or (type(json_decode) == 'function' and json_decode(rj))
+        pcall(function() if HLBG._captureIncoming or HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then HLBG.DebugLog('RESULTS_JSON', { raw = rj, parsed = decoded }) end end)
+        if type(decoded) == 'table' and type(HLBG.Results) == 'function' then pcall(HLBG.Results, decoded) end
         return
     end
     -- History TSV fallback
@@ -1902,13 +1842,14 @@ if DC then
     end
     
     HLBG.RequestStats = function(seasonId)
-        if DC then
-            if seasonId then
-                DC:Send("HLBG", 0x06, tostring(seasonId))  -- CMSG_REQUEST_STATS with season
-            else
-                DC:Send("HLBG", 0x06)  -- CMSG_REQUEST_STATS
-            end
+        -- seasonId retained for compatibility; stats UI moved to DC-Leaderboards
+        if type(HLBG.OpenLeaderboards) == 'function' then
+            return HLBG.OpenLeaderboards()
         end
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Stats view moved to DC-Leaderboards. Use /leaderboard.")
+        end
+        return false
     end
     
     -- Log that DC protocol handlers are registered

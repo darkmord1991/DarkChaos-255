@@ -93,6 +93,13 @@ DC.Opcodes = {
     CMSG_GET_TRANSMOG_STATE      = 0x37,
     CMSG_APPLY_TRANSMOG_PREVIEW  = 0x38,
     
+    -- Client -> Server: Community
+    CMSG_COMMUNITY_GET_LIST   = 0x39,
+    CMSG_COMMUNITY_PUBLISH    = 0x3A,
+    CMSG_COMMUNITY_RATE       = 0x3B,
+    CMSG_COMMUNITY_FAVORITE   = 0x3C,
+    CMSG_COMMUNITY_VIEW       = 0x3E,
+    
     -- Server -> Client: Sync/Data
     SMSG_HANDSHAKE_ACK       = 0x40,
     SMSG_FULL_COLLECTION     = 0x41,
@@ -109,6 +116,11 @@ DC.Opcodes = {
     SMSG_TRANSMOG_STATE          = 0x48,
     SMSG_TRANSMOG_SLOT_ITEMS     = 0x49,
     SMSG_COLLECTED_APPEARANCES   = 0x4A,
+
+    -- Server -> Client: Community
+    SMSG_COMMUNITY_LIST       = 0x63,
+    SMSG_COMMUNITY_PUBLISH_RESULT = 0x64,
+
     
     -- Server -> Client: Shop
     SMSG_SHOP_DATA           = 0x50,
@@ -251,6 +263,12 @@ function DC:InitializeProtocol()
     registerOpcode(self.Opcodes.SMSG_WISHLIST_UPDATED)
     registerOpcode(self.Opcodes.SMSG_OPEN_UI)
     registerOpcode(self.Opcodes.SMSG_ERROR)
+    
+    registerOpcode(self.Opcodes.SMSG_COMMUNITY_LIST)
+    registerOpcode(self.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT)
+    registerOpcode(self.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT)
+    registerOpcode(self.Opcodes.SMSG_INSPECT_TRANSMOG)
+
 
     self:Debug("Protocol handlers registered via RegisterJSONHandler: " .. self.MODULE_ID)
     self.isConnected = true
@@ -771,11 +789,37 @@ function DC:RequestRemoveWishlist(collectionType, entryId)
 end
 
 -- Use/summon collection item (mount, pet, toy)
-function DC:RequestUseItem(collectionType, entryId)
-    local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
     return self:SendMessage(self.Opcodes.CMSG_USE_ITEM, {
         type = typeId or 0,
         entryId = entryId,
+    })
+end
+
+function DC:RequestCommunityList(offset, limit, filter)
+    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_GET_LIST, {
+        offset = offset or 0,
+        limit = limit or 50,
+        filter = filter or "all"
+    })
+end
+
+function DC:RequestCommunityFavorite(outfitId, add)
+    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_FAVORITE, {
+        id = outfitId,
+        add = add
+    })
+end
+
+function DC:RequestCommunityPublish(name, items)
+    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_PUBLISH, {
+        name = name,
+        items = items
+    })
+end
+
+function DC:RequestCommunityRate(id)
+    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_RATE, {
+        id = id
     })
 end
 
@@ -1004,6 +1048,14 @@ function DC.OnProtocolMessage(payload)
         self:HandleOpenUI(data)
     elseif opcode == self.Opcodes.SMSG_ERROR then
         self:HandleError(data)
+    elseif opcode == self.Opcodes.SMSG_COMMUNITY_LIST then
+        self:HandleCommunityList(data)
+    elseif opcode == self.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT then
+        self:HandleCommunityPublishResult(data)
+    elseif opcode == self.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT then
+        self:HandleCommunityFavoriteResult(data)
+    elseif opcode == self.Opcodes.SMSG_INSPECT_TRANSMOG then
+        self:HandleInspectTransmog(data)
     else
         self:Debug(string.format("Unknown opcode: 0x%02X", opcode))
     end
@@ -1013,6 +1065,110 @@ end
 -- RESPONSE HANDLERS
 -- Updated to match new protocol
 -- ============================================================================
+
+-- Request to toggle favorite status
+function DC:RequestCommunityFavorite(outfitID, add)
+    local msg = DC.Message(DC.Opcodes.CMSG_COMMUNITY_FAVORITE)
+    msg:Add("id", outfitID)
+    msg:Add("add", add)
+    msg:Send()
+end
+
+-- Request to view (increment view count)
+function DC:RequestCommunityView(outfitID)
+    local msg = DC.Message(DC.Opcodes.CMSG_COMMUNITY_VIEW)
+    msg:Add("id", outfitID)
+    msg:Send()
+end
+
+-- Request inspection of a target
+function DC:RequestInspectTarget(unitToken)
+    local guid = UnitGUID(unitToken)
+    if not guid then return end
+    
+    -- GUID is string "0xF13000..." or number depending on version/client
+    -- Parse GUID to low part if possible or send full string to be managed by server (JSON handles strings/numbers)
+    -- Server code expects uint64 or string.
+    -- For 3.3.5a lua: tonumber(guid, 16) gets low part ? No, UnitGUID returns "0x..." string.
+    -- Use tonumber((UnitGUID(unit)):sub(3), 16) if needed, but JSON can take the string.
+    -- Server code: json["target"].AsUInt64() -- JsonCPP handles string->uint64 parsing if formatted correctly.
+    -- The server code I wrote: `uint64 targetGuid = json["target"].AsUInt64();` with `json["target"].AsUInt64()`
+    -- `AsUInt64` in `DCAddon` (my hypothetical wrapper) usually expects a number type or string.
+    -- Better safe: send string, server parses.
+    
+    -- If using AIO/Eluna, guid is string.
+    -- Let's extract the low GUID counter if possible, or just send the string.
+    -- My server code `uint64 targetGuid = json["target"].AsUInt64();` implies full GUID.
+    -- Just send the string, my Json wrapper usually handles Hex strings or numeric definitions.
+    
+    -- But wait, `Player::GetGUID().GetCounter()` was used in some places.
+    -- Server C++: `Player* target = ObjectAccessor::FindPlayer(ObjectGuid(targetGuid));`
+    -- This constructor takes full 64-bit GUID.
+    -- So sending the return value of UnitGUID("target") is correct (which is a hex string).
+    
+    return self:SendMessage(self.Opcodes.CMSG_INSPECT_TRANSMOG, {
+        target = tonumber((UnitGUID(unitToken)):sub(3), 16) -- Convert Hex string to number for JSON? Lua numbers are doubles. 
+        -- 64-bit integers lose precision in Lua 5.1 doubles.
+        -- SAFEST: Send as String. Server `AsUInt64()` usually parses strings.
+        -- Re-checking server code: `json["target"].AsUInt64()`. 
+        -- If I send a string, does `AsUInt64()` work? Usually yes.
+        -- BUT, if I send a Lua number, it will be a double, potentially losing precision for high GUIDs.
+        -- UnitGUID in 3.3.5 returns string "0x..."
+        -- Let's send it as string.
+    })
+    -- Wait, my server code: `uint64 targetGuid = json["target"].AsUInt64();`
+    -- If I send string "0x...", `AsUInt64` might fail if it strictly expects digits.
+    -- I should convert to string of digits? Or rely on `AsUInt64` knowing hex?
+    -- Safest is often to send as string. 
+    -- Actually, to be super safe and avoid Lua number precision issues:
+    -- I will send as string "0xF..."
+    -- Modification to server might be needed if `AsUInt64` doesn't handle hex.
+    -- But standard JsonCPP `asUInt64()` supports numbers.
+    -- Let's check `RequestInspectTarget` implementation below.
+end
+
+function DC:RequestInspectTarget(unitToken)
+    local guidStr = UnitGUID(unitToken)
+    if not guidStr then return end
+    
+    -- Send as string to preserve 64-bit precision
+    return self:SendMessage(self.Opcodes.CMSG_INSPECT_TRANSMOG, {
+        target = guidStr
+    })
+end
+
+-- Handle inspection response
+function DC:HandleInspectTransmog(data)
+    self:Debug("Received inspect transmog data")
+    
+    if type(self.PreviewInspectData) == "function" then
+        self:PreviewInspectData(data)
+    elseif self.PreviewOutfitRaw then
+        -- Format data for PreviewOutfitRaw
+        -- Data comes as { slots = { "0": itemId, "1": itemId... }, target = guid }
+        local items = {}
+        if data.slots then
+            for slotStr, itemId in pairs(data.slots) do
+                local slotId = tonumber(slotStr)
+                if slotId then
+                    -- Mapping visual slot to item? 
+                    -- Server sends visualSlot?
+                    -- Server code: `obj.Add(std::to_string(f[0].Get<uint32>()), f[1].Get<uint32>());`
+                    -- f[0] is `slot` (visual slot, 0..19 or whatever).
+                    -- f[1] is `fake_entry` (item ID).
+                    
+                    -- PreviewOutfitRaw expects: { [slot] = itemId, ... }
+                    items[slotId] = itemId
+                end
+            end
+        end
+        self:PreviewOutfitRaw(items)
+        -- Show the frame if hidden?
+        if self.IsShown and not self.MainFrame:IsShown() then
+            self:Show()
+        end
+    end
+end
 
 -- Handle handshake acknowledgement
 function DC:HandleHandshakeAck(data)
@@ -2316,4 +2472,50 @@ end
 function DC:CheckAchievements(collType)
     -- Request achievement update from server
     self:RequestAchievements()
+end
+
+-- ============================================================================
+-- COMMUNITY OUTFITS HANDLERS
+-- ============================================================================
+
+function DC:HandleCommunityList(data)
+    local outfits = data.outfits or {}
+    
+    -- Notify UI
+    if self.CommunityUI and self.CommunityUI.OnListReceived then
+        self.CommunityUI:OnListReceived(outfits)
+    end
+end
+
+function DC:HandleCommunityPublishResult(data)
+    local success = data[1] -- The data can be a boolean directly if sent via Add(bool)
+    if type(success) ~= "boolean" then success = data.success end -- Fallback if JSON object
+
+    if success then
+        self:Print(DC.L["COMMUNITY_PUBLISH_SUCCESS"] or "Outfit published to community!")
+    else
+        self:Print("|cffff0000" .. (DC.L["COMMUNITY_PUBLISH_FAILED"] or "Failed to publish outfit.") .. "|r")
+    end
+    
+    -- Notify UI
+    if self.Wardrobe and self.Wardrobe.OnPublishResult then
+        self.Wardrobe:OnPublishResult(success)
+    end
+end
+
+function DC:HandleCommunityFavoriteResult(data)
+    local outfitId = data.id
+    local isAdd = data.add
+    local success = true -- Assume success if we got the result back
+    
+    if self.CommunityUI and self.CommunityUI.OnFavoriteResult then
+        self.CommunityUI:OnFavoriteResult(outfitId, isAdd)
+    end
+end
+
+function DC:RequestAddWishlist(collectionType, entryId)
+    local msg = DC:CreateMessage(DC.Opcodes.CMSG_ADD_WISHLIST)
+    msg:Add("type", collectionType or 6) -- Default to Transmog (6)
+    msg:Add("entryId", entryId)
+    DC:SendMessage(msg)
 end

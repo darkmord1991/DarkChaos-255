@@ -30,9 +30,7 @@
 #ifndef DC_ADDON_NAMESPACE_H
 #define DC_ADDON_NAMESPACE_H
 
-#include "Player.h"
-#include "Chat.h"
-#include "WorldPacket.h"
+// Core headers expected to be provided by PCH or including file
 #include <string>
 #include <vector>
 #include <functional>
@@ -502,6 +500,22 @@ namespace DCAddon
             constexpr uint8 SMSG_PURCHASE_RESULT     = 0x51;  // Purchase result
             constexpr uint8 SMSG_CURRENCIES          = 0x52;  // Currency balances
 
+            // Community Outfits (Platform)
+            constexpr uint8 CMSG_COMMUNITY_GET_LIST   = 0x39; // Get list of community outfits
+            constexpr uint8 CMSG_COMMUNITY_PUBLISH    = 0x3A; // Publish an outfit
+            constexpr uint8 CMSG_COMMUNITY_RATE       = 0x3B; // Rate an outfit
+            constexpr uint8 CMSG_COMMUNITY_FAVORITE   = 0x3C; // Toggle favorite
+            constexpr uint8 CMSG_COMMUNITY_VIEW       = 0x3E; // View/Preview outfit (impressions)
+            constexpr uint8 SMSG_COMMUNITY_LIST       = 0x63; // List of community outfits
+            constexpr uint8 SMSG_COMMUNITY_PUBLISH_RESULT = 0x64; // Publish result
+            constexpr uint8 SMSG_COMMUNITY_FAVORITE_RESULT = 0x65; // Favorite result
+
+            // Client -> Server: Inspection
+            constexpr uint8 CMSG_INSPECT_TRANSMOG     = 0x3D; // Inspect target transmog
+
+            // Server -> Client: Inspection
+            constexpr uint8 SMSG_INSPECT_TRANSMOG     = 0x66; // Inspection data (JSON)
+            
             // Server -> Client: Wishlist
             constexpr uint8 SMSG_WISHLIST_DATA       = 0x60;  // Wishlist items (JSON)
             constexpr uint8 SMSG_WISHLIST_AVAILABLE  = 0x61;  // Item on wishlist now available

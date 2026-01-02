@@ -40,29 +40,10 @@ local function RegisterDCHandlers()
         end
     end)
     
-    -- SMSG_HISTORY_TSV = 51 (0x33) - Match history UI
+    -- SMSG_HISTORY_TSV = 51 (0x33) - Deprecated (history UI moved to DC-Leaderboards)
     DC:RegisterHandler("HLBG", 51, function(...)
-        local args = {...}
-        local total = tonumber(args[1]) or 0
-        local tsv = args[2] or ""
-        
         if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF00FF00HLBG DC Handler:|r HISTORY_TSV received (op 51): total=%d, tsv_len=%d",
-                total, #tsv))
-        end
-
-        local hist = (HLBG and HLBG.UI and HLBG.UI.History) or {}
-        local page = hist.page or 1
-        local per = hist.per or 25
-        local sortKey = hist.sortKey or "id"
-        local sortDir = hist.sortDir or "DESC"
-
-        if type(HLBG.HistoryStr) == 'function' then
-            pcall(HLBG.HistoryStr, tsv, page, per, total, sortKey, sortDir)
-        else
-            if DEFAULT_CHAT_FRAME then
-                DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r History data received but HistoryStr function not found.")
-            end
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Ignoring HISTORY_TSV (deprecated; use /leaderboard).")
         end
     end)
     

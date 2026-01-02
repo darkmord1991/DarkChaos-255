@@ -1,5 +1,21 @@
 ﻿local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 HLBG.UI = HLBG.UI or {}
+
+-- Open the unified leaderboards UI (DC-Leaderboards)
+HLBG.OpenLeaderboards = HLBG.OpenLeaderboards or function()
+    if _G.DCLeaderboards and type(_G.DCLeaderboards.Toggle) == 'function' then
+        _G.DCLeaderboards:Toggle()
+        return true
+    end
+    if _G.SlashCmdList and type(_G.SlashCmdList["DCLEADERBOARDS"]) == 'function' then
+        _G.SlashCmdList["DCLEADERBOARDS"]("")
+        return true
+    end
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r DC-Leaderboards not loaded. Use |cFFFFFFFF/leaderboard|r if available.")
+    end
+    return false
+end
 -- Initialize SavedVariables with defaults if not exists
 -- Migrate saved variables to DCHLBGDB (new name). If the old table exists, copy values to preserve user settings.
 if not DCHLBGDB then
@@ -92,23 +108,15 @@ if not HLBG.UI.Frame then
     refreshBtn:SetPoint("TOPLEFT", HLBG.UI.Frame, "TOPLEFT", 8, -8)
     refreshBtn:SetText("↻")
     refreshBtn:SetScript("OnClick", function()
-        -- Show debug info
-        local DC = _G.DCAddonProtocol
-        local hasDC = DC and "YES" or "NO"
-        local hasAIO = _G.AIO and "YES" or "NO"
-        
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Refresh:|r DCAddonProtocol=" .. hasDC .. " AIO=" .. hasAIO)
-        
-        if HLBG and HLBG.RequestHistory then 
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting history data...")
-            HLBG.RequestHistory() 
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r RequestHistory function not found!")
+        -- Stats/History UI moved to DC-Leaderboards; keep refresh lightweight.
+        if DEFAULT_CHAT_FRAME then
+            local DC = _G.DCAddonProtocol
+            local hasDC = DC and "YES" or "NO"
+            local hasAIO = _G.AIO and "YES" or "NO"
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG Refresh:|r DCAddonProtocol=" .. hasDC .. " AIO=" .. hasAIO)
         end
-        
-        if HLBG and HLBG.RequestStats then 
-            HLBG.RequestStats() 
-        end
+        if type(HLBG.RequestStatus) == 'function' then pcall(HLBG.RequestStatus) end
+        if type(HLBG.RequestResources) == 'function' then pcall(HLBG.RequestResources) end
     end)
     refreshBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT"); GameTooltip:AddLine("Refresh data", 1,1,1); GameTooltip:Show()
@@ -237,9 +245,9 @@ if not HLBG.UI.History.Content then
                 self.arrow:SetText(hist.sortDir == "DESC" and "▼" or "▲")
                 
                 -- Request new data with updated sort
-                if type(HLBG.RequestHistoryUI) == 'function' then
-                    HLBG.RequestHistoryUI(hist.page or 1, hist.per or 25, 0, hist.sortKey, hist.sortDir)
-                end
+                    if type(HLBG.OpenLeaderboards) == 'function' then
+                        HLBG.OpenLeaderboards()
+                    end
             end)
             
             -- Hover effect
@@ -278,13 +286,14 @@ if not HLBG.UI.History.Content then
     
     -- Auto-load history when History tab is shown
     HLBG.UI.History:SetScript("OnShow", function()
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r History tab shown, requesting data...")
-        if type(HLBG.RequestHistory) == 'function' then
-            C_Timer.After(0.3, function()
-                pcall(HLBG.RequestHistory)
-            end)
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r RequestHistory function not found!")
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r History view moved to DC-Leaderboards.")
+        end
+        if HLBG.UI and HLBG.UI.History and HLBG.UI.History.Placeholder then
+            HLBG.UI.History.Placeholder:SetText("History is now available in |cFFFFFFFFDC-Leaderboards|r.\n\nClick the button below or use |cFFFFFFFF/leaderboard|r.")
+        end
+        if HLBG.UI and HLBG.UI.History and HLBG.UI.History.HistBtn then
+            HLBG.UI.History.HistBtn:Show()
         end
     end)
     
@@ -300,13 +309,17 @@ if not HLBG.UI.History.Content then
     local histBtn = HLBG.UI.History.HistBtn or CreateFrame("Button", nil, HLBG.UI.History, "UIPanelButtonTemplate")
     histBtn:SetSize(120, 32)
     histBtn:SetPoint("BOTTOM", HLBG.UI.History, "BOTTOM", 0, 40)
-    histBtn:SetText("Test History")
-    histBtn:SetScript("OnClick", function() DEFAULT_CHAT_FRAME:AddMessage("History tab button clicked!") end)
-    histBtn:Hide()  -- Hide test button - not needed in production
+    histBtn:SetText("Leaderboards")
+    histBtn:SetScript("OnClick", function()
+        if type(HLBG.OpenLeaderboards) == 'function' then
+            HLBG.OpenLeaderboards()
+        end
+    end)
+    histBtn:Show()
     HLBG.UI.History.HistBtn = histBtn
     local histText = HLBG.UI.History.Placeholder or HLBG.UI.History:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     histText:SetPoint("CENTER", HLBG.UI.History, "CENTER", 0, 0)
-    histText:SetText("No history data loaded.")
+    histText:SetText("History is now available in DC-Leaderboards.\n\nUse |cFFFFFFFF/leaderboard|r.")
     histText:SetTextColor(1,1,1,1)
     HLBG.UI.History.Placeholder = histText
     -- Alias for legacy renderer: some code expects ui.EmptyText to exist and hides it when rows are present
@@ -320,20 +333,8 @@ if not HLBG.UI.History.Content then
     prevBtn:SetHighlightTexture("Interface/Buttons/UI-Panel-Button-Red")
     if prevBtn:GetFontString() then prevBtn:GetFontString():SetTextColor(1,0.82,0,1) end
     prevBtn:SetScript("OnClick", function()
-        local ui = HLBG.UI.History
-        local currentPage = tonumber(ui.page) or 1
-        if currentPage > 1 then
-            local newPage = currentPage - 1
-            -- Request previous page from server (don't update ui.page yet - let server response do it)
-            local cmd = string.format(".hlbg historyui %d %d %s %s", newPage, ui.per or 25, ui.sortKey or "id", ui.sortDir or "DESC")
-            local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
-            if editBox then
-                editBox:SetText(cmd)
-                ChatEdit_SendText(editBox, 0)
-            end
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Requesting page %d (current: %d)", newPage, currentPage))
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Already on first page")
+        if type(HLBG.OpenLeaderboards) == 'function' then
+            HLBG.OpenLeaderboards()
         end
     end)
     HLBG.UI.History.PrevBtn = prevBtn
@@ -342,23 +343,8 @@ if not HLBG.UI.History.Content then
     nextBtn:SetPoint("BOTTOMRIGHT", HLBG.UI.History, "BOTTOMRIGHT", -50, 20)
     nextBtn:SetText("Next")
     nextBtn:SetScript("OnClick", function()
-        local ui = HLBG.UI.History
-        local currentPage = tonumber(ui.page) or 1
-        local totalRecords = tonumber(ui.total) or 0
-        local perPage = tonumber(ui.per) or 25
-        local maxPage = (totalRecords > 0) and math.max(1, math.ceil(totalRecords / perPage)) or 1
-        if currentPage < maxPage then
-            local newPage = currentPage + 1
-            -- Request next page from server (don't update ui.page yet - let server response do it)
-            local cmd = string.format(".hlbg historyui %d %d %s %s", newPage, perPage, ui.sortKey or "id", ui.sortDir or "DESC")
-            local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
-            if editBox then
-                editBox:SetText(cmd)
-                ChatEdit_SendText(editBox, 0)
-            end
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFF33FF99HLBG:|r Requesting page %d of %d (current: %d)", newPage, maxPage, currentPage))
-        else
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00HLBG:|r Already on last page (page %d of %d)", currentPage, maxPage))
+        if type(HLBG.OpenLeaderboards) == 'function' then
+            HLBG.OpenLeaderboards()
         end
     end)
     HLBG.UI.History.NextBtn = nextBtn
@@ -414,29 +400,24 @@ No data - waiting for server
 |cFFFFD700Average score per affix:|r
 No data - waiting for server
 
-|cFFAAAAAAClick Refresh (↻) button to request stats from server|r]])
+|cFFAAAAAAStatistics view moved to DC-Leaderboards. Use |cFFFFFFFF/leaderboard|r.|r]])
     HLBG.UI.Stats.Text = statsText
     -- Refresh button for stats
     local refreshStatsBtn = CreateFrame("Button", nil, HLBG.UI.Stats.Content, "UIPanelButtonTemplate")
     refreshStatsBtn:SetSize(100, 25)
     refreshStatsBtn:SetPoint("TOPRIGHT", HLBG.UI.Stats.Content, "TOPRIGHT", -40, -55)
-    refreshStatsBtn:SetText("Refresh")  -- Set button text
+    refreshStatsBtn:SetText("Leaderboards")
     refreshStatsBtn:SetScript("OnClick", function()
-        -- Request stats from server via chat command (.hlbg statsui is the correct command)
-        local cmd = ".hlbg statsui"
-        local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
-        if editBox then
-            editBox:SetText(cmd)
-            ChatEdit_SendText(editBox, 0)
+        if type(HLBG.OpenLeaderboards) == 'function' then
+            HLBG.OpenLeaderboards()
         end
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting statistics...")
     end)
 end
 -- Stats update function (to be called when stats data arrives from server)
 HLBG.UpdateStats = HLBG.UpdateStats or function(statsData)
     if not HLBG.UI.Stats or not HLBG.UI.Stats.Text then return end
     if type(statsData) ~= "table" then
-        HLBG.UI.Stats.Text:SetText("|cFFFFAA00No statistics data available.|r\n\nUse |cFFFFFFFF.hlbg statsui|r command or click Refresh.")
+        HLBG.UI.Stats.Text:SetText("|cFFFFAA00Statistics view moved to DC-Leaderboards.|r\n\nUse |cFFFFFFFF/leaderboard|r.")
         return
     end
     
@@ -643,7 +624,7 @@ Capture and hold strategic points to gain resources. First team to reach 500 res
 • Work with your team to control the battlefield
 |cFFFFD700Commands:|r
 • .hlbg status - View current battleground status
-• .hlbg historyui - View match history
+• Use /leaderboard - Match history & stats
 • Type /hlbg or click minimap button to open this UI
 |cFFFFD700Affixes:|r
 Special modifiers that change gameplay each season. Check the HUD for the current affix!]])
@@ -827,45 +808,8 @@ function ShowTab(i)
             if debugEnabled then
                 DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG Debug:|r No History data to display")
             end
-            -- Schedule a one-shot retry to re-request history in case of race/timing
-            if not HLBG._showTabRetryScheduled then
-                HLBG._showTabRetryScheduled = true
-                pcall(function()
-                    -- Use C_Timer compatibility layer if present
-                    if type(C_Timer) == 'table' and type(C_Timer.After) == 'function' then
-                        C_Timer.After(0.6, function()
-                            HLBG._showTabRetryScheduled = false
-                            -- Re-request via AIO and fallback chat commands
-                            local page = HLBG.UI.History.page or 1
-                            local per = HLBG.UI.History.per or 25
-                            local sk = HLBG.UI.History.sortKey or 'id'
-                            local sd = HLBG.UI.History.sortDir or 'DESC'
-                            if _G.AIO and _G.AIO.Handle then
-                                pcall(_G.AIO.Handle, 'HLBG', 'Request', 'HISTORY', page, per, sk, sd)
-                            end
-                            if type(HLBG.safeExecSlash) == 'function' then
-                                pcall(HLBG.safeExecSlash, string.format('.hlbg historyui %d %d %s %s', page, per, sk, sd))
-                            end
-                            -- If data has arrived in the interim, render it
-                            if HLBG.UI and HLBG.UI.History and HLBG.UI.History.lastRows and #HLBG.UI.History.lastRows > 0 and type(HLBG.History) == 'function' then
-                                pcall(HLBG.History, HLBG.UI.History.lastRows, HLBG.UI.History.page or 1, HLBG.UI.History.per or 15, HLBG.UI.History.total or #HLBG.UI.History.lastRows, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')
-                                if debugEnabled and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                                    DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r History retried and rendered after delay')
-                                end
-                            else
-                                if debugEnabled and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-                                    DEFAULT_CHAT_FRAME:AddMessage('|cFFFFAA00HLBG:|r Retry completed but no history rows arrived')
-                                end
-                            end
-                        end)
-                    else
-                        -- Fallback without C_Timer: do a simple request and log
-                        HLBG._showTabRetryScheduled = false
-                        if _G.AIO and _G.AIO.Handle then pcall(_G.AIO.Handle, 'HLBG', 'Request', 'HISTORY', HLBG.UI.History.page or 1, HLBG.UI.History.per or 25, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC') end
-                        if type(HLBG.safeExecSlash) == 'function' then pcall(HLBG.safeExecSlash, string.format('.hlbg historyui %d %d %s %s', HLBG.UI.History.page or 1, HLBG.UI.History.per or 25, HLBG.UI.History.sortKey or 'id', HLBG.UI.History.sortDir or 'DESC')) end
-                    end
-                end)
-            end
+            -- History UI moved to DC-Leaderboards; no background retry requests.
+            HLBG._showTabRetryScheduled = false
         end
     end
     if i == 2 and HLBG.UI.Stats then

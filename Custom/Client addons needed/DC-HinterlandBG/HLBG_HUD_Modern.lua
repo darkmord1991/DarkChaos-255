@@ -469,18 +469,31 @@ function HLBG.InitializeModernHUD()
             C_Timer.After(1, HLBG.UpdateHUDVisibility)
         end
     end)
-    -- Set up less frequent telemetry updates to prevent blinking
+    -- Telemetry refresh: prefer ticker over OnUpdate (avoid per-frame overhead)
     if DCHLBGDB.enableTelemetry then
-        local telemetryFrame = CreateFrame("Frame")
-        telemetryFrame:SetScript("OnUpdate", function(self, elapsed)
-            self.elapsed = (self.elapsed or 0) + elapsed
-            if self.elapsed >= 5 then -- Update every 5 seconds instead of 1 to reduce blinking
-                self.elapsed = 0
-                if HUD:IsVisible() then
+        if C_Timer and type(C_Timer.NewTicker) == 'function' then
+            -- Cancel any previous ticker (e.g., /reload)
+            if HLBG._telemetryTicker and HLBG._telemetryTicker.Cancel then
+                pcall(function() HLBG._telemetryTicker:Cancel() end)
+            end
+            HLBG._telemetryTicker = C_Timer.NewTicker(5, function()
+                if HUD and HUD.IsVisible and HUD:IsVisible() then
                     HLBG.UpdateModernHUD() -- Update telemetry portion
                 end
-            end
-        end)
+            end)
+        else
+            -- Fallback: older clients without ticker
+            local telemetryFrame = CreateFrame("Frame")
+            telemetryFrame:SetScript("OnUpdate", function(self, elapsed)
+                self.elapsed = (self.elapsed or 0) + (elapsed or 0)
+                if self.elapsed >= 5 then
+                    self.elapsed = 0
+                    if HUD and HUD.IsVisible and HUD:IsVisible() then
+                        HLBG.UpdateModernHUD()
+                    end
+                end
+            end)
+        end
     end
     -- Initial visibility check
     HLBG.UpdateHUDVisibility()
@@ -548,24 +561,29 @@ end
 -- Improved HUD update with worldstate-first approach (no more blinking)
 local oldUpdateHUD = HLBG.UpdateHUD
 HLBG.UpdateHUD = function()
-    DebugPrint("|cFFAA00FF[UpdateHUD]|r Called")
+    local dev = (HLBG and HLBG._devMode) or (DCHLBGDB and DCHLBGDB.devMode)
+    if dev then DebugPrint("|cFFAA00FF[UpdateHUD]|r Called") end
     -- Throttle updates to prevent blinking (max once per 1 second - reduced from 3s)
     local now = GetTime()
     HLBG._lastHUDUpdate = HLBG._lastHUDUpdate or 0
     local timeSinceLastUpdate = now - HLBG._lastHUDUpdate
     if timeSinceLastUpdate < 1.0 then
-        DebugPrint(string.format("|cFFFFAA00[UpdateHUD THROTTLED]|r Skipped (%.1fs since last update, need 1.0s)", timeSinceLastUpdate))
+        if dev then
+            DebugPrint(string.format("|cFFFFAA00[UpdateHUD THROTTLED]|r Skipped (%.1fs since last update, need 1.0s)", timeSinceLastUpdate))
+        end
         return -- Skip update to prevent blinking
     end
     HLBG._lastHUDUpdate = now
-    DebugPrint("|cFF00FFAA[UpdateHUD]|r Proceeding (throttle passed)")
+    if dev then DebugPrint("|cFF00FFAA[UpdateHUD]|r Proceeding (throttle passed)") end
     -- Primary: Use improved worldstate reader (server-driven, real-time)
     local hudData = HLBG.ReadWorldstateData()
     -- Secondary: Use HLBG._lastStatus as fallback and sync source
     local status = HLBG._lastStatus or {}
     local res = _G.RES or {}
-    DebugPrint(string.format("|cFFAA00FF[UpdateHUD DATA]|r hudData.A=%s status.A=%s res.A=%s",
-            tostring(hudData.allianceResources), tostring(status.A), tostring(res.A)))
+    if dev then
+        DebugPrint(string.format("|cFFAA00FF[UpdateHUD DATA]|r hudData.A=%s status.A=%s res.A=%s",
+                tostring(hudData.allianceResources), tostring(status.A), tostring(res.A)))
+    end
     -- Combine data with worldstates taking priority (server-authoritative)
     local finalData = {
         allianceResources = hudData.allianceResources or status.A or status.allianceResources or res.A or 450,
@@ -579,7 +597,7 @@ HLBG.UpdateHUD = function()
         phase = hudData.phase or status.phase or "BATTLE"
     }
     -- EXTENSIVE DEBUG: Log final combined data
-    if DCHLBGDB and DCHLBGDB.devMode then
+    if dev then
         DebugPrint(string.format("|cFF00FFAA[UpdateHUD FINAL]|r A=%d H=%d Time=%d",
             finalData.allianceResources, finalData.hordeResources, finalData.timeLeft))
     end
@@ -592,7 +610,7 @@ HLBG.UpdateHUD = function()
     if finalData.hordePlayers ~= nil then HLBG._lastStatus.HPC = finalData.hordePlayers end
     -- Update the HUD with stable, non-blinking data
     if type(HLBG.UpdateModernHUD) == 'function' then
-        DebugPrint("|cFF00FFAA[UpdateHUD]|r Calling UpdateModernHUD with finalData")
+        if dev then DebugPrint("|cFF00FFAA[UpdateHUD]|r Calling UpdateModernHUD with finalData") end
         
         -- ONLY show HUD if we should show it (zone check)
         if HUD then
@@ -600,10 +618,12 @@ HLBG.UpdateHUD = function()
             if shouldShowHUD then
                 HUD:Show()
                 HUD:SetAlpha(DCHLBGDB.hudAlpha or 0.9)
-                DebugPrint(string.format("|cFFFFAA00[UpdateHUD]|r HUD shown (in Hinterlands) alpha=%.2f", HUD:GetAlpha()))
+                if dev then
+                    DebugPrint(string.format("|cFFFFAA00[UpdateHUD]|r HUD shown (in Hinterlands) alpha=%.2f", HUD:GetAlpha()))
+                end
             else
                 HUD:Hide()
-                DebugPrint("|cFFFFAA00[UpdateHUD]|r HUD hidden (not in Hinterlands)")
+                if dev then DebugPrint("|cFFFFAA00[UpdateHUD]|r HUD hidden (not in Hinterlands)") end
                 return -- Don't update HUD content if it's hidden
             end
         end
@@ -633,11 +653,16 @@ wsFrame:SetScript("OnEvent", function(self, event)
         if HLBG._testDataActive then
             return -- Skip worldstate updates when test data is active
         end
-        -- Update HUD when worldstates change.
-        -- NOTE: HLBG.UpdateHUD already throttles to 1s; keep this handler unthrottled
-        -- so resource changes feel near real-time without adding extra latency.
+        -- Coalesce bursts of worldstate events into one scheduled update.
         if HLBG.UpdateHUD then
-            HLBG.UpdateHUD()
+            if HLBG._wsHudUpdatePending then return end
+            HLBG._wsHudUpdatePending = true
+            C_Timer.After(0.15, function()
+                HLBG._wsHudUpdatePending = false
+                if HLBG and HLBG.UpdateHUD then
+                    HLBG.UpdateHUD()
+                end
+            end)
         end
     end
 end)
