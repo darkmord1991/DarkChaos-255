@@ -19,6 +19,7 @@ Modules\Tooltips.lua
 Modules\Automation.lua
 Modules\Chat.lua
 Modules\Interface.lua
+Modules\ExtendedStats\ExtendedStats.lua
 Modules\GTFO.lua
 Modules\ItemScore.lua
 Modules\BagEnhancements.lua

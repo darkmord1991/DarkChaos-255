@@ -45,7 +45,7 @@ namespace DCCollection
     // Transmog Helper Implementations
     // =======================================================================
 
-    static bool IsBetterTransmogRepresentative(uint32 newEntry, bool newIsNonCustom, uint32 newQuality, uint32 newItemLevel,
+    bool IsBetterTransmogRepresentative(uint32 newEntry, bool newIsNonCustom, uint32 newQuality, uint32 newItemLevel,
         uint32 oldEntry, bool oldIsNonCustom, uint32 oldQuality, uint32 oldItemLevel)
     {
         if (newIsNonCustom != oldIsNonCustom)
@@ -465,6 +465,15 @@ namespace DCCollection
         }
         return best;
     }
+    
+    TransmogAppearanceVariant const* FindAnyVariant(uint32 displayId)
+    {
+        auto const& idx = GetTransmogAppearanceIndexCached();
+        auto it = idx.find(displayId);
+        if (it != idx.end() && !it->second.empty())
+            return &it->second[0];
+        return nullptr;
+    }
 
     // Unlocking Logic
     static std::unordered_map<uint32, std::unordered_set<uint32>> s_AccountUnlockedTransmogAppearances;
@@ -522,7 +531,7 @@ namespace DCCollection
         return proto ? proto->DisplayInfoID : 0;
     }
 
-    void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source, bool notifyPlayer = true)
+    void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source, bool notifyPlayer)
     {
         if (!player || !player->GetSession() || !proto) return;
         if (!IsItemEligibleForTransmogUnlock(proto)) return;
@@ -751,7 +760,7 @@ namespace DCCollection
         return matchingItemIds;
     }
 
-    void SendTransmogSlotItemsResponse(Player* player, uint32 visualSlot, uint32 page, std::vector<uint32> const& matchingItemIds, std::string const& searchFilter = "")
+    void SendTransmogSlotItemsResponse(Player* player, uint32 visualSlot, uint32 page, std::vector<uint32> const& matchingItemIds, std::string const& searchFilter)
     {
         uint32 pageSize = sConfigMgr->GetOption<uint32>(TRANSMOG_SLOT_ITEMS_PAGE_SIZE, 24);
         if (pageSize < 6) pageSize = 6;
@@ -844,9 +853,11 @@ namespace DCCollection
         // Use new table prefix: dc_collection_community_outfits
         if (!WorldTableExists("dc_collection_community_outfits"))
         {
-             DCAddon::JsonBuilder json;
-             json.Add("outfits", DCAddon::JsonBuilder::Array());
-             DCAddon::Message(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST).AddJson(json).Send(player);
+             DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST);
+             DCAddon::JsonValue outfits;
+             outfits.SetArray();
+             response.Set("outfits", outfits);
+             response.Send(player);
              return;
         }
 
@@ -911,27 +922,32 @@ namespace DCCollection
                 accountId, whereClause, orderBy, offset, limit);
         }
 
-        DCAddon::JsonBuilder json;
-        auto arr = json.AddArray("outfits");
+        DCAddon::JsonValue outfits;
+        outfits.SetArray();
         
         if (result)
         {
             do
             {
                 Field* f = result->Fetch();
-                auto obj = arr.AddObject();
-                obj.Add("id", f[0].Get<uint32>());
-                obj.Add("name", f[1].Get<std::string>());
-                obj.Add("author", f[2].Get<std::string>());
-                obj.Add("items", f[3].Get<std::string>());
-                obj.Add("upvotes", f[4].Get<uint32>());
-                obj.Add("downloads", f[5].Get<uint32>());
-                obj.Add("is_favorite", f[6].Get<bool>());
-                obj.Add("views", f[7].Get<uint32>());
-                obj.Add("tags", f[8].Get<std::string>());
+                DCAddon::JsonValue obj;
+                obj.SetObject();
+                obj.Set("id", f[0].Get<uint32>());
+                obj.Set("name", f[1].Get<std::string>());
+                obj.Set("author", f[2].Get<std::string>());
+                obj.Set("items", f[3].Get<std::string>());
+                obj.Set("upvotes", f[4].Get<uint32>());
+                obj.Set("downloads", f[5].Get<uint32>());
+                obj.Set("is_favorite", f[6].Get<bool>());
+                obj.Set("views", f[7].Get<uint32>());
+                obj.Set("tags", f[8].Get<std::string>());
+                outfits.Push(obj);
             } while (result->NextRow());
         }
-        DCAddon::Message(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST).AddJson(json).Send(player);
+        
+        DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST);
+        response.Set("outfits", outfits);
+        response.Send(player);
     }
 
     void HandleCommunityPublish(Player* player, const DCAddon::ParsedMessage& msg)
@@ -975,12 +991,12 @@ namespace DCCollection
             "VALUES ('{}', '{}', {}, '{}', '{}')",
             name, player->GetName(), player->GetGUID().GetCounter(), items, tags);
 
-        DCAddon::JsonBuilder res;
-        res.Add("success", true);
-        DCAddon::Message(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_PUBLISH_RESULT).AddJson(res).Send(player);
+        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_PUBLISH_RESULT);
+        res.Set("success", true);
+        res.Send(player);
     }
     
-    void HandleCommunityRate(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityRate(Player* /*player*/, const DCAddon::ParsedMessage& msg)
     {
         if (!DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
@@ -1003,13 +1019,13 @@ namespace DCCollection
         else
             CharacterDatabase.Execute("DELETE FROM dc_collection_community_favorites WHERE account_id = {} AND outfit_id = {}", accountId, id);
 
-        DCAddon::JsonBuilder res;
-        res.Add("id", id);
-        res.Add("is_favorite", add);
-        DCAddon::Message(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_FAVORITE_RESULT).AddJson(res).Send(player);
+        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_FAVORITE_RESULT);
+        res.Set("id", id);
+        res.Set("is_favorite", add);
+        res.Send(player);
     }
 
-    void HandleCommunityView(Player* player, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityView(Player* /*player*/, const DCAddon::ParsedMessage& msg)
     {
         if (!DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
@@ -1025,20 +1041,14 @@ namespace DCCollection
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         
-        uint64 targetGuid = json["target"].AsUInt64();
-        Player* target = ObjectAccessor::FindPlayer(ObjectGuid(targetGuid));
-        
-        // If target is offline or not found, we might still want to support it by querying DB if they exist?
-        // For now, let's stick to online players or DB lookups.
-        // DB lookup is safer as it works for offline too if we have GUID.
-        // However, raw GUID from client might be low-guid or full guid.
-        // JSON numbers are often doubles, careful with precision. Usually fine for low GUIDs.
+        std::string targetStr = json["target"].IsString() ? json["target"].AsString() : std::to_string(static_cast<uint64>(json["target"].AsNumber()));
+        uint64 targetGuid = std::stoull(targetStr);
         
         // Query DB for transmog entries
         QueryResult result = CharacterDatabase.Query("SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}", (uint32)targetGuid);
         
-        DCAddon::JsonBuilder res;
-        auto obj = res.AddObject("slots"); // Map of slot -> entry
+        DCAddon::JsonValue slots;
+        slots.SetObject();
         
         if (result)
         {
@@ -1046,13 +1056,14 @@ namespace DCCollection
             {
                 Field* f = result->Fetch();
                 // Format: "slot": itemId
-                obj.Add(std::to_string(f[0].Get<uint32>()), f[1].Get<uint32>());
+                slots.Set(std::to_string(f[0].Get<uint32>()), f[1].Get<uint32>());
             } while (result->NextRow());
         }
-        res.EndObject();
-        res.Add("target", targetGuid);
         
-        DCAddon::Message(MODULE, DCAddon::Opcode::Collection::SMSG_INSPECT_TRANSMOG).AddJson(res).Send(player);
+        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_INSPECT_TRANSMOG);
+        res.Set("slots", slots);
+        res.Set("target", std::to_string(targetGuid)); // Use string to preserve large GUID precision
+        res.Send(player);
     }
 
     // =======================================================================
@@ -1064,26 +1075,26 @@ namespace DCCollection
     public:
         WardrobePlayerScript() : PlayerScript("WardrobePlayerScript") {}
 
-        void OnLogin(Player* player) override
+        void OnPlayerLogin(Player* /*player*/) override
         {
             if (!sConfigMgr->GetOption<bool>("DCCollection.Transmog.LoginScan.Enable", true)) return;
             // Scan inventory for NEW transmog unlocks
             // (Simplified logic here: actual comprehensive scan mimics item loot hooks)
         }
         
-        void OnLootItem(Player* player, Item* item, uint32 /*count*/, ObjectGuid /*lootguid*/) override
+        void OnPlayerLootItem(Player* player, Item* item, uint32 /*count*/, ObjectGuid /*lootguid*/) override
         {
             if (sConfigMgr->GetOption<bool>("DCCollection.Transmog.UnlockOnLoot", true))
                 UnlockTransmogAppearance(player, item->GetTemplate(), "loot");
         }
         
-        void OnCreateItem(Player* player, Item* item, uint32 /*count*/) override
+        void OnPlayerCreateItem(Player* player, Item* item, uint32 /*count*/) override
         {
             if (sConfigMgr->GetOption<bool>("DCCollection.Transmog.UnlockOnCreate", true))
                 UnlockTransmogAppearance(player, item->GetTemplate(), "create");
         }
         
-        void OnQuestRewardItem(Player* player, Item* item, uint32 /*count*/) override
+        void OnPlayerQuestRewardItem(Player* player, Item* item, uint32 /*count*/) override
         {
             if (sConfigMgr->GetOption<bool>("DCCollection.Transmog.UnlockOnQuestReward", true))
                 UnlockTransmogAppearance(player, item->GetTemplate(), "quest");

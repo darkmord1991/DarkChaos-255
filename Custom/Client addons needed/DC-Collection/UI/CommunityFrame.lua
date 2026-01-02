@@ -14,8 +14,8 @@ if not DC then return end
 DC.CommunityUI = DC.CommunityUI or {}
 local UI = DC.CommunityUI
 
-local BUTTON_SIZE = 46  -- Match TransmogFrame grid
-local BUTTON_GAP = 4
+local BUTTON_SIZE = 46  -- legacy; cards will auto-size
+local BUTTON_GAP = 10
 local COLS = 6
 local ROWS = 3
 local ITEMS_PER_PAGE = COLS * ROWS
@@ -25,8 +25,32 @@ UI.offset = 0
 UI.limit = ITEMS_PER_PAGE
 UI.filter = "all" -- "all", "favorites", "mine" (mine = implementation TODO via author_guid match)
 
-function UI:Initialize(parent)
-    if self.frame then return end
+function UI:Initialize(parent, options)
+    if options and type(options.onPreview) == "function" then
+        self.onPreview = options.onPreview
+    end
+
+    if self.frame then
+        if parent and self.frame.GetParent and self.frame:GetParent() ~= parent then
+            self.frame:SetParent(parent)
+            self.frame:ClearAllPoints()
+            self.frame:SetAllPoints()
+        end
+        return
+    end
+
+    local cols = (options and tonumber(options.cols)) or COLS
+    local rows = (options and tonumber(options.rows)) or ROWS
+    if cols < 1 then cols = 1 end
+    if rows < 1 then rows = 1 end
+    local itemsPerPage = cols * rows
+
+    self.cols = cols
+    self.rows = rows
+
+    self.limit = itemsPerPage
+    self.offset = self.offset or 0
+    UI.limit = itemsPerPage
     
     self.frame = CreateFrame("Frame", "DCCommunityFrame", parent)
     self.frame:SetAllPoints()
@@ -35,13 +59,17 @@ function UI:Initialize(parent)
     -- Filter Dropdown/Buttons
     local filterFrame = CreateFrame("Frame", nil, self.frame)
     filterFrame:SetPoint("TOPLEFT", 10, -10)
-    filterFrame:SetSize(200, 30)
+    filterFrame:SetSize(420, 30)
     
     self.filterButtons = {}
-    local function CreateFilterButton(text, value, x)
+    local function CreateFilterButton(text, value, anchorTo)
         local btn = CreateFrame("Button", nil, filterFrame, "UIPanelButtonTemplate")
         btn:SetSize(80, 22)
-        btn:SetPoint("LEFT", x, 0)
+        if anchorTo then
+            btn:SetPoint("LEFT", anchorTo, "RIGHT", 5, 0)
+        else
+            btn:SetPoint("LEFT", 0, 0)
+        end
         btn:SetText(text)
         btn:SetScript("OnClick", function()
             UI.offset = 0
@@ -55,15 +83,15 @@ function UI:Initialize(parent)
         table.insert(UI.filterButtons, btn)
         return btn
     end
-    
-    CreateFilterButton("All", "all", 0)
-    CreateFilterButton("Favorites", "favorites", 85)
-    CreateFilterButton("My Outfits", "mine", 170)
+
+    local allBtn = CreateFilterButton("All", "all")
+    local favBtn = CreateFilterButton("Favorites", "favorites", allBtn)
+    local mineBtn = CreateFilterButton("My Outfits", "mine", favBtn)
     
     -- Tag Search Box
     local searchBox = CreateFrame("EditBox", "DCCommunitySearchBox", self.frame, "InputBoxTemplate")
-    searchBox:SetSize(120, 20)
-    searchBox:SetPoint("LEFT", filterFrame, "RIGHT", 10, 0)
+    searchBox:SetSize(140, 20)
+    searchBox:SetPoint("LEFT", mineBtn, "RIGHT", 10, 0)
     searchBox:SetAutoFocus(false)
     searchBox:SetText("Search Tags...")
     searchBox:SetScript("OnEnterPressed", function(self)
@@ -104,33 +132,83 @@ function UI:Initialize(parent)
     self.gridFrame:SetPoint("TOPLEFT", 10, -50)
     self.gridFrame:SetPoint("BOTTOMRIGHT", -10, 40)
     
+    local function ParseAppearanceIds(itemsString)
+        local ids = {}
+        if type(itemsString) ~= "string" then
+            return ids
+        end
+        for id in string.gmatch(itemsString, "%d+") do
+            table.insert(ids, tonumber(id))
+        end
+        return ids
+    end
+
+    local function TryRenderOutfitOnModel(model, itemsString)
+        if not model or type(model.SetUnit) ~= "function" then
+            return
+        end
+
+        model:SetUnit("player")
+        if model.Undress then
+            model:Undress()
+        end
+
+        local appearanceIds = ParseAppearanceIds(itemsString)
+        for _, appearanceId in ipairs(appearanceIds) do
+            local def = DC and DC.TransmogModule and DC.TransmogModule.GetAppearanceDefinition
+                and DC.TransmogModule:GetAppearanceDefinition(appearanceId)
+            local itemId = def and (def.itemId or def.item_id or def.entryId or def.entry_id or def.entry)
+            if type(itemId) == "string" then
+                itemId = tonumber(itemId)
+            end
+            if itemId and model.TryOn then
+                pcall(function()
+                    model:TryOn(itemId)
+                end)
+            end
+        end
+
+        if model.SetPosition then
+            model:SetPosition(1.5, 0, 0)
+        end
+        if model.SetFacing then
+            model:SetFacing(0)
+        end
+    end
+
     self.buttons = {}
-    for i = 1, ITEMS_PER_PAGE do
-        local btn = CreateFrame("Button", "DCCommunityOutfitButton"..i, self.gridFrame) -- No template, custom
-        btn:SetSize(BUTTON_SIZE, BUTTON_SIZE)
-        
-        -- Positioning
-        local col = (i - 1) % COLS
-        local row = math.floor((i - 1) / COLS)
-        btn:SetPoint("TOPLEFT", col * (BUTTON_SIZE + BUTTON_GAP), -row * (BUTTON_SIZE + BUTTON_GAP + 20)) -- Extra vertical gap for details
-        
-        -- Visuals
-        btn.icon = btn:CreateTexture(nil, "BACKGROUND")
-        btn.icon:SetAllPoints()
-        btn.icon:SetTexture("Interface\\Icons\\INV_Chest_Cloth_17") -- Default
+    for i = 1, itemsPerPage do
+        local btn = CreateFrame("Button", "DCCommunityOutfitButton"..i, self.gridFrame)
+        btn:SetSize(200, 160) -- real size set by LayoutGrid()
+
+        btn:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 32,
+            insets = { left = 11, right = 12, top = 12, bottom = 11 }
+        })
+        btn:SetBackdropColor(0, 0, 0, 0)
+
+        ApplyLeaderboardsStyle(btn)
         
         btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
         btn.highlight:SetAllPoints()
         btn.highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
         btn.highlight:SetBlendMode("ADD")
         
-        -- Details (Below button)
-        btn.name = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btn.name:SetPoint("TOP", btn, "BOTTOM", 0, -2)
-        btn.name:SetWidth(BUTTON_SIZE + 10)
+        -- Name (top of box)
+        btn.name = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.name:SetPoint("TOPLEFT", btn, "TOPLEFT", 10, -8)
+        btn.name:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -10, -8)
         btn.name:SetJustifyH("CENTER")
         btn.name:SetWordWrap(false)
-        btn.name:SetText("Outfit Name")
+        btn.name:SetText("")
+
+        -- 3D preview (fills the card under the name)
+        btn.model = CreateFrame("DressUpModel", nil, btn)
+        btn.model:SetPoint("TOPLEFT", btn, "TOPLEFT", 10, -26)
+        btn.model:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -10, 10)
+        btn.model:SetUnit("player")
         
         -- Favorite Icon (Overlay)
         btn.fav = CreateFrame("Button", nil, btn)
@@ -161,33 +239,84 @@ function UI:Initialize(parent)
             GameTooltip:AddLine("Author: " .. (btn.data.author_name or "Unknown"), 0.7, 0.7, 0.7)
             GameTooltip:AddLine("Likes: " .. (btn.data.likes or 0), 0.7, 0.7, 0.7)
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Click to Apply", 0, 1, 0)
-            GameTooltip:AddLine("Ctrl-Click to Preview", 1, 0.8, 0)
+            GameTooltip:AddLine("Click to Preview", 1, 0.8, 0)
+            GameTooltip:AddLine("Right-click to Apply", 0, 1, 0)
             GameTooltip:Show()
         end)
         btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
         
         btn:SetScript("OnClick", function(self, button)
-             if not self.data then return end
-             if IsControlKeyDown() then
-                 if DC.PreviewOutfit and self.data.items then 
-                      -- Convert "items" string (123:456:...) to table or just use stored table if protocol sends array
-                      -- Initial protocol implementation sent "items" as string "id,id,id".
-                      -- Actually, server sends "items" as a comma/space separated string of item IDs usually.
-                      -- Let's parse it if it's a string
-                      local itemString = self.data.items
-                      DC:PreviewCommunityOutfit(self.data.name, itemString, self.data.id)
-                 end
-             else
-                  -- Apply
-                 if DC.ApplyCommunityOutfit and self.data.items then
-                      DC:ApplyCommunityOutfit(self.data.items)
-                 end
-             end
+            if not self.data then return end
+
+            if button == "RightButton" then
+                -- Apply
+                if DC.ApplyCommunityOutfit and self.data.items then
+                    DC:ApplyCommunityOutfit(self.data.items)
+                end
+                return
+            end
+
+            -- Preview
+            if UI.onPreview and self.data.items then
+                UI.onPreview(self.data.name, self.data.items, self.data.id)
+            elseif DC.PreviewCommunityOutfit and self.data.items then
+                DC:PreviewCommunityOutfit(self.data.name, self.data.items, self.data.id)
+            end
         end)
+
+        btn.LayoutGrid = function(selfBtn, cellW, cellH, x, y)
+            selfBtn:ClearAllPoints()
+            selfBtn:SetPoint("TOPLEFT", x, y)
+            selfBtn:SetSize(cellW, cellH)
+        end
+
+        btn.Render = function(selfBtn)
+            if not selfBtn.data then
+                return
+            end
+
+            local itemsString = selfBtn.data.items
+            if itemsString and itemsString ~= selfBtn._lastItemsString then
+                selfBtn._lastItemsString = itemsString
+                TryRenderOutfitOnModel(selfBtn.model, itemsString)
+            end
+        end
         
         table.insert(self.buttons, btn)
     end
+
+    function UI:LayoutGrid()
+        if not self.gridFrame or not self.buttons then
+            return
+        end
+
+        local gridW = self.gridFrame:GetWidth() or 0
+        local gridH = self.gridFrame:GetHeight() or 0
+        local c = self.cols or cols
+        local r = self.rows or rows
+        if gridW <= 0 or gridH <= 0 or c < 1 or r < 1 then
+            return
+        end
+
+        local gap = BUTTON_GAP
+        local cellW = math.floor((gridW - (c - 1) * gap) / c)
+        local cellH = math.floor((gridH - (r - 1) * gap) / r)
+        if cellW < 120 then cellW = 120 end
+        if cellH < 120 then cellH = 120 end
+
+        for i, btn in ipairs(self.buttons) do
+            local col = (i - 1) % c
+            local row = math.floor((i - 1) / c)
+            local x = col * (cellW + gap)
+            local y = -row * (cellH + gap)
+            if btn.LayoutGrid then
+                btn:LayoutGrid(cellW, cellH, x, y)
+            end
+        end
+    end
+
+    self.gridFrame:SetScript("OnShow", function() UI:LayoutGrid() end)
+    self.gridFrame:SetScript("OnSizeChanged", function() UI:LayoutGrid() end)
     
     -- Paging Controls
     local pagingFrame = CreateFrame("Frame", nil, self.frame)
@@ -199,8 +328,8 @@ function UI:Initialize(parent)
     self.prevBtn:SetPoint("LEFT", 0, 0)
     self.prevBtn:SetText("<")
     self.prevBtn:SetScript("OnClick", function()
-        if UI.offset >= ITEMS_PER_PAGE then
-            UI.offset = UI.offset - ITEMS_PER_PAGE
+        if UI.offset >= (UI.limit or itemsPerPage) then
+            UI.offset = UI.offset - (UI.limit or itemsPerPage)
             UI:RequestList()
         end
     end)
@@ -210,7 +339,7 @@ function UI:Initialize(parent)
     self.nextBtn:SetPoint("RIGHT", 0, 0)
     self.nextBtn:SetText(">")
     self.nextBtn:SetScript("OnClick", function()
-        UI.offset = UI.offset + ITEMS_PER_PAGE
+        UI.offset = UI.offset + (UI.limit or itemsPerPage)
         UI:RequestList()
     end)
     
@@ -219,9 +348,6 @@ function UI:Initialize(parent)
     self.pageText:SetText("Page 1")
     
 end
-
-end
-
 
 function UI:ToggleFavorite(outfitId, add)
     DC:RequestCommunityFavorite(outfitId, add)
@@ -274,12 +400,7 @@ function UI:UpdateGrid()
         if outfit then
             btn:Show()
             btn.data = outfit
-            btn.name:SetText(outfit.name or "Outfit")
-            -- btn.icon:SetTexture(...) -- Need to determine icon from items? 
-            -- Or server should send icon? 
-            -- Existing outfit system uses first item as icon or generic.
-            -- Use generic for now.
-            btn.icon:SetTexture("Interface\\Icons\\INV_Chest_Cloth_17")
+            btn.name:SetText(outfit.name or "")
 
             -- Update Favorite Star
             -- If filter is favorites, all are favorites.
@@ -296,18 +417,24 @@ function UI:UpdateGrid()
                  btn.fav:SetAlpha(0.3)
                  btn.fav.tex:SetVertexColor(1, 1, 1) -- Grey
             end
+
+            if btn.Render then
+                btn:Render()
+            end
             
         else
             btn:Hide()
+            btn.data = nil
         end
     end
     
-    local page = math.floor(self.offset / ITEMS_PER_PAGE) + 1
+    local perPage = self.limit or UI.limit or ITEMS_PER_PAGE
+    local page = math.floor((self.offset or 0) / perPage) + 1
     self.pageText:SetText("Page " .. page)
     
-    if self.offset == 0 then self.prevBtn:Disable() else self.prevBtn:Enable() end
+    if (self.offset or 0) == 0 then self.prevBtn:Disable() else self.prevBtn:Enable() end
     -- Next button logic depends on if we got full page
-    if #self.outfits < ITEMS_PER_PAGE then self.nextBtn:Disable() else self.nextBtn:Enable() end
+    if #self.outfits < perPage then self.nextBtn:Disable() else self.nextBtn:Enable() end
 
 end
 

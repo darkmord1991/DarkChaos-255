@@ -789,6 +789,8 @@ function DC:RequestRemoveWishlist(collectionType, entryId)
 end
 
 -- Use/summon collection item (mount, pet, toy)
+function DC:RequestUseItem(collectionType, entryId)
+    local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
     return self:SendMessage(self.Opcodes.CMSG_USE_ITEM, {
         type = typeId or 0,
         entryId = entryId,
@@ -1355,6 +1357,13 @@ function DC:HandleItemLearned(data)
     -- Limit to 50 recent items
     while #self.recentAdditions > 50 do
         table.remove(self.recentAdditions)
+    end
+
+    if type(self.SetRecentAdditions) == "function" then
+        self:SetRecentAdditions(self.recentAdditions)
+    elseif DCCollectionDB then
+        DCCollectionDB.recentAdditions = self.recentAdditions
+        DCCollectionDB.recentAdditionsUpdatedAt = time()
     end
     
     -- Update My Collection UI if visible
@@ -2317,7 +2326,15 @@ function DC:HandleStats(data)
     
     -- Handle recent additions if included
     if data.recent then
-        self.recentAdditions = data.recent
+        if type(self.SetRecentAdditions) == "function" then
+            self:SetRecentAdditions(data.recent)
+        else
+            self.recentAdditions = data.recent
+            if DCCollectionDB then
+                DCCollectionDB.recentAdditions = data.recent
+                DCCollectionDB.recentAdditionsUpdatedAt = time()
+            end
+        end
     end
     
     -- Notify legacy UI
@@ -2513,9 +2530,4 @@ function DC:HandleCommunityFavoriteResult(data)
     end
 end
 
-function DC:RequestAddWishlist(collectionType, entryId)
-    local msg = DC:CreateMessage(DC.Opcodes.CMSG_ADD_WISHLIST)
-    msg:Add("type", collectionType or 6) -- Default to Transmog (6)
-    msg:Add("entryId", entryId)
-    DC:SendMessage(msg)
-end
+

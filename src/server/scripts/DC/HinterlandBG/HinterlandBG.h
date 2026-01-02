@@ -12,7 +12,7 @@
 #include "OutdoorPvP/OutdoorPvPHL.h" // canonical class definition
 
 class Player;
-enum TeamId;
+enum TeamId : uint8;
 
 // HLBG player stats integration (implementation in OutdoorPvPHL_Utils.cpp)
 class HLBGPlayerStats

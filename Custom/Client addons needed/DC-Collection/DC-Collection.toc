@@ -33,13 +33,13 @@ Shop\ShopModule.lua
 UI\MyCollectionFrame.lua
 UI\MainFrame.lua
 UI\AchievementsFrame.lua
+UI\CommunityFrame.lua
 UI\WardrobeFrame.lua
 UI\Wardrobe\WardrobeCore.lua
 UI\Wardrobe\WardrobeUI.lua
 UI\Wardrobe\CameraDB.lua
 UI\Wardrobe\WardrobeItems.lua
 UI\Wardrobe\WardrobeSets.lua
-UI\Wardrobe\WardrobeOutfits.lua
 UI\ToastFrame.lua
 UI\MountJournalFrame.lua
 UI\PetJournalFrame.lua

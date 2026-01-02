@@ -27,13 +27,13 @@ local Wardrobe = DC.Wardrobe
 -- CONSTANTS / DATA TABLES
 -- ============================================================================
 
-Wardrobe.FRAME_WIDTH = 1000
-Wardrobe.FRAME_HEIGHT = 650
+Wardrobe.FRAME_WIDTH = 1120
+Wardrobe.FRAME_HEIGHT = 720
 Wardrobe.MODEL_WIDTH = 250
 Wardrobe.SLOT_SIZE = 36
 Wardrobe.GRID_ICON_SIZE = 46
-Wardrobe.GRID_COLS = 5
-Wardrobe.GRID_ROWS = 5
+Wardrobe.GRID_COLS = 6
+Wardrobe.GRID_ROWS = 6
 Wardrobe.ITEMS_PER_PAGE = Wardrobe.GRID_COLS * Wardrobe.GRID_ROWS
 
 -- Camera control constants
@@ -65,20 +65,20 @@ Wardrobe.EQUIPMENT_SLOTS = {
 }
 
 Wardrobe.SLOT_FILTERS = {
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Head",     invTypes = { [1] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shoulder", invTypes = { [3] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest",    invTypes = { [5] = true, [20] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shirt",    invTypes = { [4] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Tabard",   invTypes = { [19] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Wrists",   invTypes = { [9] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Hands",    invTypes = { [10] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Waist",    invTypes = { [6] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Legs",     invTypes = { [7] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Feet",     invTypes = { [8] = true } },
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest",    invTypes = { [16] = true } }, -- Back uses chest icon
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand", invTypes = { [13] = true, [17] = true, [21] = true } }, -- Weapon, 2H, MainHand
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-SecondaryHand", invTypes = { [13] = true, [14] = true, [17] = true, [22] = true, [23] = true } }, -- Weapon, Shield, 2H, OffHand, Holdable
-    { icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ranged",   invTypes = { [15] = true, [25] = true, [26] = true, [28] = true } }, -- Ranged, Thrown, RangedRight, Relic
+    { label = "Head",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Head",     invTypes = { [1] = true } },
+    { label = "Shoulder",  icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shoulder", invTypes = { [3] = true } },
+    { label = "Chest",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest",    invTypes = { [5] = true, [20] = true } },
+    { label = "Shirt",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shirt",    invTypes = { [4] = true } },
+    { label = "Tabard",    icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Tabard",   invTypes = { [19] = true } },
+    { label = "Wrist",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Wrists",   invTypes = { [9] = true } },
+    { label = "Hands",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Hands",    invTypes = { [10] = true } },
+    { label = "Waist",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Waist",    invTypes = { [6] = true } },
+    { label = "Legs",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Legs",     invTypes = { [7] = true } },
+    { label = "Feet",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Feet",     invTypes = { [8] = true } },
+    { label = "Back",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest",    invTypes = { [16] = true } }, -- Back uses chest icon
+    { label = "Main Hand", icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand", invTypes = { [13] = true, [17] = true, [21] = true } }, -- Weapon, 2H, MainHand
+    { label = "Off Hand",  icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-SecondaryHand", invTypes = { [13] = true, [14] = true, [17] = true, [22] = true, [23] = true } }, -- Weapon, Shield, 2H, OffHand, Holdable
+    { label = "Ranged",    icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ranged",   invTypes = { [15] = true, [25] = true, [26] = true, [28] = true } }, -- Ranged, Thrown, RangedRight, Relic
 }
 
 Wardrobe.VISUAL_SLOTS = {
@@ -102,7 +102,7 @@ Wardrobe.VISUAL_SLOTS = {
 -- STATE DEFAULTS
 -- ============================================================================
 
-Wardrobe.currentTab = Wardrobe.currentTab or "items" -- "items", "sets", "outfits"
+Wardrobe.currentTab = Wardrobe.currentTab or "items" -- "items", "sets", "community"
 Wardrobe.selectedSlot = Wardrobe.selectedSlot or nil
 Wardrobe.selectedSlotFilter = Wardrobe.selectedSlotFilter or nil
 Wardrobe.selectedQualityFilter = Wardrobe.selectedQualityFilter or 0  -- 0 = all qualities
@@ -115,6 +115,18 @@ Wardrobe.totalCount = Wardrobe.totalCount or 0
 Wardrobe.transmogDisabled = Wardrobe.transmogDisabled or false
 Wardrobe.spellVisualsDisabled = Wardrobe.spellVisualsDisabled or false
 Wardrobe.showUncollected = (Wardrobe.showUncollected ~= nil) and Wardrobe.showUncollected or true
+
+-- Outfits feature has been removed from the Wardrobe UI.
+-- Keep no-op stubs to avoid nil-call errors if some legacy code path still calls these.
+if type(Wardrobe.UpdateOutfitSlots) ~= "function" then
+    function Wardrobe:UpdateOutfitSlots() end
+end
+if type(Wardrobe.ShowSaveOutfitDialog) ~= "function" then
+    function Wardrobe:ShowSaveOutfitDialog() end
+end
+if type(Wardrobe.LoadOutfit) ~= "function" then
+    function Wardrobe:LoadOutfit() end
+end
 
 -- Quality filter constants (matches server-side ITEM_QUALITY)
 Wardrobe.QUALITY_FILTERS = {

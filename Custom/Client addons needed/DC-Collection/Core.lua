@@ -141,6 +141,19 @@ DC.collectionStats = {}
 -- Recent additions for My Collection overview
 DC.recentAdditions = {}
 
+function DC:SetRecentAdditions(recent)
+    if type(recent) ~= "table" then
+        return
+    end
+
+    self.recentAdditions = recent
+
+    if DCCollectionDB then
+        DCCollectionDB.recentAdditions = recent
+        DCCollectionDB.recentAdditionsUpdatedAt = time()
+    end
+end
+
 -- Currency
 DC.currency = {
     tokens = 0,
@@ -362,6 +375,11 @@ function DC:LoadSettings()
         if DCCollectionDB[key] == nil then
             DCCollectionDB[key] = value
         end
+    end
+
+    -- Restore cached recent additions (My Collection overview)
+    if type(DCCollectionDB.recentAdditions) == "table" then
+        self.recentAdditions = DCCollectionDB.recentAdditions
     end
     
     -- Character-specific settings

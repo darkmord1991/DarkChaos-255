@@ -41,7 +41,15 @@ namespace DCCollection
     // Shared Helpers (Implemented in dc_addon_collection.cpp)
     uint32 GetAccountId(Player* player);
     std::string const& GetCharEntryColumn(std::string const& tableName);
+    bool CharacterTableExists(std::string const& tableName);
+    bool CharacterColumnExists(std::string const& tableName, std::string const& columnName);
     bool WorldTableExists(std::string const& tableName);
+    bool WorldColumnExists(std::string const& tableName, std::string const& columnName);
+    std::string const& GetWorldEntryColumn(std::string const& tableName);
+    std::string const& GetWishlistIdColumn();
+    bool WishlistCollectionTypeIsEnum();
+    std::string WishlistTypeToString(uint8 type);
+    uint8 WishlistTypeFromString(std::string const& type);
     std::vector<uint32> LoadPlayerCollection(uint32 accountId, CollectionType type);
     bool HasCollectionItem(uint32 accountId, CollectionType type, uint32 entryId);
 
@@ -66,7 +74,7 @@ namespace DCCollection
     bool HasTransmogAppearanceUnlocked(uint32 accountId, uint32 displayId);
     bool IsAppearanceCompatible(uint8 slot, ItemTemplate const* proto, TransmogAppearanceVariant const& variant);
     TransmogAppearanceVariant const* FindBestVariantForSlot(uint32 displayId, uint8 slot, ItemTemplate const* proto);
-    void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source);
+    void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source, bool notifyPlayer = true);
     void InvalidateAccountUnlockedTransmogAppearances(uint32 accountId);
 
     // Additional Transmog Helpers
@@ -74,6 +82,9 @@ namespace DCCollection
     std::vector<uint32> GetInvTypesForVisualSlot(uint32 visualSlot);
     std::vector<uint32> GetCollectedAppearancesForSlot(Player* player, uint32 visualSlot, std::string const& searchFilter);
     void SendTransmogSlotItemsResponse(Player* player, uint32 visualSlot, uint32 page, std::vector<uint32> const& matchingItemIds, std::string const& searchFilter = "");
+    bool IsBetterTransmogRepresentative(uint32 newEntry, bool newIsNonCustom, uint32 newQuality, uint32 newItemLevel,
+        uint32 oldEntry, bool oldIsNonCustom, uint32 oldQuality, uint32 oldItemLevel);
+    TransmogAppearanceVariant const* FindAnyVariant(uint32 displayId);
     void SendTransmogState(Player* player); // Needed by SetTransmog
 }
 

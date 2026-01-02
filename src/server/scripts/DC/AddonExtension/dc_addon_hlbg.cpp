@@ -591,6 +591,7 @@ namespace HLBG
         SendQueueInfo(player);
     }
 
+#if 0
     static void HandleRequestStats(Player* player, const ParsedMessage& msg)
     {
         if (!player) return;
@@ -612,6 +613,7 @@ namespace HLBG
         response.Add(std::string("HLBG history UI is deprecated. Use DC-Leaderboards (/leaderboard)."));
         response.Send(player);
     }
+#endif
 
     // Leaderboard and stats handlers
     static void HandleGetLeaderboard(Player* player, const ParsedMessage& msg)
