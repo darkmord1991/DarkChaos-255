@@ -310,6 +310,12 @@ function Wardrobe:_ApplyEmbeddedLayout()
         previewModeFrame:SetFrameStrata("HIGH")
     end
 
+    -- Restore page frame position for embedded mode
+    if frame.pageFrame and frame.gridContainer then
+        frame.pageFrame:ClearAllPoints()
+        frame.pageFrame:SetPoint("TOPLEFT", frame.gridContainer, "BOTTOMLEFT", 0, -2)
+    end
+
     -- If the tooltip preview already exists, re-parent + re-anchor it.
     if self.tooltipPreview and self.tooltipPreview.SetParent then
         self.tooltipPreview:SetParent(previewHost)
@@ -351,10 +357,15 @@ function Wardrobe:_ApplyStandaloneLayout()
     bottom:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 45, 10)
     bottom:SetSize(self.MODEL_WIDTH + 50, 50)
 
+    if frame.pageFrame then
+        frame.pageFrame:ClearAllPoints()
+        frame.pageFrame:SetPoint("BOTTOM", right, "BOTTOM", 0, -45)
+    end
+
     if previewModeFrame then
-        previewModeFrame:SetParent(bottom)
+        previewModeFrame:SetParent(right)
         previewModeFrame:ClearAllPoints()
-        previewModeFrame:SetPoint("BOTTOMRIGHT", bottom, "BOTTOMRIGHT", -10, 0)
+        previewModeFrame:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, -45)
     end
 
     if self.tooltipPreview and self.tooltipPreview.SetParent then
@@ -776,7 +787,7 @@ function Wardrobe:CreateRightPanel(parent)
     local tabs = {
         { key = "items", label = "Items" },
         { key = "sets", label = "Sets" },
-        { key = "community", label = "Community" },
+        { key = "outfits", label = "Outfits" },
     }
 
     parent.tabButtons = {}
@@ -813,6 +824,43 @@ function Wardrobe:CreateRightPanel(parent)
 
         table.insert(parent.tabButtons, tab)
     end
+
+    -- New Outfit Button (+)
+    local newOutfitBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
+    newOutfitBtn:SetSize(25, 25)
+    newOutfitBtn:SetPoint("LEFT", parent.tabButtons[#parent.tabButtons], "RIGHT", 5, 0)
+    newOutfitBtn:SetText("+")
+    newOutfitBtn:SetScript("OnClick", function()
+        if Wardrobe.ShowSaveOutfitDialog then
+            Wardrobe:ShowSaveOutfitDialog()
+        end
+    end)
+    newOutfitBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Save New Outfit")
+        GameTooltip:Show()
+    end)
+    newOutfitBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    parent.newOutfitBtn = newOutfitBtn
+
+    -- Randomize Outfit Button (Dice)
+    local randomOutfitBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
+    randomOutfitBtn:SetSize(25, 25)
+    randomOutfitBtn:SetPoint("LEFT", newOutfitBtn, "RIGHT", 5, 0)
+    randomOutfitBtn:SetText("R") -- Placeholder text, maybe replace with Dice icon if available
+    randomOutfitBtn:SetScript("OnClick", function()
+        if Wardrobe.RandomizeOutfit then
+            Wardrobe:RandomizeOutfit()
+        end
+    end)
+    randomOutfitBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Randomize Outfit")
+        GameTooltip:AddLine("Gives you a random look from your collected items.", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    randomOutfitBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    parent.randomOutfitBtn = randomOutfitBtn
 
     -- Filter controls row (Order By, Filter, Quality dropdown, Search box)
     local filterControlsY = -30  -- Position below tabs
@@ -1199,7 +1247,7 @@ function Wardrobe:CreateRightPanel(parent)
 
     local pageFrame = CreateFrame("Frame", nil, right)
     pageFrame:ClearAllPoints()
-    pageFrame:SetPoint("TOPLEFT", gridContainer, "BOTTOMLEFT", 0, -8)
+    pageFrame:SetPoint("BOTTOM", right, "BOTTOM", 0, -45)
     pageFrame:SetSize(260, 25)
     -- Ensure controls draw above the grid background
     pageFrame:SetFrameStrata("HIGH")
@@ -1238,13 +1286,97 @@ function Wardrobe:CreateRightPanel(parent)
             Wardrobe.currentPage = Wardrobe.currentPage + 1
             if Wardrobe.currentTab == "sets" then
                 Wardrobe:RefreshSetsGrid()
+            elseif Wardrobe.currentTab == "outfits" then
+                Wardrobe:RefreshOutfitsGrid()
             else
                 Wardrobe:RefreshGrid()
             end
         end
     end)
 
+    self:CreateOutfitsGrid(right)
+
     parent.rightPanel = right
+end
+
+function Wardrobe:CreateOutfitsGrid(parent)
+    local OUTFIT_COLS = 3
+    local OUTFIT_ROWS = 2
+    local OUTFIT_WIDTH = 200
+    local OUTFIT_HEIGHT = 200
+    local GAP_X = 15
+    local GAP_Y = 15
+
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetPoint("TOPLEFT", parent.collectedFrame, "BOTTOMLEFT", 0, -5)
+    container:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 40) -- Leave space for pages/bottom bar
+    container:Hide()
+    
+    parent.outfitGridContainer = container
+
+    parent.outfitButtons = {}
+
+    -- Calculate total width to center it
+    local totalWidth = (OUTFIT_COLS * OUTFIT_WIDTH) + ((OUTFIT_COLS - 1) * GAP_X)
+    local startX = (parent:GetWidth() - totalWidth) / 2
+
+    for i = 1, (OUTFIT_COLS * OUTFIT_ROWS) do
+        local btn = CreateFrame("Button", nil, container)
+        btn:SetSize(OUTFIT_WIDTH, OUTFIT_HEIGHT)
+
+        local row = math.floor((i - 1) / OUTFIT_COLS)
+        local col = (i - 1) % OUTFIT_COLS
+
+        -- Centered layout
+        btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + (col * (OUTFIT_WIDTH + GAP_X)), -10 - (row * (OUTFIT_HEIGHT + GAP_Y)))
+
+        -- Background/Border
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        btn.bg:SetTexture(0, 0, 0, 0.4)
+        
+        btn:SetBackdrop({
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true, tileSize = 32, edgeSize = 16,
+            insets = { left = 5, right = 5, top = 5, bottom = 5 }
+        })
+
+        -- Initial highlight (selection/hover)
+        btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+        btn.highlight:SetAllPoints()
+        btn.highlight:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+        btn.highlight:SetBlendMode("ADD")
+        btn.highlight:SetAlpha(0.3)
+
+        -- Name Text (At Top)
+        btn.name = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        btn.name:SetPoint("TOPLEFT", 8, -8)
+        btn.name:SetPoint("TOPRIGHT", -8, -8)
+        btn.name:SetHeight(20)
+        btn.name:SetJustifyH("CENTER")
+        btn.name:SetText("Outfit Name")
+
+        -- Model Preview (Middle/Filling)
+        btn.model = CreateFrame("DressUpModel", nil, btn)
+        btn.model:SetPoint("TOPLEFT", 8, -30)
+        btn.model:SetPoint("BOTTOMRIGHT", -8, 8)
+        btn.model:SetUnit("player")
+        btn.model:SetLight(1, 0, 0, 0, -1, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+        
+        -- Fallback Icon (if model is heavy or disabled)
+        btn.icon = btn:CreateTexture(nil, "ARTWORK")
+        btn.icon:SetPoint("CENTER")
+        btn.icon:SetSize(64, 64)
+        btn.icon:SetTexture("Interface\\Icons\\INV_Chest_Cloth_17")
+        btn.icon:Hide()
+
+        btn.icon:Hide()
+        
+        btn.icon:Hide()
+        
+        -- Attach to parent's outfitButtons array (initialized at line 1317)
+        table.insert(parent.outfitButtons, btn)
+    end
 end
 
 -- ============================================================================
@@ -1260,14 +1392,20 @@ function Wardrobe:CreateBottomBar(parent)
     local previewModeFrame = CreateFrame("Frame", nil, parent.rightPanel or bottom)
     previewModeFrame:SetSize(150, 20)
     previewModeFrame:ClearAllPoints()
-    if parent.gridContainer then
-        -- Keep it just below the grid background
-        previewModeFrame:SetPoint("TOPRIGHT", parent.gridContainer, "BOTTOMRIGHT", 0, -8)
-        previewModeFrame:SetFrameStrata("HIGH")
-        previewModeFrame:SetFrameLevel(parent.gridContainer:GetFrameLevel() + 10)
+    
+    if parent.pageFrame then
+        previewModeFrame:SetPoint("LEFT", parent.pageFrame, "RIGHT", 10, 0)
+    elseif parent.rightPanel then
+        -- Fallback if pageFrame isn't ready
+        previewModeFrame:SetPoint("BOTTOMRIGHT", parent.rightPanel, "BOTTOMRIGHT", 0, -45)
     else
         previewModeFrame:SetPoint("BOTTOM", parent.rightPanel or bottom, "BOTTOM", 0, 5)
     end
+    
+    if parent.gridContainer then
+        previewModeFrame:SetFrameLevel(parent.gridContainer:GetFrameLevel() + 10)
+    end
+    previewModeFrame:SetFrameStrata("HIGH")
     
     previewModeFrame.label = previewModeFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     previewModeFrame.label:SetPoint("LEFT", previewModeFrame, "LEFT", 0, 0)

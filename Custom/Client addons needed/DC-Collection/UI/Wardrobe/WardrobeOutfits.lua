@@ -2,10 +2,7 @@
     DC-Collection UI/Wardrobe/WardrobeOutfits.lua
     ============================================
 
-    Outfits tab: simple list + load/delete actions.
-
-    Notes:
-    - Outfits paging should not change tabs; paging buttons are disabled while in outfits.
+    Outfits tab: custom 3x2 grid with large previews.
 ]]
 
 local DC = DCCollection
@@ -15,8 +12,62 @@ DC.Wardrobe = DC.Wardrobe or {}
 local Wardrobe = DC.Wardrobe
 
 -- ============================================================================
--- OUTFIT SYSTEM (ported from the original monolithic WardrobeFrame.lua)
+-- OUTFIT SYSTEM
 -- ============================================================================
+
+function Wardrobe:ShowOutfitsContent()
+    if self.frame then
+        if self.frame.modelTitle then self.frame.modelTitle:SetText("Saved Outfits") end
+        if self.frame.communityHost then self.frame.communityHost:Hide() end
+        if DC and DC.CommunityUI and DC.CommunityUI.frame then
+            DC.CommunityUI.frame:Hide()
+        end
+
+        -- Hide items/sets specific controls
+        if self.frame.orderBtn then self.frame.orderBtn:Hide() end
+        if self.frame.filterBtn then self.frame.filterBtn:Hide() end
+        if self.frame.qualityDropdown then self.frame.qualityDropdown:Hide() end
+        if self.frame.searchBox then self.frame.searchBox:Hide() end
+        
+        -- Hide slot filters
+        for _, btn in ipairs(self.frame.slotFilterButtons or {}) do
+            btn:Hide()
+        end
+        
+        -- Hide standard grid container
+        if self.frame.gridContainer then self.frame.gridContainer:Hide() end
+        if self.frame.gridFrame then self.frame.gridFrame:Hide() end
+        
+        -- Show outfit grid container
+        if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Show() end
+
+        -- Hide collected bar (Outfits are not "collected" in the same sense)
+        if self.frame.collectedFrame then self.frame.collectedFrame:Hide() end
+        if self.frame.showUncollectedCheck then self.frame.showUncollectedCheck:Hide() end
+        
+        if self.frame.modelPanel then self.frame.modelPanel:Show() end
+
+        -- Preview Mode Frame handled globally in WardrobeUI
+        if self.frame.previewModeFrame then
+             self.frame.previewModeFrame:Show()
+        end
+
+        -- Show Outfit Controls
+        if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Show() end
+        if self.frame.randomOutfitBtn then self.frame.randomOutfitBtn:Show() end
+
+        -- Request latest from server
+        if DC.Protocol and DC.Protocol.RequestSavedOutfits then
+            DC.Protocol:RequestSavedOutfits()
+        end
+    end
+    
+    -- Reset pagination when switching to this tab
+    self.currentPage = 1
+    self.totalPages = 1
+    
+    self:RefreshOutfitsGrid()
+end
 
 function Wardrobe:ShowSaveOutfitDialog()
     StaticPopupDialogs["DC_SAVE_OUTFIT"] = {
@@ -43,27 +94,14 @@ function Wardrobe:SaveCurrentOutfit(name)
     if not DC.db then DC.db = {} end
     if not DC.db.outfits then DC.db.outfits = {} end
 
-    local index = nil
-    for i = 1, 20 do
-        if not DC.db.outfits[i] then
-            index = i
-            break
-        end
-    end
-
-    if not index then
-        if DC and DC.Print then
-            DC:Print("Outfit slots full!")
-        end
-        return
-    end
-
+    -- Always use ID 0 for new outfits - server will auto-increment
+    local id = 0
+    
     local outfit = {
+        id = id,
         name = name,
-        icon = "Interface\\Icons\\INV_Chest_Cloth_17",
+        icon = "Interface\\Icons\\INV_Chest_Cloth_17", 
         slots = {},
-        date = date("%Y-%m-%d"),
-        level = UnitLevel("player"),
     }
 
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
@@ -71,36 +109,55 @@ function Wardrobe:SaveCurrentOutfit(name)
         if invSlotId then
             local itemId = GetInventoryItemID("player", invSlotId)
             if itemId then
-                local transmogId = DC.transmogState and DC.transmogState[tostring(invSlotId)]
-                outfit.slots[slotDef.key] = transmogId or itemId
+                -- Check for transmog
+                local transmogId = DC.transmogState and DC.transmogState[tostring(invSlotId-1)]
+                
+                -- Store the actual transmog appearance ID if available, otherwise item ID
+                outfit.slots[slotDef.key] = tonumber(transmogId) or itemId
+                
+                -- Capture icon from chest/head for main icon if not set
+                if (slotDef.key == "ChestSlot" or slotDef.key == "HeadSlot") and outfit.icon == "Interface\\Icons\\INV_Chest_Cloth_17" then
+                     local _, _, _, _, _, _, _, _, _, tex = GetItemInfo(itemId)
+                     if tex then outfit.icon = tex end
+                end
             end
         end
     end
 
-    DC.db.outfits[index] = outfit
-    if DC and DC.Print then
-        DC:Print("Outfit '" .. name .. "' saved!")
+    -- Sanitize icon path (replace backslashes with forward slashes) to prevent server/DB corruption
+    if outfit.icon then
+        outfit.icon = string.gsub(outfit.icon, "\\", "/")
     end
 
-    self:UpdateOutfitSlots()
+    -- Send to server
+    if DC.Protocol and DC.Protocol.SaveOutfit then
+        DC.Protocol:SaveOutfit(id, outfit.name, outfit.icon, outfit.slots)
+        -- Also add locally for instant feedback (will be overwritten by sync)
+        table.insert(DC.db.outfits, outfit)
+        DC:Print("Outfit '" .. name .. "' saved to server!")
+    else
+        DC:Print("Error: Protocol not ready.")
+    end
+
+    -- Refresh UI immediately
+    if self.currentTab == "outfits" then
+        self:RefreshOutfitsGrid()
+    end
 end
 
-function Wardrobe:LoadOutfit(index)
-    local outfits = DC.db and DC.db.outfits or {}
-    local outfit = outfits[index]
-
-    if not outfit then
-        if DC and DC.Print then
-            DC:Print("No outfit saved in this slot.")
-        end
-        return
-    end
+function Wardrobe:LoadOutfit(outfit)
+    if not outfit then return end
 
     for slotKey, itemId in pairs(outfit.slots or {}) do
+        -- itemId here is the Appearance ID or Item ID we want to look like
+        
         local invSlotId = GetInventorySlotInfo(slotKey)
+        -- We apply to the slot if we have an item equipped there
         if invSlotId and GetInventoryItemID("player", invSlotId) then
             if DC and DC.RequestSetTransmog then
-                DC:RequestSetTransmog(invSlotId, itemId)
+                -- Note: The server expects (slot, entryId).
+                -- entryId should be the item entry of the appearance.
+                DC:RequestSetTransmog(invSlotId-1, itemId) 
             end
         end
     end
@@ -110,95 +167,199 @@ function Wardrobe:LoadOutfit(index)
     end
 end
 
-function Wardrobe:UpdateOutfitSlots()
-    if not self.frame or not self.frame.outfitSlots then return end
+function Wardrobe:RandomizeOutfit()
+    if not self.BuildAppearanceList then return end
+    
+    -- Cache current tab/slot to restore later
+    local originalTab = self.currentTab
+    local originalSlot = self.selectedSlot
+    
+    if DC and DC.Print then DC:Print("Randomizing outfit...") end
 
-    local outfits = DC.db and DC.db.outfits or {}
-
-    for i, slot in ipairs(self.frame.outfitSlots) do
-        local outfit = outfits[i]
-        if outfit then
-            slot.icon:SetTexture(outfit.icon or "Interface\\Icons\\INV_Chest_Cloth_17")
-            slot.icon:Show()
-        else
-            slot.icon:Hide()
+    local collectedBySlot = {}
+    
+    -- Iterate all slots to find collected items
+    -- We can reuse BuildAppearanceList but we need to temporarily trick it into thinking a specific slot filter is active.
+    -- Or we can just iterate the raw definitions if available.
+    -- Reusing BuildAppearanceList is safer to respect "collected" logic.
+    
+    for _, slotDef in ipairs(self.SLOT_FILTERS or {}) do
+        -- Mock selection
+        self.selectedSlotFilter = slotDef
+        -- Force re-building list for this slot
+        local list = self:BuildAppearanceList()
+        
+        -- Filter only collected items
+        local collected = {}
+        for _, item in ipairs(list) do
+            if item.collected then
+                table.insert(collected, item.itemId)
+            end
+        end
+        collectedBySlot[slotDef.label] = collected
+    end
+    
+    -- Restore state
+    self.selectedSlotFilter = nil
+    
+    -- Now select random items
+    for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
+        -- Map EQUIPMENT_SLOTS to SLOT_FILTERS labels
+        -- This mapping is a bit loose in the core file, let's try to match by invType.
+        local invSlotId, _ = GetInventorySlotInfo(slotDef.key)
+        if invSlotId then
+            local slotCandidates = {}
+            -- Find the matching filter group(s)
+            for _, filter in ipairs(self.SLOT_FILTERS or {}) do
+                if filter.invTypes[slotDef.invType] then
+                    local items = collectedBySlot[filter.label]
+                    if items then
+                        for _, id in ipairs(items) do
+                            table.insert(slotCandidates, id)
+                        end
+                    end
+                end
+            end
+            
+            if #slotCandidates > 0 then
+                local randomItemId = slotCandidates[math.random(1, #slotCandidates)]
+                if randomItemId then
+                    -- Apply to model
+                     if self.frame.model then
+                         local link = "item:" .. tostring(randomItemId) .. ":0:0:0:0:0:0:0"
+                         self.frame.model:TryOn(link)
+                     end
+                     -- Apply to actual character (Preview only? User said "random outfit option", usually implies applying it or previewing it to save)
+                     -- "Randomize Outfit" usually implies changing the *current look* (Transmog) or just the preview model?
+                     -- "where random appearances are choosen for every slot that are known by the player"
+                     -- Let's just update the preview model first. Applying it automatically might be annoying.
+                     -- The user can then click "Save" to save it as an outfit.
+                     
+                     -- Wait, if they want to APPLY it to their character, they'd need an "Apply" button or we just apply it?
+                     -- "Random outfit option" -> usually generates a look.
+                     -- I'll stick to updating the preview model for now.
+                     -- To apply it, they would need to look at the model and maybe click "Apply".
+                     -- But currently "Apply" logic is tied to Saved Outfits or Individual Items.
+                     -- There isn't an "Apply current model look to character" button.
+                     -- Maybe I should just Apply it directly? "Randomize" usually acts as an action.
+                     -- Let's Apply it directly to the character (transmog).
+                     
+                     if DC and DC.RequestSetTransmog then
+                         DC:RequestSetTransmog(invSlotId-1, randomItemId)
+                     end
+                end
+            end
         end
     end
+    
+    if DC and DC.Print then DC:Print("Random outfit applied!") end
 end
 
 function Wardrobe:RefreshOutfitsGrid()
-    if not self.frame then return end
+    local buttons = self.frame and self.frame.outfitButtons
+    if not buttons and _G["DCCollectionWardrobeFrame"] then
+        buttons = _G["DCCollectionWardrobeFrame"].outfitButtons
+    end
+    
+    if not buttons then return end
 
     local outfits = DC.db and DC.db.outfits or {}
+    DC:Print("DEBUG: RefreshOutfitsGrid. #outfits = " .. (outfits and #outfits or "nil"))
+    local ITEMS_PER_PAGE = 6 -- 3x2 grid
+    
+    local totalOutfits = #outfits
+    self.currentPage = self.currentPage or 1
+    self.totalPages = math.max(1, math.ceil(totalOutfits / ITEMS_PER_PAGE))
+    
+    if DC and DC.Print then
+        DC:Print("Debug: Refreshing outfits grid. Total outfits: " .. totalOutfits)
+    end
 
-    for i, btn in ipairs(self.frame.gridButtons) do
-        local outfit = outfits[i]
-
-        if outfit then
-            btn:Show()
-            btn.itemData = { outfit = outfit, index = i }
-            btn.icon:SetTexture(outfit.icon or "Interface\\Icons\\INV_Chest_Cloth_17")
-            btn.icon:SetVertexColor(1, 1, 1)
-            btn.notCollected:Hide()
-            
-            -- Override search hit highlighting if not needed, or keep it
-            
-            -- Hook scripts if not already done (assuming buttons are reused)
-            if not btn.dcOutfitScriptsHooked then
-                btn.dcOutfitScriptsHooked = true
-                
-                btn:SetScript("OnClick", function(self, button)
-                    if not self.itemData or not self.itemData.outfit then return end
-                    
-                    if IsModifiedClick("CHATLINK") then
-                        local link = DC:GenerateOutfitLink(self.itemData.outfit.name, self.itemData.outfit)
-                        if link then
-                            if ChatEdit_InsertLink then
-                                ChatEdit_InsertLink(link)
-                            end
-                        end
-                        return
-                    end
-                    
-                    if IsModifiedClick("DRESSUP") then
-                        DC:PreviewOutfit(self.itemData.outfit.name)
-                        return
-                    end
-                    
-                    -- Normal click: apply
-                    DC:ApplyOutfit(self.itemData.outfit.name)
-                end)
-                
-                btn:SetScript("OnEnter", function(self)
-                    if not self.itemData or not self.itemData.outfit then return end
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:AddLine(self.itemData.outfit.name, 1, 1, 1)
-                    GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("Click to apply", 0.7, 0.7, 0.7)
-                    GameTooltip:AddLine("Ctrl-Click to preview", 0.7, 0.7, 0.7)
-                    GameTooltip:AddLine("Shift-Click to link", 0.7, 0.7, 0.7)
-                    GameTooltip:Show()
-                end)
-                
-                btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-            end
-        else
-            btn:Hide()
-            btn.itemData = nil
+    if totalOutfits == 0 then
+        if not self.frame.noOutfitsText then
+            self.frame.noOutfitsText = self.frame.outfitGridContainer:CreateFontString(nil, "OVERLAY", "GameFontDisableLarge")
+            self.frame.noOutfitsText:SetPoint("CENTER", 0, 0)
+            self.frame.noOutfitsText:SetText("No outfits saved yet.\nClick '+' above to save your look!")
+        end
+        self.frame.noOutfitsText:Show()
+    else
+        if self.frame.noOutfitsText then
+            self.frame.noOutfitsText:Hide()
         end
     end
 
     if self.frame.pageText then
-        self.frame.pageText:SetText("Saved Outfits")
+        self.frame.pageText:SetText(string.format("Page %d / %d", self.currentPage, self.totalPages))
     end
 
-    if self.frame.prevBtn then self.frame.prevBtn:Disable() end
-    if self.frame.nextBtn then self.frame.nextBtn:Disable() end
-
-    if self.frame.collectedFrame then
-        local count = 0
-        for _ in pairs(outfits) do count = count + 1 end
-        self.frame.collectedFrame.text:SetText(string.format("Outfits: %d", count))
-        self.frame.collectedFrame.bar:SetValue(0)
+    if self.currentPage > self.totalPages then self.currentPage = self.totalPages end
+    
+    local startIdx = (self.currentPage - 1) * ITEMS_PER_PAGE
+    
+    local startIdx = (self.currentPage - 1) * ITEMS_PER_PAGE
+    
+    for i, btn in ipairs(buttons) do
+        local idx = startIdx + i
+        local outfit = outfits[idx]
+        
+        if outfit then
+            btn:Show()
+            btn.outfit = outfit
+            btn.name:SetText(outfit.name or "Outfit " .. idx)
+            
+            -- Setup Model Preview
+            btn.model:Show()
+            btn.model:Undress()
+            btn.model:SetUnit("player")
+            btn.model:SetFacing(0)
+            
+            -- Try on all items
+            if outfit.slots then
+                 for _, itemId in pairs(outfit.slots) do
+                     local itemLink = "item:" .. itemId .. ":0:0:0:0:0:0:0"
+                     btn.model:TryOn(itemLink)
+                 end
+            end
+            
+            -- Hook Interaction
+            btn:SetScript("OnClick", function(selfBtn, button)
+                if IsModifiedClick("CHATLINK") then
+                    local link = "[Outfit: " .. (selfBtn.outfit.name or "Link") .. "]" -- Simplified link for now
+                    if ChatEdit_InsertLink then
+                         ChatEdit_InsertLink(link)
+                    end
+                    return
+                end
+                
+                -- Apply outfit on click
+                Wardrobe:LoadOutfit(selfBtn.outfit)
+            end)
+            
+            btn:SetScript("OnEnter", function(selfBtn)
+                 GameTooltip:SetOwner(selfBtn, "ANCHOR_RIGHT")
+                 GameTooltip:SetText(selfBtn.outfit.name)
+                 GameTooltip:AddLine("Click to Apply", 0, 1, 0)
+                 GameTooltip:AddLine("Shift+Click to Link", 1, 1, 1)
+                 GameTooltip:Show()
+            end)
+            
+            btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            
+        else
+            btn:Hide()
+        end
+    end
+    
+    -- Update Page Text
+    if self.frame.pageText then
+        self.frame.pageText:SetText(string.format("Page %d / %d", self.currentPage, self.totalPages))
+    end
+    
+    -- Update Page Buttons
+    if self.frame.prevBtn then
+        self.frame.prevBtn:SetEnabled(self.currentPage > 1)
+    end
+    if self.frame.nextBtn then
+        self.frame.nextBtn:SetEnabled(self.currentPage < self.totalPages)
     end
 end

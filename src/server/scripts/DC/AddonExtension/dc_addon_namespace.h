@@ -452,6 +452,7 @@ namespace DCAddon
             // Client -> Server: Definitions / Per-type data
             constexpr uint8 CMSG_GET_DEFINITIONS      = 0x06;  // Request definitions for a type
             constexpr uint8 CMSG_GET_COLLECTION       = 0x07;  // Request collection for a type
+            constexpr uint8 CMSG_GET_ITEM_SETS        = 0x08;  // Request item sets
 
             // Client -> Server: Shop
             constexpr uint8 CMSG_GET_SHOP            = 0x10;  // Request shop items
@@ -476,10 +477,17 @@ namespace DCAddon
             constexpr uint8 CMSG_GET_COLLECTED_APPEARANCES = 0x36; // Get all collected displayIds (for tooltip)
             constexpr uint8 CMSG_GET_TRANSMOG_STATE      = 0x37;  // Request current per-slot state
             constexpr uint8 CMSG_APPLY_TRANSMOG_PREVIEW  = 0x38;  // Apply all pending preview slots at once
+            
+            // Client -> Server: Outfits
+            constexpr uint8 CMSG_SAVE_OUTFIT         = 0x39; // Save current equipment set
+            constexpr uint8 CMSG_DELETE_OUTFIT       = 0x3A; // Delete saved outfit
+            constexpr uint8 CMSG_GET_SAVED_OUTFITS   = 0x3B; // Request saved outfits
 
             // Server -> Client: Transmog-specific
             constexpr uint8 SMSG_TRANSMOG_SLOT_ITEMS   = 0x49;  // Appearances for a slot response
             constexpr uint8 SMSG_COLLECTED_APPEARANCES = 0x4A;  // All collected displayIds
+            constexpr uint8 SMSG_ITEM_SETS             = 0x4B;  // Item Sets definition payload
+            constexpr uint8 SMSG_SAVED_OUTFITS         = 0x4C;  // Saved Outfits payload
 
             // Server -> Client: Sync/Data
             constexpr uint8 SMSG_HANDSHAKE_ACK       = 0x40;  // Handshake response

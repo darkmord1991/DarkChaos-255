@@ -17,11 +17,6 @@ local Wardrobe = DC.Wardrobe
 -- ============================================================================
 
 function Wardrobe:SelectTab(tabKey)
-    -- Outfits tab has been removed; keep backward compatibility
-    if tabKey == "outfits" then
-        tabKey = "items"
-    end
-
     self.currentTab = tabKey
     self.currentPage = 1
 
@@ -41,6 +36,10 @@ function Wardrobe:SelectTab(tabKey)
         self:ShowItemsContent()
     elseif tabKey == "sets" then
         self:ShowSetsContent()
+    elseif tabKey == "outfits" then
+        if self.ShowOutfitsContent then
+            self:ShowOutfitsContent()
+        end
     elseif tabKey == "community" then
         self:ShowCommunityContent()
     end
@@ -53,6 +52,11 @@ function Wardrobe:ShowItemsContent()
         if DC and DC.CommunityUI and DC.CommunityUI.frame then
             DC.CommunityUI.frame:Hide()
         end
+        if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
+
+        -- Hide Outfit Controls
+        if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Hide() end
+        if self.frame.randomOutfitBtn then self.frame.randomOutfitBtn:Hide() end
 
         if self.frame.orderBtn then self.frame.orderBtn:Show() end
         if self.frame.filterBtn then self.frame.filterBtn:Show() end
@@ -75,6 +79,10 @@ function Wardrobe:ShowItemsContent()
         if self.frame.modelPanel then
             self.frame.modelPanel:Show()
         end
+        -- Preview Mode Frame is now handled globally in WardrobeUI
+        if self.frame.previewModeFrame then
+             self.frame.previewModeFrame:Show()
+        end
     end
     self:RefreshGrid()
 end
@@ -86,6 +94,11 @@ function Wardrobe:ShowSetsContent()
         if DC and DC.CommunityUI and DC.CommunityUI.frame then
             DC.CommunityUI.frame:Hide()
         end
+        if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
+        
+        -- Hide Outfit Controls
+        if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Hide() end
+        if self.frame.randomOutfitBtn then self.frame.randomOutfitBtn:Hide() end
 
         if self.frame.orderBtn then self.frame.orderBtn:Show() end
         if self.frame.filterBtn then self.frame.filterBtn:Show() end
@@ -99,6 +112,13 @@ function Wardrobe:ShowSetsContent()
         if self.frame.modelPanel then
             self.frame.modelPanel:Show()
         end
+        -- Preview Mode Frame is now handled globally in WardrobeUI
+        if self.frame.previewModeFrame then
+             self.frame.previewModeFrame:Show()
+        end
+    end
+    if DC and DC.RequestItemSets then
+        DC:RequestItemSets()
     end
     self:RefreshSetsGrid()
 end
@@ -163,6 +183,8 @@ function Wardrobe:ShowCommunityContent()
     end
 
     -- Hide wardrobe-specific controls
+    if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Hide() end
+    if self.frame.randomOutfitBtn then self.frame.randomOutfitBtn:Hide() end
     if self.frame.orderBtn then self.frame.orderBtn:Hide() end
     if self.frame.filterBtn then self.frame.filterBtn:Hide() end
     if self.frame.qualityDropdown then self.frame.qualityDropdown:Hide() end
@@ -190,8 +212,8 @@ function Wardrobe:ShowCommunityContent()
             onPreview = function(outfitName, itemsString)
                 Wardrobe:PreviewCommunityOutfitEmbedded(outfitName, itemsString)
             end,
-            cols = 2,
-            rows = 3,
+            cols = 3,
+            rows = 2,
         })
         if DC.CommunityUI.frame then
             DC.CommunityUI.frame:Show()
@@ -241,12 +263,21 @@ function Wardrobe:SelectSlot(slotDef)
             -- Store camera position in model for zoom functionality
             model.cameraX = cameraPos.x
             model.cameraY = cameraPos.y
-                DC.CommunityUI:Initialize(host, {
-                    onPreview = function(outfitName, itemsString)
-                        Wardrobe:PreviewCommunityOutfitEmbedded(outfitName, itemsString)
-                    end,
-                    cols = 3,
-                    rows = 2,
+            model.cameraZ = cameraPos.z
+
+            -- Apply with current zoom level
+            local zoomedPos = {
+                x = cameraPos.x * (model.cameraDistance or 1.0),
+                y = cameraPos.y,
+                z = cameraPos.z,
+                facing = cameraPos.facing
+            }
+            if type(self.ApplyCameraPosition) == "function" then
+                self:ApplyCameraPosition(model, zoomedPos)
+            elseif model.SetPosition then
+                model:SetPosition(zoomedPos.x, zoomedPos.y, zoomedPos.z)
+            end
+
             -- Reset rotation to facing angle for this slot
             if model.SetFacing then
                 model:SetFacing(cameraPos.facing)

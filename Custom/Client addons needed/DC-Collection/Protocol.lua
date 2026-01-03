@@ -53,6 +53,9 @@
 
 local DC = DCCollection
 
+-- Initialize Protocol namespace
+DC.Protocol = DC.Protocol or {}
+
 -- ============================================================================
 -- OPCODE DEFINITIONS
 -- Must match DCAddonNamespace.h Opcode::Collection namespace EXACTLY
@@ -65,11 +68,15 @@ DC.Opcodes = {
     CMSG_SYNC_COLLECTION     = 0x03,
     CMSG_GET_STATS           = 0x04,
     CMSG_GET_BONUSES         = 0x05,
-
-    -- Client -> Server: Definitions / Per-type collections
     CMSG_GET_DEFINITIONS     = 0x06,
     CMSG_GET_COLLECTION      = 0x07,
+    CMSG_GET_ITEM_SETS       = 0x08,
     
+    -- Client -> Server: Outfits
+    CMSG_SAVE_OUTFIT         = 0x39,
+    CMSG_DELETE_OUTFIT       = 0x3A,
+    CMSG_GET_SAVED_OUTFITS   = 0x3B,
+
     -- Client -> Server: Shop
     CMSG_GET_SHOP            = 0x10,
     CMSG_BUY_ITEM            = 0x11,
@@ -116,6 +123,8 @@ DC.Opcodes = {
     SMSG_TRANSMOG_STATE          = 0x48,
     SMSG_TRANSMOG_SLOT_ITEMS     = 0x49,
     SMSG_COLLECTED_APPEARANCES   = 0x4A,
+    SMSG_ITEM_SETS               = 0x4B,
+    SMSG_SAVED_OUTFITS           = 0x4C,
 
     -- Server -> Client: Community
     SMSG_COMMUNITY_LIST       = 0x63,
@@ -268,6 +277,8 @@ function DC:InitializeProtocol()
     registerOpcode(self.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT)
     registerOpcode(self.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT)
     registerOpcode(self.Opcodes.SMSG_INSPECT_TRANSMOG)
+    registerOpcode(self.Opcodes.SMSG_ITEM_SETS)
+    registerOpcode(self.Opcodes.SMSG_SAVED_OUTFITS)
 
 
     self:Debug("Protocol handlers registered via RegisterJSONHandler: " .. self.MODULE_ID)
@@ -797,6 +808,68 @@ function DC:RequestUseItem(collectionType, entryId)
     })
 end
 
+-- Request Item Sets (sets tab)
+function DC:RequestItemSets()
+    local reqKey = "req:itemsets"
+    if self:_IsInflight(reqKey) then
+        return false
+    end
+
+    self:_DebounceRequest(reqKey, 0.20, function()
+        if self:_IsInflight(reqKey) then
+            return
+        end
+        self:_MarkInflight(reqKey, true)
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_ITEM_SETS, {})
+        if not ok then
+            self:_MarkInflight(reqKey, nil)
+        end
+    end)
+    return true
+end
+
+-- =============================================================================
+-- Outfit Saving Protocol
+-- =============================================================================
+
+function DC.Protocol:SaveOutfit(id, name, icon, items)
+    local data = {
+        id = id,
+        name = name or "Outfit",
+        icon = icon or "Interface\\Icons\\INV_Misc_QuestionMark",
+        items = items or {}
+    }
+    DC:SendMessage(DC.Opcodes.CMSG_SAVE_OUTFIT, data)
+end
+
+function DC.Protocol:DeleteOutfit(id)
+    DC:SendMessage(DC.Opcodes.CMSG_DELETE_OUTFIT, { id = id })
+end
+
+function DC.Protocol:RequestSavedOutfits()
+    DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {})
+end
+
+function DC:OnMsg_SavedOutfits(data)
+    self:Debug("OnMsg_SavedOutfits called!")
+    if not data or not data.outfits then return end
+    
+    DC.db = DC.db or {}
+    DC.db.outfits = {}
+    
+    for _, outfit in ipairs(data.outfits) do
+        -- Map 'items' to 'slots' for UI compatibility
+        outfit.slots = outfit.items
+        table.insert(DC.db.outfits, outfit)
+    end
+    
+    self:Debug("Received " .. #DC.db.outfits .. " saved outfits from server.")
+    
+    if DC.Wardrobe and DC.Wardrobe.RefreshOutfitsGrid then
+        DC.Wardrobe:RefreshOutfitsGrid()
+    end
+end
+
 function DC:RequestCommunityList(offset, limit, filter)
     return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_GET_LIST, {
         offset = offset or 0,
@@ -1034,6 +1107,10 @@ function DC.OnProtocolMessage(payload)
         self:HandleTransmogSlotItems(data)
     elseif opcode == self.Opcodes.SMSG_COLLECTED_APPEARANCES then
         self:HandleCollectedAppearances(data)
+    elseif opcode == self.Opcodes.SMSG_ITEM_SETS then
+        self:OnMsg_ItemSets(data)
+    elseif opcode == self.Opcodes.SMSG_SAVED_OUTFITS then
+        self:OnMsg_SavedOutfits(data)
     elseif opcode == self.Opcodes.SMSG_SHOP_DATA then
         self:HandleShopData(data)
     elseif opcode == self.Opcodes.SMSG_PURCHASE_RESULT then
@@ -2489,7 +2566,49 @@ end
 function DC:CheckAchievements(collType)
     -- Request achievement update from server
     self:RequestAchievements()
+    self:RequestAchievements()
 end
+
+-- ============================================================================
+-- HANDLERS: Item Sets (SMSG_ITEM_SETS)
+-- ============================================================================
+
+function DC:OnMsg_ItemSets(data)
+    if not data or not data.sets then
+        return
+    end
+
+    DC.definitions = DC.definitions or {}
+    DC.definitions.itemsets = DC.definitions.itemsets or {}
+    DC.definitions.sets = DC.definitions.sets or {}
+
+    -- Clear existing sets to avoid duplicates on re-request
+    wipe(DC.definitions.sets)
+    wipe(DC.definitions.itemsets)
+
+    local count = 0
+    for _, set in ipairs(data.sets) do
+        if set.id and set.items then
+            -- Store definition
+            DC.definitions.itemsets[set.id] = {
+                ID = set.id,
+                name = set.name or ("Set " .. set.id),
+                items = set.items,
+            }
+            -- Also add to 'sets' list for iteration
+            table.insert(DC.definitions.sets, DC.definitions.itemsets[set.id])
+            count = count + 1
+        end
+    end
+
+    self:Debug("Received " .. count .. " item sets definitions.")
+
+    -- Trigger UI update if Wardrobe is loaded
+    if DC.Wardrobe and DC.Wardrobe.UpdateSetsList then
+        DC.Wardrobe:UpdateSetsList()
+    end
+end
+
 
 -- ============================================================================
 -- COMMUNITY OUTFITS HANDLERS

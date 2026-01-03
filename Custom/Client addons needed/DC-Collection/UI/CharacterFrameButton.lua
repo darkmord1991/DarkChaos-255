@@ -21,7 +21,6 @@ local function CreateCharacterFrameButton()
     if _G["DC_Collection_CharFrameButton"] then
         return
     end
-
     local button = CreateFrame("Button", "DC_Collection_CharFrameButton", CharacterFrame)
     button:SetSize(BUTTON_SIZE, BUTTON_SIZE)
     button:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 0, BUTTON_OFFSET_Y)
@@ -68,7 +67,7 @@ local function CreateCharacterFrameButton()
 
     -- Tooltip
     button:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:SetText("Collection", 1, 1, 1)
         GameTooltip:AddLine("Open your account-wide collection", 0.8, 0.8, 0.8, true)
         GameTooltip:AddLine(" ", 1, 1, 1)
@@ -79,7 +78,7 @@ local function CreateCharacterFrameButton()
     button:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
     end)
-
+    
     DC.CharacterFrameButton = button
 end
 

@@ -14,6 +14,12 @@ if not DC then return end
 DC.CommunityUI = DC.CommunityUI or {}
 local UI = DC.CommunityUI
 
+local function SafeApplyLeaderboardsStyle(frame)
+    if type(ApplyLeaderboardsStyle) == "function" then
+        ApplyLeaderboardsStyle(frame)
+    end
+end
+
 local BUTTON_SIZE = 46  -- legacy; cards will auto-size
 local BUTTON_GAP = 10
 local COLS = 6
@@ -189,7 +195,7 @@ function UI:Initialize(parent, options)
         })
         btn:SetBackdropColor(0, 0, 0, 0)
 
-        ApplyLeaderboardsStyle(btn)
+        SafeApplyLeaderboardsStyle(btn)
         
         btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
         btn.highlight:SetAllPoints()

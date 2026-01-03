@@ -2,7 +2,7 @@
 -- DC-QoS: Chat Module
 -- ============================================================
 -- Chat enhancements and quality-of-life improvements
--- Adapted from Leatrix Plus for WoW 3.3.5a compatibility
+-- Inspired by Chatter, WIM, and Leatrix Plus for 3.3.5a
 -- ============================================================
 
 local addon = DCQOS
@@ -14,43 +14,314 @@ local Chat = {
     displayName = "Chat",
     settingKey = "chat",
     icon = "Interface\\Icons\\INV_Letter_02",
+    defaults = {
+        chat = {
+            enabled = true,
+            -- Appearance
+            hideChannelNames = true,
+            hideSocialButtons = false,
+            -- Timestamps
+            showTimestamps = true,
+            timestampFormat = "[%H:%M] ",
+            -- Class Colors
+            classColoredNames = true,
+            -- URL Detection
+            detectURLs = true,
+            -- Sticky Channels
+            stickyChannels = true,
+            -- Copy Chat
+            enableChatCopy = true,
+        },
+    },
 }
 
--- ============================================================
--- Hide Channel Names
--- ============================================================
-local channelReplacements = {
-    ["Общий"] = "О",
-    ["Торговля"] = "Т",
-    ["LocalDefense"] = "LD",
-    ["LookingForGroup"] = "LFG",
-    ["General"] = "G",
-    ["Trade"] = "T",
-    ["WorldDefense"] = "WD",
-    ["GuildRecruitment"] = "GR",
-}
-
-local function SetupHideChannelNames()
-    local settings = addon.settings.chat
-    if not settings.enabled or not settings.hideChannelNames then return end
-    
-    -- Hook AddMessage to shorten channel names
-    for i = 1, NUM_CHAT_WINDOWS do
-        local chatFrame = _G["ChatFrame" .. i]
-        if chatFrame then
-            local origAddMessage = chatFrame.AddMessage
-            chatFrame.AddMessage = function(self, msg, ...)
-                if msg then
-                    -- Replace channel names with short versions
-                    for long, short in pairs(channelReplacements) do
-                        msg = msg:gsub("%[" .. long .. "%]", "[" .. short .. "]")
-                        msg = msg:gsub("%[(%d+)%. " .. long .. "%]", "[%1]")
-                    end
-                end
-                return origAddMessage(self, msg, ...)
+-- Merge defaults
+for k, v in pairs(Chat.defaults) do
+    if addon.defaults[k] == nil then
+        addon.defaults[k] = v
+    else
+        for k2, v2 in pairs(v) do
+            if addon.defaults[k][k2] == nil then
+                addon.defaults[k][k2] = v2
             end
         end
     end
+end
+
+-- ============================================================
+-- Class Colors Reference
+-- ============================================================
+local CLASS_COLORS = RAID_CLASS_COLORS or {
+    ["WARRIOR"]     = { r = 0.78, g = 0.61, b = 0.43 },
+    ["PALADIN"]     = { r = 0.96, g = 0.55, b = 0.73 },
+    ["HUNTER"]      = { r = 0.67, g = 0.83, b = 0.45 },
+    ["ROGUE"]       = { r = 1.00, g = 0.96, b = 0.41 },
+    ["PRIEST"]      = { r = 1.00, g = 1.00, b = 1.00 },
+    ["DEATHKNIGHT"] = { r = 0.77, g = 0.12, b = 0.23 },
+    ["SHAMAN"]      = { r = 0.00, g = 0.44, b = 0.87 },
+    ["MAGE"]        = { r = 0.41, g = 0.80, b = 0.94 },
+    ["WARLOCK"]     = { r = 0.58, g = 0.51, b = 0.79 },
+    ["DRUID"]       = { r = 1.00, g = 0.49, b = 0.04 },
+}
+
+-- Cache for player class lookups
+local playerClassCache = {}
+
+local function GetClassColorCode(classToken)
+    local color = CLASS_COLORS[classToken]
+    if color then
+        return string.format("|cff%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
+    end
+    return "|cffffffff"
+end
+
+-- ============================================================
+-- Channel Name Shortening
+-- ============================================================
+local channelReplacements = {
+    -- English
+    ["General"] = "G",
+    ["Trade"] = "T",
+    ["LocalDefense"] = "LD",
+    ["LookingForGroup"] = "LFG",
+    ["WorldDefense"] = "WD",
+    ["GuildRecruitment"] = "GR",
+    -- Russian
+    ["Общий"] = "О",
+    ["Торговля"] = "Т",
+}
+
+-- ============================================================
+-- URL Detection Patterns
+-- ============================================================
+local URL_PATTERNS = {
+    -- http/https URLs
+    "(https?://[%w%.%-_/&?=%%+#@:]+)",
+    -- www URLs
+    "(www%.[%w%.%-_/&?=%%+#@:]+)",
+    -- IP addresses with port
+    "(%d+%.%d+%.%d+%.%d+:%d+)",
+    -- IP addresses
+    "(%d+%.%d+%.%d+%.%d+)",
+    -- Common domains
+    "([%w%-_]+%.com[/%w%.%-_?=&]*)",
+    "([%w%-_]+%.org[/%w%.%-_?=&]*)",
+    "([%w%-_]+%.net[/%w%.%-_?=&]*)",
+    "([%w%-_]+%.io[/%w%.%-_?=&]*)",
+    "([%w%-_]+%.gg[/%w%.%-_?=&]*)",
+}
+
+-- ============================================================
+-- Timestamp Formatting
+-- ============================================================
+local function GetTimestamp(format)
+    return date(format or "[%H:%M] ")
+end
+
+-- ============================================================
+-- URL Highlighting
+-- ============================================================
+local function HighlightURLs(msg)
+    if not msg then return msg end
+    
+    for _, pattern in ipairs(URL_PATTERNS) do
+        msg = msg:gsub(pattern, "|cff00ffff|Hurl:%1|h[%1]|h|r")
+    end
+    
+    return msg
+end
+
+-- URL Click Handler
+local function SetupURLHandler()
+    -- Hook SetItemRef to handle our custom url links
+    local origSetItemRef = SetItemRef
+    SetItemRef = function(link, text, button, chatFrame)
+        if link:sub(1, 4) == "url:" then
+            local url = link:sub(5)
+            -- Show copy dialog
+            addon:ShowCopyBox(url)
+            return
+        end
+        return origSetItemRef(link, text, button, chatFrame)
+    end
+end
+
+-- ============================================================
+-- Class-Colored Player Names
+-- ============================================================
+local function ColorPlayerName(msg, playerName, ...)
+    if not msg or not playerName then return msg end
+    
+    local settings = addon.settings.chat
+    if not settings.classColoredNames then return msg end
+    
+    -- Try to get cached class
+    local classToken = playerClassCache[playerName]
+    
+    if not classToken then
+        -- Try to get from guild/friends/raid/party
+        if UnitExists(playerName) then
+            local _, class = UnitClass(playerName)
+            classToken = class
+        end
+        
+        -- Cache it (even nil to avoid repeated lookups)
+        playerClassCache[playerName] = classToken or false
+    end
+    
+    if classToken and classToken ~= false then
+        local colorCode = GetClassColorCode(classToken)
+        -- Replace player name with colored version
+        msg = msg:gsub("|Hplayer:" .. playerName .. "(.-)|h%[(.-)%]|h", 
+            "|Hplayer:" .. playerName .. "%1|h[" .. colorCode .. "%2|r]|h")
+    end
+    
+    return msg
+end
+
+-- Update class cache from events
+local function SetupClassCaching()
+    local frame = CreateFrame("Frame")
+    
+    -- Cache guild members
+    frame:RegisterEvent("GUILD_ROSTER_UPDATE")
+    -- Cache party/raid members
+    frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+    frame:RegisterEvent("RAID_ROSTER_UPDATE")
+    -- Cache friends
+    frame:RegisterEvent("FRIENDLIST_UPDATE")
+    -- Cache from who results
+    frame:RegisterEvent("WHO_LIST_UPDATE")
+    
+    frame:SetScript("OnEvent", function(self, event)
+        if event == "GUILD_ROSTER_UPDATE" then
+            for i = 1, GetNumGuildMembers() do
+                local name, _, _, _, _, _, _, _, _, _, classToken = GetGuildRosterInfo(i)
+                if name and classToken then
+                    playerClassCache[name:match("([^%-]+)")] = classToken
+                end
+            end
+        elseif event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+            local maxMembers = GetNumRaidMembers() > 0 and GetNumRaidMembers() or GetNumPartyMembers()
+            local prefix = GetNumRaidMembers() > 0 and "raid" or "party"
+            for i = 1, maxMembers do
+                local unit = prefix .. i
+                if UnitExists(unit) then
+                    local name = UnitName(unit)
+                    local _, classToken = UnitClass(unit)
+                    if name and classToken then
+                        playerClassCache[name] = classToken
+                    end
+                end
+            end
+        elseif event == "FRIENDLIST_UPDATE" then
+            for i = 1, GetNumFriends() do
+                local name, _, class = GetFriendInfo(i)
+                if name and class then
+                    -- Convert localized class name to token
+                    for token, info in pairs(CLASS_COLORS) do
+                        local localizedName = LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]
+                        if localizedName == class then
+                            playerClassCache[name] = token
+                            break
+                        end
+                    end
+                end
+            end
+        elseif event == "WHO_LIST_UPDATE" then
+            for i = 1, GetNumWhoResults() do
+                local name, _, _, _, _, _, classToken = GetWhoInfo(i)
+                if name and classToken then
+                    playerClassCache[name] = classToken
+                end
+            end
+        end
+    end)
+end
+
+-- ============================================================
+-- Chat Frame Message Hook
+-- ============================================================
+local function SetupChatFrameHooks()
+    local settings = addon.settings.chat
+    
+    for i = 1, NUM_CHAT_WINDOWS do
+        local chatFrame = _G["ChatFrame" .. i]
+        if chatFrame and not chatFrame.dcHooked then
+            chatFrame.dcHooked = true
+            
+            local origAddMessage = chatFrame.AddMessage
+            chatFrame.AddMessage = function(self, msg, r, g, b, ...)
+                if msg then
+                    local settings = addon.settings.chat
+                    if not settings.enabled then
+                        return origAddMessage(self, msg, r, g, b, ...)
+                    end
+                    
+                    -- Add timestamps
+                    if settings.showTimestamps then
+                        local timestamp = GetTimestamp(settings.timestampFormat)
+                        if not msg:find("^|cff%x%x%x%x%x%x%[%d%d:%d%d") then  -- Don't double-timestamp
+                            msg = "|cff888888" .. timestamp .. "|r" .. msg
+                        end
+                    end
+                    
+                    -- Shorten channel names
+                    if settings.hideChannelNames then
+                        for long, short in pairs(channelReplacements) do
+                            msg = msg:gsub("%[" .. long .. "%]", "[" .. short .. "]")
+                            msg = msg:gsub("%[(%d+)%. " .. long .. "%]", "[%1]")
+                        end
+                    end
+                    
+                    -- Highlight URLs
+                    if settings.detectURLs then
+                        msg = HighlightURLs(msg)
+                    end
+                end
+                
+                return origAddMessage(self, msg, r, g, b, ...)
+            end
+        end
+    end
+end
+
+-- ============================================================
+-- Class Colors via Chat Filter
+-- ============================================================
+local function SetupClassColorFilter()
+    local settings = addon.settings.chat
+    if not settings.classColoredNames then return end
+    
+    -- Chat event filter for class coloring
+    local function ClassColorFilter(self, event, msg, author, ...)
+        if not addon.settings.chat.classColoredNames then
+            return false, msg, author, ...
+        end
+        
+        local playerName = author:match("([^%-]+)")
+        local classToken = playerClassCache[playerName]
+        
+        if classToken then
+            local colorCode = GetClassColorCode(classToken)
+            -- The chat frame will handle the player link coloring
+        end
+        
+        return false, msg, author, ...
+    end
+    
+    -- Register filter for various chat types
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_SAY", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_YELL", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_PARTY", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_PARTY_LEADER", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_RAID", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_RAID_LEADER", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_RAID_WARNING", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_GUILD", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_OFFICER", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", ClassColorFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_CHANNEL", ClassColorFilter)
 end
 
 -- ============================================================
@@ -60,7 +331,6 @@ local function SetupStickyChannels()
     local settings = addon.settings.chat
     if not settings.enabled or not settings.stickyChannels then return end
     
-    -- Make all channel types sticky
     ChatTypeInfo["WHISPER"].sticky = 1
     ChatTypeInfo["CHANNEL"].sticky = 1
     ChatTypeInfo["SAY"].sticky = 1
@@ -79,13 +349,11 @@ local function SetupHideSocialButtons()
     local settings = addon.settings.chat
     if not settings.enabled or not settings.hideSocialButtons then return end
     
-    -- Hide the social/friend button near chat
     if FriendsMicroButton then
         FriendsMicroButton:Hide()
         FriendsMicroButton:SetScript("OnShow", function(self) self:Hide() end)
     end
     
-    -- Hide chat buttons on the side
     if ChatFrameMenuButton then
         ChatFrameMenuButton:Hide()
         ChatFrameMenuButton:SetScript("OnShow", function(self) self:Hide() end)
@@ -93,44 +361,174 @@ local function SetupHideSocialButtons()
 end
 
 -- ============================================================
--- Shorten Class Names in Chat
+-- Chat Copy Feature
 -- ============================================================
-local shortClassNames = {
-    ["Warrior"] = "War",
-    ["Paladin"] = "Pal",
-    ["Hunter"] = "Hun",
-    ["Rogue"] = "Rog",
-    ["Priest"] = "Pri",
-    ["Death Knight"] = "DK",
-    ["Shaman"] = "Sha",
-    ["Mage"] = "Mag",
-    ["Warlock"] = "Wlk",
-    ["Druid"] = "Dru",
-}
+local copyFrame = nil
+local copyEditBox = nil
 
--- ============================================================
--- Copy Chat Link
--- ============================================================
-local function SetupCopyChatLink()
-    -- Create a hidden editbox for copying text
-    local copyBox = CreateFrame("EditBox", "DCQoSCopyBox", UIParent, "InputBoxTemplate")
-    copyBox:SetSize(300, 30)
-    copyBox:SetPoint("CENTER")
-    copyBox:SetAutoFocus(false)
-    copyBox:Hide()
-    copyBox:SetScript("OnEscapePressed", function(self)
-        self:Hide()
-    end)
-    copyBox:SetScript("OnEnterPressed", function(self)
-        self:Hide()
+local function CreateCopyFrame()
+    if copyFrame then return end
+    
+    -- Main frame
+    copyFrame = CreateFrame("Frame", "DCQoS_ChatCopyFrame", UIParent)
+    copyFrame:SetSize(500, 300)
+    copyFrame:SetPoint("CENTER")
+    copyFrame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        edgeSize = 24,
+        insets = { left = 6, right = 6, top = 6, bottom = 6 },
+    })
+    copyFrame:SetBackdropColor(0, 0, 0, 0.9)
+    copyFrame:SetMovable(true)
+    copyFrame:EnableMouse(true)
+    copyFrame:RegisterForDrag("LeftButton")
+    copyFrame:SetScript("OnDragStart", copyFrame.StartMoving)
+    copyFrame:SetScript("OnDragStop", copyFrame.StopMovingOrSizing)
+    copyFrame:SetFrameStrata("DIALOG")
+    copyFrame:Hide()
+    
+    -- Title
+    local title = copyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -15)
+    title:SetText("Chat Copy")
+    
+    -- Scroll frame
+    local scrollFrame = CreateFrame("ScrollFrame", "DCQoS_ChatCopyScroll", copyFrame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", 12, -40)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 45)
+    
+    -- Edit box for copying
+    copyEditBox = CreateFrame("EditBox", "DCQoS_ChatCopyEdit", scrollFrame)
+    copyEditBox:SetMultiLine(true)
+    copyEditBox:SetAutoFocus(false)
+    copyEditBox:SetFontObject(ChatFontNormal)
+    copyEditBox:SetWidth(450)
+    copyEditBox:SetScript("OnEscapePressed", function(self)
+        copyFrame:Hide()
     end)
     
-    -- Function to show copy box with text
+    scrollFrame:SetScrollChild(copyEditBox)
+    
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, copyFrame, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", -5, -5)
+    
+    -- Select All button
+    local selectBtn = CreateFrame("Button", nil, copyFrame, "UIPanelButtonTemplate")
+    selectBtn:SetSize(100, 22)
+    selectBtn:SetPoint("BOTTOMLEFT", 15, 12)
+    selectBtn:SetText("Select All")
+    selectBtn:SetScript("OnClick", function()
+        copyEditBox:HighlightText()
+        copyEditBox:SetFocus()
+    end)
+    
+    -- Close button
+    local closeButton = CreateFrame("Button", nil, copyFrame, "UIPanelButtonTemplate")
+    closeButton:SetSize(80, 22)
+    closeButton:SetPoint("BOTTOMRIGHT", -15, 12)
+    closeButton:SetText("Close")
+    closeButton:SetScript("OnClick", function()
+        copyFrame:Hide()
+    end)
+end
+
+local function ShowChatCopy(chatFrame)
+    CreateCopyFrame()
+    
+    -- Get chat messages
+    local numMessages = chatFrame:GetNumMessages()
+    local text = ""
+    
+    for i = 1, numMessages do
+        local line = chatFrame:GetMessageInfo(i)
+        if line then
+            -- Strip color codes for cleaner copy
+            line = line:gsub("|c%x%x%x%x%x%x%x%x", "")
+            line = line:gsub("|r", "")
+            line = line:gsub("|H.-|h", "")
+            line = line:gsub("|h", "")
+            text = text .. line .. "\n"
+        end
+    end
+    
+    copyEditBox:SetText(text)
+    copyFrame:Show()
+    copyEditBox:HighlightText()
+    copyEditBox:SetFocus()
+end
+
+-- Simple URL copy box
+local function SetupSimpleCopyBox()
+    local copyBox = CreateFrame("Frame", "DCQoS_URLCopy", UIParent)
+    copyBox:SetSize(400, 60)
+    copyBox:SetPoint("CENTER")
+    copyBox:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    copyBox:SetBackdropColor(0, 0, 0, 0.9)
+    copyBox:SetFrameStrata("DIALOG")
+    copyBox:Hide()
+    
+    local urlEdit = CreateFrame("EditBox", nil, copyBox, "InputBoxTemplate")
+    urlEdit:SetSize(370, 20)
+    urlEdit:SetPoint("CENTER", 0, 5)
+    urlEdit:SetAutoFocus(false)
+    urlEdit:SetScript("OnEscapePressed", function() copyBox:Hide() end)
+    urlEdit:SetScript("OnEnterPressed", function() copyBox:Hide() end)
+    
+    local label = copyBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("BOTTOM", urlEdit, "TOP", 0, 5)
+    label:SetText("Press Ctrl+C to copy, then Escape to close")
+    
+    copyBox.editBox = urlEdit
+    
+    -- Global function to show URL copy
     addon.ShowCopyBox = function(self, text)
-        copyBox:SetText(text)
+        copyBox.editBox:SetText(text or "")
         copyBox:Show()
-        copyBox:SetFocus()
-        copyBox:HighlightText()
+        copyBox.editBox:SetFocus()
+        copyBox.editBox:HighlightText()
+    end
+end
+
+-- Add copy button to chat frames
+local function SetupChatCopyButtons()
+    local settings = addon.settings.chat
+    if not settings.enableChatCopy then return end
+    
+    for i = 1, NUM_CHAT_WINDOWS do
+        local chatFrame = _G["ChatFrame" .. i]
+        local chatTab = _G["ChatFrame" .. i .. "Tab"]
+        
+        if chatFrame and chatTab and not chatFrame.dcCopyBtn then
+            local copyBtn = CreateFrame("Button", nil, chatFrame)
+            copyBtn:SetSize(20, 20)
+            copyBtn:SetPoint("TOPRIGHT", chatFrame, "TOPRIGHT", 0, 0)
+            copyBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+            copyBtn:SetHighlightTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+            copyBtn:SetAlpha(0.5)
+            copyBtn:SetScript("OnEnter", function(self)
+                self:SetAlpha(1)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText("Copy Chat", 1, 1, 1)
+                GameTooltip:AddLine("Click to copy chat history", 0.8, 0.8, 0.8)
+                GameTooltip:Show()
+            end)
+            copyBtn:SetScript("OnLeave", function(self)
+                self:SetAlpha(0.5)
+                GameTooltip:Hide()
+            end)
+            copyBtn:SetScript("OnClick", function()
+                ShowChatCopy(chatFrame)
+            end)
+            
+            chatFrame.dcCopyBtn = copyBtn
+        end
     end
 end
 
@@ -144,10 +542,15 @@ end
 function Chat.OnEnable()
     addon:Debug("Chat module enabling")
     
-    SetupHideChannelNames()
+    -- Setup all features
+    SetupChatFrameHooks()
+    SetupURLHandler()
+    SetupClassCaching()
+    SetupClassColorFilter()
     SetupStickyChannels()
     SetupHideSocialButtons()
-    SetupCopyChatLink()
+    SetupSimpleCopyBox()
+    SetupChatCopyButtons()
 end
 
 function Chat.OnDisable()
@@ -168,11 +571,71 @@ function Chat.CreateSettings(parent)
     -- Description
     local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    desc:SetText("Configure chat enhancements and appearance options.")
-    desc:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
+    desc:SetWidth(450)
     desc:SetJustifyH("LEFT")
+    desc:SetText("Enhanced chat with timestamps, class colors, URL detection, and copy features.")
     
     local yOffset = -70
+    
+    -- ============================================================
+    -- Timestamps Section
+    -- ============================================================
+    local timestampHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    timestampHeader:SetPoint("TOPLEFT", 16, yOffset)
+    timestampHeader:SetText("Timestamps")
+    yOffset = yOffset - 25
+    
+    -- Show Timestamps
+    local timestampCb = addon:CreateCheckbox(parent)
+    timestampCb:SetPoint("TOPLEFT", 16, yOffset)
+    timestampCb.Text:SetText("Show timestamps in chat")
+    timestampCb:SetChecked(settings.showTimestamps)
+    timestampCb:SetScript("OnClick", function(self)
+        addon:SetSetting("chat.showTimestamps", self:GetChecked())
+    end)
+    yOffset = yOffset - 35
+    
+    -- ============================================================
+    -- Player Names Section
+    -- ============================================================
+    local namesHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    namesHeader:SetPoint("TOPLEFT", 16, yOffset)
+    namesHeader:SetText("Player Names")
+    yOffset = yOffset - 25
+    
+    -- Class-Colored Names
+    local classColorCb = addon:CreateCheckbox(parent)
+    classColorCb:SetPoint("TOPLEFT", 16, yOffset)
+    classColorCb.Text:SetText("Color player names by class")
+    classColorCb:SetChecked(settings.classColoredNames)
+    classColorCb:SetScript("OnClick", function(self)
+        addon:SetSetting("chat.classColoredNames", self:GetChecked())
+        addon:Print("Requires /reload to take effect", true)
+    end)
+    yOffset = yOffset - 35
+    
+    -- ============================================================
+    -- URLs Section
+    -- ============================================================
+    local urlHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    urlHeader:SetPoint("TOPLEFT", 16, yOffset)
+    urlHeader:SetText("URL Detection")
+    yOffset = yOffset - 25
+    
+    -- Detect URLs
+    local urlCb = addon:CreateCheckbox(parent)
+    urlCb:SetPoint("TOPLEFT", 16, yOffset)
+    urlCb.Text:SetText("Highlight and make URLs clickable")
+    urlCb:SetChecked(settings.detectURLs)
+    urlCb:SetScript("OnClick", function(self)
+        addon:SetSetting("chat.detectURLs", self:GetChecked())
+    end)
+    
+    local urlInfo = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    urlInfo:SetPoint("TOPLEFT", urlCb, "BOTTOMLEFT", 20, -2)
+    urlInfo:SetText("Click URLs in chat to copy them")
+    urlInfo:SetTextColor(0.5, 0.5, 0.5)
+    yOffset = yOffset - 45
     
     -- ============================================================
     -- Appearance Section
@@ -185,18 +648,17 @@ function Chat.CreateSettings(parent)
     -- Hide Channel Names
     local hideChannelsCb = addon:CreateCheckbox(parent)
     hideChannelsCb:SetPoint("TOPLEFT", 16, yOffset)
-    hideChannelsCb.Text:SetText("Shorten Channel Names")
+    hideChannelsCb.Text:SetText("Shorten channel names")
     hideChannelsCb:SetChecked(settings.hideChannelNames)
     hideChannelsCb:SetScript("OnClick", function(self)
         addon:SetSetting("chat.hideChannelNames", self:GetChecked())
-        addon:Print("Requires /reload to take effect", true)
     end)
     yOffset = yOffset - 25
     
     -- Hide Social Buttons
     local hideSocialCb = addon:CreateCheckbox(parent)
     hideSocialCb:SetPoint("TOPLEFT", 16, yOffset)
-    hideSocialCb.Text:SetText("Hide Social Buttons")
+    hideSocialCb.Text:SetText("Hide social/menu buttons")
     hideSocialCb:SetChecked(settings.hideSocialButtons)
     hideSocialCb:SetScript("OnClick", function(self)
         addon:SetSetting("chat.hideSocialButtons", self:GetChecked())
@@ -215,19 +677,36 @@ function Chat.CreateSettings(parent)
     -- Sticky Channels
     local stickyCb = addon:CreateCheckbox(parent)
     stickyCb:SetPoint("TOPLEFT", 16, yOffset)
-    stickyCb.Text:SetText("Sticky Chat Channels")
+    stickyCb.Text:SetText("Sticky chat channels")
     stickyCb:SetChecked(settings.stickyChannels)
     stickyCb:SetScript("OnClick", function(self)
         addon:SetSetting("chat.stickyChannels", self:GetChecked())
         addon:Print("Requires /reload to take effect", true)
     end)
     
-    -- Info text
     local stickyInfo = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     stickyInfo:SetPoint("TOPLEFT", stickyCb, "BOTTOMLEFT", 20, -2)
     stickyInfo:SetText("Remember the last used channel when typing")
     stickyInfo:SetTextColor(0.5, 0.5, 0.5)
     yOffset = yOffset - 45
+    
+    -- ============================================================
+    -- Copy Section
+    -- ============================================================
+    local copyHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    copyHeader:SetPoint("TOPLEFT", 16, yOffset)
+    copyHeader:SetText("Chat Copy")
+    yOffset = yOffset - 25
+    
+    -- Enable Chat Copy
+    local copyCb = addon:CreateCheckbox(parent)
+    copyCb:SetPoint("TOPLEFT", 16, yOffset)
+    copyCb.Text:SetText("Show copy button on chat frames")
+    copyCb:SetChecked(settings.enableChatCopy)
+    copyCb:SetScript("OnClick", function(self)
+        addon:SetSetting("chat.enableChatCopy", self:GetChecked())
+        addon:Print("Requires /reload to take effect", true)
+    end)
     
     return yOffset - 50
 end

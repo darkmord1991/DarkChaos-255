@@ -22,18 +22,29 @@ local TAB_WIDTH = 70
 local TAB_HEIGHT = 24
 local PANEL_PADDING = 10
 
--- Tab definitions (order matters)
+-- Tab definitions (order matters - organized by category)
 local tabOrder = {
-    "Tooltips",
+    -- Core Features
     "Automation",
-    "Chat",
     "Interface",
-    "ExtendedStats",
+    "Chat",
+    "Tooltips",
+    -- Combat
+    "NameplatesPlus",
+    "CombatLog",
     "GTFO",
-    "ItemScore",
+    -- Items & Inventory
     "Bags",
+    "VendorPlus",
+    "ItemScore",
+    -- UI Customization
+    "FrameMover",
     "Cooldowns",
+    "ExtendedStats",
+    -- Social & Utilities
+    "SocialEnhancements",
     "Mail",
+    -- System
     "Communication",
 }
 
@@ -306,17 +317,30 @@ function addon:CreateSettingsPanel()
     desc:SetJustifyH("LEFT")
     
     -- Create tab buttons and frames
-    -- Tab display name overrides for modules that register with different names
+    -- Tab display name overrides (short names for tab buttons)
     local tabDisplayNames = {
-        ["Tooltips"] = "Tooltips",
-        ["Automation"] = "Automation",
+        -- Core Features
+        ["Automation"] = "Auto",
+        ["Interface"] = "UI",
         ["Chat"] = "Chat",
-        ["Interface"] = "Interface",
-        ["ExtendedStats"] = "Stats",
+        ["Tooltips"] = "Tips",
+        -- Combat
+        ["NameplatesPlus"] = "Plates",
+        ["CombatLog"] = "Combat",
         ["GTFO"] = "GTFO",
-        ["ItemScore"] = "Pawn",
+        -- Items & Inventory
         ["Bags"] = "Bags",
         ["BagEnhancements"] = "Bags",
+        ["VendorPlus"] = "Vendor",
+        ["ItemScore"] = "Pawn",
+        -- UI Customization
+        ["FrameMover"] = "Frames",
+        ["Cooldowns"] = "CDs",
+        ["ExtendedStats"] = "Stats",
+        -- Social
+        ["SocialEnhancements"] = "Social",
+        ["Mail"] = "Mail",
+        -- System
         ["Communication"] = "Sync",
     }
     

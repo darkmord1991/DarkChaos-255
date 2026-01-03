@@ -1066,6 +1066,195 @@ namespace DCCollection
         res.Send(player);
     }
 
+     // Get correct Item IDs for Item Sets
+    // This assumes ItemSet.dbc is loaded on server
+    void HandleGetItemSets(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        (void)msg;
+        
+        // Debug Log
+        LOG_INFO("addon", "HandleGetItemSets: Processing request for player {}", player->GetName());
+        LOG_INFO("addon", "ItemSetStore Rows: {}", sItemSetStore.GetNumRows()); // Added logging
+
+        // JSON response builder
+        std::stringstream ss;
+        ss << "{\"sets\":["; // Start JSON array
+
+        uint32 count = 0;
+
+        bool first = true;
+        // Nuclear Debug Option: Iterate aggressively to find ANY sets
+        for (uint32 i = 0; i < 5000; ++i)
+        {
+            ItemSetEntry const* set = sItemSetStore.LookupEntry(i);
+            if (!set)
+                continue;
+
+            // Log the first few sets to verify we are finding ANYTHING
+            if (count < 5) {
+                LOG_INFO("addon", "HandleGetItemSets: Found set ID {} Name '{}'", i, set->name[0]);
+            }
+
+            if (!first) ss << ",";
+            first = false;
+            count++;
+
+            // Start Set Object
+            // Escape name for JSON
+            std::string name = set->name[player->GetSession()->GetSessionDbcLocale()];
+            if (name.empty())
+                name = set->name[0];
+            
+
+            // Simple quote escape for JSON validity
+            size_t pos = 0;
+            while ((pos = name.find("\"", pos)) != std::string::npos) {
+                name.replace(pos, 1, "\\\"");
+                pos += 2;
+            }
+
+            ss << "{\"id\":" << i << ",\"name\":\"" << name.c_str() << "\",\"items\":[";
+
+            // Add Items in Set
+            bool firstItem = true;
+            for (uint8 j = 0; j < 10; ++j) // Max 10 items per set in 3.3.5
+            {
+                if (set->itemId[j] > 0)
+                {
+                    if (!firstItem) ss << ",";
+                    ss << set->itemId[j];
+                    firstItem = false;
+                }
+            }
+            ss << "]}"; // End Set Object
+        }
+
+        ss << "]}"; // End JSON array
+        
+        LOG_INFO("addon", "HandleGetItemSets: Found {} sets. Sending response.", count);
+
+        // Send Response
+        DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ITEM_SETS);
+        res.Add("J");
+        res.Add(ss.str());
+        res.Send(player);
+    }
+
+    // =======================================================================
+    // Outfit Saving Handlers
+    // =======================================================================
+
+    void HandleGetSavedOutfits(Player* player, const DCAddon::ParsedMessage& msg); // Forward declaration
+
+    void HandleSaveOutfit(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !DCAddon::IsJsonMessage(msg)) return;
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+
+        uint32 clientId = json["id"].AsUInt32();
+        std::string name = json["name"].AsString();
+        std::string icon = json["icon"].AsString();
+        std::string items = json["items"].IsString() ? json["items"].AsString() : json["items"].Encode();
+
+        // Sanitize Icon Path: Replace backslashes with forward slashes to prevent SQL/JSON corruption
+        std::replace(icon.begin(), icon.end(), '\\', '/');
+
+        // Escape strings for SQL
+        CharacterDatabase.EscapeString(name);
+        CharacterDatabase.EscapeString(icon);
+        CharacterDatabase.EscapeString(items);
+
+        // If clientId is 0, generate new ID. Otherwise update existing.
+        if (clientId == 0) {
+            // Get next available ID
+            QueryResult result = CharacterDatabase.Query("SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_character_outfits WHERE guid = {}", 
+                player->GetGUID().GetCounter());
+            uint32 newId = result ? result->Fetch()[0].Get<uint32>() : 1;
+            
+            CharacterDatabase.Execute("INSERT INTO dc_character_outfits (guid, outfit_id, name, icon, items) VALUES ({}, {}, '{}', '{}', '{}')",
+                player->GetGUID().GetCounter(), newId, name, icon, items);
+        } else {
+            // Update existing outfit
+            CharacterDatabase.Execute("UPDATE dc_character_outfits SET name='{}', icon='{}', items='{}' WHERE guid={} AND outfit_id={}",
+                name, icon, items, player->GetGUID().GetCounter(), clientId);
+        }
+
+        // Send updated list to client to refresh UI immediately
+        HandleGetSavedOutfits(player, msg);
+    }
+
+    void HandleDeleteOutfit(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !DCAddon::IsJsonMessage(msg)) return;
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        uint32 outfitId = json["id"].AsUInt32();
+
+        CharacterDatabase.Execute("DELETE FROM dc_character_outfits WHERE guid = {} AND outfit_id = {}", 
+            player->GetGUID().GetCounter(), outfitId);
+    }
+
+    void HandleGetSavedOutfits(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        (void)msg;
+        if (!player) return;
+
+        QueryResult result = CharacterDatabase.Query("SELECT outfit_id, name, icon, items FROM dc_character_outfits WHERE guid = {} ORDER BY outfit_id", 
+            player->GetGUID().GetCounter());
+
+        std::stringstream ss;
+        ss << "{\"outfits\":[";
+        
+        if (result)
+        {
+            bool first = true;
+            do
+            {
+                Field* f = result->Fetch();
+                uint32 id = f[0].Get<uint32>();
+                std::string name = f[1].Get<std::string>();
+                std::string icon = f[2].Get<std::string>();
+                std::string items = f[3].Get<std::string>();
+
+                // Escape name/icon/items for enclosing JSON
+                auto escape = [](std::string s) {
+                    std::string res;
+                    for (char c : s) {
+                        if (c == '"') res += "\\\"";
+                        else if (c == '\\') res += "\\\\";
+                        else res += c;
+                    }
+                    return res;
+                };
+
+                // The 'items' column is already a JSON string (e.g. {"HeadSlot":123}). 
+                // We want to embed it as an object, NOT a string, if possible.
+                // But standard JSON parser on client might expect string or object.
+                // If it's stored as TEXT "{\"HeadSlot\":123}", putting it directly into our stream without quotes makes it an object.
+                // If it's invalid JSON, it breaks the response. Assuming valid JSON from client.
+                
+                // Fallback for empty items
+                if (items.empty()) items = "{}";
+
+                if (!first) ss << ",";
+                first = false;
+
+                ss << "{\"id\":" << id 
+                   << ",\"name\":\"" << escape(name) << "\""
+                   << ",\"icon\":\"" << escape(icon) << "\""
+                   << ",\"items\":" << items 
+                   << "}";
+
+            } while (result->NextRow());
+        }
+
+        ss << "]}";
+
+        DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_SAVED_OUTFITS);
+        res.Add("J");
+        res.Add(ss.str());
+        res.Send(player);
+    }
+
     // =======================================================================
     // World/Player Scripts
     // =======================================================================
@@ -1147,4 +1336,12 @@ void AddSC_dc_addon_wardrobe()
 
     // Inspection
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_INSPECT_TRANSMOG, &HandleInspectTransmog);
+
+    // Item Sets
+    MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_GET_ITEM_SETS, &HandleGetItemSets);
+
+    // Outfits
+    MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_SAVE_OUTFIT, &HandleSaveOutfit);
+    MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_DELETE_OUTFIT, &HandleDeleteOutfit);
+    MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_GET_SAVED_OUTFITS, &HandleGetSavedOutfits);
 }

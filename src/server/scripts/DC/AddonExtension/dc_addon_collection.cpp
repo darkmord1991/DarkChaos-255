@@ -157,8 +157,9 @@ namespace DCCollection
     bool WorldTableExists(std::string const& tableName);
     bool WorldColumnExists(std::string const& tableName, std::string const& columnName);
     std::string const& GetWorldEntryColumn(std::string const& tableName);
+    std::string const& GetWorldEntryColumn(std::string const& tableName);
     uint32 FindCompanionSpellIdForItem(uint32 itemId);
-
+    
     uint32 FindCompanionItemIdForSpell(uint32 spellId)
     {
         // Companion pets in 3.3.5a are typically taught by item_template (class=15, subclass=2).
@@ -4314,6 +4315,7 @@ namespace DCCollection
 
 }  // namespace DCCollection
 
+// =======================================================================
 // =======================================================================
 // Script Registration
 // =======================================================================

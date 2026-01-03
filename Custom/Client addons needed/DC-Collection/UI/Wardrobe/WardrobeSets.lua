@@ -74,6 +74,10 @@ function Wardrobe:RefreshSetsGrid()
     end
     table.sort(list, function(a, b) return (a.name or "") < (b.name or "") end)
 
+    if DC and DC.Print then
+        DC:Print("Debug: Found " .. #list .. " sets.")
+    end
+
     local collectedSets = 0
     local totalSets = #list
 
@@ -209,6 +213,19 @@ function Wardrobe:RefreshSetsGrid()
             self.frame.nextBtn:Enable()
         else
             self.frame.nextBtn:Disable()
+        end
+    end
+
+    if #list == 0 then
+        if not self.frame.noSetsText then
+             self.frame.noSetsText = self.frame.gridContainer:CreateFontString(nil, "OVERLAY", "GameFontDisableLarge")
+             self.frame.noSetsText:SetPoint("CENTER", 0, 0)
+             self.frame.noSetsText:SetText("No item sets found.")
+        end
+        self.frame.noSetsText:Show()
+    else
+        if self.frame.noSetsText then
+            self.frame.noSetsText:Hide()
         end
     end
 end

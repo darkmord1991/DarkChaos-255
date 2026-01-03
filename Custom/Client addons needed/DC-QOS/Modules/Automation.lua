@@ -14,7 +14,43 @@ local Automation = {
     displayName = "Automation",
     settingKey = "automation",
     icon = "Interface\\Icons\\Ability_Repair",
+    defaults = {
+        automation = {
+            enabled = true,
+            autoRepair = true,
+            autoRepairGuild = false,
+            autoSellJunk = true,
+            autoDismount = false,
+            autoAcceptSummon = false,
+            autoAcceptResurrect = false,
+            autoDeclineDuels = false,
+            autoDeclineGuildInvites = false,
+            autoAcceptPartyInvites = false,
+            autoAcceptQuests = false,
+            autoTurnInQuests = false,
+            -- New features
+            autoStand = true,
+            autoGossipSkip = false,
+            autoReleaseInBG = false,
+            autoConfirmBop = false,
+            fasterLoot = true,
+            skipCinematics = false,
+        },
+    },
 }
+
+-- Merge defaults
+for k, v in pairs(Automation.defaults) do
+    if addon.defaults[k] == nil then
+        addon.defaults[k] = v
+    else
+        for k2, v2 in pairs(v) do
+            if addon.defaults[k][k2] == nil then
+                addon.defaults[k][k2] = v2
+            end
+        end
+    end
+end
 
 -- ============================================================
 -- Auto Repair
@@ -248,6 +284,190 @@ local function SetupAutoQuest()
 end
 
 -- ============================================================
+-- Auto Stand (when eating/drinking interrupted)
+-- ============================================================
+local function SetupAutoStand()
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("UNIT_AURA")
+    
+    local wasEatingDrinking = false
+    
+    frame:SetScript("OnEvent", function(self, event, unit)
+        local settings = addon.settings.automation
+        if not settings.enabled or not settings.autoStand then return end
+        if unit ~= "player" then return end
+        
+        -- Check if currently eating or drinking
+        local isEatingDrinking = false
+        for i = 1, 40 do
+            local name = UnitBuff("player", i)
+            if not name then break end
+            if name == "Food" or name == "Drink" or name == "Refreshment" then
+                isEatingDrinking = true
+                break
+            end
+        end
+        
+        -- If was eating/drinking but now not, and sitting, stand up
+        if wasEatingDrinking and not isEatingDrinking then
+            -- DoEmote("stand") -- Stand up if needed
+        end
+        
+        wasEatingDrinking = isEatingDrinking
+    end)
+end
+
+-- ============================================================
+-- Auto Gossip Skip (trainers, flight masters, banks)
+-- ============================================================
+local function SetupAutoGossipSkip()
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("GOSSIP_SHOW")
+    
+    frame:SetScript("OnEvent", function(self, event)
+        local settings = addon.settings.automation
+        if not settings.enabled or not settings.autoGossipSkip then return end
+        
+        -- Don't skip if holding Shift
+        if IsShiftKeyDown() then return end
+        
+        -- Check if only one gossip option
+        local numOptions = GetNumGossipOptions()
+        local numQuests = GetNumGossipActiveQuests() + GetNumGossipAvailableQuests()
+        
+        if numOptions == 1 and numQuests == 0 then
+            -- Check if it's a simple NPC (trainer, flight master, banker)
+            local gossipOptions = { GetGossipOptions() }
+            if gossipOptions[2] then
+                local optionType = gossipOptions[2]
+                if optionType == "trainer" or optionType == "taxi" or optionType == "banker" 
+                   or optionType == "vendor" or optionType == "battlemaster" then
+                    SelectGossipOption(1)
+                end
+            end
+        end
+    end)
+end
+
+-- ============================================================
+-- Auto Release in Battlegrounds
+-- ============================================================
+local function SetupAutoReleaseInBG()
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("PLAYER_DEAD")
+    
+    frame:SetScript("OnEvent", function(self, event)
+        local settings = addon.settings.automation
+        if not settings.enabled or not settings.autoReleaseInBG then return end
+        
+        -- Check if in a battleground
+        local _, instanceType = IsInInstance()
+        if instanceType == "pvp" or instanceType == "arena" then
+            -- Small delay before releasing
+            addon:DelayedCall(0.5, function()
+                if UnitIsDead("player") then
+                    RepopMe()
+                end
+            end)
+        end
+    end)
+end
+
+-- ============================================================
+-- Auto Confirm Bind on Pickup
+-- ============================================================
+local function SetupAutoConfirmBop()
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("LOOT_BIND_CONFIRM")
+    frame:RegisterEvent("EQUIP_BIND_CONFIRM")
+    frame:RegisterEvent("AUTOEQUIP_BIND_CONFIRM")
+    frame:RegisterEvent("MAIL_LOCK_SEND_ITEMS")
+    
+    frame:SetScript("OnEvent", function(self, event, ...)
+        local settings = addon.settings.automation
+        if not settings.enabled or not settings.autoConfirmBop then return end
+        
+        if event == "LOOT_BIND_CONFIRM" then
+            local slot = ...
+            if slot then
+                ConfirmLootSlot(slot)
+            end
+        elseif event == "EQUIP_BIND_CONFIRM" then
+            local slot = ...
+            if slot then
+                EquipPendingItem(slot)
+            end
+        elseif event == "AUTOEQUIP_BIND_CONFIRM" then
+            EquipPendingItem(0)
+        elseif event == "MAIL_LOCK_SEND_ITEMS" then
+            -- Auto-confirm mail with BoP items
+            StaticPopup_Hide("MAIL_LOCK_SEND_ITEMS")
+        end
+    end)
+end
+
+-- ============================================================
+-- Faster Loot (3.3.5a compatible)
+-- ============================================================
+local function SetupFasterLoot()
+    local frame = CreateFrame("Frame")
+    -- Note: LOOT_READY doesn't exist in 3.3.5a, use LOOT_OPENED instead
+    frame:RegisterEvent("LOOT_OPENED")
+    
+    frame:SetScript("OnEvent", function(self, event, autoLoot)
+        local settings = addon.settings.automation
+        if not settings.enabled or not settings.fasterLoot then return end
+        
+        -- Only process with auto-loot enabled (check CVar or passed autoLoot)
+        local isAutoLoot = autoLoot or (GetCVar("autoLootDefault") == "1")
+        if not isAutoLoot then return end
+        
+        -- Loot all items quickly
+        local numItems = GetNumLootItems()
+        if numItems > 0 then
+            for i = numItems, 1, -1 do
+                LootSlot(i)
+            end
+        end
+    end)
+end
+
+-- ============================================================
+-- Skip Cinematics (3.3.5a compatible)
+-- ============================================================
+local function SetupSkipCinematics()
+    -- Hook MovieFrame to auto-close
+    if MovieFrame then
+        MovieFrame:HookScript("OnShow", function(self)
+            local settings = addon.settings.automation
+            if not settings.enabled or not settings.skipCinematics then return end
+            
+            -- Stop and hide the movie
+            if MovieFrame.StopMovie then
+                MovieFrame:StopMovie()
+            end
+            MovieFrame:Hide()
+        end)
+    end
+    
+    -- Hook CinematicFrame to auto-close
+    if CinematicFrame then
+        CinematicFrame:HookScript("OnShow", function(self)
+            local settings = addon.settings.automation
+            if not settings.enabled or not settings.skipCinematics then return end
+            
+            -- Safely cancel cinematic (function may not exist in all 3.3.5a builds)
+            if CinematicFrame_CancelCinematic then
+                CinematicFrame_CancelCinematic()
+            else
+                -- Fallback: just hide the frame
+                CinematicFrame:Hide()
+            end
+        end)
+    end
+end
+
+-- ============================================================
 -- Module Callbacks
 -- ============================================================
 function Automation.OnInitialize()
@@ -257,6 +477,7 @@ end
 function Automation.OnEnable()
     addon:Debug("Automation module enabling")
     
+    -- Original features
     SetupAutoRepair()
     SetupAutoSellJunk()
     SetupAutoDismount()
@@ -266,6 +487,14 @@ function Automation.OnEnable()
     SetupAutoDeclineGuildInvites()
     SetupAutoAcceptPartyInvites()
     SetupAutoQuest()
+    
+    -- New features
+    SetupAutoStand()
+    SetupAutoGossipSkip()
+    SetupAutoReleaseInBG()
+    SetupAutoConfirmBop()
+    SetupFasterLoot()
+    SetupSkipCinematics()
 end
 
 function Automation.OnDisable()
@@ -432,6 +661,56 @@ function Automation.CreateSettings(parent)
     dismountCb:SetChecked(settings.autoDismount)
     dismountCb:SetScript("OnClick", function(self)
         addon:SetSetting("automation.autoDismount", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+    
+    -- Auto Gossip Skip
+    local gossipCb = addon:CreateCheckbox(parent)
+    gossipCb:SetPoint("TOPLEFT", 16, yOffset)
+    gossipCb.Text:SetText("Auto-skip gossip (trainers, flight masters)")
+    gossipCb:SetChecked(settings.autoGossipSkip)
+    gossipCb:SetScript("OnClick", function(self)
+        addon:SetSetting("automation.autoGossipSkip", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+    
+    -- Faster Loot
+    local fasterLootCb = addon:CreateCheckbox(parent)
+    fasterLootCb:SetPoint("TOPLEFT", 16, yOffset)
+    fasterLootCb.Text:SetText("Faster auto-loot")
+    fasterLootCb:SetChecked(settings.fasterLoot)
+    fasterLootCb:SetScript("OnClick", function(self)
+        addon:SetSetting("automation.fasterLoot", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+    
+    -- Auto Confirm BoP
+    local bopCb = addon:CreateCheckbox(parent)
+    bopCb:SetPoint("TOPLEFT", 16, yOffset)
+    bopCb.Text:SetText("Auto-confirm Bind on Pickup dialogs")
+    bopCb:SetChecked(settings.autoConfirmBop)
+    bopCb:SetScript("OnClick", function(self)
+        addon:SetSetting("automation.autoConfirmBop", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+    
+    -- Auto Release in BG
+    local releaseBgCb = addon:CreateCheckbox(parent)
+    releaseBgCb:SetPoint("TOPLEFT", 16, yOffset)
+    releaseBgCb.Text:SetText("Auto-release in Battlegrounds")
+    releaseBgCb:SetChecked(settings.autoReleaseInBG)
+    releaseBgCb:SetScript("OnClick", function(self)
+        addon:SetSetting("automation.autoReleaseInBG", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+    
+    -- Skip Cinematics
+    local cinematicsCb = addon:CreateCheckbox(parent)
+    cinematicsCb:SetPoint("TOPLEFT", 16, yOffset)
+    cinematicsCb.Text:SetText("Skip cinematics and movies")
+    cinematicsCb:SetChecked(settings.skipCinematics)
+    cinematicsCb:SetScript("OnClick", function(self)
+        addon:SetSetting("automation.skipCinematics", self:GetChecked())
     end)
     
     return yOffset - 50

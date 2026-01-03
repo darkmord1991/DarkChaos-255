@@ -37,6 +37,7 @@ UI\CommunityFrame.lua
 UI\WardrobeFrame.lua
 UI\Wardrobe\WardrobeCore.lua
 UI\Wardrobe\WardrobeUI.lua
+UI\Wardrobe\WardrobeOutfits.lua
 UI\Wardrobe\CameraDB.lua
 UI\Wardrobe\WardrobeItems.lua
 UI\Wardrobe\WardrobeSets.lua
