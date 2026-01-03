@@ -77,9 +77,10 @@ local DC_TABLE_CHECKER = {
         -- Prestige System
         {"acore_chars", "dc_character_prestige", "Prestige", true},
         {"acore_chars", "dc_character_prestige_log", "Prestige", false},
-        {"acore_chars", "dc_character_prestige_stats", "Prestige", false},
+        {"acore_chars", "dc_character_prestige_stats", "Prestige", false},        -- Prestige statistics tracking
         {"acore_chars", "dc_prestige_challenge_rewards", "Prestige", false},
         {"acore_chars", "dc_prestige_challenges", "Prestige", false},
+        {"acore_chars", "dc_prestige_players", "Prestige", false},
         
         -- Duel System
         {"acore_chars", "dc_duel_class_matchups", "Duel System", false},
@@ -94,6 +95,10 @@ local DC_TABLE_CHECKER = {
         -- Group Finder
         {"acore_chars", "dc_group_finder_listings", "Group Finder", true},
         {"acore_chars", "dc_group_finder_rewards", "Group Finder", false},
+        {"acore_chars", "dc_group_finder_applications", "Group Finder", false},
+        {"acore_chars", "dc_group_finder_event_signups", "Group Finder", false},
+        {"acore_chars", "dc_group_finder_scheduled_events", "Group Finder", false},
+        {"acore_chars", "dc_group_finder_spectators", "Group Finder", false},
         
         -- Heirloom System
         {"acore_chars", "dc_heirloom_package_history", "Heirloom", false},
@@ -102,9 +107,12 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_heirloom_upgrades", "Heirloom", true},
         
         -- HLBG (Hinterlands BG) System - Unified leaderboard with participant tracking
-        {"acore_chars", "dc_hlbg_match_participants", "HLBG System", true},  -- NEW: unified participant table
-        {"acore_chars", "dc_hlbg_winner_history", "HLBG System", true},      -- Existing: match results
-        {"acore_chars", "dc_hlbg_player_stats", "HLBG System", false},       -- Legacy: can be deprecated
+        {"acore_chars", "dc_hlbg_match_participants", "HLBG System", true},  -- Unified participant table
+        {"acore_chars", "dc_hlbg_winner_history", "HLBG System", true},      -- Match results
+        {"acore_chars", "dc_hlbg_player_stats", "HLBG System", false},       -- Legacy stats
+        {"acore_chars", "dc_hlbg_state", "HLBG System", true},               -- BG state persistence
+        {"acore_chars", "dc_hlbg_season_config", "HLBG System", true},       -- Season configuration
+        {"acore_chars", "dc_hlbg_player_season_data", "HLBG System", true},  -- Player seasonal stats
 
         -- HLBG: legacy tables removed from REQUIRED_TABLES; if you depend on them, add to DEPRECATED_TABLES above.
         
@@ -151,6 +159,10 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_mplus_spec_settings", "Mythic Spectator", false},
         {"acore_chars", "dc_spectator_settings", "Mythic Spectator", false},
         
+        -- Mythic+ Stats (additional tracking)
+        {"acore_chars", "dc_mythic_dungeon_stats", "Mythic+", false},
+        {"acore_chars", "dc_mythic_weekly_best", "Mythic+", false},
+        
         -- Season System (CONSOLIDATED - dc_seasons is PRIMARY source of truth)
         -- NOTE: Use DarkChaos::GetActiveSeasonId() helper in C++ code for season access
         {"acore_chars", "dc_player_claimed_chests", "Season System", false},
@@ -184,6 +196,7 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_addon_protocol_log", "Protocol Logging", false},
         {"acore_chars", "dc_addon_protocol_stats", "Protocol Logging", false},
         {"acore_chars", "dc_addon_protocol_daily", "Protocol Logging", false},
+        {"acore_chars", "dc_addon_protocol_errors", "Protocol Logging", false},
         
         -- Cross-System Integration Framework (added 2025-12-04)
         -- Provides unified event bus, aggregated stats, and cross-system multipliers
@@ -193,13 +206,40 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_cross_system_multipliers", "Cross-System", false},      -- Multiplier overrides
         {"acore_chars", "dc_cross_system_achievement_triggers", "Cross-System", false}, -- Achievement trigger definitions
         
-        -- Collection System (added 2025-12-21)
+        -- Welcome/QoS System (added 2026-01-03)
+        {"acore_chars", "dc_player_qos_settings", "QoS System", false},
+        {"acore_chars", "dc_player_seen_features", "Welcome System", false},
+        {"acore_chars", "dc_player_welcome", "Welcome System", false},
+        {"acore_chars", "dc_welcome_faq", "Welcome System", false},
+        {"acore_chars", "dc_welcome_whats_new", "Welcome System", false},
+        
+        -- Migration tables
+        {"acore_chars", "dc_migration_auth_unlocks", "Migration", false},
+        {"acore_chars", "dc_migration_item_display", "Migration", false},
+        
+        -- Item Upgrade diagnostics
+        {"acore_chars", "dc_item_upgrade_missing_items", "Item Upgrade", false},
+        
+        -- Collection System (added 2025-12-21, expanded 2026-01-03)
         -- Retail-like collection management for mounts, pets, toys, heirlooms, etc.
         {"acore_chars", "dc_collection_items", "Collection System", true},           -- Generic account-wide collection items
         {"acore_chars", "dc_collection_wishlist", "Collection System", false},       -- Collection wishlist
         {"acore_chars", "dc_collection_currency", "Collection System", false},       -- Collection currency (tokens/emblems)
         {"acore_chars", "dc_collection_shop_purchases", "Collection System", false}, -- Shop purchase history
         {"acore_chars", "dc_character_transmog", "Collection System", false},        -- Active transmog selections
+        {"acore_chars", "dc_character_outfits", "Collection System", true},          -- Saved player outfits
+        {"acore_chars", "dc_collection_achievements", "Collection System", false},   -- Collection-based achievements
+        {"acore_chars", "dc_collection_community_favorites", "Collection System", false}, -- Community favorite outfits
+        {"acore_chars", "dc_collection_community_outfits", "Collection System", true},  -- Shared community outfits
+        {"acore_chars", "dc_collection_migrations", "Collection System", false},     -- Collection data migrations
+        {"acore_chars", "dc_collection_mount_speed", "Collection System", false},    -- Mount speed overrides
+        {"acore_chars", "dc_collection_stats", "Collection System", false},          -- Collection statistics
+        {"acore_chars", "dc_heirloom_collection", "Collection System", true},        -- Account heirloom collection
+        {"acore_chars", "dc_mount_collection", "Collection System", true},           -- Account mount collection
+        {"acore_chars", "dc_pet_collection", "Collection System", true},             -- Account pet collection
+        {"acore_chars", "dc_title_collection", "Collection System", false},          -- Account title collection
+        {"acore_chars", "dc_toy_collection", "Collection System", true},             -- Account toy collection
+        {"acore_chars", "dc_transmog_collection", "Collection System", true},        -- Account transmog collection
         
         -- ============================================================
         -- WORLD DATABASE (acore_world)
@@ -213,6 +253,10 @@ local DC_TABLE_CHECKER = {
         
         -- Artifact Config
         {"acore_world", "dc_chaos_artifact_items", "Artifacts", false},
+        
+        -- Custom Data Extensions
+        {"acore_world", "dc_item_custom_data", "Custom Data", false},
+        {"acore_world", "dc_spell_custom_data", "Custom Data", false},
         
         -- Quest Token Rewards
         {"acore_world", "dc_daily_quest_token_rewards", "Quest Rewards", false},

@@ -844,6 +844,27 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_daily` (
   KEY `idx_module` (`module`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Daily aggregated statistics for trend analysis';
 
+CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `guid` int unsigned DEFAULT NULL COMMENT 'Character GUID (if known)',
+  `account_id` int unsigned DEFAULT NULL,
+  `character_name` varchar(48) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `direction` enum('C2S','S2C') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'C2S',
+  `request_type` enum('STANDARD','DC_JSON','DC_PLAIN','AIO') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DC_PLAIN',
+  `module` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'UNKN',
+  `opcode` tinyint unsigned NOT NULL DEFAULT '0',
+  `event_type` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Short category (unhandled, parse_error, rate_limited, chunk_abandoned, etc.)',
+  `message` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Human-readable error/timeout message',
+  `payload_preview` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_timestamp` (`timestamp`),
+  KEY `idx_guid` (`guid`),
+  KEY `idx_account` (`account_id`),
+  KEY `idx_module` (`module`),
+  KEY `idx_event_type` (`event_type`)
+) ENGINE=InnoDB AUTO_INCREMENT=87 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
+
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -867,7 +888,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=18028 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=50205 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1113,6 +1134,15 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_statistics` (
   CONSTRAINT `fk_stat_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Overall statistics for dungeon quest achievements';
 
+CREATE TABLE IF NOT EXISTS `dc_character_outfits` (
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
+  `outfit_id` tinyint unsigned NOT NULL COMMENT 'Outfit Slot ID (0-N)',
+  `name` varchar(50) NOT NULL DEFAULT 'New Outfit',
+  `icon` varchar(100) NOT NULL DEFAULT 'Interface\\Icons\\INV_Misc_QuestionMark',
+  `items` text COMMENT 'JSON string of slot->appearance',
+  PRIMARY KEY (`guid`,`outfit_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Player saved outfits for Wardrobe';
+
 CREATE TABLE IF NOT EXISTS `dc_character_prestige` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `prestige_level` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Current prestige level (0-10)',
@@ -1157,6 +1187,27 @@ CREATE TABLE IF NOT EXISTS `dc_collection_achievements` (
   `reward_claimed` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`account_id`,`achievement_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection achievements';
+
+CREATE TABLE IF NOT EXISTS `dc_collection_community_favorites` (
+  `account_id` int unsigned NOT NULL,
+  `outfit_id` int unsigned NOT NULL,
+  PRIMARY KEY (`account_id`,`outfit_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `dc_collection_community_outfits` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL,
+  `author_name` varchar(50) NOT NULL,
+  `author_guid` int unsigned NOT NULL,
+  `items_string` text NOT NULL COMMENT 'Serialized item IDs',
+  `upvotes` int unsigned DEFAULT '0',
+  `downloads` int unsigned DEFAULT '0',
+  `views` int unsigned DEFAULT '0',
+  `weekly_votes` int unsigned DEFAULT '0',
+  `tags` varchar(255) DEFAULT '' COMMENT 'Comma-separated tags',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_collection_currency` (
   `account_id` int unsigned NOT NULL,
@@ -1638,6 +1689,18 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   KEY `idx_last_participation` (`last_participation`) COMMENT 'Recent activity queries'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Player Statistics - Individual player performance tracking';
 
+CREATE TABLE IF NOT EXISTS `dc_hlbg_state` (
+  `zone_id` int NOT NULL,
+  `bg_state` tinyint DEFAULT NULL,
+  `alliance_score` int DEFAULT NULL,
+  `horde_score` int DEFAULT NULL,
+  `match_time_remaining_ms` int DEFAULT NULL,
+  `warmup_time_remaining_ms` int DEFAULT NULL,
+  `affix_id` tinyint DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`zone_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique battle identifier',
   `season` smallint unsigned NOT NULL DEFAULT '1' COMMENT 'Season number (joins with hlbg_seasons)',
@@ -1660,7 +1723,7 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
   KEY `idx_weather` (`weather`) COMMENT 'Weather statistics queries',
   KEY `idx_win_reason` (`win_reason`) COMMENT 'Win condition analysis',
   KEY `idx_season_occurred` (`season`,`occurred_at`) COMMENT 'Composite index for season history'
-) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Battle History - Primary table for all battle results';
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Battle History - Primary table for all battle results';
 
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `tier_id` tinyint unsigned NOT NULL COMMENT 'Item tier (1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)',
@@ -1712,7 +1775,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_log` (
   KEY `idx_player_timestamp` (`player_guid`,`timestamp`),
   KEY `idx_dc_item_upgrade_log_player_timestamp` (`player_guid`,`timestamp`),
   CONSTRAINT `fk_dc_item_upgrade_log_player` FOREIGN KEY (`player_guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Complete log of all item upgrades';
+) ENGINE=InnoDB AUTO_INCREMENT=45 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Complete log of all item upgrades';
 
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry ID',
@@ -1734,7 +1797,7 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_unresolved` (`resolved`,`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=567 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+) ENGINE=InnoDB AUTO_INCREMENT=914 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
 
 CREATE TABLE `dc_item_upgrade_missing_items_summary` (
 	`item_id` INT UNSIGNED NOT NULL COMMENT 'Item template ID that failed',
@@ -1827,8 +1890,9 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrades` (
   KEY `k_item_guid` (`item_guid`),
   KEY `k_tier` (`tier_id`),
   KEY `k_season` (`season`),
-  KEY `k_last_upgraded` (`last_upgraded_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade state tracking - stores player item upgrade progress and history';
+  KEY `k_last_upgraded` (`last_upgraded_at`),
+  KEY `idx_tier` (`tier_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=45 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade state tracking - stores player item upgrade progress and history';
 
 CREATE TABLE IF NOT EXISTS `dc_leaderboard_cache` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -1951,7 +2015,9 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_runs` (
   `completed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Run completion timestamp',
   PRIMARY KEY (`run_id`),
   KEY `idx_player_season` (`character_guid`,`season_id`,`completed_at` DESC),
-  KEY `idx_vault_eligibility` (`character_guid`,`season_id`,`success`,`completed_at`)
+  KEY `idx_vault_eligibility` (`character_guid`,`season_id`,`success`,`completed_at`),
+  KEY `idx_map_level` (`map_id`,`keystone_level`),
+  KEY `idx_completion` (`completed_at`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete Mythic+ run history for vault and statistics';
 
 CREATE TABLE IF NOT EXISTS `dc_mplus_scores` (
@@ -1964,7 +2030,8 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_scores` (
   `total_runs` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total runs of this dungeon',
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`character_guid`,`season_id`,`map_id`),
-  KEY `idx_leaderboard` (`season_id`,`map_id`,`best_score` DESC)
+  KEY `idx_leaderboard` (`season_id`,`map_id`,`best_score` DESC),
+  KEY `idx_season_score` (`season_id`,`best_score` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-dungeon Mythic+ scores and best clears';
 
 CREATE TABLE IF NOT EXISTS `dc_mplus_spec_invites` (
@@ -2032,6 +2099,27 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_spec_settings` (
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Player Settings';
+
+CREATE TABLE IF NOT EXISTS `dc_mythic_dungeon_stats` (
+  `season_id` int unsigned NOT NULL,
+  `map_id` int unsigned NOT NULL,
+  `keystone_level` tinyint unsigned NOT NULL,
+  `runs_started` int unsigned DEFAULT '0',
+  `runs_completed` int unsigned DEFAULT '0',
+  `total_time` bigint unsigned DEFAULT '0',
+  `deaths_total` int unsigned DEFAULT '0',
+  PRIMARY KEY (`season_id`,`map_id`,`keystone_level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `dc_mythic_weekly_best` (
+  `week_start` int unsigned NOT NULL,
+  `player_guid` int unsigned NOT NULL,
+  `map_id` int unsigned NOT NULL,
+  `keystone_level` tinyint unsigned NOT NULL,
+  `score` int unsigned NOT NULL,
+  `completion_time` int unsigned NOT NULL,
+  PRIMARY KEY (`week_start`,`player_guid`,`map_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_pet_collection` (
   `account_id` int unsigned NOT NULL COMMENT 'Account ID',
@@ -2211,6 +2299,14 @@ CREATE TABLE `dc_player_progression_summary` (
 	`season_id` INT UNSIGNED NULL
 );
 
+CREATE TABLE IF NOT EXISTS `dc_player_qos_settings` (
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
+  `setting_key` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Setting identifier (e.g. "Tooltips.ShowItemLevel")',
+  `setting_value` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Setting value (stored as string)',
+  PRIMARY KEY (`guid`,`setting_key`),
+  KEY `idx_guid` (`guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Persistent player settings for DarkChaos QoS module';
+
 CREATE TABLE IF NOT EXISTS `dc_player_season_data` (
   `player_guid` int unsigned NOT NULL,
   `season_id` int unsigned NOT NULL,
@@ -2250,66 +2346,66 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_achievements` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Seasonal achievements';
 
 CREATE TABLE IF NOT EXISTS `dc_player_seasonal_chests` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `player_guid` int unsigned NOT NULL,
-  `season_id` int unsigned NOT NULL,
-  `week_timestamp` bigint unsigned NOT NULL,
-  `slot1_tokens` int unsigned NOT NULL DEFAULT '0',
-  `slot1_essence` int unsigned NOT NULL DEFAULT '0',
-  `slot2_tokens` int unsigned NOT NULL DEFAULT '0',
-  `slot2_essence` int unsigned NOT NULL DEFAULT '0',
-  `slot3_tokens` int unsigned NOT NULL DEFAULT '0',
-  `slot3_essence` int unsigned NOT NULL DEFAULT '0',
-  `slots_unlocked` tinyint unsigned NOT NULL DEFAULT '1',
-  `collected` tinyint(1) NOT NULL DEFAULT '0',
+  `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique chest ID',
+  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
+  `season_id` int unsigned NOT NULL COMMENT 'Season ID',
+  `week_timestamp` bigint unsigned NOT NULL COMMENT 'Unix timestamp of the week this chest is for',
+  `slot1_tokens` int unsigned NOT NULL DEFAULT '0' COMMENT 'Tokens in slot 1',
+  `slot1_essence` int unsigned NOT NULL DEFAULT '0' COMMENT 'Essence in slot 1',
+  `slot2_tokens` int unsigned NOT NULL DEFAULT '0' COMMENT 'Tokens in slot 2',
+  `slot2_essence` int unsigned NOT NULL DEFAULT '0' COMMENT 'Essence in slot 2',
+  `slot3_tokens` int unsigned NOT NULL DEFAULT '0' COMMENT 'Tokens in slot 3',
+  `slot3_essence` int unsigned NOT NULL DEFAULT '0' COMMENT 'Essence in slot 3',
+  `slots_unlocked` tinyint unsigned NOT NULL DEFAULT '1' COMMENT 'Number of slots unlocked (1-3)',
+  `collected` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Whether chest has been collected',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When this chest was generated',
+  `collected_at` timestamp NULL DEFAULT NULL COMMENT 'When this chest was collected',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_player_season_week` (`player_guid`,`season_id`,`week_timestamp`),
-  KEY `idx_season_week` (`season_id`,`week_timestamp`),
-  KEY `idx_uncollected` (`collected`,`season_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly seasonal reward chest tracking';
+  UNIQUE KEY `idx_player_season_week` (`player_guid`,`season_id`,`week_timestamp`),
+  KEY `idx_season` (`season_id`),
+  KEY `idx_collected` (`collected`),
+  KEY `idx_week` (`week_timestamp`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly reward chests (Great Vault system)';
 
 CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `player_guid` int unsigned NOT NULL,
-  `season_id` int unsigned NOT NULL,
-  `total_tokens_earned` bigint unsigned DEFAULT '0',
-  `total_essence_earned` bigint unsigned DEFAULT '0',
-  `quests_completed` int unsigned DEFAULT '0',
-  `bosses_killed` int unsigned DEFAULT '0',
-  `chests_claimed` int unsigned DEFAULT '0',
-  `weekly_tokens_earned` int unsigned DEFAULT '0',
-  `weekly_essence_earned` int unsigned DEFAULT '0',
-  `weekly_reset_at` bigint unsigned DEFAULT NULL,
-  `season_best_run` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `last_reward_at` bigint unsigned DEFAULT NULL,
-  `last_activity_at` bigint unsigned DEFAULT NULL,
-  `joined_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_player_season` (`player_guid`,`season_id`),
-  KEY `idx_season_id` (`season_id`),
-  KEY `idx_tokens_earned` (`total_tokens_earned`),
-  KEY `idx_last_activity` (`last_activity_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player seasonal statistics';
+  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
+  `season_id` int unsigned NOT NULL COMMENT 'Season ID',
+  `total_tokens_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total seasonal tokens earned',
+  `total_essence_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total seasonal essence earned',
+  `weekly_tokens_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Tokens earned this week',
+  `weekly_essence_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Essence earned this week',
+  `quests_completed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total quests completed this season',
+  `creatures_killed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total creatures killed this season',
+  `dungeon_bosses_killed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total dungeon bosses killed this season',
+  `world_bosses_killed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total world bosses killed this season',
+  `prestige_level` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player prestige level this season',
+  `last_weekly_reset` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp of last weekly reset',
+  `last_updated` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp of last update',
+  PRIMARY KEY (`player_guid`,`season_id`),
+  KEY `idx_season` (`season_id`),
+  KEY `idx_tokens` (`total_tokens_earned`),
+  KEY `idx_essence` (`total_essence_earned`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player seasonal statistics and progression';
 
 CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats_history` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `player_guid` int unsigned NOT NULL,
-  `season_id` int unsigned NOT NULL,
-  `total_tokens_earned` bigint unsigned DEFAULT '0',
-  `total_essence_earned` bigint unsigned DEFAULT '0',
-  `quests_completed` int unsigned DEFAULT '0',
-  `bosses_killed` int unsigned DEFAULT '0',
-  `chests_claimed` int unsigned DEFAULT '0',
-  `final_rank_tokens` int unsigned DEFAULT NULL,
-  `final_rank_bosses` int unsigned DEFAULT NULL,
-  `archived_at` bigint unsigned NOT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_player_season` (`player_guid`,`season_id`),
-  KEY `idx_archived_at` (`archived_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Archived player stats';
+  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
+  `season_id` int unsigned NOT NULL COMMENT 'Season ID',
+  `total_tokens_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total seasonal tokens earned',
+  `total_essence_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total seasonal essence earned',
+  `weekly_tokens_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Tokens earned in final week',
+  `weekly_essence_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Essence earned in final week',
+  `quests_completed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total quests completed',
+  `creatures_killed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total creatures killed',
+  `dungeon_bosses_killed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total dungeon bosses killed',
+  `world_bosses_killed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total world bosses killed',
+  `prestige_level` int unsigned NOT NULL DEFAULT '0' COMMENT 'Final prestige level',
+  `last_weekly_reset` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp of last weekly reset',
+  `last_updated` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp when archived',
+  `archived_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When this record was archived',
+  PRIMARY KEY (`player_guid`,`season_id`),
+  KEY `idx_season_archive` (`season_id`),
+  KEY `idx_archived` (`archived_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Archived seasonal statistics from past seasons';
 
 CREATE TABLE IF NOT EXISTS `dc_player_seen_features` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2372,24 +2468,24 @@ CREATE TABLE IF NOT EXISTS `dc_player_upgrade_tokens` (
   `season` int unsigned NOT NULL DEFAULT '1',
   `last_transaction_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`player_guid`,`currency_type`,`season`),
-  KEY `idx_season` (`season`)
+  KEY `idx_season` (`season`),
+  KEY `idx_player_season` (`player_guid`,`season`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player currency storage for upgrades';
 
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_cap_snapshot` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `player_guid` int unsigned NOT NULL,
-  `season_id` int unsigned NOT NULL,
-  `week_ending` date NOT NULL,
-  `tokens_earned` int unsigned DEFAULT '0',
-  `essence_earned` int unsigned DEFAULT '0',
-  `quests_completed` int unsigned DEFAULT '0',
-  `bosses_killed` int unsigned DEFAULT '0',
-  `chests_claimed` int unsigned DEFAULT '0',
-  `snapshot_at` bigint unsigned NOT NULL,
+  `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique snapshot ID',
+  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
+  `season_id` int unsigned NOT NULL COMMENT 'Season ID',
+  `week_timestamp` bigint unsigned NOT NULL COMMENT 'Unix timestamp of the week (start of week)',
+  `tokens_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Tokens earned during this week',
+  `essence_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Essence earned during this week',
+  `dungeons_completed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Dungeons completed during this week',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When this snapshot was created',
   PRIMARY KEY (`id`),
-  KEY `idx_player_season_week` (`player_guid`,`season_id`,`week_ending`),
-  KEY `idx_week_ending` (`week_ending`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Historical snapshots of weekly caps';
+  UNIQUE KEY `idx_player_season_week` (`player_guid`,`season_id`,`week_timestamp`),
+  KEY `idx_season` (`season_id`),
+  KEY `idx_week` (`week_timestamp`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
 
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2696,7 +2792,7 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_transaction_type` (`transaction_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=349 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
+) ENGINE=InnoDB AUTO_INCREMENT=587 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
 CREATE TABLE `dc_top_upgraders` (
 	`player_guid` INT UNSIGNED NOT NULL,
@@ -3819,16 +3915,7 @@ CREATE TABLE `v_player_heirloom_upgrades` (
 	`last_upgraded_at` TIMESTAMP NULL COMMENT 'When last upgraded'
 );
 
-CREATE TABLE `v_seasonal_leaderboard` (
-	`player_guid` INT UNSIGNED NOT NULL,
-	`season_id` INT UNSIGNED NOT NULL,
-	`total_tokens_earned` BIGINT UNSIGNED NULL,
-	`total_essence_earned` BIGINT UNSIGNED NULL,
-	`quests_completed` INT UNSIGNED NULL,
-	`bosses_killed` INT UNSIGNED NULL,
-	`chests_claimed` INT UNSIGNED NULL,
-	`token_rank` BIGINT UNSIGNED NOT NULL,
-	`boss_rank` BIGINT UNSIGNED NOT NULL
+CREATE TABLE `v_seasonal_leaderboard` 
 );
 
 CREATE TABLE `v_transaction_summary` (
@@ -3841,14 +3928,7 @@ CREATE TABLE `v_transaction_summary` (
 	`last_transaction` BIGINT UNSIGNED NULL
 );
 
-CREATE TABLE `v_weekly_top_performers` (
-	`player_guid` INT UNSIGNED NOT NULL,
-	`season_id` INT UNSIGNED NOT NULL,
-	`weekly_tokens_earned` INT UNSIGNED NULL,
-	`weekly_essence_earned` INT UNSIGNED NULL,
-	`quests_completed` INT UNSIGNED NULL,
-	`bosses_killed` INT UNSIGNED NULL,
-	`weekly_rank` BIGINT UNSIGNED NOT NULL
+CREATE TABLE `v_weekly_top_performers` 
 );
 
 CREATE TABLE IF NOT EXISTS `warden_action` (
