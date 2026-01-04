@@ -105,7 +105,7 @@ local function EnhanceFriendList()
     -- Hook FriendsFrame friend button update
     if not FriendsList_Update then return end
     
-    hooksecurefunc("FriendsFrame_UpdateFriends", function()
+    hooksecurefunc("FriendsList_Update", function()
         local settings = addon.settings.socialEnhancements
         if not settings.enabled then return end
         

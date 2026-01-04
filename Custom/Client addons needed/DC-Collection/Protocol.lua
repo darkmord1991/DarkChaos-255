@@ -100,12 +100,13 @@ DC.Opcodes = {
     CMSG_GET_TRANSMOG_STATE      = 0x37,
     CMSG_APPLY_TRANSMOG_PREVIEW  = 0x38,
     
-    -- Client -> Server: Community
-    CMSG_COMMUNITY_GET_LIST   = 0x39,
-    CMSG_COMMUNITY_PUBLISH    = 0x3A,
-    CMSG_COMMUNITY_RATE       = 0x3B,
-    CMSG_COMMUNITY_FAVORITE   = 0x3C,
-    CMSG_COMMUNITY_VIEW       = 0x3E,
+    -- Client -> Server: Community (0x53+ range to avoid collision with Outfit opcodes)
+    CMSG_COMMUNITY_GET_LIST   = 0x53,
+    CMSG_COMMUNITY_PUBLISH    = 0x54,
+    CMSG_COMMUNITY_RATE       = 0x55,
+    CMSG_COMMUNITY_FAVORITE   = 0x56,
+    CMSG_COMMUNITY_VIEW       = 0x57,
+    CMSG_COPY_COMMUNITY_OUTFIT = 0x58, -- Copy community outfit to personal account collection
     
     -- Server -> Client: Sync/Data
     SMSG_HANDSHAKE_ACK       = 0x40,
@@ -850,31 +851,89 @@ function DC.Protocol:RequestSavedOutfits()
     DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {})
 end
 
+function DC:RequestDefinitions(typeStr, offset)
+    self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = typeStr, offset = offset or 0 })
+end
+
+function DC:RequestItemSets()
+    self:SendMessage(self.Opcodes.CMSG_GET_ITEM_SETS, {})
+end
+
+-- Copy a community outfit to the player's personal account collection
+function DC.Protocol:CopyCommunityOutfitToAccount(communityOutfitId)
+    return DC:SendMessage(DC.Opcodes.CMSG_COPY_COMMUNITY_OUTFIT, { id = communityOutfitId })
+end
+
 function DC:OnMsg_SavedOutfits(data)
     self:Debug("OnMsg_SavedOutfits called!")
-    if not data or not data.outfits then return end
+    if DC.Print then DC:Print("[DEBUG] OnMsg_SavedOutfits called") end
+    
+    -- Debug: Show what we actually received
+    if DC.Print then
+        DC:Print("[DEBUG] data type: " .. type(data))
+        DC:Print("[DEBUG] data.outfits type: " .. type(data and data.outfits or "nil"))
+        if data and data.outfits then
+            DC:Print("[DEBUG] #data.outfits = " .. tostring(#data.outfits))
+        end
+    end
+    
+    if not data or not data.outfits then
+        if DC.Print then DC:Print("[DEBUG] No data or no outfits in response!") end
+        return
+    end
+    
+    if DC.Print then DC:Print("[DEBUG] Received " .. #data.outfits .. " raw outfits from server") end
+    
+    if data.outfits[1] then
+         self:Debug("First outfit items type: " .. type(data.outfits[1].items))
+         if DC.Print then DC:Print("[DEBUG] First outfit items type: " .. type(data.outfits[1].items)) end
+         if type(data.outfits[1].items) == "string" then
+             self:Debug("First outfit items string: " .. tostring(data.outfits[1].items))
+             if DC.Print then DC:Print("[DEBUG] First outfit items string: " .. tostring(data.outfits[1].items)) end
+         end
+    end
     
     DC.db = DC.db or {}
     DC.db.outfits = {}
     
     for _, outfit in ipairs(data.outfits) do
-        -- Map 'items' to 'slots' for UI compatibility
-        outfit.slots = outfit.items
+        -- Server sends 'items' as either a table or a JSON string from DB.
+        -- Parse it if needed.
+        local slots = outfit.items
+        if type(slots) == "string" and slots ~= "" then
+            -- Try to parse JSON string like {"ChestSlot":48691,...}
+            local parsed = {}
+            local success = pcall(function()
+                for k, v in slots:gmatch('"?([^":,{}]+)"?%s*:%s*(%d+)') do
+                    parsed[k] = tonumber(v)
+                end
+            end)
+            if success and next(parsed) then
+                slots = parsed
+                if DC.Print then DC:Print("[DEBUG] Parsed outfit items from string, got " .. self:TableCount(parsed) .. " slots") end
+            else
+                if DC.Print then DC:Print("[DEBUG] Failed to parse outfit items string!") end
+            end
+        end
+        
+        outfit.slots = slots
         table.insert(DC.db.outfits, outfit)
     end
     
     self:Debug("Received " .. #DC.db.outfits .. " saved outfits from server.")
+    if DC.Print then DC:Print("[DC-Collection] Loaded " .. #DC.db.outfits .. " saved outfits.") end
     
     if DC.Wardrobe and DC.Wardrobe.RefreshOutfitsGrid then
         DC.Wardrobe:RefreshOutfitsGrid()
     end
 end
 
-function DC:RequestCommunityList(offset, limit, filter)
+function DC:RequestCommunityList(offset, limit, filter, sort)
     return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_GET_LIST, {
         offset = offset or 0,
         limit = limit or 50,
-        filter = filter or "all"
+        filter = filter or "all",
+        sort = sort or "newest",
     })
 end
 
@@ -885,11 +944,15 @@ function DC:RequestCommunityFavorite(outfitId, add)
     })
 end
 
-function DC:RequestCommunityPublish(name, items)
-    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_PUBLISH, {
+function DC:RequestCommunityPublish(name, items, tags)
+    local payload = {
         name = name,
-        items = items
-    })
+        items = items,
+    }
+    if tags and tags ~= "" then
+        payload.tags = tags
+    end
+    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_PUBLISH, payload)
 end
 
 function DC:RequestCommunityRate(id)
@@ -2604,8 +2667,8 @@ function DC:OnMsg_ItemSets(data)
     self:Debug("Received " .. count .. " item sets definitions.")
 
     -- Trigger UI update if Wardrobe is loaded
-    if DC.Wardrobe and DC.Wardrobe.UpdateSetsList then
-        DC.Wardrobe:UpdateSetsList()
+    if DC.Wardrobe and DC.Wardrobe.RefreshSetsGrid then
+        DC.Wardrobe:RefreshSetsGrid()
     end
 end
 

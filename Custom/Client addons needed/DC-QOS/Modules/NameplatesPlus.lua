@@ -31,11 +31,11 @@ local NameplatesPlus = {
             showHealthPercent = true,
             healthPercentPosition = "CENTER",
             healthPercentFormat = "%d%%",
-            showHealthNumbers = false,
+            showHealthRealValues = true,
             -- Target
             targetHighlight = true,
             targetHighlightColor = { r = 1, g = 1, b = 0, a = 0.8 },
-            targetScale = 1.15,
+            targetScale = 1.0,
             nonTargetAlpha = 0.7,
             -- Threat
             showThreat = true,
@@ -65,6 +65,10 @@ local NameplatesPlus = {
                     "Blessing of Kings",
                     "Arcane Intellect",
                     "Power Word: Fortitude",
+                    "Prayer of Spirit",
+                    "Divine Spirit",
+                    "Thorns",
+                    "Retribution Aura",
                 },
                 -- Priority auras (always show first)
                 priority = {
@@ -85,8 +89,25 @@ local NameplatesPlus = {
                 maxDuration = 0,
             },
             -- Range
+            nameplateRange = 41,
             fadeOutOfRange = false,
             outOfRangeAlpha = 0.5,
+            
+            -- Visuals
+            textureMode = "Blizzard", -- "Blizzard" or "Flat"
+            
+            -- Advanced Threat
+            threatMode = "Auto", -- "Auto", "Tank", "DPS"
+            showThreatValues = true, -- diff
+            showThreatPercentage = true,
+            
+            -- Target Indicators
+            targetNeon = true,
+            targetArrows = true,
+            
+            -- NPC Icons
+            npcIcons = true,
+            npcIconSize = 24,
         },
     },
 }
@@ -110,6 +131,74 @@ end
 local hookedPlates = {}
 local updateFrame = nil
 local playerGUID = nil
+local npcRoleCache = {} -- Name -> Role (Vendor, Innkeeper, etc)
+
+local function SafeGetCVar(name)
+    if type(GetCVar) ~= "function" then
+        return nil
+    end
+
+    local ok, value = pcall(GetCVar, name)
+    if ok then
+        return value
+    end
+    return nil
+end
+
+local function SafeSetCVar(name, value)
+    if type(SetCVar) ~= "function" then
+        return false
+    end
+
+    local ok = pcall(SetCVar, name, value)
+    return ok and true or false
+end
+
+-- Tip Scanning for NPC detection
+local tipScanner = CreateFrame("GameTooltip", "DCQoS_TipScan", nil, "GameTooltipTemplate")
+tipScanner:SetOwner(WorldFrame, "ANCHOR_NONE")
+
+local function GetNPCRole(unit)
+    if not unit then return nil end
+    local name = UnitName(unit)
+    if not name then return nil end
+    
+    if npcRoleCache[name] then return npcRoleCache[name] end
+    
+    -- Scan tooltip
+    tipScanner:ClearLines()
+    tipScanner:SetUnit(unit)
+    
+    for i = 2, tipScanner:NumLines() do
+        local line = _G["DCQoS_TipScanTextLeft" .. i]
+        if line then
+            local text = line:GetText()
+            if text then
+                if text:find("Vendor") or text:find("Merchant") then
+                    npcRoleCache[name] = "Vendor"
+                    return "Vendor"
+                elseif text:find("Innkeeper") then
+                    npcRoleCache[name] = "Innkeeper"
+                    return "Innkeeper"
+                elseif text:find("Flight Master") then
+                    npcRoleCache[name] = "FlightMaster"
+                    return "FlightMaster"
+                elseif text:find("Trainer") then
+                    npcRoleCache[name] = "Trainer"
+                    return "Trainer"
+                elseif text:find("Auctioneer") then
+                    npcRoleCache[name] = "Auctioneer"
+                    return "Auctioneer"
+                elseif text:find("Banker") then
+                    npcRoleCache[name] = "Banker"
+                    return "Banker"
+                end
+            end
+        end
+    end
+    
+    return nil
+end
 
 -- Class colors reference
 local CLASS_COLORS = RAID_CLASS_COLORS or {
@@ -140,6 +229,20 @@ local THREAT_COLORS = {
         danger  = { r = 1.0, g = 0.0, b = 0.0 },  -- Red: lost aggro!
     },
 }
+
+-- Automatic Threat Mode Detection
+local function GetAutomaticThreatMode()
+    -- Check Stance/Form
+    local form = GetShapeshiftForm()
+    local _, class = UnitClass("player")
+    
+    if class == "WARRIOR" and form == 2 then return "tank" end -- Defensive Stance
+    if class == "DRUID" and form == 1 then return "tank" end -- Bear Form
+    if class == "DEATHKNIGHT" and GetShapeshiftForm() == 1 then return "tank" end -- Blood Presence (simplified check)
+    if class == "PALADIN" and GetIcons and GetIcons() == "Righteous Fury" then return "tank" end -- Hard to check RF easily without buff scan
+    
+    return "dps"
+end
 
 -- ============================================================
 -- Helper Functions
@@ -229,7 +332,50 @@ local function CreateThreatGlow(frame, healthBar)
     glow:Hide()
     frame.dcThreatGlow = glow
     
+    -- Advanced Threat Text
+    local diffText = healthBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    diffText:SetPoint("BOTTOMRIGHT", healthBar, "TOPRIGHT", 0, 2)
+    diffText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+    diffText:Hide()
+    healthBar.dcThreatDiff = diffText
+    
+    local pctText = healthBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    pctText:SetPoint("BOTTOMLEFT", healthBar, "TOPLEFT", 0, 2)
+    pctText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
+    pctText:Hide()
+    healthBar.dcThreatPct = pctText
+    
     return glow
+end
+
+local function CreateTargetNeon(frame, healthBar)
+    if frame.dcTargetNeon then return frame.dcTargetNeon end
+    
+    local neon = frame:CreateTexture(nil, "OVERLAY")
+    neon:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Flash")
+    neon:SetBlendMode("ADD")
+    neon:SetPoint("TOPLEFT", healthBar, "TOPLEFT", -2, 2)
+    neon:SetPoint("BOTTOMRIGHT", healthBar, "BOTTOMRIGHT", 2, -2)
+    neon:SetVertexColor(1, 1, 1, 0.5)
+    neon:Hide()
+    frame.dcTargetNeon = neon
+    return neon
+end
+
+local function CreateNPCIcons(frame, healthBar)
+    if frame.dcNPCIcons then return frame.dcNPCIcons end
+    
+    local iconFrame = CreateFrame("Frame", nil, frame)
+    iconFrame:SetSize(24, 24)
+    iconFrame:SetPoint("CENTER", healthBar, "CENTER", 0, 20)
+    
+    local icon = iconFrame:CreateTexture(nil, "OVERLAY")
+    icon:SetAllPoints()
+    iconFrame.texture = icon
+    
+    iconFrame:Hide()
+    frame.dcNPCIcons = iconFrame
+    return iconFrame
 end
 
 local function CreateCastBarOverlay(frame, originalCastBar)
@@ -305,6 +451,14 @@ end
 -- ============================================================
 -- Update Functions
 -- ============================================================
+local function FormatNumber(currentValue)
+    if currentValue >= 1000 then
+        -- Round to nearest k: 14500 -> 15k, 14400 -> 14k
+        return string.format("%.0fk", math.floor(currentValue / 1000 + 0.5))
+    end
+    return tostring(currentValue)
+end
+
 local function UpdateHealthPercent(healthBar, settings)
     if not settings.showHealthPercent then
         if healthBar.dcHealthPercent then healthBar.dcHealthPercent:Hide() end
@@ -319,10 +473,8 @@ local function UpdateHealthPercent(healthBar, settings)
     local percent = (cur / max) * 100
     local text = healthBar.dcHealthPercent or CreateHealthPercentText(healthBar)
     
-    if settings.showHealthNumbers then
-        local curK = cur >= 1000 and string.format("%.1fk", cur / 1000) or tostring(cur)
-        local maxK = max >= 1000 and string.format("%.1fk", max / 1000) or tostring(max)
-        text:SetText(string.format("%s/%s", curK, maxK))
+    if settings.showHealthRealValues then
+        text:SetText(string.format("%s/%s", FormatNumber(cur), FormatNumber(max)))
     else
         text:SetFormattedText(settings.healthPercentFormat, percent)
     end
@@ -350,6 +502,11 @@ local function UpdateClassColor(healthBar, unit, settings)
     if not color then return end
     
     local isEnemy = UnitIsEnemy("player", unit)
+    
+    -- Ensure clean texture if Flat mode is active
+    if settings.textureMode == "Flat" then
+        healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    end
     
     if isEnemy and settings.enemyClassColors then
         healthBar:SetStatusBarColor(color.r, color.g, color.b)
@@ -381,26 +538,34 @@ local function UpdateThreat(frame, unit, settings)
     
     if not status then
         glow:Hide()
+        if healthBar.dcThreatDiff then healthBar.dcThreatDiff:Hide() end
+        if healthBar.dcThreatPct then healthBar.dcThreatPct:Hide() end
         return
     end
     
-    local colors = settings.tankMode and THREAT_COLORS.tank or THREAT_COLORS.dps
-    local color
+    -- Determine Mode
+    local mode = settings.tankMode and "tank" or "dps" -- Manual override
+    if settings.threatMode == "Auto" then
+        mode = GetAutomaticThreatMode()
+    end
     
-    if settings.tankMode then
-        -- Tank mode: red = not tanking, green = tanking
-        if isTanking then
+    local colors = (mode == "tank") and THREAT_COLORS.tank or THREAT_COLORS.dps
+    local color
+    local isTankingActually = (status >= 2) -- 3 is securely tanking, 2 is insecurely tanking
+    
+    -- Logic
+    if mode == "tank" then
+        if isTankingActually then
             color = colors.safe
-        elseif status >= 2 then
+        elseif status == 1 then
             color = colors.warning
         else
             color = colors.danger
         end
     else
-        -- DPS/Healer mode: red = you have aggro, green = safe
-        if isTanking then
+        if isTankingActually then
             color = colors.danger
-        elseif status >= 2 then
+        elseif status == 1 then
             color = colors.warning
         else
             color = colors.safe
@@ -411,10 +576,69 @@ local function UpdateThreat(frame, unit, settings)
         glow:SetVertexColor(color.r, color.g, color.b, 0.6)
         glow:Show()
         
+        -- Advanced Threat Values
+        if settings.showThreatValues then
+            local _, _, percent, rawPercent, threatValue = UnitDetailedThreatSituation("player", unit)
+            if threatValue then
+                -- This is a simplification; getting "second highest" without scanning group is hard.
+                -- We will show Absolute Threat or simple diff if we can.
+                -- For 3.3.5a standalone without a library, we mainly know OUR threat.
+                -- We can show threat PERCENT relative to aggro holder.
+                
+                if healthBar.dcThreatPct then
+                    if rawPercent then
+                        healthBar.dcThreatPct:SetText(string.format("%.0f%%", rawPercent))
+                        healthBar.dcThreatPct:SetTextColor(color.r, color.g, color.b)
+                        healthBar.dcThreatPct:Show()
+                    else
+                         healthBar.dcThreatPct:Hide()
+                    end
+                end
+                
+                if healthBar.dcThreatDiff then
+                     -- Fake Diff: just show value k
+                     healthBar.dcThreatDiff:SetText(FormatNumber(threatValue))
+                     healthBar.dcThreatDiff:SetTextColor(color.r, color.g, color.b)
+                     healthBar.dcThreatDiff:Show()
+                end
+            end
+        end
+        
         -- Also color the health bar if threatColors enabled
         if settings.threatColors and healthBar then
             healthBar:SetStatusBarColor(color.r, color.g, color.b)
         end
+    end
+end
+    
+local function UpdateNPCIcons(frame, unit, settings)
+    if not settings.npcIcons then 
+        if frame.dcNPCIcons then frame.dcNPCIcons:Hide() end
+        return 
+    end
+    
+    local role = GetNPCRole(unit)
+    if not role then
+        if frame.dcNPCIcons then frame.dcNPCIcons:Hide() end
+        return
+    end
+    
+    local iconFrame = frame.dcNPCIcons or CreateNPCIcons(frame, frame.dcHealthBar)
+    local tex = ""
+    
+    if role == "Vendor" then tex = "Interface\\Icons\\Inv_Misc_Bag_10"
+    elseif role == "Innkeeper" then tex = "Interface\\Icons\\Inv_Misc_Rune_01" -- Hearthstone-ish
+    elseif role == "FlightMaster" then tex = "Interface\\Icons\\Taxi_Path"
+    elseif role == "Trainer" then tex = "Interface\\Icons\\Inv_Misc_Book_09"
+    elseif role == "Auctioneer" then tex = "Interface\\Icons\\Inv_Misc_Coin_02"
+    elseif role == "Banker" then tex = "Interface\\Icons\\Inv_Box_02"
+    end
+    
+    if tex ~= "" then
+        iconFrame.texture:SetTexture(tex)
+        iconFrame:Show()
+    else
+        iconFrame:Hide()
     end
 end
 
@@ -628,25 +852,35 @@ local function UpdateTargetHighlight(frame, settings)
     
     local isTarget = IsPlateTarget(frame)
     local highlight = frame.dcTargetHighlight or CreateTargetHighlight(frame)
+    local c = settings.targetHighlightColor
     
-    if isTarget then
-        local c = settings.targetHighlightColor
-        highlight:SetVertexColor(c.r, c.g, c.b, c.a)
-        highlight:Show()
-        
-        if settings.targetScale and settings.targetScale ~= 1.0 then
-            frame:SetScale(settings.targetScale)
+    -- Neon Glow
+    if settings.targetNeon then
+        local neon = frame.dcTargetNeon or CreateTargetNeon(frame, frame.dcHealthBar)
+        if isTarget then
+            neon:SetVertexColor(c.r, c.g, c.b, c.a)
+            neon:Show()
+        else
+            neon:Hide()
         end
     else
+        if frame.dcTargetNeon then frame.dcTargetNeon:Hide() end
+    end
+
+    if isTarget then
+        highlight:SetVertexColor(c.r, c.g, c.b, c.a)
+        highlight:Show()
+        frame.dcIsTarget = true
+    else
         highlight:Hide()
-        
-        if settings.targetScale and settings.targetScale ~= 1.0 then
-            frame:SetScale(1.0)
-        end
-        
-        if settings.nonTargetAlpha and settings.nonTargetAlpha < 1.0 and UnitExists("target") then
-            frame:SetAlpha(settings.nonTargetAlpha)
-        end
+        frame.dcIsTarget = false
+    end
+    
+    -- Alpha handling
+    if settings.nonTargetAlpha and settings.nonTargetAlpha < 1.0 and UnitExists("target") and not isTarget then
+        frame:SetAlpha(settings.nonTargetAlpha)
+    else
+        frame:SetAlpha(1.0)
     end
 end
 
@@ -665,6 +899,14 @@ local function HookNameplate(frame)
     
     local healthBar = children[1]
     local castBar = children[2]
+    
+    -- Apply Texture Mode
+    if healthBar and settings.textureMode == "Flat" then
+        healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    end
+    if castBar and settings.textureMode == "Flat" then
+        castBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    end
     
     local nameText = nil
     local levelText = nil
@@ -702,6 +944,10 @@ local function HookNameplate(frame)
         CreateDebuffFrame(frame, healthBar)
     end
     
+    if healthBar then
+        CreateNPCIcons(frame, healthBar)
+    end
+    
     -- Hook health bar updates
     if healthBar then
         healthBar:HookScript("OnValueChanged", function(self)
@@ -716,6 +962,7 @@ local function HookNameplate(frame)
         local settings = addon.settings.nameplatesPlus
         if not settings.enabled then return end
         
+        -- Reset scale to 1.0 to ensure cleanliness
         self:SetScale(1.0)
         
         if self.dcHealthBar then
@@ -779,6 +1026,9 @@ local function OnUpdate(self, elapsed)
                     UpdateThreat(frame, unit, settings)
                     UpdateCastBar(frame, frame.dcCastBar, unit, settings)
                     UpdateDebuffs(frame, unit, settings)
+                    UpdateNPCIcons(frame, unit, settings)
+                    -- Ensure health text is always correct (fixes "missing values" bug)
+                    UpdateHealthPercent(frame.dcHealthBar, settings)
                 end
             end
         end
@@ -791,6 +1041,16 @@ end
 function NameplatesPlus.OnInitialize()
     addon:Debug("NameplatesPlus module initializing")
     playerGUID = UnitGUID("player")
+    
+    -- Force nameplate scale CVar to 1 to prevent "jumping"
+    if SafeGetCVar("nameplateSelectedScale") ~= nil then
+        SafeSetCVar("nameplateSelectedScale", "1")
+    end
+    
+    -- Apply range setting
+    if addon.settings.nameplatesPlus.nameplateRange then
+        SafeSetCVar("nameplateMaxDistance", tostring(addon.settings.nameplatesPlus.nameplateRange))
+    end
 end
 
 function NameplatesPlus.OnEnable()
@@ -996,6 +1256,15 @@ function NameplatesPlus.CreateSettings(parent)
     healthPctCb:SetScript("OnClick", function(self)
         addon:SetSetting("nameplatesPlus.showHealthPercent", self:GetChecked())
     end)
+    yOffset = yOffset - 25
+    
+    local healthNumCb = addon:CreateCheckbox(parent)
+    healthNumCb:SetPoint("TOPLEFT", 36, yOffset)
+    healthNumCb.Text:SetText("Show actual health values (e.g. 15k/30k)")
+    healthNumCb:SetChecked(settings.showHealthRealValues)
+    healthNumCb:SetScript("OnClick", function(self)
+        addon:SetSetting("nameplatesPlus.showHealthRealValues", self:GetChecked())
+    end)
     yOffset = yOffset - 35
     
     -- Target Section
@@ -1011,6 +1280,46 @@ function NameplatesPlus.CreateSettings(parent)
     targetCb:SetScript("OnClick", function(self)
         addon:SetSetting("nameplatesPlus.targetHighlight", self:GetChecked())
     end)
+    yOffset = yOffset - 35
+
+    -- Visuals Section
+    local visualHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    visualHeader:SetPoint("TOPLEFT", 16, yOffset)
+    visualHeader:SetText("Visuals & Range")
+    yOffset = yOffset - 25
+
+    -- Texture Mode
+    local textureCb = addon:CreateCheckbox(parent)
+    textureCb:SetPoint("TOPLEFT", 16, yOffset)
+    textureCb.Text:SetText("Use Flat (Sharp) Textures")
+    textureCb:SetChecked(settings.textureMode == "Flat")
+    textureCb:SetScript("OnClick", function(self)
+        local mode = self:GetChecked() and "Flat" or "Blizzard"
+        addon:SetSetting("nameplatesPlus.textureMode", mode)
+        addon:Print("Reload UI required for texture changes to fully apply.", true)
+    end)
+    yOffset = yOffset - 25
+
+    -- Range Slider
+    local rangeSlider = CreateFrame("Slider", "DCQoSNameplateRange", parent, "OptionsSliderTemplate")
+    rangeSlider:SetPoint("TOPLEFT", 20, yOffset - 10)
+    rangeSlider:SetWidth(200)
+    rangeSlider:SetHeight(17)
+    rangeSlider:SetMinMaxValues(20, 41)
+    rangeSlider:SetValueStep(1)
+    rangeSlider:SetValue(settings.nameplateRange or 41)
+    
+    _G[rangeSlider:GetName() .. "Text"]:SetText("View Distance: " .. (settings.nameplateRange or 41) .. " yds")
+    _G[rangeSlider:GetName() .. "Low"]:SetText("20")
+    _G[rangeSlider:GetName() .. "High"]:SetText("41")
+    
+    rangeSlider:SetScript("OnValueChanged", function(self, value)
+        local val = math.floor(value)
+        addon:SetSetting("nameplatesPlus.nameplateRange", val)
+        _G[self:GetName() .. "Text"]:SetText("View Distance: " .. val .. " yds")
+        SafeSetCVar("nameplateMaxDistance", tostring(val))
+    end)
+    yOffset = yOffset - 50
     
     return yOffset - 50
 end

@@ -53,6 +53,7 @@ function Wardrobe:ShowItemsContent()
             DC.CommunityUI.frame:Hide()
         end
         if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
+        if self.frame.communityGridContainer then self.frame.communityGridContainer:Hide() end
 
         -- Hide Outfit Controls
         if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Hide() end
@@ -95,6 +96,7 @@ function Wardrobe:ShowSetsContent()
             DC.CommunityUI.frame:Hide()
         end
         if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
+        if self.frame.communityGridContainer then self.frame.communityGridContainer:Hide() end
         
         -- Hide Outfit Controls
         if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Hide() end
@@ -123,107 +125,7 @@ function Wardrobe:ShowSetsContent()
     self:RefreshSetsGrid()
 end
 
-function Wardrobe:ShowCommunityContent()
-    if not self.frame then
-        return
-    end
-
-    local function PreviewAppearancesOnModel(model, appearanceIds)
-        if not model or not appearanceIds or type(appearanceIds) ~= "table" then
-            return
-        end
-
-        if model.SetUnit then
-            model:SetUnit("player")
-        end
-        if model.Undress then
-            model:Undress()
-        end
-
-        for _, app in ipairs(appearanceIds) do
-            local appearanceId = type(app) == "string" and tonumber(app) or app
-            if appearanceId and appearanceId ~= 0 then
-                local def = DC and DC.TransmogModule and DC.TransmogModule.GetAppearanceDefinition
-                    and DC.TransmogModule:GetAppearanceDefinition(appearanceId)
-                local itemId = def and (def.itemId or def.item_id or def.entryId or def.entry_id or def.entry)
-                if type(itemId) == "string" then
-                    itemId = tonumber(itemId)
-                end
-                if itemId and model.TryOn then
-                    model:TryOn(itemId)
-                end
-            end
-        end
-    end
-
-    local function ParseAppearanceIds(itemsString)
-        local items = {}
-        if type(itemsString) ~= "string" then
-            return items
-        end
-        for id in string.gmatch(itemsString, "%d+") do
-            table.insert(items, tonumber(id))
-        end
-        return items
-    end
-
-    -- Expose a helper for Community UI to call (embedded preview)
-    if not self.PreviewCommunityOutfitEmbedded then
-        function Wardrobe:PreviewCommunityOutfitEmbedded(name, itemsString)
-            if not self.frame then return end
-
-            local model = self.frame.model
-            if self.frame.modelTitle then
-                self.frame.modelTitle:SetText((name and name ~= "") and name or "")
-            end
-
-            local ids = ParseAppearanceIds(itemsString)
-            PreviewAppearancesOnModel(model, ids)
-        end
-    end
-
-    -- Hide wardrobe-specific controls
-    if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Hide() end
-    if self.frame.randomOutfitBtn then self.frame.randomOutfitBtn:Hide() end
-    if self.frame.orderBtn then self.frame.orderBtn:Hide() end
-    if self.frame.filterBtn then self.frame.filterBtn:Hide() end
-    if self.frame.qualityDropdown then self.frame.qualityDropdown:Hide() end
-    if self.frame.searchBox then self.frame.searchBox:Hide() end
-
-    for _, btn in ipairs(self.frame.slotFilterButtons or {}) do
-        btn:Hide()
-    end
-    if self.frame.collectedFrame then self.frame.collectedFrame:Hide() end
-    if self.frame.showUncollectedCheck then self.frame.showUncollectedCheck:Hide() end
-    if self.frame.gridFrame then self.frame.gridFrame:Hide() end
-    if self.frame.gridContainer then self.frame.gridContainer:Hide() end
-    if self.frame.pageText then self.frame.pageText:Hide() end
-    if self.frame.prevBtn then self.frame.prevBtn:Hide() end
-    if self.frame.nextBtn then self.frame.nextBtn:Hide() end
-
-    -- Show community UI in the right panel
-    if self.frame.communityHost then
-        self.frame.communityHost:Show()
-    end
-
-    if DC and DC.CommunityUI and type(DC.CommunityUI.Initialize) == "function" and (self.frame.communityListHost or self.frame.communityHost) then
-        local host = self.frame.communityListHost or self.frame.communityHost
-        DC.CommunityUI:Initialize(host, {
-            onPreview = function(outfitName, itemsString)
-                Wardrobe:PreviewCommunityOutfitEmbedded(outfitName, itemsString)
-            end,
-            cols = 3,
-            rows = 2,
-        })
-        if DC.CommunityUI.frame then
-            DC.CommunityUI.frame:Show()
-        end
-        if type(DC.CommunityUI.RequestList) == "function" then
-            DC.CommunityUI.offset = 0
-            DC.CommunityUI:RequestList("all")
-        end
-    end
-end
+-- Legacy ShowCommunityContent removed - see WardrobeCommunity.lua
 
 -- ============================================================================
 -- SLOT SELECTION
@@ -980,6 +882,10 @@ function Wardrobe:ApplyAppearance(appearance)
 
     if DC and DC.RequestSetTransmog then
         DC:RequestSetTransmog(invSlotId, appearanceId)
+
+        if type(self.MarkUnsavedChanges) == "function" then
+            self:MarkUnsavedChanges()
+        end
     end
 end
 

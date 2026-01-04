@@ -77,6 +77,10 @@ namespace DCCollection
     void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string const& source, bool notifyPlayer = true);
     void InvalidateAccountUnlockedTransmogAppearances(uint32 accountId);
 
+    // Session notification helpers (encapsulate per-translation-unit storage)
+    void ClearSessionNotifiedAppearances(uint32 guid);
+    void EraseSessionNotifiedAppearances(uint32 guid);
+
     // Additional Transmog Helpers
     uint8 VisualSlotToEquipmentSlot(uint32 visualSlot);
     std::vector<uint32> GetInvTypesForVisualSlot(uint32 visualSlot);

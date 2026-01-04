@@ -141,27 +141,26 @@ namespace DCCollection
     constexpr uint32 MOUNT_THRESHOLD_TIER3 = 100;
     constexpr uint32 MOUNT_THRESHOLD_TIER4 = 200;
 
-    // Session notification deduplication
-    // This map stores the set of displayIDs for which a notification has already been sent
-    // during the current session, keyed by the player's GUID (low part).
-    static std::unordered_map<uint32, std::unordered_set<uint32>> sessionNotifiedAppearances;
-
-    // Forward declarations for helpers defined later in this file
-    bool WorldTableExists(std::string const& tableName);
-    std::string const& GetWorldEntryColumn(std::string const& tableName);
-    void HandleSummonMount(Player* player, uint32 entryId, bool random);
-    void HandleSetTitle(Player* player, uint32 entryId);
-    void HandleSummonHeirloom(Player* player, uint32 entryId);
-
     // Forward declarations for helpers defined later in this file
     bool WorldTableExists(std::string const& tableName);
     bool WorldColumnExists(std::string const& tableName, std::string const& columnName);
     std::string const& GetWorldEntryColumn(std::string const& tableName);
-    std::string const& GetWorldEntryColumn(std::string const& tableName);
+    void HandleSummonMount(Player* player, uint32 entryId, bool random);
+    void HandleSetTitle(Player* player, uint32 entryId);
+    void HandleSummonHeirloom(Player* player, uint32 entryId);
     uint32 FindCompanionSpellIdForItem(uint32 itemId);
     
     uint32 FindCompanionItemIdForSpell(uint32 spellId)
     {
+        // Static cache: spellId -> itemId mapping (0 means not found)
+        static std::unordered_map<uint32, uint32> s_companionItemCache;
+        [[maybe_unused]] static bool s_cacheInitialized = false;
+        
+        // Check cache first
+        auto it = s_companionItemCache.find(spellId);
+        if (it != s_companionItemCache.end())
+            return it->second;
+        
         // Companion pets in 3.3.5a are typically taught by item_template (class=15, subclass=2).
         QueryResult r = WorldDatabase.Query(
             "SELECT MIN(entry) FROM item_template "
@@ -170,17 +169,29 @@ namespace DCCollection
             ")",
             spellId, spellId, spellId, spellId, spellId);
 
-        if (!r)
-            return 0;
-
-        Field* f = r->Fetch();
-        if (f[0].IsNull())
-            return 0;
-        return f[0].Get<uint32>();
+        uint32 result = 0;
+        if (r)
+        {
+            Field* f = r->Fetch();
+            if (!f[0].IsNull())
+                result = f[0].Get<uint32>();
+        }
+        
+        // Cache the result (including 0 for "not found")
+        s_companionItemCache[spellId] = result;
+        return result;
     }
 
     uint32 FindMountItemIdForSpell(uint32 spellId)
     {
+        // Static cache: spellId -> itemId mapping (0 means not found)
+        static std::unordered_map<uint32, uint32> s_mountItemCache;
+        
+        // Check cache first
+        auto it = s_mountItemCache.find(spellId);
+        if (it != s_mountItemCache.end())
+            return it->second;
+        
         // Mounts are typically taught by item_template (class=15, subclass=5).
         QueryResult r = WorldDatabase.Query(
             "SELECT MIN(entry) FROM item_template "
@@ -189,13 +200,17 @@ namespace DCCollection
             ")",
             spellId, spellId, spellId, spellId, spellId);
 
-        if (!r)
-            return 0;
-
-        Field* f = r->Fetch();
-        if (f[0].IsNull())
-            return 0;
-        return f[0].Get<uint32>();
+        uint32 result = 0;
+        if (r)
+        {
+            Field* f = r->Fetch();
+            if (!f[0].IsNull())
+                result = f[0].Get<uint32>();
+        }
+        
+        // Cache the result (including 0 for "not found")
+        s_mountItemCache[spellId] = result;
+        return result;
     }
 
     bool IsCompanionSpell(SpellInfo const* spellInfo)
@@ -499,11 +514,6 @@ namespace DCCollection
         return 0;
     }
 
-
-    // Forward declarations used by early migration helpers.
-    uint32 GetItemDisplayId(ItemTemplate const* proto);
-    bool IsItemEligibleForTransmogUnlock(ItemTemplate const* proto);
-    bool CharacterTableExists(std::string const& tableName);
 
     // Forward declarations used by early migration helpers.
     uint32 GetItemDisplayId(ItemTemplate const* proto);
@@ -4045,7 +4055,7 @@ namespace DCCollection
 
             // Clear session notification cache on login
             uint32 guid = player->GetGUID().GetCounter();
-            sessionNotifiedAppearances[guid].clear();
+            ClearSessionNotifiedAppearances(guid);
         }
 
         void OnPlayerLearnSpell(Player* player, uint32 spellId) override
@@ -4258,7 +4268,7 @@ namespace DCCollection
 
             // Clear session notification cache on logout
             uint32 guid = player->GetGUID().GetCounter();
-            sessionNotifiedAppearances.erase(guid);
+            EraseSessionNotifiedAppearances(guid);
         }
     };
 

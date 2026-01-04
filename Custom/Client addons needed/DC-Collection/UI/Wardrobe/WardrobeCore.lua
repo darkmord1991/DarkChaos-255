@@ -24,6 +24,75 @@ DC.Wardrobe = DC.Wardrobe or {}
 local Wardrobe = DC.Wardrobe
 
 -- ============================================================================
+-- UNSAVED CHANGES (WARDROBE LOOK)
+-- ============================================================================
+
+function Wardrobe:MarkUnsavedChanges()
+    self._unsavedChanges = true
+end
+
+function Wardrobe:ClearUnsavedChanges()
+    self._unsavedChanges = nil
+end
+
+function Wardrobe:_HideImmediate()
+    if self.frame then
+        self._suppressUnsavedOnHide = true
+        self.frame:Hide()
+    end
+end
+
+function Wardrobe:_EnsureUnsavedChangesPopup()
+    if not StaticPopupDialogs or StaticPopupDialogs["DC_WARDROBE_UNSAVED_CHANGES"] then
+        return
+    end
+
+    StaticPopupDialogs["DC_WARDROBE_UNSAVED_CHANGES"] = {
+        text = "You have unsaved changes. Save this look as an outfit?",
+        button1 = "Save",
+        button2 = "Discard",
+        button3 = "Cancel",
+        OnAccept = function()
+            local action = Wardrobe._pendingUnsavedAction
+            Wardrobe._pendingUnsavedAction = nil
+            Wardrobe._afterSaveAction = action
+            if type(Wardrobe.ShowSaveOutfitDialog) == "function" then
+                Wardrobe:ShowSaveOutfitDialog()
+            end
+        end,
+        OnCancel = function()
+            local action = Wardrobe._pendingUnsavedAction
+            Wardrobe._pendingUnsavedAction = nil
+            Wardrobe:ClearUnsavedChanges()
+            if action then
+                pcall(action)
+            end
+        end,
+        OnAlt = function()
+            Wardrobe._pendingUnsavedAction = nil
+            Wardrobe._afterSaveAction = nil
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+end
+
+function Wardrobe:ConfirmUnsavedChanges(nextAction)
+    if not self._unsavedChanges then
+        if nextAction then
+            nextAction()
+        end
+        return
+    end
+
+    self:_EnsureUnsavedChangesPopup()
+    self._pendingUnsavedAction = nextAction
+    StaticPopup_Show("DC_WARDROBE_UNSAVED_CHANGES")
+end
+
+-- ============================================================================
 -- CONSTANTS / DATA TABLES
 -- ============================================================================
 
@@ -508,9 +577,18 @@ function Wardrobe:ShowEmbedded(host)
 end
 
 function Wardrobe:Hide()
-    if self.frame then
-        self.frame:Hide()
+    if not self.frame then
+        return
     end
+
+    if self._unsavedChanges then
+        self:ConfirmUnsavedChanges(function()
+            Wardrobe:_HideImmediate()
+        end)
+        return
+    end
+
+    self:_HideImmediate()
 end
 
 function Wardrobe:CancelRefresh()

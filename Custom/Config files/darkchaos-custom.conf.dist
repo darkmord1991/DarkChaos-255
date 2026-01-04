@@ -3089,6 +3089,31 @@ DCCollection.Wishlist.MaxItems = 50
 DCCollection.Wishlist.NotifyOnZoneEnter = 1
 
 # -------------------------------------------------------------------------
+# DCCollection: Account-Wide Outfits
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Outfits.Enable
+#        Description: Enable account-wide outfit saving system
+#        Default:     1 (Enabled)
+#
+DCCollection.Outfits.Enable = 1
+
+#
+#    DCCollection.Outfits.MaxPerAccount
+#        Description: Maximum number of outfits a player can save per account
+#        Default:     50
+#
+DCCollection.Outfits.MaxPerAccount = 50
+
+#
+#    DCCollection.Outfits.AllowCommunityImport
+#        Description: Allow players to copy community outfits to their collection
+#        Default:     1 (Enabled)
+#
+DCCollection.Outfits.AllowCommunityImport = 1
+
+# -------------------------------------------------------------------------
 # DCCollection: Notifications & UI
 # -------------------------------------------------------------------------
 

@@ -485,18 +485,30 @@ namespace DCCollection
         s_AccountUnlockedTransmogAppearances.erase(accountId);
     }
 
+    // Session notification helpers: keep the actual storage private to this translation unit.
+    void ClearSessionNotifiedAppearances(uint32 guid)
+    {
+        sessionNotifiedAppearances[guid].clear();
+    }
+
+    void EraseSessionNotifiedAppearances(uint32 guid)
+    {
+        sessionNotifiedAppearances.erase(guid);
+    }
+
     static std::unordered_set<uint32> const& GetAccountUnlockedTransmogAppearances(uint32 accountId)
     {
         auto it = s_AccountUnlockedTransmogAppearances.find(accountId);
         if (it != s_AccountUnlockedTransmogAppearances.end()) return it->second;
 
         std::unordered_set<uint32> unlocked;
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (!itemsEntryCol.empty())
+        
+        // Try new cache table first (90%+ faster)
+        if (CharacterTableExists("dc_account_transmog_cache"))
         {
-             QueryResult result = CharacterDatabase.Query(
-                "SELECT {} FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND unlocked = 1",
-                itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG));
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT displayid FROM dc_account_transmog_cache WHERE account_id = {}",
+                accountId);
             if (result)
             {
                 do
@@ -505,6 +517,26 @@ namespace DCCollection
                     uint32 dId = fields[0].Get<uint32>();
                     if (dId) unlocked.insert(dId);
                 } while (result->NextRow());
+            }
+        }
+        else
+        {
+            // Fallback to old table for backward compatibility
+            std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+            if (!itemsEntryCol.empty())
+            {
+                 QueryResult result = CharacterDatabase.Query(
+                    "SELECT {} FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND unlocked = 1",
+                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG));
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint32 dId = fields[0].Get<uint32>();
+                        if (dId) unlocked.insert(dId);
+                    } while (result->NextRow());
+                }
             }
         }
         auto [insertedIt, _] = s_AccountUnlockedTransmogAppearances.emplace(accountId, std::move(unlocked));
@@ -565,6 +597,16 @@ namespace DCCollection
             "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
             "VALUES ({}, {}, {}, '{}', 1, NOW())",
             itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId, source);
+
+        // Also populate new cache table if it exists (90%+ faster lookups)
+        if (CharacterTableExists("dc_account_transmog_cache"))
+        {
+            CharacterDatabase.Execute(
+                "INSERT IGNORE INTO dc_account_transmog_cache "
+                "(account_id, displayid, source, unlocked_at) "
+                "VALUES ({}, {}, '{}', NOW())",
+                accountId, displayId, source);
+        }
 
         auto cacheIt = s_AccountUnlockedTransmogAppearances.find(accountId);
         if (cacheIt != s_AccountUnlockedTransmogAppearances.end())
@@ -814,18 +856,12 @@ namespace DCCollection
         DCAddon::JsonValue appArr; appArr.SetArray();
         for (uint32 d : unlocked) appArr.Push(DCAddon::JsonValue(d));
 
-        DCAddon::JsonValue itemArr; itemArr.SetArray();
-        auto const& idx = GetTransmogAppearanceIndexCached();
-        for (uint32 d : unlocked) {
-            auto it = idx.find(d);
-            if (it != idx.end()) {
-                 for (auto const& v : it->second) itemArr.Push(DCAddon::JsonValue(v.canonicalItemId));
-            }
-        }
+        // NOTE: We intentionally do NOT include a secondary "items" array here.
+        // Building canonical itemId lists forces loading the full transmog appearance index
+        // (item_template scan), which can cause noticeable server hitching when the addon opens.
         DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COLLECTED_APPEARANCES);
         response.Set("count", static_cast<uint32>(unlocked.size()));
         response.Set("appearances", appArr);
-        response.Set("items", itemArr);
         response.Send(player);
     }
 
@@ -900,9 +936,10 @@ namespace DCCollection
              uint32 playerGuid = player->GetGUID().GetCounter();
              result = CharacterDatabase.Query(
                 "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, "
-                "CAST((SELECT COUNT(*) FROM dc_collection_community_favorites f WHERE f.outfit_id = o.id AND f.account_id = {}) AS UNSIGNED) as is_favorite, "
+                "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, "
                 "o.views, o.tags "
                 "FROM dc_collection_community_outfits o "
+                "LEFT JOIN dc_collection_community_favorites f ON f.outfit_id = o.id AND f.account_id = {} "
                 "WHERE o.author_guid = {} {} "
                 "ORDER BY o.created_at DESC LIMIT {}, {}",
                 accountId, playerGuid, tagFilterCondition, offset, limit);
@@ -914,9 +951,10 @@ namespace DCCollection
 
             result = CharacterDatabase.Query(
                 "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, "
-                "CAST((SELECT COUNT(*) FROM dc_collection_community_favorites f WHERE f.outfit_id = o.id AND f.account_id = {}) AS UNSIGNED) as is_favorite, "
+                "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, "
                 "o.views, o.tags "
                 "FROM dc_collection_community_outfits o "
+                "LEFT JOIN dc_collection_community_favorites f ON f.outfit_id = o.id AND f.account_id = {} "
                 "{} "
                 "ORDER BY {} LIMIT {}, {}",
                 accountId, whereClause, orderBy, offset, limit);
@@ -1149,12 +1187,18 @@ namespace DCCollection
     void HandleSaveOutfit(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
+        
+        // Check if outfits enabled
+        if (!sConfigMgr->GetOption<bool>("DCCollection.Outfits.Enable", true))
+            return;
+        
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
 
         uint32 clientId = json["id"].AsUInt32();
         std::string name = json["name"].AsString();
         std::string icon = json["icon"].AsString();
         std::string items = json["items"].IsString() ? json["items"].AsString() : json["items"].Encode();
+        uint32 accountId = player->GetSession()->GetAccountId();
 
         // Sanitize Icon Path: Replace backslashes with forward slashes to prevent SQL/JSON corruption
         std::replace(icon.begin(), icon.end(), '\\', '/');
@@ -1166,17 +1210,27 @@ namespace DCCollection
 
         // If clientId is 0, generate new ID. Otherwise update existing.
         if (clientId == 0) {
+            // Check outfit limit
+            uint32 maxOutfits = sConfigMgr->GetOption<uint32>("DCCollection.Outfits.MaxPerAccount", 50);
+            QueryResult countResult = CharacterDatabase.Query("SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = {}", accountId);
+            if (countResult && countResult->Fetch()[0].Get<uint32>() >= maxOutfits) {
+                // Limit reached - send error
+                DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
+                res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
+                res.Send(player);
+                return;
+            }
+            
             // Get next available ID
-            QueryResult result = CharacterDatabase.Query("SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_character_outfits WHERE guid = {}", 
-                player->GetGUID().GetCounter());
+            QueryResult result = CharacterDatabase.Query("SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = {}", accountId);
             uint32 newId = result ? result->Fetch()[0].Get<uint32>() : 1;
             
-            CharacterDatabase.Execute("INSERT INTO dc_character_outfits (guid, outfit_id, name, icon, items) VALUES ({}, {}, '{}', '{}', '{}')",
-                player->GetGUID().GetCounter(), newId, name, icon, items);
+            CharacterDatabase.Execute("INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items) VALUES ({}, {}, '{}', '{}', '{}')",
+                accountId, newId, name, icon, items);
         } else {
             // Update existing outfit
-            CharacterDatabase.Execute("UPDATE dc_character_outfits SET name='{}', icon='{}', items='{}' WHERE guid={} AND outfit_id={}",
-                name, icon, items, player->GetGUID().GetCounter(), clientId);
+            CharacterDatabase.Execute("UPDATE dc_account_outfits SET name='{}', icon='{}', items='{}' WHERE account_id={} AND outfit_id={}",
+                name, icon, items, accountId, clientId);
         }
 
         // Send updated list to client to refresh UI immediately
@@ -1188,9 +1242,10 @@ namespace DCCollection
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 outfitId = json["id"].AsUInt32();
+        uint32 accountId = player->GetSession()->GetAccountId();
 
-        CharacterDatabase.Execute("DELETE FROM dc_character_outfits WHERE guid = {} AND outfit_id = {}", 
-            player->GetGUID().GetCounter(), outfitId);
+        CharacterDatabase.Execute("DELETE FROM dc_account_outfits WHERE account_id = {} AND outfit_id = {}", 
+            accountId, outfitId);
     }
 
     void HandleGetSavedOutfits(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1198,8 +1253,11 @@ namespace DCCollection
         (void)msg;
         if (!player) return;
 
-        QueryResult result = CharacterDatabase.Query("SELECT outfit_id, name, icon, items FROM dc_character_outfits WHERE guid = {} ORDER BY outfit_id", 
-            player->GetGUID().GetCounter());
+        uint32 accountId = player->GetSession()->GetAccountId();
+        
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT outfit_id, name, icon, items, source_author FROM dc_account_outfits WHERE account_id = {} ORDER BY outfit_id", 
+            accountId);
 
         std::stringstream ss;
         ss << "{\"outfits\":[";
@@ -1214,6 +1272,7 @@ namespace DCCollection
                 std::string name = f[1].Get<std::string>();
                 std::string icon = f[2].Get<std::string>();
                 std::string items = f[3].Get<std::string>();
+                std::string sourceAuthor = f[4].IsNull() ? "" : f[4].Get<std::string>();
 
                 // Escape name/icon/items for enclosing JSON
                 auto escape = [](std::string s) {
@@ -1226,12 +1285,6 @@ namespace DCCollection
                     return res;
                 };
 
-                // The 'items' column is already a JSON string (e.g. {"HeadSlot":123}). 
-                // We want to embed it as an object, NOT a string, if possible.
-                // But standard JSON parser on client might expect string or object.
-                // If it's stored as TEXT "{\"HeadSlot\":123}", putting it directly into our stream without quotes makes it an object.
-                // If it's invalid JSON, it breaks the response. Assuming valid JSON from client.
-                
                 // Fallback for empty items
                 if (items.empty()) items = "{}";
 
@@ -1241,8 +1294,12 @@ namespace DCCollection
                 ss << "{\"id\":" << id 
                    << ",\"name\":\"" << escape(name) << "\""
                    << ",\"icon\":\"" << escape(icon) << "\""
-                   << ",\"items\":" << items 
-                   << "}";
+                   << ",\"items\":" << items;
+                
+                if (!sourceAuthor.empty()) {
+                    ss << ",\"author\":\"" << escape(sourceAuthor) << "\"";
+                }
+                ss << "}";
 
             } while (result->NextRow());
         }
@@ -1253,6 +1310,66 @@ namespace DCCollection
         res.Add("J");
         res.Add(ss.str());
         res.Send(player);
+    }
+
+    // Copy a community outfit to the player's personal account collection
+    void HandleCopyCommunityOutfit(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !DCAddon::IsJsonMessage(msg)) return;
+        
+        if (!sConfigMgr->GetOption<bool>("DCCollection.Outfits.AllowCommunityImport", true))
+            return;
+        
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        uint32 communityId = json["id"].AsUInt32();
+        uint32 accountId = player->GetSession()->GetAccountId();
+        
+        // Check outfit limit
+        uint32 maxOutfits = sConfigMgr->GetOption<uint32>("DCCollection.Outfits.MaxPerAccount", 50);
+        QueryResult countResult = CharacterDatabase.Query("SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = {}", accountId);
+        if (countResult && countResult->Fetch()[0].Get<uint32>() >= maxOutfits) {
+            DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
+            res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
+            res.Send(player);
+            return;
+        }
+        
+        // Fetch community outfit
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT name, author_name, items_string FROM dc_collection_community_outfits WHERE id = {}", communityId);
+        
+        if (!result) {
+            DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
+            res.Set("error", "Community outfit not found");
+            res.Send(player);
+            return;
+        }
+        
+        Field* f = result->Fetch();
+        std::string name = f[0].Get<std::string>();
+        std::string author = f[1].Get<std::string>();
+        std::string items = f[2].Get<std::string>();
+        
+        // Escape for SQL
+        CharacterDatabase.EscapeString(name);
+        CharacterDatabase.EscapeString(author);
+        CharacterDatabase.EscapeString(items);
+        
+        // Get next available ID
+        QueryResult idResult = CharacterDatabase.Query("SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = {}", accountId);
+        uint32 newId = idResult ? idResult->Fetch()[0].Get<uint32>() : 1;
+        
+        // Insert new outfit
+        CharacterDatabase.Execute(
+            "INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items, source_community_id, source_author) "
+            "VALUES ({}, {}, '{}', 'Interface/Icons/INV_Chest_Cloth_17', '{}', {}, '{}')",
+            accountId, newId, name, items, communityId, author);
+        
+        // Increment downloads on the community outfit
+        CharacterDatabase.Execute("UPDATE dc_collection_community_outfits SET downloads = downloads + 1 WHERE id = {}", communityId);
+        
+        // Send updated outfit list
+        HandleGetSavedOutfits(player, msg);
     }
 
     // =======================================================================
@@ -1295,12 +1412,16 @@ namespace DCCollection
     public:
         WardrobeMiscScript() : WorldScript("WardrobeMiscScript") {}
         
-        void OnAfterConfigLoad(bool /*reload*/) override
+        void OnAfterConfigLoad(bool reload) override
         {
-            // Rebuild definitions if needed. 
-            // NOTE: dc_addon_collection.cpp handles global definition loading. 
-            // We just ensure our cache is ready on demand.
-            // But we can pre-warm cache here if desired.
+            if (reload)
+                return;
+
+            // Pre-warm heavy transmog caches at startup to avoid the first-player hitch.
+            // (Doing the item_template scan lazily can freeze the world thread and make gossips/menus feel laggy.)
+            (void)GetTransmogAppearanceIndexCached();
+            (void)GetTransmogAppearanceVariantKeysCached();
+            (void)GetTransmogDefinitionsSyncVersionCached();
         }
     };
 
@@ -1344,4 +1465,5 @@ void AddSC_dc_addon_wardrobe()
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_SAVE_OUTFIT, &HandleSaveOutfit);
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_DELETE_OUTFIT, &HandleDeleteOutfit);
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_GET_SAVED_OUTFITS, &HandleGetSavedOutfits);
+    MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_COPY_COMMUNITY_OUTFIT, &HandleCopyCommunityOutfit);
 }

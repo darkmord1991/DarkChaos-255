@@ -657,7 +657,7 @@ end
 
 function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     local parts = {module, tostring(opcode)}
-        local args = {a1, a2, a3, a4, a5, nil}
+    local args = {a1, a2, a3, a4, a5, nil}
     for i = 1, 5 do
         local v = args[i]
         if v ~= nil then

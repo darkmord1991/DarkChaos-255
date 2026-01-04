@@ -607,8 +607,28 @@ function Pins:Init(state)
         print("|cffff0000[DC-Mapupgrades] ERROR: Astrolabe not loaded!|r")
     end
 
+    -- Retry logic for map open: sometimes MapID is not ready immediately (especially with Mapster/Carbonite)
+    local function RetryMapCheck()
+        if not WorldMapFrame:IsShown() then return end
+        local mapId = ActiveWorldMapId()
+        if mapId and mapId > 0 then
+            Pins.forceUpdate = true
+            Pins.lastMapId = nil
+            Pins:ScheduleWorldPinUpdate()
+        end
+    end
+
     if WorldMapFrame then
-        WorldMapFrame:HookScript("OnShow", function() self:ScheduleWorldPinUpdate() end)
+        WorldMapFrame:HookScript("OnShow", function() 
+            self.forceUpdate = true
+            self.lastMapId = nil
+            self:ScheduleWorldPinUpdate() 
+            
+            -- Check again in 0.2, 0.5, and 1.0 seconds to catch delayed initialization
+            C_Timer.After(0.2, RetryMapCheck)
+            C_Timer.After(0.5, RetryMapCheck)
+            C_Timer.After(1.0, RetryMapCheck)
+        end)
         WorldMapFrame:HookScript("OnSizeChanged", function() self:ScheduleWorldPinUpdate() end)
     end
 
@@ -959,8 +979,13 @@ function Pins:UpdateWorldPinsInternal()
 
     local activeMapId = ActiveWorldMapId()
     
-    -- Skip redundant updates if map hasn't changed
-    if activeMapId == self.lastMapId and not self.forceUpdate then
+    -- Don't skip update if mapId is nil (map not ready yet) - wait for valid map
+    if activeMapId and activeMapId == self.lastMapId and not self.forceUpdate then
+        return
+    end
+    -- If no valid map ID yet, clear lastMapId so next update with valid ID will proceed
+    if not activeMapId then
+        self.lastMapId = nil
         return
     end
     self.lastMapId = activeMapId

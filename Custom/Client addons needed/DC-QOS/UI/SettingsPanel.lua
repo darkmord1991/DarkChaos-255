@@ -1,8 +1,7 @@
 -- ============================================================
--- DC-QoS: Settings Panel with Tabs
+-- DC-QoS: Settings Panel (Dashboard Layout)
 -- ============================================================
--- Tabbed Interface Options panel for DC-QoS settings
--- Each module gets its own tab for organized settings
+-- Hub & Spoke interface: Main dashboard with buttons -> Module settings
 -- ============================================================
 
 local addon = DCQOS
@@ -11,126 +10,135 @@ local addon = DCQOS
 -- Panel References
 -- ============================================================
 addon.settingsPanel = nil
-addon.tabFrames = {}
-addon.tabButtons = {}
-addon.currentTab = nil
+addon.moduleFrames = {}   -- Content frames for each module
+addon.dashboardFrame = nil -- Main dashboard frame
+addon.backButton = nil
+addon.currentView = "Dashboard"
 
 -- ============================================================
--- Tab Configuration
+-- Module lists (Organized for Dashboard)
 -- ============================================================
-local TAB_WIDTH = 70
-local TAB_HEIGHT = 24
-local PANEL_PADDING = 10
+local moduleCategories = {
+    {
+        name = "Core & Automation",
+        modules = { "Automation", "Interface", "Chat", "Tooltips" }
+    },
+    {
+        name = "Combat",
+        modules = { "NameplatesPlus", "CombatLog", "GTFO" }
+    },
+    {
+        name = "Items & Inventory",
+        modules = { "Bags", "VendorPlus", "ItemScore" }
+    },
+    {
+        name = "UI Customization",
+        modules = { "FrameMover", "Cooldowns", "ExtendedStats" }
+    },
+    {
+        name = "Social & System",
+        modules = { "SocialEnhancements", "Mail", "Communication" }
+    }
+}
 
--- Tab definitions (order matters - organized by category)
-local tabOrder = {
-    -- Core Features
-    "Automation",
-    "Interface",
-    "Chat",
-    "Tooltips",
-    -- Combat
-    "NameplatesPlus",
-    "CombatLog",
-    "GTFO",
-    -- Items & Inventory
-    "Bags",
-    "VendorPlus",
-    "ItemScore",
-    -- UI Customization
-    "FrameMover",
-    "Cooldowns",
-    "ExtendedStats",
-    -- Social & Utilities
-    "SocialEnhancements",
-    "Mail",
-    -- System
-    "Communication",
+-- Display names for buttons
+local moduleDisplayNames = {
+    ["Automation"] = "Automation",
+    ["Interface"] = "Interface",
+    ["Chat"] = "Chat Enhancements",
+    ["Tooltips"] = "Tooltip Info",
+    ["NameplatesPlus"] = "Nameplates",
+    ["CombatLog"] = "Combat Log",
+    ["GTFO"] = "GTFO Alerts",
+    ["Bags"] = "Bag & Bank",
+    ["VendorPlus"] = "Vendor",
+    ["ItemScore"] = "Item Score / Pawn",
+    ["FrameMover"] = "Move Frames",
+    ["Cooldowns"] = "Cooldown Text",
+    ["ExtendedStats"] = "Extended Stats",
+    ["SocialEnhancements"] = "Social",
+    ["Mail"] = "Mail",
+    ["Communication"] = "Sync & Server",
+}
+
+-- Icons for buttons (standard WoW icons)
+local moduleIcons = {
+    ["Automation"] = "Interface\\Icons\\Inv_Gizmo_02",
+    ["Interface"] = "Interface\\Icons\\Inv_Misc_Book_09",
+    ["Chat"] = "Interface\\Icons\\Spell_Holy_Dizzy",
+    ["Tooltips"] = "Interface\\Icons\\Inv_Misc_Note_02",
+    ["NameplatesPlus"] = "Interface\\Icons\\Ability_Creature_Cursed_01",
+    ["CombatLog"] = "Interface\\Icons\\Ability_Warrior_OffensiveStance",
+    ["GTFO"] = "Interface\\Icons\\Spell_Fire_Fire",
+    ["Bags"] = "Interface\\Icons\\Inv_Misc_Bag_10",
+    ["VendorPlus"] = "Interface\\Icons\\Inv_Misc_Coin_02",
+    ["ItemScore"] = "Interface\\Icons\\Inv_Sword_04",
+    ["FrameMover"] = "Interface\\Icons\\Inv_Misc_Map_01",
+    ["Cooldowns"] = "Interface\\Icons\\Spell_Nature_TimeStop",
+    ["ExtendedStats"] = "Interface\\Icons\\Spell_Holy_PowerWordShield",
+    ["SocialEnhancements"] = "Interface\\Icons\\Spell_Holy_Stoicism",
+    ["Mail"] = "Interface\\Icons\\Inv_Letter_02",
+    ["Communication"] = "Interface\\Icons\\Spell_Holy_DivineProvidence",
 }
 
 -- ============================================================
 -- Helper Functions
 -- ============================================================
 
--- Create a tab button
-local function CreateTabButton(parent, x, y, name, displayName)
-    local button = CreateFrame("Button", "DCQoSTab" .. name, parent)
-    button:SetSize(TAB_WIDTH, TAB_HEIGHT)
+local function CreateDashboardButton(parent, moduleName, x, y)
+    local displayName = moduleDisplayNames[moduleName] or moduleName
+    local iconPath = moduleIcons[moduleName] or "Interface\\Icons\\Inv_Misc_QuestionMark"
+    
+    local button = CreateFrame("Button", "DCQoSBtn_" .. moduleName, parent, "UIPanelButtonTemplate")
+    button:SetSize(150, 26)
     button:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     
-    -- Background textures
-    button.bg = button:CreateTexture(nil, "BACKGROUND")
-    button.bg:SetAllPoints()
-    button.bg:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")
-    button.bg:SetTexCoord(0, 0.625, 0, 0.6875)
-    
-    button.bgHighlight = button:CreateTexture(nil, "BACKGROUND")
-    button.bgHighlight:SetAllPoints()
-    button.bgHighlight:SetTexture("Interface\\Buttons\\UI-Panel-Button-Highlight")
-    button.bgHighlight:SetTexCoord(0, 0.625, 0, 0.6875)
-    button.bgHighlight:SetBlendMode("ADD")
-    button.bgHighlight:Hide()
+    -- Icon
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    button.icon:SetSize(20, 20)
+    button.icon:SetPoint("LEFT", 4, 0)
+    button.icon:SetTexture(iconPath)
     
     -- Text
-    button.text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    button.text:SetPoint("CENTER", 0, 1)
+    button.text = button:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    button.text:SetPoint("LEFT", button.icon, "RIGHT", 6, 0)
+    button.text:SetPoint("RIGHT", -5, 0)
     button.text:SetText(displayName)
+    button.text:SetJustifyH("LEFT")
     
-    -- Tab name for reference
-    button.tabName = name
-    
-    -- Hover effects
-    button:SetScript("OnEnter", function(self)
-        if addon.currentTab ~= self.tabName then
-            self.bgHighlight:Show()
-        end
-    end)
-    
-    button:SetScript("OnLeave", function(self)
-        self.bgHighlight:Hide()
-    end)
-    
-    -- Click handler
-    button:SetScript("OnClick", function(self)
-        addon:ShowTab(self.tabName)
+    button:SetScript("OnClick", function()
+        addon:ShowModule(moduleName)
     end)
     
     return button
 end
 
--- Create a tab content frame
-local function CreateTabFrame(parent, name)
-    local frame = CreateFrame("Frame", "DCQoSTabFrame" .. name, parent)
-    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", PANEL_PADDING, -90)
-    frame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -PANEL_PADDING, PANEL_PADDING)
+local function CreateModuleFrame(parent, name)
+    local frame = CreateFrame("Frame", "DCQoSFrame_" .. name, parent)
+    -- Position: Below title/back button area
+    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 10, -50)
+    frame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -10, 10)
     frame:Hide()
     
     -- Background for content area
     frame.bg = frame:CreateTexture(nil, "BACKGROUND")
     frame.bg:SetAllPoints()
     frame.bg:SetTexture(0, 0, 0, 0.3)
-
-    -- Scrollable content area so settings never render outside the frame.
-    -- NOTE: UIPanelScrollFrameTemplate relies on a named frame (self:GetName())
-    -- in 3.3.5a's UIPanelTemplates.lua ScrollFrame_OnLoad.
-    local safeName = tostring(name or "")
-    safeName = safeName:gsub("[^%w_]", "")
-    if safeName == "" then
-        safeName = tostring(GetTime()):gsub("%.", "")
-    end
-    local scroll = CreateFrame("ScrollFrame", "DCQoSTabScrollFrame" .. safeName, frame, "UIPanelScrollFrameTemplate")
+    
+    -- Scroll Frame
+    local safeName = tostring(name or ""):gsub("[^%w_]", "")
+    local scroll = CreateFrame("ScrollFrame", "DCQoSScroll_" .. safeName, frame, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6)
     scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -28, 6)
-
+    
     local content = CreateFrame("Frame", nil, scroll)
     content:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
-    content:SetSize(1, 1)
+    content:SetSize(1, 1) -- Autosize later
     scroll:SetScrollChild(content)
-
+    
     frame.scrollFrame = scroll
     frame.content = content
-
-    -- Keep content width synced (prevents widgets from overflowing horizontally).
+    
     frame:SetScript("OnSizeChanged", function(self)
         if not self.content or not self.scrollFrame then return end
         local w = self.scrollFrame:GetWidth()
@@ -142,66 +150,23 @@ local function CreateTabFrame(parent, name)
     return frame
 end
 
--- Update tab button appearance
-local function UpdateTabAppearance(selectedTab)
-    for name, button in pairs(addon.tabButtons) do
-        if name == selectedTab then
-            button.text:SetTextColor(1, 0.82, 0)  -- Gold for selected
-            button.bg:SetVertexColor(0.2, 0.4, 0.6)  -- Darker blue for selected
-        else
-            button.text:SetTextColor(1, 1, 1)  -- White for unselected
-            button.bg:SetVertexColor(0.4, 0.4, 0.4)  -- Gray for unselected
-        end
-    end
-end
-
 -- ============================================================
--- Show a specific tab
--- ============================================================
-function addon:ShowTab(tabName)
-    -- Hide all tab frames
-    for name, frame in pairs(self.tabFrames) do
-        frame:Hide()
-    end
-    
-    -- Show selected tab frame
-    if self.tabFrames[tabName] then
-        self.tabFrames[tabName]:Show()
-    end
-    
-    self.currentTab = tabName
-    UpdateTabAppearance(tabName)
-end
-
--- ============================================================
--- Create Communication Tab (Special - settings for server sync)
+-- Create Communication Settings (Legacy helper)
 -- ============================================================
 local function CreateCommunicationSettings(parent)
     local settings = addon.settings.communication or {}
     
-    -- Title
     local title = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("Communication Settings")
     
-    -- Description
     local desc = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetText("Configure server communication and synchronization options.")
-    desc:SetWidth(parent:GetWidth() - 32)
-    desc:SetJustifyH("LEFT")
     
     local yOffset = -70
     
-    -- ============================================================
-    -- Server Sync Section
-    -- ============================================================
-    local syncHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    syncHeader:SetPoint("TOPLEFT", 16, yOffset)
-    syncHeader:SetText("Server Synchronization")
-    yOffset = yOffset - 25
-    
-    -- Auto Sync Settings
+    -- Auto Sync
     local autoSyncCb = addon:CreateCheckbox(parent, "DCQoSAutoSync")
     autoSyncCb:SetPoint("TOPLEFT", 16, yOffset)
     autoSyncCb.Text:SetText("Auto-sync Settings with Server")
@@ -211,7 +176,7 @@ local function CreateCommunicationSettings(parent)
     end)
     yOffset = yOffset - 25
     
-    -- Manual sync button
+    -- Sync Now
     local syncButton = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     syncButton:SetSize(120, 24)
     syncButton:SetPoint("TOPLEFT", 16, yOffset)
@@ -225,230 +190,193 @@ local function CreateCommunicationSettings(parent)
     end)
     yOffset = yOffset - 40
     
-    -- ============================================================
-    -- Debug Section
-    -- ============================================================
-    local debugHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    debugHeader:SetPoint("TOPLEFT", 16, yOffset)
-    debugHeader:SetText("Debugging")
-    yOffset = yOffset - 25
-    
-    -- Debug Mode
-    local debugCb = addon:CreateCheckbox(parent, "DCQoSDebugMode")
-    debugCb:SetPoint("TOPLEFT", 16, yOffset)
-    debugCb.Text:SetText("Enable Debug Mode")
-    debugCb:SetChecked(settings.debugMode)
-    debugCb:SetScript("OnClick", function(self)
-        addon:SetSetting("communication.debugMode", self:GetChecked())
-    end)
-    yOffset = yOffset - 25
-    
-    -- Show Protocol Messages
-    local protocolCb = addon:CreateCheckbox(parent, "DCQoSProtocolMsgs")
-    protocolCb:SetPoint("TOPLEFT", 16, yOffset)
-    protocolCb.Text:SetText("Show Protocol Messages")
-    protocolCb:SetChecked(settings.showProtocolMessages)
-    protocolCb:SetScript("OnClick", function(self)
-        addon:SetSetting("communication.showProtocolMessages", self:GetChecked())
-    end)
-    yOffset = yOffset - 40
-    
-    -- ============================================================
-    -- Status Section
-    -- ============================================================
-    local statusHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    statusHeader:SetPoint("TOPLEFT", 16, yOffset)
-    statusHeader:SetText("Connection Status")
-    yOffset = yOffset - 25
-    
     -- Connection status
     local statusText = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     statusText:SetPoint("TOPLEFT", 16, yOffset)
     
     local function UpdateStatus()
         if addon.protocol and addon.protocol.connected then
-            statusText:SetText("|cff00ff00Connected|r to DCAddonProtocol (Module: " .. addon.protocol.MODULE_ID .. ")")
+            statusText:SetText("|cff00ff00Connected|r to DCAddonProtocol")
         else
-            statusText:SetText("|cffff0000Not Connected|r - DCAddonProtocol not available")
+            statusText:SetText("|cffff0000Not Connected|r")
         end
     end
     UpdateStatus()
-    
-    -- Refresh status button
-    yOffset = yOffset - 30
-    local refreshButton = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    refreshButton:SetSize(100, 22)
-    refreshButton:SetPoint("TOPLEFT", 16, yOffset)
-    refreshButton:SetText("Refresh")
-    refreshButton:SetScript("OnClick", function()
-        UpdateStatus()
-    end)
+    yOffset = yOffset - 40
     
     return yOffset - 50
 end
 
 -- ============================================================
--- Create Main Settings Panel
+-- Navigation
 -- ============================================================
+
+function addon:ShowDashboard()
+    -- Hide all modules
+    for _, frame in pairs(self.moduleFrames) do
+        frame:Hide()
+    end
+    
+    -- Show dashboard
+    if self.dashboardFrame then
+        self.dashboardFrame:Show()
+    end
+    
+    -- Hide back button
+    if self.backButton then
+        self.backButton:Hide()
+    end
+    
+    self.currentView = "Dashboard"
+end
+
+function addon:ShowModule(moduleName)
+    -- Hide dashboard
+    if self.dashboardFrame then
+        self.dashboardFrame:Hide()
+    end
+    
+    -- Hide all other modules
+    for name, frame in pairs(self.moduleFrames) do
+        if name == moduleName then
+            frame:Show()
+        else
+            frame:Hide()
+        end
+    end
+    
+    -- Show back button
+    if self.backButton then
+        self.backButton:Show()
+    end
+    
+    self.currentView = moduleName
+end
+
+-- ============================================================
+-- Construction
+-- ============================================================
+
 function addon:CreateSettingsPanel()
     if self.settingsPanel then return end
     
-    -- Create main panel
+    -- Main Panel
     local panel = CreateFrame("Frame", "DCQoSSettingsPanel", InterfaceOptionsFramePanelContainer)
     panel.name = "DC-QoS"
     panel:Hide()
     
-    -- Title
+    -- Header
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("|cff00ff00DC|r-QoS: Quality of Service")
+    title:SetText("|cff00ff00DC|r-QoS Dashboard")
     
-    -- Version
-    local version = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    version:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
-    version:SetText("Version " .. self.version .. " | DarkChaos-255")
-    version:SetTextColor(0.7, 0.7, 0.7)
+    -- Back Button (Hidden initially)
+    local backBtn = CreateFrame("Button", "DCQoSBackBtn", panel, "UIPanelButtonTemplate")
+    backBtn:SetSize(80, 22)
+    backBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -16, -16)
+    backBtn:SetText("< Back")
+    backBtn:Hide()
+    backBtn:SetScript("OnClick", function()
+        addon:ShowDashboard()
+    end)
+    self.backButton = backBtn
     
-    -- Description
+    -- Description (Dashboard only)
     local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    desc:SetPoint("TOPLEFT", version, "BOTTOMLEFT", 0, -8)
-    desc:SetText("Comprehensive Quality of Life improvements for your gameplay experience.")
-    desc:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
-    desc:SetJustifyH("LEFT")
-    
-    -- Create tab buttons and frames
-    -- Tab display name overrides (short names for tab buttons)
-    local tabDisplayNames = {
-        -- Core Features
-        ["Automation"] = "Auto",
-        ["Interface"] = "UI",
-        ["Chat"] = "Chat",
-        ["Tooltips"] = "Tips",
-        -- Combat
-        ["NameplatesPlus"] = "Plates",
-        ["CombatLog"] = "Combat",
-        ["GTFO"] = "GTFO",
-        -- Items & Inventory
-        ["Bags"] = "Bags",
-        ["BagEnhancements"] = "Bags",
-        ["VendorPlus"] = "Vendor",
-        ["ItemScore"] = "Pawn",
-        -- UI Customization
-        ["FrameMover"] = "Frames",
-        ["Cooldowns"] = "CDs",
-        ["ExtendedStats"] = "Stats",
-        -- Social
-        ["SocialEnhancements"] = "Social",
-        ["Mail"] = "Mail",
-        -- System
-        ["Communication"] = "Sync",
-    }
-    
-    local MAX_WIDTH = 550
-    local currentX = PANEL_PADDING
-    local currentY = -60
-
-    for i, tabName in ipairs(tabOrder) do
-        local module = self.modules[tabName]
-        -- For "Bags" tab, try BagEnhancements module
-        if not module and tabName == "Bags" then
-            module = self.modules["BagEnhancements"]
-        end
-        
-        local displayName = tabDisplayNames[tabName] or (module and module.displayName) or tabName
-        
-        -- Wrap logic
-        if currentX + TAB_WIDTH > MAX_WIDTH then
-            currentX = PANEL_PADDING
-            currentY = currentY - TAB_HEIGHT - 4
-        end
-
-        -- Create tab button
-        self.tabButtons[tabName] = CreateTabButton(panel, currentX, currentY, tabName, displayName)
-        
-        -- Create tab content frame
-        self.tabFrames[tabName] = CreateTabFrame(panel, tabName)
-
-        -- Advance X
-        currentX = currentX + TAB_WIDTH + 4
-        
-        -- Populate tab with module settings
-        if module and module.CreateSettings then
-            local y = module.CreateSettings(self.tabFrames[tabName].content)
-            if type(y) == "number" then
-                self.tabFrames[tabName].content:SetHeight(math.max(1, -y + 30))
-            end
-        elseif tabName == "Communication" then
-            local y = CreateCommunicationSettings(self.tabFrames[tabName].content)
-            if type(y) == "number" then
-                self.tabFrames[tabName].content:SetHeight(math.max(1, -y + 30))
-            end
-        end
-    end
-
-    -- Update all tab frames anchors to account for button rows
-    local contentTopY = currentY - TAB_HEIGHT - 10
-    for _, frame in pairs(self.tabFrames) do
-        frame:SetPoint("TOPLEFT", panel, "TOPLEFT", PANEL_PADDING, contentTopY)
-    end
-    
-    -- Show first tab by default
-    self:ShowTab(tabOrder[1])
-    
-    -- Register with Interface Options
-    InterfaceOptions_AddCategory(panel)
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetText("Version " .. self.version .. " - Select a module to configure.")
     
     self.settingsPanel = panel
-    
-    -- Also create sub-panels for each module (optional)
-    self:CreateSubPanels()
-end
+    InterfaceOptions_AddCategory(panel)
 
--- ============================================================
--- Create Sub-Panels for Each Module (Alternative view)
--- ============================================================
-function addon:CreateSubPanels()
-    for _, tabName in ipairs(tabOrder) do
-        local module = self.modules[tabName]
-        if module then
-            local subPanel = CreateFrame("Frame", "DCQoSSubPanel" .. tabName, InterfaceOptionsFramePanelContainer)
-            subPanel.name = module.displayName or tabName
-            subPanel.parent = "DC-QoS"
+    -- 1. Create Dashboard Frame
+    local dashboard = CreateFrame("Frame", "DCQoSDashboard", panel)
+    dashboard:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -50)
+    dashboard:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -10, 10)
+    self.dashboardFrame = dashboard
+    
+    -- Populate Dashboard Buttons
+    -- Populate Dashboard Buttons
+    local startX = 10
+    local startY = -4
+    local colWidth = 155
+    local rowHeight = 30
+    
+    local currentY = startY
+    
+    for _, category in ipairs(moduleCategories) do
+        -- Category Header
+        local catHeader = dashboard:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        catHeader:SetPoint("TOPLEFT", startX, currentY)
+        catHeader:SetText(category.name)
+        catHeader:SetTextColor(1, 0.82, 0) -- Gold
+        
+        currentY = currentY - 18
+        
+        -- Buttons Grid (3 columns)
+        local col = 0
+        
+        for _, modName in ipairs(category.modules) do
+            CreateDashboardButton(dashboard, modName, startX + (col * colWidth), currentY)
             
-            if module.CreateSettings then
-                module.CreateSettings(subPanel)
-            elseif tabName == "Communication" then
-                CreateCommunicationSettings(subPanel)
+            col = col + 1
+            if col >= 3 then
+                col = 0
+                currentY = currentY - rowHeight
             end
+        end
+        
+        if col > 0 then
+            currentY = currentY - rowHeight
+        end
+        currentY = currentY - 8 -- spacer
+    end
+
+    -- 2. Create Frames for ALL known modules
+    -- (We iterate category lists to find them all easily)
+    for _, category in ipairs(moduleCategories) do
+        for _, modName in ipairs(category.modules) do
+            local frame = CreateModuleFrame(panel, modName)
+            self.moduleFrames[modName] = frame
             
-            InterfaceOptions_AddCategory(subPanel)
+            local module = self.modules[modName]
+            -- Special case for Bags using BagEnhancements
+            if not module and modName == "Bags" then module = self.modules["BagEnhancements"] end
+
+            if module and module.CreateSettings then
+                local y = module.CreateSettings(frame.content)
+                if type(y) == "number" then
+                    frame.content:SetHeight(math.max(1, -y + 30))
+                end
+            elseif modName == "Communication" then
+                local y = CreateCommunicationSettings(frame.content)
+                if type(y) == "number" then
+                    frame.content:SetHeight(math.max(1, -y + 30))
+                end
+            end
         end
     end
+    
+    -- 3. Show Dashboard initially
+    self:ShowDashboard()
 end
 
 -- ============================================================
--- Toggle Settings Panel
+-- Toggle
 -- ============================================================
 function addon:ToggleSettings()
     if not self.settingsPanel then
         self:CreateSettingsPanel()
     end
-    
-    -- Open to our panel
     InterfaceOptionsFrame_OpenToCategory("DC-QoS")
-    InterfaceOptionsFrame_OpenToCategory("DC-QoS")  -- Called twice to ensure it opens
+    InterfaceOptionsFrame_OpenToCategory("DC-QoS")
 end
 
 -- ============================================================
--- Initialize Panel on Addon Load
+-- Init
 -- ============================================================
 addon:RegisterEvent("PLAYER_LOGIN", function()
     addon:DelayedCall(1, function()
         addon:CreateSettingsPanel()
     end)
 end)
-
--- ============================================================
--- Hook Escape Key to Close Panel
--- ============================================================
--- (Interface Options already handles ESC)

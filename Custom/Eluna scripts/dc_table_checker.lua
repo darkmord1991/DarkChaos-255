@@ -303,7 +303,7 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_item_templates_upgrade", "Item Upgrade", true},
         {"acore_world", "dc_item_upgrade_clones", "Item Upgrade", true},
         {"acore_world", "dc_item_upgrade_costs", "Item Upgrade", false},
-        {"acore_world", "dc_item_upgrade_stage", "Item Upgrade", false},
+
         {"acore_world", "dc_item_upgrade_state", "Item Upgrade", false},
         {"acore_world", "dc_item_upgrade_synthesis_inputs", "Item Upgrade", false},
         {"acore_world", "dc_item_upgrade_synthesis_recipes", "Item Upgrade", false},

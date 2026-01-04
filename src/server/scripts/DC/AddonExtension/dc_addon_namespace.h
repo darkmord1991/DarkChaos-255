@@ -508,18 +508,19 @@ namespace DCAddon
             constexpr uint8 SMSG_PURCHASE_RESULT     = 0x51;  // Purchase result
             constexpr uint8 SMSG_CURRENCIES          = 0x52;  // Currency balances
 
-            // Community Outfits (Platform)
-            constexpr uint8 CMSG_COMMUNITY_GET_LIST   = 0x39; // Get list of community outfits
-            constexpr uint8 CMSG_COMMUNITY_PUBLISH    = 0x3A; // Publish an outfit
-            constexpr uint8 CMSG_COMMUNITY_RATE       = 0x3B; // Rate an outfit
-            constexpr uint8 CMSG_COMMUNITY_FAVORITE   = 0x3C; // Toggle favorite
-            constexpr uint8 CMSG_COMMUNITY_VIEW       = 0x3E; // View/Preview outfit (impressions)
+            // Community Outfits (Platform) - NOTE: Use 0x53+ range to avoid collision with Outfit opcodes
+            constexpr uint8 CMSG_COMMUNITY_GET_LIST   = 0x53; // Get list of community outfits
+            constexpr uint8 CMSG_COMMUNITY_PUBLISH    = 0x54; // Publish an outfit
+            constexpr uint8 CMSG_COMMUNITY_RATE       = 0x55; // Rate an outfit
+            constexpr uint8 CMSG_COMMUNITY_FAVORITE   = 0x56; // Toggle favorite
+            constexpr uint8 CMSG_COMMUNITY_VIEW       = 0x57; // View/Preview outfit (impressions)
             constexpr uint8 SMSG_COMMUNITY_LIST       = 0x63; // List of community outfits
             constexpr uint8 SMSG_COMMUNITY_PUBLISH_RESULT = 0x64; // Publish result
             constexpr uint8 SMSG_COMMUNITY_FAVORITE_RESULT = 0x65; // Favorite result
 
             // Client -> Server: Inspection
             constexpr uint8 CMSG_INSPECT_TRANSMOG     = 0x3D; // Inspect target transmog
+            constexpr uint8 CMSG_COPY_COMMUNITY_OUTFIT = 0x58; // Copy community outfit to account
 
             // Server -> Client: Inspection
             constexpr uint8 SMSG_INSPECT_TRANSMOG     = 0x66; // Inspection data (JSON)

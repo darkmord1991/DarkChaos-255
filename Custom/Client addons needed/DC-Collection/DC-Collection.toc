@@ -41,6 +41,7 @@ UI\Wardrobe\WardrobeOutfits.lua
 UI\Wardrobe\CameraDB.lua
 UI\Wardrobe\WardrobeItems.lua
 UI\Wardrobe\WardrobeSets.lua
+UI\Wardrobe\WardrobeCommunity.lua
 UI\ToastFrame.lua
 UI\MountJournalFrame.lua
 UI\PetJournalFrame.lua

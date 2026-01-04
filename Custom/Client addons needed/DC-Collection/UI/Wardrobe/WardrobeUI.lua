@@ -108,6 +108,21 @@ function Wardrobe:CreateFrame()
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    frame:SetScript("OnHide", function()
+        if Wardrobe._suppressUnsavedOnHide then
+            Wardrobe._suppressUnsavedOnHide = nil
+            return
+        end
+
+        if Wardrobe._unsavedChanges then
+            frame:Show()
+            if type(Wardrobe.ConfirmUnsavedChanges) == "function" then
+                Wardrobe:ConfirmUnsavedChanges(function()
+                    Wardrobe:_HideImmediate()
+                end)
+            end
+        end
+    end)
     frame:Hide()
 
     local BG_FELLEATHER = "Interface\\AddOns\\DC-Leaderboards\\Textures\\Backgrounds\\FelLeather_512.tga"
@@ -724,6 +739,9 @@ function Wardrobe:CreateLeftPanel(parent)
                     end
                 else
                     -- Regular click: Select slot and update camera
+                    if Wardrobe.currentTab ~= "items" then
+                        Wardrobe:SelectTab("items")
+                    end
                     Wardrobe:SelectSlot(slotDef)
                 end
             elseif button == "RightButton" then
@@ -788,6 +806,7 @@ function Wardrobe:CreateRightPanel(parent)
         { key = "items", label = "Items" },
         { key = "sets", label = "Sets" },
         { key = "outfits", label = "Outfits" },
+        { key = "community", label = "Community" },
     }
 
     parent.tabButtons = {}
@@ -1294,12 +1313,12 @@ function Wardrobe:CreateRightPanel(parent)
         end
     end)
 
-    self:CreateOutfitsGrid(right)
+    self:CreateOutfitsGrid(parent, right)
 
     parent.rightPanel = right
 end
 
-function Wardrobe:CreateOutfitsGrid(parent)
+function Wardrobe:CreateOutfitsGrid(root, rightPanel)
     local OUTFIT_COLS = 3
     local OUTFIT_ROWS = 2
     local OUTFIT_WIDTH = 200
@@ -1307,18 +1326,36 @@ function Wardrobe:CreateOutfitsGrid(parent)
     local GAP_X = 15
     local GAP_Y = 15
 
-    local container = CreateFrame("Frame", nil, parent)
-    container:SetPoint("TOPLEFT", parent.collectedFrame, "BOTTOMLEFT", 0, -5)
-    container:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 40) -- Leave space for pages/bottom bar
+    local container = CreateFrame("Frame", nil, rightPanel)
+    container:SetPoint("TOPLEFT", root.collectedFrame, "BOTTOMLEFT", 0, -5)
+    container:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", 0, 40) -- Leave space for pages/bottom bar
     container:Hide()
-    
-    parent.outfitGridContainer = container
 
-    parent.outfitButtons = {}
+    -- Store on the main frame (root) to match how the rest of the Wardrobe code accesses widgets.
+    root.outfitGridContainer = container
+    root.outfitButtons = {}
 
-    -- Calculate total width to center it
+    -- Calculate total width to center it (widths may be 0 during initial creation)
     local totalWidth = (OUTFIT_COLS * OUTFIT_WIDTH) + ((OUTFIT_COLS - 1) * GAP_X)
-    local startX = (parent:GetWidth() - totalWidth) / 2
+
+    local function LayoutOutfitButtons()
+        local w = container:GetWidth()
+        if not w or w <= 1 then
+            w = rightPanel:GetWidth()
+        end
+        if not w or w <= 1 then
+            w = totalWidth
+        end
+        local startX = (w - totalWidth) / 2
+        if startX < 0 then startX = 0 end
+
+        for i, btn in ipairs(root.outfitButtons) do
+            local row = math.floor((i - 1) / OUTFIT_COLS)
+            local col = (i - 1) % OUTFIT_COLS
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + (col * (OUTFIT_WIDTH + GAP_X)), -10 - (row * (OUTFIT_HEIGHT + GAP_Y)))
+        end
+    end
 
     for i = 1, (OUTFIT_COLS * OUTFIT_ROWS) do
         local btn = CreateFrame("Button", nil, container)
@@ -1327,8 +1364,7 @@ function Wardrobe:CreateOutfitsGrid(parent)
         local row = math.floor((i - 1) / OUTFIT_COLS)
         local col = (i - 1) % OUTFIT_COLS
 
-        -- Centered layout
-        btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + (col * (OUTFIT_WIDTH + GAP_X)), -10 - (row * (OUTFIT_HEIGHT + GAP_Y)))
+        -- Layout is applied after creation (widths may be 0 right now)
 
         -- Background/Border
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
@@ -1374,9 +1410,13 @@ function Wardrobe:CreateOutfitsGrid(parent)
         
         btn.icon:Hide()
         
-        -- Attach to parent's outfitButtons array (initialized at line 1317)
-        table.insert(parent.outfitButtons, btn)
+        -- Attach to root's outfitButtons array
+        table.insert(root.outfitButtons, btn)
     end
+
+    container:SetScript("OnShow", LayoutOutfitButtons)
+    container:SetScript("OnSizeChanged", LayoutOutfitButtons)
+    LayoutOutfitButtons()
 end
 
 -- ============================================================================

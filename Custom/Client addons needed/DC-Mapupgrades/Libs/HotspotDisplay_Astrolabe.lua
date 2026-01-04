@@ -16,13 +16,14 @@ function Ast.NormalizeCoords(x, y)
     return nx, ny
 end
 
--- Approximate world bounds for key maps. These values get overridden by server supplied normalized coords when available
+-- Approximate world bounds for key maps. 
+-- Values extracted from Custom/CSV DBC/WorldMapArea.csv (columns: LocLeft, LocRight, LocTop, LocBottom)
 Ast.MapBounds = {
-    [0] = { minX = -12000, maxX = 12000, minY = -12000, maxY = 12000 }, -- Eastern Kingdoms
-    [1] = { minX = -12000, maxX = 12000, minY = -12000, maxY = 12000 }, -- Kalimdor
-    [530] = { minX = -5000, maxX = 5000, minY = -5000, maxY = 5000 },   -- Outland
-    [571] = { minX = -8000, maxX = 8000, minY = -8000, maxY = 8000 },   -- Northrend
-    [37] = { minX = -500, maxX = 500, minY = 700, maxY = 1400 },        -- Azshara Crater
+    [0] = { minX = -15973.34, maxX = 11176.34, minY = -22569.21, maxY = 18171.97 },  -- Eastern Kingdoms (Map 0, Area 0 "Azeroth")
+    [1] = { minX = -11733.3, maxX = 12799.9, minY = -19733.21, maxY = 17066.6 },    -- Kalimdor (Map 1, Area 0 "Kalimdor")
+    [530] = { minX = -5821.359, maxX = 5821.359, minY = -4468.039, maxY = 12996.04 }, -- Outland (Map 530, Area 0 "Expansion01")
+    [571] = { minX = -1240.89, maxX = 10593.38, minY = -8534.246, maxY = 9217.152 },  -- Northrend (Map 571, Area 0 "Northrend")
+    [37] = { minX = -1116, maxX = 1756, minY = -1884, maxY = 2427 },                -- Azshara Crater (Map 37, Area 268)
 }
 
 -- Convert absolute world-space coordinates into normalized 0..1 range when bounds available
@@ -47,8 +48,27 @@ function Ast.WorldCoordsToNormalized(mapId, x, y)
         return nil, nil
     end
     
-    local nx = (x - bounds.minX) / (bounds.maxX - bounds.minX)
-    local ny = (y - bounds.minY) / (bounds.maxY - bounds.minY)
+    -- WoW World Coordinates to UI Map Coordinates Transformation
+    -- World X = North(+)/South(-). Vertical axis.
+    -- World Y = West(+)/East(-). Horizontal axis.
+    
+    -- Bounds: MinX/MaxX defines Vertical Range (South -> North)
+    -- Bounds: MinY/MaxY defines Horizontal Range (East -> West)
+    
+    -- 1. Normalize World X (Vertical) to 0..1 (South -> North)
+    local normX = (x - bounds.minX) / (bounds.maxX - bounds.minX)
+    
+    -- 2. Normalize World Y (Horizontal) to 0..1 (East -> West)
+    local normY = (y - bounds.minY) / (bounds.maxY - bounds.minY)
+    
+    -- 3. Map to UI Coordinates
+    -- UI X (Horizontal): Left (0) -> Right (1)
+    -- World Y: West (High, 1) should be Left (0). East (Low, 0) should be Right (1).
+    local nx = 1 - normY
+    
+    -- UI Y (Vertical): Top (0) -> Bottom (1)
+    -- World X: North (High, 1) should be Top (0). South (Low, 0) should be Bottom (1).
+    local ny = 1 - normX
     
     if not _G.DC_HOTSPOT_CONVERSION_LOGGED then
         print(string.format("|cff00ff00[Astrolabe] Converted: (%d, %.1f, %.1f) -> (%.4f, %.4f)|r", mapId, x, y, nx, ny))

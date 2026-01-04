@@ -42,15 +42,27 @@ local CombatLog = {
             -- Advanced Metrics
             trackDispels = true,
             trackAbsorbs = true,
+            trackOverkill = true,
+            trackMisses = true,
+            trackCritDetails = true,
+            trackActivity = true,
+            trackPowerGains = true,
+            trackKillingBlows = true,
+            trackCrowdControl = true,
+            trackFriendlyFire = true,
+            trackPotions = true,
+            trackResurrects = true,
             -- Segments
             keepSegments = 5,
-            -- Position
-            frameX = nil,
-            frameY = nil,
+            -- Position (Skada-style)
+            x = nil,              -- Center X relative to screen center
+            y = nil,              -- Center Y relative to screen center
+            scale = 1.0,          -- Window scale
             frameWidth = 200,
             frameHeight = 250,
-            frameScale = 1.0,
             frameAlpha = 0.9,
+            hidden = false,       -- Window visibility state
+            locked = false,       -- Lock window position
             -- Combat Timer
             showCombatTimer = true,
         },
@@ -91,6 +103,85 @@ local currentSegment = nil
 local deathLog = {}
 local MAX_DEATH_LOG = 10
 
+-- Miss types mapping
+local MISS_TYPES = {
+    ABSORB = "absorbs",
+    BLOCK = "blocks",
+    DEFLECT = "deflects",
+    DODGE = "dodges",
+    EVADE = "evades",
+    IMMUNE = "immunes",
+    MISS = "misses",
+    PARRY = "parries",
+    REFLECT = "reflects",
+    RESIST = "resists",
+}
+
+-- Common CC spells (extendable list)
+local CC_SPELLS = {
+    -- Stuns
+    [408] = true,     -- Kidney Shot
+    [1833] = true,    -- Cheap Shot
+    [2094] = true,    -- Blind
+    [5211] = true,    -- Bash
+    [8983] = true,    -- Bash (Bear)
+    [12809] = true,   -- Concussion Blow
+    [19577] = true,   -- Intimidation
+    [20066] = true,   -- Repentance
+    [20170] = true,   -- Stun (Seal of Justice)
+    [22570] = true,   -- Maim
+    [24394] = true,   -- Intimidation
+    [44572] = true,   -- Deep Freeze
+    [46968] = true,   -- Shockwave
+    [47481] = true,   -- Gnaw (Ghoul)
+    [49012] = true,   -- Spell Lock (Felhunter)
+    [49802] = true,   -- Maim
+    [49803] = true,   -- Pounce
+    -- Fears
+    [5782] = true,    -- Fear
+    [6215] = true,    -- Fear (Felhunter)
+    [5484] = true,    -- Howl of Terror
+    [8122] = true,    -- Psychic Scream
+    -- Polymorphs
+    [118] = true,     -- Polymorph
+    [12824] = true,   -- Polymorph
+    [12825] = true,   -- Polymorph
+    [28271] = true,   -- Polymorph: Turtle
+    [28272] = true,   -- Polymorph: Pig
+    [61305] = true,   -- Polymorph: Black Cat
+    [61721] = true,   -- Polymorph: Rabbit
+    [61780] = true,   -- Polymorph: Turkey
+    -- Cyclone, Roots, etc.
+    [339] = true,     -- Entangling Roots
+    [33786] = true,   -- Cyclone
+    [53308] = true,   -- Entangling Roots (Nature's Grasp)
+    -- Silences
+    [18469] = true,   -- Counterspell - Silenced
+    [15487] = true,   -- Silence
+    [34490] = true,   -- Silencing Shot
+}
+
+-- Power type constants
+local POWER_TYPE_MANA = 0
+local POWER_TYPE_RAGE = 1
+local POWER_TYPE_FOCUS = 2
+local POWER_TYPE_ENERGY = 3
+local POWER_TYPE_RUNIC = 6
+
+-- Potion/healthstone spell IDs
+local CONSUMABLE_SPELLS = {
+    -- Health potions
+    [28495] = "potion",   -- Super Healing Potion
+    [17534] = "potion",   -- Major Healing Potion
+    [17535] = "potion",   -- Major Mana Potion
+    [43185] = "potion",   -- Runic Healing Potion
+    [43186] = "potion",   -- Runic Mana Potion
+    -- Healthstones
+    [6262] = "healthstone",   -- Healthstone
+    [23468] = "healthstone",  -- Master Healthstone
+    [43523] = "healthstone",  -- Conjured Mana Biscuit
+}
+
 -- Class colors
 local CLASS_COLORS = RAID_CLASS_COLORS or {
     ["WARRIOR"]     = { r = 0.78, g = 0.61, b = 0.43 },
@@ -108,6 +199,36 @@ local CLASS_COLORS = RAID_CLASS_COLORS or {
 -- ============================================================
 -- Utility Functions
 -- ============================================================
+
+-- Save/Restore frame position (from Skada-style implementation)
+local function SavePosition(frame, db)
+    if not frame or not frame.GetCenter or not db then return end
+    
+    local x, y = frame:GetCenter()
+    if not x or not y then return end
+    
+    local scale = frame:GetEffectiveScale()
+    local uscale = UIParent:GetScale()
+    
+    -- Save relative to screen center (Skada's method)
+    db.x = ((x * scale) - (GetScreenWidth() * uscale) * 0.5) / uscale
+    db.y = ((y * scale) - (GetScreenHeight() * uscale) * 0.5) / uscale
+    db.scale = math.floor(frame:GetScale() * 100) * 0.01
+end
+
+local function RestorePosition(frame, db)
+    if not frame or not frame.SetPoint or not db then return end
+    
+    local scale = frame:GetEffectiveScale()
+    local uscale = UIParent:GetScale()
+    local x = (db.x or 0) * uscale / scale
+    local y = (db.y or 0) * uscale / scale
+    
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+    frame:SetScale(db.scale or 1)
+end
+
 local function FormatNumber(num)
     if not num then return "0" end
     if num >= 1000000 then
@@ -182,16 +303,49 @@ local function GetPlayerData(guid, name, flags)
         playerData[guid] = {
             name = name or "Unknown",
             class = classToken,
+            -- Damage tracking
             damage = 0,
+            overkill = 0,
+            totalDamage = 0,  -- damage + absorbed
+            -- Healing tracking
             healing = 0,
-            damageTaken = 0,
             overhealing = 0,
+            totalHealing = 0,
+            -- Defense tracking
+            damageTaken = 0,
             absorbs = 0,
+            -- Combat events
             deaths = 0,
+            killingBlows = 0,
             interrupts = 0,
             dispels = 0,
-            -- Spell breakdown: spells[spellId] = { name, damage, healing, hits, crits }
+            ccDone = 0,
+            resurrects = 0,
+            -- Activity tracking
+            activeTime = 0,
+            lastActive = 0,
+            -- Power gains (mana, rage, runic, energy)
+            manaGain = 0,
+            rageGain = 0,
+            runicGain = 0,
+            energyGain = 0,
+            -- Miss types
+            dodges = 0,
+            parries = 0,
+            misses = 0,
+            blocks = 0,
+            resists = 0,
+            -- Friendly fire
+            friendlyDamage = 0,
+            -- Item usage
+            potionsUsed = 0,
+            healthstonesUsed = 0,
+            -- Spell breakdown: spells[spellId] = { name, damage, healing, hits, crits, min, max, etc }
             spells = {},
+            -- CC spells used
+            ccSpells = {},
+            -- Death log entries
+            deathLog = {},
         }
     end
     
@@ -313,7 +467,6 @@ local function CreateCombatFrame()
     
     combatFrame = CreateFrame("Frame", "DCQoS_CombatLogFrame", UIParent)
     combatFrame:SetSize(width, height)
-    combatFrame:SetPoint("CENTER", UIParent, "CENTER", settings.frameX or 300, settings.frameY or 150)
     combatFrame:SetScale(settings.frameScale or 1.0)
     combatFrame:SetAlpha(settings.frameAlpha or 0.9)
     combatFrame:SetMovable(true)
@@ -323,6 +476,14 @@ local function CreateCombatFrame()
     combatFrame:SetResizable(true)
     combatFrame:SetMinResize(150, 100)
     combatFrame:SetMaxResize(400, 500)
+    
+    -- Restore saved position or use default
+    if settings.x and settings.y then
+        RestorePosition(combatFrame, settings)
+    else
+        combatFrame:SetPoint("CENTER", UIParent, "CENTER", 300, 150)
+        SavePosition(combatFrame, settings)
+    end
     
     -- Background
     combatFrame:SetBackdrop({
@@ -340,6 +501,7 @@ local function CreateCombatFrame()
     titleBar:SetPoint("TOPRIGHT", 0, 0)
     titleBar:SetHeight(24)
     titleBar:EnableMouse(true)
+    combatFrame.titleBar = titleBar  -- Store reference
     
     -- Title
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -383,7 +545,7 @@ local function CreateCombatFrame()
     closeBtn:SetSize(20, 20)
     closeBtn:SetPoint("TOPRIGHT", 0, 0)
     closeBtn:SetScript("OnClick", function()
-        combatFrame:Hide()
+        CombatLog.HideFrame()
     end)
     
     -- Timer text
@@ -419,25 +581,69 @@ local function CreateCombatFrame()
     resizeGrip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     resizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     resizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    combatFrame.resizeGrip = resizeGrip  -- Store reference
     resizeGrip:SetScript("OnMouseDown", function()
-        combatFrame:StartSizing("BOTTOMRIGHT")
+        if not settings.locked then
+            combatFrame:StartSizing("BOTTOMRIGHT")
+        end
     end)
     resizeGrip:SetScript("OnMouseUp", function()
-        combatFrame:StopMovingOrSizing()
-        addon:SetSetting("combatLog.frameWidth", combatFrame:GetWidth())
-        addon:SetSetting("combatLog.frameHeight", combatFrame:GetHeight())
-        CombatLog.UpdateFrame()
+        if not settings.locked then
+            combatFrame:StopMovingOrSizing()
+            local settings = addon.settings.combatLog
+            settings.frameWidth = combatFrame:GetWidth()
+            settings.frameHeight = combatFrame:GetHeight()
+            SavePosition(combatFrame, settings)
+            CombatLog.UpdateFrame()
+        end
     end)
     
     -- Dragging
-    titleBar:SetScript("OnMouseDown", function()
-        combatFrame:StartMoving()
+    titleBar:SetScript("OnMouseDown", function(self, button)
+        if button == "LeftButton" and not settings.locked then
+            combatFrame:StartMoving()
+        end
     end)
-    titleBar:SetScript("OnMouseUp", function()
-        combatFrame:StopMovingOrSizing()
-        local _, _, _, x, y = combatFrame:GetPoint()
-        addon:SetSetting("combatLog.frameX", x)
-        addon:SetSetting("combatLog.frameY", y)
+    titleBar:SetScript("OnMouseUp", function(self, button)
+        if button == "LeftButton" and not settings.locked then
+            combatFrame:StopMovingOrSizing()
+            local settings = addon.settings.combatLog
+            SavePosition(combatFrame, settings)
+        elseif button == "RightButton" then
+            -- Right-click menu
+            local menu = {
+                { text = "|cffFFCC00DC Combat Menu|r", isTitle = true, notCheckable = true },
+                { text = "Damage Done", func = function()
+                    addon:SetSetting("combatLog.meterMode", "damage")
+                    CombatLog.UpdateFrame()
+                end, checked = function() return addon.settings.combatLog.meterMode == "damage" end },
+                { text = "Healing Done", func = function()
+                    addon:SetSetting("combatLog.meterMode", "healing")
+                    CombatLog.UpdateFrame()
+                end, checked = function() return addon.settings.combatLog.meterMode == "healing" end },
+                { text = "Damage Taken", func = function()
+                    addon:SetSetting("combatLog.meterMode", "damageTaken")
+                    CombatLog.UpdateFrame()
+                end, checked = function() return addon.settings.combatLog.meterMode == "damageTaken" end },
+                { text = " ", isTitle = true, notCheckable = true },
+                { text = settings.locked and "Unlock Window" or "Lock Window", func = function()
+                    CombatLog.ToggleLock()
+                end, notCheckable = true },
+                { text = "Reset Stats", func = function()
+                    ResetPlayerData()
+                    CombatLog.UpdateFrame()
+                    addon:Print("Combat stats reset.", true)
+                end, notCheckable = true },
+                { text = " ", isTitle = true, notCheckable = true },
+                { text = "Hide Window", func = function()
+                    CombatLog.HideFrame()
+                end, notCheckable = true },
+                { text = "Close Menu", func = function() end, notCheckable = true },
+            }
+            
+            -- Show the menu using EasyMenu (built-in WoW function)
+            EasyMenu(menu, CreateFrame("Frame", "DCQoS_CombatLogMenu", UIParent, "UIDropDownMenuTemplate"), "cursor", 0, 0, "MENU")
+        end
     end)
     
     -- Update timer
@@ -449,7 +655,15 @@ local function CreateCombatFrame()
         end
     end)
     
-    combatFrame:Hide()
+    -- Apply lock state
+    CombatLog.UpdateLockState()
+    
+    if settings.hidden then
+        combatFrame:Hide()
+    else
+        combatFrame:Show()
+    end
+    
     return combatFrame
 end
 
@@ -513,6 +727,7 @@ function CombatLog.UpdateFrame()
 end
 
 function CombatLog.ShowFrame()
+    addon:SetSetting("combatLog.hidden", false)
     if not combatFrame then
         CreateCombatFrame()
     end
@@ -520,8 +735,49 @@ function CombatLog.ShowFrame()
 end
 
 function CombatLog.HideFrame()
+    addon:SetSetting("combatLog.hidden", true)
     if combatFrame then
         combatFrame:Hide()
+    end
+end
+
+-- Lock/unlock the window to prevent dragging and resizing
+function CombatLog.ToggleLock()
+    local settings = addon.settings.combatLog
+    settings.locked = not settings.locked
+    
+    if combatFrame then
+        CombatLog.UpdateLockState()
+    end
+    
+    addon:Print(settings.locked and "Combat window locked" or "Combat window unlocked", true)
+end
+
+function CombatLog.UpdateLockState()
+    if not combatFrame then return end
+    
+    local settings = addon.settings.combatLog
+    local titleBar = combatFrame.titleBar
+    local resizeGrip = combatFrame.resizeGrip
+    
+    if settings.locked then
+        -- Disable dragging and resizing
+        combatFrame:SetMovable(false)
+        combatFrame:EnableMouse(false)
+        if titleBar then titleBar:EnableMouse(false) end
+        if resizeGrip then resizeGrip:Hide() end
+        
+        -- Update border to show locked state
+        combatFrame:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.5)
+    else
+        -- Enable dragging and resizing
+        combatFrame:SetMovable(true)
+        combatFrame:EnableMouse(true)
+        if titleBar then titleBar:EnableMouse(true) end
+        if resizeGrip then resizeGrip:Show() end
+        
+        -- Restore normal border
+        combatFrame:SetBackdropBorderColor(0.3, 0.3, 0.3)
     end
 end
 
@@ -557,10 +813,23 @@ local function ShowDeathRecap()
     for i = #deathLog - count + 1, #deathLog do
         local entry = deathLog[i]
         if entry then
-            print(string.format("  |cffff6600%s|r from %s (%s)", 
+            local hpText = ""
+            if entry.hp and entry.maxhp then
+                hpText = string.format(" [HP: %d/%d - %.1f%%]", entry.hp, entry.maxhp, entry.hpPercent or 0)
+            end
+            local extraText = ""
+            if entry.overkill and entry.overkill > 0 then
+                extraText = extraText .. string.format(" |cffff0000Overkill: %s|r", FormatNumber(entry.overkill))
+            end
+            if entry.absorbed and entry.absorbed > 0 then
+                extraText = extraText .. string.format(" |cff00ff00Absorbed: %s|r", FormatNumber(entry.absorbed))
+            end
+            print(string.format("  |cffff6600%s|r from %s (%s)%s%s", 
                 FormatNumber(entry.amount), 
                 entry.source, 
-                entry.spell))
+                entry.spell,
+                hpText,
+                extraText))
         end
     end
 end
@@ -659,6 +928,151 @@ local function ShowDispels()
     end
 end
 
+-- Show activity summary
+local function ShowActivity()
+    addon:Print("=== Activity Summary ===", true)
+    
+    local combatTime = GetCombatTime()
+    if combatTime == 0 then
+        print("  No combat time recorded.")
+        return
+    end
+    
+    local sorted = {}
+    for guid, data in pairs(playerData) do
+        if data.activeTime and data.activeTime > 0 then
+            local activityPct = (data.activeTime / combatTime) * 100
+            table.insert(sorted, { 
+                name = data.name, 
+                activeTime = data.activeTime,
+                activityPct = activityPct
+            })
+        end
+    end
+    
+    table.sort(sorted, function(a, b) return a.activeTime > b.activeTime end)
+    
+    if #sorted == 0 then
+        print("  No activity recorded.")
+        return
+    end
+    
+    for i, entry in ipairs(sorted) do
+        print(string.format("  %d. %s - %s (%.1f%%)", 
+            i, entry.name, FormatTime(entry.activeTime), entry.activityPct))
+    end
+end
+
+-- Show killing blows
+local function ShowKillingBlows()
+    addon:Print("=== Killing Blows ===", true)
+    
+    local sorted = {}
+    for guid, data in pairs(playerData) do
+        if data.killingBlows and data.killingBlows > 0 then
+            table.insert(sorted, { name = data.name, kbs = data.killingBlows })
+        end
+    end
+    
+    table.sort(sorted, function(a, b) return a.kbs > b.kbs end)
+    
+    if #sorted == 0 then
+        print("  No killing blows recorded.")
+        return
+    end
+    
+    for i, entry in ipairs(sorted) do
+        print(string.format("  %d. %s - %d killing blows", i, entry.name, entry.kbs))
+    end
+end
+
+-- Show CC summary
+local function ShowCrowdControl()
+    addon:Print("=== Crowd Control Summary ===", true)
+    
+    local sorted = {}
+    for guid, data in pairs(playerData) do
+        if data.ccDone and data.ccDone > 0 then
+            table.insert(sorted, { name = data.name, cc = data.ccDone })
+        end
+    end
+    
+    table.sort(sorted, function(a, b) return a.cc > b.cc end)
+    
+    if #sorted == 0 then
+        print("  No CC recorded.")
+        return
+    end
+    
+    for i, entry in ipairs(sorted) do
+        print(string.format("  %d. %s - %d CC applications", i, entry.name, entry.cc))
+    end
+end
+
+-- Show power gains
+local function ShowPowerGains()
+    addon:Print("=== Power Gains ===", true)
+    
+    for guid, data in pairs(playerData) do
+        if data.manaGain > 0 or data.rageGain > 0 or data.energyGain > 0 or data.runicGain > 0 then
+            print(string.format("|cffffd700%s|r:", data.name))
+            if data.manaGain > 0 then
+                print(string.format("  Mana: %s", FormatNumber(data.manaGain)))
+            end
+            if data.rageGain > 0 then
+                print(string.format("  Rage: %s", FormatNumber(data.rageGain)))
+            end
+            if data.energyGain > 0 then
+                print(string.format("  Energy: %s", FormatNumber(data.energyGain)))
+            end
+            if data.runicGain > 0 then
+                print(string.format("  Runic Power: %s", FormatNumber(data.runicGain)))
+            end
+        end
+    end
+end
+
+-- Show friendly fire
+local function ShowFriendlyFire()
+    addon:Print("=== Friendly Fire ===", true)
+    
+    local sorted = {}
+    for guid, data in pairs(playerData) do
+        if data.friendlyDamage and data.friendlyDamage > 0 then
+            table.insert(sorted, { name = data.name, damage = data.friendlyDamage })
+        end
+    end
+    
+    table.sort(sorted, function(a, b) return a.damage > b.damage end)
+    
+    if #sorted == 0 then
+        print("  No friendly fire recorded.")
+        return
+    end
+    
+    for i, entry in ipairs(sorted) do
+        print(string.format("  %d. %s - %s damage to allies", 
+            i, entry.name, FormatNumber(entry.damage)))
+    end
+end
+
+-- Show consumables usage
+local function ShowConsumables()
+    addon:Print("=== Consumables Usage ===", true)
+    
+    for guid, data in pairs(playerData) do
+        if (data.potionsUsed and data.potionsUsed > 0) or (data.healthstonesUsed and data.healthstonesUsed > 0) then
+            print(string.format("|cffffd700%s|r:", data.name))
+            if data.potionsUsed > 0 then
+                print(string.format("  Potions: %d", data.potionsUsed))
+            end
+            if data.healthstonesUsed > 0 then
+                print(string.format("  Healthstones: %d", data.healthstonesUsed))
+            end
+        end
+    end
+end
+
 -- Show absorbs summary
 local function ShowAbsorbs()
     addon:Print("=== Absorb Summary ===", true)
@@ -713,8 +1127,8 @@ local function OnCombatLogEvent(...)
         end
     end
     
-    -- Helper to track spell breakdown
-    local function TrackSpell(data, spellId, spellName, amount, isCrit, isHealing)
+    -- Helper to track spell breakdown with comprehensive stats
+    local function TrackSpell(data, spellId, spellName, amount, isCrit, isHealing, isGlancing, missType, absorbed, overkill)
         if not data.spells then data.spells = {} end
         if not spellId then spellId = 0 end
         
@@ -725,17 +1139,74 @@ local function OnCombatLogEvent(...)
                 healing = 0,
                 hits = 0,
                 crits = 0,
+                glancing = 0,
+                -- Crit tracking
+                critDamage = 0,
+                critMin = nil,
+                critMax = nil,
+                -- Normal hit tracking
+                normalHits = 0,
+                normalDamage = 0,
+                normalMin = nil,
+                normalMax = nil,
+                -- Miss tracking
+                misses = 0,
+                dodges = 0,
+                parries = 0,
+                blocks = 0,
+                resists = 0,
+                -- Advanced
+                absorbed = 0,
+                overkill = 0,
             }
         end
         
         local spell = data.spells[spellId]
+        
+        -- Track miss types
+        if missType and MISS_TYPES[missType] then
+            spell[MISS_TYPES[missType]] = (spell[MISS_TYPES[missType]] or 0) + 1
+            return  -- Don't count as hit
+        end
+        
         spell.hits = spell.hits + 1
-        if isCrit then spell.crits = spell.crits + 1 end
+        
+        -- Track absorbed/overkill
+        if absorbed and absorbed > 0 then
+            spell.absorbed = spell.absorbed + absorbed
+        end
+        if overkill and overkill > 0 then
+            spell.overkill = spell.overkill + overkill
+        end
         
         if isHealing then
             spell.healing = spell.healing + (amount or 0)
         else
             spell.damage = spell.damage + (amount or 0)
+            
+            -- Track crit details
+            if isCrit then
+                spell.crits = spell.crits + 1
+                spell.critDamage = spell.critDamage + amount
+                if not spell.critMin or amount < spell.critMin then
+                    spell.critMin = amount
+                end
+                if not spell.critMax or amount > spell.critMax then
+                    spell.critMax = amount
+                end
+            elseif isGlancing then
+                spell.glancing = spell.glancing + 1
+            else
+                -- Normal hit
+                spell.normalHits = spell.normalHits + 1
+                spell.normalDamage = spell.normalDamage + amount
+                if not spell.normalMin or amount < spell.normalMin then
+                    spell.normalMin = amount
+                end
+                if not spell.normalMax or amount > spell.normalMax then
+                    spell.normalMax = amount
+                end
+            end
         end
     end
     
@@ -743,33 +1214,75 @@ local function OnCombatLogEvent(...)
     if isGroupSource then
         local data = GetPlayerData(sourceGUID, sourceName, sourceFlags)
         if data then
+            UpdateActivity(data)
+            
             if event == "SWING_DAMAGE" then
                 local amount = arg9 or 0
-                local critical = arg14
+                local overkill = arg10 or 0
+                local school = arg11 or 0
+                local resisted = arg12 or 0
+                local blocked = arg13 or 0
+                local absorbed = arg14 or 0
+                local critical = arg15
+                local glancing = arg16
+                
                 data.damage = data.damage + amount
-                TrackSpell(data, 0, "Melee", amount, critical, false)
+                if overkill > 0 then data.overkill = data.overkill + overkill end
+                if absorbed > 0 then data.totalDamage = data.totalDamage + amount + absorbed end
+                
+                TrackSpell(data, 0, "Melee", amount, critical, false, glancing, nil, absorbed, overkill)
+                
+            elseif event == "SWING_MISSED" then
+                local missType = arg9
+                local data = GetPlayerData(sourceGUID, sourceName, sourceFlags)
+                if data and MISS_TYPES[missType] then
+                    data[MISS_TYPES[missType]] = (data[MISS_TYPES[missType]] or 0) + 1
+                    TrackSpell(data, 0, "Melee", 0, false, false, false, missType, 0, 0)
+                end
                 
             elseif event == "SPELL_DAMAGE" or event == "SPELL_PERIODIC_DAMAGE" or event == "RANGE_DAMAGE" then
                 local spellId = arg9
                 local spellName = arg10
+                local school = arg11
                 local amount = arg12 or 0
-                local critical = arg17
+                local overkill = arg13 or 0
+                local school2 = arg14 or 0
+                local resisted = arg15 or 0
+                local blocked = arg16 or 0
+                local absorbed = arg17 or 0
+                local critical = arg18
+                local glancing = arg19
+                
                 data.damage = data.damage + amount
-                TrackSpell(data, spellId, spellName, amount, critical, false)
+                if overkill > 0 then data.overkill = data.overkill + overkill end
+                if absorbed > 0 then data.totalDamage = data.totalDamage + amount + absorbed end
+                
+                TrackSpell(data, spellId, spellName, amount, critical, false, glancing, nil, absorbed, overkill)
+            
+            elseif event == "SPELL_MISSED" or event == "RANGE_MISSED" then
+                local spellId = arg9
+                local spellName = arg10
+                local missType = arg12
+                if MISS_TYPES[missType] then
+                    data[MISS_TYPES[missType]] = (data[MISS_TYPES[missType]] or 0) + 1
+                    TrackSpell(data, spellId, spellName, 0, false, false, false, missType, 0, 0)
+                end
                 
             elseif event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL" then
                 local spellId = arg9
                 local spellName = arg10
                 local amount = arg12 or 0
                 local overheal = arg13 or 0
-                local critical = arg14
+                local absorbed = arg14 or 0
+                local critical = arg15
                 local effectiveHeal = amount - overheal
                 data.healing = data.healing + effectiveHeal
-                data.overhealing = (data.overhealing or 0) + overheal
-                TrackSpell(data, spellId, spellName, effectiveHeal, critical, true)
+                data.overhealing = data.overhealing + overheal
+                data.totalHealing = data.totalHealing + amount
+                TrackSpell(data, spellId, spellName, effectiveHeal, critical, true, false, nil, absorbed, 0)
                 
             elseif event == "SPELL_INTERRUPT" then
-                data.interrupts = (data.interrupts or 0) + 1
+                data.interrupts = data.interrupts + 1
                 
                 if sourceGUID == playerGUID and settings.announceInterrupts then
                     local interruptedSpell = arg13 or "Unknown"
@@ -785,13 +1298,47 @@ local function OnCombatLogEvent(...)
                 
             elseif event == "SPELL_DISPEL" or event == "SPELL_STOLEN" then
                 if settings.trackDispels then
-                    data.dispels = (data.dispels or 0) + 1
+                    data.dispels = data.dispels + 1
                 end
                 
             elseif event == "SPELL_AURA_APPLIED" then
-                -- Track absorb shields applied (approximate)
-                -- Absorbs in 3.3.5a don't have specific events, this is limited
+                local spellId = arg9
+                -- Track CC applications
+                if settings.trackCrowdControl and CC_SPELLS[spellId] then
+                    data.ccDone = data.ccDone + 1
+                    data.ccSpells[spellId] = (data.ccSpells[spellId] or 0) + 1
+                end
                 
+                -- Track consumable usage
+                if CONSUMABLE_SPELLS[spellId] then
+                    if CONSUMABLE_SPELLS[spellId] == "potion" then
+                        data.potionsUsed = data.potionsUsed + 1
+                    elseif CONSUMABLE_SPELLS[spellId] == "healthstone" then
+                        data.healthstonesUsed = data.healthstonesUsed + 1
+                    end
+                end
+                
+            elseif event == "SPELL_RESURRECT" then
+                if settings.trackResurrects then
+                    data.resurrects = data.resurrects + 1
+                end
+                
+            elseif event == "SPELL_ENERGIZE" then
+                if settings.trackPowerGains then
+                    local spellId = arg9
+                    local amount = arg12 or 0
+                    local powerType = arg13
+                    
+                    if powerType == POWER_TYPE_MANA then
+                        data.manaGain = data.manaGain + amount
+                    elseif powerType == POWER_TYPE_RAGE then
+                        data.rageGain = data.rageGain + amount
+                    elseif powerType == POWER_TYPE_ENERGY or powerType == POWER_TYPE_FOCUS then
+                        data.energyGain = data.energyGain + amount
+                    elseif powerType == POWER_TYPE_RUNIC then
+                        data.runicGain = data.runicGain + amount
+                    end
+                end
             end
         end
     end
@@ -821,31 +1368,88 @@ local function OnCombatLogEvent(...)
         end
     end
     
-    -- Track damage taken by player
+    -- Track damage to friendlies (friendly fire)
+    if settings.trackFriendlyFire and isGroupSource then
+        local isGroupDest = bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0 or
+                            bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0
+        if isGroupDest and sourceGUID ~= destGUID then
+            local data = GetPlayerData(sourceGUID, sourceName, sourceFlags)
+            if data then
+                local amount = 0
+                if event == "SWING_DAMAGE" then
+                    amount = arg9 or 0
+                elseif event == "SPELL_DAMAGE" or event == "SPELL_PERIODIC_DAMAGE" or event == "RANGE_DAMAGE" then
+                    amount = arg12 or 0
+                end
+                if amount > 0 then
+                    data.friendlyDamage = data.friendlyDamage + amount
+                end
+            end
+        end
+    end
+    
+    -- Track killing blows
+    if event == "PARTY_KILL" or event == "UNIT_DIED" then
+        if settings.trackKillingBlows and isGroupSource and sourceGUID ~= destGUID then
+            local data = GetPlayerData(sourceGUID, sourceName, sourceFlags)
+            if data then
+                data.killingBlows = data.killingBlows + 1
+            end
+        end
+    end
+    
+    -- Track damage taken by player with enhanced death logging
     if destGUID == playerGUID then
         local data = GetPlayerData(playerGUID, playerName)
         if data then
             local amount = 0
             local spellName = nil
+            local spellId = nil
+            local absorbed = 0
+            local overkill = 0
+            local currentHP = UnitHealth("player")
+            local maxHP = UnitHealthMax("player")
             
             if event == "SWING_DAMAGE" then
                 amount = arg9 or 0
+                overkill = arg10 or 0
+                absorbed = arg14 or 0
                 spellName = "Melee"
+                spellId = 0
             elseif event == "SPELL_DAMAGE" or event == "SPELL_PERIODIC_DAMAGE" or event == "RANGE_DAMAGE" then
+                spellId = arg9
                 spellName = arg10
                 amount = arg12 or 0
+                overkill = arg13 or 0
+                absorbed = arg17 or 0
             elseif event == "ENVIRONMENTAL_DAMAGE" then
                 spellName = arg9 or "Environment"
                 amount = arg10 or 0
+                spellId = -1
             end
             
             if amount > 0 then
                 data.damageTaken = data.damageTaken + amount
-                RecordDamageForDeathRecap(timestamp, sourceName, spellName, amount)
+                -- Enhanced death recap entry
+                if #deathLog >= MAX_DEATH_LOG then
+                    table.remove(deathLog, 1)
+                end
+                table.insert(deathLog, {
+                    time = timestamp,
+                    source = sourceName or "Unknown",
+                    spell = spellName or "Unknown",
+                    spellId = spellId,
+                    amount = amount,
+                    overkill = overkill,
+                    absorbed = absorbed,
+                    hp = currentHP,
+                    maxhp = maxHP,
+                    hpPercent = maxHP > 0 and (currentHP / maxHP * 100) or 0,
+                })
             end
             
             if event == "UNIT_DIED" then
-                data.deaths = (data.deaths or 0) + 1
+                data.deaths = data.deaths + 1
                 ShowDeathRecap()
             end
         end
@@ -861,7 +1465,7 @@ local function OnCombatEvent(self, event, ...)
         combatStartTime = GetTime()
         ResetPlayerData()
         
-        if settings.showMeter then
+        if settings.showMeter and not settings.hidden then
             CombatLog.ShowFrame()
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
@@ -901,6 +1505,11 @@ function CombatLog.OnEnable()
     eventFrame:RegisterEvent("PLAYER_DEAD")
     eventFrame:SetScript("OnEvent", OnCombatEvent)
     
+    -- Initial visibility check
+    if not settings.hidden then
+        CombatLog.ShowFrame()
+    end
+    
     -- Slash commands
     SLASH_DCCOMBAT1 = "/dccombat"
     SLASH_DCCOMBAT2 = "/dcc"
@@ -939,15 +1548,37 @@ function CombatLog.OnEnable()
             ShowDispels()
         elseif msg == "absorbs" then
             ShowAbsorbs()
+        elseif msg == "activity" or msg == "uptime" then
+            ShowActivity()
+        elseif msg == "kb" or msg == "killingblows" then
+            ShowKillingBlows()
+        elseif msg == "cc" or msg == "crowdcontrol" then
+            ShowCrowdControl()
+        elseif msg == "power" or msg == "mana" then
+            ShowPowerGains()
+        elseif msg == "ff" or msg == "friendlyfire" then
+            ShowFriendlyFire()
+        elseif msg == "consumables" or msg == "potions" then
+            ShowConsumables()
+        elseif msg == "lock" then
+            CombatLog.ToggleLock()
         elseif msg == "help" then
             addon:Print("Combat Log Commands:", true)
             print("  |cffffd700/dcc|r - Toggle display")
+            print("  |cffffd700/dcc show/hide|r - Show/hide window")
+            print("  |cffffd700/dcc lock|r - Lock/unlock window position")
             print("  |cffffd700/dcc d|r - Damage mode")
             print("  |cffffd700/dcc h|r - Healing mode")
             print("  |cffffd700/dcc s|r - Spell breakdown (your spells)")
             print("  |cffffd700/dcc spells <name>|r - Spell breakdown for player")
             print("  |cffffd700/dcc dispels|r - Show dispel summary")
             print("  |cffffd700/dcc absorbs|r - Show absorb summary")
+            print("  |cffffd700/dcc activity|r - Show activity/uptime")
+            print("  |cffffd700/dcc kb|r - Show killing blows")
+            print("  |cffffd700/dcc cc|r - Show crowd control")
+            print("  |cffffd700/dcc power|r - Show power gains")
+            print("  |cffffd700/dcc ff|r - Show friendly fire")
+            print("  |cffffd700/dcc consumables|r - Show potion/healthstone usage")
             print("  |cffffd700/dcc reset|r - Reset stats")
             print("  |cffffd700/dcc death|r - Show death recap")
         end
