@@ -290,7 +290,7 @@ local function GetOrCreateButton(bag, slot, parentFrame)
     end
     
     button:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip_SetDefaultAnchor(GameTooltip, self)
         GameTooltip:SetBagItem(self.bag, self:GetID())
         GameTooltip:Show()
     end)
@@ -347,6 +347,15 @@ local function LayoutFrame(frameDefName)
     
     local col, row = 0, 0
     local searchText = frame.searchBox:GetText()
+    
+    -- Clear all buttons first to prevent ghost items (e.g. when swapping to smaller bags)
+    for _, bag in ipairs(def.bags) do
+        if itemButtons[bag] then
+            for _, button in pairs(itemButtons[bag]) do
+                button:Hide()
+            end
+        end
+    end
     
     for _, bag in ipairs(def.bags) do
         local numSlots = GetContainerNumSlots(bag)

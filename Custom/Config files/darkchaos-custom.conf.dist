@@ -1995,6 +1995,13 @@ DarkChaos.Seasonal.WeeklyTokenCap = 1000
 DarkChaos.Seasonal.WeeklyEssenceCap = 1000
 
 #
+#    SeasonalRewards.ActiveSeasonID
+#        Description: Active season ID for Seasonal Rewards
+#        Default:     1
+#
+SeasonalRewards.ActiveSeasonID = 1
+
+#
 #    SeasonalRewards.Enable
 #        Description: Master toggle for the Seasonal Reward system
 #        Default:     1 (Enabled)

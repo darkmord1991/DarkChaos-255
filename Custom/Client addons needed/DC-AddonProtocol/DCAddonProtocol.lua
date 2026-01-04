@@ -1183,6 +1183,8 @@ DC.Opcode = {
         SMSG_TRANSMOG_STATE = 0x48,
         SMSG_TRANSMOG_SLOT_ITEMS = 0x49,
         SMSG_COLLECTED_APPEARANCES = 0x4A,
+        SMSG_ITEM_SETS = 0x4B,
+        SMSG_SAVED_OUTFITS = 0x4C,
         SMSG_SHOP_DATA = 0x50,
         SMSG_PURCHASE_RESULT = 0x51,
         SMSG_CURRENCIES = 0x52,
@@ -1485,16 +1487,37 @@ frame:SetScript("OnEvent", function()
                     local total = tonumber(totalStr) or 0
                     if total > 0 and idx >= 0 and idx < total then
                         DC._chunkBuffers = DC._chunkBuffers or {}
+                        DC._chunkMsgIds = DC._chunkMsgIds or {}  -- Lookup: sender_total -> msgId
                         local sender = arg4 or "_"
                         local now = time()
-
-                        local buf = DC._chunkBuffers[sender]
-                        -- Reset buffer if incompatible or stale
+                        local baseKey = sender .. "_" .. total
+                        
+                        -- For chunk 0, extract MODULE|OPCODE to create unique key
+                        -- Chunk 0 format: MODULE|OPCODE|J|data... or MODULE|OPCODE|data...
+                        local msgId = nil
+                        if idx == 0 then
+                            local m, o = string.match(dataPart or "", "^([^|]+)|(%d+)")
+                            if m and o then
+                                msgId = m .. "_" .. o
+                                -- Store msgId lookup for subsequent chunks
+                                DC._chunkMsgIds[baseKey] = msgId
+                            end
+                        else
+                            -- For non-chunk-0, look up the msgId from chunk 0
+                            msgId = DC._chunkMsgIds[baseKey]
+                        end
+                        
+                        -- Build full key (with msgId if available)
+                        local bufKey = msgId and (baseKey .. "_" .. msgId) or baseKey
+                        
+                        local buf = DC._chunkBuffers[bufKey]
+                        -- Reset buffer if stale
                         local staleSec = tonumber(DC:GetSetting("chunkTimeoutSec")) or 10
                         if staleSec < 2 then staleSec = 2 end
-                        if not buf or buf.total ~= total or (buf.ts and now - buf.ts > staleSec) then
-                            buf = { total = total, parts = {}, received = 0, seen = {}, ts = now }
-                            DC._chunkBuffers[sender] = buf
+                        
+                        if not buf or (buf.ts and now - buf.ts > staleSec) then
+                            buf = { total = total, parts = {}, received = 0, seen = {}, ts = now, msgId = msgId }
+                            DC._chunkBuffers[bufKey] = buf
                         else
                             buf.ts = now
                         end
@@ -1512,7 +1535,8 @@ frame:SetScript("OnEvent", function()
                                 full = full .. (buf.parts[i] or "")
                             end
                             payload = full
-                            DC._chunkBuffers[sender] = nil
+                            DC._chunkBuffers[bufKey] = nil
+                            DC._chunkMsgIds[baseKey] = nil  -- Cleanup msgId lookup
                         else
                             -- Wait for more chunks
                             return
@@ -1523,6 +1547,7 @@ frame:SetScript("OnEvent", function()
 
             local parts = {}
             for p in string.gmatch(payload, "([^|]+)") do table.insert(parts, p) end
+            
             if #parts >= 2 then
                 local module = parts[1]
                 local opcode = tonumber(parts[2]) or 0
@@ -1562,8 +1587,10 @@ frame:SetScript("OnEvent", function()
                     return
                 end
 
-                -- Check if this is a JSON message (format: MODULE|OPCODE|J|{json})
-                if #parts >= 4 and parts[3] == "J" then
+                -- Check if this is a JSON message (format: MODULE|OPCODE|J|{json} or MODULE|OPCODE|1|{json})
+                -- Note: Some servers send "1" instead of "J" as the JSON marker
+                local isJson = #parts >= 4 and (parts[3] == "J" or parts[3] == "1")
+                if isJson then
                     -- JSON message - reconstruct JSON (in case it had | in it)
                     local jsonParts = {}
                     for i = 4, #parts do

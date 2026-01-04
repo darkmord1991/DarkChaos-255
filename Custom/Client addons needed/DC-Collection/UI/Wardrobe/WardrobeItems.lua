@@ -823,17 +823,47 @@ function Wardrobe:ShowAppearanceContextMenu(appearance)
         },
     }
 
-    if not appearance.collected then
+    -- Link Item
+    table.insert(menu, {
+        text = "Link to Chat",
+        notCheckable = true,
+        func = function()
+            local id = appearance.itemId
+            if id then
+                local _, link = GetItemInfo(id)
+                if not link then
+                    link = "\124cffff8000\124Hitem:" .. id .. ":0:0:0:0:0:0:0:0\124h[Item " .. id .. "]\124h\124r"
+                end
+                if ChatEdit_InsertLink then
+                     if not ChatEdit_GetActiveWindow() then
+                         DEFAULT_CHAT_FRAME.editBox:Show()
+                         DEFAULT_CHAT_FRAME.editBox:SetText("")
+                     end
+                     ChatEdit_InsertLink(link)
+                end
+            end
+        end,
+    })
+
+    -- Wishlist Logic
+    local itemId = appearance.itemId
+    if not appearance.collected and itemId then
+        local isWishlisted = Wardrobe.IsWishlistedTransmog and Wardrobe:IsWishlistedTransmog(itemId)
+        
         table.insert(menu, {
-            text = (DC.L and (DC.L["ADD_TO_WISHLIST"] or DC.L["WISHLIST"])) or "Add to wishlist",
+            text = isWishlisted and ((DC.L and DC.L["REMOVE_FROM_WISHLIST"]) or "Remove from wishlist") or ((DC.L and (DC.L["ADD_TO_WISHLIST"] or DC.L["WISHLIST"])) or "Add to wishlist"),
             notCheckable = true,
             func = function()
-                if DC and DC.RequestAddWishlist and appearance.itemId then
-                    DC:RequestAddWishlist("transmog", appearance.itemId)
+                if DC and DC.RequestAddWishlist and DC.RequestRemoveWishlist then
+                    if isWishlisted then
+                        DC:RequestRemoveWishlist("transmog", itemId)
+                    else
+                        DC:RequestAddWishlist("transmog", itemId)
+                    end
                 end
             end,
         })
-    else
+    end
         table.insert(menu, {
             text = "Apply",
             notCheckable = true,
@@ -841,7 +871,7 @@ function Wardrobe:ShowAppearanceContextMenu(appearance)
                 Wardrobe:ApplyAppearance(appearance)
             end,
         })
-    end
+
 
     table.insert(menu, { text = (DC.L and DC.L["CANCEL"]) or "Cancel", notCheckable = true })
 

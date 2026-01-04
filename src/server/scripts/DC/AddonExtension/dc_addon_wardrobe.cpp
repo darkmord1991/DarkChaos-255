@@ -11,6 +11,7 @@
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "ObjectAccessor.h"
 #include "DatabaseEnv.h"
 #include "Item.h"
 #include "ItemTemplate.h"
@@ -886,16 +887,10 @@ namespace DCCollection
         }
         if (limit > 50) limit = 50;
 
-        // Use new table prefix: dc_collection_community_outfits
-        if (!WorldTableExists("dc_collection_community_outfits"))
-        {
-             DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST);
-             DCAddon::JsonValue outfits;
-             outfits.SetArray();
-             response.Set("outfits", outfits);
-             response.Send(player);
-             return;
-        }
+        if (limit > 50) limit = 50;
+        
+        // Table existence check removed (WorldTableExists checks World DB, but table is in Character DB)
+
 
         uint32 accountId = GetAccountId(player);
         
@@ -1200,41 +1195,67 @@ namespace DCCollection
         std::string items = json["items"].IsString() ? json["items"].AsString() : json["items"].Encode();
         uint32 accountId = player->GetSession()->GetAccountId();
 
-        // Sanitize Icon Path: Replace backslashes with forward slashes to prevent SQL/JSON corruption
+        // Sanitize Icon Path
         std::replace(icon.begin(), icon.end(), '\\', '/');
 
         // Escape strings for SQL
         CharacterDatabase.EscapeString(name);
         CharacterDatabase.EscapeString(icon);
         CharacterDatabase.EscapeString(items);
+        
+        // Needed for lambda
+        ObjectGuid playerGuid = player->GetGUID();
 
         // If clientId is 0, generate new ID. Otherwise update existing.
         if (clientId == 0) {
             // Check outfit limit
             uint32 maxOutfits = sConfigMgr->GetOption<uint32>("DCCollection.Outfits.MaxPerAccount", 50);
-            QueryResult countResult = CharacterDatabase.Query("SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = {}", accountId);
-            if (countResult && countResult->Fetch()[0].Get<uint32>() >= maxOutfits) {
-                // Limit reached - send error
-                DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
-                res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
-                res.Send(player);
-                return;
-            }
             
-            // Get next available ID
-            QueryResult result = CharacterDatabase.Query("SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = {}", accountId);
-            uint32 newId = result ? result->Fetch()[0].Get<uint32>() : 1;
-            
-            CharacterDatabase.Execute("INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items) VALUES ({}, {}, '{}', '{}', '{}')",
-                accountId, newId, name, icon, items);
+            std::string countQuery = "SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
+            CharacterDatabase.AsyncQuery(countQuery)
+                .WithCallback([playerGuid, accountId, name, icon, items, maxOutfits, msg](QueryResult countResult) {
+                    Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                    if (!player) return;
+
+                    if (countResult && countResult->Fetch()[0].Get<uint32>() >= maxOutfits) {
+                        // Limit reached
+                        DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
+                        res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
+                        res.Send(player);
+                        return;
+                    }
+                    
+                    // Get next available ID
+                    std::string maxQuery = "SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
+                    CharacterDatabase.AsyncQuery(maxQuery)
+                        .WithCallback([playerGuid, accountId, name, icon, items, msg](QueryResult maxResult) {
+                            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                            if (!player) return;
+                            
+                            uint32 newId = maxResult ? maxResult->Fetch()[0].Get<uint32>() : 1;
+                            
+                            std::string insertSql = "INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items) VALUES (" + 
+                                std::to_string(accountId) + ", " + std::to_string(newId) + ", '" + name + "', '" + icon + "', '" + items + "')";
+                                
+                            // Use AsyncQuery for INSERT to ensure serialization
+                            CharacterDatabase.AsyncQuery(insertSql).WithCallback([playerGuid, msg](QueryResult) {
+                                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                                if (!player) return;
+                                HandleGetSavedOutfits(player, msg);
+                            });
+                        });
+                });
         } else {
             // Update existing outfit
-            CharacterDatabase.Execute("UPDATE dc_account_outfits SET name='{}', icon='{}', items='{}' WHERE account_id={} AND outfit_id={}",
-                name, icon, items, accountId, clientId);
-        }
+            std::string updateSql = "UPDATE dc_account_outfits SET name='" + name + "', icon='" + icon + "', items='" + items + 
+                "' WHERE account_id=" + std::to_string(accountId) + " AND outfit_id=" + std::to_string(clientId);
 
-        // Send updated list to client to refresh UI immediately
-        HandleGetSavedOutfits(player, msg);
+            CharacterDatabase.AsyncQuery(updateSql).WithCallback([playerGuid, msg](QueryResult) {
+                 Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                 if (!player) return;
+                 HandleGetSavedOutfits(player, msg);
+            });
+        }
     }
 
     void HandleDeleteOutfit(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1244,8 +1265,11 @@ namespace DCCollection
         uint32 outfitId = json["id"].AsUInt32();
         uint32 accountId = player->GetSession()->GetAccountId();
 
-        CharacterDatabase.Execute("DELETE FROM dc_account_outfits WHERE account_id = {} AND outfit_id = {}", 
-            accountId, outfitId);
+        std::string sql = "DELETE FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId) + " AND outfit_id = " + std::to_string(outfitId);
+        CharacterDatabase.AsyncQuery(sql).WithCallback([playerGuid = player->GetGUID(), msg](QueryResult) {
+            Player* p = ObjectAccessor::FindPlayer(playerGuid);
+            if (p) HandleGetSavedOutfits(p, msg);
+        });
     }
 
     void HandleGetSavedOutfits(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1255,64 +1279,69 @@ namespace DCCollection
 
         uint32 accountId = player->GetSession()->GetAccountId();
         
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT outfit_id, name, icon, items, source_author FROM dc_account_outfits WHERE account_id = {} ORDER BY outfit_id", 
-            accountId);
+        std::string sql = "SELECT outfit_id, name, icon, items, source_author FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId) + " ORDER BY outfit_id";
 
-        std::stringstream ss;
-        ss << "{\"outfits\":[";
-        
-        if (result)
-        {
-            bool first = true;
-            do
-            {
-                Field* f = result->Fetch();
-                uint32 id = f[0].Get<uint32>();
-                std::string name = f[1].Get<std::string>();
-                std::string icon = f[2].Get<std::string>();
-                std::string items = f[3].Get<std::string>();
-                std::string sourceAuthor = f[4].IsNull() ? "" : f[4].Get<std::string>();
+        CharacterDatabase.AsyncQuery(sql)
+            .WithCallback([playerGuid = player->GetGUID()](QueryResult result) {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player) return;
 
-                // Escape name/icon/items for enclosing JSON
-                auto escape = [](std::string s) {
-                    std::string res;
-                    for (char c : s) {
-                        if (c == '"') res += "\\\"";
-                        else if (c == '\\') res += "\\\\";
-                        else res += c;
-                    }
-                    return res;
-                };
-
-                // Fallback for empty items
-                if (items.empty()) items = "{}";
-
-                if (!first) ss << ",";
-                first = false;
-
-                ss << "{\"id\":" << id 
-                   << ",\"name\":\"" << escape(name) << "\""
-                   << ",\"icon\":\"" << escape(icon) << "\""
-                   << ",\"items\":" << items;
+                std::stringstream ss;
+                ss << "{\"outfits\":[";
                 
-                if (!sourceAuthor.empty()) {
-                    ss << ",\"author\":\"" << escape(sourceAuthor) << "\"";
+                uint32 outfitCount = 0;
+                if (result)
+                {
+                    bool first = true;
+                    do
+                    {
+                        Field* f = result->Fetch();
+                        uint32 id = f[0].Get<uint32>();
+                        std::string name = f[1].Get<std::string>();
+                        std::string icon = f[2].Get<std::string>();
+                        std::string items = f[3].Get<std::string>();
+                        std::string sourceAuthor = f[4].IsNull() ? "" : f[4].Get<std::string>();
+
+                        // Simple JSON escape
+                        auto escape = [](std::string s) {
+                            std::string res;
+                            for (char c : s) {
+                                if (c == '"') res += "\\\"";
+                                else if (c == '\\') res += "\\\\";
+                                else res += c;
+                            }
+                            return res;
+                        };
+
+                        if (items.empty()) items = "{}";
+
+                        if (!first) ss << ",";
+                        first = false;
+
+                        ss << "{\"id\":" << id 
+                           << ",\"name\":\"" << escape(name) << "\""
+                           << ",\"icon\":\"" << escape(icon) << "\""
+                           << ",\"items\":" << items;
+                        
+                        if (!sourceAuthor.empty()) {
+                            ss << ",\"author\":\"" << escape(sourceAuthor) << "\"";
+                        }
+                        ss << "}";
+                        outfitCount++;
+
+                    } while (result->NextRow());
                 }
-                ss << "}";
+                
+                ss << "]}";
 
-            } while (result->NextRow());
-        }
+                LOG_INFO("module.dc", "[DCWardrobe] Loaded {} saved outfits for account (Async)", outfitCount);
 
-        ss << "]}";
-
-        DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_SAVED_OUTFITS);
-        res.Add("J");
-        res.Add(ss.str());
-        res.Send(player);
+                DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_SAVED_OUTFITS);
+                res.Add("J");
+                res.Add(ss.str());
+                res.Send(player);
+            });
     }
-
-    // Copy a community outfit to the player's personal account collection
     void HandleCopyCommunityOutfit(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
@@ -1323,53 +1352,77 @@ namespace DCCollection
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 communityId = json["id"].AsUInt32();
         uint32 accountId = player->GetSession()->GetAccountId();
+        ObjectGuid playerGuid = player->GetGUID();
         
-        // Check outfit limit
-        uint32 maxOutfits = sConfigMgr->GetOption<uint32>("DCCollection.Outfits.MaxPerAccount", 50);
-        QueryResult countResult = CharacterDatabase.Query("SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = {}", accountId);
-        if (countResult && countResult->Fetch()[0].Get<uint32>() >= maxOutfits) {
-            DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
-            res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
-            res.Send(player);
-            return;
-        }
+        // 1. Check Count
+        std::string countQuery = "SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
         
-        // Fetch community outfit
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT name, author_name, items_string FROM dc_collection_community_outfits WHERE id = {}", communityId);
-        
-        if (!result) {
-            DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
-            res.Set("error", "Community outfit not found");
-            res.Send(player);
-            return;
-        }
-        
-        Field* f = result->Fetch();
-        std::string name = f[0].Get<std::string>();
-        std::string author = f[1].Get<std::string>();
-        std::string items = f[2].Get<std::string>();
-        
-        // Escape for SQL
-        CharacterDatabase.EscapeString(name);
-        CharacterDatabase.EscapeString(author);
-        CharacterDatabase.EscapeString(items);
-        
-        // Get next available ID
-        QueryResult idResult = CharacterDatabase.Query("SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = {}", accountId);
-        uint32 newId = idResult ? idResult->Fetch()[0].Get<uint32>() : 1;
-        
-        // Insert new outfit
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items, source_community_id, source_author) "
-            "VALUES ({}, {}, '{}', 'Interface/Icons/INV_Chest_Cloth_17', '{}', {}, '{}')",
-            accountId, newId, name, items, communityId, author);
-        
-        // Increment downloads on the community outfit
-        CharacterDatabase.Execute("UPDATE dc_collection_community_outfits SET downloads = downloads + 1 WHERE id = {}", communityId);
-        
-        // Send updated outfit list
-        HandleGetSavedOutfits(player, msg);
+        CharacterDatabase.AsyncQuery(countQuery)
+            .WithCallback([playerGuid, accountId, communityId, msg](QueryResult countResult) {
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                if (!player) return;
+                
+                uint32 maxOutfits = sConfigMgr->GetOption<uint32>("DCCollection.Outfits.MaxPerAccount", 50);
+                
+                if (countResult && countResult->Fetch()[0].Get<uint32>() >= maxOutfits) {
+                    DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
+                    res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
+                    res.Send(player);
+                    return;
+                }
+                
+                // 2. Fetch community outfit
+                std::string commQuery = "SELECT name, author_name, items_string FROM dc_collection_community_outfits WHERE id = " + std::to_string(communityId);
+                
+                CharacterDatabase.AsyncQuery(commQuery)
+                    .WithCallback([playerGuid, accountId, communityId, msg](QueryResult commResult) {
+                        Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                        if (!player) return;
+                        
+                        if (!commResult) {
+                            DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
+                            res.Set("error", "Community outfit not found");
+                            res.Send(player);
+                            return;
+                        }
+                        
+                        Field* f = commResult->Fetch();
+                        std::string name = f[0].Get<std::string>();
+                        std::string author = f[1].Get<std::string>();
+                        std::string items = f[2].Get<std::string>();
+                        
+                        CharacterDatabase.EscapeString(name);
+                        CharacterDatabase.EscapeString(author);
+                        CharacterDatabase.EscapeString(items);
+                        
+                        // 3. Get ID
+                        std::string maxQuery = "SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
+                        
+                         CharacterDatabase.AsyncQuery(maxQuery)
+                            .WithCallback([playerGuid, accountId, communityId, name, author, items, msg](QueryResult maxResult) {
+                                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                                if (!player) return;
+                                
+                                uint32 newId = maxResult ? maxResult->Fetch()[0].Get<uint32>() : 1;
+                                
+                                // 4. Insert
+                                std::string insertSql = "INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items, source_community_id, source_author) VALUES (" +
+                                    std::to_string(accountId) + ", " + std::to_string(newId) + ", '" + name + "', 'Interface/Icons/INV_Chest_Cloth_17', '" + items + "', " + std::to_string(communityId) + ", '" + author + "')";
+                                    
+                                CharacterDatabase.AsyncQuery(insertSql)
+                                    .WithCallback([playerGuid, communityId, msg](QueryResult) {
+                                        Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                                        if (!player) return;
+                                        
+                                        // 5. Update Downloads
+                                        std::string updateDownSql = "UPDATE dc_collection_community_outfits SET downloads = downloads + 1 WHERE id = " + std::to_string(communityId);
+                                        CharacterDatabase.Execute(updateDownSql.c_str());
+                                        
+                                        HandleGetSavedOutfits(player, msg);
+                                    });
+                            });
+                    });
+            });
     }
 
     // =======================================================================
@@ -1435,6 +1488,8 @@ void AddSC_dc_addon_wardrobe()
 
     using namespace DCAddon;
     using namespace DCCollection;
+
+    LOG_INFO("module.dc", "[DCWardrobe] AddSC_dc_addon_wardrobe() - Registering wardrobe handlers...");
 
     // Register Transmog & Community Handlers
     // NOTE: Module 'COLL' is shared. We register specific opcodes here.

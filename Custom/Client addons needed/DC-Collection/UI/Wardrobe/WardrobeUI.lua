@@ -1155,7 +1155,26 @@ function Wardrobe:CreateRightPanel(parent)
         btn:SetScript("OnClick", function(selfBtn, button)
             if not selfBtn.itemData then return end
 
-            if IsShiftKeyDown and IsShiftKeyDown() then
+            if IsShiftKeyDown and IsShiftKeyDown() and button == "LeftButton" then
+                local itemId = selfBtn.itemData.itemId
+                if itemId then
+                    local _, link = GetItemInfo(itemId)
+                    if not link then
+                        -- Fallback link
+                         link = "\124cffff8000\124Hitem:" .. itemId .. ":0:0:0:0:0:0:0:0\124h[Item " .. itemId .. "]\124h\124r"
+                    end
+                    if ChatEdit_InsertLink then
+                        if not ChatEdit_GetActiveWindow() then
+                            DEFAULT_CHAT_FRAME.editBox:Show()
+                            DEFAULT_CHAT_FRAME.editBox:SetText("")
+                        end
+                        ChatEdit_InsertLink(link)
+                    end
+                end
+                return
+            end
+
+            if IsAltKeyDown and IsAltKeyDown() and button == "LeftButton" then
                 local itemId = selfBtn.itemData.itemId
                 if not itemId then return end
                 if DC and DC.RequestAddWishlist and DC.RequestRemoveWishlist then
@@ -1321,13 +1340,13 @@ end
 function Wardrobe:CreateOutfitsGrid(root, rightPanel)
     local OUTFIT_COLS = 3
     local OUTFIT_ROWS = 2
-    local OUTFIT_WIDTH = 200
-    local OUTFIT_HEIGHT = 200
-    local GAP_X = 15
-    local GAP_Y = 15
+    local OUTFIT_WIDTH = 165    -- Reduced from 200 to fit container
+    local OUTFIT_HEIGHT = 175   -- Reduced from 200
+    local GAP_X = 10            -- Reduced from 15
+    local GAP_Y = 10            -- Reduced from 15
 
     local container = CreateFrame("Frame", nil, rightPanel)
-    container:SetPoint("TOPLEFT", root.collectedFrame, "BOTTOMLEFT", 0, -5)
+    container:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 0, -25)  -- Adjusted per feedback (offset -25)
     container:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", 0, 40) -- Leave space for pages/bottom bar
     container:Hide()
 
@@ -1353,7 +1372,7 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
             local row = math.floor((i - 1) / OUTFIT_COLS)
             local col = (i - 1) % OUTFIT_COLS
             btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + (col * (OUTFIT_WIDTH + GAP_X)), -10 - (row * (OUTFIT_HEIGHT + GAP_Y)))
+            btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + (col * (OUTFIT_WIDTH + GAP_X)), -2 - (row * (OUTFIT_HEIGHT + GAP_Y)))
         end
     end
 

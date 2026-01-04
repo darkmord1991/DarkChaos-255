@@ -810,23 +810,49 @@ function DC:RequestUseItem(collectionType, entryId)
 end
 
 -- Request Item Sets (sets tab)
-function DC:RequestItemSets()
-    local reqKey = "req:itemsets"
-    if self:_IsInflight(reqKey) then
-        return false
+-- Request Item Sets (removed duplicate)
+
+-- =============================================================================
+-- Wishlist Protocol
+-- =============================================================================
+
+function DC:RequestAddWishlist(collType, entryId)
+    local typeId = self:GetTypeIdFromName(collType)
+    
+    -- Server expects numeric ID (1-7), but GetTypeIdFromName returns strings in current Core.lua
+    if type(typeId) == "string" then
+        if typeId == "mount" then typeId = 1
+        elseif typeId == "pet" then typeId = 2
+        elseif typeId == "toy" then typeId = 3
+        elseif typeId == "heirloom" then typeId = 4
+        elseif typeId == "title" then typeId = 5
+        elseif typeId == "transmog" then typeId = 6
+        elseif typeId == "item_set" then typeId = 7
+        end
     end
 
-    self:_DebounceRequest(reqKey, 0.20, function()
-        if self:_IsInflight(reqKey) then
-            return
+    if not typeId or typeId == 0 then return end
+    
+    self:SendMessage(self.Opcodes.CMSG_ADD_WISHLIST, { type = typeId, entryId = tonumber(entryId) })
+end
+
+function DC:RequestRemoveWishlist(collType, entryId)
+    local typeId = self:GetTypeIdFromName(collType)
+    
+    if type(typeId) == "string" then
+        if typeId == "mount" then typeId = 1
+        elseif typeId == "pet" then typeId = 2
+        elseif typeId == "toy" then typeId = 3
+        elseif typeId == "heirloom" then typeId = 4
+        elseif typeId == "title" then typeId = 5
+        elseif typeId == "transmog" then typeId = 6
+        elseif typeId == "item_set" then typeId = 7
         end
-        self:_MarkInflight(reqKey, true)
-        local ok = self:SendMessage(self.Opcodes.CMSG_GET_ITEM_SETS, {})
-        if not ok then
-            self:_MarkInflight(reqKey, nil)
-        end
-    end)
-    return true
+    end
+    
+    if not typeId or typeId == 0 then return end
+
+    self:SendMessage(self.Opcodes.CMSG_REMOVE_WISHLIST, { type = typeId, entryId = tonumber(entryId) })
 end
 
 -- =============================================================================
@@ -848,7 +874,11 @@ function DC.Protocol:DeleteOutfit(id)
 end
 
 function DC.Protocol:RequestSavedOutfits()
-    DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {})
+
+    
+    local result = DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {})
+    
+
 end
 
 function DC:RequestDefinitions(typeStr, offset)
@@ -856,6 +886,7 @@ function DC:RequestDefinitions(typeStr, offset)
 end
 
 function DC:RequestItemSets()
+    if self.itemSetsLoaded then return end -- Cache: Only request once per session
     self:SendMessage(self.Opcodes.CMSG_GET_ITEM_SETS, {})
 end
 
@@ -866,23 +897,14 @@ end
 
 function DC:OnMsg_SavedOutfits(data)
     self:Debug("OnMsg_SavedOutfits called!")
-    if DC.Print then DC:Print("[DEBUG] OnMsg_SavedOutfits called") end
-    
-    -- Debug: Show what we actually received
-    if DC.Print then
-        DC:Print("[DEBUG] data type: " .. type(data))
-        DC:Print("[DEBUG] data.outfits type: " .. type(data and data.outfits or "nil"))
-        if data and data.outfits then
-            DC:Print("[DEBUG] #data.outfits = " .. tostring(#data.outfits))
-        end
-    end
+
     
     if not data or not data.outfits then
         if DC.Print then DC:Print("[DEBUG] No data or no outfits in response!") end
         return
     end
     
-    if DC.Print then DC:Print("[DEBUG] Received " .. #data.outfits .. " raw outfits from server") end
+
     
     if data.outfits[1] then
          self:Debug("First outfit items type: " .. type(data.outfits[1].items))
@@ -2196,8 +2218,9 @@ function DC:HandleDefinitions(data)
                     if frame.elapsed >= interval and frame.pendingRequest then
                         local req = frame.pendingRequest
                         -- Pause paging if user isn't actively viewing Wardrobe/transmog UI,
-                        -- unless background wardrobe sync is enabled.
-                        if not (wardrobeVisible or mainTabVisible) and not allowBackground then
+                        -- unless background wardrobe sync is enabled OR manual refresh is in progress.
+                        local isManualRefresh = DC.Wardrobe and DC.Wardrobe.isRefreshing
+                        if not (wardrobeVisible or mainTabVisible or isManualRefresh) and not allowBackground then
                             frame.elapsed = 0
                             return
                         end
@@ -2665,6 +2688,9 @@ function DC:OnMsg_ItemSets(data)
     end
 
     self:Debug("Received " .. count .. " item sets definitions.")
+    if DC.Print then DC:Print("[PROTOCOL] Cached " .. count .. " item sets.") end
+    
+    self.itemSetsLoaded = true -- Mark as loaded to prevent re-requesting
 
     -- Trigger UI update if Wardrobe is loaded
     if DC.Wardrobe and DC.Wardrobe.RefreshSetsGrid then
@@ -2680,9 +2706,22 @@ end
 function DC:HandleCommunityList(data)
     local outfits = data.outfits or {}
     
-    -- Notify UI
+    if DC.Print then
+        DC:Print("[DEBUG] HandleCommunityList received " .. (outfits and #outfits or "nil") .. " outfits")
+    end
+    
+    -- Store in DC.db for Wardrobe Community tab
+    if not self.db then self.db = {} end
+    self.db.communityOutfits = outfits
+    
+    -- Notify CommunityUI (standalone)
     if self.CommunityUI and self.CommunityUI.OnListReceived then
         self.CommunityUI:OnListReceived(outfits)
+    end
+    
+    -- Notify Wardrobe Community grid
+    if self.Wardrobe and self.Wardrobe.RefreshCommunityGrid then
+        self.Wardrobe:RefreshCommunityGrid()
     end
 end
 

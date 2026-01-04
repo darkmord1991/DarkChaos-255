@@ -280,6 +280,37 @@ function Wardrobe:ShowOutfitContextMenu(outfit, anchor)
                 Wardrobe:PublishOutfitToCommunity(outfit)
             end,
         },
+        {
+            text = "Delete",
+            notCheckable = true,
+            func = function()
+                StaticPopupDialogs["DC_CONFIRM_DELETE_OUTFIT"] = {
+                    text = "Are you sure you want to delete outfit '%s'?",
+                    button1 = "Yes",
+                    button2 = "No",
+                    OnAccept = function()
+                        if DC.Protocol and DC.Protocol.DeleteOutfit then
+                             DC.Protocol:DeleteOutfit(outfit.id)
+                             -- Update local DB immediately
+                             if DC.db and DC.db.outfits then
+                                 for k, v in ipairs(DC.db.outfits) do
+                                     if v.id == outfit.id then
+                                         table.remove(DC.db.outfits, k)
+                                         break
+                                     end
+                                 end
+                             end
+                             if Wardrobe then Wardrobe:RefreshOutfitsGrid() end
+                        end
+                    end,
+                    timeout = 0,
+                    whileDead = true,
+                    hideOnEscape = true,
+                    preferredIndex = 3,
+                }
+                StaticPopup_Show("DC_CONFIRM_DELETE_OUTFIT", outfit.name or "Outfit")
+            end,
+        },
         { text = (DC.L and DC.L["CANCEL"]) or "Cancel", notCheckable = true },
     }
 
@@ -326,16 +357,26 @@ end
 function Wardrobe:RandomizeOutfit()
     if not self.BuildAppearanceList then return end
 
-    -- Robust pseudo-random seed, independent of math.random() (which can be clobbered).
+    -- Robust pseudo-random seed with high entropy
     local seed = 1
     if type(time) == "function" then
         seed = seed + ((time() or 0) * 1000)
     end
     if type(GetTime) == "function" then
-        seed = seed + math.floor((GetTime() or 0) * 1000)
+        seed = seed + math.floor((GetTime() or 0) * 10000) -- Higher precision
     end
+    -- Add sub-millisecond precision if available
+    if type(debugprofilestop) == "function" then
+        seed = seed + math.floor((debugprofilestop() or 0))
+    end
+    -- Add player position for extra entropy
+    local px, py = GetPlayerMapPosition("player")
+    if px and py then
+        seed = seed + math.floor((px * 100000) + (py * 10000))
+    end
+    -- Counter to ensure different results on rapid clicks
     self._randomizeCounter = (self._randomizeCounter or 0) + 1
-    seed = seed + (self._randomizeCounter * 101)
+    seed = seed + (self._randomizeCounter * 7919)  -- Use a prime number
     
     -- Cache current tab/slot to restore later
     local originalTab = self.currentTab
@@ -352,59 +393,55 @@ function Wardrobe:RandomizeOutfit()
     
     if DC and DC.Print then DC:Print("[RANDOMIZE] Starting to collect appearances by slot...") end
     
+    -- Use cached collected list if available to improve performance
+    self.collectedCache = self.collectedCache or {}
+    
+    if DC and DC.Print then DC:Print("[RANDOMIZE] Starting to collect appearances by slot...") end
+    
     for _, slotDef in ipairs(self.SLOT_FILTERS or {}) do
-        -- Mock selection
-        self.selectedSlotFilter = slotDef
-        -- Force re-building list for this slot
-        local list = self:BuildAppearanceList()
+        local collected = nil
         
-        if DC and DC.Print then 
-            DC:Print("[RANDOMIZE] Slot: " .. (slotDef.label or "unknown") .. " - Total items: " .. #list)
-        end
-        
-        -- Filter only collected items
-        local collected = {}
-        local collectedCount = 0
-        local uncollectedCount = 0
-        
-        for _, item in ipairs(list) do
-            if item.collected then
-                collectedCount = collectedCount + 1
-                -- Prefer displayId (server expects appearanceId), but fall back to itemId if unavailable
-                local appearanceId = item.displayId or item.appearanceId or item.appearance_id
-                if type(appearanceId) == "string" then
-                    appearanceId = tonumber(appearanceId)
-                end
-                
-                -- Fallback: if no displayId, use itemId (older servers or incomplete data)
-                if not appearanceId or appearanceId == 0 then
-                    appearanceId = item.itemId
-                end
-                
-                if appearanceId then
-                    table.insert(collected, appearanceId)
-                else
-                    if DC and DC.Print then
-                        DC:Print("[RANDOMIZE] WARNING: Collected item has no valid ID: " .. tostring(item.name or "unknown"))
+        -- Check cache first
+        if self.collectedCache[slotDef.label] then
+            collected = self.collectedCache[slotDef.label]
+        else
+            -- Mock selection to build list
+            self.selectedSlotFilter = slotDef
+            local list = self:BuildAppearanceList()
+            
+            -- Filter only collected items
+            collected = {}
+            for _, item in ipairs(list) do
+                if item.collected then
+                    -- Prefer displayId (server expects appearanceId), but fall back to itemId if unavailable
+                    local appearanceId = item.displayId or item.appearanceId or item.appearance_id
+                    if type(appearanceId) == "string" then
+                        appearanceId = tonumber(appearanceId)
+                    end
+                    
+                    -- Fallback: if no displayId, use itemId
+                    if not appearanceId or appearanceId == 0 then
+                        appearanceId = item.itemId
+                    end
+                    
+                    if appearanceId then
+                        table.insert(collected, appearanceId)
                     end
                 end
-            else
-                uncollectedCount = uncollectedCount + 1
             end
-        end
-        
-        if DC and DC.Print then 
-            DC:Print("[RANDOMIZE] Slot: " .. (slotDef.label or "unknown") .. " - Collected: " .. collectedCount .. ", Uncollected: " .. uncollectedCount .. ", Valid IDs: " .. #collected)
+            
+            -- Cache result
+            self.collectedCache[slotDef.label] = collected
         end
         
         collectedBySlot[slotDef.label] = collected
     end
     
-    if DC and DC.Print then DC:Print("[RANDOMIZE] Finished collecting appearances. Summary:") end
+    if DC and DC.Print then DC:Print("[RANDOMIZE] Finished collecting (cached). Summary:") end
     for slotLabel, ids in pairs(collectedBySlot) do
-        if DC and DC.Print then
-            DC:Print("[RANDOMIZE]   " .. slotLabel .. ": " .. #ids .. " appearances")
-        end
+        -- if DC and DC.Print then
+        --    DC:Print("[RANDOMIZE]   " .. slotLabel .. ": " .. #ids .. " appearances")
+        -- end
     end
     
     -- Restore state
@@ -477,16 +514,16 @@ function Wardrobe:RandomizeOutfit()
 
     if DC and DC.Print then 
         DC:Print("[RANDOMIZE] Applying picks to character...")
-        DC:Print("[RANDOMIZE] Total picks generated: " .. (picks and self:TableCount(picks) or 0))
+        local pickCount = 0
+        if picks then for _ in pairs(picks) do pickCount = pickCount + 1 end end
+        DC:Print("[RANDOMIZE] Total picks generated: " .. pickCount)
     end
     
     local actualApplied = 0
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
         local p = picks and picks[slotDef.key]
         if p then
-            if DC and DC.Print then
-                DC:Print("[RANDOMIZE] Slot " .. slotDef.key .. ": appearance ID " .. tostring(p.id))
-            end
+
             if DC and (DC.RequestSetTransmogByEquipmentSlot or DC.RequestSetTransmog) then
                 if DC.RequestSetTransmogByEquipmentSlot then
                     DC:RequestSetTransmogByEquipmentSlot((p.inv or 0) - 1, p.id)
@@ -523,7 +560,7 @@ function Wardrobe:RefreshOutfitsGrid()
     if not buttons then return end
 
     local outfits = DC.db and DC.db.outfits or {}
-    DC:Print("DEBUG: RefreshOutfitsGrid. #outfits = " .. (outfits and #outfits or "nil"))
+    local outfits = DC.db and DC.db.outfits or {}
     local ITEMS_PER_PAGE = 6 -- 3x2 grid
     
     local totalOutfits = #outfits
@@ -531,11 +568,7 @@ function Wardrobe:RefreshOutfitsGrid()
     self.totalPages = math.max(1, math.ceil(totalOutfits / ITEMS_PER_PAGE))
     
     if DC and DC.Print then
-        DC:Print("Debug: Refreshing outfits grid. Total outfits: " .. totalOutfits)
-        if totalOutfits > 0 then
-             local sample = outfits[1]
-             DC:Print("First outfit: " .. (sample.name or "nil") .. ", slots type: " .. type(sample.slots))
-        end
+        -- DC:Print("Debug: Refreshing outfits grid. Total outfits: " .. totalOutfits)
     end
 
     if totalOutfits == 0 then

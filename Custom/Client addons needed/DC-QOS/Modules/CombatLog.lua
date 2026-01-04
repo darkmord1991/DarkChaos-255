@@ -97,7 +97,7 @@ local playerName = nil
 
 -- Segments (fight history)
 local segments = {}
-local currentSegment = nil
+local activeSegment = nil -- nil or 0 = current fight, >0 = segment index
 
 -- Death recap
 local deathLog = {}
@@ -167,6 +167,13 @@ local POWER_TYPE_RAGE = 1
 local POWER_TYPE_FOCUS = 2
 local POWER_TYPE_ENERGY = 3
 local POWER_TYPE_RUNIC = 6
+
+-- Combat Log Flags (Safety fallbacks)
+local COMBATLOG_OBJECT_AFFILIATION_MINE = COMBATLOG_OBJECT_AFFILIATION_MINE or 0x00000001
+local COMBATLOG_OBJECT_AFFILIATION_PARTY = COMBATLOG_OBJECT_AFFILIATION_PARTY or 0x00000002
+local COMBATLOG_OBJECT_AFFILIATION_RAID = COMBATLOG_OBJECT_AFFILIATION_RAID or 0x00000004
+local COMBATLOG_OBJECT_TYPE_PET = COMBATLOG_OBJECT_TYPE_PET or 0x00001000
+local COMBATLOG_OBJECT_TYPE_GUARDIAN = COMBATLOG_OBJECT_TYPE_GUARDIAN or 0x00002000
 
 -- Potion/healthstone spell IDs
 local CONSUMABLE_SPELLS = {
@@ -355,6 +362,8 @@ end
 local function ResetPlayerData()
     wipe(playerData)
     wipe(deathLog)
+    combatStartTime = GetTime()
+    combatEndTime = 0
 end
 
 local function SaveSegment()
@@ -391,12 +400,50 @@ end
 -- ============================================================
 -- Sorted Data for Display
 -- ============================================================
+local function SelectSegment(index)
+    if not index or index == 0 then
+        activeSegment = nil
+        if combatFrame and combatFrame.title then
+            combatFrame.title:SetText("|cffFFCC00DC|r Combat")
+        end
+    else
+        if segments[index] then
+            activeSegment = index
+            local seg = segments[index]
+            if combatFrame and combatFrame.title then
+                local duration = seg.duration or 0
+                local timeStr = FormatTime(duration)
+                combatFrame.title:SetText(string.format("Fight %d (%s)", index, timeStr))
+            end
+        end
+    end
+    CombatLog.UpdateFrame()
+end
+
 local function GetSortedData(mode)
     local sorted = {}
-    local valueKey = mode == "damage" and "damage" or (mode == "healing" and "healing" or "damageTaken")
+    local valueKey = "damage"
     
-    for guid, data in pairs(playerData) do
-        if data[valueKey] > 0 then
+    -- Determine data source
+    local dataSource = playerData
+    if activeSegment and segments[activeSegment] then
+        dataSource = segments[activeSegment].data
+    end
+    
+    if mode == "healing" then valueKey = "healing"
+    elseif mode == "damageTaken" then valueKey = "damageTaken" 
+    elseif mode == "dispels" then valueKey = "dispels"
+    elseif mode == "interrupts" then valueKey = "interrupts"
+    elseif mode == "deaths" then valueKey = "deaths"
+    elseif mode == "cc" then valueKey = "ccDone"
+    elseif mode == "friendlyFire" then valueKey = "friendlyDamage" 
+    end
+
+    
+    if not dataSource then return sorted end
+
+    for guid, data in pairs(dataSource) do
+        if data[valueKey] and data[valueKey] > 0 then
             table.insert(sorted, {
                 guid = guid,
                 name = data.name,
@@ -409,6 +456,42 @@ local function GetSortedData(mode)
     table.sort(sorted, function(a, b) return a.value > b.value end)
     
     return sorted
+end
+
+
+
+local function ShowTooltip(self)
+    local data = self.data
+    if not data then return end
+    
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(data.name, 1, 1, 1)
+    GameTooltip:AddLine(" ")
+    
+    if data.spells then
+        local sortedSpells = {}
+        for id, spell in pairs(data.spells) do
+            local amount = spell.damage + spell.healing
+            if amount > 0 then
+                table.insert(sortedSpells, { name = spell.name, amount = amount, hits = spell.hits, crits = spell.crits })
+            end
+        end
+        table.sort(sortedSpells, function(a, b) return a.amount > b.amount end)
+        
+        for i = 1, math.min(10, #sortedSpells) do
+            local spell = sortedSpells[i]
+            local critRate = spell.hits > 0 and (spell.crits / spell.hits * 100) or 0
+            GameTooltip:AddDoubleLine(
+                spell.name,
+                string.format("%s (%.0f%% crit)", FormatNumber(spell.amount), critRate),
+                1, 1, 1, 0.8, 0.8, 0.8
+            )
+        end
+    else
+        GameTooltip:AddLine("No spell details available", 0.7, 0.7, 0.7)
+    end
+    
+    GameTooltip:Show()
 end
 
 -- ============================================================
@@ -454,6 +537,9 @@ local function CreateBar(parent, index)
     value:SetJustifyH("RIGHT")
     bar.valueText = value
     
+    bar:SetScript("OnEnter", ShowTooltip)
+    bar:SetScript("OnLeave", GameTooltip_Hide)
+    bar:EnableMouse(true)
     bar:Hide()
     return bar
 end
@@ -524,6 +610,25 @@ local function CreateCombatFrame()
         GameTooltip:Show()
     end)
     dmgBtn:SetScript("OnLeave", GameTooltip_Hide)
+    
+    -- Menu Button
+    local menuBtn = CreateFrame("Button", nil, titleBar, "UIPanelButtonTemplate")
+    menuBtn:SetSize(25, 16)
+    menuBtn:SetPoint("LEFT", title, "RIGHT", 10, 0)
+    menuBtn:SetText("M")
+    menuBtn:SetScript("OnClick", function(self)
+        CombatLog.OpenMenu(self)
+    end)
+    menuBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Open Menu")
+        GameTooltip:Show()
+    end)
+    menuBtn:SetScript("OnLeave", GameTooltip_Hide)
+    
+    -- Reposition D/H buttons
+    dmgBtn:ClearAllPoints()
+    dmgBtn:SetPoint("LEFT", menuBtn, "RIGHT", 2, 0)
     
     local healBtn = CreateFrame("Button", nil, titleBar, "UIPanelButtonTemplate")
     healBtn:SetSize(25, 16)
@@ -610,46 +715,14 @@ local function CreateCombatFrame()
             local settings = addon.settings.combatLog
             SavePosition(combatFrame, settings)
         elseif button == "RightButton" then
-            -- Right-click menu
-            local menu = {
-                { text = "|cffFFCC00DC Combat Menu|r", isTitle = true, notCheckable = true },
-                { text = "Damage Done", func = function()
-                    addon:SetSetting("combatLog.meterMode", "damage")
-                    CombatLog.UpdateFrame()
-                end, checked = function() return addon.settings.combatLog.meterMode == "damage" end },
-                { text = "Healing Done", func = function()
-                    addon:SetSetting("combatLog.meterMode", "healing")
-                    CombatLog.UpdateFrame()
-                end, checked = function() return addon.settings.combatLog.meterMode == "healing" end },
-                { text = "Damage Taken", func = function()
-                    addon:SetSetting("combatLog.meterMode", "damageTaken")
-                    CombatLog.UpdateFrame()
-                end, checked = function() return addon.settings.combatLog.meterMode == "damageTaken" end },
-                { text = " ", isTitle = true, notCheckable = true },
-                { text = settings.locked and "Unlock Window" or "Lock Window", func = function()
-                    CombatLog.ToggleLock()
-                end, notCheckable = true },
-                { text = "Reset Stats", func = function()
-                    ResetPlayerData()
-                    CombatLog.UpdateFrame()
-                    addon:Print("Combat stats reset.", true)
-                end, notCheckable = true },
-                { text = " ", isTitle = true, notCheckable = true },
-                { text = "Hide Window", func = function()
-                    CombatLog.HideFrame()
-                end, notCheckable = true },
-                { text = "Close Menu", func = function() end, notCheckable = true },
-            }
-            
-            -- Show the menu using EasyMenu (built-in WoW function)
-            EasyMenu(menu, CreateFrame("Frame", "DCQoS_CombatLogMenu", UIParent, "UIDropDownMenuTemplate"), "cursor", 0, 0, "MENU")
+            CombatLog.OpenMenu("cursor")
         end
     end)
     
     -- Update timer
     combatFrame:SetScript("OnUpdate", function(self, elapsed)
         self.updateElapsed = (self.updateElapsed or 0) + elapsed
-        if self.updateElapsed >= 0.5 then
+        if self.updateElapsed >= 0.1 then
             self.updateElapsed = 0
             CombatLog.UpdateFrame()
         end
@@ -715,10 +788,14 @@ function CombatLog.UpdateFrame()
             
             if mode == "damage" or mode == "healing" then
                 bar.valueText:SetText(string.format("%s (%s)", FormatNumber(data.value), FormatNumber(dps)))
+            elseif mode == "dispels" or mode == "interrupts" or mode == "deaths" or mode == "cc" then
+                bar.valueText:SetText(tostring(data.value))
             else
                 bar.valueText:SetText(FormatNumber(data.value))
             end
             
+            -- Store data for tooltip
+            bar.data = playerData[data.guid]
             bar:Show()
         else
             bar:Hide()
@@ -928,6 +1005,85 @@ local function ShowDispels()
     end
 end
 
+function CombatLog.OpenMenu(anchor)
+    local settings = addon.settings.combatLog
+    local menu = {
+        { text = "|cffFFCC00DC Combat Menu|r", isTitle = true, notCheckable = true },
+        { text = "Reset Stats", func = function()
+            ResetPlayerData()
+            SelectSegment(0)
+            CombatLog.UpdateFrame()
+            addon:Print("Combat stats reset.", true)
+        end, notCheckable = true },
+        
+        { text = "Segments", isTitle = true, notCheckable = true },
+        { text = "Current Fight", func = function() SelectSegment(0) end, checked = function() return activeSegment == nil end },
+    }
+    
+    -- Add history segments
+    for i, seg in ipairs(segments) do
+        table.insert(menu, {
+            text = string.format("Fight %d (%s)", i, FormatTime(seg.duration)),
+            func = function() SelectSegment(i) end,
+            checked = function() return activeSegment == i end
+        })
+    end 
+    
+    local modes = {
+        { text = "Modes", isTitle = true, notCheckable = true },
+        { text = "Damage Done", func = function()
+            addon:SetSetting("combatLog.meterMode", "damage")
+            CombatLog.UpdateFrame()
+        end, checked = function() return addon.settings.combatLog.meterMode == "damage" end },
+        { text = "Healing Done", func = function()
+            addon:SetSetting("combatLog.meterMode", "healing")
+            CombatLog.UpdateFrame()
+        end, checked = function() return addon.settings.combatLog.meterMode == "healing" end },
+        { text = "Damage Taken", func = function()
+            addon:SetSetting("combatLog.meterMode", "damageTaken")
+            CombatLog.UpdateFrame()
+        end, checked = function() return addon.settings.combatLog.meterMode == "damageTaken" end },
+        { text = "Dispels", func = function()
+            addon:SetSetting("combatLog.meterMode", "dispels")
+            CombatLog.UpdateFrame()
+        end, checked = function() return addon.settings.combatLog.meterMode == "dispels" end },
+        { text = "Interrupts", func = function()
+            addon:SetSetting("combatLog.meterMode", "interrupts")
+            CombatLog.UpdateFrame()
+        end, checked = function() return addon.settings.combatLog.meterMode == "interrupts" end },
+        { text = "Deaths", func = function()
+            addon:SetSetting("combatLog.meterMode", "deaths")
+            CombatLog.UpdateFrame()
+        end, checked = function() return addon.settings.combatLog.meterMode == "deaths" end },
+        { text = "CC Done", func = function()
+            addon:SetSetting("combatLog.meterMode", "cc")
+            CombatLog.UpdateFrame()
+        end, checked = function() return addon.settings.combatLog.meterMode == "cc" end },
+        { text = "Friendly Fire", func = function()
+            addon:SetSetting("combatLog.meterMode", "friendlyFire")
+            CombatLog.UpdateFrame()
+        end, checked = function() return addon.settings.combatLog.meterMode == "friendlyFire" end },
+        { text = " ", isTitle = true, notCheckable = true },
+        { text = settings.locked and "Unlock Window" or "Lock Window", func = function()
+            CombatLog.ToggleLock()
+        end, notCheckable = true },
+        { text = "Hide Window", func = function()
+            CombatLog.HideFrame()
+        end, notCheckable = true },
+        { text = "Close Menu", func = function() end, notCheckable = true },
+    }
+    
+    for _, m in ipairs(modes) do table.insert(menu, m) end
+            
+    -- Ensure menu frame exists
+    if not CombatLog.menuFrame then
+        CombatLog.menuFrame = CreateFrame("Frame", "DCQoS_CombatLogMenu", UIParent, "UIDropDownMenuTemplate")
+    end
+
+    -- Show the menu
+    EasyMenu(menu, CombatLog.menuFrame, anchor or "cursor", 0, 0, "MENU")
+end
+
 -- Show activity summary
 local function ShowActivity()
     addon:Print("=== Activity Summary ===", true)
@@ -1108,6 +1264,19 @@ end
 -- ============================================================
 local eventFrame = CreateFrame("Frame")
 
+local function UpdateActivity(data)
+    local currentTime = GetTime()
+    if not data.lastActive or data.lastActive == 0 then
+        data.lastActive = currentTime
+    else
+        local delta = currentTime - data.lastActive
+        if delta > 0 and delta < 10 then -- Allow gaps up to 10 seconds
+            data.activeTime = (data.activeTime or 0) + delta
+        end
+        data.lastActive = currentTime
+    end
+end
+
 local function OnCombatLogEvent(...)
     local settings = addon.settings.combatLog
     if not settings.enabled then return end
@@ -1115,17 +1284,28 @@ local function OnCombatLogEvent(...)
     local timestamp, event, sourceGUID, sourceName, sourceFlags, 
           destGUID, destName, destFlags = select(1, ...)
     
-    local arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17 = select(9, ...)
+    -- DEBUG INFO
+    -- if event:find("_DAMAGE") then
+    --    print("DEBUG: Event="..event.." Source="..(sourceName or "nil").." flags="..(sourceFlags or "nil"))
+    -- end
+    
+    local arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, arg19, arg20, arg21 = select(9, ...)
     
     -- Check if source is in our group
+    if not playerGUID then playerGUID = UnitGUID("player") end -- Safety check
+    
     local isGroupSource = sourceGUID == playerGUID
     if settings.trackGroup and not isGroupSource then
         if bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0 or
            bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0 or
-           bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0 then
+           bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0 or
+           (bit.band(sourceFlags, COMBATLOG_OBJECT_TYPE_PET) > 0 and bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0) or 
+           (bit.band(sourceFlags, COMBATLOG_OBJECT_TYPE_GUARDIAN) > 0 and bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0) then
             isGroupSource = true
         end
     end
+    
+
     
     -- Helper to track spell breakdown with comprehensive stats
     local function TrackSpell(data, spellId, spellName, amount, isCrit, isHealing, isGlancing, missType, absorbed, overkill)
@@ -1227,6 +1407,7 @@ local function OnCombatLogEvent(...)
                 local glancing = arg16
                 
                 data.damage = data.damage + amount
+                
                 if overkill > 0 then data.overkill = data.overkill + overkill end
                 if absorbed > 0 then data.totalDamage = data.totalDamage + amount + absorbed end
                 
@@ -1254,6 +1435,7 @@ local function OnCombatLogEvent(...)
                 local glancing = arg19
                 
                 data.damage = data.damage + amount
+
                 if overkill > 0 then data.overkill = data.overkill + overkill end
                 if absorbed > 0 then data.totalDamage = data.totalDamage + amount + absorbed end
                 
@@ -1348,7 +1530,8 @@ local function OnCombatLogEvent(...)
         local isGroupDest = destGUID == playerGUID
         if settings.trackGroup and not isGroupDest then
             if bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0 or
-               bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0 then
+               bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0 or
+               (bit.band(destFlags, COMBATLOG_OBJECT_TYPE_PET) > 0 and bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0) then
                 isGroupDest = true
             end
         end
@@ -1398,6 +1581,22 @@ local function OnCombatLogEvent(...)
         end
     end
     
+    -- Smart Combat Start: If we deal damage/healing but aren't "in combat" yet
+    if not inCombat and (isGroupSource or isGroupDest) then
+        local currentTime = GetTime()
+        -- If it's been > 3 seconds since last fight ended, assume new fight
+        if (currentTime - combatEndTime) > 3 then
+            inCombat = true
+            combatStartTime = currentTime
+            ResetPlayerData()
+            
+            if settings.showMeter and not settings.hidden then
+                CombatLog.ShowFrame()
+            end
+            addon:Debug("Smart Combat Start triggered")
+        end
+    end
+
     -- Track damage taken by player with enhanced death logging
     if destGUID == playerGUID then
         local data = GetPlayerData(playerGUID, playerName)
@@ -1461,12 +1660,15 @@ local function OnCombatEvent(self, event, ...)
     if not settings.enabled then return end
     
     if event == "PLAYER_REGEN_DISABLED" then
-        inCombat = true
-        combatStartTime = GetTime()
-        ResetPlayerData()
-        
-        if settings.showMeter and not settings.hidden then
-            CombatLog.ShowFrame()
+        -- Only start/reset if we didn't already start via Smart Start
+        if not inCombat or (GetTime() - combatStartTime) > 5 then
+            inCombat = true
+            combatStartTime = GetTime()
+            ResetPlayerData()
+            
+            if settings.showMeter and not settings.hidden then
+                CombatLog.ShowFrame()
+            end
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
         inCombat = false
