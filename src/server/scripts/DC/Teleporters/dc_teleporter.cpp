@@ -7,12 +7,15 @@
 #include "CommandScript.h"
 #include "DatabaseEnv.h"
 
+#include "../GuildHousing/guildhouse.h"
+
 using namespace Acore::ChatCommands;
 
 enum TeleporterTypes
 {
     TELEPORTER_TYPE_MENU = 1,
-    TELEPORTER_TYPE_TELEPORT = 2
+    TELEPORTER_TYPE_TELEPORT = 2,
+    TELEPORTER_TYPE_GUILDHOUSE = 3
 };
 
 struct TeleporterOption
@@ -98,6 +101,31 @@ public:
         {
             CloseGossipMenuFor(player);
             player->TeleportTo(option.MapId, option.X, option.Y, option.Z, option.O);
+        }
+        else if (option.Type == TELEPORTER_TYPE_GUILDHOUSE)
+        {
+            if (player->IsInCombat())
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("You can't use this while in combat.");
+                ShowMenu(player, creature, option.ParentId);
+                return true;
+            }
+
+            if (!player->GetGuild())
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("You are not in a guild.");
+                ShowMenu(player, creature, option.ParentId);
+                return true;
+            }
+
+            if (GuildHouseManager::TeleportToGuildHouse(player, player->GetGuildId()))
+            {
+                CloseGossipMenuFor(player);
+                return true;
+            }
+
+            ChatHandler(player->GetSession()).PSendSysMessage("Your guild does not own a Guild House.");
+            ShowMenu(player, creature, option.ParentId);
         }
 
         return true;

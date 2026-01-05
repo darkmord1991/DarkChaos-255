@@ -502,8 +502,8 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             end
             self:_MarkInflight(reqKey, true)
             self._transmogDefOffset = 0
-            -- Transmog definitions are huge; smaller pages reduce client/server load and lower disconnect risk.
-            self._transmogDefLimit = self._transmogDefLimit or 1000
+            -- Transmog definitions are huge; keep pages small to avoid client freezes and server hitching.
+            self._transmogDefLimit = self._transmogDefLimit or 250
             self._transmogDefLoading = true
             self._transmogDefTotal = nil
             self._transmogDefLastRequestedOffset = 0
@@ -860,6 +860,11 @@ end
 -- =============================================================================
 
 function DC.Protocol:SaveOutfit(id, name, icon, items)
+    -- Any save invalidates cached paging/index views.
+    DC.db = DC.db or {}
+    DC.db.outfitsPages = nil
+    DC.db.outfitsBySignature = nil
+
     local data = {
         id = id,
         name = name or "Outfit",
@@ -870,24 +875,71 @@ function DC.Protocol:SaveOutfit(id, name, icon, items)
 end
 
 function DC.Protocol:DeleteOutfit(id)
+    DC.db = DC.db or {}
+    DC.db.outfitsPages = nil
+    DC.db.outfitsBySignature = nil
     DC:SendMessage(DC.Opcodes.CMSG_DELETE_OUTFIT, { id = id })
 end
 
 function DC.Protocol:RequestSavedOutfits()
+    return self:RequestSavedOutfitsPage(0, 6)
+end
 
-    
-    local result = DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {})
-    
-
+function DC.Protocol:RequestSavedOutfitsPage(offset, limit)
+    return DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {
+        offset = offset or 0,
+        limit = limit or 6,
+    })
 end
 
 function DC:RequestDefinitions(typeStr, offset)
     self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = typeStr, offset = offset or 0 })
 end
 
-function DC:RequestItemSets()
-    if self.itemSetsLoaded then return end -- Cache: Only request once per session
-    self:SendMessage(self.Opcodes.CMSG_GET_ITEM_SETS, {})
+function DC:RequestItemSets(force)
+    if self.itemSetsLoaded and not force then
+        return
+    end
+
+    -- Avoid restarting the paging run while one is already in progress.
+    if self._itemSetsLoading and not force then
+        return
+    end
+
+    -- Avoid running item set paging in parallel with transmog paging.
+    -- Some protocol transports only tolerate one large/paged transfer at a time.
+    if self._transmogDefLoading and not force then
+        self._deferItemSetsUntilTransmogComplete = true
+        return
+    end
+
+    local defs = self.definitions or DC.definitions
+    if defs then
+        -- Keep both spellings in sync (older code used itemSets).
+        if type(defs.itemsets) ~= "table" and type(defs.itemSets) == "table" then defs.itemsets = defs.itemSets end
+        if type(defs.itemSets) ~= "table" and type(defs.itemsets) == "table" then defs.itemSets = defs.itemsets end
+    end
+
+    -- If item sets are already present from SavedVariables cache, validate via syncVersion
+    -- to avoid unnecessary re-downloads but still refresh after server updates/locale changes.
+    local cached = defs and (defs.itemsets or defs.itemSets)
+    local hasCached = (not force and type(cached) == "table" and next(cached) ~= nil)
+
+    self._itemSetsLoading = true
+    self._itemSetsOffset = 0
+    self._itemSetsLimit = tonumber(self._itemSetsLimit) or 50
+    if self._itemSetsLimit < 10 then self._itemSetsLimit = 10 end
+    if self._itemSetsLimit > 200 then self._itemSetsLimit = 200 end
+
+    local payload = { offset = self._itemSetsOffset, limit = self._itemSetsLimit }
+    if hasCached and type(self.GetSyncVersion) == "function" then
+        local v = tonumber(self:GetSyncVersion("itemsets")) or 0
+        if v ~= 0 then
+            payload.syncVersion = v
+        end
+    end
+
+    self:SendMessage(self.Opcodes.CMSG_GET_ITEM_SETS, payload)
 end
 
 -- Copy a community outfit to the player's personal account collection
@@ -917,30 +969,62 @@ function DC:OnMsg_SavedOutfits(data)
     
     DC.db = DC.db or {}
     DC.db.outfits = {}
+    DC.db.outfitsPages = DC.db.outfitsPages or {}
+    DC.db.outfitsBySignature = DC.db.outfitsBySignature or {}
+
+    -- Paging metadata (optional, server may send when supported).
+    DC.db.outfitsOffset = tonumber(data.offset) or 0
+    DC.db.outfitsLimit = tonumber(data.limit) or 6
+    DC.db.outfitsTotal = tonumber(data.total) or nil
+
+    -- Cache parsed items strings to avoid repeated gmatch() parsing when the server
+    -- re-sends the same outfits list after save/delete.
+    self._outfitItemsParseCache = self._outfitItemsParseCache or {}
     
+    local pageOutfits = {}
+
     for _, outfit in ipairs(data.outfits) do
         -- Server sends 'items' as either a table or a JSON string from DB.
         -- Parse it if needed.
         local slots = outfit.items
         if type(slots) == "string" and slots ~= "" then
-            -- Try to parse JSON string like {"ChestSlot":48691,...}
-            local parsed = {}
-            local success = pcall(function()
-                for k, v in slots:gmatch('"?([^":,{}]+)"?%s*:%s*(%d+)') do
-                    parsed[k] = tonumber(v)
-                end
-            end)
-            if success and next(parsed) then
-                slots = parsed
-                if DC.Print then DC:Print("[DEBUG] Parsed outfit items from string, got " .. self:TableCount(parsed) .. " slots") end
+            local cached = self._outfitItemsParseCache[slots]
+            if cached then
+                slots = cached
             else
-                if DC.Print then DC:Print("[DEBUG] Failed to parse outfit items string!") end
+                -- Try to parse JSON-ish string like {"ChestSlot":48691,...}
+                local parsed = {}
+                local success = pcall(function()
+                    for k, v in slots:gmatch('"?([^":,{}]+)"?%s*:%s*(%d+)') do
+                        parsed[k] = tonumber(v)
+                    end
+                end)
+                if success and next(parsed) then
+                    self._outfitItemsParseCache[slots] = parsed
+                    slots = parsed
+                end
             end
         end
         
         outfit.slots = slots
-        table.insert(DC.db.outfits, outfit)
+
+        -- Build a signature index so the wardrobe can pin the equipped outfit on page 1.
+        if Wardrobe and type(Wardrobe.SerializeSlotsToJsonString) == "function" and type(slots) == "table" then
+            local sig = Wardrobe.SerializeSlotsToJsonString(slots)
+            if sig and sig ~= "" then
+                DC.db.outfitsBySignature[sig] = outfit
+            end
+        end
+
+        table.insert(pageOutfits, outfit)
     end
+
+    -- Cache this page by offset so we can prefetch pages without breaking the visible page.
+    local offset = tonumber(data.offset) or 0
+    DC.db.outfitsPages[offset] = pageOutfits
+
+    -- Keep legacy field for the most recently received page.
+    DC.db.outfits = pageOutfits
     
     self:Debug("Received " .. #DC.db.outfits .. " saved outfits from server.")
     if DC.Print then DC:Print("[DC-Collection] Loaded " .. #DC.db.outfits .. " saved outfits.") end
@@ -1400,6 +1484,11 @@ function DC:HandleFullCollection(data)
     if self.UI and self.UI.mainFrame and self.UI.mainFrame:IsShown() then
         self.UI:RefreshCurrentTab()
     end
+
+    -- Collection changes can change what randomizer considers "collected".
+    if self.Wardrobe and type(self.Wardrobe.InvalidateRandomizerCache) == "function" then
+        self.Wardrobe:InvalidateRandomizerCache()
+    end
 end
 
 -- Handle delta sync update
@@ -1437,6 +1526,10 @@ function DC:HandleDeltaSync(data)
     -- Fire callback
     if self.callbacks.onDeltaSync then
         self.callbacks.onDeltaSync(data)
+    end
+
+    if self.Wardrobe and type(self.Wardrobe.InvalidateRandomizerCache) == "function" then
+        self.Wardrobe:InvalidateRandomizerCache()
     end
 end
 
@@ -1541,6 +1634,10 @@ function DC:HandleItemLearned(data)
     -- Refresh stats
     self:RequestStats()
     self:RequestBonuses()
+
+    if self.Wardrobe and type(self.Wardrobe.InvalidateRandomizerCache) == "function" then
+        self.Wardrobe:InvalidateRandomizerCache()
+    end
 end
 
 -- Handle shop data
@@ -1552,7 +1649,7 @@ function DC:HandleShopData(data)
     self._inflightRequests["req:shop:all"] = nil
     self._inflightRequests["req:shop:default"] = nil
 
-        self.shopCategory = data.category or "default"
+    self.shopCategory = data.category or "default"
     self.currency = self.currency or { tokens = 0, emblems = 0 }
     self.currency.tokens = data.tokens or data.token or self.currency.tokens or 0
     self.currency.emblems = data.emblems or data.essence or data.emblem or self.currency.emblems or 0
@@ -1578,17 +1675,20 @@ function DC:HandleShopData(data)
         local collTypeId = it.type
         local typeName = self:GetTypeNameFromId(collTypeId)
 
+        local shopId = it.shopId or it.id or it.shop_id
+
         local card = {
+            -- Common (used by MainFrame cards)
             type = "shop",
-            shopId = it.shopId,
+            shopId = shopId,
             collectionTypeId = collTypeId,
             collectionTypeName = typeName,
-            entryId = it.entryId,
-            appearanceId = it.appearanceId,
-            itemId = it.itemId,
+            entryId = it.entryId or it.entry_id or it.entry,
+            appearanceId = it.appearanceId or it.appearance_id,
+            itemId = it.itemId or it.itemID or it.item_id,
             spellId = it.spellId or it.spellID or it.spell,
-            priceTokens = it.priceTokens or 0,
-            priceEmblems = it.priceEmblems or 0,
+            priceTokens = it.priceTokens or it.costTokens or it.price_tokens or 0,
+            priceEmblems = it.priceEmblems or it.costEmblems or it.price_emblems or 0,
             discount = it.discount or 0,
             stock = it.stock,
             featured = it.featured,
@@ -1597,7 +1697,18 @@ function DC:HandleShopData(data)
             rarity = it.rarity or 2,
             source = "Shop",
             name = it.name,
-            icon = nil, -- Will be resolved below
+            icon = nil, -- resolved below
+
+            -- ShopModule/ShopUI expected schema
+            id = shopId,
+            itemType = collTypeId,
+            costTokens = it.costTokens or it.priceTokens or it.cost_tokens or it.price_tokens or 0,
+            costEmblems = it.costEmblems or it.priceEmblems or it.cost_emblems or it.price_emblems or 0,
+            isFeatured = (it.isFeatured ~= nil and it.isFeatured) or (it.featured ~= nil and it.featured) or false,
+            purchased = it.purchased or it.owned or false,
+            purchaseCount = it.purchaseCount or it.purchase_count or 0,
+            maxPurchases = it.maxPurchases or it.max_purchases,
+            description = it.description,
         }
 
         -- Server may send an icon name (e.g. "INV_...") or a full texture path.
@@ -1619,7 +1730,7 @@ function DC:HandleShopData(data)
             end
 
             -- If this mount is represented by an item template, try item icon/name.
-            local itemIdToUse = it.itemId or it.entryId
+            local itemIdToUse = (it.itemId or it.itemID or it.item_id) or (it.entryId or it.entry_id or it.entry)
             if (not card.icon or card.icon == "Interface\\Icons\\INV_Misc_QuestionMark") and itemIdToUse and GetItemInfo then
                 local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(itemIdToUse)
                 if texture then card.icon = texture end
@@ -1628,7 +1739,7 @@ function DC:HandleShopData(data)
             end
         elseif typeName == "pets" or typeName == "heirlooms" or typeName == "transmog" then
             -- Use GetItemInfo for items (returns texture as 10th value)
-            local itemIdToUse = it.itemId or it.entryId
+            local itemIdToUse = (it.itemId or it.itemID or it.item_id) or (it.entryId or it.entry_id or it.entry)
             if itemIdToUse and GetItemInfo then
                 local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(itemIdToUse)
                 if texture then card.icon = texture end
@@ -1663,6 +1774,14 @@ function DC:HandleShopData(data)
         -- Final fallbacks
         card.icon = self:NormalizeTexturePath(card.icon, "Interface\\Icons\\INV_Misc_QuestionMark")
         card.name = card.name or "Shop Item"
+
+        -- Keep cost mirrors in sync (some UIs use price*, ShopUI uses cost*).
+        if (not card.priceTokens or card.priceTokens == 0) and card.costTokens then
+            card.priceTokens = card.costTokens
+        end
+        if (not card.priceEmblems or card.priceEmblems == 0) and card.costEmblems then
+            card.priceEmblems = card.costEmblems
+        end
 
         table.insert(mapped, card)
     end
@@ -1914,6 +2033,17 @@ function DC:HandleTransmogState(data)
     -- Refresh UI if open
     if self.UI and self.UI.mainFrame and self.UI.mainFrame:IsShown() then
         self.UI:RefreshCurrentTab()
+    end
+
+    -- Retry a deferred outfit save once we have transmog state.
+    if self.Wardrobe and self.Wardrobe._pendingSaveOutfitName and type(self.Wardrobe.SaveCurrentOutfit) == "function" then
+        local n = self.Wardrobe._pendingSaveOutfitName
+        self.Wardrobe._pendingSaveOutfitName = nil
+        pcall(function() self.Wardrobe:SaveCurrentOutfit(n) end)
+    end
+
+    if self.Wardrobe and type(self.Wardrobe.InvalidateRandomizerCache) == "function" then
+        self.Wardrobe:InvalidateRandomizerCache()
     end
 
     self:Debug(string.format("Received transmog state (%d slots)", self:TableCount(state)))
@@ -2264,6 +2394,14 @@ function DC:HandleDefinitions(data)
                 tostring(total)))
             self._transmogDefLoading = nil
             self:_MarkInflight("req:defs:transmog", nil)
+
+            -- If we deferred item set loading to avoid parallel transfers, start it now.
+            if self._deferItemSetsUntilTransmogComplete then
+                self._deferItemSetsUntilTransmogComplete = nil
+                if type(self.RequestItemSets) == "function" and not self.itemSetsLoaded then
+                    self:RequestItemSets()
+                end
+            end
 
             if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
                 self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
@@ -2666,11 +2804,43 @@ function DC:OnMsg_ItemSets(data)
 
     DC.definitions = DC.definitions or {}
     DC.definitions.itemsets = DC.definitions.itemsets or {}
-    DC.definitions.sets = DC.definitions.sets or {}
+    DC.definitions.itemSets = DC.definitions.itemsets
 
-    -- Clear existing sets to avoid duplicates on re-request
-    wipe(DC.definitions.sets)
-    wipe(DC.definitions.itemsets)
+    local offset = tonumber(data.offset) or 0
+    local limit = tonumber(data.limit) or tonumber(self._itemSetsLimit) or 50
+    local total = tonumber(data.total) or nil
+    local hasMore = data.hasMore
+    if hasMore == nil then hasMore = data.more end
+    if hasMore == nil then hasMore = data.has_more end
+    hasMore = (hasMore == true or hasMore == 1 or hasMore == "1")
+
+    local upToDate = data.upToDate
+    if upToDate == nil then upToDate = data.up_to_date end
+    upToDate = (upToDate == true or upToDate == 1 or upToDate == "1")
+
+    local syncVersion = tonumber(data.syncVersion or data.version) or nil
+
+    -- If the server says our cached payload is current, keep existing tables.
+    if upToDate and offset == 0 then
+        if syncVersion ~= nil and type(self.SetSyncVersion) == "function" then
+            self:SetSyncVersion("itemsets", syncVersion)
+        end
+
+        self._itemSetsLoading = nil
+        self.itemSetsLoaded = true
+        return
+    end
+
+    -- Capture syncVersion at the start of a paging run; commit only when complete.
+    if offset == 0 and syncVersion ~= nil then
+        self._pendingSyncVersions = self._pendingSyncVersions or {}
+        self._pendingSyncVersions.itemsets = syncVersion
+    end
+
+    -- Clear only when starting a fresh paging run.
+    if offset == 0 then
+        wipe(DC.definitions.itemsets)
+    end
 
     local count = 0
     for _, set in ipairs(data.sets) do
@@ -2681,8 +2851,6 @@ function DC:OnMsg_ItemSets(data)
                 name = set.name or ("Set " .. set.id),
                 items = set.items,
             }
-            -- Also add to 'sets' list for iteration
-            table.insert(DC.definitions.sets, DC.definitions.itemsets[set.id])
             count = count + 1
         end
     end
@@ -2690,7 +2858,46 @@ function DC:OnMsg_ItemSets(data)
     self:Debug("Received " .. count .. " item sets definitions.")
     if DC.Print then DC:Print("[PROTOCOL] Cached " .. count .. " item sets.") end
     
+    -- Paging support: request remaining pages.
+    if hasMore then
+        local nextOffset = tonumber(data.nextOffset or data.next_offset) or (offset + limit)
+        self._itemSetsOffset = nextOffset
+        self._itemSetsLimit = limit
+
+        if not self._itemSetsPagingDelayFrame then
+            self._itemSetsPagingDelayFrame = CreateFrame("Frame")
+            self._itemSetsPagingDelayFrame.elapsed = 0
+            self._itemSetsPagingDelayFrame.pending = nil
+            self._itemSetsPagingDelayFrame:SetScript("OnUpdate", function(frame, elapsed)
+                frame.elapsed = frame.elapsed + (elapsed or 0)
+                if frame.elapsed < 0.2 then
+                    return
+                end
+                if not frame.pending then
+                    frame:Hide()
+                    return
+                end
+                local req = frame.pending
+                frame.pending = nil
+                frame.elapsed = 0
+                frame:Hide()
+                DC:SendMessage(DC.Opcodes.CMSG_GET_ITEM_SETS, { offset = req.offset, limit = req.limit })
+            end)
+        end
+
+        self._itemSetsPagingDelayFrame.pending = { offset = nextOffset, limit = limit }
+        self._itemSetsPagingDelayFrame.elapsed = 0
+        self._itemSetsPagingDelayFrame:Show()
+        return
+    end
+
+    self._itemSetsLoading = nil
     self.itemSetsLoaded = true -- Mark as loaded to prevent re-requesting
+
+    if self._pendingSyncVersions and self._pendingSyncVersions.itemsets ~= nil and type(self.SetSyncVersion) == "function" then
+        self:SetSyncVersion("itemsets", self._pendingSyncVersions.itemsets)
+        self._pendingSyncVersions.itemsets = nil
+    end
 
     -- Trigger UI update if Wardrobe is loaded
     if DC.Wardrobe and DC.Wardrobe.RefreshSetsGrid then

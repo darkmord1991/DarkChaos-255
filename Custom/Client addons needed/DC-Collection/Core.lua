@@ -77,7 +77,7 @@ local defaults = {
     -- Wardrobe/transmog background sync
     -- When enabled, the addon will periodically check for transmog updates and allow paging
     -- to continue even if the UI is not open.
-    backgroundWardrobeSync = false,
+    backgroundWardrobeSync = true,
 
     -- Network error/timeout log (SavedVariables ring buffer)
     -- Stores only recent events to help diagnose refresh failures.
@@ -1014,7 +1014,15 @@ DC.After = After
 -- ============================================================================
 
 function DC:IsBackgroundWardrobeSyncEnabled()
-    return (DCCollectionDB and DCCollectionDB.backgroundWardrobeSync) and true or false
+    -- Treat nil as enabled (default-on) to keep wardrobe data warm in the background.
+    -- Explicitly setting it to false in SavedVariables still disables the loop.
+    if not DCCollectionDB then
+        return true
+    end
+    if DCCollectionDB.backgroundWardrobeSync == nil then
+        return true
+    end
+    return DCCollectionDB.backgroundWardrobeSync and true or false
 end
 
 function DC:StartBackgroundWardrobeSync()
@@ -1031,32 +1039,83 @@ function DC:StartBackgroundWardrobeSync()
             return
         end
 
-        -- Default cadence: keep it conservative to avoid hammering the server.
-        -- This is primarily a "keep it updated" check; if upToDate, the server should respond quickly.
+        -- Default cadence when fully idle: keep it conservative.
+        -- When there is pending wardrobe work, we run short out-of-combat ticks.
         local delaySeconds = 30 * 60
+
+        local function IsInCombat()
+            if type(InCombatLockdown) == "function" then
+                return InCombatLockdown() and true or false
+            end
+            if type(UnitAffectingCombat) == "function" then
+                return UnitAffectingCombat("player") and true or false
+            end
+            return false
+        end
 
         if not self:IsProtocolReady() then
             -- Retry sooner while waiting for protocol readiness.
             delaySeconds = 30
         else
+            -- Never do background sync work in combat.
+            if IsInCombat() then
+                delaySeconds = 20
+                After(delaySeconds, Tick)
+                return
+            end
+
             -- Avoid stacking requests while a paged transmog download is already running.
             local pagingBusy = (self._transmogDefLoading ~= nil)
                 or (self._transmogPagingDelayFrame and self._transmogPagingDelayFrame.pendingRequest ~= nil)
 
+            -- Do one small unit of work per tick (keeps spikes down).
+            local didWork = false
+
+            -- 1) Resume / start transmog definitions paging
             if not pagingBusy then
-                self:Debug("Background wardrobe sync tick")
                 DCCollectionDB = DCCollectionDB or {}
                 if DCCollectionDB.transmogDefsIncomplete and type(self.ResumeTransmogDefinitions) == "function" then
+                    self:Debug("Background wardrobe sync: resume transmog defs")
                     self:ResumeTransmogDefinitions("bg_sync")
-                elseif type(self.RequestDefinitions) == "function" then
-                    self:RequestDefinitions("transmog")
-                end
-                if type(self.RequestCollection) == "function" then
-                    self:RequestCollection("transmog")
+                    didWork = true
+                elseif (not self.definitionsLoaded) and type(self.RequestDefinitions) == "function" then
+                    self:Debug("Background wardrobe sync: request transmog defs")
+                    self:RequestDefinitions("transmog", 0)
+                    didWork = true
                 end
             else
                 -- If we're already paging, poll more frequently so we can continue once the run finishes.
-                delaySeconds = 60
+                delaySeconds = 10
+            end
+
+            -- 2) Item sets (after transmog paging is not active)
+            if not didWork and not pagingBusy and type(self.RequestItemSets) == "function" then
+                if not self.itemSetsLoaded and not self._itemSetsLoading then
+                    self:Debug("Background wardrobe sync: request item sets")
+                    self:RequestItemSets(false)
+                    didWork = true
+                end
+            end
+
+            -- 3) Saved outfits (small page)
+            if not didWork and DC and DC.Protocol and type(DC.Protocol.RequestSavedOutfitsPage) == "function" then
+                DC.db = DC.db or {}
+                if type(DC.db.outfits) ~= "table" then
+                    self:Debug("Background wardrobe sync: request saved outfits")
+                    DC.Protocol:RequestSavedOutfitsPage(0, 6)
+                    didWork = true
+                end
+            end
+
+            -- 4) Light collection refresh (cheap)
+            if not didWork and type(self.RequestCollection) == "function" then
+                self:RequestCollection("transmog")
+                didWork = true
+            end
+
+            -- While there is work to do, keep a short cadence.
+            if didWork then
+                delaySeconds = 12
             end
         end
 
@@ -1400,6 +1459,16 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
     
     -- Request shop data
     self:RequestShopData()
+
+    -- Item sets are paged, but should not run in parallel with transmog paging
+    -- (some protocol variants are sensitive to concurrent large transfers).
+    if type(self.RequestItemSets) == "function" then
+        if self._transmogDefLoading then
+            self._deferItemSetsUntilTransmogComplete = true
+        else
+            self:RequestItemSets()
+        end
+    end
 end
 
 -- Request initial data, retrying briefly if protocol isn't ready yet.

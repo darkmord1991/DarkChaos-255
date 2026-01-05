@@ -546,12 +546,35 @@ function Wardrobe:CreateLeftPanel(parent)
     refreshBtn:SetPoint("LEFT", disableVisualsBtn, "RIGHT", 3, 0)
     refreshBtn:SetText("Refresh Data")
     refreshBtn:SetScript("OnClick", function(self)
+        -- If we're actively refreshing transmog definitions, this button always acts as Cancel.
         if Wardrobe.isRefreshing then
-            -- Cancel refresh
             Wardrobe:CancelRefresh()
-        else
-            Wardrobe:RefreshTransmogDefinitions()
+            return
         end
+
+        local tab = Wardrobe.currentTab or "items"
+        if tab == "outfits" then
+            local ITEMS_PER_PAGE = 6
+            local page = tonumber(Wardrobe.currentPage) or 1
+            local offset = (page - 1) * ITEMS_PER_PAGE
+            if DC and DC.Protocol and DC.Protocol.RequestSavedOutfitsPage then
+                DC.Protocol:RequestSavedOutfitsPage(offset, ITEMS_PER_PAGE)
+            elseif DC and DC.Protocol and DC.Protocol.RequestSavedOutfits then
+                DC.Protocol:RequestSavedOutfits()
+            end
+            return
+        elseif tab == "community" then
+            -- Community UI currently expects a 50-row window and paginates locally.
+            local page = tonumber(Wardrobe.communityPage) or 1
+            local offset = (page - 1) * 6
+            if DC and DC.RequestCommunityList then
+                DC:RequestCommunityList(offset, 50, "all", "newest")
+            end
+            return
+        end
+
+        -- Default behavior: refresh transmog definitions.
+        Wardrobe:RefreshTransmogDefinitions()
     end)
     parent.refreshBtn = refreshBtn
     
@@ -844,11 +867,11 @@ function Wardrobe:CreateRightPanel(parent)
         table.insert(parent.tabButtons, tab)
     end
 
-    -- New Outfit Button (+)
+    -- Save Outfit Button
     local newOutfitBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
-    newOutfitBtn:SetSize(25, 25)
+    newOutfitBtn:SetSize(60, 25)
     newOutfitBtn:SetPoint("LEFT", parent.tabButtons[#parent.tabButtons], "RIGHT", 5, 0)
-    newOutfitBtn:SetText("+")
+    newOutfitBtn:SetText("Save")
     newOutfitBtn:SetScript("OnClick", function()
         if Wardrobe.ShowSaveOutfitDialog then
             Wardrobe:ShowSaveOutfitDialog()
@@ -856,7 +879,7 @@ function Wardrobe:CreateRightPanel(parent)
     end)
     newOutfitBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Save New Outfit")
+        GameTooltip:SetText("Save Current Outfit")
         GameTooltip:Show()
     end)
     newOutfitBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1307,6 +1330,8 @@ function Wardrobe:CreateRightPanel(parent)
             Wardrobe.currentPage = Wardrobe.currentPage - 1
             if Wardrobe.currentTab == "sets" then
                 Wardrobe:RefreshSetsGrid()
+            elseif Wardrobe.currentTab == "outfits" then
+                Wardrobe:RefreshOutfitsGrid()
             else
                 Wardrobe:RefreshGrid()
             end
@@ -1353,6 +1378,42 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
     -- Store on the main frame (root) to match how the rest of the Wardrobe code accesses widgets.
     root.outfitGridContainer = container
     root.outfitButtons = {}
+
+    -- Dedicated outfits pager (Outfits tab only).
+    local pager = CreateFrame("Frame", nil, container)
+    pager:SetSize(200, 25)
+    pager:SetPoint("BOTTOM", container, "BOTTOM", 0, 8)
+    pager:Hide()
+    root.outfitsPageFrame = pager
+
+    local prevBtn = CreateFrame("Button", nil, pager, "UIPanelButtonTemplate")
+    prevBtn:SetSize(50, 22)
+    prevBtn:SetPoint("LEFT", 0, 0)
+    prevBtn:SetText("<")
+    prevBtn:SetScript("OnClick", function()
+        if Wardrobe.currentPage and Wardrobe.currentPage > 1 then
+            Wardrobe.currentPage = Wardrobe.currentPage - 1
+            Wardrobe:RefreshOutfitsGrid()
+        end
+    end)
+    root.outfitsPrevBtn = prevBtn
+
+    local nextBtn = CreateFrame("Button", nil, pager, "UIPanelButtonTemplate")
+    nextBtn:SetSize(50, 22)
+    nextBtn:SetPoint("RIGHT", 0, 0)
+    nextBtn:SetText(">")
+    nextBtn:SetScript("OnClick", function()
+        if Wardrobe.currentPage and Wardrobe.totalPages and Wardrobe.currentPage < Wardrobe.totalPages then
+            Wardrobe.currentPage = Wardrobe.currentPage + 1
+            Wardrobe:RefreshOutfitsGrid()
+        end
+    end)
+    root.outfitsNextBtn = nextBtn
+
+    local pageText = pager:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    pageText:SetPoint("CENTER", 0, 0)
+    pageText:SetText("Page 1 / 1")
+    root.outfitsPageText = pageText
 
     -- Calculate total width to center it (widths may be 0 during initial creation)
     local totalWidth = (OUTFIT_COLS * OUTFIT_WIDTH) + ((OUTFIT_COLS - 1) * GAP_X)

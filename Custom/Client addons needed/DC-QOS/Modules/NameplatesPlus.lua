@@ -492,26 +492,78 @@ local function UpdateHealthPercent(healthBar, settings)
     text:Show()
 end
 
-local function UpdateClassColor(healthBar, unit, settings)
-    if not settings.classColors then return end
+local function UpdateHealthBarColor(frame, healthBar, unit, settings)
+    local r, g, b
+    local setColor = false
     
-    local classToken = GetUnitClass(unit)
-    if not classToken then return end
-    
-    local color = CLASS_COLORS[classToken]
-    if not color then return end
-    
-    local isEnemy = UnitIsEnemy("player", unit)
-    
-    -- Ensure clean texture if Flat mode is active
-    if settings.textureMode == "Flat" then
-        healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    -- 1. Check Threat Color (highest priority if enabled)
+    if settings.showThreat and settings.threatColors and UnitAffectingCombat(unit) and not UnitIsFriend("player", unit) then
+        local _, status = UnitDetailedThreatSituation("player", unit)
+        if status then
+            local mode = settings.tankMode and "tank" or "dps" -- Manual override
+            if settings.threatMode == "Auto" then
+                mode = GetAutomaticThreatMode()
+            end
+            
+            local colors = (mode == "tank") and THREAT_COLORS.tank or THREAT_COLORS.dps
+            local color
+            local isTankingActually = (status >= 2)
+            
+            -- Logic
+            if mode == "tank" then
+                if isTankingActually then
+                    color = colors.safe
+                elseif status == 1 then
+                    color = colors.warning
+                else
+                    color = colors.danger
+                end
+            else
+                if isTankingActually then
+                    color = colors.danger
+                elseif status == 1 then
+                    color = colors.warning
+                else
+                    color = colors.safe
+                end
+            end
+            
+            if color then
+                r, g, b = color.r, color.g, color.b
+                setColor = true
+            end
+        end
     end
     
-    if isEnemy and settings.enemyClassColors then
-        healthBar:SetStatusBarColor(color.r, color.g, color.b)
-    elseif not isEnemy and settings.friendlyClassColors then
-        healthBar:SetStatusBarColor(color.r, color.g, color.b)
+    -- 2. Check Class Color (if no threat color determined)
+    if not setColor and settings.classColors then
+        local classToken = GetUnitClass(unit)
+        if classToken then
+            local color = CLASS_COLORS[classToken]
+            if color then
+                local isEnemy = UnitIsEnemy("player", unit)
+                if (isEnemy and settings.enemyClassColors) or (not isEnemy and settings.friendlyClassColors) then
+                    r, g, b = color.r, color.g, color.b
+                    setColor = true
+                end
+            end
+        end
+    end
+    
+    -- Apply Color
+    if setColor and r and g and b then
+        healthBar:SetStatusBarColor(r, g, b)
+    end
+
+    -- Texture Enforcement (Check first to avoid redundant sets)
+    if settings.textureMode == "Flat" then
+        local texObj = healthBar:GetStatusBarTexture()
+        if texObj and texObj.GetTexture and texObj:GetTexture() ~= "Interface\\Buttons\\WHITE8x8" then
+            healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        elseif not texObj then
+             -- Fallback if no texture object exists yet
+             healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        end
     end
 end
 
@@ -528,7 +580,7 @@ local function UpdateThreat(frame, unit, settings)
         return
     end
     
-    local isTanking, status, scaledPercent = UnitDetailedThreatSituation("player", unit)
+    local _, status = UnitDetailedThreatSituation("player", unit)
     local glow = frame.dcThreatGlow
     local healthBar = frame.dcHealthBar
     
@@ -543,33 +595,24 @@ local function UpdateThreat(frame, unit, settings)
         return
     end
     
-    -- Determine Mode
-    local mode = settings.tankMode and "tank" or "dps" -- Manual override
+    -- Determine Color for GLOW only (Bar color is handled in UpdateHealthBarColor)
+    local mode = settings.tankMode and "tank" or "dps"
     if settings.threatMode == "Auto" then
         mode = GetAutomaticThreatMode()
     end
     
     local colors = (mode == "tank") and THREAT_COLORS.tank or THREAT_COLORS.dps
     local color
-    local isTankingActually = (status >= 2) -- 3 is securely tanking, 2 is insecurely tanking
+    local isTankingActually = (status >= 2)
     
-    -- Logic
     if mode == "tank" then
-        if isTankingActually then
-            color = colors.safe
-        elseif status == 1 then
-            color = colors.warning
-        else
-            color = colors.danger
-        end
+        if isTankingActually then color = colors.safe
+        elseif status == 1 then color = colors.warning
+        else color = colors.danger end
     else
-        if isTankingActually then
-            color = colors.danger
-        elseif status == 1 then
-            color = colors.warning
-        else
-            color = colors.safe
-        end
+        if isTankingActually then color = colors.danger
+        elseif status == 1 then color = colors.warning
+        else color = colors.safe end
     end
     
     if color then
@@ -578,13 +621,8 @@ local function UpdateThreat(frame, unit, settings)
         
         -- Advanced Threat Values
         if settings.showThreatValues then
-            local _, _, percent, rawPercent, threatValue = UnitDetailedThreatSituation("player", unit)
+            local _, _, _, rawPercent, threatValue = UnitDetailedThreatSituation("player", unit)
             if threatValue then
-                -- This is a simplification; getting "second highest" without scanning group is hard.
-                -- We will show Absolute Threat or simple diff if we can.
-                -- For 3.3.5a standalone without a library, we mainly know OUR threat.
-                -- We can show threat PERCENT relative to aggro holder.
-                
                 if healthBar.dcThreatPct then
                     if rawPercent then
                         healthBar.dcThreatPct:SetText(string.format("%.0f%%", rawPercent))
@@ -596,17 +634,11 @@ local function UpdateThreat(frame, unit, settings)
                 end
                 
                 if healthBar.dcThreatDiff then
-                     -- Fake Diff: just show value k
                      healthBar.dcThreatDiff:SetText(FormatNumber(threatValue))
                      healthBar.dcThreatDiff:SetTextColor(color.r, color.g, color.b)
                      healthBar.dcThreatDiff:Show()
                 end
             end
-        end
-        
-        -- Also color the health bar if threatColors enabled
-        if settings.threatColors and healthBar then
-            healthBar:SetStatusBarColor(color.r, color.g, color.b)
         end
     end
 end
@@ -1022,7 +1054,7 @@ local function OnUpdate(self, elapsed)
                 UpdateTargetHighlight(frame, settings)
                 
                 if unit then
-                    UpdateClassColor(frame.dcHealthBar, unit, settings)
+                    UpdateHealthBarColor(frame, frame.dcHealthBar, unit, settings)
                     UpdateThreat(frame, unit, settings)
                     UpdateCastBar(frame, frame.dcCastBar, unit, settings)
                     UpdateDebuffs(frame, unit, settings)

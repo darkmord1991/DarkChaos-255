@@ -82,6 +82,9 @@ function TransmogModule:GetAppearance(appearanceId)
 end
 
 function TransmogModule:GetAppearanceDefinition(appearanceId)
+    if type(DC.GetDefinition) == "function" then
+        return DC:GetDefinition("transmog", appearanceId)
+    end
     return DC.definitions.transmog and DC.definitions.transmog[appearanceId]
 end
 

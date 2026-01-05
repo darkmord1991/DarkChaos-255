@@ -21,6 +21,7 @@
 #include "Config.h"
 #include "SpellMgr.h"
 #include "Bag.h"
+#include "CryptoHash.h"
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -29,6 +30,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <mutex>
 
 namespace DCCollection
 {
@@ -327,6 +329,75 @@ namespace DCCollection
     // =======================================================================
     // Helpers
     // =======================================================================
+
+    static inline bool IsDigitsOnly(std::string const& s)
+    {
+        if (s.empty())
+            return false;
+        for (unsigned char c : s)
+            if (c < '0' || c > '9')
+                return false;
+        return true;
+    }
+
+    static inline bool ContainsCaseInsensitive(std::string const& haystack, std::string const& needleLower)
+    {
+        if (needleLower.empty())
+            return true;
+
+        // Simple ASCII case-insensitive substring search without allocations.
+        size_t const n = needleLower.size();
+        size_t const h = haystack.size();
+        if (n > h)
+            return false;
+
+        for (size_t i = 0; i + n <= h; ++i)
+        {
+            bool match = true;
+            for (size_t j = 0; j < n; ++j)
+            {
+                unsigned char c = static_cast<unsigned char>(haystack[i + j]);
+                c = static_cast<unsigned char>(std::tolower(c));
+                if (c != static_cast<unsigned char>(needleLower[j]))
+                {
+                    match = false;
+                    break;
+                }
+            }
+            if (match)
+                return true;
+        }
+        return false;
+    }
+
+    static void EnsureCommunityTables()
+    {
+        static std::once_flag once;
+        std::call_once(once, []()
+        {
+            CharacterDatabase.Execute(
+                "CREATE TABLE IF NOT EXISTS dc_collection_community_outfits ("
+                "id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
+                "name VARCHAR(100),"
+                "author_name VARCHAR(50),"
+                "author_guid INT UNSIGNED,"
+                "items_string TEXT,"
+                "upvotes INT UNSIGNED DEFAULT 0,"
+                "downloads INT UNSIGNED DEFAULT 0,"
+                "views INT UNSIGNED DEFAULT 0,"
+                "weekly_votes INT UNSIGNED DEFAULT 0,"
+                "tags VARCHAR(255) DEFAULT '',"
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                ")");
+
+            CharacterDatabase.Execute(
+                "CREATE TABLE IF NOT EXISTS dc_collection_community_favorites ("
+                "account_id INT UNSIGNED,"
+                "outfit_id INT UNSIGNED,"
+                "PRIMARY KEY(account_id, outfit_id)"
+                ")");
+        });
+    }
 
     uint8 VisualSlotToEquipmentSlot(uint32 visualSlot)
     {
@@ -669,6 +740,9 @@ namespace DCCollection
          DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
          uint8 slot = static_cast<uint8>(json["slot"].AsUInt32());
          bool clear = json.HasKey("clear") ? json["clear"].AsBool() : false;
+         // Client may send either a transmog appearance displayId OR an item entry ID.
+         // Prefer displayId when it is already unlocked; otherwise try to interpret
+         // it as an item entry and derive the displayId from the item template.
          uint32 displayId = json.HasKey("appearanceId") ? json["appearanceId"].AsUInt32() : 0;
 
          if (slot >= EQUIPMENT_SLOT_END) return;
@@ -687,7 +761,22 @@ namespace DCCollection
              return;
          }
 
-         if (!displayId || !HasTransmogAppearanceUnlocked(accountId, displayId)) return;
+         if (!displayId)
+             return;
+
+         if (!HasTransmogAppearanceUnlocked(accountId, displayId))
+         {
+             // Fallback: if the value is actually an item entry, derive its displayId.
+             if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(displayId))
+             {
+                 uint32 derived = proto->DisplayInfoID;
+                 if (derived && HasTransmogAppearanceUnlocked(accountId, derived))
+                     displayId = derived;
+             }
+         }
+
+         if (!HasTransmogAppearanceUnlocked(accountId, displayId))
+             return;
 
          ItemTemplate const* equippedProto = equippedItem->GetTemplate();
          TransmogAppearanceVariant const* appearance = FindBestVariantForSlot(displayId, slot, equippedProto);
@@ -719,7 +808,7 @@ namespace DCCollection
         uint32 accountId = GetAccountId(player);
         uint32 guid = player->GetGUID().GetCounter();
 
-        // Used CharacterDatabase with transaction? For now individual executes.
+        auto trans = CharacterDatabase.BeginTransaction();
         for (auto const& kv : preview.AsObject())
         {
              uint32 visualSlot = std::stoul(kv.first);
@@ -731,10 +820,10 @@ namespace DCCollection
 
              DCAddon::JsonValue const& slotValue = kv.second;
              if (slotValue.IsNull()) {
-                 CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, (uint32)equipmentSlot);
+                 trans->Append("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, (uint32)equipmentSlot);
                  player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), equippedItem->GetEntry());
              } else if (slotValue.AsUInt32() == 0) {
-                 CharacterDatabase.Execute("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, 0, {})", guid, (uint32)equipmentSlot, equippedItem->GetEntry());
+                 trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, 0, {})", guid, (uint32)equipmentSlot, equippedItem->GetEntry());
                  player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), 0);
              } else {
                  uint32 itemId = slotValue.AsUInt32();
@@ -743,11 +832,13 @@ namespace DCCollection
                  uint32 displayId = fakeProto->DisplayInfoID;
                  if (!HasTransmogAppearanceUnlocked(accountId, displayId)) continue;
                  if (!FindBestVariantForSlot(displayId, equipmentSlot, equippedItem->GetTemplate())) continue;
-                 
-                 CharacterDatabase.Execute("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})", guid, (uint32)equipmentSlot, itemId, equippedItem->GetEntry());
+
+                 trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})", guid, (uint32)equipmentSlot, itemId, equippedItem->GetEntry());
                  player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), itemId);
              }
         }
+
+        CharacterDatabase.CommitTransaction(trans);
         SendTransmogState(player);
     }
 
@@ -758,44 +849,87 @@ namespace DCCollection
         std::vector<uint32> invTypes = GetInvTypesForVisualSlot(visualSlot);
         if (invTypes.empty()) return {};
 
+        uint32 minQuality = sConfigMgr->GetOption<uint32>(TRANSMOG_MIN_QUALITY, 0);
+
         uint8 equipmentSlot = VisualSlotToEquipmentSlot(visualSlot);
         Item* equippedItem = (equipmentSlot < EQUIPMENT_SLOT_END) ? player->GetItemByPos(INVENTORY_SLOT_BAG_0, equipmentSlot) : nullptr;
         
-        std::string searchLower = searchFilter;
-        std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(), ::tolower);
-        bool hasSearch = !searchLower.empty();
+        bool hasSearch = !searchFilter.empty();
+        bool searchIsDigitsOnly = hasSearch && IsDigitsOnly(searchFilter);
+        uint32 searchNumeric = 0;
+        if (searchIsDigitsOnly)
+            searchNumeric = static_cast<uint32>(std::strtoul(searchFilter.c_str(), nullptr, 10));
+
+        std::string searchLower;
+        if (hasSearch && !searchIsDigitsOnly)
+        {
+            searchLower = searchFilter;
+            std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        }
 
         auto const& appearances = GetTransmogAppearanceIndexCached();
         std::vector<uint32> matchingItemIds;
         matchingItemIds.reserve(128);
 
-        for (auto const& [displayId, variants] : appearances)
+        // Critical optimization: iterate the player's unlocked displayIds instead of scanning the entire item_template-derived index.
+        // Scanning the full index on each slot/search request can hitch the world thread even with few players.
+        auto const& unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+        for (uint32 displayId : unlocked)
         {
-            if (!HasTransmogAppearanceUnlocked(accountId, displayId)) continue;
-            for (auto const& def : variants)
-            {
-                bool invTypeMatch = false;
-                for (uint32 invType : invTypes) { if (def.inventoryType == invType) { invTypeMatch = true; break; } }
-                if (!invTypeMatch) continue;
+            auto it = appearances.find(displayId);
+            if (it == appearances.end())
+                continue;
 
-                if (equippedItem && !IsAppearanceCompatible(equipmentSlot, equippedItem->GetTemplate(), def)) continue;
+            for (auto const& def : it->second)
+            {
+                if (def.quality < minQuality)
+                    continue;
+
+                bool invTypeMatch = false;
+                for (uint32 invType : invTypes)
+                {
+                    if (def.inventoryType == invType)
+                    {
+                        invTypeMatch = true;
+                        break;
+                    }
+                }
+                if (!invTypeMatch)
+                    continue;
+
+                if (equippedItem && !IsAppearanceCompatible(equipmentSlot, equippedItem->GetTemplate(), def))
+                    continue;
 
                 if (hasSearch)
                 {
                     bool matchFound = false;
-                    std::string nameLower = def.name;
-                    std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
-                    if (nameLower.find(searchLower) != std::string::npos) matchFound = true;
-                    if (!matchFound && std::to_string(displayId).find(searchFilter) != std::string::npos) matchFound = true;
-                    // Simplify: skip itemId search for performance if needed, but keeping logic
-                    if (!matchFound) {
-                        for (uint32 itemId : def.itemIds) { if (std::to_string(itemId).find(searchFilter) != std::string::npos) { matchFound = true; break; } }
-                    }
-                    if (!matchFound) continue;
-                }
 
-                uint32 minQuality = sConfigMgr->GetOption<uint32>(TRANSMOG_MIN_QUALITY, 0);
-                if (def.quality < minQuality) continue;
+                    if (searchIsDigitsOnly)
+                    {
+                        // Numeric searches are common; avoid string allocations.
+                        if (searchNumeric == displayId)
+                            matchFound = true;
+                        if (!matchFound)
+                        {
+                            for (uint32 itemId : def.itemIds)
+                            {
+                                if (itemId == searchNumeric)
+                                {
+                                    matchFound = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (ContainsCaseInsensitive(def.name, searchLower))
+                            matchFound = true;
+                    }
+
+                    if (!matchFound)
+                        continue;
+                }
 
                 matchingItemIds.push_back(def.canonicalItemId);
             }
@@ -872,6 +1006,11 @@ namespace DCCollection
 
     void HandleCommunityGetList(Player* player, const DCAddon::ParsedMessage& msg)
     {
+        if (!player)
+            return;
+
+        EnsureCommunityTables();
+
         uint32 offset = 0;
         uint32 limit = 50;
         std::string filter = "all";
@@ -913,11 +1052,10 @@ namespace DCCollection
             filter = "tag"; // Override filter mode to just use WHERE clause
         }
 
-        QueryResult result;
+        std::string sql;
         if (filter == "favorites")
         {
-             // Join on favorites and filter
-             result = CharacterDatabase.Query(
+            sql = Acore::StringFormat(
                 "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, 1 as is_favorite, o.views, o.tags "
                 "FROM dc_collection_community_outfits o "
                 "JOIN dc_collection_community_favorites f ON o.id = f.outfit_id "
@@ -927,9 +1065,8 @@ namespace DCCollection
         }
         else if (filter == "my_outfits")
         {
-             // Filter by author GUID
-             uint32 playerGuid = player->GetGUID().GetCounter();
-             result = CharacterDatabase.Query(
+            uint32 playerGuid = player->GetGUID().GetCounter();
+            sql = Acore::StringFormat(
                 "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, "
                 "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, "
                 "o.views, o.tags "
@@ -939,12 +1076,10 @@ namespace DCCollection
                 "ORDER BY o.created_at DESC LIMIT {}, {}",
                 accountId, playerGuid, tagFilterCondition, offset, limit);
         }
-        else // all or tag
+        else
         {
-            // Join to get favorite status
-            std::string whereClause = (filter == "tag" && !tagFilterCondition.empty()) ? "WHERE " + tagFilterCondition.substr(5) : ""; // Remove first AND
-
-            result = CharacterDatabase.Query(
+            std::string whereClause = (filter == "tag" && !tagFilterCondition.empty()) ? "WHERE " + tagFilterCondition.substr(5) : "";
+            sql = Acore::StringFormat(
                 "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, "
                 "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, "
                 "o.views, o.tags "
@@ -955,37 +1090,47 @@ namespace DCCollection
                 accountId, whereClause, orderBy, offset, limit);
         }
 
-        DCAddon::JsonValue outfits;
-        outfits.SetArray();
-        
-        if (result)
+        ObjectGuid playerGuid = player->GetGUID();
+        CharacterDatabase.AsyncQuery(sql).WithCallback([playerGuid](QueryResult result)
         {
-            do
+            Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            if (!player)
+                return;
+
+            DCAddon::JsonValue outfits;
+            outfits.SetArray();
+            if (result)
             {
-                Field* f = result->Fetch();
-                DCAddon::JsonValue obj;
-                obj.SetObject();
-                obj.Set("id", f[0].Get<uint32>());
-                obj.Set("name", f[1].Get<std::string>());
-                obj.Set("author", f[2].Get<std::string>());
-                obj.Set("items", f[3].Get<std::string>());
-                obj.Set("upvotes", f[4].Get<uint32>());
-                obj.Set("downloads", f[5].Get<uint32>());
-                obj.Set("is_favorite", f[6].Get<bool>());
-                obj.Set("views", f[7].Get<uint32>());
-                obj.Set("tags", f[8].Get<std::string>());
-                outfits.Push(obj);
-            } while (result->NextRow());
-        }
-        
-        DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST);
-        response.Set("outfits", outfits);
-        response.Send(player);
+                do
+                {
+                    Field* f = result->Fetch();
+                    DCAddon::JsonValue obj;
+                    obj.SetObject();
+                    obj.Set("id", f[0].Get<uint32>());
+                    obj.Set("name", f[1].Get<std::string>());
+                    obj.Set("author", f[2].Get<std::string>());
+                    obj.Set("items", f[3].Get<std::string>());
+                    obj.Set("upvotes", f[4].Get<uint32>());
+                    obj.Set("downloads", f[5].Get<uint32>());
+                    obj.Set("is_favorite", f[6].Get<bool>());
+                    obj.Set("views", f[7].Get<uint32>());
+                    obj.Set("tags", f[8].Get<std::string>());
+                    outfits.Push(obj);
+                } while (result->NextRow());
+            }
+
+            DCAddon::JsonMessage response(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_LIST);
+            response.Set("outfits", outfits);
+            response.Send(player);
+        });
     }
 
     void HandleCommunityPublish(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!DCAddon::IsJsonMessage(msg)) return;
+
+        EnsureCommunityTables();
+
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         std::string name = json["name"].AsString();
         std::string items = json["items"].AsString();
@@ -996,37 +1141,20 @@ namespace DCCollection
         CharacterDatabase.EscapeString(items);
         CharacterDatabase.EscapeString(tags);
         
-        // Lazy create tables
-        CharacterDatabase.Execute(
-            "CREATE TABLE IF NOT EXISTS dc_collection_community_outfits ("
-            "id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
-            "name VARCHAR(100),"
-            "author_name VARCHAR(50),"
-            "author_guid INT UNSIGNED,"
-            "items_string TEXT,"
-            "upvotes INT UNSIGNED DEFAULT 0,"
-            "downloads INT UNSIGNED DEFAULT 0,"
-            "views INT UNSIGNED DEFAULT 0,"
-            "weekly_votes INT UNSIGNED DEFAULT 0,"
-            "tags VARCHAR(255) DEFAULT '',"
-            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-            ")");
-            
-        CharacterDatabase.Execute(
-            "CREATE TABLE IF NOT EXISTS dc_collection_community_favorites ("
-            "account_id INT UNSIGNED,"
-            "outfit_id INT UNSIGNED,"
-            "PRIMARY KEY(account_id, outfit_id)"
-            ")");
-
-        CharacterDatabase.Execute(
+        std::string insertSql = Acore::StringFormat(
             "INSERT INTO dc_collection_community_outfits (name, author_name, author_guid, items_string, tags) "
             "VALUES ('{}', '{}', {}, '{}', '{}')",
             name, player->GetName(), player->GetGUID().GetCounter(), items, tags);
 
-        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_PUBLISH_RESULT);
-        res.Set("success", true);
-        res.Send(player);
+        CharacterDatabase.AsyncQuery(insertSql).WithCallback([playerGuid = player->GetGUID()](QueryResult)
+        {
+            if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            {
+                DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_PUBLISH_RESULT);
+                res.Set("success", true);
+                res.Send(player);
+            }
+        });
     }
     
     void HandleCommunityRate(Player* /*player*/, const DCAddon::ParsedMessage& msg)
@@ -1036,36 +1164,50 @@ namespace DCCollection
         uint32 id = json["id"].AsUInt32();
         
         // Update both upvotes (lifetime) and weekly_votes (trending)
-        CharacterDatabase.Execute("UPDATE dc_collection_community_outfits SET upvotes = upvotes + 1, weekly_votes = weekly_votes + 1 WHERE id = {}", id);
+        EnsureCommunityTables();
+        CharacterDatabase.AsyncQuery(Acore::StringFormat(
+            "UPDATE dc_collection_community_outfits SET upvotes = upvotes + 1, weekly_votes = weekly_votes + 1 WHERE id = {}",
+            id));
     }
     
     void HandleCommunityFavorite(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!DCAddon::IsJsonMessage(msg)) return;
+        EnsureCommunityTables();
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
         bool add = json["add"].AsBool();
         uint32 accountId = GetAccountId(player);
-        
-        if (add)
-            CharacterDatabase.Execute("INSERT IGNORE INTO dc_collection_community_favorites (account_id, outfit_id) VALUES ({}, {})", accountId, id);
-        else
-            CharacterDatabase.Execute("DELETE FROM dc_collection_community_favorites WHERE account_id = {} AND outfit_id = {}", accountId, id);
 
-        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_FAVORITE_RESULT);
-        res.Set("id", id);
-        res.Set("is_favorite", add);
-        res.Send(player);
+        std::string sql;
+        if (add)
+            sql = Acore::StringFormat("INSERT IGNORE INTO dc_collection_community_favorites (account_id, outfit_id) VALUES ({}, {})", accountId, id);
+        else
+            sql = Acore::StringFormat("DELETE FROM dc_collection_community_favorites WHERE account_id = {} AND outfit_id = {}", accountId, id);
+
+        ObjectGuid playerGuid = player->GetGUID();
+        CharacterDatabase.AsyncQuery(sql).WithCallback([playerGuid, id, add](QueryResult)
+        {
+            if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            {
+                DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_FAVORITE_RESULT);
+                res.Set("id", id);
+                res.Set("is_favorite", add);
+                res.Send(player);
+            }
+        });
     }
 
     void HandleCommunityView(Player* /*player*/, const DCAddon::ParsedMessage& msg)
     {
         if (!DCAddon::IsJsonMessage(msg)) return;
+        EnsureCommunityTables();
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
 
-        // Increment views
-        CharacterDatabase.Execute("UPDATE dc_collection_community_outfits SET views = views + 1 WHERE id = {}", id);
+        CharacterDatabase.AsyncQuery(Acore::StringFormat(
+            "UPDATE dc_collection_community_outfits SET views = views + 1 WHERE id = {}",
+            id));
     }
 
     // Inspection Handler
@@ -1103,70 +1245,136 @@ namespace DCCollection
     // This assumes ItemSet.dbc is loaded on server
     void HandleGetItemSets(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        (void)msg;
-        
-        // Debug Log
-        LOG_INFO("addon", "HandleGetItemSets: Processing request for player {}", player->GetName());
-        LOG_INFO("addon", "ItemSetStore Rows: {}", sItemSetStore.GetNumRows()); // Added logging
+        if (!player || !player->GetSession())
+            return;
 
-        // JSON response builder
-        std::stringstream ss;
-        ss << "{\"sets\":["; // Start JSON array
-
-        uint32 count = 0;
-
-        bool first = true;
-        // Nuclear Debug Option: Iterate aggressively to find ANY sets
-        for (uint32 i = 0; i < 5000; ++i)
+        uint32 offset = 0;
+        uint32 limit = 50;
+        uint32 clientSyncVersion = 0;
+        if (DCAddon::IsJsonMessage(msg))
         {
-            ItemSetEntry const* set = sItemSetStore.LookupEntry(i);
-            if (!set)
-                continue;
+            DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
 
-            // Log the first few sets to verify we are finding ANYTHING
-            if (count < 5) {
-                LOG_INFO("addon", "HandleGetItemSets: Found set ID {} Name '{}'", i, set->name[0]);
-            }
+            if (json.HasKey("offset") && json["offset"].IsNumber())
+                offset = json["offset"].AsUInt32();
+            if (json.HasKey("limit") && json["limit"].IsNumber())
+                limit = json["limit"].AsUInt32();
 
-            if (!first) ss << ",";
-            first = false;
-            count++;
-
-            // Start Set Object
-            // Escape name for JSON
-            std::string name = set->name[player->GetSession()->GetSessionDbcLocale()];
-            if (name.empty())
-                name = set->name[0];
-            
-
-            // Simple quote escape for JSON validity
-            size_t pos = 0;
-            while ((pos = name.find("\"", pos)) != std::string::npos) {
-                name.replace(pos, 1, "\\\"");
-                pos += 2;
-            }
-
-            ss << "{\"id\":" << i << ",\"name\":\"" << name.c_str() << "\",\"items\":[";
-
-            // Add Items in Set
-            bool firstItem = true;
-            for (uint8 j = 0; j < 10; ++j) // Max 10 items per set in 3.3.5
-            {
-                if (set->itemId[j] > 0)
-                {
-                    if (!firstItem) ss << ",";
-                    ss << set->itemId[j];
-                    firstItem = false;
-                }
-            }
-            ss << "]}"; // End Set Object
+            if (json.HasKey("syncVersion") && json["syncVersion"].IsNumber())
+                clientSyncVersion = json["syncVersion"].AsUInt32();
+            else if (json.HasKey("version") && json["version"].IsNumber())
+                clientSyncVersion = json["version"].AsUInt32();
         }
 
-        ss << "]}"; // End JSON array
-        
-        LOG_INFO("addon", "HandleGetItemSets: Found {} sets. Sending response.", count);
+        // Clamp paging parameters.
+        if (limit < 10)
+            limit = 10;
+        if (limit > 200)
+            limit = 200;
 
-        // Send Response
+        struct ItemSetPayload
+        {
+            std::vector<std::string> setJson; // individual {"id":..,"name":..,"items":[..]} entries
+            uint32 syncVersion = 0;
+        };
+
+        // Cache the set fragments by locale (names are locale-dependent).
+        static std::map<uint8, ItemSetPayload> s_itemSetsByLocale;
+
+        uint8 locale = static_cast<uint8>(player->GetSession()->GetSessionDbcLocale());
+        auto it = s_itemSetsByLocale.find(locale);
+        if (it == s_itemSetsByLocale.end())
+        {
+            ItemSetPayload payload;
+            payload.setJson.reserve(600);
+
+            Acore::Crypto::MD5 md5;
+
+            uint32 const rows = sItemSetStore.GetNumRows();
+            for (uint32 i = 0; i < rows; ++i)
+            {
+                ItemSetEntry const* set = sItemSetStore.LookupEntry(i);
+                if (!set)
+                    continue;
+
+                std::string name = set->name[locale];
+                if (name.empty())
+                    name = set->name[0];
+
+                // Minimal JSON escaping.
+                std::string escaped;
+                escaped.reserve(name.size());
+                for (char c : name)
+                {
+                    if (c == '\\') escaped += "\\\\";
+                    else if (c == '"') escaped += "\\\"";
+                    else escaped += c;
+                }
+
+                std::ostringstream entry;
+                entry << "{\"id\":" << i << ",\"name\":\"" << escaped << "\",\"items\":[";
+
+                bool firstItem = true;
+                for (uint8 j = 0; j < 10; ++j)
+                {
+                    if (set->itemId[j] > 0)
+                    {
+                        if (!firstItem)
+                            entry << ',';
+                        entry << set->itemId[j];
+                        firstItem = false;
+                    }
+                }
+                entry << "]}";
+
+                std::string s = entry.str();
+                md5.UpdateData(s);
+                md5.UpdateData("\n");
+                payload.setJson.emplace_back(std::move(s));
+            }
+
+            md5.Finalize();
+            auto const& d = md5.GetDigest();
+            payload.syncVersion = uint32(d[0]) | (uint32(d[1]) << 8) | (uint32(d[2]) << 16) | (uint32(d[3]) << 24);
+
+            it = s_itemSetsByLocale.emplace(locale, std::move(payload)).first;
+        }
+
+        ItemSetPayload const& payload = it->second;
+        uint32 total = static_cast<uint32>(payload.setJson.size());
+        if (offset >= total)
+            offset = total;
+
+        // If the client already has this exact locale's item set payload, avoid re-sending.
+        if (offset == 0 && clientSyncVersion != 0 && clientSyncVersion == payload.syncVersion)
+        {
+            std::ostringstream ss;
+            ss << "{\"sets\":[],\"offset\":0,\"limit\":" << limit << ",\"total\":" << total
+               << ",\"hasMore\":0,\"upToDate\":1,\"syncVersion\":" << payload.syncVersion << "}";
+
+            DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ITEM_SETS);
+            res.Add("J");
+            res.Add(ss.str());
+            res.Send(player);
+            return;
+        }
+
+        uint32 end = std::min<uint32>(offset + limit, total);
+        bool hasMore = end < total;
+
+        std::ostringstream ss;
+        ss << "{\"sets\":[";
+        bool first = true;
+        for (uint32 i = offset; i < end; ++i)
+        {
+            if (!first)
+                ss << ',';
+            first = false;
+            ss << payload.setJson[i];
+        }
+          ss << "],\"offset\":" << offset << ",\"limit\":" << limit << ",\"total\":" << total
+              << ",\"hasMore\":" << (hasMore ? 1 : 0) << ",\"syncVersion\":" << payload.syncVersion << "}";
+
         DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ITEM_SETS);
         res.Add("J");
         res.Add(ss.str());
@@ -1274,72 +1482,120 @@ namespace DCCollection
 
     void HandleGetSavedOutfits(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        (void)msg;
         if (!player) return;
 
         uint32 accountId = player->GetSession()->GetAccountId();
-        
-        std::string sql = "SELECT outfit_id, name, icon, items, source_author FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId) + " ORDER BY outfit_id";
 
-        CharacterDatabase.AsyncQuery(sql)
-            .WithCallback([playerGuid = player->GetGUID()](QueryResult result) {
+        uint32 offset = 0;
+        uint32 limit = 6;
+        if (DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+            if (json.HasKey("offset") && json["offset"].IsNumber())
+                offset = json["offset"].AsUInt32();
+            if (json.HasKey("limit") && json["limit"].IsNumber())
+                limit = json["limit"].AsUInt32();
+        }
+
+        if (limit < 1)
+            limit = 1;
+        if (limit > 50)
+            limit = 50;
+
+        // Fetch total + page.
+        std::string countSql = "SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
+        CharacterDatabase.AsyncQuery(countSql)
+            .WithCallback([playerGuid = player->GetGUID(), accountId, offset, limit](QueryResult countResult)
+            {
                 Player* player = ObjectAccessor::FindPlayer(playerGuid);
-                if (!player) return;
+                if (!player)
+                    return;
 
-                std::stringstream ss;
-                ss << "{\"outfits\":[";
-                
-                uint32 outfitCount = 0;
-                if (result)
-                {
-                    bool first = true;
-                    do
+                uint32 total = 0;
+                if (countResult)
+                    total = countResult->Fetch()[0].Get<uint32>();
+
+                uint32 pageOffset = offset;
+                if (pageOffset > total)
+                    pageOffset = total;
+
+                std::string pageSql =
+                    "SELECT outfit_id, name, icon, items, source_author FROM dc_account_outfits "
+                    "WHERE account_id = " + std::to_string(accountId) +
+                    " ORDER BY outfit_id LIMIT " + std::to_string(pageOffset) + ", " + std::to_string(limit);
+
+                CharacterDatabase.AsyncQuery(pageSql)
+                    .WithCallback([playerGuid, pageOffset, limit, total](QueryResult result)
                     {
-                        Field* f = result->Fetch();
-                        uint32 id = f[0].Get<uint32>();
-                        std::string name = f[1].Get<std::string>();
-                        std::string icon = f[2].Get<std::string>();
-                        std::string items = f[3].Get<std::string>();
-                        std::string sourceAuthor = f[4].IsNull() ? "" : f[4].Get<std::string>();
+                        Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                        if (!player)
+                            return;
 
-                        // Simple JSON escape
-                        auto escape = [](std::string s) {
-                            std::string res;
-                            for (char c : s) {
-                                if (c == '"') res += "\\\"";
-                                else if (c == '\\') res += "\\\\";
-                                else res += c;
-                            }
-                            return res;
-                        };
+                        std::stringstream ss;
+                        ss << "{\"outfits\":[";
 
-                        if (items.empty()) items = "{}";
+                        uint32 outfitCount = 0;
+                        if (result)
+                        {
+                            bool first = true;
+                            do
+                            {
+                                Field* f = result->Fetch();
+                                uint32 id = f[0].Get<uint32>();
+                                std::string name = f[1].Get<std::string>();
+                                std::string icon = f[2].Get<std::string>();
+                                std::string items = f[3].Get<std::string>();
+                                std::string sourceAuthor = f[4].IsNull() ? "" : f[4].Get<std::string>();
 
-                        if (!first) ss << ",";
-                        first = false;
+                                // Simple JSON escape
+                                auto escape = [](std::string s)
+                                {
+                                    std::string res;
+                                    for (char c : s)
+                                    {
+                                        if (c == '"') res += "\\\"";
+                                        else if (c == '\\') res += "\\\\";
+                                        else res += c;
+                                    }
+                                    return res;
+                                };
 
-                        ss << "{\"id\":" << id 
-                           << ",\"name\":\"" << escape(name) << "\""
-                           << ",\"icon\":\"" << escape(icon) << "\""
-                           << ",\"items\":" << items;
-                        
-                        if (!sourceAuthor.empty()) {
-                            ss << ",\"author\":\"" << escape(sourceAuthor) << "\"";
+                                if (items.empty())
+                                    items = "{}";
+
+                                if (!first)
+                                    ss << ",";
+                                first = false;
+
+                                ss << "{\"id\":" << id
+                                   << ",\"name\":\"" << escape(name) << "\""
+                                   << ",\"icon\":\"" << escape(icon) << "\""
+                                   << ",\"items\":" << items;
+
+                                if (!sourceAuthor.empty())
+                                    ss << ",\"author\":\"" << escape(sourceAuthor) << "\"";
+
+                                ss << "}";
+                                outfitCount++;
+
+                            } while (result->NextRow());
                         }
-                        ss << "}";
-                        outfitCount++;
 
-                    } while (result->NextRow());
-                }
-                
-                ss << "]}";
+                        bool hasMore = (pageOffset + outfitCount) < total;
 
-                LOG_INFO("module.dc", "[DCWardrobe] Loaded {} saved outfits for account (Async)", outfitCount);
+                        ss << "],\"offset\":" << pageOffset
+                           << ",\"limit\":" << limit
+                           << ",\"total\":" << total
+                           << ",\"hasMore\":" << (hasMore ? 1 : 0)
+                           << "}";
 
-                DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_SAVED_OUTFITS);
-                res.Add("J");
-                res.Add(ss.str());
-                res.Send(player);
+                        LOG_INFO("module.dc", "[DCWardrobe] Loaded {} saved outfits for account (Async) offset={} limit={} total={}", outfitCount, pageOffset, limit, total);
+
+                        DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_SAVED_OUTFITS);
+                        res.Add("J");
+                        res.Add(ss.str());
+                        res.Send(player);
+                    });
             });
     }
     void HandleCopyCommunityOutfit(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1469,6 +1725,9 @@ namespace DCCollection
         {
             if (reload)
                 return;
+
+            // Ensure Community tables exist once at startup (avoid runtime DDL stalls).
+            EnsureCommunityTables();
 
             // Pre-warm heavy transmog caches at startup to avoid the first-player hitch.
             // (Doing the item_template scan lazily can freeze the world thread and make gossips/menus feel laggy.)

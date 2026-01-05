@@ -144,6 +144,10 @@ void AddSC_dc_prestige_commandscript();        // Commands/cs_dc_prestige.cpp
 void AddSC_dc_item_upgrade_commandscript();    // Commands/cs_dc_item_upgrade.cpp
 void AddSC_dc_hotspot_commandscript();        // Commands/cs_dc_hotspot.cpp
 
+// --- Guild Housing ---
+void AddGuildHouseScripts();                  // mod_guildhouse.cpp
+void AddGuildHouseButlerScripts();            // mod_guildhouse_butler.cpp
+
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddDCScripts()
@@ -629,6 +633,23 @@ void AddDCScripts()
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Cross-System Framework: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts", ">>   ✗ CRASH in Cross-System Framework");
+    }
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // GUILD HOUSING SYSTEM
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Guild Housing System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddGuildHouseScripts();
+        AddGuildHouseButlerScripts();
+        LOG_INFO("scripts.dc", ">>   ✓ Guild Housing scripts loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Guild Housing: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts", ">>   ✗ CRASH in Guild Housing");
     }
     LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
 

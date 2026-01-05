@@ -550,5 +550,30 @@ function DC:ShowShopContent()
     end
     
     self.ShopUI:Show()
+
+    -- Ensure data is requested when arriving via the MainFrame tab switch.
+    if self.ShopModule then
+        -- Shop items
+        if (not self.shopItems) or (#self.shopItems == 0) then
+            if type(self.ShopModule.RefreshShopItems) == "function" then
+                self.ShopModule:RefreshShopItems()
+            elseif type(self.RequestShopItems) == "function" then
+                self:RequestShopItems()
+            end
+        end
+
+        -- Currency
+        local tokens, essence = (type(self.GetCurrencyBalances) == "function") and self:GetCurrencyBalances() or nil
+        tokens = tonumber(tokens) or (self.currency and self.currency.tokens) or 0
+        essence = tonumber(essence) or (self.currency and self.currency.emblems) or 0
+        if tokens == 0 and essence == 0 then
+            if type(self.ShopModule.RefreshCurrency) == "function" then
+                self.ShopModule:RefreshCurrency()
+            elseif type(self.RequestCurrency) == "function" then
+                self:RequestCurrency()
+            end
+        end
+    end
+
     self:UpdateShopUI()
 end

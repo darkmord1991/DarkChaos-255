@@ -606,7 +606,11 @@ function Wardrobe:CancelRefresh()
     
     -- Update UI
     if self.frame and self.frame.refreshBtn then
-        self.frame.refreshBtn:SetText("Refresh Data")
+        if type(self.UpdateRefreshButtonForTab) == "function" then
+            self:UpdateRefreshButtonForTab()
+        else
+            self.frame.refreshBtn:SetText("Refresh Data")
+        end
         self.frame.refreshBtn:Enable()
     end
     
@@ -751,7 +755,11 @@ function Wardrobe:RefreshTransmogDefinitions()
             Wardrobe.isRefreshing = false
 
             if Wardrobe.frame and Wardrobe.frame.refreshBtn then
-                Wardrobe.frame.refreshBtn:SetText("Refresh Data")
+                if type(Wardrobe.UpdateRefreshButtonForTab) == "function" then
+                    Wardrobe:UpdateRefreshButtonForTab()
+                else
+                    Wardrobe.frame.refreshBtn:SetText("Refresh Data")
+                end
                 Wardrobe.frame.refreshBtn:Enable()
             end
             if Wardrobe.frame and Wardrobe.frame.refreshStatus then
@@ -802,7 +810,11 @@ function Wardrobe:RefreshTransmogDefinitions()
                     Wardrobe.isRefreshing = false
                     
                     if Wardrobe.frame and Wardrobe.frame.refreshBtn then
-                        Wardrobe.frame.refreshBtn:SetText("Refresh Data")
+                        if type(Wardrobe.UpdateRefreshButtonForTab) == "function" then
+                            Wardrobe:UpdateRefreshButtonForTab()
+                        else
+                            Wardrobe.frame.refreshBtn:SetText("Refresh Data")
+                        end
                         Wardrobe.frame.refreshBtn:Enable()
                     end
                     
@@ -835,6 +847,27 @@ function Wardrobe:RefreshTransmogDefinitions()
     end)
     
     checkFrame:Show()
+end
+
+function Wardrobe:UpdateRefreshButtonForTab()
+    if not self.frame or not self.frame.refreshBtn then
+        return
+    end
+
+    -- During transmog refresh, the button acts as Cancel regardless of tab.
+    if self.isRefreshing then
+        self.frame.refreshBtn:SetText("Cancel")
+        return
+    end
+
+    local tab = self.currentTab or "items"
+    if tab == "outfits" then
+        self.frame.refreshBtn:SetText("Refresh Outfits")
+    elseif tab == "community" then
+        self.frame.refreshBtn:SetText("Refresh Community")
+    else
+        self.frame.refreshBtn:SetText("Refresh Data")
+    end
 end
 
 function Wardrobe:Toggle()

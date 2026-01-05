@@ -512,7 +512,12 @@ local function PreviewAppearance(itemIdOrAppearanceId)
     end
 
     -- Try to get itemId from definitions first (legacy path)
-    local def = DC and DC.definitions and DC.definitions.transmog and DC.definitions.transmog[itemIdOrAppearanceId]
+    local def
+    if DC and type(DC.GetDefinition) == "function" then
+        def = DC:GetDefinition("transmog", itemIdOrAppearanceId)
+    else
+        def = DC and DC.definitions and DC.definitions.transmog and DC.definitions.transmog[itemIdOrAppearanceId]
+    end
     local itemId = def and def.itemId or itemIdOrAppearanceId
 
     UI.selectedAppearanceId = itemIdOrAppearanceId

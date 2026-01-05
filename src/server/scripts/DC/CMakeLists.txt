@@ -260,6 +260,18 @@ set(SCRIPTS_DC_Commands
     Commands/dc_item_upgrade_commands.cpp
 )
 
+# DC Guild Housing
+set(SCRIPTS_DC_GuildHousing
+    GuildHousing/mod_guildhouse.cpp
+    GuildHousing/mod_guildhouse_butler.cpp
+    GuildHousing/guildhouse_manager.cpp
+)
+
+# DC Teleporters
+set(SCRIPTS_DC_Teleporters
+    Teleporters/dc_teleporter.cpp
+)
+
 set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase3}
     ${SCRIPTS_DC_ItemUpgrade_Phase4A}
@@ -296,6 +308,8 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_GOMove}
     ${SCRIPTS_DC_CrossSystem}
     ${SCRIPTS_DC_Commands}
+    ${SCRIPTS_DC_GuildHousing}
+    ${SCRIPTS_DC_Teleporters}
 )
 
 # The DC HinterlandBG config was merged into the consolidated

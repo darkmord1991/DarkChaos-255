@@ -818,6 +818,29 @@ CREATE TABLE IF NOT EXISTS `daily_players_reports` (
   PRIMARY KEY (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS `dc_account_outfits` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
+  `outfit_id` tinyint unsigned NOT NULL COMMENT 'Outfit Slot (0-49)',
+  `name` varchar(50) NOT NULL DEFAULT 'New Outfit',
+  `icon` varchar(100) NOT NULL DEFAULT 'Interface/Icons/INV_Misc_QuestionMark',
+  `items` text COMMENT 'JSON {SlotKey: itemId}',
+  `source_community_id` int unsigned DEFAULT NULL COMMENT 'If copied from community outfit',
+  `source_author` varchar(50) DEFAULT NULL COMMENT 'Original author name if copied from community',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`account_id`,`outfit_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account-wide saved outfits';
+
+CREATE TABLE IF NOT EXISTS `dc_account_transmog_cache` (
+  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
+  `displayid` int unsigned NOT NULL COMMENT 'Item Display ID (appearance)',
+  `unlocked_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When first unlocked',
+  `source` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT 'unknown' COMMENT 'How it was unlocked: loot/quest/vendor/migration',
+  PRIMARY KEY (`account_id`,`displayid`),
+  KEY `idx_account` (`account_id`),
+  KEY `idx_displayid` (`displayid`),
+  KEY `idx_unlocked_at` (`unlocked_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Account-wide transmog appearance unlocks for fast lookup';
+
 CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
   `achievement_id` int unsigned NOT NULL,
   `name` varchar(100) NOT NULL,
@@ -863,7 +886,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
   KEY `idx_account` (`account_id`),
   KEY `idx_module` (`module`),
   KEY `idx_event_type` (`event_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=87 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=89 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -888,7 +911,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=50205 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=60279 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1176,7 +1199,8 @@ CREATE TABLE IF NOT EXISTS `dc_character_transmog` (
   `slot` tinyint unsigned NOT NULL COMMENT 'Equipment slot (0-18)',
   `fake_entry` int unsigned NOT NULL COMMENT 'Item entry used for appearance',
   `real_entry` int unsigned NOT NULL COMMENT 'Real equipped item entry',
-  PRIMARY KEY (`guid`,`slot`)
+  PRIMARY KEY (`guid`,`slot`),
+  KEY `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Applied transmog per character';
 
 CREATE TABLE IF NOT EXISTS `dc_collection_achievements` (
@@ -1191,7 +1215,8 @@ CREATE TABLE IF NOT EXISTS `dc_collection_achievements` (
 CREATE TABLE IF NOT EXISTS `dc_collection_community_favorites` (
   `account_id` int unsigned NOT NULL,
   `outfit_id` int unsigned NOT NULL,
-  PRIMARY KEY (`account_id`,`outfit_id`)
+  PRIMARY KEY (`account_id`,`outfit_id`),
+  KEY `idx_outfit_account` (`outfit_id`,`account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_collection_community_outfits` (
@@ -1206,8 +1231,11 @@ CREATE TABLE IF NOT EXISTS `dc_collection_community_outfits` (
   `weekly_votes` int unsigned DEFAULT '0',
   `tags` varchar(255) DEFAULT '' COMMENT 'Comma-separated tags',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  PRIMARY KEY (`id`),
+  KEY `idx_created_at` (`created_at` DESC),
+  KEY `idx_upvotes` (`upvotes` DESC),
+  KEY `idx_author_guid` (`author_guid`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_collection_currency` (
   `account_id` int unsigned NOT NULL,
@@ -1233,7 +1261,8 @@ CREATE TABLE IF NOT EXISTS `dc_collection_items` (
   `last_used` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`account_id`,`collection_type`,`entry_id`),
   KEY `idx_type_account` (`collection_type`,`account_id`),
-  KEY `idx_fav` (`account_id`,`collection_type`,`is_favorite`)
+  KEY `idx_fav` (`account_id`,`collection_type`,`is_favorite`),
+  KEY `idx_account_type_unlocked` (`account_id`,`collection_type`,`unlocked`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Generic account-wide collection items';
 
 CREATE TABLE IF NOT EXISTS `dc_collection_migrations` (
@@ -1642,6 +1671,19 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   KEY `idx_entry` (`item_entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom stat package upgrade state';
 
+CREATE TABLE IF NOT EXISTS `dc_hlbg_match_history` (
+  `match_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `start_time` int unsigned NOT NULL COMMENT 'Match start timestamp',
+  `end_time` int unsigned DEFAULT NULL COMMENT 'Match end timestamp',
+  `winner_team` tinyint DEFAULT NULL COMMENT 'Winning team (1 or 2)',
+  `team1_score` int NOT NULL DEFAULT '0',
+  `team2_score` int NOT NULL DEFAULT '0',
+  `player_count` tinyint NOT NULL DEFAULT '0',
+  `season_id` int unsigned NOT NULL COMMENT 'Season this match belongs to',
+  PRIMARY KEY (`match_id`),
+  KEY `idx_season` (`season_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG archived match history';
+
 CREATE TABLE IF NOT EXISTS `dc_hlbg_match_participants` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique participant record ID',
   `match_id` int unsigned NOT NULL COMMENT 'Foreign key to dc_hlbg_winner_history.id (the match ID)',
@@ -1671,6 +1713,40 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_match_participants` (
   KEY `idx_participant_match_guid` (`match_id`,`guid`)
 ) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks individual player statistics for each HLBG match';
 
+CREATE TABLE IF NOT EXISTS `dc_hlbg_player_history` (
+  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
+  `season_id` int unsigned NOT NULL COMMENT 'Season identifier',
+  `joined_at` int unsigned NOT NULL COMMENT 'Unix timestamp when player joined season',
+  `rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Final rating',
+  `completed_games` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total games completed',
+  `wins` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total wins',
+  `losses` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total losses',
+  `highest_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Highest rating achieved',
+  `lowest_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Lowest rating',
+  `total_score` int unsigned NOT NULL DEFAULT '0' COMMENT 'Cumulative score',
+  `average_score` int unsigned NOT NULL DEFAULT '0' COMMENT 'Average score',
+  `archived_at` int unsigned NOT NULL COMMENT 'Unix timestamp when archived',
+  PRIMARY KEY (`player_guid`,`season_id`),
+  KEY `idx_season` (`season_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG archived player history';
+
+CREATE TABLE IF NOT EXISTS `dc_hlbg_player_season_data` (
+  `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
+  `season_id` int unsigned NOT NULL COMMENT 'Season identifier',
+  `joined_at` int unsigned NOT NULL COMMENT 'Unix timestamp when player joined season',
+  `rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Current rating',
+  `completed_games` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total games completed',
+  `wins` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total wins',
+  `losses` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total losses',
+  `highest_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Highest rating achieved this season',
+  `lowest_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Lowest rating this season',
+  `total_score` int unsigned NOT NULL DEFAULT '0' COMMENT 'Cumulative score from all games',
+  `average_score` int unsigned NOT NULL DEFAULT '0' COMMENT 'Average score per game',
+  PRIMARY KEY (`player_guid`,`season_id`),
+  KEY `idx_season_rating` (`season_id`,`rating` DESC),
+  KEY `idx_season_wins` (`season_id`,`wins` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG player seasonal statistics';
+
 CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   `player_guid` int unsigned NOT NULL COMMENT 'Player GUID (unique identifier)',
   `player_name` varchar(12) NOT NULL COMMENT 'Player character name',
@@ -1688,6 +1764,17 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_player_stats` (
   KEY `idx_total_kills` (`total_kills`) COMMENT 'Kill count leaderboard',
   KEY `idx_last_participation` (`last_participation`) COMMENT 'Recent activity queries'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Player Statistics - Individual player performance tracking';
+
+CREATE TABLE IF NOT EXISTS `dc_hlbg_season_config` (
+  `season_id` int unsigned NOT NULL COMMENT 'Season identifier',
+  `base_rating` int unsigned NOT NULL DEFAULT '1500' COMMENT 'Base rating for new players',
+  `max_rating_change` int unsigned NOT NULL DEFAULT '50' COMMENT 'Maximum rating change per match',
+  `min_players_per_team` tinyint unsigned NOT NULL DEFAULT '5' COMMENT 'Minimum players required per team',
+  `max_players_per_team` tinyint unsigned NOT NULL DEFAULT '10' COMMENT 'Maximum players allowed per team',
+  `match_duration` int unsigned NOT NULL DEFAULT '1800' COMMENT 'Match duration in seconds',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`season_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='HLBG season configuration';
 
 CREATE TABLE IF NOT EXISTS `dc_hlbg_state` (
   `zone_id` int NOT NULL,
@@ -2381,6 +2468,12 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats` (
   `prestige_level` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player prestige level this season',
   `last_weekly_reset` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp of last weekly reset',
   `last_updated` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp of last update',
+  `bosses_killed` int unsigned DEFAULT '0' COMMENT 'Total bosses killed this season',
+  `chests_claimed` int unsigned DEFAULT '0' COMMENT 'Total chests opened this season',
+  `season_best_run` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Best achievement this season',
+  `weekly_reset_at` bigint unsigned DEFAULT NULL COMMENT 'Unix timestamp of last weekly reset',
+  `last_reward_at` bigint unsigned DEFAULT NULL COMMENT 'Unix timestamp of last reward earned',
+  `last_activity_at` bigint unsigned DEFAULT NULL COMMENT 'Unix timestamp of last activity',
   PRIMARY KEY (`player_guid`,`season_id`),
   KEY `idx_season` (`season_id`),
   KEY `idx_tokens` (`total_tokens_earned`),
@@ -2485,7 +2578,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_cap_snapshot` (
   UNIQUE KEY `idx_player_season_week` (`player_guid`,`season_id`,`week_timestamp`),
   KEY `idx_season` (`season_id`),
   KEY `idx_week` (`week_timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
 
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2792,7 +2885,7 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_transaction_type` (`transaction_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=587 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
+) ENGINE=InnoDB AUTO_INCREMENT=655 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
 CREATE TABLE `dc_top_upgraders` (
 	`player_guid` INT UNSIGNED NOT NULL,
@@ -3915,7 +4008,16 @@ CREATE TABLE `v_player_heirloom_upgrades` (
 	`last_upgraded_at` TIMESTAMP NULL COMMENT 'When last upgraded'
 );
 
-CREATE TABLE `v_seasonal_leaderboard` 
+CREATE TABLE `v_seasonal_leaderboard` (
+	`player_guid` INT UNSIGNED NOT NULL COMMENT 'Player GUID',
+	`season_id` INT UNSIGNED NOT NULL COMMENT 'Season ID',
+	`total_tokens_earned` INT UNSIGNED NOT NULL COMMENT 'Total seasonal tokens earned',
+	`total_essence_earned` INT UNSIGNED NOT NULL COMMENT 'Total seasonal essence earned',
+	`quests_completed` INT UNSIGNED NOT NULL COMMENT 'Total quests completed this season',
+	`bosses_killed` INT UNSIGNED NULL COMMENT 'Total bosses killed this season',
+	`chests_claimed` INT UNSIGNED NULL COMMENT 'Total chests opened this season',
+	`token_rank` BIGINT UNSIGNED NOT NULL,
+	`boss_rank` BIGINT UNSIGNED NOT NULL
 );
 
 CREATE TABLE `v_transaction_summary` (
@@ -3928,7 +4030,14 @@ CREATE TABLE `v_transaction_summary` (
 	`last_transaction` BIGINT UNSIGNED NULL
 );
 
-CREATE TABLE `v_weekly_top_performers` 
+CREATE TABLE `v_weekly_top_performers` (
+	`player_guid` INT UNSIGNED NOT NULL COMMENT 'Player GUID',
+	`season_id` INT UNSIGNED NOT NULL COMMENT 'Season ID',
+	`weekly_tokens_earned` INT UNSIGNED NOT NULL COMMENT 'Tokens earned this week',
+	`weekly_essence_earned` INT UNSIGNED NOT NULL COMMENT 'Essence earned this week',
+	`quests_completed` INT UNSIGNED NOT NULL COMMENT 'Total quests completed this season',
+	`bosses_killed` INT UNSIGNED NULL COMMENT 'Total bosses killed this season',
+	`weekly_rank` BIGINT UNSIGNED NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS `warden_action` (

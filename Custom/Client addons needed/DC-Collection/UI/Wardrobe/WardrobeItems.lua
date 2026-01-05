@@ -20,6 +20,20 @@ function Wardrobe:SelectTab(tabKey)
     self.currentTab = tabKey
     self.currentPage = 1
 
+    -- The shared item pager (created in WardrobeUI) is only for Items/Sets.
+    -- Outfits/Community have their own paging controls.
+    if self.frame and self.frame.pageFrame then
+        if tabKey == "outfits" or tabKey == "community" then
+            self.frame.pageFrame:Hide()
+        else
+            self.frame.pageFrame:Show()
+        end
+    end
+
+    if type(self.UpdateRefreshButtonForTab) == "function" then
+        self:UpdateRefreshButtonForTab()
+    end
+
     if self.frame and self.frame.tabButtons then
         for _, tab in ipairs(self.frame.tabButtons) do
             if tab.key == tabKey then
@@ -552,27 +566,63 @@ function Wardrobe:BuildAppearanceList()
     for id, def in pairs(defs) do
         local valid = true
 
-        local displayId = def.displayId or def.displayID or def.display_id or def.appearanceId or def.appearance_id
-        if type(displayId) == "string" then
-            displayId = tonumber(displayId)
-        end
+        -- Definitions can be either full tables or packed strings.
+        local name
+        local displayId
+        local itemId
+        local invType
+        local itemIds
+        local itemIdsTotal
+        local packedQuality
 
-        -- Prefer explicit itemId if present; fall back to the definition key only if it looks numeric.
-        local itemId = def.itemId or def.item_id or def.item
-        if type(itemId) == "string" then
-            itemId = tonumber(itemId)
-        end
-        if not itemId and type(id) == "number" then
-            itemId = id
-        elseif not itemId and type(id) == "string" then
-            itemId = tonumber(id)
-        end
+        if type(def) == "string" and type(DC.ParsePackedTransmogDefinition) == "function" then
+            local pName, pIcon, pQuality, pDisplayId, pInvType, _, _, _, pItemId, _, pItemIdsTotal, pItemIdsStr = DC:ParsePackedTransmogDefinition(def)
+            name = pName or ""
+            packedQuality = tonumber(pQuality) or 0
+            displayId = tonumber(pDisplayId)
+            invType = tonumber(pInvType) or 0
+            itemId = tonumber(pItemId)
+            itemIdsTotal = (pItemIdsTotal ~= "" and tonumber(pItemIdsTotal)) or nil
+            itemIds = (pItemIdsStr and pItemIdsStr ~= "" and pItemIdsStr) or nil
 
-        local invType = def.inventoryType or def.inventory_type or def.invType or def.inv_type
-        if type(invType) == "string" then
-            invType = tonumber(invType)
+            if not itemId and type(id) == "number" then
+                itemId = id
+            elseif not itemId and type(id) == "string" then
+                itemId = tonumber(id)
+            end
+        else
+            name = (def and def.name) or ""
+
+            displayId = def.displayId or def.displayID or def.display_id or def.appearanceId or def.appearance_id
+            if type(displayId) == "string" then
+                displayId = tonumber(displayId)
+            end
+
+            -- Prefer explicit itemId if present; fall back to the definition key only if it looks numeric.
+            itemId = def.itemId or def.item_id or def.item
+            if type(itemId) == "string" then
+                itemId = tonumber(itemId)
+            end
+            if not itemId and type(id) == "number" then
+                itemId = id
+            elseif not itemId and type(id) == "string" then
+                itemId = tonumber(id)
+            end
+
+            invType = def.inventoryType or def.inventory_type or def.invType or def.inv_type
+            if type(invType) == "string" then
+                invType = tonumber(invType)
+            end
+            invType = invType or 0
+
+            itemIds = def.itemIds or def.item_ids
+            itemIdsTotal = def.itemIdsTotal or def.item_ids_total or def.itemIdsTotal or def.itemIds_count or def.itemIdsCount
+            packedQuality = def.quality or def.Quality or def.rarity or def.Rarity or def.itemQuality or def.item_quality
+            if type(packedQuality) == "string" then
+                packedQuality = tonumber(packedQuality)
+            end
+            packedQuality = tonumber(packedQuality) or 0
         end
-        invType = invType or 0
 
         -- Fallback: if server didn't send inventoryType, infer it from the item.
         if invType == 0 and itemId then
@@ -590,15 +640,7 @@ function Wardrobe:BuildAppearanceList()
         if valid and self.selectedQualityFilter and self.selectedQualityFilter > 0 then
             -- Server definitions commonly use "rarity" (and some use "quality").
             -- Fall back to the client item cache (GetItemInfo) if the definition is missing it.
-            local quality = def.quality
-                or def.Quality
-                or def.rarity
-                or def.Rarity
-                or def.itemQuality
-                or def.item_quality
-                or 0
-            if type(quality) == "string" then quality = tonumber(quality) end
-            quality = tonumber(quality) or 0
+            local quality = packedQuality or 0
 
             if quality <= 0 and itemId and GetItemInfo then
                 local _, _, itemQuality = GetItemInfo(itemId)
@@ -615,8 +657,7 @@ function Wardrobe:BuildAppearanceList()
             local matchFound = false
             
             -- Check name match
-            local name = def.name or ""
-            if string.find(string.lower(name), search, 1, true) then
+            if string.find(string.lower(name or ""), search, 1, true) then
                 matchFound = true
             end
             
@@ -656,13 +697,10 @@ function Wardrobe:BuildAppearanceList()
 
             local existing = byKey[key]
             if not existing then
-                local itemIds = def.itemIds or def.item_ids
-                local itemIdsTotal = def.itemIdsTotal or def.item_ids_total or def.itemIds_count or def.itemIdsCount
-
                 byKey[key] = {
                     id = id,
                     itemId = itemId,
-                    name = def.name or "",
+                    name = name or "",
                     collected = collected,
                     inventoryType = invType,
                     displayId = displayId,
@@ -675,17 +713,17 @@ function Wardrobe:BuildAppearanceList()
                     existing.collected = true
                 end
 
-                if not existing.itemIds and (def.itemIds or def.item_ids) then
-                    existing.itemIds = def.itemIds or def.item_ids
+                if not existing.itemIds and itemIds then
+                    existing.itemIds = itemIds
                 end
-                if not existing.itemIdsTotal and (def.itemIdsTotal or def.item_ids_total or def.itemIdsCount or def.itemIds_count) then
-                    existing.itemIdsTotal = def.itemIdsTotal or def.item_ids_total or def.itemIdsCount or def.itemIds_count
+                if not existing.itemIdsTotal and itemIdsTotal then
+                    existing.itemIdsTotal = itemIdsTotal
                 end
                 -- Prefer a better representative itemId for the tooltip/model preview.
                 if IsBetterRepresentative(itemId, existing.itemId) then
                     existing.id = id
                     existing.itemId = itemId
-                    existing.name = (def.name or existing.name or "")
+                    existing.name = (name or existing.name or "")
                     existing.inventoryType = invType
                     existing.displayId = displayId
                 end
@@ -905,9 +943,12 @@ function Wardrobe:ApplyAppearance(appearance)
         appearanceId = tonumber(appearanceId)
     end
 
-    -- Fallback for older servers that expect itemId.
-    if not appearanceId then
-        appearanceId = appearance.itemId
+    -- Most reliable: server expects displayId.
+    if not appearanceId or tonumber(appearanceId) <= 0 then
+        if DC and DC.Print then
+            DC:Print("Unable to apply: missing appearance displayId for this entry.")
+        end
+        return
     end
 
     if DC and DC.RequestSetTransmog then

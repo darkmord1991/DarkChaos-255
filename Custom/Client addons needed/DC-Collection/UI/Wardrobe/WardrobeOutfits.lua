@@ -11,7 +11,7 @@ if not DC then return end
 DC.Wardrobe = DC.Wardrobe or {}
 local Wardrobe = DC.Wardrobe
 
-local function SerializeSlotsToJsonString(slots)
+Wardrobe.SerializeSlotsToJsonString = Wardrobe.SerializeSlotsToJsonString or function(slots)
     if type(slots) ~= "table" then
         return nil
     end
@@ -31,6 +31,152 @@ local function SerializeSlotsToJsonString(slots)
     end
 
     return "{" .. table.concat(parts, ",") .. "}"
+end
+
+function Wardrobe:InvalidateRandomizerCache()
+    self.collectedCache = nil
+    self._lastRandomOutfitSig = nil
+end
+
+function Wardrobe:_EnsureOutfitPreviewQueue()
+    if self._outfitPreviewQueueFrame then
+        return
+    end
+
+    self._outfitPreviewQueue = self._outfitPreviewQueue or {}
+
+    local f = CreateFrame("Frame")
+    f:Hide()
+    f.elapsed = 0
+    f:SetScript("OnUpdate", function(frame, dt)
+        frame.elapsed = (frame.elapsed or 0) + (dt or 0)
+        if frame.elapsed < 0.03 then
+            return
+        end
+        frame.elapsed = 0
+
+        local q = Wardrobe._outfitPreviewQueue
+        if not q or #q == 0 then
+            frame:Hide()
+            return
+        end
+
+        local job = table.remove(q, 1)
+        local btn = job and job.btn
+        local outfit = job and job.outfit
+        if not (btn and btn.model and outfit) then
+            return
+        end
+
+        -- If the button has since been re-used for another outfit, skip.
+        if btn._outfitPreviewSig ~= job.sig then
+            return
+        end
+
+        local model = btn.model
+
+        -- Fix order: SetUnit first, then undress, then TryOn.
+        model:SetUnit("player")
+        model:SetFacing(0)
+        if model.Undress then
+            model:Undress()
+        end
+
+        -- Best-effort: TryOn only items that are already cached.
+        local slots = outfit.slots or outfit.items
+        if type(slots) == "string" then
+            for _, val in slots:gmatch('"?[^":,{}]+"?%s*:%s*(%d+)') do
+                local n = tonumber(val)
+                if n and n > 0 and (not GetItemInfo or GetItemInfo(n)) then
+                    pcall(function()
+                        model:TryOn("item:" .. n .. ":0:0:0:0:0:0:0")
+                    end)
+                end
+            end
+        elseif type(slots) == "table" then
+            for _, val in pairs(slots) do
+                local n = tonumber(val)
+                if n and n > 0 and (not GetItemInfo or GetItemInfo(n)) then
+                    pcall(function()
+                        model:TryOn("item:" .. n .. ":0:0:0:0:0:0:0")
+                    end)
+                end
+            end
+        end
+    end)
+
+    self._outfitPreviewQueueFrame = f
+end
+
+function Wardrobe:_QueueOutfitPreview(btn, outfit)
+    if not (btn and btn.model and outfit) then
+        return
+    end
+
+    self:_EnsureOutfitPreviewQueue()
+
+    -- Signature: if unchanged, don't rebuild the model.
+    local slots = outfit.slots or outfit.items
+    local sig = tostring(outfit.id or "") .. ":" .. tostring(type(slots)) .. ":" .. tostring(slots)
+    if btn._outfitPreviewSig == sig then
+        return
+    end
+    btn._outfitPreviewSig = sig
+
+    self._outfitPreviewQueue = self._outfitPreviewQueue or {}
+    table.insert(self._outfitPreviewQueue, { btn = btn, outfit = outfit, sig = sig })
+    if self._outfitPreviewQueueFrame then
+        self._outfitPreviewQueueFrame:Show()
+    end
+end
+
+local function GetCurrentOutfitSlots()
+    local slots = {}
+    if not Wardrobe or type(Wardrobe.EQUIPMENT_SLOTS) ~= "table" then
+        return slots
+    end
+
+    for _, slotDef in ipairs(Wardrobe.EQUIPMENT_SLOTS) do
+        local invSlotId = GetInventorySlotInfo(slotDef.key)
+        if invSlotId then
+            local itemId = GetInventoryItemID("player", invSlotId)
+            if itemId then
+                local transmogId = DC and DC.transmogState and DC.transmogState[tostring(invSlotId - 1)]
+                local tid = tonumber(transmogId) or 0
+                if tid < 0 then tid = 0 end
+                slots[slotDef.key] = tid
+            end
+        end
+    end
+
+    return slots
+end
+
+local function IsSameSlots(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then
+        return false
+    end
+
+    local countA = 0
+    for k, v in pairs(a) do
+        local av = tonumber(v) or 0
+        if av > 0 then
+            countA = countA + 1
+            if (tonumber(b[k]) or 0) ~= av then
+                return false
+            end
+        end
+    end
+
+    local countB = 0
+    for k, v in pairs(b) do
+        local bv = tonumber(v) or 0
+        if bv > 0 then
+            countB = countB + 1
+        end
+    end
+
+    return countA == countB
 end
 
 local function NextLCG(seed)
@@ -100,7 +246,11 @@ function Wardrobe:ShowOutfitsContent()
 
         -- Request latest from server
         if DC.Protocol and DC.Protocol.RequestSavedOutfits then
-            DC.Protocol:RequestSavedOutfits()
+            if DC.Protocol.RequestSavedOutfitsPage then
+                DC.Protocol:RequestSavedOutfitsPage(0, 6)
+            else
+                DC.Protocol:RequestSavedOutfits()
+            end
         end
     end
     
@@ -136,6 +286,18 @@ function Wardrobe:ShowSaveOutfitDialog()
 end
 
 function Wardrobe:SaveCurrentOutfit(name)
+    -- Ensure we have authoritative transmog state (displayIds) before saving.
+    if not (DC and DC.transmogState) then
+        self._pendingSaveOutfitName = name
+        if DC and type(DC.RequestTransmogState) == "function" then
+            DC:RequestTransmogState()
+        end
+        if DC and DC.Print then
+            DC:Print("Loading transmog state, retrying save...")
+        end
+        return
+    end
+
     if not DC.db then DC.db = {} end
     if not DC.db.outfits then DC.db.outfits = {} end
 
@@ -154,11 +316,12 @@ function Wardrobe:SaveCurrentOutfit(name)
         if invSlotId then
             local itemId = GetInventoryItemID("player", invSlotId)
             if itemId then
-                -- Check for transmog
-                local transmogId = DC.transmogState and DC.transmogState[tostring(invSlotId-1)]
-                
-                -- Store the actual transmog appearance ID if available, otherwise item ID
-                outfit.slots[slotDef.key] = tonumber(transmogId) or itemId
+                -- Store displayId from transmog state (server expects displayId).
+                -- If no transmog is applied, store 0 so LoadOutfit can clear.
+                local transmogId = DC.transmogState and DC.transmogState[tostring(invSlotId - 1)]
+                local tid = tonumber(transmogId) or 0
+                if tid < 0 then tid = 0 end
+                outfit.slots[slotDef.key] = tid
                 
                 -- Capture icon from chest/head for main icon if not set
                 if (slotDef.key == "ChestSlot" or slotDef.key == "HeadSlot") and outfit.icon == "Interface\\Icons\\INV_Chest_Cloth_17" then
@@ -253,7 +416,7 @@ function Wardrobe:PublishOutfitToCommunity(outfit)
         itemsString = slots
     elseif type(slots) == "table" then
         -- Convert table to JSON string
-        itemsString = SerializeSlotsToJsonString(slots)
+        itemsString = Wardrobe.SerializeSlotsToJsonString(slots)
     end
 
     if not itemsString or itemsString == "" or itemsString == "{}" then
@@ -341,10 +504,24 @@ function Wardrobe:LoadOutfit(outfit)
         if invSlotId and GetInventoryItemID("player", invSlotId) then
             -- Server expects 0-based equipment slot index + appearanceId (displayId).
             if DC and DC.RequestSetTransmogByEquipmentSlot then
-                DC:RequestSetTransmogByEquipmentSlot(invSlotId - 1, tonumber(appearanceId) or appearanceId)
+                local n = tonumber(appearanceId) or 0
+                if n and n <= 0 then
+                    if DC.RequestClearTransmogByEquipmentSlot then
+                        DC:RequestClearTransmogByEquipmentSlot(invSlotId - 1)
+                    end
+                else
+                    DC:RequestSetTransmogByEquipmentSlot(invSlotId - 1, n)
+                end
             elseif DC and DC.RequestSetTransmog then
                 -- Fallback: RequestSetTransmog expects 1-based inventory slot.
-                DC:RequestSetTransmog(invSlotId, tonumber(appearanceId) or appearanceId)
+                local n = tonumber(appearanceId) or 0
+                if n and n <= 0 then
+                    if DC.RequestClearTransmog then
+                        DC:RequestClearTransmog(invSlotId)
+                    end
+                else
+                    DC:RequestSetTransmog(invSlotId, n)
+                end
             end
         end
     end
@@ -413,18 +590,9 @@ function Wardrobe:RandomizeOutfit()
             collected = {}
             for _, item in ipairs(list) do
                 if item.collected then
-                    -- Prefer displayId (server expects appearanceId), but fall back to itemId if unavailable
-                    local appearanceId = item.displayId or item.appearanceId or item.appearance_id
-                    if type(appearanceId) == "string" then
-                        appearanceId = tonumber(appearanceId)
-                    end
-                    
-                    -- Fallback: if no displayId, use itemId
-                    if not appearanceId or appearanceId == 0 then
-                        appearanceId = item.itemId
-                    end
-                    
-                    if appearanceId then
+                    -- Only use displayId (server expects appearanceId=displayId).
+                    local appearanceId = tonumber(item.displayId)
+                    if appearanceId and appearanceId > 0 then
                         table.insert(collected, appearanceId)
                     end
                 end
@@ -523,8 +691,8 @@ function Wardrobe:RandomizeOutfit()
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
         local p = picks and picks[slotDef.key]
         if p then
-
-            if DC and (DC.RequestSetTransmogByEquipmentSlot or DC.RequestSetTransmog) then
+            -- Only apply if an item is equipped in that slot.
+            if p.inv and GetInventoryItemID("player", p.inv) and DC and (DC.RequestSetTransmogByEquipmentSlot or DC.RequestSetTransmog) then
                 if DC.RequestSetTransmogByEquipmentSlot then
                     DC:RequestSetTransmogByEquipmentSlot((p.inv or 0) - 1, p.id)
                 else
@@ -560,11 +728,52 @@ function Wardrobe:RefreshOutfitsGrid()
     if not buttons then return end
 
     local outfits = DC.db and DC.db.outfits or {}
-    local outfits = DC.db and DC.db.outfits or {}
     local ITEMS_PER_PAGE = 6 -- 3x2 grid
-    
-    local totalOutfits = #outfits
+
     self.currentPage = self.currentPage or 1
+    local wantOffset = (self.currentPage - 1) * ITEMS_PER_PAGE
+
+    -- Ensure the dedicated outfits pager is visible only on this tab.
+    if self.frame and self.frame.outfitsPageFrame then
+        self.frame.outfitsPageFrame:Show()
+    end
+
+    -- Loading label to avoid showing placeholder tiles while waiting for server.
+    if self.frame and self.frame.outfitGridContainer and not self.frame.outfitsLoadingText then
+        local t = self.frame.outfitGridContainer:CreateFontString(nil, "OVERLAY", "GameFontDisableLarge")
+        t:SetPoint("CENTER", 0, 0)
+        t:SetText("Loading outfits...")
+        t:Hide()
+        self.frame.outfitsLoadingText = t
+    end
+
+    -- If server paging is supported, ensure we have the correct page loaded.
+    if DC.Protocol and DC.Protocol.RequestSavedOutfitsPage then
+        DC.db = DC.db or {}
+        DC.db.outfitsPages = DC.db.outfitsPages or {}
+
+        local cachedPage = DC.db.outfitsPages[wantOffset]
+        if cachedPage then
+            outfits = cachedPage
+            DC.db.outfits = cachedPage
+            DC.db.outfitsOffset = wantOffset
+            DC.db.outfitsLimit = ITEMS_PER_PAGE
+        elseif (not DC.db or DC.db.outfitsOffset ~= wantOffset) then
+            -- Hide tiles until the server responds, so we don't show placeholder names.
+            for _, b in ipairs(buttons) do b:Hide() end
+            if self.frame and self.frame.outfitsLoadingText then
+                self.frame.outfitsLoadingText:Show()
+            end
+            DC.Protocol:RequestSavedOutfitsPage(wantOffset, ITEMS_PER_PAGE)
+            return
+        end
+    end
+
+    if self.frame and self.frame.outfitsLoadingText then
+        self.frame.outfitsLoadingText:Hide()
+    end
+
+    local totalOutfits = (DC.db and tonumber(DC.db.outfitsTotal)) or #outfits
     self.totalPages = math.max(1, math.ceil(totalOutfits / ITEMS_PER_PAGE))
     
     if DC and DC.Print then
@@ -584,15 +793,79 @@ function Wardrobe:RefreshOutfitsGrid()
         end
     end
 
-    if self.frame.pageText then
-        self.frame.pageText:SetText(string.format("Page %d / %d", self.currentPage, self.totalPages))
+    if self.frame.outfitsPageText then
+        self.frame.outfitsPageText:SetText(string.format("Page %d / %d", self.currentPage, self.totalPages))
+    end
+
+    if self.frame.outfitsPrevBtn and type(self.frame.outfitsPrevBtn.SetEnabled) == "function" then
+        self.frame.outfitsPrevBtn:SetEnabled(self.currentPage > 1)
+    elseif self.frame.outfitsPrevBtn then
+        if self.currentPage > 1 and type(self.frame.outfitsPrevBtn.Enable) == "function" then
+            self.frame.outfitsPrevBtn:Enable()
+        elseif type(self.frame.outfitsPrevBtn.Disable) == "function" then
+            self.frame.outfitsPrevBtn:Disable()
+        end
+    end
+    if self.frame.outfitsNextBtn and type(self.frame.outfitsNextBtn.SetEnabled) == "function" then
+        self.frame.outfitsNextBtn:SetEnabled(self.currentPage < self.totalPages)
+    elseif self.frame.outfitsNextBtn then
+        if self.currentPage < self.totalPages and type(self.frame.outfitsNextBtn.Enable) == "function" then
+            self.frame.outfitsNextBtn:Enable()
+        elseif type(self.frame.outfitsNextBtn.Disable) == "function" then
+            self.frame.outfitsNextBtn:Disable()
+        end
     end
 
     if self.currentPage > self.totalPages then self.currentPage = self.totalPages end
     
-    local startIdx = (self.currentPage - 1) * ITEMS_PER_PAGE
-    
-    local startIdx = (self.currentPage - 1) * ITEMS_PER_PAGE
+    -- Determine equipped outfit; for page 1 we try to pin it even if it lives on another page.
+    local equippedIndex
+    local equippedSlots = GetCurrentOutfitSlots()
+    local equippedSig = Wardrobe.SerializeSlotsToJsonString(equippedSlots)
+
+    local pinnedOutfit
+    if wantOffset == 0 and DC.db and DC.db.outfitsBySignature and equippedSig then
+        pinnedOutfit = DC.db.outfitsBySignature[equippedSig]
+    end
+
+    -- If pinning on page 1, show pinned outfit as tile 1 and fill remaining tiles from page 0.
+    if wantOffset == 0 and pinnedOutfit then
+        local merged = { pinnedOutfit }
+        for _, o in ipairs(outfits) do
+            if #merged >= ITEMS_PER_PAGE then break end
+            if not (o and pinnedOutfit and o.id == pinnedOutfit.id) then
+                table.insert(merged, o)
+            end
+        end
+        outfits = merged
+        DC.db.outfits = merged
+        DC.db.outfitsOffset = 0
+        equippedIndex = 1
+    else
+        -- Old behavior: pin within current page only.
+        for i, o in ipairs(outfits) do
+            local s = o and (o.slots or o.items)
+            if type(s) == "string" then
+                local parsed = {}
+                for k, v in s:gmatch('"?([^":,{}]+)"?%s*:%s*(%d+)') do
+                    parsed[k] = tonumber(v)
+                end
+                s = parsed
+            end
+            if type(s) == "table" and IsSameSlots(equippedSlots, s) then
+                equippedIndex = i
+                break
+            end
+        end
+
+        if equippedIndex and equippedIndex > 1 then
+            local eq = table.remove(outfits, equippedIndex)
+            table.insert(outfits, 1, eq)
+            equippedIndex = 1
+        end
+    end
+
+    local startIdx = 0
     
     for i, btn in ipairs(buttons) do
         local idx = startIdx + i
@@ -601,29 +874,24 @@ function Wardrobe:RefreshOutfitsGrid()
         if outfit then
             btn:Show()
             btn.outfit = outfit
-            btn.name:SetText(outfit.name or "Outfit " .. idx)
-            
-            -- Setup Model Preview
-            btn.model:Show()
-            btn.model:Undress()
-            btn.model:SetUnit("player")
-            btn.model:SetFacing(0)
-            
-            -- Try on all items
-            if outfit.slots then
-                 if type(outfit.slots) == "table" then
-                     for _, itemId in pairs(outfit.slots) do
-                         local itemLink = "item:" .. itemId .. ":0:0:0:0:0:0:0"
-                         btn.model:TryOn(itemLink)
-                     end
-                 elseif type(outfit.slots) == "string" then
-                     -- Parse JSON string for display
-                     for slot, val in outfit.slots:gmatch('"?([^":,{}]+)"?%s*:%s*(%d+)') do
-                         local itemLink = "item:" .. val .. ":0:0:0:0:0:0:0"
-                         btn.model:TryOn(itemLink)
-                     end
-                 end
+
+            local baseName = outfit.name
+            if not baseName or baseName == "" or baseName == "Outfit Name" then
+                baseName = "Outfit " .. (outfit.id or idx)
             end
+
+            local isEquipped = (equippedIndex == idx)
+            if isEquipped then
+                btn.name:SetText(baseName .. " (Equipped)")
+                btn.highlight:SetAlpha(0.55)
+            else
+                btn.name:SetText(baseName)
+                btn.highlight:SetAlpha(0.3)
+            end
+            
+            -- Setup Model Preview (throttled to avoid hitching on tab open)
+            btn.model:Show()
+            self:_QueueOutfitPreview(btn, outfit)
             
             -- Hook Interaction
             btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -647,7 +915,14 @@ function Wardrobe:RefreshOutfitsGrid()
             
             btn:SetScript("OnEnter", function(selfBtn)
                  GameTooltip:SetOwner(selfBtn, "ANCHOR_RIGHT")
-                 GameTooltip:SetText(selfBtn.outfit.name)
+                 local n = selfBtn.outfit and selfBtn.outfit.name
+                 if not n or n == "" or n == "Outfit Name" then
+                     n = "Outfit " .. tostring(selfBtn.outfit and (selfBtn.outfit.id or "") or "")
+                 end
+                 GameTooltip:SetText(n)
+                 if isEquipped then
+                     GameTooltip:AddLine("Currently equipped", 1, 0.82, 0)
+                 end
                  GameTooltip:AddLine("Click to Apply", 0, 1, 0)
                  GameTooltip:AddLine("Shift+Click to Link", 1, 1, 1)
                  GameTooltip:Show()
@@ -657,39 +932,6 @@ function Wardrobe:RefreshOutfitsGrid()
             
         else
             btn:Hide()
-        end
-    end
-    
-    -- Update Page Text
-    if self.frame.pageText then
-        self.frame.pageText:SetText(string.format("Page %d / %d", self.currentPage, self.totalPages))
-    end
-    
-    -- Update Page Buttons
-    if self.frame.prevBtn then
-        if type(self.frame.prevBtn.SetEnabled) == "function" then
-            self.frame.prevBtn:SetEnabled(self.currentPage > 1)
-        elseif self.currentPage > 1 then
-            if type(self.frame.prevBtn.Enable) == "function" then
-                self.frame.prevBtn:Enable()
-            end
-        else
-            if type(self.frame.prevBtn.Disable) == "function" then
-                self.frame.prevBtn:Disable()
-            end
-        end
-    end
-    if self.frame.nextBtn then
-        if type(self.frame.nextBtn.SetEnabled) == "function" then
-            self.frame.nextBtn:SetEnabled(self.currentPage < self.totalPages)
-        elseif self.currentPage < self.totalPages then
-            if type(self.frame.nextBtn.Enable) == "function" then
-                self.frame.nextBtn:Enable()
-            end
-        else
-            if type(self.frame.nextBtn.Disable) == "function" then
-                self.frame.nextBtn:Disable()
-            end
         end
     end
 end

@@ -3324,6 +3324,46 @@ Logger.hlbg.aio=5,Appender.DC
 # Seasonal System
 Logger.seasonal=5,Appender.DC
 
+###################################################################################################
+# GUILD HOUSE SETTINGS
+###################################################################################################
+
+#
+#    GuildHouse.Currency.ItemId
+#        Description: Item ID of the currency used for purchasing Guild House upgrades.
+#        Default:     90000 (Guild Construction Token)
+#        Set to 0 to use Money (Gold) instead.
+#
+
+GuildHouse.Currency.ItemId = 90000
+
+#
+#    GuildHouse.Cost.*
+#        Description: Costs for various Guild House upgrades.
+#        If GuildHouse.Currency.ItemId is set, these are token counts.
+#        If set to 0, these are copper amounts.
+#
+
+CostGuildHouse = 10000000
+GuildHouseInnKeeper = 10
+GuildHouseBank = 50
+GuildHouseMailbox = 5
+GuildHouseAuctioneer = 100
+GuildHouseTrainerCost = 25
+GuildHouseVendor = 20
+GuildHouseObject = 15
+GuildHousePortal = 50
+GuildHouseProf = 30
+GuildHouseSpirit = 100
+
+#
+#    GuildHouse.Rank.Buy
+#        Description: Minimum Guild Rank required to purchase upgrades (0 = Guild Master).
+#        Default:     0
+#
+
+GuildHouseBuyRank = 0
+
 ###########################################################################
 # END OF CONFIGURATION FILE
 ###########################################################################

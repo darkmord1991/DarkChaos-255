@@ -30,9 +30,8 @@ local CATEGORY_WIDTH = 180
 local ACHIEVEMENT_HEIGHT = 80
 local SCROLL_BAR_WIDTH = 26
 
-local addonNameGlobal = ...
-local ADDON_PATH = "Interface\\AddOns\\" .. (addonNameGlobal or "DC-Collection") .. "\\"
-local BG_FELLEATHER = ADDON_PATH .. "Textures\\Backgrounds\\FelLeather_512.tga"
+-- Use a stable, known-good texture path ("..." can be nil or non-addon-name in some load paths).
+local BG_FELLEATHER = "Interface\\AddOns\\DC-Collection\\Textures\\Backgrounds\\FelLeather_512.tga"
 
 -- ============================================================================
 -- FRAME CREATION

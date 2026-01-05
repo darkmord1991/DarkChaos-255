@@ -65,6 +65,8 @@ local CombatLog = {
             locked = false,       -- Lock window position
             -- Combat Timer
             showCombatTimer = true,
+            -- Totals display: "off", "line", "title", "menu"
+            totalsDisplay = "line",
         },
     },
 }
@@ -258,6 +260,37 @@ local function FormatTime(seconds)
     end
 end
 
+local function GetActiveTotals()
+    if activeSegment and segments[activeSegment] and segments[activeSegment].totals then
+        return segments[activeSegment].totals, segments[activeSegment].duration or 0
+    end
+
+    local totals = { damage = 0, healing = 0, absorbs = 0, damageTaken = 0 }
+    for _, data in pairs(playerData) do
+        totals.damage = totals.damage + (data.damage or 0)
+        totals.healing = totals.healing + (data.healing or 0)
+        totals.absorbs = totals.absorbs + (data.absorbs or 0)
+        totals.damageTaken = totals.damageTaken + (data.damageTaken or 0)
+    end
+
+    return totals, GetCombatTime()
+end
+
+local function FormatTotalsSummary(totals, duration)
+    if not totals then return "" end
+    local dps = (duration and duration > 0) and (totals.damage or 0) / duration or 0
+    local hps = (duration and duration > 0) and (totals.healing or 0) / duration or 0
+    return string.format(
+        "D: %s (%s/s)  H: %s (%s/s)  DT: %s  A: %s",
+        FormatNumber(totals.damage or 0),
+        FormatNumber(dps),
+        FormatNumber(totals.healing or 0),
+        FormatNumber(hps),
+        FormatNumber(totals.damageTaken or 0),
+        FormatNumber(totals.absorbs or 0)
+    )
+end
+
 local function GetCombatTime()
     if inCombat then
         return GetTime() - combatStartTime
@@ -376,17 +409,139 @@ local function SaveSegment()
         endTime = combatEndTime or GetTime(),
         duration = GetCombatTime(),
         data = {},
+        totals = {
+            players = 0,
+            damage = 0,
+            totalDamage = 0,
+            overkill = 0,
+            healing = 0,
+            totalHealing = 0,
+            overhealing = 0,
+            damageTaken = 0,
+            absorbs = 0,
+            deaths = 0,
+            killingBlows = 0,
+            interrupts = 0,
+            dispels = 0,
+            ccDone = 0,
+            resurrects = 0,
+            activeTime = 0,
+            manaGain = 0,
+            rageGain = 0,
+            energyGain = 0,
+            runicGain = 0,
+            dodges = 0,
+            parries = 0,
+            misses = 0,
+            blocks = 0,
+            resists = 0,
+            friendlyDamage = 0,
+            potionsUsed = 0,
+            healthstonesUsed = 0,
+        },
     }
     
     -- Copy player data
     for guid, data in pairs(playerData) do
+        local spellsCopy = {}
+        if data.spells then
+            for spellId, spell in pairs(data.spells) do
+                spellsCopy[spellId] = {
+                    name = spell.name,
+                    damage = spell.damage or 0,
+                    healing = spell.healing or 0,
+                    hits = spell.hits or 0,
+                    crits = spell.crits or 0,
+                    glancing = spell.glancing or 0,
+                    critDamage = spell.critDamage or 0,
+                    critMin = spell.critMin,
+                    critMax = spell.critMax,
+                    normalHits = spell.normalHits or 0,
+                    normalDamage = spell.normalDamage or 0,
+                    normalMin = spell.normalMin,
+                    normalMax = spell.normalMax,
+                    misses = spell.misses or 0,
+                    dodges = spell.dodges or 0,
+                    parries = spell.parries or 0,
+                    blocks = spell.blocks or 0,
+                    resists = spell.resists or 0,
+                    absorbed = spell.absorbed or 0,
+                    overkill = spell.overkill or 0,
+                }
+            end
+        end
+
+        local ccSpellsCopy = {}
+        if data.ccSpells then
+            for spellId, count in pairs(data.ccSpells) do
+                ccSpellsCopy[spellId] = count
+            end
+        end
+
         segment.data[guid] = {
             name = data.name,
             class = data.class,
-            damage = data.damage,
-            healing = data.healing,
-            damageTaken = data.damageTaken,
+            damage = data.damage or 0,
+            totalDamage = data.totalDamage or 0,
+            overkill = data.overkill or 0,
+            healing = data.healing or 0,
+            totalHealing = data.totalHealing or 0,
+            overhealing = data.overhealing or 0,
+            damageTaken = data.damageTaken or 0,
+            absorbs = data.absorbs or 0,
+            deaths = data.deaths or 0,
+            killingBlows = data.killingBlows or 0,
+            interrupts = data.interrupts or 0,
+            dispels = data.dispels or 0,
+            ccDone = data.ccDone or 0,
+            resurrects = data.resurrects or 0,
+            activeTime = data.activeTime or 0,
+            manaGain = data.manaGain or 0,
+            rageGain = data.rageGain or 0,
+            energyGain = data.energyGain or 0,
+            runicGain = data.runicGain or 0,
+            dodges = data.dodges or 0,
+            parries = data.parries or 0,
+            misses = data.misses or 0,
+            blocks = data.blocks or 0,
+            resists = data.resists or 0,
+            friendlyDamage = data.friendlyDamage or 0,
+            potionsUsed = data.potionsUsed or 0,
+            healthstonesUsed = data.healthstonesUsed or 0,
+            spells = spellsCopy,
+            ccSpells = ccSpellsCopy,
         }
+
+        local entry = segment.data[guid]
+        local totals = segment.totals
+        totals.players = totals.players + 1
+        totals.damage = totals.damage + (entry.damage or 0)
+        totals.totalDamage = totals.totalDamage + (entry.totalDamage or 0)
+        totals.overkill = totals.overkill + (entry.overkill or 0)
+        totals.healing = totals.healing + (entry.healing or 0)
+        totals.totalHealing = totals.totalHealing + (entry.totalHealing or 0)
+        totals.overhealing = totals.overhealing + (entry.overhealing or 0)
+        totals.damageTaken = totals.damageTaken + (entry.damageTaken or 0)
+        totals.absorbs = totals.absorbs + (entry.absorbs or 0)
+        totals.deaths = totals.deaths + (entry.deaths or 0)
+        totals.killingBlows = totals.killingBlows + (entry.killingBlows or 0)
+        totals.interrupts = totals.interrupts + (entry.interrupts or 0)
+        totals.dispels = totals.dispels + (entry.dispels or 0)
+        totals.ccDone = totals.ccDone + (entry.ccDone or 0)
+        totals.resurrects = totals.resurrects + (entry.resurrects or 0)
+        totals.activeTime = totals.activeTime + (entry.activeTime or 0)
+        totals.manaGain = totals.manaGain + (entry.manaGain or 0)
+        totals.rageGain = totals.rageGain + (entry.rageGain or 0)
+        totals.energyGain = totals.energyGain + (entry.energyGain or 0)
+        totals.runicGain = totals.runicGain + (entry.runicGain or 0)
+        totals.dodges = totals.dodges + (entry.dodges or 0)
+        totals.parries = totals.parries + (entry.parries or 0)
+        totals.misses = totals.misses + (entry.misses or 0)
+        totals.blocks = totals.blocks + (entry.blocks or 0)
+        totals.resists = totals.resists + (entry.resists or 0)
+        totals.friendlyDamage = totals.friendlyDamage + (entry.friendlyDamage or 0)
+        totals.potionsUsed = totals.potionsUsed + (entry.potionsUsed or 0)
+        totals.healthstonesUsed = totals.healthstonesUsed + (entry.healthstonesUsed or 0)
     end
     
     table.insert(segments, 1, segment)
@@ -403,18 +558,9 @@ end
 local function SelectSegment(index)
     if not index or index == 0 then
         activeSegment = nil
-        if combatFrame and combatFrame.title then
-            combatFrame.title:SetText("|cffFFCC00DC|r Combat")
-        end
     else
         if segments[index] then
             activeSegment = index
-            local seg = segments[index]
-            if combatFrame and combatFrame.title then
-                local duration = seg.duration or 0
-                local timeStr = FormatTime(duration)
-                combatFrame.title:SetText(string.format("Fight %d (%s)", index, timeStr))
-            end
         end
     end
     CombatLog.UpdateFrame()
@@ -431,30 +577,89 @@ local function GetSortedData(mode)
     end
     
     if mode == "healing" then valueKey = "healing"
-    elseif mode == "damageTaken" then valueKey = "damageTaken" 
+    elseif mode == "damageTaken" then valueKey = "damageTaken"
     elseif mode == "dispels" then valueKey = "dispels"
     elseif mode == "interrupts" then valueKey = "interrupts"
     elseif mode == "deaths" then valueKey = "deaths"
     elseif mode == "cc" then valueKey = "ccDone"
-    elseif mode == "friendlyFire" then valueKey = "friendlyDamage" 
+    elseif mode == "friendlyFire" then valueKey = "friendlyDamage"
+    elseif mode == "absorbs" then valueKey = "absorbs"
+    elseif mode == "overkill" then valueKey = "overkill"
+    elseif mode == "killingBlows" then valueKey = "killingBlows"
+    elseif mode == "activity" then valueKey = "activeTime"
+    elseif mode == "power" then valueKey = "powerTotal"
+    elseif mode == "consumables" then valueKey = "consumablesTotal"
     end
 
     
     if not dataSource then return sorted end
 
     for guid, data in pairs(dataSource) do
-        if data[valueKey] and data[valueKey] > 0 then
+        local value = nil
+
+        if valueKey == "powerTotal" then
+            value = (data.manaGain or 0) + (data.rageGain or 0) + (data.energyGain or 0) + (data.runicGain or 0)
+        elseif valueKey == "consumablesTotal" then
+            value = (data.potionsUsed or 0) + (data.healthstonesUsed or 0)
+        else
+            value = data[valueKey]
+        end
+
+        if value and value > 0 then
             table.insert(sorted, {
                 guid = guid,
                 name = data.name,
                 class = data.class,
-                value = data[valueKey],
+                value = value,
             })
         end
     end
     
     table.sort(sorted, function(a, b) return a.value > b.value end)
     
+    return sorted
+end
+
+local function GetThreatSortedData()
+    local sorted = {}
+    if not UnitExists("target") then
+        return sorted
+    end
+
+    local units = {}
+    if IsInRaid() then
+        for i = 1, 40 do
+            units[#units + 1] = "raid" .. i
+        end
+    elseif IsInGroup() then
+        units[#units + 1] = "player"
+        for i = 1, 4 do
+            units[#units + 1] = "party" .. i
+        end
+    else
+        units[#units + 1] = "player"
+    end
+
+    for _, unit in ipairs(units) do
+        if UnitExists(unit) then
+            local isTanking, _, threatPct, _, threatValue = UnitDetailedThreatSituation(unit, "target")
+            if threatPct and threatPct > 0 then
+                local name = UnitName(unit)
+                local guid = UnitGUID(unit)
+                local _, class = UnitClass(unit)
+                table.insert(sorted, {
+                    guid = guid,
+                    name = name or unit,
+                    class = class,
+                    value = threatPct,
+                    threatValue = threatValue,
+                    isTanking = isTanking,
+                })
+            end
+        end
+    end
+
+    table.sort(sorted, function(a, b) return a.value > b.value end)
     return sorted
 end
 
@@ -548,12 +753,26 @@ local function CreateCombatFrame()
     if combatFrame then return combatFrame end
     
     local settings = addon.settings.combatLog
+
+    -- Migrate legacy position settings (older DC-QOS versions)
+    if (settings.x == nil or settings.y == nil) and (settings.frameX ~= nil or settings.frameY ~= nil) then
+        combatFrame = CreateFrame("Frame", nil, UIParent)
+        combatFrame:SetPoint("CENTER", UIParent, "CENTER", settings.frameX or 300, settings.frameY or 150)
+        SavePosition(combatFrame, settings)
+        combatFrame:Hide()
+        combatFrame = nil
+        settings.frameX, settings.frameY = nil, nil
+    end
+    if settings.scale == nil and settings.frameScale ~= nil then
+        settings.scale = settings.frameScale
+        settings.frameScale = nil
+    end
     local width = settings.frameWidth or 200
     local height = settings.frameHeight or 250
     
     combatFrame = CreateFrame("Frame", "DCQoS_CombatLogFrame", UIParent)
     combatFrame:SetSize(width, height)
-    combatFrame:SetScale(settings.frameScale or 1.0)
+    combatFrame:SetScale(settings.scale or 1.0)
     combatFrame:SetAlpha(settings.frameAlpha or 0.9)
     combatFrame:SetMovable(true)
     combatFrame:EnableMouse(true)
@@ -595,26 +814,33 @@ local function CreateCombatFrame()
     title:SetText("|cffFFCC00DC|r Combat")
     combatFrame.title = title
     
-    -- Mode buttons
-    local dmgBtn = CreateFrame("Button", nil, titleBar, "UIPanelButtonTemplate")
-    dmgBtn:SetSize(25, 16)
-    dmgBtn:SetPoint("LEFT", title, "RIGHT", 10, 0)
-    dmgBtn:SetText("D")
-    dmgBtn:SetScript("OnClick", function()
-        addon:SetSetting("combatLog.meterMode", "damage")
-        CombatLog.UpdateFrame()
+    -- Timer text (RIGHT relative to Close Button)
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, titleBar, "UIPanelCloseButton")
+    closeBtn:SetSize(20, 20)
+    closeBtn:SetPoint("TOPRIGHT", 0, 0)
+    closeBtn:SetScript("OnClick", function()
+        CombatLog.HideFrame()
     end)
-    dmgBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Damage Done")
-        GameTooltip:Show()
-    end)
-    dmgBtn:SetScript("OnLeave", GameTooltip_Hide)
-    
-    -- Menu Button
+
+    -- Timer text (RIGHT relative to Close Button)
+    local timerText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    timerText:SetPoint("RIGHT", closeBtn, "LEFT", -5, 0)
+    timerText:SetText("0:00")
+    combatFrame.timerText = timerText
+
+    -- Totals line (small), anchored under the timer area
+    local totalsText = combatFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    totalsText:SetPoint("TOPRIGHT", timerText, "BOTTOMRIGHT", 0, -2)
+    totalsText:SetJustifyH("RIGHT")
+    totalsText:SetText("")
+    totalsText:Hide()
+    combatFrame.totalsText = totalsText
+
+    -- Menu Button (Left of Timer)
     local menuBtn = CreateFrame("Button", nil, titleBar, "UIPanelButtonTemplate")
     menuBtn:SetSize(25, 16)
-    menuBtn:SetPoint("LEFT", title, "RIGHT", 10, 0)
+    menuBtn:SetPoint("RIGHT", timerText, "LEFT", -10, 0)
     menuBtn:SetText("M")
     menuBtn:SetScript("OnClick", function(self)
         CombatLog.OpenMenu(self)
@@ -625,14 +851,11 @@ local function CreateCombatFrame()
         GameTooltip:Show()
     end)
     menuBtn:SetScript("OnLeave", GameTooltip_Hide)
-    
-    -- Reposition D/H buttons
-    dmgBtn:ClearAllPoints()
-    dmgBtn:SetPoint("LEFT", menuBtn, "RIGHT", 2, 0)
-    
+
+    -- Healing Button (Left of Menu)
     local healBtn = CreateFrame("Button", nil, titleBar, "UIPanelButtonTemplate")
     healBtn:SetSize(25, 16)
-    healBtn:SetPoint("LEFT", dmgBtn, "RIGHT", 2, 0)
+    healBtn:SetPoint("RIGHT", menuBtn, "LEFT", -2, 0)
     healBtn:SetText("H")
     healBtn:SetScript("OnClick", function()
         addon:SetSetting("combatLog.meterMode", "healing")
@@ -644,20 +867,22 @@ local function CreateCombatFrame()
         GameTooltip:Show()
     end)
     healBtn:SetScript("OnLeave", GameTooltip_Hide)
-    
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, titleBar, "UIPanelCloseButton")
-    closeBtn:SetSize(20, 20)
-    closeBtn:SetPoint("TOPRIGHT", 0, 0)
-    closeBtn:SetScript("OnClick", function()
-        CombatLog.HideFrame()
+
+    -- Damage Button (Left of Healing)
+    local dmgBtn = CreateFrame("Button", nil, titleBar, "UIPanelButtonTemplate")
+    dmgBtn:SetSize(25, 16)
+    dmgBtn:SetPoint("RIGHT", healBtn, "LEFT", -2, 0)
+    dmgBtn:SetText("D")
+    dmgBtn:SetScript("OnClick", function()
+        addon:SetSetting("combatLog.meterMode", "damage")
+        CombatLog.UpdateFrame()
     end)
-    
-    -- Timer text
-    local timerText = combatFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    timerText:SetPoint("TOPRIGHT", -25, -5)
-    timerText:SetText("0:00")
-    combatFrame.timerText = timerText
+    dmgBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Damage Done")
+        GameTooltip:Show()
+    end)
+    dmgBtn:SetScript("OnLeave", GameTooltip_Hide)
     
     -- Create bar frames
     for i = 1, 15 do
@@ -747,11 +972,63 @@ function CombatLog.UpdateFrame()
     local combatTime = GetCombatTime()
     
     -- Update timer
-    combatFrame.timerText:SetText(FormatTime(combatTime))
+    if combatFrame.timerText then
+        combatFrame.timerText:SetText(FormatTime(combatTime))
+    end
     
-    -- Get sorted data
+    -- Get sorted data and update title
     local mode = settings.meterMode or "damage"
-    local sorted = GetSortedData(mode)
+    local modeNames = {
+        damage = "Damage",
+        healing = "Healing",
+        damageTaken = "Damage Taken",
+        dispels = "Dispels",
+        interrupts = "Interrupts",
+        deaths = "Deaths",
+        cc = "CC Done",
+        friendlyFire = "Friendly Fire"
+    }
+    
+    local titleText = "|cffFFCC00DC|r " .. (modeNames[mode] or "Combat")
+    
+    if activeSegment and segments[activeSegment] then
+        titleText = titleText .. string.format(" (Fight %d)", activeSegment)
+    else
+        titleText = titleText .. " (Current)"
+    end
+    
+    if combatFrame.title then
+        if settings.totalsDisplay == "title" then
+            local totals = GetActiveTotals()
+            local short = string.format(
+                "D:%s H:%s A:%s",
+                FormatNumber((totals and totals.damage) or 0),
+                FormatNumber((totals and totals.healing) or 0),
+                FormatNumber((totals and totals.absorbs) or 0)
+            )
+            combatFrame.title:SetText(titleText .. "  " .. short)
+        else
+            combatFrame.title:SetText(titleText)
+        end
+    end
+
+    -- Totals line (under timer)
+    if combatFrame.totalsText then
+        if settings.totalsDisplay == "line" then
+            local totals, duration = GetActiveTotals()
+            combatFrame.totalsText:SetText(FormatTotalsSummary(totals, duration))
+            combatFrame.totalsText:Show()
+        else
+            combatFrame.totalsText:Hide()
+        end
+    end
+
+    local sorted = {}
+    if mode == "threat" then
+        sorted = GetThreatSortedData()
+    else
+        sorted = GetSortedData(mode)
+    end
     
     -- Find max value for bar scaling
     local maxValue = 0
@@ -762,7 +1039,9 @@ function CombatLog.UpdateFrame()
     -- Update bars
     local maxBars = math.min(settings.maxBars or 10, #barFrames)
     local barHeight = settings.barHeight or 18
-    local visibleHeight = combatFrame:GetHeight() - 50  -- Title + bottom bar
+    local extraTop = (settings.totalsDisplay == "line") and 14 or 0
+    local topOffset = 28 + extraTop
+    local visibleHeight = combatFrame:GetHeight() - (50 + extraTop)  -- Title + bottom bar (+ totals line)
     local barsToShow = math.min(math.floor(visibleHeight / (barHeight + 2)), maxBars)
     
     for i = 1, #barFrames do
@@ -771,11 +1050,11 @@ function CombatLog.UpdateFrame()
         if i <= barsToShow and sorted[i] then
             local data = sorted[i]
             local percent = maxValue > 0 and (data.value / maxValue * 100) or 0
-            local dps = combatTime > 0 and (data.value / combatTime) or 0
+            local perSec = combatTime > 0 and (data.value / combatTime) or 0
             
             -- Size and position
             bar:SetSize(combatFrame:GetWidth() - 10, barHeight)
-            bar:SetPoint("TOPLEFT", 5, -28 - ((i - 1) * (barHeight + 2)))
+            bar:SetPoint("TOPLEFT", 5, -topOffset - ((i - 1) * (barHeight + 2)))
             
             -- Color
             local r, g, b = GetClassColor(data.class)
@@ -787,7 +1066,20 @@ function CombatLog.UpdateFrame()
             bar.nameText:SetText(data.name)
             
             if mode == "damage" or mode == "healing" then
-                bar.valueText:SetText(string.format("%s (%s)", FormatNumber(data.value), FormatNumber(dps)))
+                bar.valueText:SetText(string.format("%s (%s)", FormatNumber(data.value), FormatNumber(perSec)))
+            elseif mode == "damageTaken" then
+                bar.valueText:SetText(string.format("%s (%s/s)", FormatNumber(data.value), FormatNumber(perSec)))
+            elseif mode == "activity" then
+                bar.valueText:SetText(FormatTime(data.value))
+            elseif mode == "threat" then
+                bar.valueText:SetText(string.format("%.1f%%", data.value))
+            elseif mode == "consumables" then
+                bar.valueText:SetText(string.format("%d", data.value))
+            elseif mode == "killingBlows" or mode == "dispels" or mode == "interrupts" or mode == "deaths" or mode == "cc" then
+                bar.valueText:SetText(string.format("%d", data.value))
+            else
+                bar.valueText:SetText(FormatNumber(data.value))
+            end
             elseif mode == "dispels" or mode == "interrupts" or mode == "deaths" or mode == "cc" then
                 bar.valueText:SetText(tostring(data.value))
             else
@@ -1007,6 +1299,27 @@ end
 
 function CombatLog.OpenMenu(anchor)
     local settings = addon.settings.combatLog
+
+    local function SetTotalsDisplay(mode)
+        addon:SetSetting("combatLog.totalsDisplay", mode)
+        CombatLog.UpdateFrame()
+    end
+
+    local totalsDisplay = settings.totalsDisplay or "line"
+    local currentText = "Current Fight"
+    if totalsDisplay == "menu" then
+        local totals = { damage = 0, healing = 0 }
+        for _, data in pairs(playerData) do
+            totals.damage = totals.damage + (data.damage or 0)
+            totals.healing = totals.healing + (data.healing or 0)
+        end
+        currentText = string.format(
+            "Current Fight  D:%s H:%s",
+            FormatNumber(totals.damage),
+            FormatNumber(totals.healing)
+        )
+    end
+
     local menu = {
         { text = "|cffFFCC00DC Combat Menu|r", isTitle = true, notCheckable = true },
         { text = "Reset Stats", func = function()
@@ -1017,13 +1330,23 @@ function CombatLog.OpenMenu(anchor)
         end, notCheckable = true },
         
         { text = "Segments", isTitle = true, notCheckable = true },
-        { text = "Current Fight", func = function() SelectSegment(0) end, checked = function() return activeSegment == nil end },
+        { text = currentText, func = function() SelectSegment(0) end, checked = function() return activeSegment == nil end },
     }
     
     -- Add history segments
     for i, seg in ipairs(segments) do
+        local segText = string.format("Fight %d (%s)", i, FormatTime(seg.duration))
+        if totalsDisplay == "menu" and seg.totals then
+            segText = string.format(
+                "Fight %d (%s)  D:%s H:%s",
+                i,
+                FormatTime(seg.duration),
+                FormatNumber(seg.totals.damage or 0),
+                FormatNumber(seg.totals.healing or 0)
+            )
+        end
         table.insert(menu, {
-            text = string.format("Fight %d (%s)", i, FormatTime(seg.duration)),
+            text = segText,
             func = function() SelectSegment(i) end,
             checked = function() return activeSegment == i end
         })
@@ -1063,6 +1386,12 @@ function CombatLog.OpenMenu(anchor)
             addon:SetSetting("combatLog.meterMode", "friendlyFire")
             CombatLog.UpdateFrame()
         end, checked = function() return addon.settings.combatLog.meterMode == "friendlyFire" end },
+        { text = " ", isTitle = true, notCheckable = true },
+        { text = "Totals Display", isTitle = true, notCheckable = true },
+        { text = "Off", func = function() SetTotalsDisplay("off") end, checked = function() return (addon.settings.combatLog.totalsDisplay or "line") == "off" end },
+        { text = "Small Line", func = function() SetTotalsDisplay("line") end, checked = function() return (addon.settings.combatLog.totalsDisplay or "line") == "line" end },
+        { text = "Title Bar", func = function() SetTotalsDisplay("title") end, checked = function() return (addon.settings.combatLog.totalsDisplay or "line") == "title" end },
+        { text = "Segment Menu", func = function() SetTotalsDisplay("menu") end, checked = function() return (addon.settings.combatLog.totalsDisplay or "line") == "menu" end },
         { text = " ", isTitle = true, notCheckable = true },
         { text = settings.locked and "Unlock Window" or "Lock Window", func = function()
             CombatLog.ToggleLock()
@@ -1304,6 +1633,16 @@ local function OnCombatLogEvent(...)
             isGroupSource = true
         end
     end
+
+    -- Check if destination is in our group (used for friendly fire, smart combat start, etc.)
+    local isGroupDest = destGUID == playerGUID
+    if settings.trackGroup and not isGroupDest then
+        if bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0 or
+           bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0 or
+           bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0 then
+            isGroupDest = true
+        end
+    end
     
 
     
@@ -1427,12 +1766,11 @@ local function OnCombatLogEvent(...)
                 local school = arg11
                 local amount = arg12 or 0
                 local overkill = arg13 or 0
-                local school2 = arg14 or 0
-                local resisted = arg15 or 0
-                local blocked = arg16 or 0
-                local absorbed = arg17 or 0
-                local critical = arg18
-                local glancing = arg19
+                local resisted = arg14 or 0
+                local blocked = arg15 or 0
+                local absorbed = arg16 or 0
+                local critical = arg17
+                local glancing = arg18
                 
                 data.damage = data.damage + amount
 
@@ -1553,8 +1891,6 @@ local function OnCombatLogEvent(...)
     
     -- Track damage to friendlies (friendly fire)
     if settings.trackFriendlyFire and isGroupSource then
-        local isGroupDest = bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0 or
-                            bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0
         if isGroupDest and sourceGUID ~= destGUID then
             local data = GetPlayerData(sourceGUID, sourceName, sourceFlags)
             if data then
@@ -1620,7 +1956,7 @@ local function OnCombatLogEvent(...)
                 spellName = arg10
                 amount = arg12 or 0
                 overkill = arg13 or 0
-                absorbed = arg17 or 0
+                absorbed = arg16 or 0
             elseif event == "ENVIRONMENTAL_DAMAGE" then
                 spellName = arg9 or "Environment"
                 amount = arg10 or 0
@@ -1838,6 +2174,45 @@ function CombatLog.CreateSettings(parent)
         addon:SetSetting("combatLog.trackGroup", self:GetChecked())
     end)
     yOffset = yOffset - 35
+
+    local totalsHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    totalsHeader:SetPoint("TOPLEFT", 16, yOffset)
+    totalsHeader:SetText("Totals")
+    yOffset = yOffset - 25
+
+    local totalsBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    totalsBtn:SetSize(220, 22)
+    totalsBtn:SetPoint("TOPLEFT", 16, yOffset)
+
+    local displayNames = {
+        off = "Off",
+        line = "Small Line",
+        title = "Title Bar",
+        menu = "Segment Menu",
+    }
+    local cycle = { "line", "title", "menu", "off" }
+
+    local function RefreshTotalsBtn()
+        local mode = addon.settings.combatLog.totalsDisplay or "line"
+        totalsBtn:SetText("Totals: " .. (displayNames[mode] or "Small Line"))
+    end
+
+    totalsBtn:SetScript("OnClick", function()
+        local current = addon.settings.combatLog.totalsDisplay or "line"
+        local nextMode = "line"
+        for i, v in ipairs(cycle) do
+            if v == current then
+                nextMode = cycle[i % #cycle + 1]
+                break
+            end
+        end
+        addon:SetSetting("combatLog.totalsDisplay", nextMode)
+        RefreshTotalsBtn()
+        CombatLog.UpdateFrame()
+    end)
+
+    RefreshTotalsBtn()
+    yOffset = yOffset - 45
     
     -- Death Recap Section
     local deathHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")

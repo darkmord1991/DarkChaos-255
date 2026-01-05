@@ -119,6 +119,10 @@ end
 
 local DELIMITER = "^"
 
+-- Keep the in-memory transmog definitions packed as delimiter-separated strings
+-- to avoid huge per-entry Lua table overhead.
+local DEFAULT_TRANSMOG_UNPACK_CACHE_MAX = 512
+
 local function PackTransmogDefinition(def)
     if type(def) ~= "table" then return def end
     
@@ -132,7 +136,12 @@ local function PackTransmogDefinition(def)
         def.subclass or "",
         def.visualSlot or "",
         def.itemId or "",
-        def.spellId or ""
+        def.spellId or "",
+
+        -- Optional fields used by some UIs. Store as strings to keep packing simple.
+        def.itemIdsTotal or def.item_ids_total or def.itemIds_count or def.itemIdsCount or "",
+        (type(def.itemIds) == "table" and table.concat(def.itemIds, ",")) or def.itemIds or def.item_ids or "",
+        def.source or ""
     }, DELIMITER)
 end
 
@@ -143,6 +152,14 @@ local function UnpackTransmogDefinition(str)
     -- Fast split
     local parts = { strsplit(DELIMITER, str) }
     
+    local itemIds = nil
+    if parts[12] and parts[12] ~= "" then
+        itemIds = { strsplit(",", parts[12]) }
+        for i = 1, #itemIds do
+            itemIds[i] = tonumber(itemIds[i]) or itemIds[i]
+        end
+    end
+
     return {
         name = (parts[1] ~= "" and parts[1]) or nil,
         icon = (parts[2] ~= "" and parts[2]) or nil,
@@ -155,7 +172,64 @@ local function UnpackTransmogDefinition(str)
         visualSlot = tonumber(parts[8]),
         itemId = tonumber(parts[9]),
         spellId = tonumber(parts[10]),
+
+        itemIdsTotal = (parts[11] ~= "" and tonumber(parts[11])) or nil,
+        itemIds = itemIds,
+        source = (parts[13] ~= "" and parts[13]) or nil,
     }
+end
+
+-- Parse only the commonly-used fields from a packed transmog definition string.
+-- Returns: name, icon, quality, displayId, inventoryType, class, subclass, visualSlot, itemId, spellId, itemIdsTotal, itemIdsStr, source
+function DC:ParsePackedTransmogDefinition(str)
+    if type(str) ~= "string" then
+        return nil
+    end
+    return strsplit(DELIMITER, str)
+end
+
+local function GetTransmogUnpackCacheMax()
+    if DCCollectionDB and DCCollectionDB.transmogUnpackCacheMax ~= nil then
+        local v = tonumber(DCCollectionDB.transmogUnpackCacheMax)
+        if v and v >= 32 then
+            return math.floor(v)
+        end
+    end
+    return DEFAULT_TRANSMOG_UNPACK_CACHE_MAX
+end
+
+function DC:_GetUnpackedTransmogDefinition(id, packed)
+    if not id or type(packed) ~= "string" then
+        return nil
+    end
+
+    self._transmogDefUnpackCache = self._transmogDefUnpackCache or {}
+    local cached = self._transmogDefUnpackCache[id]
+    if cached then
+        return cached
+    end
+
+    local def = UnpackTransmogDefinition(packed)
+    if type(def) ~= "table" then
+        return def
+    end
+
+    local maxSize = GetTransmogUnpackCacheMax()
+    self._transmogDefUnpackRing = self._transmogDefUnpackRing or {}
+    self._transmogDefUnpackRingPos = (self._transmogDefUnpackRingPos or 0) + 1
+    if self._transmogDefUnpackRingPos > maxSize then
+        self._transmogDefUnpackRingPos = 1
+    end
+
+    local pos = self._transmogDefUnpackRingPos
+    local oldId = self._transmogDefUnpackRing[pos]
+    if oldId ~= nil then
+        self._transmogDefUnpackCache[oldId] = nil
+    end
+
+    self._transmogDefUnpackRing[pos] = id
+    self._transmogDefUnpackCache[id] = def
+    return def
 end
 
 -- ============================================================================
@@ -176,17 +250,17 @@ function DC:LoadCache()
     -- Load definitions
     if DCCollectionDB.definitionCache then
         for collType, defs in pairs(DCCollectionDB.definitionCache) do
-            -- If types are packed (transmog), unpack them now.
-            if collType == "transmog" or collType == "itemSets" then
-                local unpackedDefs = {}
+            -- Keep transmog packed in memory to reduce RAM.
+            if collType == "transmog" then
+                local packedDefs = {}
                 for id, data in pairs(defs) do
-                    if type(data) == "string" then
-                        unpackedDefs[id] = UnpackTransmogDefinition(data)
+                    if type(data) == "table" then
+                        packedDefs[id] = PackTransmogDefinition(data)
                     else
-                        unpackedDefs[id] = data
+                        packedDefs[id] = data
                     end
                 end
-                self.definitions[collType] = unpackedDefs
+                self.definitions[collType] = packedDefs
             else
                 self.definitions[collType] = defs
             end
@@ -438,7 +512,12 @@ function DC:CacheAddDefinition(collectionType, itemId, defData)
 
     local normalizedId = NormalizeId(itemId)
     self.definitions[typeName] = self.definitions[typeName] or {}
-    self.definitions[typeName][normalizedId] = defData
+
+    if typeName == "transmog" then
+        self.definitions[typeName][normalizedId] = PackTransmogDefinition(defData)
+    else
+        self.definitions[typeName][normalizedId] = defData
+    end
 
     self:_BumpDefinitionsRevision(typeName)
     
@@ -473,7 +552,11 @@ function DC:CacheMergeDefinitions(collectionType, definitions)
         if not self.definitions[typeName][normalizedId] then
             added = added + 1
         end
-        self.definitions[typeName][normalizedId] = defData
+        if typeName == "transmog" then
+            self.definitions[typeName][normalizedId] = PackTransmogDefinition(defData)
+        else
+            self.definitions[typeName][normalizedId] = defData
+        end
     end
 
     if added > 0 then
@@ -615,7 +698,11 @@ function DC:GetDefinition(collectionType, itemId)
 
     local normalizedId = NormalizeId(itemId)
     if self.definitions[typeName] then
-        return self.definitions[typeName][normalizedId]
+        local v = self.definitions[typeName][normalizedId]
+        if typeName == "transmog" and type(v) == "string" then
+            return self:_GetUnpackedTransmogDefinition(normalizedId, v)
+        end
+        return v
     end
     return nil
 end

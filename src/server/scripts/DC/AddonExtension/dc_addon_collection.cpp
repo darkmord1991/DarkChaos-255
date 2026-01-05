@@ -3002,8 +3002,19 @@ namespace DCCollection
             auto const& appearanceIndex = GetTransmogAppearanceIndexCached();
             auto const& keys = GetTransmogAppearanceVariantKeysCached();
 
+            // IMPORTANT: Keep these pages small. Transmog definitions can be extremely large,
+            // and (depending on configuration) can trigger expensive metadata work.
+            // Large pages are a common cause of world-thread hitching.
             if (limit == 0)
-                limit = 1000;  // Increased from 200 to handle large transmog databases efficiently
+                limit = 250;
+
+            // Hard clamp to keep worst-case per-request time bounded.
+            if (limit > 500)
+                limit = 500;
+
+            // Optional: include per-item "source" info.
+            // This can be expensive (World DB lookups) and is not required for core wardrobe UX.
+            bool includeSources = sConfigMgr->GetOption<bool>("DCCollection.Transmog.Definitions.IncludeSources", false);
 
             uint32 total = static_cast<uint32>(keys.size());
             if (offset > total)
@@ -3066,7 +3077,8 @@ namespace DCCollection
                 d.Set("itemIds", itemsArr);
                 d.Set("itemIdsTotal", static_cast<uint32>(def->itemIds.size()));
 
-                d.Set("source", buildSourceForItemCached(def->canonicalItemId));
+                if (includeSources)
+                    d.Set("source", buildSourceForItemCached(def->canonicalItemId));
                 defs.Set(k, d);
             }
 

@@ -361,7 +361,7 @@ local function LayoutFrame(frameDefName)
         local numSlots = GetContainerNumSlots(bag)
         for slot = 1, numSlots do
             local button = GetOrCreateButton(bag, slot, frame)
-            button:SetParent(frame)
+            -- Note: button parent is already set to proxy (for correct BagID), do not reparent to frame
             button:ClearAllPoints()
             button:SetPoint("TOPLEFT", frame, "TOPLEFT", padding + (col * (size + spacing)), -padding - 40 - (row * (size + spacing)))
             button:Show()
@@ -436,7 +436,7 @@ local function CreateBagFrame(frameDefName)
     -- Search
     local search = CreateFrame("EditBox", "DCQoS_"..frameDefName.."_Search", f, "InputBoxTemplate")
     search:SetSize(120, 20)
-    search:SetPoint("TOPRIGHT", -30, -8)
+    search:SetPoint("TOPRIGHT", -30, -32) -- Moved down below title area
     search:SetAutoFocus(false)
     search:SetScript("OnTextChanged", function(self)
         LayoutFrame(frameDefName)

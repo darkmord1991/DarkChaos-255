@@ -74,7 +74,7 @@ function Wardrobe:RefreshSetsGrid()
     end
     table.sort(list, function(a, b) return (a.name or "") < (b.name or "") end)
 
-    if DC and DC.Print then
+    if DC and DC.Print and DCCollectionDB and DCCollectionDB.debugMode then
         DC:Print("Debug: Found " .. #list .. " sets.")
     end
 

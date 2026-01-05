@@ -1530,11 +1530,8 @@ frame:SetScript("OnEvent", function()
                         buf.parts[idx + 1] = dataPart or ""
 
                         if buf.received >= total then
-                            local full = ""
-                            for i = 1, total do
-                                full = full .. (buf.parts[i] or "")
-                            end
-                            payload = full
+                            -- Use table.concat to avoid O(n^2) string growth and extra allocations.
+                            payload = table.concat(buf.parts, "", 1, total)
                             DC._chunkBuffers[bufKey] = nil
                             DC._chunkMsgIds[baseKey] = nil  -- Cleanup msgId lookup
                         else

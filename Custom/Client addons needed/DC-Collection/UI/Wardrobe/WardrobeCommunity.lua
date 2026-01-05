@@ -169,7 +169,7 @@ function Wardrobe:CreateCommunityGrid()
     -- Pagination
     local pageFrame = CreateFrame("Frame", nil, container)
     pageFrame:SetSize(200, 25)
-    pageFrame:SetPoint("BOTTOM", container, "BOTTOM", 0, -30)
+    pageFrame:SetPoint("BOTTOM", container, "BOTTOM", 0, 8)
     
     local prevBtn = CreateFrame("Button", nil, pageFrame, "UIPanelButtonTemplate")
     prevBtn:SetSize(50, 22)

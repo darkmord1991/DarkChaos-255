@@ -326,14 +326,16 @@ local function SetTooltipAnchor()
     local settings = addon.settings.tooltips
     if not settings.enabled then return end
     
-    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+    local origGameTooltip_SetDefaultAnchor = GameTooltip_SetDefaultAnchor
+    GameTooltip_SetDefaultAnchor = function(tooltip, parent)
         local anchor = settings.anchor or 1
         
         if anchor == 1 then
             -- Default positioning
-            return
+            origGameTooltip_SetDefaultAnchor(tooltip, parent)
         elseif anchor == 2 then
             -- Fixed overlay position
+            origGameTooltip_SetDefaultAnchor(tooltip, parent) -- Set owner/default first
             tooltip:ClearAllPoints()
             tooltip:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", 
                 settings.cursorOffsetX or -13, 
@@ -342,12 +344,12 @@ local function SetTooltipAnchor()
             -- Cursor attached
             tooltip:SetOwner(parent, "ANCHOR_CURSOR")
         elseif anchor == 4 then
-            -- Cursor right with offset
-            tooltip:SetOwner(parent, "ANCHOR_CURSOR_RIGHT", 
+            -- Cursor right with offset (Use ANCHOR_CURSOR with offsets)
+            tooltip:SetOwner(parent, "ANCHOR_CURSOR", 
                 settings.cursorOffsetX or 0, 
                 settings.cursorOffsetY or 0)
         end
-    end)
+    end
 end
 
 -- ============================================================
