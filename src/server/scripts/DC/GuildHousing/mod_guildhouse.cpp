@@ -124,96 +124,128 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
-        uint32 map;
-        float posX;
-        float posY;
-        float posZ;
-        float ori;
+        if (!player)
+            return false;
 
-            QueryResult locationResult;
-            uint32 locationId = action - 1000; // Offset for location IDs
-            locationResult = WorldDatabase.Query("SELECT `map`, `posX`, `posY`, `posZ`, `orientation`, `cost` FROM `dc_guild_house_locations` WHERE `id`={}", locationId);
-            
-            if (!locationResult)
-            {
-                 ChatHandler(player->GetSession()).PSendSysMessage("Error finding Guild House location.");
-                 CloseGossipMenuFor(player);
-                 return false;
-            }
-
-            Field* fields = locationResult->Fetch();
-            map = fields[0].Get<uint32>();
-            posX = fields[1].Get<float>();
-            posY = fields[2].Get<float>();
-            posZ = fields[3].Get<float>();
-            ori = fields[4].Get<float>();
-            uint32 cost = fields[5].Get<uint32>();
-
-             if (player->GetMoney() < cost)
-             {
-                 ChatHandler(player->GetSession()).PSendSysMessage("You do not have enough money to purchase this Guild House.");
-                 CloseGossipMenuFor(player);
-                 return false;
-             }
-
-             // Proceed with purchase logic
-             CharacterDatabase.Query("INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) VALUES ({}, {}, {}, {}, {}, {}, {})", player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
-             player->ModifyMoney(-cost);
-             // Msg to purchaser and Msg Guild as purchaser
-             ChatHandler(player->GetSession()).PSendSysMessage("You have successfully purchased a Guild House");
-             player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "We now have a Guild House!", LANG_UNIVERSAL);
-             player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "In chat, type `.guildhouse teleport` or `.gh tele` to meet me there!", LANG_UNIVERSAL);
-             LOG_INFO("modules", "GUILDHOUSE: GuildId: '{}' has purchased a guildhouse at location ID {}", player->GetGuildId(), locationId);
-
-
-             // Spawn a portal and the guild house butler automatically as part of purchase.
-             SpawnTeleporterNPC(player);
-             SpawnButlerNPC(player);
-             CloseGossipMenuFor(player);
-             return true; 
-
-        case 3: // sell back guild house
+        // Location purchase actions are offset by 1000
+        if (action >= 1000)
         {
-            QueryResult has_gh = CharacterDatabase.Query("SELECT id, `guild` FROM `dc_guild_house` WHERE guild={}", player->GetGuildId());
-            if (!has_gh)
+            if (!player->GetGuild())
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("Your guild does not own a Guild House!");
+                ChatHandler(player->GetSession()).PSendSysMessage("You are not a member of a guild.");
                 CloseGossipMenuFor(player);
                 return false;
             }
 
-            // calculate total gold returned: 1) cost of guild house and cost of each purchase made
-            if (RemoveGuildHouse(player))
+            // Only the guild master should be able to buy a house (also enforced in OnGossipHello)
+            if (player->GetGuild()->GetLeaderGUID() != player->GetGUID())
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("You have successfully sold your Guild House.");
-                player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "We just sold our Guild House.", LANG_UNIVERSAL);
-                player->ModifyMoney(+(sConfigMgr->GetOption<int32>("CostGuildHouse", 10000000) / 2));
-                LOG_INFO("modules", "GUILDHOUSE: Successfully returned money and sold Guild House");
+                ChatHandler(player->GetSession()).PSendSysMessage("Only the Guild Master can purchase a Guild House.");
                 CloseGossipMenuFor(player);
+                return false;
             }
-            else
+
+            QueryResult alreadyHas = CharacterDatabase.Query(
+                "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
+                player->GetGuildId());
+
+            if (alreadyHas)
             {
-                ChatHandler(player->GetSession()).PSendSysMessage("There was an error selling your Guild House.");
+                ChatHandler(player->GetSession()).PSendSysMessage("Your guild already has a Guild House.");
                 CloseGossipMenuFor(player);
+                return false;
             }
-            break;
-        }
-        case 2: // buy guild house
-            BuyGuildHouse(player->GetGuild(), player, creature);
-            break;
-        case 1: // teleport to guild house
-            TeleportGuildHouse(player->GetGuild(), player, creature);
-            break;
-        }
 
-        }
+            uint32 locationId = action - 1000;
+            QueryResult locationResult = WorldDatabase.Query(
+                "SELECT `map`, `posX`, `posY`, `posZ`, `orientation`, `cost` FROM `dc_guild_house_locations` WHERE `id` = {}",
+                locationId);
 
-        if (action >= 1000)
-        {
-            // Logic moved into the switch case above for atomic handling
+            if (!locationResult)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("Error finding Guild House location.");
+                CloseGossipMenuFor(player);
+                return false;
+            }
+
+            Field* fields = locationResult->Fetch();
+            uint32 map = fields[0].Get<uint32>();
+            float posX = fields[1].Get<float>();
+            float posY = fields[2].Get<float>();
+            float posZ = fields[3].Get<float>();
+            float ori = fields[4].Get<float>();
+            uint32 cost = fields[5].Get<uint32>();
+
+            if (player->GetMoney() < cost)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("You do not have enough money to purchase this Guild House.");
+                CloseGossipMenuFor(player);
+                return false;
+            }
+
+            CharacterDatabase.Query(
+                "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
+                "VALUES ({}, {}, {}, {}, {}, {}, {})",
+                player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
+
+            player->ModifyMoney(-static_cast<int64>(cost));
+
+            ChatHandler(player->GetSession()).PSendSysMessage("You have successfully purchased a Guild House");
+            player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "We now have a Guild House!", LANG_UNIVERSAL);
+            player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "In chat, type `.guildhouse teleport` or `.gh tele` to meet me there!", LANG_UNIVERSAL);
+            LOG_INFO("modules", "GUILDHOUSE: GuildId: '{}' has purchased a guildhouse at location ID {}", player->GetGuildId(), locationId);
+
+            // Spawn the portal and the guild house butler automatically as part of purchase.
+            SpawnTeleporterNPC(player);
+            SpawnButlerNPC(player);
+
+            CloseGossipMenuFor(player);
             return true;
         }
 
+        switch (action)
+        {
+            case 1: // teleport to guild house
+                TeleportGuildHouse(player->GetGuild(), player, creature);
+                break;
+            case 2: // buy guild house
+                BuyGuildHouse(player->GetGuild(), player, creature);
+                break;
+            case 3: // sell back guild house
+            {
+                QueryResult has_gh = CharacterDatabase.Query(
+                    "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
+                    player->GetGuildId());
+
+                if (!has_gh)
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("Your guild does not own a Guild House!");
+                    CloseGossipMenuFor(player);
+                    return false;
+                }
+
+                if (RemoveGuildHouse(player))
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("You have successfully sold your Guild House.");
+                    player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "We just sold our Guild House.", LANG_UNIVERSAL);
+                    player->ModifyMoney(+(sConfigMgr->GetOption<int32>("CostGuildHouse", 10000000) / 2));
+                    LOG_INFO("modules", "GUILDHOUSE: Successfully returned money and sold Guild House");
+                }
+                else
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("There was an error selling your Guild House.");
+                }
+
+                CloseGossipMenuFor(player);
+                break;
+            }
+            case 5: // close
+                CloseGossipMenuFor(player);
+                break;
+            default:
+                OnGossipHello(player, creature);
+                break;
+        }
 
         return true;
     }
