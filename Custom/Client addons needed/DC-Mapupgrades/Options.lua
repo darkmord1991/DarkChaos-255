@@ -31,7 +31,7 @@ local CHECKBOXES = {
     { key = "announce", label = "Announce in chat", desc = "Print chat messages when hotspots spawn." },
     { key = "announceExpire", label = "Announce expiry", desc = "Print chat messages when hotspots expire." },
     { key = "lockWorldMap", label = "Prevent world map hijack", desc = "Do not auto-switch the world map back to your current zone while it is open." },
-    { key = "showAllMaps", label = "Show all hotspots on any map", desc = "Ignore map matching and show all hotspots on every map (useful for testing)." },
+    { key = "showAllMaps", label = "Show all XP hotspots on any map", desc = "Ignore map matching and show all XP hotspots on every map (useful for testing). Does not affect world boss/rare pins." },
     { key = "debug", label = "Debug mode", desc = "Show diagnostic messages in chat to help troubleshoot issues." },
 }
 

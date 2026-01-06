@@ -993,7 +993,9 @@ function Pins:UpdateWorldPinsInternal()
     
     local seen = {}
     local visibleCount = 0
-    local showAll = db and db.showAllMaps
+    -- NOTE: showAllMaps is a debug/testing option intended for XP hotspots only.
+    -- Applying it to entity pins (world bosses/rares) makes them show on unrelated maps.
+    local showAllHotspots = db and db.showAllMaps
 
     local dbgNoMatch, dbgNoCoords, dbgNoParent, dbgGated = 0, 0, 0, 0
     local dbgSample
@@ -1028,7 +1030,7 @@ function Pins:UpdateWorldPinsInternal()
                 dbgGated = dbgGated + 1
                 pin:Hide()
             else
-                local matches = HotspotMatchesMap(hotspot, activeMapId, showAll)
+                local matches = HotspotMatchesMap(hotspot, activeMapId, showAllHotspots)
             
                 if not matches then
                     dbgNoMatch = dbgNoMatch + 1
@@ -1146,7 +1148,7 @@ function Pins:UpdateWorldPinsInternal()
                     end
                 end
 
-                local matches = enabled and EntityMatchesMap(ent, activeMapId, showAll)
+                local matches = enabled and EntityMatchesMap(ent, activeMapId, false)
                 if kind == "boss" and matches then
                     matchedBoss = matchedBoss + 1
                 elseif kind == "boss" and (not sampleBoss) then

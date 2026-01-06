@@ -16,6 +16,10 @@
 #include "Maps/MapMgr.h"
 #include "guildhouse.h"
 
+#include <algorithm>
+#include <cctype>
+#include <string>
+
 class GuildData : public DataMap::Base
 {
 public:
@@ -63,398 +67,7 @@ public:
     }
 };
 
-class GuildHouseSeller : public CreatureScript
-{
-
-public:
-    GuildHouseSeller() : CreatureScript("GuildHouseSeller") {}
-
-    struct GuildHouseSellerAI : public ScriptedAI
-    {
-        GuildHouseSellerAI(Creature* creature) : ScriptedAI(creature) {}
-
-        void UpdateAI(uint32 /*diff*/) override
-        {
-            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
-        }
-    };
-
-    CreatureAI * GetAI(Creature* creature) const override
-    {
-        return new GuildHouseSellerAI(creature);
-    }
-
-    bool OnGossipHello(Player* player, Creature* creature) override
-    {
-        if (!player->GetGuild())
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("You are not a member of a guild.");
-            CloseGossipMenuFor(player);
-            return false;
-        }
-
-        QueryResult has_gh = CharacterDatabase.Query("SELECT id, `guild` FROM `dc_guild_house` WHERE guild = {}", player->GetGuildId());
-
-        // Only show Teleport option if guild owns a guild house
-        if (has_gh)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Teleport to Guild House", GOSSIP_SENDER_MAIN, 1);
-
-            // Only show "Sell" option if they have a guild house & have permission to sell it
-            Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId());
-            Guild::Member const* memberMe = guild->GetMember(player->GetGUID());
-            if (memberMe->IsRankNotLower(sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0)))
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Sell Guild House!", GOSSIP_SENDER_MAIN, 3, "Are you sure you want to sell your Guild House?", 0, false);
-            }
-        }
-        else
-        {
-            // Only leader of the guild can buy guild house & only if they don't already have a guild house
-            if (player->GetGuild()->GetLeaderGUID() == player->GetGUID())
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Buy Guild House!", GOSSIP_SENDER_MAIN, 2);
-            }
-        }
-
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, 5);
-        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
-        return true;
-    }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
-    {
-        if (!player)
-            return false;
-
-        // Location purchase actions are offset by 1000
-        if (action >= 1000)
-        {
-            if (!player->GetGuild())
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("You are not a member of a guild.");
-                CloseGossipMenuFor(player);
-                return false;
-            }
-
-            // Only the guild master should be able to buy a house (also enforced in OnGossipHello)
-            if (player->GetGuild()->GetLeaderGUID() != player->GetGUID())
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("Only the Guild Master can purchase a Guild House.");
-                CloseGossipMenuFor(player);
-                return false;
-            }
-
-            QueryResult alreadyHas = CharacterDatabase.Query(
-                "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
-                player->GetGuildId());
-
-            if (alreadyHas)
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("Your guild already has a Guild House.");
-                CloseGossipMenuFor(player);
-                return false;
-            }
-
-            uint32 locationId = action - 1000;
-            QueryResult locationResult = WorldDatabase.Query(
-                "SELECT `map`, `posX`, `posY`, `posZ`, `orientation`, `cost` FROM `dc_guild_house_locations` WHERE `id` = {}",
-                locationId);
-
-            if (!locationResult)
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("Error finding Guild House location.");
-                CloseGossipMenuFor(player);
-                return false;
-            }
-
-            Field* fields = locationResult->Fetch();
-            uint32 map = fields[0].Get<uint32>();
-            float posX = fields[1].Get<float>();
-            float posY = fields[2].Get<float>();
-            float posZ = fields[3].Get<float>();
-            float ori = fields[4].Get<float>();
-            uint32 cost = fields[5].Get<uint32>();
-
-            if (player->GetMoney() < cost)
-            {
-                ChatHandler(player->GetSession()).PSendSysMessage("You do not have enough money to purchase this Guild House.");
-                CloseGossipMenuFor(player);
-                return false;
-            }
-
-            CharacterDatabase.Query(
-                "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
-                "VALUES ({}, {}, {}, {}, {}, {}, {})",
-                player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
-
-            player->ModifyMoney(-static_cast<int64>(cost));
-
-            ChatHandler(player->GetSession()).PSendSysMessage("You have successfully purchased a Guild House");
-            player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "We now have a Guild House!", LANG_UNIVERSAL);
-            player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "In chat, type `.guildhouse teleport` or `.gh tele` to meet me there!", LANG_UNIVERSAL);
-            LOG_INFO("modules", "GUILDHOUSE: GuildId: '{}' has purchased a guildhouse at location ID {}", player->GetGuildId(), locationId);
-
-            // Spawn the portal and the guild house butler automatically as part of purchase.
-            SpawnTeleporterNPC(player);
-            SpawnButlerNPC(player);
-
-            CloseGossipMenuFor(player);
-            return true;
-        }
-
-        switch (action)
-        {
-            case 1: // teleport to guild house
-                TeleportGuildHouse(player->GetGuild(), player, creature);
-                break;
-            case 2: // buy guild house
-                BuyGuildHouse(player->GetGuild(), player, creature);
-                break;
-            case 3: // sell back guild house
-            {
-                QueryResult has_gh = CharacterDatabase.Query(
-                    "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
-                    player->GetGuildId());
-
-                if (!has_gh)
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("Your guild does not own a Guild House!");
-                    CloseGossipMenuFor(player);
-                    return false;
-                }
-
-                if (RemoveGuildHouse(player))
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("You have successfully sold your Guild House.");
-                    player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "We just sold our Guild House.", LANG_UNIVERSAL);
-                    player->ModifyMoney(+(sConfigMgr->GetOption<int32>("CostGuildHouse", 10000000) / 2));
-                    LOG_INFO("modules", "GUILDHOUSE: Successfully returned money and sold Guild House");
-                }
-                else
-                {
-                    ChatHandler(player->GetSession()).PSendSysMessage("There was an error selling your Guild House.");
-                }
-
-                CloseGossipMenuFor(player);
-                break;
-            }
-            case 5: // close
-                CloseGossipMenuFor(player);
-                break;
-            default:
-                OnGossipHello(player, creature);
-                break;
-        }
-
-        return true;
-    }
-
-    uint32 GetGuildPhase(Player* player)
-    {
-        return ::GetGuildPhase(player);
-    }
-
-    bool RemoveGuildHouse(Player* player)
-    {
-
-        uint32 guildPhase = GetGuildPhase(player);
-        QueryResult CreatureResult;
-        QueryResult GameobjResult;
-        Map *map = sMapMgr->FindMap(1, 0);
-        // Lets find all of the gameobjects to be removed
-        GameobjResult = WorldDatabase.Query("SELECT `guid` FROM `gameobject` WHERE `map` = 1 AND `phaseMask` = '{}'", guildPhase);
-        // Lets find all of the creatures to be removed
-        CreatureResult = WorldDatabase.Query("SELECT `guid` FROM `creature` WHERE `map` = 1 AND `phaseMask` = '{}'", guildPhase);
-
-        // Remove creatures from the deleted guild house map
-        if (CreatureResult)
-        {
-            do
-            {
-                Field* fields = CreatureResult->Fetch();
-                uint32 lowguid = fields[0].Get<uint32>();
-                if (CreatureData const* cr_data = sObjectMgr->GetCreatureData(lowguid))
-                {
-                    if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(cr_data->id1, lowguid)))
-                    {
-                        creature->CombatStop();
-                        creature->DeleteFromDB();
-                        creature->AddObjectToRemoveList();
-                    }
-                }
-            } while (CreatureResult->NextRow());
-        }
-
-        // Remove gameobjects from the deleted guild house map
-        if (GameobjResult)
-        {
-            do
-            {
-                Field* fields = GameobjResult->Fetch();
-                uint32 lowguid = fields[0].Get<uint32>();
-                if (GameObjectData const* go_data = sObjectMgr->GetGameObjectData(lowguid))
-                {
-                    if (GameObject* gobject = map->GetGameObject(ObjectGuid::Create<HighGuid::GameObject>(go_data->id, lowguid)))
-                    {
-                        gobject->SetRespawnTime(0);
-                        gobject->Delete();
-                        gobject->DeleteFromDB();
-                        gobject->CleanupsBeforeDelete();
-                        // delete gobject;
-                    }
-                }
-
-            } while (GameobjResult->NextRow());
-        }
-
-        // Delete actual guild_house data from characters database
-        CharacterDatabase.Query("DELETE FROM `dc_guild_house` WHERE `guild`={}", player->GetGuildId());
-
-        return true;
-    }
-
-    void SpawnTeleporterNPC(Player* player)
-    {
-        uint32 entry = 800002; // Teleporter NPC
-        float posX = 16226.5f; // Default near center of GM island area
-        float posY = 16258.8f;
-        float posZ = 13.2f;
-        float ori = 1.6f;
-
-        // Try to verify coordinates from DB if possible, but fallback to defaults or use player position offset
-        // For now, using hardcoded defaults similar to existing logic or relative to player
-        
-        // Actually, let's use the player's position + offset to be safe, OR valid GM island coords
-        // The original logic checked `dc_guild_house_spawns` for portals. 
-        // We can just spawn it near the Butler or player.
-        
-        // Let's spawn it at a fixed location on GM Island for consistency if map is 1
-        // Original GM Island coords: 16222.972, 16267.802, 13.136777
-        
-        posX = 16222.0f; 
-        posY = 16270.0f; 
-        posZ = 13.1f; 
-        ori = 4.7f;
-
-        Map* map = sMapMgr->FindMap(1, 0); // GM Island Map
-        Creature* creature = new Creature();
-
-        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, GetGuildPhase(player), entry, 0, posX, posY, posZ, ori))
-        {
-            delete creature;
-            LOG_INFO("modules", "GUILDHOUSE: Unable to create Teleporter NPC!");
-            return;
-        }
-
-        creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), GetGuildPhase(player));
-        uint32 lowguid = creature->GetSpawnId();
-
-        creature->CleanupsBeforeDelete();
-        delete creature;
-        creature = new Creature();
-        if (!creature->LoadCreatureFromDB(lowguid, map))
-        {
-            delete creature;
-            return;
-        }
-
-        sObjectMgr->AddCreatureToGrid(lowguid, sObjectMgr->GetCreatureData(lowguid));
-        CloseGossipMenuFor(player);
-    }
-
-    void SpawnButlerNPC(Player* player)
-    {
-        uint32 entry = GetCreatureEntry(1);
-        float posX = 16202.185547f;
-        float posY = 16255.916992f;
-        float posZ = 21.160221f;
-        float ori = 6.195375f;
-
-        Map* map = sMapMgr->FindMap(1, 0);
-        Creature *creature = new Creature();
-
-        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, player->GetPhaseMaskForSpawn(), entry, 0, posX, posY, posZ, ori))
-        {
-            delete creature;
-            return;
-        }
-        creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), GetGuildPhase(player));
-        uint32 lowguid = creature->GetSpawnId();
-
-        creature->CleanupsBeforeDelete();
-        delete creature;
-        creature = new Creature();
-        if (!creature->LoadCreatureFromDB(lowguid, map))
-        {
-            delete creature;
-            return;
-        }
-
-        sObjectMgr->AddCreatureToGrid(lowguid, sObjectMgr->GetCreatureData(lowguid));
-        return;
-    }
-
-    bool BuyGuildHouse(Guild* guild, Player* player, Creature* creature)
-    {
-        QueryResult result = CharacterDatabase.Query("SELECT `id`, `guild` FROM `dc_guild_house` WHERE `guild`={}", guild->GetId());
-
-        if (result)
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("Your guild already has a Guild House.");
-            CloseGossipMenuFor(player);
-            return false;
-        }
-
-        ClearGossipMenuFor(player);
-
-        QueryResult locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations`");
-        
-        if (!locations)
-        {
-            ChatHandler(player->GetSession()).PSendSysMessage("No Guild House locations are currently available.");
-            CloseGossipMenuFor(player);
-            return false;
-        }
-
-        do
-        {
-            Field* fields = locations->Fetch();
-            uint32 id = fields[0].Get<uint32>();
-            std::string name = fields[1].Get<std::string>();
-            uint32 cost = fields[2].Get<uint32>();
-            std::string comment = fields[3].Get<std::string>();
-
-            std::string text = name + " (" + std::to_string(cost / 10000) + "g) - " + comment;
-            
-            // Action ID = 1000 + Location ID to allow adequate room for other menu options
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, text, GOSSIP_SENDER_MAIN, 1000 + id, "Are you sure you want to buy " + name + "?", cost, false);
-
-        } while (locations->NextRow());
-
-        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
-        return true;
-    }
-
-    void TeleportGuildHouse(Guild* guild, Player* player, Creature* creature)
-    {
-        if (GuildHouseManager::TeleportToGuildHouse(player, guild->GetId()))
-        {
-            // Success
-        }
-        else
-        {
-            ClearGossipMenuFor(player);
-            if (player->GetGuild()->GetLeaderGUID() == player->GetGUID())
-            {
-                AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Buy Guild House!", GOSSIP_SENDER_MAIN, 2);
-            }
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, 5);
-            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
-            ChatHandler(player->GetSession()).PSendSysMessage("Your Guild does not own a Guild House");
-        }
-    }
-};
+void AddGuildHouseNpcScripts();
 
 class GuildHousePlayerScript : public PlayerScript
 {
@@ -574,15 +187,81 @@ public:
         return GuildHouseCommandBaseTable;
     }
 
-    static ChatCommandTable GetAdminCommands()
+    static ChatCommandTable const& GetAdminCommands()
     {
         static ChatCommandTable AdminCommandTable =
         {
             {"teleport", HandleAdminTeleportCommand, SEC_GAMEMASTER, Console::Yes},
-            {"delete", HandleAdminDeleteCommand, SEC_GAMEMASTER, Console::Yes}
+            {"delete", HandleAdminDeleteCommand, SEC_GAMEMASTER, Console::Yes},
+            {"buy", HandleAdminBuyCommand, SEC_GAMEMASTER, Console::Yes}
         };
 
         return AdminCommandTable;
+    }
+
+    static void TrimString(std::string& str)
+    {
+        auto notSpace = [](unsigned char ch) { return !std::isspace(ch); };
+        str.erase(str.begin(), std::find_if(str.begin(), str.end(), notSpace));
+        str.erase(std::find_if(str.rbegin(), str.rend(), notSpace).base(), str.end());
+    }
+
+    static bool IsAllDigits(std::string const& str)
+    {
+        return !str.empty() && std::all_of(str.begin(), str.end(), [](unsigned char ch) { return std::isdigit(ch); });
+    }
+
+    static bool SpawnGuildHouseCreature(uint32 entry, float posX, float posY, float posZ, float ori, uint32 guildPhase)
+    {
+        Map* map = sMapMgr->FindMap(1, 0); // GM Island Map
+        if (!map)
+            return false;
+
+        Creature* creature = new Creature();
+
+        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, guildPhase, entry, 0, posX, posY, posZ, ori))
+        {
+            delete creature;
+            return false;
+        }
+
+        creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), guildPhase);
+        uint32 lowguid = creature->GetSpawnId();
+
+        creature->CleanupsBeforeDelete();
+        delete creature;
+
+        creature = new Creature();
+        if (!creature->LoadCreatureFromDB(lowguid, map))
+        {
+            delete creature;
+            return false;
+        }
+
+        sObjectMgr->AddCreatureToGrid(lowguid, sObjectMgr->GetCreatureData(lowguid));
+        return true;
+    }
+
+    static bool SpawnGuildHouseTeleporter(uint32 guildPhase)
+    {
+        // Match the existing SpawnTeleporterNPC defaults
+        uint32 entry = 800002;
+        float posX = 16222.0f;
+        float posY = 16270.0f;
+        float posZ = 13.1f;
+        float ori = 4.7f;
+        return SpawnGuildHouseCreature(entry, posX, posY, posZ, ori, guildPhase);
+    }
+
+    static bool SpawnGuildHouseButler(uint32 guildPhase)
+    {
+        // Match the existing SpawnButlerNPC defaults
+        uint32 entry = 95104;
+        float posX = 16202.185547f;
+        float posY = 16255.916992f;
+        float posZ = 21.160221f;
+        float ori = 6.195375f;
+        return SpawnGuildHouseCreature(entry, posX, posY, posZ, ori, guildPhase);
     }
 
     static bool HandleAdminTeleportCommand(ChatHandler* handler, const char* args)
@@ -638,6 +317,147 @@ public:
         return true;
     }
 
+    // .guildhouse admin buy <guildId> [locationId]
+    // .guildhouse admin buy <guildName> [locationId]
+    // Creates the guild house record with no cost and spawns teleporter/butler in the guild phase.
+    static bool HandleAdminBuyCommand(ChatHandler* handler, const char* args)
+    {
+        if (!handler || !handler->GetSession() || !handler->GetSession()->GetPlayer())
+            return false;
+
+        if (!args || !*args)
+            return false;
+
+        std::string input = args;
+        TrimString(input);
+        if (input.empty())
+            return false;
+
+        // Parse optional locationId. Prefer guildId syntax when possible.
+        uint32 guildId = 0;
+        uint32 locationId = 0;
+        Guild* guild = nullptr;
+
+        // Split first token
+        std::string firstToken;
+        std::string remainder;
+        {
+            size_t spacePos = input.find_first_of(" \t");
+            if (spacePos == std::string::npos)
+            {
+                firstToken = input;
+                remainder.clear();
+            }
+            else
+            {
+                firstToken = input.substr(0, spacePos);
+                remainder = input.substr(spacePos + 1);
+                TrimString(remainder);
+            }
+        }
+
+        if (IsAllDigits(firstToken))
+        {
+            guildId = static_cast<uint32>(std::stoul(firstToken));
+            guild = sGuildMgr->GetGuildById(guildId);
+
+            if (!remainder.empty() && IsAllDigits(remainder))
+                locationId = static_cast<uint32>(std::stoul(remainder));
+        }
+        else
+        {
+            // Treat as guild name, optionally with trailing locationId
+            std::string guildName = input;
+
+            size_t lastSpace = guildName.find_last_of(" \t");
+            if (lastSpace != std::string::npos)
+            {
+                std::string maybeId = guildName.substr(lastSpace + 1);
+                if (IsAllDigits(maybeId))
+                {
+                    locationId = static_cast<uint32>(std::stoul(maybeId));
+                    guildName = guildName.substr(0, lastSpace);
+                    TrimString(guildName);
+                }
+            }
+
+            guild = sGuildMgr->GetGuildByName(guildName);
+            if (guild)
+                guildId = guild->GetId();
+        }
+
+        if (!guild || !guildId)
+        {
+            handler->SendSysMessage("Guild not found.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        QueryResult alreadyHas = CharacterDatabase.Query(
+            "SELECT `id` FROM `dc_guild_house` WHERE `guild` = {}",
+            guildId);
+
+        if (alreadyHas)
+        {
+            handler->SendSysMessage("That guild already owns a Guild House.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        // Load location
+        uint32 map = 0;
+        float posX = 0.0f;
+        float posY = 0.0f;
+        float posZ = 0.0f;
+        float ori = 0.0f;
+
+        QueryResult locationResult;
+        if (locationId)
+        {
+            locationResult = WorldDatabase.Query(
+                "SELECT `id`, `map`, `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_locations` WHERE `id` = {}",
+                locationId);
+        }
+        else
+        {
+            // Default to the first configured location
+            locationResult = WorldDatabase.Query(
+                "SELECT `id`, `map`, `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_locations` ORDER BY `id` ASC LIMIT 1");
+        }
+
+        if (!locationResult)
+        {
+            handler->SendSysMessage("Guild House location not found.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        Field* fields = locationResult->Fetch();
+        locationId = fields[0].Get<uint32>();
+        map = fields[1].Get<uint32>();
+        posX = fields[2].Get<float>();
+        posY = fields[3].Get<float>();
+        posZ = fields[4].Get<float>();
+        ori = fields[5].Get<float>();
+
+        uint32 guildPhase = ::GetGuildPhase(guildId);
+
+        CharacterDatabase.Query(
+            "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
+            "VALUES ({}, {}, {}, {}, {}, {}, {})",
+            guildId, guildPhase, map, posX, posY, posZ, ori);
+
+        // Spawn portal/butler for that guild phase (no cost).
+        if (!SpawnGuildHouseTeleporter(guildPhase))
+            handler->SendSysMessage("Warning: Failed to spawn Guild House teleporter.");
+        if (!SpawnGuildHouseButler(guildPhase))
+            handler->SendSysMessage("Warning: Failed to spawn Guild House butler.");
+
+        handler->PSendSysMessage("Purchased Guild House for guild '{}' at location {} (no cost).", guild->GetName(), locationId);
+        LOG_INFO("modules", "GUILDHOUSE: Admin purchased guildhouse for GuildId: '{}' at location ID {}", guildId, locationId);
+        return true;
+    }
+
     static uint32 GetGuildPhase(Player* player)
     {
         return ::GetGuildPhase(player);
@@ -662,7 +482,7 @@ public:
             return false;
         }
 
-        if (player->FindNearestCreature(GetCreatureEntry(1), VISIBLE_RANGE, true))
+        if (player->FindNearestCreature(95104, VISIBLE_RANGE, true))
         {
             handler->SendSysMessage("You already have the Guild House Butler!");
             handler->SetSentErrorMessage(true);
@@ -675,7 +495,7 @@ public:
         float ori = 6.195375f;
 
         Creature* creature = new Creature();
-        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, GetGuildPhase(player), GetCreatureEntry(1), 0, posX, posY, posZ, ori))
+        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, GetGuildPhase(player), 95104, 0, posX, posY, posZ, ori))
         {
             handler->SendSysMessage("You already have the Guild House Butler!");
             handler->SetSentErrorMessage(true);
@@ -759,7 +579,7 @@ public:
 void AddGuildHouseScripts()
 {
     new GuildHelper();
-    new GuildHouseSeller();
+    AddGuildHouseNpcScripts();
     new GuildHousePlayerScript();
     new GuildHouseCommand();
     new GuildHouseGlobal();

@@ -263,6 +263,7 @@ set(SCRIPTS_DC_Commands
 # DC Guild Housing
 set(SCRIPTS_DC_GuildHousing
     GuildHousing/mod_guildhouse.cpp
+    GuildHousing/mod_guildhouse_npcs.cpp
     GuildHousing/mod_guildhouse_butler.cpp
     GuildHousing/guildhouse_manager.cpp
 )

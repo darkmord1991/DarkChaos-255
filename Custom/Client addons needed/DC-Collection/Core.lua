@@ -1088,16 +1088,7 @@ function DC:StartBackgroundWardrobeSync()
                 delaySeconds = 10
             end
 
-            -- 2) Item sets (after transmog paging is not active)
-            if not didWork and not pagingBusy and type(self.RequestItemSets) == "function" then
-                if not self.itemSetsLoaded and not self._itemSetsLoading then
-                    self:Debug("Background wardrobe sync: request item sets")
-                    self:RequestItemSets(false)
-                    didWork = true
-                end
-            end
-
-            -- 3) Saved outfits (small page)
+            -- 2) Saved outfits (small page)
             if not didWork and DC and DC.Protocol and type(DC.Protocol.RequestSavedOutfitsPage) == "function" then
                 DC.db = DC.db or {}
                 if type(DC.db.outfits) ~= "table" then
@@ -1107,7 +1098,7 @@ function DC:StartBackgroundWardrobeSync()
                 end
             end
 
-            -- 4) Light collection refresh (cheap)
+            -- 3) Light collection refresh (cheap)
             if not didWork and type(self.RequestCollection) == "function" then
                 self:RequestCollection("transmog")
                 didWork = true
@@ -1459,16 +1450,6 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
     
     -- Request shop data
     self:RequestShopData()
-
-    -- Item sets are paged, but should not run in parallel with transmog paging
-    -- (some protocol variants are sensitive to concurrent large transfers).
-    if type(self.RequestItemSets) == "function" then
-        if self._transmogDefLoading then
-            self._deferItemSetsUntilTransmogComplete = true
-        else
-            self:RequestItemSets()
-        end
-    end
 end
 
 -- Request initial data, retrying briefly if protocol isn't ready yet.

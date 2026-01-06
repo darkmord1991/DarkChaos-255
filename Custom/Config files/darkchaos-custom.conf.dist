@@ -736,14 +736,14 @@ HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 600004,810000,600008
 #        Description: Token item ID granted to winning team on match end
 #        Default:     0
 #
-HinterlandBG.Reward.NPCTokenItemId = 0
+HinterlandBG.Reward.NPCTokenItemId = 300311
 
 #
 #    HinterlandBG.Reward.NPCTokenItemCount
 #        Description: Number of tokens to grant to winning team
 #        Default:     0
 #
-HinterlandBG.Reward.NPCTokenItemCount = 0
+HinterlandBG.Reward.NPCTokenItemCount = 100
 
 #
 #    HinterlandBG.Reward.NPCEntries*
@@ -2087,6 +2087,17 @@ SeasonalRewards.AchievementTracking = 1
 #
 ###########################################################################
 
+###################################################################################################
+# AZEROTHCORE (CORE) - OUTDOORPVP
+#
+#     OutdoorPvPCaptureRate
+#        Description: Rate multiplier for outdoor PvP capture points.
+#        Default:     1.0
+#
+OutdoorPvPCaptureRate = 1
+
+###################################################################################################
+
 #
 #    SlowXpGain.Enable
 #        Description: Enable the Slow XP Gain module
@@ -3061,14 +3072,14 @@ DCCollection.Shop.Enable = 1
 #        Description: Item ID used as shop token currency
 #        Default:     0 (Use custom currency, not an item)
 #
-DCCollection.Shop.CurrencyToken = 0
+DCCollection.Shop.CurrencyToken = 300311
 
 #
 #    DCCollection.Shop.CurrencyEmblem
 #        Description: Item ID used as shop emblem currency
 #        Default:     0 (Use custom currency, not an item)
 #
-DCCollection.Shop.CurrencyEmblem = 0
+DCCollection.Shop.CurrencyEmblem = 300312
 
 # -------------------------------------------------------------------------
 # DCCollection: Wishlist System
@@ -3144,6 +3155,17 @@ DCCollection.Notifications.Sound = 1
 #        Default:     30
 #
 DCCollection.SyncInterval = 30
+
+# -------------------------------------------------------------------------
+# DCCollection Transmog: Definitions
+# -------------------------------------------------------------------------
+
+#
+#    DCCollection.Transmog.Definitions.IncludeSources
+#        Description: Include source metadata when building transmog definitions (implementation-dependent)
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.Definitions.IncludeSources = 0
 
 # -------------------------------------------------------------------------
 # DCCollection Transmog: Unlock Behavior
@@ -3331,11 +3353,11 @@ Logger.seasonal=5,Appender.DC
 #
 #    GuildHouse.Currency.ItemId
 #        Description: Item ID of the currency used for purchasing Guild House upgrades.
-#        Default:     90000 (Guild Construction Token)
+#        Default:     300311 Standard Token
 #        Set to 0 to use Money (Gold) instead.
 #
 
-GuildHouse.Currency.ItemId = 90000
+GuildHouse.Currency.ItemId = 300311
 
 #
 #    GuildHouse.Cost.*
@@ -3355,6 +3377,20 @@ GuildHouseObject = 15
 GuildHousePortal = 50
 GuildHouseProf = 30
 GuildHouseSpirit = 100
+
+#
+#    GuildHouse.MoveCost
+#        Description: Gold cost (in copper) to move a Guild House to a new location using the Guild House NPC.
+#        Default:     0 (Free)
+#
+GuildHouse.MoveCost = 0
+
+#
+#    GuildHouse.ResetCost
+#        Description: Gold cost (in copper) to reset Guild House spawns (cleans up guild-phase objects/creatures and respawns core NPCs).
+#        Default:     0 (Free)
+#
+GuildHouse.ResetCost = 0
 
 #
 #    GuildHouse.Rank.Buy

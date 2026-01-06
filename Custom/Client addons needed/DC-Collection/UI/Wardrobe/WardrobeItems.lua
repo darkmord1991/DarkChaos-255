@@ -121,10 +121,21 @@ function Wardrobe:ShowSetsContent()
         if self.frame.qualityDropdown then self.frame.qualityDropdown:Show() end
         if self.frame.searchBox then self.frame.searchBox:Show() end
         if self.frame.gridContainer then self.frame.gridContainer:Show() end
+        if self.frame.gridFrame then self.frame.gridFrame:Show() end
 
         for _, btn in ipairs(self.frame.slotFilterButtons or {}) do
             btn:Hide()
         end
+
+        -- Outfits/Community hide the collected bar; Sets uses it for progress.
+        if self.frame.collectedFrame then
+            self.frame.collectedFrame:Show()
+        end
+        -- "Show uncollected" is an Items-only filter.
+        if self.frame.showUncollectedCheck then
+            self.frame.showUncollectedCheck:Hide()
+        end
+
         if self.frame.modelPanel then
             self.frame.modelPanel:Show()
         end

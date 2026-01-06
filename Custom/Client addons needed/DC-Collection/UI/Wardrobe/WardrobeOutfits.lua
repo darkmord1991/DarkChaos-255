@@ -243,15 +243,6 @@ function Wardrobe:ShowOutfitsContent()
         -- Show Outfit Controls
         if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Show() end
         if self.frame.randomOutfitBtn then self.frame.randomOutfitBtn:Show() end
-
-        -- Request latest from server
-        if DC.Protocol and DC.Protocol.RequestSavedOutfits then
-            if DC.Protocol.RequestSavedOutfitsPage then
-                DC.Protocol:RequestSavedOutfitsPage(0, 6)
-            else
-                DC.Protocol:RequestSavedOutfits()
-            end
-        end
     end
     
     -- Reset pagination when switching to this tab

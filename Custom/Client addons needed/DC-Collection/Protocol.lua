@@ -950,20 +950,25 @@ end
 function DC:OnMsg_SavedOutfits(data)
     self:Debug("OnMsg_SavedOutfits called!")
 
-    
-    if not data or not data.outfits then
-        if DC.Print then DC:Print("[DEBUG] No data or no outfits in response!") end
+    if not data then
+        if DC.Print then DC:Print("[DEBUG] No data in outfits response!") end
+        return
+    end
+
+    local outfitsList = data.outfits or data.savedOutfits or data.list
+    if type(outfitsList) ~= "table" then
+        if DC.Print then DC:Print("[DEBUG] No outfits list in response!") end
         return
     end
     
 
     
-    if data.outfits[1] then
-         self:Debug("First outfit items type: " .. type(data.outfits[1].items))
-         if DC.Print then DC:Print("[DEBUG] First outfit items type: " .. type(data.outfits[1].items)) end
-         if type(data.outfits[1].items) == "string" then
-             self:Debug("First outfit items string: " .. tostring(data.outfits[1].items))
-             if DC.Print then DC:Print("[DEBUG] First outfit items string: " .. tostring(data.outfits[1].items)) end
+    if outfitsList[1] then
+         self:Debug("First outfit items type: " .. type(outfitsList[1].items))
+         if DC.Print then DC:Print("[DEBUG] First outfit items type: " .. type(outfitsList[1].items)) end
+         if type(outfitsList[1].items) == "string" then
+             self:Debug("First outfit items string: " .. tostring(outfitsList[1].items))
+             if DC.Print then DC:Print("[DEBUG] First outfit items string: " .. tostring(outfitsList[1].items)) end
          end
     end
     
@@ -972,9 +977,32 @@ function DC:OnMsg_SavedOutfits(data)
     DC.db.outfitsPages = DC.db.outfitsPages or {}
     DC.db.outfitsBySignature = DC.db.outfitsBySignature or {}
 
-    -- Paging metadata (optional, server may send when supported).
-    DC.db.outfitsOffset = tonumber(data.offset) or 0
-    DC.db.outfitsLimit = tonumber(data.limit) or 6
+    -- Paging metadata (optional). Some servers do not echo offset/limit in the response;
+    -- in that case, fall back to the last request parameters.
+    local req = self.pendingRequests and self.pendingRequests[self.Opcodes.CMSG_GET_SAVED_OUTFITS]
+    local reqData = req and req.data
+    local respOffset = tonumber(data.offset)
+    local respLimit = tonumber(data.limit)
+    local offset = respOffset
+    local limit = respLimit
+    if reqData then
+        local reqOffset = tonumber(reqData.offset)
+        local reqLimit = tonumber(reqData.limit)
+        if offset == nil and reqOffset ~= nil then
+            offset = reqOffset
+        elseif offset == 0 and reqOffset ~= nil and reqOffset > 0 then
+            -- Some servers incorrectly echo offset=0 for every page; prefer the requested offset.
+            offset = reqOffset
+        end
+        if limit == nil and reqLimit ~= nil then
+            limit = reqLimit
+        end
+    end
+    offset = offset or 0
+    limit = limit or 6
+
+    DC.db.outfitsOffset = offset
+    DC.db.outfitsLimit = limit
     DC.db.outfitsTotal = tonumber(data.total) or nil
 
     -- Cache parsed items strings to avoid repeated gmatch() parsing when the server
@@ -983,7 +1011,7 @@ function DC:OnMsg_SavedOutfits(data)
     
     local pageOutfits = {}
 
-    for _, outfit in ipairs(data.outfits) do
+    for _, outfit in ipairs(outfitsList) do
         -- Server sends 'items' as either a table or a JSON string from DB.
         -- Parse it if needed.
         local slots = outfit.items
@@ -1020,7 +1048,6 @@ function DC:OnMsg_SavedOutfits(data)
     end
 
     -- Cache this page by offset so we can prefetch pages without breaking the visible page.
-    local offset = tonumber(data.offset) or 0
     DC.db.outfitsPages[offset] = pageOutfits
 
     -- Keep legacy field for the most recently received page.
@@ -2331,6 +2358,11 @@ function DC:HandleDefinitions(data)
                 self._transmogPagingDelayFrame:SetScript("OnUpdate", function(frame, elapsed)
                     frame.elapsed = frame.elapsed + elapsed
                     local wardrobeVisible = (DC.Wardrobe and DC.Wardrobe.frame and DC.Wardrobe.frame:IsShown())
+                    -- Avoid paging large transmog definitions while the user is on Outfits/Community.
+                    -- Those tabs can function without transmog defs and should not be starved by paging.
+                    if wardrobeVisible and DC.Wardrobe and (DC.Wardrobe.currentTab == "outfits" or DC.Wardrobe.currentTab == "community") then
+                        wardrobeVisible = false
+                    end
                     local mainTabVisible = (DC.MainFrame and DC.MainFrame:IsShown() and (DC.activeTab == "wardrobe" or DC.activeTab == "transmog"))
                     local allowBackground = false
                     if type(DC.IsBackgroundWardrobeSyncEnabled) == "function" then
@@ -2395,13 +2427,9 @@ function DC:HandleDefinitions(data)
             self._transmogDefLoading = nil
             self:_MarkInflight("req:defs:transmog", nil)
 
-            -- If we deferred item set loading to avoid parallel transfers, start it now.
-            if self._deferItemSetsUntilTransmogComplete then
-                self._deferItemSetsUntilTransmogComplete = nil
-                if type(self.RequestItemSets) == "function" and not self.itemSetsLoaded then
-                    self:RequestItemSets()
-                end
-            end
+            -- Clear any deferred item set load.
+            -- Item sets should be fetched on-demand (Sets tab) to avoid large transfers starving other UI.
+            self._deferItemSetsUntilTransmogComplete = nil
 
             if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
                 self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
@@ -2806,8 +2834,26 @@ function DC:OnMsg_ItemSets(data)
     DC.definitions.itemsets = DC.definitions.itemsets or {}
     DC.definitions.itemSets = DC.definitions.itemsets
 
-    local offset = tonumber(data.offset) or 0
-    local limit = tonumber(data.limit) or tonumber(self._itemSetsLimit) or 50
+    -- Some servers do not echo offset/limit; fall back to the last request parameters.
+    local req = self.pendingRequests and self.pendingRequests[self.Opcodes.CMSG_GET_ITEM_SETS]
+    local reqData = req and req.data
+    local offset = tonumber(data.offset)
+    local limit = tonumber(data.limit)
+    if reqData then
+        local reqOffset = tonumber(reqData.offset)
+        local reqLimit = tonumber(reqData.limit)
+        if offset == nil and reqOffset ~= nil then
+            offset = reqOffset
+        elseif offset == 0 and reqOffset ~= nil and reqOffset > 0 then
+            -- Some servers incorrectly echo offset=0 for every page; prefer the requested offset.
+            offset = reqOffset
+        end
+        if limit == nil and reqLimit ~= nil then
+            limit = reqLimit
+        end
+    end
+    offset = offset or 0
+    limit = limit or tonumber(self._itemSetsLimit) or 50
     local total = tonumber(data.total) or nil
     local hasMore = data.hasMore
     if hasMore == nil then hasMore = data.more end
@@ -2843,8 +2889,10 @@ function DC:OnMsg_ItemSets(data)
     end
 
     local count = 0
+    local added = 0
     for _, set in ipairs(data.sets) do
         if set.id and set.items then
+            local isNew = (DC.definitions.itemsets[set.id] == nil)
             -- Store definition
             DC.definitions.itemsets[set.id] = {
                 ID = set.id,
@@ -2852,6 +2900,9 @@ function DC:OnMsg_ItemSets(data)
                 items = set.items,
             }
             count = count + 1
+            if isNew then
+                added = added + 1
+            end
         end
     end
 
@@ -2859,6 +2910,15 @@ function DC:OnMsg_ItemSets(data)
     if DC.Print then DC:Print("[PROTOCOL] Cached " .. count .. " item sets.") end
     
     -- Paging support: request remaining pages.
+    -- If the server ignores paging and keeps returning the same page, stop to prevent infinite loops.
+    if hasMore and offset > 0 and added == 0 then
+        local respOffset = tonumber(data.offset)
+        local reqOffset = reqData and tonumber(reqData.offset) or nil
+        if respOffset == nil or (respOffset == 0 and reqOffset ~= nil and reqOffset > 0) then
+            hasMore = false
+        end
+    end
+
     if hasMore then
         local nextOffset = tonumber(data.nextOffset or data.next_offset) or (offset + limit)
         self._itemSetsOffset = nextOffset

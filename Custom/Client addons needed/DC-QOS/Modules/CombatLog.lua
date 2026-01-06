@@ -260,6 +260,10 @@ local function FormatTime(seconds)
     end
 end
 
+-- Forward declaration: GetActiveTotals() is defined before GetCombatTime().
+-- Without this, Lua will resolve GetCombatTime as a global at call time.
+local GetCombatTime
+
 local function GetActiveTotals()
     if activeSegment and segments[activeSegment] and segments[activeSegment].totals then
         return segments[activeSegment].totals, segments[activeSegment].duration or 0
@@ -291,7 +295,7 @@ local function FormatTotalsSummary(totals, duration)
     )
 end
 
-local function GetCombatTime()
+GetCombatTime = function()
     if inCombat then
         return GetTime() - combatStartTime
     elseif combatEndTime > 0 and combatStartTime > 0 then
@@ -1077,11 +1081,6 @@ function CombatLog.UpdateFrame()
                 bar.valueText:SetText(string.format("%d", data.value))
             elseif mode == "killingBlows" or mode == "dispels" or mode == "interrupts" or mode == "deaths" or mode == "cc" then
                 bar.valueText:SetText(string.format("%d", data.value))
-            else
-                bar.valueText:SetText(FormatNumber(data.value))
-            end
-            elseif mode == "dispels" or mode == "interrupts" or mode == "deaths" or mode == "cc" then
-                bar.valueText:SetText(tostring(data.value))
             else
                 bar.valueText:SetText(FormatNumber(data.value))
             end

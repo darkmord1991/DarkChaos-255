@@ -294,8 +294,10 @@ public:
         float posZ;
         float ori;
 
-        // Correct query table name
-        QueryResult result = WorldDatabase.Query("SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `entry`={}", entry);
+        // Map-aware spawn presets (supports multiple guildhouse locations on different maps)
+        QueryResult result = WorldDatabase.Query(
+            "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `map`={} AND `entry`={}",
+            player->GetMapId(), entry);
 
         if (!result)
             return;
@@ -348,8 +350,10 @@ public:
         float posZ;
         float ori;
 
-        // Correct query table name
-        QueryResult result = WorldDatabase.Query("SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `entry`={}", entry);
+        // Map-aware spawn presets (supports multiple guildhouse locations on different maps)
+        QueryResult result = WorldDatabase.Query(
+            "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `map`={} AND `entry`={}",
+            player->GetMapId(), entry);
 
         if (!result)
             return;
