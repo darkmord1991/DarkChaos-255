@@ -60,5 +60,11 @@ INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ
 INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (80, 1, 95101, 16218, 16260, 21, 1.5, 'Holiday Ambassador');
 INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (81, 1, 95102, 16220, 16260, 21, 1.5, 'Omni-Crafter');
 INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (82, 1, 95103, 16222, 16260, 21, 1.5, 'Guildhouse Manager');
-INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (83, 1, 95104, 16202.2, 16255.9, 21.1602, 6.19537, 'GuildHouse Butler');
+INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (83, 1, 95104, 16229.422, 16283.675, 13.175704, 3.036652, 'GuildHouse Butler');
 INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (84, 1, 55002, 16222, 16260, 21, 1.5, 'Services NPC');
+
+INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (85, 1, 190004, 16240.0000, 16290.0000, 13.175704, 3.036652, 'Mythic NPC 190004');
+INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (86, 1, 100050, 16241.0000, 16291.0000, 13.175704, 3.036652, 'Mythic NPC 100050');
+INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (87, 1, 100051, 16242.0000, 16292.0000, 13.175704, 3.036652, 'Mythic NPC 100051');
+INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (88, 1, 100101, 16243.0000, 16293.0000, 13.175704, 3.036652, 'Mythic NPC 100101');
+INSERT INTO `dc_guild_house_spawns` (`id`, `map`, `entry`, `posX`, `posY`, `posZ`, `orientation`, `comment`) VALUES (89, 1, 100100, 16244.0000, 16294.0000, 13.175704, 3.036652, 'Mythic NPC 100100');

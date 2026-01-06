@@ -217,6 +217,10 @@ end
 -- ============================================================================
 
 function DC:InitializeProtocol()
+    if self.isConnected then
+        return true
+    end
+
     -- Check for DCAddonProtocol
     if not DCAddonProtocol then
         self:Print("|cffff0000Error:|r DCAddonProtocol not found. Collection System requires DC-AddonProtocol.")
@@ -295,6 +299,15 @@ end
 function DC:SendMessage(opcode, data)
     if not self.isConnected then
         self:Debug("Cannot send message - not connected")
+        if type(self.LogNetEvent) == "function" then
+            self:LogNetEvent("warn", "send", "Cannot send message - not connected", { opcode = opcode })
+        end
+        -- Surface this even when debugMode is off (throttled).
+        local now = (type(GetTime) == "function") and GetTime() or 0
+        if not self._lastNotConnectedWarnAt or (now - self._lastNotConnectedWarnAt) > 5 then
+            self._lastNotConnectedWarnAt = now
+            self:Print(string.format("[Net] Not connected; cannot send opcode 0x%02X", tonumber(opcode) or 0))
+        end
         return false
     end
 
@@ -309,6 +322,10 @@ function DC:SendMessage(opcode, data)
         local success = DCAddonProtocol:SendMessage(self.MODULE_ID, payload)
         if success then
             self:Debug(string.format("Sent message opcode 0x%02X", opcode))
+
+            if type(self.LogNetEvent) == "function" then
+                self:LogNetEvent("info", "send", "Sent message (legacy)", { opcode = opcode })
+            end
 
             self.pendingRequests[opcode] = {
                 sentAt = GetTime(),
@@ -336,6 +353,9 @@ function DC:SendMessage(opcode, data)
 
     if ok then
         self:Debug(string.format("Sent message opcode 0x%02X", opcode))
+        if type(self.LogNetEvent) == "function" then
+            self:LogNetEvent("info", "send", "Sent message", { opcode = opcode })
+        end
         self.pendingRequests[opcode] = {
             sentAt = GetTime(),
             data = data,
@@ -344,6 +364,7 @@ function DC:SendMessage(opcode, data)
     end
 
     self:Debug("Failed to send message: " .. tostring(err))
+    self:Print(string.format("[Net] Send failed for opcode 0x%02X: %s", tonumber(opcode) or 0, tostring(err)))
     if type(self.LogNetEvent) == "function" then
         self:LogNetEvent("error", "send", "Failed to send message", { opcode = opcode, err = tostring(err) })
     end
@@ -931,7 +952,7 @@ function DC:RequestItemSets(force)
     if self._itemSetsLimit < 10 then self._itemSetsLimit = 10 end
     if self._itemSetsLimit > 200 then self._itemSetsLimit = 200 end
 
-    local payload = { offset = self._itemSetsOffset, limit = self._itemSetsLimit }
+    local payload = { offset = self._itemSetsOffset, limit = self._itemSetsLimit, packed = 1 }
     if hasCached and type(self.GetSyncVersion) == "function" then
         local v = tonumber(self:GetSyncVersion("itemsets")) or 0
         if v ~= 0 then
@@ -1276,6 +1297,10 @@ function DC.OnProtocolMessage(payload)
     local data = payload.data or {}
     
     self:Debug(string.format("Received message opcode 0x%02X", opcode))
+
+    if type(self.LogNetEvent) == "function" then
+        self:LogNetEvent("info", "recv", "Received message", { opcode = opcode })
+    end
     
     -- Clear pending request
     self.pendingRequests[opcode] = nil
@@ -1333,6 +1358,9 @@ function DC.OnProtocolMessage(payload)
         self:HandleInspectTransmog(data)
     else
         self:Debug(string.format("Unknown opcode: 0x%02X", opcode))
+        if type(self.LogNetEvent) == "function" then
+            self:LogNetEvent("warn", "recv", "Unknown opcode", { opcode = opcode })
+        end
     end
 end
 
@@ -2826,7 +2854,7 @@ end
 -- ============================================================================
 
 function DC:OnMsg_ItemSets(data)
-    if not data or not data.sets then
+    if not data then
         return
     end
 
@@ -2888,22 +2916,71 @@ function DC:OnMsg_ItemSets(data)
         wipe(DC.definitions.itemsets)
     end
 
+    -- Packed payload format (reduces JSON key overhead):
+    -- data = { packed=1, data="<lines>", ... }
+    -- line format: id;urlenc(name);item1,item2,item3
+    local isPacked = (data.packed == true or data.packed == 1 or data.packed == "1")
+    local packedData = isPacked and data.data or nil
+
+    local function UrlDecode(s)
+        if type(s) ~= "string" or s == "" then
+            return s
+        end
+        s = s:gsub("%%(%x%x)", function(hex)
+            return string.char(tonumber(hex, 16))
+        end)
+        return s
+    end
+
     local count = 0
     local added = 0
-    for _, set in ipairs(data.sets) do
-        if set.id and set.items then
-            local isNew = (DC.definitions.itemsets[set.id] == nil)
-            -- Store definition
-            DC.definitions.itemsets[set.id] = {
-                ID = set.id,
-                name = set.name or ("Set " .. set.id),
-                items = set.items,
-            }
-            count = count + 1
-            if isNew then
-                added = added + 1
+    if type(packedData) == "string" and packedData ~= "" then
+        for line in packedData:gmatch("[^\n]+") do
+            local idStr, nameEnc, itemsCsv = line:match("^(%d+);([^;]*);?(.*)$")
+            local setId = tonumber(idStr)
+            if setId then
+                local name = UrlDecode(nameEnc or "")
+                if name == "" then
+                    name = "Set " .. setId
+                end
+
+                local items = {}
+                if itemsCsv and itemsCsv ~= "" then
+                    for num in itemsCsv:gmatch("%d+") do
+                        items[#items + 1] = tonumber(num)
+                    end
+                end
+
+                local isNew = (DC.definitions.itemsets[setId] == nil)
+                DC.definitions.itemsets[setId] = {
+                    ID = setId,
+                    name = name,
+                    items = items,
+                }
+                count = count + 1
+                if isNew then
+                    added = added + 1
+                end
             end
         end
+    elseif type(data.sets) == "table" then
+        for _, set in ipairs(data.sets) do
+            if set.id and set.items then
+                local isNew = (DC.definitions.itemsets[set.id] == nil)
+                -- Store definition
+                DC.definitions.itemsets[set.id] = {
+                    ID = set.id,
+                    name = set.name or ("Set " .. set.id),
+                    items = set.items,
+                }
+                count = count + 1
+                if isNew then
+                    added = added + 1
+                end
+            end
+        end
+    else
+        return
     end
 
     self:Debug("Received " .. count .. " item sets definitions.")

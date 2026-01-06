@@ -74,6 +74,47 @@ class GuildHousePlayerScript : public PlayerScript
 public:
     GuildHousePlayerScript() : PlayerScript("GuildHousePlayerScript") {}
 
+    void EnsureButlerSpawned(Player* player, uint32 guildPhase)
+    {
+        if (!player)
+            return;
+
+        // If a butler already exists in this phase, do nothing.
+        if (player->FindNearestCreature(95104, VISIBLE_RANGE, true))
+            return;
+
+        Map* map = player->GetMap();
+        if (!map)
+            return;
+
+        float posX = 16229.422f;
+        float posY = 16283.675f;
+        float posZ = 13.175704f;
+        float ori = 3.036652f;
+
+        Creature* creature = new Creature();
+        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, guildPhase, 95104, 0, posX, posY, posZ, ori))
+        {
+            delete creature;
+            return;
+        }
+
+        creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), guildPhase);
+        uint32 lowguid = creature->GetSpawnId();
+
+        creature->CleanupsBeforeDelete();
+        delete creature;
+
+        creature = new Creature();
+        if (!creature->LoadCreatureFromDB(lowguid, map))
+        {
+            delete creature;
+            return;
+        }
+
+        sObjectMgr->AddCreatureToGrid(lowguid, sObjectMgr->GetCreatureData(lowguid));
+    }
+
     void OnPlayerLogin(Player* player)
     {
         CheckPlayer(player);
@@ -148,6 +189,7 @@ public:
             }
 
             player->SetPhaseMask(guildData->phase, true);
+            EnsureButlerSpawned(player, guildData->phase);
         }
         else
             player->SetPhaseMask(GetNormalPhase(player), true);
@@ -257,10 +299,10 @@ public:
     {
         // Match the existing SpawnButlerNPC defaults
         uint32 entry = 95104;
-        float posX = 16202.185547f;
-        float posY = 16255.916992f;
-        float posZ = 21.160221f;
-        float ori = 6.195375f;
+        float posX = 16229.422f;
+        float posY = 16283.675f;
+        float posZ = 13.175704f;
+        float ori = 3.036652f;
         return SpawnGuildHouseCreature(entry, posX, posY, posZ, ori, guildPhase);
     }
 
@@ -489,10 +531,10 @@ public:
             return false;
         }
 
-        float posX = 16202.185547f;
-        float posY = 16255.916992f;
-        float posZ = 21.160221f;
-        float ori = 6.195375f;
+        float posX = 16229.422f;
+        float posY = 16283.675f;
+        float posZ = 13.175704f;
+        float ori = 3.036652f;
 
         Creature* creature = new Creature();
         if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, GetGuildPhase(player), 95104, 0, posX, posY, posZ, ori))

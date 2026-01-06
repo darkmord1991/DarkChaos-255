@@ -22,7 +22,7 @@ INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entr
 
 -- Models
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
-(95100, 0, 26305, 1, 1, 0), -- Seasonal Trader
+(95100, 0, 15693, 1, 1, 0), -- Seasonal Trader
 (95101, 0, 15693, 1, 1, 0), -- Holiday Ambassador
 (95102, 0, 28693, 1, 1, 0), -- Omni-Crafter
 (95103, 0, 26305, 1, 1, 0), -- Guild House Manager
@@ -36,5 +36,5 @@ INSERT INTO `dc_guild_house_spawns` (`entry`, `posX`, `posY`, `posZ`, `orientati
 (95101, 16218.0, 16260.0, 21.0, 1.5), -- Holiday Ambassador
 (95102, 16220.0, 16260.0, 21.0, 1.5), -- Omni-Crafter
 (95103, 16222.0, 16260.0, 21.0, 1.5), -- Guild House Manager
-(95104, 16202.185547, 16255.916992, 21.160221, 6.195375), -- Guild House Butler
+(95104, 16229.422, 16283.675, 13.175704, 3.036652), -- Guild House Butler
 (55002, 16222.0, 16260.0, 21.0, 1.5); -- Services NPC

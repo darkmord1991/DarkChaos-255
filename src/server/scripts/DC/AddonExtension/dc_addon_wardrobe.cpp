@@ -1251,6 +1251,7 @@ namespace DCCollection
         uint32 offset = 0;
         uint32 limit = 50;
         uint32 clientSyncVersion = 0;
+        bool wantPacked = false;
         if (DCAddon::IsJsonMessage(msg))
         {
             DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
@@ -1264,6 +1265,18 @@ namespace DCCollection
                 clientSyncVersion = json["syncVersion"].AsUInt32();
             else if (json.HasKey("version") && json["version"].IsNumber())
                 clientSyncVersion = json["version"].AsUInt32();
+
+            // Optional: request packed payload to reduce JSON overhead.
+            // Accept 1/true.
+            if (json.HasKey("packed"))
+            {
+                if (json["packed"].IsBool())
+                    wantPacked = json["packed"].AsBool();
+                else if (json["packed"].IsNumber())
+                    wantPacked = (json["packed"].AsUInt32() != 0);
+                else if (json["packed"].IsString())
+                    wantPacked = (json["packed"].AsString() == "1" || json["packed"].AsString() == "true");
+            }
         }
 
         // Clamp paging parameters.
@@ -1274,7 +1287,8 @@ namespace DCCollection
 
         struct ItemSetPayload
         {
-            std::vector<std::string> setJson; // individual {"id":..,"name":..,"items":[..]} entries
+            std::vector<std::string> setJson;    // individual {"id":..,"name":..,"items":[..]} entries
+            std::vector<std::string> setPacked;  // individual id;urlenc(name);csv(items)
             uint32 syncVersion = 0;
         };
 
@@ -1287,6 +1301,7 @@ namespace DCCollection
         {
             ItemSetPayload payload;
             payload.setJson.reserve(600);
+            payload.setPacked.reserve(600);
 
             Acore::Crypto::MD5 md5;
 
@@ -1311,17 +1326,44 @@ namespace DCCollection
                     else escaped += c;
                 }
 
+                // Packed-name escaping (percent-encoding for a few separators/controls).
+                auto packEscape = [](std::string const& s)
+                {
+                    std::string out;
+                    out.reserve(s.size());
+                    auto hex = [](uint8 v) -> char { return v < 10 ? char('0' + v) : char('A' + (v - 10)); };
+                    for (unsigned char uc : s)
+                    {
+                        char c = static_cast<char>(uc);
+                        bool need = (c == '%' || c == '\n' || c == '\r' || c == ';' || c == ',' || c == '|' || c == '"' || c == '\\');
+                        if (!need)
+                        {
+                            out += c;
+                            continue;
+                        }
+                        out += '%';
+                        out += hex((uc >> 4) & 0xF);
+                        out += hex(uc & 0xF);
+                    }
+                    return out;
+                };
+
                 std::ostringstream entry;
                 entry << "{\"id\":" << i << ",\"name\":\"" << escaped << "\",\"items\":[";
 
                 bool firstItem = true;
+                std::ostringstream itemsCsv;
                 for (uint8 j = 0; j < 10; ++j)
                 {
                     if (set->itemId[j] > 0)
                     {
                         if (!firstItem)
+                        {
                             entry << ',';
+                            itemsCsv << ',';
+                        }
                         entry << set->itemId[j];
+                        itemsCsv << set->itemId[j];
                         firstItem = false;
                     }
                 }
@@ -1331,6 +1373,11 @@ namespace DCCollection
                 md5.UpdateData(s);
                 md5.UpdateData("\n");
                 payload.setJson.emplace_back(std::move(s));
+
+                // Packed line: id;urlenc(name);csv(items)
+                std::ostringstream packed;
+                packed << i << ';' << packEscape(name) << ';' << itemsCsv.str();
+                payload.setPacked.emplace_back(packed.str());
             }
 
             md5.Finalize();
@@ -1349,8 +1396,16 @@ namespace DCCollection
         if (offset == 0 && clientSyncVersion != 0 && clientSyncVersion == payload.syncVersion)
         {
             std::ostringstream ss;
-            ss << "{\"sets\":[],\"offset\":0,\"limit\":" << limit << ",\"total\":" << total
-               << ",\"hasMore\":0,\"upToDate\":1,\"syncVersion\":" << payload.syncVersion << "}";
+            if (wantPacked)
+            {
+                ss << "{\"packed\":1,\"data\":\"\",\"offset\":0,\"limit\":" << limit << ",\"total\":" << total
+                   << ",\"hasMore\":0,\"upToDate\":1,\"syncVersion\":" << payload.syncVersion << "}";
+            }
+            else
+            {
+                ss << "{\"sets\":[],\"offset\":0,\"limit\":" << limit << ",\"total\":" << total
+                   << ",\"hasMore\":0,\"upToDate\":1,\"syncVersion\":" << payload.syncVersion << "}";
+            }
 
             DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ITEM_SETS);
             res.Add("J");
@@ -1363,17 +1418,33 @@ namespace DCCollection
         bool hasMore = end < total;
 
         std::ostringstream ss;
-        ss << "{\"sets\":[";
-        bool first = true;
-        for (uint32 i = offset; i < end; ++i)
+        if (wantPacked)
         {
-            if (!first)
-                ss << ',';
-            first = false;
-            ss << payload.setJson[i];
+            ss << "{\"packed\":1,\"data\":\"";
+            // Join packed lines with '\n' (note: we never embed raw newlines; names are percent-encoded).
+            for (uint32 i = offset; i < end; ++i)
+            {
+                if (i != offset)
+                    ss << "\\n";
+                ss << payload.setPacked[i];
+            }
+            ss << "\",\"offset\":" << offset << ",\"limit\":" << limit << ",\"total\":" << total
+               << ",\"hasMore\":" << (hasMore ? 1 : 0) << ",\"syncVersion\":" << payload.syncVersion << "}";
         }
-          ss << "],\"offset\":" << offset << ",\"limit\":" << limit << ",\"total\":" << total
-              << ",\"hasMore\":" << (hasMore ? 1 : 0) << ",\"syncVersion\":" << payload.syncVersion << "}";
+        else
+        {
+            ss << "{\"sets\":[";
+            bool first = true;
+            for (uint32 i = offset; i < end; ++i)
+            {
+                if (!first)
+                    ss << ',';
+                first = false;
+                ss << payload.setJson[i];
+            }
+            ss << "],\"offset\":" << offset << ",\"limit\":" << limit << ",\"total\":" << total
+               << ",\"hasMore\":" << (hasMore ? 1 : 0) << ",\"syncVersion\":" << payload.syncVersion << "}";
+        }
 
         DCAddon::Message res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ITEM_SETS);
         res.Add("J");

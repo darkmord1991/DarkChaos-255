@@ -15,6 +15,8 @@
 #include "CreatureAI.h"
 #include "guildhouse.h"
 
+#include <optional>
+
 int cost, GuildHouseInnKeeper, GuildHouseBank, GuildHouseMailBox, GuildHouseAuctioneer, GuildHouseTrainer, GuildHouseVendor, GuildHouseObject, GuildHousePortal, GuildHouseSpirit, GuildHouseProf, GuildHouseBuyRank, GuildHouseCurrency;
 
 class GuildHouseSpawner : public CreatureScript
@@ -22,6 +24,37 @@ class GuildHouseSpawner : public CreatureScript
 
 public:
     GuildHouseSpawner() : CreatureScript("GuildHouseSpawner") {}
+
+    static constexpr uint32 ACTION_BACK = 9;
+    static constexpr uint32 ACTION_GM_MENU = 9000000;
+    static constexpr uint32 ACTION_GM_SPAWN_ALL = 9000001;
+    static constexpr uint32 ACTION_GM_DESPAWN_ALL = 9000002;
+
+    static bool ShouldKeepCreatureEntryOnDespawnAll(uint32 entry)
+    {
+        // Keep core management NPCs so the guild house remains usable.
+        return entry == 95103 /*manager*/ || entry == 95104 /*butler*/ || entry == 800002 /*teleporter*/;
+    }
+    
+    static bool SpawnPresetsHaveMapColumn()
+    {
+        static std::optional<bool> cached;
+        if (cached.has_value())
+            return cached.value();
+
+        QueryResult result = WorldDatabase.Query(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_guild_house_spawns' AND COLUMN_NAME = 'map'");
+
+        if (!result)
+        {
+            cached = false;
+            return false;
+        }
+
+        Field* fields = result->Fetch();
+        cached = (fields[0].Get<uint64>() > 0);
+        return cached.value();
+    }
 
     struct GuildHouseSpawnerAI : public ScriptedAI
     {
@@ -58,10 +91,9 @@ public:
         }
 
         ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Innkeeper", GOSSIP_SENDER_MAIN, GetCreatureEntry(2), "Add an Innkeeper?", GuildHouseInnKeeper, false);
+        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Innkeeper", GOSSIP_SENDER_MAIN, 800001, "Add an Innkeeper?", GuildHouseInnKeeper, false);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Mailbox", GOSSIP_SENDER_MAIN, 184137, "Spawn a Mailbox?", GuildHouseMailBox, false);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Stable Master", GOSSIP_SENDER_MAIN, 28690, "Spawn a Stable Master?", GuildHouseVendor, false);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Class Trainer", GOSSIP_SENDER_MAIN, 2);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Vendor", GOSSIP_SENDER_MAIN, 3);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Objects", GOSSIP_SENDER_MAIN, 4);
         AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Bank", GOSSIP_SENDER_MAIN, 30605, "Spawn a Banker?", GuildHouseBank, false);
@@ -76,6 +108,9 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Spawn Seasonal Vendors", GOSSIP_SENDER_MAIN, 21);
         AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Special Vendors", GOSSIP_SENDER_MAIN, 22);
 
+        if (player->IsGameMaster())
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM Menu", GOSSIP_SENDER_MAIN, ACTION_GM_MENU);
+
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
     }
@@ -83,21 +118,40 @@ public:
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
 
+        if (action == ACTION_GM_MENU)
+        {
+            ClearGossipMenuFor(player);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Spawn everything (free)", GOSSIP_SENDER_MAIN, ACTION_GM_SPAWN_ALL);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Despawn everything", GOSSIP_SENDER_MAIN, ACTION_GM_DESPAWN_ALL);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, ACTION_BACK);
+            SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+            return true;
+        }
+
+        if (action == ACTION_GM_SPAWN_ALL)
+        {
+            SpawnAll(player, false);
+            OnGossipHello(player, creature);
+            return true;
+        }
+
+        if (action == ACTION_GM_DESPAWN_ALL)
+        {
+            DespawnAll(player);
+            OnGossipHello(player, creature);
+            return true;
+        }
+
         switch (action)
         {
-        case 2: // Spawn Class Trainer
+        case 20: // Mythic+
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Death Knight", GOSSIP_SENDER_MAIN, 29195, "Spawn Death Knight Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Druid", GOSSIP_SENDER_MAIN, 26324, "Spawn Druid Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Hunter", GOSSIP_SENDER_MAIN, 26325, "Spawn Hunter Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Mage", GOSSIP_SENDER_MAIN, 26326, "Spawn Mage Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Paladin", GOSSIP_SENDER_MAIN, 26327, "Spawn Paladin Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Priest", GOSSIP_SENDER_MAIN, 26328, "Spawn Priest Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Rogue", GOSSIP_SENDER_MAIN, 26329, "Spawn Rogue Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Shaman", GOSSIP_SENDER_MAIN, 26330, "Spawn Shaman Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Warlock", GOSSIP_SENDER_MAIN, 26331, "Spawn Warlock Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Warrior", GOSSIP_SENDER_MAIN, 26332, "Spawn Warrior Trainer?", GuildHouseTrainer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, 9);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (190004)", GOSSIP_SENDER_MAIN, 190004, "Spawn Mythic NPC (190004)?", GuildHouseVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100050)", GOSSIP_SENDER_MAIN, 100050, "Spawn Mythic NPC (100050)?", GuildHouseVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100051)", GOSSIP_SENDER_MAIN, 100051, "Spawn Mythic NPC (100051)?", GuildHouseVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100101)", GOSSIP_SENDER_MAIN, 100101, "Spawn Mythic NPC (100101)?", GuildHouseVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100100)", GOSSIP_SENDER_MAIN, 100100, "Spawn Mythic NPC (100100)?", GuildHouseVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, ACTION_BACK);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
 
@@ -140,26 +194,25 @@ public:
         {
             uint32 auctioneer = 0;
             auctioneer = player->GetTeamId() == TEAM_ALLIANCE ? 8719 : 9856;
-            SpawnNPC(auctioneer, player);
+            SpawnNPC(auctioneer, player, GuildHouseAuctioneer, true, true);
             break;
         }
         case 9858: // Neutral Auctioneer
-            cost = GuildHouseAuctioneer;
-            SpawnNPC(action, player);
+            SpawnNPC(action, player, GuildHouseAuctioneer, true, true);
             break;
         case 7: // Spawn Profession Trainers
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Alchemy Trainer", GOSSIP_SENDER_MAIN, 95001, "Spawn Alchemy Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Blacksmithing Trainer", GOSSIP_SENDER_MAIN, 95002, "Spawn Blacksmithing Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Enchanting Trainer", GOSSIP_SENDER_MAIN, 95003, "Spawn Enchanting Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Engineering Trainer", GOSSIP_SENDER_MAIN, 95004, "Spawn Engineering Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Herbalism Trainer", GOSSIP_SENDER_MAIN, 95005, "Spawn Herbalism Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Inscription Trainer", GOSSIP_SENDER_MAIN, 95006, "Spawn Inscription Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Jewelcrafing Trainer", GOSSIP_SENDER_MAIN, 95007, "Spawn Jewelcrafting Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Leatherworking Trainer", GOSSIP_SENDER_MAIN, 95008, "Spawn Leatherworking Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Mining Trainer", GOSSIP_SENDER_MAIN, 95009, "Spawn Mining Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Skinning Trainer", GOSSIP_SENDER_MAIN, 95010, "Spawn Skinning Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Tailoring Trainer", GOSSIP_SENDER_MAIN, 95011, "Spawn Tailoring Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Alchemy Trainer", GOSSIP_SENDER_MAIN, 19052, "Spawn Alchemy Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Blacksmithing Trainer", GOSSIP_SENDER_MAIN, 2836, "Spawn Blacksmithing Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Enchanting Trainer", GOSSIP_SENDER_MAIN, (player->GetTeamId() == TEAM_ALLIANCE ? 18773 : 18753), "Spawn Enchanting Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Engineering Trainer", GOSSIP_SENDER_MAIN, 8736, "Spawn Engineering Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Herbalism Trainer", GOSSIP_SENDER_MAIN, 908, "Spawn Herbalism Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Inscription Trainer", GOSSIP_SENDER_MAIN, (player->GetTeamId() == TEAM_ALLIANCE ? 30721 : 30722), "Spawn Inscription Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Jewelcrafting Trainer", GOSSIP_SENDER_MAIN, (player->GetTeamId() == TEAM_ALLIANCE ? 18774 : 18751), "Spawn Jewelcrafting Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Leatherworking Trainer", GOSSIP_SENDER_MAIN, 19187, "Spawn Leatherworking Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Mining Trainer", GOSSIP_SENDER_MAIN, 8128, "Spawn Mining Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Skinning Trainer", GOSSIP_SENDER_MAIN, 19180, "Spawn Skinning Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Tailoring Trainer", GOSSIP_SENDER_MAIN, 2627, "Spawn Tailoring Trainer?", GuildHouseProf, false);
             
             // Faction check not needed for custom trainers if they are neutral, 
             // but the request implies global replacement. 
@@ -168,7 +221,7 @@ public:
 
 
 
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, 9);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, ACTION_BACK);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
         case 8: // Secondary Profession Trainers
@@ -179,31 +232,16 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, 9);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
-        case 9: // Go back!
+        case ACTION_BACK: // Go back!
             OnGossipHello(player, creature);
             break;
         case 10: // PVP toggle
             break;
         case 30605: // Banker
-            cost = GuildHouseBank;
-            SpawnNPC(action, player);
+            SpawnNPC(action, player, GuildHouseBank, true, true);
             break;
-        case GetCreatureEntry(2): // Innkeeper
-            cost = GuildHouseInnKeeper;
-            SpawnNPC(action, player);
-            break;
-        case 26327: // Paladin
-        case 26324: // Druid
-        case 26325: // Hunter
-        case 26326: // Mage
-        case 26328: // Priest
-        case 26329: // Rogue
-        case 26330: // Shaman
-        case 26331: // Warlock
-        case 26332: // Warrior
-        case 29195: // Death Knight
-            cost = GuildHouseTrainer;
-            SpawnNPC(action, player);
+        case 800001: // Innkeeper
+            SpawnNPC(action, player, GuildHouseInnKeeper, true, true);
             break;
         case 2836:  // Blacksmithing
         case 8128:  // Mining
@@ -222,8 +260,7 @@ public:
         case 19185: // Cooking
         case 2834:  // Fishing
         case 19184: // First Aid
-            cost = GuildHouseProf;
-            SpawnNPC(action, player);
+            SpawnNPC(action, player, GuildHouseProf, true, true);
             break;
         case 28692: // Trade Supplies
         case 28776: // Tabard Vendor
@@ -232,33 +269,31 @@ public:
         case 29493: // Ammo & Repair Vendor
         case 28690: // Stable Master
         case 2622:  // Poisons Vendor
-        case 90001: // Keystone Master
-        case 90002: // Dungeon Porter
-        case 90003: // Valor Quartermaster
+        case 190004: // Mythic+ (custom)
+        case 100050: // Mythic+ (custom)
+        case 100051: // Mythic+ (custom)
+        case 100101: // Mythic+ (custom)
+        case 100100: // Mythic+ (custom)
         case 90004: // Seasonal Trader
         case 90005: // Holiday Ambassador
         case 90006: // Omni-Crafter
         case 90007: // Repair Bot
-            cost = GuildHouseVendor;
-            SpawnNPC(action, player);
+            SpawnNPC(action, player, GuildHouseVendor, true, true);
             break;
         //
         // Objects
         //
         case 184137: // Mailbox
-            cost = GuildHouseMailBox;
-            SpawnObject(action, player);
+            SpawnObject(action, player, GuildHouseMailBox, true, true);
             break;
         case 6491: // Spirit Healer
-            cost = GuildHouseSpirit;
-            SpawnNPC(action, player);
+            SpawnNPC(action, player, GuildHouseSpirit, true, true);
             break;
         case 1685:   // Forge
         case 4087:   // Anvil
         case 187293: // Guild Vault
         case 191028: // Barber Chair
-            cost = GuildHouseObject;
-            SpawnObject(action, player);
+            SpawnObject(action, player, GuildHouseObject, true, true);
             break;
         case GetGameObjectEntry(1): // Darnassus Portal
         case GetGameObjectEntry(2): // Exodar Portal
@@ -268,8 +303,7 @@ public:
         case GetGameObjectEntry(7): // Undercity Portal
         case GetGameObjectEntry(8): // Shattrath Portal
         case GetGameObjectEntry(9): // Dalaran Portal
-            cost = GuildHousePortal;
-            SpawnObject(action, player);
+            SpawnObject(action, player, GuildHousePortal, true, true);
             break;
         }
         return true;
@@ -280,7 +314,7 @@ public:
         return ::GetGuildPhase(player);
     }
 
-    void SpawnNPC(uint32 entry, Player* player)
+    void SpawnNPC(uint32 entry, Player* player, uint32 spawnCost, bool chargePlayer, bool doBroadcast)
     {
         if (player->FindNearestCreature(entry, VISIBILITY_RANGE, true))
         {
@@ -294,13 +328,28 @@ public:
         float posZ;
         float ori;
 
-        // Map-aware spawn presets (supports multiple guildhouse locations on different maps)
-        QueryResult result = WorldDatabase.Query(
-            "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `map`={} AND `entry`={}",
-            player->GetMapId(), entry);
+        QueryResult result;
+        if (SpawnPresetsHaveMapColumn())
+        {
+            // Map-aware spawn presets (supports multiple guildhouse locations on different maps)
+            result = WorldDatabase.Query(
+                "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `map`={} AND `entry`={}",
+                player->GetMapId(), entry);
+        }
+        else
+        {
+            // Backward compatible with old schema (no `map` column)
+            result = WorldDatabase.Query(
+                "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `entry`={}",
+                entry);
+        }
 
         if (!result)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "No spawn preset found for entry {} (map {}). Check `dc_guild_house_spawns`.", entry, player->GetMapId());
             return;
+        }
 
         do
         {
@@ -332,11 +381,37 @@ public:
         }
 
         sObjectMgr->AddCreatureToGrid(db_guid, sObjectMgr->GetCreatureData(db_guid));
-        player->ModifyMoney(-cost);
+
+        if (Guild* guild = player->GetGuild())
+        {
+            std::string spawnedName = std::to_string(entry);
+            if (CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(entry))
+                spawnedName = creatureTemplate->Name;
+
+            std::string safePlayerName = player->GetName();
+            CharacterDatabase.EscapeString(safePlayerName);
+            std::string safeSpawnedName = spawnedName;
+            CharacterDatabase.EscapeString(safeSpawnedName);
+
+            CharacterDatabase.Execute(
+                "INSERT INTO `dc_guild_house_purchase_log` (`created_at`, `guild_id`, `player_guid`, `player_name`, `map`, `phaseMask`, `spawn_type`, `entry`, `template_name`, `cost`) "
+                "VALUES (UNIX_TIMESTAMP(), {}, {}, '{}', {}, {}, 'CREATURE', {}, '{}', {})",
+                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), GetGuildPhase(player), entry, safeSpawnedName, spawnCost);
+
+            if (doBroadcast)
+            {
+                guild->BroadcastToGuild(player->GetSession(), false,
+                    "Guild House: " + std::string(player->GetName()) + " spawned " + spawnedName + ".",
+                    LANG_UNIVERSAL);
+            }
+        }
+
+        if (chargePlayer && spawnCost)
+            player->ModifyMoney(-static_cast<int64>(spawnCost));
         CloseGossipMenuFor(player);
     }
 
-    void SpawnObject(uint32 entry, Player* player)
+    void SpawnObject(uint32 entry, Player* player, uint32 spawnCost, bool chargePlayer, bool doBroadcast)
     {
         if (player->FindNearestGameObject(entry, VISIBLE_RANGE))
         {
@@ -350,13 +425,28 @@ public:
         float posZ;
         float ori;
 
-        // Map-aware spawn presets (supports multiple guildhouse locations on different maps)
-        QueryResult result = WorldDatabase.Query(
-            "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `map`={} AND `entry`={}",
-            player->GetMapId(), entry);
+        QueryResult result;
+        if (SpawnPresetsHaveMapColumn())
+        {
+            // Map-aware spawn presets (supports multiple guildhouse locations on different maps)
+            result = WorldDatabase.Query(
+                "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `map`={} AND `entry`={}",
+                player->GetMapId(), entry);
+        }
+        else
+        {
+            // Backward compatible with old schema (no `map` column)
+            result = WorldDatabase.Query(
+                "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` WHERE `entry`={}",
+                entry);
+        }
 
         if (!result)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "No spawn preset found for entry {} (map {}). Check `dc_guild_house_spawns`.", entry, player->GetMapId());
             return;
+        }
 
         do
         {
@@ -406,8 +496,172 @@ public:
 
         // TODO: is it really necessary to add both the real and DB table guid here ?
         sObjectMgr->AddGameobjectToGrid(guidLow, sObjectMgr->GetGameObjectData(guidLow));
-        player->ModifyMoney(-cost);
+
+        if (Guild* guild = player->GetGuild())
+        {
+            std::string spawnedName = std::to_string(entry);
+            if (GameObjectTemplate const* objectTemplate = sObjectMgr->GetGameObjectTemplate(entry))
+                spawnedName = objectTemplate->name;
+
+            std::string safePlayerName = player->GetName();
+            CharacterDatabase.EscapeString(safePlayerName);
+            std::string safeSpawnedName = spawnedName;
+            CharacterDatabase.EscapeString(safeSpawnedName);
+
+            CharacterDatabase.Execute(
+                "INSERT INTO `dc_guild_house_purchase_log` (`created_at`, `guild_id`, `player_guid`, `player_name`, `map`, `phaseMask`, `spawn_type`, `entry`, `template_name`, `cost`) "
+                "VALUES (UNIX_TIMESTAMP(), {}, {}, '{}', {}, {}, 'GAMEOBJECT', {}, '{}', {})",
+                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), GetGuildPhase(player), entry, safeSpawnedName, spawnCost);
+
+            if (doBroadcast)
+            {
+                guild->BroadcastToGuild(player->GetSession(), false,
+                    "Guild House: " + std::string(player->GetName()) + " spawned " + spawnedName + ".",
+                    LANG_UNIVERSAL);
+            }
+        }
+
+        if (chargePlayer && spawnCost)
+            player->ModifyMoney(-static_cast<int64>(spawnCost));
         CloseGossipMenuFor(player);
+    }
+
+    void SpawnAll(Player* player, bool doBroadcastEach)
+    {
+        if (!player || !player->GetGuild())
+            return;
+
+        // Core services
+        SpawnNPC(800001, player, 0, false, doBroadcastEach); // Innkeeper
+        SpawnObject(184137, player, 0, false, doBroadcastEach); // Mailbox
+        SpawnNPC(28690, player, 0, false, doBroadcastEach); // Stable Master
+        SpawnNPC(30605, player, 0, false, doBroadcastEach); // Banker
+        SpawnNPC(8719, player, 0, false, doBroadcastEach);  // Alliance Auctioneer
+        SpawnNPC(9856, player, 0, false, doBroadcastEach);  // Horde Auctioneer
+        SpawnNPC(9858, player, 0, false, doBroadcastEach);  // Neutral Auctioneer
+        SpawnNPC(6491, player, 0, false, doBroadcastEach);  // Spirit Healer
+
+        // Vendors
+        SpawnNPC(28692, player, 0, false, doBroadcastEach);
+        SpawnNPC(28776, player, 0, false, doBroadcastEach);
+        SpawnNPC(19572, player, 0, false, doBroadcastEach);
+        SpawnNPC(29636, player, 0, false, doBroadcastEach);
+        SpawnNPC(29493, player, 0, false, doBroadcastEach);
+        SpawnNPC(2622, player, 0, false, doBroadcastEach);
+
+        // Primary professions (team-based where applicable)
+        SpawnNPC(19052, player, 0, false, doBroadcastEach); // Alchemy
+        SpawnNPC(2836, player, 0, false, doBroadcastEach);  // Blacksmithing
+        SpawnNPC(player->GetTeamId() == TEAM_ALLIANCE ? 18773 : 18753, player, 0, false, doBroadcastEach); // Enchanting
+        SpawnNPC(8736, player, 0, false, doBroadcastEach);  // Engineering
+        SpawnNPC(908, player, 0, false, doBroadcastEach);   // Herbalism
+        SpawnNPC(player->GetTeamId() == TEAM_ALLIANCE ? 30721 : 30722, player, 0, false, doBroadcastEach); // Inscription
+        SpawnNPC(player->GetTeamId() == TEAM_ALLIANCE ? 18774 : 18751, player, 0, false, doBroadcastEach); // Jewelcrafting
+        SpawnNPC(19187, player, 0, false, doBroadcastEach); // Leatherworking
+        SpawnNPC(8128, player, 0, false, doBroadcastEach);  // Mining
+        SpawnNPC(19180, player, 0, false, doBroadcastEach); // Skinning
+        SpawnNPC(2627, player, 0, false, doBroadcastEach);  // Tailoring
+
+        // Secondary professions
+        SpawnNPC(19184, player, 0, false, doBroadcastEach);
+        SpawnNPC(2834, player, 0, false, doBroadcastEach);
+        SpawnNPC(19185, player, 0, false, doBroadcastEach);
+
+        // Objects
+        SpawnObject(1685, player, 0, false, doBroadcastEach);
+        SpawnObject(4087, player, 0, false, doBroadcastEach);
+        SpawnObject(187293, player, 0, false, doBroadcastEach);
+        SpawnObject(191028, player, 0, false, doBroadcastEach);
+
+        // DC vendors
+        SpawnNPC(95100, player, 0, false, doBroadcastEach);
+        SpawnNPC(95101, player, 0, false, doBroadcastEach);
+        SpawnNPC(95102, player, 0, false, doBroadcastEach);
+        SpawnNPC(55002, player, 0, false, doBroadcastEach);
+
+        // Mythic+ NPCs
+        SpawnNPC(190004, player, 0, false, doBroadcastEach);
+        SpawnNPC(100050, player, 0, false, doBroadcastEach);
+        SpawnNPC(100051, player, 0, false, doBroadcastEach);
+        SpawnNPC(100101, player, 0, false, doBroadcastEach);
+        SpawnNPC(100100, player, 0, false, doBroadcastEach);
+
+        if (Guild* guild = player->GetGuild())
+        {
+            guild->BroadcastToGuild(player->GetSession(), false,
+                "GM: " + std::string(player->GetName()) + " spawned all Guild House upgrades.",
+                LANG_UNIVERSAL);
+        }
+    }
+
+    void DespawnAll(Player* player)
+    {
+        if (!player || !player->GetGuild())
+            return;
+
+        uint32 guildPhase = GetGuildPhase(player);
+        uint32 mapId = player->GetMapId();
+        Map* map = player->GetMap();
+        if (!map)
+            return;
+
+        QueryResult creatureResult = WorldDatabase.Query(
+            "SELECT `guid`, `id1` FROM `creature` WHERE `map` = {} AND `phaseMask` = {}",
+            mapId, guildPhase);
+
+        if (creatureResult)
+        {
+            do
+            {
+                Field* fields = creatureResult->Fetch();
+                uint32 lowguid = fields[0].Get<uint32>();
+                uint32 entry = fields[1].Get<uint32>();
+                if (ShouldKeepCreatureEntryOnDespawnAll(entry))
+                    continue;
+
+                if (CreatureData const* crData = sObjectMgr->GetCreatureData(lowguid))
+                {
+                    if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(crData->id1, lowguid)))
+                    {
+                        creature->CombatStop();
+                        creature->DeleteFromDB();
+                        creature->AddObjectToRemoveList();
+                    }
+                }
+            } while (creatureResult->NextRow());
+        }
+
+        QueryResult gameobjResult = WorldDatabase.Query(
+            "SELECT `guid` FROM `gameobject` WHERE `map` = {} AND `phaseMask` = {}",
+            mapId, guildPhase);
+
+        if (gameobjResult)
+        {
+            do
+            {
+                Field* fields = gameobjResult->Fetch();
+                uint32 lowguid = fields[0].Get<uint32>();
+
+                if (GameObjectData const* goData = sObjectMgr->GetGameObjectData(lowguid))
+                {
+                    if (GameObject* gobject = map->GetGameObject(ObjectGuid::Create<HighGuid::GameObject>(goData->id, lowguid)))
+                    {
+                        gobject->SetRespawnTime(0);
+                        gobject->Delete();
+                        gobject->DeleteFromDB();
+                        gobject->CleanupsBeforeDelete();
+                    }
+                }
+
+            } while (gameobjResult->NextRow());
+        }
+
+        if (Guild* guild = player->GetGuild())
+        {
+            guild->BroadcastToGuild(player->GetSession(), false,
+                "GM: " + std::string(player->GetName()) + " despawned all Guild House upgrades.",
+                LANG_UNIVERSAL);
+        }
     }
 };
 

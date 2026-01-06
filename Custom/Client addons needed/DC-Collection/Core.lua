@@ -953,6 +953,18 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
     elseif cmd == "debug" then
         DCCollectionDB.debugMode = not DCCollectionDB.debugMode
         DC:Print("Debug mode: " .. (DCCollectionDB.debugMode and "ON" or "OFF"))
+    elseif cmd:match("^netlog") then
+        local n = cmd:match("^netlog%s+(%d+)")
+        if type(DC.DumpNetEventLog) == "function" then
+            DC:DumpNetEventLog(tonumber(n) or 30)
+        else
+            DC:Print("Net log is not available in this build.")
+        end
+    elseif cmd == "netclear" then
+        if type(DC.ClearNetEventLog) == "function" then
+            DC:ClearNetEventLog()
+            DC:Print("[NetLog] Cleared")
+        end
     elseif cmd == "stats" then
         local owned, total = DC:GetTotalCount()
         DC:Print("Collection Statistics:")
@@ -974,6 +986,8 @@ SlashCmdList["DCCOLLECTION"] = function(msg)
         DC:Print("  /dcc stats - Show collection statistics")
         DC:Print("  /dcc currency - Show current currency")
         DC:Print("  /dcc debug - Toggle debug mode")
+        DC:Print("  /dcc netlog [N] - Show last N net events")
+        DC:Print("  /dcc netclear - Clear net event log")
     else
         DC:Print("Unknown command. Type /dcc help for a list of commands.")
     end
@@ -1311,6 +1325,13 @@ function events:PLAYER_LOGIN()
             DC:MaybeResumeTransmogDefinitionsOnLogin()
         end
     end)
+
+    -- Fallback: ensure protocol registration actually happened.
+    After(0.5, function()
+        if not DC.isConnected and type(DC.InitializeProtocol) == "function" then
+            DC:InitializeProtocol()
+        end
+    end)
 end
 
 function events:PLAYER_LOGOUT()
@@ -1354,13 +1375,6 @@ function DC:InitializeCache()
     -- Load cached data from SavedVariables
     if self.LoadCache then
         self:LoadCache()
-    end
-end
-
-function DC:InitializeProtocol()
-    -- Initialize DCAddonProtocol communication
-    if self.SetupProtocol then
-        self:SetupProtocol()
     end
 end
 

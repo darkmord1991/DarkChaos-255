@@ -49,7 +49,7 @@ public:
 
         void UpdateAI(uint32 /*diff*/) override
         {
-            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+            me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
         }
     };
 
@@ -60,6 +60,8 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
+        ClearGossipMenuFor(player);
+
         if (!player->GetGuild())
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You are not a member of a guild.");
@@ -756,10 +758,10 @@ public:
     void SpawnButlerNPC(Player* player)
     {
         uint32 entry = 95104;
-        float posX = 16202.185547f;
-        float posY = 16255.916992f;
-        float posZ = 21.160221f;
-        float ori = 6.195375f;
+        float posX = 16229.422f;
+        float posY = 16283.675f;
+        float posZ = 13.175704f;
+        float ori = 3.036652f;
 
         Map* map = sMapMgr->FindMap(1, 0);
         Creature* creature = new Creature();
