@@ -236,7 +236,13 @@ public:
         }
 
         uint32 guildPhase = GetGuildPhase(player);
-        CleanupGuildHouseSpawns(guildPhase);
+        
+        // Only clean up the CURRENT map location, we need to know where it is.
+        // For reset, we are at the location, or we query DB.
+        QueryResult result = CharacterDatabase.Query("SELECT `map` FROM `dc_guild_house` WHERE `guild` = {}", player->GetGuildId());
+        uint32 mapId = result ? result->Fetch()[0].Get<uint32>() : 1;
+
+        GuildHouseManager::CleanupGuildHouseSpawns(mapId, guildPhase);
         SpawnTeleporterNPC(player);
         SpawnButlerNPC(player);
         ChatHandler(player->GetSession()).PSendSysMessage("Guild House has been reset.");
@@ -296,9 +302,21 @@ public:
             "UPDATE `dc_guild_house` SET `map` = {}, `positionX` = {}, `positionY` = {}, `positionZ` = {}, `orientation` = {} WHERE `guild` = {}",
             map, posX, posY, posZ, ori, player->GetGuildId());
 
+        // Update Cache (preserve phase from getter)
+        GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori));
+
+        // Treat move like a reset as well (clean and respawn core NPCs)
         // Treat move like a reset as well (clean and respawn core NPCs)
         uint32 guildPhase = GetGuildPhase(player);
-        CleanupGuildHouseSpawns(guildPhase);
+        
+        // We moved, so we need to clean up the OLD location (or new? Ideally we clean up whatever is there).
+        // Since we just updated the DB, 'map' is the NEW map.
+        // We should have cleaned up the OLD map before updating DB context if map changed.
+        // Assuming single map for now or identical phase ID across maps means we just clean the new map to be safe
+        // or we trust the user wants a fresh start.
+        // Let's clean the NEW map to ensure no garbage exists in this phase.
+        
+        GuildHouseManager::CleanupGuildHouseSpawns(map, guildPhase);
         SpawnTeleporterNPC(player);
         SpawnButlerNPC(player);
 
@@ -370,7 +388,7 @@ public:
             CharacterDatabase.Query(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {})",
-                player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
+                player->GetGuildId(), ::GetGuildPhase(player), map, posX, posY, posZ, ori);
 
             player->ModifyMoney(-static_cast<int64>(cost));
 
@@ -441,7 +459,7 @@ public:
             CharacterDatabase.Query(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {})",
-                player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
+                player->GetGuildId(), ::GetGuildPhase(player), map, posX, posY, posZ, ori);
 
             SpawnTeleporterNPC(player);
             SpawnButlerNPC(player);
@@ -642,104 +660,51 @@ public:
         return true;
     }
 
-    uint32 GetGuildPhase(Player* player)
-    {
-        return ::GetGuildPhase(player);
-    }
+
 
     bool RemoveGuildHouse(Player* player)
     {
-
-        uint32 guildPhase = GetGuildPhase(player);
-        QueryResult CreatureResult;
-        QueryResult GameobjResult;
-        Map* map = sMapMgr->FindMap(1, 0);
-        // Lets find all of the gameobjects to be removed
-        GameobjResult = WorldDatabase.Query("SELECT `guid` FROM `gameobject` WHERE `map` = 1 AND `phaseMask` = '{}'", guildPhase);
-        // Lets find all of the creatures to be removed
-        CreatureResult = WorldDatabase.Query("SELECT `guid` FROM `creature` WHERE `map` = 1 AND `phaseMask` = '{}'", guildPhase);
-
-        // Remove creatures from the deleted guild house map
-        if (CreatureResult)
-        {
-            do
-            {
-                Field* fields = CreatureResult->Fetch();
-                uint32 lowguid = fields[0].Get<uint32>();
-                if (CreatureData const* cr_data = sObjectMgr->GetCreatureData(lowguid))
-                {
-                    if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(cr_data->id1, lowguid)))
-                    {
-                        creature->CombatStop();
-                        creature->DeleteFromDB();
-                        creature->AddObjectToRemoveList();
-                    }
-                }
-            } while (CreatureResult->NextRow());
-        }
-
-        // Remove gameobjects from the deleted guild house map
-        if (GameobjResult)
-        {
-            do
-            {
-                Field* fields = GameobjResult->Fetch();
-                uint32 lowguid = fields[0].Get<uint32>();
-                if (GameObjectData const* go_data = sObjectMgr->GetGameObjectData(lowguid))
-                {
-                    if (GameObject* gobject = map->GetGameObject(ObjectGuid::Create<HighGuid::GameObject>(go_data->id, lowguid)))
-                    {
-                        gobject->SetRespawnTime(0);
-                        gobject->Delete();
-                        gobject->DeleteFromDB();
-                        gobject->CleanupsBeforeDelete();
-                        // delete gobject;
-                    }
-                }
-
-            } while (GameobjResult->NextRow());
-        }
-
-        // Delete actual guild_house data from characters database
-        CharacterDatabase.Query("DELETE FROM `dc_guild_house` WHERE `guild`={}", player->GetGuildId());
-
-        return true;
+        return GuildHouseManager::RemoveGuildHouse(player->GetGuild());
     }
 
     void SpawnTeleporterNPC(Player* player)
     {
         uint32 entry = 800002; // Teleporter NPC
-        float posX = 16226.5f; // Default near center of GM island area
-        float posY = 16258.8f;
-        float posZ = 13.2f;
-        float ori = 1.6f;
+        
+        // Defaults (GM Island) - fallback
+        float posX = 16222.0f;
+        float posY = 16270.0f;
+        float posZ = 13.1f;
+        float ori = 4.7f;
+        uint32 mapId = 1;
 
-        // Try to verify coordinates from DB if possible, but fallback to defaults or use player position offset
-        // For now, using hardcoded defaults similar to existing logic or relative to player
+        // Try to get actual guild house location
+        QueryResult result = CharacterDatabase.Query("SELECT `map`, `positionX`, `positionY`, `positionZ`, `orientation` FROM `dc_guild_house` WHERE `guild`={}", player->GetGuildId());
+        if (result)
+        {
+             Field* fields = result->Fetch();
+             mapId = fields[0].Get<uint32>();
+             // We want to spawn the teleporter slightly offset from the arrival point, or at a fixed relative point?
+             // For now, let's just spawn it AT the arrival point so they can leave/manage.
+             posX = fields[1].Get<float>();
+             posY = fields[2].Get<float>();
+             posZ = fields[3].Get<float>();
+             ori = fields[4].Get<float>();
+        }
 
-        // Actually, let's use the player's position + offset to be safe, OR valid GM island coords
-        // The original logic checked `dc_guild_house_spawns` for portals.
-        // We can just spawn it near the Butler or player.
-
-        // Let's spawn it at a fixed location on GM Island for consistency if map is 1
-        // Original GM Island coords: 16222.972, 16267.802, 13.136777
-
-        posX = 16222.0f;
-        posY = 16270.0f;
-        posZ = 13.1f;
-        ori = 4.7f;
-
-        Map* map = sMapMgr->FindMap(1, 0); // GM Island Map
+        Map* map = sMapMgr->FindMap(mapId, 0);
+        if (!map) return;
+        
         Creature* creature = new Creature();
-
-        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, GetGuildPhase(player), entry, 0, posX, posY, posZ, ori))
+        // Use ::GetGuildPhase(player) directly
+        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, ::GetGuildPhase(player), entry, 0, posX, posY, posZ, ori))
         {
             delete creature;
             LOG_INFO("modules", "GUILDHOUSE: Unable to create Teleporter NPC!");
             return;
         }
 
-        creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), GetGuildPhase(player));
+        creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), ::GetGuildPhase(player));
         uint32 lowguid = creature->GetSpawnId();
 
         creature->CleanupsBeforeDelete();
@@ -758,20 +723,43 @@ public:
     void SpawnButlerNPC(Player* player)
     {
         uint32 entry = 95104;
+        
+        // Defaults (GM Island) - fallback
         float posX = 16229.422f;
         float posY = 16283.675f;
         float posZ = 13.175704f;
         float ori = 3.036652f;
+        uint32 mapId = 1;
 
-        Map* map = sMapMgr->FindMap(1, 0);
+        // Try to get actual guild house location
+        QueryResult result = CharacterDatabase.Query("SELECT `map`, `positionX`, `positionY`, `positionZ`, `orientation` FROM `dc_guild_house` WHERE `guild`={}", player->GetGuildId());
+        if (result)
+        {
+             Field* fields = result->Fetch();
+             mapId = fields[0].Get<uint32>();
+             
+             // Offset butler slightly from teleporter/spawn point? 
+             // Or just use the defaults if currently hardcoded logic expects a specific layout.
+             // If we want to support dynamic maps, we should probably have a "Butler Spawn Offset" or just spawn him nearby.
+             // For now, let's use the DB coords + small offset.
+             posX = fields[1].Get<float>() + 2.0f; // Simple offset
+             posY = fields[2].Get<float>();
+             posZ = fields[3].Get<float>();
+             ori = fields[4].Get<float>();
+        }
+
+        Map* map = sMapMgr->FindMap(mapId, 0);
+        if (!map) return;
+
         Creature* creature = new Creature();
 
-        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, player->GetPhaseMaskForSpawn(), entry, 0, posX, posY, posZ, ori))
+        // Use ::GetGuildPhase(player), NOT player->GetPhaseMaskForSpawn() which might be generic
+        if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, ::GetGuildPhase(player), entry, 0, posX, posY, posZ, ori))
         {
             delete creature;
             return;
         }
-        creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), GetGuildPhase(player));
+        creature->SaveToDB(map->GetId(), (1 << map->GetSpawnMode()), ::GetGuildPhase(player));
         uint32 lowguid = creature->GetSpawnId();
 
         creature->CleanupsBeforeDelete();

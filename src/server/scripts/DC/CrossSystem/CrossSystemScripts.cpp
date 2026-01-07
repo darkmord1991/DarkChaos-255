@@ -9,6 +9,7 @@
 
 #include "CrossSystemManager.h"
 #include "CrossSystemAdapters.h"
+#include "WorldBossMgr.h"
 #include "Creature.h"
 #include "Log.h"
 #include "Map.h"
@@ -17,6 +18,9 @@
 #include "World.h"
 
 using namespace DarkChaos::CrossSystem;
+
+// Forward declaration for world boss registration
+static void RegisterGiantIslesWorldBosses();
 
 // =========================================================================
 // World Script - Global Hooks
@@ -34,6 +38,9 @@ public:
 
         // Register all system adapters
         Adapters::RegisterAllAdapters();
+
+        // Register world bosses with WorldBossMgr
+        RegisterGiantIslesWorldBosses();
     }
 
     void OnShutdown() override
@@ -125,4 +132,20 @@ void AddSC_dc_cross_system_scripts()
 {
     new CrossSystemWorldScript();
     new CrossSystemPlayerScript();
+}
+
+// =========================================================================
+// World Boss Registration
+// =========================================================================
+
+static void RegisterGiantIslesWorldBosses()
+{
+    // Giant Isles world bosses
+    // Format: RegisterBoss(entry, spawnId, displayName, zoneId, respawnTimeSeconds)
+    // zoneId 5006 = Giant Isles
+    sWorldBossMgr->RegisterBoss(400100, 9000190, "Oondasta, King of Dinosaurs", 5006, 1800);
+    sWorldBossMgr->RegisterBoss(400101, 9000189, "Thok the Bloodthirsty", 5006, 1800);
+    sWorldBossMgr->RegisterBoss(400102, 9000191, "Nalak the Storm Lord", 5006, 1800);
+
+    LOG_INFO("dc.crosssystem", "WorldBossMgr: Registered 3 Giant Isles world bosses");
 }

@@ -510,10 +510,12 @@ end
 
 -- Fallback boss definitions (used if the server only sends partial boss lists)
 -- Single source of truth for client-side boss identity/metadata.
+-- mapId is the server zone ID (5006 = Giant Isles), nx/ny are normalized (0-1) coordinates for map pins.
+-- Coordinates calculated from spawn data: Oondasta (6054,1109), Thok (6095,1336), Nalak (6243,789)
 DCInfoBar.DEFAULT_WORLD_BOSSES = DCInfoBar.DEFAULT_WORLD_BOSSES or {
-    { entry = 400100, spawnId = 9000190, id = "oondasta", name = "Oondasta, King of Dinosaurs", zone = "Devilsaur Gorge" },
-    { entry = 400101, spawnId = 9000189, id = "thok",     name = "Thok the Bloodthirsty",     zone = "Raptor Ridge" },
-    { entry = 400102, spawnId = 9000191, id = "nalak",    name = "Nalak the Storm Lord",      zone = "Thundering Peaks" },
+    { entry = 400100, spawnId = 9000190, id = "oondasta", name = "Oondasta, King of Dinosaurs", zone = "Devilsaur Gorge",    mapId = 5006, nx = 0.637, ny = 0.447 },
+    { entry = 400101, spawnId = 9000189, id = "thok",     name = "Thok the Bloodthirsty",     zone = "Raptor Ridge",        mapId = 5006, nx = 0.579, ny = 0.240 },
+    { entry = 400102, spawnId = 9000191, id = "nalak",    name = "Nalak the Storm Lord",      zone = "Thundering Peaks",    mapId = 5006, nx = 0.367, ny = 0.737 },
 }
 
 local DEFAULT_GIANT_ISLES_BOSSES = DCInfoBar.DEFAULT_WORLD_BOSSES

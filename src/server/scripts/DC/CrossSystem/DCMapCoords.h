@@ -55,8 +55,12 @@ namespace MapCoords
         if (tx < 0.0f || tx > 100.0f || ty < 0.0f || ty > 100.0f)
         {
             // Custom zone fallback(s)
+            // Note: bounds are (locLeft, locRight, locTop, locBottom) from WorldMapArea.csv
+            // nx = (locLeft - x) / (locLeft - locRight)
+            // ny = (locTop - y) / (locTop - locBottom)
             static constexpr WorldMapAreaBounds CustomBounds[] = {
                 // Isles of Giants (MapID 1405, AreaID 5006)
+                // From WorldMapArea.csv line 219: "1100","1405","5006","IslesofGiants","2132,02","2,91039","6932,32","5334,3"
                 { 5006u, 2132.02f, 2.91039f, 6932.32f, 5334.3f },
             };
 

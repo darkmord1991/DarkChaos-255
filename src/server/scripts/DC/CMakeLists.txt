@@ -247,6 +247,7 @@ set(SCRIPTS_DC_CrossSystem
     CrossSystem/CrossSystemManager.cpp
     CrossSystem/CrossSystemScripts.cpp
     CrossSystem/DCSpawnResolver.cpp
+    CrossSystem/WorldBossMgr.cpp
 )
 
 # DC Commands - Unified command hub

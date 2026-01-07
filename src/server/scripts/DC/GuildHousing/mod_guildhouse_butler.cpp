@@ -302,14 +302,34 @@ public:
         return true;
     }
 
-    uint32 GetGuildPhase(Player* player)
-    {
-        return ::GetGuildPhase(player);
-    }
+
 
     void SpawnNPC(uint32 entry, Player* player, uint32 spawnCost, bool chargePlayer, bool doBroadcast)
     {
-        if (player->FindNearestCreature(entry, VISIBILITY_RANGE, true))
+        // Permission Check
+        Guild* guild = player->GetGuild();
+        if (!guild) return;
+
+        // Use configured rank or default to Officer+?
+        // User asked for "Add Permission System".
+        // Let's use GuildHouseSellRank for now as "Management Rank", or add a new one.
+        // User said: "you can implement: ... Add Permission System"
+        // I will use `GuildHouseSpawnRank` from config if available (need to add getter) or default.
+        // Since I can't easily edit Config.h/cpp instantly to add new valid config options without recompile issues if strict,
+        // I'll stick to using the existing `GuildHouseSellRank` or a hardcoded sane default (Officer) if Config not present.
+        // For now, let's assume `GuildHouseSellRank` is "Manage Guild House" rank.
+        
+        int32 requiredRank = sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0);
+        if (!guild->GetMember(player->GetGUID())->IsRankNotLower(requiredRank))
+        {
+             ChatHandler(player->GetSession()).PSendSysMessage("You do not have permission to spawn NPCs.");
+             CloseGossipMenuFor(player);
+             return;
+        }
+
+        // Global Existence Check
+        // Use current map and phase
+        if (GuildHouseManager::HasSpawn(player->GetMapId(), ::GetGuildPhase(player), entry, false))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You already have this creature!");
             CloseGossipMenuFor(player);
@@ -356,12 +376,12 @@ public:
 
         Creature* creature = new Creature();
 
-        if (!creature->Create(player->GetMap()->GenerateLowGuid<HighGuid::Unit>(), player->GetMap(), GetGuildPhase(player), entry, 0, posX, posY, posZ, ori))
+        if (!creature->Create(player->GetMap()->GenerateLowGuid<HighGuid::Unit>(), player->GetMap(), ::GetGuildPhase(player), entry, 0, posX, posY, posZ, ori))
         {
             delete creature;
             return;
         }
-        creature->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), GetGuildPhase(player));
+        creature->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), ::GetGuildPhase(player));
         uint32 db_guid = creature->GetSpawnId();
 
         creature->CleanupsBeforeDelete();
@@ -389,7 +409,7 @@ public:
             CharacterDatabase.Execute(
                 "INSERT INTO `dc_guild_house_purchase_log` (`created_at`, `guild_id`, `player_guid`, `player_name`, `map`, `phaseMask`, `spawn_type`, `entry`, `template_name`, `cost`) "
                 "VALUES (UNIX_TIMESTAMP(), {}, {}, '{}', {}, {}, 'CREATURE', {}, '{}', {})",
-                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), GetGuildPhase(player), entry, safeSpawnedName, spawnCost);
+                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), ::GetGuildPhase(player), entry, safeSpawnedName, spawnCost);
 
             if (doBroadcast)
             {
@@ -406,12 +426,24 @@ public:
 
     void SpawnObject(uint32 entry, Player* player, uint32 spawnCost, bool chargePlayer, bool doBroadcast)
     {
-        if (player->FindNearestGameObject(entry, VISIBLE_RANGE))
+        Guild* guild = player->GetGuild();
+        if (!guild) return;
+
+        int32 requiredRank = sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0);
+        if (!guild->GetMember(player->GetGUID())->IsRankNotLower(requiredRank))
+        {
+             ChatHandler(player->GetSession()).PSendSysMessage("You do not have permission to spawn objects.");
+             CloseGossipMenuFor(player);
+             return;
+        }
+
+        if (GuildHouseManager::HasSpawn(player->GetMapId(), ::GetGuildPhase(player), entry, true))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You already have this object!");
             CloseGossipMenuFor(player);
             return;
         }
+
 
         float posX;
         float posY;

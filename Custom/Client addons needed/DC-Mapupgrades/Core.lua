@@ -327,7 +327,9 @@ function Core:ImportWorldBossesFromInfoBar()
             local entry = tonumber(b.entry) or nil
             local name = b.name
             local zoneLabel = b.zone
-            local mapId = tonumber(b.mapId) or nil
+            -- Use zoneId (server area ID) for map matching, NOT mapId (server map ID like 1405)
+            -- EntityMatchesMap expects zoneId to match CUSTOM_ZONE_MAPPING values
+            local mapId = tonumber(b.zoneId) or tonumber(b.mapId) or nil
             local nx, ny = NormalizePossibleNormalizedPos(b.nx, b.ny)
 
             local existing = findBySpawnOrEntryOrName(spawnId, entry, name)
