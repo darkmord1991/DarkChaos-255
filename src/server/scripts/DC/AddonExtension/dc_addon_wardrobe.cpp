@@ -43,6 +43,9 @@ namespace DCCollection
     constexpr const char* TRANSMOG_MIN_QUALITY = "DCCollection.Transmog.MinQuality";
     constexpr const char* TRANSMOG_SLOT_ITEMS_PAGE_SIZE = "DCCollection.Transmog.SlotItemsPageSize";
     constexpr const char* TRANSMOG_SESSION_NOTIFICATION_DEDUP = "DCCollection.Transmog.SessionNotificationDedup";
+    // When true, skip the "is this appearance unlocked for this account?" check.
+    // Useful for servers that want open/free transmog for all appearances.
+    constexpr const char* TRANSMOG_SKIP_UNLOCK_CHECK = "DCCollection.Transmog.SkipUnlockCheck";
 
     // =======================================================================
     // Transmog Helper Implementations
@@ -68,11 +71,13 @@ namespace DCCollection
         return std::to_string(displayId) + ":" + std::to_string(inventoryType) + ":" + std::to_string(itemClass) + ":" + std::to_string(itemSubClass);
     }
 
-    using AppearanceIndex = std::unordered_map<uint32, std::vector<TransmogAppearanceVariant>>;
+    using PublicAppearanceIndex = std::map<uint32, std::vector<TransmogAppearanceVariant>>;
 
-    AppearanceIndex BuildTransmogAppearanceIndex()
+    PublicAppearanceIndex BuildTransmogAppearanceIndexMap()
     {
-        AppearanceIndex defs;
+        PublicAppearanceIndex defs;
+
+        LOG_DEBUG("module.dc", "[DCWardrobe] Building transmog appearance index from item_template...");
 
         QueryResult result = WorldDatabase.Query(
             "SELECT entry, displayid, name, class, subclass, InventoryType, Quality, ItemLevel "
@@ -83,110 +88,16 @@ namespace DCCollection
 
         if (!result)
         {
-            LOG_ERROR("module.dc", "[DCWardrobe] Transmog index build: item_template query returned no rows (or failed). Definitions/apply will be empty until this is fixed.");
+            LOG_ERROR("module.dc", "[DCWardrobe] Transmog index build: item_template query returned no rows (or failed). "
+                "This can happen very early at startup; the server will retry later. "
+                "Check that World DB is connected and item_template exists with correct columns.");
             return defs;
         }
 
+        uint32 rowCount = 0;
         do
         {
-            Field* fields = result->Fetch();
-            uint32 entry = fields[0].Get<uint32>();
-            uint32 displayId = fields[1].Get<uint32>();
-            std::string name = fields[2].Get<std::string>();
-            uint32 itemClass = fields[3].Get<uint32>();
-            uint32 itemSubClass = fields[4].Get<uint32>();
-            uint32 inventoryType = fields[5].Get<uint32>();
-            uint32 quality = fields[6].Get<uint32>();
-            uint32 itemLevel = fields[7].Get<uint32>();
-
-            if (!displayId)
-                continue;
-
-            auto& variants = defs[displayId];
-
-            TransmogAppearanceVariant* bucket = nullptr;
-            for (auto& v : variants)
-            {
-                if (v.inventoryType == inventoryType && v.itemClass == itemClass && v.itemSubClass == itemSubClass)
-                {
-                    bucket = &v;
-                    break;
-                }
-            }
-
-            if (!bucket)
-            {
-                TransmogAppearanceVariant v;
-                v.canonicalItemId = entry;
-                v.displayId = displayId;
-                v.inventoryType = inventoryType;
-                v.itemClass = itemClass;
-                v.itemSubClass = itemSubClass;
-                v.quality = quality;
-                v.itemLevel = itemLevel;
-                v.name = name;
-                v.itemIds.push_back(entry);
-                variants.push_back(std::move(v));
-                continue;
-            }
-
-            bucket->itemIds.push_back(entry);
-
-            bool entryIsNonCustom = entry < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
-            bool existingIsNonCustom = bucket->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
-            if (IsBetterTransmogRepresentative(entry, entryIsNonCustom, quality, itemLevel,
-                bucket->canonicalItemId, existingIsNonCustom, bucket->quality, bucket->itemLevel))
-            {
-                bucket->canonicalItemId = entry;
-                bucket->quality = quality;
-                bucket->itemLevel = itemLevel;
-                bucket->name = name;
-            }
-        } while (result->NextRow());
-
-        for (auto& [_, variants] : defs)
-        {
-            for (auto& v : variants)
-            {
-                std::sort(v.itemIds.begin(), v.itemIds.end());
-                v.itemIds.erase(std::unique(v.itemIds.begin(), v.itemIds.end()), v.itemIds.end());
-            }
-        }
-
-        return defs;
-    }
-
-    // Explicitly convert unordered_map to map for the header interface if needed,
-    // OR change the header to use unordered_map.
-    // The header declared `std::map<uint32, std::vector<TransmogAppearanceVariant>>`.
-    // My local `AppearanceIndex` is unordered_map.
-    // I will change the internal one to `std::map` to match header, or change header.
-    // Using `std::map` is safer for header inclusion, though unordered_map is faster.
-    // Given the size, map is acceptable for lookup. 
-    // Wait, the header declared `std::map`. I should respect that or update header.
-    // I'll update the implementation here to use std::map to match header for now.
-    // Actually, I can use an internal cache and return a reference to it.
-    
-    // Re-declaring AppearanceIndex to match header:
-    using PublicAppearanceIndex = std::map<uint32, std::vector<TransmogAppearanceVariant>>;
-
-    PublicAppearanceIndex BuildTransmogAppearanceIndexMap()
-    {
-        // Copy-paste logic but use map
-        PublicAppearanceIndex defs;
-        // ... build logic ... 
-        // It's the same logic.
-        QueryResult result = WorldDatabase.Query(
-            "SELECT entry, displayid, name, class, subclass, InventoryType, Quality, ItemLevel "
-            "FROM item_template "
-            "WHERE displayid <> 0 "
-            "  AND class IN (2, 4) " // weapon, armor
-            "  AND InventoryType <> 0");
-
-        if (!result) return defs;
-
-        do
-        {
+            rowCount++;
             Field* fields = result->Fetch();
             uint32 entry = fields[0].Get<uint32>();
             uint32 displayId = fields[1].Get<uint32>();
@@ -247,61 +158,76 @@ namespace DCCollection
                 v.itemIds.erase(std::unique(v.itemIds.begin(), v.itemIds.end()), v.itemIds.end());
             }
         }
+
+        LOG_DEBUG("module.dc", "[DCWardrobe] Transmog index build complete: {} item_template rows -> {} unique displayIds",
+            rowCount, static_cast<uint32>(defs.size()));
+
         return defs;
     }
 
-    std::map<uint32, std::vector<TransmogAppearanceVariant>> const& GetTransmogAppearanceIndexCached()
+    struct TransmogIndexCache
     {
-        static PublicAppearanceIndex cached;
-        static bool initialized = false;
-        if (!initialized)
-        {
-            cached = BuildTransmogAppearanceIndexMap();
-            initialized = true;
-        }
-        return cached;
+        PublicAppearanceIndex appearances;
+        std::vector<std::string> variantKeys;
+        uint32 syncVersion = 0;
+        bool initialized = false;
+        std::mutex mutex;
+    };
+
+    static TransmogIndexCache& GetTransmogIndexCache()
+    {
+        static TransmogIndexCache cache;
+        return cache;
     }
 
-    std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached()
+    static void EnsureTransmogIndexCache()
     {
-        static std::vector<std::string> keys;
-        static bool initialized = false;
-        if (!initialized)
-        {
-            auto const& appearances = GetTransmogAppearanceIndexCached();
-            std::vector<std::tuple<uint32, uint32, uint32, uint32, std::string>> tmp;
-            tmp.reserve(appearances.size());
+        auto& cache = GetTransmogIndexCache();
+        std::lock_guard<std::mutex> lock(cache.mutex);
 
-            for (auto const& [displayId, variants] : appearances)
+        // If we successfully built a non-empty index already, keep it.
+        if (cache.initialized && !cache.appearances.empty())
+            return;
+
+        PublicAppearanceIndex defs = BuildTransmogAppearanceIndexMap();
+        if (defs.empty())
+        {
+            // Do NOT mark as initialized: the OnAfterConfigLoad pre-warm can run before
+            // the World DB is fully available. We want later requests to retry.
+            cache.initialized = false;
+            cache.appearances.clear();
+            cache.variantKeys.clear();
+            cache.syncVersion = 0;
+            return;
+        }
+
+        cache.appearances = std::move(defs);
+
+        // Build stable variant key list.
+        std::vector<std::tuple<uint32, uint32, uint32, uint32, std::string>> tmp;
+        tmp.reserve(cache.appearances.size());
+
+        for (auto const& [displayId, variants] : cache.appearances)
+        {
+            for (auto const& v : variants)
             {
-                for (auto const& v : variants)
-                {
-                    tmp.emplace_back(displayId, v.inventoryType, v.itemClass, v.itemSubClass,
-                        BuildTransmogVariantKey(displayId, v.inventoryType, v.itemClass, v.itemSubClass));
-                }
+                tmp.emplace_back(displayId, v.inventoryType, v.itemClass, v.itemSubClass,
+                    BuildTransmogVariantKey(displayId, v.inventoryType, v.itemClass, v.itemSubClass));
             }
-
-            std::sort(tmp.begin(), tmp.end(), [](auto const& a, auto const& b)
-            {
-                return std::tie(std::get<0>(a), std::get<1>(a), std::get<2>(a), std::get<3>(a))
-                    < std::tie(std::get<0>(b), std::get<1>(b), std::get<2>(b), std::get<3>(b));
-            });
-
-            keys.reserve(tmp.size());
-            for (auto const& t : tmp)
-                keys.push_back(std::get<4>(t));
-
-            initialized = true;
         }
-        return keys;
-    }
 
-    uint32 GetTransmogDefinitionsSyncVersionCached()
-    {
-        static uint32 version = 0;
-        static bool initialized = false;
-        if (initialized) return version;
+        std::sort(tmp.begin(), tmp.end(), [](auto const& a, auto const& b)
+        {
+            return std::tie(std::get<0>(a), std::get<1>(a), std::get<2>(a), std::get<3>(a))
+                < std::tie(std::get<0>(b), std::get<1>(b), std::get<2>(b), std::get<3>(b));
+        });
 
+        cache.variantKeys.clear();
+        cache.variantKeys.reserve(tmp.size());
+        for (auto const& t : tmp)
+            cache.variantKeys.push_back(std::get<4>(t));
+
+        // Compute sync version (FNV-1a over a subset of definition fields).
         uint32 h = 2166136261u;
         auto fnvMixU32 = [&](uint32 v)
         {
@@ -313,8 +239,7 @@ namespace DCCollection
             }
         };
 
-        auto const& appearances = GetTransmogAppearanceIndexCached();
-        for (auto const& [displayId, variants] : appearances)
+        for (auto const& [displayId, variants] : cache.appearances)
         {
             for (auto const& v : variants)
             {
@@ -324,9 +249,26 @@ namespace DCCollection
             }
         }
 
-        version = h;
-        initialized = true;
-        return version;
+        cache.syncVersion = h;
+        cache.initialized = true;
+    }
+
+    std::map<uint32, std::vector<TransmogAppearanceVariant>> const& GetTransmogAppearanceIndexCached()
+    {
+        EnsureTransmogIndexCache();
+        return GetTransmogIndexCache().appearances;
+    }
+
+    std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached()
+    {
+        EnsureTransmogIndexCache();
+        return GetTransmogIndexCache().variantKeys;
+    }
+
+    uint32 GetTransmogDefinitionsSyncVersionCached()
+    {
+        EnsureTransmogIndexCache();
+        return GetTransmogIndexCache().syncVersion;
     }
     
     // =======================================================================
@@ -798,7 +740,6 @@ namespace DCCollection
 
         if (result)
         {
-            auto const& appearances = GetTransmogAppearanceIndexCached();
             do
             {
                 Field* fields = result->Fetch();
@@ -806,11 +747,11 @@ namespace DCCollection
                 uint32 fakeEntry = fields[1].Get<uint32>();
                 uint32 displayId = 0;
                 ItemTemplate const* fakeProto = sObjectMgr->GetItemTemplate(fakeEntry);
-                if (fakeProto) displayId = fakeProto->DisplayInfoID;
-                if (displayId && appearances.find(displayId) != appearances.end())
-                    state.Set(std::to_string(slot), displayId);
-                else
-                    state.Set(std::to_string(slot), 0);
+                if (fakeProto)
+                    displayId = fakeProto->DisplayInfoID;
+
+                // Report the stored/derived displayId even if the definitions cache is currently empty.
+                state.Set(std::to_string(slot), displayId);
             } while (result->NextRow());
         }
 
@@ -864,18 +805,16 @@ namespace DCCollection
          if (!displayId)
              return;
 
-         if (!HasTransmogAppearanceUnlocked(accountId, displayId))
+         // First try to derive displayId if the value is an item entry ID.
+         if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(displayId))
          {
-             // Fallback: if the value is actually an item entry, derive its displayId.
-             if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(displayId))
-             {
-                 uint32 derived = proto->DisplayInfoID;
-                 if (derived && HasTransmogAppearanceUnlocked(accountId, derived))
-                     displayId = derived;
-             }
+             uint32 derived = proto->DisplayInfoID;
+             if (derived)
+                 displayId = derived;
          }
 
-         if (!HasTransmogAppearanceUnlocked(accountId, displayId))
+         bool skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
+         if (!skipUnlockCheck && !HasTransmogAppearanceUnlocked(accountId, displayId))
              return;
 
          ItemTemplate const* equippedProto = equippedItem->GetTemplate();
@@ -904,12 +843,32 @@ namespace DCCollection
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         EnsureCharacterTransmogTable();
 
+        // Debug logging: show appearance index status at each apply request.
+        {
+            auto const& idx = GetTransmogAppearanceIndexCached();
+            auto const& keys = GetTransmogAppearanceVariantKeysCached();
+            LOG_DEBUG("module.dc", "[DCWardrobe] HandleApplyTransmogPreview: player={} (GUID {}), indexSize={}, variantKeys={}",
+                player->GetName(), player->GetGUID().GetCounter(), static_cast<uint32>(idx.size()), static_cast<uint32>(keys.size()));
+        }
+
         // Batch apply mode (equipment-slot + displayId) to avoid per-slot message/DB spam.
         // Payload: { byEquipSlot: true, entries: [ { slot: 0..18, appearanceId: displayId, clear: bool }, ... ] }
         bool byEquipSlot = json.HasKey("byEquipSlot") ? json["byEquipSlot"].AsBool() : false;
-        if (byEquipSlot && json.HasKey("entries") && json["entries"].IsArray())
+        bool hasEntries = json.HasKey("entries") && json["entries"].IsArray();
+        
+        LOG_INFO("module.dc", "[DCWardrobe] HandleApplyTransmogPreview: player={}, byEquipSlot={}, hasEntries={}",
+            player->GetName(), byEquipSlot, hasEntries);
+        
+        if (byEquipSlot && hasEntries)
         {
             uint32 accountId = GetAccountId(player);
+            auto const& unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+            auto const& idx = GetTransmogAppearanceIndexCached();
+            
+            LOG_INFO("module.dc", "[DCWardrobe] Batch apply: player={}, accountId={}, unlockedAppearances={}, indexSize={}, entriesCount={}",
+                player->GetName(), accountId, static_cast<uint32>(unlocked.size()), 
+                static_cast<uint32>(idx.size()), static_cast<uint32>(json["entries"].AsArray().size()));
+            
             uint32 guid = player->GetGUID().GetCounter();
 
             uint32 requested = 0;
@@ -971,20 +930,28 @@ namespace DCCollection
                 }
 
                 // Client may send either a transmog appearance displayId OR an item entry ID.
-                // If it's not unlocked as a displayId, try deriving displayId from the item template.
-                if (!HasTransmogAppearanceUnlocked(accountId, displayId))
+                // If the value corresponds to an item template, derive the displayId from it.
+                // This ensures outfits created with itemIds (e.g. from community) work correctly.
+                uint32 originalValue = displayId;
+                if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(displayId))
                 {
-                    if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(displayId))
+                    // The value was an item entry; derive its displayId.
+                    uint32 derived = proto->DisplayInfoID;
+                    if (derived)
                     {
-                        uint32 derived = proto->DisplayInfoID;
-                        if (derived && HasTransmogAppearanceUnlocked(accountId, derived))
-                            displayId = derived;
+                        displayId = derived;
+                        LOG_DEBUG("module.dc", "[DCWardrobe] Slot {}: derived displayId {} from item entry {}",
+                            (uint32)equipmentSlot, displayId, originalValue);
                     }
                 }
 
-                if (!HasTransmogAppearanceUnlocked(accountId, displayId))
+                // Check if the derived (or original) displayId is unlocked for this account.
+                bool skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
+                if (!skipUnlockCheck && !HasTransmogAppearanceUnlocked(accountId, displayId))
                 {
                     skippedNotUnlocked++;
+                    LOG_DEBUG("module.dc", "[DCWardrobe] Slot {}: displayId {} not unlocked for account {}",
+                        (uint32)equipmentSlot, displayId, accountId);
                     perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("not_unlocked"));
                     continue;
                 }
@@ -994,6 +961,12 @@ namespace DCCollection
                 if (!appearance)
                 {
                     skippedNoVariant++;
+                    auto const& idx = GetTransmogAppearanceIndexCached();
+                    LOG_DEBUG("module.dc", "[DCWardrobe] Slot {}: no compatible variant for displayId {} (indexHasKey={}, equippedClass={}, equippedSubClass={}, equippedInvType={})",
+                        (uint32)equipmentSlot, displayId, (idx.find(displayId) != idx.end()),
+                        equippedProto ? equippedProto->Class : 0,
+                        equippedProto ? equippedProto->SubClass : 0,
+                        equippedProto ? equippedProto->InventoryType : 0);
                     perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("no_compatible_variant"));
                     continue;
                 }
@@ -1018,6 +991,8 @@ namespace DCCollection
                 if (skippedBadSlot)      oss << "Invalid slots: " << skippedBadSlot << ". ";
                 oss << "(Requested " << requested << ")";
 
+                LOG_INFO("module.dc", "[DCWardrobe] Batch apply REJECTED: player={}, {}", player->GetName(), oss.str());
+
                 DCAddon::JsonMessage err(MODULE, DCAddon::Opcode::Collection::SMSG_ERROR);
                 err.Set("error", oss.str());
                 err.Set("code", 1001);
@@ -1033,11 +1008,17 @@ namespace DCCollection
                 if (skippedNoVariant)    oss << "Incompatible/unknown appearance: " << skippedNoVariant << ". ";
                 if (skippedBadSlot)      oss << "Invalid slots: " << skippedBadSlot << ". ";
 
+                LOG_INFO("module.dc", "[DCWardrobe] Batch apply PARTIAL: player={}, {}", player->GetName(), oss.str());
+
                 DCAddon::JsonMessage err(MODULE, DCAddon::Opcode::Collection::SMSG_ERROR);
                 err.Set("error", oss.str());
                 err.Set("code", 1002);
                 err.Set("perSlot", perSlot);
                 err.Send(player);
+            }
+            else if (applied > 0)
+            {
+                LOG_INFO("module.dc", "[DCWardrobe] Batch apply SUCCESS: player={}, applied={}/{}", player->GetName(), applied, requested);
             }
 
             SendTransmogState(player);
@@ -2064,12 +2045,40 @@ namespace DCCollection
 
             // Pre-warm heavy transmog caches at startup to avoid the first-player hitch.
             // (Doing the item_template scan lazily can freeze the world thread and make gossips/menus feel laggy.)
+            // Note: If this fires before World DB is ready, the cache will remain uninitialized
+            // and will retry on first player request.
             auto const& idx = GetTransmogAppearanceIndexCached();
             auto const& keys = GetTransmogAppearanceVariantKeysCached();
             uint32 ver = GetTransmogDefinitionsSyncVersionCached();
 
-            LOG_INFO("module.dc", "[DCWardrobe] Transmog index loaded: {} displayIds, {} variant keys, syncVersion={}",
-                static_cast<uint32>(idx.size()), static_cast<uint32>(keys.size()), ver);
+            if (idx.empty())
+            {
+                LOG_WARN("module.dc", "[DCWardrobe] Transmog index is EMPTY after pre-warm. "
+                    "This can happen if OnAfterConfigLoad runs before World DB is ready. "
+                    "The index will retry on first player request.");
+            }
+            else
+            {
+                LOG_INFO("module.dc", "[DCWardrobe] Transmog index loaded: {} displayIds, {} variant keys, syncVersion={}",
+                    static_cast<uint32>(idx.size()), static_cast<uint32>(keys.size()), ver);
+            }
+        }
+
+        void OnStartup() override
+        {
+            // Second chance to load the transmog index if pre-warm failed.
+            auto const& idx = GetTransmogAppearanceIndexCached();
+            if (idx.empty())
+            {
+                LOG_WARN("module.dc", "[DCWardrobe] OnStartup: Transmog index still empty. Will retry on first player request.");
+            }
+            else
+            {
+                auto const& keys = GetTransmogAppearanceVariantKeysCached();
+                uint32 ver = GetTransmogDefinitionsSyncVersionCached();
+                LOG_INFO("module.dc", "[DCWardrobe] OnStartup: Transmog index confirmed: {} displayIds, {} variant keys, syncVersion={}",
+                    static_cast<uint32>(idx.size()), static_cast<uint32>(keys.size()), ver);
+            }
         }
     };
 

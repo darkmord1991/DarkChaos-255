@@ -31,6 +31,8 @@ local Chat = {
             stickyChannels = true,
             -- Copy Chat
             enableChatCopy = true,
+            -- History
+            maxLines = 1000,
         },
     },
 }
@@ -343,6 +345,21 @@ local function SetupStickyChannels()
 end
 
 -- ============================================================
+-- Max Chat Lines
+-- ============================================================
+local function SetupChatLines()
+    local settings = addon.settings.chat
+    local maxLines = tonumber(settings.maxLines) or 1000
+    
+    for i = 1, NUM_CHAT_WINDOWS do
+        local chatFrame = _G["ChatFrame" .. i]
+        if chatFrame then
+            chatFrame:SetMaxLines(maxLines)
+        end
+    end
+end
+
+-- ============================================================
 -- Hide Social Buttons
 -- ============================================================
 local function SetupHideSocialButtons()
@@ -548,6 +565,7 @@ function Chat.OnEnable()
     SetupClassCaching()
     SetupClassColorFilter()
     SetupStickyChannels()
+    SetupChatLines()
     SetupHideSocialButtons()
     SetupSimpleCopyBox()
     SetupChatCopyButtons()
@@ -602,6 +620,24 @@ function Chat.CreateSettings(parent)
     namesHeader:SetPoint("TOPLEFT", 16, yOffset)
     namesHeader:SetText("Player Names")
     yOffset = yOffset - 25
+
+    -- Max Lines Slider
+    local linesSlider = addon:CreateSlider(parent)
+    linesSlider:SetPoint("TOPLEFT", 200, yOffset + 25) -- Place to the right of Player Names header area
+    linesSlider.Text:SetText("Max Chat Lines: " .. settings.maxLines)
+    linesSlider:SetMinMaxValues(100, 5000)
+    linesSlider:SetValueStep(100)
+    linesSlider:SetValue(settings.maxLines)
+    linesSlider:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value)
+        self.Text:SetText("Max Chat Lines: " .. value)
+        addon:SetSetting("chat.maxLines", value)
+    end)
+    linesSlider:SetScript("OnMouseUp", function(self)
+        -- Apply immediately
+        SetupChatLines()
+    end)
+    
     
     -- Class-Colored Names
     local classColorCb = addon:CreateCheckbox(parent)

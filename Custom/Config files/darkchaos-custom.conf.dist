@@ -3175,6 +3175,8 @@ DCCollection.SyncInterval = 30
 #
 DCCollection.Transmog.Definitions.IncludeSources = 0
 
+DCCollection.Transmog.SkipUnlockCheck = 1
+
 # -------------------------------------------------------------------------
 # DCCollection Transmog: Unlock Behavior
 # -------------------------------------------------------------------------
@@ -3184,7 +3186,7 @@ DCCollection.Transmog.Definitions.IncludeSources = 0
 #        Description: Automatically unlock a transmog appearance when the corresponding item is equipped
 #        Default:     0 (Disabled)
 #
-DCCollection.Transmog.UnlockOnEquip = 0
+DCCollection.Transmog.UnlockOnEquip = 1
 
 #
 #    DCCollection.Transmog.UnlockOnCreate
@@ -3198,14 +3200,14 @@ DCCollection.Transmog.UnlockOnCreate = 1
 #        Description: Automatically unlock a transmog appearance when the item becomes soulbound
 #        Default:     0 (Disabled)
 #
-DCCollection.Transmog.UnlockOnSoulbind = 0
+DCCollection.Transmog.UnlockOnSoulbind = 1
 
 #
 #    DCCollection.Transmog.UnlockOnLoot
 #        Description: Automatically unlock transmog appearances when looting items
 #        Default:     0 (Disabled)
 #
-DCCollection.Transmog.UnlockOnLoot = 0
+DCCollection.Transmog.UnlockOnLoot = 1
 
 #
 #    DCCollection.Transmog.UnlockOnQuestReward
@@ -3338,21 +3340,25 @@ Appender.DC=2,5,0,dcsystem.log,a
 #
 
 # General DC Scripts
-Logger.scripts.dc=5,Appender.DC
+Logger.scripts.dc=5,Appender.DC,Appender.Console
 
 # DC Addon Protocol
-Logger.dc.addon=5,Appender.DC
+Logger.dc.addon=5,Appender.DC,Appender.Console
+
+# DC Addon Extension Modules (Wardrobe, Collection, etc.)
+Logger.module=5,Appender.DC,Appender.Console
+Logger.module.dc=5,Appender.DC,Appender.Console
 
 # Mythic+ System
-Logger.mythic=5,Appender.DC
-Logger.mythic.run=5,Appender.DC
+Logger.mythic=5,Appender.DC,Appender.Console
+Logger.mythic.run=5,Appender.DC,Appender.Console
 
 # Hinterland BG
-Logger.hlbg=5,Appender.DC
-Logger.hlbg.aio=5,Appender.DC
+Logger.hlbg=5,Appender.DC,Appender.Console
+Logger.hlbg.aio=5,Appender.DC,Appender.Console
 
 # Seasonal System
-Logger.seasonal=5,Appender.DC
+Logger.seasonal=5,Appender.DC,Appender.Console
 
 ###################################################################################################
 # GUILD HOUSE SETTINGS
@@ -3407,6 +3413,13 @@ GuildHouse.ResetCost = 0
 #
 
 GuildHouseBuyRank = 0
+
+#
+#    GuildHouse.Rank.Sell
+#        Description: Minimum Guild Rank required to spawn/sell NPCs (0 = Guild Master).
+#        Default:     0
+#
+GuildHouseSellRank = 0
 
 ###########################################################################
 # END OF CONFIGURATION FILE

@@ -327,6 +327,12 @@ function Wardrobe:IsAppearanceCollected(itemId)
     return DC.collections.transmog[itemId] ~= nil
 end
 
+-- Clear the itemId -> displayId cache. Call this when definitions are reloaded.
+function Wardrobe:ClearItemIdToDisplayIdCache()
+    self.itemIdToDisplayId = nil
+    self.itemIdToDisplayIdBuilt = nil
+end
+
 function Wardrobe:GetAppearanceDisplayIdForItemId(itemId)
     if not itemId or itemId == 0 or not DC then
         return nil
@@ -335,6 +341,36 @@ function Wardrobe:GetAppearanceDisplayIdForItemId(itemId)
     self.itemIdToDisplayId = self.itemIdToDisplayId or {}
     if self.itemIdToDisplayId[itemId] ~= nil then
         return self.itemIdToDisplayId[itemId]
+    end
+
+    -- Helper to unpack a packed definition string if needed
+    local function UnpackDefIfNeeded(id, rawDef)
+        if type(rawDef) == "table" then
+            return rawDef
+        elseif type(rawDef) == "string" then
+            -- Definitions are stored as packed strings to save memory.
+            -- Use DC:_GetUnpackedTransmogDefinition if available (uses LRU cache).
+            if DC and type(DC._GetUnpackedTransmogDefinition) == "function" then
+                return DC:_GetUnpackedTransmogDefinition(id, rawDef)
+            end
+            -- Fallback: parse inline using DC:ParsePackedTransmogDefinition
+            if DC and type(DC.ParsePackedTransmogDefinition) == "function" then
+                local name, icon, quality, displayId, invType, class, subclass, visualSlot, defItemId, spellId, itemIdsTotal, itemIdsStr = DC:ParsePackedTransmogDefinition(rawDef)
+                local itemIds = nil
+                if itemIdsStr and itemIdsStr ~= "" then
+                    itemIds = { strsplit(",", itemIdsStr) }
+                    for i = 1, #itemIds do
+                        itemIds[i] = tonumber(itemIds[i]) or itemIds[i]
+                    end
+                end
+                return {
+                    displayId = tonumber(displayId),
+                    itemId = tonumber(defItemId),
+                    itemIds = itemIds,
+                }
+            end
+        end
+        return nil
     end
 
     local function ExtractDisplayId(def)
@@ -352,27 +388,54 @@ function Wardrobe:GetAppearanceDisplayIdForItemId(itemId)
     -- Fast path: some servers key definitions by itemId.
     local defs = DC.definitions and DC.definitions.transmog
     if type(defs) == "table" then
-        local direct = ExtractDisplayId(defs[itemId])
-        if direct and direct > 0 then
-            self.itemIdToDisplayId[itemId] = direct
-            return direct
+        local directRaw = defs[itemId]
+        if directRaw then
+            local directDef = UnpackDefIfNeeded(itemId, directRaw)
+            local direct = ExtractDisplayId(directDef)
+            if direct and direct > 0 then
+                self.itemIdToDisplayId[itemId] = direct
+                return direct
+            end
         end
 
         -- Build a reverse map once from defs (itemId -> displayId)
+        -- This handles both the canonical itemId and the itemIds array.
         if not self.itemIdToDisplayIdBuilt then
-            for _, def in pairs(defs) do
+            for defId, rawDef in pairs(defs) do
+                local def = UnpackDefIfNeeded(defId, rawDef)
                 if type(def) == "table" then
-                    local sourceItemId = def.itemId or def.item_id or def.entryId or def.entry_id
-                    if type(sourceItemId) == "string" then
-                        sourceItemId = tonumber(sourceItemId)
-                    end
                     local displayId = ExtractDisplayId(def)
-                    if sourceItemId and displayId and displayId > 0 then
-                        self.itemIdToDisplayId[sourceItemId] = displayId
+                    if displayId and displayId > 0 then
+                        -- Map the canonical itemId
+                        local sourceItemId = def.itemId or def.item_id or def.entryId or def.entry_id
+                        if type(sourceItemId) == "string" then
+                            sourceItemId = tonumber(sourceItemId)
+                        end
+                        if sourceItemId then
+                            self.itemIdToDisplayId[sourceItemId] = displayId
+                        end
+
+                        -- Map all itemIds in the array (server sends itemIds[] with all entries sharing this displayId)
+                        local itemIdsArray = def.itemIds or def.item_ids
+                        if type(itemIdsArray) == "table" then
+                            for _, arrItemId in ipairs(itemIdsArray) do
+                                local numId = tonumber(arrItemId)
+                                if numId then
+                                    self.itemIdToDisplayId[numId] = displayId
+                                end
+                            end
+                        end
                     end
                 end
             end
             self.itemIdToDisplayIdBuilt = true
+
+            -- Debug: report how many itemId->displayId mappings were built
+            if DC and type(DC.Debug) == "function" then
+                local count = 0
+                for _ in pairs(self.itemIdToDisplayId) do count = count + 1 end
+                DC:Debug("[Wardrobe] Built itemId->displayId map: " .. count .. " entries")
+            end
         end
     end
 

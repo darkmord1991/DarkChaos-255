@@ -99,16 +99,34 @@ function DC:IsCacheFresh()
 end
 
 -- Check if we have any cached definitions (meaning cache isn't empty).
+-- Returns false if critical definitions are missing/empty (transmog, mounts, companions).
 function DC:HasCachedDefinitions()
     if not self.definitions then
         return false
     end
-    for _, defs in pairs(self.definitions) do
-        if next(defs) then
-            return true
-        end
+
+    -- Transmog definitions are critical for wardrobe/outfits - if they're empty, force a refresh.
+    local transmogDefs = self.definitions.transmog
+    if type(transmogDefs) ~= "table" or not next(transmogDefs) then
+        -- No transmog definitions - don't consider cache "valid" for heavy requests.
+        return false
     end
-    return false
+
+    -- Mounts and companions are also critical - check them too.
+    local mountDefs = self.definitions.mounts or self.definitions.mount
+    local companionDefs = self.definitions.companions or self.definitions.companion or self.definitions.pets or self.definitions.pet
+    
+    if type(mountDefs) ~= "table" or not next(mountDefs) then
+        self:Debug("HasCachedDefinitions: mounts definitions missing")
+        return false
+    end
+    
+    if type(companionDefs) ~= "table" or not next(companionDefs) then
+        self:Debug("HasCachedDefinitions: companions definitions missing")
+        return false
+    end
+
+    return true
 end
 
 -- ============================================================================

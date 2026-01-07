@@ -1138,7 +1138,9 @@ local function SetFrameVisibility(shouldShow)
     end
 
     -- Local run timer HUD (non-Mythic)
-    if localRun.active or localRun.finished then
+    -- Only show if strictly inside a trackable instance (party/raid)
+    local trackable = GetTrackableInstanceInfo()
+    if (localRun.active or localRun.finished) and trackable then
         frame:Show()
         return
     end
@@ -1169,6 +1171,12 @@ local function UpdateFrameFromLocalRun()
         return
     end
     if not (localRun.active or localRun.finished) then
+        return
+    end
+
+    local trackable = GetTrackableInstanceInfo()
+    if not trackable then
+        SetFrameVisibility(false)
         return
     end
 

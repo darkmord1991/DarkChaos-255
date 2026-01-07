@@ -3842,12 +3842,13 @@ namespace DCCollection
             if (json["type"].IsString())
             {
                 std::string t = json["type"].AsString();
-                if (t == "mounts") type = static_cast<uint8>(CollectionType::MOUNT);
-                else if (t == "pets") type = static_cast<uint8>(CollectionType::PET);
-                else if (t == "heirlooms") type = static_cast<uint8>(CollectionType::HEIRLOOM);
-                else if (t == "titles") type = static_cast<uint8>(CollectionType::TITLE);
-                else if (t == "transmog") type = static_cast<uint8>(CollectionType::TRANSMOG);
-                else if (t == "itemSets" || t == "sets") type = static_cast<uint8>(CollectionType::ITEM_SET);
+                // Accept both singular and plural forms
+                if (t == "mounts" || t == "mount") type = static_cast<uint8>(CollectionType::MOUNT);
+                else if (t == "pets" || t == "pet" || t == "companions" || t == "companion") type = static_cast<uint8>(CollectionType::PET);
+                else if (t == "heirlooms" || t == "heirloom") type = static_cast<uint8>(CollectionType::HEIRLOOM);
+                else if (t == "titles" || t == "title") type = static_cast<uint8>(CollectionType::TITLE);
+                else if (t == "transmog" || t == "appearances" || t == "appearance") type = static_cast<uint8>(CollectionType::TRANSMOG);
+                else if (t == "itemSets" || t == "sets" || t == "itemset" || t == "set") type = static_cast<uint8>(CollectionType::ITEM_SET);
             }
             else
             {
@@ -3877,9 +3878,12 @@ namespace DCCollection
         if (type == static_cast<uint8>(CollectionType::TRANSMOG))
         {
             uint32 serverSyncVersion = GetTransmogDefinitionsSyncVersionCached();
-            if (clientSyncVersion != 0 && clientSyncVersion == serverSyncVersion && offset == 0)
+            auto const& keys = GetTransmogAppearanceVariantKeysCached();
+
+            // Only allow syncVersion short-circuit if server actually has definitions.
+            // If the server index is empty (serverSyncVersion=0), force a full send.
+            if (clientSyncVersion != 0 && clientSyncVersion == serverSyncVersion && offset == 0 && !keys.empty())
             {
-                auto const& keys = GetTransmogAppearanceVariantKeysCached();
                 DCAddon::JsonValue empty;
                 empty.SetObject();
 
@@ -3894,6 +3898,13 @@ namespace DCCollection
                 ack.Set("more", false);
                 ack.Send(player);
                 return;
+            }
+
+            // If server has no definitions, warn and continue (will send empty result).
+            if (keys.empty())
+            {
+                LOG_WARN("module.dc", "[DCCollection] Transmog definitions requested but server index is empty. "
+                    "Check if item_template query succeeded at startup.");
             }
         }
 
@@ -3914,11 +3925,12 @@ namespace DCCollection
             if (json["type"].IsString())
             {
                 std::string t = json["type"].AsString();
-                if (t == "mounts") type = static_cast<uint8>(CollectionType::MOUNT);
-                else if (t == "pets") type = static_cast<uint8>(CollectionType::PET);
-                else if (t == "heirlooms") type = static_cast<uint8>(CollectionType::HEIRLOOM);
-                else if (t == "titles") type = static_cast<uint8>(CollectionType::TITLE);
-                else if (t == "transmog") type = static_cast<uint8>(CollectionType::TRANSMOG);
+                // Accept both singular and plural forms
+                if (t == "mounts" || t == "mount") type = static_cast<uint8>(CollectionType::MOUNT);
+                else if (t == "pets" || t == "pet" || t == "companions" || t == "companion") type = static_cast<uint8>(CollectionType::PET);
+                else if (t == "heirlooms" || t == "heirloom") type = static_cast<uint8>(CollectionType::HEIRLOOM);
+                else if (t == "titles" || t == "title") type = static_cast<uint8>(CollectionType::TITLE);
+                else if (t == "transmog" || t == "appearances" || t == "appearance") type = static_cast<uint8>(CollectionType::TRANSMOG);
             }
             else
             {

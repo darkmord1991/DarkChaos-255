@@ -2376,6 +2376,13 @@ function DC:HandleDefinitions(data)
     end
 
     self:CacheMergeDefinitions(collType, definitions)
+
+    -- When transmog definitions are updated, clear the Wardrobe's itemId->displayId cache
+    -- so it gets rebuilt with the new data.
+    if collType == "transmog" and DC.Wardrobe and type(DC.Wardrobe.ClearItemIdToDisplayIdCache) == "function" then
+        DC.Wardrobe:ClearItemIdToDisplayIdCache()
+    end
+
     if syncVersion ~= nil then
         if collType == "transmog" then
             self._pendingSyncVersions = self._pendingSyncVersions or {}
@@ -2432,14 +2439,32 @@ function DC:HandleDefinitions(data)
 
     -- Transmog definitions can be very large; server may send them in pages.
     if collType == "transmog" then
+        local receivedCount = self:TableCount(definitions)
+        local totalFromServer = tonumber(data.total or data.count) or 0
+
         if upToDate == true or upToDate == 1 or upToDate == "1" then
-            if not self:_HasAnyTransmogDefinitions() and not self._transmogDefsForcedFullDownload then
-                self._transmogDefsForcedFullDownload = true
-                self:Debug("Transmog definitions reported up-to-date but local cache is empty; forcing full download")
-                self._transmogDefLoading = nil
-                self:_MarkInflight("req:defs:transmog", nil)
-                self:RequestDefinitions("transmog", 0)
-                return
+            -- Server says definitions are up-to-date.
+            -- But if local cache is empty AND server reports total=0, the server's index is empty.
+            if not self:_HasAnyTransmogDefinitions() then
+                if totalFromServer == 0 or receivedCount == 0 then
+                    -- Server's transmog index is empty - this is a server-side configuration issue.
+                    self:Print("|cffff6600[Warning]|r Server has no transmog definitions. "
+                        .. "Wardrobe features may not work correctly. "
+                        .. "Server admin should check that item_template is populated.")
+                    self._transmogDefLoading = nil
+                    self:_MarkInflight("req:defs:transmog", nil)
+                    return
+                end
+
+                -- Local cache empty but server has data - force a full download once.
+                if not self._transmogDefsForcedFullDownload then
+                    self._transmogDefsForcedFullDownload = true
+                    self:Debug("Transmog definitions reported up-to-date but local cache is empty; forcing full download")
+                    self._transmogDefLoading = nil
+                    self:_MarkInflight("req:defs:transmog", nil)
+                    self:RequestDefinitions("transmog", 0)
+                    return
+                end
             end
 
             self:Debug("Transmog definitions up-to-date; skipping download")

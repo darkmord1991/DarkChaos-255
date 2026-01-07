@@ -7,6 +7,7 @@
 #include "../GuildHousing/guildhouse.h"
 #include "Maps/MapMgr.h"
 #include "Map.h"
+#include "Tokenize.h"
 
 using namespace Acore::ChatCommands;
 
@@ -180,7 +181,8 @@ public:
         Map* map = sMapMgr->FindMap(data->map, 0);
         if (map)
         {
-             for (Map::PlayerListType::const_iterator itr = map->GetPlayers().begin(); itr != map->GetPlayers().end(); ++itr)
+             Map::PlayerList const& players = map->GetPlayers();
+             for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
              {
                  Player* p = itr->GetSource();
                  if (p && p->GetPhaseByAuras() == data->phase)
@@ -425,16 +427,16 @@ public:
         }
 
         // Parse args: rankId (0-9), action (add/remove), flagging
-        Tokenizer tokens(args, ' '); // rankId, action, flag
+        std::vector<std::string_view> tokens = Acore::Tokenize(args, ' ', false);
         if (tokens.size() < 3)
         {
              handler->SendSysMessage("Usage: .gh rank <rankId> <add/remove> <spawn/delete/move/admin>");
              return false;
         }
 
-        uint8 rankId = (uint8)atoi(tokens[0]);
-        std::string action = tokens[1];
-        std::string flagName = tokens[2];
+        uint8 rankId = (uint8)atoi(std::string(tokens[0]).c_str());
+        std::string_view action = tokens[1];
+        std::string_view flagName = tokens[2];
 
         uint32 flag = 0;
         if (flagName == "spawn") flag = GH_PERM_SPAWN;

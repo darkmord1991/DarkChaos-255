@@ -664,7 +664,7 @@ public:
                 {
                     creature->CombatStop(true);
                     creature->DeleteFromDB();
-                    creature->DespawnOrUnsummon(Milliseconds(0));
+                    creature->AddObjectToRemoveList();
                     ++removedCreatures;
                 }
                 else
