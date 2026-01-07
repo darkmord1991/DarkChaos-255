@@ -112,6 +112,7 @@ namespace DC
         DCAddon::JsonValue b;
         b.SetObject();
         BuildBossJson(b, boss, "hp_update", true, -1);
+        b.Set("hpPct", DCAddon::JsonValue(static_cast<int32>(hpPct)));
         b.Set("threshold", DCAddon::JsonValue(static_cast<int32>(threshold)));
         bossesArr.Push(b);
 

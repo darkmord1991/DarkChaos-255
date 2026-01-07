@@ -143,6 +143,7 @@ void AddSC_dc_seasonal_rewards_commandscript(); // Commands/cs_dc_seasonal_rewar
 void AddSC_dc_prestige_commandscript();        // Commands/cs_dc_prestige.cpp
 void AddSC_dc_item_upgrade_commandscript();    // Commands/cs_dc_item_upgrade.cpp
 void AddSC_dc_hotspot_commandscript();        // Commands/cs_dc_hotspot.cpp
+void AddSC_cs_dc_guildhouse();                // Commands/cs_dc_guildhouse.cpp
 
 // --- Guild Housing ---
 void AddGuildHouseScripts();                  // mod_guildhouse.cpp
@@ -645,6 +646,7 @@ void AddDCScripts()
     try {
         AddGuildHouseScripts();
         AddGuildHouseButlerScripts();
+        AddSC_cs_dc_guildhouse();
         LOG_INFO("scripts.dc", ">>   ✓ Guild Housing scripts loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts", ">>   ✗ EXCEPTION in Guild Housing: {}", e.what());

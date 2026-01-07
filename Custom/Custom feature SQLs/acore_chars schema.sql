@@ -886,7 +886,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
   KEY `idx_account` (`account_id`),
   KEY `idx_module` (`module`),
   KEY `idx_event_type` (`event_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=89 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=90 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -911,7 +911,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=60279 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=66902 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1235,7 +1235,7 @@ CREATE TABLE IF NOT EXISTS `dc_collection_community_outfits` (
   KEY `idx_created_at` (`created_at` DESC),
   KEY `idx_upvotes` (`upvotes` DESC),
   KEY `idx_author_guid` (`author_guid`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_collection_currency` (
   `account_id` int unsigned NOT NULL,
@@ -1559,6 +1559,37 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_spectators` (
   KEY `idx_run` (`run_id`),
   KEY `idx_spectator` (`spectator_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dc_guild_house` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `guild` int NOT NULL DEFAULT '0',
+  `phase` int NOT NULL,
+  `map` int NOT NULL DEFAULT '0',
+  `positionX` float NOT NULL DEFAULT '0',
+  `positionY` float NOT NULL DEFAULT '0',
+  `positionZ` float NOT NULL DEFAULT '0',
+  `orientation` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `guild` (`guild`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb3;
+
+CREATE TABLE IF NOT EXISTS `dc_guild_house_purchase_log` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` int unsigned NOT NULL DEFAULT '0',
+  `guild_id` int unsigned NOT NULL,
+  `player_guid` bigint unsigned NOT NULL,
+  `player_name` varchar(12) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `map` int unsigned NOT NULL,
+  `phaseMask` int unsigned NOT NULL,
+  `spawn_type` enum('CREATURE','GAMEOBJECT') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `entry` int unsigned NOT NULL,
+  `template_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cost` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `idx_guild_time` (`guild_id`,`created_at`),
+  KEY `idx_player_time` (`player_guid`,`created_at`),
+  KEY `idx_entry_time` (`entry`,`created_at`)
+) ENGINE=InnoDB AUTO_INCREMENT=110 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `dc_guild_leaderboard` (
 	`guildid` INT UNSIGNED NOT NULL,
@@ -2578,7 +2609,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_cap_snapshot` (
   UNIQUE KEY `idx_player_season_week` (`player_guid`,`season_id`,`week_timestamp`),
   KEY `idx_season` (`season_id`),
   KEY `idx_week` (`week_timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
 
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',

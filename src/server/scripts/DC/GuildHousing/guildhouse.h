@@ -57,7 +57,43 @@ public:
     static GuildHouseData* GetGuildHouseData(uint32 guildId);
     static void UpdateGuildHouseData(uint32 guildId, GuildHouseData const& data);
     static void RemoveGuildHouseData(uint32 guildId);
+    static bool MoveGuildHouse(uint32 guildId, uint32 locationId);
 
     // Spawn Management
     static bool HasSpawn(uint32 mapId, uint32 phase, uint32 entry, bool isGameObject);
+    static void SpawnTeleporterNPC(Player* player);
+    static void SpawnButlerNPC(Player* player);
+    static void SpawnTeleporterNPC(uint32 guildId, uint32 mapId, uint32 phase, float x, float y, float z, float o);
+    static void SpawnButlerNPC(uint32 guildId, uint32 mapId, uint32 phase, float x, float y, float z, float o);
+
+    // Permissions
+    static bool HasPermission(Player* player, uint32 permission);
+    static void SetPermission(uint32 guildId, uint8 rankId, uint32 permission);
+
+    // Audit Log
+    static void LogAction(Player* player, uint8 actionType, uint8 entityType, uint32 entry, uint32 guid, float x, float y, float z, float o);
+    static bool UndoAction(Player* player, uint32 logId);
 };
+
+enum GuildHousePermissions
+{
+    GH_PERM_SPAWN   = 1,
+    GH_PERM_DELETE  = 2,
+    GH_PERM_MOVE    = 4,
+    GH_PERM_ADMIN   = 8,
+    GH_PERM_WORKSHOP = 16
+};
+
+enum GuildHouseActionType
+{
+    GH_ACTION_SPAWN  = 1,
+    GH_ACTION_DELETE = 2,
+    GH_ACTION_MOVE   = 3
+};
+
+enum GuildHouseEntityType
+{
+    GH_ENTITY_CREATURE   = 1,
+    GH_ENTITY_GAMEOBJECT = 2
+};
+

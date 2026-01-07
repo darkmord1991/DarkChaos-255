@@ -111,6 +111,16 @@ These commands are available to all players to manage various custom systems.
 | `queue leave` | | Leave the queue. |
 | `queue status` | | Check your current queue status. |
 
+### System: Guild Housing
+*Command:* `.guildhouse` (Alias: `.gh`)
+
+| Subcommand | Arguments | Description |
+| :--- | :--- | :--- |
+| `teleport` | | Teleport to your customized Guild House instance. |
+| `butler` | | Spawn your Guild House Butler (requires Master). |
+| `info` | | View instance information (Phase, Map, Coordinates). |
+| `members` | | List all guild members currently inside the Guild House. |
+
 ### System: Hotspots
 *Command:* `.hotspot` (Alias: `.hotspots`)
 

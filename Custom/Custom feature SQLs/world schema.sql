@@ -914,7 +914,7 @@ CREATE TABLE IF NOT EXISTS `creature` (
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id1`)
-) ENGINE=InnoDB AUTO_INCREMENT=9000431 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
+) ENGINE=InnoDB AUTO_INCREMENT=9000523 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 CREATE TABLE IF NOT EXISTS `creature_addon` (
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -1605,6 +1605,33 @@ CREATE TABLE IF NOT EXISTS `dc_dungeon_setup` (
   CONSTRAINT `dc_dungeon_setup_ibfk_1` FOREIGN KEY (`map_id`) REFERENCES `dc_dungeon_mythic_profile` (`map_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Unified dungeon availability toggles for Normal/Heroic/Mythic/Mythic+';
 
+CREATE TABLE IF NOT EXISTS `dc_guild_house_locations` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `map` int unsigned NOT NULL,
+  `posX` float NOT NULL,
+  `posY` float NOT NULL,
+  `posZ` float NOT NULL,
+  `orientation` float NOT NULL,
+  `cost` int unsigned NOT NULL DEFAULT '10000000',
+  `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `required_achievement` int unsigned DEFAULT '0',
+  `comment` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dc_guild_house_spawns` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `map` int NOT NULL DEFAULT '1',
+  `entry` int NOT NULL DEFAULT '0',
+  `posX` float NOT NULL DEFAULT '0',
+  `posY` float NOT NULL DEFAULT '0',
+  `posZ` float NOT NULL DEFAULT '0',
+  `orientation` float NOT NULL DEFAULT '0',
+  `comment` varchar(500) DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `map_entry` (`map`,`entry`)
+) ENGINE=InnoDB AUTO_INCREMENT=106 DEFAULT CHARSET=utf8mb3;
+
 CREATE TABLE IF NOT EXISTS `dc_heirloom_definitions` (
   `item_id` int unsigned NOT NULL,
   `name` varchar(100) NOT NULL,
@@ -2196,7 +2223,7 @@ CREATE TABLE IF NOT EXISTS `dc_teleporter` (
   `z` decimal(10,3) DEFAULT NULL,
   `o` decimal(10,3) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=802 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=1001 DEFAULT CHARSET=latin1;
 
 CREATE TABLE IF NOT EXISTS `dc_token_vendor_items` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -2741,7 +2768,7 @@ CREATE TABLE IF NOT EXISTS `gameobject` (
   `VerifiedBuild` int DEFAULT NULL,
   `Comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`guid`)
-) ENGINE=InnoDB AUTO_INCREMENT=5714438 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
+) ENGINE=InnoDB AUTO_INCREMENT=5714491 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Gameobject System';
 
 CREATE TABLE IF NOT EXISTS `gameobject_addon` (
   `guid` int unsigned NOT NULL DEFAULT '0',

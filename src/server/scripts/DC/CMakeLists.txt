@@ -259,6 +259,7 @@ set(SCRIPTS_DC_Commands
     Commands/SeasonalRewardCommands.cpp
     Commands/dc_prestige_chat.cpp
     Commands/dc_item_upgrade_commands.cpp
+    Commands/cs_dc_guildhouse.cpp
 )
 
 # DC Guild Housing
