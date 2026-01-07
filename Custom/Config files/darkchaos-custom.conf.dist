@@ -294,6 +294,14 @@ Hotspots.ExperienceBonus = 100
 Hotspots.Radius = 150.0
 
 #
+#    Hotspots.MinDistance
+#        Description: Minimum distance (in yards) required between hotspot centers
+#                     to avoid clustering. Set to 0 to disable spacing enforcement.
+#        Default:     300.0 (2x Radius)
+#
+Hotspots.MinDistance = 300.0
+
+#
 #    Hotspots.MaxActive
 #        Description: Maximum number of active hotspots
 #        Default:     15

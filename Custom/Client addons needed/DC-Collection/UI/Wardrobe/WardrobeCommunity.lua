@@ -37,6 +37,12 @@ function Wardrobe:ShowCommunityContent()
         -- Hide outfit grid
         if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
 
+        -- Hide outfits-only pager (Outfits tab)
+        if self.frame.outfitsPageFrame then self.frame.outfitsPageFrame:Hide() end
+
+        -- Ensure shared pager (used by Sets) is visible
+        if self.frame.pageFrame then self.frame.pageFrame:Show() end
+
         -- Show community grid container (create if needed)
         if not self.frame.communityGridContainer then
             self:CreateCommunityGrid()
@@ -63,9 +69,9 @@ function Wardrobe:ShowCommunityContent()
         end
     end
     
-    -- Reset pagination
-    self.communityPage = 1
-    self.communityTotalPages = 1
+    -- Reset pagination (shared pager)
+    self.currentPage = 1
+    self.totalPages = 1
     
     self:RefreshCommunityGrid()
 end
@@ -155,56 +161,32 @@ function Wardrobe:CreateCommunityGrid()
             end
         end)
         
-        -- Stats (upvotes/downloads)
-        btn.stats = btn:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        btn.stats:SetPoint("TOPLEFT", btn, "TOPLEFT", 5, -5)
-        btn.stats:SetText("")
+        -- Stats (upvotes/downloads) with icons
+        btn.upIcon = btn:CreateTexture(nil, "OVERLAY")
+        btn.upIcon:SetSize(12, 12)
+        btn.upIcon:SetPoint("TOPLEFT", btn, "TOPLEFT", 5, -5)
+        btn.upIcon:SetTexture("Interface\\Buttons\\UI-PlusButton-Up")
+        btn.upIcon:SetVertexColor(0.2, 1.0, 0.2)
+
+        btn.upText = btn:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        btn.upText:SetPoint("LEFT", btn.upIcon, "RIGHT", 2, 0)
+        btn.upText:SetText("0")
+
+        btn.downIcon = btn:CreateTexture(nil, "OVERLAY")
+        btn.downIcon:SetSize(12, 12)
+        btn.downIcon:SetPoint("LEFT", btn.upText, "RIGHT", 8, 0)
+        btn.downIcon:SetTexture("Interface\\Buttons\\UI-MinusButton-Up")
+        btn.downIcon:SetVertexColor(1.0, 0.2, 0.2)
+
+        btn.downText = btn:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        btn.downText:SetPoint("LEFT", btn.downIcon, "RIGHT", 2, 0)
+        btn.downText:SetText("0")
         
         btn:Hide()
         table.insert(buttons, btn)
     end
     
     self.frame.communityButtons = buttons
-    
-    -- Pagination
-    local pageFrame = CreateFrame("Frame", nil, container)
-    pageFrame:SetSize(200, 25)
-    pageFrame:SetPoint("BOTTOM", container, "BOTTOM", 0, 8)
-    
-    local prevBtn = CreateFrame("Button", nil, pageFrame, "UIPanelButtonTemplate")
-    prevBtn:SetSize(50, 22)
-    prevBtn:SetPoint("LEFT", 0, 0)
-    prevBtn:SetText("<")
-    prevBtn:SetScript("OnClick", function()
-        if self.communityPage > 1 then
-            self.communityPage = self.communityPage - 1
-            if DC.RequestCommunityList then
-                DC:RequestCommunityList((self.communityPage - 1) * 6, 50, "all", "newest")
-            end
-            self:RefreshCommunityGrid()
-        end
-    end)
-    self.frame.communityPrevBtn = prevBtn
-    
-    local nextBtn = CreateFrame("Button", nil, pageFrame, "UIPanelButtonTemplate")
-    nextBtn:SetSize(50, 22)
-    nextBtn:SetPoint("RIGHT", 0, 0)
-    nextBtn:SetText(">")
-    nextBtn:SetScript("OnClick", function()
-        if self.communityPage < self.communityTotalPages then
-            self.communityPage = self.communityPage + 1
-            if DC.RequestCommunityList then
-                DC:RequestCommunityList((self.communityPage - 1) * 6, 50, "all", "newest")
-            end
-            self:RefreshCommunityGrid()
-        end
-    end)
-    self.frame.communityNextBtn = nextBtn
-    
-    local pageText = pageFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    pageText:SetPoint("CENTER", 0, 0)
-    pageText:SetText("Page 1 / 1")
-    self.frame.communityPageText = pageText
     
     -- No outfits text
     local noOutfitsText = container:CreateFontString(nil, "OVERLAY", "GameFontDisableLarge")
@@ -216,15 +198,48 @@ end
 
 function Wardrobe:RefreshCommunityGrid()
     local buttons = self.frame and self.frame.communityButtons
-    if not buttons then return end
+    if not buttons then
+        self._pendingCommunityRefresh = true
+
+        if not self._communityRefreshRetryFrame then
+            local f = CreateFrame("Frame")
+            f.elapsed = 0
+            f.tries = 0
+            f:SetScript("OnUpdate", function(this, elapsed)
+                this.elapsed = (this.elapsed or 0) + (elapsed or 0)
+                if this.elapsed < 0.05 then return end
+                this.elapsed = 0
+                this.tries = (this.tries or 0) + 1
+
+                if this.tries > 40 then
+                    this:SetScript("OnUpdate", nil)
+                    Wardrobe._communityRefreshRetryFrame = nil
+                    return
+                end
+
+                if Wardrobe and Wardrobe._pendingCommunityRefresh and type(Wardrobe.RefreshCommunityGrid) == "function" then
+                    Wardrobe:RefreshCommunityGrid()
+                end
+            end)
+            self._communityRefreshRetryFrame = f
+        end
+
+        return
+    end
+
+    self._pendingCommunityRefresh = nil
+    if self._communityRefreshRetryFrame then
+        self._communityRefreshRetryFrame:SetScript("OnUpdate", nil)
+        self._communityRefreshRetryFrame = nil
+    end
     
     -- Get community outfits from DC.db.communityOutfits (populated by OnMsg_CommunityList)
     local outfits = DC.db and DC.db.communityOutfits or {}
     local ITEMS_PER_PAGE = 6
     
     local totalOutfits = #outfits
-    self.communityPage = self.communityPage or 1
-    self.communityTotalPages = math.max(1, math.ceil(totalOutfits / ITEMS_PER_PAGE))
+    self.currentPage = self.currentPage or 1
+    self.totalPages = math.max(1, math.ceil(totalOutfits / ITEMS_PER_PAGE))
     
     -- Show/hide no outfits message
     if totalOutfits == 0 then
@@ -237,38 +252,28 @@ function Wardrobe:RefreshCommunityGrid()
         end
     end
     
-    -- Update pagination
-    if self.frame.communityPageText then
-        self.frame.communityPageText:SetText(string.format("Page %d / %d", self.communityPage, self.communityTotalPages))
+    -- Update shared pager
+    if self.frame and self.frame.pageText then
+        self.frame.pageText:SetText(string.format("Page %d / %d", self.currentPage, self.totalPages))
     end
-    if self.frame.communityPrevBtn then
-        if type(self.frame.communityPrevBtn.SetEnabled) == "function" then
-            self.frame.communityPrevBtn:SetEnabled(self.communityPage > 1)
-        elseif self.communityPage > 1 then
-            if type(self.frame.communityPrevBtn.Enable) == "function" then
-                self.frame.communityPrevBtn:Enable()
-            end
+    if self.frame and self.frame.prevBtn then
+        if self.currentPage > 1 then
+            if type(self.frame.prevBtn.Enable) == "function" then self.frame.prevBtn:Enable() end
         else
-            if type(self.frame.communityPrevBtn.Disable) == "function" then
-                self.frame.communityPrevBtn:Disable()
-            end
+            if type(self.frame.prevBtn.Disable) == "function" then self.frame.prevBtn:Disable() end
         end
     end
-    if self.frame.communityNextBtn then
-        if type(self.frame.communityNextBtn.SetEnabled) == "function" then
-            self.frame.communityNextBtn:SetEnabled(self.communityPage < self.communityTotalPages)
-        elseif self.communityPage < self.communityTotalPages then
-            if type(self.frame.communityNextBtn.Enable) == "function" then
-                self.frame.communityNextBtn:Enable()
-            end
+    if self.frame and self.frame.nextBtn then
+        if self.currentPage < self.totalPages then
+            if type(self.frame.nextBtn.Enable) == "function" then self.frame.nextBtn:Enable() end
         else
-            if type(self.frame.communityNextBtn.Disable) == "function" then
-                self.frame.communityNextBtn:Disable()
-            end
+            if type(self.frame.nextBtn.Disable) == "function" then self.frame.nextBtn:Disable() end
         end
     end
     
-    local startIdx = (self.communityPage - 1) * ITEMS_PER_PAGE
+    if self.currentPage > self.totalPages then self.currentPage = self.totalPages end
+
+    local startIdx = (self.currentPage - 1) * ITEMS_PER_PAGE
     
     for i, btn in ipairs(buttons) do
         local idx = startIdx + i
@@ -283,7 +288,8 @@ function Wardrobe:RefreshCommunityGrid()
             -- Stats
             local upvotes = outfit.upvotes or 0
             local downloads = outfit.downloads or 0
-            btn.stats:SetText(string.format("▲%d  ⬇%d", upvotes, downloads))
+            if btn.upText then btn.upText:SetText(tostring(upvotes)) end
+            if btn.downText then btn.downText:SetText(tostring(downloads)) end
             
             -- Setup Model Preview
             btn.model:Show()
@@ -360,8 +366,11 @@ function DC:OnMsg_CommunityList(data)
     end
     
     self:Debug("Received " .. #DC.db.communityOutfits .. " community outfits from server.")
-    
-    if DC.Wardrobe and DC.Wardrobe.RefreshCommunityGrid then
-        DC.Wardrobe:RefreshCommunityGrid()
+
+    if DC.Wardrobe then
+        DC.Wardrobe._pendingCommunityRefresh = true
+        if DC.Wardrobe.RefreshCommunityGrid then
+            DC.Wardrobe:RefreshCommunityGrid()
+        end
     end
 end

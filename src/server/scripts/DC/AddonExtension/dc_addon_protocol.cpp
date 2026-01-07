@@ -257,6 +257,19 @@ static uint8 ExtractOpcode(const std::string& payload)
     }
 }
 
+// Some small, UI-critical requests should bypass rate limiting.
+// This prevents prior high-volume transfers (e.g., transmog paging) from starving Outfits/Community.
+static bool ShouldBypassRateLimit(const std::string& payload)
+{
+    std::string moduleCode = ExtractModuleCode(payload);
+    if (moduleCode != DCAddon::Module::COLLECTION)
+        return false;
+
+    uint8 opcode = ExtractOpcode(payload);
+    return opcode == DCAddon::Opcode::Collection::CMSG_GET_SAVED_OUTFITS
+        || opcode == DCAddon::Opcode::Collection::CMSG_COMMUNITY_GET_LIST;
+}
+
 static std::string DetectRequestType(const std::string& payload)
 {
     if (payload.empty()) return "STANDARD";
@@ -823,8 +836,8 @@ public:
         // Skip the "DC\t" prefix and route to handler
         std::string payload = msg.substr(3);  // Everything after "DC\t"
 
-        // Check rate limit before processing
-        if (!CheckRateLimit(player))
+        // Check rate limit before processing. Allow a small bypass list for UI-critical requests.
+        if (!ShouldBypassRateLimit(payload) && !CheckRateLimit(player))
         {
             msg.clear();
             return;
@@ -884,6 +897,7 @@ public:
 
         LOG_INFO("dc.addon", "===========================================");
         LOG_INFO("dc.addon", "Dark Chaos Addon Protocol v{} loaded", s_AddonConfig.ProtocolVersion);
+        LOG_INFO("dc.addon", "RateLimit bypass enabled for: COLL|0x3B (SavedOutfits), COLL|0x53 (CommunityList)");
         LOG_INFO("dc.addon", "Enabled modules:");
         LOG_INFO("dc.addon", "  Core:        {}", s_AddonConfig.EnableCore ? "Yes" : "No");
         LOG_INFO("dc.addon", "  AOE Loot:    {}", s_AddonConfig.EnableAOELoot ? "Yes" : "No");

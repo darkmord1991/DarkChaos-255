@@ -202,33 +202,27 @@ public:
             break;
         case 7: // Spawn Profession Trainers
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Alchemy Trainer", GOSSIP_SENDER_MAIN, 19052, "Spawn Alchemy Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Blacksmithing Trainer", GOSSIP_SENDER_MAIN, 2836, "Spawn Blacksmithing Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Enchanting Trainer", GOSSIP_SENDER_MAIN, (player->GetTeamId() == TEAM_ALLIANCE ? 18773 : 18753), "Spawn Enchanting Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Engineering Trainer", GOSSIP_SENDER_MAIN, 8736, "Spawn Engineering Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Herbalism Trainer", GOSSIP_SENDER_MAIN, 908, "Spawn Herbalism Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Inscription Trainer", GOSSIP_SENDER_MAIN, (player->GetTeamId() == TEAM_ALLIANCE ? 30721 : 30722), "Spawn Inscription Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Jewelcrafting Trainer", GOSSIP_SENDER_MAIN, (player->GetTeamId() == TEAM_ALLIANCE ? 18774 : 18751), "Spawn Jewelcrafting Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Leatherworking Trainer", GOSSIP_SENDER_MAIN, 19187, "Spawn Leatherworking Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Mining Trainer", GOSSIP_SENDER_MAIN, 8128, "Spawn Mining Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Skinning Trainer", GOSSIP_SENDER_MAIN, 19180, "Spawn Skinning Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Tailoring Trainer", GOSSIP_SENDER_MAIN, 2627, "Spawn Tailoring Trainer?", GuildHouseProf, false);
-            
-            // Faction check not needed for custom trainers if they are neutral, 
-            // but the request implies global replacement. 
-            // The SQL defines them as Neutral (Type 2, no faction req usually implied or handled by core).
-            // Removing faction specific logic blocks since we use unified IDs now.
-
-
+            // Custom profession trainers (see worlddb/Trainers/npc_trainer_new.sql)
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Alchemy Trainer", GOSSIP_SENDER_MAIN, 95001, "Spawn Alchemy Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Blacksmithing Trainer", GOSSIP_SENDER_MAIN, 95002, "Spawn Blacksmithing Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Enchanting Trainer", GOSSIP_SENDER_MAIN, 95003, "Spawn Enchanting Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Engineering Trainer", GOSSIP_SENDER_MAIN, 95004, "Spawn Engineering Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Herbalism Trainer", GOSSIP_SENDER_MAIN, 95005, "Spawn Herbalism Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Inscription Trainer", GOSSIP_SENDER_MAIN, 95006, "Spawn Inscription Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Jewelcrafting Trainer", GOSSIP_SENDER_MAIN, 95007, "Spawn Jewelcrafting Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Leatherworking Trainer", GOSSIP_SENDER_MAIN, 95008, "Spawn Leatherworking Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Mining Trainer", GOSSIP_SENDER_MAIN, 95009, "Spawn Mining Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Skinning Trainer", GOSSIP_SENDER_MAIN, 95010, "Spawn Skinning Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Tailoring Trainer", GOSSIP_SENDER_MAIN, 95011, "Spawn Tailoring Trainer?", GuildHouseProf, false);
 
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, ACTION_BACK);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
         case 8: // Secondary Profession Trainers
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "First Aid Trainer", GOSSIP_SENDER_MAIN, 19184, "Spawn First Aid Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Fishing Trainer", GOSSIP_SENDER_MAIN, 2834, "Spawn Fishing Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Cooking Trainer", GOSSIP_SENDER_MAIN, 19185, "Spawn Cooking Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "First Aid Trainer", GOSSIP_SENDER_MAIN, 95013, "Spawn First Aid Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Fishing Trainer", GOSSIP_SENDER_MAIN, 95014, "Spawn Fishing Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Cooking Trainer", GOSSIP_SENDER_MAIN, 95012, "Spawn Cooking Trainer?", GuildHouseProf, false);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, 9);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
@@ -243,23 +237,22 @@ public:
         case 800001: // Innkeeper
             SpawnNPC(action, player, GuildHouseInnKeeper, true, true);
             break;
-        case 2836:  // Blacksmithing
-        case 8128:  // Mining
-        case 8736:  // Engineering
-        case 18774: // Jewelcrafting (Alliance)
-        case 18751: // Jewelcrafting (Horde)
-        case 18773: // Enchanting (Alliance)
-        case 18753: // Enchanting (Horde)
-        case 30721: // Inscription (Alliance)
-        case 30722: // Inscription (Horde)
-        case 19187: // Leatherworking
-        case 19180: // Skinning
-        case 19052: // Alchemy
-        case 908:   // Herbalism
-        case 2627:  // Tailoring
-        case 19185: // Cooking
-        case 2834:  // Fishing
-        case 19184: // First Aid
+        case 95001: // Alchemy
+        case 95002: // Blacksmithing
+        case 95003: // Enchanting
+        case 95004: // Engineering
+        case 95005: // Herbalism
+        case 95006: // Inscription
+        case 95007: // Jewelcrafting
+        case 95008: // Leatherworking
+        case 95009: // Mining
+        case 95010: // Skinning
+        case 95011: // Tailoring
+        case 95012: // Cooking
+        case 95013: // First Aid
+        case 95014: // Fishing
+        case 95025: // Weapon Trainer
+        case 95026: // Riding Trainer
             SpawnNPC(action, player, GuildHouseProf, true, true);
             break;
         case 28692: // Trade Supplies
@@ -274,10 +267,10 @@ public:
         case 100051: // Mythic+ (custom)
         case 100101: // Mythic+ (custom)
         case 100100: // Mythic+ (custom)
-        case 90004: // Seasonal Trader
-        case 90005: // Holiday Ambassador
-        case 90006: // Omni-Crafter
-        case 90007: // Repair Bot
+        case 95100: // Seasonal Trader
+        case 95101: // Holiday Ambassador
+        case 95102: // Omni-Crafter
+        case 55002: // Services NPC
             SpawnNPC(action, player, GuildHouseVendor, true, true);
             break;
         //
@@ -550,22 +543,26 @@ public:
         SpawnNPC(2622, player, 0, false, doBroadcastEach);
 
         // Primary professions (team-based where applicable)
-        SpawnNPC(19052, player, 0, false, doBroadcastEach); // Alchemy
-        SpawnNPC(2836, player, 0, false, doBroadcastEach);  // Blacksmithing
-        SpawnNPC(player->GetTeamId() == TEAM_ALLIANCE ? 18773 : 18753, player, 0, false, doBroadcastEach); // Enchanting
-        SpawnNPC(8736, player, 0, false, doBroadcastEach);  // Engineering
-        SpawnNPC(908, player, 0, false, doBroadcastEach);   // Herbalism
-        SpawnNPC(player->GetTeamId() == TEAM_ALLIANCE ? 30721 : 30722, player, 0, false, doBroadcastEach); // Inscription
-        SpawnNPC(player->GetTeamId() == TEAM_ALLIANCE ? 18774 : 18751, player, 0, false, doBroadcastEach); // Jewelcrafting
-        SpawnNPC(19187, player, 0, false, doBroadcastEach); // Leatherworking
-        SpawnNPC(8128, player, 0, false, doBroadcastEach);  // Mining
-        SpawnNPC(19180, player, 0, false, doBroadcastEach); // Skinning
-        SpawnNPC(2627, player, 0, false, doBroadcastEach);  // Tailoring
+        SpawnNPC(95001, player, 0, false, doBroadcastEach); // Alchemy
+        SpawnNPC(95002, player, 0, false, doBroadcastEach); // Blacksmithing
+        SpawnNPC(95003, player, 0, false, doBroadcastEach); // Enchanting
+        SpawnNPC(95004, player, 0, false, doBroadcastEach); // Engineering
+        SpawnNPC(95005, player, 0, false, doBroadcastEach); // Herbalism
+        SpawnNPC(95006, player, 0, false, doBroadcastEach); // Inscription
+        SpawnNPC(95007, player, 0, false, doBroadcastEach); // Jewelcrafting
+        SpawnNPC(95008, player, 0, false, doBroadcastEach); // Leatherworking
+        SpawnNPC(95009, player, 0, false, doBroadcastEach); // Mining
+        SpawnNPC(95010, player, 0, false, doBroadcastEach); // Skinning
+        SpawnNPC(95011, player, 0, false, doBroadcastEach); // Tailoring
 
         // Secondary professions
-        SpawnNPC(19184, player, 0, false, doBroadcastEach);
-        SpawnNPC(2834, player, 0, false, doBroadcastEach);
-        SpawnNPC(19185, player, 0, false, doBroadcastEach);
+        SpawnNPC(95013, player, 0, false, doBroadcastEach); // First Aid
+        SpawnNPC(95014, player, 0, false, doBroadcastEach); // Fishing
+        SpawnNPC(95012, player, 0, false, doBroadcastEach); // Cooking
+
+        // Weapon & riding trainers
+        SpawnNPC(95025, player, 0, false, doBroadcastEach);
+        SpawnNPC(95026, player, 0, false, doBroadcastEach);
 
         // Objects
         SpawnObject(1685, player, 0, false, doBroadcastEach);
@@ -605,6 +602,9 @@ public:
         if (!map)
             return;
 
+        uint32 removedCreatures = 0;
+        uint32 removedGameObjects = 0;
+
         QueryResult creatureResult = WorldDatabase.Query(
             "SELECT `guid`, `id1` FROM `creature` WHERE `map` = {} AND `phaseMask` = {}",
             mapId, guildPhase);
@@ -619,15 +619,32 @@ public:
                 if (ShouldKeepCreatureEntryOnDespawnAll(entry))
                     continue;
 
-                if (CreatureData const* crData = sObjectMgr->GetCreatureData(lowguid))
+                // Prefer deleting the live object (works for dynamically spawned creatures).
+                // Use the per-map spawnId store, since ObjectGuid(entry, spawnId) can miss loaded objects.
+                Creature* creature = nullptr;
                 {
-                    if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(crData->id1, lowguid)))
-                    {
-                        creature->CombatStop();
-                        creature->DeleteFromDB();
-                        creature->AddObjectToRemoveList();
-                    }
+                    auto bounds = map->GetCreatureBySpawnIdStore().equal_range(lowguid);
+                    if (bounds.first != bounds.second)
+                        creature = bounds.first->second;
                 }
+
+                if (creature)
+                {
+                    creature->CombatStop(true);
+                    creature->DeleteFromDB();
+                    creature->DespawnOrUnsummon(Milliseconds(0));
+                    ++removedCreatures;
+                }
+                else
+                {
+                    // Fallback: ensure DB cleanup even if the creature isn't loaded.
+                    WorldDatabase.Execute("DELETE FROM `creature` WHERE `guid` = {}", lowguid);
+                    WorldDatabase.Execute("DELETE FROM `creature_addon` WHERE `guid` = {}", lowguid);
+                    ++removedCreatures;
+                }
+
+                // Clean cached spawn data if present.
+                sObjectMgr->DeleteCreatureData(lowguid);
             } while (creatureResult->NextRow());
         }
 
@@ -642,19 +659,35 @@ public:
                 Field* fields = gameobjResult->Fetch();
                 uint32 lowguid = fields[0].Get<uint32>();
 
-                if (GameObjectData const* goData = sObjectMgr->GetGameObjectData(lowguid))
+                GameObject* gobject = nullptr;
                 {
-                    if (GameObject* gobject = map->GetGameObject(ObjectGuid::Create<HighGuid::GameObject>(goData->id, lowguid)))
-                    {
-                        gobject->SetRespawnTime(0);
-                        gobject->Delete();
-                        gobject->DeleteFromDB();
-                        gobject->CleanupsBeforeDelete();
-                    }
+                    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(lowguid);
+                    if (bounds.first != bounds.second)
+                        gobject = bounds.first->second;
                 }
+
+                if (gobject)
+                {
+                    gobject->SetRespawnTime(0);
+                    gobject->Delete();
+                    gobject->DeleteFromDB();
+                    ++removedGameObjects;
+                }
+                else
+                {
+                    WorldDatabase.Execute("DELETE FROM `gameobject` WHERE `guid` = {}", lowguid);
+                    WorldDatabase.Execute("DELETE FROM `gameobject_addon` WHERE `guid` = {}", lowguid);
+                    ++removedGameObjects;
+                }
+
+                sObjectMgr->DeleteGOData(lowguid);
 
             } while (gameobjResult->NextRow());
         }
+
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "GM: Despawned {} creatures and {} gameobjects on map {} phase {}.",
+            removedCreatures, removedGameObjects, mapId, guildPhase);
 
         if (Guild* guild = player->GetGuild())
         {

@@ -69,8 +69,8 @@ function Wardrobe:ShowItemsContent()
         if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
         if self.frame.communityGridContainer then self.frame.communityGridContainer:Hide() end
 
-        -- Hide Outfit Controls
-        if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Hide() end
+        -- Show Save button in Items tab so users can save their current look
+        if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Show() end
         if self.frame.randomOutfitBtn then self.frame.randomOutfitBtn:Hide() end
 
         if self.frame.orderBtn then self.frame.orderBtn:Show() end
@@ -210,6 +210,11 @@ function Wardrobe:SelectSlot(slotDef)
                 model:SetFacing(cameraPos.facing)
                 model.rotation = cameraPos.facing
             end
+            
+            -- Apply animation sequence if defined
+            if cameraPos.sequence and model.SetAnimation then
+                model:SetAnimation(cameraPos.sequence)
+            end
         end
     end
 
@@ -289,7 +294,10 @@ function Wardrobe:RefreshGrid()
             Wardrobe:ShowFixedItemTooltip(selfBtn, selfBtn.itemData.itemId, function(tip)
                 tip:AddLine(" ")
 
-                if selfBtn.itemData.displayId then
+                if selfBtn.itemData.isHideOption then
+                    tip:AddLine("|cffff6600Hide this equipment slot|r", 1, 1, 1)
+                    tip:AddLine("The slot will appear empty", 0.7, 0.7, 0.7)
+                elseif selfBtn.itemData.displayId then
                     tip:AddLine("DisplayId: " .. tostring(selfBtn.itemData.displayId), 0.85, 0.85, 0.85)
                 end
 
@@ -353,6 +361,39 @@ function Wardrobe:RefreshGrid()
     end
 
     local list = self:BuildAppearanceList()
+    
+    -- Add "Hide Slot" option for eligible slots
+    -- Only certain slots can be hidden: Head (1), Shoulder (3), Back (16), Chest (4)
+    local hideableSlots = {
+        [1] = true,   -- Head
+        [3] = true,   -- Shoulder  
+        [16] = true,  -- Back/Cloak
+        [4] = true,   -- Chest
+    }
+    
+    if self.selectedSlotFilter then
+        -- Check if current slot filter contains a hideable inventory type
+        local isHideable = false
+        for invType in pairs(self.selectedSlotFilter.invTypes) do
+            if hideableSlots[invType] then
+                isHideable = true
+                break
+            end
+        end
+        
+        if isHideable then
+            -- Insert "Hide Slot" as first option
+            table.insert(list, 1, {
+                id = "hide",
+                itemId = 0,
+                name = "Hide Slot",
+                displayId = 0,
+                collected = true,
+                isHideOption = true,
+            })
+        end
+    end
+    
     self.appearanceList = list
 
     local totalShown = #list
@@ -949,6 +990,18 @@ function Wardrobe:ApplyAppearance(appearance)
         return
     end
 
+    -- Special handling for "Hide Slot" option
+    if appearance.isHideOption then
+        if DC and DC.RequestSetTransmog then
+            DC:RequestSetTransmog(invSlotId, 0)  -- Send 0 to hide the slot
+            
+            if type(self.MarkUnsavedChanges) == "function" then
+                self:MarkUnsavedChanges()
+            end
+        end
+        return
+    end
+    
     local appearanceId = appearance.displayId or appearance.appearanceId or appearance.appearance_id
     if type(appearanceId) == "string" then
         appearanceId = tonumber(appearanceId)

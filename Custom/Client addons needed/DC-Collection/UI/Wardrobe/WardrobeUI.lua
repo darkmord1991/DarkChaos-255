@@ -1332,6 +1332,10 @@ function Wardrobe:CreateRightPanel(parent)
                 Wardrobe:RefreshSetsGrid()
             elseif Wardrobe.currentTab == "outfits" then
                 Wardrobe:RefreshOutfitsGrid()
+            elseif Wardrobe.currentTab == "community" then
+                if Wardrobe.RefreshCommunityGrid then
+                    Wardrobe:RefreshCommunityGrid()
+                end
             else
                 Wardrobe:RefreshGrid()
             end
@@ -1351,6 +1355,10 @@ function Wardrobe:CreateRightPanel(parent)
                 Wardrobe:RefreshSetsGrid()
             elseif Wardrobe.currentTab == "outfits" then
                 Wardrobe:RefreshOutfitsGrid()
+            elseif Wardrobe.currentTab == "community" then
+                if Wardrobe.RefreshCommunityGrid then
+                    Wardrobe:RefreshCommunityGrid()
+                end
             else
                 Wardrobe:RefreshGrid()
             end

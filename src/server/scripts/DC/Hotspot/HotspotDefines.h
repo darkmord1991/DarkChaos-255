@@ -17,6 +17,7 @@ struct HotspotsConfig
     uint32 duration = 60;                    // minutes
     uint32 experienceBonus = 100;            // percentage
     float radius = 150.0f;                   // yards
+    float minDistance = 300.0f;              // yards (minimum distance between hotspot centers; 0 = disabled)
     uint32 maxActive = 5;
     uint32 minActive = 1;                    // minimum hotspots to maintain (crash persistence)
     uint32 maxPerZone = 2;                   // max hotspots allowed in same zone (0 = unlimited)

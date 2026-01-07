@@ -38,6 +38,99 @@ function Wardrobe:InvalidateRandomizerCache()
     self._lastRandomOutfitSig = nil
 end
 
+function Wardrobe:_EnsurePendingApplyVerifier()
+    if self._pendingApplyVerifierFrame then
+        return
+    end
+
+    local f = CreateFrame("Frame")
+    f:Hide()
+    f.elapsed = 0
+    f:SetScript("OnUpdate", function(frame, dt)
+        frame.elapsed = (frame.elapsed or 0) + (dt or 0)
+        if frame.elapsed < 0.05 then
+            return
+        end
+        frame.elapsed = 0
+
+        local pending = Wardrobe._pendingApplyOutfit
+        if not pending then
+            frame:Hide()
+            return
+        end
+
+        local now = (GetTime and GetTime()) or 0
+        local last = pending.lastUpdateAt or pending.startedAt or now
+        if now - last < 0.35 then
+            return
+        end
+
+        frame:Hide()
+        Wardrobe:_VerifyPendingOutfitApply()
+    end)
+
+    self._pendingApplyVerifierFrame = f
+end
+
+function Wardrobe:OnTransmogStateReceived(state)
+    if not self._pendingApplyOutfit then
+        return
+    end
+
+    local now = (GetTime and GetTime()) or 0
+    self._pendingApplyOutfit.lastUpdateAt = now
+    self:_EnsurePendingApplyVerifier()
+    if self._pendingApplyVerifierFrame then
+        self._pendingApplyVerifierFrame:Show()
+    end
+end
+
+function Wardrobe:_VerifyPendingOutfitApply()
+    local pending = self._pendingApplyOutfit
+    if not pending then
+        return
+    end
+
+    self._pendingApplyOutfit = nil
+
+    local state = (DC and DC.transmogState) or {}
+    local failed = {}
+    local total = 0
+
+    for equipmentSlot, expectedVal in pairs(pending.expectedByEquipSlot or {}) do
+        total = total + 1
+        local key = tostring(equipmentSlot)
+        local actual = tonumber(state[key]) or 0
+        local expected = tonumber(expectedVal) or 0
+
+        local ok
+        if expected <= 0 then
+            ok = (actual <= 0)
+        else
+            ok = (actual == expected)
+        end
+
+        if not ok then
+            local label = (pending.slotLabelByEquipSlot and pending.slotLabelByEquipSlot[equipmentSlot]) or ("slot " .. key)
+            failed[#failed + 1] = label
+        end
+    end
+
+    if DC and DC.Print then
+        if total == 0 then
+            DC:Print("Outfit applied.")
+        elseif #failed == 0 then
+            DC:Print("Outfit '" .. (pending.name or "") .. "' applied (verified).")
+        else
+            table.sort(failed)
+            DC:Print("Outfit apply incomplete. Failed slots: " .. table.concat(failed, ", ") .. ".")
+            if DCCollectionDB and DCCollectionDB.debugMode and DC.Debug then
+                DC:Debug("[OUTFIT APPLY] Some slots were rejected (likely not unlocked, incompatible with equipped gear, or slot empty).")
+            end
+        end
+    end
+end
+
 function Wardrobe:_EnsureOutfitPreviewQueue()
     if self._outfitPreviewQueueFrame then
         return
@@ -258,11 +351,42 @@ function Wardrobe:ShowSaveOutfitDialog()
         button1 = "Save",
         button2 = "Cancel",
         hasEditBox = true,
+        hasCheckButton = true,
+        checkButtonText = "Update selected outfit",
         maxLetters = 32,
+        OnShow = function(selfPopup)
+            local selected = Wardrobe and Wardrobe.selectedOutfit
+            local canUpdate = selected and selected.id and tonumber(selected.id) and tonumber(selected.id) > 0
+
+            if selfPopup.checkButton then
+                if canUpdate then
+                    selfPopup.checkButton:Show()
+                    selfPopup.checkButton:SetChecked(true)
+                else
+                    selfPopup.checkButton:Hide()
+                    selfPopup.checkButton:SetChecked(false)
+                end
+            end
+
+            if selfPopup.editBox and canUpdate then
+                selfPopup.editBox:SetText(selected.name or "")
+                if selfPopup.editBox.HighlightText then
+                    selfPopup.editBox:HighlightText()
+                end
+            end
+        end,
         OnAccept = function(selfPopup)
             local name = selfPopup.editBox:GetText()
             if name and name ~= "" then
-                Wardrobe:SaveCurrentOutfit(name)
+                local selected = Wardrobe and Wardrobe.selectedOutfit
+                local canUpdate = selected and selected.id and tonumber(selected.id) and tonumber(selected.id) > 0
+                local wantsUpdate = selfPopup.checkButton and selfPopup.checkButton:IsShown() and selfPopup.checkButton:GetChecked()
+
+                if canUpdate and wantsUpdate then
+                    Wardrobe:SaveCurrentOutfit(name, tonumber(selected.id))
+                else
+                    Wardrobe:SaveCurrentOutfit(name)
+                end
             end
         end,
         OnCancel = function()
@@ -276,7 +400,7 @@ function Wardrobe:ShowSaveOutfitDialog()
     StaticPopup_Show("DC_SAVE_OUTFIT")
 end
 
-function Wardrobe:SaveCurrentOutfit(name)
+function Wardrobe:SaveCurrentOutfit(name, overwriteId)
     -- Ensure we have authoritative transmog state (displayIds) before saving.
     if not (DC and DC.transmogState) then
         self._pendingSaveOutfitName = name
@@ -292,8 +416,7 @@ function Wardrobe:SaveCurrentOutfit(name)
     if not DC.db then DC.db = {} end
     if not DC.db.outfits then DC.db.outfits = {} end
 
-    -- Always use ID 0 for new outfits - server will auto-increment
-    local id = 0
+    local id = tonumber(overwriteId) or 0
     
     local outfit = {
         id = id,
@@ -328,8 +451,8 @@ function Wardrobe:SaveCurrentOutfit(name)
         outfit.icon = string.gsub(outfit.icon, "\\", "/")
     end
 
-    -- Duplicate Check
-    if DC.db.outfits then
+    -- Duplicate Check (skip when overwriting)
+    if id == 0 and DC.db.outfits then
         for _, saved in ipairs(DC.db.outfits) do
             -- Parse saved slots if string
             local savedSlots = saved.slots
@@ -370,9 +493,24 @@ function Wardrobe:SaveCurrentOutfit(name)
     -- Send to server
     if DC.Protocol and DC.Protocol.SaveOutfit then
         DC.Protocol:SaveOutfit(id, outfit.name, outfit.icon, outfit.slots)
-        -- Also add locally for instant feedback (will be overwritten by sync)
-        table.insert(DC.db.outfits, outfit)
-        DC:Print("Outfit '" .. name .. "' saved to server!")
+        -- Also update locally for instant feedback (will be overwritten by sync)
+        if id == 0 then
+            table.insert(DC.db.outfits, outfit)
+            DC:Print("Outfit '" .. name .. "' saved to server!")
+        else
+            local replaced
+            for i = 1, #DC.db.outfits do
+                if tonumber(DC.db.outfits[i] and DC.db.outfits[i].id) == id then
+                    DC.db.outfits[i] = outfit
+                    replaced = true
+                    break
+                end
+            end
+            if not replaced then
+                table.insert(DC.db.outfits, outfit)
+            end
+            DC:Print("Outfit '" .. name .. "' updated on server!")
+        end
 
         if type(self.ClearUnsavedChanges) == "function" then
             self:ClearUnsavedChanges()
@@ -488,37 +626,113 @@ function Wardrobe:LoadOutfit(outfit)
         return
     end
 
+    local dbg = (DCCollectionDB and DCCollectionDB.debugMode) and true or false
+    local dbgLines
+    local dbgCount = 0
+
+    local batchEntries
+    local canBatch = DC and type(DC.ApplyTransmogBatchByEquipmentSlot) == "function"
+    if canBatch then
+        batchEntries = {}
+    end
+
+    self._pendingApplyOutfit = {
+        name = outfit.name or "",
+        expectedByEquipSlot = {},
+        slotLabelByEquipSlot = {},
+        startedAt = (GetTime and GetTime()) or 0,
+        lastUpdateAt = (GetTime and GetTime()) or 0,
+    }
+
     for slotKey, appearanceId in pairs(slots) do
-        local invSlotId = GetInventorySlotInfo(slotKey)
+        local invSlotId
+
+        -- Support both string keys ("HeadSlot") and numeric keys (0-based equipment slot or 1-based inventory slot).
+        if type(slotKey) == "number" or (type(slotKey) == "string" and tonumber(slotKey)) then
+            local slotNum = tonumber(slotKey)
+            if slotNum == 0 then
+                invSlotId = 1
+            elseif slotNum and slotNum > 0 and slotNum <= 19 then
+                -- Treat as 1-based inventory slot.
+                invSlotId = slotNum
+            elseif slotNum and slotNum >= 0 and slotNum <= 18 then
+                -- Fallback: treat as 0-based equipment slot.
+                invSlotId = slotNum + 1
+            end
+        else
+            invSlotId = GetInventorySlotInfo(slotKey)
+        end
 
         -- Only apply if the player has an item equipped in that slot.
         if invSlotId and GetInventoryItemID("player", invSlotId) then
-            -- Server expects 0-based equipment slot index + appearanceId (displayId).
-            if DC and DC.RequestSetTransmogByEquipmentSlot then
-                local n = tonumber(appearanceId) or 0
-                if n and n <= 0 then
-                    if DC.RequestClearTransmogByEquipmentSlot then
-                        DC:RequestClearTransmogByEquipmentSlot(invSlotId - 1)
-                    end
-                else
-                    DC:RequestSetTransmogByEquipmentSlot(invSlotId - 1, n)
-                end
-            elseif DC and DC.RequestSetTransmog then
-                -- Fallback: RequestSetTransmog expects 1-based inventory slot.
-                local n = tonumber(appearanceId) or 0
-                if n and n <= 0 then
-                    if DC.RequestClearTransmog then
-                        DC:RequestClearTransmog(invSlotId)
-                    end
-                else
-                    DC:RequestSetTransmog(invSlotId, n)
+            local equipmentSlot = invSlotId - 1
+
+            local n = tonumber(appearanceId) or 0
+
+            -- Some payloads store itemIds instead of displayIds.
+            local mapped
+            if n and n > 0 and Wardrobe and type(Wardrobe.GetAppearanceDisplayIdForItemId) == "function" then
+                mapped = Wardrobe:GetAppearanceDisplayIdForItemId(n)
+                if mapped and mapped > 0 then
+                    n = mapped
                 end
             end
+
+            if dbg and dbgCount < 6 then
+                dbgLines = dbgLines or {}
+                dbgCount = dbgCount + 1
+                dbgLines[#dbgLines + 1] = string.format("slot=%s inv=%d equip=%d raw=%s mapped=%s send=%d", tostring(slotKey), tonumber(invSlotId) or 0, tonumber(equipmentSlot) or 0, tostring(appearanceId), tostring(mapped), tonumber(n) or 0)
+            end
+
+            if canBatch then
+                if n and n <= 0 then
+                    table.insert(batchEntries, { slot = equipmentSlot, clear = true })
+                else
+                    table.insert(batchEntries, { slot = equipmentSlot, appearanceId = n, clear = false })
+                end
+            else
+                -- Fallback: per-slot apply (older servers)
+                if DC and DC.RequestSetTransmogByEquipmentSlot then
+                    if n and n <= 0 then
+                        if DC.RequestClearTransmogByEquipmentSlot then
+                            DC:RequestClearTransmogByEquipmentSlot(equipmentSlot)
+                        end
+                    else
+                        DC:RequestSetTransmogByEquipmentSlot(equipmentSlot, n)
+                    end
+                elseif DC and DC.RequestSetTransmog then
+                    if n and n <= 0 then
+                        if DC.RequestClearTransmog then
+                            DC:RequestClearTransmog(invSlotId)
+                        end
+                    else
+                        DC:RequestSetTransmog(invSlotId, n)
+                    end
+                end
+            end
+
+            self._pendingApplyOutfit.expectedByEquipSlot[equipmentSlot] = tonumber(n) or 0
+            self._pendingApplyOutfit.slotLabelByEquipSlot[equipmentSlot] = tostring(slotKey)
+        end
+    end
+
+    if canBatch and batchEntries and #batchEntries > 0 then
+        DC:ApplyTransmogBatchByEquipmentSlot(batchEntries)
+    end
+
+    -- Force-refresh transmog state so UI + preview can update from authoritative server state.
+    if DC and type(DC.RequestTransmogState) == "function" then
+        DC:RequestTransmogState()
+    end
+
+    if dbg and dbgLines and DC and type(DC.Debug) == "function" then
+        for _, line in ipairs(dbgLines) do
+            DC:Debug("[OUTFIT APPLY] " .. line)
         end
     end
 
     if DC and DC.Print then
-        DC:Print("Outfit '" .. (outfit.name or "") .. "' applied!")
+        DC:Print("Applying outfit '" .. (outfit.name or "") .. "'...")
     end
 end
 
@@ -679,17 +893,34 @@ function Wardrobe:RandomizeOutfit()
     end
     
     local actualApplied = 0
+    local actualCleared = 0
+
+    -- Clear relevant slots first so randomizer truly *replaces* existing transmogs.
+    for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
+        local invSlotId = slotDef and slotDef.slotName and GetInventorySlotInfo(slotDef.slotName)
+        if invSlotId and GetInventoryItemID("player", invSlotId) then
+            local equipSlot = invSlotId - 1
+            if DC and type(DC.RequestClearTransmogByEquipmentSlot) == "function" then
+                DC:RequestClearTransmogByEquipmentSlot(equipSlot)
+                actualCleared = actualCleared + 1
+            end
+        end
+    end
+
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
         local p = picks and picks[slotDef.key]
         if p then
             -- Only apply if an item is equipped in that slot.
-            if p.inv and GetInventoryItemID("player", p.inv) and DC and (DC.RequestSetTransmogByEquipmentSlot or DC.RequestSetTransmog) then
-                if DC.RequestSetTransmogByEquipmentSlot then
-                    DC:RequestSetTransmogByEquipmentSlot((p.inv or 0) - 1, p.id)
-                else
-                    DC:RequestSetTransmog(p.inv, p.id)
+            if p.inv and GetInventoryItemID("player", p.inv) then
+                local equipSlot = (p.inv or 0) - 1
+                -- Use the correct Protocol function
+                if DC.Protocol and type(DC.Protocol.RequestSetTransmogByEquipmentSlot) == "function" then
+                    DC.Protocol:RequestSetTransmogByEquipmentSlot(equipSlot, p.id)
+                    actualApplied = actualApplied + 1
+                elseif DC and type(DC.RequestSetTransmogByEquipmentSlot) == "function" then
+                    DC:RequestSetTransmogByEquipmentSlot(equipSlot, p.id)
+                    actualApplied = actualApplied + 1
                 end
-                actualApplied = actualApplied + 1
             end
         else
             if DC and DC.Print then
@@ -703,7 +934,7 @@ function Wardrobe:RandomizeOutfit()
     end
 
     if DC and DC.Print then 
-        DC:Print("[RANDOMIZE] Random outfit applied to " .. actualApplied .. " slots!")
+        DC:Print("[RANDOMIZE] Cleared " .. actualCleared .. " slots; applied " .. actualApplied .. " randomized picks")
         if actualApplied == 0 then
             DC:Print("[RANDOMIZE] ERROR: No slots were randomized! Check collected appearances above.")
         end
@@ -715,8 +946,46 @@ function Wardrobe:RefreshOutfitsGrid()
     if not buttons and _G["DCCollectionWardrobeFrame"] then
         buttons = _G["DCCollectionWardrobeFrame"].outfitButtons
     end
-    
-    if not buttons then return end
+
+    if not buttons then
+        -- Data can arrive before the Outfits tab finishes building its grid.
+        -- Mark as pending and retry a few times on the next frames.
+        self._pendingOutfitsRefresh = true
+
+        if not self._outfitsRefreshRetryFrame then
+            local f = CreateFrame("Frame")
+            f.elapsed = 0
+            f.tries = 0
+            f:SetScript("OnUpdate", function(this, elapsed)
+                this.elapsed = (this.elapsed or 0) + (elapsed or 0)
+                if this.elapsed < 0.05 then return end
+                this.elapsed = 0
+                this.tries = (this.tries or 0) + 1
+
+                -- Stop after a short while to avoid running forever.
+                if this.tries > 40 then
+                    this:SetScript("OnUpdate", nil)
+                    Wardrobe._outfitsRefreshRetryFrame = nil
+                    return
+                end
+
+                if Wardrobe and Wardrobe._pendingOutfitsRefresh and type(Wardrobe.RefreshOutfitsGrid) == "function" then
+                    -- If the grid is now ready, this call will clear pending below.
+                    Wardrobe:RefreshOutfitsGrid()
+                end
+            end)
+            self._outfitsRefreshRetryFrame = f
+        end
+
+        return
+    end
+
+    -- Grid is ready; stop any pending retry.
+    self._pendingOutfitsRefresh = nil
+    if self._outfitsRefreshRetryFrame then
+        self._outfitsRefreshRetryFrame:SetScript("OnUpdate", nil)
+        self._outfitsRefreshRetryFrame = nil
+    end
 
     local outfits = DC.db and DC.db.outfits or {}
     local ITEMS_PER_PAGE = 6 -- 3x2 grid
@@ -888,9 +1157,50 @@ function Wardrobe:RefreshOutfitsGrid()
             btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
             btn:SetScript("OnClick", function(selfBtn, button)
                 if IsModifiedClick("CHATLINK") then
-                    local link = "[Outfit: " .. (selfBtn.outfit.name or "Link") .. "]" -- Simplified link for now
+                    local link
+
+                    if DC and type(DC.GenerateOutfitLink) == "function" and selfBtn.outfit then
+                        local rawSlots = selfBtn.outfit.slots or selfBtn.outfit.items
+                        local slots = rawSlots
+
+                        if type(slots) == "string" then
+                            local parsed = {}
+                            for k, v in slots:gmatch('"?([^":,{}]+)"?%s*:%s*(%d+)') do
+                                parsed[k] = tonumber(v)
+                            end
+                            slots = parsed
+                        end
+
+                        if type(slots) == "table" then
+                            local state = {}
+                            for slotKey, appearanceId in pairs(slots) do
+                                local invSlotId
+                                if type(slotKey) == "number" or (type(slotKey) == "string" and tonumber(slotKey)) then
+                                    local slotNum = tonumber(slotKey)
+                                    if slotNum == 0 then
+                                        invSlotId = 1
+                                    elseif slotNum and slotNum > 0 and slotNum <= 19 then
+                                        invSlotId = slotNum
+                                    elseif slotNum and slotNum >= 0 and slotNum <= 18 then
+                                        invSlotId = slotNum + 1
+                                    end
+                                else
+                                    invSlotId = GetInventorySlotInfo(slotKey)
+                                end
+
+                                local n = tonumber(appearanceId) or 0
+                                if invSlotId and n and n > 0 then
+                                    state[tostring(invSlotId)] = n
+                                end
+                            end
+
+                            link = DC:GenerateOutfitLink(selfBtn.outfit.name or "Outfit", { state = state })
+                        end
+                    end
+
+                    link = link or ("[Outfit: " .. (selfBtn.outfit and selfBtn.outfit.name or "Link") .. "]")
                     if ChatEdit_InsertLink then
-                         ChatEdit_InsertLink(link)
+                        ChatEdit_InsertLink(link)
                     end
                     return
                 end
@@ -901,6 +1211,7 @@ function Wardrobe:RefreshOutfitsGrid()
                 end
                 
                 -- Apply outfit on click
+                Wardrobe.selectedOutfit = selfBtn.outfit
                 Wardrobe:LoadOutfit(selfBtn.outfit)
             end)
             

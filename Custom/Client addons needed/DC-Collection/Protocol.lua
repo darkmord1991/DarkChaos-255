@@ -208,7 +208,20 @@ function DC:DumpNetEventLog(count)
         local lvl = (e and e.level) or "?"
         local tg = (e and e.tag and e.tag ~= "" and ("/" .. e.tag) or "") or ""
         local msg = (e and e.msg) or ""
-        self:Print(string.format("[NetLog] %s [%s%s] %s", ts, lvl, tg, msg))
+
+        local extra = (e and e.extra) or nil
+        local op = extra and extra.opcode
+        local opTxt = ""
+        if op ~= nil then
+            op = tonumber(op) or op
+            if type(op) == "number" then
+                opTxt = string.format(" opcode=0x%02X", op)
+            else
+                opTxt = " opcode=" .. tostring(op)
+            end
+        end
+
+        self:Print(string.format("[NetLog] %s [%s%s]%s %s", ts, lvl, tg, opTxt, msg))
     end
 end
 
@@ -285,6 +298,12 @@ function DC:InitializeProtocol()
     registerOpcode(self.Opcodes.SMSG_ITEM_SETS)
     registerOpcode(self.Opcodes.SMSG_SAVED_OUTFITS)
 
+    -- Diagnostics: also register the request opcodes used by Wardrobe (Outfits/Community).
+    -- If these are ever received client-side, it typically means the server did NOT handle the message
+    -- and the whisper got echoed back to the player as a normal addon whisper.
+    registerOpcode(self.Opcodes.CMSG_GET_SAVED_OUTFITS)
+    registerOpcode(self.Opcodes.CMSG_COMMUNITY_GET_LIST)
+
 
     self:Debug("Protocol handlers registered via RegisterJSONHandler: " .. self.MODULE_ID)
     self.isConnected = true
@@ -324,7 +343,7 @@ function DC:SendMessage(opcode, data)
             self:Debug(string.format("Sent message opcode 0x%02X", opcode))
 
             if type(self.LogNetEvent) == "function" then
-                self:LogNetEvent("info", "send", "Sent message (legacy)", { opcode = opcode })
+                self:LogNetEvent("info", "send", string.format("Sent opcode 0x%02X", tonumber(opcode) or 0), { opcode = opcode })
             end
 
             self.pendingRequests[opcode] = {
@@ -354,7 +373,7 @@ function DC:SendMessage(opcode, data)
     if ok then
         self:Debug(string.format("Sent message opcode 0x%02X", opcode))
         if type(self.LogNetEvent) == "function" then
-            self:LogNetEvent("info", "send", "Sent message", { opcode = opcode })
+            self:LogNetEvent("info", "send", string.format("Sent opcode 0x%02X", tonumber(opcode) or 0), { opcode = opcode })
         end
         self.pendingRequests[opcode] = {
             sentAt = GetTime(),
@@ -478,12 +497,11 @@ end
 -- clientSyncVersion is optional; if provided, server may reply with upToDate=true.
 function DC:RequestDefinitions(collType, clientSyncVersion)
     if not collType then
-        self:RequestDefinitions("mounts")
-        self:RequestDefinitions("pets")
-        -- Compatibility: some servers use singular type names.
+        -- Use canonical server type names to avoid double-sending and rate-limit pressure.
+        self:RequestDefinitions("mount")
         self:RequestDefinitions("pet")
-        self:RequestDefinitions("heirlooms")
-        self:RequestDefinitions("titles")
+        self:RequestDefinitions("heirloom")
+        self:RequestDefinitions("title")
         -- Transmog definitions can be huge; fetch on-demand (and paged) when the Transmog tab is opened.
         return
     end
@@ -546,7 +564,7 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             end
 
             local payload = { type = serverType, offset = 0, limit = self._transmogDefLimit }
-            if v and v > 0 then
+            if v and v > 0 and self:_HasAnyTransmogDefinitions() then
                 payload.syncVersion = v
             end
 
@@ -572,30 +590,20 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
         end
         self:_MarkInflight(reqKey, true)
 
-        -- Some servers expect plural type names; others expect singular.
-        -- If they differ, send BOTH once to maximize compatibility.
-        local typesToTry = { serverType }
-        if normalizedType and normalizedType ~= serverType then
-            typesToTry[#typesToTry + 1] = normalizedType
+        local payload = { type = serverType }
+        local v = clientSyncVersion
+        if v == nil then
+            v = self:GetSyncVersion(serverType)
+        end
+        if type(v) ~= "number" then
+            v = tonumber(v)
+        end
+        if v and v > 0 then
+            payload.syncVersion = v
         end
 
-        local anyOk = false
-        for _, tName in ipairs(typesToTry) do
-            local payload = { type = tName }
-            local v = clientSyncVersion
-            if v == nil then
-                v = self:GetSyncVersion(tName)
-            end
-            if type(v) ~= "number" then
-                v = tonumber(v)
-            end
-            if v and v > 0 then
-                payload.syncVersion = v
-            end
-            local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, payload)
-            anyOk = anyOk or (ok and true or false)
-        end
-        if not anyOk then
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, payload)
+        if not ok then
             self:_MarkInflight(reqKey, nil)
         end
     end)
@@ -699,15 +707,11 @@ end
 -- NOTE: Server uses SINGULAR forms (pet, mount, heirloom, title, transmog)
 function DC:RequestCollection(collType)
     if not collType then
-        -- Request both singular and plural forms to support different servers.
+        -- Use canonical server type names to avoid double-sending and rate-limit pressure.
         self:RequestCollection("mount")
-        self:RequestCollection("mounts")
         self:RequestCollection("pet")
-        self:RequestCollection("pets")
         self:RequestCollection("heirloom")
-        self:RequestCollection("heirlooms")
         self:RequestCollection("title")
-        self:RequestCollection("titles")
         self:RequestCollection("transmog")
         return
     end
@@ -733,17 +737,8 @@ function DC:RequestCollection(collType)
         end
         self:_MarkInflight(reqKey, true)
 
-        local typesToTry = { serverType }
-        if normalizedType and normalizedType ~= serverType then
-            typesToTry[#typesToTry + 1] = normalizedType
-        end
-
-        local anyOk = false
-        for _, tName in ipairs(typesToTry) do
-            local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = tName })
-            anyOk = anyOk or (ok and true or false)
-        end
-        if not anyOk then
+        local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = serverType })
+        if not ok then
             self:_MarkInflight(reqKey, nil)
         end
     end)
@@ -907,14 +902,38 @@ function DC.Protocol:RequestSavedOutfits()
 end
 
 function DC.Protocol:RequestSavedOutfitsPage(offset, limit)
-    return DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {
+    local sentAt = (type(GetTime) == "function") and GetTime() or 0
+
+    -- Temporarily pause transmog paging so this small request is less likely to be starved/dropped.
+    -- Some transports/servers rate-limit addon messages; large paging runs can dominate the channel.
+    local now = sentAt
+    if now == 0 and type(time) == "function" then
+        now = time() or 0
+    end
+    DC._pauseTransmogPagingUntil = now + 3.0
+    if DC._transmogPagingDelayFrame then
+        DC._transmogPagingDelayFrame.elapsed = 0
+    end
+
+    local ok = DC:SendMessage(DC.Opcodes.CMSG_GET_SAVED_OUTFITS, {
         offset = offset or 0,
         limit = limit or 6,
     })
-end
 
-function DC:RequestDefinitions(typeStr, offset)
-    self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = typeStr, offset = offset or 0 })
+    -- If the server doesn't respond with SMSG_SAVED_OUTFITS (0x4C), tell the user.
+    if ok and type(DC.After) == "function" then
+        DC:LogNetEvent("info", "await", "Awaiting outfits response (0x4C)", { opcode = DC.Opcodes.CMSG_GET_SAVED_OUTFITS })
+        DC.After(2.0, function()
+            DC._lastRecvOpcodeAt = DC._lastRecvOpcodeAt or {}
+            local last = tonumber(DC._lastRecvOpcodeAt[DC.Opcodes.SMSG_SAVED_OUTFITS] or 0) or 0
+            if last < sentAt then
+                DC:Print("[Net] No outfits response (0x4C) after 2s")
+                DC:Print("[Net] Likely server unhandled/dropped request (module disabled or rate-limit)")
+            end
+        end)
+    end
+
+    return ok
 end
 
 function DC:RequestItemSets(force)
@@ -1074,21 +1093,59 @@ function DC:OnMsg_SavedOutfits(data)
     -- Keep legacy field for the most recently received page.
     DC.db.outfits = pageOutfits
     
+    -- Cache metadata for next session
+    DC.db.outfitsMeta = DC.db.outfitsMeta or {}
+    DC.db.outfitsMeta.lastSync = time()
+    DC.db.outfitsMeta.total = DC.db.outfitsTotal
+    
     self:Debug("Received " .. #DC.db.outfits .. " saved outfits from server.")
     if DC.Print then DC:Print("[DC-Collection] Loaded " .. #DC.db.outfits .. " saved outfits.") end
-    
-    if DC.Wardrobe and DC.Wardrobe.RefreshOutfitsGrid then
-        DC.Wardrobe:RefreshOutfitsGrid()
+
+    -- UI may not have finished creating the outfits grid yet; mark pending and attempt refresh.
+    if DC.Wardrobe then
+        DC.Wardrobe._pendingOutfitsRefresh = true
+        if DC.Wardrobe.RefreshOutfitsGrid then
+            DC.Wardrobe:RefreshOutfitsGrid()
+        end
     end
+
+    -- Allow transmog paging to continue after we get a response.
+    self._pauseTransmogPagingUntil = nil
 end
 
 function DC:RequestCommunityList(offset, limit, filter, sort)
-    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_GET_LIST, {
+    local sentAt = (type(GetTime) == "function") and GetTime() or 0
+
+    -- Temporarily pause transmog paging so this small request is less likely to be starved/dropped.
+    local now = sentAt
+    if now == 0 and type(time) == "function" then
+        now = time() or 0
+    end
+    self._pauseTransmogPagingUntil = now + 3.0
+    if self._transmogPagingDelayFrame then
+        self._transmogPagingDelayFrame.elapsed = 0
+    end
+
+    local ok = self:SendMessage(self.Opcodes.CMSG_COMMUNITY_GET_LIST, {
         offset = offset or 0,
         limit = limit or 50,
         filter = filter or "all",
         sort = sort or "newest",
     })
+
+    if ok and type(self.After) == "function" then
+        self:LogNetEvent("info", "await", "Awaiting community response (0x63)", { opcode = self.Opcodes.CMSG_COMMUNITY_GET_LIST })
+        self.After(2.0, function()
+            self._lastRecvOpcodeAt = self._lastRecvOpcodeAt or {}
+            local last = tonumber(self._lastRecvOpcodeAt[self.Opcodes.SMSG_COMMUNITY_LIST] or 0) or 0
+            if last < sentAt then
+                self:Print("[Net] No community response (0x63) after 2s")
+                self:Print("[Net] Likely server unhandled/dropped request (module disabled or rate-limit)")
+            end
+        end)
+    end
+
+    return ok
 end
 
 function DC:RequestCommunityFavorite(outfitId, add)
@@ -1266,6 +1323,15 @@ function DC:ApplyTransmogPreview(previewTable)
     })
 end
 
+-- Apply multiple equipment-slot changes at once (preferred for outfits).
+-- entries: { { slot = 0..18, appearanceId = displayId, clear = bool }, ... }
+function DC:ApplyTransmogBatchByEquipmentSlot(entries)
+    return self:SendMessage(self.Opcodes.CMSG_APPLY_TRANSMOG_PREVIEW, {
+        byEquipSlot = true,
+        entries = entries or {},
+    })
+end
+
 -- Toggle account-wide unlock (for heirlooms)
 function DC:RequestToggleUnlock(collectionType, entryId)
     local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
@@ -1299,8 +1365,25 @@ function DC.OnProtocolMessage(payload)
     self:Debug(string.format("Received message opcode 0x%02X", opcode))
 
     if type(self.LogNetEvent) == "function" then
-        self:LogNetEvent("info", "recv", "Received message", { opcode = opcode })
+        self:LogNetEvent("info", "recv", string.format("Received opcode 0x%02X", tonumber(opcode) or 0), { opcode = opcode })
     end
+
+    -- Diagnostics: if we ever receive our OWN request opcodes, the server did not handle the message
+    -- and it got echoed back as a normal addon whisper.
+    if opcode == self.Opcodes.CMSG_GET_SAVED_OUTFITS or opcode == self.Opcodes.CMSG_COMMUNITY_GET_LIST then
+        local now = (type(GetTime) == "function") and GetTime() or 0
+        if not self._lastLoopbackWarnAt or (now - self._lastLoopbackWarnAt) > 2 then
+            self._lastLoopbackWarnAt = now
+            self:Print(string.format("[Net] Loopback detected for opcode 0x%02X (server did not handle it)", tonumber(opcode) or 0))
+        end
+        if type(self.LogNetEvent) == "function" then
+            self:LogNetEvent("warn", "loopback", "Loopback (server unhandled)", { opcode = opcode })
+        end
+    end
+
+    -- Track last-received timestamp per opcode (used by request timeouts).
+    self._lastRecvOpcodeAt = self._lastRecvOpcodeAt or {}
+    self._lastRecvOpcodeAt[opcode] = (type(GetTime) == "function") and GetTime() or time()
     
     -- Clear pending request
     self.pendingRequests[opcode] = nil
@@ -1490,7 +1573,11 @@ function DC:HandleHandshakeAck(data)
 
     -- Request the rest of the initial data (definitions, currencies, shop, etc.)
     if type(self.RequestInitialData) == "function" then
-        self:RequestInitialData(true)
+        -- Handshake can arrive after ADDON_LOADED/PLAYER_LOGIN already kicked off init.
+        -- Avoid duplicate request spikes.
+        if not self._initialDataRequested then
+            self:RequestInitialData(true)
+        end
     end
     
     -- Fire callback
@@ -2068,6 +2155,35 @@ function DC:HandleError(data)
     self:Debug(string.format("Error received: code=%d, msg=%s", errorCode, errorMsg))
     self:Print("|cffff0000Error:|r " .. errorMsg)
 
+    -- Optional structured details (used for transmog apply diagnostics).
+    if type(data) == "table" and type(data.perSlot) == "table" then
+        local order = {}
+        for k in pairs(data.perSlot) do
+            table.insert(order, k)
+        end
+        table.sort(order, function(a, b)
+            return tonumber(a) < tonumber(b)
+        end)
+
+        local SLOT_NAMES = {
+            [0] = "Head", [1] = "Neck", [2] = "Shoulder", [3] = "Shirt", [4] = "Chest",
+            [5] = "Waist", [6] = "Legs", [7] = "Feet", [8] = "Wrist", [9] = "Hands",
+            [10] = "Finger1", [11] = "Finger2", [12] = "Trinket1", [13] = "Trinket2",
+            [14] = "Back", [15] = "MainHand", [16] = "OffHand", [17] = "Ranged", [18] = "Tabard",
+        }
+
+        self:Print("|cffffff00Transmog apply details:|r")
+        for _, slotKey in ipairs(order) do
+            local slotNum = tonumber(slotKey)
+            local slotName = SLOT_NAMES[slotNum] or ("Slot " .. tostring(slotKey))
+            local reason = data.perSlot[slotKey]
+            if type(reason) == "table" then
+                reason = reason.reason or reason.status or reason.message or "unknown"
+            end
+            self:Print(string.format(" - %s: %s", slotName, tostring(reason)))
+        end
+    end
+
     if type(self.LogNetEvent) == "function" then
         self:LogNetEvent("error", "server", errorMsg, { code = errorCode })
     end
@@ -2099,6 +2215,10 @@ function DC:HandleTransmogState(data)
 
     if self.Wardrobe and type(self.Wardrobe.InvalidateRandomizerCache) == "function" then
         self.Wardrobe:InvalidateRandomizerCache()
+    end
+
+    if self.Wardrobe and type(self.Wardrobe.OnTransmogStateReceived) == "function" then
+        pcall(function() self.Wardrobe:OnTransmogStateReceived(state) end)
     end
 
     self:Debug(string.format("Received transmog state (%d slots)", self:TableCount(state)))
@@ -2183,6 +2303,22 @@ end
 -- Check if an appearance is collected (by displayId)
 function DC:IsAppearanceCollected(displayId)
     return self.collectedAppearances and self.collectedAppearances[displayId]
+end
+
+-- Returns true if we currently have any transmog definitions cached locally.
+-- This prevents getting stuck when the cache is empty but a saved syncVersion still matches.
+function DC:_HasAnyTransmogDefinitions()
+    local defs = nil
+    if type(self.definitions) == "table" then
+        defs = self.definitions.transmog
+    end
+    if type(defs) ~= "table" then
+        defs = self._transmogDefinitions
+    end
+    if type(defs) ~= "table" then
+        return false
+    end
+    return next(defs) ~= nil
 end
 
 function DC:HandleDefinitions(data)
@@ -2297,6 +2433,15 @@ function DC:HandleDefinitions(data)
     -- Transmog definitions can be very large; server may send them in pages.
     if collType == "transmog" then
         if upToDate == true or upToDate == 1 or upToDate == "1" then
+            if not self:_HasAnyTransmogDefinitions() and not self._transmogDefsForcedFullDownload then
+                self._transmogDefsForcedFullDownload = true
+                self:Debug("Transmog definitions reported up-to-date but local cache is empty; forcing full download")
+                self._transmogDefLoading = nil
+                self:_MarkInflight("req:defs:transmog", nil)
+                self:RequestDefinitions("transmog", 0)
+                return
+            end
+
             self:Debug("Transmog definitions up-to-date; skipping download")
             self._transmogDefLoading = nil
             self:_MarkInflight("req:defs:transmog", nil)
@@ -2385,6 +2530,15 @@ function DC:HandleDefinitions(data)
                 
                 self._transmogPagingDelayFrame:SetScript("OnUpdate", function(frame, elapsed)
                     frame.elapsed = frame.elapsed + elapsed
+
+                    local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+                    local pauseUntil = tonumber(DC._pauseTransmogPagingUntil or 0) or 0
+                    if pauseUntil > 0 and now > 0 and now < pauseUntil then
+                        -- Keep delaying while UI-critical requests are in flight.
+                        frame.elapsed = 0
+                        return
+                    end
+
                     local wardrobeVisible = (DC.Wardrobe and DC.Wardrobe.frame and DC.Wardrobe.frame:IsShown())
                     -- Avoid paging large transmog definitions while the user is on Outfits/Community.
                     -- Those tabs can function without transmog defs and should not be starved by paging.
@@ -2766,13 +2920,8 @@ function DC:HandleMountSpeedBonus(data)
     end
 end
 
-function DC:HandleError(data)
-    local errorCode = data.code or 0
-    local errorMsg = data.message or DC.L["ERR_UNKNOWN"]
-    
-    self:Print("|cffff0000Error:|r " .. errorMsg)
-    self:Debug(string.format("Server error code %d: %s", errorCode, errorMsg))
-end
+-- NOTE: DC:HandleError is defined earlier with richer handling.
+-- Keep only one implementation to avoid accidentally ignoring server-provided `error` fields.
 
 -- ============================================================================
 -- SYNC FUNCTIONS
@@ -3067,6 +3216,9 @@ function DC:HandleCommunityList(data)
     if self.Wardrobe and self.Wardrobe.RefreshCommunityGrid then
         self.Wardrobe:RefreshCommunityGrid()
     end
+
+    -- Allow transmog paging to continue after we get a response.
+    self._pauseTransmogPagingUntil = nil
 end
 
 function DC:HandleCommunityPublishResult(data)

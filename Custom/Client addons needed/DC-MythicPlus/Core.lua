@@ -118,6 +118,125 @@ local lastPayload
 local lastRequestTime = 0
 local REQUEST_COOLDOWN = 1.0
 
+-- =====================================================================
+-- LOCAL RUN TIMER (non-Mythic runs)
+-- Tracks time spent in any party/raid instance, even without Mythic+.
+-- =====================================================================
+
+local localRun = {
+    active = false,
+    finished = false,
+    startedAt = 0,
+    finishedElapsed = 0,
+    instanceKey = nil,
+    instanceName = nil,
+    instanceType = nil,
+    difficultyID = nil,
+}
+
+local function NowSeconds()
+    if type(GetTime) == "function" then
+        return GetTime() or 0
+    end
+    if type(time) == "function" then
+        return time() or 0
+    end
+    return 0
+end
+
+local function GetTrackableInstanceInfo()
+    if type(IsInInstance) ~= "function" or type(GetInstanceInfo) ~= "function" then
+        return nil
+    end
+
+    local inInstance = select(1, IsInInstance())
+    if not inInstance then
+        return nil
+    end
+
+    local name, instanceType, difficultyID = GetInstanceInfo()
+    if instanceType ~= "party" and instanceType ~= "raid" then
+        return nil
+    end
+
+    name = name or "Instance"
+    difficultyID = tonumber(difficultyID) or 0
+    local key = tostring(name) .. ":" .. tostring(instanceType) .. ":" .. tostring(difficultyID)
+    return {
+        key = key,
+        name = name,
+        instanceType = instanceType,
+        difficultyID = difficultyID,
+    }
+end
+
+local function IsMythicRunActive()
+    return activeState and activeState.inProgress
+end
+
+local function ResetLocalRunTimer(keepActiveIfInInstance)
+    local now = NowSeconds()
+    local info = GetTrackableInstanceInfo()
+    localRun.startedAt = now
+    localRun.finishedElapsed = 0
+    localRun.finished = false
+    localRun.active = keepActiveIfInInstance and (info ~= nil) or false
+    localRun.instanceKey = info and info.key or nil
+    localRun.instanceName = info and info.name or nil
+    localRun.instanceType = info and info.instanceType or nil
+    localRun.difficultyID = info and info.difficultyID or nil
+end
+
+local function StartLocalRunTimer(info)
+    local now = NowSeconds()
+    localRun.active = true
+    localRun.finished = false
+    localRun.startedAt = now
+    localRun.finishedElapsed = 0
+    localRun.instanceKey = info and info.key or nil
+    localRun.instanceName = info and info.name or "Instance"
+    localRun.instanceType = info and info.instanceType or nil
+    localRun.difficultyID = info and info.difficultyID or nil
+end
+
+local function FinishLocalRunTimer()
+    if not localRun.active then
+        return
+    end
+    local now = NowSeconds()
+    localRun.finishedElapsed = math.max(0, (now or 0) - (localRun.startedAt or 0))
+    localRun.active = false
+    localRun.finished = true
+end
+
+local function UpdateLocalRunTrackingFromInstance()
+    -- If Mythic+ is active, don't run the local timer to avoid double timers.
+    if IsMythicRunActive() then
+        if localRun.active then
+            FinishLocalRunTimer()
+        end
+        return
+    end
+
+    local info = GetTrackableInstanceInfo()
+    if info then
+        if (not localRun.active and not localRun.finished) or (localRun.instanceKey and localRun.instanceKey ~= info.key) then
+            StartLocalRunTimer(info)
+        elseif localRun.active then
+            -- Keep info fresh
+            localRun.instanceKey = info.key
+            localRun.instanceName = info.name
+            localRun.instanceType = info.instanceType
+            localRun.difficultyID = info.difficultyID
+        end
+    else
+        -- Left instance
+        if localRun.active then
+            FinishLocalRunTimer()
+        end
+    end
+end
+
 local function Print(msg)
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage("|cff32c4ffMythic+ HUD:|r " .. (msg or ""))
@@ -159,6 +278,27 @@ local function FormatSeconds(seconds)
     local minutes = math.floor(s / 60)
     local remain = s % 60
     return string.format("%02d:%02d", minutes, remain)
+end
+
+local function IsOnGMIsland()
+    -- Prefer numeric IDs (stable), fallback to zone text.
+    local worldMapShown = WorldMapFrame and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
+    if type(SetMapToCurrentZone) == "function" and not worldMapShown then
+        pcall(SetMapToCurrentZone)
+    end
+    if type(GetCurrentMapAreaID) == "function" then
+        local ok, areaId = pcall(GetCurrentMapAreaID)
+        areaId = ok and tonumber(areaId) or nil
+        -- WotLK: GM Island area id is typically 876.
+        if areaId == 876 then
+            return true
+        end
+    end
+    local zone = (GetZoneText and GetZoneText()) or ""
+    if type(zone) == "string" and string.find(string.lower(zone), "gm island") then
+        return true
+    end
+    return false
 end
 
 local function ParseTimeSeconds(input)
@@ -858,6 +998,26 @@ local function EnsureFrame()
     headerText:SetText("Mythic+ HUD")
     headerText:SetTextColor(1, 0.82, 0, 1)
 
+    -- Close button (hides HUD until re-enabled)
+    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    closeBtn:SetSize(46, 18)
+    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+    closeBtn:SetText("Close")
+    closeBtn:SetScript("OnClick", function()
+        DCMythicPlusHUDDB.hidden = true
+        if frame then frame:Hide() end
+    end)
+
+    -- Reset button (resets local run timer; does not affect Mythic+ server timer)
+    local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    resetBtn:SetSize(46, 18)
+    resetBtn:SetPoint("TOPRIGHT", closeBtn, "TOPLEFT", -6, 0)
+    resetBtn:SetText("Reset")
+    resetBtn:SetScript("OnClick", function()
+        ResetLocalRunTimer(true)
+        UpdateLocalRunTrackingFromInstance()
+    end)
+
     timerText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     timerText:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -40)
     timerText:SetText("Timer: --")
@@ -960,13 +1120,83 @@ local function SetFrameVisibility(shouldShow)
     if not frame then
         return
     end
-    -- Only show if explicitly requested AND user hasn't hidden it AND a run is actually active
-    -- AND the player is in a mythic or mythic+ dungeon instance
-    if shouldShow and not DCMythicPlusHUDDB.hidden and IsInMythicOrMythicPlusInstance() then
+
+    if IsOnGMIsland() then
+        frame:Hide()
+        return
+    end
+
+    if DCMythicPlusHUDDB.hidden then
+        frame:Hide()
+        return
+    end
+
+    -- Mythic/Mythic+ server-driven HUD
+    if IsInMythicOrMythicPlusInstance() and activeState and activeState.inProgress then
+        frame:Show()
+        return
+    end
+
+    -- Local run timer HUD (non-Mythic)
+    if localRun.active or localRun.finished then
+        frame:Show()
+        return
+    end
+
+    -- Fallback
+    if shouldShow then
         frame:Show()
     else
         frame:Hide()
     end
+end
+
+local function UpdateFrameFromLocalRun()
+    if not frame then
+        return
+    end
+
+    if IsOnGMIsland() then
+        frame:Hide()
+        return
+    end
+
+    if DCMythicPlusHUDDB.hidden then
+        frame:Hide()
+        return
+    end
+    if IsMythicRunActive() then
+        return
+    end
+    if not (localRun.active or localRun.finished) then
+        return
+    end
+
+    local f = EnsureFrame()
+    ApplySavedPosition()
+
+    local name = localRun.instanceName or "Run Timer"
+    headerText:SetText(string.format("%s |cffffaa33Run|r", name))
+
+    local elapsed
+    if localRun.active then
+        elapsed = math.max(0, NowSeconds() - (localRun.startedAt or 0))
+    else
+        elapsed = localRun.finishedElapsed or 0
+    end
+    timerText:SetText(string.format("Timer: %s elapsed", FormatSeconds(elapsed)))
+    statusText:SetText(localRun.active and "Status: |cff78beffTracking|r" or "Status: |cff50ff7aFinished|r")
+
+    -- Keep the rest minimal for non-Mythic runs
+    deathText:SetText("")
+    playerText:SetText("")
+    bossText:SetText("")
+    if enemyText then enemyText:SetText("") end
+    affixText:SetText("")
+    countdownText:SetText("")
+    reasonText:SetText("")
+
+    SetFrameVisibility(true)
 end
 
 -- =====================================================================
@@ -1367,6 +1597,9 @@ local function UpdateFrameFromState(data)
     local f = EnsureFrame()
     ApplySavedPosition()
 
+    -- If we get server state updates, prefer Mythic+ HUD and stop local tracking display.
+    UpdateLocalRunTrackingFromInstance()
+
     local mapId = GetMapIdFromState(data)
     local keystone = GetKeystoneFromState(data)
     local runKey = GetRunKey(mapId, keystone)
@@ -1429,12 +1662,8 @@ local function UpdateFrameFromState(data)
     UpdateReason(data.reason)
 
     lastPayload = data
-    -- Only show frame if the data indicates an active run
-    if data and data.inProgress then
-        SetFrameVisibility(true)
-    else
-        SetFrameVisibility(false)
-    end
+    -- Update visibility based on current state (mythic or local)
+    SetFrameVisibility(data and data.inProgress)
 
     if data and data.completed and mapId and keystone and not runTracker.endLogged then
         local improved = AddPersonalBestIfImproved(mapId, keystone, data.elapsed)
@@ -1566,12 +1795,12 @@ SlashCmdList.DCM = function(msg)
         Print("Frame unlocked")
     elseif cmd == "show" then
         DCMythicPlusHUDDB.hidden = false
-        -- Only show if a run is active
-        if IsInMythicOrMythicPlusInstance() then
-            SetFrameVisibility(true)
+        UpdateLocalRunTrackingFromInstance()
+        SetFrameVisibility(true)
+        if (activeState and activeState.inProgress) or localRun.active or localRun.finished then
             Print("HUD shown")
         else
-            Print("HUD will show when you enter a Mythic/Mythic+ dungeon with an active run")
+            Print("HUD will show when you enter a dungeon/raid (or when a Mythic+ run starts)")
         end
         RequestServerSnapshot("slash")
     elseif cmd == "hide" then
@@ -1770,6 +1999,7 @@ end
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("PLAYER_LOGIN")
 loader:RegisterEvent("PLAYER_ENTERING_WORLD")
+loader:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 loader:SetScript("OnEvent", function(self, event)
     -- Clear any stale activeState on login
     if event == "PLAYER_LOGIN" then
@@ -1787,13 +2017,31 @@ loader:SetScript("OnEvent", function(self, event)
         if ScanInventoryForKeystone then ScanInventoryForKeystone() end
     end
     if event == "PLAYER_ENTERING_WORLD" then
+        UpdateLocalRunTrackingFromInstance()
         if activeState and activeState.inProgress then
             UpdateFrameFromState(activeState)
         else
-            -- Don't show idle state - only show when a run is active
-            frame:Hide()
+            UpdateFrameFromLocalRun()
+            SetFrameVisibility(false)
         end
+    elseif event == "ZONE_CHANGED_NEW_AREA" then
+        UpdateLocalRunTrackingFromInstance()
+        UpdateFrameFromLocalRun()
+        SetFrameVisibility(false)
     end
+end)
+
+-- Lightweight ticker: keep local run timer text updated.
+local localTicker = CreateFrame("Frame")
+localTicker.elapsed = 0
+localTicker:SetScript("OnUpdate", function(self, elapsed)
+    self.elapsed = (self.elapsed or 0) + elapsed
+    if self.elapsed < 0.25 then
+        return
+    end
+    self.elapsed = 0
+    UpdateLocalRunTrackingFromInstance()
+    UpdateFrameFromLocalRun()
 end)
 
 -- =====================================================================

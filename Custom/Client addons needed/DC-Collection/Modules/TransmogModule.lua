@@ -326,7 +326,10 @@ function DC:SaveOutfit(name)
     for slot, appearanceId in pairs(self.transmogState or {}) do
         local v = tonumber(appearanceId)
         if v and v ~= 0 then
-            snapshot[tostring(slot)] = v
+            -- transmogState is keyed by 0-based equipment slots; store 1-based inventory slots.
+            local slotNum = tonumber(slot)
+            local invSlotId = slotNum and (slotNum + 1) or slot
+            snapshot[tostring(invSlotId)] = v
         end
     end
 
@@ -368,7 +371,15 @@ function DC:ApplyOutfit(name)
         local slot = tonumber(slotStr)
         local app = tonumber(appearanceId)
         if slot ~= nil and app and app ~= 0 then
-            self:RequestSetTransmogByEquipmentSlot(slot, app)
+            -- outfit.state uses 1-based inventory slot (preferred). Server expects 0-based equipment slot.
+            local equipmentSlot
+            if slot >= 1 and slot <= 19 then
+                equipmentSlot = slot - 1
+            else
+                -- Back-compat: treat as already 0-based equipment slot.
+                equipmentSlot = slot
+            end
+            self:RequestSetTransmogByEquipmentSlot(equipmentSlot, app)
         end
     end
 
@@ -523,7 +534,12 @@ function DC:GenerateOutfitLink(name, outfitData)
     -- Slots
     local slotData = {}
     for _, slot in ipairs(SERIALIZATION_ORDER) do
-        local appearanceId = outfitData.state[tostring(slot)] or 0
+        -- Prefer 1-based inventory slot keys; accept legacy 0-based equipment slot keys.
+        local appearanceId = outfitData.state[tostring(slot)]
+        if not appearanceId and slot and tonumber(slot) then
+            appearanceId = outfitData.state[tostring(tonumber(slot) - 1)]
+        end
+        appearanceId = appearanceId or 0
         table.insert(slotData, HexEncode(appearanceId))
     end
     
@@ -594,6 +610,56 @@ function DC:PreviewOutfitFromLink(linkData)
     end
     
     DC:Print("Previewing outfit: " .. (outfit.name or "Unknown"))
+end
+
+function DC:ApplyOutfitFromLink(linkData)
+    local outfit = self:ParseOutfitLink(linkData)
+    if not outfit then
+        self:Print("Invalid outfit link.")
+        return false
+    end
+
+    -- Apply in one batched request when available (reduces per-slot spam).
+    if type(self.ApplyTransmogBatchByEquipmentSlot) == "function" then
+        local entries = {}
+
+        -- Clear known transmog slots first so this replaces the current look.
+        for _, invSlotId in ipairs(SERIALIZATION_ORDER) do
+            local inv = tonumber(invSlotId)
+            if inv then
+                table.insert(entries, { slot = inv - 1, clear = true })
+            end
+        end
+
+        for invSlotStr, appearanceId in pairs(outfit.state or {}) do
+            local inv = tonumber(invSlotStr)
+            local app = tonumber(appearanceId)
+            if inv and app and app > 0 then
+                table.insert(entries, { slot = inv - 1, appearanceId = app, clear = false })
+            end
+        end
+
+        self:ApplyTransmogBatchByEquipmentSlot(entries)
+    else
+        -- Legacy per-slot fallback.
+        for _, invSlotId in ipairs(SERIALIZATION_ORDER) do
+            local inv = tonumber(invSlotId)
+            if inv then
+                self:RequestClearTransmogByEquipmentSlot(inv - 1)
+            end
+        end
+
+        for invSlotStr, appearanceId in pairs(outfit.state or {}) do
+            local inv = tonumber(invSlotStr)
+            local app = tonumber(appearanceId)
+            if inv and app and app > 0 then
+                self:RequestSetTransmogByEquipmentSlot(inv - 1, app)
+            end
+        end
+    end
+
+    self:Print("Outfit '" .. (outfit.name or "") .. "' applied!")
+    return true
 end
 
 function DC:PreviewOutfitRaw(appearanceIds)

@@ -75,6 +75,27 @@ static bool IsMapEnabled(uint32 mapId)
     return false;
 }
 
+static bool IsFarEnoughFromExistingHotspots(uint32 mapId, float x, float y)
+{
+    float minDist = sHotspotsConfig.minDistance;
+    if (minDist <= 0.0f)
+        return true;
+
+    float minDistSq = minDist * minDist;
+    for (Hotspot const& h : sHotspotMgr->GetGrid().GetAll())
+    {
+        if (h.mapId != mapId)
+            continue;
+
+        float dx = h.x - x;
+        float dy = h.y - y;
+        if ((dx * dx + dy * dy) < minDistSq)
+            return false;
+    }
+
+    return true;
+}
+
 HotspotMgr* HotspotMgr::instance()
 {
     static HotspotMgr instance;
@@ -90,6 +111,7 @@ void HotspotMgr::LoadConfig()
     sHotspotsConfig.duration = sConfigMgr->GetOption<uint32>("Hotspots.Duration", 60);
     sHotspotsConfig.experienceBonus = sConfigMgr->GetOption<uint32>("Hotspots.ExperienceBonus", 100);
     sHotspotsConfig.radius = sConfigMgr->GetOption<float>("Hotspots.Radius", 150.0f);
+    sHotspotsConfig.minDistance = sConfigMgr->GetOption<float>("Hotspots.MinDistance", sHotspotsConfig.radius * 2.0f);
     sHotspotsConfig.maxActive = sConfigMgr->GetOption<uint32>("Hotspots.MaxActive", 5);
     sHotspotsConfig.minActive = sConfigMgr->GetOption<uint32>("Hotspots.MinActive", 1);
     sHotspotsConfig.maxPerZone = sConfigMgr->GetOption<uint32>("Hotspots.MaxPerZone", 2);
@@ -237,6 +259,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                 {
                     constexpr float PH = 2.0f;
                     if (map->IsInWater(PHASEMASK_NORMAL, cx, cy, gz, PH)) continue;
+                    if (!IsFarEnoughFromExistingHotspots(candidateMapId, cx, cy)) continue;
                     outMapId = candidateMapId; outX = cx; outY = cy; outZ = gz; outZoneId = rect.zoneId;
                     return true;
                 }

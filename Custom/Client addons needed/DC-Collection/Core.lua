@@ -1094,7 +1094,7 @@ function DC:StartBackgroundWardrobeSync()
                     didWork = true
                 elseif (not self.definitionsLoaded) and type(self.RequestDefinitions) == "function" then
                     self:Debug("Background wardrobe sync: request transmog defs")
-                    self:RequestDefinitions("transmog", 0)
+                    self:RequestDefinitions("transmog")
                     didWork = true
                 end
             else
@@ -1420,6 +1420,24 @@ end
 function DC:RequestInitialData(skipHandshake, forceRefresh)
     DC:Debug("Requesting initial collection data...")
 
+    -- Guard against duplicate triggers (ADDON_LOADED, PLAYER_LOGIN, UI open, handshake ack).
+    -- These can stack in the same second and spam the addon channel.
+    if not forceRefresh then
+        local now = 0
+        if type(GetTime) == "function" then
+            now = GetTime() or 0
+        elseif type(time) == "function" then
+            now = time() or 0
+        end
+        if now > 0 and self._initialDataLastRequestAt and (now - self._initialDataLastRequestAt) < 2.0 then
+            self:Debug("Initial data request throttled (recent request)")
+            return
+        end
+        if now > 0 then
+            self._initialDataLastRequestAt = now
+        end
+    end
+
     self._initialDataRequested = true
 
     if not self:IsProtocolReady() then
@@ -1555,7 +1573,11 @@ local orig_SetItemRef = SetItemRef
 function SetItemRef(link, text, button, chatFrame)
     if type(link) == "string" then
         if string.sub(link, 1, 9) == "dc:outfit" then
-            if DC.PreviewOutfitFromLink then
+            -- Default click previews; Shift+Click or RightClick applies.
+            local wantsApply = (button == "RightButton") or (type(IsShiftKeyDown) == "function" and IsShiftKeyDown())
+            if wantsApply and type(DC.ApplyOutfitFromLink) == "function" then
+                DC:ApplyOutfitFromLink(link)
+            elseif type(DC.PreviewOutfitFromLink) == "function" then
                 DC:PreviewOutfitFromLink(link)
             end
             return

@@ -18,6 +18,7 @@ Protocol.lua
 Bonuses.lua
 Wishlist.lua
 DebugCommands.lua
+ItemPreloader.lua
 
 # Modules
 Modules\HeirloomModule.lua
@@ -46,4 +47,5 @@ UI\ToastFrame.lua
 UI\MountJournalFrame.lua
 UI\PetJournalFrame.lua
 UI\CharacterFrameButton.lua
+UI\TransmogBorders.lua
 Shop\ShopUI.lua
