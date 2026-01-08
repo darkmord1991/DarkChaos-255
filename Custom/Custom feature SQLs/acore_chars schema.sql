@@ -911,7 +911,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=66902 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=72044 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1573,6 +1573,32 @@ CREATE TABLE IF NOT EXISTS `dc_guild_house` (
   UNIQUE KEY `guild` (`guild`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb3;
 
+CREATE TABLE IF NOT EXISTS `dc_guild_house_log` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `guildId` int unsigned NOT NULL,
+  `playerGuid` int unsigned NOT NULL,
+  `actionType` tinyint unsigned NOT NULL COMMENT '1=Spawn, 2=Delete, 3=Move',
+  `entityType` tinyint unsigned NOT NULL COMMENT '1=Creature, 2=GameObject',
+  `entityEntry` int unsigned NOT NULL,
+  `entityGuid` int unsigned NOT NULL COMMENT 'LowGUID of the entity involved',
+  `mapId` int unsigned NOT NULL,
+  `posX` float NOT NULL,
+  `posY` float NOT NULL,
+  `posZ` float NOT NULL,
+  `orientation` float NOT NULL,
+  `timestamp` int unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_guild` (`guildId`),
+  KEY `idx_time` (`timestamp`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dc_guild_house_permissions` (
+  `guildId` int unsigned NOT NULL,
+  `rankId` tinyint unsigned NOT NULL,
+  `permission` int unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`guildId`,`rankId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `dc_guild_house_purchase_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `created_at` int unsigned NOT NULL DEFAULT '0',
@@ -1589,7 +1615,7 @@ CREATE TABLE IF NOT EXISTS `dc_guild_house_purchase_log` (
   KEY `idx_guild_time` (`guild_id`,`created_at`),
   KEY `idx_player_time` (`player_guid`,`created_at`),
   KEY `idx_entry_time` (`entry`,`created_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=110 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=153 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `dc_guild_leaderboard` (
 	`guildid` INT UNSIGNED NOT NULL,
@@ -2609,7 +2635,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_cap_snapshot` (
   UNIQUE KEY `idx_player_season_week` (`player_guid`,`season_id`,`week_timestamp`),
   KEY `idx_season` (`season_id`),
   KEY `idx_week` (`week_timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
+) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
 
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',

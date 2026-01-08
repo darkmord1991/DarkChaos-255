@@ -46,6 +46,9 @@ namespace DCCollection
     // When true, skip the "is this appearance unlocked for this account?" check.
     // Useful for servers that want open/free transmog for all appearances.
     constexpr const char* TRANSMOG_SKIP_UNLOCK_CHECK = "DCCollection.Transmog.SkipUnlockCheck";
+    // When true, skip the armor type/weapon type compatibility check.
+    // Allows transmogs across armor types (e.g., cloth appearance on plate armor).
+    constexpr const char* TRANSMOG_SKIP_COMPAT_CHECK = "DCCollection.Transmog.SkipCompatCheck";
 
     // =======================================================================
     // Transmog Helper Implementations
@@ -733,6 +736,10 @@ namespace DCCollection
 
         DCAddon::JsonValue state;
         state.SetObject();
+        
+        // Also send itemIds (fakeEntry) for outfit preview TryOn
+        DCAddon::JsonValue itemIds;
+        itemIds.SetObject();
 
         QueryResult result = CharacterDatabase.Query(
             "SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}",
@@ -752,11 +759,14 @@ namespace DCCollection
 
                 // Report the stored/derived displayId even if the definitions cache is currently empty.
                 state.Set(std::to_string(slot), displayId);
+                // Also send the item entry for outfit preview TryOn
+                itemIds.Set(std::to_string(slot), fakeEntry);
             } while (result->NextRow());
         }
 
         DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_TRANSMOG_STATE);
         msg.Set("state", state);
+        msg.Set("itemIds", itemIds);
         msg.Send(player);
     }
 
@@ -837,16 +847,20 @@ namespace DCCollection
          }
 
          ItemTemplate const* equippedProto = equippedItem->GetTemplate();
-         TransmogAppearanceVariant const* appearance = FindBestVariantForSlot(displayId, slot, equippedProto);
+         bool skipCompatCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_COMPAT_CHECK, false);
+         TransmogAppearanceVariant const* appearance = skipCompatCheck 
+             ? FindAnyVariant(displayId)
+             : FindBestVariantForSlot(displayId, slot, equippedProto);
          if (!appearance)
          {
              auto const& idx = GetTransmogAppearanceIndexCached();
-             LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} NO_COMPATIBLE_VARIANT (indexHasKey={}, equippedClass={}, equippedSubClass={}, equippedInvType={})",
+             LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} NO_COMPATIBLE_VARIANT (indexHasKey={}, equippedClass={}, equippedSubClass={}, equippedInvType={}, skipCompat={})",
                  player->GetName(), static_cast<uint32>(slot), displayId,
                  (idx.find(displayId) != idx.end()),
                  equippedProto ? equippedProto->Class : 0,
                  equippedProto ? equippedProto->SubClass : 0,
-                 equippedProto ? equippedProto->InventoryType : 0);
+                 equippedProto ? equippedProto->InventoryType : 0,
+                 skipCompatCheck);
              return;
          }
 
@@ -991,16 +1005,20 @@ namespace DCCollection
                 }
 
                 ItemTemplate const* equippedProto = equippedItem->GetTemplate();
-                TransmogAppearanceVariant const* appearance = FindBestVariantForSlot(displayId, equipmentSlot, equippedProto);
+                bool skipCompatCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_COMPAT_CHECK, false);
+                TransmogAppearanceVariant const* appearance = skipCompatCheck
+                    ? FindAnyVariant(displayId)
+                    : FindBestVariantForSlot(displayId, equipmentSlot, equippedProto);
                 if (!appearance)
                 {
                     skippedNoVariant++;
                     auto const& idx = GetTransmogAppearanceIndexCached();
-                    LOG_INFO("module.dc", "[DCWardrobe] Batch slot {}: displayId {} NO_COMPATIBLE_VARIANT (indexHasKey={}, equippedClass={}, equippedSubClass={}, equippedInvType={})",
+                    LOG_INFO("module.dc", "[DCWardrobe] Batch slot {}: displayId {} NO_COMPATIBLE_VARIANT (indexHasKey={}, equippedClass={}, equippedSubClass={}, equippedInvType={}, skipCompat={})",
                         (uint32)equipmentSlot, displayId, (idx.find(displayId) != idx.end()),
                         equippedProto ? equippedProto->Class : 0,
                         equippedProto ? equippedProto->SubClass : 0,
-                        equippedProto ? equippedProto->InventoryType : 0);
+                        equippedProto ? equippedProto->InventoryType : 0,
+                        skipCompatCheck);
                     perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("no_compatible_variant"));
                     continue;
                 }
@@ -1109,8 +1127,10 @@ namespace DCCollection
                  ItemTemplate const* fakeProto = sObjectMgr->GetItemTemplate(itemId);
                  if (!fakeProto) continue;
                  uint32 displayId = fakeProto->DisplayInfoID;
-                 if (!HasTransmogAppearanceUnlocked(accountId, displayId)) continue;
-                 if (!FindBestVariantForSlot(displayId, equipmentSlot, equippedItem->GetTemplate())) continue;
+                 bool skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
+                 if (!skipUnlockCheck && !HasTransmogAppearanceUnlocked(accountId, displayId)) continue;
+                 bool skipCompatCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_COMPAT_CHECK, false);
+                 if (!skipCompatCheck && !FindBestVariantForSlot(displayId, equipmentSlot, equippedItem->GetTemplate())) continue;
 
                  trans->Append("REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})", guid, (uint32)equipmentSlot, itemId, equippedItem->GetEntry());
                  player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (equipmentSlot * 2), itemId);
@@ -1176,7 +1196,8 @@ namespace DCCollection
                 if (!invTypeMatch)
                     continue;
 
-                if (equippedItem && !IsAppearanceCompatible(equipmentSlot, equippedItem->GetTemplate(), def))
+                bool skipCompatCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_COMPAT_CHECK, false);
+                if (!skipCompatCheck && equippedItem && !IsAppearanceCompatible(equipmentSlot, equippedItem->GetTemplate(), def))
                     continue;
 
                 if (hasSearch)
@@ -1740,13 +1761,20 @@ namespace DCCollection
 
     void HandleSaveOutfit(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        if (!player || !DCAddon::IsJsonMessage(msg)) return;
+        if (!player || !DCAddon::IsJsonMessage(msg))
+        {
+            LOG_INFO("module.dc", "[DCWardrobe] HandleSaveOutfit: invalid player or non-JSON message");
+            return;
+        }
 
         EnsureAccountOutfitsTable();
         
         // Check if outfits enabled
         if (!sConfigMgr->GetOption<bool>("DCCollection.Outfits.Enable", true))
+        {
+            LOG_INFO("module.dc", "[DCWardrobe] HandleSaveOutfit: outfits disabled by config");
             return;
+        }
         
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
 
@@ -1756,6 +1784,9 @@ namespace DCCollection
         std::string items = json["items"].IsString() ? json["items"].AsString() : json["items"].Encode();
         uint32 accountId = player->GetSession()->GetAccountId();
 
+        LOG_INFO("module.dc", "[DCWardrobe] HandleSaveOutfit: player={}, accountId={}, clientId={}, name='{}', itemsLen={}",
+            player->GetName(), accountId, clientId, name, items.length());
+
         // Sanitize Icon Path
         std::replace(icon.begin(), icon.end(), '\\', '/');
 
@@ -1763,59 +1794,50 @@ namespace DCCollection
         CharacterDatabase.EscapeString(name);
         CharacterDatabase.EscapeString(icon);
         CharacterDatabase.EscapeString(items);
-        
-        // Needed for lambda
-        ObjectGuid playerGuid = player->GetGUID();
 
         // If clientId is 0, generate new ID. Otherwise update existing.
         if (clientId == 0) {
-            // Check outfit limit
+            // Check outfit limit synchronously to avoid callback chain issues
             uint32 maxOutfits = sConfigMgr->GetOption<uint32>("DCCollection.Outfits.MaxPerAccount", 50);
             
             std::string countQuery = "SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
-            CharacterDatabase.AsyncQuery(countQuery)
-                .WithCallback([playerGuid, accountId, name, icon, items, maxOutfits, msg](QueryResult countResult) {
-                    Player* player = ObjectAccessor::FindPlayer(playerGuid);
-                    if (!player) return;
-
-                    if (countResult && countResult->Fetch()[0].Get<uint32>() >= maxOutfits) {
-                        // Limit reached
-                        DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
-                        res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
-                        res.Send(player);
-                        return;
-                    }
-                    
-                    // Get next available ID
-                    std::string maxQuery = "SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
-                    CharacterDatabase.AsyncQuery(maxQuery)
-                        .WithCallback([playerGuid, accountId, name, icon, items, msg](QueryResult maxResult) {
-                            Player* player = ObjectAccessor::FindPlayer(playerGuid);
-                            if (!player) return;
-                            
-                            uint32 newId = maxResult ? maxResult->Fetch()[0].Get<uint32>() : 1;
-                            
-                            std::string insertSql = "INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items) VALUES (" + 
-                                std::to_string(accountId) + ", " + std::to_string(newId) + ", '" + name + "', '" + icon + "', '" + items + "')";
-                                
-                            // Use AsyncQuery for INSERT to ensure serialization
-                            CharacterDatabase.AsyncQuery(insertSql).WithCallback([playerGuid, msg](QueryResult) {
-                                Player* player = ObjectAccessor::FindPlayer(playerGuid);
-                                if (!player) return;
-                                HandleGetSavedOutfits(player, msg);
-                            });
-                        });
-                });
+            QueryResult countResult = CharacterDatabase.Query(countQuery);
+            
+            uint32 currentCount = countResult ? countResult->Fetch()[0].Get<uint32>() : 0;
+            LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: account {} has {} outfits (max {})", accountId, currentCount, maxOutfits);
+            
+            if (currentCount >= maxOutfits) {
+                LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: limit reached for account {}", accountId);
+                DCAddon::JsonMessage res(DCAddon::Module::COLLECTION, DCAddon::Opcode::Collection::SMSG_ERROR);
+                res.Set("error", "Outfit limit reached (" + std::to_string(maxOutfits) + ")");
+                res.Send(player);
+                return;
+            }
+            
+            // Get next available ID synchronously
+            std::string maxQuery = "SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
+            QueryResult maxResult = CharacterDatabase.Query(maxQuery);
+            uint32 newId = maxResult ? maxResult->Fetch()[0].Get<uint32>() : 1;
+            
+            LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: inserting new outfit id={} for account {}", newId, accountId);
+            
+            std::string insertSql = "INSERT INTO dc_account_outfits (account_id, outfit_id, name, icon, items) VALUES (" + 
+                std::to_string(accountId) + ", " + std::to_string(newId) + ", '" + name + "', '" + icon + "', '" + items + "')";
+                
+            // Execute INSERT synchronously
+            CharacterDatabase.Execute(insertSql);
+            
+            LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: insert complete, refreshing outfits for player");
+            HandleGetSavedOutfits(player, msg);
         } else {
             // Update existing outfit
+            LOG_INFO("module.dc", "[DCWardrobe] SaveOutfit: updating outfit id={} for account {}", clientId, accountId);
+            
             std::string updateSql = "UPDATE dc_account_outfits SET name='" + name + "', icon='" + icon + "', items='" + items + 
                 "' WHERE account_id=" + std::to_string(accountId) + " AND outfit_id=" + std::to_string(clientId);
 
-            CharacterDatabase.AsyncQuery(updateSql).WithCallback([playerGuid, msg](QueryResult) {
-                 Player* player = ObjectAccessor::FindPlayer(playerGuid);
-                 if (!player) return;
-                 HandleGetSavedOutfits(player, msg);
-            });
+            CharacterDatabase.Execute(updateSql);
+            HandleGetSavedOutfits(player, msg);
         }
     }
 

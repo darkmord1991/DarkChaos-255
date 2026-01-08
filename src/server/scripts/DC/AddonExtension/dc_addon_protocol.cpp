@@ -267,6 +267,7 @@ static bool ShouldBypassRateLimit(const std::string& payload)
 
     uint8 opcode = ExtractOpcode(payload);
     return opcode == DCAddon::Opcode::Collection::CMSG_GET_SAVED_OUTFITS
+        || opcode == DCAddon::Opcode::Collection::CMSG_SAVE_OUTFIT
         || opcode == DCAddon::Opcode::Collection::CMSG_COMMUNITY_GET_LIST
         || opcode == DCAddon::Opcode::Collection::CMSG_APPLY_TRANSMOG_PREVIEW
         || opcode == DCAddon::Opcode::Collection::CMSG_SET_TRANSMOG
@@ -940,17 +941,20 @@ public:
             player->GetName(), ExtractModuleCode(payload), incomingOpcode, payload.length());
 
         // Check rate limit before processing. Allow a small bypass list for UI-critical requests.
+        // Bypassed messages don't count against the rate limit.
         bool shouldBypass = ShouldBypassRateLimit(payload);
-        bool passedRateLimit = CheckRateLimit(player);
-        
-        if (!shouldBypass && !passedRateLimit)
+        if (!shouldBypass)
         {
-            // Log dropped messages for diagnostics
-            uint8 droppedOpcode = ExtractOpcode(payload);
-            LOG_INFO("module.dc", "[RateLimit] DROPPED message from {}: module={}, opcode=0x{:02X} (bypass={}, rateOk={})",
-                player->GetName(), ExtractModuleCode(payload), droppedOpcode, shouldBypass, passedRateLimit);
-            msg.clear();
-            return;
+            bool passedRateLimit = CheckRateLimit(player);
+            if (!passedRateLimit)
+            {
+                // Log dropped messages for diagnostics
+                uint8 droppedOpcode = ExtractOpcode(payload);
+                LOG_INFO("module.dc", "[RateLimit] DROPPED message from {}: module={}, opcode=0x{:02X}",
+                    player->GetName(), ExtractModuleCode(payload), droppedOpcode);
+                msg.clear();
+                return;
+            }
         }
 
         if (s_AddonConfig.EnableDebugLog)

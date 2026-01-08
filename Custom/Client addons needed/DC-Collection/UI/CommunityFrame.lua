@@ -138,13 +138,18 @@ function UI:Initialize(parent, options)
     self.gridFrame:SetPoint("TOPLEFT", 10, -50)
     self.gridFrame:SetPoint("BOTTOMRIGHT", -10, 40)
     
-    local function ParseAppearanceIds(itemsString)
+    local function ParseItemIds(itemsString)
+        -- Extract item IDs from JSON-like string: {"ChestSlot":40495,"HeadSlot":51495,...}
         local ids = {}
         if type(itemsString) ~= "string" then
             return ids
         end
-        for id in string.gmatch(itemsString, "%d+") do
-            table.insert(ids, tonumber(id))
+        -- Match slot:value pairs and extract the numeric values
+        for id in string.gmatch(itemsString, ':%s*(%d+)') do
+            local numId = tonumber(id)
+            if numId and numId > 0 then
+                table.insert(ids, numId)
+            end
         end
         return ids
     end
@@ -159,15 +164,10 @@ function UI:Initialize(parent, options)
             model:Undress()
         end
 
-        local appearanceIds = ParseAppearanceIds(itemsString)
-        for _, appearanceId in ipairs(appearanceIds) do
-            local def = DC and DC.TransmogModule and DC.TransmogModule.GetAppearanceDefinition
-                and DC.TransmogModule:GetAppearanceDefinition(appearanceId)
-            local itemId = def and (def.itemId or def.item_id or def.entryId or def.entry_id or def.entry)
-            if type(itemId) == "string" then
-                itemId = tonumber(itemId)
-            end
-            if itemId and model.TryOn then
+        -- The itemsString contains item IDs (not displayIds), so use them directly for TryOn
+        local itemIds = ParseItemIds(itemsString)
+        for _, itemId in ipairs(itemIds) do
+            if itemId and itemId > 0 and model.TryOn then
                 pcall(function()
                     model:TryOn(itemId)
                 end)

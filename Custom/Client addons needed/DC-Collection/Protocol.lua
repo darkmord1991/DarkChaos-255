@@ -2155,6 +2155,11 @@ function DC:HandleError(data)
     self:Debug(string.format("Error received: code=%d, msg=%s", errorCode, errorMsg))
     self:Print("|cffff0000Error:|r " .. errorMsg)
 
+    -- Mark pending outfit apply as having received a server error (to avoid duplicate messages)
+    if self.Wardrobe and self.Wardrobe._pendingApplyOutfit then
+        self.Wardrobe._pendingApplyOutfit.hadServerError = true
+    end
+
     -- Optional structured details (used for transmog apply diagnostics).
     if type(data) == "table" and type(data.perSlot) == "table" then
         local order = {}
@@ -2196,10 +2201,13 @@ end
 
 function DC:HandleTransmogState(data)
     local state = data.state or {}
+    local itemIds = data.itemIds or {}
     self.transmogState = state
+    self.transmogItemIds = itemIds  -- Store item entries for TryOn/outfit save
 
     DCCollectionCharDB = DCCollectionCharDB or {}
     DCCollectionCharDB.transmogState = state
+    DCCollectionCharDB.transmogItemIds = itemIds
 
     -- Refresh UI if open
     if self.UI and self.UI.mainFrame and self.UI.mainFrame:IsShown() then
