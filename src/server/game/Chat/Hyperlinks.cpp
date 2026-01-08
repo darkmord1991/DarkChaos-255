@@ -355,6 +355,7 @@ static bool ValidateLinkInfo(HyperlinkInfo const& info)
     TryValidateAs(areatrigger);
     TryValidateAs(creature);
     TryValidateAs(creature_entry);
+    TryValidateAs(dc);
     TryValidateAs(enchant);
     TryValidateAs(gameevent);
     TryValidateAs(gameobject);

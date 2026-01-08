@@ -152,16 +152,16 @@ public:
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
-    bool CleanupGuildHouseSpawns(uint32 guildPhase)
+    bool CleanupGuildHouseSpawns(uint32 guildPhase, uint32 mapId = 1)
     {
         QueryResult CreatureResult;
         QueryResult GameobjResult;
-        Map* map = sMapMgr->FindMap(1, 0);
+        Map* map = sMapMgr->FindMap(mapId, 0);
         if (!map)
             return false;
 
-        GameobjResult = WorldDatabase.Query("SELECT `guid` FROM `gameobject` WHERE `map` = 1 AND `phaseMask` = '{}'", guildPhase);
-        CreatureResult = WorldDatabase.Query("SELECT `guid` FROM `creature` WHERE `map` = 1 AND `phaseMask` = '{}'", guildPhase);
+        GameobjResult = WorldDatabase.Query("SELECT `guid` FROM `gameobject` WHERE `map` = {} AND `phaseMask` = {}", mapId, guildPhase);
+        CreatureResult = WorldDatabase.Query("SELECT `guid` FROM `creature` WHERE `map` = {} AND `phaseMask` = {}", mapId, guildPhase);
 
         if (CreatureResult)
         {

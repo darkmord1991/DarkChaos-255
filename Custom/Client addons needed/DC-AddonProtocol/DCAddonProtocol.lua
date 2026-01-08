@@ -590,6 +590,19 @@ function DC:RegisterHandler(module, opcode, handler)
     table.insert(self._handlers[key], handler)
 end
 
+-- Legacy API: RegisterModule for DC-Collection Protocol.lua compatibility
+-- Registers a single callback to receive all messages for a module.
+-- The callback receives the raw payload from the server.
+DC._moduleCallbacks = DC._moduleCallbacks or {}
+
+function DC:RegisterModule(moduleId, callback)
+    if type(callback) ~= "function" then
+        return false
+    end
+    self._moduleCallbacks[moduleId] = callback
+    return true
+end
+
 function DC:UnregisterHandler(module, opcode, handler)
     local key = module .. "_" .. tostring(opcode)
     local h = self._handlers[key]
@@ -679,6 +692,45 @@ function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     SendAddonMessage(self.PREFIX, msg, "WHISPER", UnitName("player"))
 end
 
+-- WoW 3.3.5a addon message size limit is 255 bytes
+-- We use smaller chunks to leave room for chunk headers (INDEX|TOTAL|)
+local MAX_ADDON_MSG_SIZE = 255
+local CHUNK_HEADER_SIZE = 10  -- Reserve space for "99|99|" worst case
+
+-- Send a raw message with chunking support for messages > 255 bytes
+function DC:SendChunked(msg)
+    local maxChunkDataSize = MAX_ADDON_MSG_SIZE - CHUNK_HEADER_SIZE
+    
+    if string.len(msg) <= MAX_ADDON_MSG_SIZE then
+        -- No chunking needed for small messages
+        if self._debug then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending (no chunk): " .. string.sub(msg, 1, 80))
+        end
+        SendAddonMessage(self.PREFIX, msg, "WHISPER", UnitName("player"))
+        return
+    end
+    
+    -- Split into chunks
+    local totalChunks = math.ceil(string.len(msg) / maxChunkDataSize)
+    
+    if self._debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Chunking message: " .. string.len(msg) .. " bytes -> " .. totalChunks .. " chunks")
+    end
+    
+    for i = 0, totalChunks - 1 do
+        local startPos = i * maxChunkDataSize + 1
+        local endPos = math.min((i + 1) * maxChunkDataSize, string.len(msg))
+        local chunkData = string.sub(msg, startPos, endPos)
+        local chunk = tostring(i) .. "|" .. tostring(totalChunks) .. "|" .. chunkData
+        
+        if self._debug then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r   Chunk " .. i .. "/" .. totalChunks .. ": " .. string.len(chunk) .. " bytes")
+        end
+        
+        SendAddonMessage(self.PREFIX, chunk, "WHISPER", UnitName("player"))
+    end
+end
+
 function DC:SendJSON(module, opcode, data)
     local json = self:EncodeJSON(data)
     local msg = module .. "|" .. tostring(opcode) .. "|J|" .. json
@@ -687,10 +739,12 @@ function DC:SendJSON(module, opcode, data)
     self:LogRequest(module, opcode, data)
     
     if self._debug then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending JSON: " .. module .. " opcode=" .. tostring(opcode))
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending JSON: " .. module .. " opcode=" .. tostring(opcode) .. " size=" .. string.len(msg))
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Data: " .. string.sub(json, 1, 200) .. (string.len(json) > 200 and "..." or ""))
     end
-    SendAddonMessage(self.PREFIX, msg, "WHISPER", UnitName("player"))
+    
+    -- Use chunked sending for large messages
+    self:SendChunked(msg)
 end
 
 -- Standard request method - uses JSON format by default
@@ -706,6 +760,21 @@ function DC:Request(module, opcode, data)
         -- Simple value - wrap in object
         self:SendJSON(module, opcode, { value = data })
     end
+end
+
+-- Legacy SendMessage API for DC-Collection Protocol.lua compatibility
+-- payload is a table: { op = opcode, data = {}, time = timestamp }
+function DC:SendMessage(moduleId, payload)
+    if type(payload) ~= "table" then
+        return false
+    end
+    local opcode = payload.op
+    local data = payload.data or {}
+    if opcode == nil then
+        return false
+    end
+    self:SendJSON(moduleId, opcode, data)
+    return true
 end
 
 -- Alias for Request
@@ -1639,6 +1708,14 @@ frame:SetScript("OnEvent", function()
                         elseif DC._debug then
                             DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[DC]|r No handler for: " .. key)
                         end
+                    end
+                    
+                    -- Legacy module callback (DC-Collection Protocol.lua uses this)
+                    local modCallback = DC._moduleCallbacks and DC._moduleCallbacks[module]
+                    if modCallback then
+                        -- Pass a payload similar to what the legacy API expects
+                        local legacyPayload = { op = tonumber(opcode), data = data }
+                        pcall(modCallback, legacyPayload)
                     end
                 else
                     -- Regular message - log it too

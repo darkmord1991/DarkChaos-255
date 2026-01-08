@@ -211,6 +211,18 @@ namespace Acore::Hyperlinks
             static constexpr std::string_view tag() { return "trade"; }
             static bool StoreTo(TradeskillLinkData& val, std::string_view data);
         };
+
+        // DC-Collection custom link tag - accepts any data (outfit links, etc.)
+        struct AC_GAME_API dc
+        {
+            using value_type = std::string_view;
+            static constexpr std::string_view tag() { return "dc"; }
+            static bool StoreTo(std::string_view& val, std::string_view data)
+            {
+                val = data;
+                return true; // Always valid - addon manages link content
+            }
+        };
     }
 
     struct HyperlinkColor

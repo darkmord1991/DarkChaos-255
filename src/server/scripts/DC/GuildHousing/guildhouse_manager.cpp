@@ -164,7 +164,8 @@ bool GuildHouseManager::HasSpawn(uint32 mapId, uint32 phase, uint32 entry, bool 
     }
     else
     {
-        QueryResult result = WorldDatabase.Query("SELECT COUNT(*) FROM `creature` WHERE `map`={} AND `id`={} AND `phaseMask`={}", mapId, entry, phase);
+        // Note: creature table uses `id1` for the entry column, not `id`
+        QueryResult result = WorldDatabase.Query("SELECT COUNT(*) FROM `creature` WHERE `map`={} AND `id1`={} AND `phaseMask`={}", mapId, entry, phase);
         if (result)
             return result->Fetch()[0].Get<uint32>() > 0;
     }

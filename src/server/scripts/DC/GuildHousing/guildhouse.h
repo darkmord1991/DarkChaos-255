@@ -16,19 +16,34 @@ constexpr uint32 GetGameObjectEntry(uint32 offset)
 }
 
 // Guild Phase Helpers
+// 
+// IMPORTANT: WoW phases are BITMASKS. Two phases with overlapping bits will see each other.
+// To ensure isolation, each guild must use a UNIQUE POWER-OF-2 phase value.
+// Formula: (1 << (4 + (guildId % 27))) gives bits 4-30, supporting up to 27 concurrent guild houses.
+// Bits 0-3 are reserved for normal game phases (PHASEMASK_NORMAL = 1).
+//
+// If you need more than 27 guild houses, consider using separate map instances or
+// multiple guildhouse maps with each handling 27 guilds.
+//
 inline uint32 GetGuildPhase(uint32 guildId)
 {
-    return guildId + 10;
+    if (guildId == 0)
+        return PHASEMASK_NORMAL; // No guild = normal phase
+    
+    // Use power-of-2 for true isolation. Bits 4-30 = 27 unique phases.
+    // guildId % 27 maps guilds to bit positions 4-30.
+    uint32 bitPosition = 4 + ((guildId - 1) % 27);
+    return (1u << bitPosition);
 }
 
 inline uint32 GetGuildPhase(Guild* guild)
 {
-    return GetGuildPhase(guild->GetId());
+    return GetGuildPhase(guild ? guild->GetId() : 0);
 }
 
 inline uint32 GetGuildPhase(Player* player)
 {
-    return GetGuildPhase(player->GetGuildId());
+    return GetGuildPhase(player ? player->GetGuildId() : 0);
 }
 
 

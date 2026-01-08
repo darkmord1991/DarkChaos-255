@@ -267,7 +267,10 @@ static bool ShouldBypassRateLimit(const std::string& payload)
 
     uint8 opcode = ExtractOpcode(payload);
     return opcode == DCAddon::Opcode::Collection::CMSG_GET_SAVED_OUTFITS
-        || opcode == DCAddon::Opcode::Collection::CMSG_COMMUNITY_GET_LIST;
+        || opcode == DCAddon::Opcode::Collection::CMSG_COMMUNITY_GET_LIST
+        || opcode == DCAddon::Opcode::Collection::CMSG_APPLY_TRANSMOG_PREVIEW
+        || opcode == DCAddon::Opcode::Collection::CMSG_SET_TRANSMOG
+        || opcode == DCAddon::Opcode::Collection::CMSG_GET_TRANSMOG_STATE;
 }
 
 static std::string DetectRequestType(const std::string& payload)
@@ -820,6 +823,83 @@ class DCAddonMessageRouterScript : public PlayerScript
 public:
     DCAddonMessageRouterScript() : PlayerScript("DCAddonMessageRouterScript") {}
 
+    // Try to parse a message as a chunked message. Returns true if it's a chunk.
+    // If complete, sets outPayload to the reassembled message. Otherwise clears it.
+    bool TryReassembleChunk(Player* player, const std::string& payload, std::string& outPayload)
+    {
+        // Chunk format: INDEX|TOTAL|DATA
+        // Check if starts with digit and has proper format
+        if (payload.empty() || !std::isdigit(payload[0]))
+            return false;
+
+        size_t firstPipe = payload.find('|');
+        if (firstPipe == std::string::npos || firstPipe >= payload.size() - 1)
+            return false;
+
+        size_t secondPipe = payload.find('|', firstPipe + 1);
+        if (secondPipe == std::string::npos)
+            return false;
+
+        // Parse index and total
+        uint32 chunkIndex = 0, totalChunks = 0;
+        try
+        {
+            chunkIndex = std::stoul(payload.substr(0, firstPipe));
+            totalChunks = std::stoul(payload.substr(firstPipe + 1, secondPipe - firstPipe - 1));
+        }
+        catch (...)
+        {
+            return false;  // Not a valid chunk format
+        }
+
+        // Validate chunk parameters
+        if (totalChunks == 0 || chunkIndex >= totalChunks)
+            return false;
+
+        // Special case: if totalChunks == 1, this is a single-chunk message (short-circuit)
+        // Just extract the data and return immediately without storing in buffer
+        if (totalChunks == 1)
+        {
+            outPayload = payload.substr(secondPipe + 1);
+            LOG_DEBUG("module.dc", "[DC-CHUNK] player={}, single-chunk message, dataLen={}",
+                player->GetName(), outPayload.length());
+            return true;
+        }
+
+        // It's a multi-chunk message
+        std::string chunkData = payload.substr(secondPipe + 1);
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        LOG_DEBUG("module.dc", "[DC-CHUNK] player={}, chunk={}/{}, dataLen={}",
+            player->GetName(), chunkIndex + 1, totalChunks, chunkData.length());
+
+        // Store chunk
+        auto& chunkedMsg = s_ChunkedMessages[accountId];
+        if (chunkIndex == 0)
+        {
+            // First chunk - reset buffer
+            chunkedMsg = DCAddon::ChunkedMessage();
+            s_ChunkStartTimes[accountId] = GameTime::GetGameTime().count() * 1000;
+        }
+
+        bool complete = chunkedMsg.AddChunk(payload);
+
+        if (complete)
+        {
+            outPayload = chunkedMsg.GetCompleteMessage();
+            s_ChunkedMessages.erase(accountId);
+            s_ChunkStartTimes.erase(accountId);
+
+            LOG_DEBUG("module.dc", "[DC-CHUNK] player={}, COMPLETE! reassembledLen={}",
+                player->GetName(), outPayload.length());
+            return true;
+        }
+
+        // Still waiting for more chunks
+        outPayload.clear();
+        return true;
+    }
+
     // Intercept addon messages with "DC" prefix and route to handlers
     void OnPlayerBeforeSendChatMessage(Player* player, uint32& type, uint32& lang, std::string& msg) override
     {
@@ -833,12 +913,42 @@ public:
         if (msg.rfind(dcPrefix, 0) != 0)
             return;
 
-        // Skip the "DC\t" prefix and route to handler
-        std::string payload = msg.substr(3);  // Everything after "DC\t"
+        // Skip the "DC\t" prefix
+        std::string rawPayload = msg.substr(3);  // Everything after "DC\t"
+
+        // Check if this is a chunked message that needs reassembly
+        std::string reassembledPayload;
+        if (TryReassembleChunk(player, rawPayload, reassembledPayload))
+        {
+            if (reassembledPayload.empty())
+            {
+                // Still waiting for more chunks - suppress this message and continue
+                msg.clear();
+                return;
+            }
+            // Use the reassembled payload
+            rawPayload = reassembledPayload;
+            LOG_INFO("module.dc", "[DC-CHUNK] player={}, reassembled message ready, len={}",
+                player->GetName(), rawPayload.length());
+        }
+
+        std::string payload = rawPayload;
+        
+        // Early logging: show ALL incoming DC messages
+        uint8 incomingOpcode = ExtractOpcode(payload);
+        LOG_INFO("module.dc", "[DC-INCOMING] player={}, module={}, opcode=0x{:02X}, payloadLen={}",
+            player->GetName(), ExtractModuleCode(payload), incomingOpcode, payload.length());
 
         // Check rate limit before processing. Allow a small bypass list for UI-critical requests.
-        if (!ShouldBypassRateLimit(payload) && !CheckRateLimit(player))
+        bool shouldBypass = ShouldBypassRateLimit(payload);
+        bool passedRateLimit = CheckRateLimit(player);
+        
+        if (!shouldBypass && !passedRateLimit)
         {
+            // Log dropped messages for diagnostics
+            uint8 droppedOpcode = ExtractOpcode(payload);
+            LOG_INFO("module.dc", "[RateLimit] DROPPED message from {}: module={}, opcode=0x{:02X} (bypass={}, rateOk={})",
+                player->GetName(), ExtractModuleCode(payload), droppedOpcode, shouldBypass, passedRateLimit);
             msg.clear();
             return;
         }
@@ -897,7 +1007,7 @@ public:
 
         LOG_INFO("dc.addon", "===========================================");
         LOG_INFO("dc.addon", "Dark Chaos Addon Protocol v{} loaded", s_AddonConfig.ProtocolVersion);
-        LOG_INFO("dc.addon", "RateLimit bypass enabled for: COLL|0x3B (SavedOutfits), COLL|0x53 (CommunityList)");
+        LOG_INFO("dc.addon", "RateLimit bypass enabled for: COLL|0x3B (SavedOutfits), COLL|0x53 (CommunityList), COLL|0x38 (ApplyTransmog), COLL|0x33 (SetTransmog), COLL|0x37 (GetTransmogState)");
         LOG_INFO("dc.addon", "Enabled modules:");
         LOG_INFO("dc.addon", "  Core:        {}", s_AddonConfig.EnableCore ? "Yes" : "No");
         LOG_INFO("dc.addon", "  AOE Loot:    {}", s_AddonConfig.EnableAOELoot ? "Yes" : "No");

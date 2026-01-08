@@ -775,10 +775,20 @@ namespace DCCollection
          // it as an item entry and derive the displayId from the item template.
          uint32 displayId = json.HasKey("appearanceId") ? json["appearanceId"].AsUInt32() : 0;
 
-         if (slot >= EQUIPMENT_SLOT_END) return;
+         if (slot >= EQUIPMENT_SLOT_END)
+         {
+             LOG_DEBUG("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} INVALID (>= EQUIPMENT_SLOT_END)",
+                 player->GetName(), static_cast<uint32>(slot));
+             return;
+         }
          
          Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-         if (!equippedItem) return;
+         if (!equippedItem)
+         {
+             LOG_DEBUG("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} NO_ITEM_EQUIPPED",
+                 player->GetName(), static_cast<uint32>(slot));
+             return;
+         }
 
          uint32 guid = player->GetGUID().GetCounter();
          uint32 accountId = GetAccountId(player);
@@ -806,20 +816,39 @@ namespace DCCollection
              return;
 
          // First try to derive displayId if the value is an item entry ID.
+         uint32 originalValue = displayId;
          if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(displayId))
          {
              uint32 derived = proto->DisplayInfoID;
              if (derived)
+             {
                  displayId = derived;
+                 LOG_DEBUG("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} derived displayId {} from item entry {}",
+                     player->GetName(), static_cast<uint32>(slot), displayId, originalValue);
+             }
          }
 
          bool skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
          if (!skipUnlockCheck && !HasTransmogAppearanceUnlocked(accountId, displayId))
+         {
+             LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} NOT_UNLOCKED (skipCheck={})",
+                 player->GetName(), static_cast<uint32>(slot), displayId, skipUnlockCheck);
              return;
+         }
 
          ItemTemplate const* equippedProto = equippedItem->GetTemplate();
          TransmogAppearanceVariant const* appearance = FindBestVariantForSlot(displayId, slot, equippedProto);
-         if (!appearance) return;
+         if (!appearance)
+         {
+             auto const& idx = GetTransmogAppearanceIndexCached();
+             LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} NO_COMPATIBLE_VARIANT (indexHasKey={}, equippedClass={}, equippedSubClass={}, equippedInvType={})",
+                 player->GetName(), static_cast<uint32>(slot), displayId,
+                 (idx.find(displayId) != idx.end()),
+                 equippedProto ? equippedProto->Class : 0,
+                 equippedProto ? equippedProto->SubClass : 0,
+                 equippedProto ? equippedProto->InventoryType : 0);
+             return;
+         }
 
          uint32 fakeEntry = appearance->canonicalItemId;
          CharacterDatabase.Execute(
@@ -827,6 +856,8 @@ namespace DCCollection
              guid, static_cast<uint32>(slot), fakeEntry, equippedItem->GetEntry());
 
          player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
+         LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} APPLIED fakeEntry={}",
+             player->GetName(), static_cast<uint32>(slot), displayId, fakeEntry);
          SendTransmogState(player);
     }
 
@@ -837,6 +868,8 @@ namespace DCCollection
 
     void HandleApplyTransmogPreview(Player* player, const DCAddon::ParsedMessage& msg)
     {
+        LOG_INFO("module.dc", "[DCWardrobe] HandleApplyTransmogPreview CALLED for player={}", player ? player->GetName() : "NULL");
+        
         if (!player || !player->GetSession()) return;
         if (!DCAddon::IsJsonMessage(msg)) return;
 
@@ -865,9 +898,10 @@ namespace DCCollection
             auto const& unlocked = GetAccountUnlockedTransmogAppearances(accountId);
             auto const& idx = GetTransmogAppearanceIndexCached();
             
-            LOG_INFO("module.dc", "[DCWardrobe] Batch apply: player={}, accountId={}, unlockedAppearances={}, indexSize={}, entriesCount={}",
+            LOG_INFO("module.dc", "[DCWardrobe] Batch apply: player={}, accountId={}, unlockedAppearances={}, indexSize={}, entriesCount={}, skipUnlockCheck={}",
                 player->GetName(), accountId, static_cast<uint32>(unlocked.size()), 
-                static_cast<uint32>(idx.size()), static_cast<uint32>(json["entries"].AsArray().size()));
+                static_cast<uint32>(idx.size()), static_cast<uint32>(json["entries"].AsArray().size()),
+                sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false));
             
             uint32 guid = player->GetGUID().GetCounter();
 
@@ -950,8 +984,8 @@ namespace DCCollection
                 if (!skipUnlockCheck && !HasTransmogAppearanceUnlocked(accountId, displayId))
                 {
                     skippedNotUnlocked++;
-                    LOG_DEBUG("module.dc", "[DCWardrobe] Slot {}: displayId {} not unlocked for account {}",
-                        (uint32)equipmentSlot, displayId, accountId);
+                    LOG_INFO("module.dc", "[DCWardrobe] Batch slot {}: displayId {} NOT_UNLOCKED for account {} (skipCheck={})",
+                        (uint32)equipmentSlot, displayId, accountId, skipUnlockCheck);
                     perSlot.Set(std::to_string(equipmentSlot), DCAddon::JsonValue("not_unlocked"));
                     continue;
                 }
@@ -962,7 +996,7 @@ namespace DCCollection
                 {
                     skippedNoVariant++;
                     auto const& idx = GetTransmogAppearanceIndexCached();
-                    LOG_DEBUG("module.dc", "[DCWardrobe] Slot {}: no compatible variant for displayId {} (indexHasKey={}, equippedClass={}, equippedSubClass={}, equippedInvType={})",
+                    LOG_INFO("module.dc", "[DCWardrobe] Batch slot {}: displayId {} NO_COMPATIBLE_VARIANT (indexHasKey={}, equippedClass={}, equippedSubClass={}, equippedInvType={})",
                         (uint32)equipmentSlot, displayId, (idx.find(displayId) != idx.end()),
                         equippedProto ? equippedProto->Class : 0,
                         equippedProto ? equippedProto->SubClass : 0,
