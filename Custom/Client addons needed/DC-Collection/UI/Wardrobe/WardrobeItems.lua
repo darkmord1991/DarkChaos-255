@@ -1050,11 +1050,20 @@ function Wardrobe:UpdateSlotButtons()
         local slotDef = btn.slotDef
         local invSlotId = GetInventorySlotInfo(slotDef.key)
 
-        btn.icon:SetTexture(self:GetSlotIcon(slotDef.key))
-
         local eqSlot = invSlotId and (invSlotId - 1)
         local state = DC.transmogState or {}
+        local transmogItemIds = DC.transmogItemIds or {}
         local applied = eqSlot and state[tostring(eqSlot)] and tonumber(state[tostring(eqSlot)]) ~= 0
+
+        local iconTexture = nil
+        if applied and eqSlot ~= nil then
+            local transmogItemId = transmogItemIds[eqSlot] or transmogItemIds[tostring(eqSlot)]
+            if transmogItemId and GetItemInfo then
+                iconTexture = select(10, GetItemInfo(transmogItemId))
+            end
+        end
+
+        btn.icon:SetTexture(iconTexture or self:GetSlotIcon(slotDef.key))
 
         if applied then
             btn.transmogApplied:Show()

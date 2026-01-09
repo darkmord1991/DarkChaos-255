@@ -433,27 +433,23 @@ end
 
 function Wardrobe:ShowSaveOutfitDialog()
     StaticPopupDialogs["DC_SAVE_OUTFIT"] = {
-        text = "Enter outfit name:",
+        text = "Enter outfit name:\n(Using the same name will overwrite the selected outfit)",
         button1 = "Save",
         button2 = "Cancel",
         hasEditBox = true,
-        hasCheckButton = true,
-        checkButtonText = "Update selected outfit",
         maxLetters = 32,
         OnShow = function(selfPopup)
             local selected = Wardrobe and Wardrobe.selectedOutfit
             local canUpdate = selected and selected.id and tonumber(selected.id) and tonumber(selected.id) > 0
 
-            if selfPopup.checkButton then
-                if canUpdate then
-                    selfPopup.checkButton:Show()
-                    selfPopup.checkButton:SetChecked(true)
-                else
-                    selfPopup.checkButton:Hide()
-                    selfPopup.checkButton:SetChecked(false)
-                end
+            -- Debug: log what we have
+            if DC and DC.Debug then
+                DC:Debug("[SaveDialog] OnShow: selectedOutfit=" .. tostring(selected and selected.name or "nil"))
+                DC:Debug("[SaveDialog] OnShow: selectedOutfit.id=" .. tostring(selected and selected.id or "nil"))
+                DC:Debug("[SaveDialog] OnShow: canUpdate=" .. tostring(canUpdate))
             end
 
+            -- Pre-fill with selected outfit's name if available
             if selfPopup.editBox and canUpdate then
                 selfPopup.editBox:SetText(selected.name or "")
                 if selfPopup.editBox.HighlightText then
@@ -466,9 +462,19 @@ function Wardrobe:ShowSaveOutfitDialog()
             if name and name ~= "" then
                 local selected = Wardrobe and Wardrobe.selectedOutfit
                 local canUpdate = selected and selected.id and tonumber(selected.id) and tonumber(selected.id) > 0
-                local wantsUpdate = selfPopup.checkButton and selfPopup.checkButton:IsShown() and selfPopup.checkButton:GetChecked()
+                
+                -- If the name matches the selected outfit's name, overwrite it
+                local wantsUpdate = canUpdate and selected.name and (name == selected.name)
 
-                if canUpdate and wantsUpdate then
+                -- Debug: log what we're doing
+                if DC and DC.Debug then
+                    DC:Debug("[SaveDialog] OnAccept: name=" .. tostring(name))
+                    DC:Debug("[SaveDialog] OnAccept: canUpdate=" .. tostring(canUpdate))
+                    DC:Debug("[SaveDialog] OnAccept: wantsUpdate=" .. tostring(wantsUpdate))
+                    DC:Debug("[SaveDialog] OnAccept: selected.id=" .. tostring(selected and selected.id or "nil"))
+                end
+
+                if wantsUpdate then
                     Wardrobe:SaveCurrentOutfit(name, tonumber(selected.id))
                 else
                     Wardrobe:SaveCurrentOutfit(name)

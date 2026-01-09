@@ -8,6 +8,22 @@
 local addonName = "DC-InfoBar"
 local DCInfoBar = DCInfoBar or {}
 
+-- Seasonal currency items (client-side inventory totals)
+-- Keep in sync with DC-InfoBar/Plugins/Character/Gold.lua
+local SEASONAL_TOKEN_ID = 300311
+local SEASONAL_ESSENCE_ID = 300312
+
+local function GetItemCountSafe(itemId)
+    if type(_G.GetItemCount) == "function" then
+        -- 3.3.5 supports GetItemCount(itemId[, includeBank])
+        local ok, count = pcall(_G.GetItemCount, itemId, true)
+        if ok and type(count) == "number" then
+            return count
+        end
+    end
+    return 0
+end
+
 local SeasonPlugin = {
     id = "DCInfoBar_Season",
     name = "Season",
@@ -34,6 +50,36 @@ function SeasonPlugin:OnActivate()
         if DC then
             DC:Request("SEAS", 0x01, {})  -- CMSG_GET_CURRENT
             DC:Request("SEAS", 0x03, {})  -- CMSG_GET_PROGRESS
+        end
+    end
+
+    local function RefreshLocalInventoryTotals()
+        DCInfoBar.serverData = DCInfoBar.serverData or {}
+        DCInfoBar.serverData.season = DCInfoBar.serverData.season or {}
+
+        local season = DCInfoBar.serverData.season
+        season.totalTokens = GetItemCountSafe(SEASONAL_TOKEN_ID)
+        season.totalEssence = GetItemCountSafe(SEASONAL_ESSENCE_ID)
+    end
+
+    local function ThrottledSeasonRefresh(reason)
+        -- Keep updates responsive without spamming the server.
+        local now = (GetTime and GetTime()) or 0
+        self._lastSeasonRefreshAt = self._lastSeasonRefreshAt or 0
+
+        -- Always refresh client-side inventory totals immediately.
+        RefreshLocalInventoryTotals()
+        self._elapsed = 999 -- Force plugin redraw
+
+        -- Server progress (weekly tokens) can require a server roundtrip.
+        if (now - self._lastSeasonRefreshAt) < 2.0 then
+            return
+        end
+        self._lastSeasonRefreshAt = now
+
+        local DC = rawget(_G, "DCAddonProtocol")
+        if DC then
+            DC:Request("SEAS", 0x03, {}) -- CMSG_GET_PROGRESS
         end
     end
     
@@ -107,6 +153,33 @@ function SeasonPlugin:OnActivate()
         
         -- Request initial data
         RequestSeasonData()
+
+        -- Also keep token totals fresh by watching bag/loot updates.
+        -- This fixes cases where tokens are received but the bar doesn't update
+        -- until the next manual/periodic server refresh.
+        if not SeasonPlugin._invWatchFrame then
+            local f = CreateFrame("Frame")
+            f:RegisterEvent("BAG_UPDATE")
+            f:RegisterEvent("BAG_UPDATE_DELAYED")
+            f:RegisterEvent("CHAT_MSG_LOOT")
+            f:RegisterEvent("PLAYER_ENTERING_WORLD")
+            f:SetScript("OnEvent", function(_, event)
+                -- Batch rapid bag updates (loot) into one refresh.
+                if DCInfoBar and DCInfoBar.After then
+                    if SeasonPlugin._pendingRefresh then
+                        return
+                    end
+                    SeasonPlugin._pendingRefresh = true
+                    DCInfoBar:After(0.25, function()
+                        SeasonPlugin._pendingRefresh = false
+                        ThrottledSeasonRefresh(event)
+                    end)
+                else
+                    ThrottledSeasonRefresh(event)
+                end
+            end)
+            SeasonPlugin._invWatchFrame = f
+        end
         
         -- Retry after delay if no data (increased retries)
         local retryFrame = CreateFrame("Frame")
@@ -133,6 +206,9 @@ function SeasonPlugin:OnActivate()
     end
     
     RegisterHandlers()
+
+    -- Prime local totals right away (even before server data arrives)
+    ThrottledSeasonRefresh("OnActivate")
 end
 
 function SeasonPlugin:OnUpdate(elapsed)

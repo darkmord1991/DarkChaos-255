@@ -323,6 +323,11 @@ function DC:LoadCache()
         self.transmogState = DCCollectionCharDB.transmogState
     end
 
+    -- Load per-character transmog itemIds (fake entries used for icon + TryOn)
+    if DCCollectionCharDB and DCCollectionCharDB.transmogItemIds then
+        self.transmogItemIds = DCCollectionCharDB.transmogItemIds
+    end
+
     -- Load outfits (scope selectable)
     local scope = (DCCollectionDB and DCCollectionDB.outfitsScope) or "char"
     if scope == "account" then

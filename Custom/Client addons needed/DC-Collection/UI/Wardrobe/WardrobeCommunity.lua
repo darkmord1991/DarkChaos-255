@@ -300,16 +300,19 @@ function Wardrobe:RefreshCommunityGrid()
             -- Try on items from the outfit
             local items = outfit.items or outfit.items_string
             if type(items) == "string" then
-                -- Parse JSON string
-                -- Simple pattern matching for {SlotKey: itemId, ...}
-                for slot, itemId in items:gmatch('"?([^":,{}]+)"?%s*:%s*(%d+)') do
-                    local link = "item:" .. itemId .. ":0:0:0:0:0:0:0"
-                    btn.model:TryOn(link)
+                -- Parse JSON string: extract numeric item IDs
+                for itemId in items:gmatch(':%s*(%d+)') do
+                    local numId = tonumber(itemId)
+                    if numId and numId > 0 then
+                        btn.model:TryOn(numId)
+                    end
                 end
             elseif type(items) == "table" then
                 for _, itemId in pairs(items) do
-                    local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
-                    btn.model:TryOn(link)
+                    local numId = tonumber(itemId)
+                    if numId and numId > 0 then
+                        btn.model:TryOn(numId)
+                    end
                 end
             end
             
@@ -319,8 +322,13 @@ function Wardrobe:RefreshCommunityGrid()
                 GameTooltip:SetText(selfBtn.outfit.name or "Outfit")
                 GameTooltip:AddLine("by " .. (selfBtn.outfit.author or selfBtn.outfit.author_name or "Unknown"), 0.7, 0.7, 0.7)
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("▲ " .. (selfBtn.outfit.upvotes or 0) .. " upvotes", 0.2, 1, 0.2)
-                GameTooltip:AddLine("⬇ " .. (selfBtn.outfit.downloads or 0) .. " downloads", 0.7, 0.7, 1)
+                GameTooltip:AddLine("+" .. (selfBtn.outfit.upvotes or 0) .. " upvotes", 0.2, 1, 0.2)
+                GameTooltip:AddLine((selfBtn.outfit.downloads or 0) .. " downloads", 0.7, 0.7, 1)
+                GameTooltip:AddLine((selfBtn.outfit.views or 0) .. " views", 0.7, 0.7, 0.7)
+                if selfBtn.outfit.created_at then
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine("Created: " .. selfBtn.outfit.created_at, 0.5, 0.5, 0.5)
+                end
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("Click to preview", 1, 1, 0)
                 GameTooltip:AddLine("Click '+ Add to Mine' to copy to your collection", 0, 1, 0)
@@ -336,14 +344,18 @@ function Wardrobe:RefreshCommunityGrid()
                     
                     local outfitItems = selfBtn.outfit.items or selfBtn.outfit.items_string
                     if type(outfitItems) == "string" then
-                        for _, itemId in outfitItems:gmatch('"?[^":,{}]+"?%s*:%s*(%d+)') do
-                            local link = "item:" .. itemId .. ":0:0:0:0:0:0:0"
-                            self.frame.model:TryOn(link)
+                        for itemId in outfitItems:gmatch(':%s*(%d+)') do
+                            local numId = tonumber(itemId)
+                            if numId and numId > 0 then
+                                self.frame.model:TryOn(numId)
+                            end
                         end
                     elseif type(outfitItems) == "table" then
                         for _, itemId in pairs(outfitItems) do
-                            local link = "item:" .. tostring(itemId) .. ":0:0:0:0:0:0:0"
-                            self.frame.model:TryOn(link)
+                            local numId = tonumber(itemId)
+                            if numId and numId > 0 then
+                                self.frame.model:TryOn(numId)
+                            end
                         end
                     end
                 end

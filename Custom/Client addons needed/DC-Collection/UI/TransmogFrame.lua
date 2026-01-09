@@ -171,11 +171,30 @@ local function UpdateSlotButtonVisual(btn)
     end
 
     local invSlotId = GetInventorySlotInfo(btn.slotKey)
-    local itemId = invSlotId and GetInventoryItemID("player", invSlotId)
+    local baseItemId = invSlotId and GetInventoryItemID("player", invSlotId)
 
+    -- Check if transmog is applied to this slot
+    local eqSlot = invSlotId and GetEquipmentSlotIndex(invSlotId)
+    local transmogItemIds = DC.transmogItemIds or {}
+    local state = DC.transmogState or {}
+    
+    -- Get transmog item ID if one is applied (non-zero displayId in state means transmog active)
+    local transmogItemId = nil
+    local applied = false
+    if eqSlot ~= nil then
+        local displayId = state[tostring(eqSlot)]
+        if displayId and tonumber(displayId) and tonumber(displayId) ~= 0 then
+            applied = true
+            -- Get the actual item ID from transmogItemIds
+            transmogItemId = transmogItemIds[eqSlot] or transmogItemIds[tostring(eqSlot)]
+        end
+    end
+    
+    -- Use transmog item texture if available, otherwise base item
+    local displayItemId = (applied and transmogItemId) or baseItemId
     local texture = nil
-    if itemId and GetItemInfo then
-        texture = select(10, GetItemInfo(itemId))
+    if displayItemId and GetItemInfo then
+        texture = select(10, GetItemInfo(displayItemId))
     end
 
     if texture then
@@ -184,11 +203,7 @@ local function UpdateSlotButtonVisual(btn)
         btn.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
     end
 
-    -- Highlight if transmog applied to that equipment slot.
-    local eqSlot = invSlotId and GetEquipmentSlotIndex(invSlotId)
-    local state = DC.transmogState or {}
-    local applied = eqSlot ~= nil and state[tostring(eqSlot)] and tonumber(state[tostring(eqSlot)]) and tonumber(state[tostring(eqSlot)]) ~= 0
-
+    -- Show glow if transmog is applied
     if applied then
         btn.appliedGlow:Show()
     else

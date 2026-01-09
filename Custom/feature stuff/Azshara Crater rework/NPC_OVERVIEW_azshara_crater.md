@@ -150,10 +150,10 @@
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
 | Young Thistle Boar | **1984** | 2-4 | Beast | 15 |
-| Rabid Thistle Bear | **2164** | 4-6 | Beast | 12 |
-| Crater Wolf | **2728** | 5-7 | Beast | 10 |
-| Highborne Wisp | **7849** | 6-8 | Elemental | 8 |
-| Giant Webwood Spider | **1985** | 8-10 | Beast | 8 |
+| Young Forest Bear | **822** | 8-9 | Beast | 12 |
+| Mangy Wolf | **525** | 5-6 | Beast | 10 |
+| Timberling | **2038** | 5-6 | Elemental | 8 |
+| Webwood Lurker | **1998** | 5-6 | Beast | 8 |
 | **Sethir the Ancient** | **6909** | 11 | **RARE** | 1 |
 | **Timber** | **1132** | 10 | **RARE** | 1 |
 | **Mother Fang** | **1240** | 10 | **RARE** | 1 |
@@ -161,11 +161,11 @@
 ### Zone 2: Northern Ruins (Level 10-20)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
-| Highborne Apparition | **7971** | 12-14 | Undead | 15 |
-| Highborne Lichling | **7972** | 14-16 | Undead | 12 |
-| Lingering Highborne | **7973** | 16-18 | Undead | 10 |
-| Arcane Anomaly | **18429** | 17-19 | Elemental | 8 |
-| Cursed Sentry | **7148** | 18-20 | Construct | 6 |
+| Dreadbone Skeleton | **16303** | 10-11 | Undead | 15 |
+| Harvest Golem | **36** | 11-12 | Construct | 12 |
+| Lesser Voidwalker | **418** | 20 | Demon | 10 |
+| Skeletal Warrior | **48** | 21-22 | Undead | 8 |
+| Skeletal Mage | **203** | 22-23 | Undead | 6 |
 | **The Evalcharr** | **6966** | 15 | **RARE** | 1 |
 | **Kregg Keelhaul** | **1260** | 15 | **RARE** | 1 |
 | **Snort the Heckler** | **5829** | 17 | **RARE** | 1 |
@@ -173,11 +173,11 @@
 ### Zone 3: Timbermaw Slopes (Level 20-30)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
-| Timbermaw Pathfinder | **7156** | 22-24 | Humanoid | 12 |
-| Timbermaw Warrior | **7157** | 24-26 | Humanoid | 10 |
-| Timbermaw Shaman | **7158** | 25-27 | Humanoid | 8 |
-| Deadwood Shaman | **7155** | 26-28 | Humanoid | 10 |
-| Deadwood Avenger | **7153** | 28-30 | Humanoid | 8 |
+| Thistlefur Pathfinder | **3926** | 23-24 | Humanoid | 12 |
+| Thistlefur Avenger | **3925** | 23-24 | Humanoid | 10 |
+| Thistlefur Shaman | **3924** | 23-24 | Humanoid | 8 |
+| Thistlefur Totemic | **3922** | 23-24 | Humanoid | 10 |
+| Thistlefur Ursa | **3921** | 23-24 | Humanoid | 8 |
 | **Arash-ethis** | **6650** | 29 | **RARE** | 1 |
 | **Hayoc** | **8208** | 25 | **RARE** | 1 |
 | **Kreiss** | **8203** | 27 | **RARE** | 1 |
@@ -191,9 +191,9 @@
 | Spitelash Screamer | **6196** | 37-39 | Humanoid | 8 |
 | Makrura Shellhide | **6348** | 38-40 | Humanoid | 8 |
 | Makrura Clackclaw | **6349** | 31-33 | Humanoid | 8 |
-| Blue Dragonspawn | **6131** | 36-38 | Dragon | 6 |
 | Arcane Devourer | **11467** | 34-36 | Elemental | 8 |
 | Spitelash Serpent | **6200** | 38-40 | Humanoid | 6 |
+| Cliff Breaker | **9197** | 38-39 | Elemental | 4 |
 | Blue Drake | **6129** | 39-40 | Dragon | 4 |
 | **Lady Sesspira** | **6140** | 40 | **RARE** | 1 |
 | **Garneg Charknap** | **8210** | 34 | **RARE** | 1 |
@@ -204,16 +204,14 @@
 ### Zone 5: Western Cliffs (Level 40-50)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
-| Wildspawn Satyr | **11451** | 42-44 | Demon | 12 |
-| Wildspawn Shadowstalker | **11452** | 44-46 | Demon | 10 |
-| Wildspawn Felsworn | **11453** | 46-48 | Demon | 8 |
+| Jadefire Satyr | **11791** | 49 | Demon | 12 |
+| Putridus Trickster | **11791** | 43 | Demon | 10 |
+| Putridus Satyr | **11790** | 42-43 | Demon | 8 |
 | Felpaw Ravager | **5866** | 45-47 | Demon | 10 |
 | Felhound | **5865** | 48-50 | Demon | 8 |
-| Hederine Slayer | **12130** | 47-49 | Demon | 8 |
-| Hederine Archmage | **12131** | 48-50 | Demon | 6 |
 | Fel Steed | **11464** | 42-44 | Demon | 6 |
 | Carrion Vulture | **5345** | 41-43 | Beast | 10 |
-| Wildspawn Hellcaller | **11454** | 46-48 | Demon | 8 |
+| Hellcalled Shadowstalker | **11452** | 44-46 | Demon | 8 |
 | **Monnos the Elder** | **6144** | 47 | **RARE** | 1 |
 | **Magronos the Unyielding** | **6146** | 48 | **RARE** | 1 |
 | **Andre Firebeard** | **14222** | 48 | **RARE** | 1 |
@@ -230,8 +228,7 @@
 | Doomguard Commander | **7671** | 58-60 | Demon | 4 |
 | Infernal Sentry | **11466** | 54-56 | Demon | 8 |
 | Entropic Beast | **10398** | 52-54 | Elemental | 10 |
-| Hederine Manastalker | **11465** | 56-58 | Demon | 6 |
-| Shadowcone Warlock | **11468** | 55-57 | Demon | 8 |
+| Infernal Target | **17644** | 60 | Demon | 6 |
 | Dreadlord | **12459** | 59-60 | Demon | 2 |
 | **Gatekeeper Karlindos** | **10831** | 58 | **RARE** | 1 |
 | **Jade** | **18683** | 60 | **RARE** | 1 |
@@ -243,20 +240,18 @@
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
 | Azure Whelpling | **6130** | 62-64 | Dragon | 15 |
-| Azure Drake | **6129** | 64-66 | Dragon | 10 |
-| Azure Templar | **12461** | 66-68 | Dragon | 6 |
+| Azure Netherwing Drake | **23456** | 70 | Dragon | 10 |
+| Onyx Netherwing Drake | **23455** | 70 | Dragon | 6 |
 | Naga Explorer | **6065** | 65-68 | Humanoid | 10 |
 | Mana Surge | **15527** | 68-70 | Elemental | 8 |
-| Mana Wraith | **18276** | 62-64 | Elemental | 10 |
-| Unstable Mana | **18274** | 64-66 | Elemental | 8 |
-| Azure Ley-Whelp | **26177** | 68-70 | Dragon | 12 |
-| Spitelash Sea-Witch | **6201** | 63-65 | Humanoid | 6 |
-| Spitelash Battle-Guardian | **15690** | 65-67 | Humanoid | 8 |
-| Stormsnout Monk | **14454** | 68-70 | Humanoid | 4 |
-| Son of Arakkor | **14444** | 66-68 | Giant | 4 |
-| Ghost of the Highborne | **18428** | 61-63 | Undead | 10 |
-| Arcane Servant | **18252** | 62-64 | Construct | 8 |
-| Blue Dragonspawn | **6131** | 65-67 | Dragon | 10 |
+| Mana Wraith | **18864** | 67-68 | Elemental | 10 |
+| Unstable Dragonhawk | **18854** | 68-69 | Beast | 8 |
+| Wyrmcult Zealot | **21382** | 67-68 | Humanoid | 12 |
+| Blue Dragonspawn | **6131** | 65-67 | Dragon | 6 |
+| Lesser Nether Drake | **21004** | 66-67 | Dragon | 8 |
+| Voidwraith | **18659** | 67-68 | Demon | 8 |
+| Rage Talon Dragonspawn | **109** | 58-59 | Dragon | 4 |
+| Chromatic Dragonspawn | **10447** | 59-60 | Dragon | 4 |
 | **General Colbatann** | **11500** | 68 | **RARE** | 1 |
 | **Mekthorg the Relentless** | **18685** | 61 | **RARE** | 1 |
 | **Vorakem Doomspeaker** | **18686** | 63 | **RARE** | 1 |
@@ -271,21 +266,22 @@
 ### Zone 8: Temple of Eternity (Level 70-80)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
-| Highborne Apparition | **7971** | 72-74 | Undead | 12 |
-| Arcane Guardian | **15691** | 74-76 | Construct | 8 |
+| Skeletal Craftsman | **32164** | 78-79 | Undead | 12 |
+| Skeletal Woodcutter | **33499** | 79 | Undead | 10 |
+| Skeletal Smith | **29837** | 81 | Undead | 8 |
 | Mana Remnant | **5766** | 76-78 | Elemental | 10 |
-| Faceless Lurker | **27099** | 78-80 | Aberration | 6 |
-| Forgotten One | **27959** | 79-80 | Aberration | 4 |
-| Eldritch Horror | **27958** | 79-80 | Aberration | 4 |
-| Void Sentinel | **27960** | 80 | Aberration | 4 |
-| Herald of Doom | **27957** | 80+ | Aberration | 2 |
-| Highborne Soul | **18430** | 72-74 | Undead | 10 |
-| Cursed Highborne | **18431** | 74-76 | Undead | 8 |
+| Faceless Lurker | **31691** | 79-80 | Aberration | 6 |
+| Forgotten Captain | **27220** | 72-73 | Undead | 4 |
+| Forgotten Knight | **27224** | 71-72 | Undead | 4 |
+| Forgotten Rifleman | **27225** | 71-72 | Undead | 4 |
+| Void Zone | **34001** | 83 | Aberration | 4 |
+| Faceless Horror | **33772** | 82 | Aberration | 2 |
+| Phantom Valet | **16408** | 72 | Undead | 10 |
+| Phantom Attendant | **16406** | 71 | Undead | 8 |
 | Temple Guardian | **18432** | 76-78 | Construct | 6 |
-| Void Spawn | **25526** | 78-80 | Aberration | 8 |
-| Ancient Faceless One | **27099** | 79-80 | Aberration | 4 |
-| Shadowy Apparition | **27955** | 75-77 | Undead | 10 |
-| Whispering Shade | **18427** | 72-74 | Undead | 12 |
+| Phantom Hallucination | **16425** | 80 | Undead | 8 |
+| Wretched Belcher | **31363** | 80-81 | Humanoid | 4 |
+| Wretched Ghoul | **37881** | 80 | Undead | 10 |
 | **Antilos** | **6910** | 80 | **RARE** | 1 |
 | **Perobas the Bloodthirster** | **32357** | 74 | **RARE** | 1 |
 | **Vigdis the War Maiden** | **32358** | 73 | **RARE** | 1 |

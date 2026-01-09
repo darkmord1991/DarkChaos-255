@@ -514,13 +514,17 @@ namespace DCAddon
             constexpr uint8 CMSG_COMMUNITY_RATE       = 0x55; // Rate an outfit
             constexpr uint8 CMSG_COMMUNITY_FAVORITE   = 0x56; // Toggle favorite
             constexpr uint8 CMSG_COMMUNITY_VIEW       = 0x57; // View/Preview outfit (impressions)
+            constexpr uint8 CMSG_COPY_COMMUNITY_OUTFIT = 0x58; // Copy community outfit to account
+            constexpr uint8 CMSG_COMMUNITY_UPDATE     = 0x59; // Update community outfit (owner only)
+            constexpr uint8 CMSG_COMMUNITY_DELETE     = 0x5A; // Delete community outfit (owner only)
             constexpr uint8 SMSG_COMMUNITY_LIST       = 0x63; // List of community outfits
             constexpr uint8 SMSG_COMMUNITY_PUBLISH_RESULT = 0x64; // Publish result
             constexpr uint8 SMSG_COMMUNITY_FAVORITE_RESULT = 0x65; // Favorite result
+            constexpr uint8 SMSG_COMMUNITY_UPDATE_RESULT = 0x67; // Update result
+            constexpr uint8 SMSG_COMMUNITY_DELETE_RESULT = 0x68; // Delete result
 
             // Client -> Server: Inspection
             constexpr uint8 CMSG_INSPECT_TRANSMOG     = 0x3D; // Inspect target transmog
-            constexpr uint8 CMSG_COPY_COMMUNITY_OUTFIT = 0x58; // Copy community outfit to account
 
             // Server -> Client: Inspection
             constexpr uint8 SMSG_INSPECT_TRANSMOG     = 0x66; // Inspection data (JSON)

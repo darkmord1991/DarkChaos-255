@@ -428,6 +428,9 @@ end
 
 function WayWander30()
     WaySetSpawnDist(30)
+    AzerothAdmin:ChatMsg(".npc set movetype random")
+    AzerothAdmin:LogAction("Set NPC movement type to RANDOM.")
+    AzerothAdmin:ChatMsg(".respawn")
 end
 
 function WayWanderOff()
@@ -438,6 +441,14 @@ function NPCUnFreeze_Way()
     local player = UnitName("target") or UnitName("player")
     AzerothAdmin:ChatMsg(".npc set movetype way NODEL")
     AzerothAdmin:LogAction("Set NPC movement type to WAYPOINT for player "..player..".")
+end
+
+function NPCUnFreeze_Random()
+    WaySetSpawnDist(10)
+    local player = UnitName("target") or UnitName("player")
+    AzerothAdmin:ChatMsg(".npc set movetype random")
+    AzerothAdmin:LogAction("Set NPC movement type to RANDOM for player "..player..".")
+    AzerothAdmin:ChatMsg(".respawn")
 end
 
 function ShowMove()

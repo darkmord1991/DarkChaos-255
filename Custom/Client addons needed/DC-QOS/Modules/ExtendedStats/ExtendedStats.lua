@@ -7,6 +7,24 @@
 
 local addon = DCQOS
 
+-- Combat rating IDs fallback (3.3.5a).
+-- Some custom clients/UIs may not expose _G.CR_* constants.
+local CR = {
+    DEFENSE_SKILL = _G.CR_DEFENSE_SKILL or 2,
+    DODGE = _G.CR_DODGE or 3,
+    PARRY = _G.CR_PARRY or 4,
+    BLOCK = _G.CR_BLOCK or 5,
+    HIT_MELEE = _G.CR_HIT_MELEE or 6,
+    HIT_RANGED = _G.CR_HIT_RANGED or 7,
+    HIT_SPELL = _G.CR_HIT_SPELL or 8,
+    CRIT_TAKEN_MELEE = _G.CR_CRIT_TAKEN_MELEE or 15,
+    HASTE_MELEE = _G.CR_HASTE_MELEE or 20,
+    HASTE_RANGED = _G.CR_HASTE_RANGED or 21,
+    HASTE_SPELL = _G.CR_HASTE_SPELL or 22,
+    EXPERTISE = _G.CR_EXPERTISE or 24,
+    ARMOR_PENETRATION = _G.CR_ARMOR_PENETRATION or 25,
+ }
+
 local ExtendedStats = {
     displayName = "Extended Stats",
     settingKey = "extendedStats",
@@ -15,6 +33,7 @@ local ExtendedStats = {
         extendedStats = {
             enabled = true,
             show = true,
+            hideUnavailable = true,
             anchorOffsetX = -2,
             anchorOffsetY = -12,
             -- General
@@ -178,12 +197,12 @@ end
 local function GetAvoidance()
     local dodge = SafeNumber(GetDodgeChance()) or 0
     local parry = SafeNumber(GetParryChance()) or 0
-    local miss = SafeNumber(GetParryChance()) or 5 -- Base 5% miss
+    local miss = 5.0 -- Base 5% miss vs same-level (simple display)
     return string.format("%.2f%%", dodge + parry + miss)
 end
 
 local function GetMeleeHitChance()
-    local hitBonus = GetCombatRatingBonusSafe(_G.CR_HIT_MELEE) or 0
+    local hitBonus = GetCombatRatingBonusSafe(CR.HIT_MELEE) or 0
     return hitBonus
 end
 
@@ -195,14 +214,14 @@ local function GetMeleeMissChance(bossLevel)
 end
 
 local function GetRangedMissChance(bossLevel)
-    local hitBonus = GetCombatRatingBonusSafe(_G.CR_HIT_RANGED) or 0
+    local hitBonus = GetCombatRatingBonusSafe(CR.HIT_RANGED) or 0
     local baseMiss = bossLevel and 8.0 or 5.0
     local missChance = baseMiss - hitBonus
     return math.max(0, missChance)
 end
 
 local function GetSpellMissChance(bossLevel)
-    local hitBonus = GetCombatRatingBonusSafe(_G.CR_HIT_SPELL) or 0
+    local hitBonus = GetCombatRatingBonusSafe(CR.HIT_SPELL) or 0
     local baseMiss = bossLevel and 17.0 or 4.0 -- 17% vs boss, 4% vs same level
     local missChance = baseMiss - hitBonus
     return math.max(0, missChance)
@@ -235,37 +254,61 @@ local function CreateLine(parent, yOffset, labelText, isAlt)
     local line = CreateFrame("Frame", nil, parent)
     line:SetPoint("TOPLEFT", parent, "TOPLEFT", 4, yOffset)
     line:SetPoint("RIGHT", parent, "RIGHT", -4, 0)
-    line:SetHeight(12)
+    line:SetHeight(14)
 
-    if isAlt then
-        local bg = line:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture(1, 1, 1, 0.05) -- Faint highlight
+    local bg = line:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture(1, 1, 1, 0.05) -- Faint highlight
+    if bg.SetShown then
+        bg:SetShown(isAlt and true or false)
+    else
+        if isAlt then
+            bg:Show()
+        else
+            bg:Hide()
+        end
     end
+    line._altBg = bg
 
     local label = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     label:SetPoint("LEFT", line, "LEFT", 4, 0)
     label:SetText(labelText)
+    label:SetJustifyH("LEFT")
+    label:SetNonSpaceWrap(false)
 
     local value = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     value:SetPoint("RIGHT", line, "RIGHT", -4, 0)
+    value:SetJustifyH("RIGHT")
+    value:SetNonSpaceWrap(false)
     value:SetText("-")
 
-    return label, value
+    -- Prevent label/value overlap: constrain label to end before the value column.
+    label:SetPoint("RIGHT", value, "LEFT", -8, 0)
+    -- Ensure the value column has enough width for strings like "207 (22.95%)".
+    value:SetWidth(96)
+
+    return line, label, value
 end
 
 local function CreateHeader(parent, yOffset, text)
-    local header = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    header:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, yOffset)
+    local headerFrame = CreateFrame("Frame", nil, parent)
+    headerFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, yOffset)
+    headerFrame:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
+    headerFrame:SetHeight(14)
+
+    local header = headerFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    header:SetPoint("TOPLEFT", headerFrame, "TOPLEFT", 0, 0)
     header:SetText(text)
-    
-    local underline = parent:CreateTexture(nil, "ARTWORK")
+
+    local underline = headerFrame:CreateTexture(nil, "ARTWORK")
     underline:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -2)
-    underline:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
+    underline:SetPoint("RIGHT", headerFrame, "RIGHT", 0, 0)
     underline:SetHeight(1)
     underline:SetTexture(1, 1, 1, 0.2)
-    
-    return header
+
+    headerFrame._headerText = header
+    headerFrame._underline = underline
+    return headerFrame
 end
 
 local function ApplyStyle(frame)
@@ -385,10 +428,11 @@ local function TryBuildUI()
     settingsBtn:SetFrameLevel(frame:GetFrameLevel() + 10)
     settingsBtn:Show()
     
-    -- Toggle Button (below settings on right edge)
-    local toggleBtn = CreateFrame("Button", "DCQoSExtendedStatsToggle", frame)
+    -- Toggle Button (must not be parented to the panel frame;
+    -- otherwise it disappears when the panel is hidden)
+    local toggleBtn = CreateFrame("Button", "DCQoSExtendedStatsToggle", CharacterFrame)
     toggleBtn:SetSize(32, 32)
-    toggleBtn:SetPoint("LEFT", frame, "RIGHT", 4, 20)
+    -- Anchored in UpdateVisibility() depending on panel state.
     toggleBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
     toggleBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
     toggleBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
@@ -415,7 +459,7 @@ local function TryBuildUI()
             end
 
             if btn.SetParent then
-                btn:SetParent(frame)
+                btn:SetParent(CharacterFrame)
             end
             btn:ClearAllPoints()
             btn:SetPoint("TOP", prev, "BOTTOM", 0, -5)
@@ -443,10 +487,17 @@ local function TryBuildUI()
             -- Treat old default as flush
             dx = -2
         end
+        dx = tonumber(dx) or -2
+        -- Avoid huge gaps caused by accidentally saved drag offsets.
+        -- Keep the panel snapped close to the Character window by default.
+        if dx > 40 or dx < -80 then
+            dx = -2
+            addon:SetSetting("extendedStats.anchorOffsetX", dx)
+        end
         local dy = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetY) or -12
         frame:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", dx, dy)
         frame:SetHeight(CharacterFrame:GetHeight() - 24)
-        frame:SetWidth(200)
+        frame:SetWidth(260)
     end
 
     frame.UpdateLayout = UpdateLayout
@@ -460,6 +511,8 @@ local function TryBuildUI()
             frame:Show()
             settingsBtn:Show()
             toggleBtn:Show()
+            toggleBtn:ClearAllPoints()
+            toggleBtn:SetPoint("LEFT", frame, "RIGHT", 4, 20)
             -- Re-anchor 3rd-party buttons after we show
             ReanchorExternalButtons()
             toggleBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
@@ -468,6 +521,8 @@ local function TryBuildUI()
             frame:Hide()
             settingsBtn:Hide()
             toggleBtn:Show()
+            toggleBtn:ClearAllPoints()
+            toggleBtn:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 4, -40)
             if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
             if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
             if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
@@ -516,290 +571,350 @@ local function TryBuildUI()
     frame.scrollFrame = scroll
     frame.content = content
 
-    -- Layout
-    local y = -5
+    -- Layout (dynamic reflow; can hide unavailable stats per class)
     local stats = {}
-    local alt = false
+    local lines = {}
+    local headers = {}
+    local sections = {}
+    local availability = {}
     local settings = addon.settings.extendedStats
-    
-    -- Helper to add stat line
-    local function AddStat(key, label)
+
+    local function AddSection(name)
+        local headerFrame = CreateHeader(content, 0, name)
+        headers[name] = headerFrame
+        local section = { name = name, header = headerFrame, keys = {} }
+        table.insert(sections, section)
+        return section
+    end
+
+    local function AddStat(section, key, label)
         if settings["show" .. key] then
-            local _, value = CreateLine(content, y, label, alt)
+            local line, _, value = CreateLine(content, 0, label, false)
+            lines[key] = line
             stats[key] = value
-            y = y - 12
-            alt = not alt
+            table.insert(section.keys, key)
         end
     end
-    
-    -- General
-    if settings.showMovementSpeed then
-        CreateHeader(content, y, "General")
-        y = y - 16
-        alt = false
-        AddStat("MovementSpeed", "Movement Speed")
+
+    local function IsUnavailableText(text)
+        return (text == nil) or (text == "-") or (text == "")
     end
-    
-    -- Melee
-    if settings.showMeleeAP or settings.showMeleeHit or settings.showMeleeCrit or settings.showMeleeHaste or 
+
+    local function ShouldHideUnavailable()
+        return settings.hideUnavailable ~= false
+    end
+
+    local function ReflowLayout()
+        local y = -5
+
+        for _, section in ipairs(sections) do
+            local visibleKeys = {}
+            for _, key in ipairs(section.keys) do
+                if lines[key] and (not ShouldHideUnavailable() or availability[key]) then
+                    table.insert(visibleKeys, key)
+                end
+            end
+
+            if #visibleKeys == 0 then
+                if section.header then section.header:Hide() end
+                for _, key in ipairs(section.keys) do
+                    if lines[key] then lines[key]:Hide() end
+                end
+            else
+                if section.header then
+                    section.header:Show()
+                    section.header:ClearAllPoints()
+                    section.header:SetPoint("TOPLEFT", content, "TOPLEFT", 8, y)
+                    section.header:SetPoint("RIGHT", content, "RIGHT", -8, 0)
+                end
+                y = y - 16
+
+                local row = 0
+                for _, key in ipairs(visibleKeys) do
+                    local line = lines[key]
+                    if line then
+                        row = row + 1
+                        line:Show()
+                        line:ClearAllPoints()
+                        line:SetPoint("TOPLEFT", content, "TOPLEFT", 4, y)
+                        line:SetPoint("RIGHT", content, "RIGHT", -4, 0)
+                        if line._altBg then
+                            local showAlt = ((row % 2) == 0)
+                            if line._altBg.SetShown then
+                                line._altBg:SetShown(showAlt)
+                            else
+                                if showAlt then
+                                    line._altBg:Show()
+                                else
+                                    line._altBg:Hide()
+                                end
+                            end
+                        end
+                        y = y - 14
+                    end
+                end
+
+                y = y - 6
+            end
+        end
+
+        content:SetHeight(math.max(1, -y + 20))
+    end
+
+    -- Build sections based on enabled toggles
+    if settings.showMovementSpeed then
+        local s = AddSection("General")
+        AddStat(s, "MovementSpeed", "Movement Speed")
+    end
+
+    if settings.showMeleeAP or settings.showMeleeHit or settings.showMeleeCrit or settings.showMeleeHaste or
        settings.showMeleeExpertise or settings.showMeleeExpertiseRating or settings.showMeleeArPen or
        settings.showMeleeMiss or settings.showMeleeMissBoss then
-        y = y - 6
-        CreateHeader(content, y, "Melee")
-        y = y - 16
-        alt = false
-        AddStat("MeleeAP", "Attack Power")
-        AddStat("MeleeHit", "Hit")
-        AddStat("MeleeCrit", "Crit")
-        AddStat("MeleeHaste", "Haste")
-        AddStat("MeleeExpertise", "Expertise")
-        AddStat("MeleeExpertiseRating", "Expertise Rating")
-        AddStat("MeleeArPen", "Armor Pen")
-        AddStat("MeleeMiss", "Miss Chance")
-        AddStat("MeleeMissBoss", "Miss (Boss)")
+        local s = AddSection("Melee")
+        AddStat(s, "MeleeAP", "Attack Power")
+        AddStat(s, "MeleeHit", "Hit")
+        AddStat(s, "MeleeCrit", "Crit")
+        AddStat(s, "MeleeHaste", "Haste")
+        AddStat(s, "MeleeExpertise", "Expertise")
+        AddStat(s, "MeleeExpertiseRating", "Expertise Rating")
+        AddStat(s, "MeleeArPen", "Armor Pen")
+        AddStat(s, "MeleeMiss", "Miss Chance")
+        AddStat(s, "MeleeMissBoss", "Miss (Boss)")
     end
 
-    -- Ranged
     if settings.showRangedAP or settings.showRangedHit or settings.showRangedCrit or settings.showRangedHaste or
        settings.showRangedArPen or settings.showRangedMiss or settings.showRangedMissBoss then
-        y = y - 6
-        CreateHeader(content, y, "Ranged")
-        y = y - 16
-        alt = false
-        AddStat("RangedAP", "Attack Power")
-        AddStat("RangedHit", "Hit")
-        AddStat("RangedCrit", "Crit")
-        AddStat("RangedHaste", "Haste")
-        AddStat("RangedArPen", "Armor Pen")
-        AddStat("RangedMiss", "Miss Chance")
-        AddStat("RangedMissBoss", "Miss (Boss)")
+        local s = AddSection("Ranged")
+        AddStat(s, "RangedAP", "Attack Power")
+        AddStat(s, "RangedHit", "Hit")
+        AddStat(s, "RangedCrit", "Crit")
+        AddStat(s, "RangedHaste", "Haste")
+        AddStat(s, "RangedArPen", "Armor Pen")
+        AddStat(s, "RangedMiss", "Miss Chance")
+        AddStat(s, "RangedMissBoss", "Miss (Boss)")
     end
 
-    -- Spell
-    if settings.showSpellPower or settings.showSpellPenetration or settings.showSpellHit or 
+    if settings.showSpellPower or settings.showSpellPenetration or settings.showSpellHit or
        settings.showSpellCrit or settings.showSpellHaste or settings.showSpellMiss or settings.showSpellMissBoss or
        settings.showSpellSchools then
-        y = y - 6
-        CreateHeader(content, y, "Spell")
-        y = y - 16
-        alt = false
-        AddStat("SpellPower", "Spell Power (best)")
-        AddStat("SpellPenetration", "Penetration")
-        AddStat("SpellHit", "Hit")
-        AddStat("SpellCrit", "Crit (best)")
-        AddStat("SpellHaste", "Haste")
-        AddStat("SpellMiss", "Miss Chance")
-        AddStat("SpellMissBoss", "Miss (Boss)")
-        
-        -- Spell Schools
+        local s = AddSection("Spell")
+        AddStat(s, "SpellPower", "Spell Power (best)")
+        AddStat(s, "SpellPenetration", "Penetration")
+        AddStat(s, "SpellHit", "Hit")
+        AddStat(s, "SpellCrit", "Crit (best)")
+        AddStat(s, "SpellHaste", "Haste")
+        AddStat(s, "SpellMiss", "Miss Chance")
+        AddStat(s, "SpellMissBoss", "Miss (Boss)")
+
         if settings.showSpellSchools then
             for _, school in ipairs(SPELL_SCHOOLS) do
-                y = y - 6
-                CreateHeader(content, y, school.name)
-                y = y - 16
-                alt = false
-                local _, dmg = CreateLine(content, y, "Damage", false)
-                stats[school.name .. "Dmg"] = dmg
-                y = y - 12
-                local _, crit = CreateLine(content, y, "Crit", true)
-                stats[school.name .. "Crit"] = crit
-                y = y - 12
+                local ss = AddSection(school.name)
+                AddStat(ss, school.name .. "Dmg", "Damage")
+                AddStat(ss, school.name .. "Crit", "Crit")
             end
         end
     end
 
-    -- Defense
     if settings.showArmor or settings.showDefense or settings.showDefenseRating or settings.showAvoidance or
        settings.showDodge or settings.showParry or settings.showBlock or settings.showBlockValue or settings.showResilience then
-        y = y - 6
-        CreateHeader(content, y, "Defense")
-        y = y - 16
-        alt = false
-        AddStat("Armor", "Armor")
-        AddStat("Defense", "Defense")
-        AddStat("DefenseRating", "Defense Rating")
-        AddStat("Avoidance", "Avoidance")
-        AddStat("Dodge", "Dodge")
-        AddStat("Parry", "Parry")
-        AddStat("Block", "Block")
-        AddStat("BlockValue", "Block Value")
-        AddStat("Resilience", "Resilience")
-    end
-    
-    -- Mana Regen
-    if settings.showMP5Casting or settings.showMP5NotCasting then
-        y = y - 6
-        CreateHeader(content, y, "Mana Regen")
-        y = y - 16
-        alt = false
-        AddStat("MP5Casting", "MP5 (Casting)")
-        AddStat("MP5NotCasting", "MP5 (Not Casting)")
+        local s = AddSection("Defense")
+        AddStat(s, "Armor", "Armor")
+        AddStat(s, "Defense", "Defense")
+        AddStat(s, "DefenseRating", "Defense Rating")
+        AddStat(s, "Avoidance", "Avoidance")
+        AddStat(s, "Dodge", "Dodge")
+        AddStat(s, "Parry", "Parry")
+        AddStat(s, "Block", "Block")
+        AddStat(s, "BlockValue", "Block Value")
+        AddStat(s, "Resilience", "Resilience")
     end
 
-    content:SetHeight(math.max(1, -y + 20))
+    if settings.showMP5Casting or settings.showMP5NotCasting then
+        local s = AddSection("Mana Regen")
+        AddStat(s, "MP5Casting", "MP5 (Casting)")
+        AddStat(s, "MP5NotCasting", "MP5 (Not Casting)")
+    end
 
     local function UpdateStats()
+        local function SetStatText(key, text)
+            if not stats[key] then
+                return
+            end
+            if IsUnavailableText(text) then
+                stats[key]:SetText("-")
+                availability[key] = false
+            else
+                stats[key]:SetText(text)
+                availability[key] = true
+            end
+        end
+
         -- General
-        if stats.MovementSpeed then stats.MovementSpeed:SetText(GetMovementSpeed()) end
+        if stats.MovementSpeed then SetStatText("MovementSpeed", GetMovementSpeed()) end
         
         -- Melee
         if stats.MeleeAP then
             if type(UnitAttackPower) == "function" then
                 local base, pos, neg = UnitAttackPower("player")
-                stats.MeleeAP:SetText(string.format("%d", base + pos + neg))
+                SetStatText("MeleeAP", string.format("%d", base + pos + neg))
             else
-                stats.MeleeAP:SetText("-")
+                SetStatText("MeleeAP", "-")
             end
         end
         
-        if stats.MeleeHit then stats.MeleeHit:SetText(FormatRatingAndBonus(_G.CR_HIT_MELEE)) end
+        if stats.MeleeHit then SetStatText("MeleeHit", FormatRatingAndBonus(CR.HIT_MELEE)) end
         
         if stats.MeleeCrit then
             if type(GetCritChance) == "function" then
-                stats.MeleeCrit:SetText(FmtPercent(GetCritChance()))
+                SetStatText("MeleeCrit", FmtPercent(GetCritChance()))
             else
-                stats.MeleeCrit:SetText("-")
+                SetStatText("MeleeCrit", "-")
             end
         end
         
-        if stats.MeleeHaste then stats.MeleeHaste:SetText(FormatRatingAndBonus(_G.CR_HASTE_MELEE)) end
-        if stats.MeleeExpertise then stats.MeleeExpertise:SetText(FormatRatingAndBonus(_G.CR_EXPERTISE)) end
+        if stats.MeleeHaste then SetStatText("MeleeHaste", FormatRatingAndBonus(CR.HASTE_MELEE)) end
+        if stats.MeleeExpertise then SetStatText("MeleeExpertise", FormatRatingAndBonus(CR.EXPERTISE)) end
         
         if stats.MeleeExpertiseRating then
-            local expertiseRating = GetCombatRatingSafe(_G.CR_EXPERTISE)
-            stats.MeleeExpertiseRating:SetText(expertiseRating and string.format("%d", expertiseRating) or "-")
+            local expertiseRating = GetCombatRatingSafe(CR.EXPERTISE)
+            SetStatText("MeleeExpertiseRating", expertiseRating and string.format("%d", expertiseRating) or "-")
         end
         
-        if stats.MeleeArPen then stats.MeleeArPen:SetText(FormatRatingAndBonus(_G.CR_ARMOR_PENETRATION)) end
-        if stats.MeleeMiss then stats.MeleeMiss:SetText(FmtPercent(GetMeleeMissChance(false))) end
-        if stats.MeleeMissBoss then stats.MeleeMissBoss:SetText(FmtPercent(GetMeleeMissChance(true))) end
+        if stats.MeleeArPen then SetStatText("MeleeArPen", FormatRatingAndBonus(CR.ARMOR_PENETRATION)) end
+        if stats.MeleeMiss then SetStatText("MeleeMiss", FmtPercent(GetMeleeMissChance(false))) end
+        if stats.MeleeMissBoss then SetStatText("MeleeMissBoss", FmtPercent(GetMeleeMissChance(true))) end
 
         -- Ranged
         if stats.RangedAP then
             if type(UnitRangedAttackPower) == "function" then
                 local base, pos, neg = UnitRangedAttackPower("player")
-                stats.RangedAP:SetText(string.format("%d", base + pos + neg))
+                SetStatText("RangedAP", string.format("%d", base + pos + neg))
             else
-                stats.RangedAP:SetText("-")
+                SetStatText("RangedAP", "-")
             end
         end
         
-        if stats.RangedHit then stats.RangedHit:SetText(FormatRatingAndBonus(_G.CR_HIT_RANGED)) end
+        if stats.RangedHit then SetStatText("RangedHit", FormatRatingAndBonus(CR.HIT_RANGED)) end
         
         if stats.RangedCrit then
             if type(GetRangedCritChance) == "function" then
-                stats.RangedCrit:SetText(FmtPercent(GetRangedCritChance()))
+                SetStatText("RangedCrit", FmtPercent(GetRangedCritChance()))
             else
-                stats.RangedCrit:SetText("-")
+                SetStatText("RangedCrit", "-")
             end
         end
         
-        if stats.RangedHaste then stats.RangedHaste:SetText(FormatRatingAndBonus(_G.CR_HASTE_RANGED)) end
-        if stats.RangedArPen then stats.RangedArPen:SetText(FormatRatingAndBonus(_G.CR_ARMOR_PENETRATION)) end
-        if stats.RangedMiss then stats.RangedMiss:SetText(FmtPercent(GetRangedMissChance(false))) end
-        if stats.RangedMissBoss then stats.RangedMissBoss:SetText(FmtPercent(GetRangedMissChance(true))) end
+        if stats.RangedHaste then SetStatText("RangedHaste", FormatRatingAndBonus(CR.HASTE_RANGED)) end
+        if stats.RangedArPen then SetStatText("RangedArPen", FormatRatingAndBonus(CR.ARMOR_PENETRATION)) end
+        if stats.RangedMiss then SetStatText("RangedMiss", FmtPercent(GetRangedMissChance(false))) end
+        if stats.RangedMissBoss then SetStatText("RangedMissBoss", FmtPercent(GetRangedMissChance(true))) end
 
         -- Spell
         if stats.SpellPower then
             local sp = BestSpellPower()
-            stats.SpellPower:SetText(sp and string.format("%d", sp) or "-")
+            SetStatText("SpellPower", sp and string.format("%d", sp) or "-")
         end
         
         if stats.SpellPenetration then
             if type(GetSpellPenetration) == "function" then
                 local pen = SafeNumber(GetSpellPenetration())
-                stats.SpellPenetration:SetText(pen and string.format("%d", pen) or "-")
+                SetStatText("SpellPenetration", pen and string.format("%d", pen) or "-")
             else
-                stats.SpellPenetration:SetText("-")
+                SetStatText("SpellPenetration", "-")
             end
         end
         
-        if stats.SpellHit then stats.SpellHit:SetText(FormatRatingAndBonus(_G.CR_HIT_SPELL)) end
+        if stats.SpellHit then SetStatText("SpellHit", FormatRatingAndBonus(CR.HIT_SPELL)) end
         
         if stats.SpellCrit then
             local sc = BestSpellCrit()
-            stats.SpellCrit:SetText(sc and FmtPercent(sc) or "-")
+            SetStatText("SpellCrit", sc and FmtPercent(sc) or "-")
         end
         
-        if stats.SpellHaste then stats.SpellHaste:SetText(FormatRatingAndBonus(_G.CR_HASTE_SPELL)) end
-        if stats.SpellMiss then stats.SpellMiss:SetText(FmtPercent(GetSpellMissChance(false))) end
-        if stats.SpellMissBoss then stats.SpellMissBoss:SetText(FmtPercent(GetSpellMissChance(true))) end
+        if stats.SpellHaste then SetStatText("SpellHaste", FormatRatingAndBonus(CR.HASTE_SPELL)) end
+        if stats.SpellMiss then SetStatText("SpellMiss", FmtPercent(GetSpellMissChance(false))) end
+        if stats.SpellMissBoss then SetStatText("SpellMissBoss", FmtPercent(GetSpellMissChance(true))) end
         
         -- Per-school spell stats
         if settings.showSpellSchools then
             for _, school in ipairs(SPELL_SCHOOLS) do
                 if stats[school.name .. "Dmg"] then
                     local dmg = GetSpellDamageForSchool(school.id)
-                    stats[school.name .. "Dmg"]:SetText(dmg and string.format("%d", dmg) or "-")
+                    SetStatText(school.name .. "Dmg", dmg and string.format("%d", dmg) or "-")
                 end
                 if stats[school.name .. "Crit"] then
                     local crit = GetSpellCritForSchool(school.id)
-                    stats[school.name .. "Crit"]:SetText(crit and FmtPercent(crit) or "-")
+                    SetStatText(school.name .. "Crit", crit and FmtPercent(crit) or "-")
                 end
             end
         end
 
         -- Defense
-        if stats.Armor then stats.Armor:SetText(GetArmorText()) end
-        if stats.Defense then stats.Defense:SetText(GetDefenseText()) end
+        if stats.Armor then SetStatText("Armor", GetArmorText()) end
+        if stats.Defense then SetStatText("Defense", GetDefenseText()) end
         
         if stats.DefenseRating then
-            local defRating = GetCombatRatingSafe(_G.CR_DEFENSE_SKILL)
-            stats.DefenseRating:SetText(defRating and string.format("%d", defRating) or "-")
+            local defRating = GetCombatRatingSafe(CR.DEFENSE_SKILL)
+            SetStatText("DefenseRating", defRating and string.format("%d", defRating) or "-")
         end
         
-        if stats.Avoidance then stats.Avoidance:SetText(GetAvoidance()) end
+        if stats.Avoidance then SetStatText("Avoidance", GetAvoidance()) end
 
         if stats.Dodge then
             if type(GetDodgeChance) == "function" then
-                stats.Dodge:SetText(FmtPercent(GetDodgeChance()))
+                SetStatText("Dodge", FmtPercent(GetDodgeChance()))
             else
-                stats.Dodge:SetText("-")
+                SetStatText("Dodge", "-")
             end
         end
 
         if stats.Parry then
             if type(GetParryChance) == "function" then
-                stats.Parry:SetText(FmtPercent(GetParryChance()))
+                SetStatText("Parry", FmtPercent(GetParryChance()))
             else
-                stats.Parry:SetText("-")
+                SetStatText("Parry", "-")
             end
         end
 
         if stats.Block then
             if type(GetBlockChance) == "function" then
-                stats.Block:SetText(FmtPercent(GetBlockChance()))
+                SetStatText("Block", FmtPercent(GetBlockChance()))
             else
-                stats.Block:SetText("-")
+                SetStatText("Block", "-")
             end
         end
         
         if stats.BlockValue then
             if type(GetShieldBlock) == "function" then
-                stats.BlockValue:SetText(string.format("%d", GetShieldBlock()))
+                SetStatText("BlockValue", string.format("%d", GetShieldBlock()))
             else
-                stats.BlockValue:SetText("-")
+                SetStatText("BlockValue", "-")
             end
         end
 
-        if stats.Resilience then stats.Resilience:SetText(FormatRatingAndBonus(_G.CR_CRIT_TAKEN_MELEE)) end
+        if stats.Resilience then SetStatText("Resilience", FormatRatingAndBonus(CR.CRIT_TAKEN_MELEE)) end
         
         -- Mana Regen
         if stats.MP5Casting or stats.MP5NotCasting then
             if type(GetManaRegen) == "function" then
                 local base, casting = GetManaRegen()
                 if stats.MP5Casting then
-                    stats.MP5Casting:SetText(casting and string.format("%d", casting * 5) or "-")
+                    SetStatText("MP5Casting", casting and string.format("%d", casting * 5) or "-")
                 end
                 if stats.MP5NotCasting then
-                    stats.MP5NotCasting:SetText(base and string.format("%d", base * 5) or "-")
+                    SetStatText("MP5NotCasting", base and string.format("%d", base * 5) or "-")
                 end
             else
-                if stats.MP5Casting then stats.MP5Casting:SetText("-") end
-                if stats.MP5NotCasting then stats.MP5NotCasting:SetText("-") end
+                if stats.MP5Casting then SetStatText("MP5Casting", "-") end
+                if stats.MP5NotCasting then SetStatText("MP5NotCasting", "-") end
             end
         end
+
+        ReflowLayout()
     end
+
+    frame.UpdateStats = UpdateStats
+    frame.ReflowLayout = ReflowLayout
 
     -- Update events while frame is visible
     frame:SetScript("OnShow", function()
@@ -833,6 +948,9 @@ local function TryBuildUI()
     end)
     showHook:HookScript("OnHide", function()
         frame:Hide()
+        if toggleBtn then
+            toggleBtn:Hide()
+        end
     end)
 
     ExtendedStats._frame = frame
@@ -901,6 +1019,18 @@ function ExtendedStats.CreateSettings(parent)
         addon:SetSetting("extendedStats.show", self:GetChecked())
     end)
     
+
+    local hideUnavailable = addon:CreateCheckbox(parent)
+    hideUnavailable:SetPoint("TOPLEFT", 16, yOffset)
+    hideUnavailable.Text:SetText("Hide unavailable/empty stats")
+    hideUnavailable:SetChecked(settings.hideUnavailable ~= false)
+    hideUnavailable:SetScript("OnClick", function(self)
+        settings.hideUnavailable = self:GetChecked()
+        if ExtendedStats._frame and ExtendedStats._frame.UpdateStats then
+            ExtendedStats._frame:UpdateStats()
+        end
+    end)
+    yOffset = yOffset - 30
     yOffset = yOffset - 40
     
     local function CreateStatToggle(label, settingKey, xOffset)

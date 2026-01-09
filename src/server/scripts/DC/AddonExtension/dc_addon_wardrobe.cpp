@@ -328,6 +328,7 @@ namespace DCCollection
                 "id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,"
                 "name VARCHAR(100),"
                 "author_name VARCHAR(50),"
+                "author_account_id INT UNSIGNED DEFAULT 0,"
                 "author_guid INT UNSIGNED,"
                 "items_string TEXT,"
                 "upvotes INT UNSIGNED DEFAULT 0,"
@@ -337,6 +338,27 @@ namespace DCCollection
                 "tags VARCHAR(255) DEFAULT '',"
                 "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
                 ")");
+
+            // Migration: add author_account_id for account-wide ownership.
+            // Some environments do not support "ADD COLUMN IF NOT EXISTS", so probe first.
+            if (QueryResult col = CharacterDatabase.Query("SHOW COLUMNS FROM dc_collection_community_outfits LIKE 'author_account_id'"))
+            {
+                (void)col;
+            }
+            else
+            {
+                CharacterDatabase.Execute(
+                    "ALTER TABLE dc_collection_community_outfits "
+                    "ADD COLUMN author_account_id INT UNSIGNED DEFAULT 0 AFTER author_name");
+            }
+
+            // Best-effort backfill from existing author_guid -> characters.account.
+            // If this fails on some custom DB layouts, it will just be ignored.
+            CharacterDatabase.Execute(
+                "UPDATE dc_collection_community_outfits o "
+                "JOIN characters c ON c.guid = o.author_guid "
+                "SET o.author_account_id = c.account "
+                "WHERE (o.author_account_id IS NULL OR o.author_account_id = 0)");
 
             CharacterDatabase.Execute(
                 "CREATE TABLE IF NOT EXISTS dc_collection_community_favorites ("
@@ -1356,7 +1378,7 @@ namespace DCCollection
         if (filter == "favorites")
         {
             sql = Acore::StringFormat(
-                "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, 1 as is_favorite, o.views, o.tags "
+                "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, 1 as is_favorite, o.views, o.tags, o.author_account_id, o.author_guid, o.created_at "
                 "FROM dc_collection_community_outfits o "
                 "JOIN dc_collection_community_favorites f ON o.id = f.outfit_id "
                 "WHERE f.account_id = {} {} "
@@ -1365,16 +1387,15 @@ namespace DCCollection
         }
         else if (filter == "my_outfits")
         {
-            uint32 playerGuid = player->GetGUID().GetCounter();
             sql = Acore::StringFormat(
                 "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, "
                 "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, "
-                "o.views, o.tags "
+                "o.views, o.tags, o.author_account_id, o.author_guid, o.created_at "
                 "FROM dc_collection_community_outfits o "
                 "LEFT JOIN dc_collection_community_favorites f ON f.outfit_id = o.id AND f.account_id = {} "
-                "WHERE o.author_guid = {} {} "
+                "WHERE o.author_account_id = {} {} "
                 "ORDER BY o.created_at DESC LIMIT {}, {}",
-                accountId, playerGuid, tagFilterCondition, offset, limit);
+                accountId, accountId, tagFilterCondition, offset, limit);
         }
         else
         {
@@ -1382,7 +1403,7 @@ namespace DCCollection
             sql = Acore::StringFormat(
                 "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, "
                 "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, "
-                "o.views, o.tags "
+                "o.views, o.tags, o.author_account_id, o.author_guid, o.created_at "
                 "FROM dc_collection_community_outfits o "
                 "LEFT JOIN dc_collection_community_favorites f ON f.outfit_id = o.id AND f.account_id = {} "
                 "{} "
@@ -1412,6 +1433,10 @@ namespace DCCollection
                 obj.Set("is_favorite", f[6].Get<bool>());
                 obj.Set("views", f[7].Get<uint32>());
                 obj.Set("tags", f[8].Get<std::string>());
+                obj.Set("author_account_id", f[9].Get<uint32>());
+                obj.Set("author_guid", f[10].Get<uint32>());
+                obj.Set("created_at", f[11].Get<std::string>());
+                obj.Set("is_owner", f[9].Get<uint32>() == accountId);
                 outfits.Push(obj);
                 outfitCount++;
             } while (result->NextRow());
@@ -1439,15 +1464,17 @@ namespace DCCollection
         std::string items = json["items"].AsString();
         std::string tags = "";
         if (json.HasKey("tags")) tags = json["tags"].AsString();
+
+        uint32 accountId = GetAccountId(player);
         
         CharacterDatabase.EscapeString(name);
         CharacterDatabase.EscapeString(items);
         CharacterDatabase.EscapeString(tags);
         
         std::string insertSql = Acore::StringFormat(
-            "INSERT INTO dc_collection_community_outfits (name, author_name, author_guid, items_string, tags) "
-            "VALUES ('{}', '{}', {}, '{}', '{}')",
-            name, player->GetName(), player->GetGUID().GetCounter(), items, tags);
+            "INSERT INTO dc_collection_community_outfits (name, author_name, author_account_id, author_guid, items_string, tags) "
+            "VALUES ('{}', '{}', {}, {}, '{}', '{}')",
+            name, player->GetName(), accountId, player->GetGUID().GetCounter(), items, tags);
 
         // Publish is an infrequent action. Use a synchronous execute to guarantee an immediate response,
         // even on cores where async callbacks may be delayed or dropped due to DB errors.
@@ -1509,6 +1536,136 @@ namespace DCCollection
         CharacterDatabase.AsyncQuery(Acore::StringFormat(
             "UPDATE dc_collection_community_outfits SET views = views + 1 WHERE id = {}",
             id));
+    }
+
+    void HandleCommunityUpdate(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+        if (!DCAddon::IsJsonMessage(msg))
+            return;
+
+        EnsureCommunityTables();
+
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        uint32 id = json["id"].AsUInt32();
+        std::string name = json["name"].AsString();
+        std::string items = json["items"].AsString();
+        std::string tags = "";
+        if (json.HasKey("tags")) tags = json["tags"].AsString();
+        
+        uint32 playerGuid = player->GetGUID().GetCounter();
+        uint32 accountId = GetAccountId(player);
+
+        // Verify ownership before updating
+        std::string checkSql = Acore::StringFormat(
+            "SELECT author_account_id, author_guid FROM dc_collection_community_outfits WHERE id = {}",
+            id);
+        
+        QueryResult checkResult = CharacterDatabase.Query(checkSql);
+        
+        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_UPDATE_RESULT);
+        
+        if (!checkResult)
+        {
+            res.Set("success", false);
+            res.Set("error", "Outfit not found");
+            res.Send(player);
+            return;
+        }
+        
+        Field* ownerFields = checkResult->Fetch();
+        uint32 authorAccountId = ownerFields[0].Get<uint32>();
+        uint32 authorGuid = ownerFields[1].Get<uint32>();
+        bool isOwner = (authorAccountId != 0) ? (authorAccountId == accountId) : (authorGuid == playerGuid);
+        if (!isOwner)
+        {
+            res.Set("success", false);
+            res.Set("error", "You are not the owner of this outfit");
+            res.Send(player);
+            return;
+        }
+        
+        CharacterDatabase.EscapeString(name);
+        CharacterDatabase.EscapeString(items);
+        CharacterDatabase.EscapeString(tags);
+        
+        std::string updateSql = Acore::StringFormat(
+            "UPDATE dc_collection_community_outfits SET name = '{}', items_string = '{}', tags = '{}' WHERE id = {}",
+            name, items, tags, id);
+
+        CharacterDatabase.Execute(updateSql);
+
+        res.Set("success", true);
+        res.Set("id", id);
+        res.Send(player);
+        
+        LOG_INFO("module.dc", "[DCWardrobe] Player {} updated community outfit id={}",
+            player->GetName(), id);
+    }
+
+    void HandleCommunityDelete(Player* player, const DCAddon::ParsedMessage& msg)
+    {
+        if (!player || !player->GetSession())
+            return;
+        if (!DCAddon::IsJsonMessage(msg))
+            return;
+
+        EnsureCommunityTables();
+
+        DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
+        uint32 id = json["id"].AsUInt32();
+        
+        uint32 playerGuid = player->GetGUID().GetCounter();
+        uint32 accountId = GetAccountId(player);
+
+        // Verify ownership before deleting
+        std::string checkSql = Acore::StringFormat(
+            "SELECT author_account_id, author_guid FROM dc_collection_community_outfits WHERE id = {}",
+            id);
+        
+        QueryResult checkResult = CharacterDatabase.Query(checkSql);
+        
+        DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_DELETE_RESULT);
+        
+        if (!checkResult)
+        {
+            res.Set("success", false);
+            res.Set("error", "Outfit not found");
+            res.Send(player);
+            return;
+        }
+        
+        Field* ownerFields = checkResult->Fetch();
+        uint32 authorAccountId = ownerFields[0].Get<uint32>();
+        uint32 authorGuid = ownerFields[1].Get<uint32>();
+        bool isOwner = (authorAccountId != 0) ? (authorAccountId == accountId) : (authorGuid == playerGuid);
+        if (!isOwner)
+        {
+            res.Set("success", false);
+            res.Set("error", "You are not the owner of this outfit");
+            res.Send(player);
+            return;
+        }
+        
+        // Delete the outfit
+        std::string deleteSql = Acore::StringFormat(
+            "DELETE FROM dc_collection_community_outfits WHERE id = {}",
+            id);
+        CharacterDatabase.Execute(deleteSql);
+        
+        // Also delete any favorites referencing this outfit
+        std::string deleteFavsSql = Acore::StringFormat(
+            "DELETE FROM dc_collection_community_favorites WHERE outfit_id = {}",
+            id);
+        CharacterDatabase.Execute(deleteFavsSql);
+
+        res.Set("success", true);
+        res.Set("id", id);
+        res.Send(player);
+        
+        LOG_INFO("module.dc", "[DCWardrobe] Player {} deleted community outfit id={}",
+            player->GetName(), id);
     }
 
     // Inspection Handler
@@ -2169,6 +2326,8 @@ void AddSC_dc_addon_wardrobe()
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_COMMUNITY_RATE, &HandleCommunityRate);
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_COMMUNITY_FAVORITE, &HandleCommunityFavorite);
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_COMMUNITY_VIEW, &HandleCommunityView);
+    MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_COMMUNITY_UPDATE, &HandleCommunityUpdate);
+    MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_COMMUNITY_DELETE, &HandleCommunityDelete);
 
     // Inspection
     MessageRouter::Instance().RegisterHandler(Module::COLLECTION, Opcode::Collection::CMSG_INSPECT_TRANSMOG, &HandleInspectTransmog);

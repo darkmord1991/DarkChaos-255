@@ -107,6 +107,8 @@ DC.Opcodes = {
     CMSG_COMMUNITY_FAVORITE   = 0x56,
     CMSG_COMMUNITY_VIEW       = 0x57,
     CMSG_COPY_COMMUNITY_OUTFIT = 0x58, -- Copy community outfit to personal account collection
+    CMSG_COMMUNITY_UPDATE     = 0x59, -- Update community outfit (owner only)
+    CMSG_COMMUNITY_DELETE     = 0x5A, -- Delete community outfit (owner only)
     
     -- Server -> Client: Sync/Data
     SMSG_HANDSHAKE_ACK       = 0x40,
@@ -130,6 +132,8 @@ DC.Opcodes = {
     -- Server -> Client: Community
     SMSG_COMMUNITY_LIST       = 0x63,
     SMSG_COMMUNITY_PUBLISH_RESULT = 0x64,
+    SMSG_COMMUNITY_UPDATE_RESULT = 0x67,
+    SMSG_COMMUNITY_DELETE_RESULT = 0x68,
 
     
     -- Server -> Client: Shop
@@ -293,6 +297,8 @@ function DC:InitializeProtocol()
     
     registerOpcode(self.Opcodes.SMSG_COMMUNITY_LIST)
     registerOpcode(self.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT)
+    registerOpcode(self.Opcodes.SMSG_COMMUNITY_UPDATE_RESULT)
+    registerOpcode(self.Opcodes.SMSG_COMMUNITY_DELETE_RESULT)
     registerOpcode(self.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT)
     registerOpcode(self.Opcodes.SMSG_INSPECT_TRANSMOG)
     registerOpcode(self.Opcodes.SMSG_ITEM_SETS)
@@ -1172,6 +1178,24 @@ function DC:RequestCommunityRate(id)
     })
 end
 
+function DC:RequestCommunityUpdate(id, name, items, tags)
+    local payload = {
+        id = id,
+        name = name,
+        items = items,
+    }
+    if tags and tags ~= "" then
+        payload.tags = tags
+    end
+    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_UPDATE, payload)
+end
+
+function DC:RequestCommunityDelete(id)
+    return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_DELETE, {
+        id = id
+    })
+end
+
 function DC:RequestSummonMount(spellId, random)
     if random or not spellId then
         local mounts = self.collections and self.collections.mounts
@@ -1435,6 +1459,10 @@ function DC.OnProtocolMessage(payload)
         self:HandleCommunityList(data)
     elseif opcode == self.Opcodes.SMSG_COMMUNITY_PUBLISH_RESULT then
         self:HandleCommunityPublishResult(data)
+    elseif opcode == self.Opcodes.SMSG_COMMUNITY_UPDATE_RESULT then
+        self:HandleCommunityUpdateResult(data)
+    elseif opcode == self.Opcodes.SMSG_COMMUNITY_DELETE_RESULT then
+        self:HandleCommunityDeleteResult(data)
     elseif opcode == self.Opcodes.SMSG_COMMUNITY_FAVORITE_RESULT then
         self:HandleCommunityFavoriteResult(data)
     elseif opcode == self.Opcodes.SMSG_INSPECT_TRANSMOG then
@@ -2212,6 +2240,13 @@ function DC:HandleTransmogState(data)
     -- Refresh UI if open
     if self.UI and self.UI.mainFrame and self.UI.mainFrame:IsShown() then
         self.UI:RefreshCurrentTab()
+    end
+
+    -- Refresh Wardrobe slot buttons (embedded Wardrobe uses its own frame, not UI.mainFrame)
+    if self.Wardrobe and self.Wardrobe.frame and self.Wardrobe.frame.IsShown and self.Wardrobe.frame:IsShown() then
+        if type(self.Wardrobe.UpdateSlotButtons) == "function" then
+            pcall(function() self.Wardrobe:UpdateSlotButtons() end)
+        end
     end
 
     -- Retry a deferred outfit save once we have transmog state.
@@ -3277,6 +3312,48 @@ function DC:HandleCommunityFavoriteResult(data)
     
     if self.CommunityUI and self.CommunityUI.OnFavoriteResult then
         self.CommunityUI:OnFavoriteResult(outfitId, isAdd)
+    end
+end
+
+function DC:HandleCommunityUpdateResult(data)
+    local success = data.success
+    local errMsg = data.error
+    local outfitId = data.id
+    
+    if success then
+        self:Print("Community outfit updated successfully!")
+        -- Refresh community list
+        if self.RequestCommunityList then
+            self:RequestCommunityList(0, 50, "all", "newest")
+        end
+    else
+        self:Print("|cffff0000Failed to update outfit: " .. (errMsg or "Unknown error") .. "|r")
+    end
+    
+    -- Notify UI
+    if self.CommunityUI and self.CommunityUI.OnUpdateResult then
+        self.CommunityUI:OnUpdateResult(success, outfitId, errMsg)
+    end
+end
+
+function DC:HandleCommunityDeleteResult(data)
+    local success = data.success
+    local errMsg = data.error
+    local outfitId = data.id
+    
+    if success then
+        self:Print("Community outfit deleted.")
+        -- Refresh community list
+        if self.RequestCommunityList then
+            self:RequestCommunityList(0, 50, "all", "newest")
+        end
+    else
+        self:Print("|cffff0000Failed to delete outfit: " .. (errMsg or "Unknown error") .. "|r")
+    end
+    
+    -- Notify UI
+    if self.CommunityUI and self.CommunityUI.OnDeleteResult then
+        self.CommunityUI:OnDeleteResult(success, outfitId, errMsg)
     end
 end
 

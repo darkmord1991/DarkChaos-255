@@ -583,6 +583,9 @@ function Wardrobe:Show()
     if DC and DC.RequestCollection then
         DC:RequestCollection("transmog")
     end
+    if DC and DC.RequestTransmogState then
+        DC:RequestTransmogState()
+    end
     if DC and DC.RequestWishlist then
         DC:RequestWishlist()
     end
@@ -622,6 +625,9 @@ function Wardrobe:ShowEmbedded(host)
     end
     if DC and DC.RequestCollection then
         DC:RequestCollection("transmog")
+    end
+    if DC and DC.RequestTransmogState then
+        DC:RequestTransmogState()
     end
     if DC and DC.RequestWishlist then
         DC:RequestWishlist()
