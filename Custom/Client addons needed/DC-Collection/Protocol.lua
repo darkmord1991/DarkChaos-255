@@ -2264,6 +2264,15 @@ function DC:HandleTransmogState(data)
         pcall(function() self.Wardrobe:OnTransmogStateReceived(state) end)
     end
 
+    -- Refresh Transmog UI (if used) and borders even when no inventory events fire.
+    if self.TransmogUI and type(self.TransmogUI.OnTransmogStateReceived) == "function" then
+        pcall(function() self.TransmogUI:OnTransmogStateReceived(state, itemIds) end)
+    end
+
+    if self.TransmogBorders and type(self.TransmogBorders.UpdateCharacterBorders) == "function" then
+        pcall(function() self.TransmogBorders:UpdateCharacterBorders() end)
+    end
+
     self:Debug(string.format("Received transmog state (%d slots)", self:TableCount(state)))
 end
 

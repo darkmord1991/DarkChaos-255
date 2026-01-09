@@ -64,6 +64,12 @@ local defaults = {
     customIconTexture = "",
     useDCProtocolJSON = true,  -- Use JSON format when available
 
+    -- Reduce chat spam when crossing hotspot boundaries while moving.
+    -- Debounce waits before printing; cooldown prevents repeated prints.
+    suppressHotspotChatSpam = true,
+    hotspotChatDebounceSeconds = 3,
+    hotspotChatCooldownSeconds = 15,
+
     -- Map view id -> server zone id learned at runtime (helps custom maps where clients report odd ids)
     customZoneMapping = {},
 

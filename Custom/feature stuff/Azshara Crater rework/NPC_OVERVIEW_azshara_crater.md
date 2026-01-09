@@ -20,6 +20,8 @@
 
 > [!IMPORTANT]
 > All entries verified via **https://www.wowhead.com/wotlk/npcs**
+> **Update (Jan 2026):** Water quests now target existing WotLK NPCs (Action 10) instead of custom ones.
+
 
 ### Azshara Zone NPCs (Confirmed)
 | NPC Name | Entry ID | Original Level | Type | Source |
@@ -79,6 +81,7 @@
 | Jaelysia | **8659** | Stable Master | Pet stable + mount vendor |
 | Zixil | **3537** | Repair | Weapons + armor repair |
 | Montarr | **8150** | Goods Vendor | General supplies + first aid |
+| **Warden Stonebrook** | **300002** | Questgiver | Wildlife & Hunting Quests (Boars, Bears, Spiders) |
 | Orgrimmar Grunt | **3296** | Guard | Patrol x4 |
 | Sentinel | **3211** | Guard | Patrol x4 |
 
@@ -152,11 +155,12 @@
 | Young Thistle Boar | **1984** | 2-4 | Beast | 15 |
 | Young Forest Bear | **822** | 8-9 | Beast | 12 |
 | Mangy Wolf | **525** | 5-6 | Beast | 10 |
-| Timberling | **2038** | 5-6 | Elemental | 8 |
+| Timberling | **2022** | 5-6 | Elemental | 8 |
 | Webwood Lurker | **1998** | 5-6 | Beast | 8 |
-| **Sethir the Ancient** | **6909** | 11 | **RARE** | 1 |
+| **Murloc Forager** | **46** | 6-7 | Humanoid | 10 (Water) |
+| **Mazzranache** | **3068** | 9 | Beast | 1 (Rare) |
 | **Timber** | **1132** | 10 | **RARE** | 1 |
-| **Mother Fang** | **1240** | 10 | **RARE** | 1 |
+| **Mother Fang** | **471** | 10 | **RARE** | 1 |
 
 ### Zone 2: Northern Ruins (Level 10-20)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
@@ -166,6 +170,7 @@
 | Lesser Voidwalker | **418** | 20 | Demon | 10 |
 | Skeletal Warrior | **48** | 21-22 | Undead | 8 |
 | Skeletal Mage | **203** | 22-23 | Undead | 6 |
+| **Corrupt Water Spirit** | **5897** | 19-20 | Elemental | 8 (Water) |
 | **The Evalcharr** | **6966** | 15 | **RARE** | 1 |
 | **Kregg Keelhaul** | **1260** | 15 | **RARE** | 1 |
 | **Snort the Heckler** | **5829** | 17 | **RARE** | 1 |
@@ -178,7 +183,8 @@
 | Thistlefur Shaman | **3924** | 23-24 | Humanoid | 8 |
 | Thistlefur Totemic | **3922** | 23-24 | Humanoid | 10 |
 | Thistlefur Ursa | **3921** | 23-24 | Humanoid | 8 |
-| **Arash-ethis** | **6650** | 29 | **RARE** | 1 |
+| **Giant Wetlands Crocolisk**| **2089** | 25-26 | Beast | 6 (Water) |
+| **Arash-ethis** | **5349** | 49 | **RARE** | 1 |
 | **Hayoc** | **8208** | 25 | **RARE** | 1 |
 | **Kreiss** | **8203** | 27 | **RARE** | 1 |
 
@@ -195,7 +201,7 @@
 | Spitelash Serpent | **6200** | 38-40 | Humanoid | 6 |
 | Cliff Breaker | **9197** | 38-39 | Elemental | 4 |
 | Blue Drake | **6129** | 39-40 | Dragon | 4 |
-| **Lady Sesspira** | **6140** | 40 | **RARE** | 1 |
+| **Lady Sesspira** | **6649** | 51 | **RARE** | 1 |
 | **Garneg Charknap** | **8210** | 34 | **RARE** | 1 |
 | **Rippa** | **5828** | 39 | **RARE** | 1 |
 | **Slark** | **14221** | 35 | **RARE** | 1 |
@@ -210,7 +216,7 @@
 | Felpaw Ravager | **5866** | 45-47 | Demon | 10 |
 | Felhound | **5865** | 48-50 | Demon | 8 |
 | Fel Steed | **11464** | 42-44 | Demon | 6 |
-| Carrion Vulture | **5345** | 41-43 | Beast | 10 |
+| Carrion Vulture | **1809** | 50-52 | Beast | 10 |
 | Hellcalled Shadowstalker | **11452** | 44-46 | Demon | 8 |
 | **Monnos the Elder** | **6144** | 47 | **RARE** | 1 |
 | **Magronos the Unyielding** | **6146** | 48 | **RARE** | 1 |
@@ -221,7 +227,7 @@
 ### Zone 6: Haldarr Territory (Level 50-60)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
-| Legashi Satyr | **6133** | 52-54 | Demon | 15 |
+| Legashi Satyr | **6200** | 51-52 | Demon | 15 |
 | Legashi Rogue | **6134** | 54-56 | Demon | 12 |
 | Legashi Hellcaller | **6135** | 56-58 | Demon | 10 |
 | Felguard Sentry | **8716** | 57-59 | Demon | 8 |
@@ -242,7 +248,7 @@
 | Azure Whelpling | **6130** | 62-64 | Dragon | 15 |
 | Azure Netherwing Drake | **23456** | 70 | Dragon | 10 |
 | Onyx Netherwing Drake | **23455** | 70 | Dragon | 6 |
-| Naga Explorer | **6065** | 65-68 | Humanoid | 10 |
+| Naga Explorer | **1907** | 65-68 | Humanoid | 10 |
 | Mana Surge | **15527** | 68-70 | Elemental | 8 |
 | Mana Wraith | **18864** | 67-68 | Elemental | 10 |
 | Unstable Dragonhawk | **18854** | 68-69 | Beast | 8 |
@@ -250,14 +256,14 @@
 | Blue Dragonspawn | **6131** | 65-67 | Dragon | 6 |
 | Lesser Nether Drake | **21004** | 66-67 | Dragon | 8 |
 | Voidwraith | **18659** | 67-68 | Demon | 8 |
-| Rage Talon Dragonspawn | **109** | 58-59 | Dragon | 4 |
+| Rage Talon Dragonspawn | **9096** | 58-59 | Dragon | 4 |
 | Chromatic Dragonspawn | **10447** | 59-60 | Dragon | 4 |
-| **General Colbatann** | **11500** | 68 | **RARE** | 1 |
+| **General Colbatann** | **10196** | 68 | **RARE** | 1 |
 | **Mekthorg the Relentless** | **18685** | 61 | **RARE** | 1 |
 | **Vorakem Doomspeaker** | **18686** | 63 | **RARE** | 1 |
 | **Marticar** | **18684** | 62 | **RARE** | 1 |
-| **Hemathion** | **18698** | 68 | **RARE** | 1 |
-| **Morcrush** | **18697** | 68 | **RARE** | 1 |
+| **Hemathion** | **18692** | 68 | **RARE** | 1 |
+| **Morcrush** | **18690** | 68 | **RARE** | 1 |
 | **Collidus the Watcher** | **18690** | 68 | **RARE** | 1 |
 | **Okrek** | **18692** | 66 | **RARE** | 1 |
 | **Crippler** | **18693** | 66 | **RARE** | 1 |
@@ -269,7 +275,7 @@
 | Skeletal Craftsman | **32164** | 78-79 | Undead | 12 |
 | Skeletal Woodcutter | **33499** | 79 | Undead | 10 |
 | Skeletal Smith | **29837** | 81 | Undead | 8 |
-| Mana Remnant | **5766** | 76-78 | Elemental | 10 |
+| Mana Remnant | **11483** | 76-78 | Elemental | 10 |
 | Faceless Lurker | **31691** | 79-80 | Aberration | 6 |
 | Forgotten Captain | **27220** | 72-73 | Undead | 4 |
 | Forgotten Knight | **27224** | 71-72 | Undead | 4 |
@@ -287,7 +293,7 @@
 | **Vigdis the War Maiden** | **32358** | 73 | **RARE** | 1 |
 | **King Ping** | **32359** | 73 | **RARE** | 1 |
 | **Tukemuth** | **32361** | 74 | **RARE** | 1 |
-| **Icehorn** | **32355** | 71 | **RARE** | 1 |
+| **Icehorn** | **32361** | 71 | **RARE** | 1 |
 | **Fumblub Gearwind** | **32481** | 78 | **RARE** | 1 |
 | **Hildana Deathstealer** | **32487** | 80 | **RARE** | 1 |
 | **Highlord Madfrog** | **32482** | 71 | **RARE** | 1 |
@@ -384,10 +390,11 @@
 | **Bear Necessities** | 5 | Collect | Gather 6 Bear Pelts | Leatherworker |
 | **Strange Wisps** | 7 | Kill | Destroy 5 Highborne Wisps | Shaman |
 | **The Northern Road** | 10 | Travel | Report to Northern Checkpoint | Commander |
-| **Bounty: Sethir** | 11 | Rare | Slay Sethir the Ancient | Rep + Gear |
+| **Bounty: Mazzranache** | 11 | Rare | Slay Mazzranache | Beast Stalker Boots |
 | **Shadows of Zin-Azshari** | 12 | Scout | Explore the ruins entrance | XP |
 | **Spider Silk Harvest** | 9 | Collect | Collect 10 Spider Silk | Tailoring Mats |
 | **Ancient Relic Hunt** | 6 | Collect | Retrieve 4 Highborne Relics | XP + Silver |
+| **Murloc Menace** | 8 | Kill | Slay 10 Murloc Foragers | Worn Mace |
 
 **Chain Quest: "Whispers from the Past"**
 1. (Lv 5) Find ancient night elf relics in the rim
@@ -411,6 +418,7 @@
 | **Wandering Souls** | 13 | Kill | Slay 12 Highborne Lichlings | XP |
 | **Lady Szallah's End** | 23 | Dungeon | Defeat Lady Szallah (D1) | Rare Gear |
 | **Zin-Azshari's Legacy** | 25 | Dungeon | Clear Ruins of Zin-Azshari (D1) | Epic Trinket |
+| **Elemental Imbalance** | 18 | Kill | Defeat 8 Corrupt Water Spirits | Spring Water x5 |
 
 **Lore Chain: "The Queen's Guard"**
 1. (Lv 15) Discover Varo'then's journal fragment
@@ -433,6 +441,7 @@
 | **The Totem Thieves** | 25 | Kill | Slay 8 Deadwood Totem-Makers | Rep + XP |
 | **Grizzlegut's Pelt** | 33 | Dungeon | Slay Grizzlegut (D2) | Leather Chest |
 | **Ancestors' Blessing** | 27 | Interact | Visit 4 Spirit Altars | Buffs + XP |
+| **Crocolisk Crisis** | 25 | Kill | Hunt 6 Giant Wetlands Crocolisks | Cloth Vest |
 
 **Reputation Chain: "Friend of the Tribe"**
 1. (Lv 23) Prove yourself by killing corrupted kin

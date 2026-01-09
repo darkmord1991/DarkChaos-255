@@ -175,6 +175,38 @@ local function ParseHotspotMessages(message)
     return nil, nil
 end
 
+-- ============================================================
+-- Hotspot chat spam suppression (movement debounce)
+-- ============================================================
+local hotspotChatPending
+local hotspotChatPendingDueAt = 0
+local hotspotChatLastShownAt = 0
+local hotspotChatFlushInProgress = false
+local hotspotChatThrottleFrame
+
+local function IsOppositeHotspotKind(a, b)
+    return (a == "enter" and b == "leave") or (a == "leave" and b == "enter")
+end
+
+local function GetHotspotChatKind(message)
+    if type(message) ~= "string" then return nil end
+    if not message:find("%[Hotspot", 1, false) then
+        return nil
+    end
+
+    if message:find("%[Hotspot Results%]", 1, true) then
+        return "results"
+    end
+    if message:find("entered an XP Hotspot", 1, true) then
+        return "enter"
+    end
+    if message:find("left the XP Hotspot", 1, true) or message:find("left the XP Hotspot.", 1, true) then
+        return "leave"
+    end
+
+    return "other"
+end
+
 function UI:Init(state)
     self.state = state
     self:EnsurePopup()
@@ -506,6 +538,111 @@ function UI:SetupMessageListener()
             end
         end
     end)
+
+    -- Reduce hotspot spam in chat when crossing boundaries quickly.
+    -- This only affects what gets printed; the event still fires so the indicator logic works.
+    if ChatFrame_AddMessageEventFilter and not self._dcHotspotChatFilterInstalled then
+        self._dcHotspotChatFilterInstalled = true
+
+        if not hotspotChatThrottleFrame then
+            hotspotChatThrottleFrame = CreateFrame("Frame", "DCMapupgrades_HotspotChatThrottle", UIParent)
+            hotspotChatThrottleFrame:Hide()
+        end
+
+        hotspotChatThrottleFrame:SetScript("OnUpdate", function()
+            if not hotspotChatPending or (hotspotChatPendingDueAt or 0) <= 0 then
+                return
+            end
+
+            local now = (GetTime and GetTime()) or 0
+            if now < (hotspotChatPendingDueAt or 0) then
+                return
+            end
+
+            local db = (UI.state and UI.state.db) or {}
+            local debounce = tonumber(db.hotspotChatDebounceSeconds) or 3
+            local cooldown = tonumber(db.hotspotChatCooldownSeconds) or 6
+            if debounce < 0 then debounce = 0 end
+            if cooldown < 0 then cooldown = 0 end
+
+            if (now - (hotspotChatLastShownAt or 0)) < cooldown then
+                hotspotChatPending = nil
+                hotspotChatPendingDueAt = 0
+                return
+            end
+
+            local chatFrame = DEFAULT_CHAT_FRAME or _G.ChatFrame1
+            if chatFrame and chatFrame.AddMessage then
+                hotspotChatFlushInProgress = true
+                chatFrame:AddMessage(hotspotChatPending)
+                hotspotChatFlushInProgress = false
+            end
+
+            hotspotChatLastShownAt = now
+            hotspotChatPending = nil
+            hotspotChatPendingDueAt = 0
+        end)
+
+        local function HotspotChatFilter(_, event, message, ...)
+            if hotspotChatFlushInProgress then
+                return false, message, ...
+            end
+
+            local db = (UI.state and UI.state.db) or {}
+            if db.suppressHotspotChatSpam == false then
+                return false, message, ...
+            end
+
+            local kind = GetHotspotChatKind(message)
+            if not kind then
+                return false, message, ...
+            end
+
+            local now = (GetTime and GetTime()) or 0
+            local debounce = tonumber(db.hotspotChatDebounceSeconds) or 3
+            local cooldown = tonumber(db.hotspotChatCooldownSeconds) or 6
+            if debounce < 0 then debounce = 0 end
+            if cooldown < 0 then cooldown = 0 end
+
+            -- If debounce is disabled, apply cooldown only (no delaying).
+            if debounce == 0 then
+                if (now - (hotspotChatLastShownAt or 0)) < cooldown then
+                    return true
+                end
+                hotspotChatLastShownAt = now
+                return false, message, ...
+            end
+
+            if hotspotChatPending then
+                local pendingKind = GetHotspotChatKind(hotspotChatPending)
+
+                -- If we rapidly flip enter/leave, suppress both.
+                if pendingKind and IsOppositeHotspotKind(pendingKind, kind) then
+                    hotspotChatPending = nil
+                    hotspotChatPendingDueAt = 0
+                    return true
+                end
+
+                -- Prefer showing Results over Notice when leaving.
+                if pendingKind == "leave" and kind == "results" then
+                    hotspotChatPending = message
+                    return true
+                end
+
+                -- Replace pending with the latest message of the same kind.
+                if pendingKind == kind then
+                    hotspotChatPending = message
+                    return true
+                end
+            end
+
+            hotspotChatPending = message
+            hotspotChatPendingDueAt = now + debounce
+            return true
+        end
+
+        ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", HotspotChatFilter)
+    end
 end
 
 -- Ensure the hotspot indicator frame exists

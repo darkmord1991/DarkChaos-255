@@ -150,6 +150,11 @@ addon.defaults = {
         autoSync = true,
         debugMode = false,
         showProtocolMessages = false,
+
+        -- Debug output routing
+        routeDcDebugToTab = true,
+        captureDcDebugFromOtherAddons = true,
+        dcDebugTabName = "DCDebug",
     },
 }
 
@@ -158,6 +163,65 @@ addon.settings = {}
 -- ============================================================
 -- Utility Functions
 -- ============================================================
+
+local function FindChatWindowIndexByName(windowName)
+    if not windowName or windowName == "" then return nil end
+    if not GetChatWindowInfo then return nil end
+    for i = 1, NUM_CHAT_WINDOWS do
+        local name = GetChatWindowInfo(i)
+        if name == windowName then
+            return i
+        end
+    end
+    return nil
+end
+
+function addon:GetChatFrameByWindowName(windowName)
+    local index = FindChatWindowIndexByName(windowName)
+    if not index then return nil end
+    return _G["ChatFrame" .. index]
+end
+
+function addon:EnsureChatWindow(windowName)
+    if not windowName or windowName == "" then return nil end
+
+    local frame = self:GetChatFrameByWindowName(windowName)
+    if frame then
+        return frame
+    end
+
+    if FCF_OpenNewWindow then
+        FCF_OpenNewWindow(windowName)
+    end
+
+    return self:GetChatFrameByWindowName(windowName)
+end
+
+function addon:RenameChatWindow(oldName, newName)
+    if not oldName or oldName == "" or not newName or newName == "" then return false end
+    if oldName == newName then return true end
+
+    -- If the destination exists, don't rename into it.
+    if self:GetChatFrameByWindowName(newName) then
+        return true
+    end
+
+    local oldFrame = self:GetChatFrameByWindowName(oldName)
+    if not oldFrame then return false end
+
+    if FCF_SetWindowName then
+        FCF_SetWindowName(oldFrame, newName)
+        return self:GetChatFrameByWindowName(newName) ~= nil
+    end
+
+    return false
+end
+
+function addon:GetDcDebugChatFrame()
+    local comm = self.settings and self.settings.communication
+    local name = comm and comm.dcDebugTabName or "DCDebug"
+    return self:GetChatFrameByWindowName(name)
+end
 
 -- Safe print with addon prefix
 function addon:Print(msg, forceShow)
@@ -169,7 +233,18 @@ end
 -- Debug print (only when debug mode enabled)
 function addon:Debug(msg)
     if self.settings.communication and self.settings.communication.debugMode then
-        print("|cff888888[DC-QoS Debug]|r " .. tostring(msg))
+        local line = "|cff888888[DC-QoS Debug]|r " .. tostring(msg)
+        local comm = self.settings.communication
+
+        if comm and comm.routeDcDebugToTab then
+            local target = self:EnsureChatWindow(comm.dcDebugTabName or "DCDebug")
+            if target and target.AddMessage then
+                target:AddMessage(line)
+                return
+            end
+        end
+
+        print(line)
     end
 end
 
@@ -351,6 +426,28 @@ function addon:LoadSettings()
         self.settings = DCQoSDB
         -- Merge any new defaults
         self:MergeDefaults(self.settings, self.defaults)
+
+        -- One-time migration: enable DC debug routing for existing users
+        if self.settings.communication then
+            if self.settings.communication._dcDebugRouteMigrated ~= true then
+                self.settings.communication.routeDcDebugToTab = true
+                self.settings.communication._dcDebugRouteMigrated = true
+            end
+
+            -- One-time migration: rename default chat tab "DC" -> "DCDebug" (don't clobber custom names)
+            if self.settings.communication._dcDebugTabMigrated ~= true then
+                local oldName = "DC"
+                local newName = "DCDebug"
+                local currentName = self.settings.communication.dcDebugTabName
+
+                if not currentName or currentName == "" or currentName == oldName then
+                    self:RenameChatWindow(oldName, newName)
+                    self.settings.communication.dcDebugTabName = newName
+                end
+
+                self.settings.communication._dcDebugTabMigrated = true
+            end
+        end
     else
         self.settings = self:DeepCopy(self.defaults)
     end
@@ -421,6 +518,11 @@ function addon:Initialize()
     
     -- Load settings from SavedVariables
     self:LoadSettings()
+
+    -- If enabled, ensure the DC debug chat tab exists early
+    if self.settings and self.settings.communication and self.settings.communication.routeDcDebugToTab then
+        self:EnsureChatWindow(self.settings.communication.dcDebugTabName or "DCDebug")
+    end
     
     -- Initialize all registered modules
     for _, name in ipairs(self.moduleOrder) do

@@ -96,6 +96,37 @@ end
 -- ============================================================
 -- Sell Price in Tooltips
 -- ============================================================
+local function IsTooltipShowingSellPriceMoneyFrame(tooltip)
+    local tooltipName = tooltip and tooltip.GetName and tooltip:GetName()
+    if not tooltipName then
+        return false
+    end
+
+    local prefixText = _G[tooltipName .. "MoneyFrame1PrefixText"]
+    if not prefixText or not prefixText.GetText then
+        return false
+    end
+
+    local text = prefixText:GetText()
+    if not text then
+        return false
+    end
+
+    local sellPriceLabel = SELL_PRICE or "Sell Price:"
+    return text == sellPriceLabel or string.find(text, "Sell Price", 1, true) ~= nil
+end
+
+local function ClearTooltipMoney(tooltip)
+    if type(GameTooltip_ClearMoney) == "function" then
+        GameTooltip_ClearMoney(tooltip)
+        return
+    end
+
+    if tooltip and tooltip.ClearMoney then
+        tooltip:ClearMoney()
+    end
+end
+
 local function AddSellPriceToTooltip(tooltip, itemLink)
     local settings = addon.settings.vendorPlus
     if not settings.enabled or not settings.showSellPrice then return end
@@ -107,7 +138,13 @@ local function AddSellPriceToTooltip(tooltip, itemLink)
     local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemLink)
     if sellPrice and sellPrice > 0 then
         tooltip:AddLine(" ")
-        tooltip:AddDoubleLine("Vendor Price:", GetCoinTextureString(sellPrice), 0.8, 0.8, 0.8, 1, 1, 1)
+        tooltip:AddDoubleLine(SELL_PRICE or "Sell Price:", GetCoinTextureString(sellPrice), 0.8, 0.8, 0.8, 1, 1, 1)
+
+        -- Prevent duplicate: the default UI renders SELL_PRICE as a money frame
+        -- that appears below/outside the tooltip.
+        if IsTooltipShowingSellPriceMoneyFrame(tooltip) then
+            ClearTooltipMoney(tooltip)
+        end
         tooltip._dcVendorPriceShown = true
     end
 end

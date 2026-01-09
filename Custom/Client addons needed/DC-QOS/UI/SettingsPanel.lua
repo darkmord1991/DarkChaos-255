@@ -175,6 +175,41 @@ local function CreateCommunicationSettings(parent)
         addon:SetSetting("communication.autoSync", self:GetChecked())
     end)
     yOffset = yOffset - 25
+
+    -- Debug mode
+    local debugModeCb = addon:CreateCheckbox(parent, "DCQoSDebugMode")
+    debugModeCb:SetPoint("TOPLEFT", 16, yOffset)
+    debugModeCb.Text:SetText("Enable debug mode")
+    debugModeCb:SetChecked(settings.debugMode == true)
+    debugModeCb:SetScript("OnClick", function(self)
+        addon:SetSetting("communication.debugMode", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    -- Route DC debug to its own chat tab
+    local routeDebugCb = addon:CreateCheckbox(parent, "DCQoSRouteDebugToTab")
+    routeDebugCb:SetPoint("TOPLEFT", 16, yOffset)
+    routeDebugCb.Text:SetText("Send DC debug messages to 'DCDebug' chat tab")
+    routeDebugCb:SetChecked(settings.routeDcDebugToTab == true)
+    routeDebugCb:SetScript("OnClick", function(self)
+        local enabled = self:GetChecked()
+        addon:SetSetting("communication.routeDcDebugToTab", enabled)
+        if enabled then
+            addon:EnsureChatWindow((addon.settings.communication and addon.settings.communication.dcDebugTabName) or "DCDebug")
+            addon:Print("DC debug tab enabled (chat tab: DCDebug)", true)
+        end
+    end)
+    yOffset = yOffset - 25
+
+    -- Capture other DC addon debug messages too
+    local captureOtherCb = addon:CreateCheckbox(parent, "DCQoSCaptureOtherDcDebug")
+    captureOtherCb:SetPoint("TOPLEFT", 34, yOffset)
+    captureOtherCb.Text:SetText("Also capture other DC addons' debug lines ([Debug]/[DEBUG]/Protocol/DC_DebugUtils)")
+    captureOtherCb:SetChecked(settings.captureDcDebugFromOtherAddons ~= false)
+    captureOtherCb:SetScript("OnClick", function(self)
+        addon:SetSetting("communication.captureDcDebugFromOtherAddons", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
     
     -- Sync Now
     local syncButton = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")

@@ -316,8 +316,11 @@ end
 function NPCUnFreeze_Random()
     local player = UnitName("target") or UnitName("player")
     local rdistancecname = ma_npcunfreeze_random_distancebutton:GetText()
-    MangAdmin:ChatMsg(".npc set spawndist "..rdistancecname)
-    MangAdmin:LogAction("Set NPC spawndist "..rdistancecname..".")
+  local dist = tonumber(rdistancecname) or 0
+  if dist < 0 then dist = 0 end
+  dist = math.floor(dist)
+  MangAdmin:ChatMsg(".npc set wanderdistance " .. tostring(dist))
+  MangAdmin:LogAction("Set NPC wanderdistance " .. tostring(dist) .. ".")
     MangAdmin:ChatMsg(".npc set movetype random")
     MangAdmin:LogAction("Set NPC movement type to RANDOM for player "..player..".")
     MangAdmin:ChatMsg(".respawn")

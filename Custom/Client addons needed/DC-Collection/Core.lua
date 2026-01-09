@@ -1332,6 +1332,27 @@ function events:PLAYER_LOGIN()
             DC:InitializeProtocol()
         end
     end)
+
+    -- Ensure transmog visuals (slot icons/borders) reflect persisted server state after relog.
+    -- This is lightweight and should not be tied to the full autoSyncOnLogin flow.
+    After(2, function()
+        if type(DC.RequestTransmogStateWithRetry) == "function" then
+            DC:RequestTransmogStateWithRetry(6, 1)
+        elseif type(DC.RequestTransmogState) == "function" and DC:IsProtocolReady() then
+            DC:RequestTransmogState()
+        end
+    end)
+end
+
+function events:PLAYER_ENTERING_WORLD()
+    -- PLAYER_ENTERING_WORLD can fire multiple times; throttle requests.
+    After(1, function()
+        if type(DC.RequestTransmogStateWithRetry) == "function" then
+            DC:RequestTransmogStateWithRetry(6, 1)
+        elseif type(DC.RequestTransmogState) == "function" and DC:IsProtocolReady() then
+            DC:RequestTransmogState()
+        end
+    end)
 end
 
 function events:PLAYER_LOGOUT()
@@ -1508,6 +1529,52 @@ function DC:RequestInitialDataWithRetry(maxAttempts, delaySeconds)
         if attempt >= maxAttempts then
             self._initialDataRetryInProgress = nil
             self:Debug("Initial data request retry exhausted")
+            return
+        end
+
+        After(delaySeconds, tryRequest)
+    end
+
+    tryRequest()
+end
+
+-- Request current transmog state, retrying briefly if protocol isn't ready yet.
+-- This keeps slot visuals correct after relog (server reapplies transmogs without inventory events).
+function DC:RequestTransmogStateWithRetry(maxAttempts, delaySeconds)
+    maxAttempts = maxAttempts or 6
+    delaySeconds = delaySeconds or 1
+
+    if not self:GetSetting("enableServerSync") then
+        return
+    end
+    if type(self.RequestTransmogState) ~= "function" then
+        return
+    end
+
+    -- Throttle: avoid spamming on repeated PLAYER_ENTERING_WORLD triggers.
+    local now = 0
+    if type(GetTime) == "function" then
+        now = GetTime() or 0
+    elseif type(time) == "function" then
+        now = time() or 0
+    end
+    if now > 0 and self._transmogStateLastRequestAt and (now - self._transmogStateLastRequestAt) < 3.0 then
+        return
+    end
+    if now > 0 then
+        self._transmogStateLastRequestAt = now
+    end
+
+    local attempt = 0
+    local function tryRequest()
+        attempt = attempt + 1
+
+        if self:IsProtocolReady() then
+            self:RequestTransmogState()
+            return
+        end
+
+        if attempt >= maxAttempts then
             return
         end
 

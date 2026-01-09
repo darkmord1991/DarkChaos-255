@@ -107,9 +107,14 @@ function AchievementsUI:Create(parent)
     achievementPanel.bg:SetTexture(BG_FELLEATHER)
     achievementPanel.bg:SetVertexColor(1, 1, 1, 0.8)
     
-    local achievementTint = achievementPanel:CreateTexture(nil, "BORDER")
-    achievementTint:SetAllPoints()
-    achievementTint:SetTexture(0, 0, 0, 0.4)
+    achievementPanel.tint = achievementPanel:CreateTexture(nil, "BORDER")
+    achievementPanel.tint:SetAllPoints()
+    achievementPanel.tint:SetTexture(0, 0, 0, 0.4)
+
+    -- The inner Achievements panel background can look broken on some client/UI combos.
+    -- Hide it (and its tint) while keeping the rest of the frame intact.
+    achievementPanel.bg:Hide()
+    achievementPanel.tint:Hide()
 
     local achTitle = achievementPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     achTitle:SetPoint("TOPLEFT", achievementPanel, "TOPLEFT", 8, -8)

@@ -33,6 +33,11 @@ local Chat = {
             enableChatCopy = true,
             -- History
             maxLines = 1000,
+
+            -- Spam Control
+            suppressHotspotSpam = true,
+            hotspotDebounceSeconds = 3,
+            hotspotCooldownSeconds = 15,
         },
     },
 }
@@ -246,6 +251,200 @@ end
 -- ============================================================
 local function SetupChatFrameHooks()
     local settings = addon.settings.chat
+
+    local function IsDcDebugLine(msg)
+        if type(msg) ~= "string" then return false end
+
+        -- DC addon informational spam (non-[Debug] lines)
+        if msg:find("%[DC AoE Loot%]", 1, false) then
+            return true
+        end
+        if msg:find("^Mythic%+ HUD:") then
+            return true
+        end
+
+        -- DC-Hotspot diagnostics (often multi-line, not always tagged as Debug)
+        if msg:find("%[DC%-Hotspot%]") then
+            return true
+        end
+
+        -- Common pattern: [DC-Anything Debug]
+        if msg:find("%[DC[^%]]* Debug%]") then
+            return true
+        end
+
+        -- DCAddonProtocol debug: [DC Debug]
+        if msg:find("%[DC Debug%]") then
+            return true
+        end
+
+        -- DC-Welcome / DC-Collection style: [DC-Addon] ... [Debug] ...
+        if (msg:find("%[DC[^%]]*%]") or msg:find("%[DC%-[^%]]*%]")) and msg:find("%[Debug%]") then
+            return true
+        end
+
+        -- DC-Collection protocol debug sometimes uses [DEBUG] (upper) in the message
+        if (msg:find("%[DC[^%]]*%]") or msg:find("%[DC%-[^%]]*%]")) and msg:find("%[DEBUG%]") then
+            return true
+        end
+
+        -- DC-Mapupgrades / HLBG can use shared DC_DebugUtils: |cff33ff99[AddonName]|r ...
+        local tag = msg:match("^|cff33ff99%[([^%]]+)%]|r")
+        if tag and (tag:find("^DC") or tag:find("^DC%-") or tag == "HLBG") then
+            return true
+        end
+
+        -- HLBG sometimes embeds explicit markers
+        if msg:find("HLBG Debug") or msg:find("HLBG Debug:") then
+            return true
+        end
+
+        -- Protocol/diagnostic debug tags used by some DC addons
+        if msg:find("%[DC[^%]]* Protocol%]") then
+            return true
+        end
+
+        return false
+    end
+
+    local dcDebugCaptureUntil = 0
+    local function IsDcDebugContinuationLine(msg)
+        if type(msg) ~= "string" then return false end
+        if GetTime and GetTime() > (dcDebugCaptureUntil or 0) then
+            return false
+        end
+
+        -- Continuation lines often look like:
+        -- [15:23]   Key: value
+        -- or just:  Key: value
+        local stripped = msg
+        stripped = stripped:gsub("^|cff%x%x%x%x%x%x", "")
+        stripped = stripped:gsub("^%[\d\d:%d\d%]%s+", "")
+
+        if stripped:find("^%s%s+%S") then
+            return true
+        end
+
+        return false
+    end
+
+    -- ============================================================
+    -- Hotspot spam suppression (debounce + cooldown)
+    -- ============================================================
+    local hotspotPending = nil
+    local hotspotPendingDueAt = 0
+    local hotspotLastShownAt = 0
+    local hotspotFlushInProgress = false
+
+    local function GetHotspotKind(msg)
+        if type(msg) ~= "string" then return nil end
+        if not msg:find("%[Hotspot", 1, false) then
+            return nil
+        end
+
+        if msg:find("%[Hotspot%]", 1, true) and msg:find("entered an XP Hotspot", 1, true) then
+            return "enter"
+        end
+        if (msg:find("%[Hotspot Notice%]", 1, true) or msg:find("%[Hotspot%]", 1, true)) and msg:find("left the XP Hotspot", 1, true) then
+            return "leave"
+        end
+        if msg:find("%[Hotspot Results%]", 1, true) then
+            return "results"
+        end
+
+        return "other"
+    end
+
+    local function IsOppositeHotspotKind(a, b)
+        return (a == "enter" and b == "leave") or (a == "leave" and b == "enter")
+    end
+
+    local hotspotThrottleFrame = _G["DCQoS_HotspotThrottleFrame"]
+    if not hotspotThrottleFrame then
+        hotspotThrottleFrame = CreateFrame("Frame", "DCQoS_HotspotThrottleFrame", UIParent)
+        hotspotThrottleFrame:Hide()
+    end
+
+    hotspotThrottleFrame:SetScript("OnUpdate", function()
+        if not hotspotPending or hotspotPendingDueAt <= 0 then
+            return
+        end
+
+        local now = (GetTime and GetTime()) or 0
+        if now < hotspotPendingDueAt then
+            return
+        end
+
+        local cooldown = tonumber(addon.settings.chat.hotspotCooldownSeconds) or 6
+        if cooldown < 0 then cooldown = 0 end
+        if (now - (hotspotLastShownAt or 0)) < cooldown then
+            hotspotPending = nil
+            hotspotPendingDueAt = 0
+            return
+        end
+
+        local targetFrame = hotspotPending.frame or DEFAULT_CHAT_FRAME
+        if targetFrame and targetFrame.AddMessage then
+            hotspotFlushInProgress = true
+            targetFrame:AddMessage(hotspotPending.msg, hotspotPending.r, hotspotPending.g, hotspotPending.b, unpack(hotspotPending.extra or {}))
+            hotspotFlushInProgress = false
+        end
+
+        hotspotLastShownAt = now
+        hotspotPending = nil
+        hotspotPendingDueAt = 0
+    end)
+
+    local function MaybeDebounceHotspotMessage(frame, msg, r, g, b, ...)
+        local s = addon.settings.chat
+        if not s.enabled or not s.suppressHotspotSpam then
+            return false
+        end
+        if hotspotFlushInProgress then
+            return false
+        end
+
+        local kind = GetHotspotKind(msg)
+        if not kind then
+            return false
+        end
+
+        local now = (GetTime and GetTime()) or 0
+        local debounce = tonumber(s.hotspotDebounceSeconds) or 3
+        if debounce < 0 then debounce = 0 end
+
+        if debounce == 0 then
+            -- No debounce; rely on cooldown only (handled by flush frame when delaying). Let it through.
+            hotspotLastShownAt = now
+            return false
+        end
+
+        if hotspotPending and hotspotPending.kind then
+            -- If we immediately flip state while moving, drop both.
+            if IsOppositeHotspotKind(hotspotPending.kind, kind) then
+                hotspotPending = nil
+                hotspotPendingDueAt = 0
+                return true
+            end
+
+            -- Duplicate while pending; suppress.
+            if hotspotPending.kind == kind then
+                return true
+            end
+        end
+
+        hotspotPending = {
+            frame = frame,
+            kind = kind,
+            msg = msg,
+            r = r,
+            g = g,
+            b = b,
+            extra = { ... },
+        }
+        hotspotPendingDueAt = now + debounce
+        return true
+    end
     
     for i = 1, NUM_CHAT_WINDOWS do
         local chatFrame = _G["ChatFrame" .. i]
@@ -253,8 +452,38 @@ local function SetupChatFrameHooks()
             chatFrame.dcHooked = true
             
             local origAddMessage = chatFrame.AddMessage
+            chatFrame._dcOrigAddMessage = origAddMessage
             chatFrame.AddMessage = function(self, msg, r, g, b, ...)
                 if msg then
+                    -- Optional: capture DC-related debug spam into a dedicated chat tab
+                    local comm = addon.settings and addon.settings.communication
+                    if comm and comm.routeDcDebugToTab and comm.captureDcDebugFromOtherAddons and type(msg) == "string" then
+                        if IsDcDebugLine(msg) then
+                            -- Open a short window to capture follow-up lines that don't repeat the prefix.
+                            if GetTime then
+                                dcDebugCaptureUntil = GetTime() + 2.0
+                            else
+                                dcDebugCaptureUntil = 0
+                            end
+                            local debugFrame = addon:EnsureChatWindow(comm.dcDebugTabName or "DCDebug")
+                            if debugFrame and debugFrame ~= self and debugFrame.AddMessage then
+                                debugFrame:AddMessage(msg, r, g, b, ...)
+                                return
+                            end
+                        elseif IsDcDebugContinuationLine(msg) then
+                            local debugFrame = addon:EnsureChatWindow(comm.dcDebugTabName or "DCDebug")
+                            if debugFrame and debugFrame ~= self and debugFrame.AddMessage then
+                                debugFrame:AddMessage(msg, r, g, b, ...)
+                                return
+                            end
+                        end
+                    end
+
+                    -- Debounce XP Hotspot enter/leave spam while running around.
+                    if type(msg) == "string" and MaybeDebounceHotspotMessage(self, msg, r, g, b, ...) then
+                        return
+                    end
+
                     local settings = addon.settings.chat
                     if not settings.enabled then
                         return origAddMessage(self, msg, r, g, b, ...)
@@ -725,6 +954,49 @@ function Chat.CreateSettings(parent)
     stickyInfo:SetText("Remember the last used channel when typing")
     stickyInfo:SetTextColor(0.5, 0.5, 0.5)
     yOffset = yOffset - 45
+
+    -- ============================================================
+    -- Spam Control Section
+    -- ============================================================
+    local spamHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    spamHeader:SetPoint("TOPLEFT", 16, yOffset)
+    spamHeader:SetText("Spam Control")
+    yOffset = yOffset - 25
+
+    local hotspotCb = addon:CreateCheckbox(parent)
+    hotspotCb:SetPoint("TOPLEFT", 16, yOffset)
+    hotspotCb.Text:SetText("Debounce XP Hotspot enter/leave messages")
+    hotspotCb:SetChecked(settings.suppressHotspotSpam)
+    hotspotCb:SetScript("OnClick", function(self)
+        addon:SetSetting("chat.suppressHotspotSpam", self:GetChecked())
+    end)
+    yOffset = yOffset - 35
+
+    local debounceSlider = addon:CreateSlider(parent)
+    debounceSlider:SetPoint("TOPLEFT", 16, yOffset)
+    debounceSlider.Text:SetText("Hotspot debounce: " .. (settings.hotspotDebounceSeconds or 3) .. "s")
+    debounceSlider:SetMinMaxValues(0, 10)
+    debounceSlider:SetValueStep(1)
+    debounceSlider:SetValue(settings.hotspotDebounceSeconds or 3)
+    debounceSlider:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value + 0.5)
+        self.Text:SetText("Hotspot debounce: " .. value .. "s")
+        addon:SetSetting("chat.hotspotDebounceSeconds", value)
+    end)
+    yOffset = yOffset - 45
+
+    local cooldownSlider = addon:CreateSlider(parent)
+    cooldownSlider:SetPoint("TOPLEFT", 16, yOffset)
+    cooldownSlider.Text:SetText("Hotspot cooldown: " .. (settings.hotspotCooldownSeconds or 6) .. "s")
+    cooldownSlider:SetMinMaxValues(0, 30)
+    cooldownSlider:SetValueStep(1)
+    cooldownSlider:SetValue(settings.hotspotCooldownSeconds or 6)
+    cooldownSlider:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value + 0.5)
+        self.Text:SetText("Hotspot cooldown: " .. value .. "s")
+        addon:SetSetting("chat.hotspotCooldownSeconds", value)
+    end)
+    yOffset = yOffset - 55
     
     -- ============================================================
     -- Copy Section

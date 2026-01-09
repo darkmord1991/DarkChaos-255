@@ -414,13 +414,14 @@ function WayRun()
 end
 
 -- DC Waypoints helpers: control random wander distance for the selected spawn.
--- Uses AzerothCore command: `.npc set spawndist <yards>`.
+-- Uses AzerothCore command: `.npc set wanderdistance <yards>`.
 local function WaySetSpawnDist(dist)
     local player = UnitName("target") or UnitName("player")
     dist = tonumber(dist) or 0
     if dist < 0 then dist = 0 end
-    AzerothAdmin:ChatMsg(".npc set spawndist " .. tostring(dist))
-    AzerothAdmin:LogAction("Set NPC spawndist " .. tostring(dist) .. " for player " .. player .. ".")
+    dist = math.floor(dist)
+    AzerothAdmin:ChatMsg(".npc set wanderdistance " .. tostring(dist))
+    AzerothAdmin:LogAction("Set NPC wanderdistance " .. tostring(dist) .. " for player " .. player .. ".")
     if AzerothAdmin and AzerothAdmin.UpdateWaypointInfo then
         AzerothAdmin:UpdateWaypointInfo()
     end

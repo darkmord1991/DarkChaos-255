@@ -1163,6 +1163,17 @@ local function ShowTransmogPanel()
     UpdateGrid()
 end
 
+-- Called from Protocol.lua when the server sends the current transmog state.
+-- Refreshes slot button visuals even when no inventory events fire (common after relog).
+function UI:OnTransmogStateReceived()
+    if UI.frame and UI.frame:IsShown() and UI.frame.slotButtons then
+        for _, b in ipairs(UI.frame.slotButtons) do
+            UpdateSlotButtonVisual(b)
+        end
+        UpdateEquippedHeader()
+    end
+end
+
 local function CreateCharacterFrameTab()
     if not CharacterFrame then
         return
