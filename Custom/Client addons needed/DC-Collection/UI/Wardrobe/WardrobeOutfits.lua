@@ -38,6 +38,66 @@ function Wardrobe:InvalidateRandomizerCache()
     self._lastRandomOutfitSig = nil
 end
 
+-- Update slot buttons immediately from an outfit's slots table (used for instant feedback)
+function Wardrobe:_UpdateSlotButtonsFromOutfit(slots)
+    if not self.frame or not self.frame.slotButtons or type(slots) ~= "table" then
+        return
+    end
+
+    local needsDelayedRefresh = false
+    local itemsToTryOn = {}
+
+    for _, btn in ipairs(self.frame.slotButtons) do
+        local slotDef = btn.slotDef
+        local slotKey = slotDef.key
+        
+        -- Get the item ID from the outfit's slots
+        local itemId = tonumber(slots[slotKey] or 0)
+        
+        -- Also try numeric key conversion (equipment slot index)
+        if (not itemId or itemId <= 0) then
+            local invSlotId = GetInventorySlotInfo(slotKey)
+            if invSlotId then
+                local eqSlot = invSlotId - 1
+                itemId = tonumber(slots[eqSlot] or slots[tostring(eqSlot)] or 0)
+            end
+        end
+
+        if itemId and itemId > 0 then
+            local iconTexture = select(10, GetItemInfo(itemId))
+            if iconTexture then
+                btn.icon:SetTexture(iconTexture)
+                btn.transmogApplied:Show()
+            else
+                -- Item not cached yet, keep current icon and schedule refresh
+                needsDelayedRefresh = true
+                btn.transmogApplied:Show()
+            end
+            -- Collect items for model TryOn
+            table.insert(itemsToTryOn, itemId)
+        end
+    end
+
+    -- Also update the model preview with the outfit items
+    if self.frame and self.frame.model then
+        local model = self.frame.model
+        model:SetUnit("player")
+        model:SetFacing(0)
+        if model.Undress then
+            model:Undress()
+        end
+        -- Apply all outfit items via TryOn
+        for _, itemId in ipairs(itemsToTryOn) do
+            pcall(function() model:TryOn(itemId) end)
+        end
+    end
+
+    -- Schedule delayed refresh if some items weren't cached
+    if needsDelayedRefresh and DC and type(DC._ScheduleTransmogIconRefresh) == "function" then
+        DC:_ScheduleTransmogIconRefresh()
+    end
+end
+
 function Wardrobe:_EnsurePendingApplyVerifier()
     if self._pendingApplyVerifierFrame then
         return
@@ -114,24 +174,6 @@ local function ExtractOutfitItemIds(outfit, skipDebug)
     local itemIds = {}
     local slots = outfit and (outfit.slots or outfit.items)
     
-    -- Debug: log what we're working with (only on first call, not retries)
-    if not skipDebug and DC and DC.Debug then
-        DC:Debug("[Preview] ExtractOutfitItemIds: outfit.name=" .. tostring(outfit and outfit.name))
-        DC:Debug("[Preview] slots type=" .. type(slots))
-        if type(slots) == "table" then
-            local count = 0
-            for k, v in pairs(slots) do
-                count = count + 1
-                if count <= 3 then  -- Only log first 3 to avoid spam
-                    DC:Debug("[Preview] slot[" .. tostring(k) .. "]=" .. tostring(v))
-                end
-            end
-            DC:Debug("[Preview] total slots in table: " .. count)
-        elseif type(slots) == "string" then
-            DC:Debug("[Preview] slots string (first 100): " .. string.sub(slots, 1, 100))
-        end
-    end
-    
     if type(slots) == "string" then
         for val in slots:gmatch('"?[^":,{}]+"?%s*:%s*(%d+)') do
             local n = tonumber(val)
@@ -146,11 +188,6 @@ local function ExtractOutfitItemIds(outfit, skipDebug)
                 itemIds[#itemIds + 1] = n
             end
         end
-    end
-    
-    -- Debug: log extracted items count (only on first call)
-    if not skipDebug and DC and DC.Debug then
-        DC:Debug("[Preview] Extracted " .. #itemIds .. " items from outfit: " .. (outfit and outfit.name or "unknown"))
     end
     
     return itemIds
@@ -225,17 +262,13 @@ function Wardrobe:_EnsureOutfitPreviewQueue()
         local model = btn.model
 
         -- Reset model completely before applying new outfit.
-        -- SetUnit("player") copies the player's current gear, so we must undress first.
-        -- For WotLK/3.3.5, we need to be careful with the order.
         model:SetUnit("player")
         model:SetFacing(0)
         
-        -- Undress completely to remove any current gear/transmogs
         if model.Undress then
             model:Undress()
         end
         
-        -- Also try to reset camera
         if model.SetPortraitZoom then
             model:SetPortraitZoom(0)
         end
@@ -243,30 +276,12 @@ function Wardrobe:_EnsureOutfitPreviewQueue()
             model:RefreshCamera()
         end
 
-        -- Debug: log which outfit is being previewed
-        if DC and DC.Debug then
-            DC:Debug("[Preview] Rendering outfit: " .. (outfit.name or "unknown") .. " with " .. #itemIds .. " items")
-        end
-
-        -- TryOn all items using numeric ID (consistent with transmogrification_frame.lua)
-        local appliedCount = 0
+        -- TryOn all items
         for _, id in ipairs(itemIds) do
             local numId = tonumber(id)
             if numId and numId > 0 then
-                local success, err = pcall(function()
-                    model:TryOn(numId)
-                end)
-                if success then
-                    appliedCount = appliedCount + 1
-                elseif DC and DC.Debug then
-                    DC:Debug("[Preview] TryOn failed for item " .. tostring(id) .. ": " .. tostring(err))
-                end
+                pcall(function() model:TryOn(numId) end)
             end
-        end
-        
-        -- Debug: log result
-        if DC and DC.Debug then
-            DC:Debug("[Preview] Applied " .. appliedCount .. "/" .. #itemIds .. " items for outfit: " .. (outfit.name or "unknown"))
         end
     end)
 
@@ -320,15 +335,66 @@ local function GetCurrentOutfitSlots()
         if invSlotId then
             local itemId = GetInventoryItemID("player", invSlotId)
             if itemId then
-                local transmogId = DC and DC.transmogState and DC.transmogState[tostring(invSlotId - 1)]
-                local tid = tonumber(transmogId) or 0
-                if tid < 0 then tid = 0 end
-                slots[slotDef.key] = tid
+                -- Build the "current outfit" using actual item entry IDs (fake_entry) so TryOn works.
+                -- DC.transmogState contains displayIds and only includes slots present in the server DB.
+                -- DC.transmogItemIds contains the corresponding fake_entry (item entry) for preview/texture.
+                local eqSlot = (invSlotId == 1 and 0) or (invSlotId and (invSlotId - 1))
+                local state = DC and DC.transmogState or nil
+                local itemIds = DC and DC.transmogItemIds or nil
+
+                local hasState = state and state[tostring(eqSlot)] ~= nil
+                local displayId = hasState and tonumber(state[tostring(eqSlot)]) or nil
+                if hasState and displayId ~= nil then
+                    if displayId == 0 then
+                        -- Slot is explicitly hidden.
+                        slots[slotDef.key] = 0
+                    else
+                        local fakeEntry = itemIds and (itemIds[eqSlot] or itemIds[tostring(eqSlot)])
+                        fakeEntry = tonumber(fakeEntry) or 0
+                        -- Fall back to equipped item if something is off.
+                        slots[slotDef.key] = (fakeEntry > 0) and fakeEntry or itemId
+                    end
+                else
+                    -- No transmog record for this slot: use the equipped item as the visual.
+                    slots[slotDef.key] = itemId
+                end
             end
         end
     end
 
     return slots
+end
+
+local function GetCurrentOutfitIconFromSlots(slots)
+    if type(slots) ~= "table" then
+        return "Interface\\Icons\\INV_Chest_Cloth_17"
+    end
+
+    local function iconFromSlotKey(key)
+        local itemId = tonumber(slots[key] or 0)
+        if itemId and itemId > 0 and GetItemInfo then
+            local tex = select(10, GetItemInfo(itemId))
+            if tex then
+                return tex
+            end
+            -- If transmog item isn't cached, try to get the equipped item's icon as fallback
+            local invSlotId = GetInventorySlotInfo(key)
+            if invSlotId then
+                local equippedId = GetInventoryItemID("player", invSlotId)
+                if equippedId and equippedId ~= itemId then
+                    local eqTex = select(10, GetItemInfo(equippedId))
+                    if eqTex then
+                        return eqTex
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    return iconFromSlotKey("ChestSlot")
+        or iconFromSlotKey("HeadSlot")
+        or "Interface\\Icons\\INV_Chest_Cloth_17"
 end
 
 local function IsSameSlots(a, b)
@@ -442,13 +508,6 @@ function Wardrobe:ShowSaveOutfitDialog()
             local selected = Wardrobe and Wardrobe.selectedOutfit
             local canUpdate = selected and selected.id and tonumber(selected.id) and tonumber(selected.id) > 0
 
-            -- Debug: log what we have
-            if DC and DC.Debug then
-                DC:Debug("[SaveDialog] OnShow: selectedOutfit=" .. tostring(selected and selected.name or "nil"))
-                DC:Debug("[SaveDialog] OnShow: selectedOutfit.id=" .. tostring(selected and selected.id or "nil"))
-                DC:Debug("[SaveDialog] OnShow: canUpdate=" .. tostring(canUpdate))
-            end
-
             -- Pre-fill with selected outfit's name if available
             if selfPopup.editBox and canUpdate then
                 selfPopup.editBox:SetText(selected.name or "")
@@ -465,14 +524,6 @@ function Wardrobe:ShowSaveOutfitDialog()
                 
                 -- If the name matches the selected outfit's name, overwrite it
                 local wantsUpdate = canUpdate and selected.name and (name == selected.name)
-
-                -- Debug: log what we're doing
-                if DC and DC.Debug then
-                    DC:Debug("[SaveDialog] OnAccept: name=" .. tostring(name))
-                    DC:Debug("[SaveDialog] OnAccept: canUpdate=" .. tostring(canUpdate))
-                    DC:Debug("[SaveDialog] OnAccept: wantsUpdate=" .. tostring(wantsUpdate))
-                    DC:Debug("[SaveDialog] OnAccept: selected.id=" .. tostring(selected and selected.id or "nil"))
-                end
 
                 if wantsUpdate then
                     Wardrobe:SaveCurrentOutfit(name, tonumber(selected.id))
@@ -517,19 +568,6 @@ function Wardrobe:SaveCurrentOutfit(name, overwriteId)
         slots = {},
     }
 
-    -- Debug: log what transmog state we have
-    if DC and DC.Debug then
-        DC:Debug("[SaveOutfit] DC.transmogItemIds contents:")
-        local stateCount = 0
-        for k, v in pairs(DC.transmogItemIds or {}) do
-            stateCount = stateCount + 1
-            if stateCount <= 5 then
-                DC:Debug("[SaveOutfit]   transmogItemIds[" .. tostring(k) .. "] = " .. tostring(v))
-            end
-        end
-        DC:Debug("[SaveOutfit]   total transmogItemIds entries: " .. stateCount)
-    end
-
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
         local invSlotId = GetInventorySlotInfo(slotDef.key)
         if invSlotId then
@@ -547,11 +585,6 @@ function Wardrobe:SaveCurrentOutfit(name, overwriteId)
                     valueToSave = tid  -- Transmog is applied, save the transmog item ID
                 else
                     valueToSave = itemId  -- No transmog, save the actual equipped item ID
-                end
-                
-                -- Debug: log what we're saving for this slot
-                if DC and DC.Debug then
-                    DC:Debug("[SaveOutfit] " .. slotDef.key .. " (slot " .. slotIdx .. "): itemId=" .. tostring(itemId) .. ", transmogItemId=" .. tostring(tid) .. ", saving=" .. tostring(valueToSave))
                 end
                 
                 outfit.slots[slotDef.key] = valueToSave
@@ -679,6 +712,26 @@ end
 
 function Wardrobe:ShowOutfitContextMenu(outfit, anchor)
     if not outfit then
+        return
+    end
+
+    if outfit.__isCurrentUnsaved then
+        local menu = {
+            { text = outfit.name or "Current", isTitle = true, notCheckable = true },
+            {
+                text = "Save as...",
+                notCheckable = true,
+                func = function()
+                    if Wardrobe and type(Wardrobe.ShowSaveOutfitDialog) == "function" then
+                        Wardrobe:ShowSaveOutfitDialog()
+                    end
+                end,
+            },
+            { text = (DC.L and DC.L["CANCEL"]) or "Cancel", notCheckable = true },
+        }
+
+        local dropdown = CreateFrame("Frame", "DCWardrobeOutfitContextMenu", UIParent, "UIDropDownMenuTemplate")
+        EasyMenu(menu, dropdown, anchor or "cursor", 0, 0, "MENU")
         return
     end
 
@@ -838,6 +891,10 @@ function Wardrobe:LoadOutfit(outfit)
     if canBatch and batchEntries and #batchEntries > 0 then
         DC:ApplyTransmogBatchByEquipmentSlot(batchEntries)
     end
+
+    -- Immediately update UI with the outfit's expected items (preview before server confirms)
+    -- This gives instant visual feedback while waiting for the server to respond
+    self:_UpdateSlotButtonsFromOutfit(slots)
 
     -- Force-refresh transmog state so UI + preview can update from authoritative server state.
     if DC and type(DC.RequestTransmogState) == "function" then
@@ -1016,7 +1073,7 @@ function Wardrobe:RandomizeOutfit()
 
     -- Clear relevant slots first so randomizer truly *replaces* existing transmogs.
     for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
-        local invSlotId = slotDef and slotDef.slotName and GetInventorySlotInfo(slotDef.slotName)
+        local invSlotId = slotDef and slotDef.key and GetInventorySlotInfo(slotDef.key)
         if invSlotId and GetInventoryItemID("player", invSlotId) then
             local equipSlot = invSlotId - 1
             if DC and type(DC.RequestClearTransmogByEquipmentSlot) == "function" then
@@ -1050,6 +1107,11 @@ function Wardrobe:RandomizeOutfit()
 
     if type(self.MarkUnsavedChanges) == "function" and actualApplied > 0 then
         self:MarkUnsavedChanges()
+    end
+
+    -- Request updated transmog state from server so UI can refresh
+    if DC and type(DC.RequestTransmogState) == "function" then
+        DC:RequestTransmogState()
     end
 
     if DC and DC.Print then 
@@ -1244,6 +1306,28 @@ function Wardrobe:RefreshOutfitsGrid()
         end
     end
 
+    -- If the player's current look doesn't match any saved outfit, show it as an explicit tile on page 1.
+    if wantOffset == 0 and not pinnedOutfit and not equippedIndex then
+        local currentSlotsSig = Wardrobe.SerializeSlotsToJsonString(equippedSlots)
+        if currentSlotsSig and currentSlotsSig ~= "{}" then
+            local currentOutfit = {
+                id = 0,
+                name = "Current (unsaved)",
+                icon = GetCurrentOutfitIconFromSlots(equippedSlots),
+                slots = equippedSlots,
+                __isCurrentUnsaved = true,
+            }
+
+            local merged = { currentOutfit }
+            for _, o in ipairs(outfits) do
+                if #merged >= ITEMS_PER_PAGE then break end
+                table.insert(merged, o)
+            end
+            outfits = merged
+            equippedIndex = 1
+        end
+    end
+
     local startIdx = 0
     
     -- Force-clear preview cache signatures to ensure previews re-render after data changes
@@ -1336,6 +1420,12 @@ function Wardrobe:RefreshOutfitsGrid()
                 end
                 
                 -- Apply outfit on click
+                if selfBtn.outfit and selfBtn.outfit.__isCurrentUnsaved then
+                    if DC and DC.Print then
+                        DC:Print("This is your current look. Use '+' to save it as an outfit.")
+                    end
+                    return
+                end
                 Wardrobe.selectedOutfit = selfBtn.outfit
                 Wardrobe:LoadOutfit(selfBtn.outfit)
             end)
@@ -1350,7 +1440,12 @@ function Wardrobe:RefreshOutfitsGrid()
                  if isEquipped then
                      GameTooltip:AddLine("Currently equipped", 1, 0.82, 0)
                  end
-                 GameTooltip:AddLine("Click to Apply", 0, 1, 0)
+                 if selfBtn.outfit and selfBtn.outfit.__isCurrentUnsaved then
+                     GameTooltip:AddLine("This is your current look", 0, 1, 0)
+                     GameTooltip:AddLine("Click '+' to save as outfit", 1, 1, 1)
+                 else
+                     GameTooltip:AddLine("Click to Apply", 0, 1, 0)
+                 end
                  GameTooltip:AddLine("Shift+Click to Link", 1, 1, 1)
                  GameTooltip:Show()
             end)

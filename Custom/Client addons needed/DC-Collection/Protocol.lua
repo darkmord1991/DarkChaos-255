@@ -2227,9 +2227,122 @@ function DC:HandleError(data)
     end
 end
 
+-- Schedule a delayed refresh for transmog icons after items are cached
+function DC:_ScheduleTransmogIconRefresh()
+    if self._transmogIconRefreshFrame then
+        -- Already scheduled
+        return
+    end
+
+    local f = CreateFrame("Frame")
+    f.elapsed = 0
+    f.attempts = 0
+    f:SetScript("OnUpdate", function(frame, dt)
+        frame.elapsed = (frame.elapsed or 0) + (dt or 0)
+        if frame.elapsed < 0.15 then
+            return
+        end
+        frame.elapsed = 0
+        frame.attempts = (frame.attempts or 0) + 1
+
+        -- Check if all items are now cached
+        local allCached = true
+        local itemIds = DC.transmogItemIds or {}
+        for _, itemId in pairs(itemIds) do
+            local id = tonumber(itemId)
+            if id and id > 0 then
+                if not GetItemInfo(id) then
+                    allCached = false
+                    break
+                end
+            end
+        end
+
+        -- Refresh UI if all cached or after max attempts
+        if allCached or frame.attempts >= 20 then
+            frame:SetScript("OnUpdate", nil)
+            DC._transmogIconRefreshFrame = nil
+
+            -- Refresh slot buttons with now-cached icons (use IsVisible for embedded mode)
+            local wardrobeVisible = DC.Wardrobe and DC.Wardrobe.frame and
+                ((DC.Wardrobe.frame.IsVisible and DC.Wardrobe.frame:IsVisible()) or
+                 (DC.Wardrobe.frame.IsShown and DC.Wardrobe.frame:IsShown()))
+            if wardrobeVisible then
+                if type(DC.Wardrobe.UpdateSlotButtons) == "function" then
+                    pcall(function() DC.Wardrobe:UpdateSlotButtons() end)
+                end
+                -- Also refresh the outfits grid if on that tab
+                if DC.Wardrobe.currentTab == "outfits" and type(DC.Wardrobe.RefreshOutfitsGrid) == "function" then
+                    pcall(function() DC.Wardrobe:RefreshOutfitsGrid() end)
+                end
+            end
+
+            local transmogUIVisible = DC.TransmogUI and DC.TransmogUI.frame and
+                ((DC.TransmogUI.frame.IsVisible and DC.TransmogUI.frame:IsVisible()) or
+                 (DC.TransmogUI.frame.IsShown and DC.TransmogUI.frame:IsShown()))
+            if transmogUIVisible then
+                if type(DC.TransmogUI.UpdateSlotButtons) == "function" then
+                    pcall(function() DC.TransmogUI:UpdateSlotButtons() end)
+                end
+            end
+        end
+    end)
+
+    self._transmogIconRefreshFrame = f
+end
+
 function DC:HandleTransmogState(data)
-    local state = data.state or {}
-    local itemIds = data.itemIds or {}
+    local function normalizeSlotMap(tbl)
+        if type(tbl) ~= "table" then
+            return {}
+        end
+
+        local out = {}
+        local hasStringSlotKey = false
+        local minNumKey = nil
+        local maxNumKey = nil
+
+        for k, v in pairs(tbl) do
+            if type(k) == "string" then
+                local nk = tonumber(k)
+                if nk ~= nil then
+                    hasStringSlotKey = true
+                    out[tostring(nk)] = v
+                end
+            elseif type(k) == "number" then
+                minNumKey = (minNumKey == nil) and k or math.min(minNumKey, k)
+                maxNumKey = (maxNumKey == nil) and k or math.max(maxNumKey, k)
+            end
+        end
+
+        -- If the decoder already gave us string slot keys ("0", "1", ...), those are authoritative.
+        if hasStringSlotKey then
+            for k, v in pairs(tbl) do
+                if type(k) == "number" then
+                    out[tostring(k)] = out[tostring(k)] or v
+                end
+            end
+            return out
+        end
+
+        -- Otherwise, handle numeric-key tables.
+        -- Some JSON decoders convert {"0":x,"1":y} into an array-like table { [1]=x, [2]=y, ... }.
+        local shift = 0
+        if minNumKey ~= nil and minNumKey == 1 then
+            shift = -1
+        end
+
+        for k, v in pairs(tbl) do
+            if type(k) == "number" then
+                out[tostring(k + shift)] = v
+            end
+        end
+        return out
+    end
+
+    local state = normalizeSlotMap(data.state)
+    local itemIds = normalizeSlotMap(data.itemIds)
+
     self.transmogState = state
     self.transmogItemIds = itemIds  -- Store item entries for TryOn/outfit save
 
@@ -2237,16 +2350,40 @@ function DC:HandleTransmogState(data)
     DCCollectionCharDB.transmogState = state
     DCCollectionCharDB.transmogItemIds = itemIds
 
+    -- Pre-cache all transmog item IDs so their icons are available
+    local needsDelayedRefresh = false
+    for _, itemId in pairs(itemIds) do
+        local id = tonumber(itemId)
+        if id and id > 0 then
+            local name = GetItemInfo(id)
+            if not name then
+                needsDelayedRefresh = true
+            end
+        end
+    end
+
     -- Refresh UI if open
     if self.UI and self.UI.mainFrame and self.UI.mainFrame:IsShown() then
         self.UI:RefreshCurrentTab()
     end
 
-    -- Refresh Wardrobe slot buttons (embedded Wardrobe uses its own frame, not UI.mainFrame)
-    if self.Wardrobe and self.Wardrobe.frame and self.Wardrobe.frame.IsShown and self.Wardrobe.frame:IsShown() then
+    -- Refresh Wardrobe slot buttons (use IsVisible() to handle embedded mode where parent shows the frame)
+    local wardrobeVisible = self.Wardrobe and self.Wardrobe.frame and 
+        ((self.Wardrobe.frame.IsVisible and self.Wardrobe.frame:IsVisible()) or 
+         (self.Wardrobe.frame.IsShown and self.Wardrobe.frame:IsShown()))
+    if wardrobeVisible then
         if type(self.Wardrobe.UpdateSlotButtons) == "function" then
             pcall(function() self.Wardrobe:UpdateSlotButtons() end)
         end
+
+        if type(self.Wardrobe.UpdateModel) == "function" then
+            pcall(function() self.Wardrobe:UpdateModel() end)
+        end
+    end
+
+    -- If some transmog items weren't cached, schedule a delayed refresh
+    if needsDelayedRefresh then
+        self:_ScheduleTransmogIconRefresh()
     end
 
     -- Retry a deferred outfit save once we have transmog state.

@@ -187,20 +187,36 @@ local function UpdateSlotButtonVisual(btn)
             applied = true
             -- Get the actual item ID from transmogItemIds
             transmogItemId = transmogItemIds[eqSlot] or transmogItemIds[tostring(eqSlot)]
+            transmogItemId = tonumber(transmogItemId)
         end
     end
     
     -- Use transmog item texture if available, otherwise base item
     local displayItemId = (applied and transmogItemId) or baseItemId
     local texture = nil
+    local needsDelayedRefresh = false
     if displayItemId and GetItemInfo then
         texture = select(10, GetItemInfo(displayItemId))
+        if not texture and applied and transmogItemId then
+            -- Transmog item not cached, schedule delayed refresh
+            needsDelayedRefresh = true
+        end
     end
 
     if texture then
         btn.icon:SetTexture(texture)
     else
-        btn.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        -- If no texture available, try to get base item texture as fallback
+        if baseItemId and baseItemId ~= displayItemId then
+            local baseTex = select(10, GetItemInfo(baseItemId))
+            if baseTex then
+                btn.icon:SetTexture(baseTex)
+            else
+                btn.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            end
+        else
+            btn.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        end
     end
 
     -- Show glow if transmog is applied
@@ -214,6 +230,11 @@ local function UpdateSlotButtonVisual(btn)
         btn.selectedGlow:Show()
     else
         btn.selectedGlow:Hide()
+    end
+
+    -- Schedule delayed refresh if transmog item wasn't cached
+    if needsDelayedRefresh and DC and type(DC._ScheduleTransmogIconRefresh) == "function" then
+        DC:_ScheduleTransmogIconRefresh()
     end
 end
 

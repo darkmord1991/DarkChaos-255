@@ -34,7 +34,8 @@ local ExtendedStats = {
             enabled = true,
             show = true,
             hideUnavailable = true,
-            anchorOffsetX = -2,
+            -- Slight overlap to avoid a visible seam between the two bordered frames.
+            anchorOffsetX = -8,
             anchorOffsetY = -12,
             -- General
             showMovementSpeed = true,
@@ -482,22 +483,40 @@ local function TryBuildUI()
         -- Attach to the Character window (right side), with user offsets
         local dx = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetX)
         if dx == nil then
-            dx = -2
-        elseif dx == 0 then
-            -- Treat old default as flush
-            dx = -2
+            dx = -8
         end
-        dx = tonumber(dx) or -2
+        dx = tonumber(dx) or -4
+
+        -- Never allow a visible gap between the CharacterFrame and this panel.
+        -- Positive offsets create an empty space; clamp to 0 (flush) and persist.
+        if dx > -2 then
+            dx = -8
+            addon:SetSetting("extendedStats.anchorOffsetX", dx)
+        end
+
         -- Avoid huge gaps caused by accidentally saved drag offsets.
         -- Keep the panel snapped close to the Character window by default.
         if dx > 40 or dx < -80 then
-            dx = -2
+            dx = -8
             addon:SetSetting("extendedStats.anchorOffsetX", dx)
         end
         local dy = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetY) or -12
         frame:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", dx, dy)
         frame:SetHeight(CharacterFrame:GetHeight() - 24)
-        frame:SetWidth(260)
+
+        -- Use available space to the right (prevents cramped labels) but cap it.
+        local width = 300
+        if UIParent and UIParent.GetRight and CharacterFrame and CharacterFrame.GetRight then
+            local uiRight = UIParent:GetRight()
+            local charRight = CharacterFrame:GetRight()
+            if uiRight and charRight then
+                local available = uiRight - charRight - 10
+                if available and available > 0 then
+                    width = math.max(260, math.min(360, available))
+                end
+            end
+        end
+        frame:SetWidth(width)
     end
 
     frame.UpdateLayout = UpdateLayout
@@ -565,11 +584,33 @@ local function TryBuildUI()
     scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -28, 8)
 
     local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(180, 400)
+    content:SetSize(1, 400)
     scroll:SetScrollChild(content)
 
     frame.scrollFrame = scroll
     frame.content = content
+
+    local function SyncContentWidth()
+        if not scroll or not content then return end
+        local w = scroll:GetWidth()
+        if not w or w <= 1 then return end
+        -- Ensure child uses the full scroll width so label/value columns don't truncate.
+        content:SetWidth(w)
+    end
+
+    if scroll and scroll.HookScript then
+        scroll:HookScript("OnSizeChanged", function()
+            SyncContentWidth()
+        end)
+    end
+
+    if frame and frame.HookScript then
+        frame:HookScript("OnSizeChanged", function()
+            SyncContentWidth()
+        end)
+    end
+
+    SyncContentWidth()
 
     -- Layout (dynamic reflow; can hide unavailable stats per class)
     local stats = {}
@@ -988,6 +1029,61 @@ end
 function ExtendedStats.CreateSettings(parent)
     local settings = addon.settings.extendedStats
 
+    local controls = {}
+
+    local function TrackControl(ctrl, col, y)
+        if not ctrl then return end
+        ctrl._dcqosCol = col
+        ctrl._dcqosY = y
+        table.insert(controls, ctrl)
+    end
+
+    local function UpdateLayout()
+        local w = parent and parent.GetWidth and parent:GetWidth() or 0
+
+        -- Content is inside a scroll frame; width can be 0/1 during initial build.
+        -- Use sane fallbacks, then reflow on size changes.
+        if w < 350 then
+            w = 350
+        end
+
+        local leftX = 16
+        local gap = 20
+        local innerW = w - (leftX * 2)
+        local colW
+        local rightX
+
+        if innerW >= 520 then
+            colW = math.floor((innerW - gap) / 2)
+            rightX = leftX + colW + gap
+        else
+            -- Narrow panels: keep legacy-ish spacing but still widen text.
+            colW = math.floor(innerW - 8)
+            rightX = 180
+        end
+
+        for _, ctrl in ipairs(controls) do
+            if ctrl._dcqosCol and ctrl._dcqosY then
+                local x = (ctrl._dcqosCol == 2) and rightX or leftX
+                ctrl:ClearAllPoints()
+                ctrl:SetPoint("TOPLEFT", x, ctrl._dcqosY)
+
+                -- Prevent checkbox text being clipped; make it consume available space.
+                if ctrl.Text and ctrl.Text.SetWidth then
+                    if innerW >= 520 then
+                        ctrl:SetWidth(colW)
+                        ctrl.Text:SetWidth(math.max(40, colW - 30))
+                    else
+                        ctrl:SetWidth(colW)
+                        ctrl.Text:SetWidth(math.max(40, colW - 30))
+                    end
+                    if ctrl.Text.SetJustifyH then ctrl.Text:SetJustifyH("LEFT") end
+                    if ctrl.Text.SetNonSpaceWrap then ctrl.Text:SetNonSpaceWrap(false) end
+                end
+            end
+        end
+    end
+
     local title = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("Extended Stats")
@@ -1018,6 +1114,8 @@ function ExtendedStats.CreateSettings(parent)
     showByDefaultCb:SetScript("OnClick", function(self)
         addon:SetSetting("extendedStats.show", self:GetChecked())
     end)
+
+    yOffset = yOffset - 30
     
 
     local hideUnavailable = addon:CreateCheckbox(parent)
@@ -1033,120 +1131,140 @@ function ExtendedStats.CreateSettings(parent)
     yOffset = yOffset - 30
     yOffset = yOffset - 40
     
-    local function CreateStatToggle(label, settingKey, xOffset)
+    local function CreateStatToggle(label, settingKey, col)
         local cb = addon:CreateCheckbox(parent)
-        cb:SetPoint("TOPLEFT", xOffset or 16, yOffset)
+        cb:SetPoint("TOPLEFT", 16, yOffset)
         cb.Text:SetText(label)
         cb:SetChecked(settings[settingKey] ~= false)
         cb:SetScript("OnClick", function(self)
             addon:SetSetting("extendedStats." .. settingKey, self:GetChecked())
             addon:Print("Requires /reload to take effect", true)
         end)
+
+        TrackControl(cb, col or 1, yOffset)
         return cb
     end
     
     -- General Header
     local generalHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     generalHeader:SetPoint("TOPLEFT", 16, yOffset)
+    generalHeader:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     generalHeader:SetText("General Stats")
     yOffset = yOffset - 25
     
-    CreateStatToggle("Movement Speed", "showMovementSpeed")
+    CreateStatToggle("Movement Speed", "showMovementSpeed", 1)
     yOffset = yOffset - 25
     
     -- Melee Header
     yOffset = yOffset - 5
     local meleeHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     meleeHeader:SetPoint("TOPLEFT", 16, yOffset)
+    meleeHeader:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     meleeHeader:SetText("Melee Stats")
     yOffset = yOffset - 25
     
-    CreateStatToggle("Attack Power", "showMeleeAP", 16)
-    CreateStatToggle("Hit", "showMeleeHit", 180)
+    CreateStatToggle("Attack Power", "showMeleeAP", 1)
+    CreateStatToggle("Hit", "showMeleeHit", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Crit", "showMeleeCrit", 16)
-    CreateStatToggle("Haste", "showMeleeHaste", 180)
+    CreateStatToggle("Crit", "showMeleeCrit", 1)
+    CreateStatToggle("Haste", "showMeleeHaste", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Expertise", "showMeleeExpertise", 16)
-    CreateStatToggle("Expertise Rating", "showMeleeExpertiseRating", 180)
+    CreateStatToggle("Expertise", "showMeleeExpertise", 1)
+    CreateStatToggle("Expertise Rating", "showMeleeExpertiseRating", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Armor Pen", "showMeleeArPen", 16)
-    CreateStatToggle("Miss Chance", "showMeleeMiss", 180)
+    CreateStatToggle("Armor Pen", "showMeleeArPen", 1)
+    CreateStatToggle("Miss Chance", "showMeleeMiss", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Miss (Boss)", "showMeleeMissBoss", 16)
+    CreateStatToggle("Miss (Boss)", "showMeleeMissBoss", 1)
     yOffset = yOffset - 25
     
     -- Ranged Header
     yOffset = yOffset - 5
     local rangedHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     rangedHeader:SetPoint("TOPLEFT", 16, yOffset)
+    rangedHeader:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     rangedHeader:SetText("Ranged Stats")
     yOffset = yOffset - 25
     
-    CreateStatToggle("Attack Power", "showRangedAP", 16)
-    CreateStatToggle("Hit", "showRangedHit", 180)
+    CreateStatToggle("Attack Power", "showRangedAP", 1)
+    CreateStatToggle("Hit", "showRangedHit", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Crit", "showRangedCrit", 16)
-    CreateStatToggle("Haste", "showRangedHaste", 180)
+    CreateStatToggle("Crit", "showRangedCrit", 1)
+    CreateStatToggle("Haste", "showRangedHaste", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Armor Pen", "showRangedArPen", 16)
-    CreateStatToggle("Miss Chance", "showRangedMiss", 180)
+    CreateStatToggle("Armor Pen", "showRangedArPen", 1)
+    CreateStatToggle("Miss Chance", "showRangedMiss", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Miss (Boss)", "showRangedMissBoss", 16)
+    CreateStatToggle("Miss (Boss)", "showRangedMissBoss", 1)
     yOffset = yOffset - 25
     
     -- Spell Header
     yOffset = yOffset - 5
     local spellHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     spellHeader:SetPoint("TOPLEFT", 16, yOffset)
+    spellHeader:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     spellHeader:SetText("Spell Stats")
     yOffset = yOffset - 25
     
-    CreateStatToggle("Spell Power", "showSpellPower", 16)
-    CreateStatToggle("Penetration", "showSpellPenetration", 180)
+    CreateStatToggle("Spell Power", "showSpellPower", 1)
+    CreateStatToggle("Penetration", "showSpellPenetration", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Hit", "showSpellHit", 16)
-    CreateStatToggle("Crit", "showSpellCrit", 180)
+    CreateStatToggle("Hit", "showSpellHit", 1)
+    CreateStatToggle("Crit", "showSpellCrit", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Haste", "showSpellHaste", 16)
-    CreateStatToggle("Miss Chance", "showSpellMiss", 180)
+    CreateStatToggle("Haste", "showSpellHaste", 1)
+    CreateStatToggle("Miss Chance", "showSpellMiss", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Miss (Boss)", "showSpellMissBoss", 16)
-    CreateStatToggle("Show Spell Schools", "showSpellSchools", 180)
+    CreateStatToggle("Miss (Boss)", "showSpellMissBoss", 1)
+    CreateStatToggle("Show Spell Schools", "showSpellSchools", 2)
     yOffset = yOffset - 25
     
     -- Defense Header
     yOffset = yOffset - 5
     local defenseHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     defenseHeader:SetPoint("TOPLEFT", 16, yOffset)
+    defenseHeader:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     defenseHeader:SetText("Defense Stats")
     yOffset = yOffset - 25
     
-    CreateStatToggle("Armor", "showArmor", 16)
-    CreateStatToggle("Defense", "showDefense", 180)
+    CreateStatToggle("Armor", "showArmor", 1)
+    CreateStatToggle("Defense", "showDefense", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Defense Rating", "showDefenseRating", 16)
-    CreateStatToggle("Avoidance", "showAvoidance", 180)
+    CreateStatToggle("Defense Rating", "showDefenseRating", 1)
+    CreateStatToggle("Avoidance", "showAvoidance", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Dodge", "showDodge", 16)
-    CreateStatToggle("Parry", "showParry", 180)
+    CreateStatToggle("Dodge", "showDodge", 1)
+    CreateStatToggle("Parry", "showParry", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Block", "showBlock", 16)
-    CreateStatToggle("Block Value", "showBlockValue", 180)
+    CreateStatToggle("Block", "showBlock", 1)
+    CreateStatToggle("Block Value", "showBlockValue", 2)
     yOffset = yOffset - 25
-    CreateStatToggle("Resilience", "showResilience", 16)
+    CreateStatToggle("Resilience", "showResilience", 1)
     yOffset = yOffset - 25
     
     -- Mana Regen Header
     yOffset = yOffset - 5
     local regenHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     regenHeader:SetPoint("TOPLEFT", 16, yOffset)
+    regenHeader:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
     regenHeader:SetText("Mana Regeneration")
     yOffset = yOffset - 25
     
-    CreateStatToggle("MP5 (Casting)", "showMP5Casting", 16)
-    CreateStatToggle("MP5 (Not Casting)", "showMP5NotCasting", 180)
+    CreateStatToggle("MP5 (Casting)", "showMP5Casting", 1)
+    CreateStatToggle("MP5 (Not Casting)", "showMP5NotCasting", 2)
     yOffset = yOffset - 25
+
+    -- Track the top controls too, so they get wider text/less clipping.
+    TrackControl(enabledCb, 1, -70)
+    TrackControl(showByDefaultCb, 1, -100)
+    TrackControl(hideUnavailable, 1, -130)
+
+    UpdateLayout()
+    if parent and parent.HookScript then
+        parent:HookScript("OnSizeChanged", function()
+            UpdateLayout()
+        end)
+    end
 
     return yOffset - 20
 end

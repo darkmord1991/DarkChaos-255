@@ -1,6 +1,24 @@
 -- Lightweight Astrolabe helper for DC Hotspot add-on
 -- Provides minimal conversions from world/normalized coordinates to UI space
-print("|cff00ff00[DC-Hotspot] Loading HotspotDisplay_Astrolabe.lua|r")
+local Debug = _G.DC_DebugUtils
+
+local function IsDebugEnabled()
+    local db = rawget(_G, "DCMapupgradesDB")
+    if type(db) ~= "table" then
+        db = rawget(_G, "DCHotspotDB")
+    end
+    return type(db) == "table" and db.debug == true
+end
+
+local function DebugPrint(...)
+    if Debug and Debug.PrintMulti then
+        Debug:PrintMulti("Astrolabe", IsDebugEnabled(), ...)
+    elseif IsDebugEnabled() then
+        print("[Astrolabe] " .. table.concat({ ... }, " "))
+    end
+end
+
+DebugPrint("Loading HotspotDisplay_Astrolabe.lua")
 local Ast = {}
 
 -- Normalize coordinates that can be expressed in 0..1 or 0..100 space
@@ -30,21 +48,21 @@ Ast.MapBounds = {
 function Ast.WorldCoordsToNormalized(mapId, x, y)
     -- Debug: log what we receive
     if not _G.DC_HOTSPOT_ASTRO_LOGGED then
-        print("|cff00ffff[Astrolabe] WorldCoordsToNormalized called: mapId=" .. tostring(mapId) .. " x=" .. tostring(x) .. " y=" .. tostring(y) .. "|r")
+        DebugPrint("WorldCoordsToNormalized called:", "mapId=" .. tostring(mapId), "x=" .. tostring(x), "y=" .. tostring(y))
         _G.DC_HOTSPOT_ASTRO_LOGGED = true
     end
     
     local bounds = Ast.MapBounds[mapId]
     if not bounds then
         if not _G.DC_HOTSPOT_NO_BOUNDS_LOGGED then
-            print("|cffff0000[Astrolabe] No bounds for mapId " .. tostring(mapId) .. "|r")
+            DebugPrint("No bounds for mapId", tostring(mapId))
             _G.DC_HOTSPOT_NO_BOUNDS_LOGGED = true
         end
         return nil, nil
     end
     
     if type(x) ~= "number" or type(y) ~= "number" then
-        print("|cffff0000[Astrolabe] Invalid x/y types: " .. type(x) .. "/" .. type(y) .. "|r")
+        DebugPrint("Invalid x/y types:", type(x) .. "/" .. type(y))
         return nil, nil
     end
     
@@ -71,7 +89,7 @@ function Ast.WorldCoordsToNormalized(mapId, x, y)
     local ny = 1 - normX
     
     if not _G.DC_HOTSPOT_CONVERSION_LOGGED then
-        print(string.format("|cff00ff00[Astrolabe] Converted: (%d, %.1f, %.1f) -> (%.4f, %.4f)|r", mapId, x, y, nx, ny))
+        DebugPrint(string.format("Converted: (%d, %.1f, %.1f) -> (%.4f, %.4f)", mapId, x, y, nx, ny))
         _G.DC_HOTSPOT_CONVERSION_LOGGED = true
     end
     
@@ -113,5 +131,5 @@ function Ast.WorldToMinimapOffset(minimapFrame, playerNx, playerNy, targetNx, ta
 end
 
 _G.HotspotDisplay_Astrolabe = Ast
-print("|cff00ff00[DC-Hotspot] HotspotDisplay_Astrolabe registered in _G|r")
+DebugPrint("HotspotDisplay_Astrolabe registered in _G")
 return Ast

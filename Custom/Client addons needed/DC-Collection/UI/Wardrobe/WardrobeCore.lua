@@ -185,8 +185,8 @@ Wardrobe.transmogDisabled = Wardrobe.transmogDisabled or false
 Wardrobe.spellVisualsDisabled = Wardrobe.spellVisualsDisabled or false
 Wardrobe.showUncollected = (Wardrobe.showUncollected ~= nil) and Wardrobe.showUncollected or true
 
--- Outfits feature has been removed from the Wardrobe UI.
--- Keep no-op stubs to avoid nil-call errors if some legacy code path still calls these.
+-- Stub functions to avoid nil-call errors before WardrobeOutfits.lua loads.
+-- Real implementations are in WardrobeOutfits.lua.
 if type(Wardrobe.UpdateOutfitSlots) ~= "function" then
     function Wardrobe:UpdateOutfitSlots() end
 end

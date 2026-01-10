@@ -682,8 +682,9 @@ function Wardrobe:BuildAppearanceList()
         end
 
         if self.selectedSlotFilter then
-            -- If inventoryType is unknown (0), keep it visible instead of silently filtering it out.
-            if invType ~= 0 and not self.selectedSlotFilter.invTypes[invType] then
+            -- Only include items that have a known inventory type matching the filter.
+            -- Items with unknown invType (0) are excluded to prevent wrong-slot randomization.
+            if invType == 0 or not self.selectedSlotFilter.invTypes[invType] then
                 valid = false
             end
         end
@@ -1036,6 +1037,31 @@ function Wardrobe:UpdateModel()
 
     if self.transmogDisabled then
         model:Undress()
+        return
+    end
+
+    -- Apply transmog items to the model using TryOn
+    -- This shows the transmogged appearance instead of the equipped item appearance
+    local transmogItemIds = DC.transmogItemIds or {}
+    local state = DC.transmogState or {}
+    
+    for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
+        local invSlotId = GetInventorySlotInfo(slotDef.key)
+        if invSlotId then
+            local eqSlot = invSlotId - 1
+            local eqSlotStr = tostring(eqSlot)
+            local hasTransmog = state[eqSlotStr] and tonumber(state[eqSlotStr]) ~= 0
+            
+            if hasTransmog then
+                local transmogItemId = transmogItemIds[eqSlot] or transmogItemIds[eqSlotStr]
+                if transmogItemId then
+                    transmogItemId = tonumber(transmogItemId)
+                    if transmogItemId and transmogItemId > 0 then
+                        pcall(function() model:TryOn(transmogItemId) end)
+                    end
+                end
+            end
+        end
     end
 end
 
@@ -1045,6 +1071,8 @@ end
 
 function Wardrobe:UpdateSlotButtons()
     if not self.frame or not self.frame.slotButtons then return end
+
+    local needsDelayedRefresh = false
 
     for _, btn in ipairs(self.frame.slotButtons) do
         local slotDef = btn.slotDef
@@ -1058,8 +1086,15 @@ function Wardrobe:UpdateSlotButtons()
         local iconTexture = nil
         if applied and eqSlot ~= nil then
             local transmogItemId = transmogItemIds[eqSlot] or transmogItemIds[tostring(eqSlot)]
-            if transmogItemId and GetItemInfo then
-                iconTexture = select(10, GetItemInfo(transmogItemId))
+            if transmogItemId then
+                transmogItemId = tonumber(transmogItemId)
+                if transmogItemId and transmogItemId > 0 then
+                    iconTexture = select(10, GetItemInfo(transmogItemId))
+                    if not iconTexture then
+                        -- Item not cached yet, trigger cache and mark for delayed refresh
+                        needsDelayedRefresh = true
+                    end
+                end
             end
         end
 
@@ -1070,5 +1105,10 @@ function Wardrobe:UpdateSlotButtons()
         else
             btn.transmogApplied:Hide()
         end
+    end
+
+    -- Schedule delayed refresh if some transmog items weren't cached
+    if needsDelayedRefresh and DC and type(DC._ScheduleTransmogIconRefresh) == "function" then
+        DC:_ScheduleTransmogIconRefresh()
     end
 end

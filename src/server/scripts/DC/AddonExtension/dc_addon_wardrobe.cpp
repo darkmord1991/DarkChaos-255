@@ -546,7 +546,13 @@ namespace DCCollection
             {
                 if (!IsWeaponCompatible(equipped->SubClass, appearance.itemSubClass)) return false;
             }
-            else return false;
+            else
+            {
+                // Many custom/cosmetic armor items are classified as ARMOR_MISC (0).
+                // Treat ARMOR_MISC as a wildcard to avoid blocking transmogs for those items.
+                if (equipped->SubClass != ITEM_SUBCLASS_ARMOR_MISC && appearance.itemSubClass != ITEM_SUBCLASS_ARMOR_MISC)
+                    return false;
+            }
         }
 
         if (!IsInvTypeCompatibleForSlot(slot, appearance.inventoryType)) return false;
@@ -807,10 +813,25 @@ namespace DCCollection
          // it as an item entry and derive the displayId from the item template.
          uint32 displayId = json.HasKey("appearanceId") ? json["appearanceId"].AsUInt32() : 0;
 
+         auto sendSetError = [&](char const* reason, uint32 code)
+         {
+             DCAddon::JsonMessage err(MODULE, DCAddon::Opcode::Collection::SMSG_ERROR);
+             err.Set("error", std::string("Transmog apply rejected: ") + reason);
+             err.Set("code", code);
+
+             // Provide per-slot detail so the client can print a useful message.
+             DCAddon::JsonValue perSlot;
+             perSlot.SetObject();
+             perSlot.Set(std::to_string(slot), DCAddon::JsonValue(reason));
+             err.Set("perSlot", perSlot);
+             err.Send(player);
+         };
+
          if (slot >= EQUIPMENT_SLOT_END)
          {
              LOG_DEBUG("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} INVALID (>= EQUIPMENT_SLOT_END)",
                  player->GetName(), static_cast<uint32>(slot));
+             sendSetError("invalid_slot", 1100);
              return;
          }
          
@@ -819,6 +840,7 @@ namespace DCCollection
          {
              LOG_DEBUG("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} NO_ITEM_EQUIPPED",
                  player->GetName(), static_cast<uint32>(slot));
+             sendSetError("no_item_equipped", 1101);
              return;
          }
 
@@ -865,6 +887,7 @@ namespace DCCollection
          {
              LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} NOT_UNLOCKED (skipCheck={})",
                  player->GetName(), static_cast<uint32>(slot), displayId, skipUnlockCheck);
+             sendSetError("not_unlocked", 1102);
              return;
          }
 
@@ -883,6 +906,7 @@ namespace DCCollection
                  equippedProto ? equippedProto->SubClass : 0,
                  equippedProto ? equippedProto->InventoryType : 0,
                  skipCompatCheck);
+             sendSetError("no_compatible_variant", 1103);
              return;
          }
 

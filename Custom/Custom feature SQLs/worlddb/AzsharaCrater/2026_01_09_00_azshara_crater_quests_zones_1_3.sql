@@ -61,7 +61,7 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (300010, 0, 20602, 1, 1, 12340),  -- Arcanist Melia (High Elf Female Mage)
 (300011, 0, 10979, 0.9, 1, 12340), -- Spirit of Kelvenar (Ghostly Highborne)
 (300020, 0, 4618, 1, 1, 12340),   -- Pathfinder Gor'nash (Orc Male)
-(300021, 0, 30418, 1.1, 1, 12340); -- Elder Greymane (Worgen Male Human Form)
+(300021, 0, 4618, 1.1, 1, 12340); -- Elder Greymane (Worgen Male Human Form)
 
 -- UPDATE GOSSIP MENU IDs for Quest Givers (To match Section 9)
 UPDATE `creature_template` SET `gossip_menu_id` = 300001 WHERE `entry` = 300001; -- Scout Thalindra

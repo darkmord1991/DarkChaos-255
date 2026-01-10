@@ -128,6 +128,7 @@
 | Timbermaw Warrior | **7157** | Guard | Patrol x4 |
 | Human Scout | **2434** | Alliance Rep | Faction liaison |
 | Orc Scout | **3139** | Horde Rep | Faction liaison |
+| **Elder Greymane** | **300021** | Escort NPC | Thistlefur Prisoner (Zone 3 Quest) |
 
 ---
 
@@ -171,7 +172,7 @@
 | Skeletal Warrior | **48** | 21-22 | Undead | 8 |
 | Skeletal Mage | **203** | 22-23 | Undead | 6 |
 | **Corrupt Water Spirit** | **5897** | 19-20 | Elemental | 8 (Water) |
-| **The Evalcharr** | **6966** | 15 | **RARE** | 1 |
+| **Gorefang** | **12431** | 13 | **RARE** | 1 |
 | **Kregg Keelhaul** | **1260** | 15 | **RARE** | 1 |
 | **Snort the Heckler** | **5829** | 17 | **RARE** | 1 |
 
@@ -184,9 +185,11 @@
 | Thistlefur Totemic | **3922** | 23-24 | Humanoid | 10 |
 | Thistlefur Ursa | **3921** | 23-24 | Humanoid | 8 |
 | **Giant Wetlands Crocolisk**| **2089** | 25-26 | Beast | 6 (Water) |
-| **Arash-ethis** | **5349** | 49 | **RARE** | 1 |
-| **Hayoc** | **8208** | 25 | **RARE** | 1 |
-| **Kreiss** | **8203** | 27 | **RARE** | 1 |
+| Ghostpaw Runner | **3823** | 27-28 | Beast | 8 |
+| Enraged Foulweald | **12921** | 23-24 | Humanoid | 8 |
+| **Mist Howler** | **10644** | 22 | **RARE** | 1 |
+| **Brontus** | **5827** | 27 | **RARE** | 1 |
+| **Dal Bloodclaw** | **3987** | 25 | **RARE** | 1 |
 
 ### Zone 4: Central River (Level 30-40)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
@@ -201,7 +204,7 @@
 | Spitelash Serpent | **6200** | 38-40 | Humanoid | 6 |
 | Cliff Breaker | **9197** | 38-39 | Elemental | 4 |
 | Blue Drake | **6129** | 39-40 | Dragon | 4 |
-| **Lady Sesspira** | **6649** | 51 | **RARE** | 1 |
+| **Prince Nazjak** | **2779** | 41 | **RARE** | 1 |
 | **Garneg Charknap** | **8210** | 34 | **RARE** | 1 |
 | **Rippa** | **5828** | 39 | **RARE** | 1 |
 | **Slark** | **14221** | 35 | **RARE** | 1 |
@@ -216,7 +219,7 @@
 | Felpaw Ravager | **5866** | 45-47 | Demon | 10 |
 | Felhound | **5865** | 48-50 | Demon | 8 |
 | Fel Steed | **11464** | 42-44 | Demon | 6 |
-| Carrion Vulture | **1809** | 50-52 | Beast | 10 |
+| Rekk'tilac | **8277** | 48 | Beast | 10 |
 | Hellcalled Shadowstalker | **11452** | 44-46 | Demon | 8 |
 | **Monnos the Elder** | **6144** | 47 | **RARE** | 1 |
 | **Magronos the Unyielding** | **6146** | 48 | **RARE** | 1 |
@@ -306,60 +309,60 @@
 ### ★D1: Ruins of Zin-Azshari (Level 15-25)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Highborne Apparition | **7971** | 18 | No |
-| Trash | Highborne Lichling | **7972** | 19 | No |
-| Trash | Lingering Highborne | **7973** | 20 | **Yes** |
-| Trash | Shade of Elura | **8521** | 18 | No |
-| Trash | Shadowsong Zealot | **11479** | 21 | **Yes** |
-| Trash | Highborne Ghost | **7850** | 17-19 | No |
-| Trash | Zin-Azshari Guardian | **7847** | 20 | **Yes** |
-| **Mini-Boss**| **Lady Szallah** | **7848** | 23 | **Elite** |
-| **Boss** | **Varo'then's Ghost** | **7970** | 25 | **Elite** |
+| Trash | Highborne Apparition | **6116** | 45-46 | No |
+| Trash | Highborne Lichling | **7864** | 48 | No |
+| Trash | Lingering Highborne | **7864** | 48-50 | **Yes** |
+| Trash | Shade of Elura | **6133** | 47 | No |
+| Trash | Arcane Horror | **11479** | 58 | **Yes** |
+| Trash | Highborne Ghost | **7850** | 78-80 | No |
+| Trash | Caliph Scorpidsting | **7847** | 56 | **Yes** |
+| **Mini-Boss**| **Lady Szallah** | **5343** | 11 | **Elite** |
+| **Boss** | **Prince Tortheldrin** | **11486** | 61 | **Elite** |
 
 ---
 
 ### ★D2: Timbermaw Deep (Level 25-35)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Timbermaw Pathfinder | **7156** | 28 | No |
-| Trash | Timbermaw Warrior | **7157** | 29 | **Yes** |
-| Trash | Timbermaw Shaman | **7158** | 28 | No |
-| Trash | Deadwood Shaman | **7155** | 30 | No |
-| Trash | Deadwood Avenger | **7153** | 32 | **Yes** |
-| Trash | Timbermaw Totem-Maker | **7154** | 30 | No |
-| Trash | Corrupted Furbolg | **7159** | 31-33 | **Yes** |
-| **Mini-Boss**| **Grizzlegut** | **11604** | 33 | **Elite** |
-| **Boss** | **Overlord Ror** | **11605** | 35 | **Elite** |
+| Trash | Timbermaw Pathfinder | **7156** | 60 | No |
+| Trash | Timbermaw Warrior | **7157** | 60 | **Yes** |
+| Trash | Timbermaw Shaman | **7158** | 60 | No |
+| Trash | Deadwood Shaman | **7155** | 60 | No |
+| Trash | Deadwood Avenger | **7153** | 60 | **Yes** |
+| Trash | Deadwood Gardener | **7154** | 60 | No |
+| Trash | Corrupted Furbolg | **7159** | 60 | **Yes** |
+| **Mini-Boss**| **Old Grizzlegut** | **5352** | 60 | **Elite** |
+| **Boss** | **Overlord Ror** | **9464** | 50 | **Elite** |
 
 ---
 
 ### ★D3: Spitelash Depths (Level 45-55)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Spitelash Warrior | **6190** | 48 | No |
-| Trash | Spitelash Myrmidon | **6193** | 49 | **Yes** |
-| Trash | Spitelash Siren | **6195** | 48 | No |
-| Trash | Spitelash Screamer | **6196** | 50 | No |
-| Trash | Makrura Shellhide | **6348** | 49 | **Yes** |
-| Trash | Spitelash Sorceress | **6194** | 48-50 | No |
-| Trash | Spitelash Naga | **6192** | 50-52 | **Yes** |
-| **Mini-Boss**| **Master Pa'vick** | **14457** | 53 | **Elite** |
-| **Boss** | **Duke Hydraxis** | **13278** | 55 | **Elite** |
+| Trash | Spitelash Warrior | **6190** | 36 | No |
+| Trash | Spitelash Myrmidon | **6193** | 36 | **Yes** |
+| Trash | Spitelash Siren | **6195** | 36 | No |
+| Trash | Spitelash Screamer | **6196** | 36 | No |
+| Trash | Makrura Shellhide | **6348** | 38 | **Yes** |
+| Trash | Spitelash Sorceress | **6194** | 36 | No |
+| Trash | Spitelash Naga | **6192** | 36 | **Yes** |
+| **Mini-Boss**| **Princess Tempestria**| **14457** | 60 | **Elite** |
+| **Boss** | **Duke Hydraxis** | **13278** | 60 | **Elite** |
 
 ---
 
 ### ★D4: The Fel Pit (Level 55-65)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Legashi Satyr | **6133** | 58 | No |
-| Trash | Legashi Rogue | **6134** | 59 | No |
-| Trash | Legashi Hellcaller | **6135** | 60 | **Yes** |
-| Trash | Felguard Sentry | **8716** | 58 | No |
-| Trash | Doomguard Commander | **7671** | 62 | **Yes** |
-| Trash | Wrath Elemental | **11463** | 60-62 | No |
-| Trash | Haldarr Fel-Stalker | **10830** | 62 | **Yes** |
-| **Mini-Boss**| **Lady Hederine** | **12143** | 64 | **Elite** |
-| **Boss** | **Sethir the Ancient** | **6909** | 65 | **Elite** |
+| Trash | Legashi Satyr | **6200** | 51-52 | No |
+| Trash | Legashi Rogue | **6134** | 54-56 | No |
+| Trash | Legashi Hellcaller | **6135** | 56-58 | **Yes** |
+| Trash | Felguard Sentry | **8716** | 57-59 | No |
+| Trash | Doomguard Commander | **7671** | 58-60 | **Yes** |
+| Trash | Warpwood Treant | **11462** | 54-55 | No |
+| Trash | Invading Fel Stalker | **19286** | 60 | **Yes** |
+| **Mini-Boss**| **Lady Hederine** | **12143** | 58 | **Elite** |
+| **Boss** | **Sethir the Ancient** | **6909** | 62 | **Elite** |
 
 ---
 
@@ -367,9 +370,9 @@
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
 | Trash | Arcane Guardian | **15691** | 77 | **Yes** |
-| Trash | Mana Remnant | **5766** | 76 | No |
+| Trash | Mana Remnant | **11483** | 71 | No |
 | Trash | Faceless Lurker | **27099** | 78 | **Yes** |
-| Trash | Highborne Apparition | **7971** | 75 | No |
+| Trash | Highborne Apparition | **6116** | 45 | No |
 | Trash | Forgotten One | **27959** | 79 | **Yes** |
 | Trash | Ancient Highborne Spirit| **7850** | 78-80 | No |
 | Trash | Arcane Sentinel | **15689** | 80 | **Yes** |

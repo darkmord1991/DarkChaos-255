@@ -21,7 +21,7 @@ addon.currentView = "Dashboard"
 local moduleCategories = {
     {
         name = "Core & Automation",
-        modules = { "Automation", "Interface", "Chat", "Tooltips" }
+        modules = { "Automation", "Interface", "Chat", "Tooltips", "DruidFix" }
     },
     {
         name = "Combat",
@@ -47,6 +47,7 @@ local moduleDisplayNames = {
     ["Interface"] = "Interface",
     ["Chat"] = "Chat Enhancements",
     ["Tooltips"] = "Tooltip Info",
+    ["DruidFix"] = "Druid Fix",
     ["NameplatesPlus"] = "Nameplates",
     ["CombatLog"] = "Combat Log",
     ["GTFO"] = "GTFO Alerts",
@@ -67,6 +68,7 @@ local moduleIcons = {
     ["Interface"] = "Interface\\Icons\\Inv_Misc_Book_09",
     ["Chat"] = "Interface\\Icons\\Spell_Holy_Dizzy",
     ["Tooltips"] = "Interface\\Icons\\Inv_Misc_Note_02",
+    ["DruidFix"] = "Interface\\Icons\\Ability_Druid_TwilightsWrath",
     ["NameplatesPlus"] = "Interface\\Icons\\Ability_Creature_Cursed_01",
     ["CombatLog"] = "Interface\\Icons\\Ability_Warrior_OffensiveStance",
     ["GTFO"] = "Interface\\Icons\\Spell_Fire_Fire",

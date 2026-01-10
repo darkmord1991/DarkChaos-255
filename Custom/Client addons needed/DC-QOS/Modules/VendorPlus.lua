@@ -96,34 +96,60 @@ end
 -- ============================================================
 -- Sell Price in Tooltips
 -- ============================================================
-local function IsTooltipShowingSellPriceMoneyFrame(tooltip)
-    local tooltipName = tooltip and tooltip.GetName and tooltip:GetName()
-    if not tooltipName then
-        return false
-    end
+local function NormalizeLabel(text)
+    if not text then return nil end
+    text = tostring(text)
+    text = string.gsub(text, "[%s\t\r\n]+", " ")
+    text = string.gsub(text, "[:：]", "")
+    text = string.gsub(text, "^%s+", "")
+    text = string.gsub(text, "%s+$", "")
+    return string.lower(text)
+end
 
-    local prefixText = _G[tooltipName .. "MoneyFrame1PrefixText"]
+local function IsTooltipMoneyFrameSellPrice(tooltipName, index)
+    if not tooltipName or not index then return false end
+    local prefixText = _G[tooltipName .. "MoneyFrame" .. index .. "PrefixText"]
     if not prefixText or not prefixText.GetText then
         return false
     end
 
     local text = prefixText:GetText()
-    if not text then
+    if not text or text == "" then
         return false
     end
 
-    local sellPriceLabel = SELL_PRICE or "Sell Price:"
-    return text == sellPriceLabel or string.find(text, "Sell Price", 1, true) ~= nil
+    local normalized = NormalizeLabel(text)
+    local sellPriceLabel = NormalizeLabel(SELL_PRICE) or "sell price"
+
+    return normalized == sellPriceLabel
+        or string.find(normalized, sellPriceLabel, 1, true) ~= nil
+        or string.find(normalized, "sell price", 1, true) ~= nil
 end
 
-local function ClearTooltipMoney(tooltip)
-    if type(GameTooltip_ClearMoney) == "function" then
-        GameTooltip_ClearMoney(tooltip)
+local function HideTooltipSellPriceMoneyFrame(tooltip)
+    local tooltipName = tooltip and tooltip.GetName and tooltip:GetName()
+    if not tooltipName then
         return
     end
 
-    if tooltip and tooltip.ClearMoney then
-        tooltip:ClearMoney()
+    -- The item reference tooltip is the "inside item window" tooltip.
+    -- Only hide the external money frame for normal hover tooltips.
+    if tooltipName == "ItemRefTooltip" then
+        return
+    end
+
+    for i = 1, 3 do
+        if IsTooltipMoneyFrameSellPrice(tooltipName, i) then
+            local moneyFrame = _G[tooltipName .. "MoneyFrame" .. i]
+            if moneyFrame and moneyFrame.Hide then
+                moneyFrame:Hide()
+            end
+            local prefixText = _G[tooltipName .. "MoneyFrame" .. i .. "PrefixText"]
+            if prefixText and prefixText.SetText then
+                prefixText:SetText("")
+            end
+            return
+        end
     end
 end
 
@@ -137,20 +163,18 @@ local function AddSellPriceToTooltip(tooltip, itemLink)
     
     local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemLink)
     if sellPrice and sellPrice > 0 then
-        tooltip:AddLine(" ")
-        tooltip:AddDoubleLine(SELL_PRICE or "Sell Price:", GetCoinTextureString(sellPrice), 0.8, 0.8, 0.8, 1, 1, 1)
-
         -- Prevent duplicate: the default UI renders SELL_PRICE as a money frame
         -- that appears below/outside the tooltip.
-        if IsTooltipShowingSellPriceMoneyFrame(tooltip) then
-            ClearTooltipMoney(tooltip)
-        end
+        -- Hide that external money frame first, then add the in-tooltip line.
+        HideTooltipSellPriceMoneyFrame(tooltip)
+
+        tooltip:AddLine(" ")
+        tooltip:AddDoubleLine(SELL_PRICE or "Sell Price:", GetCoinTextureString(sellPrice), 0.8, 0.8, 0.8, 1, 1, 1)
         tooltip._dcVendorPriceShown = true
     end
 end
 
 local function SetupTooltipHooks()
-    -- Hook tooltip set item functions
     local function OnTooltipSetItem(tooltip)
         local _, itemLink = tooltip:GetItem()
         if itemLink then
@@ -162,6 +186,29 @@ local function SetupTooltipHooks()
     GameTooltip:HookScript("OnTooltipCleared", function(self)
         self._dcVendorPriceShown = nil
     end)
+
+    -- Catch generic item tooltips (not just bag/inventory hooks)
+    GameTooltip:HookScript("OnTooltipSetItem", function(self)
+        OnTooltipSetItem(self)
+    end)
+
+    -- Comparison tooltips (ShoppingTooltip1/2) can also show the external money frame
+    if ShoppingTooltip1 and ShoppingTooltip1.HookScript then
+        ShoppingTooltip1:HookScript("OnTooltipCleared", function(self)
+            self._dcVendorPriceShown = nil
+        end)
+        ShoppingTooltip1:HookScript("OnTooltipSetItem", function(self)
+            OnTooltipSetItem(self)
+        end)
+    end
+    if ShoppingTooltip2 and ShoppingTooltip2.HookScript then
+        ShoppingTooltip2:HookScript("OnTooltipCleared", function(self)
+            self._dcVendorPriceShown = nil
+        end)
+        ShoppingTooltip2:HookScript("OnTooltipSetItem", function(self)
+            OnTooltipSetItem(self)
+        end)
+    end
     
     -- Hook the set functions
     hooksecurefunc(GameTooltip, "SetBagItem", function(self, bag, slot)

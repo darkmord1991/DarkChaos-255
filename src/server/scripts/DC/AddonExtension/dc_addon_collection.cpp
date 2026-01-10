@@ -4002,6 +4002,51 @@ namespace DCCollection
     public:
         CollectionPlayerScript() : PlayerScript("dc_collection_player") {}
 
+        static void ApplyStoredCharacterTransmog(Player* player)
+        {
+            if (!player || !player->GetSession())
+                return;
+
+            // Apply transmog appearance by overriding visible item entry fields.
+            // This is intentionally run with a delay after login because the login pipeline
+            // may overwrite PLAYER_VISIBLE_ITEM_* fields after early script hooks.
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT slot, fake_entry, real_entry FROM dc_character_transmog WHERE guid = {}",
+                player->GetGUID().GetCounter());
+
+            if (!result)
+                return;
+
+            do
+            {
+                Field* fields = result->Fetch();
+                uint8 slot = static_cast<uint8>(fields[0].Get<uint32>());
+                uint32 fakeEntry = fields[1].Get<uint32>();
+                uint32 realEntry = fields[2].Get<uint32>();
+
+                if (slot >= EQUIPMENT_SLOT_END)
+                    continue;
+
+                Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                if (!equippedItem)
+                    continue;
+
+                uint32 currentEntry = equippedItem->GetEntry();
+                if (currentEntry && currentEntry != realEntry)
+                {
+                    CharacterDatabase.Execute(
+                        "UPDATE dc_character_transmog SET real_entry = {} WHERE guid = {} AND slot = {}",
+                        currentEntry, player->GetGUID().GetCounter(), static_cast<uint32>(slot));
+                }
+
+                // fakeEntry == 0 means hide slot.
+                if (fakeEntry)
+                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
+                else
+                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
+            } while (result->NextRow());
+        }
+
         void OnPlayerLogin(Player* player) override
         {
             if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
@@ -4019,6 +4064,30 @@ namespace DCCollection
 
             // Push current transmog state so the UI can show applied slots
             SendTransmogState(player);
+
+            // Re-apply stored transmogs after login initialization finishes.
+            // Some login phases reset visible item fields to the real entries after early hooks run.
+            // We schedule a couple of delayed passes to cover slower clients/servers.
+            {
+                ObjectGuid guid = player->GetGUID();
+                player->m_Events.AddEventAtOffset([guid]()
+                {
+                    if (Player* p = ObjectAccessor::FindPlayer(guid))
+                    {
+                        ApplyStoredCharacterTransmog(p);
+                        SendTransmogState(p);
+                    }
+                }, 1500ms);
+
+                player->m_Events.AddEventAtOffset([guid]()
+                {
+                    if (Player* p = ObjectAccessor::FindPlayer(guid))
+                    {
+                        ApplyStoredCharacterTransmog(p);
+                        SendTransmogState(p);
+                    }
+                }, 5s);
+            }
 
             // Optional: scan player's equipment and bags to unlock transmogs at login
             if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_LOGIN_SCAN_ENABLED, false))
@@ -4177,7 +4246,14 @@ namespace DCCollection
 
             if (!currentEntry)
             {
-                // Slot is empty; clear transmog for that slot.
+                // Important: during LoginPlayer, visible item slots can be reset/initialized
+                // before inventory items are fully loaded. In that phase, 'item' may be null
+                // briefly even though an item is actually equipped.
+                // If we delete here, transmogs get wiped on login.
+                if (player->GetSession()->PlayerLoading())
+                    return;
+
+                // Slot is truly empty (not during load); clear transmog for that slot.
                 CharacterDatabase.Execute(
                     "DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}",
                     player->GetGUID().GetCounter(), static_cast<uint32>(slot));

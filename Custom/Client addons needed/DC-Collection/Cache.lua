@@ -328,6 +328,53 @@ function DC:LoadCache()
         self.transmogItemIds = DCCollectionCharDB.transmogItemIds
     end
 
+    -- Normalize cached transmog maps (some decoders/older saves may shift numeric keys).
+    local function normalizeSlotMap(tbl)
+        if type(tbl) ~= "table" then
+            return {}
+        end
+
+        local out = {}
+        local hasStringSlotKey = false
+        local minNumKey = nil
+
+        for k, v in pairs(tbl) do
+            if type(k) == "string" then
+                local nk = tonumber(k)
+                if nk ~= nil then
+                    hasStringSlotKey = true
+                    out[tostring(nk)] = v
+                end
+            elseif type(k) == "number" then
+                minNumKey = (minNumKey == nil) and k or math.min(minNumKey, k)
+            end
+        end
+
+        if hasStringSlotKey then
+            for k, v in pairs(tbl) do
+                if type(k) == "number" then
+                    out[tostring(k)] = out[tostring(k)] or v
+                end
+            end
+            return out
+        end
+
+        local shift = (minNumKey == 1) and -1 or 0
+        for k, v in pairs(tbl) do
+            if type(k) == "number" then
+                out[tostring(k + shift)] = v
+            end
+        end
+        return out
+    end
+
+    if self.transmogState then
+        self.transmogState = normalizeSlotMap(self.transmogState)
+    end
+    if self.transmogItemIds then
+        self.transmogItemIds = normalizeSlotMap(self.transmogItemIds)
+    end
+
     -- Load outfits (scope selectable)
     local scope = (DCCollectionDB and DCCollectionDB.outfitsScope) or "char"
     if scope == "account" then
