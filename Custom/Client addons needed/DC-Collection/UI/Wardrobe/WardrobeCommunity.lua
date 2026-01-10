@@ -50,6 +50,11 @@ function Wardrobe:ShowCommunityContent()
         if self.frame.communityGridContainer then 
             self.frame.communityGridContainer:Show() 
         end
+        
+        -- Show community filter checkbox
+        if self.frame.communityMineCheck then
+            self.frame.communityMineCheck:Show()
+        end
 
         -- Hide collected bar
         if self.frame.collectedFrame then self.frame.collectedFrame:Hide() end
@@ -97,6 +102,22 @@ function Wardrobe:CreateCommunityGrid()
     container:Hide()
     
     self.frame.communityGridContainer = container
+    
+    -- "Show only my published" checkbox (above the grid)
+    local mineCheck = CreateFrame("CheckButton", nil, self.frame.rightPanel, "UICheckButtonTemplate")
+    mineCheck:SetSize(24, 24)
+    mineCheck:SetPoint("TOPLEFT", self.frame.rightPanel, "TOPLEFT", 10, -8)
+    mineCheck:SetChecked(false)
+    mineCheck.text = mineCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    mineCheck.text:SetPoint("LEFT", mineCheck, "RIGHT", 2, 0)
+    mineCheck.text:SetText("Show only my published outfits")
+    mineCheck:SetScript("OnClick", function(self)
+        Wardrobe.showOnlyMyCommunityOutfits = self:GetChecked()
+        Wardrobe.currentPage = 1
+        Wardrobe:RefreshCommunityGrid()
+    end)
+    mineCheck:Hide() -- Hidden by default, shown when community tab is active
+    self.frame.communityMineCheck = mineCheck
     
     -- Create grid of 6 outfit cards (3x2)
     local buttons = {}
@@ -160,6 +181,34 @@ function Wardrobe:CreateCommunityGrid()
                 end
             end
         end)
+        
+        -- Delete button (only shown for user's own outfits)
+        btn.deleteBtn = CreateFrame("Button", nil, btn, "UIPanelButtonTemplate")
+        btn.deleteBtn:SetSize(60, 18)
+        btn.deleteBtn:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -5, -5)
+        btn.deleteBtn:SetText("Delete")
+        btn.deleteBtn:GetFontString():SetFont("Fonts\\FRIZQT__.TTF", 9)
+        btn.deleteBtn:SetScript("OnClick", function()
+            if btn.outfit and btn.outfit.id then
+                -- Confirm deletion
+                StaticPopupDialogs["DC_COMMUNITY_DELETE_OUTFIT"] = {
+                    text = "Delete your community outfit \"%s\"?\n\nThis cannot be undone.",
+                    button1 = "Delete",
+                    button2 = "Cancel",
+                    OnAccept = function()
+                        if DC and DC.RequestCommunityDelete then
+                            DC:RequestCommunityDelete(btn.outfit.id)
+                        end
+                    end,
+                    timeout = 0,
+                    whileDead = true,
+                    hideOnEscape = true,
+                    preferredIndex = 3,
+                }
+                StaticPopup_Show("DC_COMMUNITY_DELETE_OUTFIT", btn.outfit.name or "Unknown")
+            end
+        end)
+        btn.deleteBtn:Hide() -- Hidden by default, shown only for user's outfits
         
         -- Stats (upvotes/downloads) with icons
         btn.upIcon = btn:CreateTexture(nil, "OVERLAY")
@@ -234,8 +283,29 @@ function Wardrobe:RefreshCommunityGrid()
     end
     
     -- Get community outfits from DC.db.communityOutfits (populated by OnMsg_CommunityList)
-    local outfits = DC.db and DC.db.communityOutfits or {}
+    local allOutfits = DC.db and DC.db.communityOutfits or {}
     local ITEMS_PER_PAGE = 6
+    
+    -- Filter outfits if "show only mine" is checked
+    local outfits = {}
+    local playerName = UnitName("player")
+    
+    if self.showOnlyMyCommunityOutfits and playerName then
+        for _, outfit in ipairs(allOutfits) do
+            local outfitAuthor = outfit.author or outfit.author_name
+            local isOwner = outfit.is_owner
+            
+            if isOwner == nil and outfitAuthor then
+                isOwner = (string.lower(playerName) == string.lower(outfitAuthor))
+            end
+            
+            if isOwner then
+                table.insert(outfits, outfit)
+            end
+        end
+    else
+        outfits = allOutfits
+    end
     
     local totalOutfits = #outfits
     self.currentPage = self.currentPage or 1
@@ -244,6 +314,11 @@ function Wardrobe:RefreshCommunityGrid()
     -- Show/hide no outfits message
     if totalOutfits == 0 then
         if self.frame.noCommunityText then
+            if self.showOnlyMyCommunityOutfits then
+                self.frame.noCommunityText:SetText("You haven't published any outfits yet.\nShare one from the Outfits tab!")
+            else
+                self.frame.noCommunityText:SetText("No community outfits yet.\nBe the first to share yours!")
+            end
             self.frame.noCommunityText:Show()
         end
     else
@@ -284,6 +359,25 @@ function Wardrobe:RefreshCommunityGrid()
             btn.outfit = outfit
             btn.name:SetText(outfit.name or ("Outfit #" .. idx))
             btn.author:SetText("by " .. (outfit.author or outfit.author_name or "Unknown"))
+            
+            -- Check if this outfit belongs to the current player
+            local playerName = UnitName("player")
+            local outfitAuthor = outfit.author or outfit.author_name
+            local isOwner = outfit.is_owner -- Server may send explicit flag
+            
+            -- If server doesn't send is_owner, compare by name (less reliable due to case/realm)
+            if isOwner == nil and playerName and outfitAuthor then
+                isOwner = (string.lower(playerName) == string.lower(outfitAuthor))
+            end
+            
+            -- Show/hide delete button based on ownership
+            if btn.deleteBtn then
+                if isOwner then
+                    btn.deleteBtn:Show()
+                else
+                    btn.deleteBtn:Hide()
+                end
+            end
             
             -- Stats
             local upvotes = outfit.upvotes or 0

@@ -125,6 +125,15 @@ local DEFAULTS = {
             showLatency = true,
             showMemory = false,
         },
+        ["DCInfoBar_Launchers"] = {
+            enabled = true,
+            side = "right",
+            priority = 940,
+            showLabel = false,
+            showIcon = true,
+            iconSize = 16,
+            iconPadding = 2,
+        },
         ["DCInfoBar_Clock"] = {
             enabled = true,
             side = "right",
@@ -140,7 +149,7 @@ local DEFAULTS = {
     -- Plugin order (for drag-drop reordering in future)
     pluginOrder = {
         left = { "Season", "Keystone", "Affixes", "WorldBoss", "Events", "Location" },
-        right = { "Gold", "Durability", "Bags", "Performance", "Clock" },
+        right = { "Gold", "Durability", "Bags", "Performance", "Launchers", "Clock" },
     },
     
     -- Communication / Debug settings

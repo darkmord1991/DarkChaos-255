@@ -248,6 +248,7 @@ function DCInfoBar:CreatePluginsTab(parent)
         { id = "DCInfoBar_Durability", name = "Durability", category = "Character" },
         { id = "DCInfoBar_Bags", name = "Bag Space", category = "Character" },
         { id = "DCInfoBar_Performance", name = "FPS/Latency", category = "Misc" },
+        { id = "DCInfoBar_Launchers", name = "Addons", category = "Misc" },
         { id = "DCInfoBar_Clock", name = "Clock", category = "Misc" },
     }
     

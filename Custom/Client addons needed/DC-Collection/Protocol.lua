@@ -933,8 +933,8 @@ function DC.Protocol:RequestSavedOutfitsPage(offset, limit)
             DC._lastRecvOpcodeAt = DC._lastRecvOpcodeAt or {}
             local last = tonumber(DC._lastRecvOpcodeAt[DC.Opcodes.SMSG_SAVED_OUTFITS] or 0) or 0
             if last < sentAt then
-                DC:Print("[Net] No outfits response (0x4C) after 2s")
-                DC:Print("[Net] Likely server unhandled/dropped request (module disabled or rate-limit)")
+                DC:Debug("[Net] No outfits response (0x4C) after 2s")
+                DC:Debug("[Net] Likely server unhandled/dropped request (module disabled or rate-limit)")
             end
         end)
     end
@@ -1145,8 +1145,8 @@ function DC:RequestCommunityList(offset, limit, filter, sort)
             self._lastRecvOpcodeAt = self._lastRecvOpcodeAt or {}
             local last = tonumber(self._lastRecvOpcodeAt[self.Opcodes.SMSG_COMMUNITY_LIST] or 0) or 0
             if last < sentAt then
-                self:Print("[Net] No community response (0x63) after 2s")
-                self:Print("[Net] Likely server unhandled/dropped request (module disabled or rate-limit)")
+                self:Debug("[Net] No community response (0x63) after 2s")
+                self:Debug("[Net] Likely server unhandled/dropped request (module disabled or rate-limit)")
             end
         end)
     end

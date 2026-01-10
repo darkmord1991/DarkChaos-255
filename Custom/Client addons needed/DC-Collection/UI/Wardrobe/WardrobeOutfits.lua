@@ -452,6 +452,7 @@ function Wardrobe:ShowOutfitsContent()
         if self.frame.modelTitle then self.frame.modelTitle:SetText("Saved Outfits") end
         if self.frame.communityHost then self.frame.communityHost:Hide() end
         if self.frame.communityGridContainer then self.frame.communityGridContainer:Hide() end
+        if self.frame.communityMineCheck then self.frame.communityMineCheck:Hide() end
         if DC and DC.CommunityUI and DC.CommunityUI.frame then
             DC.CommunityUI.frame:Hide()
         end

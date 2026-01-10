@@ -54,7 +54,7 @@ INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entr
 --   Worgen Male: 30418 (like Worgen in human form)
 -- ============================================================================
 
-DELETE FROM `creature_template_model` WHERE `CreatureID` IN (300001, 300002, 300010, 300011, 300020, 300021);
+DELETE FROM `creature_template_model` WHERE `CreatureID` IN (300000, 300001, 300002, 300010, 300011, 300020, 300021);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (300001, 0, 4301, 1, 1, 12340),   -- Scout Thalindra (Night Elf Female Sentinel)
 (300002, 0, 1349, 1, 1, 12340),   -- Warden Stonebrook (Dwarf Male)
@@ -112,6 +112,15 @@ UPDATE `creature_template` SET `gossip_menu_id` = 300020 WHERE `entry` = 300020;
 
 -- ============================================================================
 -- SECTION 4: LOOT ITEMS (Using existing WotLK items - NO CUSTOM ITEMS)
+-- ============================================================================
+
+-- Clean up orphaned quests with invalid data from previous versions
+DELETE FROM `quest_template` WHERE `ID` IN (300405, 300406, 300603, 300705);
+DELETE FROM `creature_queststarter` WHERE `quest` IN (300405, 300406, 300603, 300705);
+DELETE FROM `creature_questender` WHERE `quest` IN (300405, 300406, 300603, 300705);
+DELETE FROM `quest_request_items` WHERE `ID` IN (300405, 300406, 300603, 300705);
+DELETE FROM `quest_offer_reward` WHERE `ID` IN (300405, 300406, 300603, 300705);
+
 -- ============================================================================
 -- Zone 1: Use existing low-level materials
 --   Boar Meat: 769 (Roasted Boar Meat)
@@ -201,7 +210,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 3: Bear Bounty (Kill Bears)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300102, 2, 6, 2, 0, 0, 0, 3, 500, 0, 0, 300311, 2, 300312, 1, 'Bear Bounty', 'Kill 8 Young Forest Bears.', 'The bears have been encroaching on our supplies. Eliminate them and I will reward you with coin.', 'Azshara Crater', 'Bears defeated.', 822, 8);
+(300102, 2, 6, 2, 0, 0, 0, 3, 500, 300311, 2, 300312, 1, 0, 0, 'Bear Bounty', 'Kill 8 Young Forest Bears.', 'The bears have been encroaching on our supplies. Eliminate them and I will reward you with coin.', 'Azshara Crater', 'Bears defeated.', 822, 8);
 
 -- Quest 4: Strange Energies (Kill Timberlings)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
@@ -254,11 +263,11 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 7: Into the Slopes (Travel)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300206, 2, 20, 16, 0, 0, 0, 5, 0, 0, 0, 300311, 4, 300312, 3, 'Into the Slopes', 'Proceed to the eastern slopes and find the Orc Scout.', 'The magical interference is stronger to the east. Go there and meet our scout.', 'Azshara Crater', 'Scout found.');
+(300206, 2, 20, 16, 0, 0, 0, 5, 0, 300311, 4, 300312, 3, 0, 0, 'Into the Slopes', 'Proceed to the eastern slopes and find the Orc Scout.', 'The magical interference is stronger to the east. Go there and meet our scout.', 'Azshara Crater', 'Scout found.');
 
 -- Quest 8: Dust to Dust (Collect Gold Dust)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300207, 2, 15, 12, 0, 0, 0, 3, 0, 0, 0, 300311, 3, 300312, 2, 'Dust to Dust', 'Collect 10 Gold Dust.', 'The bones of these skeletons are infused with magic. Bring me samples of their dust for study.', 'Azshara Crater', 'Dust collected.', 773, 10);
+(300207, 2, 15, 12, 0, 0, 0, 3, 0, 300311, 3, 300312, 2, 0, 0, 'Dust to Dust', 'Collect 10 Gold Dust.', 'The bones of these skeletons are infused with magic. Bring me samples of their dust for study.', 'Azshara Crater', 'Dust collected.', 773, 10);
 
 -- ----------------------------------------------------------------------------
 -- ZONE 3 QUESTS (Level 20-30) - Pathfinder Gor'nash (300020)
@@ -266,7 +275,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 1: Proving Strength (Kill Satyrs)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300300, 2, 22, 18, 0, 0, 0, 3, 0, 847, 1, 300311, 4, 300312, 2, 'Proving Strength', 'Kill 10 Haldarr Satyrs.', 'The Satyrs to the east are a plague. Show me your strength by slaying them.', 'Azshara Crater', 'Satyrs slain.', 2049, 10);
+(300300, 2, 22, 18, 0, 0, 0, 3, 0, 847, 1, 300311, 4, 300312, 2, 'Proving Strength', 'Kill 10 Haldarr Satyrs (or any Satyr).', 'The Satyrs to the east are a plague. Show me your strength by slaying them.', 'Azshara Crater', 'Satyrs slain.', 2044, 10);
 
 -- Quest 2: Satyr Horns (Collect Item)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
@@ -291,7 +300,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 7: The River Awaits (Final XP)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300306, 2, 30, 25, 0, 0, 0, 5, 0, 0, 0, 300311, 5, 300312, 4, 'The River Awaits', 'Return to Scout Thalindra.', 'You have done well. Return to the outpost and report our victory.', 'Azshara Crater', 'Victory reported.');
+(300306, 2, 30, 25, 0, 0, 0, 5, 0, 300311, 5, 300312, 4, 0, 0, 'The River Awaits', 'Return to Scout Thalindra.', 'You have done well. Return to the outpost and report our victory.', 'Azshara Crater', 'Victory reported.');
 
 -- Quest 8: Furbolg Resources (Collect Gnoll War Beads)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
@@ -546,46 +555,8 @@ INSERT INTO `gossip_menu` (`MenuID`, `TextID`) VALUES
 (300020, 300020);
 
 -- ============================================================================
--- SECTION 10: WATER NPCS & QUESTS
+-- END OF SQL SCRIPT
 -- ============================================================================
--- New creatures for flooded areas in Zones 1-3
--- ============================================================================
-
--- 1. Creature Templates (SKIPPED - Using existing NPCs)
--- Murloc Forager (125)
--- Corrupt Water Spirit (5897)
--- Giant Wetlands Crocolisk (2089)
-
--- 2. Creature Models (SKIPPED)
-
--- 3. Loot Tables (SKIPPED - Using standard loot tables)
-
--- 4. Quests
--- Quest 1: Murloc Menace (Kill Murlocs)
--- Reward: Worn Mace (36)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300108, 2, 10, 5, 0, 0, 0, 3, 0, 36, 1, 300311, 3, 300312, 2, 'Murloc Menace', 'Kill 10 Murloc Foragers.', 'The murlocs are encroaching on the lower pools. Push them back.', 'Azshara Crater', 'Murlocs defeated.', 125, 10);
-
--- Quest 2: Elemental Imbalance (Kill Water Spirits)
--- Reward: Refreshing Spring Water (159) x5
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300208, 2, 18, 12, 0, 0, 0, 3, 0, 159, 5, 300311, 4, 300312, 3, 'Elemental Imbalance', 'Defeat 8 Corrupted Water Spirits.', 'The water spirits have been corrupted by the Fel magics here. Put them to rest.', 'Azshara Crater', 'Spirits cleansed.', 5897, 8);
-
--- Quest 3: Crocolisk Crisis (Kill Crocolisks)
--- Reward: Thick Cloth Vest (200)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300308, 2, 25, 20, 0, 0, 0, 4, 0, 200, 1, 300311, 5, 300312, 4, 'Crocolisk Crisis', 'Hunt down 6 Giant Wetlands Crocolisks.', 'The crocolisks in the river are growing too aggressive. Cull their numbers.', 'Azshara Crater', 'Crocolisks hunted.', 2089, 6);
-
--- 5. Quest Texts
-INSERT INTO `quest_offer_reward` (`ID`, `RewardText`) VALUES
-(300108, 'Good riddance. Those wet beasts smell awful.'),
-(300208, 'The waters seem calmer now. Thank you.'),
-(300308, 'Excellent work. The river is much safer to cross.');
-
-INSERT INTO `quest_request_items` (`ID`, `CompletionText`) VALUES
-(300108, 'The Murlocs still croak in the night. Silence them.'),
-(300208, 'The spirits are still enraged. Return when you have calmed them.'),
-(300308, 'Watch your step near the river. The crocolisks are still hungry.');
 
 -- ============================================================================
 -- END OF SQL SCRIPT

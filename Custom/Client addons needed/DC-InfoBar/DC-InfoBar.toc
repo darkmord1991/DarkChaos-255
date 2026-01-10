@@ -37,3 +37,4 @@ Plugins\Character\Bags.lua
 # Misc plugins
 Plugins\Misc\Performance.lua
 Plugins\Misc\Clock.lua
+Plugins\Misc\Launchers.lua

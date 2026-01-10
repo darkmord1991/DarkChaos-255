@@ -2233,6 +2233,79 @@ namespace DCCollection
     }
 
     // =======================================================================
+    // Transmog Visual Restoration
+    // =======================================================================
+
+    void RestoreTransmogVisuals(Player* player)
+    {
+        if (!player)
+            return;
+
+        EnsureCharacterTransmogTable();
+
+        uint32 guid = player->GetGUID().GetCounter();
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT slot, fake_entry, real_entry FROM dc_character_transmog WHERE guid = {}",
+            guid);
+
+        if (!result)
+            return;
+
+        uint32 restoredCount = 0;
+        do
+        {
+            Field* fields = result->Fetch();
+            uint8 slot = static_cast<uint8>(fields[0].Get<uint32>());
+            uint32 fakeEntry = fields[1].Get<uint32>();
+            uint32 realEntry = fields[2].Get<uint32>();
+
+            if (slot >= EQUIPMENT_SLOT_END)
+                continue;
+
+            // Check if player has an item equipped in this slot
+            Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!equippedItem)
+            {
+                // No item equipped - remove the transmog entry since it's no longer valid
+                CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
+                continue;
+            }
+
+            // Verify the real_entry matches the currently equipped item
+            // If player changed gear, the transmog may no longer apply
+            uint32 currentEntry = equippedItem->GetEntry();
+            if (realEntry != 0 && realEntry != currentEntry)
+            {
+                // Different item equipped - transmog is stale, remove it
+                CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
+                // Reset to show the real item
+                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), currentEntry);
+                continue;
+            }
+
+            // Apply the transmog visual
+            if (fakeEntry == 0)
+            {
+                // Hidden slot
+                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
+            }
+            else
+            {
+                // Transmogrified to fakeEntry
+                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
+            }
+            restoredCount++;
+
+        } while (result->NextRow());
+
+        if (restoredCount > 0)
+        {
+            LOG_DEBUG("module.dc", "[DCWardrobe] Restored {} transmog visuals for player {} (GUID {})",
+                restoredCount, player->GetName(), guid);
+        }
+    }
+
+    // =======================================================================
     // World/Player Scripts
     // =======================================================================
 
@@ -2241,8 +2314,11 @@ namespace DCCollection
     public:
         WardrobePlayerScript() : PlayerScript("WardrobePlayerScript") {}
 
-        void OnPlayerLogin(Player* /*player*/) override
+        void OnPlayerLogin(Player* player) override
         {
+            // Restore transmog visuals from database
+            RestoreTransmogVisuals(player);
+
             if (!sConfigMgr->GetOption<bool>("DCCollection.Transmog.LoginScan.Enable", true)) return;
             // Scan inventory for NEW transmog unlocks
             // (Simplified logic here: actual comprehensive scan mimics item loot hooks)
@@ -2264,6 +2340,14 @@ namespace DCCollection
         {
             if (sConfigMgr->GetOption<bool>("DCCollection.Transmog.UnlockOnQuestReward", true))
                 UnlockTransmogAppearance(player, item->GetTemplate(), "quest");
+        }
+
+        void OnPlayerDelete(ObjectGuid guid, uint32 /*accountId*/) override
+        {
+            // Clean up character-specific transmog data when character is deleted
+            uint32 lowGuid = guid.GetCounter();
+            CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {}", lowGuid);
+            LOG_DEBUG("module.dc", "[DCWardrobe] Cleaned up transmog data for deleted character (GUID {})", lowGuid);
         }
     };
 

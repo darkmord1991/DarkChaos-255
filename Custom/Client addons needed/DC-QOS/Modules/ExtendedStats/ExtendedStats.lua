@@ -35,7 +35,7 @@ local ExtendedStats = {
             show = true,
             hideUnavailable = true,
             -- Slight overlap to avoid a visible seam between the two bordered frames.
-            anchorOffsetX = -8,
+            anchorOffsetX = -18,
             anchorOffsetY = -12,
             -- General
             showMovementSpeed = true,
@@ -483,40 +483,29 @@ local function TryBuildUI()
         -- Attach to the Character window (right side), with user offsets
         local dx = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetX)
         if dx == nil then
-            dx = -8
+            dx = -18
         end
-        dx = tonumber(dx) or -4
+        dx = tonumber(dx) or -18
 
         -- Never allow a visible gap between the CharacterFrame and this panel.
-        -- Positive offsets create an empty space; clamp to 0 (flush) and persist.
-        if dx > -2 then
-            dx = -8
+        -- Any offset that isn't sufficiently negative can leave a seam between borders.
+        if dx > -10 then
+            dx = -18
             addon:SetSetting("extendedStats.anchorOffsetX", dx)
         end
 
         -- Avoid huge gaps caused by accidentally saved drag offsets.
         -- Keep the panel snapped close to the Character window by default.
         if dx > 40 or dx < -80 then
-            dx = -8
+            dx = -18
             addon:SetSetting("extendedStats.anchorOffsetX", dx)
         end
         local dy = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetY) or -12
         frame:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", dx, dy)
         frame:SetHeight(CharacterFrame:GetHeight() - 24)
 
-        -- Use available space to the right (prevents cramped labels) but cap it.
-        local width = 300
-        if UIParent and UIParent.GetRight and CharacterFrame and CharacterFrame.GetRight then
-            local uiRight = UIParent:GetRight()
-            local charRight = CharacterFrame:GetRight()
-            if uiRight and charRight then
-                local available = uiRight - charRight - 10
-                if available and available > 0 then
-                    width = math.max(260, math.min(360, available))
-                end
-            end
-        end
-        frame:SetWidth(width)
+        -- Fixed width: keeps the panel compact and avoids pushing into the world view.
+        frame:SetWidth(290)
     end
 
     frame.UpdateLayout = UpdateLayout
@@ -1041,26 +1030,38 @@ function ExtendedStats.CreateSettings(parent)
     local function UpdateLayout()
         local w = parent and parent.GetWidth and parent:GetWidth() or 0
 
+        -- In DC-QoS this function receives the scroll child frame.
+        -- That frame can be 1px wide until the scroll frame sizes; use the scroll width too.
+        if (not w or w < 50) and parent and parent.GetParent then
+            local p = parent:GetParent()
+            if p and p.GetWidth then
+                w = p:GetWidth()
+            end
+        end
+
         -- Content is inside a scroll frame; width can be 0/1 during initial build.
         -- Use sane fallbacks, then reflow on size changes.
-        if w < 350 then
-            w = 350
-        end
+        if w < 350 then w = 350 end
 
         local leftX = 16
-        local gap = 20
         local innerW = w - (leftX * 2)
-        local colW
-        local rightX
+        if innerW < 220 then innerW = 220 end
 
-        if innerW >= 520 then
+        -- Always compute column positions from available width.
+        -- Avoid hardcoded right-column X (that caused clipping when width was still the fallback).
+        local gap = 20
+        local colW = math.floor((innerW - gap) / 2)
+        if colW < 140 then
+            gap = 12
             colW = math.floor((innerW - gap) / 2)
-            rightX = leftX + colW + gap
-        else
-            -- Narrow panels: keep legacy-ish spacing but still widen text.
-            colW = math.floor(innerW - 8)
-            rightX = 180
         end
+        if colW < 90 then
+            gap = 8
+            colW = math.floor((innerW - gap) / 2)
+        end
+        if colW < 60 then colW = 60 end
+
+        local rightX = leftX + colW + gap
 
         for _, ctrl in ipairs(controls) do
             if ctrl._dcqosCol and ctrl._dcqosY then
@@ -1070,13 +1071,8 @@ function ExtendedStats.CreateSettings(parent)
 
                 -- Prevent checkbox text being clipped; make it consume available space.
                 if ctrl.Text and ctrl.Text.SetWidth then
-                    if innerW >= 520 then
-                        ctrl:SetWidth(colW)
-                        ctrl.Text:SetWidth(math.max(40, colW - 30))
-                    else
-                        ctrl:SetWidth(colW)
-                        ctrl.Text:SetWidth(math.max(40, colW - 30))
-                    end
+                    ctrl:SetWidth(colW)
+                    ctrl.Text:SetWidth(math.max(40, colW - 30))
                     if ctrl.Text.SetJustifyH then ctrl.Text:SetJustifyH("LEFT") end
                     if ctrl.Text.SetNonSpaceWrap then ctrl.Text:SetNonSpaceWrap(false) end
                 end

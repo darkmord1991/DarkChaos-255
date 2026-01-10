@@ -68,6 +68,7 @@ function Wardrobe:ShowItemsContent()
         end
         if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
         if self.frame.communityGridContainer then self.frame.communityGridContainer:Hide() end
+        if self.frame.communityMineCheck then self.frame.communityMineCheck:Hide() end
 
         -- Show Save button in Items tab so users can save their current look
         if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Show() end
@@ -111,6 +112,7 @@ function Wardrobe:ShowSetsContent()
         end
         if self.frame.outfitGridContainer then self.frame.outfitGridContainer:Hide() end
         if self.frame.communityGridContainer then self.frame.communityGridContainer:Hide() end
+        if self.frame.communityMineCheck then self.frame.communityMineCheck:Hide() end
         
         -- Hide Outfit Controls
         if self.frame.newOutfitBtn then self.frame.newOutfitBtn:Hide() end

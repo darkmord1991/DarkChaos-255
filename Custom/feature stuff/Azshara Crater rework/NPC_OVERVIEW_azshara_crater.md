@@ -146,6 +146,17 @@
 | Innkeeper Serena | **6746** | Innkeeper | Bind point + buff food |
 | Repair Vendor | **3173** | Repair | High-level equipment |
 
+### ★ Secondary Quest Givers (Zones 4-8)
+*Additional contacts for expanded operations.*
+
+| Zone | NPC Name | Entry ID | Race | Role |
+|------|----------|----------|------|------|
+| **4** | **Engineer Whizzbang** | **300031** | Goblin | Engineering/Scouting |
+| **5** | **Earthcaller Ryga** | **300041** | Tauren | Shamanic/Elemental |
+| **6** | **Vindicator Boros** | **300051** | Draenei | Anti-Demon Specialist |
+| **7** | **Ambassador Caelestrasz**| **300061** | Night Elf | Dragonflight Liaison |
+| **8** | **Nexus-Prince Haramad** | **300071** | Ethereal | Ethereal Trader |
+
 ---
 
 ## Zone Enemy NPCs (5 per Zone)
@@ -219,6 +230,7 @@
 | Felpaw Ravager | **5866** | 45-47 | Demon | 10 |
 | Felhound | **5865** | 48-50 | Demon | 8 |
 | Fel Steed | **11464** | 42-44 | Demon | 6 |
+| Carrion Vulture | **2937** | 42-44 | Beast | 8 |
 | Rekk'tilac | **8277** | 48 | Beast | 10 |
 | Hellcalled Shadowstalker | **11452** | 44-46 | Demon | 8 |
 | **Monnos the Elder** | **6144** | 47 | **RARE** | 1 |
@@ -309,45 +321,44 @@
 ### ★D1: Ruins of Zin-Azshari (Level 15-25)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Highborne Apparition | **6116** | 45-46 | No |
-| Trash | Highborne Lichling | **7864** | 48 | No |
-| Trash | Lingering Highborne | **7864** | 48-50 | **Yes** |
-| Trash | Shade of Elura | **6133** | 47 | No |
-| Trash | Arcane Horror | **11479** | 58 | **Yes** |
-| Trash | Highborne Ghost | **7850** | 78-80 | No |
-| Trash | Caliph Scorpidsting | **7847** | 56 | **Yes** |
-| **Mini-Boss**| **Lady Szallah** | **5343** | 11 | **Elite** |
-| **Boss** | **Prince Tortheldrin** | **11486** | 61 | **Elite** |
+| Trash | Blackrock Gladiator | **4464** | 24 | No |
+| Trash | Black Dragon Whelp | **441** | 18 | No |
+| Trash | Fire Elemental | **5850** | 23 | No |
+| Trash | Lesser Fire Elemental | **5852** | 16 | No |
+| Trash | Blackrock Grunt | **440** | 19 | No |
+| Trash | Blackrock Summoner | **4463** | 22 | No |
+| **Mini-Boss**| **Targorr the Dread** | **1716** | 24 | **Elite** | Existing Blizz NPC (Orc) replacing Aquanis. |
+| **Boss** | **Lady Sarevess** | **4831** | 25 | **Elite** |
 
 ---
 
 ### ★D2: Timbermaw Deep (Level 25-35)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Timbermaw Pathfinder | **7156** | 60 | No |
-| Trash | Timbermaw Warrior | **7157** | 60 | **Yes** |
-| Trash | Timbermaw Shaman | **7158** | 60 | No |
-| Trash | Deadwood Shaman | **7155** | 60 | No |
-| Trash | Deadwood Avenger | **7153** | 60 | **Yes** |
-| Trash | Deadwood Gardener | **7154** | 60 | No |
-| Trash | Corrupted Furbolg | **7159** | 60 | **Yes** |
-| **Mini-Boss**| **Old Grizzlegut** | **5352** | 60 | **Elite** |
-| **Boss** | **Overlord Ror** | **9464** | 50 | **Elite** |
+| Trash | Mosshide Brute | **1012** | 25 | No |
+| Trash | Mosshide Mystic | **1013** | 24 | No |
+| Trash | Mosshide Fenrunner | **1010** | 23 | No |
+| Trash | Mosshide Trapper | **1011** | 24 | No |
+| Trash | Mosshide Mongrel | **1008** | 21 | No |
+| Trash | Mosshide Alpha | **1014** | 27 | **Yes** |
+| **Mini-Boss**| **Aggem Thorncurse**| **4428** | 30 | **Elite** |
+| **Boss** | **Death Speaker Jargba**| **4424** | 30 | **Elite** |
 
 ---
 
-### ★D3: Spitelash Depths (Level 45-55)
+### ★D3: Spitelash Depths (Level 40-50)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Spitelash Warrior | **6190** | 36 | No |
-| Trash | Spitelash Myrmidon | **6193** | 36 | **Yes** |
-| Trash | Spitelash Siren | **6195** | 36 | No |
-| Trash | Spitelash Screamer | **6196** | 36 | No |
-| Trash | Makrura Shellhide | **6348** | 38 | **Yes** |
-| Trash | Spitelash Sorceress | **6194** | 36 | No |
-| Trash | Spitelash Naga | **6192** | 36 | **Yes** |
-| **Mini-Boss**| **Princess Tempestria**| **14457** | 60 | **Elite** |
-| **Boss** | **Duke Hydraxis** | **13278** | 60 | **Elite** |
+| Trash | Greater Rock Elemental | **2736** | 43 | No |
+| Trash | Dark Iron Watchman | **8637** | 44 | No |
+| Trash | Dark Iron Geologist | **5839** | 43 | No |
+| Trash | Fire Elemental | **575** | 40 | No |
+| Trash | Dark Iron Steamsmith | **5840** | 47 | No |
+| **Rare** | **Ambassador Flamelash** | **9156** | 55 | **Elite** |
+| **Mini-Boss**| **Faulty War Golem** | **8279** | 46 | **Elite** |
+| **Boss** | **Pyromancer Loregrain** | **9024** | 52 | **Elite** |
+
+
 
 ---
 
@@ -356,28 +367,28 @@
 |------|----------|----------|-------|-------|
 | Trash | Legashi Satyr | **6200** | 51-52 | No |
 | Trash | Legashi Rogue | **6134** | 54-56 | No |
-| Trash | Legashi Hellcaller | **6135** | 56-58 | **Yes** |
 | Trash | Felguard Sentry | **8716** | 57-59 | No |
+| Trash | Legashi Hellcaller | **6135** | 56-58 | **Yes** |
 | Trash | Doomguard Commander | **7671** | 58-60 | **Yes** |
 | Trash | Warpwood Treant | **11462** | 54-55 | No |
 | Trash | Invading Fel Stalker | **19286** | 60 | **Yes** |
 | **Mini-Boss**| **Lady Hederine** | **12143** | 58 | **Elite** |
-| **Boss** | **Sethir the Ancient** | **6909** | 62 | **Elite** |
+| **Boss** | **Prince Tortheldrin** | **11486** | 61 | **Elite** |
 
 ---
 
 ### ★D5: Sanctum of the Highborne (Level 75-80)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Arcane Guardian | **15691** | 77 | **Yes** |
-| Trash | Mana Remnant | **11483** | 71 | No |
-| Trash | Faceless Lurker | **27099** | 78 | **Yes** |
+| Trash | Wretched Ghoul | **37881** | 80 | No |
+| Trash | Wretched Belcher | **31363** | 80 | **Yes** |
+| Trash | Arcane Sentinel | **15689** | 80 | **Yes** |
 | Trash | Highborne Apparition | **6116** | 45 | No |
 | Trash | Forgotten One | **27959** | 79 | **Yes** |
 | Trash | Ancient Highborne Spirit| **7850** | 78-80 | No |
-| Trash | Arcane Sentinel | **15689** | 80 | **Yes** |
+| Trash | Faceless Lurker | **27099** | 78 | **Yes** |
 | **Mini-Boss**| **Magister Kalendris** | **11487** | 80 | **Elite** |
-| **Boss** | **Azuregos** | **6109** | 80+ | **Elite** |
+| **Boss** | **Cyanigosa** | **29317** | 77 | **Elite** |
 
 ---
 

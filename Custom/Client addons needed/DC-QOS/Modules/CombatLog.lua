@@ -20,6 +20,8 @@ local CombatLog = {
             enabled = true,
             -- Display Mode
             showMeter = true,
+            -- If the window was hidden (e.g. via the close button), still auto-show it when combat starts.
+            autoShowInCombat = true,
             meterMode = "damage", -- damage, healing, damageTaken, threat, dispels
             showBars = true,
             maxBars = 10,
@@ -236,6 +238,20 @@ local function RestorePosition(frame, db)
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", x, y)
     frame:SetScale(db.scale or 1)
+end
+
+local function EnsureOnScreen(frame, db)
+    if not frame or not frame.GetLeft or not UIParent then return end
+    local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+    local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
+    if not left or not right or not top or not bottom or not sw or not sh then return end
+
+    -- If entirely off-screen, reset to a sane center position.
+    if right < 0 or left > sw or top < 0 or bottom > sh then
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", UIParent, "CENTER", 300, 150)
+        SavePosition(frame, db)
+    end
 end
 
 local function FormatNumber(num)
@@ -771,13 +787,37 @@ local function CreateCombatFrame()
         settings.scale = settings.frameScale
         settings.frameScale = nil
     end
-    local width = settings.frameWidth or 200
-    local height = settings.frameHeight or 250
+    local width = tonumber(settings.frameWidth) or 200
+    local height = tonumber(settings.frameHeight) or 250
+    if width < 150 then width = 200 end
+    if height < 100 then height = 250 end
+
+    local scale = tonumber(settings.scale) or 1.0
+    if scale < 0.5 or scale > 3.0 then
+        scale = 1.0
+    end
+
+    local alpha = tonumber(settings.frameAlpha) or 0.9
+    if alpha < 0.1 or alpha > 1.0 then
+        alpha = 0.9
+    end
+
+    settings.frameWidth = width
+    settings.frameHeight = height
+    settings.scale = scale
+    settings.frameAlpha = alpha
     
     combatFrame = CreateFrame("Frame", "DCQoS_CombatLogFrame", UIParent)
     combatFrame:SetSize(width, height)
-    combatFrame:SetScale(settings.scale or 1.0)
-    combatFrame:SetAlpha(settings.frameAlpha or 0.9)
+    combatFrame:SetScale(scale)
+    combatFrame:SetAlpha(alpha)
+
+    if combatFrame.SetFrameStrata then
+        combatFrame:SetFrameStrata("DIALOG")
+    end
+    if combatFrame.SetToplevel then
+        combatFrame:SetToplevel(true)
+    end
     combatFrame:SetMovable(true)
     combatFrame:EnableMouse(true)
     combatFrame:SetClampedToScreen(true)
@@ -1099,7 +1139,17 @@ function CombatLog.ShowFrame()
     if not combatFrame then
         CreateCombatFrame()
     end
+
+    local settings = addon.settings.combatLog
+    if combatFrame.SetFrameStrata then
+        combatFrame:SetFrameStrata("DIALOG")
+    end
+    if combatFrame.SetToplevel then
+        combatFrame:SetToplevel(true)
+    end
     combatFrame:Show()
+    if combatFrame.Raise then combatFrame:Raise() end
+    EnsureOnScreen(combatFrame, settings)
 end
 
 function CombatLog.HideFrame()
@@ -2001,8 +2051,15 @@ local function OnCombatEvent(self, event, ...)
             combatStartTime = GetTime()
             ResetPlayerData()
             
-            if settings.showMeter and not settings.hidden then
-                CombatLog.ShowFrame()
+            if settings.showMeter then
+                if settings.autoShowInCombat ~= false then
+                    if not combatFrame then
+                        CreateCombatFrame()
+                    end
+                    combatFrame:Show()
+                elseif not settings.hidden then
+                    CombatLog.ShowFrame()
+                end
             end
         end
     elseif event == "PLAYER_REGEN_ENABLED" then
@@ -2028,6 +2085,88 @@ function CombatLog.OnInitialize()
     addon:Debug("CombatLog module initializing")
     playerGUID = UnitGUID("player")
     playerName = UnitName("player")
+
+    -- Register slash commands even if the module is disabled.
+    -- This lets players recover a hidden/off-screen window without needing the module enabled.
+    if not CombatLog._slashRegistered then
+        CombatLog._slashRegistered = true
+
+        -- NOTE: /dcc is reserved by DC-Collection. Do not claim it here.
+        SLASH_DCCOMBAT1 = "/dccombat"
+        SLASH_DCCOMBAT2 = "/dcqoscombat"
+        SlashCmdList["DCCOMBAT"] = function(msg)
+            msg = tostring(msg or "")
+            msg = msg:match("^%s*(.-)%s*$")
+            msg = string.lower(msg)
+
+            if msg == "" or msg == "toggle" then
+                if combatFrame and combatFrame:IsShown() then
+                    CombatLog.HideFrame()
+                else
+                    CombatLog.ShowFrame()
+                end
+            elseif msg == "show" then
+                CombatLog.ShowFrame()
+            elseif msg == "hide" then
+                CombatLog.HideFrame()
+            elseif msg == "reset" then
+                ResetPlayerData()
+                addon:Print("Combat stats reset.", true)
+            elseif msg == "death" then
+                ShowDeathRecap()
+            elseif msg == "damage" or msg == "d" then
+                addon:SetSetting("combatLog.meterMode", "damage")
+                CombatLog.UpdateFrame()
+                addon:Print("Mode: Damage Done", true)
+            elseif msg == "healing" or msg == "h" then
+                addon:SetSetting("combatLog.meterMode", "healing")
+                CombatLog.UpdateFrame()
+                addon:Print("Mode: Healing Done", true)
+            elseif msg == "spells" or msg == "s" then
+                ShowSpellBreakdown()
+            elseif msg:match("^spells ") then
+                local target = msg:match("^spells (.+)")
+                ShowSpellBreakdown(target)
+            elseif msg == "dispels" then
+                ShowDispels()
+            elseif msg == "absorbs" then
+                ShowAbsorbs()
+            elseif msg == "activity" or msg == "uptime" then
+                ShowActivity()
+            elseif msg == "kb" or msg == "killingblows" then
+                ShowKillingBlows()
+            elseif msg == "cc" or msg == "crowdcontrol" then
+                ShowCrowdControl()
+            elseif msg == "power" or msg == "mana" then
+                ShowPowerGains()
+            elseif msg == "ff" or msg == "friendlyfire" then
+                ShowFriendlyFire()
+            elseif msg == "consumables" or msg == "potions" then
+                ShowConsumables()
+            elseif msg == "lock" then
+                CombatLog.ToggleLock()
+            elseif msg == "help" then
+                addon:Print("Combat Log Commands:", true)
+                print("  |cffffd700/dccombat|r - Toggle display")
+                print("  |cffffd700/dccombat show/hide|r - Show/hide window")
+                print("  |cffffd700/dccombat lock|r - Lock/unlock window position")
+                print("  |cffffd700/dccombat d|r - Damage mode")
+                print("  |cffffd700/dccombat h|r - Healing mode")
+                print("  |cffffd700/dccombat s|r - Spell breakdown (your spells)")
+                print("  |cffffd700/dccombat spells <name>|r - Spell breakdown for player")
+                print("  |cffffd700/dccombat dispels|r - Show dispel summary")
+                print("  |cffffd700/dccombat absorbs|r - Show absorb summary")
+                print("  |cffffd700/dccombat activity|r - Show activity/uptime")
+                print("  |cffffd700/dccombat kb|r - Show killing blows")
+                print("  |cffffd700/dccombat cc|r - Show crowd control")
+                print("  |cffffd700/dccombat power|r - Show power gains")
+                print("  |cffffd700/dccombat ff|r - Show friendly fire")
+                print("  |cffffd700/dccombat consumables|r - Show potion/healthstone usage")
+                print("  |cffffd700/dccombat reset|r - Reset stats")
+                print("  |cffffd700/dccombat death|r - Show death recap")
+            end
+        end
+    end
 end
 
 function CombatLog.OnEnable()
@@ -2045,80 +2184,6 @@ function CombatLog.OnEnable()
     -- Initial visibility check
     if not settings.hidden then
         CombatLog.ShowFrame()
-    end
-    
-    -- Slash commands
-    SLASH_DCCOMBAT1 = "/dccombat"
-    SLASH_DCCOMBAT2 = "/dcc"
-    SlashCmdList["DCCOMBAT"] = function(msg)
-        msg = msg and strlower(strtrim(msg)) or ""
-        
-        if msg == "" or msg == "toggle" then
-            if combatFrame and combatFrame:IsShown() then
-                CombatLog.HideFrame()
-            else
-                CombatLog.ShowFrame()
-            end
-        elseif msg == "show" then
-            CombatLog.ShowFrame()
-        elseif msg == "hide" then
-            CombatLog.HideFrame()
-        elseif msg == "reset" then
-            ResetPlayerData()
-            addon:Print("Combat stats reset.", true)
-        elseif msg == "death" then
-            ShowDeathRecap()
-        elseif msg == "damage" or msg == "d" then
-            addon:SetSetting("combatLog.meterMode", "damage")
-            CombatLog.UpdateFrame()
-            addon:Print("Mode: Damage Done", true)
-        elseif msg == "healing" or msg == "h" then
-            addon:SetSetting("combatLog.meterMode", "healing")
-            CombatLog.UpdateFrame()
-            addon:Print("Mode: Healing Done", true)
-        elseif msg == "spells" or msg == "s" then
-            ShowSpellBreakdown()
-        elseif msg:match("^spells ") then
-            local target = msg:match("^spells (.+)")
-            ShowSpellBreakdown(target)
-        elseif msg == "dispels" then
-            ShowDispels()
-        elseif msg == "absorbs" then
-            ShowAbsorbs()
-        elseif msg == "activity" or msg == "uptime" then
-            ShowActivity()
-        elseif msg == "kb" or msg == "killingblows" then
-            ShowKillingBlows()
-        elseif msg == "cc" or msg == "crowdcontrol" then
-            ShowCrowdControl()
-        elseif msg == "power" or msg == "mana" then
-            ShowPowerGains()
-        elseif msg == "ff" or msg == "friendlyfire" then
-            ShowFriendlyFire()
-        elseif msg == "consumables" or msg == "potions" then
-            ShowConsumables()
-        elseif msg == "lock" then
-            CombatLog.ToggleLock()
-        elseif msg == "help" then
-            addon:Print("Combat Log Commands:", true)
-            print("  |cffffd700/dcc|r - Toggle display")
-            print("  |cffffd700/dcc show/hide|r - Show/hide window")
-            print("  |cffffd700/dcc lock|r - Lock/unlock window position")
-            print("  |cffffd700/dcc d|r - Damage mode")
-            print("  |cffffd700/dcc h|r - Healing mode")
-            print("  |cffffd700/dcc s|r - Spell breakdown (your spells)")
-            print("  |cffffd700/dcc spells <name>|r - Spell breakdown for player")
-            print("  |cffffd700/dcc dispels|r - Show dispel summary")
-            print("  |cffffd700/dcc absorbs|r - Show absorb summary")
-            print("  |cffffd700/dcc activity|r - Show activity/uptime")
-            print("  |cffffd700/dcc kb|r - Show killing blows")
-            print("  |cffffd700/dcc cc|r - Show crowd control")
-            print("  |cffffd700/dcc power|r - Show power gains")
-            print("  |cffffd700/dcc ff|r - Show friendly fire")
-            print("  |cffffd700/dcc consumables|r - Show potion/healthstone usage")
-            print("  |cffffd700/dcc reset|r - Reset stats")
-            print("  |cffffd700/dcc death|r - Show death recap")
-        end
     end
     
     CreateCombatFrame()
@@ -2146,7 +2211,7 @@ function CombatLog.CreateSettings(parent)
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     desc:SetWidth(450)
     desc:SetJustifyH("LEFT")
-    desc:SetText("DPS/HPS meter with group tracking. Use |cffffd700/dcc|r to toggle, |cffffd700/dcc d|r for damage, |cffffd700/dcc h|r for healing.")
+    desc:SetText("DPS/HPS meter with group tracking. Use |cffffd700/dccombat|r to toggle, |cffffd700/dccombat d|r for damage, |cffffd700/dccombat h|r for healing.")
     
     local yOffset = -70
     
@@ -2164,6 +2229,41 @@ function CombatLog.CreateSettings(parent)
         addon:SetSetting("combatLog.showMeter", self:GetChecked())
     end)
     yOffset = yOffset - 25
+
+    local autoShowCb = addon:CreateCheckbox(parent)
+    autoShowCb:SetPoint("TOPLEFT", 16, yOffset)
+    autoShowCb.Text:SetText("Auto-show window when combat starts")
+    autoShowCb:SetChecked(settings.autoShowInCombat ~= false)
+    autoShowCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.autoShowInCombat", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local showBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    showBtn:SetSize(140, 20)
+    showBtn:SetPoint("TOPLEFT", 34, yOffset)
+    showBtn:SetText("Show Window Now")
+    showBtn:SetScript("OnClick", function()
+        CombatLog.ShowFrame()
+    end)
+
+    local resetBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    resetBtn:SetSize(140, 20)
+    resetBtn:SetPoint("LEFT", showBtn, "RIGHT", 10, 0)
+    resetBtn:SetText("Reset Position")
+    resetBtn:SetScript("OnClick", function()
+        local db = addon.settings.combatLog
+        db.x, db.y = nil, nil
+        if not combatFrame then
+            CreateCombatFrame()
+        end
+        combatFrame:ClearAllPoints()
+        combatFrame:SetPoint("CENTER", UIParent, "CENTER", 300, 150)
+        SavePosition(combatFrame, db)
+        combatFrame:Show()
+    end)
+
+    yOffset = yOffset - 30
     
     local groupCb = addon:CreateCheckbox(parent)
     groupCb:SetPoint("TOPLEFT", 16, yOffset)

@@ -1,270 +1,169 @@
 # Azshara Crater - Quest System Design
-## Quest NPCs, Templates & Examples
 
 > [!NOTE]
 > Quests do NOT unlock zones/dungeons. Uses existing heirloom gameobjects as special features.
 
----
+## Quest NPC Templates
 
-## Quest NPC Templates (Verified WotLK Entry IDs)
+### Zone Quest Givers (Zones 4-8)
 
-![Azshara Crater Final Master Map](azshara_crater_map_v3.png)
-
-### Quest Giver NPCs
-
-| Role | NPC Name | Entry ID | Model | Location |
+| Zone | NPC Name | Entry ID | Model | Location |
 |------|----------|----------|-------|----------|
-| **Main Horde** | Ag'tor Bloodfist | 11821 | Orc Warrior | Valormok |
-| **Main Alliance** | Jarrodenus | 9116 | Night Elf Male | Valormok |
-| **Neutral Leader** | Talo Thornhoof | 5639 | Tauren Elder | Ton'ma |
-| **Furbolg Rep** | Nafien | 15395 | Furbolg | East Outpost |
-| **Dragon Rep** | Haleh | 10929 | Blue Dragon | Temple Approach |
-| **Shaman** | Kardris Dreamseeker | 3344 | Orc Shaman | Valormok |
-| **Scout** | Huntress Ravenoak | 10301 | Night Elf Hunter | North Checkpoint |
-| **Mage** | Archmage Xylem | 8379 | Human Mage | Temple Approach |
+| **Zone 4** | Wavemaster Kol'gar | 300030 | Troll Shaman | Central River |
+| **Zone 5** | Demonologist Vex'ara | 300040 | Blood Elf Warlock | The Cliffs |
+| **Zone 6** | Felsworn Kael'thos | 300050 | Blood Elf Paladin | The Fel Pit |
+| **Zone 7** | Dragonbinder Seryth | 300060 | Draenei Mage | Wyrmrest |
+| **Zone 8** | Archmage Thadeus | 300070 | Human Mage | The Temple |
 
-### Service NPCs
+### Dungeon Quest Givers (Stationed outside entrances)
 
-| Role | NPC Name | Entry ID | Model | Notes |
-|------|----------|----------|-------|-------|
-| **Innkeeper** | Innkeeper Allisara | 6740 | Night Elf Female | Bind point |
-| **Flight Master** | Rawl | 12902 | Orc Male | Wyvern |
-| **Flight Master** | Daelyshia | 12903 | Night Elf Female | Hippogryph |
-| **Stable Master** | Jaelysia | 8659 | Night Elf Female | Pet stable |
-| **Repair** | Zixil | 3537 | Goblin Male | Anvil vendor |
-| **General Goods** | Montarr | 8150 | Tauren Male | Supplies |
-| **Reagents** | Kulwia | 3012 | Tauren Female | Magic supplies |
-
-### Guard NPCs
-
-| Role | NPC Name | Entry ID | Model | Faction |
-|------|----------|----------|-------|---------|
-| **Horde Guard** | Orgrimmar Grunt | 3296 | Orc Male | Horde |
-| **Alliance Guard** | Sentinel | 3211 | Night Elf Female | Alliance |
-| **Neutral Guard** | Bluffwatcher | 3084 | Tauren Male | Neutral |
-| **Furbolg Guard** | Timbermaw Warrior | 7157 | Furbolg | Neutral |
+| Dungeon | NPC Name | Entry ID | Model | Target |
+|---------|----------|----------|-------|--------|
+| **D1** | Magister Idona | 300081 | High Elf | Ruins of Zin-Azshari |
+| **D2** | Elder Brownpaw | 300082 | Furbolg | Timbermaw Deep |
+| **D3** | Prospector Khazgorm | 300083 | Dwarf | Spitelash Depths |
+| **D4** | Slayer Vorith | 300084 | Blood Elf DH | The Fel Pit |
+| **D5** | Image of Arcanigos | 300085 | Human (Blue Dragon) | Sanctum of Highborne |
 
 ---
 
 ## Quest Examples by Zone
 
+## Quest Examples by Zone
+
 ### Zone 1: Valormok Rim (Level 1-10)
-
-#### Quest 1: "Welcome to the Crater"
-- **Level:** 1
-- **Type:** Intro
-- **Giver:** Ag'tor Bloodfist (11821) / Jarrodenus (9116)
-- **Objective:** Speak with Commander at main base
-- **Reward:** 50 XP, 6 slot bag
-- **Script:** Simple gossip → complete
-
-#### Quest 2: "Crater Wildlife Survey"
-- **Level:** 3
-- **Type:** Kill
-- **Giver:** Kardris Dreamseeker (3344)
-- **Objective:** Kill 8 Crater Wolves (use existing wolf NPC scaled)
-- **Reward:** 150 XP, green mail boots
-- **Script:** Basic kill credit tracking
-
-#### Quest 3: "Bear Bounty"
-- **Level:** 5
-- **Type:** Collect
-- **Giver:** Montarr (8150)
-- **Objective:** Collect 6 Bear Pelts (item drop from bears)
-- **Reward:** 200 XP, 5 silver
-- **Script:** Loot item from kills, deliver to NPC
-
-#### Quest 4: "Strange Energies"
-- **Level:** 7
-- **Type:** Interact
-- **Giver:** Archmage Xylem (8379)
-- **Objective:** Investigate 4 Arcane Leylines (gameobjects)
-- **Reward:** 250 XP, green wand
-- **Script:** Click gameobjects to "investigate"
-
-#### Quest 5: "Report to the North"
-- **Level:** 10
-- **Type:** Travel
-- **Giver:** Ag'tor Bloodfist (11821)
-- **Objective:** Speak with Huntress Ravenoak at Northern Checkpoint
-- **Reward:** 300 XP, flight path unlock
-- **Script:** Deliver message NPC to NPC
-
----
+*   **Quest Givers:** Scout Thalindra (300001), Warden Stonebrook (300002)
+1.  **"Welcome to Crater"**: Speak with Scout Thalindra.
+2.  **"Wildlife Survey"**: Kill 6 Boars and 6 Wolves.
+3.  **"Bear Bounty"**: Kill 8 Bears.
+4.  **"Strange Energies"**: Kill 8 Timberlings.
+5.  **"Web of Danger"**: Kill 10 Webwood Lurkers (Spiders).
+6.  **"Ancient's Lair"**: Defeat 12 Timberlings (Boss Placeholder).
+7.  **"Pelt Collection"**: Collect 8 Light Hides.
+8.  **"Murloc Menace"**: Kill 10 Murloc Foragers.
+9.  **"Report to North"**: Travel to Zone 2.
 
 ### Zone 2: Northern Ruins (Level 10-20)
-
-#### Quest 1: "The Haunted Grounds"
-- **Level:** 12
-- **Type:** Kill
-- **Giver:** Huntress Ravenoak (10301)
-- **Objective:** Slay 10 Highborne Apparitions (7971)
-- **Reward:** 400 XP, green cloth gloves
-- **Script:** Kill credit
-
-#### Quest 2: "Spectral Samples"
-- **Level:** 14
-- **Type:** Collect
-- **Giver:** Archmage Xylem (8379)
-- **Objective:** Collect 8 Ghost Essence (drop from ghosts)
-- **Reward:** 500 XP, blue wand
-- **Script:** Item drop collection
-
-#### Quest 3: "Ancient Relics"
-- **Level:** 16
-- **Type:** Collect
-- **Giver:** Talo Thornhoof (5639)
-- **Objective:** Retrieve 5 Ancient Night Elf Relics (from ground objects)
-- **Reward:** 600 XP, green ring
-- **Script:** Gameobject interaction
-
-#### Quest 4: "The Wailing Noble"
-- **Level:** 18
-- **Type:** Elite Kill
-- **Giver:** Huntress Ravenoak (10301)
-- **Objective:** Defeat Lingering Highborne (7973) x3
-- **Reward:** 700 XP, blue cloth chest
-- **Script:** Elite mob kill credit
-
-#### Quest 5: "Varo'then's Journal"
-- **Level:** 20
-- **Type:** Collect + Elite
-- **Giver:** Archmage Xylem (8379)
-- **Objective:** Obtain Varo'then's Journal from his ghost (7970)
-- **Reward:** 800 XP, blue off-hand book
-- **Script:** Boss drop item
-
----
+*   **Quest Givers:** Arcanist Melia (300010), Spirit of Kelvenar (300011)
+1.  **"Haunted Grounds"**: Kill 10 Dreadbone Skeletons.
+2.  **"Spectral Samples"**: Kill 8 Voidwalkers.
+3.  **"Ancient Relics"**: Destroy 8 Harvest Golems.
+4.  **"Commune with Spirit"**: Speak with Spirit of Kelvenar.
+5.  **"The Wailing Noble"**: Defeat 12 Skeletal Warriors.
+6.  **"Varo'then's Journal"**: Retrieve Journal from ruins.
+7.  **"Dust to Dust"**: Collect 10 Gold Dust.
+8.  **"Elemental Imbalance"**: Defeat 8 Corrupt Water Spirits.
+9.  **"Into the Slopes"**: Travel to Zone 3.
 
 ### Zone 3: Timbermaw Slopes (Level 20-30)
+*   **Quest Givers:** Pathfinder Gor'nash (300020)
+1.  **"Proving Strength"**: Kill 10 Haldarr Satyrs.
+2.  **"Satyr Horns"**: Collect 10 Satyr Horns.
+3.  **"Smash the Totems"**: Destroy 5 Thistlefur Totems.
+4.  **"Elder's Request"**: Kill 10 Thistlefur Shamans.
+5.  **"Source of Corruption"**: Kill 15 Thistlefur Avengers.
+6.  **"Cleansing Ritual"**: Defeat 20 Thistlefurs (Mass Kill).
+7.  **"Furbolg Beads"**: Collect 10 Gnoll War Beads.
+8.  **"Crocolisk Crisis"**: Hunt 6 Giant Wetlands Crocolisks.
+9.  **"The River Awaits"**: Return to Zone 1 (Thalindra).
 
-#### Quest 1: "Proving Grounds"
-- **Level:** 22
-- **Type:** Kill
-- **Giver:** Nafien (15395)
-- **Objective:** Kill 12 Deadwood Furbolgs (7153, 7155)
-- **Reward:** 500 XP, +250 Timbermaw Rep
-- **Script:** Faction kill credit
+### Zone 4: Central River (Level 30-40)
+*   **Giver:** Wavemaster Kol'gar (300030)
+1.  **"Strashaz Threat"**: Kill 12 Strashaz Warriors.
+2.  **"Drysnap Shells"**: Collect 10 Shells from Drysnap Pincers.
+3.  **"Rock Elementals"**: Kill 8 Lesser Rock Elementals.
+4.  **"Hydra Scales"**: Kill 6 Strashaz Hydras.
+5.  **"Bounty: Prince Nazjak"**: Kill Prince Nazjak (Rare).
+6.  **"River Pollution"**: Cleanse 8 polluted spots.
+7.  **"Crab Meat"**: Collect 10 Crab Meat.
+8.  **"The Western Cliffs"**: Report to Vex'ara.
 
-#### Quest 2: "Supply Run"
-- **Level:** 24
-- **Type:** Collect
-- **Giver:** Nafien (15395)
-- **Objective:** Gather 10 Deadwood Headdress Feathers
-- **Reward:** 600 XP, +350 Timbermaw Rep
-- **Script:** Item collection
+*   **Secondary Giver:** Engineer Whizzbang (300031)
+1.  **"High-Explosive Research"**: Kill 6 Cliff Breakers.
+2.  **"Stop the Screaming"**: Kill 8 Spitelash Sirens.
+3.  **"Survey Data Recovery"**: Kill 8 Spitelash Screamers.
 
-#### Quest 3: "Wisdom of the Elders"
-- **Level:** 26
-- **Type:** Escort
-- **Giver:** Timbermaw Elder NPC
-- **Objective:** Escort Elder to safety
-- **Reward:** 700 XP, green leather helm
-- **Script:** Escort AI pathing
+### Zone 5: The Cliffs (Level 40-50)
+*   **Giver:** Demonologist Vex'ara (300040)
+1.  **"Satyr Horns"**: Kill 12 Jadefire Satyrs.
+2.  **"Felhound Fangs"**: Kill 10 Felhounds.
+3.  **"Fel Steed Subjugation"**: Kill 8 Fel Steeds.
+4.  **"Shadowstalker Hunt"**: Kill 10 Hellcalled Shadowstalkers.
+5.  **"Bounty: Monnos the Elder"**: Kill Monnos the Elder (Rare).
+6.  **"Corrupted Soil"**: Collect 10 Soil Samples.
+7.  **"Demonic Runes"**: Collect 6 Runes from satyrs.
+8.  **"Into Haldarr Territory"**: Report to Kael'thos.
 
-#### Quest 4: "The Corruption Source"
-- **Level:** 28
-- **Type:** Investigation
-- **Giver:** Kardris Dreamseeker (3344)
-- **Objective:** Investigate 3 Fel-touched areas
-- **Reward:** 800 XP, blue trinket
-- **Script:** Gameobject discovery
+*   **Secondary Giver:** Earthcaller Ryga (300041)
+1.  **"Restoring Balance"**: Kill 8 Felpaw Ravagers.
+2.  **"Carrion Feeders"**: Kill 8 Carrion Vultures.
+3.  **"Bounty: Magronos"**: Kill Magronos the Unyielding (Rare).
 
-#### Quest 5: "Cleansing Ritual"
-- **Level:** 30
-- **Type:** Use Item
-- **Giver:** Kardris Dreamseeker (3344)
-- **Objective:** Use Cleansing Totem on 5 corrupted trees
-- **Reward:** 900 XP, blue staff
-- **Script:** Item use on gameobject
+### Zone 6: The Fel Pit (Level 50-60)
+*   **Giver:** Felsworn Kael'thos (300050)
+1.  **"Legashi Cull"**: Kill 12 Legashi Satyrs.
+2.  **"Infernal Cores"**: Collect 8 Entropic Cores.
+3.  **"Doomguard Commander"**: Kill 4 Doomguard Commanders.
+4.  **"Bounty: Gatekeeper Karlindos"**: Kill Gatekeeper Karlindos (Rare).
+5.  **"Portal Sabotage"**: Sabotage 3 Legion Portals.
+6.  **"Fel Armaments"**: Collect 10 Fel Weapons.
+7.  **"Dragon Coast"**: Report to Seryth.
 
----
+*   **Secondary Giver:** Vindicator Boros (300051)
+1.  **"Sentry Destruction"**: Kill 5 Infernal Sentries.
+2.  **"Hunting the Hunters"**: Kill 3 Dreadlords.
+3.  **"Portal Keepers"**: Kill 5 Legashi Hellcallers.
 
-### Zone 4-8: Quest Template Format
+### Zone 7: Wyrmrest (Level 60-70)
+*   **Giver:** Dragonbinder Seryth (300060)
+1.  **"Phase Hunter Menace"**: Kill 12 Phase Hunters.
+2.  **"Mana Surge"**: Destroy 10 Mana Surges.
+3.  **"Netherwing Presence"**: Kill 6 Netherwing Drakes.
+4.  **"Bounty: General Colbatann"**: Kill General Colbatann (Rare).
+5.  **"Dragon Egg Hunt"**: Destroy 8 Blue Dragon Eggs.
+6.  **"Cultist Orders"**: Collect 6 Wyrmcult Orders.
+7.  **"The Temple Approach"**: Report to Thadeus.
 
-For remaining zones, use this template:
+*   **Secondary Giver:** Ambassador Caelestrasz (300061)
+1.  **"Naga Surveyors"**: Kill 10 Naga Explorers.
+2.  **"Corrupted Beasts"**: Kill 8 Unstable Dragonhawks.
+3.  **"Fanatical Devotion"**: Kill 8 Wyrmcult Zealots.
 
-```
-Quest Name: [Name]
-Level: [X]
-Type: [Kill/Collect/Escort/Elite/Use Item/Investigate]
-Giver NPC: [Name] (Entry ID)
-Objective: [Clear description]
-Target NPCs: [Entry IDs if applicable]
-Reward: [XP amount], [Item reward]
-Script Type: [kill_credit/item_collect/escort/use_item/boss_kill]
-```
+### Zone 8: The Temple (Level 70-80)
+*   **Giver:** Archmage Thadeus (300070)
+1.  **"Skeletal Army"**: Kill 12 Skeletal Craftsmen.
+2.  **"Faceless Horror"**: Kill 8 Faceless Lurkers.
+3.  **"Forgotten Captains"**: Kill 4 Forgotten Captains.
+4.  **"Bounty: Antilos"**: Slay Antilos (Rare).
+5.  **"Temple Artifacts"**: Collect 10 Ancient Artifacts.
+6.  **"Ghostly Essence"**: Collect 8 Phantom Essence.
 
----
+*   **Secondary Giver:** Nexus-Prince Haramad (300071)
+1.  **"Weapons of the Dead"**: Kill 8 Skeletal Smiths.
+2.  **"Guardian Malfunction"**: Kill 6 Temple Guardians.
+3.  **"Spectral Servants"**: Kill 10 Phantom Valets.
 
-## Special Quest Types
-
-### Daily Quests (Available at Level 30+)
-
-| Quest Name | Level | Objective | Reward |
-|------------|-------|-----------|--------|
-| "Naga Patrol" | 35 | Kill 15 Spitelash (any) | 500 XP, 50 silver |
-| "Fel Crystal Harvest" | 55 | Collect 8 Fel Crystals | 800 XP, 1 gold |
-| "Dragon Scale Collection" | 65 | Collect 10 Azure Scales | 1000 XP, 2 gold |
-| "Ghostly Tribute" | 75 | Kill 20 Temple ghosts | 1500 XP, 5 gold |
-
-### Group Quests (2-3 Players)
-
-| Quest Name | Level | Objective | Reward |
-|------------|-------|-----------|--------|
-| "The Elite Guard" | 25 | Kill 3 Lingering Highborne (Elite) | Blue weapon |
-| "Naga Warlord" | 50 | Defeat Duke Hydraxis helper | Blue armor |
-| "Demon Commander" | 60 | Kill Doomguard Commander | Epic ring |
-| "Dragon Challenge" | 75 | Prove worth to Azuregos | Epic trinket |
-
-### Heirloom Interaction Quests
-
-| Quest Name | Level | Heirloom Object | Reward |
-|------------|-------|-----------------|--------|
-| "The Ancient Chest" | 10 | Heirloom Chest #1 | Bonus XP token |
-| "Mystical Cache" | 30 | Heirloom Chest #2 | Heirloom upgrade |
-| "Dragon's Hoard" | 50 | Heirloom Chest #3 | Epic heirloom |
-| "The Queen's Treasury" | 70 | Heirloom Chest #4 | Legendary material |
-
----
-
-## Quest Chain Examples
-
-### Chain: "The Crater's Secret" (Zone 1-3)
-
-| Step | Level | Quest Name | Objective |
-|------|-------|------------|-----------|
-| 1 | 5 | "Strange Stones" | Collect 3 glowing stones |
-| 2 | 10 | "The First Fragment" | Find fragment in ruins |
-| 3 | 15 | "Ghostly Knowledge" | Speak with friendly ghost |
-| 4 | 20 | "The Second Fragment" | Retrieve from elite mob |
-| 5 | 25 | "Furbolg Wisdom" | Consult Timbermaw elder |
-| 6 | 30 | "The Complete Picture" | Combine fragments |
-| **Final Reward:** Epic ring + 5000 XP bonus |
-
-### Chain: "The Demon Threat" (Zone 5-6)
-
-| Step | Level | Quest Name | Objective |
-|------|-------|------------|-----------|
-| 1 | 40 | "Satyr Scouts" | Kill 10 Legashi Satyr |
-| 2 | 45 | "Capture Orders" | Loot orders from Hellcaller |
-| 3 | 50 | "Portal Fragments" | Collect 5 portal shards |
-| 4 | 55 | "Infiltration" | Kill without being detected (stealth optional) |
-| 5 | 60 | "The Demon Lord" | Defeat Sethir the Ancient |
-| **Final Reward:** Epic weapon + title "Demonbane" |
+### Mini-Dungeon Quests
+1.  **D1: Ruins of Zin-Azshari (L25)**
+    *   **"Ruins of Zin-Azshari"**: Kill Lady Sarevess (Boss).
+    *   **"Targorr the Dread"**: Kill Targorr the Dread (Mini-Boss).
+2.  **D2: Timbermaw Deep (L35)**
+    *   **"Timbermaw Deep"**: Kill Death Speaker Jargba (Boss).
+    *   **"Aggem Thorncurse"**: Kill Aggem Thorncurse (Mini-Boss).
+    *   **"The Mosshide Menace"**: Kill 8 Mosshide Brutes & 8 Mosshide Mystics.
+3.  **D3: Spitelash Depths (L40-50)** - Dark Iron Invasion Theme
+    *   **"The Pyromancer"**: Kill Pyromancer Loregrain (Boss).
+    *   **"Ambassador of Flame"**: Slay Ambassador Flamelash (Rare Elite).
+    *   **"Faulty Engineering"**: Destroy the Faulty War Golem (Mini-Boss).
+    *   **"The Iron Legion"**: Kill 10 Dark Iron Watchmen & 10 Dark Iron Geologists.
+4.  **D4: The Fel Pit (L65)** - "The Fel Pit" (Kill Prince Tortheldrin).
+5.  **D5: Sanctum of the Highborne (L80)** - "Sanctum of the Highborne" (Kill Cyanigosa).
 
 ---
 
-## NPCs Summary for Implementation
-
-| Category | Count | Entry ID Range |
-|----------|-------|----------------|
-| Quest Givers | 8 | Existing WotLK IDs |
-| Service NPCs | 7 | Existing WotLK IDs |
-| Guards | 4 | Existing WotLK IDs |
-| **Total Base NPCs** | 19 | All verified |
-
----
-
-> [!TIP]
-> Quest scripting can use AzerothCore SmartAI or Eluna Lua scripts. All NPC entry IDs are verified from wowhead.com/wotlk.
+## Technical Notes
+*   **Schemas**: Adhere strictly to `world schema.sql`.
+    *   `creature_template`: No `modelid` columns used.
+    *   `creature_template_model`: Used for assigning models.
+    *   `quest_template`: Standard WotLK structure.
+*   **Rewards**: Quests reward XP, Money, and custom tokens (300311, 300312).

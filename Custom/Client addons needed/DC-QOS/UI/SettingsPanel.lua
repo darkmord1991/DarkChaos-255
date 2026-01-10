@@ -140,6 +140,14 @@ local function CreateModuleFrame(parent, name)
     
     frame.scrollFrame = scroll
     frame.content = content
+
+    local function SyncContentWidth()
+        if not frame.content or not frame.scrollFrame then return end
+        local w = frame.scrollFrame:GetWidth()
+        if w and w > 0 then
+            frame.content:SetWidth(w)
+        end
+    end
     
     frame:SetScript("OnSizeChanged", function(self)
         if not self.content or not self.scrollFrame then return end
@@ -148,6 +156,13 @@ local function CreateModuleFrame(parent, name)
             self.content:SetWidth(w)
         end
     end)
+
+    if scroll and scroll.HookScript then
+        scroll:HookScript("OnSizeChanged", SyncContentWidth)
+    end
+    if frame and frame.HookScript then
+        frame:HookScript("OnShow", SyncContentWidth)
+    end
     
     return frame
 end
