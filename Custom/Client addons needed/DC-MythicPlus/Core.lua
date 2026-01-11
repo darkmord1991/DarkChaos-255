@@ -1212,6 +1212,15 @@ end
 -- =====================================================================
 namespace.inventoryKeystone = namespace.inventoryKeystone or nil
 
+local function StripColorCodes(s)
+    if not s then
+        return s
+    end
+    s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
+    s = string.gsub(s, "|r", "")
+    return s
+end
+
 local function KeystoneEqual(a, b)
     if a == b then
         return true
@@ -1219,12 +1228,18 @@ local function KeystoneEqual(a, b)
     if (not a) ~= (not b) then
         return false
     end
+    -- Dungeon assignment is optional in DC (generic keystone per level).
+    -- Treat keys as equal based on level + link; ignore dungeonName to avoid spam.
     return (a.hasKey == b.hasKey)
         and (a.level == b.level)
-        and (a.dungeonName == b.dungeonName)
         and (a.itemLink == b.itemLink)
-        and (a.bag == b.bag)
-        and (a.slot == b.slot)
+end
+
+local function KeystoneSig(k)
+    if not k then
+        return "none"
+    end
+    return tostring(k.hasKey) .. ":" .. tostring(k.level) .. ":" .. tostring(k.itemLink)
 end
 
 local function ScanInventoryForKeystone()
@@ -1271,7 +1286,7 @@ local function ScanInventoryForKeystone()
                             line = _G[tooltipName .. "TextLeft" .. i]
                         end
                         if line then
-                            local text = line:GetText()
+                            local text = StripColorCodes(line:GetText())
                             if text then
                                 local lvl = string.match(text, "Level:?%s*(%d+)") or string.match(text, "%+(%d+)") or string.match(text, "Mythic Level (%d+)") or string.match(text, "Keystone Level (%d+)")
                                 if lvl then tooltipLevel = tonumber(lvl) end
@@ -1279,16 +1294,36 @@ local function ScanInventoryForKeystone()
                                 if dng then tooltipDungeon = dng end
                             end
                         end
+
+                        local rline
+                        if tooltipName then
+                            rline = _G[tooltipName .. "TextRight" .. i]
+                        end
+                        if rline then
+                            local rtext = StripColorCodes(rline:GetText())
+                            if rtext then
+                                local lvl = string.match(rtext, "Level:?%s*(%d+)") or string.match(rtext, "%+(%d+)") or string.match(rtext, "Mythic Level (%d+)") or string.match(rtext, "Keystone Level (%d+)")
+                                if lvl then tooltipLevel = tonumber(lvl) end
+                                local dng = string.match(rtext, "Dungeon:?%s*(.+)") or string.match(rtext, "Instance:?%s*(.+)") or string.match(rtext, "Map:?%s*(.+)")
+                                if dng then tooltipDungeon = dng end
+                            end
+                        end
                     end
                     if not level and tooltipLevel then level = tooltipLevel end
                     if not dungeon and tooltipDungeon then dungeon = tooltipDungeon end
+
+                    -- DC currently uses generic keystones per level (not per dungeon).
+                    -- Keep dungeonName only if we can confidently parse it.
+                    if dungeon == "Unknown" or dungeon == "" then
+                        dungeon = nil
+                    end
                     
                     -- Only accept if we found a valid level
                     if level and level > 0 then
                         found = {
                             hasKey = true,
                             level = level or 0,
-                            dungeonName = dungeon or "Unknown",
+                            dungeonName = dungeon,
                             itemLink = itemLink,
                             bag = bag,
                             slot = slot,
@@ -1304,10 +1339,31 @@ local function ScanInventoryForKeystone()
     local changed = not KeystoneEqual(namespace.inventoryKeystone, found)
     namespace.inventoryKeystone = found
     if changed then
-        if found then
-            Print("Inventory keystone detected: +" .. (found.level or 0) .. " " .. (found.dungeonName or "Unknown"))
-        else
-            Print("No inventory keystone detected")
+        local sig = KeystoneSig(found)
+        local lastSig = namespace._lastInvKeyAnnouncedSig
+
+        -- Avoid the common "startup flicker" where bags aren't ready yet.
+        -- Only announce "none" if we previously had a key, or if we've been in-world for a few seconds.
+        local now = (GetTime and GetTime()) or 0
+        local inWorldFor = now - (namespace._enteredWorldAt or 0)
+
+        if sig ~= lastSig then
+            if sig == "none" then
+                if lastSig and lastSig ~= "none" then
+                    Print("No inventory keystone detected")
+                    namespace._lastInvKeyAnnouncedSig = sig
+                elseif inWorldFor >= 5 then
+                    Print("No inventory keystone detected")
+                    namespace._lastInvKeyAnnouncedSig = sig
+                end
+            else
+                local msg = "Inventory keystone detected: +" .. (found.level or 0)
+                if found.dungeonName then
+                    msg = msg .. " " .. tostring(found.dungeonName)
+                end
+                Print(msg)
+                namespace._lastInvKeyAnnouncedSig = sig
+            end
         end
     end
     -- If GroupFinder UI exists, update the keystone panel display immediately
@@ -1321,6 +1377,9 @@ local scanFrame = CreateFrame("Frame")
 scanFrame:RegisterEvent("BAG_UPDATE")
 scanFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 scanFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "PLAYER_ENTERING_WORLD" then
+        namespace._enteredWorldAt = (GetTime and GetTime()) or 0
+    end
     ScanInventoryForKeystone()
     if event == "PLAYER_ENTERING_WORLD" then
         -- Request canonical keystone mapping from server to ensure client knows IDs

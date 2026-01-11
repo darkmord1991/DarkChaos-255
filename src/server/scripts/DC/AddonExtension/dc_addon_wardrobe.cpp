@@ -91,9 +91,30 @@ namespace DCCollection
 
         if (!result)
         {
+            uint64 totalRows = 0;
+            uint64 filteredRows = 0;
+            bool hasTotal = false;
+            bool hasFiltered = false;
+
+            if (QueryResult total = WorldDatabase.Query("SELECT COUNT(*) FROM item_template"))
+            {
+                totalRows = total->Fetch()[0].Get<uint64>();
+                hasTotal = true;
+            }
+
+            if (QueryResult filtered = WorldDatabase.Query(
+                "SELECT COUNT(*) FROM item_template "
+                "WHERE displayid <> 0 AND class IN (2, 4) AND InventoryType <> 0"))
+            {
+                filteredRows = filtered->Fetch()[0].Get<uint64>();
+                hasFiltered = true;
+            }
+
             LOG_ERROR("module.dc", "[DCWardrobe] Transmog index build: item_template query returned no rows (or failed). "
                 "This can happen very early at startup; the server will retry later. "
-                "Check that World DB is connected and item_template exists with correct columns.");
+                "WorldDB item_template total={} (available={}), filtered={} (available={}). "
+                "Check WorldDatabaseInfo points to the right schema and that item_template exists with expected columns.",
+                totalRows, hasTotal ? 1 : 0, filteredRows, hasFiltered ? 1 : 0);
             return defs;
         }
 
@@ -501,6 +522,7 @@ namespace DCCollection
         {
             case EQUIPMENT_SLOT_HEAD: return invType == INVTYPE_HEAD;
             case EQUIPMENT_SLOT_SHOULDERS: return invType == INVTYPE_SHOULDERS;
+            case EQUIPMENT_SLOT_BODY: return invType == INVTYPE_BODY;
             case EQUIPMENT_SLOT_CHEST: return invType == INVTYPE_CHEST || invType == INVTYPE_ROBE;
             case EQUIPMENT_SLOT_WAIST: return invType == INVTYPE_WAIST;
             case EQUIPMENT_SLOT_LEGS: return invType == INVTYPE_LEGS;
@@ -514,6 +536,7 @@ namespace DCCollection
                 return invType == INVTYPE_WEAPON || invType == INVTYPE_WEAPONOFFHAND || invType == INVTYPE_SHIELD || invType == INVTYPE_HOLDABLE;
             case EQUIPMENT_SLOT_RANGED:
                 return invType == INVTYPE_RANGED || invType == INVTYPE_RANGEDRIGHT || invType == INVTYPE_THROWN || invType == INVTYPE_RELIC;
+            case EQUIPMENT_SLOT_TABARD: return invType == INVTYPE_TABARD;
             default:
                 return false;
         }
@@ -537,21 +560,27 @@ namespace DCCollection
     bool IsAppearanceCompatible(uint8 slot, ItemTemplate const* equipped, TransmogAppearanceVariant const& appearance)
     {
         if (!equipped) return false;
-        if (equipped->Class != ITEM_CLASS_ARMOR && equipped->Class != ITEM_CLASS_WEAPON) return false;
-        if (appearance.itemClass != equipped->Class) return false;
-        
-        if (appearance.itemSubClass != equipped->SubClass)
+
+        // Some custom servers allow equipping items with non-standard Class values.
+        // Treat such items as wildcards for class/subclass matching, but still enforce invType/slot.
+        bool equippedIsStandard = (equipped->Class == ITEM_CLASS_ARMOR || equipped->Class == ITEM_CLASS_WEAPON);
+        if (equippedIsStandard)
         {
-            if (equipped->Class == ITEM_CLASS_WEAPON)
+            if (appearance.itemClass != equipped->Class) return false;
+        
+            if (appearance.itemSubClass != equipped->SubClass)
             {
-                if (!IsWeaponCompatible(equipped->SubClass, appearance.itemSubClass)) return false;
-            }
-            else
-            {
-                // Many custom/cosmetic armor items are classified as ARMOR_MISC (0).
-                // Treat ARMOR_MISC as a wildcard to avoid blocking transmogs for those items.
-                if (equipped->SubClass != ITEM_SUBCLASS_ARMOR_MISC && appearance.itemSubClass != ITEM_SUBCLASS_ARMOR_MISC)
-                    return false;
+                if (equipped->Class == ITEM_CLASS_WEAPON)
+                {
+                    if (!IsWeaponCompatible(equipped->SubClass, appearance.itemSubClass)) return false;
+                }
+                else
+                {
+                    // Many custom/cosmetic armor items are classified as ARMOR_MISC (0).
+                    // Treat ARMOR_MISC as a wildcard to avoid blocking transmogs for those items.
+                    if (equipped->SubClass != ITEM_SUBCLASS_ARMOR_MISC && appearance.itemSubClass != ITEM_SUBCLASS_ARMOR_MISC)
+                        return false;
+                }
             }
         }
 
@@ -603,6 +632,44 @@ namespace DCCollection
         if (it != idx.end() && !it->second.empty())
             return &it->second[0];
         return nullptr;
+    }
+
+    TransmogAppearanceVariant const* FindAnyVariantForSlot(uint32 displayId, uint8 slot)
+    {
+        auto const& idx = GetTransmogAppearanceIndexCached();
+        auto it = idx.find(displayId);
+        if (it == idx.end())
+            return nullptr;
+
+        TransmogAppearanceVariant const* best = nullptr;
+        for (auto const& v : it->second)
+        {
+            if (!IsInvTypeCompatibleForSlot(slot, v.inventoryType))
+                continue;
+
+            if (slot == EQUIPMENT_SLOT_CHEST)
+            {
+                auto isChestLike = [](uint32 inv) { return inv == INVTYPE_CHEST || inv == INVTYPE_ROBE; };
+                if (!isChestLike(v.inventoryType))
+                    continue;
+            }
+
+            if (!best)
+            {
+                best = &v;
+                continue;
+            }
+
+            bool newIsNonCustom = v.canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
+            bool oldIsNonCustom = best->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
+            if (IsBetterTransmogRepresentative(v.canonicalItemId, newIsNonCustom, v.quality, v.itemLevel,
+                best->canonicalItemId, oldIsNonCustom, best->quality, best->itemLevel))
+            {
+                best = &v;
+            }
+        }
+
+        return best;
     }
 
     // Unlocking Logic
@@ -808,9 +875,10 @@ namespace DCCollection
          DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
          uint8 slot = static_cast<uint8>(json["slot"].AsUInt32());
          bool clear = json.HasKey("clear") ? json["clear"].AsBool() : false;
-         // Client may send either a transmog appearance displayId OR an item entry ID.
-         // Prefer displayId when it is already unlocked; otherwise try to interpret
-         // it as an item entry and derive the displayId from the item template.
+         // Client sends appearanceId as a displayId.
+         // Some older clients/outfit payloads may send an item entry instead;
+         // to avoid displayId/item-entry ID collisions, only attempt entry->displayId
+         // derivation when the value is not unlocked as-is.
          uint32 displayId = json.HasKey("appearanceId") ? json["appearanceId"].AsUInt32() : 0;
 
          auto sendSetError = [&](char const* reason, uint32 code)
@@ -869,20 +937,24 @@ namespace DCCollection
          if (!displayId)
              return;
 
-         // First try to derive displayId if the value is an item entry ID.
-         uint32 originalValue = displayId;
-         if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(displayId))
+         bool skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
+
+         // If it's not unlocked as a displayId, try treating it as an item entry and derive.
+         if (!skipUnlockCheck && displayId && !HasTransmogAppearanceUnlocked(accountId, displayId))
          {
-             uint32 derived = proto->DisplayInfoID;
-             if (derived)
+             uint32 originalValue = displayId;
+             if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(originalValue))
              {
-                 displayId = derived;
-                 LOG_DEBUG("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} derived displayId {} from item entry {}",
-                     player->GetName(), static_cast<uint32>(slot), displayId, originalValue);
+                 uint32 derived = proto->DisplayInfoID;
+                 if (derived)
+                 {
+                     displayId = derived;
+                     LOG_DEBUG("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} derived displayId {} from item entry {}",
+                         player->GetName(), static_cast<uint32>(slot), displayId, originalValue);
+                 }
              }
          }
 
-         bool skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
          if (!skipUnlockCheck && !HasTransmogAppearanceUnlocked(accountId, displayId))
          {
              LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} NOT_UNLOCKED (skipCheck={})",
@@ -894,7 +966,7 @@ namespace DCCollection
          ItemTemplate const* equippedProto = equippedItem->GetTemplate();
          bool skipCompatCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_COMPAT_CHECK, false);
          TransmogAppearanceVariant const* appearance = skipCompatCheck 
-             ? FindAnyVariant(displayId)
+             ? FindAnyVariantForSlot(displayId, slot)
              : FindBestVariantForSlot(displayId, slot, equippedProto);
          if (!appearance)
          {
@@ -1024,23 +1096,25 @@ namespace DCCollection
                 }
 
                 // Client may send either a transmog appearance displayId OR an item entry ID.
-                // If the value corresponds to an item template, derive the displayId from it.
-                // This ensures outfits created with itemIds (e.g. from community) work correctly.
-                uint32 originalValue = displayId;
-                if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(displayId))
+                // To avoid displayId/item-entry collisions, only attempt entry->displayId derivation
+                // when the value is not unlocked as-is.
+                bool skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
+                if (!skipUnlockCheck && displayId && !HasTransmogAppearanceUnlocked(accountId, displayId))
                 {
-                    // The value was an item entry; derive its displayId.
-                    uint32 derived = proto->DisplayInfoID;
-                    if (derived)
+                    uint32 originalValue = displayId;
+                    if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(originalValue))
                     {
-                        displayId = derived;
-                        LOG_DEBUG("module.dc", "[DCWardrobe] Slot {}: derived displayId {} from item entry {}",
-                            (uint32)equipmentSlot, displayId, originalValue);
+                        uint32 derived = proto->DisplayInfoID;
+                        if (derived)
+                        {
+                            displayId = derived;
+                            LOG_DEBUG("module.dc", "[DCWardrobe] Slot {}: derived displayId {} from item entry {}",
+                                (uint32)equipmentSlot, displayId, originalValue);
+                        }
                     }
                 }
 
                 // Check if the derived (or original) displayId is unlocked for this account.
-                bool skipUnlockCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false);
                 if (!skipUnlockCheck && !HasTransmogAppearanceUnlocked(accountId, displayId))
                 {
                     skippedNotUnlocked++;
@@ -1053,7 +1127,7 @@ namespace DCCollection
                 ItemTemplate const* equippedProto = equippedItem->GetTemplate();
                 bool skipCompatCheck = sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_COMPAT_CHECK, false);
                 TransmogAppearanceVariant const* appearance = skipCompatCheck
-                    ? FindAnyVariant(displayId)
+                    ? FindAnyVariantForSlot(displayId, equipmentSlot)
                     : FindBestVariantForSlot(displayId, equipmentSlot, equippedProto);
                 if (!appearance)
                 {
@@ -2236,6 +2310,77 @@ namespace DCCollection
     // Transmog Visual Restoration
     // =======================================================================
 
+    struct DcTransmogVisualRow
+    {
+        uint8 slot = 0;
+        uint32 fakeEntry = 0;
+        uint32 realEntry = 0;
+    };
+
+    static std::vector<DcTransmogVisualRow> LoadTransmogVisualRows(uint32 guid)
+    {
+        std::vector<DcTransmogVisualRow> rows;
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT slot, fake_entry, real_entry FROM dc_character_transmog WHERE guid = {}",
+            guid);
+
+        if (!result)
+            return rows;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            DcTransmogVisualRow row;
+            row.slot = static_cast<uint8>(fields[0].Get<uint32>());
+            row.fakeEntry = fields[1].Get<uint32>();
+            row.realEntry = fields[2].Get<uint32>();
+            rows.push_back(row);
+        } while (result->NextRow());
+
+        return rows;
+    }
+
+    static uint32 ApplyTransmogVisualRows(Player* player, uint32 guid, std::vector<DcTransmogVisualRow> const& rows, bool cleanup)
+    {
+        if (!player)
+            return 0;
+
+        uint32 applied = 0;
+        for (auto const& row : rows)
+        {
+            uint8 slot = row.slot;
+            uint32 fakeEntry = row.fakeEntry;
+            uint32 realEntry = row.realEntry;
+
+            if (slot >= EQUIPMENT_SLOT_END)
+                continue;
+
+            Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!equippedItem)
+            {
+                if (cleanup)
+                    CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
+                continue;
+            }
+
+            uint32 currentEntry = equippedItem->GetEntry();
+            if (realEntry != 0 && realEntry != currentEntry)
+            {
+                if (cleanup)
+                {
+                    CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
+                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), currentEntry);
+                }
+                continue;
+            }
+
+            player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
+            applied++;
+        }
+
+        return applied;
+    }
+
     void RestoreTransmogVisuals(Player* player)
     {
         if (!player)
@@ -2244,65 +2389,13 @@ namespace DCCollection
         EnsureCharacterTransmogTable();
 
         uint32 guid = player->GetGUID().GetCounter();
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT slot, fake_entry, real_entry FROM dc_character_transmog WHERE guid = {}",
-            guid);
-
-        if (!result)
+        auto rows = LoadTransmogVisualRows(guid);
+        if (rows.empty())
             return;
 
-        uint32 restoredCount = 0;
-        do
-        {
-            Field* fields = result->Fetch();
-            uint8 slot = static_cast<uint8>(fields[0].Get<uint32>());
-            uint32 fakeEntry = fields[1].Get<uint32>();
-            uint32 realEntry = fields[2].Get<uint32>();
-
-            if (slot >= EQUIPMENT_SLOT_END)
-                continue;
-
-            // Check if player has an item equipped in this slot
-            Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-            if (!equippedItem)
-            {
-                // No item equipped - remove the transmog entry since it's no longer valid
-                CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
-                continue;
-            }
-
-            // Verify the real_entry matches the currently equipped item
-            // If player changed gear, the transmog may no longer apply
-            uint32 currentEntry = equippedItem->GetEntry();
-            if (realEntry != 0 && realEntry != currentEntry)
-            {
-                // Different item equipped - transmog is stale, remove it
-                CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
-                // Reset to show the real item
-                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), currentEntry);
-                continue;
-            }
-
-            // Apply the transmog visual
-            if (fakeEntry == 0)
-            {
-                // Hidden slot
-                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
-            }
-            else
-            {
-                // Transmogrified to fakeEntry
-                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
-            }
-            restoredCount++;
-
-        } while (result->NextRow());
-
+        uint32 restoredCount = ApplyTransmogVisualRows(player, guid, rows, true);
         if (restoredCount > 0)
-        {
-            LOG_DEBUG("module.dc", "[DCWardrobe] Restored {} transmog visuals for player {} (GUID {})",
-                restoredCount, player->GetName(), guid);
-        }
+            LOG_DEBUG("module.dc", "[DCWardrobe] Restored {} transmog visuals for player {} (GUID {})", restoredCount, player->GetName(), guid);
     }
 
     // =======================================================================
@@ -2316,8 +2409,36 @@ namespace DCCollection
 
         void OnPlayerLogin(Player* player) override
         {
-            // Restore transmog visuals from database
-            RestoreTransmogVisuals(player);
+            // Restore transmog visuals from database.
+            // IMPORTANT: Apply multiple times after login because core init and other modules
+            // can overwrite PLAYER_VISIBLE_ITEM_* shortly after we first set it.
+            uint32 guid = player->GetGUID().GetCounter();
+            auto rows = LoadTransmogVisualRows(guid);
+            if (!rows.empty())
+            {
+                ObjectGuid const playerGuid = player->GetGUID();
+
+                // Pass 1: cleanup + apply (early)
+                player->m_Events.AddEventAtOffset([playerGuid, guid, rows]()
+                {
+                    if (Player* p = ObjectAccessor::FindPlayer(playerGuid))
+                        ApplyTransmogVisualRows(p, guid, rows, true);
+                }, 2s);
+
+                // Pass 2: apply-only (late)
+                player->m_Events.AddEventAtOffset([playerGuid, guid, rows]()
+                {
+                    if (Player* p = ObjectAccessor::FindPlayer(playerGuid))
+                        ApplyTransmogVisualRows(p, guid, rows, false);
+                }, 6s);
+
+                // Pass 3: apply-only (very late)
+                player->m_Events.AddEventAtOffset([playerGuid, guid, rows]()
+                {
+                    if (Player* p = ObjectAccessor::FindPlayer(playerGuid))
+                        ApplyTransmogVisualRows(p, guid, rows, false);
+                }, 10s);
+            }
 
             if (!sConfigMgr->GetOption<bool>("DCCollection.Transmog.LoginScan.Enable", true)) return;
             // Scan inventory for NEW transmog unlocks

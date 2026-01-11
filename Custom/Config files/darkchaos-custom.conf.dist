@@ -3175,7 +3175,26 @@ DCCollection.SyncInterval = 30
 #
 DCCollection.Transmog.Definitions.IncludeSources = 0
 
+#
+#    DCCollection.Transmog.SlotItemsPageSize
+#        Description: Page size for transmog slot items responses (smaller = less hitching, more requests)
+#        Default:     100
+#
+DCCollection.Transmog.SlotItemsPageSize = 100
+
+#
+#    DCCollection.Transmog.SkipUnlockCheck
+#        Description: Allow applying appearances even if they are not unlocked for the account
+#        Default:     0 (Disabled)
+#
 DCCollection.Transmog.SkipUnlockCheck = 1
+
+#
+#    DCCollection.Transmog.SkipCompatCheck
+#        Description: Skip compatibility validation (armor/weapon type checks). Still enforces slot/inventoryType.
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.SkipCompatCheck = 1
 
 # -------------------------------------------------------------------------
 # DCCollection Transmog: Unlock Behavior

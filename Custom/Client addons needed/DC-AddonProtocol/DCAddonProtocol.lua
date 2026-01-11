@@ -35,11 +35,14 @@ if DCAddonProtocol then return end
 
 DCAddonProtocol = {
     PREFIX = "DC",
-    VERSION = "1.6.0",
+    VERSION = "2.0.0",
+    -- Capability flags (must stay in sync with server-side ProtocolVersion::Capability)
+    CAPABILITIES = 3, -- JSON_MESSAGES(1) | BATCH_MESSAGES(2)
     _handlers = {},
     _debug = false,
     _connected = false,
     _serverVersion = nil,
+    _serverCaps = 0,
     _features = {},
     _handshakeSent = false,
     _lastHandshakeTime = 0,
@@ -72,6 +75,10 @@ DCAddonProtocol = {
 }
 
 local DC = DCAddonProtocol
+
+function DC:GetHandshakeVersionString()
+    return tostring(self.VERSION) .. "|" .. tostring(self.CAPABILITIES or 0)
+end
 
 -- ============================================================================
 -- SAVED VARIABLES (Settings + NetLog)
@@ -1741,7 +1748,7 @@ frame:SetScript("OnEvent", function()
     elseif event == "PLAYER_LOGIN" then
         DC:_InitDB()
         DC._stats.sessionStart = time()
-        DC:Send("CORE", 1, DC.VERSION)
+        DC:Send("CORE", 1, DC:GetHandshakeVersionString())
     end
 end)
 
@@ -1823,7 +1830,7 @@ SlashCmdList["DC"] = function(msg)
     elseif cmd == "reconnect" then
         DC._connected = false
         DC._handshakeSent = false
-        DC:Send("CORE", 1, DC.VERSION)
+        DC:Send("CORE", 1, DC:GetHandshakeVersionString())
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handshake sent")
     elseif cmd == "handlers" then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Registered handlers (key: count):")
@@ -2486,22 +2493,41 @@ function DC:HasFeature(feature)
 end
 
 -- Register built-in handlers for CORE module
-DC:RegisterHandler("CORE", 0x10, function(arg1, arg2)
+DC:RegisterHandler("CORE", 0x10, function(...)
+    local arg1, arg2, arg3 = ...
+
     -- Handle both JSON format (arg1 = table) and pipe format (arg1 = version string)
-    local version, features
+    local version, compatible, negotiatedCaps, features
     if type(arg1) == "table" then
         version = arg1.version or arg1.v or "1.0.0"
         features = arg1.features
+        compatible = (arg1.compatible ~= false)
+        negotiatedCaps = tonumber(arg1.caps or arg1.capabilities or 0) or 0
     else
         version = arg1 or "1.0.0"
-        features = arg2
+        if type(arg2) == "boolean" then
+            -- New server ACK: version, compatible(bool), negotiatedCaps(number)
+            compatible = arg2
+            negotiatedCaps = tonumber(arg3) or 0
+        else
+            -- Legacy ACK: version, features
+            compatible = true
+            negotiatedCaps = 0
+            features = arg2
+        end
     end
-    
-    DC._connected = true
+
     DC._serverVersion = tostring(version)
-    DC:DebugPrint("Handshake ACK received, server v" .. tostring(version))
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r Connected to server v" .. tostring(version))
-    
+    DC._serverCaps = negotiatedCaps or 0
+    DC._connected = (compatible and true or false)
+    DC:DebugPrint("Handshake ACK received, server v" .. tostring(version) .. " compatible=" .. tostring(compatible) .. " caps=" .. tostring(negotiatedCaps))
+    if compatible then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r Connected to server v" .. tostring(version))
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC Protocol]|r Protocol version mismatch (client v" .. tostring(DC.VERSION) .. "). Please update your DC addons.")
+        return
+    end
+
     if features then
         if type(features) == "table" then
             for _, feat in ipairs(features) do
@@ -2523,6 +2549,7 @@ DC:RegisterHandler("CORE", 0x10, function(arg1, arg2)
             "Status: " .. connected .. "\n" ..
             "Client Version: |cff00ccff" .. DC.VERSION .. "|r\n" ..
             "Server Version: |cff00ccff" .. DC._serverVersion .. "|r\n" ..
+            "Negotiated Caps: |cff00ccff" .. tostring(DC._serverCaps or 0) .. "|r\n" ..
             "Handlers: |cffffff00" .. handlers .. "|r\n" ..
             "Debug Mode: " .. debug
         )

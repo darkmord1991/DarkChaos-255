@@ -38,6 +38,57 @@ function Wardrobe:InvalidateRandomizerCache()
     self._lastRandomOutfitSig = nil
 end
 
+-- Outfits are primarily stored as appearanceIds (displayIds). For UI previews
+-- (icons + model TryOn) we must use a real item entry id.
+local function ResolvePreviewItemId(rawId)
+    local n = tonumber(rawId)
+    if not n or n <= 0 then
+        return nil
+    end
+
+    -- If it's already a valid item entry (cached), use it.
+    if type(GetItemInfo) == "function" then
+        local name = GetItemInfo(n)
+        if name then
+            return n
+        end
+    end
+
+    -- Try packed transmog definitions: itemId is field #9, itemIdsStr is field #12.
+    local packed = DC and DC._transmogDefinitions and DC._transmogDefinitions[n]
+    if type(packed) == "string" and DC and type(DC.ParsePackedTransmogDefinition) == "function" then
+        local _, _, _, _, _, _, _, _, defItemId, _, _, itemIdsStr = DC:ParsePackedTransmogDefinition(packed)
+        local resolved = tonumber(defItemId)
+        if resolved and resolved > 0 then
+            return resolved
+        end
+        if itemIdsStr and itemIdsStr ~= "" then
+            local first = tonumber((tostring(itemIdsStr):match("^(%d+)") or ""))
+            if first and first > 0 then
+                return first
+            end
+        end
+    end
+
+    -- Try unpacked definition table.
+    local def = DC and type(DC.GetDefinition) == "function" and DC:GetDefinition("transmog", n)
+    if type(def) == "table" then
+        local resolved = tonumber(def.itemId or def.item_id)
+        if resolved and resolved > 0 then
+            return resolved
+        end
+        if type(def.itemIds) == "table" then
+            local first = tonumber(def.itemIds[1])
+            if first and first > 0 then
+                return first
+            end
+        end
+    end
+
+    -- Fallback: return as-is (may still work for some ids).
+    return n
+end
+
 -- Update slot buttons immediately from an outfit's slots table (used for instant feedback)
 function Wardrobe:_UpdateSlotButtonsFromOutfit(slots)
     if not self.frame or not self.frame.slotButtons or type(slots) ~= "table" then
@@ -64,7 +115,8 @@ function Wardrobe:_UpdateSlotButtonsFromOutfit(slots)
         end
 
         if itemId and itemId > 0 then
-            local iconTexture = select(10, GetItemInfo(itemId))
+            local previewItemId = ResolvePreviewItemId(itemId)
+            local iconTexture = previewItemId and select(10, GetItemInfo(previewItemId))
             if iconTexture then
                 btn.icon:SetTexture(iconTexture)
                 btn.transmogApplied:Show()
@@ -74,7 +126,9 @@ function Wardrobe:_UpdateSlotButtonsFromOutfit(slots)
                 btn.transmogApplied:Show()
             end
             -- Collect items for model TryOn
-            table.insert(itemsToTryOn, itemId)
+            if previewItemId and previewItemId > 0 then
+                table.insert(itemsToTryOn, previewItemId)
+            end
         end
     end
 
@@ -242,7 +296,14 @@ function Wardrobe:_EnsureOutfitPreviewQueue()
 
         -- Extract item IDs from outfit
         local isRetry = (job.retries or 0) > 0
-        local itemIds = ExtractOutfitItemIds(outfit, isRetry)
+        local rawIds = ExtractOutfitItemIds(outfit, isRetry)
+        local itemIds = {}
+        for _, id in ipairs(rawIds) do
+            local resolved = ResolvePreviewItemId(id)
+            if resolved and resolved > 0 then
+                itemIds[#itemIds + 1] = resolved
+            end
+        end
 
         -- Pre-cache: call GetItemInfo on all items to trigger cache requests
         for _, id in ipairs(itemIds) do
@@ -943,19 +1004,17 @@ function Wardrobe:RandomizeOutfit()
     local originalFilter = self.selectedSlotFilter
     local originalQuality = self.selectedQualityFilter
     
-    if DC and DC.Print then DC:Print("Randomizing outfit...") end
+    if DC and DC.Debug then DC:Debug("Randomizing outfit...") end
 
     local collectedBySlot = {}
     
     -- Iterate all slots to find collected items
     -- We use Wardrobe:BuildAppearanceList() if available
     
-    if DC and DC.Print then DC:Print("[RANDOMIZE] Starting to collect appearances by slot...") end
+    if DC and DC.Debug then DC:Debug("[RANDOMIZE] Starting to collect appearances by slot...") end
     
     -- Use cached collected list if available to improve performance
     self.collectedCache = self.collectedCache or {}
-    
-    if DC and DC.Print then DC:Print("[RANDOMIZE] Starting to collect appearances by slot...") end
     
     for _, slotDef in ipairs(self.SLOT_FILTERS or {}) do
         local collected = nil
@@ -987,7 +1046,7 @@ function Wardrobe:RandomizeOutfit()
         collectedBySlot[slotDef.label] = collected
     end
     
-    if DC and DC.Print then DC:Print("[RANDOMIZE] Finished collecting (cached). Summary:") end
+    if DC and DC.Debug then DC:Debug("[RANDOMIZE] Finished collecting (cached). Summary:") end
     for slotLabel, ids in pairs(collectedBySlot) do
         -- if DC and DC.Print then
         --    DC:Print("[RANDOMIZE]   " .. slotLabel .. ": " .. #ids .. " appearances")
@@ -1004,6 +1063,135 @@ function Wardrobe:RandomizeOutfit()
         local picks = {}
         local appliedCount = 0
 
+        local function GetEquippedArmorWeaponType(equippedItemId)
+            if not equippedItemId or type(GetItemInfo) ~= "function" then
+                return nil, nil
+            end
+
+            local _, _, _, _, _, itemType, itemSubType = GetItemInfo(equippedItemId)
+            if not itemType or not itemSubType then
+                return nil, nil
+            end
+
+            -- Map to server-side numeric ItemTemplate class/subclass where possible.
+            local ARMOR_STR = _G.ARMOR or "Armor"
+            local WEAPON_STR = _G.WEAPON or "Weapon"
+
+            if itemType == ARMOR_STR then
+                local armorMap = {
+                    [(_G.MISCELLANEOUS or "Miscellaneous")] = 0,
+                    [(_G.ITEM_SUBCLASS_ARMOR_CLOTH or "Cloth")] = 1,
+                    [(_G.ITEM_SUBCLASS_ARMOR_LEATHER or "Leather")] = 2,
+                    [(_G.ITEM_SUBCLASS_ARMOR_MAIL or "Mail")] = 3,
+                    [(_G.ITEM_SUBCLASS_ARMOR_PLATE or "Plate")] = 4,
+                    [(_G.ITEM_SUBCLASS_ARMOR_SHIELD or "Shields")] = 6,
+                    [(_G.ITEM_SUBCLASS_ARMOR_LIBRAM or "Librams")] = 7,
+                    [(_G.ITEM_SUBCLASS_ARMOR_IDOL or "Idols")] = 8,
+                    [(_G.ITEM_SUBCLASS_ARMOR_TOTEM or "Totems")] = 9,
+                    [(_G.ITEM_SUBCLASS_ARMOR_SIGIL or "Sigils")] = 10,
+                }
+                return 4, armorMap[itemSubType]
+            elseif itemType == WEAPON_STR then
+                local weaponMap = {
+                    [(_G.ONE_HANDED_AXES or "One-Handed Axes")] = 0,
+                    [(_G.TWO_HANDED_AXES or "Two-Handed Axes")] = 1,
+                    [(_G.BOWS or "Bows")] = 2,
+                    [(_G.GUNS or "Guns")] = 3,
+                    [(_G.ONE_HANDED_MACES or "One-Handed Maces")] = 4,
+                    [(_G.TWO_HANDED_MACES or "Two-Handed Maces")] = 5,
+                    [(_G.POLEARMS or "Polearms")] = 6,
+                    [(_G.ONE_HANDED_SWORDS or "One-Handed Swords")] = 7,
+                    [(_G.TWO_HANDED_SWORDS or "Two-Handed Swords")] = 8,
+                    [(_G.STAVES or "Staves")] = 10,
+                    [(_G.FIST_WEAPONS or "Fist Weapons")] = 13,
+                    [(_G.DAGGERS or "Daggers")] = 15,
+                    [(_G.THROWN or "Thrown")] = 16,
+                    [(_G.CROSSBOWS or "Crossbows")] = 18,
+                    [(_G.WANDS or "Wands")] = 19,
+                    [(_G.FISHING_POLES or "Fishing Poles")] = 20,
+                }
+                return 2, weaponMap[itemSubType]
+            end
+
+            return nil, nil
+        end
+
+        local function IsWeaponSubClassCompatible(eqSub, apSub)
+            if not eqSub or not apSub then
+                return true
+            end
+            if eqSub == apSub then
+                return true
+            end
+
+            local is1H = { [0] = true, [4] = true, [7] = true }
+            local is2H = { [1] = true, [5] = true, [8] = true }
+            local isRanged = { [2] = true, [3] = true, [18] = true }
+            local isPoleStaff = { [6] = true, [10] = true }
+
+            if is1H[eqSub] and is1H[apSub] then return true end
+            if is2H[eqSub] and is2H[apSub] then return true end
+            if isRanged[eqSub] and isRanged[apSub] then return true end
+            if isPoleStaff[eqSub] and isPoleStaff[apSub] then return true end
+            return false
+        end
+
+        local function GetAppearanceType(displayId)
+            if not displayId then return nil, nil, nil end
+            local packed = DC and DC._transmogDefinitions and DC._transmogDefinitions[displayId]
+            if type(packed) == "string" and DC and type(DC.ParsePackedTransmogDefinition) == "function" then
+                local _, _, _, _, pInvType, pClass, pSubClass = DC:ParsePackedTransmogDefinition(packed)
+                return tonumber(pInvType) or nil, tonumber(pClass) or nil, tonumber(pSubClass) or nil
+            end
+
+            local def = DC and type(DC.GetDefinition) == "function" and DC:GetDefinition("transmog", displayId)
+            if type(def) == "table" then
+                return tonumber(def.inventoryType), tonumber(def.class), tonumber(def.subclass)
+            end
+            return nil, nil, nil
+        end
+
+        local function IsCandidateCompatibleWithEquipped(slotDef, invSlotId, displayId)
+            if not slotDef or not invSlotId or not displayId then
+                return false
+            end
+
+            local equippedItemId = GetInventoryItemID("player", invSlotId)
+            if not equippedItemId then
+                return false
+            end
+
+            -- Slot/inventory type match is already strongly constrained by SLOT_FILTERS.
+            -- Here we additionally constrain by armor/weapon type when available.
+            local aInvType, aClass, aSub = GetAppearanceType(displayId)
+            local eClass, eSub = GetEquippedArmorWeaponType(equippedItemId)
+
+            -- If we can't resolve types (item not cached), don't over-filter.
+            if not aClass or not eClass then
+                return true
+            end
+
+            if aClass ~= eClass then
+                return false
+            end
+
+            -- Armor: require same armor type unless one side is Misc (0).
+            if eClass == 4 then
+                if eSub and aSub and eSub ~= 0 and aSub ~= 0 and eSub ~= aSub then
+                    return false
+                end
+                return true
+            end
+
+            -- Weapons: use loose family matching like the server.
+            if eClass == 2 then
+                return IsWeaponSubClassCompatible(eSub, aSub)
+            end
+
+            -- Unknown class: allow.
+            return true
+        end
+
         for _, slotDef in ipairs(self.EQUIPMENT_SLOTS or {}) do
             local invSlotId = GetInventorySlotInfo(slotDef.key)
             if invSlotId then
@@ -1017,8 +1205,11 @@ function Wardrobe:RandomizeOutfit()
                             for _, id in ipairs(items) do
                                 local n = tonumber(id)
                                 if n and not seen[n] then
-                                    seen[n] = true
-                                    slotCandidates[#slotCandidates + 1] = n
+                                    -- Only keep candidates likely compatible with currently equipped item.
+                                    if IsCandidateCompatibleWithEquipped(slotDef, invSlotId, n) then
+                                        seen[n] = true
+                                        slotCandidates[#slotCandidates + 1] = n
+                                    end
                                 end
                             end
                         end
@@ -1062,11 +1253,11 @@ function Wardrobe:RandomizeOutfit()
         seed = NextLCG(seed)
     end
 
-    if DC and DC.Print then 
-        DC:Print("[RANDOMIZE] Applying picks to character...")
+    if DC and DC.Debug then 
+        DC:Debug("[RANDOMIZE] Applying picks to character...")
         local pickCount = 0
         if picks then for _ in pairs(picks) do pickCount = pickCount + 1 end end
-        DC:Print("[RANDOMIZE] Total picks generated: " .. pickCount)
+        DC:Debug("[RANDOMIZE] Total picks generated: " .. pickCount)
     end
     
     local actualApplied = 0
@@ -1101,7 +1292,7 @@ function Wardrobe:RandomizeOutfit()
             end
         else
             if DC and DC.Print then
-                DC:Print("[RANDOMIZE] Slot " .. slotDef.key .. ": no pick available")
+                if DC and DC.Debug then DC:Debug("[RANDOMIZE] Slot " .. slotDef.key .. ": no pick available") end
             end
         end
     end
@@ -1115,10 +1306,10 @@ function Wardrobe:RandomizeOutfit()
         DC:RequestTransmogState()
     end
 
-    if DC and DC.Print then 
-        DC:Print("[RANDOMIZE] Cleared " .. actualCleared .. " slots; applied " .. actualApplied .. " randomized picks")
+    if DC and DC.Debug then
+        DC:Debug("[RANDOMIZE] Cleared " .. actualCleared .. " slots; applied " .. actualApplied .. " randomized picks")
         if actualApplied == 0 then
-            DC:Print("[RANDOMIZE] ERROR: No slots were randomized! Check collected appearances above.")
+            DC:Debug("[RANDOMIZE] ERROR: No slots were randomized! Check collected appearances above.")
         end
     end
 end

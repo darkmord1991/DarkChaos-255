@@ -1550,15 +1550,20 @@ function GF:UpdateKeystoneDisplay(data)
         end
 
         -- Avoid chat spam: only announce when the fallback key actually changes.
-        local sig = tostring(keystoneLevel) .. "|" .. tostring(keystoneDungeon)
+        -- DC currently uses generic keystones per level; dungeon may be nil/unknown.
+        local sig = tostring(keystoneLevel)
         if GF._lastInvKeySig ~= sig then
             GF._lastInvKeySig = sig
-            GF.Print("Using inventory keystone fallback: +" .. tostring(keystoneLevel) .. " " .. tostring(keystoneDungeon))
+            GF.Print("Using inventory keystone fallback: +" .. tostring(keystoneLevel))
         end
     end
     if hasKey then
-        local dungeonName = keystoneDungeon or "Unknown"
-        panel.keystoneDungeon:SetText("Dungeon: |cff32c4ff" .. dungeonName .. "|r")
+        local dungeonName = keystoneDungeon
+        if dungeonName and dungeonName ~= "" and dungeonName ~= "Unknown" then
+            panel.keystoneDungeon:SetText("Dungeon: |cff32c4ff" .. dungeonName .. "|r")
+        else
+            panel.keystoneDungeon:SetText("Dungeon: |cff32c4ffAny|r")
+        end
         panel.keystoneLevel:SetText(string.format("Level: |cff32c4ff+%d|r", keystoneLevel))
         panel.keystoneName:SetText("|cff32c4ffMythic Keystone|r")
     else

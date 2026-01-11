@@ -4241,6 +4241,17 @@ namespace DCCollection
             uint32 fakeEntry = fields[0].Get<uint32>();
             uint32 realEntry = fields[1].Get<uint32>();
 
+            // During login and some inventory update flows, the core may call SetVisibleItemSlot
+            // with a null Item* even though the item is actually still equipped.
+            // If we treat that as a true unequip we can accidentally delete saved transmogs
+            // (commonly observed as head/shoulders 'reverting' on login).
+            Item* equippedItem = (slot < EQUIPMENT_SLOT_END)
+                ? player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot)
+                : nullptr;
+
+            if (!item && equippedItem)
+                item = equippedItem;
+
             // If the currently equipped item changed, update real_entry and/or clear.
             uint32 currentEntry = item ? item->GetEntry() : 0;
 
@@ -4251,6 +4262,11 @@ namespace DCCollection
                 // briefly even though an item is actually equipped.
                 // If we delete here, transmogs get wiped on login.
                 if (player->GetSession()->PlayerLoading())
+                    return;
+
+                // Double-check the player's inventory state before deleting. Some flows can
+                // still pass a null Item* for an equipped slot even after PlayerLoading().
+                if (slot < EQUIPMENT_SLOT_END && player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
                     return;
 
                 // Slot is truly empty (not during load); clear transmog for that slot.

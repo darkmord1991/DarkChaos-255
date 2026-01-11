@@ -191,7 +191,8 @@ function addon:EnsureChatWindow(windowName)
     end
 
     if FCF_OpenNewWindow then
-        FCF_OpenNewWindow(windowName)
+        -- Protect against FrameXML errors inside FCF_OpenNewWindow/FCF_FadeInChatFrame.
+        pcall(FCF_OpenNewWindow, windowName)
     end
 
     return self:GetChatFrameByWindowName(windowName)

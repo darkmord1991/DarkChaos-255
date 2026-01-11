@@ -177,6 +177,10 @@ DC.isLoaded = false
 DC.isDataReady = false
 DC.pendingRequests = {}
 
+-- Creating chat windows too early (during ADDON_LOADED/cache init) can explode inside
+-- FrameXML's chat fade code on some clients. Only attempt after the UI is fully in-world.
+DC._chatUiReady = false
+
 -- ============================================================================
 -- UTILITY FUNCTIONS
 -- ============================================================================
@@ -187,9 +191,71 @@ function DC:Print(msg)
     end
 end
 
+local function FindChatWindowIndexByName(windowName)
+    if not windowName or windowName == "" then return nil end
+    if not GetChatWindowInfo then return nil end
+    for i = 1, NUM_CHAT_WINDOWS do
+        local name = GetChatWindowInfo(i)
+        if name == windowName then
+            return i
+        end
+    end
+    return nil
+end
+
+function DC:GetChatFrameByWindowName(windowName)
+    local index = FindChatWindowIndexByName(windowName)
+    if not index then return nil end
+    return _G["ChatFrame" .. index]
+end
+
+function DC:EnsureChatWindow(windowName)
+    if not windowName or windowName == "" then return nil end
+    local frame = self:GetChatFrameByWindowName(windowName)
+    if frame then
+        return frame
+    end
+    if not self._chatUiReady then
+        return nil
+    end
+    if FCF_OpenNewWindow then
+        -- Protect against FrameXML errors inside FCF_OpenNewWindow/FCF_FadeInChatFrame.
+        pcall(FCF_OpenNewWindow, windowName)
+    end
+    return self:GetChatFrameByWindowName(windowName)
+end
+
+function DC:GetDcDebugChatFrame()
+    -- Prefer DC-QoS' configured debug tab if present.
+    local qos = rawget(_G, "DCQOS")
+    if qos and type(qos.GetDcDebugChatFrame) == "function" then
+        local ok, frame = pcall(qos.GetDcDebugChatFrame, qos)
+        if ok and frame then
+            return frame
+        end
+    end
+
+    local name = (DCCollectionDB and DCCollectionDB.dcDebugTabName) or "DCDebug"
+    return self:GetChatFrameByWindowName(name)
+end
+
 function DC:Debug(msg)
     if DCCollectionDB and DCCollectionDB.debugMode then
-        self:Print("|cff888888[Debug]|r " .. tostring(msg or ""))
+        local line = "|cff888888[DC-Collection Debug]|r " .. tostring(msg or "")
+
+        local target = nil
+        if DCCollectionDB and DCCollectionDB.routeDcDebugToTab ~= false then
+            target = self:GetDcDebugChatFrame() or self:EnsureChatWindow((DCCollectionDB and DCCollectionDB.dcDebugTabName) or "DCDebug")
+        end
+
+        if target and target.AddMessage then
+            target:AddMessage(line)
+            return
+        end
+
+        if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+            DEFAULT_CHAT_FRAME:AddMessage(line)
+        end
     end
 end
 
@@ -1345,6 +1411,15 @@ function events:PLAYER_LOGIN()
 end
 
 function events:PLAYER_ENTERING_WORLD()
+    DC._chatUiReady = true
+
+    -- If debug routing is enabled, create the tab lazily now that chat UI is safe.
+    After(0.25, function()
+        if DCCollectionDB and DCCollectionDB.debugMode and (DCCollectionDB.routeDcDebugToTab ~= false) then
+            DC:EnsureChatWindow((DCCollectionDB and DCCollectionDB.dcDebugTabName) or "DCDebug")
+        end
+    end)
+
     -- PLAYER_ENTERING_WORLD can fire multiple times; throttle requests.
     After(1, function()
         if type(DC.RequestTransmogStateWithRetry) == "function" then

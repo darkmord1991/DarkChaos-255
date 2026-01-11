@@ -997,13 +997,13 @@ function DC:OnMsg_SavedOutfits(data)
     self:Debug("OnMsg_SavedOutfits called!")
 
     if not data then
-        if DC.Print then DC:Print("[DEBUG] No data in outfits response!") end
+        if DC.Debug then DC:Debug("No data in outfits response!") end
         return
     end
 
     local outfitsList = data.outfits or data.savedOutfits or data.list
     if type(outfitsList) ~= "table" then
-        if DC.Print then DC:Print("[DEBUG] No outfits list in response!") end
+        if DC.Debug then DC:Debug("No outfits list in response!") end
         return
     end
     
@@ -1011,10 +1011,10 @@ function DC:OnMsg_SavedOutfits(data)
     
     if outfitsList[1] then
          self:Debug("First outfit items type: " .. type(outfitsList[1].items))
-         if DC.Print then DC:Print("[DEBUG] First outfit items type: " .. type(outfitsList[1].items)) end
+         if DC.Debug then DC:Debug("First outfit items type: " .. type(outfitsList[1].items)) end
          if type(outfitsList[1].items) == "string" then
              self:Debug("First outfit items string: " .. tostring(outfitsList[1].items))
-             if DC.Print then DC:Print("[DEBUG] First outfit items string: " .. tostring(outfitsList[1].items)) end
+             if DC.Debug then DC:Debug("First outfit items string: " .. tostring(outfitsList[1].items)) end
          end
     end
     
@@ -1105,7 +1105,7 @@ function DC:OnMsg_SavedOutfits(data)
     DC.db.outfitsMeta.total = DC.db.outfitsTotal
     
     self:Debug("Received " .. #DC.db.outfits .. " saved outfits from server.")
-    if DC.Print then DC:Print("[DC-Collection] Loaded " .. #DC.db.outfits .. " saved outfits.") end
+    if DC.Debug then DC:Debug("Loaded " .. #DC.db.outfits .. " saved outfits.") end
 
     -- UI may not have finished creating the outfits grid yet; mark pending and attempt refresh.
     if DC.Wardrobe then
@@ -2181,7 +2181,14 @@ function DC:HandleError(data)
     local errorCode = data.code or 0
     
     self:Debug(string.format("Error received: code=%d, msg=%s", errorCode, errorMsg))
-    self:Print("|cffff0000Error:|r " .. errorMsg)
+
+    local hasPerSlot = (type(data) == "table" and type(data.perSlot) == "table")
+    if hasPerSlot then
+        -- Keep normal chat clean; detailed per-slot reasons go to dcdebug.
+        self:Print("|cffff0000Error:|r " .. errorMsg .. " |cff888888(details in dcdebug)|r")
+    else
+        self:Print("|cffff0000Error:|r " .. errorMsg)
+    end
 
     -- Mark pending outfit apply as having received a server error (to avoid duplicate messages)
     if self.Wardrobe and self.Wardrobe._pendingApplyOutfit then
@@ -2189,7 +2196,7 @@ function DC:HandleError(data)
     end
 
     -- Optional structured details (used for transmog apply diagnostics).
-    if type(data) == "table" and type(data.perSlot) == "table" then
+    if hasPerSlot then
         local order = {}
         for k in pairs(data.perSlot) do
             table.insert(order, k)
@@ -2205,7 +2212,7 @@ function DC:HandleError(data)
             [14] = "Back", [15] = "MainHand", [16] = "OffHand", [17] = "Ranged", [18] = "Tabard",
         }
 
-        self:Print("|cffffff00Transmog apply details:|r")
+        self:Debug("Transmog apply details:")
         for _, slotKey in ipairs(order) do
             local slotNum = tonumber(slotKey)
             local slotName = SLOT_NAMES[slotNum] or ("Slot " .. tostring(slotKey))
@@ -2213,7 +2220,7 @@ function DC:HandleError(data)
             if type(reason) == "table" then
                 reason = reason.reason or reason.status or reason.message or "unknown"
             end
-            self:Print(string.format(" - %s: %s", slotName, tostring(reason)))
+            self:Debug(string.format(" - %s: %s", slotName, tostring(reason)))
         end
     end
 
@@ -2633,10 +2640,11 @@ function DC:HandleDefinitions(data)
 
         if upToDate == true or upToDate == 1 or upToDate == "1" then
             -- Server says definitions are up-to-date.
-            -- But if local cache is empty AND server reports total=0, the server's index is empty.
+            -- If local cache is empty, force a full download once.
+            -- Only warn about server misconfiguration when the server explicitly reports total=0.
             if not self:_HasAnyTransmogDefinitions() then
-                if totalFromServer == 0 or receivedCount == 0 then
-                    -- Server's transmog index is empty - this is a server-side configuration issue.
+                if totalFromServer == 0 then
+                    -- Server's transmog index is empty (or not built yet) - likely a server-side issue.
                     self:Print("|cffff6600[Warning]|r Server has no transmog definitions. "
                         .. "Wardrobe features may not work correctly. "
                         .. "Server admin should check that item_template is populated.")
@@ -3414,7 +3422,7 @@ function DC:HandleCommunityList(data)
     local outfits = data.outfits or {}
     
     if DC.Print then
-        DC:Print("[DEBUG] HandleCommunityList received " .. (outfits and #outfits or "nil") .. " outfits")
+        if DC.Debug then DC:Debug("HandleCommunityList received " .. (outfits and #outfits or "nil") .. " outfits") end
     end
     
     -- Store in DC.db for Wardrobe Community tab
