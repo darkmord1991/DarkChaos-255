@@ -270,7 +270,7 @@ namespace DCCollection
     {
         if (!WorldTableExists("dc_pet_definitions"))
         {
-            LOG_WARN("module", "DC-Collection: dc_pet_definitions missing; skipping pet definition rebuild.");
+            LOG_WARN("module.dc", "DC-Collection: dc_pet_definitions missing; skipping pet definition rebuild.");
             return;
         }
 
@@ -1111,7 +1111,7 @@ namespace DCCollection
 
                             auto const dtMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
                             if (dtMs >= 250)
-                                LOG_INFO("module", "DC-Collection: Flushed achievement progress after accountwide sync in {} ms.", dtMs);
+                                LOG_INFO("module.dc", "DC-Collection: Flushed achievement progress after accountwide sync in {} ms.", dtMs);
                         }
                     }
 
@@ -3653,7 +3653,7 @@ namespace DCCollection
                         // Skip this entry if it's not actually a valid companion
                         if (!isValidCompanion)
                         {
-                            LOG_WARN("module", "DC-Collection: Skipping invalid companion entry {} for account {}", entryId, accountId);
+                            LOG_WARN("module.dc", "DC-Collection: Skipping invalid companion entry {} for account {}", entryId, accountId);
                             continue;
                         }
                         
@@ -4412,7 +4412,7 @@ namespace DCCollection
 
             if (enabled)
             {
-                LOG_INFO("module", "DC-Collection: Module enabled");
+                LOG_INFO("module.dc", "DC-Collection: Module enabled");
             }
 
             // Optional maintenance task. Run only at startup (not on config reload).

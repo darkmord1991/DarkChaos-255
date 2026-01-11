@@ -576,7 +576,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     if (!player || !mainCreature) return false;
     if (!IsPlayerAoELootEnabled(player->GetGUID()))
     {
-        LOG_DEBUG("scripts", "AoELoot: player {} has AoE loot disabled", player->GetGUID().ToString());
+        LOG_DEBUG("scripts.dc", "AoELoot: player {} has AoE loot disabled", player->GetGUID().ToString());
         return false;
     }
 
@@ -586,7 +586,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     std::list<Creature*> nearby;
     player->GetDeadCreatureListInGrid(nearby, sConfig.range);
 
-    LOG_DEBUG("scripts", "AoELoot: found {} nearby dead creatures for player {}", nearby.size(), player->GetGUID().ToString());
+    LOG_DEBUG("scripts.dc", "AoELoot: found {} nearby dead creatures for player {}", nearby.size(), player->GetGUID().ToString());
 
     nearby.remove_if([&](Creature* c) -> bool {
         if (!c) return true;
@@ -1223,7 +1223,7 @@ public:
     void OnStartup() override
     {
         sConfig.Load();
-        LOG_INFO("scripts", "DarkChaos AoE Loot Unified initialized (Enabled: {})", sConfig.enabled ? "Yes" : "No");
+        LOG_INFO("scripts.dc", "DarkChaos AoE Loot Unified initialized (Enabled: {})", sConfig.enabled ? "Yes" : "No");
     }
 };
 

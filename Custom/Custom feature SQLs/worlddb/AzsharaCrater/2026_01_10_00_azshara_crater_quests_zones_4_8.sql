@@ -79,10 +79,26 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (300070, 0, 3577, 1, 1, 12340),   -- Archmage Thadeus (Human Male Mage)
 (300081, 0, 20602, 1, 1, 12340),  -- D1: Magister Idona (High Elf Female)
 (300082, 0, 11629, 1, 1, 12340),  -- D2: Elder Brownpaw (Furbolg)
-(300083, 0, 1462, 1, 1, 12340),   -- D3: Prospector Khazgorm (Dwarf Male)
+(300083, 0, 1349, 1, 1, 12340),   -- D3: Prospector Khazgorm (Dwarf Male) - Fixed DisplayID
 (300084, 0, 21390, 1, 1, 12340),  -- D4: Slayer Vorith (Blood Elf DH)
-(300085, 0, 4258, 1, 1, 12340),   -- D5: Priestess Lunara (Night Elf Female Priest)
+(300085, 0, 4606, 1, 1, 12340),   -- D5: Priestess Lunara (Night Elf Female Priest) - Fixed DisplayID
 (300086, 0, 26604, 1, 1, 12340);  -- D6: Arcanigos (Human Male with Runes)
+
+-- ============================================================================
+-- SECTION 2: GAMEOBJECT TEMPLATES (gameobject_template)
+-- ============================================================================
+
+-- Blue Dragon Egg (Quest 300705: Dragon Egg Hunt)
+DELETE FROM `gameobject_template` WHERE `entry` = 300705;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data0`, `Data1`, `Data2`, `Data3`, `Data4`, `Data5`, `Data6`, `Data7`, `Data8`, `Data9`, `Data10`, `Data11`, `Data12`, `Data13`, `Data14`, `Data15`, `Data16`, `Data17`, `Data18`, `Data19`, `Data20`, `Data21`, `Data22`, `Data23`, `AIName`, `ScriptName`, `VerifiedBuild`) VALUES
+(300705, 1, 1271, 'Blue Dragon Egg', '', 'Destroying', '', 1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340);
+-- Type 1 = Button/Loot, DisplayID 1271 = Dragon Egg model
+
+-- Sludge Pile (Quest 300406: River Pollution)
+DELETE FROM `gameobject_template` WHERE `entry` = 300406;
+INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data0`, `Data1`, `Data2`, `Data3`, `Data4`, `Data5`, `Data6`, `Data7`, `Data8`, `Data9`, `Data10`, `Data11`, `Data12`, `Data13`, `Data14`, `Data15`, `Data16`, `Data17`, `Data18`, `Data19`, `Data20`, `Data21`, `Data22`, `Data23`, `AIName`, `ScriptName`, `VerifiedBuild`) VALUES
+(300406, 1, 49, 'Sludge Pile', '', 'Cleansing', '', 1.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340);
+-- Type 1 = Button/Loot, DisplayID 49 = Sludge/Ooze pile model
 
 -- ============================================================================
 -- SECTION 3: QUEST TEMPLATES (quest_template)
@@ -121,11 +137,11 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 6: Proceed to Cliffs (Travel)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300405, 2, 40, 36, 0, 0, 0, 5, 0, 0, 0, 300311, 8, 300312, 5, 'The Western Cliffs', 'Report to Demonologist Vex''ara.', 'Demonic activity increases to the west. Investigate.', 'Azshara Crater', 'Vex''ara found.');
+(300405, 2, 40, 36, 0, 0, 0, 5, 0, 300311, 8, 300312, 5, 0, 0, 'The Western Cliffs', 'Report to Demonologist Vex''ara.', 'Demonic activity increases to the west. Investigate.', 'Azshara Crater', 'Vex''ara found.');
 
 -- Quest 7: River Pollution (Object Interact)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300406, 2, 33, 30, 0, 0, 0, 3, 0, 118, 5, 300311, 6, 300312, 4, 'River Pollution', 'Cleanse 8 Sludge Piles near the river banks.', 'The Naga corruption seeps into the land. Cleanse it.', 'Azshara Crater', 'Sludge cleansed.', 200000, 8); -- Placeholder GO ID
+(300406, 2, 33, 30, 0, 0, 0, 3, 0, 118, 5, 300311, 6, 300312, 4, 'River Pollution', 'Cleanse 8 Sludge Piles near the river banks.', 'The Naga corruption seeps into the land. Cleanse it.', 'Azshara Crater', 'Sludge cleansed.', -300406, 8); -- Sludge Pile GO
 
 -- Quest 8: Crab Meat (Collect)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
@@ -225,7 +241,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 6: Dragon Egg Hunt (Collect/Destoy)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300705, 2, 64, 60, 0, 0, 0, 3, 0, 300311, 15, 300312, 10, 0, 0, 'Dragon Egg Hunt', 'Destroy 8 Blue Dragon Eggs.', 'The eggs must not hatch. Destroy them for the sanctity of the flight.', 'Azshara Crater', 'Eggs destroyed.', 181057, 8); -- Placeholder GO ID
+(300705, 2, 64, 60, 0, 0, 0, 3, 0, 300311, 15, 300312, 10, 0, 0, 'Dragon Egg Hunt', 'Destroy 8 Blue Dragon Eggs.', 'The eggs must not hatch. Destroy them for the sanctity of the flight.', 'Azshara Crater', 'Eggs destroyed.', -300705, 8); -- Blue Dragon Egg GO
 
 -- Quest 7: Cultist Orders (Collect)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES

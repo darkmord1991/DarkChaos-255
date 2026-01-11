@@ -154,7 +154,7 @@ public:
             if (TryClaimServerFirst(player, "first_255"))
             {
                 if (debug >= 1)
-                    LOG_INFO("scripts", "DC.Achievements: Server First claimed: first_255 by {}", player->GetName());
+                    LOG_INFO("scripts.dc", "DC.Achievements: Server First claimed: first_255 by {}", player->GetName());
                 CompleteAchievement(player, ACHIEVEMENT_FIRST_255);
                 AnnounceServerFirst(player, "First to Level 255");
             }
@@ -291,7 +291,7 @@ public:
             }
             else
             {
-                LOG_ERROR("scripts", "DC.Achievements: Prestige achievement {} not found in store", achievementId);
+                LOG_ERROR("scripts.dc", "DC.Achievements: Prestige achievement {} not found in store", achievementId);
             }
         }
 

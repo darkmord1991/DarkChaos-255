@@ -156,7 +156,7 @@ namespace DCCollection
     {
         if (!WorldTableExists("dc_pet_definitions"))
         {
-            LOG_WARN("module", "DC-Collection: dc_pet_definitions missing; skipping pet definition rebuild.");
+            LOG_WARN("module.dc", "DC-Collection: dc_pet_definitions missing; skipping pet definition rebuild.");
             return;
         }
 
@@ -243,7 +243,7 @@ namespace DCCollection
             } while (r->NextRow());
         }
 
-        LOG_INFO("module", "DC-Collection: Pet definition rebuild complete ({} rows inserted/updated, {} skipped).",
+        LOG_INFO("module.dc", "DC-Collection: Pet definition rebuild complete ({} rows inserted/updated, {} skipped).",
             insertedOrUpdated, skippedNoSpell);
     }
 

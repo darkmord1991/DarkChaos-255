@@ -65,7 +65,7 @@ public:
         catch (...)
         {
             // Database not set up yet - use defaults
-            LOG_WARN("scripts", "ItemUpgrade: Curator NPC failed to query database (tables missing?)");
+            LOG_WARN("scripts.dc", "ItemUpgrade: Curator NPC failed to query database (tables missing?)");
         }
 
         // Clear any previous menu

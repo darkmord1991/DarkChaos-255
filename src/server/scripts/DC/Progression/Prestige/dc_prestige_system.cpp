@@ -90,7 +90,7 @@ public:
 
         if (maxPrestigeLevel == 0 || maxPrestigeLevel > MAX_PRESTIGE_LEVEL)
         {
-            LOG_ERROR("scripts", "Prestige: Invalid MaxLevel ({}). Must be 1-{}. Using default {}.",
+            LOG_ERROR("scripts.dc", "Prestige: Invalid MaxLevel ({}). Must be 1-{}. Using default {}.",
                 maxPrestigeLevel, MAX_PRESTIGE_LEVEL, MAX_PRESTIGE_LEVEL);
             maxPrestigeLevel = MAX_PRESTIGE_LEVEL;
             configValid = false;
@@ -98,7 +98,7 @@ public:
 
         if (requireLevel == 0 || requireLevel > 255)
         {
-            LOG_ERROR("scripts", "Prestige: Invalid RequiredLevel ({}). Must be 1-255. Using default {}.",
+            LOG_ERROR("scripts.dc", "Prestige: Invalid RequiredLevel ({}). Must be 1-255. Using default {}.",
                 requireLevel, REQUIRED_LEVEL);
             requireLevel = REQUIRED_LEVEL;
             configValid = false;
@@ -106,7 +106,7 @@ public:
 
         if (resetLevel == 0 || resetLevel >= requireLevel)
         {
-            LOG_ERROR("scripts", "Prestige: Invalid ResetLevel ({}). Must be 1-{} (less than RequiredLevel). Using default 1.",
+            LOG_ERROR("scripts.dc", "Prestige: Invalid ResetLevel ({}). Must be 1-{} (less than RequiredLevel). Using default 1.",
                 resetLevel, requireLevel - 1);
             resetLevel = 1;
             configValid = false;
@@ -114,17 +114,17 @@ public:
 
         if (statBonusPercent == 0 || statBonusPercent > 100)
         {
-            LOG_WARN("scripts", "Prestige: StatBonusPercent ({}) is outside recommended range 1-100. Proceeding anyway.",
+            LOG_WARN("scripts.dc", "Prestige: StatBonusPercent ({}) is outside recommended range 1-100. Proceeding anyway.",
                 statBonusPercent);
         }
 
         if (configValid)
         {
-            LOG_INFO("scripts", "Prestige: Configuration loaded successfully");
+            LOG_INFO("scripts.dc", "Prestige: Configuration loaded successfully");
         }
         else
         {
-            LOG_WARN("scripts", "Prestige: Configuration loaded with errors (see above). Some values were reset to defaults.");
+            LOG_WARN("scripts.dc", "Prestige: Configuration loaded with errors (see above). Some values were reset to defaults.");
         }
 
         // Load prestige rewards
@@ -232,7 +232,7 @@ public:
                 }
 
                 if (debug)
-                    LOG_DEBUG("scripts", "Prestige: Blocked prestige for {} due to bag space (free={}, required={})", player->GetName(), freeSlots, requiredStacks);
+                    LOG_DEBUG("scripts.dc", "Prestige: Blocked prestige for {} due to bag space (free={}, required={})", player->GetName(), freeSlots, requiredStacks);
                 return false;
             }
         }
@@ -241,7 +241,7 @@ public:
         std::string playerName = player->GetName();
         uint32 oldLevel = player->GetLevel();
 
-        LOG_INFO("scripts", "Prestige: Player {} (GUID: {}) starting prestige {} -> {}",
+        LOG_INFO("scripts.dc", "Prestige: Player {} (GUID: {}) starting prestige {} -> {}",
             playerName, player->GetGUID().ToString(), currentPrestige, newPrestige);
 
         // Remove old prestige buffs
@@ -330,11 +330,11 @@ public:
         }
         catch (...)
         {
-            LOG_ERROR("scripts", "Prestige: Failed to log prestige for player {} (GUID: {})",
+            LOG_ERROR("scripts.dc", "Prestige: Failed to log prestige for player {} (GUID: {})",
                 playerName, player->GetGUID().ToString());
         }
 
-        LOG_INFO("scripts", "Prestige: Player {} completed prestige to level {}", playerName, newPrestige);
+        LOG_INFO("scripts.dc", "Prestige: Player {} completed prestige to level {}", playerName, newPrestige);
 
         // Teleport to starting location
         TeleportToStartingLocation(player);
@@ -394,12 +394,12 @@ public:
         if (found)
         {
             player->TeleportTo(mapId, x, y, z, o);
-            LOG_INFO("scripts", "Prestige: Teleported player {} to starting location (Map: {}, {:.2f}, {:.2f}, {:.2f})",
+            LOG_INFO("scripts.dc", "Prestige: Teleported player {} to starting location (Map: {}, {:.2f}, {:.2f}, {:.2f})",
                 player->GetName(), mapId, x, y, z);
         }
         else
         {
-            LOG_ERROR("scripts", "Prestige: No starting location found for Race {} Class {} in playercreateinfo!", 
+            LOG_ERROR("scripts.dc", "Prestige: No starting location found for Race {} Class {} in playercreateinfo!", 
                 player->getRace(), player->getClass());
             ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Could not determine starting location. Please contact a GM.|r");
         }
@@ -422,7 +422,7 @@ public:
         SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
         if (!spellInfo)
         {
-            LOG_ERROR("scripts", "Prestige: Spell {} not found in DBC for prestige level {}", spellId, prestigeLevel);
+            LOG_ERROR("scripts.dc", "Prestige: Spell {} not found in DBC for prestige level {}", spellId, prestigeLevel);
             ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Prestige spell not found!|r");
             return;
         }
@@ -436,10 +436,10 @@ public:
         // Verify aura application
         if (!player->HasAura(spellId))
         {
-            LOG_WARN("scripts", "Prestige: Aura {} may not have applied to player {}", spellId, player->GetName());
+            LOG_WARN("scripts.dc", "Prestige: Aura {} may not have applied to player {}", spellId, player->GetName());
         }
 
-        LOG_INFO("scripts", "Prestige: Applied prestige buff (spell {}) to player {}", spellId, player->GetName());
+        LOG_INFO("scripts.dc", "Prestige: Applied prestige buff (spell {}) to player {}", spellId, player->GetName());
     }
 
     void RemovePrestigeBuffs(Player* player)
@@ -477,7 +477,7 @@ public:
         {
             player->ResurrectPlayer(1.0f);
             if (debug)
-                LOG_DEBUG("scripts", "Prestige: Player {} was dead, resurrecting", player->GetName());
+                LOG_DEBUG("scripts.dc", "Prestige: Player {} was dead, resurrecting", player->GetName());
         }
 
         // Clear flags that prevent XP bar from showing or XP gain
@@ -485,14 +485,14 @@ public:
         {
             player->RemovePlayerFlag(PLAYER_FLAGS_GHOST);
             if (debug)
-                LOG_DEBUG("scripts", "Prestige: Removed GHOST flag from {}", player->GetName());
+                LOG_DEBUG("scripts.dc", "Prestige: Removed GHOST flag from {}", player->GetName());
         }
 
         if (player->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS))
         {
             player->RemovePlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS);
             if (debug)
-                LOG_DEBUG("scripts", "Prestige: Removed OUT_OF_BOUNDS flag from {}", player->GetName());
+                LOG_DEBUG("scripts.dc", "Prestige: Removed OUT_OF_BOUNDS flag from {}", player->GetName());
         }
 
         // CRITICAL: Clear NO_XP_GAIN flag - allows player to gain experience
@@ -500,7 +500,7 @@ public:
         {
             player->RemovePlayerFlag(PLAYER_FLAGS_NO_XP_GAIN);
             if (debug)
-                LOG_DEBUG("scripts", "Prestige: Removed NO_XP_GAIN flag from {}", player->GetName());
+                LOG_DEBUG("scripts.dc", "Prestige: Removed NO_XP_GAIN flag from {}", player->GetName());
         }
     }
 
@@ -900,7 +900,7 @@ public:
             if (spellInfo)
             {
                 player->AddAura(spellId, player);
-                LOG_INFO("scripts", "Prestige: Reapplied missing prestige aura {} to player {}",
+                LOG_INFO("scripts.dc", "Prestige: Reapplied missing prestige aura {} to player {}",
                     spellId, player->GetName());
             }
         }
@@ -921,7 +921,7 @@ public:
     void OnStartup() override
     {
         // Validate that all prestige spells exist in DBC
-        LOG_INFO("scripts", "Prestige: Validating prestige spells in DBC...");
+        LOG_INFO("scripts.dc", "Prestige: Validating prestige spells in DBC...");
         bool allSpellsValid = true;
 
         for (uint32 i = 1; i <= MAX_PRESTIGE_LEVEL; ++i)
@@ -929,22 +929,22 @@ public:
             uint32 spellId = PrestigeSystem::instance()->GetPrestigeSpell(i);
             if (!sSpellMgr->GetSpellInfo(spellId))
             {
-                LOG_ERROR("scripts", "Prestige: CRITICAL - Spell {} for prestige level {} not found in DBC!", spellId, i);
+                LOG_ERROR("scripts.dc", "Prestige: CRITICAL - Spell {} for prestige level {} not found in DBC!", spellId, i);
                 allSpellsValid = false;
             }
         }
 
         if (allSpellsValid)
         {
-            LOG_INFO("scripts", "Prestige: All {} prestige spells validated successfully", MAX_PRESTIGE_LEVEL);
+            LOG_INFO("scripts.dc", "Prestige: All {} prestige spells validated successfully", MAX_PRESTIGE_LEVEL);
         }
         else
         {
-            LOG_ERROR("scripts", "Prestige: CRITICAL - Some prestige spells are missing! System may not work correctly.");
+            LOG_ERROR("scripts.dc", "Prestige: CRITICAL - Some prestige spells are missing! System may not work correctly.");
         }
 
         // Validate that all prestige titles exist in DBC
-        LOG_INFO("scripts", "Prestige: Validating prestige titles in DBC...");
+        LOG_INFO("scripts.dc", "Prestige: Validating prestige titles in DBC...");
         bool allTitlesValid = true;
 
         for (uint32 i = 1; i <= MAX_PRESTIGE_LEVEL; ++i)
@@ -952,18 +952,18 @@ public:
             uint32 titleId = PrestigeSystem::instance()->GetPrestigeTitle(i);
             if (!sCharTitlesStore.LookupEntry(titleId))
             {
-                LOG_ERROR("scripts", "Prestige: CRITICAL - Title {} for prestige level {} not found in DBC!", titleId, i);
+                LOG_ERROR("scripts.dc", "Prestige: CRITICAL - Title {} for prestige level {} not found in DBC!", titleId, i);
                 allTitlesValid = false;
             }
         }
 
         if (allTitlesValid)
         {
-            LOG_INFO("scripts", "Prestige: All {} prestige titles validated successfully", MAX_PRESTIGE_LEVEL);
+            LOG_INFO("scripts.dc", "Prestige: All {} prestige titles validated successfully", MAX_PRESTIGE_LEVEL);
         }
         else
         {
-            LOG_ERROR("scripts", "Prestige: CRITICAL - Some prestige titles are missing! Players may not receive titles.");
+            LOG_ERROR("scripts.dc", "Prestige: CRITICAL - Some prestige titles are missing! Players may not receive titles.");
         }
     }
 };

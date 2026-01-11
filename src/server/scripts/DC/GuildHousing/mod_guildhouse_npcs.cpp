@@ -321,7 +321,7 @@ public:
             ChatHandler(player->GetSession()).PSendSysMessage("You have successfully purchased a Guild House");
             player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "We now have a Guild House!", LANG_UNIVERSAL);
             player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "In chat, type `.guildhouse teleport` or `.gh tele` to meet me there!", LANG_UNIVERSAL);
-            LOG_INFO("modules", "GUILDHOUSE: GuildId: '{}' has purchased a guildhouse at location ID {}", player->GetGuildId(), locationId);
+            LOG_INFO("modules.dc", "GUILDHOUSE: GuildId: '{}' has purchased a guildhouse at location ID {}", player->GetGuildId(), locationId);
 
             // Spawn the portal and the guild house butler automatically as part of purchase.
             GuildHouseManager::SpawnTeleporterNPC(player);
@@ -499,7 +499,7 @@ public:
                     ChatHandler(player->GetSession()).PSendSysMessage("You have successfully sold your Guild House.");
                     player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "We just sold our Guild House.", LANG_UNIVERSAL);
                     player->ModifyMoney(+(sConfigMgr->GetOption<int32>("CostGuildHouse", 10000000) / 2));
-                    LOG_INFO("modules", "GUILDHOUSE: Successfully returned money and sold Guild House");
+                    LOG_INFO("modules.dc", "GUILDHOUSE: Successfully returned money and sold Guild House");
                 }
                 else
                 {

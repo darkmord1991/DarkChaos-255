@@ -47,7 +47,7 @@ namespace DarkChaos
 
                 if (!result)
                 {
-                    // LOG_ERROR("scripts", "ItemUpgrade: No synthesis recipes found in database.");
+                    // LOG_ERROR("scripts.dc", "ItemUpgrade: No synthesis recipes found in database.");
                     return false;
                 }
 
@@ -78,7 +78,7 @@ namespace DarkChaos
 
                 } while (result->NextRow());
 
-                // LOG_INFO("scripts", "ItemUpgrade: Loaded {} synthesis recipes.", synthesis_recipes_.size());
+                // LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} synthesis recipes.", synthesis_recipes_.size());
                 return true;
             }
 
@@ -282,7 +282,7 @@ namespace DarkChaos
                 }
                 catch (const std::exception& e)
                 {
-                    // LOG_ERROR("scripts", "ItemUpgrade: Synthesis failed: {}", e.what());
+                    // LOG_ERROR("scripts.dc", "ItemUpgrade: Synthesis failed: {}", e.what());
                     return false;
                 }
             }

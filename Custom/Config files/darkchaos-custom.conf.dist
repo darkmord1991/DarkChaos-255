@@ -3338,27 +3338,30 @@ Appender.DC=2,5,0,dcsystem.log,a
 # Loggers
 #    Routes specific log categories to the DC appender.
 #
+# IMPORTANT:
+#   AzerothCore expects: Logger.name=LogLevel,AppenderList
+#   where AppenderList is a SPACE-separated list of appender NAMES (e.g. "Console DC").
+#   Do NOT use "Appender.DC" or extra commas.
+#
 
-# General DC Scripts
-Logger.scripts.dc=5,Appender.DC,Appender.Console
+# General scripts/modules used by DC systems
+Logger.scripts.dc=5,Console DC
+Logger.module.dc=5,Console DC
+Logger.modules.dc=5,Console DC
 
 # DC Addon Protocol
-Logger.dc.addon=5,Appender.DC,Appender.Console
-
-# DC Addon Extension Modules (Wardrobe, Collection, etc.)
-Logger.module=5,Appender.DC,Appender.Console
-Logger.module.dc=5,Appender.DC,Appender.Console
+Logger.dc.addon=5,Console DC
 
 # Mythic+ System
-Logger.mythic=5,Appender.DC,Appender.Console
-Logger.mythic.run=5,Appender.DC,Appender.Console
+Logger.mythic=5,Console DC
+Logger.mythic.run=5,Console DC
 
 # Hinterland BG
-Logger.hlbg=5,Appender.DC,Appender.Console
-Logger.hlbg.aio=5,Appender.DC,Appender.Console
+Logger.hlbg=5,Console DC
+Logger.hlbg.aio=5,Console DC
 
 # Seasonal System
-Logger.seasonal=5,Appender.DC,Appender.Console
+Logger.seasonal=5,Console DC
 
 ###################################################################################################
 # GUILD HOUSE SETTINGS

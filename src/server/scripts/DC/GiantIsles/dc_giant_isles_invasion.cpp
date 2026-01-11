@@ -339,13 +339,13 @@ public:
                     }
                     raptor = me->SummonCreature(NPC_ZANDALARI_WAR_RAPTOR, attemptPos, TEMPSUMMON_CORPSE_DESPAWN, 10 * IN_MILLISECONDS);
                     if (!raptor)
-                        LOG_WARN("scripts", "Giant Isles Invasion: Beast Tamer raptor spawn attempt {}/3 failed for parent {}", attempt, me->GetGUID().ToString());
+                        LOG_WARN("scripts.dc", "Giant Isles Invasion: Beast Tamer raptor spawn attempt {}/3 failed for parent {}", attempt, me->GetGUID().ToString());
                 }
                 if (raptor)
                 {
                     // Use helper to avoid requiring class definition in this AI file
                     GI_BroadcastSpawn(map, raptor, static_cast<uint8>(GI_GetCurrentPhase()), -1);
-                    LOG_INFO("scripts", "Giant Isles Invasion: Beast Tamer {} summoned raptor {} at {}", me->GetGUID().ToString(), raptor->GetGUID().ToString(), raptor->GetPosition().ToString());
+                    LOG_INFO("scripts.dc", "Giant Isles Invasion: Beast Tamer {} summoned raptor {} at {}", me->GetGUID().ToString(), raptor->GetGUID().ToString(), raptor->GetPosition().ToString());
                     _raptorGuids.push_back(raptor->GetGUID());
                     raptor->SetFaction(16);
                     raptor->SetReactState(REACT_AGGRESSIVE);
@@ -521,7 +521,7 @@ public:
                 sWorldState->setWorldState(WORLD_STATE_INVASION_ACTIVE + 10, static_cast<uint32>(GameTime::GetGameTime().count()));
 
                 // Placeholder for reward distribution
-                LOG_INFO("scripts", "Giant Isles Invasion: Boss killed, victory triggered by boss {}", me->GetEntry());
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Boss killed, victory triggered by boss {}", me->GetEntry());
             }
         }
 
@@ -635,7 +635,7 @@ public:
         _pendingRemoval = false;
         _pendingRemovalReason.clear();
 
-        LOG_INFO("scripts", "Giant Isles Invasion: Map created - event state reset to inactive") ;
+        LOG_INFO("scripts.dc", "Giant Isles Invasion: Map created - event state reset to inactive") ;
     }
 
     // State variables
@@ -885,7 +885,7 @@ public:
         {
             if (Creature* inv = map->GetCreature(guid))
             {
-                LOG_INFO("scripts", "Giant Isles Invasion: Despawning invader entry {} guid {} in DespawnAllInvaders (phase={})", inv->GetEntry(), inv->GetGUID().ToString(), static_cast<uint32>(_invasionPhase));
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Despawning invader entry {} guid {} in DespawnAllInvaders (phase={})", inv->GetEntry(), inv->GetGUID().ToString(), static_cast<uint32>(_invasionPhase));
                 inv->DespawnOrUnsummon(1s);
             }
         }
@@ -961,7 +961,7 @@ public:
             }
             else
             {
-                LOG_DEBUG("scripts", "Giant Isles Invasion: Warning announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
+                LOG_DEBUG("scripts.dc", "Giant Isles Invasion: Warning announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
             }
         }
 
@@ -979,7 +979,7 @@ public:
         SpawnBossSpectators(map);
         BroadcastEventStatus(map);
 
-        LOG_INFO("scripts", "Giant Isles Invasion: Event starting with 30s warning in phase {}. Triggered by {}", sessionPhase, starter ? starter->GetName() : "System");
+        LOG_INFO("scripts.dc", "Giant Isles Invasion: Event starting with 30s warning in phase {}. Triggered by {}", sessionPhase, starter ? starter->GetName() : "System");
     }
 
     void StopInvasion(Map* map)
@@ -1019,7 +1019,7 @@ public:
         _victoryInvocationCount++;
         if (_victoryInvocationCount > 1)
         {
-            LOG_WARN("scripts", "Giant Isles Invasion: OnBossKilled invoked multiple times (count={})", _victoryInvocationCount);
+            LOG_WARN("scripts.dc", "Giant Isles Invasion: OnBossKilled invoked multiple times (count={})", _victoryInvocationCount);
             // Prevent double victory processing
             if (_broadcastedVictory)
                 return;
@@ -1043,7 +1043,7 @@ public:
             }
             else
             {
-                LOG_DEBUG("scripts", "Giant Isles Invasion: Victory announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
+                LOG_DEBUG("scripts.dc", "Giant Isles Invasion: Victory announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
             }
         }
         RewardParticipants();
@@ -1064,7 +1064,7 @@ public:
         _bossGUID.Clear();
         _leaderGUID.Clear();
         _bossActivated = false;
-        LOG_INFO("scripts", "Giant Isles Invasion: Event completed successfully");
+        LOG_INFO("scripts.dc", "Giant Isles Invasion: Event completed successfully");
     }
 
     // Public method for GM commands to manually trigger waves
@@ -1127,7 +1127,7 @@ public:
         // Wave timer - advance wave when time expires
         if (_waveTimer <= diff)
         {
-            LOG_INFO("scripts", "Giant Isles Invasion: Wave timer expired at phase {} (wave state={})", _invasionPhase, sWorldState->getWorldState(WORLD_STATE_INVASION_WAVE));
+            LOG_INFO("scripts.dc", "Giant Isles Invasion: Wave timer expired at phase {} (wave state={})", _invasionPhase, sWorldState->getWorldState(WORLD_STATE_INVASION_WAVE));
             AdvanceWave(map);
         }
         else
@@ -1209,7 +1209,7 @@ public:
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 1);
                 SafeWorldAnnounce(map, "|cFFFF8000[INVASION - WAVE 1]|r Raiders hit the shore! Push them back into the surf!");
                 // Spawn the first wave batch immediately
-                LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 1");
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Starting Wave 1");
                 DespawnAllInvaders(map);
                 SpawnWaveCreatures(map);
                 BroadcastEventStatus(map);
@@ -1222,7 +1222,7 @@ public:
                 ResetWaveSpawningForCurrentWave();
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 2);
                 SafeWorldAnnounce(map, "|cFFFF8000[INVASION - WAVE 2]|r Heavy raiders advance! Hold the line!");
-                LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 2");
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Starting Wave 2");
                 DespawnAllInvaders(map);
                 SpawnWaveCreatures(map);
                 MaybeSpawnReinforcements(map, 2);
@@ -1236,7 +1236,7 @@ public:
                 ResetWaveSpawningForCurrentWave();
                 sWorldState->setWorldState(WORLD_STATE_INVASION_WAVE, 3);
                 SafeWorldAnnounce(map, "|cFFFF4000[INVASION - WAVE 3]|r Elites and witch doctors arrive! Beware their hexes!");
-                LOG_INFO("scripts", "Giant Isles Invasion: Starting Wave 3");
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Starting Wave 3");
                 DespawnAllInvaders(map);
                 SpawnWaveCreatures(map);
                 MaybeSpawnReinforcements(map, 3);
@@ -1291,12 +1291,12 @@ public:
                 float y = p.GetPositionY() + 5.0f * sin(p.GetOrientation());
                 defender->GetMotionMaster()->MovePoint(0, x, y, p.GetPositionZ());
 
-                LOG_INFO("scripts", "Giant Isles Invasion: Summoned defender entry {} at point {}", entry, i);
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Summoned defender entry {} at point {}", entry, i);
                 BroadcastSpawn(map, defender, 0, i);
             }
             else
             {
-                LOG_WARN("scripts", "Giant Isles Invasion: Failed to summon defender entry {} at point {} pos=({}, {}, {}, {})", entry, i, p.GetPositionX(), p.GetPositionY(), p.GetPositionZ(), p.GetOrientation());
+                LOG_WARN("scripts.dc", "Giant Isles Invasion: Failed to summon defender entry {} at point {} pos=({}, {}, {}, {})", entry, i, p.GetPositionX(), p.GetPositionY(), p.GetPositionZ(), p.GetOrientation());
             }
         }
     }
@@ -1390,25 +1390,25 @@ public:
         if (!map)
             return;
 
-        LOG_INFO("scripts", "Giant Isles Invasion: SpawnWave (fixed) for phase {}", _invasionPhase);
+        LOG_INFO("scripts.dc", "Giant Isles Invasion: SpawnWave (fixed) for phase {}", _invasionPhase);
 
         // Scaled, low-NPC wave sizes: compute a per-wave active cap from participant count.
         uint32 totalBudget = _waveInvaderActiveCap ? _waveInvaderActiveCap : GetWaveSpawnBudget();
         if (!totalBudget)
             return; // No spawns for warning/boss/victory/fail
 
-        LOG_INFO("scripts", "Giant Isles Invasion: Wave spawn budget={} (participants={})", totalBudget, GetParticipantCount());
+        LOG_INFO("scripts.dc", "Giant Isles Invasion: Wave spawn budget={} (participants={})", totalBudget, GetParticipantCount());
 
         std::vector<uint32> waveEntries = GetWaveCreatureEntries();
         if (waveEntries.empty())
         {
-            LOG_ERROR("scripts", "Giant Isles Invasion: No wave entries defined for phase {}", _invasionPhase);
+            LOG_ERROR("scripts.dc", "Giant Isles Invasion: No wave entries defined for phase {}", _invasionPhase);
             return;
         }
 
         // Hard safety check
         if (totalBudget > MAX_ACTIVE_INVADERS)
-            LOG_WARN("scripts", "Giant Isles Invasion: scaled wave spawn budget {} exceeds cap {}", totalBudget, MAX_ACTIVE_INVADERS);
+            LOG_WARN("scripts.dc", "Giant Isles Invasion: scaled wave spawn budget {} exceeds cap {}", totalBudget, MAX_ACTIVE_INVADERS);
 
         // Fill the wave to its target active cap immediately at wave start.
         // Ongoing replenishment is handled in OnUpdate via SpawnNextWaveInvader().
@@ -1532,7 +1532,7 @@ public:
         for (const ObjectGuid& guid : _bossGuardGuids)
             if (Creature* guard = map->GetCreature(guid))
             {
-                LOG_INFO("scripts", "Giant Isles Invasion: Despawning old boss guard entry {} guid {} in SpawnBossSpectators", guard->GetEntry(), guard->GetGUID().ToString());
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Despawning old boss guard entry {} guid {} in SpawnBossSpectators", guard->GetEntry(), guard->GetGUID().ToString());
                 guard->DespawnOrUnsummon(1s);
             }
         _bossGuardGuids.clear();
@@ -1602,18 +1602,18 @@ public:
 
         if (!source)
         {
-            LOG_WARN("scripts", "Giant Isles Invasion: No valid source to find invasion leader on map {}", map->GetId());
+            LOG_WARN("scripts.dc", "Giant Isles Invasion: No valid source to find invasion leader on map {}", map->GetId());
             return;
         }
 
         if (Creature* leader = GetClosestCreatureWithEntry(source, NPC_ZANDALARI_INVASION_LEADER, 500.0f))
         {
             _leaderGUID = leader->GetGUID();
-            LOG_INFO("scripts", "Giant Isles Invasion: Found existing Invasion Leader at {}", leader->GetPosition().ToString());
+            LOG_INFO("scripts.dc", "Giant Isles Invasion: Found existing Invasion Leader at {}", leader->GetPosition().ToString());
         }
         else
         {
-            LOG_WARN("scripts", "Giant Isles Invasion: Could not find Invasion Leader (Entry: {})", NPC_ZANDALARI_INVASION_LEADER);
+            LOG_WARN("scripts.dc", "Giant Isles Invasion: Could not find Invasion Leader (Entry: {})", NPC_ZANDALARI_INVASION_LEADER);
         }
     }
 
@@ -1645,7 +1645,7 @@ public:
         Creature* boss = EnsureBossPresence(map);
         if (!boss)
         {
-            LOG_ERROR("scripts", "Giant Isles Invasion: Unable to activate boss wave - boss missing");
+            LOG_ERROR("scripts.dc", "Giant Isles Invasion: Unable to activate boss wave - boss missing");
             return;
         }
 
@@ -1688,7 +1688,7 @@ public:
                 _bossGUID = boss->GetGUID();
             }
             else
-                LOG_WARN("scripts", "Giant Isles Invasion: Boss spawn failed at {}, retries exhausted", p.ToString());
+                LOG_WARN("scripts.dc", "Giant Isles Invasion: Boss spawn failed at {}, retries exhausted", p.ToString());
         }
         return boss;
     }
@@ -1790,7 +1790,7 @@ public:
                 return { NPC_ZANDALARI_BLOOD_GUARD, NPC_ZANDALARI_WITCH_DOCTOR, NPC_ZANDALARI_BEAST_TAMER };
 
             default:
-                LOG_ERROR("scripts", "Giant Isles Invasion: GetWaveCreatureEntries called with invalid phase {}", _invasionPhase);
+                LOG_ERROR("scripts.dc", "Giant Isles Invasion: GetWaveCreatureEntries called with invalid phase {}", _invasionPhase);
                 return {};
         }
     }
@@ -1858,13 +1858,13 @@ public:
         if (!_isFailing.compare_exchange_strong(expected, true))
         {
             // Another thread is already handling the failure; ignore this invocation
-            LOG_WARN("scripts", "Giant Isles Invasion: FailInvasion re-entry suppressed (already handling)");
+            LOG_WARN("scripts.dc", "Giant Isles Invasion: FailInvasion re-entry suppressed (already handling)");
             return;
         }
         _failInvocationCount++;
         if (_failInvocationCount > 1)
         {
-            LOG_WARN("scripts", "Giant Isles Invasion: FailInvasion invoked multiple times (count={})", _failInvocationCount);
+            LOG_WARN("scripts.dc", "Giant Isles Invasion: FailInvasion invoked multiple times (count={})", _failInvocationCount);
             if (_broadcastedFailure)
             {
                 _isFailing.store(false);
@@ -1882,7 +1882,7 @@ public:
             }
             else
             {
-                LOG_DEBUG("scripts", "Giant Isles Invasion: Failure announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
+                LOG_DEBUG("scripts.dc", "Giant Isles Invasion: Failure announcement suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
             }
         }
 
@@ -1900,7 +1900,7 @@ public:
         _bossGuardGuids.clear();
         _bossGUID.Clear();
         _bossActivated = false;
-        LOG_INFO("scripts", "Giant Isles Invasion: Event failed");
+        LOG_INFO("scripts.dc", "Giant Isles Invasion: Event failed");
         _isFailing.store(false);
     }
 
@@ -1992,7 +1992,7 @@ public:
         {
             if (Creature* invader = map->GetCreature(guid))
             {
-                LOG_INFO("scripts", "Giant Isles Invasion: Despawning invader entry {} guid {} in CleanupInvasion (phase={})", invader->GetEntry(), invader->GetGUID().ToString(), static_cast<uint32>(_invasionPhase));
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Despawning invader entry {} guid {} in CleanupInvasion (phase={})", invader->GetEntry(), invader->GetGUID().ToString(), static_cast<uint32>(_invasionPhase));
                 invader->DespawnOrUnsummon(5s);
             }
         }
@@ -2003,7 +2003,7 @@ public:
         {
             if (Creature* guard = map->GetCreature(guid))
             {
-                LOG_INFO("scripts", "Giant Isles Invasion: Despawning boss guard entry {} guid {} in CleanupInvasion (phase={})", guard->GetEntry(), guard->GetGUID().ToString(), static_cast<uint32>(_invasionPhase));
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Despawning boss guard entry {} guid {} in CleanupInvasion (phase={})", guard->GetEntry(), guard->GetGUID().ToString(), static_cast<uint32>(_invasionPhase));
                 guard->DespawnOrUnsummon(5s);
             }
         }
@@ -2013,7 +2013,7 @@ public:
         {
             if (Creature* defender = map->GetCreature(guid))
             {
-                LOG_INFO("scripts", "Giant Isles Invasion: Despawning defender entry {} guid {} in CleanupInvasion", defender->GetEntry(), defender->GetGUID().ToString());
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Despawning defender entry {} guid {} in CleanupInvasion", defender->GetEntry(), defender->GetGUID().ToString());
                 defender->DespawnOrUnsummon(30s);
             }
         }
@@ -2024,7 +2024,7 @@ public:
         {
             if (Creature* leader = map->GetCreature(_leaderGUID))
             {
-                LOG_INFO("scripts", "Giant Isles Invasion: Despawning leader entry {} guid {} in CleanupInvasion", leader->GetEntry(), leader->GetGUID().ToString());
+                LOG_INFO("scripts.dc", "Giant Isles Invasion: Despawning leader entry {} guid {} in CleanupInvasion", leader->GetEntry(), leader->GetGUID().ToString());
                 leader->DespawnOrUnsummon(5s);
             }
             _leaderGUID.Clear();
@@ -2070,7 +2070,7 @@ public:
         }
         else
         {
-            LOG_DEBUG("scripts", "Giant Isles Invasion: Announce suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
+            LOG_DEBUG("scripts.dc", "Giant Isles Invasion: Announce suppressed due to cooldown ({}ms)", (now - _lastEventAnnouncementTime));
         }
     }
 
@@ -2203,7 +2203,7 @@ public:
         {
             if (_lastEventStatusBroadcastTime != 0 && (now - _lastEventStatusBroadcastTime) < EVENT_STATUS_BROADCAST_COOLDOWN_MS)
             {
-                LOG_DEBUG("scripts", "Giant Isles Invasion: BroadcastEventStatus suppressed due to cooldown ({}ms)", (now - _lastEventStatusBroadcastTime));
+                LOG_DEBUG("scripts.dc", "Giant Isles Invasion: BroadcastEventStatus suppressed due to cooldown ({}ms)", (now - _lastEventStatusBroadcastTime));
                 return;
             }
             _lastEventStatusBroadcastTime = now;
@@ -2347,16 +2347,16 @@ public:
             if (meSummon)
             {
                 if (attempt > 1)
-                    LOG_INFO("scripts", "Giant Isles Invasion: Summon success after {} attempts for entry {} at {}", attempt, entry, attemptPos.ToString());
+                    LOG_INFO("scripts.dc", "Giant Isles Invasion: Summon success after {} attempts for entry {} at {}", attempt, entry, attemptPos.ToString());
                 return meSummon;
             }
             else
             {
-                LOG_WARN("scripts", "Giant Isles Invasion: Failed to summon entry {} at {} (attempt {}/{})", entry, attemptPos.ToString(), attempt, attempts);
+                LOG_WARN("scripts.dc", "Giant Isles Invasion: Failed to summon entry {} at {} (attempt {}/{})", entry, attemptPos.ToString(), attempt, attempts);
             }
         }
 
-        LOG_ERROR("scripts", "Giant Isles Invasion: All summon attempts failed for entry {} at {}", entry, p.ToString());
+        LOG_ERROR("scripts.dc", "Giant Isles Invasion: All summon attempts failed for entry {} at {}", entry, p.ToString());
         return nullptr;
     }
 
@@ -2745,7 +2745,7 @@ void AddSC_giant_isles_invasion()
     new npc_invasion_leader();
     new npc_invasion_commander();
     new giant_isles_invasion();
-    LOG_INFO("scripts", "Giant Isles Invasion: Scripts Registered");
+    LOG_INFO("scripts.dc", "Giant Isles Invasion: Scripts Registered");
 }
 
 // Free-level wrapper implemented after class definition to allow use in earlier AIs

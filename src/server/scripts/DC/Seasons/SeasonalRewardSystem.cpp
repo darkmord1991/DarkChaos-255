@@ -47,19 +47,19 @@ namespace DarkChaos
                 if (activeSeason)
                 {
                     config_.activeSeason = activeSeason->season_id;
-                    LOG_INFO("module", ">> [SeasonalRewards] Using season {} from SeasonalManager", config_.activeSeason);
+                    LOG_INFO("module.dc", ">> [SeasonalRewards] Using season {} from SeasonalManager", config_.activeSeason);
                 }
                 else
                 {
                     config_.activeSeason = sConfigMgr->GetOption<uint32>("SeasonalRewards.ActiveSeasonID", 1);
-                    LOG_WARN("module", ">> [SeasonalRewards] No active season in SeasonalManager, using config: {}", config_.activeSeason);
+                    LOG_WARN("module.dc", ">> [SeasonalRewards] No active season in SeasonalManager, using config: {}", config_.activeSeason);
                 }
             }
             else
             {
                 // Fallback to canonical DarkChaos.ActiveSeasonID
                 config_.activeSeason = sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);
-                LOG_INFO("module", ">> [SeasonalRewards] SeasonalManager not available, using config season: {}", config_.activeSeason);
+                LOG_INFO("module.dc", ">> [SeasonalRewards] SeasonalManager not available, using config season: {}", config_.activeSeason);
             }
 
             // Load canonical seasonal currency from DarkChaos.Seasonal.* (Section 9 unified settings)
@@ -76,10 +76,10 @@ namespace DarkChaos
             config_.resetDay = sConfigMgr->GetOption<uint8>("SeasonalRewards.WeeklyResetDay", WEEKLY_RESET_DAY);
             config_.resetHour = sConfigMgr->GetOption<uint8>("SeasonalRewards.WeeklyResetHour", WEEKLY_RESET_HOUR);
 
-            LOG_INFO("module", ">> [SeasonalRewards] Configuration loaded:");
-            LOG_INFO("module", ">>   Active Season: {}", config_.activeSeason);
-            LOG_INFO("module", ">>   Token Item: {}, Essence Item: {}", config_.tokenItemId, config_.essenceItemId);
-            LOG_INFO("module", ">>   Weekly Caps: {} tokens, {} essence",
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Configuration loaded:");
+            LOG_INFO("module.dc", ">>   Active Season: {}", config_.activeSeason);
+            LOG_INFO("module.dc", ">>   Token Item: {}, Essence Item: {}", config_.tokenItemId, config_.essenceItemId);
+            LOG_INFO("module.dc", ">>   Weekly Caps: {} tokens, {} essence",
                 config_.weeklyTokenCap == 0 ? "unlimited" : std::to_string(config_.weeklyTokenCap),
                 config_.weeklyEssenceCap == 0 ? "unlimited" : std::to_string(config_.weeklyEssenceCap));
         }
@@ -95,7 +95,7 @@ namespace DarkChaos
 
             if (!result)
             {
-                LOG_INFO("module", ">> [SeasonalRewards] No player stats loaded (fresh season or no data)");
+                LOG_INFO("module.dc", ">> [SeasonalRewards] No player stats loaded (fresh season or no data)");
                 return;
             }
 
@@ -122,14 +122,14 @@ namespace DarkChaos
                 count++;
             } while (result->NextRow());
 
-            LOG_INFO("module", ">> [SeasonalRewards] Loaded {} player stats for season {}", count, config_.activeSeason);
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Loaded {} player stats for season {}", count, config_.activeSeason);
         }
 
         void SeasonalRewardManager::Initialize()
         {
             if (!config_.enabled)
             {
-                LOG_WARN("module", ">> [SeasonalRewards] System is DISABLED in config");
+                LOG_WARN("module.dc", ">> [SeasonalRewards] System is DISABLED in config");
                 return;
             }
 
@@ -148,7 +148,7 @@ namespace DarkChaos
                     questRewards_[questId] = {tokens, essence};
                     questCount++;
                 } while (questResult->NextRow());
-                LOG_INFO("module", ">> [SeasonalRewards] Loaded {} quest rewards", questCount);
+                LOG_INFO("module.dc", ">> [SeasonalRewards] Loaded {} quest rewards", questCount);
             }
 
             // Load creature rewards
@@ -166,10 +166,10 @@ namespace DarkChaos
                     creatureRewards_[creatureEntry] = {tokens, essence};
                     creatureCount++;
                 } while (creatureResult->NextRow());
-                LOG_INFO("module", ">> [SeasonalRewards] Loaded {} creature rewards", creatureCount);
+                LOG_INFO("module.dc", ">> [SeasonalRewards] Loaded {} creature rewards", creatureCount);
             }
 
-            LOG_INFO("module", ">> [SeasonalRewards] System initialized successfully!");
+            LOG_INFO("module.dc", ">> [SeasonalRewards] System initialized successfully!");
         }
 
         void SeasonalRewardManager::ReloadConfiguration()
@@ -178,7 +178,7 @@ namespace DarkChaos
             questRewards_.clear();
             creatureRewards_.clear();
             Initialize();
-            LOG_INFO("module", ">> [SeasonalRewards] Configuration reloaded!");
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Configuration reloaded!");
         }
 
         // =====================================================================
@@ -473,7 +473,7 @@ namespace DarkChaos
 
             SavePlayerStats(*stats);
 
-            LOG_DEBUG("module", "[SeasonalRewards] Reset weekly stats for player {}", player->GetName());
+            LOG_DEBUG("module.dc", "[SeasonalRewards] Reset weekly stats for player {}", player->GetName());
         }
 
         // =====================================================================
@@ -537,7 +537,7 @@ namespace DarkChaos
 
             weeklyChests_[chest.playerGuid] = chest;
 
-            LOG_DEBUG("module", "[SeasonalRewards] Generated weekly chest for player {} with {} slots",
+            LOG_DEBUG("module.dc", "[SeasonalRewards] Generated weekly chest for player {} with {} slots",
                 player->GetName(), slotsUnlocked);
         }
 
@@ -713,7 +713,7 @@ namespace DarkChaos
                 return;
 
             player->CompletedAchievement(sAchievementMgr->GetAchievement(achievementId));
-            LOG_DEBUG("module", "[SeasonalRewards] Granted achievement {} to player {}", achievementId, player->GetName());
+            LOG_DEBUG("module.dc", "[SeasonalRewards] Granted achievement {} to player {}", achievementId, player->GetName());
         }
 
         // =====================================================================
@@ -742,7 +742,7 @@ namespace DarkChaos
             playerStats_.erase(playerGuid);
             weeklyChests_.erase(playerGuid);
 
-            LOG_INFO("module", "[SeasonalRewards] Reset season data for player {}", player->GetName());
+            LOG_INFO("module.dc", "[SeasonalRewards] Reset season data for player {}", player->GetName());
         }
 
         void SeasonalRewardManager::SetActiveSeason(uint32 seasonId)
@@ -752,7 +752,7 @@ namespace DarkChaos
             weeklyChests_.clear();
             LoadPlayerStats();
             Initialize();
-            LOG_INFO("module", "[SeasonalRewards] Active season changed to {}", seasonId);
+            LOG_INFO("module.dc", "[SeasonalRewards] Active season changed to {}", seasonId);
         }
 
         void SeasonalRewardManager::SetMultiplier(const std::string& type, float value)
@@ -766,7 +766,7 @@ namespace DarkChaos
             else if (type == "event")
                 config_.eventBossMultiplier = value;
 
-            LOG_INFO("module", "[SeasonalRewards] Set {} multiplier to {}", type, value);
+            LOG_INFO("module.dc", "[SeasonalRewards] Set {} multiplier to {}", type, value);
         }
 
         // =====================================================================
@@ -783,7 +783,7 @@ namespace DarkChaos
                 timeInfo->tm_hour == config_.resetHour &&
                 now - lastWeeklyCheck_ > 3600) // Don't check more than once per hour
             {
-                LOG_INFO("module", "[SeasonalRewards] Weekly reset triggered!");
+                LOG_INFO("module.dc", "[SeasonalRewards] Weekly reset triggered!");
 
                 // Process all loaded players
                 // Note: This only affects online players. Offline players will be reset on login.
@@ -859,7 +859,7 @@ namespace DarkChaos
 
         void SeasonalRewardManager::OnSeasonStart(uint32 season_id)
         {
-            LOG_INFO("module", ">> [SeasonalRewards] Season {} started - initializing reward system", season_id);
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Season {} started - initializing reward system", season_id);
 
             // Update active season
             config_.activeSeason = season_id;
@@ -869,12 +869,12 @@ namespace DarkChaos
             creatureRewards_.clear();
             Initialize();
 
-            LOG_INFO("module", ">> [SeasonalRewards] Season {} initialization complete", season_id);
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Season {} initialization complete", season_id);
         }
 
         void SeasonalRewardManager::OnSeasonEnd(uint32 season_id)
         {
-            LOG_INFO("module", ">> [SeasonalRewards] Season {} ending - finalizing rewards", season_id);
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Season {} ending - finalizing rewards", season_id);
 
             // Generate final weekly chests for all active players
             for (auto& [playerGuid, stats] : playerStats_)
@@ -882,16 +882,16 @@ namespace DarkChaos
                 if (stats.seasonId == season_id)
                 {
                     // Final chest generation would happen here
-                    LOG_DEBUG("module", ">> [SeasonalRewards] Finalizing season {} for player {}", season_id, playerGuid);
+                    LOG_DEBUG("module.dc", ">> [SeasonalRewards] Finalizing season {} for player {}", season_id, playerGuid);
                 }
             }
 
-            LOG_INFO("module", ">> [SeasonalRewards] Season {} finalization complete", season_id);
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Season {} finalization complete", season_id);
         }
 
         void SeasonalRewardManager::OnPlayerSeasonChange(uint32 player_guid, uint32 old_season, uint32 new_season)
         {
-            LOG_INFO("module", ">> [SeasonalRewards] Player {} transitioning from season {} to {}",
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Player {} transitioning from season {} to {}",
                 player_guid, old_season, new_season);
 
             // Archive old season stats
@@ -912,7 +912,7 @@ namespace DarkChaos
             playerStats_[player_guid] = newStats;
             SavePlayerStats(newStats);
 
-            LOG_INFO("module", ">> [SeasonalRewards] Player {} season transition complete", player_guid);
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Player {} season transition complete", player_guid);
         }
 
         bool SeasonalRewardManager::ValidateSeasonTransition(uint32 /*player_guid*/, uint32 /*season_id*/)
@@ -924,7 +924,7 @@ namespace DarkChaos
 
         bool SeasonalRewardManager::InitializeForSeason(uint32 season_id)
         {
-            LOG_INFO("module", ">> [SeasonalRewards] Initializing system for season {}", season_id);
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Initializing system for season {}", season_id);
 
             config_.activeSeason = season_id;
 
@@ -945,7 +945,7 @@ namespace DarkChaos
                     questRewards_[fields[0].Get<uint32>()] = {fields[1].Get<uint32>(), fields[2].Get<uint32>()};
                     count++;
                 } while (questResult->NextRow());
-                LOG_INFO("module", ">> [SeasonalRewards] Loaded {} quest rewards for season {}", count, season_id);
+                LOG_INFO("module.dc", ">> [SeasonalRewards] Loaded {} quest rewards for season {}", count, season_id);
             }
 
             std::string creatureSql = Acore::StringFormat(
@@ -961,7 +961,7 @@ namespace DarkChaos
                     creatureRewards_[fields[0].Get<uint32>()] = {fields[1].Get<uint32>(), fields[2].Get<uint32>()};
                     count++;
                 } while (creatureResult->NextRow());
-                LOG_INFO("module", ">> [SeasonalRewards] Loaded {} creature rewards for season {}", count, season_id);
+                LOG_INFO("module.dc", ">> [SeasonalRewards] Loaded {} creature rewards for season {}", count, season_id);
             }
 
             return true;
@@ -969,7 +969,7 @@ namespace DarkChaos
 
         bool SeasonalRewardManager::CleanupFromSeason(uint32 season_id)
         {
-            LOG_INFO("module", ">> [SeasonalRewards] Cleaning up season {}", season_id);
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Cleaning up season {}", season_id);
 
             // Save all player stats for this season
             for (auto& [playerGuid, stats] : playerStats_)
@@ -984,7 +984,7 @@ namespace DarkChaos
             questRewards_.clear();
             creatureRewards_.clear();
 
-            LOG_INFO("module", ">> [SeasonalRewards] Season {} cleanup complete", season_id);
+            LOG_INFO("module.dc", ">> [SeasonalRewards] Season {} cleanup complete", season_id);
             return true;
         }
 

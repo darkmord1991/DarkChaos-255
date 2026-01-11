@@ -192,7 +192,7 @@ void GuildHouseManager::SpawnTeleporterNPC(uint32 /*guildId*/, uint32 mapId, uin
     if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, phase, 800002, 0, x, y, z, o))
     {
         delete creature;
-        LOG_INFO("modules", "GUILDHOUSE: Unable to create Teleporter NPC!");
+        LOG_INFO("modules.dc", "GUILDHOUSE: Unable to create Teleporter NPC!");
         return;
     }
 
@@ -226,7 +226,7 @@ void GuildHouseManager::SpawnButlerNPC(uint32 /*guildId*/, uint32 mapId, uint32 
     if (!creature->Create(map->GenerateLowGuid<HighGuid::Unit>(), map, phase, 95104, 0, x, y, z, o))
     {
         delete creature;
-        LOG_INFO("modules", "GUILDHOUSE: Unable to create Butler NPC!");
+        LOG_INFO("modules.dc", "GUILDHOUSE: Unable to create Butler NPC!");
         return;
     }
 

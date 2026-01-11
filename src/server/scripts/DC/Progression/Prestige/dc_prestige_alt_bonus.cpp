@@ -52,19 +52,19 @@ namespace
             // Validate config
             if (bonusPerChar == 0 || bonusPerChar > 25)
             {
-                LOG_ERROR("scripts", "Prestige Alt Bonus: Invalid PercentPerChar ({}). Must be 1-25. Using default {}.",
+                LOG_ERROR("scripts.dc", "Prestige Alt Bonus: Invalid PercentPerChar ({}). Must be 1-25. Using default {}.",
                     bonusPerChar, XP_BONUS_PER_MAX_CHAR);
                 bonusPerChar = XP_BONUS_PER_MAX_CHAR;
             }
 
             if (maxBonusChars == 0 || maxBonusChars > 10)
             {
-                LOG_ERROR("scripts", "Prestige Alt Bonus: Invalid MaxCharacters ({}). Must be 1-10. Using default {}.",
+                LOG_ERROR("scripts.dc", "Prestige Alt Bonus: Invalid MaxCharacters ({}). Must be 1-10. Using default {}.",
                     maxBonusChars, MAX_BONUS_CHARACTERS);
                 maxBonusChars = MAX_BONUS_CHARACTERS;
             }
 
-            LOG_INFO("scripts", "Prestige Alt Bonus: Loaded ({}% per char, max {} chars = {}% max bonus)",
+            LOG_INFO("scripts.dc", "Prestige Alt Bonus: Loaded ({}% per char, max {} chars = {}% max bonus)",
                 bonusPerChar, maxBonusChars, bonusPerChar * maxBonusChars);
         }
 
@@ -175,7 +175,7 @@ namespace
             if (!player->HasAura(spellId))
             {
                 player->CastSpell(player, spellId, true);
-                LOG_INFO("scripts", "Prestige Alt Bonus: Applied {}% visual buff to player {}",
+                LOG_INFO("scripts.dc", "Prestige Alt Bonus: Applied {}% visual buff to player {}",
                     bonusPercent, player->GetName());
             }
         }
@@ -252,7 +252,7 @@ namespace
                 PrestigeAltBonusSystem::instance()->InvalidateCacheForPlayer(player);
                 PrestigeAltBonusSystem::instance()->RemoveVisualBuff(player);
 
-                LOG_INFO("scripts", "Prestige Alt Bonus: Cleared cache and buff for account {} (player {} reached max level)",
+                LOG_INFO("scripts.dc", "Prestige Alt Bonus: Cleared cache and buff for account {} (player {} reached max level)",
                     player->GetSession()->GetAccountId(), player->GetName());
             }
         }
@@ -270,7 +270,7 @@ namespace
 
         void OnStartup() override
         {
-            LOG_INFO("scripts", "Prestige Alt Bonus: System initialized");
+            LOG_INFO("scripts.dc", "Prestige Alt Bonus: System initialized");
         }
     };
 }

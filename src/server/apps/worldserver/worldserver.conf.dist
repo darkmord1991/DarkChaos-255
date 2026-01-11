@@ -680,6 +680,8 @@ Appender.Console=1,4,0,"1 9 3 6 5 8"
 Appender.Server=2,5,0,Server.log,w
 # Appender.GM=2,5,15,gm_%s.log
 Appender.Errors=2,2,0,Errors.log,w
+# DarkChaos custom systems (DC scripts/modules)
+Appender.DC=2,5,0,dcsystem.log,a
 # Appender.DB=3,5,0
 # Appender.Dev=2,5,0,Dev.log,a
 
@@ -713,6 +715,15 @@ Logger.sql.updates=4,Console Server Errors
 Logger.sql=4,Console Server
 Logger.time.update=4,Console Server
 Logger.module=4,Console Server
+Logger.modules=4,Console Server
+Logger.scripts=4,Console Server
+Logger.module.dc=4,Console Server DC
+Logger.modules.dc=4,Console Server DC
+Logger.scripts.dc=4,Console Server DC
+Logger.dc.addon=4,Console Server DC
+Logger.mythic=4,Console Server DC
+Logger.hlbg=4,Console Server DC
+Logger.seasonal=4,Console Server DC
 Logger.spells.scripts=2,Console Errors
 #Logger.achievement=4,Console Server
 #Logger.addon=4,Console Server

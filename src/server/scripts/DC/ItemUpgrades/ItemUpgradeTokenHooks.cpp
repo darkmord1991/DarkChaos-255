@@ -195,7 +195,7 @@ namespace DarkChaos
                 std::string pvpMsg = "|cff00ff00+" + std::to_string(reward) + " Upgrade Tokens|r (PvP Kill)";
                 ChatHandler(killer->GetSession()).SendSysMessage(pvpMsg.c_str());
 
-        LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from PvP kill of {}",
+        LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} tokens from PvP kill of {}",
             killer->GetGUID().GetCounter(), reward, victim->GetGUID().GetCounter());
             }
 
@@ -216,7 +216,7 @@ namespace DarkChaos
                 // Check weekly cap
                 if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter(), season))
                 {
-                    LOG_DEBUG("scripts", "ItemUpgrade: Player {} at weekly token cap, no quest reward", player->GetGUID().GetCounter());
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Player {} at weekly token cap, no quest reward", player->GetGUID().GetCounter());
                     return;
                 }
 
@@ -237,7 +237,7 @@ namespace DarkChaos
                                       std::string(quest->GetTitle()) + ")";
                 ChatHandler(player->GetSession()).SendSysMessage(questMsg.c_str());
 
-        LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens from quest {} ({})",
+        LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} tokens from quest {} ({})",
             player->GetGUID().GetCounter(), reward, quest->GetQuestId(), quest->GetTitle());
             }
 
@@ -259,7 +259,7 @@ namespace DarkChaos
                         player->GetGUID().GetCounter(), achievement->ID);
                     if (result && result->Fetch()[0].Get<uint32>() > 0)
                     {
-                        LOG_DEBUG("scripts", "ItemUpgrade: Achievement {} already claimed by player {}",
+                        LOG_DEBUG("scripts.dc", "ItemUpgrade: Achievement {} already claimed by player {}",
                                  achievement->ID, player->GetGUID().GetCounter());
                         return;  // Already claimed
                     }
@@ -267,7 +267,7 @@ namespace DarkChaos
                 catch (...)
                 {
                     // Table may not exist yet - skip artifact discovery check
-                    LOG_DEBUG("scripts", "ItemUpgrade: dc_player_artifact_discoveries table not found, skipping duplicate check");
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: dc_player_artifact_discoveries table not found, skipping duplicate check");
                 }
 
                 // Prepare a locale-aware achievement name (achievement->name is an array of locale strings)
@@ -288,7 +288,7 @@ namespace DarkChaos
                 catch (...)
                 {
                     // Table may not exist - log but continue
-                    LOG_DEBUG("scripts", "ItemUpgrade: Could not insert into dc_player_artifact_discoveries, table may not exist");
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Could not insert into dc_player_artifact_discoveries, table may not exist");
                 }
 
                 // Log transaction
@@ -301,7 +301,7 @@ namespace DarkChaos
                                         achName + ")";
                 ChatHandler(player->GetSession()).SendSysMessage(achieveMsg.c_str());
 
-                LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})",
+                LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})",
                     player->GetGUID().GetCounter(), essence_reward, achievement->ID, achName);
             }
         };
@@ -379,7 +379,7 @@ namespace DarkChaos
                 // Check weekly cap (only for regular tokens, not essence)
                 if (IsAtWeeklyTokenCap(player->GetGUID().GetCounter(), season))
                 {
-                    LOG_DEBUG("scripts", "ItemUpgrade: Player {} at weekly token cap, creature kill reward only essence", player->GetGUID().GetCounter());
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Player {} at weekly token cap, creature kill reward only essence", player->GetGUID().GetCounter());
                     token_reward = 0;  // Zero out tokens, but still award essence
                 }
 
@@ -405,7 +405,7 @@ namespace DarkChaos
                 else if (essence_reward > 0)
                     ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff9900+{} Artifact Essence|r", essence_reward).c_str());
 
-        LOG_INFO("scripts", "ItemUpgrade: Player {} earned {} tokens, {} essence from creature kill {}",
+        LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} tokens, {} essence from creature kill {}",
             player->GetGUID().GetCounter(), token_reward, essence_reward, creature->GetGUID().GetCounter());
             }
         };
@@ -424,10 +424,10 @@ void AddSC_ItemUpgradeTokenHooks()
     {
         new DarkChaos::ItemUpgrade::PlayerTokenHooks();
         new DarkChaos::ItemUpgrade::CreatureTokenHooks();
-        LOG_INFO("scripts", "ItemUpgrade: Token system hooks registered successfully");
+        LOG_INFO("scripts.dc", "ItemUpgrade: Token system hooks registered successfully");
     }
     catch (const std::exception& e)
     {
-        LOG_ERROR("scripts", "ItemUpgrade: Failed to register token hooks: {}", e.what());
+        LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to register token hooks: {}", e.what());
     }
 }

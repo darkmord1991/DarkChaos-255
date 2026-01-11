@@ -176,7 +176,7 @@ namespace DCPhasedDuels
         sActiveDuels[p2->GetGUID()] = duel;
         sUsedPhases.insert(phaseId);
 
-        LOG_DEBUG("scripts", "PhasedDuels: Started duel between {} and {} in phase {}",
+        LOG_DEBUG("scripts.dc", "PhasedDuels: Started duel between {} and {} in phase {}",
                   p1->GetName(), p2->GetName(), phaseId);
     }
 
@@ -265,7 +265,7 @@ namespace DCPhasedDuels
         sActiveDuels.erase(winner->GetGUID());
         sActiveDuels.erase(loser->GetGUID());
 
-        LOG_DEBUG("scripts", "PhasedDuels: Ended duel between {} and {} (winner: {}, duration: {}s)",
+        LOG_DEBUG("scripts.dc", "PhasedDuels: Ended duel between {} and {} (winner: {}, duration: {}s)",
                   winner->GetName(), loser->GetName(), winner->GetName(), durationSeconds);
     }
 
@@ -421,7 +421,7 @@ public:
         // Record duel start
         RecordDuelStart(player1, player2, freePhase);
 
-        LOG_INFO("scripts", "PhasedDuels: {} vs {} started in phase {}",
+        LOG_INFO("scripts.dc", "PhasedDuels: {} vs {} started in phase {}",
                  player1->GetName(), player2->GetName(), freePhase);
     }
 
@@ -445,7 +445,7 @@ public:
         // Record duel end and update statistics
         RecordDuelEnd(winner, loser, type);
 
-        LOG_INFO("scripts", "PhasedDuels: Duel ended - Winner: {}, Loser: {}",
+        LOG_INFO("scripts.dc", "PhasedDuels: Duel ended - Winner: {}, Loser: {}",
                  winner->GetName(), loser->GetName());
     }
 };
@@ -588,7 +588,7 @@ public:
     void OnStartup() override
     {
         sConfig.Load();
-        LOG_INFO("scripts", "DarkChaos Phased Duels system initialized (Enabled: {})",
+        LOG_INFO("scripts.dc", "DarkChaos Phased Duels system initialized (Enabled: {})",
                  sConfig.enabled ? "Yes" : "No");
     }
 };

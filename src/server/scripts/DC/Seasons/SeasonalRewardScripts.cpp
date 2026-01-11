@@ -135,16 +135,16 @@ public:
 
             if (DarkChaos::Seasonal::GetSeasonalManager()->RegisterSystem(registration))
             {
-                LOG_INFO("module", ">> [SeasonalRewards] Registered with SeasonalManager");
+                LOG_INFO("module.dc", ">> [SeasonalRewards] Registered with SeasonalManager");
             }
             else
             {
-                LOG_ERROR("module", ">> [SeasonalRewards] Failed to register with SeasonalManager!");
+                LOG_ERROR("module.dc", ">> [SeasonalRewards] Failed to register with SeasonalManager!");
             }
         }
         else
         {
-            LOG_WARN("module", ">> [SeasonalRewards] SeasonalManager not available - running in standalone mode");
+            LOG_WARN("module.dc", ">> [SeasonalRewards] SeasonalManager not available - running in standalone mode");
         }
     }
 

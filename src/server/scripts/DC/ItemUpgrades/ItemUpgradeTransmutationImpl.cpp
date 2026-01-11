@@ -60,7 +60,7 @@ namespace DarkChaos
 
             void LoadTransmutationData()
             {
-                LOG_INFO("scripts", "ItemUpgrade: Loading transmutation recipes...");
+                LOG_INFO("scripts.dc", "ItemUpgrade: Loading transmutation recipes...");
 
                 // Load tier conversion recipes
                 QueryResult result = WorldDatabase.Query(
@@ -103,7 +103,7 @@ namespace DarkChaos
                         count++;
                     } while (result->NextRow());
 
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} transmutation recipes", count);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} transmutation recipes", count);
                 }
 
                 // Load recipe input requirements
@@ -135,7 +135,7 @@ namespace DarkChaos
                         }
                     } while (result->NextRow());
 
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} transmutation input requirements", count);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} transmutation input requirements", count);
                 }
             }
 
@@ -285,7 +285,7 @@ namespace DarkChaos
                 std::string error_message;
                 if (!CanPerformTransmutation(player_guid, recipe_id, error_message))
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Cannot start transmutation {} for player {}: {}",
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Cannot start transmutation {} for player {}: {}",
                              recipe_id, player_guid, error_message);
                     return false;
                 }
@@ -324,13 +324,13 @@ namespace DarkChaos
                         "VALUES ({}, {}, {}) ON DUPLICATE KEY UPDATE last_used = {}",
                         player_guid, recipe_id, session.start_time, session.start_time);
 
-                    LOG_INFO("scripts", "ItemUpgrade: Started transmutation {} for player {}", recipe_id, player_guid);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Started transmutation {} for player {}", recipe_id, player_guid);
                     return true;
 
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Failed to start transmutation {} for player {}: {}",
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to start transmutation {} for player {}: {}",
                              recipe_id, player_guid, e.what());
                     return false;
                 }
@@ -409,13 +409,13 @@ namespace DarkChaos
                     // Remove session
                     active_sessions.erase(it);
 
-                    LOG_INFO("scripts", "ItemUpgrade: Cancelled transmutation {} for player {}", session.recipe_id, player_guid);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Cancelled transmutation {} for player {}", session.recipe_id, player_guid);
                     return true;
 
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Failed to cancel transmutation for player {}: {}", player_guid, e.what());
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to cancel transmutation for player {}: {}", player_guid, e.what());
                     return false;
                 }
             }
@@ -470,7 +470,7 @@ namespace DarkChaos
                         mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, final_amount, season);
                     }
 
-                    LOG_INFO("scripts", "ItemUpgrade: Player {} exchanged {} {} for {} {} (fee: {})",
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Player {} exchanged {} {} for {} {} (fee: {})",
                             player_guid, amount, tokens_to_essence ? "tokens" : "essence",
                             final_amount, tokens_to_essence ? "essence" : "tokens", fee_amount);
 
@@ -479,7 +479,7 @@ namespace DarkChaos
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Currency exchange failed for player {}: {}", player_guid, e.what());
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Currency exchange failed for player {}: {}", player_guid, e.what());
                     return false;
                 }
             }
@@ -539,7 +539,7 @@ namespace DarkChaos
                         if (recipe.output_item_id > 0)
                         {
                             // This would need integration with item creation system
-                            LOG_INFO("scripts", "ItemUpgrade: Transmutation success - would create item {}", recipe.output_item_id);
+                            LOG_INFO("scripts.dc", "ItemUpgrade: Transmutation success - would create item {}", recipe.output_item_id);
                         }
                     }
                     else
@@ -547,7 +547,7 @@ namespace DarkChaos
                         // Apply failure penalty
                         if (recipe.failure_penalty_percent > 0)
                         {
-                            LOG_INFO("scripts", "ItemUpgrade: Transmutation failed with {}% penalty", recipe.failure_penalty_percent);
+                            LOG_INFO("scripts.dc", "ItemUpgrade: Transmutation failed with {}% penalty", recipe.failure_penalty_percent);
                         }
                     }
 
@@ -559,13 +559,13 @@ namespace DarkChaos
                         player_guid, session.recipe_id, session.start_time,
                         session.end_time, session.success ? 1 : 0);
 
-                    LOG_INFO("scripts", "ItemUpgrade: Completed transmutation {} for player {} - {}",
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Completed transmutation {} for player {} - {}",
                             session.recipe_id, player_guid, session.success ? "SUCCESS" : "FAILED");
 
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Failed to complete transmutation for player {}: {}", player_guid, e.what());
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to complete transmutation for player {}: {}", player_guid, e.what());
                 }
             }
         };
@@ -691,7 +691,7 @@ namespace DarkChaos
                         state->stat_multiplier = 1.0f + (state->upgrade_level / 5.0f) * (max_mult - 1.0f);
                         mgr->SaveItemUpgrade(item_guid);
 
-                        LOG_INFO("scripts", "ItemUpgrade: Successfully converted item {} from tier {} to tier {} for player {}",
+                        LOG_INFO("scripts.dc", "ItemUpgrade: Successfully converted item {} from tier {} to tier {} for player {}",
                                 item_guid, original_tier, target_tier, player_guid);
                     }
                     else
@@ -706,7 +706,7 @@ namespace DarkChaos
                             state->stat_multiplier = 1.0f + (state->upgrade_level / 5.0f) * (max_mult - 1.0f);
                             mgr->SaveItemUpgrade(item_guid);
 
-                            LOG_INFO("scripts", "ItemUpgrade: Tier conversion failed for item {} - lost {} upgrade levels",
+                            LOG_INFO("scripts.dc", "ItemUpgrade: Tier conversion failed for item {} - lost {} upgrade levels",
                                     item_guid, level_loss);
                         }
                     }
@@ -722,7 +722,7 @@ namespace DarkChaos
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Tier conversion failed for player {}: {}", player_guid, e.what());
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Tier conversion failed for player {}: {}", player_guid, e.what());
                     return false;
                 }
             }

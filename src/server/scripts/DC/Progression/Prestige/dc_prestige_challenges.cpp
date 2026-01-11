@@ -80,7 +80,7 @@ namespace
             soloEnabled = sConfigMgr->GetOption<bool>("Prestige.Challenges.Solo.Enable", true);
             speedTimeLimit = sConfigMgr->GetOption<uint32>("Prestige.Challenges.Speed.TimeLimit", SPEED_CHALLENGE_TIME_LIMIT);
 
-            LOG_INFO("scripts", "Prestige Challenges: Loaded (Iron: {}, Speed: {}h, Solo: {})",
+            LOG_INFO("scripts.dc", "Prestige Challenges: Loaded (Iron: {}, Speed: {}h, Solo: {})",
                 ironEnabled ? "ON" : "OFF",
                 speedEnabled ? speedTimeLimit / 3600 : 0,
                 soloEnabled ? "ON" : "OFF");
@@ -125,7 +125,7 @@ namespace
                     g_ActiveChallenges[guid].push_back(progress);
                 } while (result->NextRow());
 
-                LOG_INFO("scripts", "Prestige Challenges: Loaded {} active challenge(s) for player {}",
+                LOG_INFO("scripts.dc", "Prestige Challenges: Loaded {} active challenge(s) for player {}",
                     g_ActiveChallenges[guid].size(), player->GetName());
             }
         }
@@ -191,7 +191,7 @@ namespace
 
             g_ActiveChallenges[guid].push_back(progress);
 
-            LOG_INFO("scripts", "Prestige Challenges: Player {} started challenge {} for prestige {}",
+            LOG_INFO("scripts.dc", "Prestige Challenges: Player {} started challenge {} for prestige {}",
                 player->GetName(), static_cast<uint32>(challengeType), prestigeLevel);
 
             return true;
@@ -230,7 +230,7 @@ namespace
                 challengeName, reason
             );
 
-            LOG_INFO("scripts", "Prestige Challenges: Player {} failed challenge {} - {}",
+            LOG_INFO("scripts.dc", "Prestige Challenges: Player {} failed challenge {} - {}",
                 player->GetName(), static_cast<uint32>(challengeType), reason);
         }
 
@@ -269,7 +269,7 @@ namespace
                 challengeName
             );
 
-            LOG_INFO("scripts", "Prestige Challenges: Player {} completed challenge {}",
+            LOG_INFO("scripts.dc", "Prestige Challenges: Player {} completed challenge {}",
                 player->GetName(), static_cast<uint32>(challengeType));
         }
 
@@ -535,7 +535,7 @@ namespace
 
         void OnStartup() override
         {
-            LOG_INFO("scripts", "Prestige Challenges: System initialized");
+            LOG_INFO("scripts.dc", "Prestige Challenges: System initialized");
         }
     };
 

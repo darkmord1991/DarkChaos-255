@@ -209,7 +209,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
 {
     if (sHotspotsConfig.enabledMaps.empty())
     {
-        LOG_WARN("scripts", "GetRandomHotspotPosition: no enabled maps configured");
+        LOG_WARN("scripts.dc", "GetRandomHotspotPosition: no enabled maps configured");
         return false;
     }
 
@@ -278,7 +278,7 @@ bool HotspotMgr::SpawnHotspot()
     float x, y, z;
     if (!GetRandomHotspotPosition(mapId, zoneId, x, y, z))
     {
-        LOG_ERROR("scripts", "SpawnHotspot: Failed to find valid position");
+        LOG_ERROR("scripts.dc", "SpawnHotspot: Failed to find valid position");
         return false;
     }
 
@@ -314,7 +314,7 @@ bool HotspotMgr::SpawnHotspot()
     _grid.Add(h);
     SaveHotspotToDB(h);
 
-    LOG_INFO("scripts", "Spawned Hotspot #{} on map {} zone {}", h.id, h.mapId, h.zoneId);
+    LOG_INFO("scripts.dc", "Spawned Hotspot #{} on map {} zone {}", h.id, h.mapId, h.zoneId);
 
     if (sHotspotsConfig.announceSpawn)
     {

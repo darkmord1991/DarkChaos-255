@@ -168,7 +168,7 @@ void MythicSpectatorManager::RegisterActiveRun(uint32 instanceId, uint32 mapId, 
     if (_config.replayEnabled)
         StartRecording(instanceId);
 
-    LOG_DEBUG("scripts", "MythicSpectator: Registered run {} (map {}, +{})",
+    LOG_DEBUG("scripts.dc", "MythicSpectator: Registered run {} (map {}, +{})",
               instanceId, mapId, keystoneLevel);
 }
 
@@ -195,7 +195,7 @@ void MythicSpectatorManager::UnregisterActiveRun(uint32 instanceId)
 
     _activeRuns.erase(it);
 
-    LOG_DEBUG("scripts", "MythicSpectator: Unregistered run {}", instanceId);
+    LOG_DEBUG("scripts.dc", "MythicSpectator: Unregistered run {}", instanceId);
 }
 
 void MythicSpectatorManager::UpdateRunStatus(uint32 instanceId, uint32 timerRemaining,
@@ -434,7 +434,7 @@ bool MythicSpectatorManager::StartSpectating(Player* player, uint32 instanceId)
         }
     }
 
-    LOG_INFO("scripts", "MythicSpectator: {} started spectating run {} (+{})",
+    LOG_INFO("scripts.dc", "MythicSpectator: {} started spectating run {} (+{})",
              player->GetName(), instanceId, run.keystoneLevel);
 
     return true;
@@ -521,7 +521,7 @@ void MythicSpectatorManager::StopSpectating(Player* player)
     if (player->GetSession())
         ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00[M+ Spectator]|r You have stopped spectating.");
 
-    LOG_DEBUG("scripts", "MythicSpectator: {} stopped spectating", player->GetName());
+    LOG_DEBUG("scripts.dc", "MythicSpectator: {} stopped spectating", player->GetName());
 }
 
 bool MythicSpectatorManager::IsSpectating(Player* player) const
@@ -729,7 +729,7 @@ void MythicSpectatorManager::Update(uint32 diff)
                 runIt->second.spectators.erase(guid);
 
             _spectators.erase(it);
-            LOG_DEBUG("scripts", "MythicSpectator: Cleaned up orphaned spectator {}", guid.ToString());
+            LOG_DEBUG("scripts.dc", "MythicSpectator: Cleaned up orphaned spectator {}", guid.ToString());
         }
     }
 
@@ -844,7 +844,7 @@ std::string MythicSpectatorManager::GenerateInviteCode(Player* player, uint32 in
     run->inviteCode = code;
     run->inviteCodeExpires = invite.expiresAt;
 
-    LOG_DEBUG("scripts", "MythicSpectator: Generated invite code {} for run {} by {}",
+    LOG_DEBUG("scripts.dc", "MythicSpectator: Generated invite code {} for run {} by {}",
               code, instanceId, player->GetName());
 
     return code;
@@ -997,7 +997,7 @@ void MythicSpectatorManager::SyncHudToSpectator(Player* spectator, uint32 instan
     for (auto const& [worldStateId, value] : state->hudWorldStates)
         spectator->SendUpdateWorldState(worldStateId, value);
 
-    LOG_DEBUG("scripts", "MythicSpectator: Synced {} HUD worldstates to spectator {}",
+    LOG_DEBUG("scripts.dc", "MythicSpectator: Synced {} HUD worldstates to spectator {}",
               state->hudWorldStates.size(), spectator->GetName());
 }
 
@@ -1050,7 +1050,7 @@ void MythicSpectatorManager::StartRecording(uint32 instanceId)
        << ",\"leader\":\"" << run->leaderName << "\"}";
     RecordEvent(instanceId, ReplayEventType::RUN_START, ss.str());
 
-    LOG_DEBUG("scripts", "MythicSpectator: Started recording replay for run {}", instanceId);
+    LOG_DEBUG("scripts.dc", "MythicSpectator: Started recording replay for run {}", instanceId);
 }
 
 void MythicSpectatorManager::StopRecording(uint32 instanceId, bool save)
@@ -1066,7 +1066,7 @@ void MythicSpectatorManager::StopRecording(uint32 instanceId, bool save)
 
     _activeReplays.erase(it);
 
-    LOG_DEBUG("scripts", "MythicSpectator: Stopped recording replay for run {}", instanceId);
+    LOG_DEBUG("scripts.dc", "MythicSpectator: Stopped recording replay for run {}", instanceId);
 }
 
 void MythicSpectatorManager::RecordEvent(uint32 instanceId, ReplayEventType type, std::string const& data)
@@ -1108,7 +1108,7 @@ bool MythicSpectatorManager::SaveReplay(uint32 instanceId)
         "(SELECT id FROM (SELECT id FROM dc_mplus_spec_replays ORDER BY start_time DESC LIMIT {}) AS t)",
         _config.replayMaxStoredRuns);
 
-    LOG_INFO("scripts", "MythicSpectator: Saved replay for run {} ({} events)",
+    LOG_INFO("scripts.dc", "MythicSpectator: Saved replay for run {} ({} events)",
              instanceId, replay.events.size());
 
     return true;
@@ -1497,7 +1497,7 @@ public:
     void OnStartup() override
     {
         sMythicSpectator.LoadConfig();
-        LOG_INFO("scripts", "DarkChaos Mythic+ Spectator system initialized (Enabled: {})",
+        LOG_INFO("scripts.dc", "DarkChaos Mythic+ Spectator system initialized (Enabled: {})",
                  sMythicSpectator.GetConfig().enabled ? "Yes" : "No");
     }
 

@@ -218,13 +218,13 @@ namespace DCCustomLogin
             if (!sSpellMgr->GetSpellInfo(profId))
             {
                 if (debug)
-                    LOG_WARN("module", "[DCCustomLogin] Profession spell {} not found", profId);
+                    LOG_WARN("module.dc", "[DCCustomLogin] Profession spell {} not found", profId);
                 continue;
             }
 
             player->learnSpell(profId, false);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted profession {} to {}", profId, player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted profession {} to {}", profId, player->GetName());
         }
     }
 
@@ -251,13 +251,13 @@ namespace DCCustomLogin
             if (!sSpellMgr->GetSpellInfo(skillId))
             {
                 if (debug)
-                    LOG_WARN("module", "[DCCustomLogin] Skill spell {} not found", skillId);
+                    LOG_WARN("module.dc", "[DCCustomLogin] Skill spell {} not found", skillId);
                 continue;
             }
 
             player->learnSpell(skillId, false);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted skill {} to {}", skillId, player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted skill {} to {}", skillId, player->GetName());
         }
     }
 
@@ -274,14 +274,14 @@ namespace DCCustomLogin
         {
             player->learnSpell(ridingSkill, false);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted riding skill {} to {}", ridingSkill, player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted riding skill {} to {}", ridingSkill, player->GetName());
         }
 
         if (mountSpell && sSpellMgr->GetSpellInfo(mountSpell))
         {
             player->learnSpell(mountSpell, false);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted mount {} to {}", mountSpell, player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted mount {} to {}", mountSpell, player->GetName());
         }
     }
 
@@ -303,7 +303,7 @@ namespace DCCustomLogin
                 {
                     player->EquipItem(slot, bag, true);
                     if (debug)
-                        LOG_INFO("module", "[DCCustomLogin] Equipped bag {} in slot {}", bagId, slot);
+                        LOG_INFO("module.dc", "[DCCustomLogin] Equipped bag {} in slot {}", bagId, slot);
                 }
             }
             slot++;
@@ -336,7 +336,7 @@ namespace DCCustomLogin
                     {
                         player->EquipItem(s, bag, true);
                         if (debug)
-                            LOG_INFO("module", "[DCCustomLogin] Equipped class bag {} in slot {}", classBagId, s);
+                            LOG_INFO("module.dc", "[DCCustomLogin] Equipped class bag {} in slot {}", classBagId, s);
                     }
                     break;
                 }
@@ -359,7 +359,7 @@ namespace DCCustomLogin
         {
             player->ModifyMoney(totalCopper);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted {}g {}s {}c to {}", gold, silver, copper, player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted {}g {}s {}c to {}", gold, silver, copper, player->GetName());
         }
     }
 
@@ -382,7 +382,7 @@ namespace DCCustomLogin
             {
                 player->AddItem(itemId, 1);
                 if (debug)
-                    LOG_INFO("module", "[DCCustomLogin] Added BoA item {} ({}) to {}", itemId, slot, player->GetName());
+                    LOG_INFO("module.dc", "[DCCustomLogin] Added BoA item {} ({}) to {}", itemId, slot, player->GetName());
             }
         }
 
@@ -404,14 +404,14 @@ namespace DCCustomLogin
         {
             player->learnSpell(spell1, false);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted special spell1 {} to {}", spell1, player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted special spell1 {} to {}", spell1, player->GetName());
         }
 
         if (spell2 && sSpellMgr->GetSpellInfo(spell2))
         {
             player->learnSpell(spell2, false);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted special spell2 {} to {}", spell2, player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted special spell2 {} to {}", spell2, player->GetName());
         }
 
         if (title)
@@ -420,7 +420,7 @@ namespace DCCustomLogin
             {
                 player->SetTitle(titleEntry);
                 if (debug)
-                    LOG_INFO("module", "[DCCustomLogin] Granted title {} to {}", title, player->GetName());
+                    LOG_INFO("module.dc", "[DCCustomLogin] Granted title {} to {}", title, player->GetName());
             }
         }
 
@@ -428,7 +428,7 @@ namespace DCCustomLogin
         {
             player->learnSpell(mount, false);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted special mount {} to {}", mount, player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted special mount {} to {}", mount, player->GetName());
         }
     }
 
@@ -447,7 +447,7 @@ namespace DCCustomLogin
             {
                 player->SetReputation(factionId, repValue);
                 if (debug)
-                    LOG_INFO("module", "[DCCustomLogin] Set {} reputation to {} for {}", name, repValue, player->GetName());
+                    LOG_INFO("module.dc", "[DCCustomLogin] Set {} reputation to {} for {}", name, repValue, player->GetName());
             }
         }
     }
@@ -481,7 +481,7 @@ namespace DCCustomLogin
         {
             player->AddItem(tokenItemId, amount);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted {} seasonal tokens (item {}) to {}",
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted {} seasonal tokens (item {}) to {}",
                          amount, tokenItemId, player->GetName());
 
             ChatHandler(player->GetSession()).PSendSysMessage(
@@ -489,7 +489,7 @@ namespace DCCustomLogin
         }
         else if (debug)
         {
-            LOG_WARN("module", "[DCCustomLogin] SeasonalTokens not configured (UseCanonical={}, ItemId={}), skipping token grant",
+            LOG_WARN("module.dc", "[DCCustomLogin] SeasonalTokens not configured (UseCanonical={}, ItemId={}), skipping token grant",
                      useCanonical, tokenItemId);
         }
     }
@@ -506,7 +506,7 @@ namespace DCCustomLogin
         {
             player->AddItem(itemId, 1);
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] Granted mobile teleporter {} to {}", itemId, player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted mobile teleporter {} to {}", itemId, player->GetName());
 
             ChatHandler(player->GetSession()).SendSysMessage(
                 "|cff00ccff[DarkChaos]:|r You received a |cffff8000Mobile Teleporter|r - use it to travel anywhere!");
@@ -540,7 +540,7 @@ namespace DCCustomLogin
                     "Bonuses are applied automatically.", prestigeLevel);
 
                 if (debug)
-                    LOG_INFO("module", "[DCCustomLogin] Player {} has account prestige level {}",
+                    LOG_INFO("module.dc", "[DCCustomLogin] Player {} has account prestige level {}",
                              player->GetName(), prestigeLevel);
             }
         }
@@ -560,7 +560,7 @@ namespace DCCustomLogin
         );
 
         if (debug)
-            LOG_INFO("module", "[DCCustomLogin] Marked {} for DC-Welcome first-login trigger", player->GetName());
+            LOG_INFO("module.dc", "[DCCustomLogin] Marked {} for DC-Welcome first-login trigger", player->GetName());
     }
 
     // Main function: Give all first login rewards
@@ -569,7 +569,7 @@ namespace DCCustomLogin
         bool debug = sConfigMgr->GetOption<bool>(Config::DEBUG, false);
 
         if (debug)
-            LOG_INFO("module", "[DCCustomLogin] Processing first login for {}", player->GetName());
+            LOG_INFO("module.dc", "[DCCustomLogin] Processing first login for {}", player->GetName());
 
         // Standard rewards (from mod-customlogin)
         GrantProfessions(player, debug);
@@ -588,7 +588,7 @@ namespace DCCustomLogin
         TriggerWelcomeAddon(player, debug);
 
         if (debug)
-            LOG_INFO("module", "[DCCustomLogin] Completed first login rewards for {}", player->GetName());
+            LOG_INFO("module.dc", "[DCCustomLogin] Completed first login rewards for {}", player->GetName());
     }
 
 } // namespace DCCustomLogin
@@ -613,7 +613,7 @@ public:
         if (player->GetTotalPlayedTime() == 0)
         {
             if (debug)
-                LOG_INFO("module", "[DCCustomLogin] First login detected for {}", player->GetName());
+                LOG_INFO("module.dc", "[DCCustomLogin] First login detected for {}", player->GetName());
 
             DCCustomLogin::GiveFirstLoginRewards(player);
         }

@@ -53,11 +53,11 @@ public:
 
         if (RemoveGuildHouse(guild))
         {
-            LOG_INFO("modules", "GUILDHOUSE: Deleting Guild House data due to disbanding of guild...");
+            LOG_INFO("modules.dc", "GUILDHOUSE: Deleting Guild House data due to disbanding of guild...");
         }
         else
         {
-            LOG_INFO("modules", "GUILDHOUSE: Error deleting Guild House data during disbanding of guild!!");
+            LOG_INFO("modules.dc", "GUILDHOUSE: Error deleting Guild House data during disbanding of guild!!");
         }
     }
 

@@ -227,7 +227,7 @@ namespace DarkChaos
             {
                 if (player_guid == 0 || item_guid == 0)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Invalid parameters - player_guid: {}, item_guid: {}", player_guid, item_guid);
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Invalid parameters - player_guid: {}, item_guid: {}", player_guid, item_guid);
                     return false;
                 }
 
@@ -237,7 +237,7 @@ namespace DarkChaos
                     ItemUpgradeState* state = GetItemUpgradeState(item_guid);
                     if (!state)
                     {
-                        LOG_ERROR("scripts", "ItemUpgrade: Item {} not found for upgrade", item_guid);
+                        LOG_ERROR("scripts.dc", "ItemUpgrade: Item {} not found for upgrade", item_guid);
                         return false;
                     }
 
@@ -264,7 +264,7 @@ namespace DarkChaos
                     uint8 max_level = GetTierMaxLevel(tier);
                     if (state->upgrade_level >= max_level)
                     {
-                        LOG_INFO("scripts", "ItemUpgrade: Item {} already at max level {}", item_guid, max_level);
+                        LOG_INFO("scripts.dc", "ItemUpgrade: Item {} already at max level {}", item_guid, max_level);
                         return false;
                     }
 
@@ -283,7 +283,7 @@ namespace DarkChaos
                         uint32 essence = GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, state->season);
                         if (essence < essence_cost)
                         {
-                            LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient essence (need {}, have {})",
+                            LOG_DEBUG("scripts.dc", "ItemUpgrade: Player {} insufficient essence (need {}, have {})",
                                      player_guid, essence_cost, essence);
                             return false;
                         }
@@ -294,7 +294,7 @@ namespace DarkChaos
                         uint32 tokens = GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, state->season);
                         if (tokens < token_cost)
                         {
-                            LOG_DEBUG("scripts", "ItemUpgrade: Player {} insufficient tokens (need {}, have {})",
+                            LOG_DEBUG("scripts.dc", "ItemUpgrade: Player {} insufficient tokens (need {}, have {})",
                                      player_guid, token_cost, tokens);
                             return false;
                         }
@@ -400,7 +400,7 @@ namespace DarkChaos
                         "ON DUPLICATE KEY UPDATE mastery_points = mastery_points + {}",
                         player_guid, mastery_points, state->season, mastery_points);
 
-                    LOG_INFO("scripts", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points",
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Player {} upgraded item {} to level {} and earned {} mastery points",
                             player_guid, item_guid, next_level, mastery_points);
 
                     stats.upgrades_performed++;
@@ -409,7 +409,7 @@ namespace DarkChaos
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Failed to upgrade item {} for player {}: {}", item_guid, player_guid, e.what());
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to upgrade item {} for player {}: {}", item_guid, player_guid, e.what());
                     return false;
                 }
             }
@@ -421,7 +421,7 @@ namespace DarkChaos
 
                 if (player_guid == 0)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Invalid player_guid {} in AddCurrency", player_guid);
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Invalid player_guid {} in AddCurrency", player_guid);
                     return false;
                 }
 
@@ -437,13 +437,13 @@ namespace DarkChaos
                         "ON DUPLICATE KEY UPDATE amount = amount + {}",
                         player_guid, currency_str, amount, season, amount);
 
-                    LOG_DEBUG("scripts", "ItemUpgrade: Added {} {} to player {}", amount, currency_str, player_guid);
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Added {} {} to player {}", amount, currency_str, player_guid);
                     stats.db_writes++;
                     return true;
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Failed to add currency for player {}: {}", player_guid, e.what());
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to add currency for player {}: {}", player_guid, e.what());
                     return false;
                 }
             }
@@ -452,7 +452,7 @@ namespace DarkChaos
             {
                 if (player_guid == 0)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Invalid player_guid {} in RemoveCurrency", player_guid);
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Invalid player_guid {} in RemoveCurrency", player_guid);
                     return false;
                 }
 
@@ -485,7 +485,7 @@ namespace DarkChaos
             {
                 if (player_guid == 0)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Invalid player_guid {} in GetCurrency", player_guid);
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Invalid player_guid {} in GetCurrency", player_guid);
                     return 0;
                 }
 
@@ -505,7 +505,7 @@ namespace DarkChaos
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Failed to get currency for player {}: {}", player_guid, e.what());
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to get currency for player {}: {}", player_guid, e.what());
                     return 0;
                 }
             }
@@ -536,7 +536,7 @@ namespace DarkChaos
                     
                 if (!result)
                 {
-                    LOG_DEBUG("scripts", "ItemUpgrade: Item {} not in upgrade database - creating default state", item_guid);
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Item {} not in upgrade database - creating default state", item_guid);
 
                     ItemUpgradeState default_state;
                     default_state.item_guid = item_guid;
@@ -745,13 +745,13 @@ namespace DarkChaos
                 if (state->player_guid == 0)
                 {
                     state->player_guid = player_guid;
-                    LOG_DEBUG("scripts", "ItemUpgrade: Assigned item {} to player {}", item_guid, player_guid);
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Assigned item {} to player {}", item_guid, player_guid);
                 }
 
                 // Ensure the item belongs to the player
                 if (state->player_guid != player_guid)
                 {
-                    LOG_WARN("scripts", "ItemUpgrade: Item {} belongs to player {}, not {}",
+                    LOG_WARN("scripts.dc", "ItemUpgrade: Item {} belongs to player {}, not {}",
                              item_guid, state->player_guid, player_guid);
                     return false;
                 }
@@ -844,7 +844,7 @@ namespace DarkChaos
                 }
                 catch (const std::exception& e)
                 {
-                    LOG_ERROR("scripts", "ItemUpgrade: Failed to get highest tier for player {}: {}", player_guid, e.what());
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to get highest tier for player {}: {}", player_guid, e.what());
                     return TIER_LEVELING;
                 }
             }
@@ -902,7 +902,7 @@ namespace DarkChaos
                 }
                 catch (...)
                 {
-                    LOG_DEBUG("scripts", "ItemUpgrade: dc_player_artifact_discoveries table not found");
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: dc_player_artifact_discoveries table not found");
                     return false;
                 }
 
@@ -915,20 +915,20 @@ namespace DarkChaos
 
             void LoadUpgradeData(uint32 season) override
             {
-                LOG_INFO("scripts", "ItemUpgrade: Loading upgrade data for season {}", season);
+                LOG_INFO("scripts.dc", "ItemUpgrade: Loading upgrade data for season {}", season);
 
                 // Initialize Schema Checks (Performance Optimization)
                 // Check if critical indexes exist
                 QueryResult indexCheck = CharacterDatabase.Query("SHOW INDEX FROM " + std::string(ITEM_UPGRADES_TABLE) + " WHERE Key_name = 'idx_tier'");
                 if (!indexCheck)
                 {
-                    LOG_WARN("scripts", "ItemUpgrade: [PERFORMANCE] Missing index 'idx_tier' on table '{}'. Recommend: ALTER TABLE {} ADD INDEX idx_tier (tier_id);", ITEM_UPGRADES_TABLE, ITEM_UPGRADES_TABLE);
+                    LOG_WARN("scripts.dc", "ItemUpgrade: [PERFORMANCE] Missing index 'idx_tier' on table '{}'. Recommend: ALTER TABLE {} ADD INDEX idx_tier (tier_id);", ITEM_UPGRADES_TABLE, ITEM_UPGRADES_TABLE);
                 }
                 
                 indexCheck = CharacterDatabase.Query("SHOW INDEX FROM dc_player_upgrade_tokens WHERE Key_name = 'idx_player_season'");
                 if (!indexCheck)
                 {
-                    LOG_WARN("scripts", "ItemUpgrade: [PERFORMANCE] Missing index 'idx_player_season' on table 'dc_player_upgrade_tokens'. Recommend: ALTER TABLE dc_player_upgrade_tokens ADD INDEX idx_player_season (player_guid, season);");
+                    LOG_WARN("scripts.dc", "ItemUpgrade: [PERFORMANCE] Missing index 'idx_player_season' on table 'dc_player_upgrade_tokens'. Recommend: ALTER TABLE dc_player_upgrade_tokens ADD INDEX idx_player_season (player_guid, season);");
                 }
 
                 tier_definitions.clear();
@@ -962,7 +962,7 @@ namespace DarkChaos
                         count++;
                     } while (result->NextRow());
 
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} tier definitions", count);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} tier definitions", count);
                 }
 
                 // Load upgrade costs
@@ -989,7 +989,7 @@ namespace DarkChaos
                         count++;
                     } while (result->NextRow());
 
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} upgrade cost entries", count);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} upgrade cost entries", count);
                 }
 
                 // Load item to tier mappings
@@ -1009,7 +1009,7 @@ namespace DarkChaos
                         count++;
                     } while (result->NextRow());
 
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} item-to-tier mappings", count);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} item-to-tier mappings", count);
                 }
 
                 // Load artifacts
@@ -1048,10 +1048,10 @@ namespace DarkChaos
                         count++;
                     } while (result->NextRow());
 
-                    LOG_INFO("scripts", "ItemUpgrade: Loaded {} chaos artifacts", count);
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} chaos artifacts", count);
                 }
 
-                LOG_INFO("scripts", "ItemUpgrade: Data loading complete for season {}", season);
+                LOG_INFO("scripts.dc", "ItemUpgrade: Data loading complete for season {}", season);
             }
 
             void SaveItemUpgrade(uint32 item_guid) override
@@ -1090,7 +1090,7 @@ namespace DarkChaos
             {
                 // Currency is already auto-saved by AddCurrency/RemoveCurrency
                 // This function is here for manual flush if needed
-                LOG_DEBUG("scripts", "ItemUpgrade: Currency flush for player {} season {}", player_guid, season);
+                LOG_DEBUG("scripts.dc", "ItemUpgrade: Currency flush for player {} season {}", player_guid, season);
             }
 
             // =================================================================

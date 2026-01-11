@@ -38,28 +38,28 @@ public:
         // Item 300365 - Heirloom Shirt (Transmog cosmetic, all classes)
         if (player->AddItem(300365, 1))
         {
-            LOG_DEBUG("scripts", "go_heirloom_cache: Added Heirloom Shirt (300365) to player {}", player->GetName());
+            LOG_DEBUG("scripts.dc", "go_heirloom_cache: Added Heirloom Shirt (300365) to player {}", player->GetName());
             itemsAdded++;
         }
 
         // Item 300366 - Heirloom Bag (all classes)
         if (player->AddItem(300366, 1))
         {
-            LOG_DEBUG("scripts", "go_heirloom_cache: Added Heirloom Bag (300366) to player {}", player->GetName());
+            LOG_DEBUG("scripts.dc", "go_heirloom_cache: Added Heirloom Bag (300366) to player {}", player->GetName());
             itemsAdded++;
         }
 
         if (itemsAdded == 0)
         {
             player->SendEquipError(EQUIP_ERR_ITEM_NOT_FOUND, nullptr, nullptr);
-            LOG_DEBUG("scripts", "go_heirloom_cache: Player {} received no items - inventory full", player->GetName());
+            LOG_DEBUG("scripts.dc", "go_heirloom_cache: Player {} received no items - inventory full", player->GetName());
         }
 
         // Mark chest as looted
         go->SetLootState(GO_ACTIVATED, player);
         go->SetGoState(GO_STATE_ACTIVE);
 
-        LOG_DEBUG("scripts", "go_heirloom_cache: Player {} looted heirloom cache entry {} (items added: {})",
+        LOG_DEBUG("scripts.dc", "go_heirloom_cache: Player {} looted heirloom cache entry {} (items added: {})",
             player->GetName(), go->GetEntry(), itemsAdded);
 
         return true; // Handled - don't process default behavior

@@ -55,7 +55,7 @@ namespace ItemUpgrade
             if (_initialized)
                 return;
 
-            LOG_INFO("scripts", "ItemUpgrade: Initializing Proc Spell Registry...");
+            LOG_INFO("scripts.dc", "ItemUpgrade: Initializing Proc Spell Registry...");
             uint32 count = 0;
 
             // Iterate over all item templates
@@ -90,7 +90,7 @@ namespace ItemUpgrade
             }
 
             _initialized = true;
-            LOG_INFO("scripts", "ItemUpgrade: Mapped {} proc associations.", count);
+            LOG_INFO("scripts.dc", "ItemUpgrade: Mapped {} proc associations.", count);
         }
 
         static const std::vector<uint32>* GetItemsForSpell(uint32 spellId)
@@ -238,7 +238,7 @@ namespace ItemUpgrade
                 damage = static_cast<int32>(damage * multiplier);
 
                 // Debug log (optional, can be spammy)
-                // LOG_DEBUG("scripts", "ItemUpgrade: Scaled proc {} from item {} by {:.2f}x ({} -> {})",
+                // LOG_DEBUG("scripts.dc", "ItemUpgrade: Scaled proc {} from item {} by {:.2f}x ({} -> {})",
                 //     spellInfo->Id, sourceItem->GetEntry(), multiplier, oldDamage, damage);
             }
         }

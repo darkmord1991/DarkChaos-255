@@ -166,12 +166,12 @@ BEGIN
     WHERE DATE(`timestamp`) = yesterday
     GROUP BY DATE(`timestamp`), `module`
     ON DUPLICATE KEY UPDATE
-        `total_c2s` = VALUES(`total_c2s`),
-        `total_s2c` = VALUES(`total_s2c`),
-        `unique_players` = VALUES(`unique_players`),
-        `error_count` = VALUES(`error_count`),
-        `avg_response_time_ms` = VALUES(`avg_response_time_ms`),
-        `peak_hour` = VALUES(`peak_hour`);
+        `total_c2s` = total_c2s,
+        `total_s2c` = total_s2c,
+        `unique_players` = unique_players,
+        `error_count` = error_count,
+        `avg_response_time_ms` = avg_response_time_ms,
+        `peak_hour` = peak_hour;
 END //
 DELIMITER ;
 

@@ -52,7 +52,7 @@ static uint32 GetQuestMasterEntryForMap(uint32 mapId)
         return (*result)[0].Get<uint32>();
     }
 
-    LOG_WARN("scripts", "DungeonQuestMaster: No quest master found for map ID {}, using default", mapId);
+    LOG_WARN("scripts.dc", "DungeonQuestMaster: No quest master found for map ID {}, using default", mapId);
     return NPC_DEFAULT_QUEST_MASTER;
 }
 
@@ -81,9 +81,9 @@ static Creature* SpawnQuestMasterFollower(Player* player)
         summon->ReplaceAllNpcFlags(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
 
         // Debug logging
-        LOG_DEBUG("scripts", "DungeonQuestMaster: Spawned entry={} for player {} at ({:.2f},{:.2f},{:.2f})",
+        LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Spawned entry={} for player {} at ({:.2f},{:.2f},{:.2f})",
                   entry, player->GetName(), x, y, z);
-        LOG_DEBUG("scripts", "DungeonQuestMaster: NPC Flags set to {} (GOSSIP=1 | QUESTGIVER=2)",
+        LOG_DEBUG("scripts.dc", "DungeonQuestMaster: NPC Flags set to {} (GOSSIP=1 | QUESTGIVER=2)",
                   static_cast<uint32>(summon->GetNpcFlags()));
 
         // Make it follow the player
@@ -92,7 +92,7 @@ static Creature* SpawnQuestMasterFollower(Player* player)
         // Store mapping
         sQuestMasterFollowers[player->GetGUID()] = summon->GetGUID();
 
-        LOG_DEBUG("scripts", "DungeonQuestMaster: Follower {} stored for player {}",
+        LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Follower {} stored for player {}",
                   summon->GetGUID().ToString(), player->GetName());
 
         return summon;
@@ -114,7 +114,7 @@ static void DespawnQuestMasterFollower(Player* player, bool notify = false)
     if (Creature* follower = ObjectAccessor::GetCreature(*player, it->second))
     {
         follower->DespawnOrUnsummon(0ms);
-        LOG_DEBUG("scripts", "DungeonQuestMaster: Despawned follower for player {}", player->GetName());
+        LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Despawned follower for player {}", player->GetName());
     }
 
     sQuestMasterFollowers.erase(it);
@@ -162,7 +162,7 @@ public:
         Map* map = player->GetMap();
         if (map && map->GetDifficulty() == DUNGEON_DIFFICULTY_EPIC)
         {
-            LOG_DEBUG("scripts", "DungeonQuestMaster: Skipping spawn in Mythic difficulty for player {}",
+            LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Skipping spawn in Mythic difficulty for player {}",
                       player->GetName());
             return;
         }

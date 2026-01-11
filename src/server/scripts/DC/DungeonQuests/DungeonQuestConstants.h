@@ -241,7 +241,7 @@ inline const char* GetDifficultyColor(QuestDifficulty difficulty)
  *
  * if (IsDailyQuest(questId))
  * {
- *     LOG_INFO("scripts", "Processing daily quest: {}", questId);
+ *     LOG_INFO("scripts.dc", "Processing daily quest: {}", questId);
  *     player->AddItem(ITEM_DUNGEON_EXPLORER_TOKEN, 1);
  * }
  *

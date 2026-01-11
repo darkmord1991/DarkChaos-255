@@ -72,7 +72,7 @@ namespace
         void CacheConfig()
         {
             g_CachedStatBonusPercent = sConfigMgr->GetOption<uint32>("Prestige.StatBonusPercent", 1);
-            LOG_INFO("scripts", "Prestige Spells: Cached StatBonusPercent = {}%", g_CachedStatBonusPercent);
+            LOG_INFO("scripts.dc", "Prestige Spells: Cached StatBonusPercent = {}%", g_CachedStatBonusPercent);
         }
     };
 }

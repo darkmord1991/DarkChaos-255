@@ -148,7 +148,7 @@ public:
 
         UpdateStatistics(player, statName, 1);
 
-        LOG_DEBUG("scripts", "DungeonQuest: Updated {} for player {}",
+        LOG_DEBUG("scripts.dc", "DungeonQuest: Updated {} for player {}",
                   statName, player->GetName());
     }
 
@@ -323,7 +323,7 @@ public:
             return true;
 
         // Additional validation can go here
-        LOG_INFO("scripts", "DungeonQuest: Player {} is about to complete quest {}",
+        LOG_INFO("scripts.dc", "DungeonQuest: Player {} is about to complete quest {}",
                  player->GetName(), questId);
 
         return true; // Allow completion
@@ -345,7 +345,7 @@ public:
         if (!isDailyQuest && !isWeeklyQuest && !isDungeonQuest)
             return;
 
-        LOG_INFO("scripts", "DungeonQuest: Player {} completed dungeon quest {}",
+        LOG_INFO("scripts.dc", "DungeonQuest: Player {} completed dungeon quest {}",
                  player->GetName(), questId);
 
         // Log the completion
@@ -382,7 +382,7 @@ private:
 
         if (tokenAmount == 0)
         {
-            LOG_DEBUG("scripts", "DungeonQuest: No token reward configured for quest {}", questId);
+            LOG_DEBUG("scripts.dc", "DungeonQuest: No token reward configured for quest {}", questId);
             return;
         }
 
@@ -393,7 +393,7 @@ private:
         // Calculate final token amount
         uint32 finalTokenAmount = static_cast<uint32>(tokenAmount * multiplier);
 
-        LOG_INFO("scripts", "DungeonQuest: Quest {} base={} tokens, difficulty multiplier={:.2f}, final={} tokens",
+        LOG_INFO("scripts.dc", "DungeonQuest: Quest {} base={} tokens, difficulty multiplier={:.2f}, final={} tokens",
                  questId, tokenAmount, multiplier, finalTokenAmount);
 
         // Award tokens to player via central CrossSystem/Seasonal pipeline.
@@ -433,9 +433,9 @@ private:
             );
 
             if (ok)
-                LOG_INFO("scripts", "DungeonQuest: Awarded {} tokens to player {} via CrossSystem", finalTokenAmount, player->GetName());
+                LOG_INFO("scripts.dc", "DungeonQuest: Awarded {} tokens to player {} via CrossSystem", finalTokenAmount, player->GetName());
             else
-                LOG_ERROR("scripts", "DungeonQuest: Failed to award {} tokens to player {} via CrossSystem", finalTokenAmount, player->GetName());
+                LOG_ERROR("scripts.dc", "DungeonQuest: Failed to award {} tokens to player {} via CrossSystem", finalTokenAmount, player->GetName());
         }
     }
 
@@ -456,12 +456,12 @@ private:
         if (isDailyQuest)
         {
             DungeonQuestDB::UpdateStatistics(player, "daily_quests_completed", 1);
-            LOG_DEBUG("scripts", "DungeonQuest: Updated daily quest statistics for player {}", player->GetName());
+            LOG_DEBUG("scripts.dc", "DungeonQuest: Updated daily quest statistics for player {}", player->GetName());
         }
         else if (isWeeklyQuest)
         {
             DungeonQuestDB::UpdateStatistics(player, "weekly_quests_completed", 1);
-            LOG_DEBUG("scripts", "DungeonQuest: Updated weekly quest statistics for player {}", player->GetName());
+            LOG_DEBUG("scripts.dc", "DungeonQuest: Updated weekly quest statistics for player {}", player->GetName());
         }
         else if (isDungeonQuest)
         {
@@ -472,7 +472,7 @@ private:
             if (dungeonId > 0)
             {
                 DungeonQuestDB::UpdateDungeonProgress(player, dungeonId, questId);
-                LOG_DEBUG("scripts", "DungeonQuest: Updated dungeon {} progress for player {}",
+                LOG_DEBUG("scripts.dc", "DungeonQuest: Updated dungeon {} progress for player {}",
                          dungeonId, player->GetName());
             }
         }
@@ -560,12 +560,12 @@ private:
         if (achievement)
         {
             player->CompletedAchievement(achievement);
-            LOG_INFO("scripts", "DungeonQuest: Awarded achievement {} ({}) to player {}",
+            LOG_INFO("scripts.dc", "DungeonQuest: Awarded achievement {} ({}) to player {}",
                      achievementId, name, player->GetName());
         }
         else
         {
-            LOG_ERROR("scripts", "DungeonQuest: Achievement {} not found in Achievement.dbc", achievementId);
+            LOG_ERROR("scripts.dc", "DungeonQuest: Achievement {} not found in Achievement.dbc", achievementId);
         }
     }
 };
