@@ -144,6 +144,7 @@ void AddSC_dc_prestige_commandscript();        // Commands/cs_dc_prestige.cpp
 void AddSC_dc_item_upgrade_commandscript();    // Commands/cs_dc_item_upgrade.cpp
 void AddSC_dc_hotspot_commandscript();        // Commands/cs_dc_hotspot.cpp
 void AddSC_cs_dc_guildhouse();                // Commands/cs_dc_guildhouse.cpp
+void AddSC_dc_perftest();                     // Commands/cs_dc_perftest.cpp
 
 // --- Guild Housing ---
 void AddGuildHouseScripts();                  // mod_guildhouse.cpp
@@ -696,8 +697,9 @@ void AddDCScripts()
         AddSC_dc_seasonal_rewards_commandscript();
         AddSC_dc_prestige_commandscript();
         AddSC_dc_item_upgrade_commandscript();
+        AddSC_dc_perftest();
         LOG_INFO("scripts.dc", ">>   ✓ DC addon commands and dungeon quest commands loaded");
-        LOG_INFO("scripts.dc", ">>   ✓ Consolidated DC commands loaded (HLBG, M+, Season, Prestige, ItemUpgrade)");
+        LOG_INFO("scripts.dc", ">>   ✓ Consolidated DC commands loaded (HLBG, M+, Season, Prestige, ItemUpgrade, Perftest)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in DC Commands: {}", e.what());
     } catch (...) {

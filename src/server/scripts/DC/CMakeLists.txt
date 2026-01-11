@@ -260,6 +260,7 @@ set(SCRIPTS_DC_Commands
     Commands/dc_prestige_chat.cpp
     Commands/dc_item_upgrade_commands.cpp
     Commands/cs_dc_guildhouse.cpp
+    Commands/cs_dc_perftest.cpp
 )
 
 # DC Guild Housing
