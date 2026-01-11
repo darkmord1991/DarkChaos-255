@@ -23,7 +23,8 @@
 | **D2** | Elder Brownpaw | 300082 | Furbolg | Timbermaw Deep |
 | **D3** | Prospector Khazgorm | 300083 | Dwarf | Spitelash Depths |
 | **D4** | Slayer Vorith | 300084 | Blood Elf DH | The Fel Pit |
-| **D5** | Image of Arcanigos | 300085 | Human (Blue Dragon) | Sanctum of Highborne |
+| **D5** | Priestess Lunara | 300085 | Night Elf Priest | Temple of Elune |
+| **D6** | Image of Arcanigos | 300086 | Human (Blue Dragon) | Sanctum of Highborne |
 
 ---
 
@@ -156,8 +157,31 @@
     *   **"Ambassador of Flame"**: Slay Ambassador Flamelash (Rare Elite).
     *   **"Faulty Engineering"**: Destroy the Faulty War Golem (Mini-Boss).
     *   **"The Iron Legion"**: Kill 10 Dark Iron Watchmen & 10 Dark Iron Geologists.
-4.  **D4: The Fel Pit (L65)** - "The Fel Pit" (Kill Prince Tortheldrin).
-5.  **D5: Sanctum of the Highborne (L80)** - "Sanctum of the Highborne" (Kill Cyanigosa).
+4.  **D4: The Fel Pit (L50-60)** - Fel/Demon Theme
+    *   **Quest Giver:** Slayer Vorith (300084)
+    *   **"The Fel Pit"**: Kill Prince Tortheldrin (Boss).
+    *   **"Lady Hederine"**: Defeat Lady Hederine (Mini-Boss).
+    *   **"Infernal Warbringer"**: Slay the Infernal Warbringer (Rare).
+    *   **"Doomguard Punisher"**: Slay the Doomguard Punisher (Rare).
+    *   **"Demon Legion"**: Slay 8 Legashi Hellcallers & 6 Doomguard Commanders.
+5.  **D5: Temple of Elune (L60-70)** - Night Elf/Arcane Theme
+    *   **Quest Giver:** Priestess Lunara (300085)
+    *   **"Temple of Elune"**: Defeat Priestess Delrissa (Boss).
+    *   **"The Twilight Threat"**: Slay Twilight Lord Kelris (Rare).
+    *   **"Arcane Corruption"**: Defeat Arcane Torrent (Rare).
+    *   **"High Priestess Arlokk"**: Defeat High Priestess Arlokk (Mini-Boss).
+    *   **"Highborne Corruption"**: Slay 8 Highborne Lichlings & 8 Highborne Summoners.
+    *   **"Moonkin Madness"**: Slay 10 Moonkin Oracles & 5 Moonkin Matriarchs.
+    *   **"Eldreth Incursion"**: Slay 8 Eldreth Sorcerers & 6 Eldreth Seethers.
+6.  **D6: Sanctum of the Highborne (L75-80)** - Highborne/Arcane Theme
+    *   **Quest Giver:** Image of Arcanigos (300086)
+    *   **"Sanctum of the Highborne"**: Defeat Cyanigosa (Boss).
+    *   **"Magister Kalendris"**: Defeat Magister Kalendris (Mini-Boss).
+    *   **"The Forgotten Ones"**: Slay 10 Forgotten Ones.
+    *   **"Arcane Sentinels"**: Destroy 10 Arcane Sentinels.
+    *   **"Wretched Infestation"**: Slay 12 Wretched Ghouls & 8 Wretched Belchers.
+    *   **"Highborne Spirits"**: Banish 10 Highborne Apparitions & 8 Ancient Highborne Spirits.
+    *   **"Faceless Horror"**: Slay 6 Faceless Lurkers.
 
 ---
 

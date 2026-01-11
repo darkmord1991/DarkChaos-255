@@ -55,17 +55,22 @@ DELETE FROM `creature_template` WHERE `entry` = 300084;
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
 (300084, 0, 0, 0, 0, 0, 'Slayer Vorith', 'Illidari Scout', 'quest', 300084, 60, 60, 1, 1733, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 4, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
 
--- D5 Quest Giver: Image of Arcanigos (Blue Dragon Human Form)
+-- D5 Quest Giver: Priestess Lunara (Night Elf Priestess)
 DELETE FROM `creature_template` WHERE `entry` = 300085;
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(300085, 0, 0, 0, 0, 0, 'Image of Arcanigos', 'Guardian Projection', 'quest', 300085, 80, 80, 2, 1733, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 8, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 2, 2, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
+(300085, 0, 0, 0, 0, 0, 'Priestess Lunara', 'Temple Guardian', 'quest', 300085, 70, 70, 2, 1733, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 8, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 2, 2, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
+
+-- D6 Quest Giver: Image of Arcanigos (Blue Dragon Human Form)
+DELETE FROM `creature_template` WHERE `entry` = 300086;
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(300086, 0, 0, 0, 0, 0, 'Image of Arcanigos', 'Guardian Projection', 'quest', 300086, 80, 80, 2, 1733, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 8, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 2, 2, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
 
 
 -- ============================================================================
 -- SECTION 2: CREATURE MODEL DATA (creature_template_model)
 -- ============================================================================
 
-DELETE FROM `creature_template_model` WHERE `CreatureID` IN (300030, 300040, 300050, 300060, 300070, 300081, 300082, 300083, 300084, 300085);
+DELETE FROM `creature_template_model` WHERE `CreatureID` IN (300030, 300040, 300050, 300060, 300070, 300081, 300082, 300083, 300084, 300085, 300086);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (300030, 0, 20272, 1, 1, 12340),   -- Wavemaster Kol'gar (Troll Male)
 (300040, 0, 20590, 1, 1, 12340),  -- Demonologist Vex'ara (Blood Elf Female)
@@ -76,7 +81,8 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (300082, 0, 11629, 1, 1, 12340),  -- D2: Elder Brownpaw (Furbolg)
 (300083, 0, 1462, 1, 1, 12340),   -- D3: Prospector Khazgorm (Dwarf Male)
 (300084, 0, 21390, 1, 1, 12340),  -- D4: Slayer Vorith (Blood Elf DH)
-(300085, 0, 26604, 1, 1, 12340);  -- D5: Arcanigos (Human Male with Runes)
+(300085, 0, 4258, 1, 1, 12340),   -- D5: Priestess Lunara (Night Elf Female Priest)
+(300086, 0, 26604, 1, 1, 12340);  -- D6: Arcanigos (Human Male with Runes)
 
 -- ============================================================================
 -- SECTION 3: QUEST TEMPLATES (quest_template)
@@ -283,18 +289,47 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 (300921, 2, 48, 44, 0, 0, 5, 5, 1500, 300311, 20, 300312, 10, 0, 0, 'The Iron Legion', 'Slay 10 Dark Iron Watchmen and 10 Dark Iron Geologists.', 'The Dark Iron ranks are swelling. Thin their numbers before they breach the surface.', 'Spitelash Depths', 'Legion thinned.', 8637, 10, 5839, 10);
 
 -- D4: The Fel Pit (Kill Prince Tortheldrin - Level 61 Elite)
+DELETE FROM `quest_template` WHERE `ID` BETWEEN 300930 AND 300934;
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
 (300930, 2, 61, 55, 0, 0, 5, 5, 2500, 10271, 1, 300311, 25, 300312, 15, 'The Fel Pit', 'Defeat Prince Tortheldrin.', 'The Prince has turned to demons for power. End his madness.', 'The Fel Pit', 'Prince defeated.', 11486, 1);
 
--- D5: Sanctum of the Highborne (Kill Cyanigosa - Level 77 Elite)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
+(300931, 2, 58, 54, 0, 0, 5, 5, 2200, 300311, 20, 300312, 12, 12143, 1, 0, 0, 'Lady Hederine', 'Defeat Lady Hederine.', 'Lady Hederine commands the Satyr forces. Defeat her to weaken their hold on the Fel Pit.', 'The Fel Pit', 'Hederine defeated.'),
+(300932, 2, 59, 55, 0, 0, 5, 5, 2300, 300311, 21, 300312, 13, 19261, 1, 0, 0, 'Infernal Warbringer', 'Slay the Infernal Warbringer.', 'An Infernal Warbringer has been summoned from the Twisting Nether. Banish it before it can open a portal.', 'The Fel Pit', 'Infernal banished.'),
+(300933, 2, 60, 56, 0, 0, 5, 5, 2400, 300311, 22, 300312, 14, 18044, 1, 0, 0, 'Doomguard Punisher', 'Slay the Doomguard Punisher.', 'The Doomguard Punisher leads the demon legions. Destroy it to scatter their forces.', 'The Fel Pit', 'Doomguard destroyed.'),
+(300934, 2, 57, 53, 0, 0, 5, 5, 2100, 300311, 19, 300312, 11, 6135, 8, 7671, 6, 'Demon Legion', 'Slay 8 Legashi Hellcallers and 6 Doomguard Commanders.', 'The demon forces grow stronger. Thin their ranks before they can summon reinforcements.', 'The Fel Pit', 'Legion weakened.');
+
+-- D5: Temple of Elune (Level 60-70)
+DELETE FROM `quest_template` WHERE `ID` BETWEEN 300940 AND 300946;
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300940, 2, 77, 74, 0, 0, 10, 5, 5000, 34138, 1, 300311, 25, 300312, 15, 'Sanctum of the Highborne', 'Defeat Cyanigosa.', 'The Blue Dragonflight protects this Sanctum. Prove your strength against Cyanigosa.', 'Sanctum of the Highborne', 'Cyanigosa defeated.', 29317, 1);
+(300940, 2, 70, 65, 0, 0, 5, 5, 3000, 15806, 1, 300311, 25, 300312, 15, 'Temple of Elune', 'Defeat Priestess Delrissa.', 'Priestess Delrissa has corrupted the Temple of Elune. She must be stopped before the corruption spreads.', 'Temple of Elune', 'Delrissa defeated.', 24560, 1),
+(300941, 2, 68, 63, 0, 0, 5, 5, 2500, 300311, 20, 300312, 12, 0, 0, 'The Twilight Threat', 'Slay Twilight Lord Kelris.', 'Twilight Lord Kelris leads the cultists infiltrating the temple. Eliminate this threat.', 'Temple of Elune', 'Kelris slain.', 4832, 1),
+(300942, 2, 69, 64, 0, 0, 5, 5, 2700, 300311, 22, 300312, 13, 0, 0, 'Arcane Corruption', 'Defeat Arcane Torrent.', 'An arcane anomaly known as Arcane Torrent is destabilizing the temple\'s wards. Destroy it.', 'Temple of Elune', 'Torrent destroyed.', 16485, 1),
+(300943, 2, 67, 62, 0, 0, 5, 5, 2400, 300311, 18, 300312, 11, 0, 0, 'High Priestess Arlokk', 'Defeat High Priestess Arlokk.', 'High Priestess Arlokk guards the inner sanctum. Defeat her to reach Delrissa.', 'Temple of Elune', 'Arlokk defeated.', 14515, 1);
+
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
+(300944, 2, 65, 61, 0, 0, 5, 5, 2200, 300311, 16, 300312, 10, 10683, 8, 6492, 8, 'Highborne Corruption', 'Slay 8 Highborne Lichlings and 8 Highborne Summoners.', 'The Highborne spirits have been corrupted by dark magic. Cleanse them from the temple grounds.', 'Temple of Elune', 'Highborne cleansed.'),
+(300945, 2, 66, 62, 0, 0, 5, 5, 2300, 300311, 17, 300312, 11, 15467, 10, 15621, 5, 'Moonkin Madness', 'Slay 10 Moonkin Oracles and 5 Moonkin Matriarchs.', 'The Moonkin have been driven mad by the corruption. Put them out of their misery.', 'Temple of Elune', 'Moonkin cleansed.'),
+(300946, 2, 68, 63, 0, 0, 5, 5, 2600, 300311, 19, 300312, 12, 13019, 8, 13022, 6, 'Eldreth Incursion', 'Slay 8 Eldreth Sorcerers and 6 Eldreth Seethers.', 'The Eldreth demons have invaded the temple. Drive them back into the shadows.', 'Temple of Elune', 'Eldreth repelled.');
+
+-- D6: Sanctum of the Highborne (Level 75-80)
+DELETE FROM `quest_template` WHERE `ID` BETWEEN 300960 AND 300966;
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+(300960, 2, 77, 74, 0, 0, 10, 5, 5000, 34138, 1, 300311, 25, 300312, 15, 'Sanctum of the Highborne', 'Defeat Cyanigosa.', 'The Blue Dragonflight protects this Sanctum. Prove your strength against Cyanigosa.', 'Sanctum of the Highborne', 'Cyanigosa defeated.', 29317, 1),
+(300961, 2, 76, 73, 0, 0, 10, 5, 4500, 300311, 22, 300312, 13, 0, 0, 'Magister Kalendris', 'Defeat Magister Kalendris.', 'Magister Kalendris commands the Highborne spirits. Defeat him to weaken their hold on the Sanctum.', 'Sanctum of the Highborne', 'Kalendris defeated.', 11487, 1),
+(300962, 2, 75, 72, 0, 0, 10, 5, 4000, 300311, 20, 300312, 12, 0, 0, 'The Forgotten Ones', 'Slay 10 Forgotten Ones.', 'The Forgotten Ones lurk in the shadows of the Sanctum. Cleanse them from this sacred place.', 'Sanctum of the Highborne', 'Forgotten Ones cleansed.', 27959, 10),
+(300963, 2, 75, 72, 0, 0, 10, 5, 4000, 300311, 20, 300312, 12, 0, 0, 'Arcane Sentinels', 'Destroy 10 Arcane Sentinels.', 'The Arcane Sentinels guard the Sanctum\'s halls. Disable them to progress deeper.', 'Sanctum of the Highborne', 'Sentinels destroyed.', 15689, 10);
+
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
+(300964, 2, 76, 73, 0, 0, 10, 5, 4200, 300311, 21, 300312, 13, 37881, 12, 31363, 8, 'Wretched Infestation', 'Slay 12 Wretched Ghouls and 8 Wretched Belchers.', 'The Wretched have infested the lower halls of the Sanctum. Purge them.', 'Sanctum of the Highborne', 'Wretched purged.'),
+(300965, 2, 77, 74, 0, 0, 10, 5, 4400, 300311, 22, 300312, 14, 6116, 10, 7850, 8, 'Highborne Spirits', 'Banish 10 Highborne Apparitions and 8 Ancient Highborne Spirits.', 'The ancient Highborne spirits linger in torment. Release them from their eternal prison.', 'Sanctum of the Highborne', 'Spirits released.'),
+(300966, 2, 78, 75, 0, 0, 10, 5, 4600, 300311, 23, 300312, 15, 27099, 6, 0, 0, 'Faceless Horror', 'Slay 6 Faceless Lurkers.', 'The Faceless Ones serve the Old Gods. They must not be allowed to corrupt the Sanctum further.', 'Sanctum of the Highborne', 'Faceless threat eliminated.');
 
 -- ============================================================================
 -- DUNGEON INTRODUCTION QUESTS (Breadcrumbs from Zone Givers)
 -- ============================================================================
 
-DELETE FROM `quest_template` WHERE `ID` BETWEEN 300950 AND 300954;
+DELETE FROM `quest_template` WHERE `ID` BETWEEN 300950 AND 300955;
 
 -- D1 Introduction: Zone 2 -> D1 (Arcanist Melia -> Magister Idona)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
@@ -312,7 +347,11 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
 (300953, 2, 58, 55, 0, 0, 5, 4, 2000, 300311, 15, 300312, 10, 'The Fel Pit Beckons', 'Speak with Slayer Vorith at The Fel Pit.', 'The Illidari have detected a massive demonic presence in the Fel Pit. Slayer Vorith is coordinating an assault. Only the strongest should answer this call.', 'Azshara Crater', 'You have found Slayer Vorith.');
 
--- D5 Introduction: Zone 8 -> D5 (Archmage Thadeus -> Image of Arcanigos)
+-- D5 Introduction: Zone 7 -> D5 (Dragonbinder Seryth -> Priestess Lunara)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
+(300955, 2, 67, 63, 0, 0, 5, 4, 2500, 300311, 18, 300312, 11, 'The Temple of Elune', 'Speak with Priestess Lunara at the Temple of Elune.', 'Priestess Lunara has sent word of a great corruption within the Temple of Elune. She requires champions to help cleanse the sacred grounds.', 'Azshara Crater', 'You have found Priestess Lunara.');
+
+-- D6 Introduction: Zone 8 -> D6 (Archmage Thadeus -> Image of Arcanigos)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
 (300954, 2, 76, 74, 0, 0, 10, 5, 3000, 300311, 20, 300312, 15, 'The Sanctum Guardian', 'Speak with the Image of Arcanigos at the Sanctum of the Highborne.', 'The ancient Sanctum holds secrets that could turn the tide of war. The Blue Dragonflight has sent a guardian projection to test worthy champions. This will be your greatest challenge yet.', 'Azshara Crater', 'You have found the Image of Arcanigos.');
 
@@ -349,9 +388,56 @@ INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300083, 300952);
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES (300050, 300953);
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300084, 300953);
 
--- D5: Archmage Thadeus (300070) gives quest to find Image of Arcanigos
+-- D5: Dragonbinder Seryth (300060) gives quest to find Priestess Lunara
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES (300060, 300955);
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300085, 300955);
+
+-- D6: Archmage Thadeus (300070) gives quest to find Image of Arcanigos
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES (300070, 300954);
-INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300085, 300954);
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300086, 300954);
+
+-- Dungeon Quest Givers
+-- D1: Magister Idona (300081)
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+(300081, 300900), (300081, 300901);
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+(300081, 300900), (300081, 300901);
+
+-- D2: Elder Brownpaw (300082)
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+(300082, 300910), (300082, 300911), (300082, 300912);
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+(300082, 300910), (300082, 300911), (300082, 300912);
+
+-- D3: Prospector Khazgorm (300083)
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+(300083, 300920), (300083, 300921), (300083, 300922), (300083, 300923);
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+(300083, 300920), (300083, 300921), (300083, 300922), (300083, 300923);
+
+-- D4: Slayer Vorith (300084)
+DELETE FROM `creature_queststarter` WHERE `id` = 300084 AND `quest` BETWEEN 300930 AND 300934;
+DELETE FROM `creature_questender` WHERE `id` = 300084 AND `quest` BETWEEN 300930 AND 300934;
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+(300084, 300930), (300084, 300931), (300084, 300932), (300084, 300933), (300084, 300934);
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+(300084, 300930), (300084, 300931), (300084, 300932), (300084, 300933), (300084, 300934);
+
+-- D5: Priestess Lunara (300085)
+DELETE FROM `creature_queststarter` WHERE `id` = 300085 AND `quest` BETWEEN 300940 AND 300946;
+DELETE FROM `creature_questender` WHERE `id` = 300085 AND `quest` BETWEEN 300940 AND 300946;
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+(300085, 300940), (300085, 300941), (300085, 300942), (300085, 300943), (300085, 300944), (300085, 300945), (300085, 300946);
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+(300085, 300940), (300085, 300941), (300085, 300942), (300085, 300943), (300085, 300944), (300085, 300945), (300085, 300946);
+
+-- D6: Image of Arcanigos (300086)
+DELETE FROM `creature_queststarter` WHERE `id` = 300086 AND `quest` BETWEEN 300960 AND 300966;
+DELETE FROM `creature_questender` WHERE `id` = 300086 AND `quest` BETWEEN 300960 AND 300966;
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+(300086, 300960), (300086, 300961), (300086, 300962), (300086, 300963), (300086, 300964), (300086, 300965), (300086, 300966);
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+(300086, 300960), (300086, 300961), (300086, 300962), (300086, 300963), (300086, 300964), (300086, 300965), (300086, 300966);
 
 -- Kol'gar (Zone 4)
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
@@ -388,32 +474,11 @@ INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 (300070, 300704), -- Arrive from Zone 7
 (300070, 300800), (300070, 300801), (300070, 300802), (300070, 300803), (300070, 300804), (300070, 300805);
 
--- DUNGEON QUEST GIVERS
--- D1: Magister Idona
-INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES (300081, 300900), (300081, 300901);
-INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300081, 300900), (300081, 300901);
-
--- D2: Elder Brownpaw
-INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES (300082, 300910), (300082, 300911), (300082, 300912);
-INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300082, 300910), (300082, 300911), (300082, 300912);
-
--- D3: Captain Wavescorn
-INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES (300083, 300920), (300083, 300921), (300083, 300922), (300083, 300923);
-INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300083, 300920), (300083, 300921), (300083, 300922), (300083, 300923);
-
--- D4: Slayer Vorith
-INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES (300084, 300930);
-INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300084, 300930);
-
--- D5: Image of Arcanigos
-INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES (300085, 300940);
-INSERT INTO `creature_questender` (`id`, `quest`) VALUES (300085, 300940);
-
 -- ============================================================================
 -- SECTION 6: QUEST TEXTS / GOSSIP
 -- ============================================================================
 
-DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 300400 AND 300940;
+DELETE FROM `quest_offer_reward` WHERE `ID` BETWEEN 300400 AND 300966;
 INSERT INTO `quest_offer_reward` (`ID`, `RewardText`) VALUES
 (300400, 'The waters run red with Strashaz blood. Good.'),
 (300401, 'These shells will reinforce our bunkers.'),
@@ -447,11 +512,31 @@ INSERT INTO `quest_offer_reward` (`ID`, `RewardText`) VALUES
 (300920, 'Loregrain is ashes. The Dark Irons will scatter.'),
 (300921, 'Their ranks are broken. Good work.'),
 (300922, 'The Golem is scrap. Maybe we can salvage the parts.'),
-(300923, 'Flamelash is banished! The portal ritual has been stopped.'),
-(300930, 'The pit is cleansed. Illidan would be... interested.'),
-(300940, 'Cyanigosa defeated! The Sanctum is secured. You are a hero of Azshara!');
+(300923, 'Flamelash is banished. The Firelands portal is sealed... for now.'),
+-- D4 Quests
+(300930, 'Prince Tortheldrin\'s madness ends here. The Fel Pit is cleansed.'),
+(300931, 'Lady Hederine falls. The Satyr forces scatter.'),
+(300932, 'The Infernal is banished. The portal is sealed.'),
+(300933, 'The Doomguard Punisher is destroyed. The demon legion weakens.'),
+(300934, 'Their numbers are thinned. The Fel Pit grows quieter.'),
+-- D5 Quests (Temple of Elune)
+(300940, 'Priestess Delrissa has fallen. The Temple of Elune is purified.'),
+(300941, 'Twilight Lord Kelris is no more. The cultist threat is eliminated.'),
+(300942, 'The Arcane Torrent is destroyed. The temple\'s wards are stabilizing.'),
+(300943, 'High Priestess Arlokk has been defeated. The inner sanctum is accessible.'),
+(300944, 'The corrupted Highborne are cleansed. The temple grows purer.'),
+(300945, 'The Moonkin are at peace. Their madness has ended.'),
+(300946, 'The Eldreth are banished. The temple is secure.'),
+-- D6 Quests (Sanctum of the Highborne)
+(300960, 'Cyanigosa is defeated. You have proven yourself worthy.'),
+(300961, 'Magister Kalendris falls. The Highborne spirits weaken.'),
+(300962, 'The Forgotten Ones are cleansed from the Sanctum.'),
+(300963, 'The Arcane Sentinels are disabled. The path is clear.'),
+(300964, 'The Wretched are purged. The halls are cleansed.'),
+(300965, 'The Highborne spirits are released. They can finally rest.'),
+(300966, 'The Faceless threat is eliminated. The Sanctum is safe... for now.');
 
-DELETE FROM `npc_text` WHERE `ID` IN (300030, 300040, 300050, 300060, 300070, 300081, 300082, 300083, 300084, 300085);
+DELETE FROM `npc_text` WHERE `ID` IN (300030, 300040, 300050, 300060, 300070, 300081, 300082, 300083, 300084, 300085, 300086);
 INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES
 (300030, 'The river is treacherous, outsider.'),
 (300040, 'Do you seek power? Or death? The cliffs offer both.'),
@@ -462,12 +547,13 @@ INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES
 (300082, 'The corruption spreads deep. Will you help us?'),
 (300083, 'The Naga are relentless. We must push them back.'),
 (300084, 'I hunt the hunters. Care to join the fray?'),
-(300085, 'I am but an image. The true Guardian awaits within.');
+(300085, 'The Temple of Elune calls for champions. Will you answer?'),
+(300086, 'I am but an image. The true Guardian awaits within.');
 
-DELETE FROM `gossip_menu` WHERE `MenuID` IN (300030, 300040, 300050, 300060, 300070, 300081, 300082, 300083, 300084, 300085);
+DELETE FROM `gossip_menu` WHERE `MenuID` IN (300030, 300040, 300050, 300060, 300070, 300081, 300082, 300083, 300084, 300085, 300086);
 INSERT INTO `gossip_menu` (`MenuID`, `TextID`) VALUES
 (300030, 300030), (300040, 300040), (300050, 300050), (300060, 300060), (300070, 300070), 
-(300081, 300081), (300082, 300082), (300083, 300083), (300084, 300084), (300085, 300085);
+(300081, 300081), (300082, 300082), (300083, 300083), (300084, 300084), (300085, 300085), (300086, 300086);
 
 
 -- =========================================================================

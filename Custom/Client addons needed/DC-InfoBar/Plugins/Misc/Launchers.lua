@@ -161,6 +161,19 @@ local function BuildLauncherList()
         })
     end
 
+    -- GroupFinder (part of DC-MythicPlus)
+    if IsAddOnLoaded and IsAddOnLoaded("DC-MythicPlus") then
+        table.insert(launchers, {
+            key = "groupfinder",
+            name = "GroupFinder",
+            icon = "Interface\\Icons\\INV_Misc_GroupLooking",
+            hint = "Open GroupFinder",
+            onClick = function()
+                RunSlashCommand("/groupfinder")
+            end,
+        })
+    end
+
     -- DC-QoS (settings are the primary UI)
     if IsAddOnLoaded and IsAddOnLoaded("DC-QOS") then
         table.insert(launchers, {
@@ -215,6 +228,10 @@ local function BuildSettingsList()
             entry.onClick = function()
                 OpenOptionsCategory("DC HLBG Addon")
                 RunSlashCommand("/hlbgconfig")
+            end
+        elseif e.key == "groupfinder" then
+            entry.onClick = function()
+                OpenOptionsCategory("DC Mythic+")
             end
         elseif e.key == "qos" then
             entry.onClick = function()

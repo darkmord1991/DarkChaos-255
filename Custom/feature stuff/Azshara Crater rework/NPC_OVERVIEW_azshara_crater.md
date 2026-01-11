@@ -362,22 +362,49 @@
 
 ---
 
-### ★D4: The Fel Pit (Level 55-65)
+### ★D4: The Fel Pit (Level 50-60)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
 | Trash | Legashi Satyr | **6200** | 51-52 | No |
-| Trash | Legashi Rogue | **6134** | 54-56 | No |
+| Trash | Felbeast | **8675** | 50-51 | No |
+| Trash | Felpaw Ravager | **8961** | 51-52 | No |
 | Trash | Felguard Sentry | **8716** | 57-59 | No |
 | Trash | Legashi Hellcaller | **6135** | 56-58 | **Yes** |
 | Trash | Doomguard Commander | **7671** | 58-60 | **Yes** |
 | Trash | Warpwood Treant | **11462** | 54-55 | No |
 | Trash | Invading Fel Stalker | **19286** | 60 | **Yes** |
+| Trash | Felguard Annihilator | **18894** | 58-59 | No |
+| Trash | Shadowmoon Darkweaver | **16595** | 56-57 | No |
+| Trash | Terrorfiend | **16951** | 59-60 | No |
+| **Rare** | **Infernal Warbringer** | **19261** | 58-59 | **Elite** |
+| **Rare** | **Doomguard Punisher** | **18044** | 59-60 | **Elite** |
 | **Mini-Boss**| **Lady Hederine** | **12143** | 58 | **Elite** |
 | **Boss** | **Prince Tortheldrin** | **11486** | 61 | **Elite** |
 
 ---
 
-### ★D5: Sanctum of the Highborne (Level 75-80)
+### ★D5: Temple of Elune (Level 60-70)
+| Type | NPC Name | Entry ID | Level | Elite |
+|------|----------|----------|-------|-------|
+| Trash | Highborne Summoner | **6492** | 60-61 | No |
+| Trash | Twilight Keeper Mayna | **15200** | 60 | No |
+| Trash | Teldrassil Sentinel | **3571** | 65 | No |
+| Trash | Moonkin Oracle | **15467** | 63-64 | No |
+| Trash | Ancient Protector | **2041** | 60 | No |
+| Trash | Highborne Lichling | **10683** | 61-62 | **Yes** |
+| Trash | Arcane Aberration | **16488** | 65-66 | **Yes** |
+| Trash | Moonkin Matriarch | **15621** | 67-68 | **Yes** |
+| Trash | Twilight Emissary | **15539** | 66-67 | No |
+| Trash | Eldreth Sorcerer | **13019** | 64-65 | No |
+| Trash | Eldreth Seether | **13022** | 66-67 | **Yes** |
+| **Rare** | **Twilight Lord Kelris** | **4832** | 68 | **Elite** |
+| **Rare** | **Arcane Torrent** | **16485** | 69 | **Elite** |
+| **Mini-Boss**| **High Priestess Arlokk** | **14515** | 67 | **Elite** |
+| **Boss** | **Priestess Delrissa** | **24560** | 70 | **Elite** |
+
+---
+
+### ★D6: Sanctum of the Highborne (Level 75-80)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
 | Trash | Wretched Ghoul | **37881** | 80 | No |

@@ -1541,9 +1541,20 @@ function GF:UpdateKeystoneDisplay(data)
     -- If server doesn't indicate a key but we find one in inventory, use that
     if (not hasKey) and invKey and invKey.hasKey then
         hasKey = true
-        keystoneDungeon = keystoneDungeon or invKey.dungeonName
-        keystoneLevel = keystoneLevel or invKey.level or 0
-        GF.Print("Using inventory keystone fallback: +" .. tostring(keystoneLevel) .. " " .. tostring(keystoneDungeon))
+        if not keystoneDungeon or keystoneDungeon == "" then
+            keystoneDungeon = invKey.dungeonName
+        end
+        -- NOTE: in Lua, 0 is truthy; don't use `keystoneLevel = keystoneLevel or ...` here.
+        if (not keystoneLevel) or keystoneLevel == 0 then
+            keystoneLevel = invKey.level or 0
+        end
+
+        -- Avoid chat spam: only announce when the fallback key actually changes.
+        local sig = tostring(keystoneLevel) .. "|" .. tostring(keystoneDungeon)
+        if GF._lastInvKeySig ~= sig then
+            GF._lastInvKeySig = sig
+            GF.Print("Using inventory keystone fallback: +" .. tostring(keystoneLevel) .. " " .. tostring(keystoneDungeon))
+        end
     end
     if hasKey then
         local dungeonName = keystoneDungeon or "Unknown"
