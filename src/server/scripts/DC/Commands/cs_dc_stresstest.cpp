@@ -8,6 +8,8 @@
 
 #include "ScriptMgr.h"
 #include "Chat.h"
+#include "CommandScript.h"
+#include "ChatCommand.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
 #include "World.h"
@@ -24,6 +26,9 @@
 #include <cmath>
 #include <thread>
 #include <iomanip>
+#include <fstream>
+#include <filesystem>
+#include <ctime>
 
 namespace DCPerfTest
 {
@@ -80,6 +85,385 @@ namespace DCPerfTest
         }
         out << us << "us";
         return out.str();
+    }
+
+    static std::string JsonEscape(std::string const& in)
+    {
+        std::string out;
+        out.reserve(in.size() + 8);
+
+        for (unsigned char c : in)
+        {
+            switch (c)
+            {
+                case '\\': out += "\\\\"; break;
+                case '"': out += "\\\""; break;
+                case '\b': out += "\\b"; break;
+                case '\f': out += "\\f"; break;
+                case '\n': out += "\\n"; break;
+                case '\r': out += "\\r"; break;
+                case '\t': out += "\\t"; break;
+                default:
+                {
+                    if (c < 0x20)
+                    {
+                        std::ostringstream oss;
+                        oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << int(c);
+                        out += oss.str();
+                    }
+                    else
+                    {
+                        out.push_back(static_cast<char>(c));
+                    }
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    static std::string CsvEscape(std::string const& in)
+    {
+        bool needsQuotes = false;
+        for (char c : in)
+        {
+            if (c == ',' || c == '"' || c == '\n' || c == '\r')
+            {
+                needsQuotes = true;
+                break;
+            }
+        }
+
+        if (!needsQuotes)
+            return in;
+
+        std::string out;
+        out.reserve(in.size() + 2);
+        out.push_back('"');
+        for (char c : in)
+        {
+            if (c == '"')
+                out += "\"\"";
+            else
+                out.push_back(c);
+        }
+        out.push_back('"');
+        return out;
+    }
+
+    static std::string MakeTimestampForFilename()
+    {
+        std::time_t t = std::time(nullptr);
+        std::tm tmLocal{};
+#if defined(_WIN32)
+        localtime_s(&tmLocal, &t);
+#else
+        localtime_r(&t, &tmLocal);
+#endif
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%04d%02d%02d-%02d%02d%02d",
+            tmLocal.tm_year + 1900,
+            tmLocal.tm_mon + 1,
+            tmLocal.tm_mday,
+            tmLocal.tm_hour,
+            tmLocal.tm_min,
+            tmLocal.tm_sec);
+        return std::string(buf);
+    }
+
+    static bool WriteReportJson(std::string const& filePath,
+        std::string const& suite,
+        uint32 topN,
+        bool details,
+        uint64 wallUs,
+        std::vector<TimingResult> const& results,
+        std::string& outError)
+    {
+        try
+        {
+            std::ofstream out(filePath, std::ios::out | std::ios::trunc);
+            if (!out.is_open())
+            {
+                outError = "Failed to open file for writing";
+                return false;
+            }
+
+            out << "{\n";
+            out << "  \"suite\": \"" << JsonEscape(suite) << "\",\n";
+            out << "  \"topN\": " << topN << ",\n";
+            out << "  \"details\": " << (details ? "true" : "false") << ",\n";
+            out << "  \"wall_us\": " << wallUs << ",\n";
+            out << "  \"generated_at\": \"" << JsonEscape(MakeTimestampForFilename()) << "\",\n";
+            out << "  \"results\": [\n";
+
+            for (size_t i = 0; i < results.size(); ++i)
+            {
+                TimingResult const& r = results[i];
+                out << "    {";
+                out << "\"testName\":\"" << JsonEscape(r.testName) << "\",";
+                out << "\"success\":" << (r.success ? "true" : "false") << ",";
+                out << "\"iterations\":" << r.iterations << ",";
+                out << "\"total_us\":" << r.totalUs << ",";
+                out << "\"avg_us\":" << r.avgUs << ",";
+                out << "\"min_us\":" << r.minUs << ",";
+                out << "\"max_us\":" << r.maxUs << ",";
+                out << "\"p95_us\":" << r.p95Us << ",";
+                out << "\"p99_us\":" << r.p99Us << ",";
+                out << "\"error\":\"" << JsonEscape(r.error) << "\"";
+                out << "}";
+                if (i + 1 < results.size())
+                    out << ",";
+                out << "\n";
+            }
+
+            out << "  ]\n";
+            out << "}\n";
+            return true;
+        }
+        catch (std::exception const& e)
+        {
+            outError = e.what();
+            return false;
+        }
+    }
+
+    static bool WriteReportCsv(std::string const& filePath,
+        std::string const& suite,
+        uint32 topN,
+        bool details,
+        uint64 wallUs,
+        std::vector<TimingResult> const& results,
+        std::string& outError)
+    {
+        try
+        {
+            std::ofstream out(filePath, std::ios::out | std::ios::trunc);
+            if (!out.is_open())
+            {
+                outError = "Failed to open file for writing";
+                return false;
+            }
+
+            out << "suite," << CsvEscape(suite) << "\n";
+            out << "topN," << topN << "\n";
+            out << "details," << (details ? 1 : 0) << "\n";
+            out << "wall_us," << wallUs << "\n";
+            out << "generated_at," << CsvEscape(MakeTimestampForFilename()) << "\n";
+            out << "\n";
+            out << "testName,success,iterations,total_us,avg_us,min_us,max_us,p95_us,p99_us,error\n";
+
+            for (TimingResult const& r : results)
+            {
+                out << CsvEscape(r.testName) << ",";
+                out << (r.success ? 1 : 0) << ",";
+                out << r.iterations << ",";
+                out << r.totalUs << ",";
+                out << r.avgUs << ",";
+                out << r.minUs << ",";
+                out << r.maxUs << ",";
+                out << r.p95Us << ",";
+                out << r.p99Us << ",";
+                out << CsvEscape(r.error) << "\n";
+            }
+            return true;
+        }
+        catch (std::exception const& e)
+        {
+            outError = e.what();
+            return false;
+        }
+    }
+
+    static std::string JoinPath(std::string const& dir, std::string const& file)
+    {
+        if (dir.empty())
+            return file;
+        if (dir.back() == '/' || dir.back() == '\\')
+            return dir + file;
+        return dir + '/' + file;
+    }
+
+    static bool WriteReportToLogsDir(std::string const& format,
+        std::string const& suite,
+        uint32 topN,
+        bool details,
+        uint64 wallUs,
+        std::vector<TimingResult> const& results,
+        std::string& outFullPath,
+        std::string& outError)
+    {
+        std::string logsDir = sLog->GetLogsDir();
+        std::string ts = MakeTimestampForFilename();
+        std::string ext = (format == "csv") ? ".csv" : ".json";
+        std::string filename = "stresstest-report-" + suite + "-" + ts + ext;
+        outFullPath = JoinPath(logsDir, filename);
+
+        if (!logsDir.empty())
+        {
+            try
+            {
+                std::filesystem::create_directories(std::filesystem::path(logsDir));
+            }
+            catch (...) { }
+        }
+
+        if (format == "csv")
+            return WriteReportCsv(outFullPath, suite, topN, details, wallUs, results, outError);
+
+        return WriteReportJson(outFullPath, suite, topN, details, wallUs, results, outError);
+    }
+
+    static std::string MakeLoopReportFilePath(std::string const& suite, std::string const& format)
+    {
+        std::string logsDir = sLog->GetLogsDir();
+        std::string ts = MakeTimestampForFilename();
+        std::string ext = (format == "csv") ? ".csv" : ".json";
+        std::string filename = "stresstest-loopreport-" + suite + "-" + ts + ext;
+        return JoinPath(logsDir, filename);
+    }
+
+    static void WriteLoopReportJsonHeader(std::ofstream& out,
+        std::string const& suite,
+        uint32 loops,
+        bool infinite,
+        uint32 sleepMs,
+        uint32 topN,
+        bool details,
+        std::string const& format,
+        std::string const& suiteArgs)
+    {
+        out << "{\n";
+        out << "  \"suite\": \"" << JsonEscape(suite) << "\",\n";
+        out << "  \"format\": \"" << JsonEscape(format) << "\",\n";
+        out << "  \"loops\": " << loops << ",\n";
+        out << "  \"infinite\": " << (infinite ? "true" : "false") << ",\n";
+        out << "  \"sleep_ms\": " << sleepMs << ",\n";
+        out << "  \"topN\": " << topN << ",\n";
+        out << "  \"details\": " << (details ? "true" : "false") << ",\n";
+        out << "  \"suite_args\": \"" << JsonEscape(suiteArgs) << "\",\n";
+        out << "  \"generated_at\": \"" << JsonEscape(MakeTimestampForFilename()) << "\",\n";
+        out << "  \"runs\": [\n";
+    }
+
+    static void WriteLoopReportJsonRun(std::ofstream& out,
+        uint32 runIndex,
+        uint64 wallUs,
+        std::vector<TimingResult> const& results,
+        bool first)
+    {
+        if (!first)
+            out << ",\n";
+
+        out << "    {\n";
+        out << "      \"run_index\": " << runIndex << ",\n";
+        out << "      \"wall_us\": " << wallUs << ",\n";
+        out << "      \"results\": [\n";
+
+        for (size_t i = 0; i < results.size(); ++i)
+        {
+            TimingResult const& r = results[i];
+            out << "        {";
+            out << "\"testName\":\"" << JsonEscape(r.testName) << "\",";
+            out << "\"success\":" << (r.success ? "true" : "false") << ",";
+            out << "\"iterations\":" << r.iterations << ",";
+            out << "\"total_us\":" << r.totalUs << ",";
+            out << "\"avg_us\":" << r.avgUs << ",";
+            out << "\"min_us\":" << r.minUs << ",";
+            out << "\"max_us\":" << r.maxUs << ",";
+            out << "\"p95_us\":" << r.p95Us << ",";
+            out << "\"p99_us\":" << r.p99Us << ",";
+            out << "\"error\":\"" << JsonEscape(r.error) << "\"";
+            out << "}";
+            if (i + 1 < results.size())
+                out << ",";
+            out << "\n";
+        }
+
+        out << "      ]\n";
+        out << "    }";
+    }
+
+    static void WriteLoopReportJsonFooter(std::ofstream& out)
+    {
+        out << "\n  ]\n";
+        out << "}\n";
+    }
+
+    static void WriteLoopReportCsvHeader(std::ofstream& out,
+        std::string const& suite,
+        uint32 loops,
+        bool infinite,
+        uint32 sleepMs,
+        uint32 topN,
+        bool details,
+        std::string const& format,
+        std::string const& suiteArgs)
+    {
+        out << "suite," << CsvEscape(suite) << "\n";
+        out << "format," << CsvEscape(format) << "\n";
+        out << "loops," << loops << "\n";
+        out << "infinite," << (infinite ? 1 : 0) << "\n";
+        out << "sleep_ms," << sleepMs << "\n";
+        out << "topN," << topN << "\n";
+        out << "details," << (details ? 1 : 0) << "\n";
+        out << "suite_args," << CsvEscape(suiteArgs) << "\n";
+        out << "generated_at," << CsvEscape(MakeTimestampForFilename()) << "\n";
+        out << "\n";
+        out << "run_index,wall_us,testName,success,iterations,total_us,avg_us,min_us,max_us,p95_us,p99_us,error\n";
+    }
+
+    static void WriteLoopReportCsvRun(std::ofstream& out,
+        uint32 runIndex,
+        uint64 wallUs,
+        std::vector<TimingResult> const& results)
+    {
+        for (TimingResult const& r : results)
+        {
+            out << runIndex << ",";
+            out << wallUs << ",";
+            out << CsvEscape(r.testName) << ",";
+            out << (r.success ? 1 : 0) << ",";
+            out << r.iterations << ",";
+            out << r.totalUs << ",";
+            out << r.avgUs << ",";
+            out << r.minUs << ",";
+            out << r.maxUs << ",";
+            out << r.p95Us << ",";
+            out << r.p99Us << ",";
+            out << CsvEscape(r.error) << "\n";
+        }
+    }
+
+    // Any SQL error causes a hard abort in AzerothCore's DB layer, so we must
+    // avoid querying tables that may not exist on a given installation.
+    bool CharacterTableExists(char const* tableName)
+    {
+        std::ostringstream sql;
+        sql << "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" << tableName << "' LIMIT 1";
+        return CharacterDatabase.Query(sql.str().c_str()) != nullptr;
+    }
+
+    bool CharacterColumnExists(char const* tableName, char const* columnName)
+    {
+        std::ostringstream sql;
+        sql << "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" << tableName
+            << "' AND COLUMN_NAME = '" << columnName << "' LIMIT 1";
+        return CharacterDatabase.Query(sql.str().c_str()) != nullptr;
+    }
+
+    bool WorldTableExists(char const* tableName)
+    {
+        std::ostringstream sql;
+        sql << "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" << tableName << "' LIMIT 1";
+        return WorldDatabase.Query(sql.str().c_str()) != nullptr;
+    }
+
+    bool WorldColumnExists(char const* tableName, char const* columnName)
+    {
+        std::ostringstream sql;
+        sql << "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" << tableName
+            << "' AND COLUMN_NAME = '" << columnName << "' LIMIT 1";
+        return WorldDatabase.Query(sql.str().c_str()) != nullptr;
     }
 
     // =========================================================================
@@ -197,17 +581,25 @@ namespace DCPerfTest
             // We'll insert and immediately delete to avoid permanent data changes
             SQLTransaction trans = CharacterDatabase.BeginTransaction();
 
+            // Use the existing log table with a very high fight_id range that should never overlap real data.
+            // Table schema is stable in core: (fight_id, member_id, name, guid, team, account, ip, damage, heal, kblows)
+            static constexpr uint32 FightIdBase = 4290000000U;
+            static constexpr uint32 MemberIdMod = 200U; // <= 255 (tinyint)
+
             for (uint32 i = 0; i < batchSize; ++i)
             {
-                // Use a prepared-style insert to a log table that can be cleaned
                 std::ostringstream sql;
-                sql << "INSERT INTO log_arena_memberstats (guid, visibleRank) VALUES ("
-                    << (2147483647 - i) << ", 0) ON DUPLICATE KEY UPDATE visibleRank = visibleRank";
+                uint32 fightId = FightIdBase + (i / MemberIdMod);
+                uint32 memberId = (i % MemberIdMod);
+                uint32 fakeGuid = 4000000000U - (i % 1000000U);
+                sql << "REPLACE INTO log_arena_memberstats (fight_id, member_id, name, guid, team, account, ip, damage, heal, kblows) VALUES ("
+                    << fightId << ", " << memberId << ", 'StressTest', " << fakeGuid
+                    << ", 0, 0, '127.0.0.1', 0, 0, 0)";
                 trans->Append(sql.str().c_str());
             }
 
             // Cleanup our test data
-            trans->Append("DELETE FROM log_arena_memberstats WHERE guid >= 2147483547");
+            trans->Append("DELETE FROM log_arena_memberstats WHERE fight_id >= 4290000000");
             
             CharacterDatabase.CommitTransaction(trans);
 
@@ -236,22 +628,39 @@ namespace DCPerfTest
 
         std::vector<uint64> times;
         
-        // List of common DC tables to test
+        // List of common DC tables to test (skip missing tables to avoid DB abort).
         const char* dcTables[] = {
-            "SELECT COUNT(*) FROM dc_character_prestige",
-            "SELECT COUNT(*) FROM dc_item_upgrades", 
-            "SELECT COUNT(*) FROM dc_character_mythic_keystones",
-            "SELECT COUNT(*) FROM dc_collection_mounts",
-            "SELECT COUNT(*) FROM dc_collection_pets",
-            "SELECT COUNT(*) FROM dc_guildhouses"
+            "dc_character_prestige",
+            "dc_item_upgrades",
+            "dc_mount_collection",
+            "dc_pet_collection",
+            "dc_heirloom_collection",
+            "dc_transmog_collection",
+            // legacy/alternate names
+            "dc_collection_mounts",
+            "dc_collection_pets",
+            "dc_collection_heirlooms",
+            "dc_collection_transmog",
+            "dc_guild_house",
+            "dc_guild_house_log"
         };
+
+        uint32 skipped = 0;
 
         try
         {
-            for (const char* sql : dcTables)
+            for (char const* table : dcTables)
             {
+                if (!CharacterTableExists(table))
+                {
+                    ++skipped;
+                    continue;
+                }
+
                 auto start = Clock::now();
-                QueryResult qr = CharacterDatabase.Query(sql);
+                std::ostringstream sql;
+                sql << "SELECT COUNT(*) FROM " << table;
+                QueryResult qr = CharacterDatabase.Query(sql.str().c_str());
                 auto end = Clock::now();
                 
                 if (qr)
@@ -271,8 +680,8 @@ namespace DCPerfTest
             }
             else
             {
-                result.testName += " [no DC tables found]";
-                result.totalUs = 0;
+                result.success = false;
+                result.error = "No DC tables found (skipped " + std::to_string(skipped) + ")";
             }
         }
         catch (const std::exception& e)
@@ -385,21 +794,21 @@ namespace DCPerfTest
         if (qr)
         {
             Field* f = qr->Fetch();
-            handler->PSendSysMessage("Threads Connected: %s", f[1].Get<std::string>().c_str());
+            handler->SendSysMessage(Acore::StringFormat("Threads Connected: {}", f[1].Get<std::string>()));
         }
 
         qr = CharacterDatabase.Query("SHOW STATUS LIKE 'Questions'");
         if (qr)
         {
             Field* f = qr->Fetch();
-            handler->PSendSysMessage("Total Queries: %s", f[1].Get<std::string>().c_str());
+            handler->SendSysMessage(Acore::StringFormat("Total Queries: {}", f[1].Get<std::string>()));
         }
 
         qr = CharacterDatabase.Query("SHOW STATUS LIKE 'Slow_queries'");
         if (qr)
         {
             Field* f = qr->Fetch();
-            handler->PSendSysMessage("Slow Queries: %s", f[1].Get<std::string>().c_str());
+            handler->SendSysMessage(Acore::StringFormat("Slow Queries: {}", f[1].Get<std::string>()));
         }
 
         qr = CharacterDatabase.Query("SHOW STATUS LIKE 'Uptime'");
@@ -407,7 +816,7 @@ namespace DCPerfTest
         {
             Field* f = qr->Fetch();
             uint32 uptime = f[1].Get<uint32>();
-            handler->PSendSysMessage("Uptime: %us", uptime);
+            handler->SendSysMessage(Acore::StringFormat("Uptime: {}s", uptime));
         }
 
         qr = CharacterDatabase.Query("SHOW STATUS LIKE 'Innodb_buffer_pool_read_requests'");
@@ -422,7 +831,7 @@ namespace DCPerfTest
              if (reqs > 0)
              {
                  double hitRate = 100.0 * (1.0 - (double)reads / (double)reqs);
-                 handler->PSendSysMessage("InnoDB Buffer Pool Hit Rate: %.2f%%", hitRate);
+                 handler->SendSysMessage(Acore::StringFormat("InnoDB Buffer Pool Hit Rate: {:.2f}%", hitRate));
              }
         }
 
@@ -439,7 +848,7 @@ namespace DCPerfTest
             {
                  // Note: Qcache is deprecated in MySQL 8.0, so this might always be 0
                  // but checking just in case.
-                 handler->PSendSysMessage("Query Cache Hits: %u", (uint32)hits);
+                  handler->SendSysMessage(Acore::StringFormat("Query Cache Hits: {}", hits));
             }
         }
     }
@@ -459,6 +868,15 @@ namespace DCPerfTest
         {
             result.success = false;
             result.error = "Invalid arguments";
+            return result;
+        }
+
+        // This burst targets a World DB table (creature_template). If run against the
+        // characters DB, it will abort the server with "table doesn't exist".
+        if (!WorldTableExists("creature_template"))
+        {
+            result.success = false;
+            result.error = "Missing world table creature_template";
             return result;
         }
 
@@ -492,7 +910,7 @@ namespace DCPerfTest
         for (uint32 s = 0; s < concurrency && issued < totalQueries; ++s)
         {
             std::string sql = MakeQuery(issued++);
-            Slot slot{ CharacterDatabase.AsyncQuery(sql).WithCallback([](QueryResult) {}), Clock::now() };
+            Slot slot{ WorldDatabase.AsyncQuery(sql).WithCallback([](QueryResult) {}), Clock::now() };
             slots.push_back(std::move(slot));
         }
 
@@ -514,7 +932,7 @@ namespace DCPerfTest
                 {
                     std::string sql = MakeQuery(issued++);
                     slot.start = Clock::now();
-                    slot.cb = CharacterDatabase.AsyncQuery(sql).WithCallback([](QueryResult) {});
+                    slot.cb = WorldDatabase.AsyncQuery(sql).WithCallback([](QueryResult) {});
                 }
                 else
                 {
@@ -618,23 +1036,108 @@ namespace DCPerfTest
     {
         if (!result.success)
         {
-            handler->PSendSysMessage("|cffff0000%s: FAILED - %s|r", result.testName.c_str(), result.error.c_str());
+            handler->SendSysMessage(Acore::StringFormat("|cffff0000{}: FAILED - {}|r", result.testName, result.error));
             return;
         }
 
-        handler->PSendSysMessage("|cffffffff%s|r", result.testName.c_str());
-        handler->PSendSysMessage("  Total: %s | Avg: %s | Min: %s | Max: %s",
-            FormatTime(result.totalUs).c_str(),
-            FormatTime(result.avgUs).c_str(),
-            FormatTime(result.minUs).c_str(),
-            FormatTime(result.maxUs).c_str());
+        handler->SendSysMessage(Acore::StringFormat("|cffffffff{}|r", result.testName));
+        handler->SendSysMessage(Acore::StringFormat("  Total: {} | Avg: {} | Min: {} | Max: {}",
+            FormatTime(result.totalUs),
+            FormatTime(result.avgUs),
+            FormatTime(result.minUs),
+            FormatTime(result.maxUs)));
         
         if (result.iterations > 1)
         {
-            handler->PSendSysMessage("  P95: %s | P99: %s (%u iterations)",
-                FormatTime(result.p95Us).c_str(),
-                FormatTime(result.p99Us).c_str(),
-                result.iterations);
+            handler->SendSysMessage(Acore::StringFormat("  P95: {} | P99: {} ({} iterations)",
+                FormatTime(result.p95Us),
+                FormatTime(result.p99Us),
+                result.iterations));
+        }
+    }
+
+    void PrintReportSummary(ChatHandler* handler, std::vector<TimingResult> const& results, uint32 topN)
+    {
+        if (!handler)
+            return;
+
+        uint32 okCount = 0;
+        uint32 failCount = 0;
+        uint64 okTotalUs = 0;
+
+        for (TimingResult const& r : results)
+        {
+            if (r.success)
+            {
+                ++okCount;
+                okTotalUs += r.totalUs;
+            }
+            else
+            {
+                ++failCount;
+            }
+        }
+
+        handler->SendSysMessage("|cff00ff00=== StressTest Report Summary ===|r");
+        handler->SendSysMessage(Acore::StringFormat("Tests: {} ok, {} failed | Total measured: {}",
+            okCount, failCount, FormatTime(okTotalUs)));
+
+        if (results.empty())
+            return;
+
+        std::vector<TimingResult const*> ok;
+        ok.reserve(results.size());
+        for (TimingResult const& r : results)
+            if (r.success)
+                ok.push_back(&r);
+
+        if (ok.empty())
+            return;
+
+        auto byTotalDesc = [](TimingResult const* a, TimingResult const* b) { return a->totalUs > b->totalUs; };
+        auto byAvgDesc = [](TimingResult const* a, TimingResult const* b) { return a->avgUs > b->avgUs; };
+
+        std::sort(ok.begin(), ok.end(), byTotalDesc);
+        if (topN == 0)
+            topN = 10;
+        if (topN > ok.size())
+            topN = static_cast<uint32>(ok.size());
+
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Top {} (by total time)|r", topN));
+        for (uint32 i = 0; i < topN; ++i)
+        {
+            TimingResult const& r = *ok[i];
+            handler->SendSysMessage(Acore::StringFormat("#{} {} | total {} | avg {} | p95 {} | p99 {} | iters {}",
+                i + 1,
+                r.testName,
+                FormatTime(r.totalUs),
+                FormatTime(r.avgUs),
+                FormatTime(r.p95Us),
+                FormatTime(r.p99Us),
+                r.iterations));
+        }
+
+        std::sort(ok.begin(), ok.end(), byAvgDesc);
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Top {} (by avg latency)|r", topN));
+        for (uint32 i = 0; i < topN; ++i)
+        {
+            TimingResult const& r = *ok[i];
+            handler->SendSysMessage(Acore::StringFormat("#{} {} | avg {} | p95 {} | p99 {} | total {} | iters {}",
+                i + 1,
+                r.testName,
+                FormatTime(r.avgUs),
+                FormatTime(r.p95Us),
+                FormatTime(r.p99Us),
+                FormatTime(r.totalUs),
+                r.iterations));
+        }
+
+        if (failCount)
+        {
+            handler->SendSysMessage("|cffffaa00Failed tests|r");
+            for (TimingResult const& r : results)
+                if (!r.success)
+                    handler->SendSysMessage(Acore::StringFormat("- {}: {}", r.testName, r.error));
         }
     }
 
@@ -652,6 +1155,16 @@ namespace DCPerfTest
         std::vector<uint64> times;
         times.reserve(iterations);
 
+        if (!CharacterTableExists("dc_item_upgrades"))
+        {
+            result.success = false;
+            result.error = "Missing table dc_item_upgrades";
+            return result;
+        }
+
+        bool hasSeasonId = CharacterColumnExists("dc_item_upgrades", "season_id");
+        bool hasSeason = CharacterColumnExists("dc_item_upgrades", "season");
+
         try
         {
             // Query dc_item_upgrades for random item GUIDs
@@ -661,7 +1174,12 @@ namespace DCPerfTest
                 
                 auto start = Clock::now();
                 std::ostringstream sql;
-                sql << "SELECT item_guid, tier_id, upgrade_level, season_id FROM dc_item_upgrades WHERE item_guid = " << fakeItemGuid;
+                sql << "SELECT item_guid, tier_id, upgrade_level";
+                if (hasSeasonId)
+                    sql << ", season_id";
+                else if (hasSeason)
+                    sql << ", season";
+                sql << " FROM dc_item_upgrades WHERE item_guid = " << fakeItemGuid;
                 QueryResult qr = CharacterDatabase.Query(sql.str().c_str());
                 auto end = Clock::now();
                 
@@ -698,20 +1216,39 @@ namespace DCPerfTest
         std::vector<uint64> times;
         times.reserve(iterations);
 
-        // Cycle through different collection tables
+        // Cycle through different collection tables (support both current and legacy names).
         const char* tables[] = {
+            "dc_mount_collection",
+            "dc_pet_collection",
+            "dc_heirloom_collection",
+            "dc_transmog_collection",
+            // legacy/alternate names
             "dc_collection_mounts",
             "dc_collection_pets",
             "dc_collection_heirlooms",
             "dc_collection_transmog"
         };
 
+        std::vector<char const*> existingTables;
+        existingTables.reserve(std::size(tables));
+        for (char const* table : tables)
+            if (CharacterTableExists(table))
+                existingTables.push_back(table);
+
+        if (existingTables.empty())
+        {
+            result.testName += " [SKIPPED: no collection tables present]";
+            result.iterations = 0;
+            result.totalUs = result.avgUs = result.minUs = result.maxUs = result.p95Us = result.p99Us = 0;
+            return result;
+        }
+
         try
         {
             for (uint32 i = 0; i < iterations; ++i)
             {
                 uint32 fakeAccountId = 1000 + (i % 100); // Simulate different accounts
-                const char* table = tables[i % 4];
+                char const* table = existingTables[i % existingTables.size()];
                 
                 auto start = Clock::now();
                 std::ostringstream sql;
@@ -753,23 +1290,25 @@ namespace DCPerfTest
 
         try
         {
-            // Use a high GUID range that won't conflict with real data
-            // Insert into dc_perftest_temp (if table doesn't exist, use fallback)
             SQLTransaction trans = CharacterDatabase.BeginTransaction();
 
-            // First, try to create a temp table or use log table as fallback
+            // Use the existing log table with a very high fight_id range that should never overlap real data.
+            static constexpr uint32 FightIdBase = 4290100000U;
+            static constexpr uint32 MemberIdMod = 200U; // <= 255 (tinyint)
             for (uint32 i = 0; i < batchSize; ++i)
             {
                 std::ostringstream sql;
-                // Use log_arena_memberstats with very high GUIDs as safe write target
-                sql << "INSERT INTO log_arena_memberstats (guid, visibleRank) VALUES ("
-                    << (2100000000 - i) << ", " << (i % 10) << ") "
-                    << "ON DUPLICATE KEY UPDATE visibleRank = " << (i % 10);
+                uint32 fightId = FightIdBase + (i / MemberIdMod);
+                uint32 memberId = (i % MemberIdMod);
+                uint32 fakeGuid = 4001000000U - (i % 1000000U);
+                sql << "REPLACE INTO log_arena_memberstats (fight_id, member_id, name, guid, team, account, ip, damage, heal, kblows) VALUES ("
+                    << fightId << ", " << memberId << ", 'StressTest', " << fakeGuid
+                    << ", 0, 0, '127.0.0.1', 0, 0, 0)";
                 trans->Append(sql.str().c_str());
             }
 
             // Immediately clean up our test data
-            trans->Append("DELETE FROM log_arena_memberstats WHERE guid >= 2099000000");
+            trans->Append("DELETE FROM log_arena_memberstats WHERE fight_id >= 4290100000");
             
             CharacterDatabase.CommitTransaction(trans);
 
@@ -812,30 +1351,65 @@ namespace DCPerfTest
 
                 // Query 1: Prestige data
                 {
-                    std::ostringstream sql;
-                    sql << "SELECT prestige_level FROM dc_character_prestige WHERE guid = " << fakeGuid;
-                    CharacterDatabase.Query(sql.str().c_str());
+                    if (CharacterTableExists("dc_character_prestige"))
+                    {
+                        std::ostringstream sql;
+                        sql << "SELECT prestige_level FROM dc_character_prestige WHERE guid = " << fakeGuid;
+                        CharacterDatabase.Query(sql.str().c_str());
+                    }
                 }
 
                 // Query 2: Item upgrades for equipped items (simulated)
                 {
-                    std::ostringstream sql;
-                    sql << "SELECT item_guid, tier_id, upgrade_level FROM dc_item_upgrades WHERE owner_guid = " << fakeGuid << " LIMIT 20";
-                    CharacterDatabase.Query(sql.str().c_str());
+                    if (CharacterTableExists("dc_item_upgrades"))
+                    {
+                        char const* ownerColumn = nullptr;
+                        if (CharacterColumnExists("dc_item_upgrades", "player_guid"))
+                            ownerColumn = "player_guid";
+                        else if (CharacterColumnExists("dc_item_upgrades", "owner_guid"))
+                            ownerColumn = "owner_guid";
+
+                        if (ownerColumn)
+                        {
+                            std::ostringstream sql;
+                            sql << "SELECT item_guid, tier_id, upgrade_level FROM dc_item_upgrades WHERE " << ownerColumn
+                                << " = " << fakeGuid << " LIMIT 20";
+                            CharacterDatabase.Query(sql.str().c_str());
+                        }
+                    }
                 }
 
                 // Query 3: Collection sync (mounts)
                 {
-                    std::ostringstream sql;
-                    sql << "SELECT entry_id FROM dc_collection_mounts WHERE account_id = " << fakeAccount;
-                    CharacterDatabase.Query(sql.str().c_str());
+                    char const* table = nullptr;
+                    char const* idColumn = nullptr;
+                    if (CharacterTableExists("dc_mount_collection"))
+                    {
+                        table = "dc_mount_collection";
+                        idColumn = "spell_id";
+                    }
+                    else if (CharacterTableExists("dc_collection_mounts"))
+                    {
+                        table = "dc_collection_mounts";
+                        idColumn = "entry_id";
+                    }
+
+                    if (table && idColumn)
+                    {
+                        std::ostringstream sql;
+                        sql << "SELECT " << idColumn << " FROM " << table << " WHERE account_id = " << fakeAccount;
+                        CharacterDatabase.Query(sql.str().c_str());
+                    }
                 }
 
                 // Query 4: Mythic+ data
                 {
-                    std::ostringstream sql;
-                    sql << "SELECT dungeon_id, keystone_level FROM dc_character_mythic_keystones WHERE player_guid = " << fakeGuid;
-                    CharacterDatabase.Query(sql.str().c_str());
+                    if (CharacterTableExists("dc_player_keystones"))
+                    {
+                        std::ostringstream sql;
+                        sql << "SELECT current_keystone_level FROM dc_player_keystones WHERE player_guid = " << fakeGuid;
+                        CharacterDatabase.Query(sql.str().c_str());
+                    }
                 }
 
                 auto end = Clock::now();
@@ -874,6 +1448,18 @@ namespace DCPerfTest
 
         try
         {
+            bool hasGuildHouse = CharacterTableExists("dc_guild_house");
+            bool hasGuildPerms = CharacterTableExists("dc_guild_house_permissions");
+            bool hasGuildLog = CharacterTableExists("dc_guild_house_log");
+
+            if (!hasGuildHouse && !hasGuildPerms && !hasGuildLog)
+            {
+                result.testName += " [SKIPPED: guild house tables missing]";
+                result.iterations = 0;
+                result.totalUs = result.avgUs = result.minUs = result.maxUs = result.p95Us = result.p99Us = 0;
+                return result;
+            }
+
             // Simulate queries for loading guild house data and checking their spawns
             for (uint32 i = 0; i < iterations; ++i)
             {
@@ -885,17 +1471,23 @@ namespace DCPerfTest
 
                 // 1. Fetch House Data
                 {
-                    std::ostringstream sql;
-                    sql << "SELECT phase, map, positionX, positionY, positionZ, orientation "
-                        << "FROM dc_guild_house WHERE guild = " << fakeGuildId;
-                    CharacterDatabase.Query(sql.str().c_str());
+                    if (hasGuildHouse)
+                    {
+                        std::ostringstream sql;
+                        sql << "SELECT phase, map, positionX, positionY, positionZ, orientation "
+                            << "FROM dc_guild_house WHERE guild = " << fakeGuildId;
+                        CharacterDatabase.Query(sql.str().c_str());
+                    }
                 }
 
                 // 2. Fetch Permissions
                 {
-                    std::ostringstream sql;
-                    sql << "SELECT permission FROM dc_guild_house_permissions WHERE guildId = " << fakeGuildId;
-                    CharacterDatabase.Query(sql.str().c_str());
+                    if (hasGuildPerms)
+                    {
+                        std::ostringstream sql;
+                        sql << "SELECT permission FROM dc_guild_house_permissions WHERE guildId = " << fakeGuildId;
+                        CharacterDatabase.Query(sql.str().c_str());
+                    }
                 }
 
                 // 3. Count Spawns (Simulate finding all objects for this house, which uses World DB)
@@ -908,9 +1500,12 @@ namespace DCPerfTest
 
                  // 4. Log Check (Simulate 'Undo' readiness)
                 {
-                    std::ostringstream sql;
-                    sql << "SELECT id FROM dc_guild_house_log WHERE guildId = " << fakeGuildId << " ORDER BY id DESC LIMIT 10";
-                    CharacterDatabase.Query(sql.str().c_str());
+                    if (hasGuildLog)
+                    {
+                        std::ostringstream sql;
+                        sql << "SELECT id FROM dc_guild_house_log WHERE guildId = " << fakeGuildId << " ORDER BY id DESC LIMIT 10";
+                        CharacterDatabase.Query(sql.str().c_str());
+                    }
                 }
 
                 auto end = Clock::now();
@@ -972,7 +1567,11 @@ namespace DCPerfTest
                 }
                 {
                    std::ostringstream sql;
-                   sql << "SELECT count(*) FROM creature_addon WHERE guid IN (SELECT guid FROM creature WHERE map = " << mapId << " LIMIT 500)";
+                     // Avoid LIMIT in subqueries (unsupported on some MySQL/MariaDB variants).
+                     // This is intentionally a heavier query: it counts all creature_addon rows for a map.
+                     sql << "SELECT COUNT(*) FROM creature_addon ca "
+                         "JOIN creature c ON ca.guid = c.guid "
+                         "WHERE c.map = " << mapId;
                    WorldDatabase.Query(sql.str().c_str());
                 }
 
@@ -1011,6 +1610,31 @@ namespace DCPerfTest
 
         try
         {
+            if (!CharacterTableExists("dc_mplus_runs"))
+            {
+                result.success = false;
+                result.error = "Missing table dc_mplus_runs";
+                return result;
+            }
+
+            bool mplusHasSeason = CharacterColumnExists("dc_mplus_runs", "season_id");
+
+            bool hasVaultRewardPool = CharacterTableExists("dc_vault_reward_pool");
+            bool vaultHasSeason = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "season_id");
+            bool vaultHasWeekStart = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "week_start");
+            bool vaultHasItemLevel = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "item_level");
+            bool vaultHasSlotIndex = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "slot_index");
+            bool vaultHasSlotId = hasVaultRewardPool && CharacterColumnExists("dc_vault_reward_pool", "slot_id");
+
+            bool hasVaultLootTable = WorldTableExists("dc_vault_loot_table");
+            bool vaultLootHasExpectedColumns = hasVaultLootTable
+                && WorldColumnExists("dc_vault_loot_table", "item_id")
+                && WorldColumnExists("dc_vault_loot_table", "item_level_min")
+                && WorldColumnExists("dc_vault_loot_table", "item_level_max")
+                && WorldColumnExists("dc_vault_loot_table", "class_mask")
+                && WorldColumnExists("dc_vault_loot_table", "armor_type")
+                && WorldColumnExists("dc_vault_loot_table", "role_mask");
+
             // Simulate the heavy DB load of generating vault options for players
             // 1. Check M+ history
             // 2. Check Raid history
@@ -1030,8 +1654,10 @@ namespace DCPerfTest
                 {
                     std::ostringstream sql;
                     sql << "SELECT keystone_level FROM dc_mplus_runs "
-                        << "WHERE character_guid = " << fakeGuid << " AND season_id = " << seasonId 
-                        << " ORDER BY keystone_level DESC LIMIT 8";
+                        << "WHERE character_guid = " << fakeGuid;
+                    if (mplusHasSeason)
+                        sql << " AND season_id = " << seasonId;
+                    sql << " ORDER BY keystone_level DESC LIMIT 8";
                     CharacterDatabase.Query(sql.str().c_str());
                 }
 
@@ -1055,30 +1681,64 @@ namespace DCPerfTest
                 // 4. Loot Generation (The Heavy One - World DB)
                 // Simulate fetching candidates for a Paladin/Plate/Retribution (common case)
                 {
-                    const char* sql = "SELECT item_id FROM dc_vault_loot_table "
-                        "WHERE item_level_min <= 264 AND item_level_max >= 264 "
-                        "AND ((class_mask & 2) OR class_mask = 1023) "
-                        "AND (armor_type = 'Plate' OR armor_type = 'Misc') "
-                        "AND ((role_mask & 4) OR role_mask = 7)"; // DPS role
-                    WorldDatabase.Query(sql);
+                    if (vaultLootHasExpectedColumns)
+                    {
+                        const char* sql = "SELECT item_id FROM dc_vault_loot_table "
+                            "WHERE item_level_min <= 264 AND item_level_max >= 264 "
+                            "AND ((class_mask & 2) OR class_mask = 0 OR class_mask = 1023) "
+                            "AND (armor_type = 'Plate' OR armor_type = 'Misc') "
+                            "AND ((role_mask & 4) OR role_mask = 7)"; // DPS role
+                        WorldDatabase.Query(sql);
+                    }
+                    else
+                    {
+                        // Fallback to a safe core table if DC loot table isn't present.
+                        WorldDatabase.Query("SELECT entry FROM item_template LIMIT 200");
+                    }
                 }
 
                 // 5. Cleanup & Save (Simulated write)
                 {
-                    SQLTransaction trans = CharacterDatabase.BeginTransaction();
-                    // Cleanup old
-                    std::ostringstream del;
-                    del << "DELETE FROM dc_vault_reward_pool WHERE character_guid = " << fakeGuid << " AND week_start = " << weekStart;
-                    trans->Append(del.str().c_str());
-                    
-                    // Insert new (simulate 3 items)
-                    for (int j=1; j<=3; ++j) {
-                        std::ostringstream ins;
-                        ins << "INSERT INTO dc_vault_reward_pool (character_guid, week_start, slot_id, item_id) VALUES ("
-                            << fakeGuid << ", " << weekStart << ", " << j << ", " << (50000 + j + (i % 100)) << ")";
-                        trans->Append(ins.str().c_str());
+                    if (hasVaultRewardPool && vaultHasWeekStart)
+                    {
+                        SQLTransaction trans = CharacterDatabase.BeginTransaction();
+
+                        // Cleanup old
+                        std::ostringstream del;
+                        del << "DELETE FROM dc_vault_reward_pool WHERE character_guid = " << fakeGuid;
+                        if (vaultHasSeason)
+                            del << " AND season_id = " << seasonId;
+                        del << " AND week_start = " << weekStart;
+                        trans->Append(del.str().c_str());
+
+                        // Insert new (simulate 3 items)
+                        for (int j = 0; j < 3; ++j)
+                        {
+                            uint32 itemId = (50000 + (j + 1) + (i % 100));
+                            std::ostringstream ins;
+                            ins << "INSERT INTO dc_vault_reward_pool (character_guid";
+                            if (vaultHasSeason)
+                                ins << ", season_id";
+                            ins << ", week_start, item_id";
+                            if (vaultHasItemLevel)
+                                ins << ", item_level";
+                            if (vaultHasSlotIndex)
+                                ins << ", slot_index";
+                            else if (vaultHasSlotId)
+                                ins << ", slot_id";
+                            ins << ") VALUES (" << fakeGuid;
+                            if (vaultHasSeason)
+                                ins << ", " << seasonId;
+                            ins << ", " << weekStart << ", " << itemId;
+                            if (vaultHasItemLevel)
+                                ins << ", 264";
+                            if (vaultHasSlotIndex || vaultHasSlotId)
+                                ins << ", " << j;
+                            ins << ")";
+                            trans->Append(ins.str().c_str());
+                        }
+                        CharacterDatabase.CommitTransaction(trans);
                     }
-                    CharacterDatabase.CommitTransaction(trans);
                 }
 
                 auto end = Clock::now();
@@ -1223,6 +1883,235 @@ using namespace DCPerfTest;
 class dc_stresstest_commandscript : public CommandScript
 {
 public:
+        static void AppendAndMaybePrint(ChatHandler* handler, bool printDetails, std::vector<DCPerfTest::TimingResult>& out, DCPerfTest::TimingResult const& r)
+        {
+            out.push_back(r);
+            if (printDetails)
+                DCPerfTest::PrintResult(handler, r);
+        }
+
+        static bool RunSuite(ChatHandler* handler, std::string const& suite, char const* args, bool printDetails, std::vector<DCPerfTest::TimingResult>& out)
+        {
+            if (suite == "sql")
+            {
+                if (printDetails)
+                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: SQL Stress ===|r");
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestBulkSelect(1000));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestRepeatedQueries(100));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestTransactionBatch(50));
+                return true;
+            }
+
+            if (suite == "cache")
+            {
+                if (printDetails)
+                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: Cache ===|r");
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestObjectMgrCache());
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestItemTemplateCache());
+                return true;
+            }
+
+            if (suite == "systems")
+            {
+                if (printDetails)
+                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: DC Systems ===|r");
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestDCTableQueries());
+                return true;
+            }
+
+            if (suite == "dbasync")
+            {
+                if (printDetails)
+                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: Async DB Burst ===|r");
+
+                uint32 totalQueries = 400;
+                uint32 concurrency = 8;
+                if (args && *args)
+                {
+                    std::istringstream iss(args);
+                    iss >> totalQueries;
+                    if (!(iss >> concurrency))
+                        concurrency = 8;
+                }
+
+                if (totalQueries > 5000)
+                    totalQueries = 5000;
+                if (concurrency > 32)
+                    concurrency = 32;
+                if (totalQueries == 0)
+                    totalQueries = 1;
+                if (concurrency == 0)
+                    concurrency = 1;
+
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestAsyncQueryBurst(totalQueries, concurrency));
+                return true;
+            }
+
+            if (suite == "path")
+            {
+                // Must be run in-game.
+                Player* player = handler->GetPlayer();
+                if (!player)
+                {
+                    DCPerfTest::TimingResult r;
+                    r.testName = "Pathfinding";
+                    r.success = false;
+                    r.error = "Player context required (in-game only)";
+                    AppendAndMaybePrint(handler, printDetails, out, r);
+                    return false;
+                }
+
+                uint32 iterations = 200;
+                if (args && *args)
+                {
+                    uint32 val = atoi(args);
+                    if (val > 0)
+                        iterations = val;
+                }
+                if (iterations > 2000)
+                    iterations = 2000;
+
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestPathfinding(player, iterations));
+                return true;
+            }
+
+            if (suite == "stress" || suite == "big")
+            {
+                if (printDetails)
+                {
+                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: STRESS SIMULATION ===|r");
+                    handler->SendSysMessage("Running heavy load simulations. Server may hiccup...");
+                }
+
+                uint32 baseCount = 50;
+                if (args && *args)
+                {
+                    uint32 val = atoi(args);
+                    if (val > 0)
+                        baseCount = val;
+                }
+                uint32 limitSafe = (baseCount > 500) ? 500 : baseCount;
+
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestItemUpgradeStateLookups(baseCount * 10));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCollectionTableQueries(baseCount * 8));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestLoginSimulation(limitSafe));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestConcurrentQueryPattern(baseCount * 4));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestMassTransactionWrite(baseCount * 2));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestGreatVaultSimulation(limitSafe * 2));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestGuildHouseLoadSimulation(limitSafe));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestMassMapEntityLoad((limitSafe > 2) ? (limitSafe * 4 / 10) : 1));
+                return true;
+            }
+
+            if (suite == "mysql")
+            {
+                if (printDetails)
+                    DCPerfTest::PrintMySQLStatus(handler);
+                return true;
+            }
+
+            if (suite == "cpu")
+            {
+                // CPU suite currently has no TimingResult-returning tests here; keep existing behavior.
+                // (If we add CPU TimingResults later, they will naturally flow into this report.)
+                return HandlePerfTestCPU(handler, args);
+            }
+
+            if (suite == "full")
+            {
+                RunSuite(handler, "sql", "", printDetails, out);
+                RunSuite(handler, "cache", "", printDetails, out);
+                RunSuite(handler, "systems", "", printDetails, out);
+                RunSuite(handler, "stress", "", printDetails, out);
+                if (printDetails)
+                    DCPerfTest::PrintMySQLStatus(handler);
+                return true;
+            }
+
+            handler->SendSysMessage(Acore::StringFormat("|cffff0000Unknown suite '{}'|r", suite));
+            return false;
+        }
+
+        static bool HandlePerfTestReport(ChatHandler* handler, char const* args)
+        {
+            // Usage:
+            // .stresstest report [suite=full] [topN=10] [details=0|1] [format=chat|json|csv] [suiteArgs...]
+            // Example: .stresstest report dbasync 10 0 2000 16
+            std::string suite = "full";
+            uint32 topN = 10;
+            uint32 details = 0;
+            std::string format = "chat";
+            std::string suiteArgs;
+
+            if (args && *args)
+            {
+                std::istringstream iss(args);
+                iss >> suite;
+                if (!(iss >> topN))
+                    topN = 10;
+                if (!(iss >> details))
+                    details = 0;
+
+                std::string maybeFormat;
+                if (iss >> maybeFormat)
+                {
+                    if (maybeFormat == "chat" || maybeFormat == "json" || maybeFormat == "csv")
+                    {
+                        format = maybeFormat;
+                        std::getline(iss, suiteArgs);
+                    }
+                    else
+                    {
+                        // Not a format token; treat it as the first suite arg.
+                        std::string rest;
+                        std::getline(iss, rest);
+                        suiteArgs = maybeFormat + rest;
+                    }
+                }
+                else
+                {
+                    suiteArgs.clear();
+                }
+
+                while (!suiteArgs.empty() && suiteArgs.front() == ' ')
+                    suiteArgs.erase(suiteArgs.begin());
+            }
+
+            bool printDetails = details != 0;
+
+            handler->SendSysMessage("|cff00ff00=== DC Performance Test: REPORT ===|r");
+            handler->SendSysMessage(Acore::StringFormat("Suite: {} | TopN: {} | Details: {} | Format: {}",
+                suite,
+                topN,
+                printDetails ? "yes" : "no",
+                format));
+
+            auto start = DCPerfTest::Clock::now();
+
+            std::vector<DCPerfTest::TimingResult> results;
+            results.reserve(32);
+            RunSuite(handler, suite, suiteArgs.empty() ? "" : suiteArgs.c_str(), printDetails, results);
+
+            auto end = DCPerfTest::Clock::now();
+            uint64 wallUs = std::chrono::duration_cast<DCPerfTest::Microseconds>(end - start).count();
+
+            handler->SendSysMessage(Acore::StringFormat("Wall time: {}", DCPerfTest::FormatTime(wallUs)));
+            DCPerfTest::PrintReportSummary(handler, results, topN);
+
+            if (format == "json" || format == "csv")
+            {
+                std::string fullPath;
+                std::string writeError;
+                bool ok = DCPerfTest::WriteReportToLogsDir(format, suite, topN, printDetails, wallUs, results, fullPath, writeError);
+
+                if (ok)
+                    handler->SendSysMessage(Acore::StringFormat("|cff00ff00Report written to: {}|r", fullPath));
+                else
+                    handler->SendSysMessage(Acore::StringFormat("|cffff0000Failed to write report: {}|r", writeError));
+            }
+            return true;
+        }
+
     dc_stresstest_commandscript() : CommandScript("dc_stresstest_commandscript") { }
 
     static bool HandlePerfTestCPU(ChatHandler* handler, const char* args)
@@ -1251,6 +2140,7 @@ public:
     {
         // Usage:
         // .stresstest loop <suite> [loops=10] [sleepMs=1000] [suiteArgs...]
+        // Optional: prefix suiteArgs with "quiet" to only print the final summary.
         // suite: sql|cache|systems|stress|dbasync|path|cpu|mysql|full
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: LOOP ===|r");
 
@@ -1258,6 +2148,7 @@ public:
         uint32 loops = 10;
         uint32 sleepMs = 1000;
         std::string suiteArgs;
+        bool quiet = false;
 
         if (args && *args)
         {
@@ -1273,19 +2164,38 @@ public:
                 suiteArgs.erase(suiteArgs.begin());
         }
 
+        // Allow "quiet" as a first suite-arg: e.g. ".stresstest loop dbasync 40 250 quiet 2000 16"
+        if (!suiteArgs.empty())
+        {
+            std::istringstream argss(suiteArgs);
+            std::string first;
+            argss >> first;
+            if (first == "quiet" || first == "q")
+            {
+                quiet = true;
+                std::string rest;
+                std::getline(argss, rest);
+                while (!rest.empty() && rest.front() == ' ')
+                    rest.erase(rest.begin());
+                suiteArgs = rest;
+            }
+        }
+
         if (suite.empty())
         {
             handler->SendSysMessage("Usage: .stresstest loop <suite> [loops] [sleepMs] [suiteArgs...]");
             return true;
         }
 
-        if (loops > 200)
-            loops = 200;
+        bool infinite = (loops == 0);
+        if (!infinite && loops > 10000)
+            loops = 10000;
 
         std::vector<uint64> timesUs;
-        timesUs.reserve(loops);
+        timesUs.reserve(infinite ? 1024 : loops);
 
-        for (uint32 i = 0; i < loops; ++i)
+        uint32 i = 0;
+        while (infinite || i < loops)
         {
             auto start = DCPerfTest::Clock::now();
 
@@ -1312,7 +2222,7 @@ public:
                 ok = HandlePerfTestFull(handler, passArgs);
             else
             {
-                handler->PSendSysMessage("|cffff0000Unknown suite '%s'|r", suite.c_str());
+                handler->SendSysMessage(Acore::StringFormat("|cffff0000Unknown suite '{}'|r", suite));
                 return true;
             }
 
@@ -1320,9 +2230,19 @@ public:
             uint64 us = std::chrono::duration_cast<DCPerfTest::Microseconds>(end - start).count();
             timesUs.push_back(us);
 
-            handler->PSendSysMessage("|cff32c4ffLoop %u/%u|r: %s%s", i + 1, loops, DCPerfTest::FormatTime(us).c_str(), ok ? "" : " (errors)");
+            if (!quiet)
+            {
+                if (infinite)
+                    handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}|r: {}{}", i + 1, DCPerfTest::FormatTime(us), ok ? "" : " (errors)"));
+                else
+                    handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}/{}|r: {}{}", i + 1, loops, DCPerfTest::FormatTime(us), ok ? "" : " (errors)"));
+            }
 
-            if (sleepMs > 0 && (i + 1) < loops)
+            ++i;
+            if (!infinite && i >= loops)
+                break;
+
+            if (sleepMs > 0)
                 std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
         }
 
@@ -1337,15 +2257,15 @@ public:
             uint64 p99Us = DCPerfTest::GetPercentile(timesUs, 99.0f);
 
             handler->SendSysMessage("|cff00ff00=== Loop Summary ===|r");
-            handler->PSendSysMessage("Total: %s | Avg: %s | Min: %s | Max: %s",
-                DCPerfTest::FormatTime(totalUs).c_str(),
-                DCPerfTest::FormatTime(avgUs).c_str(),
-                DCPerfTest::FormatTime(minUs).c_str(),
-                DCPerfTest::FormatTime(maxUs).c_str());
-            handler->PSendSysMessage("P95: %s | P99: %s (%u loops)",
-                DCPerfTest::FormatTime(p95Us).c_str(),
-                DCPerfTest::FormatTime(p99Us).c_str(),
-                loops);
+            handler->SendSysMessage(Acore::StringFormat("Total: {} | Avg: {} | Min: {} | Max: {}",
+                DCPerfTest::FormatTime(totalUs),
+                DCPerfTest::FormatTime(avgUs),
+                DCPerfTest::FormatTime(minUs),
+                DCPerfTest::FormatTime(maxUs)));
+            handler->SendSysMessage(Acore::StringFormat("P95: {} | P99: {} ({} loops)",
+                DCPerfTest::FormatTime(p95Us),
+                DCPerfTest::FormatTime(p99Us),
+                static_cast<uint32>(timesUs.size())));
         }
 
         return true;
@@ -1382,6 +2302,148 @@ public:
         return true;
     }
 
+    static bool HandlePerfTestLoopReport(ChatHandler* handler, const char* args)
+    {
+        // Usage:
+        // .stresstest loopreport <suite> [loops=0] [sleepMs=1000] [topN=10] [details=0|1] [format=json|csv] [suiteArgs...]
+        // loops=0 means infinite.
+        handler->SendSysMessage("|cff00ff00=== DC Performance Test: LOOPREPORT ===|r");
+
+        std::string suite;
+        uint32 loops = 0;
+        uint32 sleepMs = 1000;
+        uint32 topN = 10;
+        uint32 details = 0;
+        std::string format = "json";
+        std::string suiteArgs;
+
+        if (args && *args)
+        {
+            std::istringstream iss(args);
+            iss >> suite;
+            if (!(iss >> loops))
+                loops = 0;
+            if (!(iss >> sleepMs))
+                sleepMs = 1000;
+            if (!(iss >> topN))
+                topN = 10;
+            if (!(iss >> details))
+                details = 0;
+
+            std::string maybeFormat;
+            if (iss >> maybeFormat)
+            {
+                if (maybeFormat == "json" || maybeFormat == "csv")
+                {
+                    format = maybeFormat;
+                    std::getline(iss, suiteArgs);
+                }
+                else
+                {
+                    std::string rest;
+                    std::getline(iss, rest);
+                    suiteArgs = maybeFormat + rest;
+                }
+            }
+            else
+            {
+                suiteArgs.clear();
+            }
+
+            while (!suiteArgs.empty() && suiteArgs.front() == ' ')
+                suiteArgs.erase(suiteArgs.begin());
+        }
+
+        if (suite.empty())
+        {
+            handler->SendSysMessage("Usage: .stresstest loopreport <suite> [loops] [sleepMs] [topN] [details] [format=json|csv] [suiteArgs...] (loops=0 is infinite)");
+            return true;
+        }
+
+        bool printDetails = details != 0;
+        bool infinite = (loops == 0);
+        if (!infinite && loops > 10000)
+            loops = 10000;
+
+        handler->SendSysMessage(Acore::StringFormat("Suite: {} | Loops: {} | SleepMs: {} | TopN: {} | Details: {} | Format: {}",
+            suite,
+            infinite ? "infinite" : std::to_string(loops),
+            sleepMs,
+            topN,
+            printDetails ? "yes" : "no",
+            format));
+
+        // Create one output file per command invocation.
+        std::string logsDir = sLog->GetLogsDir();
+        if (!logsDir.empty())
+        {
+            try
+            {
+                std::filesystem::create_directories(std::filesystem::path(logsDir));
+            }
+            catch (...) { }
+        }
+
+        std::string outPath = DCPerfTest::MakeLoopReportFilePath(suite, format);
+        std::ofstream out(outPath, std::ios::out | std::ios::trunc);
+        if (!out.is_open())
+        {
+            handler->SendSysMessage(Acore::StringFormat("|cffff0000Failed to open loop report file for writing: {}|r", outPath));
+            return true;
+        }
+
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Writing loop report to: {}|r", outPath));
+
+        if (format == "csv")
+            DCPerfTest::WriteLoopReportCsvHeader(out, suite, loops, infinite, sleepMs, topN, printDetails, format, suiteArgs);
+        else
+            DCPerfTest::WriteLoopReportJsonHeader(out, suite, loops, infinite, sleepMs, topN, printDetails, format, suiteArgs);
+
+        uint32 iter = 0;
+        bool firstJsonRun = true;
+        while (infinite || iter < loops)
+        {
+            auto start = DCPerfTest::Clock::now();
+
+            std::vector<DCPerfTest::TimingResult> results;
+            results.reserve(32);
+            RunSuite(handler, suite, suiteArgs.empty() ? "" : suiteArgs.c_str(), printDetails, results);
+
+            auto end = DCPerfTest::Clock::now();
+            uint64 wallUs = std::chrono::duration_cast<DCPerfTest::Microseconds>(end - start).count();
+
+            ++iter;
+
+            if (format == "csv")
+            {
+                DCPerfTest::WriteLoopReportCsvRun(out, iter, wallUs, results);
+            }
+            else
+            {
+                DCPerfTest::WriteLoopReportJsonRun(out, iter, wallUs, results, firstJsonRun);
+                firstJsonRun = false;
+            }
+            out.flush();
+
+            if (infinite)
+                handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}|r: wall {} | appended", iter, DCPerfTest::FormatTime(wallUs)));
+            else
+                handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}/{}|r: wall {} | appended", iter, loops, DCPerfTest::FormatTime(wallUs)));
+
+            if (!infinite && iter >= loops)
+                break;
+
+            if (sleepMs > 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+        }
+
+        if (format != "csv")
+            DCPerfTest::WriteLoopReportJsonFooter(out);
+
+        handler->SendSysMessage("|cff00ff00=== LOOPREPORT Complete ===|r");
+        return true;
+    }
+
     static bool HandlePerfTestPath(ChatHandler* handler, const char* args)
     {
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: Pathfinding ===|r");
@@ -1411,25 +2473,31 @@ public:
         return true;
     }
 
-    ChatCommandTable GetCommands() const override
+    Acore::ChatCommands::ChatCommandTable GetCommands() const override
     {
+        using namespace Acore::ChatCommands;
+
         static ChatCommandTable stressTestTable =
         {
-            { "sql",      HandlePerfTestSQL,      SEC_GAMEMASTER, Console::No },
-            { "cache",    HandlePerfTestCache,    SEC_GAMEMASTER, Console::No },
-            { "systems",  HandlePerfTestSystems,  SEC_GAMEMASTER, Console::No },
-            { "stress",   HandlePerfTestStress,   SEC_GAMEMASTER, Console::No },
-            { "dbasync",  HandlePerfTestDBAsync,  SEC_GAMEMASTER, Console::No },
-            { "path",     HandlePerfTestPath,     SEC_GAMEMASTER, Console::No },
-            { "cpu",      HandlePerfTestCPU,      SEC_GAMEMASTER, Console::No },
-            { "loop",     HandlePerfTestLoop,     SEC_GAMEMASTER, Console::No },
-            { "mysql",    PrintMySQLStatus,       SEC_GAMEMASTER, Console::No },
-            { "full",     HandlePerfTestFull,     SEC_GAMEMASTER, Console::No },
+            // Allow running from worldserver console/RCON to avoid disconnecting admins during long tests.
+            ChatCommandBuilder("sql",     HandlePerfTestSQL,     SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("cache",   HandlePerfTestCache,   SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("systems", HandlePerfTestSystems, SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("stress",  HandlePerfTestStress,  SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("dbasync", HandlePerfTestDBAsync, SEC_GAMEMASTER, Console::Yes),
+            // path requires an in-game Player context.
+            ChatCommandBuilder("path",    HandlePerfTestPath,    SEC_GAMEMASTER, Console::No),
+            ChatCommandBuilder("cpu",     HandlePerfTestCPU,     SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("loop",    HandlePerfTestLoop,    SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("loopreport", HandlePerfTestLoopReport, SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("mysql",   PrintMySQLStatus,      SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("full",    HandlePerfTestFull,    SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("report",  HandlePerfTestReport,  SEC_GAMEMASTER, Console::Yes),
         };
 
         static ChatCommandTable commandTable =
         {
-            { "stresstest",  stressTestTable }
+            ChatCommandBuilder("stresstest", stressTestTable)
         };
 
         return commandTable;
@@ -1538,7 +2606,7 @@ public:
 
         auto overallEnd = Clock::now();
         auto totalMs = std::chrono::duration_cast<Milliseconds>(overallEnd - overallStart).count();
-        handler->PSendSysMessage("|cff00ff00Total time: %llu ms|r", totalMs);
+        handler->SendSysMessage(Acore::StringFormat("|cff00ff00Total time: {} ms|r", totalMs));
         return true;
     }
 };

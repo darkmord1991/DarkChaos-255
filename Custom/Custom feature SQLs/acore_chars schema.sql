@@ -886,7 +886,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
   KEY `idx_account` (`account_id`),
   KEY `idx_module` (`module`),
   KEY `idx_event_type` (`event_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=90 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=92 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -911,7 +911,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=72044 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=81649 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1223,6 +1223,7 @@ CREATE TABLE IF NOT EXISTS `dc_collection_community_outfits` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(100) NOT NULL,
   `author_name` varchar(50) NOT NULL,
+  `author_account_id` int unsigned NOT NULL DEFAULT '0',
   `author_guid` int unsigned NOT NULL,
   `items_string` text NOT NULL COMMENT 'Serialized item IDs',
   `upvotes` int unsigned DEFAULT '0',
@@ -1234,8 +1235,9 @@ CREATE TABLE IF NOT EXISTS `dc_collection_community_outfits` (
   PRIMARY KEY (`id`),
   KEY `idx_created_at` (`created_at` DESC),
   KEY `idx_upvotes` (`upvotes` DESC),
-  KEY `idx_author_guid` (`author_guid`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  KEY `idx_author_guid` (`author_guid`),
+  KEY `idx_author_account_id` (`author_account_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_collection_currency` (
   `account_id` int unsigned NOT NULL,
@@ -2942,7 +2944,7 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_transaction_type` (`transaction_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=655 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
+) ENGINE=InnoDB AUTO_INCREMENT=656 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
 CREATE TABLE `dc_top_upgraders` (
 	`player_guid` INT UNSIGNED NOT NULL,
@@ -3738,7 +3740,7 @@ BEGIN
         SUM(CASE WHEN `direction` = 'C2S' THEN 1 ELSE 0 END) as total_c2s,
         SUM(CASE WHEN `direction` = 'S2C' THEN 1 ELSE 0 END) as total_s2c,
         COUNT(DISTINCT `guid`) as unique_players,
-        SUM(CASE WHEN `status` = 'error' THEN 1 ELSE 0 END) as error_count,
+        SUM(CASE WHEN `status` IN ('error', 'timeout') THEN 1 ELSE 0 END) as error_count,
         AVG(`processing_time_ms`) as avg_response_time_ms,
         (
             SELECT HOUR(sub.`timestamp`)
