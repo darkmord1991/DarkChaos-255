@@ -1014,35 +1014,50 @@ namespace DarkChaos
 
                 // Load artifacts
                 result = WorldDatabase.Query(
-                    "SELECT artifact_id, artifact_name, item_id, cosmetic_variant, rarity, location_name, location_type, essence_cost, is_active FROM dc_chaos_artifact_items WHERE season = {} AND is_active = 1",
-                    season);
+                    "SELECT item_id, artifact_name, artifact_rarity, power_level, is_active "
+                    "FROM dc_chaos_artifact_items WHERE is_active = 1");
                 if (result)
                 {
                     uint32 count = 0;
                     do
                     {
                         Field* fields = result->Fetch();
-                        uint32 artifact_id = fields[0].Get<uint32>();
+                        uint32 item_id = fields[0].Get<uint32>();
                         std::string artifact_name = fields[1].Get<std::string>();
-                        uint32 item_id = fields[2].Get<uint32>();
-                        uint8 cosmetic_variant = fields[3].Get<uint8>();
-                        uint8 rarity = fields[4].Get<uint8>();
-                        std::string location_name = fields[5].Get<std::string>();
-                        std::string location_type = fields[6].Get<std::string>();
-                        uint32 essence_cost = fields[7].Get<uint32>();
-                        bool is_active = fields[8].Get<bool>();
+                        std::string artifact_rarity = fields[2].Get<std::string>();
+                        uint8 power_level = fields[3].Get<uint8>();
+                        bool is_active = fields[4].Get<bool>();
+
+                        // Deployed schema uses item_id as the primary key; core uses artifact_id as an identifier.
+                        // Treat the item_id as the artifact_id.
+                        uint32 artifact_id = item_id;
+
+                        // Map enum rarity string to a numeric quality-like value.
+                        uint8 rarity = 3; // rare
+                        if (artifact_rarity == "common")
+                            rarity = 1;
+                        else if (artifact_rarity == "uncommon")
+                            rarity = 2;
+                        else if (artifact_rarity == "rare")
+                            rarity = 3;
+                        else if (artifact_rarity == "epic")
+                            rarity = 4;
+                        else if (artifact_rarity == "legendary")
+                            rarity = 5;
 
                         ChaosArtifact artifact;
                         artifact.artifact_id = artifact_id;
                         artifact.artifact_name = artifact_name;
                         artifact.item_id = item_id;
-                        artifact.cosmetic_variant = cosmetic_variant;
                         artifact.rarity = rarity;
-                        artifact.location_name = location_name;
-                        artifact.location_type = location_type;
-                        artifact.essence_cost = essence_cost;
                         artifact.is_active = is_active;
                         artifact.season = season;
+
+                        // Fields not present in the deployed world schema. Keep safe defaults.
+                        artifact.cosmetic_variant = 0;
+                        artifact.location_name.clear();
+                        artifact.location_type.clear();
+                        artifact.essence_cost = 250u * std::max<uint32>(1u, power_level);
 
                         artifacts[artifact_id] = artifact;
                         count++;

@@ -41,6 +41,45 @@ local state = {
 }
 
 local ICON_BASE = "Interface\\AddOns\\DC-MythicPlus\\Media\\Teleporter\\"
+local ICONS_DUNGEONS_BASE = "Interface\\AddOns\\Icons\\dungeons\\"
+
+local function iconCandidatesForDungeonName(name)
+    if type(name) ~= "string" then
+        return nil
+    end
+
+    local raw = name:gsub("^%s+", ""):gsub("%s+$", "")
+    local lower = string.lower(raw)
+
+    -- Prefer the shared Icons addon backgrounds when available (these were missing for some dungeons).
+    if lower == "ahn'kahet: the old kingdom" or lower == "ahn'kahet the old kingdom" or lower == "ahn'kahet" then
+        return {
+            ICON_BASE .. "AhnKahet.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-ahnkalet.png",
+            ICON_BASE .. "AzjolNerub.blp", -- fallback
+        }
+    end
+
+    if lower == "gundrak" then
+        return {
+            ICON_BASE .. "GundrakDungeon.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-gundrak.png",
+        }
+    end
+
+    if lower == "the nexus" or lower == "nexus" then
+        return {
+            ICON_BASE .. "TheNexus.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.blp",
+            ICONS_DUNGEONS_BASE .. "ui-lfg-background-thenexus.png",
+            ICON_BASE .. "EyeOfEternity.blp", -- allowed replacement
+        }
+    end
+
+    return nil
+end
 
 local function normalizeDungeonNameToIconKey(name)
     if type(name) ~= "string" then
@@ -54,8 +93,11 @@ local function normalizeDungeonNameToIconKey(name)
     if lower == "ahn'kahet: the old kingdom" or lower == "ahn'kahet the old kingdom" then
         return "AhnKahet"
     end
+    if lower == "gundrak" then
+        return "GundrakDungeon"
+    end
     if lower == "the nexus" or lower == "nexus" then
-        return "EyeOfEternity"
+        return "TheNexus"
     end
     if lower == "the oculus" or lower == "oculus" then
         return "EyeOfEternity"
@@ -86,11 +128,16 @@ local function normalizeDungeonNameToIconKey(name)
 end
 
 local function iconPathForDungeonName(name)
+    local candidates = iconCandidatesForDungeonName(name)
+    if candidates and #candidates > 0 then
+        return candidates
+    end
+
     local key = normalizeDungeonNameToIconKey(name)
     if not key then
         return nil
     end
-    return ICON_BASE .. key .. ".blp"
+    return { ICON_BASE .. key .. ".blp" }
 end
 
 local iconExistsCache = {}
@@ -360,20 +407,26 @@ local function rebuildGrid()
             b.mapId = d.mapId
 
             -- Use the dungeon image as the button background if available.
-            local iconPath = iconPathForDungeonName(label)
+            local iconPaths = iconPathForDungeonName(label)
             local hasIcon = false
-            if iconPath then
-                local cached = iconExistsCache[iconPath]
-                if cached == nil then
-                    b.bg:SetTexture(iconPath)
-                    cached = (b.bg:GetTexture() ~= nil)
-                    iconExistsCache[iconPath] = cached
-                else
-                    if cached then
+            if iconPaths then
+                for _, iconPath in ipairs(iconPaths) do
+                    local cached = iconExistsCache[iconPath]
+                    if cached == nil then
                         b.bg:SetTexture(iconPath)
+                        cached = (b.bg:GetTexture() ~= nil)
+                        iconExistsCache[iconPath] = cached
+                    else
+                        if cached then
+                            b.bg:SetTexture(iconPath)
+                        end
+                    end
+
+                    if cached == true then
+                        hasIcon = true
+                        break
                     end
                 end
-                hasIcon = cached == true
             end
 
             if hasIcon then

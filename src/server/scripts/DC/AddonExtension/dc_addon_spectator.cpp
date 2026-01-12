@@ -175,44 +175,31 @@ namespace Spectator
     // Check if player is spectating
     bool IsSpectating(Player* player)
     {
-        return s_ActiveSpectators.find(player->GetGUID().GetCounter()) != s_ActiveSpectators.end();
+        return DCMythicSpectator::MythicSpectatorManager::Get().IsSpectating(player);
     }
 
     // Get run ID player is spectating
     uint32 GetSpectatingRunId(Player* player)
     {
-        auto it = s_ActiveSpectators.find(player->GetGUID().GetCounter());
-        return (it != s_ActiveSpectators.end()) ? it->second : 0;
+        auto& mgr = DCMythicSpectator::MythicSpectatorManager::Get();
+        if (DCMythicSpectator::SpectatorState* state = mgr.GetSpectatorState(player->GetGUID()))
+            return state->targetInstanceId;
+        return 0;
     }
 
     // Send HUD update to all spectators of a run
     void BroadcastHUDUpdate(uint32 runId, uint32 /*elapsed*/, uint32 /*remaining*/,
                            uint32 /*deaths*/, float /*progress*/, const std::string& /*bossInfo*/)
     {
-        for (auto const& [spectatorGuid, watchingRunId] : s_ActiveSpectators)
-        {
-            if (watchingRunId != runId)
-                continue;
-
-            // Find player by GUID
-            // Note: This needs SessionMgr access - placeholder for now
-            // if (Player* spectator = ObjectAccessor::FindPlayer(ObjectGuid(HighGuid::Player, spectatorGuid)))
-            // {
-            //     Message(Module::SPECTATOR, Opcode::Spec::SMSG_HUD_UPDATE)
-            //         .Add(elapsed)
-            //         .Add(remaining)
-            //         .Add(deaths)
-            //         .Add(progress)
-            //         .Add(bossInfo)
-            //         .Send(spectator);
-            // }
-        }
+        // TODO: If/when addon HUD updates are needed, use MythicSpectatorManager::GetSpectatorsForInstance(runId)
+        // and broadcast appropriate messages.
+        (void)runId;
     }
 
     // Player logout cleanup
     void OnPlayerLogout(Player* player)
     {
-        s_ActiveSpectators.erase(player->GetGUID().GetCounter());
+        DCMythicSpectator::MythicSpectatorManager::Get().StopSpectating(player);
     }
 
 }  // namespace Spectator

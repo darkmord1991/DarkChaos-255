@@ -55,8 +55,8 @@ namespace
     {
         // Keep this lightweight and idempotent; avoids needing an out-of-band SQL migration.
         CharacterDatabase.DirectExecute(
-            "CREATE TABLE IF NOT EXISTS dc_weekly_reset_state ("
-            "system VARCHAR(64) NOT NULL PRIMARY KEY,"
+            "CREATE TABLE IF NOT EXISTS `dc_weekly_reset_state` ("
+            "`system` VARCHAR(64) NOT NULL PRIMARY KEY,"
             "week_start INT UNSIGNED NOT NULL DEFAULT 0,"
             "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
@@ -108,7 +108,7 @@ namespace Seasons
         uint32 storedWeekStart = 0;
 
         QueryResult state = CharacterDatabase.Query(
-            "SELECT week_start FROM dc_weekly_reset_state WHERE system = '{}'",
+            "SELECT week_start FROM `dc_weekly_reset_state` WHERE `system` = '{}'",
             WEEKLY_STATE_KEY);
 
         if (state)
@@ -125,7 +125,7 @@ namespace Seasons
 
         // Persist new week start.
         CharacterDatabase.Execute(
-            "INSERT INTO dc_weekly_reset_state (system, week_start) VALUES ('{}', {}) "
+            "INSERT INTO `dc_weekly_reset_state` (`system`, week_start) VALUES ('{}', {}) "
             "ON DUPLICATE KEY UPDATE week_start = {}",
             WEEKLY_STATE_KEY, currentWeekStart, currentWeekStart);
     }
