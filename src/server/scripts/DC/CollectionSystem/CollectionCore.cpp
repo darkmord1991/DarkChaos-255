@@ -64,10 +64,10 @@ namespace DCCollection
         cache.Reset();
 
         // Load mounts
-        if (CharacterTableExists("dc_collection_mounts"))
+        if (CharacterTableExists("dc_mount_collection"))
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT mount_spell_id FROM dc_collection_mounts WHERE account_id = {}", accountId);
+                "SELECT spell_id FROM dc_mount_collection WHERE account_id = {}", accountId);
             if (result)
             {
                 do
@@ -78,10 +78,10 @@ namespace DCCollection
         }
 
         // Load pets
-        if (CharacterTableExists("dc_collection_pets"))
+        if (CharacterTableExists("dc_pet_collection"))
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT pet_spell_id FROM dc_collection_pets WHERE account_id = {}", accountId);
+                "SELECT pet_entry FROM dc_pet_collection WHERE account_id = {}", accountId);
             if (result)
             {
                 do
@@ -92,10 +92,10 @@ namespace DCCollection
         }
 
         // Load toys
-        if (CharacterTableExists("dc_collection_toys"))
+        if (CharacterTableExists("dc_toy_collection"))
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT toy_item_id FROM dc_collection_toys WHERE account_id = {}", accountId);
+                "SELECT item_id FROM dc_toy_collection WHERE account_id = {}", accountId);
             if (result)
             {
                 do
@@ -106,10 +106,10 @@ namespace DCCollection
         }
 
         // Load transmog display IDs
-        if (CharacterTableExists("dc_collection_transmog"))
+        if (CharacterTableExists("dc_transmog_collection"))
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT display_id FROM dc_collection_transmog WHERE account_id = {}", accountId);
+                "SELECT display_id FROM dc_transmog_collection WHERE account_id = {}", accountId);
             if (result)
             {
                 do

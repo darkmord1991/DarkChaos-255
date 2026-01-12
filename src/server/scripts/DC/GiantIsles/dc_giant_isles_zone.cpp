@@ -331,7 +331,7 @@ public:
         SendBossStatusList(player);
     }
 
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         if (!player)
             return;

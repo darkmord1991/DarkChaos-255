@@ -15,7 +15,6 @@ namespace
     constexpr uint8 DEFAULT_WEEKLY_RESET_DAY = 2;  // Tuesday
     constexpr uint8 DEFAULT_WEEKLY_RESET_HOUR = 15; // 15:00
 
-    constexpr char const* WEEKLY_STATE_TABLE = "dc_weekly_reset_state";
     constexpr char const* WEEKLY_STATE_KEY = "dc_global";
 
     uint32 GetCurrentWeekStart()

@@ -662,7 +662,7 @@ namespace DCPerfTest
                 sql << "SELECT COUNT(*) FROM " << table;
                 QueryResult qr = CharacterDatabase.Query(sql.str().c_str());
                 auto end = Clock::now();
-                
+
                 if (qr)
                     times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
             }

@@ -15,138 +15,125 @@
 #include "Config.h"
 #include "Log.h"
 
+#include "../MythicPlus/dc_mythic_spectator.h"
+
 namespace DCAddon
 {
 namespace Spectator
 {
-    // Active spectators map: spectatorGuid -> runId they're watching
-    static std::unordered_map<uint32, uint32> s_ActiveSpectators;
-
     // Handler: Request to spectate a run
     static void HandleRequestSpectate(Player* player, const ParsedMessage& msg)
     {
-        uint32 runId = msg.GetUInt32(0);
+        uint32 instanceId = msg.GetUInt32(0);
 
-        // Verify run exists and is in progress
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT dungeon_id, keystone_level, start_time, status FROM dc_mplus_runs "
-            "WHERE run_id = {} AND status = 'in_progress'",
-            runId);
+        auto& mgr = DCMythicSpectator::MythicSpectatorManager::Get();
 
-        if (!result)
-        {
-            Message(Module::SPECTATOR, Opcode::Spec::SMSG_SPECTATE_STOP)
-                .Add(0)  // error
-                .Add("Run not found or not in progress")
-                .Send(player);
-            return;
-        }
-
-        uint32 dungeonId = (*result)[0].Get<uint32>();
-        uint32 keystoneLevel = (*result)[1].Get<uint32>();
-
-        // Check if player is allowed to spectate (currently always allowed if not in combat)
-        // Future: Add more restrictions here
-
-        // Option: Only allow spectating if not in combat
-        if (player->IsInCombat())
+        std::string error;
+        if (!mgr.CanSpectate(player, instanceId, error))
         {
             Message(Module::SPECTATOR, Opcode::Spec::SMSG_SPECTATE_STOP)
                 .Add(0)
-                .Add("Cannot spectate while in combat")
+                .Add(error.empty() ? "Cannot spectate this run" : error)
                 .Send(player);
             return;
         }
 
-        // Register as spectator
-        s_ActiveSpectators[player->GetGUID().GetCounter()] = runId;
-
-        // Get dungeon info
-        std::string dungeonName = "Unknown Dungeon";
-        uint32 mapId = 0;
-        QueryResult dungeonResult = WorldDatabase.Query(
-            "SELECT dungeon_name, map_id FROM dc_mplus_dungeons WHERE dungeon_id = {}",
-            dungeonId);
-        if (dungeonResult)
+        if (!mgr.StartSpectating(player, instanceId))
         {
-            dungeonName = (*dungeonResult)[0].Get<std::string>();
-            mapId = (*dungeonResult)[1].Get<uint32>();
+            Message(Module::SPECTATOR, Opcode::Spec::SMSG_SPECTATE_STOP)
+                .Add(0)
+                .Add("Failed to start spectating")
+                .Send(player);
+            return;
+        }
+
+        DCMythicSpectator::SpectateableRun const* run = mgr.GetRun(instanceId);
+        uint32 mapId = run ? run->mapId : 0u;
+        uint32 keystoneLevel = run ? run->keystoneLevel : 0u;
+
+        std::string dungeonName = "Unknown Dungeon";
+        if (mapId)
+        {
+            QueryResult dungeonResult = WorldDatabase.Query(
+                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
+                mapId);
+            if (dungeonResult)
+                dungeonName = (*dungeonResult)[0].Get<std::string>();
         }
 
         Message(Module::SPECTATOR, Opcode::Spec::SMSG_SPECTATE_START)
             .Add(1)  // success
-            .Add(runId)
-            .Add(dungeonId)
+            .Add(instanceId)
+            .Add(mapId)
             .Add(dungeonName)
             .Add(mapId)
             .Add(keystoneLevel)
             .Send(player);
 
         LOG_DEBUG("dc.addon.spec", "Player {} started spectating run {}",
-                  player->GetName(), runId);
+                  player->GetName(), instanceId);
     }
 
     // Handler: Stop spectating
     static void HandleStopSpectate(Player* player, const ParsedMessage& /*msg*/)
     {
-        uint32 guid = player->GetGUID().GetCounter();
+        auto& mgr = DCMythicSpectator::MythicSpectatorManager::Get();
 
-        auto it = s_ActiveSpectators.find(guid);
-        if (it != s_ActiveSpectators.end())
-        {
-            uint32 runId = it->second;
-            s_ActiveSpectators.erase(it);
-
-            Message(Module::SPECTATOR, Opcode::Spec::SMSG_SPECTATE_STOP)
-                .Add(1)  // success
-                .Add(runId)
-                .Send(player);
-
-            LOG_DEBUG("dc.addon.spec", "Player {} stopped spectating run {}",
-                      player->GetName(), runId);
-        }
-        else
+        if (!mgr.IsSpectating(player))
         {
             Message(Module::SPECTATOR, Opcode::Spec::SMSG_SPECTATE_STOP)
                 .Add(0)
                 .Add("Not currently spectating")
                 .Send(player);
+            return;
         }
+
+        DCMythicSpectator::SpectatorState* state = mgr.GetSpectatorState(player->GetGUID());
+        uint32 instanceId = state ? state->targetInstanceId : 0u;
+
+        mgr.StopSpectating(player);
+
+        Message(Module::SPECTATOR, Opcode::Spec::SMSG_SPECTATE_STOP)
+            .Add(1)  // success
+            .Add(instanceId)
+            .Send(player);
+
+        LOG_DEBUG("dc.addon.spec", "Player {} stopped spectating run {}",
+                  player->GetName(), instanceId);
     }
 
     // Handler: List active runs available to spectate
     static void HandleListRuns(Player* player, const ParsedMessage& /*msg*/)
     {
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT r.run_id, r.dungeon_id, r.keystone_level, r.start_time, "
-            "d.dungeon_name, COUNT(DISTINCT p.player_guid) as party_size "
-            "FROM dc_mplus_runs r "
-            "LEFT JOIN dc_mplus_dungeons d ON r.dungeon_id = d.dungeon_id "
-            "LEFT JOIN dc_mplus_run_participants p ON r.run_id = p.run_id "
-            "WHERE r.status = 'in_progress' AND r.allow_spectators = 1 "
-            "GROUP BY r.run_id ORDER BY r.keystone_level DESC LIMIT 20");
+        auto& mgr = DCMythicSpectator::MythicSpectatorManager::Get();
+        std::vector<DCMythicSpectator::SpectateableRun> runs = mgr.GetSpectateableRuns();
 
         std::string runList;
         uint32 count = 0;
 
-        if (result)
+        for (DCMythicSpectator::SpectateableRun const& run : runs)
         {
-            do
-            {
-                if (count > 0) runList += ";";
+            if (count >= 20)
+                break;
 
-                uint32 runId = (*result)[0].Get<uint32>();
-                uint32 dungeonId = (*result)[1].Get<uint32>();
-                uint32 level = (*result)[2].Get<uint32>();
-                // start_time is [3]
-                std::string dungeonName = (*result)[4].IsNull() ? "Unknown" : (*result)[4].Get<std::string>();
-                uint32 partySize = (*result)[5].Get<uint32>();
+            std::string dungeonName = "Unknown";
+            QueryResult nameResult = WorldDatabase.Query(
+                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
+                run.mapId);
+            if (nameResult)
+                dungeonName = (*nameResult)[0].Get<std::string>();
 
-                std::ostringstream ss;
-                ss << runId << ":" << dungeonId << ":" << dungeonName << ":" << level << ":" << partySize;
-                runList += ss.str();
-                count++;
-            } while (result->NextRow());
+            uint32 partySize = run.participantNames.empty()
+                ? 5u
+                : static_cast<uint32>(run.participantNames.size());
+
+            if (count > 0)
+                runList += ";";
+
+            std::ostringstream ss;
+            ss << run.instanceId << ":" << run.mapId << ":" << dungeonName << ":" << uint32(run.keystoneLevel) << ":" << partySize;
+            runList += ss.str();
+            ++count;
         }
 
         Message(Module::SPECTATOR, Opcode::Spec::SMSG_RUN_LIST)

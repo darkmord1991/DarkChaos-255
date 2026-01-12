@@ -46,7 +46,7 @@ namespace MythicPlus
             // Get dungeon name
             std::string dungeonName = "Unknown";
             QueryResult nameResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE map_id = {}",
+                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
                 dungeonId);
             if (nameResult)
                 dungeonName = (*nameResult)[0].Get<std::string>();
@@ -893,7 +893,7 @@ namespace MythicPlus
             // Get dungeon name
             std::string dungeonName = "Unknown";
             QueryResult nameResult = WorldDatabase.Query(
-                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE map_id = {}",
+                "SELECT dungeon_name FROM dc_mplus_dungeons WHERE dungeon_id = {}",
                 dungeonId);
             if (nameResult)
                 dungeonName = (*nameResult)[0].Get<std::string>();
