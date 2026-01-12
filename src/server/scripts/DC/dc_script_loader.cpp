@@ -112,6 +112,7 @@ void AddSC_dc_mythic_spectator();             // MythicPlus\dc_mythic_spectator.
 
 // --- Seasonal Reward System ---
 void AddSC_SeasonalRewardScripts();           // Seasons\SeasonalRewardScripts.cpp
+void AddSC_DCWeeklyResetHub();                // Seasons\DCWeeklyResetHub.cpp
 
 
 // --- Phased Duels System ---
@@ -541,6 +542,15 @@ void AddDCScripts()
         LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in seasonal scripts: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts.dc", ">>   ✗ CRASH in seasonal scripts");
+    }
+
+    try {
+        AddSC_DCWeeklyResetHub();
+        LOG_INFO("scripts.dc", ">>   ✓ DC weekly reset hub loaded (GreatVault + ItemUpgrades)");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in weekly reset hub: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts.dc", ">>   ✗ CRASH in weekly reset hub");
     }
 
     try {

@@ -12,6 +12,8 @@
 
 #include "ItemUpgradeMechanics.h"
 #include "ItemUpgradeManager.h"
+#include "ItemUpgradeSeasonResolver.h"
+#include "ScriptMgr.h"
 #include "Item.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
@@ -40,6 +42,19 @@ namespace
             pos += 2;
         }
     }
+
+    uint8 ResolveMaxUpgradeLevel(uint8 tier_id)
+    {
+        if (auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+        {
+            uint8 maxLevel = mgr->GetTierMaxLevel(tier_id);
+            if (maxLevel > 0)
+                return maxLevel;
+        }
+
+        // Safe fallback for legacy mechanics helpers.
+        return 15;
+    }
 }
 
 using namespace DarkChaos::ItemUpgrade;
@@ -51,7 +66,8 @@ uint32 UpgradeCostCalculator::GetEssenceCost(uint8 tier_id, uint8 current_level)
     // Artifact (Tier 5) items use essence currency for upgrades
     // Implementation enabled: Essence costs calculated based on tier and level
 
-    if (current_level >= 15)
+    uint8 maxLevel = ResolveMaxUpgradeLevel(tier_id);
+    if (current_level >= maxLevel)
         return 0; // Already maxed
 
     // Base costs per tier
@@ -74,7 +90,8 @@ uint32 UpgradeCostCalculator::GetEssenceCost(uint8 tier_id, uint8 current_level)
 
 uint32 UpgradeCostCalculator::GetTokenCost(uint8 tier_id, uint8 current_level)
 {
-    if (current_level >= 15)
+    uint8 maxLevel = ResolveMaxUpgradeLevel(tier_id);
+    if (current_level >= maxLevel)
         return 0; // Already maxed
 
     // Token costs are roughly 50% of essence costs
@@ -101,8 +118,9 @@ void UpgradeCostCalculator::GetCumulativeCost(uint8 tier_id, uint8 target_level,
     out_tokens = 0;
     out_essence = 0;
 
-    if (target_level > 15)
-        target_level = 15;
+    uint8 maxLevel = ResolveMaxUpgradeLevel(tier_id);
+    if (target_level > maxLevel)
+        target_level = maxLevel;
 
     // Sum costs from level 0 to target_level - 1
     for (uint8 level = 0; level < target_level; ++level)
@@ -239,11 +257,13 @@ std::string CreateUpgradeDisplay(const ItemUpgradeState& state, uint8 tier_id)
 {
     std::ostringstream ss;
 
+    uint8 maxLevel = ResolveMaxUpgradeLevel(tier_id);
+
     float current_mult = StatScalingCalculator::GetFinalMultiplier(state.upgrade_level, tier_id);
     uint16 upgraded_ilvl = ItemLevelCalculator::GetUpgradedItemLevel(
         state.base_item_level, state.upgrade_level, tier_id);
 
-    ss << "|cff00ff00Upgrade Level: " << static_cast<int>(state.upgrade_level) << "/15|r\n";
+    ss << "|cff00ff00Upgrade Level: " << static_cast<int>(state.upgrade_level) << "/" << static_cast<int>(maxLevel) << "|r\n";
     ss << "|cffffffff Item Level: " << state.base_item_level << " -> " << upgraded_ilvl << "|r\n";
     ss << "|cffffff00Stat Bonus: " << std::fixed << std::setprecision(1)
        << (current_mult - 1.0f) * 100 << "%|r\n";
@@ -341,9 +361,27 @@ bool ItemUpgradeState::SaveToDatabase() const
 
 // (Do not define a global GetUpgradeManager here; use DarkChaos::ItemUpgrade::GetUpgradeManager())
 
+namespace
+{
+    class ItemUpgradeInitWorldScript : public WorldScript
+    {
+    public:
+        ItemUpgradeInitWorldScript() : WorldScript("ItemUpgradeInitWorldScript") {}
+
+        void OnStartup() override
+        {
+            uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+            if (UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+                mgr->LoadUpgradeData(season);
+        }
+    };
+}
+
 // Registration function to ensure this file is linked
 void AddSC_ItemUpgradeMechanicsImpl()
 {
     // This function exists solely to force the linker to include this compilation unit.
     // The static functions (StatScalingCalculator, ItemLevelCalculator) are used by other modules.
+
+    new ItemUpgradeInitWorldScript();
 }

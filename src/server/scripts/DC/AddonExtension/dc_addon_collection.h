@@ -18,9 +18,6 @@
 class Player;
 class ItemTemplate;
 
-#include <string>
-#include <map>
-
 namespace DCCollection
 {
     // Module identifier
@@ -90,6 +87,10 @@ namespace DCCollection
         uint32 oldEntry, bool oldIsNonCustom, uint32 oldQuality, uint32 oldItemLevel);
     TransmogAppearanceVariant const* FindAnyVariant(uint32 displayId);
     void SendTransmogState(Player* player); // Needed by SetTransmog
+
+    // Cache helpers (implemented in dc_addon_collection.cpp)
+    // Allows other modules to invalidate the per-character transmog cache when DB rows change.
+    void InvalidateCharacterTransmogCache(uint32 guid);
 }
 
 #endif // DC_ADDON_COLLECTION_H

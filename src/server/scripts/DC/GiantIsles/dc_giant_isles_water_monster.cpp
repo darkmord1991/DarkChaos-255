@@ -560,3 +560,8 @@ void AddSC_dc_giant_isles_water_monster()
     new npc_giant_water_monster();
     new npc_corrupted_elemental();
 }
+
+void AddSC_giant_isles_water_monster()
+{
+    AddSC_dc_giant_isles_water_monster();
+}

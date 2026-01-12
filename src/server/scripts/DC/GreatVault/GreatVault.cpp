@@ -7,6 +7,7 @@
 #include "Item.h"
 #include "ItemTemplate.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "StringFormat.h"
@@ -188,12 +189,17 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
     // Get config for vault reward mode
     VaultRewardMode rewardMode = static_cast<VaultRewardMode>(sConfigMgr->GetOption<uint32>("MythicPlus.Vault.RewardMode", VAULT_MODE_TOKENS));
 
-    // Clear existing reward pool for this player/week
-    CharacterDatabase.DirectExecute("DELETE FROM dc_vault_reward_pool WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-                                    playerGuid, seasonId, weekStart);
+    // IMPORTANT (retail-like behavior): do NOT reroll existing rewards.
+    // Only generate missing rewards for newly-unlocked slots.
 
-    // Get player info for spec-based loot
+    // Get player info for spec-based loot. If the player is offline, fall back
+    // to tokens-only to avoid null-dependent spec/class logic.
     Player* player = ObjectAccessor::FindPlayerByLowGUID(playerGuid);
+    if (!player && rewardMode != VAULT_MODE_TOKENS)
+    {
+        LOG_WARN("mythic.vault", "GreatVault: Player {} is offline; forcing tokens-only reward mode for pool generation", playerGuid);
+        rewardMode = VAULT_MODE_TOKENS;
+    }
 
     uint32 classMask = DC::VaultUtils::GetPlayerClassMask(player);
     uint8 roleMask = DC::VaultUtils::GetPlayerRoleMask(player);
@@ -267,6 +273,21 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
     std::mt19937 rng(rd());
     std::unordered_set<uint32> usedItems;
 
+    std::unordered_set<uint8> existingSlots;
+    if (QueryResult existing = CharacterDatabase.Query(
+        "SELECT slot_index, item_id FROM dc_vault_reward_pool WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+        playerGuid, seasonId, weekStart))
+    {
+        do
+        {
+            uint8 slotIndex = (*existing)[0].Get<uint8>();
+            uint32 itemId = (*existing)[1].Get<uint32>();
+            existingSlots.insert(slotIndex);
+            if (itemId)
+                usedItems.insert(itemId);
+        } while (existing->NextRow());
+    }
+
     auto insertReward = [&](uint8 slotIndex, uint32 itemId, uint32 ilvl)
     {
         CharacterDatabase.DirectExecute(
@@ -282,6 +303,10 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
         // --- RAID TRACK ---
         if (raidBosses >= raidThresholds[slotInTrack])
         {
+            uint8 globalSlot = slotInTrack;
+            if (existingSlots.find(globalSlot) != existingSlots.end())
+                goto mythic_track;
+
             uint32 itemId = 0;
             if (rewardMode == VAULT_MODE_TOKENS)
                 itemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
@@ -289,18 +314,25 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
             {
                 auto candidates = fetchCandidates(raidItemLevel);
                 itemId = pickWeighted(candidates, rng, usedItems);
+                if (!itemId)
+                    itemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
             }
 
             if (itemId)
             {
                 usedItems.insert(itemId);
-                insertReward(slotInTrack, itemId, raidItemLevel);
+                insertReward(globalSlot, itemId, raidItemLevel);
             }
         }
 
+mythic_track:
         // --- MYTHIC+ TRACK ---
         if (mplus.runs >= mplusThresholds[slotInTrack])
         {
+            uint8 globalSlot = static_cast<uint8>(3 + slotInTrack);
+            if (existingSlots.find(globalSlot) != existingSlots.end())
+                goto pvp_track;
+
             uint8 keyLevel = mplus.slotKeyLevel[slotInTrack];
             // Calculate ilvl based on key level (simplified logic here, should match MythicPlusRewards)
             // For now, just a placeholder formula or fetch from config
@@ -313,18 +345,25 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
             {
                 auto candidates = fetchCandidates(mplusIlvl);
                 itemId = pickWeighted(candidates, rng, usedItems);
+                if (!itemId)
+                    itemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
             }
 
             if (itemId)
             {
                 usedItems.insert(itemId);
-                insertReward(3 + slotInTrack, itemId, mplusIlvl);
+                insertReward(globalSlot, itemId, mplusIlvl);
             }
         }
 
+pvp_track:
         // --- PVP TRACK ---
         if (pvpWins >= pvpThresholds[slotInTrack])
         {
+            uint8 globalSlot = static_cast<uint8>(6 + slotInTrack);
+            if (existingSlots.find(globalSlot) != existingSlots.end())
+                continue;
+
             uint32 itemId = 0;
             if (rewardMode == VAULT_MODE_TOKENS)
                 itemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
@@ -332,12 +371,14 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
             {
                 auto candidates = fetchCandidates(pvpItemLevel);
                 itemId = pickWeighted(candidates, rng, usedItems);
+                if (!itemId)
+                    itemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
             }
 
             if (itemId)
             {
                 usedItems.insert(itemId);
-                insertReward(6 + slotInTrack, itemId, pvpItemLevel);
+                insertReward(globalSlot, itemId, pvpItemLevel);
             }
         }
     }
@@ -382,7 +423,11 @@ bool GreatVaultMgr::ClaimVaultItemReward(Player* player, uint8 slot, uint32 item
 
     uint32 guidLow = player->GetGUID().GetCounter();
     uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
-    uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
+    // Retail-like grace window: claim LAST week's rewards during the current week.
+    uint32 currentWeekStart = sMythicRuns->GetWeekStartTimestamp();
+    uint32 weekStart = currentWeekStart >= SECONDS_PER_WEEK ? (currentWeekStart - SECONDS_PER_WEEK) : 0;
+    if (weekStart == 0)
+        return false;
 
     // Ensure weekly vault row exists so claim state is consistent even if player only does Raid/PvP.
     CharacterDatabase.DirectExecute(
@@ -395,13 +440,13 @@ bool GreatVaultMgr::ClaimVaultItemReward(Player* player, uint8 slot, uint32 item
         guidLow, seasonId, weekStart);
     if (claimRow && (*claimRow)[0].Get<bool>())
     {
-        ChatHandler(player->GetSession()).SendSysMessage("You have already claimed a reward from the Great Vault this week.");
+        ChatHandler(player->GetSession()).SendSysMessage("You have already claimed your Great Vault reward.");
         return false;
     }
 
     // Validate slot is unlocked right now
-    uint8 trackId = 0;
-    uint8 slotInTrack = 0;
+    [[maybe_unused]] uint8 trackId = 0;
+    [[maybe_unused]] uint8 slotInTrack = 0;
     DecodeGlobalSlotIndex(slot, trackId, slotInTrack);
 
     // Verify the item is actually in the pool for this slot

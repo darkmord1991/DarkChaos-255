@@ -178,10 +178,17 @@ namespace MythicPlus
     {
         uint32 guidLow = player->GetGUID().GetCounter();
         uint32 seasonId = sMythicRuns->GetCurrentSeasonId();
-        uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
 
         constexpr uint32 SECONDS_PER_WEEK = 7u * 24u * 60u * 60u;
-        uint32 weekEnd = weekStart + SECONDS_PER_WEEK;
+
+        // Retail-like grace window:
+        // - show claimable rewards from LAST week
+        // - show current-week progress separately
+        uint32 progressWeekStart = sMythicRuns->GetWeekStartTimestamp();
+        uint32 progressWeekEnd = progressWeekStart + SECONDS_PER_WEEK;
+
+        uint32 claimWeekStart = progressWeekStart >= SECONDS_PER_WEEK ? (progressWeekStart - SECONDS_PER_WEEK) : 0;
+        uint32 claimWeekEnd = claimWeekStart + SECONDS_PER_WEEK;
 
         auto CountBits32 = [](uint32 value) -> uint32
         {
@@ -194,75 +201,99 @@ namespace MythicPlus
             return count;
         };
 
-        // Ensure weekly vault row exists so claim state is consistent even if player only does Raid/PvP.
-        CharacterDatabase.DirectExecute(
-            "INSERT IGNORE INTO dc_weekly_vault (character_guid, season_id, week_start) VALUES ({}, {}, {})",
-            guidLow, seasonId, weekStart);
+        auto GetMPlusLevelsForWeek = [&](uint32 weekStart, uint32 weekEnd) -> std::vector<uint8>
+        {
+            std::vector<uint8> levels;
+            if (QueryResult runsResult = CharacterDatabase.Query(
+                "SELECT keystone_level FROM dc_mplus_runs "
+                "WHERE character_guid = {} AND season_id = {} AND success = 1 "
+                "AND completed_at >= FROM_UNIXTIME({}) AND completed_at < FROM_UNIXTIME({}) "
+                "ORDER BY keystone_level DESC LIMIT 8",
+                guidLow, seasonId, weekStart, weekEnd))
+            {
+                do
+                {
+                    levels.push_back((*runsResult)[0].Get<uint8>());
+                } while (runsResult->NextRow());
+            }
+            return levels;
+        };
 
-        // Claim state (global claim across all 9 choices)
-        QueryResult claimResult = CharacterDatabase.Query(
-            "SELECT reward_claimed, claimed_slot FROM dc_weekly_vault WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-            guidLow, seasonId, weekStart);
+        auto GetRaidBossesForWeek = [&](uint32 weekStart, uint32 weekEnd) -> uint32
+        {
+            uint32 raidBosses = 0;
+            if (QueryResult raidRes = CharacterDatabase.Query(
+                "SELECT i.map, i.completedEncounters "
+                "FROM character_instance ci "
+                "JOIN instance i ON i.id = ci.instance "
+                "WHERE ci.guid = {} AND i.resettime >= {} AND i.resettime < {}",
+                guidLow, weekStart, weekEnd))
+            {
+                do
+                {
+                    Field* fields = raidRes->Fetch();
+                    uint32 mapId = fields[0].Get<uint32>();
+                    uint32 completedEncounters = fields[1].Get<uint32>();
 
+                    MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+                    if (!mapEntry || !mapEntry->IsRaid())
+                        continue;
+
+                    raidBosses += CountBits32(completedEncounters);
+                } while (raidRes->NextRow());
+            }
+            return raidBosses;
+        };
+
+        auto GetPvpWinsForWeek = [&](uint32 weekStart, uint32 weekEnd) -> uint32
+        {
+            uint32 pvpWins = 0;
+            if (QueryResult pvpRes = CharacterDatabase.Query(
+                "SELECT COUNT(*) FROM pvpstats_players p "
+                "JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id "
+                "WHERE p.character_guid = {} AND p.winner = 1 "
+                "AND b.date >= FROM_UNIXTIME({}) AND b.date < FROM_UNIXTIME({})",
+                guidLow, weekStart, weekEnd))
+            {
+                pvpWins = (*pvpRes)[0].Get<uint32>();
+            }
+            return pvpWins;
+        };
+
+        // Claim state applies to CLAIM WEEK.
         bool claimed = false;
         uint8 claimedSlot = 0;
-        if (claimResult)
+        if (claimWeekStart != 0)
         {
-            Field* fields = claimResult->Fetch();
-            claimed = fields[0].Get<bool>();
-            claimedSlot = fields[1].Get<uint8>();
-        }
+            CharacterDatabase.DirectExecute(
+                "INSERT IGNORE INTO dc_weekly_vault (character_guid, season_id, week_start) VALUES ({}, {}, {})",
+                guidLow, seasonId, claimWeekStart);
 
-        // Mythic+ weekly runs (top 1/4/8 levels)
-        std::vector<uint8> mplusLevels;
-        if (QueryResult runsResult = CharacterDatabase.Query(
-            "SELECT keystone_level FROM dc_mplus_runs "
-            "WHERE character_guid = {} AND season_id = {} AND success = 1 "
-            "AND completed_at >= FROM_UNIXTIME({}) AND completed_at < FROM_UNIXTIME({}) "
-            "ORDER BY keystone_level DESC LIMIT 8",
-            guidLow, seasonId, weekStart, weekEnd))
-        {
-            do
+            if (QueryResult claimResult = CharacterDatabase.Query(
+                "SELECT reward_claimed, claimed_slot FROM dc_weekly_vault WHERE character_guid = {} AND season_id = {} AND week_start = {}",
+                guidLow, seasonId, claimWeekStart))
             {
-                mplusLevels.push_back((*runsResult)[0].Get<uint8>());
-            } while (runsResult->NextRow());
+                Field* fields = claimResult->Fetch();
+                claimed = fields[0].Get<bool>();
+                claimedSlot = fields[1].Get<uint8>();
+            }
         }
 
-        uint8 mplusRuns = static_cast<uint8>(mplusLevels.size());
-        uint8 mplusHighest = mplusRuns > 0 ? mplusLevels[0] : 0;
+        // Mythic+ stats
+        std::vector<uint8> mplusLevelsProgress = GetMPlusLevelsForWeek(progressWeekStart, progressWeekEnd);
+        uint8 mplusRunsProgress = static_cast<uint8>(mplusLevelsProgress.size());
+        uint8 mplusHighest = mplusRunsProgress > 0 ? mplusLevelsProgress[0] : 0;
 
-        auto mplusThreshold = [&](uint8 slotInTrack) -> uint8
-        {
-            return sMythicRuns->GetVaultThreshold(slotInTrack);
-        };
+        std::vector<uint8> mplusLevelsClaim = claimWeekStart != 0 ? GetMPlusLevelsForWeek(claimWeekStart, claimWeekEnd) : std::vector<uint8>();
+        uint8 mplusRunsClaim = static_cast<uint8>(mplusLevelsClaim.size());
 
-        auto mplusUnlocked = [&](uint8 slotInTrack) -> bool
-        {
-            return mplusRuns >= mplusThreshold(slotInTrack);
-        };
+        auto mplusThreshold = [&](uint8 slotInTrack) -> uint8 { return sMythicRuns->GetVaultThreshold(slotInTrack); };
+        auto mplusUnlockedProgress = [&](uint8 slotInTrack) -> bool { return mplusRunsProgress >= mplusThreshold(slotInTrack); };
+        auto mplusUnlockedClaim = [&](uint8 slotInTrack) -> bool { return mplusRunsClaim >= mplusThreshold(slotInTrack); };
 
-        // Raid weekly boss progress (approximate): sum of completedEncounters bits across bound raid instances
-        uint32 raidBosses = 0;
-        if (QueryResult raidRes = CharacterDatabase.Query(
-            "SELECT i.map, i.completedEncounters "
-            "FROM character_instance ci "
-            "JOIN instance i ON i.id = ci.instance "
-            "WHERE ci.guid = {} AND i.resettime >= {} AND i.resettime < {}",
-            guidLow, weekStart, weekEnd))
-        {
-            do
-            {
-                Field* fields = raidRes->Fetch();
-                uint32 mapId = fields[0].Get<uint32>();
-                uint32 completedEncounters = fields[1].Get<uint32>();
-
-                MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-                if (!mapEntry || !mapEntry->IsRaid())
-                    continue;
-
-                raidBosses += CountBits32(completedEncounters);
-            } while (raidRes->NextRow());
-        }
+        // Raid stats
+        uint32 raidBossesProgress = GetRaidBossesForWeek(progressWeekStart, progressWeekEnd);
+        uint32 raidBossesClaim = claimWeekStart != 0 ? GetRaidBossesForWeek(claimWeekStart, claimWeekEnd) : 0;
 
         auto raidThreshold = [&](uint8 slotInTrack) -> uint32
         {
@@ -273,22 +304,12 @@ namespace MythicPlus
             return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.Raid.Threshold3", 6);
         };
 
-        auto raidUnlocked = [&](uint8 slotInTrack) -> bool
-        {
-            return raidBosses >= raidThreshold(slotInTrack);
-        };
+        auto raidUnlockedProgress = [&](uint8 slotInTrack) -> bool { return raidBossesProgress >= raidThreshold(slotInTrack); };
+        auto raidUnlockedClaim = [&](uint8 slotInTrack) -> bool { return raidBossesClaim >= raidThreshold(slotInTrack); };
 
-        // PvP weekly wins from pvpstats tables
-        uint32 pvpWins = 0;
-        if (QueryResult pvpRes = CharacterDatabase.Query(
-            "SELECT COUNT(*) FROM pvpstats_players p "
-            "JOIN pvpstats_battlegrounds b ON b.id = p.battleground_id "
-            "WHERE p.character_guid = {} AND p.winner = 1 "
-            "AND b.date >= FROM_UNIXTIME({}) AND b.date < FROM_UNIXTIME({})",
-            guidLow, weekStart, weekEnd))
-        {
-            pvpWins = (*pvpRes)[0].Get<uint32>();
-        }
+        // PvP stats
+        uint32 pvpWinsProgress = GetPvpWinsForWeek(progressWeekStart, progressWeekEnd);
+        uint32 pvpWinsClaim = claimWeekStart != 0 ? GetPvpWinsForWeek(claimWeekStart, claimWeekEnd) : 0;
 
         auto pvpThreshold = [&](uint8 slotInTrack) -> uint32
         {
@@ -299,41 +320,33 @@ namespace MythicPlus
             return sConfigMgr->GetOption<uint32>("MythicPlus.Vault.PvP.Threshold3", 8);
         };
 
-        auto pvpUnlocked = [&](uint8 slotInTrack) -> bool
-        {
-            return pvpWins >= pvpThreshold(slotInTrack);
-        };
+        auto pvpUnlockedProgress = [&](uint8 slotInTrack) -> bool { return pvpWinsProgress >= pvpThreshold(slotInTrack); };
+        auto pvpUnlockedClaim = [&](uint8 slotInTrack) -> bool { return pvpWinsClaim >= pvpThreshold(slotInTrack); };
 
-        // Ensure rewards exist when at least one slot is unlocked and the vault is not claimed
-        uint32 unlockedCount = 0;
+        // Generate claim-week rewards lazily on open (idempotent generation).
+        uint32 unlockedCountClaim = 0;
         for (uint8 i = 1; i <= 3; ++i)
         {
-            if (raidUnlocked(i)) ++unlockedCount;
-            if (mplusUnlocked(i)) ++unlockedCount;
-            if (pvpUnlocked(i)) ++unlockedCount;
+            if (raidUnlockedClaim(i)) ++unlockedCountClaim;
+            if (mplusUnlockedClaim(i)) ++unlockedCountClaim;
+            if (pvpUnlockedClaim(i)) ++unlockedCountClaim;
         }
 
-        if (!claimed && unlockedCount > 0)
+        if (claimWeekStart != 0 && !claimed && unlockedCountClaim > 0)
         {
-            QueryResult countRes = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM dc_vault_reward_pool WHERE character_guid = {} AND season_id = {} AND week_start = {}",
-                guidLow, seasonId, weekStart);
-            uint32 poolCount = countRes ? (*countRes)[0].Get<uint32>() : 0;
-            if (poolCount < unlockedCount)
-            {
-                sMythicRuns->GenerateVaultRewardPool(guidLow, seasonId, weekStart);
-            }
+            sMythicRuns->GenerateVaultRewardPool(guidLow, seasonId, claimWeekStart);
         }
 
-        // Fetch rewards (slot_index -> reward)
-        auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, weekStart);
+        // Claim-week reward pool
         std::unordered_map<uint8, std::pair<uint32, uint32>> rewardBySlot;
-        for (auto const& [slotIndex, itemId, itemLevel] : rewards)
+        if (claimWeekStart != 0)
         {
-            rewardBySlot[slotIndex] = { itemId, itemLevel };
+            auto rewards = sMythicRuns->GetVaultRewardPool(guidLow, seasonId, claimWeekStart);
+            for (auto const& [slotIndex, itemId, itemLevel] : rewards)
+                rewardBySlot[slotIndex] = { itemId, itemLevel };
         }
 
-        auto MakeSlotObj = [&](uint8 globalSlot, uint8 slotInTrack, uint32 threshold, uint32 progress, bool isUnlocked) -> JsonValue
+        auto MakeClaimSlotObj = [&](uint8 globalSlot, uint8 slotInTrack, uint32 threshold, uint32 progress, bool isUnlocked) -> JsonValue
         {
             JsonValue slotObj;
             slotObj.SetObject();
@@ -372,68 +385,122 @@ namespace MythicPlus
             return slotObj;
         };
 
-        JsonValue tracksArr;
-        tracksArr.SetArray();
-
-        // Raid track (global slots 1-3)
+        auto MakeProgressSlotObj = [&](uint8 globalSlot, uint8 slotInTrack, uint32 threshold, uint32 progress, bool isUnlocked) -> JsonValue
         {
-            JsonValue trackObj;
-            trackObj.SetObject();
-            trackObj.Set("id", "raid");
-            trackObj.Set("name", "Raid");
+            JsonValue slotObj;
+            slotObj.SetObject();
+            slotObj.Set("id", slotInTrack);
+            slotObj.Set("globalId", globalSlot);
+            slotObj.Set("threshold", static_cast<int32>(threshold));
+            slotObj.Set("progress", static_cast<int32>(progress));
 
-            JsonValue slotsArr;
-            slotsArr.SetArray();
-            for (uint8 i = 1; i <= 3; ++i)
+            if (isUnlocked)
             {
-                uint8 globalSlot = static_cast<uint8>(0 * 3 + i);
-                slotsArr.Push(MakeSlotObj(globalSlot, i, raidThreshold(i), raidBosses, raidUnlocked(i)));
+                slotObj.Set("status", "unlocked");
+                JsonValue rewardsArr;
+                rewardsArr.SetArray();
+                slotObj.Set("rewards", rewardsArr);
             }
-            trackObj.Set("slots", slotsArr);
-            tracksArr.Push(trackObj);
-        }
+            else
+            {
+                slotObj.Set("status", "locked");
+            }
 
-        // Mythic+ track (global slots 4-6)
+            return slotObj;
+        };
+
+        auto BuildTracks = [&](bool claimWeek) -> JsonValue
         {
-            JsonValue trackObj;
-            trackObj.SetObject();
-            trackObj.Set("id", "mplus");
-            trackObj.Set("name", "Mythic+");
+            JsonValue tracksArr;
+            tracksArr.SetArray();
 
-            JsonValue slotsArr;
-            slotsArr.SetArray();
-            for (uint8 i = 1; i <= 3; ++i)
+            // Raid track (global slots 1-3)
             {
-                uint8 globalSlot = static_cast<uint8>(1 * 3 + i);
-                slotsArr.Push(MakeSlotObj(globalSlot, i, mplusThreshold(i), mplusRuns, mplusUnlocked(i)));
+                JsonValue trackObj;
+                trackObj.SetObject();
+                trackObj.Set("id", "raid");
+                trackObj.Set("name", "Raid");
+
+                JsonValue slotsArr;
+                slotsArr.SetArray();
+                for (uint8 i = 1; i <= 3; ++i)
+                {
+                    uint8 globalSlot = static_cast<uint8>(0 * 3 + i);
+                    uint32 threshold = raidThreshold(i);
+                    uint32 progress = claimWeek ? raidBossesClaim : raidBossesProgress;
+                    bool unlocked = claimWeek ? raidUnlockedClaim(i) : raidUnlockedProgress(i);
+                    slotsArr.Push(claimWeek ? MakeClaimSlotObj(globalSlot, i, threshold, progress, unlocked)
+                                            : MakeProgressSlotObj(globalSlot, i, threshold, progress, unlocked));
+                }
+
+                trackObj.Set("slots", slotsArr);
+                tracksArr.Push(trackObj);
             }
-            trackObj.Set("slots", slotsArr);
-            tracksArr.Push(trackObj);
-        }
 
-        // PvP track (global slots 7-9)
-        {
-            JsonValue trackObj;
-            trackObj.SetObject();
-            trackObj.Set("id", "pvp");
-            trackObj.Set("name", "PvP");
-
-            JsonValue slotsArr;
-            slotsArr.SetArray();
-            for (uint8 i = 1; i <= 3; ++i)
+            // Mythic+ track (global slots 4-6)
             {
-                uint8 globalSlot = static_cast<uint8>(2 * 3 + i);
-                slotsArr.Push(MakeSlotObj(globalSlot, i, pvpThreshold(i), pvpWins, pvpUnlocked(i)));
+                JsonValue trackObj;
+                trackObj.SetObject();
+                trackObj.Set("id", "mplus");
+                trackObj.Set("name", "Mythic+");
+
+                JsonValue slotsArr;
+                slotsArr.SetArray();
+                for (uint8 i = 1; i <= 3; ++i)
+                {
+                    uint8 globalSlot = static_cast<uint8>(1 * 3 + i);
+                    uint32 threshold = mplusThreshold(i);
+                    uint32 progress = claimWeek ? mplusRunsClaim : mplusRunsProgress;
+                    bool unlocked = claimWeek ? mplusUnlockedClaim(i) : mplusUnlockedProgress(i);
+                    slotsArr.Push(claimWeek ? MakeClaimSlotObj(globalSlot, i, threshold, progress, unlocked)
+                                            : MakeProgressSlotObj(globalSlot, i, threshold, progress, unlocked));
+                }
+
+                trackObj.Set("slots", slotsArr);
+                tracksArr.Push(trackObj);
             }
-            trackObj.Set("slots", slotsArr);
-            tracksArr.Push(trackObj);
-        }
+
+            // PvP track (global slots 7-9)
+            {
+                JsonValue trackObj;
+                trackObj.SetObject();
+                trackObj.Set("id", "pvp");
+                trackObj.Set("name", "PvP");
+
+                JsonValue slotsArr;
+                slotsArr.SetArray();
+                for (uint8 i = 1; i <= 3; ++i)
+                {
+                    uint8 globalSlot = static_cast<uint8>(2 * 3 + i);
+                    uint32 threshold = pvpThreshold(i);
+                    uint32 progress = claimWeek ? pvpWinsClaim : pvpWinsProgress;
+                    bool unlocked = claimWeek ? pvpUnlockedClaim(i) : pvpUnlockedProgress(i);
+                    slotsArr.Push(claimWeek ? MakeClaimSlotObj(globalSlot, i, threshold, progress, unlocked)
+                                            : MakeProgressSlotObj(globalSlot, i, threshold, progress, unlocked));
+                }
+
+                trackObj.Set("slots", slotsArr);
+                tracksArr.Push(trackObj);
+            }
+
+            return tracksArr;
+        };
+
+        JsonValue claimTracks = BuildTracks(true);
+        JsonValue progressTracks = BuildTracks(false);
+
+        bool claimAvailable = (unlockedCountClaim > 0) && (!claimed);
 
         JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_VAULT_INFO)
+            // Backward compatibility: top-level fields represent CLAIM WEEK.
             .Set("claimed", claimed)
             .Set("claimedSlot", static_cast<int32>(claimedSlot))
             .Set("highestLevel", static_cast<int32>(mplusHighest))
-            .Set("tracks", tracksArr)
+            .Set("tracks", claimTracks)
+            .Set("progressTracks", progressTracks)
+            .Set("claimWeekStart", static_cast<int32>(claimWeekStart))
+            .Set("progressWeekStart", static_cast<int32>(progressWeekStart))
+            .Set("defaultView", claimAvailable ? "claim" : "progress")
             .Set("open", openWindow)
             .Send(player);
     }

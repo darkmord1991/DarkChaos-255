@@ -96,7 +96,7 @@ namespace DarkChaos
             uint32 item_entry;                   // Item template entry id
             std::string base_item_name;          // Cached display name
             uint8 tier_id;                       // Item tier id (1-5)
-            uint8 upgrade_level;                 // Current upgrade level (0 = base, 1-15 = upgraded)
+            uint8 upgrade_level;                 // Current upgrade level (0 = base, tier-dependent max)
             uint32 essence_invested;             // Total essence invested
             uint32 tokens_invested;              // Total tokens invested
             uint16 base_item_level;              // Original item level

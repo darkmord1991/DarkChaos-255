@@ -12,6 +12,7 @@
 void AddSC_giant_isles_zone();
 void AddSC_giant_isles_cannon_quest();
 void AddSC_giant_isles_invasion();
+void AddSC_giant_isles_water_monster();
 
 // World Boss scripts
 void AddSC_boss_oondasta();
@@ -19,13 +20,16 @@ void AddSC_boss_thok();
 void AddSC_boss_nalak();
 
 // Master loader function
-void AddGiantIslesScripts()
+inline void AddGiantIslesScripts()
 {
     // Zone scripts (announcements, area triggers, etc.)
     AddSC_giant_isles_zone();
 
     // Cannon quest event
     AddSC_giant_isles_cannon_quest();
+
+    // Water monster event
+    AddSC_giant_isles_water_monster();
 
     // Zandalari invasion event
     // AddSC_giant_isles_invasion();

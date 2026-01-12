@@ -169,6 +169,8 @@ set(SCRIPTS_DC_SeasonalRewards
     Seasons/SeasonalRewardSystem.h
     Seasons/SeasonalRewardSystem.cpp
     Seasons/SeasonalRewardScripts.cpp
+    Seasons/DCWeeklyResetHub.h
+    Seasons/DCWeeklyResetHub.cpp
     # Seasons/SeasonalRewardCommands.cpp (Moved to Commands)
 )
 

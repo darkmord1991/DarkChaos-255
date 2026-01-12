@@ -48,6 +48,7 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include <algorithm>
 #include <vector>
 #include <chrono>
+#include <mutex>
 
 namespace DCCollection
 {
@@ -4002,49 +4003,100 @@ namespace DCCollection
     public:
         CollectionPlayerScript() : PlayerScript("dc_collection_player") {}
 
-        static void ApplyStoredCharacterTransmog(Player* player)
+        struct CachedTransmogRow
         {
-            if (!player || !player->GetSession())
-                return;
+            uint32 fakeEntry = 0;
+            uint32 realEntry = 0;
+        };
 
-            // Apply transmog appearance by overriding visible item entry fields.
-            // This is intentionally run with a delay after login because the login pipeline
-            // may overwrite PLAYER_VISIBLE_ITEM_* fields after early script hooks.
+        struct CharacterTransmogCache
+        {
+            std::unordered_map<uint8, CachedTransmogRow> bySlot;
+            uint32 loadedAtMs = 0;
+            bool loadedOnce = false;
+        };
+
+        static std::mutex& TransmogCacheMutex()
+        {
+            static std::mutex m;
+            return m;
+        }
+
+        static std::unordered_map<uint32, CharacterTransmogCache>& TransmogCacheByGuid()
+        {
+            static std::unordered_map<uint32, CharacterTransmogCache> cache;
+            return cache;
+        }
+
+        static constexpr uint32 TRANSMOG_CACHE_TTL_MS = 1000;
+
+        static CharacterTransmogCache LoadCharacterTransmogCache(uint32 guid)
+        {
+            CharacterTransmogCache cache;
+            cache.bySlot.clear();
+            cache.loadedAtMs = getMSTime();
+            cache.loadedOnce = true;
+
             QueryResult result = CharacterDatabase.Query(
                 "SELECT slot, fake_entry, real_entry FROM dc_character_transmog WHERE guid = {}",
-                player->GetGUID().GetCounter());
+                guid);
 
             if (!result)
-                return;
+                return cache;
 
             do
             {
                 Field* fields = result->Fetch();
                 uint8 slot = static_cast<uint8>(fields[0].Get<uint32>());
-                uint32 fakeEntry = fields[1].Get<uint32>();
-                uint32 realEntry = fields[2].Get<uint32>();
-
                 if (slot >= EQUIPMENT_SLOT_END)
                     continue;
 
-                Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-                if (!equippedItem)
-                    continue;
-
-                uint32 currentEntry = equippedItem->GetEntry();
-                if (currentEntry && currentEntry != realEntry)
-                {
-                    CharacterDatabase.Execute(
-                        "UPDATE dc_character_transmog SET real_entry = {} WHERE guid = {} AND slot = {}",
-                        currentEntry, player->GetGUID().GetCounter(), static_cast<uint32>(slot));
-                }
-
-                // fakeEntry == 0 means hide slot.
-                if (fakeEntry)
-                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
-                else
-                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
+                CachedTransmogRow row;
+                row.fakeEntry = fields[1].Get<uint32>();
+                row.realEntry = fields[2].Get<uint32>();
+                cache.bySlot[slot] = row;
             } while (result->NextRow());
+
+            return cache;
+        }
+
+        static bool TryGetCachedTransmogRow(uint32 guid, uint8 slot, CachedTransmogRow& outRow)
+        {
+            uint32 now = getMSTime();
+
+            // Fast path: use cache if fresh.
+            {
+                std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                auto& byGuid = TransmogCacheByGuid();
+                auto it = byGuid.find(guid);
+                if (it != byGuid.end() && it->second.loadedOnce && (now - it->second.loadedAtMs) <= TRANSMOG_CACHE_TTL_MS)
+                {
+                    auto itSlot = it->second.bySlot.find(slot);
+                    if (itSlot == it->second.bySlot.end())
+                        return false;
+                    outRow = itSlot->second;
+                    return true;
+                }
+            }
+
+            // Slow path: refresh from DB.
+            CharacterTransmogCache refreshed = LoadCharacterTransmogCache(guid);
+            {
+                std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                TransmogCacheByGuid()[guid] = std::move(refreshed);
+                auto& cache = TransmogCacheByGuid()[guid];
+                auto itSlot = cache.bySlot.find(slot);
+                if (itSlot == cache.bySlot.end())
+                    return false;
+                outRow = itSlot->second;
+                return true;
+            }
+        }
+
+        static void EraseCharacterTransmogCache(uint32 guid)
+        {
+            std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+            TransmogCacheByGuid().erase(guid);
         }
 
         void OnPlayerLogin(Player* player) override
@@ -4064,30 +4116,6 @@ namespace DCCollection
 
             // Push current transmog state so the UI can show applied slots
             SendTransmogState(player);
-
-            // Re-apply stored transmogs after login initialization finishes.
-            // Some login phases reset visible item fields to the real entries after early hooks run.
-            // We schedule a couple of delayed passes to cover slower clients/servers.
-            {
-                ObjectGuid guid = player->GetGUID();
-                player->m_Events.AddEventAtOffset([guid]()
-                {
-                    if (Player* p = ObjectAccessor::FindPlayer(guid))
-                    {
-                        ApplyStoredCharacterTransmog(p);
-                        SendTransmogState(p);
-                    }
-                }, 1500ms);
-
-                player->m_Events.AddEventAtOffset([guid]()
-                {
-                    if (Player* p = ObjectAccessor::FindPlayer(guid))
-                    {
-                        ApplyStoredCharacterTransmog(p);
-                        SendTransmogState(p);
-                    }
-                }, 5s);
-            }
 
             // Optional: scan player's equipment and bags to unlock transmogs at login
             if (!sConfigMgr->GetOption<bool>(Config::TRANSMOG_LOGIN_SCAN_ENABLED, false))
@@ -4230,16 +4258,13 @@ namespace DCCollection
             if (slot >= EQUIPMENT_SLOT_END)
                 return;
 
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT fake_entry, real_entry FROM dc_character_transmog WHERE guid = {} AND slot = {}",
-                player->GetGUID().GetCounter(), static_cast<uint32>(slot));
-
-            if (!result)
+            uint32 guid = player->GetGUID().GetCounter();
+            CachedTransmogRow cached;
+            if (!TryGetCachedTransmogRow(guid, slot, cached))
                 return;
 
-            Field* fields = result->Fetch();
-            uint32 fakeEntry = fields[0].Get<uint32>();
-            uint32 realEntry = fields[1].Get<uint32>();
+            uint32 fakeEntry = cached.fakeEntry;
+            uint32 realEntry = cached.realEntry;
 
             // During login and some inventory update flows, the core may call SetVisibleItemSlot
             // with a null Item* even though the item is actually still equipped.
@@ -4272,7 +4297,14 @@ namespace DCCollection
                 // Slot is truly empty (not during load); clear transmog for that slot.
                 CharacterDatabase.Execute(
                     "DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}",
-                    player->GetGUID().GetCounter(), static_cast<uint32>(slot));
+                    guid, static_cast<uint32>(slot));
+
+                {
+                    std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                    auto it = TransmogCacheByGuid().find(guid);
+                    if (it != TransmogCacheByGuid().end())
+                        it->second.bySlot.erase(slot);
+                }
                 return;
             }
 
@@ -4296,7 +4328,14 @@ namespace DCCollection
                 {
                     CharacterDatabase.Execute(
                         "DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}",
-                        player->GetGUID().GetCounter(), static_cast<uint32>(slot));
+                        guid, static_cast<uint32>(slot));
+
+                    {
+                        std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                        auto it = TransmogCacheByGuid().find(guid);
+                        if (it != TransmogCacheByGuid().end())
+                            it->second.bySlot.erase(slot);
+                    }
                     return;
                 }
             }
@@ -4307,13 +4346,25 @@ namespace DCCollection
                 // Keep the appearance but update the tracked real item.
                 CharacterDatabase.Execute(
                     "UPDATE dc_character_transmog SET real_entry = {} WHERE guid = {} AND slot = {}",
-                    currentEntry, player->GetGUID().GetCounter(), static_cast<uint32>(slot));
+                    currentEntry, guid, static_cast<uint32>(slot));
+
+                {
+                    std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                    auto it = TransmogCacheByGuid().find(guid);
+                    if (it != TransmogCacheByGuid().end())
+                        it->second.bySlot[slot].realEntry = currentEntry;
+                }
             }
 
             if (fakeEntry)
             {
                 // Override visible entry ID field (slot uses PLAYER_VISIBLE_ITEM_1_ENTRYID + slot*2)
                 player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
+            }
+            else
+            {
+                // fakeEntry == 0 means "hide this slot" (transmog state should survive login/equip).
+                player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
             }
         }
 
@@ -4385,8 +4436,23 @@ namespace DCCollection
             // Clear session notification cache on logout
             uint32 guid = player->GetGUID().GetCounter();
             EraseSessionNotifiedAppearances(guid);
+
+            EraseCharacterTransmogCache(guid);
         }
     };
+
+    void InvalidateCharacterTransmogCache(uint32 guid)
+    {
+        std::lock_guard<std::mutex> lock(CollectionPlayerScript::TransmogCacheMutex());
+        auto& byGuid = CollectionPlayerScript::TransmogCacheByGuid();
+        auto it = byGuid.find(guid);
+        if (it != byGuid.end())
+        {
+            it->second.loadedOnce = false;
+            it->second.loadedAtMs = 0;
+            it->second.bySlot.clear();
+        }
+    }
 
     class CollectionMiscScript : public MiscScript
     {

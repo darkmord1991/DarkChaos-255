@@ -77,6 +77,9 @@ DC.Opcodes = {
     CMSG_DELETE_OUTFIT       = 0x3A,
     CMSG_GET_SAVED_OUTFITS   = 0x3B,
 
+    -- Client -> Server: Inspection
+    CMSG_INSPECT_TRANSMOG     = 0x3D,
+
     -- Client -> Server: Shop
     CMSG_GET_SHOP            = 0x10,
     CMSG_BUY_ITEM            = 0x11,
@@ -132,6 +135,8 @@ DC.Opcodes = {
     -- Server -> Client: Community
     SMSG_COMMUNITY_LIST       = 0x63,
     SMSG_COMMUNITY_PUBLISH_RESULT = 0x64,
+    SMSG_COMMUNITY_FAVORITE_RESULT = 0x65,
+    SMSG_INSPECT_TRANSMOG      = 0x66,
     SMSG_COMMUNITY_UPDATE_RESULT = 0x67,
     SMSG_COMMUNITY_DELETE_RESULT = 0x68,
 
@@ -1495,52 +1500,6 @@ function DC:RequestCommunityView(outfitID)
     msg:Send()
 end
 
--- Request inspection of a target
-function DC:RequestInspectTarget(unitToken)
-    local guid = UnitGUID(unitToken)
-    if not guid then return end
-    
-    -- GUID is string "0xF13000..." or number depending on version/client
-    -- Parse GUID to low part if possible or send full string to be managed by server (JSON handles strings/numbers)
-    -- Server code expects uint64 or string.
-    -- For 3.3.5a lua: tonumber(guid, 16) gets low part ? No, UnitGUID returns "0x..." string.
-    -- Use tonumber((UnitGUID(unit)):sub(3), 16) if needed, but JSON can take the string.
-    -- Server code: json["target"].AsUInt64() -- JsonCPP handles string->uint64 parsing if formatted correctly.
-    -- The server code I wrote: `uint64 targetGuid = json["target"].AsUInt64();` with `json["target"].AsUInt64()`
-    -- `AsUInt64` in `DCAddon` (my hypothetical wrapper) usually expects a number type or string.
-    -- Better safe: send string, server parses.
-    
-    -- If using AIO/Eluna, guid is string.
-    -- Let's extract the low GUID counter if possible, or just send the string.
-    -- My server code `uint64 targetGuid = json["target"].AsUInt64();` implies full GUID.
-    -- Just send the string, my Json wrapper usually handles Hex strings or numeric definitions.
-    
-    -- But wait, `Player::GetGUID().GetCounter()` was used in some places.
-    -- Server C++: `Player* target = ObjectAccessor::FindPlayer(ObjectGuid(targetGuid));`
-    -- This constructor takes full 64-bit GUID.
-    -- So sending the return value of UnitGUID("target") is correct (which is a hex string).
-    
-    return self:SendMessage(self.Opcodes.CMSG_INSPECT_TRANSMOG, {
-        target = tonumber((UnitGUID(unitToken)):sub(3), 16) -- Convert Hex string to number for JSON? Lua numbers are doubles. 
-        -- 64-bit integers lose precision in Lua 5.1 doubles.
-        -- SAFEST: Send as String. Server `AsUInt64()` usually parses strings.
-        -- Re-checking server code: `json["target"].AsUInt64()`. 
-        -- If I send a string, does `AsUInt64()` work? Usually yes.
-        -- BUT, if I send a Lua number, it will be a double, potentially losing precision for high GUIDs.
-        -- UnitGUID in 3.3.5 returns string "0x..."
-        -- Let's send it as string.
-    })
-    -- Wait, my server code: `uint64 targetGuid = json["target"].AsUInt64();`
-    -- If I send string "0x...", `AsUInt64` might fail if it strictly expects digits.
-    -- I should convert to string of digits? Or rely on `AsUInt64` knowing hex?
-    -- Safest is often to send as string. 
-    -- Actually, to be super safe and avoid Lua number precision issues:
-    -- I will send as string "0xF..."
-    -- Modification to server might be needed if `AsUInt64` doesn't handle hex.
-    -- But standard JsonCPP `asUInt64()` supports numbers.
-    -- Let's check `RequestInspectTarget` implementation below.
-end
-
 function DC:RequestInspectTarget(unitToken)
     local guidStr = UnitGUID(unitToken)
     if not guidStr then return end
@@ -1554,34 +1513,234 @@ end
 -- Handle inspection response
 function DC:HandleInspectTransmog(data)
     self:Debug("Received inspect transmog data")
-    
-    if type(self.PreviewInspectData) == "function" then
-        self:PreviewInspectData(data)
-    elseif self.PreviewOutfitRaw then
-        -- Format data for PreviewOutfitRaw
-        -- Data comes as { slots = { "0": itemId, "1": itemId... }, target = guid }
-        local items = {}
-        if data.slots then
-            for slotStr, itemId in pairs(data.slots) do
-                local slotId = tonumber(slotStr)
-                if slotId then
-                    -- Mapping visual slot to item? 
-                    -- Server sends visualSlot?
-                    -- Server code: `obj.Add(std::to_string(f[0].Get<uint32>()), f[1].Get<uint32>());`
-                    -- f[0] is `slot` (visual slot, 0..19 or whatever).
-                    -- f[1] is `fake_entry` (item ID).
-                    
-                    -- PreviewOutfitRaw expects: { [slot] = itemId, ... }
-                    items[slotId] = itemId
+
+    local function normalizeSlotMap(tbl)
+        if type(tbl) ~= "table" then
+            return {}
+        end
+
+        local out = {}
+        local hasStringSlotKey = false
+        local minNumKey = nil
+
+        for k, v in pairs(tbl) do
+            if type(k) == "string" then
+                local nk = tonumber(k)
+                if nk ~= nil then
+                    hasStringSlotKey = true
+                    out[tostring(nk)] = v
                 end
+            elseif type(k) == "number" then
+                minNumKey = (minNumKey == nil) and k or math.min(minNumKey, k)
             end
         end
-        self:PreviewOutfitRaw(items)
-        -- Show the frame if hidden?
-        if self.IsShown and not self.MainFrame:IsShown() then
-            self:Show()
+
+        if hasStringSlotKey then
+            for k, v in pairs(tbl) do
+                if type(k) == "number" then
+                    out[tostring(k)] = out[tostring(k)] or v
+                end
+            end
+            return out
+        end
+
+        local shift = 0
+        if minNumKey ~= nil and minNumKey == 1 then
+            shift = -1
+        end
+
+        for k, v in pairs(tbl) do
+            if type(k) == "number" then
+                out[tostring(k + shift)] = v
+            end
+        end
+        return out
+    end
+
+    self.inspectTarget = data and data.target or nil
+    self.inspectTransmogItemIds = normalizeSlotMap(data and data.slots)
+
+    -- UX hint (throttled): teach users where the inspect actions live.
+    do
+        local now = (GetTime and GetTime()) or 0
+        local target = tostring(self.inspectTarget or "")
+        local lastAt = tonumber(self._lastInspectHintAt or 0) or 0
+        local lastTarget = tostring(self._lastInspectHintTarget or "")
+
+        -- Show at most once per target per ~15s to avoid spam.
+        if (now == 0 or (now - lastAt) > 15) or (target ~= "" and target ~= lastTarget) then
+            self._lastInspectHintAt = now
+            self._lastInspectHintTarget = target
+
+            if self.Print then
+                self:Print("Inspect cached. Use InspectFrame buttons: Preview / Copy Outfit.")
+            end
         end
     end
+
+    if self.TransmogBorders and type(self.TransmogBorders.UpdateInspectBorders) == "function" then
+        pcall(function() self.TransmogBorders:UpdateInspectBorders("target") end)
+    end
+
+    if type(self.PreviewInspectData) == "function" then
+        self:PreviewInspectData(data)
+        return
+    end
+
+    if type(self.PreviewLastInspectedAppearance) == "function" then
+        self:PreviewLastInspectedAppearance(true)
+    end
+end
+
+-- ============================================================================
+-- INSPECT HELPERS (PREVIEW + COPY)
+-- ============================================================================
+
+local INSPECT_EQUIP_SLOT_TO_KEY = {
+    [0] = "HeadSlot",
+    [2] = "ShoulderSlot",
+    [3] = "ShirtSlot",
+    [4] = "ChestSlot",
+    [5] = "WaistSlot",
+    [6] = "LegsSlot",
+    [7] = "FeetSlot",
+    [8] = "WristSlot",
+    [9] = "HandsSlot",
+    [14] = "BackSlot",
+    [15] = "MainHandSlot",
+    [16] = "SecondaryHandSlot",
+    [17] = "RangedSlot",
+    [18] = "TabardSlot",
+}
+
+function DC:PreviewLastInspectedAppearance(silent)
+    local slots = self.inspectTransmogItemIds
+    if type(slots) ~= "table" or not next(slots) then
+        if not silent and self.Print then
+            self:Print("No inspect appearance cached yet.")
+        end
+        return
+    end
+
+    if DressUpModel and DressUpModel.Undress then
+        if DressUpFrame and DressUpFrame.Show then
+            DressUpFrame:Show()
+        end
+        DressUpModel:Undress()
+    end
+
+    for _, itemId in pairs(slots) do
+        local id = tonumber(itemId)
+        if id and id > 0 then
+            local link = "item:" .. tostring(id)
+            if DressUpModel and DressUpModel.TryOn then
+                pcall(function() DressUpModel:TryOn(link) end)
+            elseif DressUpItemLink then
+                pcall(function() DressUpItemLink(link) end)
+            end
+        end
+    end
+end
+
+function DC:CopyLastInspectedAppearanceToOutfit(outfitName)
+    local name = tostring(outfitName or "")
+    if name == "" then
+        if self.Print then
+            self:Print("Please enter an outfit name.")
+        end
+        return
+    end
+
+    local slots = self.inspectTransmogItemIds
+    if type(slots) ~= "table" or not next(slots) then
+        if self.Print then
+            self:Print("No inspect appearance cached yet.")
+        end
+        return
+    end
+
+    local out = {}
+    local icon = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+    local function tryIconFromEquipSlot(equipSlot)
+        local itemId = tonumber(slots[tostring(equipSlot)] or 0) or 0
+        if itemId > 0 and type(GetItemInfo) == "function" then
+            local tex = select(10, GetItemInfo(itemId))
+            if tex and tex ~= "" then
+                return tex
+            end
+        end
+        return nil
+    end
+
+    icon = tryIconFromEquipSlot(4) or tryIconFromEquipSlot(0) or icon
+    icon = string.gsub(icon, "\\\\", "/")
+
+    for equipSlotStr, itemId in pairs(slots) do
+        local equipSlot = tonumber(equipSlotStr)
+        local slotKey = equipSlot and INSPECT_EQUIP_SLOT_TO_KEY[equipSlot] or nil
+        local id = tonumber(itemId)
+        if slotKey and id and id > 0 then
+            out[slotKey] = id
+        end
+    end
+
+    if not next(out) then
+        if self.Print then
+            self:Print("Inspect payload had no usable slots.")
+        end
+        return
+    end
+
+    if self.Protocol and type(self.Protocol.SaveOutfit) == "function" then
+        self.Protocol:SaveOutfit(0, name, icon, out)
+        if type(self.Protocol.RequestSavedOutfits) == "function" then
+            self.Protocol:RequestSavedOutfits()
+        end
+        if self.Print then
+            self:Print("Copied inspected appearance to outfit: " .. name)
+        end
+    elseif self.Print then
+        self:Print("Error: Outfit protocol not ready.")
+    end
+end
+
+function DC:CopyLastInspectedAppearanceToOutfitPrompt()
+    if type(StaticPopupDialogs) ~= "table" then
+        return
+    end
+
+    if not StaticPopupDialogs["DC_COPY_INSPECT_OUTFIT"] then
+        StaticPopupDialogs["DC_COPY_INSPECT_OUTFIT"] = {
+            text = "Copy inspected appearance as an outfit",
+            button1 = "Save",
+            button2 = (DC.L and DC.L["CANCEL"]) or "Cancel",
+            hasEditBox = true,
+            maxLetters = 40,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+            OnShow = function(popup)
+                if popup.editBox and popup.editBox.SetText then
+                    popup.editBox:SetText("Inspect Outfit")
+                    if popup.editBox.HighlightText then
+                        popup.editBox:HighlightText()
+                    end
+                end
+            end,
+            OnAccept = function(popup)
+                local txt = popup.editBox and popup.editBox.GetText and popup.editBox:GetText() or ""
+                DC:CopyLastInspectedAppearanceToOutfit(txt)
+            end,
+            EditBoxOnEnterPressed = function(popup)
+                local txt = popup.editBox and popup.editBox.GetText and popup.editBox:GetText() or ""
+                DC:CopyLastInspectedAppearanceToOutfit(txt)
+                popup:Hide()
+            end,
+        }
+    end
+
+    StaticPopup_Show("DC_COPY_INSPECT_OUTFIT")
 end
 
 -- Handle handshake acknowledgement

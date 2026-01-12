@@ -92,6 +92,28 @@ local SLOT_HEIGHT = 120
 local PADDING_X = 5
 local PADDING_Y = 5
 
+local SECONDS_PER_WEEK = 7 * 24 * 60 * 60
+
+local function FormatWeekRange(weekStart)
+    weekStart = tonumber(weekStart or 0) or 0
+    if weekStart <= 0 then
+        return "Unknown"
+    end
+
+    local weekEnd = weekStart + SECONDS_PER_WEEK
+    local startStr = date("%Y-%m-%d", weekStart)
+    local endStr = date("%Y-%m-%d", weekEnd)
+    return startStr .. " → " .. endStr
+end
+
+local function FormatDateTime(ts)
+    ts = tonumber(ts or 0) or 0
+    if ts <= 0 then
+        return "Unknown"
+    end
+    return date("%Y-%m-%d %H:%M", ts)
+end
+
 function GV:CreateFrame()
     if frame then return frame end
 
@@ -131,6 +153,23 @@ function GV:CreateFrame()
     frame.subtitle:SetText("Earn rewards from Raid, Mythic+, and PvP")
     frame.subtitle:SetTextColor(1, 0.82, 0, 1)
 
+    -- View toggle (Retail-like: last week's rewards vs this week's progress)
+    frame.viewButtons = {}
+
+    frame.weekText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    frame.weekText:SetPoint("TOP", 0, -58)
+    frame.weekText:SetText("")
+
+    frame.viewButtons.claim = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.viewButtons.claim:SetSize(160, 22)
+    frame.viewButtons.claim:SetPoint("TOPLEFT", 18, -55)
+    frame.viewButtons.claim:SetText("Rewards (Last Week)")
+
+    frame.viewButtons.progress = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.viewButtons.progress:SetSize(160, 22)
+    frame.viewButtons.progress:SetPoint("LEFT", frame.viewButtons.claim, "RIGHT", 8, 0)
+    frame.viewButtons.progress:SetText("Progress (This Week)")
+
     frame.tracks = {}
     frame.slotByGlobalId = {}
 
@@ -141,7 +180,7 @@ function GV:CreateFrame()
         track:SetPoint(
             "TOPLEFT",
             10,
-            -60 - (trackIndex - 1) * (SLOT_HEIGHT + 50)
+            -90 - (trackIndex - 1) * (SLOT_HEIGHT + 50)
         )
 
         -- Track Background/Separator
@@ -263,6 +302,28 @@ function GV:CreateFrame()
     return frame
 end
 
+function GV:SetView(view)
+    self._view = view
+    if self._lastPayload then
+        self:Update(self._lastPayload)
+    end
+end
+
+function GV:GetActiveTracks(payload)
+    if type(payload) ~= "table" then return nil end
+    local view = self._view
+
+    if view == "progress" and type(payload.progressTracks) == "table" then
+        return payload.progressTracks, "progress"
+    end
+
+    if type(payload.tracks) == "table" then
+        return payload.tracks, "claim"
+    end
+
+    return nil
+end
+
 function GV:IsShown()
     return frame and frame:IsShown()
 end
@@ -314,13 +375,50 @@ function GV:Update(data)
         self:CreateFrame()
     end
 
+    self._lastPayload = data
+
+    if frame.viewButtons and frame.viewButtons.claim then
+        frame.viewButtons.claim:SetScript("OnClick", function() GV:SetView("claim") end)
+    end
+    if frame.viewButtons and frame.viewButtons.progress then
+        frame.viewButtons.progress:SetScript("OnClick", function() GV:SetView("progress") end)
+    end
+
     if data.open then
         frame:Show()
     end
 
-    local tracks = data.tracks
-    if type(tracks) ~= "table" then
-        return
+    if not self._view and type(data.defaultView) == "string" then
+        self._view = data.defaultView
+    end
+
+    local tracks, activeView = self:GetActiveTracks(data)
+    if type(tracks) ~= "table" then return end
+
+    if frame.weekText then
+        local resetTs = tonumber(data.progressWeekStart or 0) or 0
+        local nextResetTs = resetTs > 0 and (resetTs + SECONDS_PER_WEEK) or 0
+        local resetLabel = resetTs > 0 and (date("%A %H:%M", resetTs) .. " (your local time)") or "Unknown"
+
+        if activeView == "progress" then
+            local range = FormatWeekRange(data.progressWeekStart)
+            local nextReset = FormatDateTime(nextResetTs)
+            frame.weekText:SetText("Progress week: " .. range .. " | Weekly reset: " .. resetLabel .. " | Next reset: " .. nextReset)
+        else
+            local range = FormatWeekRange(data.claimWeekStart)
+            local expiresAt = FormatDateTime(nextResetTs)
+            frame.weekText:SetText("Reward week: " .. range .. " | Weekly reset: " .. resetLabel .. " | Expires: " .. expiresAt)
+        end
+    end
+
+    if frame.viewButtons and frame.viewButtons.claim and frame.viewButtons.progress then
+        if activeView == "progress" then
+            frame.viewButtons.progress:Disable()
+            frame.viewButtons.claim:Enable()
+        else
+            frame.viewButtons.claim:Disable()
+            frame.viewButtons.progress:Enable()
+        end
     end
 
     -- Reset mapping each update

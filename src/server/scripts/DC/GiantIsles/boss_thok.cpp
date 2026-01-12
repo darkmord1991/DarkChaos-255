@@ -24,6 +24,8 @@
 #include "GameTime.h"
 #include "DC/CrossSystem/WorldBossMgr.h"
 
+#include <cmath>
+
 enum ThokSpells
 {
     // Main abilities
@@ -148,7 +150,7 @@ public:
             events.ScheduleEvent(EVENT_ACCELERATION, 45s);
             events.ScheduleEvent(EVENT_SAVAGE_BITE, 8s);
             events.ScheduleEvent(EVENT_FIXATE, 35s);
-            events.ScheduleEvent(EVENT_BERSERK, 10min);
+            events.ScheduleEvent(EVENT_BERSERK, Milliseconds(TIMER_BERSERK));
 
             // schedule HP check to send threshold updates
             events.ScheduleEvent(EVENT_HP_CHECK, 5s);

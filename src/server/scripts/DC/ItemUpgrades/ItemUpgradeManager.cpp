@@ -69,7 +69,7 @@ namespace DarkChaos
         {
         private:
             // Cache maps for fast lookup
-            std::unordered_map<uint8, UpgradeCost> upgrade_costs;           // tier_id+level -> cost
+            std::unordered_map<uint16, UpgradeCost> upgrade_costs;          // (tier_id << 8) | upgrade_level -> cost
             std::unordered_map<uint8, TierDefinition> tier_definitions;     // tier_id -> definition
             std::unordered_map<uint32, uint8> item_to_tier;                 // item_id -> tier_id
             std::unordered_map<uint32, ChaosArtifact> artifacts;            // artifact_id -> artifact
@@ -621,7 +621,7 @@ namespace DarkChaos
                 if (upgrade_level > MAX_UPGRADE_LEVEL || upgrade_level == 0)
                     return 0;
 
-                uint8 key = (tier_id << 4) | upgrade_level;
+                uint16 key = (static_cast<uint16>(tier_id) << 8) | upgrade_level;
                 auto it = upgrade_costs.find(key);
                 if (it != upgrade_costs.end())
                     return it->second.ilvl_increase;
@@ -799,7 +799,7 @@ namespace DarkChaos
                 if (upgrade_level > max_level || upgrade_level == 0)
                     return 0;
 
-                uint8 key = (tier_id << 4) | upgrade_level;
+                uint16 key = (static_cast<uint16>(tier_id) << 8) | upgrade_level;
                 auto it = upgrade_costs.find(key);
                 if (it != upgrade_costs.end())
                     return it->second.token_cost;
@@ -813,7 +813,7 @@ namespace DarkChaos
                 if (upgrade_level > max_level || upgrade_level == 0)
                     return 0;
 
-                uint8 key = (tier_id << 4) | upgrade_level;
+                uint16 key = (static_cast<uint16>(tier_id) << 8) | upgrade_level;
                 auto it = upgrade_costs.find(key);
                 if (it != upgrade_costs.end())
                     return it->second.essence_cost;
@@ -983,7 +983,7 @@ namespace DarkChaos
                         float stat_increase = fields[5].Get<float>();
 
                         // Store in upgrade_costs map
-                        uint8 key = (tier_id << 4) | upgrade_level;
+                        uint16 key = (static_cast<uint16>(tier_id) << 8) | upgrade_level;
                         upgrade_costs[key] = UpgradeCost{tier_id, upgrade_level, token_cost, essence_cost, ilvl_increase, stat_increase, season};
 
                         count++;

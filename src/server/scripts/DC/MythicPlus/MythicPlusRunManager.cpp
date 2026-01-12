@@ -4,6 +4,7 @@
  */
 
 #include "MythicPlusRunManager.h"
+#include "DC/Seasons/DCWeeklyResetHub.h"
 
 #include "Chat.h"
 #include "Config.h"
@@ -606,11 +607,8 @@ bool MythicPlusRunManager::ClaimVaultItemReward(Player* player, uint8 slot, uint
 // Reset weekly vault progress for all or specific players
 void MythicPlusRunManager::ResetWeeklyVaultProgress()
 {
-    uint32 nowWeek = GetWeekStartTimestamp();
-    // Purge old weekly rows older than the current week + 52 weeks (keep 52 weeks history)
-    uint32 purgeBefore = nowWeek - (52 * 7 * 24 * 60 * 60);
-    CharacterDatabase.DirectExecute("DELETE FROM dc_weekly_vault WHERE week_start < {}", purgeBefore);
-    LOG_INFO("mythic.vault", "Reset weekly vault progress purge executed (<= {})", purgeBefore);
+    uint32 nowWeek = DarkChaos::Seasons::GetVaultWeekStartTimestamp();
+    DarkChaos::Seasons::CleanupGreatVaultTables(nowWeek);
 }
 
 void MythicPlusRunManager::ResetWeeklyVaultProgress(Player* player)
@@ -619,7 +617,9 @@ void MythicPlusRunManager::ResetWeeklyVaultProgress(Player* player)
         return;
     uint32 nowWeek = GetWeekStartTimestamp();
     uint32 guidLow = player->GetGUID().GetCounter();
-    CharacterDatabase.DirectExecute("DELETE FROM dc_weekly_vault WHERE character_guid = {} AND week_start < {}", guidLow, nowWeek);
+    uint32 keepFrom = nowWeek - (7 * 24 * 60 * 60);
+    CharacterDatabase.DirectExecute("DELETE FROM dc_weekly_vault WHERE character_guid = {} AND week_start < {}", guidLow, keepFrom);
+    CharacterDatabase.DirectExecute("DELETE FROM dc_vault_reward_pool WHERE character_guid = {} AND week_start < {}", guidLow, keepFrom);
     ChatHandler(player->GetSession()).SendSysMessage("Your weekly vault progress was reset.");
 }
 
@@ -1164,9 +1164,7 @@ uint32 MythicPlusRunManager::GetCurrentSeasonId() const
 
 uint32 MythicPlusRunManager::GetWeekStartTimestamp() const
 {
-    uint32 now = static_cast<uint32>(GameTime::GetGameTime().count());
-    constexpr uint32 WEEK = 7 * DAY;
-    return now - (now % WEEK);
+    return DarkChaos::Seasons::GetVaultWeekStartTimestamp();
 }
 
 uint32 MythicPlusRunManager::GetVaultTokenReward(uint8 slot) const

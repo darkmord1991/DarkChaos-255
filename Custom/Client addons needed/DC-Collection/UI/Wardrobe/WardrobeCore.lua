@@ -556,6 +556,52 @@ end
 -- SHOW / HIDE
 -- ============================================================================
 
+function Wardrobe:RequestTransmogStateDebounced(reason)
+    if not DC or type(DC.RequestTransmogState) ~= "function" then
+        return
+    end
+
+    self._transmogStateDebouncePending = true
+    self._transmogStateDebounceReason = reason
+
+    if self._transmogStateDebounceActive then
+        return
+    end
+    self._transmogStateDebounceActive = true
+
+    local function fire()
+        self._transmogStateDebounceActive = nil
+        if not self._transmogStateDebouncePending then
+            return
+        end
+        self._transmogStateDebouncePending = nil
+        DC:RequestTransmogState()
+    end
+
+    if C_Timer and type(C_Timer.After) == "function" then
+        C_Timer.After(0.20, fire)
+        return
+    end
+
+    -- Fallback for environments without C_Timer.
+    local f = self._transmogStateDebounceFrame
+    if not f then
+        f = CreateFrame("Frame")
+        self._transmogStateDebounceFrame = f
+    end
+    f.elapsed = 0
+    f:Show()
+    f:SetScript("OnUpdate", function(frame, elapsed)
+        frame.elapsed = (frame.elapsed or 0) + (elapsed or 0)
+        if frame.elapsed < 0.20 then
+            return
+        end
+        frame:Hide()
+        frame:SetScript("OnUpdate", nil)
+        fire()
+    end)
+end
+
 function Wardrobe:Show()
     local frame = self:CreateFrame()
     if not frame then return end
@@ -577,15 +623,15 @@ function Wardrobe:Show()
     -- Only request definitions on first open or if explicitly refreshing
     if not Wardrobe.definitionsLoaded and DC and DC.RequestDefinitions then
         Wardrobe.definitionsLoaded = true
+        -- Definitions changed/loaded: invalidate any cached randomizer pools.
+        self.collectedCache = nil
         DC:RequestDefinitions("transmog")
         DC:RequestDefinitions("itemSets")
     end
     if DC and DC.RequestCollection then
         DC:RequestCollection("transmog")
     end
-    if DC and DC.RequestTransmogState then
-        DC:RequestTransmogState()
-    end
+    self:RequestTransmogStateDebounced("show")
     if DC and DC.RequestWishlist then
         DC:RequestWishlist()
     end
@@ -620,15 +666,15 @@ function Wardrobe:ShowEmbedded(host)
     -- Only request definitions on first open or if explicitly refreshing
     if not Wardrobe.definitionsLoaded and DC and DC.RequestDefinitions then
         Wardrobe.definitionsLoaded = true
+        -- Definitions changed/loaded: invalidate any cached randomizer pools.
+        self.collectedCache = nil
         DC:RequestDefinitions("transmog")
         DC:RequestDefinitions("itemSets")
     end
     if DC and DC.RequestCollection then
         DC:RequestCollection("transmog")
     end
-    if DC and DC.RequestTransmogState then
-        DC:RequestTransmogState()
-    end
+    self:RequestTransmogStateDebounced("show_embedded")
     if DC and DC.RequestWishlist then
         DC:RequestWishlist()
     end
@@ -711,6 +757,9 @@ end
 
 function Wardrobe:RefreshTransmogDefinitions()
     if not DC then return end
+
+    -- Any refresh potentially changes definitions; invalidate randomizer pools.
+    self.collectedCache = nil
     
     -- Set refreshing flag
     self.isRefreshing = true
@@ -897,6 +946,9 @@ function Wardrobe:RefreshTransmogDefinitions()
                     end
                     
                     DC:Print(string.format("[Wardrobe] Refresh complete - %d transmog definitions loaded", currentCount))
+
+                    -- New definitions are now active; invalidate randomizer pools.
+                    Wardrobe.collectedCache = nil
 
                     if type(Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
                         Wardrobe:UpdateTransmogLoadingProgressUI(false)

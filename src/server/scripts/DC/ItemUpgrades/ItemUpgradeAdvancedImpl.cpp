@@ -292,17 +292,17 @@ public:
         // Maxed Out
         ach.achievement_id = 3;
         ach.name = "Maxed Out";
-        ach.description = "Fully upgrade an item to level 15";
+        ach.description = "Fully upgrade an item (reach its tier max level)";
         ach.reward_prestige_points = 50;
         ach.reward_tokens = 250;
         ach.unlock_type = "MAX_LEVEL";
-        ach.unlock_requirement = 15;
+        ach.unlock_requirement = 1;
         achievements.push_back(ach);
 
         // Legendary Ascension
         ach.achievement_id = 4;
         ach.name = "Legendary Ascension";
-        ach.description = "Fully upgrade a Legendary item";
+        ach.description = "Fully upgrade a top-tier item (highest tier in this season)";
         ach.reward_prestige_points = 200;
         ach.reward_tokens = 1000;
         ach.unlock_type = "MAX_LEGENDARY";
@@ -425,10 +425,73 @@ public:
         }
         else if (ach->unlock_type == "MAX_LEVEL")
         {
+            uint32 fullyUpgradedCount = 0;
+
+            auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+            if (!mgr)
+                return 0;
+
             QueryResult result = CharacterDatabase.Query(
-                "SELECT COUNT(*) FROM {} WHERE player_guid = {} AND upgrade_level = 15",
+                "SELECT tier_id, upgrade_level FROM {} WHERE player_guid = {}",
                 ITEM_UPGRADES_TABLE, player_guid);
-            return result ? result->Fetch()[0].Get<uint32>() : 0;
+
+            if (!result)
+                return 0;
+
+            do
+            {
+                Field* fields = result->Fetch();
+                uint8 tierId = fields[0].Get<uint8>();
+                uint8 upgradeLevel = fields[1].Get<uint8>();
+
+                uint8 maxLevel = mgr->GetTierMaxLevel(tierId);
+                if (maxLevel > 0 && upgradeLevel >= maxLevel)
+                    ++fullyUpgradedCount;
+
+            } while (result->NextRow());
+
+            return fullyUpgradedCount;
+        }
+        else if (ach->unlock_type == "MAX_LEGENDARY")
+        {
+            auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+            if (!mgr)
+                return 0;
+
+            // Resolve the highest tier configured for the current season.
+            uint8 highestTierId = 0;
+            for (uint16 tierId = 1; tierId <= 255; ++tierId)
+            {
+                if (mgr->GetTierDefinition(static_cast<uint8>(tierId)))
+                    highestTierId = static_cast<uint8>(tierId);
+            }
+
+            if (highestTierId == 0)
+                return 0;
+
+            uint8 highestTierMax = mgr->GetTierMaxLevel(highestTierId);
+            if (highestTierMax == 0)
+                return 0;
+
+            uint32 fullyUpgradedTopTierCount = 0;
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT tier_id, upgrade_level FROM {} WHERE player_guid = {} AND tier_id = {}",
+                ITEM_UPGRADES_TABLE, player_guid, static_cast<uint32>(highestTierId));
+
+            if (!result)
+                return 0;
+
+            do
+            {
+                Field* fields = result->Fetch();
+                uint8 upgradeLevel = fields[1].Get<uint8>();
+
+                if (upgradeLevel >= highestTierMax)
+                    ++fullyUpgradedTopTierCount;
+
+            } while (result->NextRow());
+
+            return fullyUpgradedTopTierCount;
         }
 
         return 0;

@@ -109,7 +109,7 @@ public:
                     "PvP combat, and completing achievements.",
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                    "Weekly cap: 500 tokens. Reset: Monday 00:00 server time.",
+                    "Weekly cap: 500 tokens. Reset follows the Great Vault weekly reset.",
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID());

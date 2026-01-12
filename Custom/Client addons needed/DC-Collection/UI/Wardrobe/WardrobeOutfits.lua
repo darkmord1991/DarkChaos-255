@@ -609,7 +609,9 @@ function Wardrobe:SaveCurrentOutfit(name, overwriteId)
     -- Ensure we have authoritative transmog itemIds (actual item entries) before saving.
     if not (DC and DC.transmogItemIds) then
         self._pendingSaveOutfitName = name
-        if DC and type(DC.RequestTransmogState) == "function" then
+        if Wardrobe and type(Wardrobe.RequestTransmogStateDebounced) == "function" then
+            Wardrobe:RequestTransmogStateDebounced("save_outfit")
+        elseif DC and type(DC.RequestTransmogState) == "function" then
             DC:RequestTransmogState()
         end
         if DC and DC.Print then
@@ -959,7 +961,9 @@ function Wardrobe:LoadOutfit(outfit)
     self:_UpdateSlotButtonsFromOutfit(slots)
 
     -- Force-refresh transmog state so UI + preview can update from authoritative server state.
-    if DC and type(DC.RequestTransmogState) == "function" then
+    if Wardrobe and type(Wardrobe.RequestTransmogStateDebounced) == "function" then
+        Wardrobe:RequestTransmogStateDebounced("apply_outfit")
+    elseif DC and type(DC.RequestTransmogState) == "function" then
         DC:RequestTransmogState()
     end
 
@@ -1302,7 +1306,9 @@ function Wardrobe:RandomizeOutfit()
     end
 
     -- Request updated transmog state from server so UI can refresh
-    if DC and type(DC.RequestTransmogState) == "function" then
+    if Wardrobe and type(Wardrobe.RequestTransmogStateDebounced) == "function" then
+        Wardrobe:RequestTransmogStateDebounced("randomize")
+    elseif DC and type(DC.RequestTransmogState) == "function" then
         DC:RequestTransmogState()
     end
 

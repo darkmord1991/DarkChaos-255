@@ -11,6 +11,26 @@ if not DC then return end
 DC.Wardrobe = DC.Wardrobe or {}
 local Wardrobe = DC.Wardrobe
 
+-- One-time confirmation dialog definition.
+-- We stash the selected outfit ID/name on Wardrobe before showing the dialog.
+if StaticPopupDialogs and not StaticPopupDialogs["DC_COMMUNITY_DELETE_OUTFIT"] then
+    StaticPopupDialogs["DC_COMMUNITY_DELETE_OUTFIT"] = {
+        text = "Delete your community outfit \"%s\"?\n\nThis cannot be undone.",
+        button1 = "Delete",
+        button2 = "Cancel",
+        OnAccept = function()
+            local outfitId = Wardrobe and Wardrobe._communityDeleteOutfitId
+            if outfitId and DC and type(DC.RequestCommunityDelete) == "function" then
+                DC:RequestCommunityDelete(outfitId)
+            end
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    }
+end
+
 -- ============================================================================
 -- COMMUNITY OUTFITS SYSTEM
 -- ============================================================================
@@ -190,22 +210,9 @@ function Wardrobe:CreateCommunityGrid()
         btn.deleteBtn:GetFontString():SetFont("Fonts\\FRIZQT__.TTF", 9)
         btn.deleteBtn:SetScript("OnClick", function()
             if btn.outfit and btn.outfit.id then
-                -- Confirm deletion
-                StaticPopupDialogs["DC_COMMUNITY_DELETE_OUTFIT"] = {
-                    text = "Delete your community outfit \"%s\"?\n\nThis cannot be undone.",
-                    button1 = "Delete",
-                    button2 = "Cancel",
-                    OnAccept = function()
-                        if DC and DC.RequestCommunityDelete then
-                            DC:RequestCommunityDelete(btn.outfit.id)
-                        end
-                    end,
-                    timeout = 0,
-                    whileDead = true,
-                    hideOnEscape = true,
-                    preferredIndex = 3,
-                }
-                StaticPopup_Show("DC_COMMUNITY_DELETE_OUTFIT", btn.outfit.name or "Unknown")
+                Wardrobe._communityDeleteOutfitId = btn.outfit.id
+                Wardrobe._communityDeleteOutfitName = btn.outfit.name or "Unknown"
+                StaticPopup_Show("DC_COMMUNITY_DELETE_OUTFIT", Wardrobe._communityDeleteOutfitName)
             end
         end)
         btn.deleteBtn:Hide() -- Hidden by default, shown only for user's outfits

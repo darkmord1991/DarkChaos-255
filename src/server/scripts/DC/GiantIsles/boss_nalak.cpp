@@ -26,6 +26,8 @@
 #include <random>
 #include "DC/CrossSystem/WorldBossMgr.h"
 
+#include <cmath>
+
 enum NalakSpells
 {
     // Main abilities

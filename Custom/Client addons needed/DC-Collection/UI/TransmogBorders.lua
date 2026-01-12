@@ -30,35 +30,72 @@ TransmogBorders.Settings = {
 
 -- Maps equipment slot IDs to character frame slot names
 local EQUIP_SLOT_TO_CHAR_FRAME = {
-    [1]  = "HeadSlot",      -- Head
-    [3]  = "ShoulderSlot",  -- Shoulder
-    [5]  = "ChestSlot",     -- Chest
-    [6]  = "WaistSlot",     -- Waist
-    [7]  = "LegsSlot",      -- Legs
-    [8]  = "FeetSlot",      -- Feet
-    [9]  = "WristSlot",     -- Wrist
-    [10] = "HandsSlot",     -- Hands
-    [15] = "BackSlot",      -- Back
-    [16] = "MainHandSlot",  -- Main Hand
-    [17] = "SecondaryHandSlot", -- Off Hand
-    [18] = "RangedSlot",    -- Ranged
+    -- NOTE: Equipment slots are 0-based (EQUIPMENT_SLOT_*), matching server state keys.
+    [0]  = "HeadSlot",      -- Head
+    [2]  = "ShoulderSlot",  -- Shoulder
+    [4]  = "ChestSlot",     -- Chest
+    [5]  = "WaistSlot",     -- Waist
+    [6]  = "LegsSlot",      -- Legs
+    [7]  = "FeetSlot",      -- Feet
+    [8]  = "WristSlot",     -- Wrist
+    [9]  = "HandsSlot",     -- Hands
+    [14] = "BackSlot",      -- Back
+    [15] = "MainHandSlot",  -- Main Hand
+    [16] = "SecondaryHandSlot", -- Off Hand
+    [17] = "RangedSlot",    -- Ranged
+    [18] = "TabardSlot",    -- Tabard
 }
 
 -- Maps equipment slot IDs to inspect frame slot names
 local EQUIP_SLOT_TO_INSPECT_FRAME = {
-    [1]  = "HeadSlot",      -- Head
-    [3]  = "ShoulderSlot",  -- Shoulder
-    [5]  = "ChestSlot",     -- Chest
-    [6]  = "WaistSlot",     -- Waist
-    [7]  = "LegsSlot",      -- Legs
-    [8]  = "FeetSlot",      -- Feet
-    [9]  = "WristSlot",     -- Wrist
-    [10] = "HandsSlot",     -- Hands
-    [15] = "BackSlot",      -- Back
-    [16] = "MainHandSlot",  -- Main Hand
-    [17] = "SecondaryHandSlot", -- Off Hand
-    [18] = "RangedSlot",    -- Ranged
+    -- NOTE: Equipment slots are 0-based (EQUIPMENT_SLOT_*), matching server inspect payload keys.
+    [0]  = "HeadSlot",      -- Head
+    [2]  = "ShoulderSlot",  -- Shoulder
+    [4]  = "ChestSlot",     -- Chest
+    [5]  = "WaistSlot",     -- Waist
+    [6]  = "LegsSlot",      -- Legs
+    [7]  = "FeetSlot",      -- Feet
+    [8]  = "WristSlot",     -- Wrist
+    [9]  = "HandsSlot",     -- Hands
+    [14] = "BackSlot",      -- Back
+    [15] = "MainHandSlot",  -- Main Hand
+    [16] = "SecondaryHandSlot", -- Off Hand
+    [17] = "RangedSlot",    -- Ranged
+    [18] = "TabardSlot",    -- Tabard
 }
+
+local function EnsureInspectActionButtons()
+    if not InspectFrame then
+        return
+    end
+
+    if InspectFrame.__dcInspectTransmogButtonsCreated then
+        return
+    end
+    InspectFrame.__dcInspectTransmogButtonsCreated = true
+
+    local preview = CreateFrame("Button", nil, InspectFrame, "UIPanelButtonTemplate")
+    preview:SetSize(78, 22)
+    preview:SetPoint("TOPRIGHT", InspectFrame, "TOPRIGHT", -42, -40)
+    preview:SetText("Preview")
+    preview:SetScript("OnClick", function()
+        if DC and type(DC.PreviewLastInspectedAppearance) == "function" then
+            DC:PreviewLastInspectedAppearance()
+        end
+    end)
+    InspectFrame.__dcInspectPreviewButton = preview
+
+    local copy = CreateFrame("Button", nil, InspectFrame, "UIPanelButtonTemplate")
+    copy:SetSize(92, 22)
+    copy:SetPoint("RIGHT", preview, "LEFT", -6, 0)
+    copy:SetText("Copy Outfit")
+    copy:SetScript("OnClick", function()
+        if DC and type(DC.CopyLastInspectedAppearanceToOutfitPrompt) == "function" then
+            DC:CopyLastInspectedAppearanceToOutfitPrompt()
+        end
+    end)
+    InspectFrame.__dcInspectCopyButton = copy
+end
 
 -- ============================================================================
 -- BORDER CREATION
@@ -150,11 +187,27 @@ function TransmogBorders:UpdateInspectBorders(unit)
         self:ClearInspectBorders()
         return
     end
-    
-    -- Note: Inspect borders require server-side data
-    -- For now, just clear them since we don't have access to other players' transmog state
-    -- This could be extended with server communication in the future
-    self:ClearInspectBorders()
+
+    EnsureInspectActionButtons()
+
+    -- Server-provided inspect payload stores fakeEntry (item entry) keyed by 0-based equipment slot.
+    local inspectItemIds = DC and DC.inspectTransmogItemIds or nil
+    if type(inspectItemIds) ~= "table" then
+        self:ClearInspectBorders()
+        return
+    end
+
+    for equipSlot, border in pairs(inspectBorders) do
+        if border then
+            local itemId = inspectItemIds[tostring(equipSlot)]
+            local hasTransmog = itemId and tonumber(itemId) and tonumber(itemId) > 0
+            if hasTransmog then
+                border:Show()
+            else
+                border:Hide()
+            end
+        end
+    end
 end
 
 function TransmogBorders:ClearInspectBorders()
@@ -185,6 +238,18 @@ local function OnInspectFrameHide()
     TransmogBorders:ClearInspectBorders()
 end
 
+local function OnInspectFrameShow()
+    -- Best-effort: request server-side inspect transmog data for the currently inspected unit.
+    if not DC or type(DC.RequestInspectTarget) ~= "function" then
+        return
+    end
+
+    local unit = (InspectFrame and InspectFrame.unit) or "target"
+    if unit and UnitExists(unit) and UnitIsPlayer(unit) then
+        pcall(function() DC:RequestInspectTarget(unit) end)
+    end
+end
+
 -- ============================================================================
 -- INITIALIZATION
 -- ============================================================================
@@ -199,10 +264,12 @@ function TransmogBorders:Initialize()
     frame:SetScript("OnEvent", function(self, event, arg1)
         if event == "ADDON_LOADED" and arg1 == "Blizzard_InspectUI" then
             TransmogBorders:CreateInspectBorders()
+            EnsureInspectActionButtons()
             
             -- Hook inspect frame events
             if InspectFrame then
                 InspectFrame:HookScript("OnHide", OnInspectFrameHide)
+                InspectFrame:HookScript("OnShow", OnInspectFrameShow)
             end
             
             self:UnregisterEvent("ADDON_LOADED")

@@ -35,6 +35,7 @@
 #include "ScriptedCreature.h"
 #include "Chat.h"
 #include <unordered_set>
+#include <unordered_map>
 
 // ============================================================================
 // CONSTANTS

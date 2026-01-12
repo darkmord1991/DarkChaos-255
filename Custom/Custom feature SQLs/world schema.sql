@@ -913,7 +913,8 @@ CREATE TABLE IF NOT EXISTS `creature` (
   `Comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`guid`),
   KEY `idx_map` (`map`),
-  KEY `idx_id` (`id1`)
+  KEY `idx_id` (`id1`),
+  KEY `idx_phaseMask` (`phaseMask`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9000794 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 CREATE TABLE IF NOT EXISTS `creature_addon` (

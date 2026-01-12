@@ -23,6 +23,8 @@
 #include "GameTime.h"
 #include "DC/CrossSystem/WorldBossMgr.h"
 
+#include <cmath>
+
 enum OondastaSpells
 {
     // Main abilities

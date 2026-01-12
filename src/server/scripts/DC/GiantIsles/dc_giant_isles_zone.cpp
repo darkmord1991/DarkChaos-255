@@ -18,6 +18,10 @@
 #include "Chat.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
+#include "DC/CrossSystem/WorldBossMgr.h"
+
+#include <unordered_map>
+#include <vector>
 
 // ============================================================================
 // ZONE CONSTANTS
@@ -149,6 +153,90 @@ static RareSpawnLocation GetRandomSpawnLocation()
 // HELPER FUNCTIONS
 // ============================================================================
 
+// Track last known zone per player so we only announce on zone entry,
+// not on every area update inside the same zone.
+static std::unordered_map<ObjectGuid, uint32> sGiantIslesLastZoneByPlayer;
+
+// Track last whisper time for the Spirit NPC to avoid repeated whisper spam.
+static std::unordered_map<ObjectGuid, uint32> sSpiritLastWhisperSecByPlayer;
+
+static std::string FormatShortDuration(int32 totalSeconds)
+{
+    if (totalSeconds < 0)
+        return "?";
+
+    int32 seconds = totalSeconds;
+    int32 hours = seconds / 3600;
+    seconds %= 3600;
+    int32 minutes = seconds / 60;
+    seconds %= 60;
+
+    if (hours > 0)
+        return std::to_string(hours) + "h " + std::to_string(minutes) + "m";
+    if (minutes > 0)
+        return std::to_string(minutes) + "m " + std::to_string(seconds) + "s";
+    return std::to_string(seconds) + "s";
+}
+
+static void SendBossStatusList(Player* player)
+{
+    if (!player || !player->GetSession())
+        return;
+
+    if (!sWorldBossMgr)
+        return;
+
+    std::vector<DC::WorldBossInfo const*> bossesInZone;
+    for (DC::WorldBossInfo const* info : sWorldBossMgr->GetAllBosses())
+    {
+        if (info && info->zoneId == ZONE_GIANT_ISLES)
+            bossesInZone.push_back(info);
+    }
+
+    ChatHandler handler(player->GetSession());
+    handler.PSendSysMessage("|cFFFF8000[Giant Isles]|r World boss status:");
+
+    auto sendOne = [&](char const* displayName, DC::WorldBossInfo const* info)
+    {
+        if (!displayName || !displayName[0])
+            displayName = "Unknown";
+
+        if (!info)
+        {
+            handler.PSendSysMessage(" - |cFFFFFF00%s|r: |cFFAAAAAAUnregistered|r", displayName);
+            return;
+        }
+
+        if (info->isActive)
+        {
+            handler.PSendSysMessage(" - |cFFFFFF00%s|r: |cFF00FF00Active|r", displayName);
+            return;
+        }
+
+        if (info->respawnCountdown > 0)
+        {
+            std::string t = FormatShortDuration(info->respawnCountdown);
+            handler.PSendSysMessage(" - |cFFFFFF00%s|r: |cFFFFFF00Respawn in %s|r", displayName, t.c_str());
+            return;
+        }
+
+        handler.PSendSysMessage(" - |cFFFFFF00%s|r: |cFFAAAAAAUnknown|r", displayName);
+    };
+
+    // Preferred: use the WorldBossMgr zone registrations.
+    if (!bossesInZone.empty())
+    {
+        for (DC::WorldBossInfo const* info : bossesInZone)
+            sendOne(info->displayName.c_str(), info);
+        return;
+    }
+
+    // Fallback: show known Giant Isles bosses even if their registered zoneId isn't set to ZONE_GIANT_ISLES yet.
+    sendOne("Oondasta", sWorldBossMgr->GetBossInfo(NPC_OONDASTA));
+    sendOne("Thok", sWorldBossMgr->GetBossInfo(NPC_THOK));
+    sendOne("Nalak", sWorldBossMgr->GetBossInfo(NPC_NALAK));
+}
+
 // Get current day of week (0 = Sunday, 6 = Saturday)
 uint8 GetCurrentDayOfWeek()
 {
@@ -197,6 +285,15 @@ public:
         if (!player)
             return;
 
+        ObjectGuid playerGuid = player->GetGUID();
+        uint32& lastZone = sGiantIslesLastZoneByPlayer[playerGuid];
+        uint32 previousZone = lastZone;
+        lastZone = newZone;
+
+        // Only respond when transitioning into the zone.
+        if (previousZone == newZone)
+            return;
+
         // Only respond when entering Giant Isles
         if (newZone != ZONE_GIANT_ISLES)
             return;
@@ -225,9 +322,23 @@ public:
                 break;
         }
 
+        bool bossActive = sWorldBossMgr && sWorldBossMgr->IsBossActive(activeBoss);
+
         ChatHandler(player->GetSession()).PSendSysMessage(
-            "|cFFFF8000[Giant Isles]|r Today's world boss: |cFFFFFF00%s|r in |cFF00FF00%s|r",
-            bossName.c_str(), location.c_str());
+            "|cFFFF8000[Giant Isles]|r Today's world boss: |cFFFFFF00%s|r in |cFF00FF00%s|r%s",
+            bossName.c_str(), location.c_str(), bossActive ? " |cFF00FF00(Active)|r" : "");
+
+        SendBossStatusList(player);
+    }
+
+    void OnLogout(Player* player) override
+    {
+        if (!player)
+            return;
+
+        ObjectGuid guid = player->GetGUID();
+        sGiantIslesLastZoneByPlayer.erase(guid);
+        sSpiritLastWhisperSecByPlayer.erase(guid);
     }
 };
 
@@ -288,9 +399,8 @@ private:
             return;
         }
 
-        // Find a map to spawn on (Giant Isles map - placeholder mapId)
-        // In production, you'd need the actual map ID for Giant Isles
-        // For now, we'll just log the spawn attempt
+        // NOTE: This is currently a placeholder manager. It logs spawn attempts,
+        // but does not actually spawn anything until mapId/coords are finalized.
         LOG_INFO("scripts.dc", "Giant Isles: Attempting to spawn random rare {} at ({}, {}, {})",
             rareEntry, loc.x, loc.y, loc.z);
 
@@ -309,9 +419,7 @@ private:
         // Announce the spawn server-wide (using zone chat instead of server message)
         LOG_INFO("scripts.dc", "Giant Isles: Rare {} spawned", rareName);
 
-        _rareIsAlive = true;
-
-        // Schedule despawn check and next spawn
+        // Schedule next attempt
         ScheduleNextRareSpawn();
     }
 
@@ -354,11 +462,18 @@ public:
             {
                 // Whisper to nearby players about the zone
                 Player* player = who->ToPlayer();
-                if (player && !player->HasAura(28126)) // Check if not recently whispered
-                {
-                    me->Whisper("The ancient spirits stir... The dinosaurs grow restless.",
-                        LANG_UNIVERSAL, player);
-                }
+                if (!player)
+                    return;
+
+                uint32 nowSec = static_cast<uint32>(GameTime::GetGameTime().count());
+                uint32& lastSec = sSpiritLastWhisperSecByPlayer[player->GetGUID()];
+
+                // 60s cooldown per player to avoid spam.
+                if (lastSec != 0 && (nowSec - lastSec) < 60)
+                    return;
+
+                lastSec = nowSec;
+                me->Whisper("The ancient spirits stir... The dinosaurs grow restless.", LANG_UNIVERSAL, player);
             }
         }
     };
@@ -461,9 +576,6 @@ public:
     {
         if (!player || !go)
             return false;
-
-        // Check if world boss is already active (used in gossip select)
-        [[maybe_unused]] uint32 activeBoss = GetActiveBossEntry();
 
         // Add gossip options
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Commune with the ancient spirits",

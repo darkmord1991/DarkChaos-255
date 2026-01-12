@@ -50,6 +50,9 @@ namespace DCCollection
     // Allows transmogs across armor types (e.g., cloth appearance on plate armor).
     constexpr const char* TRANSMOG_SKIP_COMPAT_CHECK = "DCCollection.Transmog.SkipCompatCheck";
 
+    // When true, emit verbose per-request logging for batch preview apply.
+    constexpr const char* TRANSMOG_DEBUG_APPLY_PREVIEW = "DCCollection.Transmog.Debug.ApplyPreview";
+
     // =======================================================================
     // Transmog Helper Implementations
     // =======================================================================
@@ -918,6 +921,7 @@ namespace DCCollection
          if (clear)
          {
              CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
+             InvalidateCharacterTransmogCache(guid);
              player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), equippedItem->GetEntry());
              SendTransmogState(player);
              return;
@@ -929,6 +933,7 @@ namespace DCCollection
              CharacterDatabase.Execute(
                  "REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, 0, {})",
                  guid, static_cast<uint32>(slot), equippedItem->GetEntry());
+             InvalidateCharacterTransmogCache(guid);
              player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
              SendTransmogState(player);
              return;
@@ -987,6 +992,8 @@ namespace DCCollection
              "REPLACE INTO dc_character_transmog (guid, slot, fake_entry, real_entry) VALUES ({}, {}, {}, {})",
              guid, static_cast<uint32>(slot), fakeEntry, equippedItem->GetEntry());
 
+         InvalidateCharacterTransmogCache(guid);
+
          player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
          LOG_INFO("module.dc", "[DCWardrobe] SetTransmog: player={}, slot={} displayId={} APPLIED fakeEntry={}",
              player->GetName(), static_cast<uint32>(slot), displayId, fakeEntry);
@@ -1000,7 +1007,11 @@ namespace DCCollection
 
     void HandleApplyTransmogPreview(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        LOG_INFO("module.dc", "[DCWardrobe] HandleApplyTransmogPreview CALLED for player={}", player ? player->GetName() : "NULL");
+        bool verbose = sConfigMgr->GetOption<bool>(TRANSMOG_DEBUG_APPLY_PREVIEW, false);
+        if (verbose)
+            LOG_INFO("module.dc", "[DCWardrobe] HandleApplyTransmogPreview CALLED for player={}", player ? player->GetName() : "NULL");
+        else
+            LOG_DEBUG("module.dc", "[DCWardrobe] HandleApplyTransmogPreview called for player={}", player ? player->GetName() : "NULL");
         
         if (!player || !player->GetSession()) return;
         if (!DCAddon::IsJsonMessage(msg)) return;
@@ -1021,8 +1032,12 @@ namespace DCCollection
         bool byEquipSlot = json.HasKey("byEquipSlot") ? json["byEquipSlot"].AsBool() : false;
         bool hasEntries = json.HasKey("entries") && json["entries"].IsArray();
         
-        LOG_INFO("module.dc", "[DCWardrobe] HandleApplyTransmogPreview: player={}, byEquipSlot={}, hasEntries={}",
-            player->GetName(), byEquipSlot, hasEntries);
+        if (verbose)
+            LOG_INFO("module.dc", "[DCWardrobe] HandleApplyTransmogPreview: player={}, byEquipSlot={}, hasEntries={}",
+                player->GetName(), byEquipSlot, hasEntries);
+        else
+            LOG_DEBUG("module.dc", "[DCWardrobe] HandleApplyTransmogPreview: player={}, byEquipSlot={}, hasEntries={}",
+                player->GetName(), byEquipSlot, hasEntries);
         
         if (byEquipSlot && hasEntries)
         {
@@ -1030,10 +1045,11 @@ namespace DCCollection
             auto const& unlocked = GetAccountUnlockedTransmogAppearances(accountId);
             auto const& idx = GetTransmogAppearanceIndexCached();
             
-            LOG_INFO("module.dc", "[DCWardrobe] Batch apply: player={}, accountId={}, unlockedAppearances={}, indexSize={}, entriesCount={}, skipUnlockCheck={}",
-                player->GetName(), accountId, static_cast<uint32>(unlocked.size()), 
-                static_cast<uint32>(idx.size()), static_cast<uint32>(json["entries"].AsArray().size()),
-                sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false));
+            if (verbose)
+                LOG_INFO("module.dc", "[DCWardrobe] Batch apply: player={}, accountId={}, unlockedAppearances={}, indexSize={}, entriesCount={}, skipUnlockCheck={}",
+                    player->GetName(), accountId, static_cast<uint32>(unlocked.size()),
+                    static_cast<uint32>(idx.size()), static_cast<uint32>(json["entries"].AsArray().size()),
+                    sConfigMgr->GetOption<bool>(TRANSMOG_SKIP_UNLOCK_CHECK, false));
             
             uint32 guid = player->GetGUID().GetCounter();
 
@@ -1258,6 +1274,9 @@ namespace DCCollection
         }
 
         CharacterDatabase.CommitTransaction(trans);
+
+            // Ensure subsequent slot update hooks don't read stale rows.
+            InvalidateCharacterTransmogCache(guid);
         SendTransmogState(player);
     }
 
@@ -2307,98 +2326,6 @@ namespace DCCollection
     }
 
     // =======================================================================
-    // Transmog Visual Restoration
-    // =======================================================================
-
-    struct DcTransmogVisualRow
-    {
-        uint8 slot = 0;
-        uint32 fakeEntry = 0;
-        uint32 realEntry = 0;
-    };
-
-    static std::vector<DcTransmogVisualRow> LoadTransmogVisualRows(uint32 guid)
-    {
-        std::vector<DcTransmogVisualRow> rows;
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT slot, fake_entry, real_entry FROM dc_character_transmog WHERE guid = {}",
-            guid);
-
-        if (!result)
-            return rows;
-
-        do
-        {
-            Field* fields = result->Fetch();
-            DcTransmogVisualRow row;
-            row.slot = static_cast<uint8>(fields[0].Get<uint32>());
-            row.fakeEntry = fields[1].Get<uint32>();
-            row.realEntry = fields[2].Get<uint32>();
-            rows.push_back(row);
-        } while (result->NextRow());
-
-        return rows;
-    }
-
-    static uint32 ApplyTransmogVisualRows(Player* player, uint32 guid, std::vector<DcTransmogVisualRow> const& rows, bool cleanup)
-    {
-        if (!player)
-            return 0;
-
-        uint32 applied = 0;
-        for (auto const& row : rows)
-        {
-            uint8 slot = row.slot;
-            uint32 fakeEntry = row.fakeEntry;
-            uint32 realEntry = row.realEntry;
-
-            if (slot >= EQUIPMENT_SLOT_END)
-                continue;
-
-            Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-            if (!equippedItem)
-            {
-                if (cleanup)
-                    CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
-                continue;
-            }
-
-            uint32 currentEntry = equippedItem->GetEntry();
-            if (realEntry != 0 && realEntry != currentEntry)
-            {
-                if (cleanup)
-                {
-                    CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {} AND slot = {}", guid, static_cast<uint32>(slot));
-                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), currentEntry);
-                }
-                continue;
-            }
-
-            player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
-            applied++;
-        }
-
-        return applied;
-    }
-
-    void RestoreTransmogVisuals(Player* player)
-    {
-        if (!player)
-            return;
-
-        EnsureCharacterTransmogTable();
-
-        uint32 guid = player->GetGUID().GetCounter();
-        auto rows = LoadTransmogVisualRows(guid);
-        if (rows.empty())
-            return;
-
-        uint32 restoredCount = ApplyTransmogVisualRows(player, guid, rows, true);
-        if (restoredCount > 0)
-            LOG_DEBUG("module.dc", "[DCWardrobe] Restored {} transmog visuals for player {} (GUID {})", restoredCount, player->GetName(), guid);
-    }
-
-    // =======================================================================
     // World/Player Scripts
     // =======================================================================
 
@@ -2407,67 +2334,12 @@ namespace DCCollection
     public:
         WardrobePlayerScript() : PlayerScript("WardrobePlayerScript") {}
 
-        void OnPlayerLogin(Player* player) override
-        {
-            // Restore transmog visuals from database.
-            // IMPORTANT: Apply multiple times after login because core init and other modules
-            // can overwrite PLAYER_VISIBLE_ITEM_* shortly after we first set it.
-            uint32 guid = player->GetGUID().GetCounter();
-            auto rows = LoadTransmogVisualRows(guid);
-            if (!rows.empty())
-            {
-                ObjectGuid const playerGuid = player->GetGUID();
-
-                // Pass 1: cleanup + apply (early)
-                player->m_Events.AddEventAtOffset([playerGuid, guid, rows]()
-                {
-                    if (Player* p = ObjectAccessor::FindPlayer(playerGuid))
-                        ApplyTransmogVisualRows(p, guid, rows, true);
-                }, 2s);
-
-                // Pass 2: apply-only (late)
-                player->m_Events.AddEventAtOffset([playerGuid, guid, rows]()
-                {
-                    if (Player* p = ObjectAccessor::FindPlayer(playerGuid))
-                        ApplyTransmogVisualRows(p, guid, rows, false);
-                }, 6s);
-
-                // Pass 3: apply-only (very late)
-                player->m_Events.AddEventAtOffset([playerGuid, guid, rows]()
-                {
-                    if (Player* p = ObjectAccessor::FindPlayer(playerGuid))
-                        ApplyTransmogVisualRows(p, guid, rows, false);
-                }, 10s);
-            }
-
-            if (!sConfigMgr->GetOption<bool>("DCCollection.Transmog.LoginScan.Enable", true)) return;
-            // Scan inventory for NEW transmog unlocks
-            // (Simplified logic here: actual comprehensive scan mimics item loot hooks)
-        }
-        
-        void OnPlayerLootItem(Player* player, Item* item, uint32 /*count*/, ObjectGuid /*lootguid*/) override
-        {
-            if (sConfigMgr->GetOption<bool>("DCCollection.Transmog.UnlockOnLoot", true))
-                UnlockTransmogAppearance(player, item->GetTemplate(), "loot");
-        }
-        
-        void OnPlayerCreateItem(Player* player, Item* item, uint32 /*count*/) override
-        {
-            if (sConfigMgr->GetOption<bool>("DCCollection.Transmog.UnlockOnCreate", true))
-                UnlockTransmogAppearance(player, item->GetTemplate(), "create");
-        }
-        
-        void OnPlayerQuestRewardItem(Player* player, Item* item, uint32 /*count*/) override
-        {
-            if (sConfigMgr->GetOption<bool>("DCCollection.Transmog.UnlockOnQuestReward", true))
-                UnlockTransmogAppearance(player, item->GetTemplate(), "quest");
-        }
-
         void OnPlayerDelete(ObjectGuid guid, uint32 /*accountId*/) override
         {
             // Clean up character-specific transmog data when character is deleted
             uint32 lowGuid = guid.GetCounter();
             CharacterDatabase.Execute("DELETE FROM dc_character_transmog WHERE guid = {}", lowGuid);
+            InvalidateCharacterTransmogCache(lowGuid);
             LOG_DEBUG("module.dc", "[DCWardrobe] Cleaned up transmog data for deleted character (GUID {})", lowGuid);
         }
     };
