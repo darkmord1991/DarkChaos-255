@@ -72,6 +72,12 @@ local LevelString = string.lower(TOOLTIP_UNIT_LEVEL:gsub("%%s", ".+"))
 -- Tooltip text cache for performance
 local tooltipTextCache = {}
 
+-- Tooltip update throttle to prevent lag spikes
+local lastTooltipUpdate = 0
+local TOOLTIP_UPDATE_THROTTLE = 0.05  -- 50ms between updates
+local itemInfoCache = {}  -- Cache GetItemInfo results
+local ITEM_INFO_CACHE_DURATION = 60  -- 1 minute
+
 -- ============================================================
 -- Item Upgrade/Tier Info Cache
 -- ============================================================
@@ -113,9 +119,47 @@ local function GetServerSlotFromClient(bag, slot)
     return slot - 1  -- Other bags are 0-indexed on server
 end
 
--- Request upgrade info from server
+-- Cached GetItemInfo to reduce API calls
+local function GetCachedItemInfo(itemLink)
+    if not itemLink then return nil end
+    
+    local cached = itemInfoCache[itemLink]
+    if cached and (GetTime() - cached.time) < ITEM_INFO_CACHE_DURATION then
+        return cached.name, cached.link, cached.quality, cached.level, cached.minLevel, 
+               cached.type, cached.subType, cached.stackCount, cached.equipLoc
+    end
+    
+    local name, link, quality, level, minLevel, itemType, subType, stackCount, equipLoc = GetItemInfo(itemLink)
+    if name then
+        itemInfoCache[itemLink] = {
+            time = GetTime(),
+            name = name,
+            link = link,
+            quality = quality,
+            level = level,
+            minLevel = minLevel,
+            type = itemType,
+            subType = subType,
+            stackCount = stackCount,
+            equipLoc = equipLoc
+        }
+    end
+    
+    return name, link, quality, level, minLevel, itemType, subType, stackCount, equipLoc
+end
+
+-- Request upgrade info from server (throttled)
+local lastUpgradeRequest = 0
+local UPGRADE_REQUEST_THROTTLE = 0.1  -- 100ms between requests
+
 local function RequestUpgradeInfo(bag, slot, itemLink)
     if not addon.protocol or not addon.protocol.connected then
+        return
+    end
+    
+    -- Throttle requests
+    local now = GetTime()
+    if (now - lastUpgradeRequest) < UPGRADE_REQUEST_THROTTLE then
         return
     end
     
@@ -130,11 +174,12 @@ local function RequestUpgradeInfo(bag, slot, itemLink)
     
     -- Check cache
     local cached = itemUpgradeCache[locationKey]
-    if cached and (GetTime() - cached.timestamp) < UPGRADE_CACHE_DURATION then
+    if cached and (now - cached.timestamp) < UPGRADE_CACHE_DURATION then
         return
     end
     
     pendingUpgradeRequests[locationKey] = true
+    lastUpgradeRequest = now
     
     -- Request via protocol
     addon.protocol:RequestItemUpgradeInfo(serverBag, serverSlot)
@@ -159,14 +204,8 @@ local function OnUpgradeInfoReceived(data)
         upgradedIlvl = data.upgradedIlvl,
     }
     
-    -- Refresh tooltip if still showing this item
-    if GameTooltip:IsShown() then
-        local _, link = GameTooltip:GetItem()
-        if link then
-            -- Force tooltip refresh
-            GameTooltip:Show()
-        end
-    end
+    -- Don't force refresh to avoid lag cascade
+    -- Data will appear on next natural tooltip update
 end
 
 -- Register for upgrade info events
@@ -187,8 +226,9 @@ local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
         return
     end
     
-    -- Only show for armor/weapons
-    local _, _, quality, _, _, itemType, _, _, equipLoc = GetItemInfo(itemLink)
+    -- Only show for armor/weapons (use cached GetItemInfo)
+    local _, _, quality, _, _, itemType, _, _, equipLoc = GetCachedItemInfo(itemLink)
+    if not itemType then return end  -- Item not loaded yet
     if quality == 7 then return end  -- Skip heirlooms (handled separately)
     if itemType ~= "Armor" and itemType ~= "Weapon" then return end
     if equipLoc == "INVTYPE_BAG" or equipLoc == "INVTYPE_QUIVER" then return end
@@ -422,7 +462,7 @@ local function AddItemLevel(tooltip, itemLink)
         end
     end
     
-    local _, _, _, itemLevel = GetItemInfo(itemLink)
+    local _, _, _, itemLevel = GetCachedItemInfo(itemLink)
     if itemLevel and itemLevel > 0 then
         tooltip:AddDoubleLine("Item Level:", "|cffffffff" .. itemLevel .. "|r", 0.5, 0.5, 0.5)
     end
@@ -528,18 +568,8 @@ local function OnNpcInfoReceived(npcData)
         dbGuid = npcData.dbGuid,
     }
     
-    -- Refresh tooltip if showing this unit
-    if GameTooltip:IsShown() then
-        local _, unit = GameTooltip:GetUnit()
-        if unit then
-            local currentGuid = UnitGUID(unit)
-            if currentGuid and string.lower(currentGuid) == string.lower(guid) then
-                -- Force tooltip refresh
-                GameTooltip:Hide()
-                GameTooltip:SetUnit(unit)
-            end
-        end
-    end
+    -- Don't force refresh to avoid lag
+    -- Data will appear on next natural tooltip update
 end
 
 -- Register for NPC info events

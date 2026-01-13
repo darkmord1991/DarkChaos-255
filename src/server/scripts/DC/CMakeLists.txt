@@ -37,6 +37,7 @@ set(SCRIPTS_DC_Hotspot
 set(SCRIPTS_DC_Jadeforest
     Jadeforest/jadeforest_flightmaster.cpp
     Jadeforest/jadeforest_guards.cpp
+    Jadeforest/jadeforest_training_grounds.cpp
 )
 
 # Giant Isles Zone scripts (Ported from MoP Isle of Giants)

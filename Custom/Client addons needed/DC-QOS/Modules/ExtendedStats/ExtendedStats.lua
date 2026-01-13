@@ -515,6 +515,10 @@ local function TryBuildUI()
     -- Visibility logic
     local function UpdateVisibility()
         local show = addon.settings.extendedStats.show
+        
+        -- Check if we're on the Character tab (PaperDoll)
+        local isCharacterTab = (PaperDollFrame and PaperDollFrame:IsShown()) or false
+        
         if show then
             frame:Show()
             settingsBtn:Show()
@@ -525,6 +529,19 @@ local function TryBuildUI()
             ReanchorExternalButtons()
             toggleBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
             toggleBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
+            
+            -- Show/hide external buttons based on tab
+            if isCharacterTab then
+                if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Show() end
+                if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Show() end
+                if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Show() end
+                if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Show() end
+            else
+                if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
+                if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
+                if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
+                if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+            end
         else
             frame:Hide()
             settingsBtn:Hide()
@@ -981,7 +998,49 @@ local function TryBuildUI()
         if toggleBtn then
             toggleBtn:Hide()
         end
+        -- Hide external buttons when leaving Character tab
+        if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
+        if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
+        if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
+        if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
     end)
+    
+    -- Hook other tabs to hide buttons when they're shown
+    if PetPaperDollFrame then
+        PetPaperDollFrame:HookScript("OnShow", function()
+            if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
+            if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
+            if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
+            if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+        end)
+    end
+    
+    if ReputationFrame then
+        ReputationFrame:HookScript("OnShow", function()
+            if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
+            if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
+            if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
+            if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+        end)
+    end
+    
+    if SkillFrame then
+        SkillFrame:HookScript("OnShow", function()
+            if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
+            if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
+            if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
+            if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+        end)
+    end
+    
+    if TokenFrame then
+        TokenFrame:HookScript("OnShow", function()
+            if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
+            if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
+            if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
+            if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+        end)
+    end
 
     ExtendedStats._frame = frame
     ExtendedStats._built = true

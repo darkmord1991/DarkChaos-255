@@ -365,6 +365,15 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
     if not entity then return false end
     if not activeMapId or activeMapId == 0 then return false end
     if CONTINENT_MAP_IDS[activeMapId] then return false end
+    
+    -- Check blacklist for boss/death entities
+    if (entity.kind == "boss" or entity.kind == "death") then
+        local db = Pins.state and Pins.state.db
+        if db and db.bossBlacklistMaps and db.bossBlacklistMaps[activeMapId] then
+            return false
+        end
+    end
+    
     if showAll then return true end
 
     local entMapId = tonumber(entity.mapId)
@@ -374,17 +383,30 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
     if entity.kind == "boss" or entity.kind == "death" then
         local db = Pins.state and Pins.state.db
         local learned = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
+        
+        -- First check: Try to match via MAP_TO_ZONE lookup
         local expectedZone = MAP_TO_ZONE[activeMapId]
         if expectedZone and expectedZone == entMapId then
             return true
         end
-        local resolvedZoneId = learned or CUSTOM_ZONE_MAPPING[activeMapId] or activeMapId
-        if resolvedZoneId == entMapId then
+        
+        -- Second check: Try custom zone mapping (for non-standard maps like Azshara Crater)
+        local customZone = CUSTOM_ZONE_MAPPING[activeMapId]
+        if customZone and customZone == entMapId then
             return true
         end
-        if entMapId == activeMapId then
+        
+        -- Third check: Try runtime learned mapping
+        if learned and learned == entMapId then
             return true
         end
+        
+        -- Fourth check: Direct match only if activeMapId is a custom/unknown zone
+        -- This prevents false positives on standard maps
+        if not expectedZone and not customZone and entMapId == activeMapId then
+            return true
+        end
+        
         return false
     end
 

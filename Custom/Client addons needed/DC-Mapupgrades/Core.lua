@@ -80,6 +80,9 @@ local defaults = {
     entityActiveDuration = 900, -- seconds to consider an entity "active" after being seen
     entities = { nextId = 1000000, list = {} },
     entityStatus = {},
+    
+    -- Blacklist maps from showing boss pins (e.g., custom zones without real bosses)
+    bossBlacklistMaps = { [745] = true }, -- Jade Forest
 }
 
 local function EnsureEntityTables(db)
@@ -1074,6 +1077,11 @@ function Core:ADDON_LOADED(name)
     state.db = DCMapupgradesDB
     state.db.cache = state.db.cache or {}
     EnsureEntityTables(state.db)
+    
+    -- Ensure blacklist is initialized (for users upgrading from older versions)
+    if type(state.db.bossBlacklistMaps) ~= "table" then
+        state.db.bossBlacklistMaps = { [745] = true } -- Jade Forest
+    end
 
     if RegisterAddonMessagePrefix then
         RegisterAddonMessagePrefix("HOTSPOT")

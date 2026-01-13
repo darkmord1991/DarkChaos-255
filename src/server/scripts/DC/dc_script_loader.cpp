@@ -34,6 +34,7 @@ void AddSC_flightmasters();                   // AC\ac_flightmasters.cpp
 // --- Jadeforest Zone ---
 void AddSC_jadeforest_flightmaster();         // Jadeforest\jadeforest_flightmaster.cpp
 void AddSC_jadeforest_guards();               // Jadeforest\jadeforest_guards.cpp
+void AddSC_jadeforest_training_grounds();     // Jadeforest\jadeforest_training_grounds.cpp
 
 // --- Giant Isles Zone (Ported from MoP Isle of Giants) ---
 void AddSC_giant_isles_zone();                // GiantIsles\dc_giant_isles_zone.cpp
@@ -192,6 +193,7 @@ void AddDCScripts()
     try {
         AddSC_jadeforest_flightmaster();
         AddSC_jadeforest_guards();
+        AddSC_jadeforest_training_grounds();
         LOG_INFO("scripts.dc", ">>   ✓ Jadeforest NPCs loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in Jadeforest: {}", e.what());

@@ -30,7 +30,8 @@ enum JadeforestTeleports
     TELEPORT_ENTRANCE_SOUTH    = 10580,
     TELEPORT_ENTRANCE_MAIN     = 10581,
     TELEPORT_ENTRANCE_NORTH    = 10582,
-    TELEPORT_JADETOP           = 10583
+    TELEPORT_JADETOP           = 10583,
+    TELEPORT_TRAINING_GROUNDS  = 10584
 };
 
 struct JadeforestTeleportData
@@ -46,11 +47,12 @@ struct JadeforestTeleportData
 
 static const JadeforestTeleportData teleportPoints[] =
 {
-    { TELEPORT_JADESTART,      961.603f,  -2462.78f, 180.575f, 4.41822f,  745, "Jade Start" },
-    { TELEPORT_ENTRANCE_SOUTH, 651.465f,  -2452.0f,  70.7512f, 3.05162f,  745, "Jade Entrance South" },
-    { TELEPORT_ENTRANCE_MAIN,  1069.73f,  -2151.01f, 134.324f, 1.17923f,  745, "Jade Entrance Main" },
-    { TELEPORT_ENTRANCE_NORTH, 1331.35f,  -2404.91f, 141.917f, 0.163741f, 745, "Jade Entrance North" },
-    { TELEPORT_JADETOP,        1452.68f,  -3104.49f, 331.667f, 0.610619f, 745, "Jade Top" }
+    { TELEPORT_JADESTART,        961.603f,   -2462.78f,   180.575f, 4.41822f,  745, "Jade Start" },
+    { TELEPORT_ENTRANCE_SOUTH,   651.465f,   -2452.0f,    70.7512f, 3.05162f,  745, "Jade Entrance South" },
+    { TELEPORT_ENTRANCE_MAIN,    1069.73f,   -2151.01f,   134.324f, 1.17923f,  745, "Jade Entrance Main" },
+    { TELEPORT_ENTRANCE_NORTH,   1331.35f,   -2404.91f,   141.917f, 0.163741f, 745, "Jade Entrance North" },
+    { TELEPORT_JADETOP,          1452.68f,   -3104.49f,   331.667f, 0.610619f, 745, "Jade Top" },
+    { TELEPORT_TRAINING_GROUNDS, 1252.4359f, -2478.3853f, 143.6f,   6.201568f, 745, "Training Grounds" }
 };
 
 // Jadeforest Guard - Template

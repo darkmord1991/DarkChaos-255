@@ -80,7 +80,7 @@ struct ACGuardPOI {
 static const ACGuardPOI ac_guard_pois[] = {
     // Teleport entries
     {"Startcamp",            37,  131.000f, 1012.000f, 295.000f, 5.000f,      true,  ICON_POI_SMALL_HOUSE, GOSSIP_ICON_TAXI},
-    {"Flight Master",        37,   72.5327f, 932.2570f, 339.3900f, 0.0680255f, true,  ICON_POI_BLUETOWER,   GOSSIP_ICON_TAXI},
+    {"Flightmaster Startcamp", 37, 72.5327f, 932.2570f, 339.3900f, 0.0680255f, true, ICON_POI_BLUETOWER,   GOSSIP_ICON_TAXI},
 
     // Map/minimap POI entries
     {"Innkeeper",            37,  100.973f, 1037.9f,  297.107f, 2.56106f,     false, ICON_POI_SMALL_HOUSE, GOSSIP_ICON_TALK},

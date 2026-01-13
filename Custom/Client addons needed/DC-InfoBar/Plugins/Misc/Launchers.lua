@@ -97,10 +97,18 @@ local function BuildLauncherList()
             name = "ItemUpgrade",
             icon = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Icons\\ItemUpgrade_64.tga",
             hint = "Choose Item or Heirloom",
-            onClick = function(anchorButton)
+            onClick = function(launcherButton)
                 -- Dropdown (Item / Heirloom)
+                DEFAULT_CHAT_FRAME:AddMessage("ItemUpgrade onClick fired!")
+                DEFAULT_CHAT_FRAME:AddMessage("LaunchersPlugin.id = " .. tostring(LaunchersPlugin.id))
+                DEFAULT_CHAT_FRAME:AddMessage("DCInfoBar = " .. tostring(DCInfoBar))
+                DEFAULT_CHAT_FRAME:AddMessage("DCInfoBar.plugins = " .. tostring(DCInfoBar and DCInfoBar.plugins))
+                DEFAULT_CHAT_FRAME:AddMessage("plugin instance = " .. tostring(DCInfoBar and DCInfoBar.plugins and DCInfoBar.plugins[LaunchersPlugin.id]))
+                
                 if DCInfoBar and DCInfoBar.plugins and DCInfoBar.plugins[LaunchersPlugin.id] then
-                    DCInfoBar.plugins[LaunchersPlugin.id]:ToggleItemUpgradeMenu(anchorButton)
+                    DCInfoBar.plugins[LaunchersPlugin.id]:ToggleItemUpgradeMenu(launcherButton)
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000ERROR: Plugin instance not found!|r")
                 end
             end,
         })
