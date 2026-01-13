@@ -10,11 +10,13 @@
 #include "Config.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
+#include "DBCStores.h"
 #include "GameObject.h"
 #include "GameTime.h"
 #include "Group.h"
 #include "Item.h"
 #include "Log.h"
+#include "Map.h"
 #include "MapMgr.h"
 #include "MythicDifficultyScaling.h"
 #include "MythicPlusConstants.h"
@@ -102,14 +104,14 @@ void MythicPlusRunManager::CacheBossMetadata()
     _mapBossEntries.clear();
     _mapFinalBossEntries.clear();
 
-    QueryResult result = WorldDatabase.Query(
-        "SELECT de.MapID, ie.creditEntry, ie.lastEncounterDungeon "
-        "FROM instance_encounters ie "
-        "INNER JOIN dungeonencounter_dbc de ON ie.entry = de.ID");
+    // `DungeonEncounter.dbc` is loaded into `sDungeonEncounterStore`.
+    // We intentionally avoid the world DB table `dungeonencounter_dbc` here.
+    //                                            0         1            2                3
+    QueryResult result = WorldDatabase.Query("SELECT entry, creditType, creditEntry, lastEncounterDungeon FROM instance_encounters");
 
     if (!result)
     {
-        LOG_WARN("mythic.run", "Boss metadata query returned no rows; defaulting to creature flags only");
+        LOG_WARN("mythic.run", "Boss metadata query returned no rows (instance_encounters empty); defaulting to creature flags only");
         return;
     }
 
@@ -119,9 +121,24 @@ void MythicPlusRunManager::CacheBossMetadata()
     do
     {
         Field* fields = result->Fetch();
-        uint32 mapId = fields[0].Get<uint32>();
-        uint32 bossEntry = fields[1].Get<uint32>();
-        uint16 lastEncounterDungeon = fields[2].Get<uint16>();
+        uint32 encounterId = fields[0].Get<uint32>();
+        uint8 creditType = fields[1].Get<uint8>();
+        uint32 bossEntry = fields[2].Get<uint32>();
+        uint16 lastEncounterDungeon = fields[3].Get<uint16>();
+
+        // Match `ObjectMgr::LoadInstanceEncounters()` logic: only creature-kill credits set boss flags.
+        if (creditType != ENCOUNTER_CREDIT_KILL_CREATURE)
+            continue;
+
+        DungeonEncounterEntry const* dungeonEncounter = sDungeonEncounterStore.LookupEntry(encounterId);
+        if (!dungeonEncounter)
+        {
+            // Keep log noise low; this can happen if server DBCs are missing/mismatched.
+            LOG_DEBUG("mythic.run", "Missing DungeonEncounter DBC entry for encounter id {} (from instance_encounters); skipping", encounterId);
+            continue;
+        }
+
+        uint32 mapId = dungeonEncounter->mapId;
 
         auto& bossSet = _mapBossEntries[mapId];
         if (bossSet.insert(bossEntry).second)
@@ -136,8 +153,13 @@ void MythicPlusRunManager::CacheBossMetadata()
     }
     while (result->NextRow());
 
-    LOG_INFO("mythic.run", "Cached {} boss entries ({} marked final) across {} maps for Mythic+ detection",
-             bossEntries, finalEntries, _mapBossEntries.size());
+    if (!bossEntries)
+    {
+        LOG_WARN("mythic.run", "Boss metadata loaded from instance_encounters but no usable entries were cached; defaulting to creature flags only");
+        return;
+    }
+
+    LOG_INFO("mythic.run", "Cached {} boss entries ({} marked final) across {} maps for Mythic+ detection", bossEntries, finalEntries, _mapBossEntries.size());
 }
 
 // EnsureHudCacheTable removed - handled by SQL migration

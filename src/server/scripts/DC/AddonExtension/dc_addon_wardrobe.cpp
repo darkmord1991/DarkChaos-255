@@ -703,42 +703,21 @@ namespace DCCollection
 
         std::unordered_set<uint32> unlocked;
         
-        // Try new cache table first (90%+ faster)
-        if (CharacterTableExists("dc_account_transmog_cache"))
+        // Load from dc_transmog_collection table
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT display_id FROM dc_transmog_collection WHERE account_id = {}",
+            accountId);
+        
+        if (result)
         {
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT displayid FROM dc_account_transmog_cache WHERE account_id = {}",
-                accountId);
-            if (result)
+            do
             {
-                do
-                {
-                    Field* fields = result->Fetch();
-                    uint32 dId = fields[0].Get<uint32>();
-                    if (dId) unlocked.insert(dId);
-                } while (result->NextRow());
-            }
+                Field* fields = result->Fetch();
+                uint32 dId = fields[0].Get<uint32>();
+                if (dId) unlocked.insert(dId);
+            } while (result->NextRow());
         }
-        else
-        {
-            // Fallback to old table for backward compatibility
-            std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-            if (!itemsEntryCol.empty())
-            {
-                 QueryResult result = CharacterDatabase.Query(
-                    "SELECT {} FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND unlocked = 1",
-                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG));
-                if (result)
-                {
-                    do
-                    {
-                        Field* fields = result->Fetch();
-                        uint32 dId = fields[0].Get<uint32>();
-                        if (dId) unlocked.insert(dId);
-                    } while (result->NextRow());
-                }
-            }
-        }
+        
         auto [insertedIt, _] = s_AccountUnlockedTransmogAppearances.emplace(accountId, std::move(unlocked));
         return insertedIt->second;
     }
@@ -789,24 +768,12 @@ namespace DCCollection
                  playerNotifications.insert(displayId);
         }
 
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (itemsEntryCol.empty()) return;
-
+        // Write to dc_transmog_collection table
         CharacterDatabase.Execute(
-            "INSERT IGNORE INTO dc_collection_items "
-            "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
-            "VALUES ({}, {}, {}, '{}', 1, NOW())",
-            itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId, source);
-
-        // Also populate new cache table if it exists (90%+ faster lookups)
-        if (CharacterTableExists("dc_account_transmog_cache"))
-        {
-            CharacterDatabase.Execute(
-                "INSERT IGNORE INTO dc_account_transmog_cache "
-                "(account_id, displayid, source, unlocked_at) "
-                "VALUES ({}, {}, '{}', NOW())",
-                accountId, displayId, source);
-        }
+            "INSERT IGNORE INTO dc_transmog_collection "
+            "(account_id, display_id, slot, obtained_by, obtained_from, obtained_date) "
+            "VALUES ({}, {}, 0, '{}', 'DC-Collection', NOW())",
+            accountId, displayId, source);
 
         auto cacheIt = s_AccountUnlockedTransmogAppearances.find(accountId);
         if (cacheIt != s_AccountUnlockedTransmogAppearances.end())

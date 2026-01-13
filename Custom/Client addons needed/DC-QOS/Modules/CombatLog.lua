@@ -22,7 +22,7 @@ local CombatLog = {
             showMeter = true,
             -- If the window was hidden (e.g. via the close button), still auto-show it when combat starts.
             autoShowInCombat = true,
-            meterMode = "damage", -- damage, healing, damageTaken, threat, dispels
+            meterMode = "damage", -- damage, healing, damageTaken, threat, dispels, interrupts, cc, etc.
             showBars = true,
             maxBars = 10,
             barHeight = 18,
@@ -34,14 +34,18 @@ local CombatLog = {
             -- Spell Breakdown
             showSpellBreakdown = true,
             maxSpells = 5,
-            -- Death Recap
+            -- Death Recap (ENHANCED)
             deathRecap = true,
-            deathRecapCount = 5,
+            deathRecapCount = 15,  -- Increased from 5 to 15
+            deathRecapMinDamage = 0,  -- Minimum damage to show in recap (0 = all)
+            deathRecapShowBuffs = true,  -- Show buff/debuff state in recap
+            announceDeaths = false,  -- Announce deaths to chat
+            alternativeDeathDisplay = false,  -- Each death as separate bar
             -- Interrupts
             trackInterrupts = true,
             announceInterrupts = false,
             interruptChannel = "SAY",
-            -- Advanced Metrics
+            -- Advanced Metrics (Skada-level)
             trackDispels = true,
             trackAbsorbs = true,
             trackOverkill = true,
@@ -51,9 +55,39 @@ local CombatLog = {
             trackPowerGains = true,
             trackKillingBlows = true,
             trackCrowdControl = true,
+            trackCCTaken = true,  -- Track CC received
+            trackCCBreaks = true,  -- Track CC breaks
             trackFriendlyFire = true,
             trackPotions = true,
             trackResurrects = true,
+            -- New: Avoidance & Mitigation
+            trackAvoidance = true,  -- Dodge, Parry, Miss counts
+            trackMitigation = true,  -- Block amount, Resist amount, Absorb amount
+            -- New: Enemy Tracking
+            trackEnemies = true,  -- Track enemy damage taken
+            trackEnemyHealing = true,  -- Track enemy healing done
+            trackUsefulDamage = true,  -- Track damage on important targets
+            -- New: Pet Tracking
+            trackPetDamage = true,  -- Separate pet damage from owner
+            trackPetHealing = true,  -- Separate pet healing from owner
+            -- New: Buff/Debuff Tracking
+            trackBuffs = true,  -- Track buff applications and uptime
+            trackDebuffs = true,  -- Track debuff applications and uptime
+            trackBuffUptime = true,  -- Calculate uptime percentages
+            -- New: Healing Details
+            trackHealingBySpell = true,  -- Detailed healing spell breakdown
+            trackHealingTaken = true,  -- Track who healed whom
+            trackOverhealing = true,  -- Track overheal amounts
+            -- New: Damage Details
+            trackDamageBySchool = true,  -- Track damage by magic school
+            trackDamageTakenBySpell = true,  -- Track damage taken per spell
+            trackDamageTakenBySource = true,  -- Track damage taken per source
+            -- New: Cast Tracking
+            trackCasts = true,  -- Track spell cast counts
+            -- Advanced Tooltips
+            showSchoolColors = true,  -- Color damage by school in tooltips
+            showGlancingCrushing = true,  -- Show glancing/crushing hits
+            showMitigationInTooltip = true,  -- Show absorbed/blocked/resisted in tooltips
             -- Segments
             keepSegments = 5,
             -- Position (Skada-style)
@@ -99,13 +133,87 @@ local playerData = {}
 local playerGUID = nil
 local playerName = nil
 
+-- Buff/Debuff tracking: buffData[targetGUID][spellId] = { name, applications, uptime, lastApplied }
+local buffData = {}
+local debuffData = {}
+
+-- Enemy tracking: enemyData[guid] = { name, damageTaken, damageSpells, damageSources }
+local enemyData = {}
+
+-- Pet tracking: petOwners[petGUID] = ownerGUID
+local petOwners = {}
+
+-- Active shields tracking: shields[targetGUID][spellId] = { amount, applied, lastUpdate }
+local activeShields = {}
+
+-- Healing taken tracking: healingTaken[targetGUID][sourceGUID] = amount
+local healingTaken = {}
+
 -- Segments (fight history)
 local segments = {}
 local activeSegment = nil -- nil or 0 = current fight, >0 = segment index
 
--- Death recap
+-- Death recap (ENHANCED)
 local deathLog = {}
-local MAX_DEATH_LOG = 10
+local MAX_DEATH_LOG = 15
+
+-- Add death log entry with enhanced details
+local function AddDeathLogEntry(targetGUID, eventType, data)
+    if not targetGUID then return end
+    
+    local targetData = GetPlayerData(targetGUID)
+    if not targetData or not targetData.deathLog then return end
+    
+    local timestamp = GetTime() - combatStartTime
+    local health = 0
+    local healthMax = 0
+    
+    -- Try to get health info
+    local unit = nil
+    if UnitGUID("player") == targetGUID then
+        unit = "player"
+    else
+        for i = 1, 4 do
+            if UnitGUID("party"..i) == targetGUID then
+                unit = "party"..i
+                break
+            end
+        end
+        if not unit then
+            for i = 1, 40 do
+                if UnitGUID("raid"..i) == targetGUID then
+                    unit = "raid"..i
+                    break
+                end
+            end
+        end
+    end
+    
+    if unit and UnitExists(unit) then
+        health = UnitHealth(unit)
+        healthMax = UnitHealthMax(unit)
+    end
+    
+    local entry = {
+        timestamp = timestamp,
+        eventType = eventType,  -- "damage", "heal", "buff", "debuff", "death"
+        health = health,
+        healthMax = healthMax,
+        healthPct = healthMax > 0 and (health / healthMax * 100) or 0,
+    }
+    
+    -- Copy event-specific data
+    for k, v in pairs(data or {}) do
+        entry[k] = v
+    end
+    
+    table.insert(targetData.deathLog, 1, entry)
+    
+    -- Trim old entries
+    while #targetData.deathLog > MAX_DEATH_LOG do
+        table.remove(targetData.deathLog)
+    end
+end
 
 -- Miss types mapping
 local MISS_TYPES = {
@@ -172,6 +280,70 @@ local POWER_TYPE_FOCUS = 2
 local POWER_TYPE_ENERGY = 3
 local POWER_TYPE_RUNIC = 6
 
+-- ============================================================
+-- FILTERING SYSTEM (Skada-style)
+-- ============================================================
+
+-- Ignored spells (don't count for damage/healing)
+local IGNORED_DAMAGE_SPELLS = {
+    [55711] = true,  -- Heart of the Crusader
+    [28059] = true,  -- Positive Charge
+    [28084] = true,  -- Negative Charge
+    [52212] = true,  -- Death and Decay (friendly fire)
+}
+
+local IGNORED_HEALING_SPELLS = {
+    [15290] = true,  -- Vampiric Embrace
+    [20267] = true,  -- Judgment of Light
+    [23881] = true,  -- Bloodthirst
+    [50475] = true,  -- Blood Presence
+    [52042] = true,  -- Healing Stream Totem
+}
+
+local IGNORED_ABSORB_SPELLS = {}
+
+-- Passive spells (excluded from activity time calculations)
+local PASSIVE_SPELLS = {
+    [54149] = true,  -- Infusion
+    [61257] = true,  -- Idol of the Ravenous Beast
+    [34074] = true,  -- Aspect of the Viper
+}
+
+-- Ignored creatures (training dummies, etc.)
+local IGNORED_CREATURES = {
+    [31144] = true,  -- Trainee
+    [31146] = true,  -- Raider's Training Dummy
+    [32666] = true,  -- Argent Lightwell
+    [32667] = true,  -- Argent Priest
+    [46647] = true,  -- Effigy of the Frigid Air
+}
+
+-- Important targets for "Useful Damage" tracking
+local IMPORTANT_TARGETS = {
+    -- ICC
+    [36899] = "Oozes",        -- Volatile Ooze
+    [37697] = "Oozes",        -- Little Ooze
+    [36627] = "Valkyrs",      -- Valkyr Shadowguard
+    [37970] = "Princes",      -- Prince Valanar
+    [37972] = "Princes",      -- Prince Taldaram
+    [37973] = "Princes",      -- Prince Keleseth
+    [39863] = "Boss",         -- Halion
+    [40142] = "Halion",       -- Halion (Twilight)
+    -- Ulduar
+    [33432] = "Adds",         -- Leviathan Turret
+    [33572] = "Adds",         -- Mechanolift
+}
+
+-- Environmental damage types
+local ENVIRONMENTAL_DAMAGE = {
+    FALLING = "Falling",
+    DROWNING = "Drowning",
+    FATIGUE = "Fatigue",
+    FIRE = "Fire",
+    LAVA = "Lava",
+    SLIME = "Slime",
+}
+
 -- Combat Log Flags (Safety fallbacks)
 local COMBATLOG_OBJECT_AFFILIATION_MINE = COMBATLOG_OBJECT_AFFILIATION_MINE or 0x00000001
 local COMBATLOG_OBJECT_AFFILIATION_PARTY = COMBATLOG_OBJECT_AFFILIATION_PARTY or 0x00000002
@@ -192,6 +364,53 @@ local CONSUMABLE_SPELLS = {
     [23468] = "healthstone",  -- Master Healthstone
     [43523] = "healthstone",  -- Conjured Mana Biscuit
 }
+
+-- ============================================================
+-- ABSORB SHIELD MECHANICS (Skada-style)
+-- ============================================================
+
+-- Known absorb spells with calculations
+local ABSORB_SPELLS = {
+    -- Priest
+    [17] = {name = "Power Word: Shield", school = 0x02},
+    [47753] = {name = "Divine Aegis", school = 0x02},
+    -- Paladin
+    [58597] = {name = "Sacred Shield", school = 0x02},
+    -- Death Knight
+    [48707] = {name = "Anti-Magic Shell", school = 0x02},
+    [51052] = {name = "Anti-Magic Zone", school = 0x02},
+    -- Mage
+    [11426] = {name = "Ice Barrier", school = 0x10},
+    [43039] = {name = "Ice Barrier", school = 0x10},
+    -- Warlock
+    [7812] = {name = "Sacrifice", school = 0x02},
+    [25228] = {name = "Soul Link", school = 0x02},
+    -- Druid
+    [62606] = {name = "Savage Defense", school = 0x01},
+    -- Items
+    [23506] = {name = "Aura of Protection", school = 0x02},
+    [21956] = {name = "Mark of Resolution", school = 0x02},
+}
+
+-- Passive shields
+local PASSIVE_SHIELDS = {
+    [31230] = true,  -- Cheat Death
+    [49497] = true,  -- Spell Deflection
+    [52286] = true,  -- Will of the Necropolis
+    [66233] = true,  -- Ardent Defender
+}
+
+-- Zone modifiers for absorb calculations
+local zoneModifier = 1
+local function UpdateZoneModifier()
+    if UnitInBattleground("player") then
+        zoneModifier = 1.17  -- BG buff
+    elseif IsActiveBattlefieldArena() then
+        zoneModifier = 0.9   -- Arena nerf
+    else
+        zoneModifier = 1
+    end
+end
 
 -- Class colors
 local CLASS_COLORS = RAID_CLASS_COLORS or {
@@ -367,20 +586,39 @@ local function GetPlayerData(guid, name, flags)
             damage = 0,
             overkill = 0,
             totalDamage = 0,  -- damage + absorbed
+            usefulDamage = 0,  -- damage on important targets
             -- Healing tracking
             healing = 0,
             overhealing = 0,
             totalHealing = 0,
+            healingBySpell = {},  -- [spellId] = {amount, overheal, hits}
+            healingTakenFrom = {},  -- [sourceGUID] = amount
             -- Defense tracking
             damageTaken = 0,
+            damageTakenBySpell = {},  -- [spellId] = {amount, hits}
+            damageTakenFrom = {},  -- [sourceGUID] = amount
             absorbs = 0,
+            absorbsBySpell = {},  -- [spellId] = amount
+            -- Avoidance & Mitigation
+            dodges = 0,
+            parries = 0,
+            misses = 0,
+            blocks = 0,
+            resists = 0,
+            blockAmount = 0,  -- total damage blocked
+            resistAmount = 0,  -- total damage resisted
+            absorbedAmount = 0,  -- total damage absorbed
+            avoidance = 0,  -- total avoided hits
             -- Combat events
             deaths = 0,
             killingBlows = 0,
             interrupts = 0,
             dispels = 0,
             ccDone = 0,
+            ccTaken = 0,
+            ccBreaks = 0,  -- breaking CC on others
             resurrects = 0,
+            casts = 0,
             -- Activity tracking
             activeTime = 0,
             lastActive = 0,
@@ -389,22 +627,23 @@ local function GetPlayerData(guid, name, flags)
             rageGain = 0,
             runicGain = 0,
             energyGain = 0,
-            -- Miss types
-            dodges = 0,
-            parries = 0,
-            misses = 0,
-            blocks = 0,
-            resists = 0,
             -- Friendly fire
             friendlyDamage = 0,
             -- Item usage
             potionsUsed = 0,
             healthstonesUsed = 0,
+            -- Pet damage
+            petDamage = 0,
+            petHealing = 0,
+            pets = {},  -- [petGUID] = {name, damage, healing}
             -- Spell breakdown: spells[spellId] = { name, damage, healing, hits, crits, min, max, etc }
             spells = {},
             -- CC spells used
             ccSpells = {},
-            -- Death log entries
+            -- Buffs/Debuffs applied
+            buffsApplied = {},  -- [spellId] = count
+            debuffsApplied = {},  -- [spellId] = count
+            -- Death log entries (ENHANCED)
             deathLog = {},
         }
     end
@@ -415,8 +654,98 @@ end
 local function ResetPlayerData()
     wipe(playerData)
     wipe(deathLog)
+    wipe(buffData)
+    wipe(debuffData)
+    wipe(enemyData)
+    wipe(petOwners)
+    wipe(activeShields)
+    wipe(healingTaken)
     combatStartTime = GetTime()
     combatEndTime = 0
+    UpdateZoneModifier()
+end
+
+-- ============================================================
+-- Buff/Debuff Tracking Functions
+-- ============================================================
+
+local function TrackBuff(targetGUID, spellId, spellName, auraType)
+    if not targetGUID or not spellId then return end
+    
+    local dataTable = (auraType == "BUFF") and buffData or debuffData
+    
+    if not dataTable[targetGUID] then
+        dataTable[targetGUID] = {}
+    end
+    
+    if not dataTable[targetGUID][spellId] then
+        dataTable[targetGUID][spellId] = {
+            name = spellName,
+            applications = 0,
+            uptime = 0,
+            lastApplied = 0,
+        }
+    end
+    
+    local buff = dataTable[targetGUID][spellId]
+    buff.applications = buff.applications + 1
+    buff.lastApplied = GetTime()
+end
+
+local function RemoveBuff(targetGUID, spellId, auraType)
+    if not targetGUID or not spellId then return end
+    
+    local dataTable = (auraType == "BUFF") and buffData or debuffData
+    
+    if dataTable[targetGUID] and dataTable[targetGUID][spellId] then
+        local buff = dataTable[targetGUID][spellId]
+        if buff.lastApplied > 0 then
+            buff.uptime = buff.uptime + (GetTime() - buff.lastApplied)
+            buff.lastApplied = 0
+        end
+    end
+end
+
+-- ============================================================
+-- Enemy Tracking Functions
+-- ============================================================
+
+local function GetEnemyData(guid, name)
+    if not guid then return nil end
+    
+    if not enemyData[guid] then
+        -- Extract creature ID from GUID
+        local creatureId = tonumber(guid:match("-(%d+)-%x+$"))
+        
+        enemyData[guid] = {
+            name = name or "Unknown",
+            creatureId = creatureId,
+            damageTaken = 0,
+            usefulDamage = 0,  -- if this is an important target
+            damageSpells = {},  -- [spellId] = {damage, hits}
+            damageSources = {},  -- [sourceGUID] = damage
+            healingDone = 0,
+            healingSpells = {},
+            isImportant = IMPORTANT_TARGETS[creatureId] ~= nil,
+            importantType = IMPORTANT_TARGETS[creatureId],
+        }
+    end
+    
+    return enemyData[guid]
+end
+
+-- ============================================================
+-- Pet Tracking Functions
+-- ============================================================
+
+local function RegisterPet(petGUID, ownerGUID)
+    if petGUID and ownerGUID then
+        petOwners[petGUID] = ownerGUID
+    end
+end
+
+local function GetPetOwner(petGUID)
+    return petOwners[petGUID]
 end
 
 local function SaveSegment()
@@ -2312,6 +2641,78 @@ function CombatLog.CreateSettings(parent)
 
     RefreshTotalsBtn()
     yOffset = yOffset - 45
+    
+    -- Enhanced Tracking Section
+    local trackingHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    trackingHeader:SetPoint("TOPLEFT", 16, yOffset)
+    trackingHeader:SetText("Enhanced Tracking (Skada-level)")
+    yOffset = yOffset - 25
+    
+    local avoidanceCb = addon:CreateCheckbox(parent)
+    avoidanceCb:SetPoint("TOPLEFT", 16, yOffset)
+    avoidanceCb.Text:SetText("Track avoidance & mitigation (dodge/parry/block/resist/absorb)")
+    avoidanceCb:SetChecked(settings.trackAvoidance ~= false and settings.trackMitigation ~= false)
+    avoidanceCb:SetScript("OnClick", function(self)
+        local checked = self:GetChecked()
+        addon:SetSetting("combatLog.trackAvoidance", checked)
+        addon:SetSetting("combatLog.trackMitigation", checked)
+    end)
+    yOffset = yOffset - 25
+    
+    local enemyCb = addon:CreateCheckbox(parent)
+    enemyCb:SetPoint("TOPLEFT", 16, yOffset)
+    enemyCb.Text:SetText("Track enemy damage/healing (boss mechanics)")
+    enemyCb:SetChecked(settings.trackEnemies ~= false)
+    enemyCb:SetScript("OnClick", function(self)
+        local checked = self:GetChecked()
+        addon:SetSetting("combatLog.trackEnemies", checked)
+        addon:SetSetting("combatLog.trackEnemyHealing", checked)
+    end)
+    yOffset = yOffset - 25
+    
+    local petCb = addon:CreateCheckbox(parent)
+    petCb:SetPoint("TOPLEFT", 16, yOffset)
+    petCb.Text:SetText("Track pet damage/healing separately")
+    petCb:SetChecked(settings.trackPetDamage ~= false)
+    petCb:SetScript("OnClick", function(self)
+        local checked = self:GetChecked()
+        addon:SetSetting("combatLog.trackPetDamage", checked)
+        addon:SetSetting("combatLog.trackPetHealing", checked)
+    end)
+    yOffset = yOffset - 25
+    
+    local buffCb = addon:CreateCheckbox(parent)
+    buffCb:SetPoint("TOPLEFT", 16, yOffset)
+    buffCb.Text:SetText("Track buff/debuff uptime & applications")
+    buffCb:SetChecked(settings.trackBuffs ~= false and settings.trackDebuffs ~= false)
+    buffCb:SetScript("OnClick", function(self)
+        local checked = self:GetChecked()
+        addon:SetSetting("combatLog.trackBuffs", checked)
+        addon:SetSetting("combatLog.trackDebuffs", checked)
+        addon:SetSetting("combatLog.trackBuffUptime", checked)
+    end)
+    yOffset = yOffset - 25
+    
+    local healingDetailsCb = addon:CreateCheckbox(parent)
+    healingDetailsCb:SetPoint("TOPLEFT", 16, yOffset)
+    healingDetailsCb.Text:SetText("Detailed healing tracking (by spell, source, overheal)")
+    healingDetailsCb:SetChecked(settings.trackHealingBySpell ~= false)
+    healingDetailsCb:SetScript("OnClick", function(self)
+        local checked = self:GetChecked()
+        addon:SetSetting("combatLog.trackHealingBySpell", checked)
+        addon:SetSetting("combatLog.trackHealingTaken", checked)
+        addon:SetSetting("combatLog.trackOverhealing", checked)
+    end)
+    yOffset = yOffset - 25
+    
+    local schoolCb = addon:CreateCheckbox(parent)
+    schoolCb:SetPoint("TOPLEFT", 16, yOffset)
+    schoolCb.Text:SetText("Show school colors in tooltips (Physical/Fire/Frost/etc)")
+    schoolCb:SetChecked(settings.showSchoolColors ~= false)
+    schoolCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.showSchoolColors", self:GetChecked())
+    end)
+    yOffset = yOffset - 35
     
     -- Death Recap Section
     local deathHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")

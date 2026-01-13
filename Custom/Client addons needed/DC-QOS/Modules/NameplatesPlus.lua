@@ -108,6 +108,12 @@ local NameplatesPlus = {
             -- NPC Icons
             npcIcons = true,
             npcIconSize = 24,
+            
+            -- Elite/Rare Icons
+            eliteIcons = true,
+            
+            -- Faction Icons
+            factionIcons = true,
         },
     },
 }
@@ -132,6 +138,9 @@ local hookedPlates = {}
 local updateFrame = nil
 local playerGUID = nil
 local npcRoleCache = {} -- Name -> Role (Vendor, Innkeeper, etc)
+local groupGUIDCache = {} -- GUID -> unitID for group members (threat tracking)
+local auraCache = {} -- GUID -> {auras table, timestamp} for aura throttling
+local AURA_CACHE_DURATION = 0.2 -- Cache auras for 200ms to reduce scanning
 
 local function SafeGetCVar(name)
     if type(GetCVar) ~= "function" then
@@ -200,6 +209,15 @@ local function GetNPCRole(unit)
     return nil
 end
 
+-- Elite/Rare Icon Textures
+local ELITE_TEXTURE = "Interface\\Targets\\UI-TargetingFrame-Elite"
+local RARE_TEXTURE = "Interface\\Targets\\UI-TargetingFrame-Rare"
+local RARE_ELITE_TEXTURE = "Interface\\Targets\\UI-TargetingFrame-Rare-Elite"
+
+-- Faction Icon Textures
+local FACTION_ALLIANCE = "Interface\\TargetingFrame\\UI-PVP-Alliance"
+local FACTION_HORDE = "Interface\\TargetingFrame\\UI-PVP-Horde"
+
 -- Class colors reference
 local CLASS_COLORS = RAID_CLASS_COLORS or {
     ["WARRIOR"]     = { r = 0.78, g = 0.61, b = 0.43 },
@@ -229,6 +247,38 @@ local THREAT_COLORS = {
         danger  = { r = 1.0, g = 0.0, b = 0.0 },  -- Red: lost aggro!
     },
 }
+
+-- GROUP MEMBER GUID CACHING FIX: Cache group member GUIDs for threat tracking
+local function UpdateGroupGUIDs()
+    -- Clear old cache
+    for k in pairs(groupGUIDCache) do
+        groupGUIDCache[k] = nil
+    end
+    
+    -- Cache player
+    local pGUID = UnitGUID("player")
+    if pGUID then
+        groupGUIDCache[pGUID] = "player"
+    end
+    
+    -- Cache party
+    for i = 1, 4 do
+        local unitId = "party" .. i
+        local guid = UnitGUID(unitId)
+        if guid then
+            groupGUIDCache[guid] = unitId
+        end
+    end
+    
+    -- Cache raid
+    for i = 1, 40 do
+        local unitId = "raid" .. i
+        local guid = UnitGUID(unitId)
+        if guid then
+            groupGUIDCache[guid] = unitId
+        end
+    end
+end
 
 -- Automatic Threat Mode Detection
 local function GetAutomaticThreatMode()
@@ -362,6 +412,30 @@ local function CreateTargetNeon(frame, healthBar)
     return neon
 end
 
+local function CreateEliteIcon(frame, healthBar)
+    if frame.dcEliteIcon then return frame.dcEliteIcon end
+    
+    local icon = frame:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(24, 24)
+    icon:SetPoint("LEFT", healthBar, "RIGHT", 4, 0)
+    icon:Hide()
+    
+    frame.dcEliteIcon = icon
+    return icon
+end
+
+local function CreateFactionIcon(frame, healthBar)
+    if frame.dcFactionIcon then return frame.dcFactionIcon end
+    
+    local icon = frame:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(20, 20)
+    icon:SetPoint("RIGHT", healthBar, "LEFT", -4, 0)
+    icon:Hide()
+    
+    frame.dcFactionIcon = icon
+    return icon
+end
+
 local function CreateNPCIcons(frame, healthBar)
     if frame.dcNPCIcons then return frame.dcNPCIcons end
     
@@ -459,16 +533,27 @@ local function FormatNumber(currentValue)
     return tostring(currentValue)
 end
 
-local function UpdateHealthPercent(healthBar, settings)
+local function UpdateHealthPercent(healthBar, settings, forceUpdate)
     if not settings.showHealthPercent then
         if healthBar.dcHealthPercent then healthBar.dcHealthPercent:Hide() end
         return
     end
     
+    -- HEALTHBAR VALIDATION FIX: Ensure healthBar exists before accessing methods
+    if not healthBar or not healthBar.GetMinMaxValues then return end
+    
     local min, max = healthBar:GetMinMaxValues()
     local cur = healthBar:GetValue()
     
-    if max <= 0 then return end
+    -- If max is 0, the unit data isn't available yet - mark for delayed update
+    if max <= 0 then
+        if not forceUpdate then
+            healthBar.dcHealthPending = true
+        end
+        return
+    end
+    
+    healthBar.dcHealthPending = nil
     
     local percent = (cur / max) * 100
     local text = healthBar.dcHealthPercent or CreateHealthPercentText(healthBar)
@@ -643,6 +728,73 @@ local function UpdateThreat(frame, unit, settings)
     end
 end
     
+local function UpdateEliteIcon(frame, unit, settings)
+    if not settings.eliteIcons then
+        if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
+        return
+    end
+    
+    if not unit or not UnitExists(unit) then
+        if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
+        return
+    end
+    
+    -- Don't show elite icon on players
+    if UnitIsPlayer(unit) then
+        if frame.dcEliteIcon then frame.dcEliteIcon:Hide() end
+        return
+    end
+    
+    local classification = UnitClassification(unit)
+    local icon = frame.dcEliteIcon or CreateEliteIcon(frame, frame.dcHealthBar)
+    
+    if classification == "worldboss" or classification == "elite" then
+        icon:SetTexture(ELITE_TEXTURE)
+        icon:Show()
+    elseif classification == "rare" then
+        icon:SetTexture(RARE_TEXTURE)
+        icon:Show()
+    elseif classification == "rareelite" then
+        icon:SetTexture(RARE_ELITE_TEXTURE)
+        icon:Show()
+    else
+        icon:Hide()
+    end
+end
+
+local function UpdateFactionIcon(frame, unit, settings)
+    if not settings.factionIcons then
+        if frame.dcFactionIcon then frame.dcFactionIcon:Hide() end
+        return
+    end
+    
+    if not unit or not UnitExists(unit) then
+        if frame.dcFactionIcon then frame.dcFactionIcon:Hide() end
+        return
+    end
+    
+    -- Only show faction icons on players
+    if not UnitIsPlayer(unit) then
+        if frame.dcFactionIcon then frame.dcFactionIcon:Hide() end
+        return
+    end
+    
+    local faction = UnitFactionGroup(unit)
+    local icon = frame.dcFactionIcon or CreateFactionIcon(frame, frame.dcHealthBar)
+    
+    if faction == "Alliance" then
+        icon:SetTexture(FACTION_ALLIANCE)
+        icon:SetTexCoord(0, 1, 0, 1)
+        icon:Show()
+    elseif faction == "Horde" then
+        icon:SetTexture(FACTION_HORDE)
+        icon:SetTexCoord(0, 1, 0, 1)
+        icon:Show()
+    else
+        icon:Hide()
+    end
+end
+
 local function UpdateNPCIcons(frame, unit, settings)
     if not settings.npcIcons then 
         if frame.dcNPCIcons then frame.dcNPCIcons:Hide() end
@@ -747,6 +899,53 @@ local function UpdateDebuffs(frame, unit, settings)
     local debuffFrame = frame.dcDebuffFrame or CreateDebuffFrame(frame, frame.dcHealthBar)
     if not debuffFrame then return end
     
+    -- AURA CACHING OPTIMIZATION: Check cache first to reduce UnitDebuff calls
+    local guid = UnitGUID(unit)
+    local currentTime = GetTime()
+    local cachedData = guid and auraCache[guid]
+    
+    if cachedData and (currentTime - cachedData.timestamp) < AURA_CACHE_DURATION then
+        -- Use cached aura data
+        local auras = cachedData.auras
+        local debuffIndex = 1
+        for i, aura in ipairs(auras) do
+            if debuffIndex > settings.maxDebuffs then break end
+            
+            local iconFrame = debuffFrame.icons[debuffIndex]
+            if iconFrame then
+                iconFrame.texture:SetTexture(aura.icon)
+                
+                if aura.count and aura.count > 1 then
+                    iconFrame.count:SetText(aura.count)
+                    iconFrame.count:Show()
+                else
+                    iconFrame.count:Hide()
+                end
+                
+                if aura.duration and aura.duration > 0 and aura.expirationTime then
+                    iconFrame.cooldown:SetCooldown(aura.expirationTime - aura.duration, aura.duration)
+                    iconFrame.cooldown:Show()
+                else
+                    iconFrame.cooldown:Hide()
+                end
+                
+                iconFrame:Show()
+                debuffIndex = debuffIndex + 1
+            end
+        end
+        
+        -- Hide unused icons
+        for i = debuffIndex, settings.maxDebuffs do
+            if debuffFrame.icons[i] then
+                debuffFrame.icons[i]:Hide()
+            end
+        end
+        
+        debuffFrame:Show()
+        return
+    end
+    
+    -- Cache miss or expired - scan auras
     local auraFilter = settings.auraFilter or {}
     local filterEnabled = auraFilter.enabled
     
@@ -797,14 +996,37 @@ local function UpdateDebuffs(frame, unit, settings)
             end
         end
         
-        -- Check priority (return priority value for sorting)
+        -- ENHANCED PRIORITY SYSTEM: CC effects get highest priority
         local priority = 0
+        
+        -- Check user-defined priority list first
         if auraFilter.priority then
             for i, priorityAura in ipairs(auraFilter.priority) do
                 if auraName == priorityAura then
-                    priority = 100 - i  -- Higher priority = lower index
+                    priority = 1000 - i  -- User priority gets very high value
                     break
                 end
+            end
+        end
+        
+        -- If not in user priority, check CC/important debuff types
+        if priority == 0 then
+            -- Stuns, Fears, Polymorphs = highest priority
+            if auraName:match("Stun") or auraName:match("Fear") or auraName:match("Polymorph") or
+               auraName:match("Cyclone") or auraName:match("Hex") or auraName:match("Sap") or
+               auraName:match("Blind") or auraName:match("Banish") or auraName:match("Shackle") then
+                priority = 500
+            -- Roots, Slows = medium priority
+            elseif auraName:match("Root") or auraName:match("Freeze") or auraName:match("Slow") then
+                priority = 300
+            -- Silences, Interrupts = medium-high priority
+            elseif auraName:match("Silence") or auraName:match("Interrupt") then
+                priority = 400
+            -- DoTs = low priority
+            elseif duration and duration > 10 then
+                priority = 100
+            else
+                priority = 50
             end
         end
         
@@ -836,6 +1058,14 @@ local function UpdateDebuffs(frame, unit, settings)
     
     -- Sort by priority (highest first)
     table.sort(auras, function(a, b) return a.priority > b.priority end)
+    
+    -- AURA CACHING: Store sorted results for performance
+    if guid then
+        auraCache[guid] = {
+            auras = auras,
+            timestamp = currentTime
+        }
+    end
     
     -- Display auras
     local debuffIndex = 1
@@ -977,6 +1207,8 @@ local function HookNameplate(frame)
     end
     
     if healthBar then
+        CreateEliteIcon(frame, healthBar)
+        CreateFactionIcon(frame, healthBar)
         CreateNPCIcons(frame, healthBar)
     end
     
@@ -1051,13 +1283,34 @@ local function OnUpdate(self, elapsed)
             if frame:IsShown() then
                 local unit = GetPlateUnit(frame)
                 
+                -- Update pending health displays (unit data loaded late)
+                local healthBar = frame.dcHealthBar
+                if healthBar and healthBar.dcHealthPending then
+                    UpdateHealthPercent(healthBar, settings, true)
+                end
+                
                 UpdateTargetHighlight(frame, settings)
+                
+                -- MOUSEOVER NAMETEXT HIGHLIGHT FIX: Brighten nametext on mouseover
+                if frame.dcNameText then
+                    local isMouseOver = frame:IsMouseOver()
+                    if isMouseOver and not frame.dcNameTextOriginalColor then
+                        local r, g, b, a = frame.dcNameText:GetTextColor()
+                        frame.dcNameTextOriginalColor = {r, g, b, a}
+                        frame.dcNameText:SetTextColor(1, 1, 0.6, 1)  -- Bright yellow on hover
+                    elseif not isMouseOver and frame.dcNameTextOriginalColor then
+                        frame.dcNameText:SetTextColor(unpack(frame.dcNameTextOriginalColor))
+                        frame.dcNameTextOriginalColor = nil
+                    end
+                end
                 
                 if unit then
                     UpdateHealthBarColor(frame, frame.dcHealthBar, unit, settings)
                     UpdateThreat(frame, unit, settings)
                     UpdateCastBar(frame, frame.dcCastBar, unit, settings)
                     UpdateDebuffs(frame, unit, settings)
+                    UpdateEliteIcon(frame, unit, settings)
+                    UpdateFactionIcon(frame, unit, settings)
                     UpdateNPCIcons(frame, unit, settings)
                     -- Ensure health text is always correct (fixes "missing values" bug)
                     UpdateHealthPercent(frame.dcHealthBar, settings)
@@ -1072,7 +1325,10 @@ end
 -- ============================================================
 function NameplatesPlus.OnInitialize()
     addon:Debug("NameplatesPlus module initializing")
-    playerGUID = UnitGUID("player")
+    -- NIL-SAFETY FIX: Prevent errors if UnitGUID returns nil early
+    if UnitGUID("player") then
+        playerGUID = UnitGUID("player")
+    end
     
     -- Force nameplate scale CVar to 1 to prevent "jumping"
     if SafeGetCVar("nameplateSelectedScale") ~= nil then
@@ -1098,8 +1354,20 @@ function NameplatesPlus.OnEnable()
     if not updateFrame then
         updateFrame = CreateFrame("Frame", "DCQoS_NameplatesFrame", UIParent)
         updateFrame:SetScript("OnUpdate", OnUpdate)
+        
+        -- GROUP MEMBER GUID TRACKING: Register for roster updates
+        updateFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+        updateFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+        updateFrame:SetScript("OnEvent", function(self, event)
+            if event == "PARTY_MEMBERS_CHANGED" or event == "RAID_ROSTER_UPDATE" then
+                UpdateGroupGUIDs()
+            end
+        end)
     end
     updateFrame:Show()
+    
+    -- Initial group GUID cache
+    UpdateGroupGUIDs()
     
     ScanWorldFrame()
     
@@ -1145,6 +1413,11 @@ end
 
 function NameplatesPlus.OnDisable()
     addon:Debug("NameplatesPlus module disabling")
+    
+    -- Clear aura cache
+    for k in pairs(auraCache) do
+        auraCache[k] = nil
+    end
     
     if updateFrame then
         updateFrame:Hide()
@@ -1314,6 +1587,30 @@ function NameplatesPlus.CreateSettings(parent)
     end)
     yOffset = yOffset - 35
 
+    -- Icons Section
+    local iconsHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    iconsHeader:SetPoint("TOPLEFT", 16, yOffset)
+    iconsHeader:SetText("Icons")
+    yOffset = yOffset - 25
+    
+    local eliteCb = addon:CreateCheckbox(parent)
+    eliteCb:SetPoint("TOPLEFT", 16, yOffset)
+    eliteCb.Text:SetText("Show elite/rare dragon icons")
+    eliteCb:SetChecked(settings.eliteIcons)
+    eliteCb:SetScript("OnClick", function(self)
+        addon:SetSetting("nameplatesPlus.eliteIcons", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+    
+    local factionCb = addon:CreateCheckbox(parent)
+    factionCb:SetPoint("TOPLEFT", 16, yOffset)
+    factionCb.Text:SetText("Show faction icons (Alliance/Horde)")
+    factionCb:SetChecked(settings.factionIcons)
+    factionCb:SetScript("OnClick", function(self)
+        addon:SetSetting("nameplatesPlus.factionIcons", self:GetChecked())
+    end)
+    yOffset = yOffset - 35
+    
     -- Visuals Section
     local visualHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     visualHeader:SetPoint("TOPLEFT", 16, yOffset)

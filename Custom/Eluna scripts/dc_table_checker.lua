@@ -5,7 +5,7 @@
     and reports any missing tables. The server will continue to start,
     but features with missing tables will be disabled.
     
-    Updated: 2026-01-07 (synced with world/acore_chars schema dumps)
+    Updated: 2026-01-13 (synced with world/acore_chars schema dumps)
     
     This script now strictly reflects the tables present in:
     - Custom/Custom feature SQLs/world schema.sql
@@ -23,29 +23,30 @@ local DC_TABLE_CHECKER = {
     
     -- Table definitions: {schema, table_name, feature, critical}
     REQUIRED_TABLES = {
-        -- ============================================================
-        -- CHARACTER DATABASE (acore_chars)
-        -- ============================================================
-        
-        -- Achievements
+        {"acore_chars", "dc_account_outfits", "Collection System", false},
+        {"acore_chars", "dc_account_transmog_cache", "Collection System", false},
         {"acore_chars", "dc_achievement_definitions", "Achievements", false},
-        {"acore_chars", "dc_player_achievements", "Achievements", false},
-        {"acore_chars", "dc_server_firsts", "Achievements", false},
-        
-        -- AoE Loot
+        {"acore_chars", "dc_addon_protocol_daily", "Protocol Logging", false},
+        {"acore_chars", "dc_addon_protocol_errors", "Protocol Logging", false},
+        {"acore_chars", "dc_addon_protocol_log", "Protocol Logging", false},
+        {"acore_chars", "dc_addon_protocol_stats", "Protocol Logging", false},
         {"acore_chars", "dc_aoeloot_accumulated", "AoE Loot", false},
         {"acore_chars", "dc_aoeloot_detailed_stats", "AoE Loot", true},
         {"acore_chars", "dc_aoeloot_preferences", "AoE Loot", true},
-
-        -- Artifacts
         {"acore_chars", "dc_artifact_mastery_events", "Artifacts", false},
-        {"acore_chars", "dc_player_artifact_discoveries", "Artifacts", false},
-        {"acore_chars", "dc_player_artifact_mastery", "Artifacts", true},
-
-        -- Collection System
-        {"acore_chars", "dc_account_outfits", "Collection System", false},
-        {"acore_chars", "dc_account_transmog_cache", "Collection System", false},
+        {"acore_chars", "dc_character_challenge_mode_log", "Challenge Mode", false},
+        {"acore_chars", "dc_character_challenge_mode_stats", "Challenge Mode", false},
+        {"acore_chars", "dc_character_challenge_modes", "Challenge Mode", true},
+        {"acore_chars", "dc_character_difficulty_completions", "Dungeon Progress", false},
+        {"acore_chars", "dc_character_difficulty_streaks", "Dungeon Progress", false},
+        {"acore_chars", "dc_character_dungeon_npc_respawn", "Dungeon Progress", false},
+        {"acore_chars", "dc_character_dungeon_progress", "Dungeon Progress", true},
+        {"acore_chars", "dc_character_dungeon_quests_completed", "Dungeon Progress", false},
+        {"acore_chars", "dc_character_dungeon_statistics", "Dungeon Stats", false},
         {"acore_chars", "dc_character_outfits", "Collection System", true},
+        {"acore_chars", "dc_character_prestige", "Prestige", true},
+        {"acore_chars", "dc_character_prestige_log", "Prestige", false},
+        {"acore_chars", "dc_character_prestige_stats", "Prestige", false},
         {"acore_chars", "dc_character_transmog", "Collection System", false},
         {"acore_chars", "dc_collection_achievements", "Collection System", false},
         {"acore_chars", "dc_collection_community_favorites", "Collection System", false},
@@ -57,59 +58,30 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_collection_shop_purchases", "Collection System", false},
         {"acore_chars", "dc_collection_stats", "Collection System", false},
         {"acore_chars", "dc_collection_wishlist", "Collection System", false},
-        {"acore_chars", "dc_heirloom_collection", "Collection System", true},
-        {"acore_chars", "dc_mount_collection", "Collection System", true},
-        {"acore_chars", "dc_pet_collection", "Collection System", true},
-        {"acore_chars", "dc_title_collection", "Collection System", false},
-        {"acore_chars", "dc_toy_collection", "Collection System", true},
-        {"acore_chars", "dc_transmog_collection", "Collection System", true},
-
-        -- Cross-System
         {"acore_chars", "dc_cross_system_achievement_triggers", "Cross-System", false},
         {"acore_chars", "dc_cross_system_config", "Cross-System", true},
         {"acore_chars", "dc_cross_system_events", "Cross-System", false},
         {"acore_chars", "dc_cross_system_multipliers", "Cross-System", false},
-        {"acore_chars", "dc_player_cross_system_stats", "Cross-System", true},
-
-        -- Duel System
         {"acore_chars", "dc_duel_class_matchups", "Duel System", false},
         {"acore_chars", "dc_duel_history", "Duel System", false},
         {"acore_chars", "dc_duel_statistics", "Duel System", true},
-
-        -- Dungeon System
-        {"acore_chars", "dc_character_challenge_mode_log", "Challenge Mode", false},
-        {"acore_chars", "dc_character_challenge_mode_stats", "Challenge Mode", false},
-        {"acore_chars", "dc_character_challenge_modes", "Challenge Mode", true},
-        {"acore_chars", "dc_character_difficulty_completions", "Dungeon Progress", false},
-        {"acore_chars", "dc_character_difficulty_streaks", "Dungeon Progress", false},
-        {"acore_chars", "dc_character_dungeon_npc_respawn", "Dungeon Progress", false},
-        {"acore_chars", "dc_character_dungeon_progress", "Dungeon Progress", true},
-        {"acore_chars", "dc_character_dungeon_quests_completed", "Dungeon Progress", false},
-        {"acore_chars", "dc_character_dungeon_statistics", "Dungeon Stats", false},
         {"acore_chars", "dc_dungeon_instance_resets", "Dungeon System", false},
-        {"acore_chars", "dc_player_dungeon_completion_stats", "Dungeon Stats", false},
-
-        -- Group Finder
         {"acore_chars", "dc_group_finder_applications", "Group Finder", false},
         {"acore_chars", "dc_group_finder_event_signups", "Group Finder", false},
         {"acore_chars", "dc_group_finder_listings", "Group Finder", true},
         {"acore_chars", "dc_group_finder_rewards", "Group Finder", false},
         {"acore_chars", "dc_group_finder_scheduled_events", "Group Finder", false},
         {"acore_chars", "dc_group_finder_spectators", "Group Finder", false},
-
-        -- Guild Housing
         {"acore_chars", "dc_guild_house", "Guild Housing", true},
         {"acore_chars", "dc_guild_house_log", "Guild Housing", false},
         {"acore_chars", "dc_guild_house_permissions", "Guild Housing", true},
         {"acore_chars", "dc_guild_house_purchase_log", "Guild Housing", false},
-
-        -- Heirloom
+        {"acore_chars", "dc_guild_upgrade_stats", "Leaderboards", false},
+        {"acore_chars", "dc_heirloom_collection", "Collection System", true},
         {"acore_chars", "dc_heirloom_package_history", "Heirloom", false},
         {"acore_chars", "dc_heirloom_player_packages", "Heirloom", false},
         {"acore_chars", "dc_heirloom_upgrade_log", "Heirloom", false},
         {"acore_chars", "dc_heirloom_upgrades", "Heirloom", true},
-
-        -- HLBG System
         {"acore_chars", "dc_hlbg_match_history", "HLBG System", false},
         {"acore_chars", "dc_hlbg_match_participants", "HLBG System", true},
         {"acore_chars", "dc_hlbg_player_history", "HLBG System", false},
@@ -118,8 +90,6 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_hlbg_season_config", "HLBG System", true},
         {"acore_chars", "dc_hlbg_state", "HLBG System", true},
         {"acore_chars", "dc_hlbg_winner_history", "HLBG System", true},
-
-        -- Item Upgrade
         {"acore_chars", "dc_item_upgrade_costs", "Item Upgrade", false},
         {"acore_chars", "dc_item_upgrade_currency_exchange_log", "Item Upgrade", false},
         {"acore_chars", "dc_item_upgrade_log", "Item Upgrade", false},
@@ -130,31 +100,10 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_item_upgrade_synthesis_log", "Item Upgrade", false},
         {"acore_chars", "dc_item_upgrade_transmutation_sessions", "Item Upgrade", false},
         {"acore_chars", "dc_item_upgrades", "Item Upgrade", false},
-        {"acore_chars", "dc_player_item_upgrades", "Item Upgrade", true},
-        {"acore_chars", "dc_player_synthesis_cooldowns", "Item Upgrade", false},
-        {"acore_chars", "dc_player_tier_caps", "Item Upgrade", false},
-        {"acore_chars", "dc_player_tier_unlocks", "Item Upgrade", false},
-        {"acore_chars", "dc_player_transmutation_cooldowns", "Item Upgrade", false},
-        {"acore_chars", "dc_player_upgrade_summary", "Item Upgrade", false},
-        {"acore_chars", "dc_player_upgrade_tokens", "Item Upgrade", true},
-        {"acore_chars", "dc_recent_upgrades_feed", "Item Upgrade", false},
-        {"acore_chars", "dc_respec_history", "Item Upgrade", false},
-        {"acore_chars", "dc_respec_log", "Item Upgrade", false},
-        {"acore_chars", "dc_tier_conversion_log", "Item Upgrade", false},
-        {"acore_chars", "dc_top_upgraders", "Item Upgrade", false},
-        {"acore_chars", "dc_upgrade_history", "Item Upgrade", false},
-        {"acore_chars", "dc_upgrade_speed_stats", "Item Upgrade", false},
-
-        -- Leaderboards
-        {"acore_chars", "dc_guild_leaderboard", "Leaderboards", false},
-        {"acore_chars", "dc_guild_upgrade_stats", "Leaderboards", false},
         {"acore_chars", "dc_leaderboard_cache", "Leaderboards", false},
-
-        -- Migration
         {"acore_chars", "dc_migration_auth_unlocks", "Migration", false},
         {"acore_chars", "dc_migration_item_display", "Migration", false},
-
-        -- Mythic+
+        {"acore_chars", "dc_mount_collection", "Collection System", true},
         {"acore_chars", "dc_mplus_best_runs", "Mythic+", false},
         {"acore_chars", "dc_mplus_dungeons", "Mythic+", false},
         {"acore_chars", "dc_mplus_hud_cache", "Mythic+", false},
@@ -169,123 +118,82 @@ local DC_TABLE_CHECKER = {
         {"acore_chars", "dc_mplus_spec_settings", "Mythic Spectator", false},
         {"acore_chars", "dc_mythic_dungeon_stats", "Mythic+", false},
         {"acore_chars", "dc_mythic_weekly_best", "Mythic+", false},
-        {"acore_chars", "dc_player_keystones", "Mythic+", false},
-        {"acore_chars", "dc_spectator_settings", "Mythic Spectator", false},
-
-        -- Player/Quest System
-        {"acore_chars", "dc_player_daily_quest_progress", "Quest System", false},
-        {"acore_chars", "dc_player_weekly_cap_snapshot", "Quest System", false},
-        {"acore_chars", "dc_player_weekly_quest_progress", "Quest System", false},
-        {"acore_chars", "dc_player_weekly_rewards", "Weekly Vault", false},
-
-        -- Prestige
-        {"acore_chars", "dc_character_prestige", "Prestige", true},
-        {"acore_chars", "dc_character_prestige_log", "Prestige", false},
-        {"acore_chars", "dc_character_prestige_stats", "Prestige", false},
-        {"acore_chars", "dc_prestige_challenge_rewards", "Prestige", false},
-        {"acore_chars", "dc_prestige_challenges", "Prestige", false},
-        {"acore_chars", "dc_prestige_players", "Prestige", false},
-
-        -- Protocol/Addon Stats
-        {"acore_chars", "dc_addon_protocol_daily", "Protocol Logging", false},
-        {"acore_chars", "dc_addon_protocol_errors", "Protocol Logging", false},
-        {"acore_chars", "dc_addon_protocol_log", "Protocol Logging", false},
-        {"acore_chars", "dc_addon_protocol_stats", "Protocol Logging", false},
-
-        -- Season System
+        {"acore_chars", "dc_pet_collection", "Collection System", true},
+        {"acore_chars", "dc_player_achievements", "Achievements", false},
+        {"acore_chars", "dc_player_artifact_discoveries", "Artifacts", false},
+        {"acore_chars", "dc_player_artifact_mastery", "Artifacts", true},
         {"acore_chars", "dc_player_claimed_chests", "Season System", false},
+        {"acore_chars", "dc_player_cross_system_stats", "Cross-System", true},
+        {"acore_chars", "dc_player_daily_quest_progress", "Quest System", false},
+        {"acore_chars", "dc_player_dungeon_completion_stats", "Dungeon Stats", false},
+        {"acore_chars", "dc_player_item_upgrades", "Item Upgrade", true},
+        {"acore_chars", "dc_player_keystones", "Mythic+", false},
+        {"acore_chars", "dc_player_qos_settings", "QoS System", false},
         {"acore_chars", "dc_player_season_data", "Season System", true},
         {"acore_chars", "dc_player_seasonal_achievements", "Season System", false},
         {"acore_chars", "dc_player_seasonal_chests", "Season System", false},
         {"acore_chars", "dc_player_seasonal_stats", "Season System", false},
         {"acore_chars", "dc_player_seasonal_stats_history", "Season System", false},
+        {"acore_chars", "dc_player_seen_features", "Welcome System", false},
+        {"acore_chars", "dc_player_synthesis_cooldowns", "Item Upgrade", false},
+        {"acore_chars", "dc_player_tier_caps", "Item Upgrade", false},
+        {"acore_chars", "dc_player_tier_unlocks", "Item Upgrade", false},
+        {"acore_chars", "dc_player_transmutation_cooldowns", "Item Upgrade", false},
+        {"acore_chars", "dc_player_upgrade_tokens", "Item Upgrade", true},
+        {"acore_chars", "dc_player_weekly_cap_snapshot", "Quest System", false},
+        {"acore_chars", "dc_player_weekly_quest_progress", "Quest System", false},
+        {"acore_chars", "dc_player_weekly_rewards", "Weekly Vault", false},
+        {"acore_chars", "dc_player_welcome", "Welcome System", false},
+        {"acore_chars", "dc_prestige_challenge_rewards", "Prestige", false},
+        {"acore_chars", "dc_prestige_challenges", "Prestige", false},
+        {"acore_chars", "dc_prestige_players", "Prestige", false},
+        {"acore_chars", "dc_respec_history", "Item Upgrade", false},
+        {"acore_chars", "dc_respec_log", "Item Upgrade", false},
+        {"acore_chars", "dc_reward_transactions", "Vault/Rewards", false},
         {"acore_chars", "dc_season_history", "Season System", false},
         {"acore_chars", "dc_seasons", "Season System", true},
-
-        -- Token System
+        {"acore_chars", "dc_server_firsts", "Achievements", false},
+        {"acore_chars", "dc_spectator_settings", "Mythic Spectator", false},
+        {"acore_chars", "dc_tier_conversion_log", "Item Upgrade", false},
+        {"acore_chars", "dc_title_collection", "Collection System", false},
         {"acore_chars", "dc_token_event_config", "Token System", false},
         {"acore_chars", "dc_token_rewards_log", "Token System", false},
         {"acore_chars", "dc_token_transaction_log", "Token System", false},
-
-        -- Vault/Rewards
-        {"acore_chars", "dc_player_progression_summary", "Vault/Rewards", false},
-        {"acore_chars", "dc_reward_transactions", "Vault/Rewards", false},
+        {"acore_chars", "dc_toy_collection", "Collection System", true},
+        {"acore_chars", "dc_transmog_collection", "Collection System", true},
+        {"acore_chars", "dc_upgrade_history", "Item Upgrade", false},
         {"acore_chars", "dc_vault_reward_pool", "Vault/Rewards", false},
+        {"acore_chars", "dc_weekly_reset_state", "Weekly Vault", false},
         {"acore_chars", "dc_weekly_spending", "Vault/Rewards", false},
         {"acore_chars", "dc_weekly_vault", "Weekly Vault", true},
-
-        -- Welcome/QoS
-        {"acore_chars", "dc_player_qos_settings", "QoS System", false},
-        {"acore_chars", "dc_player_seen_features", "Welcome System", false},
-        {"acore_chars", "dc_player_welcome", "Welcome System", false},
         {"acore_chars", "dc_welcome_faq", "Welcome System", false},
         {"acore_chars", "dc_welcome_whats_new", "Welcome System", false},
-        
-        -- Views (optional, but good to check if they exist as tables/views)
-        {"acore_chars", "v_dc_addon_module_health", "Views", false},
-        {"acore_chars", "v_dc_addon_player_activity", "Views", false},
-        {"acore_chars", "v_dc_addon_recent_activity", "Views", false},
-        {"acore_chars", "v_dc_dungeon_leaderboard", "Views", false},
-        {"acore_chars", "v_dc_recent_events", "Views", false},
-
-
-        -- ============================================================
-        -- WORLD DATABASE (acore_world)
-        -- ============================================================
-        
-        -- AoE Loot Config
         {"acore_world", "dc_aoeloot_blacklist", "AoE Loot Config", false},
         {"acore_world", "dc_aoeloot_config", "AoE Loot Config", true},
         {"acore_world", "dc_aoeloot_smart_categories", "AoE Loot Config", false},
         {"acore_world", "dc_aoeloot_zone_modifiers", "AoE Loot Config", false},
-        
-        -- Artifacts
         {"acore_world", "dc_chaos_artifact_items", "Artifacts", false},
-        
-        -- Collection Config
         {"acore_world", "dc_collection_achievement_defs", "Collection System", false},
         {"acore_world", "dc_collection_definitions", "Collection System", true},
         {"acore_world", "dc_collection_shop", "Collection System", false},
-        {"acore_world", "dc_heirloom_definitions", "Collection System", true},
-        {"acore_world", "dc_mount_definitions", "Collection System", true},
-        {"acore_world", "dc_pet_definitions", "Collection System", true},
-        {"acore_world", "dc_toy_definitions", "Collection System", true},
-        
-        -- Custom Data
-        {"acore_world", "dc_item_custom_data", "Custom Data", false},
-        {"acore_world", "dc_spell_custom_data", "Custom Data", false},
-        
-        -- Difficulty System
+        {"acore_world", "dc_daily_quest_token_rewards", "Quest Rewards", false},
         {"acore_world", "dc_difficulty_config", "Difficulty System", true},
-        
-        -- Duel System
         {"acore_world", "dc_duel_tournament_npcs", "Duel System", false},
         {"acore_world", "dc_duel_zones", "Duel System", false},
-        
-        -- Dungeon System
         {"acore_world", "dc_dungeon_entrances", "Dungeon System", false},
         {"acore_world", "dc_dungeon_mythic_profile", "Dungeon System", true},
         {"acore_world", "dc_dungeon_npc_mapping", "Dungeon System", false},
         {"acore_world", "dc_dungeon_setup", "Dungeon System", false},
-        
-        -- Guild Housing
         {"acore_world", "dc_guild_house_locations", "Guild Housing", true},
         {"acore_world", "dc_guild_house_spawns", "Guild Housing", false},
-
-        -- Heirloom Config
+        {"acore_world", "dc_heirloom_definitions", "Collection System", true},
         {"acore_world", "dc_heirloom_enchant_mapping", "Heirloom", false},
         {"acore_world", "dc_heirloom_package_levels", "Heirloom", false},
         {"acore_world", "dc_heirloom_stat_packages", "Heirloom", false},
         {"acore_world", "dc_heirloom_upgrade_costs", "Heirloom", false},
-        
-        -- HLBG Season Config
         {"acore_world", "dc_hlbg_seasons", "HLBG System", true},
-
-        -- Hotspots/Teleporters
         {"acore_world", "dc_hotspots_active", "Hotspot System", true},
-        {"acore_world", "dc_teleporter", "Teleporters", false},
-        
-        -- Item Upgrade Config
+        {"acore_world", "dc_item_custom_data", "Custom Data", false},
         {"acore_world", "dc_item_proc_spells", "Item Procs", false},
         {"acore_world", "dc_item_templates_upgrade", "Item Upgrade", true},
         {"acore_world", "dc_item_upgrade_clones", "Item Upgrade", true},
@@ -295,10 +203,7 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_item_upgrade_synthesis_recipes", "Item Upgrade", false},
         {"acore_world", "dc_item_upgrade_tier_items", "Item Upgrade", false},
         {"acore_world", "dc_item_upgrade_tiers", "Item Upgrade", true},
-        {"acore_world", "dc_synthesis_recipes", "Item Upgrade", false},
-        {"acore_world", "dc_upgrade_tracks", "Item Upgrade", false},
-        
-        -- Mythic+ Config
+        {"acore_world", "dc_mount_definitions", "Collection System", true},
         {"acore_world", "dc_mplus_affix_pairs", "Mythic+", false},
         {"acore_world", "dc_mplus_affix_schedule", "Mythic+", false},
         {"acore_world", "dc_mplus_affixes", "Mythic+", true},
@@ -311,26 +216,23 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_mplus_spec_strings", "Mythic Spectator", false},
         {"acore_world", "dc_mplus_teleporter_npcs", "Mythic+", false},
         {"acore_world", "dc_mplus_weekly_affixes", "Mythic+", false},
-        
-        -- Quest Config
-        {"acore_world", "dc_daily_quest_token_rewards", "Quest Rewards", false},
         {"acore_world", "dc_npc_quest_link", "Quest System", false},
+        {"acore_world", "dc_pet_definitions", "Collection System", true},
         {"acore_world", "dc_quest_difficulty_mapping", "Quest System", false},
         {"acore_world", "dc_quest_reward_tokens", "Quest Rewards", false},
-        {"acore_world", "dc_weekly_quest_token_rewards", "Quest Rewards", false},
-        
-        -- Season Rewards
         {"acore_world", "dc_seasonal_chest_rewards", "Season System", false},
         {"acore_world", "dc_seasonal_creature_rewards", "Season System", false},
         {"acore_world", "dc_seasonal_quest_rewards", "Season System", false},
         {"acore_world", "dc_seasonal_reward_config", "Season System", false},
         {"acore_world", "dc_seasonal_reward_multipliers", "Season System", false},
-        
-        -- Token Config
+        {"acore_world", "dc_spell_custom_data", "Custom Data", false},
+        {"acore_world", "dc_synthesis_recipes", "Item Upgrade", false},
+        {"acore_world", "dc_teleporter", "Teleporters", false},
         {"acore_world", "dc_token_vendor_items", "Token System", false},
-        
-        -- Vault Config
+        {"acore_world", "dc_toy_definitions", "Collection System", true},
+        {"acore_world", "dc_upgrade_tracks", "Item Upgrade", false},
         {"acore_world", "dc_vault_loot_table", "Weekly Vault", false},
+        {"acore_world", "dc_weekly_quest_token_rewards", "Quest Rewards", false},
     },
 
     -- Deprecated tables (empty as we have synced with schema)

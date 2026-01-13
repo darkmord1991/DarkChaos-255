@@ -322,7 +322,12 @@ end
 -- =====================================================================
 
 local function Print(msg)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff96[DC-Leaderboards]|r " .. tostring(msg or ""))
+    -- Use DC:DebugPrint if available, otherwise fallback to chat
+    if DC and DC.DebugPrint then
+        DC:DebugPrint("[DC-Leaderboards]", msg)
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff96[DC-Leaderboards]|r " .. tostring(msg or ""))
+    end
 end
 
 local function FormatNumber(num)
@@ -394,7 +399,7 @@ end
 
 function LB:RequestLeaderboard(category, subcategory, page, limit)
     if not DC then
-        Print("|cffff0000DCAddonProtocol not available|r")
+        Print("DCAddonProtocol not available")
         return false
     end
     
@@ -415,9 +420,9 @@ function LB:RequestLeaderboard(category, subcategory, page, limit)
         local leaderboardType = self.HLBGLeaderboardTypes[subcategory]
         if leaderboardType then
             request.leaderboardType = leaderboardType
-            Print("|cff00ccffRequesting:|r HLBG/" .. subcategory .. " (type " .. leaderboardType .. ", page " .. page .. ")")
+            Print("Requesting: HLBG/" .. subcategory .. " (type " .. leaderboardType .. ", page " .. page .. ")")
         else
-            Print("|cffff0000Error:|r Unknown HLBG subcategory: " .. tostring(subcategory))
+            Print("Error: Unknown HLBG subcategory: " .. tostring(subcategory))
             return false
         end
     else
@@ -536,7 +541,7 @@ LB.HLBGLeaderboardTypes = {
 
 function LB:RegisterHandlers()
     if not DC then
-        Print("|cffff0000DCAddonProtocol not found, handlers not registered|r")
+        Print("DCAddonProtocol not found, handlers not registered")
         return false
     end
     
@@ -586,18 +591,18 @@ function LB:RegisterHandlers()
         LB:OnError(...)
     end)
     
-    Print("|cff00ff00Protocol handlers registered successfully|r")
+    Print("Protocol handlers registered successfully")
     return true
 end
 
 -- Handler for test results
 function LB:OnTestResults(data)
     if type(data) ~= "table" then
-        Print("|cffff0000Test Results: Invalid data received|r")
+        Print("Test Results: Invalid data received")
         return
     end
     
-    Print("|cffffd700=== Database Table Test Results ===|r")
+    Print("=== Database Table Test Results ===")
     
     if data.tables then
         for _, tbl in ipairs(data.tables) do
@@ -608,16 +613,16 @@ function LB:OnTestResults(data)
     end
     
     if data.currentSeason then
-        Print("|cffffd700Current Season:|r " .. tostring(data.currentSeason))
+        Print("Current Season: " .. tostring(data.currentSeason))
     end
     
-    Print("|cffffd700================================|r")
+    Print("================================")
 end
 
 -- Handler for seasons list
 function LB:OnSeasonsList(data)
     if type(data) ~= "table" then
-        Print("|cffff0000Seasons List: Invalid data received|r")
+        Print("Seasons List: Invalid data received")
         return
     end
     
@@ -644,7 +649,7 @@ function LB:OnSeasonsList(data)
         DCLeaderboardsDB.cache.seasonsTime = time()
     end
     
-    Print("|cff00ff00Received " .. #LB.AvailableSeasons .. " seasons (cached)|r")
+    Print("Received " .. #LB.AvailableSeasons .. " seasons (cached)")
 
     -- Update any season UI that exists (main selector and/or settings panel)
     LB:UpdateSeasonDropdown()
@@ -653,7 +658,7 @@ end
 -- v1.3.0: Handler for M+ dungeons list
 function LB:OnMythicPlusDungeons(data)
     if type(data) ~= "table" then
-        Print("|cffff0000M+ Dungeons: Invalid data received|r")
+        Print("M+ Dungeons: Invalid data received")
         return
     end
     
@@ -676,7 +681,7 @@ function LB:OnMythicPlusDungeons(data)
         DCLeaderboardsDB.cache.dungeonsSeasonId = data.seasonId or 0
     end
     
-    Print("|cff00ff00Received " .. #LB.MythicPlusDungeons .. " M+ dungeons for season " .. (data.seasonId or "?") .. " (cached)|r")
+    Print("Received " .. #LB.MythicPlusDungeons .. " M+ dungeons for season " .. (data.seasonId or "?") .. " (cached)")
     
     -- Update dungeon dropdown if it exists
     if LB.Frames.dungeonDropdown and LB.currentCategory == "mplus" then
@@ -687,7 +692,7 @@ end
 -- v1.5.0: Handler for account statistics
 function LB:OnAccountStats(data)
     if type(data) ~= "table" then
-        Print("|cffff0000Account Stats: Invalid data received|r")
+        Print("Account Stats: Invalid data received")
         return
     end
     
@@ -695,7 +700,7 @@ function LB:OnAccountStats(data)
     -- Expected format: { characters = { {name, class, ...}, ... }, totals = { ... }, bestRanks = { ... } }
     self.Cache.accountStats = data
     
-    Print("|cff00ff00Received account statistics|r")
+    Print("Received account statistics")
     if data.characters then
         Print("  Characters: " .. #data.characters)
     end
@@ -709,11 +714,11 @@ end
 -- Request test of database tables
 function LB:TestDatabaseTables()
     if not DC then
-        Print("|cffff0000DCAddonProtocol not available|r")
+        Print("DCAddonProtocol not available")
         return
     end
     
-    Print("|cff00ccffTesting database tables...|r")
+    Print("Testing database tables...")
     DC:Request(self.MODULE, self.Opcode.CMSG_TEST_TABLES, {})
 end
 
@@ -743,7 +748,7 @@ function LB:RequestSeasons()
     end
 
     if not DC then
-        Print("|cffff0000DCAddonProtocol not available|r")
+        Print("DCAddonProtocol not available")
         return
     end
     
@@ -763,7 +768,7 @@ function LB:OnLeaderboardData(data)
     end
     
     if type(data) ~= "table" then 
-        Print("|cffff6600Warning: Received non-table leaderboard data|r")
+        Print("Warning: Received non-table leaderboard data")
         return 
     end
     
@@ -780,8 +785,8 @@ function LB:OnLeaderboardData(data)
     self.Cache.currentPage = data.page or 1
     self.Cache.totalPages = data.totalPages or 1
     
-    -- Always print successful receive
-    Print("|cff00ff00Received " .. #(data.entries or {}) .. " entries for " .. key .. "|r")
+    -- Debug log successful receive
+    Print("Received " .. #(data.entries or {}) .. " entries for " .. key)
     
     -- Update UI if visible
     if self.Frames.main and self.Frames.main:IsShown() then
@@ -830,9 +835,9 @@ end
 
 function LB:OnError(data)
     if type(data) == "table" then
-        Print("|cffff0000Error:|r " .. (data.message or "Unknown error"))
+        Print("Error: " .. (data.message or "Unknown error"))
     else
-        Print("|cffff0000Protocol error|r")
+        Print("Protocol error")
     end
 end
 
@@ -1833,11 +1838,11 @@ function LB:UpdateLeaderboardDisplay()
     local data = self.Cache.data[key] or {}
     
     -- Debug output - always show what we're displaying
-    Print("|cff888888Displaying:|r " .. #data .. " entries for " .. key)
+    Print("Displaying: " .. #data .. " entries for " .. key)
     
     -- Debug: List cache contents
     if self:GetSetting("verboseLogging") then
-        Print("|cff888888Cache keys:|r")
+        Print("Cache keys:")
         for cacheKey, cacheData in pairs(self.Cache.data) do
             Print("  " .. cacheKey .. ": " .. #cacheData .. " entries")
         end
@@ -2006,7 +2011,7 @@ function LB:UpdateLeaderboardDisplay()
     local isAOEItems = (self.currentCategory == "aoe" and (self.currentSubCategory == "aoe_items" or self.currentSubCategory == "aoe_filtered"))
     
     if self:GetSetting("verboseLogging") and self.currentCategory == "aoe" then
-        Print("|cffff8000AOE Loot Debug:|r isAOEItems=" .. tostring(isAOEItems) .. ", subcat=" .. tostring(self.currentSubCategory))
+        Print("AOE Loot Debug: isAOEItems=" .. tostring(isAOEItems) .. ", subcat=" .. tostring(self.currentSubCategory))
     end
     
     if self.Frames.legHeader then
@@ -2245,7 +2250,7 @@ function LB:CreateCommunicationPanel()
         local seasonId = self.value
         LB:SetSetting("selectedSeasonId", seasonId)
         UIDropDownMenu_SetText(seasonDropdown, self:GetText())
-        Print("|cff00ff00Season set to:|r " .. self:GetText())
+        Print("Season set to: " .. self:GetText())
     end
     
     local function SeasonDropdown_Initialize(self, level)
@@ -2626,7 +2631,7 @@ local function Initialize()
             Hide = function() LB:Hide() end,
         }
     else
-        Print("|cffff6600Warning: DCAddonProtocol not found. Leaderboard requests will not work.|r")
+        Print("Warning: DCAddonProtocol not found. Leaderboard requests will not work.")
     end
     
     -- Create settings panels

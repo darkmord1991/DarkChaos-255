@@ -911,7 +911,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=82317 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=82667 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -3025,6 +3025,13 @@ CREATE TABLE IF NOT EXISTS `dc_vault_reward_pool` (
   PRIMARY KEY (`character_guid`,`season_id`,`week_start`,`slot_index`),
   KEY `idx_claimed` (`character_guid`,`season_id`,`week_start`,`claimed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Generated vault reward options with claim tracking';
+
+CREATE TABLE IF NOT EXISTS `dc_weekly_reset_state` (
+  `system` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `week_start` int unsigned NOT NULL DEFAULT '0',
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`system`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_weekly_spending` (
   `player_guid` int unsigned NOT NULL,
