@@ -24,10 +24,15 @@
 #include "ObjectMgr.h"
 #include "Chat.h"
 #include "Containers.h"
+#include "DatabaseEnv.h"
+#include "StringFormat.h"
 
+#include <array>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace
@@ -38,12 +43,30 @@ namespace
     // Entries (DB)
     // ---------------------------------------------------------------------
     // NOTE: Per request, all Training Grounds NPC entries start at 800028.
-    // 800028 is reserved for the boss-display dummy (pads).
-    constexpr uint32 NPC_BOSS_DISPLAY_DUMMY   = 800028;
-    constexpr uint32 NPC_TRAINING_MASTER     = 800029;
+    // Boss-display dummies (pads): three different creature templates, each with a model pool in DB
+    // (creature_template_model supports up to 4 models via Idx 0..3).
+    constexpr uint32 NPC_BOSS_DISPLAY_PAD_A = 800028;
+    constexpr uint32 NPC_BOSS_DISPLAY_PAD_B = 800033;
+    constexpr uint32 NPC_BOSS_DISPLAY_PAD_C = 800034;
     constexpr uint32 NPC_BOSS_TRAINING_DUMMY = 800030;
     constexpr uint32 NPC_TRAINING_ADD        = 800031;
     constexpr uint32 NPC_TRAINING_TOTEM      = 800032;
+
+    // Pads are meant to be DB-spawned (persistent). Keep summon fallback off to avoid duplicates
+    // if someone places the pads manually or via SQL.
+    constexpr bool SUMMON_PADS_IF_MISSING = false;
+
+    // Training dummy spawn anchor (requested).
+    struct SpawnCoord
+    {
+        float x;
+        float y;
+        float z;
+        float o;
+    };
+
+    static constexpr SpawnCoord TRAINING_SPAWN_ANCHOR = { 1204.1191f, -2456.6824f, 139.72493f, 5.9718385f };
+    static constexpr float TRAINING_SPAWN_Z_OFFSET = 0.5f;
 
     // ---------------------------------------------------------------------
     // Spells (stock WotLK IDs; feel free to replace in DB/patches)
@@ -82,6 +105,14 @@ namespace
         bool levelMatchPlayer = true;
         uint8 fixedLevel = 80;
         bool randomBossVisual = true;
+        enum class SpawnLocation : uint8
+        {
+            Anchor = 0,
+            NearMaster = 1,
+            NearPlayer = 2,
+            NearestPad = 3,
+        };
+        SpawnLocation spawnLocation = SpawnLocation::Anchor;
     };
 
     struct TrainingSession
@@ -92,127 +123,175 @@ namespace
     static std::unordered_map<ObjectGuid, TrainingConfig> s_configByPlayer;
     static std::unordered_map<ObjectGuid, TrainingSession> s_sessionByPlayer;
 
-    // Small fallback set in case the boss-display pool wasn't loaded (e.g., SQL missing).
-    // These are creature template entries, from which we take a valid display id.
-    static constexpr uint32 BossVisualFallbackEntries[] =
+    // Personal phasing to avoid players seeing each other's spawned configurations.
+    // Uses a small set of high bits to reduce collision with existing content.
+    static constexpr uint32 PERSONAL_PHASE_BITS[] =
     {
-        10184, // Onyxia
-        15990, // Kel'Thuzad
-        28859, // Malygos
-        31125, // Archavon
-        33113, // Flame Leviathan
-        33271, // General Vezax
+        (1u << 30), (1u << 29), (1u << 28), (1u << 27), (1u << 26),
+        (1u << 25), (1u << 24), (1u << 23), (1u << 22), (1u << 21), (1u << 20)
     };
 
-    uint32 TryGetBossDisplayId(uint32 bossEntry)
+    static std::unordered_map<ObjectGuid, uint32> s_personalPhaseByPlayer;
+    static std::unordered_set<uint32> s_usedPersonalPhaseBits;
+
+    uint32 EnsurePlayerPersonalPhase(Player* player)
     {
-        if (CreatureTemplate const* tmpl = sObjectMgr->GetCreatureTemplate(bossEntry))
+        if (!player)
+            return 0;
+
+        auto it = s_personalPhaseByPlayer.find(player->GetGUID());
+        if (it != s_personalPhaseByPlayer.end())
         {
-            if (tmpl->Modelid1)
-                return tmpl->Modelid1;
-            if (tmpl->Modelid2)
-                return tmpl->Modelid2;
-            if (tmpl->Modelid3)
-                return tmpl->Modelid3;
-            if (tmpl->Modelid4)
-                return tmpl->Modelid4;
+            // Ensure the player retains the bit (in case some other system updated phase mask).
+            uint32 bit = it->second;
+            if (bit)
+                player->SetPhaseMask(player->GetPhaseMask() | bit, true);
+            return bit;
         }
 
+        for (uint32 bit : PERSONAL_PHASE_BITS)
+        {
+            if (bit && !s_usedPersonalPhaseBits.count(bit))
+            {
+                s_usedPersonalPhaseBits.insert(bit);
+                s_personalPhaseByPlayer[player->GetGUID()] = bit;
+                player->SetPhaseMask(player->GetPhaseMask() | bit, true);
+                return bit;
+            }
+        }
+
+        // No free bit available.
         return 0;
     }
 
-    std::vector<uint32> BuildBossDisplayIdPoolFromAllBossTemplates()
+    void ReleasePlayerPersonalPhase(Player* player)
     {
-        std::vector<uint32> displayIds;
+        if (!player)
+            return;
 
-        CreatureTemplateContainer const* ctc = sObjectMgr->GetCreatureTemplates();
-        if (!ctc)
-            return displayIds;
+        auto it = s_personalPhaseByPlayer.find(player->GetGUID());
+        if (it == s_personalPhaseByPlayer.end())
+            return;
 
-        // Rough reservation; we'll de-dup at the end.
-        displayIds.reserve(4096);
-
-        for (auto const& kv : *ctc)
+        uint32 bit = it->second;
+        s_personalPhaseByPlayer.erase(it);
+        if (bit)
         {
-            CreatureTemplate const& ct = kv.second;
+            s_usedPersonalPhaseBits.erase(bit);
+            player->SetPhaseMask(player->GetPhaseMask() & ~bit, true);
+        }
+    }
 
-            // Avoid our own custom entries.
-            if (ct.Entry >= NPC_BOSS_DISPLAY_DUMMY && ct.Entry <= NPC_TRAINING_TOTEM)
+    Position GetTrainingSpawnCenter()
+    {
+        Position p;
+        p.m_positionX = TRAINING_SPAWN_ANCHOR.x;
+        p.m_positionY = TRAINING_SPAWN_ANCHOR.y;
+        p.m_positionZ = TRAINING_SPAWN_ANCHOR.z + TRAINING_SPAWN_Z_OFFSET;
+        p.m_orientation = TRAINING_SPAWN_ANCHOR.o;
+        return p;
+    }
+
+
+    enum class BossDisplayPoolId : uint8
+    {
+        Vanilla = 0,
+        TBC = 1,
+        WotLK = 2,
+    };
+
+    struct WeightedDisplay
+    {
+        uint32 displayId = 0;
+        float weight = 1.0f;
+    };
+
+    static std::array<std::vector<WeightedDisplay>, 3> s_bossDisplayPools;
+    static std::array<bool, 3> s_bossDisplayPoolsLoaded = { false, false, false };
+
+    uint8 PoolIndex(BossDisplayPoolId pool)
+    {
+        return uint8(pool);
+    }
+
+    void LoadBossDisplayPoolIfNeeded(BossDisplayPoolId pool)
+    {
+        uint8 idx = PoolIndex(pool);
+        if (idx >= s_bossDisplayPools.size() || s_bossDisplayPoolsLoaded[idx])
+            return;
+
+        s_bossDisplayPools[idx].clear();
+        s_bossDisplayPoolsLoaded[idx] = true;
+
+        std::string sql = Acore::StringFormat(
+            "SELECT display_id, weight FROM dc_training_boss_display_pool WHERE pool_id = {}",
+            uint32(idx));
+
+        QueryResult result = WorldDatabase.Query(sql.c_str());
+        if (!result)
+        {
+            LOG_INFO("server.loading", "Loaded 0 boss display pool entries for pool_id={}", uint32(idx));
+            return;
+        }
+
+        do
+        {
+            Field* fields = result->Fetch();
+            uint32 displayId = fields[0].Get<uint32>();
+            float weight = fields[1].Get<float>();
+
+            if (!displayId || weight <= 0.0f)
                 continue;
 
-            // Heuristic: include bosses/elites.
-            if (ct.rank != 2 && ct.rank != 3)
-                continue;
-
-            for (CreatureModel const& model : ct.Models)
-            {
-                uint32 displayId = model.CreatureDisplayID;
-                if (!displayId)
+            if (CreatureModelInfo const* info = sObjectMgr->GetCreatureModelInfo(displayId))
+                if (info->is_trigger != 0.0f)
                     continue;
 
-                if (CreatureModelInfo const* modelInfo = sObjectMgr->GetCreatureModelInfo(displayId))
-                {
-                    if (modelInfo->is_trigger)
-                        continue;
-                }
+            s_bossDisplayPools[idx].push_back({ displayId, weight });
+        } while (result->NextRow());
 
-                displayIds.push_back(displayId);
-            }
-        }
-
-        // Best-effort de-dup
-        std::sort(displayIds.begin(), displayIds.end());
-        displayIds.erase(std::unique(displayIds.begin(), displayIds.end()), displayIds.end());
-        return displayIds;
+        LOG_INFO("server.loading", "Loaded {} boss display pool entries for pool_id={}", s_bossDisplayPools[idx].size(), uint32(idx));
     }
 
-    std::vector<uint32> const& GetBossDisplayIdPool()
+    uint32 PickFromBossDisplayPool(BossDisplayPoolId pool)
     {
-        static std::vector<uint32> s_pool;
-        static bool s_built = false;
-
-        if (!s_built)
-        {
-            s_built = true;
-            s_pool = BuildBossDisplayIdPoolFromAllBossTemplates();
-        }
-
-        return s_pool;
-    }
-
-    uint32 TryPickBossDisplayIdFallback()
-    {
-        std::vector<uint32> candidates;
-        candidates.reserve(sizeof(BossVisualFallbackEntries) / sizeof(BossVisualFallbackEntries[0]));
-
-        for (uint32 bossEntry : BossVisualFallbackEntries)
-        {
-            if (CreatureTemplate const* tmpl = sObjectMgr->GetCreatureTemplate(bossEntry))
-            {
-                if (tmpl->Modelid1)
-                    candidates.push_back(tmpl->Modelid1);
-                if (tmpl->Modelid2)
-                    candidates.push_back(tmpl->Modelid2);
-                if (tmpl->Modelid3)
-                    candidates.push_back(tmpl->Modelid3);
-                if (tmpl->Modelid4)
-                    candidates.push_back(tmpl->Modelid4);
-            }
-        }
-
-        if (candidates.empty())
+        LoadBossDisplayPoolIfNeeded(pool);
+        uint8 idx = PoolIndex(pool);
+        if (idx >= s_bossDisplayPools.size() || s_bossDisplayPools[idx].empty())
             return 0;
 
-        return candidates[urand(0, uint32(candidates.size() - 1))];
+        float total = 0.0f;
+        for (WeightedDisplay const& e : s_bossDisplayPools[idx])
+            total += e.weight;
+
+        if (total <= 0.0f)
+            return 0;
+
+        float roll = frand(0.0f, total);
+        for (WeightedDisplay const& e : s_bossDisplayPools[idx])
+        {
+            roll -= e.weight;
+            if (roll <= 0.0f)
+                return e.displayId;
+        }
+
+        return s_bossDisplayPools[idx].back().displayId;
     }
 
-    uint32 TryPickBossDisplayId()
+    void ApplyDisplayId(Creature* creature, uint32 displayId)
     {
-        std::vector<uint32> const& pool = GetBossDisplayIdPool();
-        if (!pool.empty())
-            return pool[urand(0, uint32(pool.size() - 1))];
+        if (!creature || !displayId)
+            return;
 
-        return TryPickBossDisplayIdFallback();
+        creature->SetDisplayId(displayId);
+        creature->SetNativeDisplayId(displayId);
+    }
+
+    uint32 TryPickBossVisualDisplayId()
+    {
+        // Pick an expansion pool at random.
+        BossDisplayPoolId pool = BossDisplayPoolId(urand(0, 2));
+        return PickFromBossDisplayPool(pool);
     }
 
     float GetArmorMultiplier(ArmorMode mode)
@@ -255,7 +334,7 @@ namespace
         for (ObjectGuid guid : it->second.spawned)
         {
             if (Creature* c = ObjectAccessor::GetCreature(*player, guid))
-                c->DespawnOrUnsummon(1);
+                c->DespawnOrUnsummon(Milliseconds(1));
         }
 
         it->second.spawned.clear();
@@ -296,8 +375,8 @@ namespace
         // Visual: optionally copy a boss model.
         if (cfg.randomBossVisual)
         {
-            if (uint32 displayId = TryPickBossDisplayId())
-                me->SetDisplayId(displayId);
+            if (uint32 displayId = TryPickBossVisualDisplayId())
+                ApplyDisplayId(me, displayId);
         }
 
         // Passive dummy behavior baseline.
@@ -353,6 +432,11 @@ namespace
         ACTION_LEVEL_255 = 602,
 
         ACTION_VISUAL_TOGGLE = 700,
+
+        ACTION_SPAWNLOC_ANCHOR = 800,
+        ACTION_SPAWNLOC_MASTER = 801,
+        ACTION_SPAWNLOC_PLAYER = 802,
+        ACTION_SPAWNLOC_PAD    = 803,
     };
 
     void BuildMainMenu(Player* player, Creature* creature)
@@ -386,6 +470,22 @@ namespace
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, cfg.randomBossVisual ? "Visual: Random boss (toggle)" : "Visual: Dummy model (toggle)", GOSSIP_SENDER_MAIN, ACTION_VISUAL_TOGGLE);
 
+        // Spawn location
+        char const* spawnLocText = "Spawn: Anchor";
+        switch (cfg.spawnLocation)
+        {
+            case TrainingConfig::SpawnLocation::NearMaster: spawnLocText = "Spawn: Near master"; break;
+            case TrainingConfig::SpawnLocation::NearPlayer: spawnLocText = "Spawn: Near player"; break;
+            case TrainingConfig::SpawnLocation::NearestPad: spawnLocText = "Spawn: Nearest pad"; break;
+            case TrainingConfig::SpawnLocation::Anchor:
+            default: spawnLocText = "Spawn: Anchor"; break;
+        }
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, spawnLocText, GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_ANCHOR);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Anchor", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_ANCHOR);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Near master", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_MASTER);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Near player", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_PLAYER);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Nearest pad", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_PAD);
+
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
     }
 
@@ -418,19 +518,76 @@ namespace
         {1263.06f,   -2525.243f,  143.59987f, 1.3307040f},
     };
 
-    static ObjectGuid s_bossPadGuids[3];
-
-    void DespawnBossPadDummies(Player* player)
+    Position MakePosition(float x, float y, float z, float o)
     {
-        for (ObjectGuid& guid : s_bossPadGuids)
+        Position p;
+        p.m_positionX = x;
+        p.m_positionY = y;
+        p.m_positionZ = z;
+        p.m_orientation = o;
+        return p;
+    }
+
+    Position OffsetPosition(Position const& base, float forward, float right)
+    {
+        // Local-space offsets relative to orientation.
+        float o = base.m_orientation;
+        float cosO = std::cos(o);
+        float sinO = std::sin(o);
+
+        Position p = base;
+        p.m_positionX += cosO * forward - sinO * right;
+        p.m_positionY += sinO * forward + cosO * right;
+        return p;
+    }
+
+    Position GetNearestBossPadPosition(Creature* master)
+    {
+        if (!master)
+            return MakePosition(BossPadCoords[0].x, BossPadCoords[0].y, BossPadCoords[0].z, BossPadCoords[0].o);
+
+        float bestDist = std::numeric_limits<float>::max();
+        uint8 bestIdx = 0;
+
+        for (uint8 i = 0; i < 3; ++i)
         {
-            if (!guid.IsEmpty())
+            float dist = master->GetDistance(BossPadCoords[i].x, BossPadCoords[i].y, BossPadCoords[i].z);
+            if (dist < bestDist)
             {
-                if (Creature* c = ObjectAccessor::GetCreature(*player, guid))
-                    c->DespawnOrUnsummon(1);
-                guid.Clear();
+                bestDist = dist;
+                bestIdx = i;
             }
         }
+
+        return MakePosition(BossPadCoords[bestIdx].x, BossPadCoords[bestIdx].y, BossPadCoords[bestIdx].z, BossPadCoords[bestIdx].o);
+    }
+
+    static ObjectGuid s_bossPadGuids[3];
+
+    Creature* FindExistingPadCreature(std::list<Creature*>& candidates, Position const& padPos)
+    {
+        Creature* best = nullptr;
+        float bestDist = 999999.0f;
+
+        for (Creature* c : candidates)
+        {
+            if (!c)
+                continue;
+
+            float dist = c->GetDistance(padPos.m_positionX, padPos.m_positionY, padPos.m_positionZ);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best = c;
+            }
+        }
+
+        // Require it to be close to the intended pad.
+        // Keep this lenient so minor coordinate tweaks still get adopted.
+        if (best && bestDist <= 25.0f)
+            return best;
+
+        return nullptr;
     }
 
     void EnsureBossPadDummies(Player* player)
@@ -452,28 +609,66 @@ namespace
         if (allPresent)
             return;
 
-        DespawnBossPadDummies(player);
+        // Prefer DB-spawned pads if they exist near the intended coordinates.
+        static constexpr uint32 PadEntries[3] = { NPC_BOSS_DISPLAY_PAD_A, NPC_BOSS_DISPLAY_PAD_B, NPC_BOSS_DISPLAY_PAD_C };
 
-        std::vector<uint32> displayPool = GetBossDisplayIdPool();
-        if (displayPool.size() < 3)
-            return;
+        // Gather nearby pad candidates of ANY of the three entries.
+        std::list<Creature*> padCandidates;
+        player->GetCreatureListWithEntryInGrid(padCandidates, std::vector<uint32>{ PadEntries[0], PadEntries[1], PadEntries[2] }, 300.0f);
 
-        Acore::Containers::RandomShuffle(displayPool);
-
-        // Spawn 3 distinct entries on the 3 fixed pads.
-        for (uint8 i = 0; i < 3; ++i)
+        for (uint8 pad = 0; pad < 3; ++pad)
         {
-            uint32 displayId = displayPool[i];
-            Position pos;
-            pos.m_positionX = BossPadCoords[i].x;
-            pos.m_positionY = BossPadCoords[i].y;
-            pos.m_positionZ = BossPadCoords[i].z;
-            pos.m_orientation = BossPadCoords[i].o;
+            // If we already track a live pad creature, keep it.
+            if (!s_bossPadGuids[pad].IsEmpty())
+                if (ObjectAccessor::GetCreature(*player, s_bossPadGuids[pad]))
+                    continue;
 
-            if (Creature* dummy = player->SummonCreature(NPC_BOSS_DISPLAY_DUMMY, pos, TEMPSUMMON_MANUAL_DESPAWN, 0))
+            Position pos;
+            pos.m_positionX = BossPadCoords[pad].x;
+            pos.m_positionY = BossPadCoords[pad].y;
+            pos.m_positionZ = BossPadCoords[pad].z;
+            pos.m_orientation = BossPadCoords[pad].o;
+
+            // Adopt existing DB spawn if present (any of the pad entries).
+            if (Creature* existing = FindExistingPadCreature(padCandidates, pos))
             {
-                dummy->SetDisplayId(displayId);
-                s_bossPadGuids[i] = dummy->GetGUID();
+                s_bossPadGuids[pad] = existing->GetGUID();
+                padCandidates.remove(existing);
+                continue;
+            }
+
+            if (!SUMMON_PADS_IF_MISSING)
+                continue;
+
+            // Optional fallback: summon a temporary pad dummy (disabled by default).
+            std::unordered_set<uint32> usedDisplayIds;
+            if (!sObjectMgr->GetCreatureTemplate(PadEntries[pad]))
+                continue;
+
+            if (Creature* dummy = player->SummonCreature(PadEntries[pad], pos, TEMPSUMMON_MANUAL_DESPAWN, 0))
+            {
+                s_bossPadGuids[pad] = dummy->GetGUID();
+
+                BossDisplayPoolId pool = BossDisplayPoolId(pad); // 0=vanilla, 1=TBC, 2=WotLK
+
+                // Try to keep the three pads visually distinct.
+                uint32 displayId = 0;
+                for (uint8 attempt = 0; attempt < 20; ++attempt)
+                {
+                    displayId = PickFromBossDisplayPool(pool);
+                    if (!displayId || usedDisplayIds.count(displayId))
+                        continue;
+                    break;
+                }
+
+                if (displayId)
+                {
+                    usedDisplayIds.insert(displayId);
+                    if (dummy->AI())
+                        dummy->AI()->SetData(1, displayId);
+                    else
+                        ApplyDisplayId(dummy, displayId);
+                }
             }
         }
     }
@@ -495,7 +690,7 @@ public:
         ObjectGuid playerGuid;
         uint32 checkTimer = 250;
 
-        void SetGUID(ObjectGuid guid, int32 id = 0) override
+        void SetGUID(ObjectGuid const& guid, int32 id = 0) override
         {
             if (id == 1)
                 totemGuid = guid;
@@ -527,7 +722,7 @@ public:
                                 me->CastSpell(player, SPELL_SHADOW_BOLT, true);
                             }
 
-                            me->DespawnOrUnsummon(1);
+                            me->DespawnOrUnsummon(Milliseconds(1));
                             return;
                         }
                     }
@@ -561,11 +756,14 @@ public:
             me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
         }
 
+        static constexpr uint32 INACTIVITY_DESPAWN_MS = 5u * 60u * 1000u; // 5 minutes
+
         uint32 cleaveTimer = 7000;
         uint32 voidZoneTimer = 12000;
         uint32 stackTimer = 6000;
         uint32 moveTimer = 3500;
         uint32 addSpawnTimer = 15000;
+        uint32 inactivityTimer = INACTIVITY_DESPAWN_MS;
         ObjectGuid totemGuid;
         TrainingProfile resolvedProfile = TrainingProfile::None;
 
@@ -584,6 +782,7 @@ public:
             stackTimer = 6000;
             moveTimer = 3500;
             addSpawnTimer = 15000;
+            inactivityTimer = INACTIVITY_DESPAWN_MS;
 
             totemGuid.Clear();
 
@@ -605,6 +804,7 @@ public:
                     p.m_positionZ += 0.25f;
                     if (Creature* totem = me->SummonCreature(NPC_TRAINING_TOTEM, p, TEMPSUMMON_TIMED_DESPAWN, 300000))
                     {
+                        totem->SetPhaseMask(me->GetPhaseMask(), true);
                         totem->SetReactState(REACT_PASSIVE);
                         totem->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                         totem->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
@@ -623,13 +823,35 @@ public:
             Reset();
         }
 
+        void JustEngagedWith(Unit* /*who*/) override
+        {
+            inactivityTimer = INACTIVITY_DESPAWN_MS;
+        }
+
         void DamageTaken(Unit*, uint32& damage, DamageEffectType, SpellSchoolMask) override
         {
             damage = 0;
+            inactivityTimer = INACTIVITY_DESPAWN_MS;
         }
 
         void UpdateAI(uint32 diff) override
         {
+            // Despawn after a period of inactivity/out of combat.
+            // We tick this even if there is no victim, so passive dummies still clean up.
+            if (me->IsInCombat())
+            {
+                inactivityTimer = INACTIVITY_DESPAWN_MS;
+            }
+            else
+            {
+                if (inactivityTimer <= diff)
+                {
+                    me->DespawnOrUnsummon(Milliseconds(1));
+                    return;
+                }
+                inactivityTimer -= diff;
+            }
+
             if (!UpdateVictim())
                 return;
 
@@ -716,6 +938,7 @@ public:
                             Position spawn = RandomPosAround(totem->GetPosition(), 18.0f);
                             if (Creature* add = me->SummonCreature(NPC_TRAINING_ADD, spawn, TEMPSUMMON_TIMED_DESPAWN, 60000))
                             {
+                                add->SetPhaseMask(me->GetPhaseMask(), true);
                                 add->SetReactState(REACT_AGGRESSIVE);
                                 add->GetMotionMaster()->MovePoint(1, totem->GetPosition());
 
@@ -762,19 +985,56 @@ public:
             me->ApplySpellImmune(0, IMMUNITY_EFFECT, SPELL_EFFECT_KNOCK_BACK, true);
         }
 
+        static constexpr uint32 DISPLAY_REROLL_INTERVAL_MS = 60u * 60u * 1000u; // 1 hour
+
         uint32 resetTimer = 5000;
+        uint32 rerollTimer = DISPLAY_REROLL_INTERVAL_MS;
+        uint32 forcedDisplayId = 0;
+
+        void SetData(uint32 type, uint32 data) override
+        {
+            if (type != 1)
+                return;
+
+            forcedDisplayId = data;
+            ApplyDisplayId(me, forcedDisplayId);
+        }
 
         void Reset() override
         {
             me->CastSpell(me, SPELL_STUN_PERMANENT, true);
             resetTimer = 5000;
+            rerollTimer = DISPLAY_REROLL_INTERVAL_MS;
 
-            // If this creature was spawned without a chosen display, pick one from the pool.
-            if (me->GetDisplayId() == me->GetNativeDisplayId())
+            // If this creature was DB-spawned, it won't receive SetData(1, displayId).
+            // In that case, choose a display from the pool based on entry and keep it stable.
+            if (!forcedDisplayId)
             {
-                if (uint32 displayId = TryPickBossDisplayId())
-                    me->SetDisplayId(displayId);
+                // If this is a pad dummy, choose the pool based on the closest pad location.
+                BossDisplayPoolId pool = BossDisplayPoolId(urand(0, 2));
+                float bestDist = 999999.0f;
+                int8 bestPad = -1;
+                for (int8 i = 0; i < 3; ++i)
+                {
+                    float dist = me->GetDistance(BossPadCoords[i].x, BossPadCoords[i].y, BossPadCoords[i].z);
+                    if (dist < bestDist)
+                    {
+                        bestDist = dist;
+                        bestPad = i;
+                    }
+                }
+
+                if (bestPad >= 0 && bestDist <= 25.0f)
+                    pool = BossDisplayPoolId(uint8(bestPad)); // 0=Vanilla, 1=TBC, 2=WotLK
+
+                forcedDisplayId = PickFromBossDisplayPool(pool);
             }
+
+            if (forcedDisplayId)
+                ApplyDisplayId(me, forcedDisplayId);
+
+            // Keep it effectively unkillable, but still allow damage to show up in meters.
+            me->SetHealth(me->GetMaxHealth());
         }
 
         void EnterEvadeMode(EvadeReason why) override
@@ -788,21 +1048,81 @@ public:
         void DamageTaken(Unit*, uint32& damage, DamageEffectType, SpellSchoolMask) override
         {
             resetTimer = 5000;
-            damage = 0;
+
+            // Prevent death while still letting the damage be applied/logged.
+            if (damage >= me->GetHealth())
+                damage = me->GetHealth() > 1 ? (me->GetHealth() - 1) : 0;
         }
 
         void UpdateAI(uint32 diff) override
         {
-            if (!UpdateVictim())
-                return;
-
-            if (resetTimer <= diff)
+            // Reroll visuals every hour, but only when out of combat.
+            if (!me->IsInCombat())
             {
-                EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
-                resetTimer = 5000;
+                if (rerollTimer <= diff)
+                {
+                    BossDisplayPoolId pool = BossDisplayPoolId(urand(0, 2));
+                    float bestDist = 999999.0f;
+                    int8 bestPad = -1;
+                    for (int8 i = 0; i < 3; ++i)
+                    {
+                        float dist = me->GetDistance(BossPadCoords[i].x, BossPadCoords[i].y, BossPadCoords[i].z);
+                        if (dist < bestDist)
+                        {
+                            bestDist = dist;
+                            bestPad = i;
+                        }
+                    }
+
+                    if (bestPad >= 0 && bestDist <= 25.0f)
+                        pool = BossDisplayPoolId(uint8(bestPad)); // 0=Vanilla, 1=TBC, 2=WotLK
+
+                    // Try to pick a different display than the current one.
+                    uint32 newDisplayId = 0;
+                    for (uint8 attempt = 0; attempt < 20; ++attempt)
+                    {
+                        newDisplayId = PickFromBossDisplayPool(pool);
+                        if (!newDisplayId)
+                            break;
+                        if (newDisplayId != me->GetDisplayId())
+                            break;
+                    }
+
+                    if (newDisplayId)
+                    {
+                        forcedDisplayId = newDisplayId;
+                        ApplyDisplayId(me, forcedDisplayId);
+                        me->SetHealth(me->GetMaxHealth());
+                    }
+
+                    rerollTimer = DISPLAY_REROLL_INTERVAL_MS;
+                }
+                else
+                    rerollTimer -= diff;
             }
             else
-                resetTimer -= diff;
+            {
+                // Only count down the reroll timer while out of combat.
+                rerollTimer = DISPLAY_REROLL_INTERVAL_MS;
+            }
+
+            // Combat behavior: keep it full HP and reset after a short time with no hostiles.
+            if (me->IsInCombat())
+            {
+                UpdateVictim();
+
+                // Instantly restore health so the dummy stays "full" while still producing real damage numbers.
+                if (me->GetHealth() < me->GetMaxHealth())
+                    me->SetHealth(me->GetMaxHealth());
+
+                if (resetTimer <= diff)
+                {
+                    EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
+                    resetTimer = 5000;
+                }
+                else
+                    resetTimer -= diff;
+            }
         }
 
         void MoveInLineOfSight(Unit* /*who*/) override { }
@@ -841,19 +1161,96 @@ public:
             {
                 DespawnSession(player);
 
+                if (player->GetMapId() != 745)
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("This Training Master only works in the Jade Forest training grounds (map 745).");
+                    break;
+                }
+
+                // Put the player in a personal phase bit (adds to their phase mask) so spawned dummies
+                // can be hidden from other players without writing any DB spawns.
+                uint32 personalPhaseBit = EnsurePlayerPersonalPhase(player);
+
                 uint8 count = cfg.multiTargetCount;
-                Position center = creature->GetPosition();
+                Position center;
+                switch (cfg.spawnLocation)
+                {
+                    case TrainingConfig::SpawnLocation::NearMaster:
+                        center = creature ? creature->GetPosition() : GetTrainingSpawnCenter();
+                        break;
+                    case TrainingConfig::SpawnLocation::NearPlayer:
+                        center = player->GetPosition();
+                        center.m_positionZ += TRAINING_SPAWN_Z_OFFSET;
+                        break;
+                    case TrainingConfig::SpawnLocation::NearestPad:
+                        center = GetNearestBossPadPosition(creature);
+                        break;
+                    case TrainingConfig::SpawnLocation::Anchor:
+                    default:
+                        center = GetTrainingSpawnCenter();
+                        break;
+                }
+
+                uint8 chosenLevel = cfg.levelMatchPlayer ? ClampLevel(player->GetLevel()) : ClampLevel(cfg.fixedLevel);
 
                 for (uint8 i = 0; i < count; ++i)
                 {
-                    Position pos = RandomPosAround(center, 8.0f);
-                    if (Creature* dummy = player->SummonCreature(NPC_BOSS_TRAINING_DUMMY, pos, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 300000))
+                    Position pos = center;
+
+                    // Deterministic, anchor-based offsets so spawns don't end up player-relative.
+                    static constexpr float kOffsetsExactCenter[5][2] =
                     {
+                        // First dummy spawns exactly at the configured center (requested teleport coords).
+                        { 0.0f,  0.0f },
+                        { 4.0f,  0.0f },
+                        { -4.0f, 0.0f },
+                        { 0.0f,  4.0f },
+                        { 0.0f, -4.0f },
+                    };
+
+                    static constexpr float kOffsetsAvoidCaster[5][2] =
+                    {
+                        // Avoid spawning exactly on the caster/master.
+                        { 6.0f,  0.0f },
+                        { 6.0f,  4.0f },
+                        { 6.0f, -4.0f },
+                        { 10.0f,  0.0f },
+                        { 10.0f,  4.0f },
+                    };
+
+                    uint8 offIdx = (i < 5) ? i : (i % 5);
+                    bool avoidCaster = (cfg.spawnLocation == TrainingConfig::SpawnLocation::NearMaster) || (cfg.spawnLocation == TrainingConfig::SpawnLocation::NearPlayer);
+                    float forward = avoidCaster ? kOffsetsAvoidCaster[offIdx][0] : kOffsetsExactCenter[offIdx][0];
+                    float right   = avoidCaster ? kOffsetsAvoidCaster[offIdx][1] : kOffsetsExactCenter[offIdx][1];
+                    pos = OffsetPosition(pos, forward, right);
+
+                    if (Creature* dummy = player->SummonCreature(NPC_BOSS_TRAINING_DUMMY, pos, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 300000, 0, nullptr, true))
+                    {
+                        // Keep personal phase behavior, but ensure the creature matches the player's full phase mask.
+                        if (personalPhaseBit)
+                            dummy->SetPhaseMask(player->GetPhaseMask(), true);
+                        else
+                            dummy->SetPhaseMask(player->GetPhaseMask(), true);
+
+                        // Apply level immediately (in case AI Reset hasn't run yet).
+                        dummy->SetLevel(chosenLevel);
+                        dummy->UpdateAllStats();
+
+                        if (player->IsGameMaster())
+                        {
+                            float dist = player->GetDistance(dummy);
+                            ChatHandler(player->GetSession()).PSendSysMessage(
+                                "Boss dummy spawned at: {} {} {} (dist {:.1f}). Player phase: {} Dummy phase: {}.",
+                                dummy->GetPositionX(), dummy->GetPositionY(), dummy->GetPositionZ(), dist,
+                                uint32(player->GetPhaseMask()), uint32(dummy->GetPhaseMask()));
+                        }
+
                         TrackSpawn(player, dummy);
                     }
                 }
 
-                ChatHandler(player->GetSession()).PSendSysMessage("Spawned %u training dummy(ies).", count);
+                uint32 spawnedCount = count;
+                ChatHandler(player->GetSession()).PSendSysMessage("Spawned {} training {}.", spawnedCount, spawnedCount == 1 ? "dummy" : "dummies");
                 break;
             }
 
@@ -892,6 +1289,19 @@ public:
                 cfg.fixedLevel = 255;
                 break;
 
+            case ACTION_SPAWNLOC_ANCHOR:
+                cfg.spawnLocation = TrainingConfig::SpawnLocation::Anchor;
+                break;
+            case ACTION_SPAWNLOC_MASTER:
+                cfg.spawnLocation = TrainingConfig::SpawnLocation::NearMaster;
+                break;
+            case ACTION_SPAWNLOC_PLAYER:
+                cfg.spawnLocation = TrainingConfig::SpawnLocation::NearPlayer;
+                break;
+            case ACTION_SPAWNLOC_PAD:
+                cfg.spawnLocation = TrainingConfig::SpawnLocation::NearestPad;
+                break;
+
             case ACTION_VISUAL_TOGGLE:
                 cfg.randomBossVisual = !cfg.randomBossVisual;
                 break;
@@ -913,22 +1323,30 @@ class jadeforest_training_ground_player_cleanup : public PlayerScript
 public:
     jadeforest_training_ground_player_cleanup() : PlayerScript("jadeforest_training_ground_player_cleanup") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
+        if (player && player->GetMapId() == 745)
+            EnsurePlayerPersonalPhase(player);
         EnsureBossPadDummies(player);
     }
 
-    void OnLogout(Player* player) override
+    void OnPlayerLogout(Player* player) override
     {
         DespawnSession(player);
+        ReleasePlayerPersonalPhase(player);
         s_sessionByPlayer.erase(player->GetGUID());
         s_configByPlayer.erase(player->GetGUID());
     }
 
-    void OnMapChanged(Player* player) override
+    void OnPlayerMapChanged(Player* player) override
     {
         // Avoid leaving training summons behind when teleporting away.
         DespawnSession(player);
+
+        if (player && player->GetMapId() == 745)
+            EnsurePlayerPersonalPhase(player);
+        else
+            ReleasePlayerPersonalPhase(player);
 
         // Ensure random boss-display dummies exist when entering the training map.
         EnsureBossPadDummies(player);

@@ -10,6 +10,7 @@
 #include "HinterlandBG.h"
 #include "ObjectAccessor.h"
 #include "GroupMgr.h"
+#include "Chat.h"
 #include <algorithm>
 
 // Called when a player enters the Hinterlands zone managed by this OutdoorPvP.
@@ -136,7 +137,10 @@ void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
         OutdoorPvP::HandlePlayerLeaveZone(player, zone);
         return;
     }
-     player->TextEmote(",HEY, you are leaving the zone, while a battle is on going! Shame on you!");
+
+    // Private warning to the player (no emote/broadcast).
+    ChatHandler(player->GetSession()).PSendSysMessage("You are leaving the battlefield while the battle is still ongoing.");
+
      if (_playersInZone > 0)
      {
          --_playersInZone;
