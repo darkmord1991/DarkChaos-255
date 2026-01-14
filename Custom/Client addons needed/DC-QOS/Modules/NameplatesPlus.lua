@@ -163,6 +163,10 @@ local function SafeSetCVar(name, value)
     return ok and true or false
 end
 
+local function IsPlaterActive()
+    return rawget(_G, "Plater") ~= nil or rawget(_G, "PlaterDB") ~= nil
+end
+
 -- Tip Scanning for NPC detection
 local tipScanner = CreateFrame("GameTooltip", "DCQoS_TipScan", nil, "GameTooltipTemplate")
 tipScanner:SetOwner(WorldFrame, "ANCHOR_NONE")
@@ -210,9 +214,9 @@ local function GetNPCRole(unit)
 end
 
 -- Elite/Rare Icon Textures
-local ELITE_TEXTURE = "Interface\\Targets\\UI-TargetingFrame-Elite"
-local RARE_TEXTURE = "Interface\\Targets\\UI-TargetingFrame-Rare"
-local RARE_ELITE_TEXTURE = "Interface\\Targets\\UI-TargetingFrame-Rare-Elite"
+local ELITE_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Elite"
+local RARE_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare"
+local RARE_ELITE_TEXTURE = "Interface\\TargetingFrame\\UI-TargetingFrame-Rare-Elite"
 
 -- Faction Icon Textures
 local FACTION_ALLIANCE = "Interface\\TargetingFrame\\UI-PVP-Alliance"
@@ -526,8 +530,8 @@ end
 -- Update Functions
 -- ============================================================
 local function FormatNumber(currentValue)
-    if currentValue >= 1000 then
-        -- Round to nearest k: 14500 -> 15k, 14400 -> 14k
+    if currentValue >= 100000 then
+        -- Round to nearest k: 145000 -> 145k, 144400 -> 144k
         return string.format("%.0fk", math.floor(currentValue / 1000 + 0.5))
     end
     return tostring(currentValue)
@@ -558,20 +562,29 @@ local function UpdateHealthPercent(healthBar, settings, forceUpdate)
     local percent = (cur / max) * 100
     local text = healthBar.dcHealthPercent or CreateHealthPercentText(healthBar)
     
+    local displayText
     if settings.showHealthRealValues then
-        text:SetText(string.format("%s/%s", FormatNumber(cur), FormatNumber(max)))
+        displayText = string.format("%s/%s", FormatNumber(cur), FormatNumber(max))
     else
-        text:SetFormattedText(settings.healthPercentFormat, percent)
+        displayText = string.format(settings.healthPercentFormat, percent)
+    end
+
+    if text.dcLastValue ~= displayText then
+        text:SetText(displayText)
+        text.dcLastValue = displayText
     end
     
     local pos = settings.healthPercentPosition
-    text:ClearAllPoints()
-    if pos == "LEFT" then
-        text:SetPoint("LEFT", healthBar, "LEFT", 2, 0)
-    elseif pos == "RIGHT" then
-        text:SetPoint("RIGHT", healthBar, "RIGHT", -2, 0)
-    else
-        text:SetPoint("CENTER", healthBar, "CENTER", 0, 0)
+    if text.dcLastPosition ~= pos then
+        text:ClearAllPoints()
+        if pos == "LEFT" then
+            text:SetPoint("LEFT", healthBar, "LEFT", 2, 0)
+        elseif pos == "RIGHT" then
+            text:SetPoint("RIGHT", healthBar, "RIGHT", -2, 0)
+        else
+            text:SetPoint("CENTER", healthBar, "CENTER", 0, 0)
+        end
+        text.dcLastPosition = pos
     end
     
     text:Show()
@@ -635,9 +648,14 @@ local function UpdateHealthBarColor(frame, healthBar, unit, settings)
         end
     end
     
-    -- Apply Color
+    -- Apply Color (avoid redundant sets to reduce flicker)
     if setColor and r and g and b then
-        healthBar:SetStatusBarColor(r, g, b)
+        if healthBar.dcLastColorR ~= r or healthBar.dcLastColorG ~= g or healthBar.dcLastColorB ~= b then
+            healthBar:SetStatusBarColor(r, g, b)
+            healthBar.dcLastColorR = r
+            healthBar.dcLastColorG = g
+            healthBar.dcLastColorB = b
+        end
     end
 
     -- Texture Enforcement (Check first to avoid redundant sets)
@@ -1112,6 +1130,7 @@ local function UpdateTargetHighlight(frame, settings)
         return
     end
     
+    local isPlater = IsPlaterActive()
     local isTarget = IsPlateTarget(frame)
     local highlight = frame.dcTargetHighlight or CreateTargetHighlight(frame)
     local c = settings.targetHighlightColor
@@ -1139,10 +1158,18 @@ local function UpdateTargetHighlight(frame, settings)
     end
     
     -- Alpha handling
-    if settings.nonTargetAlpha and settings.nonTargetAlpha < 1.0 and UnitExists("target") and not isTarget then
-        frame:SetAlpha(settings.nonTargetAlpha)
-    else
-        frame:SetAlpha(1.0)
+    if not isPlater then
+        if settings.nonTargetAlpha and settings.nonTargetAlpha < 1.0 and UnitExists("target") and not isTarget then
+            if frame.dcLastAlpha ~= settings.nonTargetAlpha then
+                frame:SetAlpha(settings.nonTargetAlpha)
+                frame.dcLastAlpha = settings.nonTargetAlpha
+            end
+        else
+            if frame.dcLastAlpha ~= 1.0 then
+                frame:SetAlpha(1.0)
+                frame.dcLastAlpha = 1.0
+            end
+        end
     end
 end
 
@@ -1226,8 +1253,12 @@ local function HookNameplate(frame)
         local settings = addon.settings.nameplatesPlus
         if not settings.enabled then return end
         
-        -- Reset scale to 1.0 to ensure cleanliness
-        self:SetScale(1.0)
+        -- Reset scale to 1.0 to ensure cleanliness (skip if Plater is active)
+        if not IsPlaterActive() then
+            if self:GetScale() ~= 1.0 then
+                self:SetScale(1.0)
+            end
+        end
         
         if self.dcHealthBar then
             UpdateHealthPercent(self.dcHealthBar, settings)

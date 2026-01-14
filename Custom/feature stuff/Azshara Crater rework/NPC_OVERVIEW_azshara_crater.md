@@ -205,21 +205,19 @@
 ### Zone 4: Central River (Level 30-40)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
-| Spitelash Warrior | **6190** | 32-34 | Humanoid | 15 |
-| Spitelash Myrmidon | **6193** | 34-36 | Humanoid | 12 |
-| Spitelash Siren | **6195** | 35-37 | Humanoid | 10 |
-| Spitelash Screamer | **6196** | 37-39 | Humanoid | 8 |
-| Makrura Shellhide | **6348** | 38-40 | Humanoid | 8 |
-| Makrura Clackclaw | **6349** | 31-33 | Humanoid | 8 |
-| Arcane Devourer | **11467** | 34-36 | Elemental | 8 |
-| Spitelash Serpent | **6200** | 38-40 | Humanoid | 6 |
-| Cliff Breaker | **9197** | 38-39 | Elemental | 4 |
-| Blue Drake | **6129** | 39-40 | Dragon | 4 |
+| Bloodscalp Warrior | **587** | 33-34 | Humanoid (Troll) | 15 |
+| Bloodscalp Mystic | **701** | 34-35 | Humanoid (Troll) | 12 |
+| Bloodscalp Scavenger | **702** | 33-34 | Humanoid (Troll) | 10 |
+| Witherbark Shadowcaster | **2553** | 31-32 | Humanoid (Troll) | 10 |
+| Witherbark Witch Doctor | **2555** | 33-34 | Humanoid (Troll) | 8 |
+| Witherbark Berserker | **2558** | 36-37 | Humanoid (Troll) | 8 |
+| Stonard Scout | **861** | 36-37 | Humanoid | 6 |
+| Stonard Explorer | **862** | 37-38 | Humanoid | 6 |
+| Boneflayer Ghoul | **7347** | 36 | Undead | 8 (Ruins) |
+| Fenros | **507** | 32 | Beast (Wolf) | 6 |
 | **Prince Nazjak** | **2779** | 41 | **RARE** | 1 |
-| **Garneg Charknap** | **8210** | 34 | **RARE** | 1 |
-| **Rippa** | **5828** | 39 | **RARE** | 1 |
-| **Slark** | **14221** | 35 | **RARE** | 1 |
-| **Foulmane** | **8211** | 38 | **RARE** | 1 |
+| **Plaguemaw the Rotting** | **7356** | 37 | **RARE** | 1 |
+| **Razortalon** | **8210** | 44 | **RARE** | 1 |
 
 ### Zone 5: Western Cliffs (Level 40-50)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
@@ -243,19 +241,16 @@
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
 | Legashi Satyr | **6200** | 51-52 | Demon | 15 |
-| Legashi Rogue | **6134** | 54-56 | Demon | 12 |
-| Legashi Hellcaller | **6135** | 56-58 | Demon | 10 |
-| Felguard Sentry | **8716** | 57-59 | Demon | 8 |
-| Doomguard Commander | **7671** | 58-60 | Demon | 4 |
-| Infernal Sentry | **11466** | 54-56 | Demon | 8 |
-| Entropic Beast | **10398** | 52-54 | Elemental | 10 |
-| Infernal Target | **17644** | 60 | Demon | 6 |
-| Dreadlord | **12459** | 59-60 | Demon | 2 |
-| **Gatekeeper Karlindos** | **10831** | 58 | **RARE** | 1 |
-| **Jade** | **18683** | 60 | **RARE** | 1 |
-| **Gruff** | **14228** | 58 | **RARE** | 1 |
-| **Spiteflayer** | **18681** | 56 | **RARE** | 1 |
-| **Fulgorge** | **18689** | 58 | **RARE** | 1 |
+| Legashi Rogue | **6134** | 60 | Demon | 12 |
+| Legashi Hellcaller | **6135** | 53-54 | Demon | 10 |
+| Felguard Sentinel | **6011** | 50 | Demon | 12 |
+| Infernal Sentry | **11466** | 55 | Demon | 8 |
+| Thuzadin Shadowcaster | **10398** | 58-59 | Undead (Cultist) | 8 |
+| Blackwing Warlock | **12459** | 61 | Humanoid | 6 |
+| **Immolatus** | **14429** | 56 | **RARE** | 1 |
+| **Magmus** | **9938** | 56 | **ELITE** | 1 |
+| **Volchan** | **10502** | 57 | **ELITE** | 1 |
+| **Infernal Warbringer** | **19261** | 58-59 | **ELITE** | 1 |
 
 ### Zone 7: Dragon Coast (Level 60-70)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
@@ -362,24 +357,27 @@
 
 ---
 
-### ★D4: The Fel Pit (Level 50-60)
+### ★D4: The Searing Pit (Level 50-60)
+*Renamed from "The Fel Pit" to match environment (Razorfen geometry + Warm lighting).*
+
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Legashi Satyr | **6200** | 51-52 | No |
-| Trash | Felbeast | **8675** | 50-51 | No |
-| Trash | Felpaw Ravager | **8961** | 51-52 | No |
-| Trash | Felguard Sentry | **8716** | 57-59 | No |
-| Trash | Legashi Hellcaller | **6135** | 56-58 | **Yes** |
-| Trash | Doomguard Commander | **7671** | 58-60 | **Yes** |
-| Trash | Warpwood Treant | **11462** | 54-55 | No |
-| Trash | Invading Fel Stalker | **19286** | 60 | **Yes** |
-| Trash | Felguard Annihilator | **18894** | 58-59 | No |
-| Trash | Shadowmoon Darkweaver | **16595** | 56-57 | No |
-| Trash | Terrorfiend | **16951** | 59-60 | No |
-| **Rare** | **Infernal Warbringer** | **19261** | 58-59 | **Elite** |
-| **Rare** | **Doomguard Punisher** | **18044** | 59-60 | **Elite** |
-| **Mini-Boss**| **Lady Hederine** | **12143** | 58 | **Elite** |
-| **Boss** | **Prince Tortheldrin** | **11486** | 61 | **Elite** |
+| Trash | Blackrock Soldier | **7025** | 55-56 | No |
+| Trash | Blackrock Sorcerer | **7026** | 55-56 | No |
+| Trash | Blackrock Slayer | **7027** | 56-57 | No |
+| Trash | Blackrock Warlock | **7028** | 56-57 | No |
+| Trash | Spirestone Mystic | **9198** | 55-56 | YES |
+| Trash | Spirestone Lord | **9217** | 54-55 | YES |
+| Trash | Spirestone Butcher | **9219** | 57-58 | YES |
+| Trash | Giant Ember Worg | **9697** | 54-55 | No |
+| Trash | Tar Creeper | **6527** | 55-56 | No |
+| **Rare** | **Bannok Grimaxe** | **9596** | 55 | **Elite** |
+| **Rare** | **Halycon** | **10220** | 55 | **Elite** |
+| **Rare** | **Ambassador Flamelash** | **9156** | 55 | **Elite** |
+| **Rare** | **Lord Roccor** | **9025** | 54 | **Elite** |
+| **Mini-Boss**| **General Angerforge** | **9033** | 57 | **Elite** |
+| **Boss** | **Hydrospawn** | **13280** | 57 | **Elite** (Water Boss) |
+| **Boss** | **Ghok Bashguud** | **9718** | 59 | **Elite** |
 
 ---
 

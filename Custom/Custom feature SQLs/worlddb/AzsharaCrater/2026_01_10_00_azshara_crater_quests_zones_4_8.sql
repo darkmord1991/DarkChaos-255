@@ -304,16 +304,16 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
 (300921, 2, 48, 44, 0, 0, 5, 5, 1500, 300311, 20, 300312, 10, 0, 0, 'The Iron Legion', 'Slay 10 Dark Iron Watchmen and 10 Dark Iron Geologists.', 'The Dark Iron ranks are swelling. Thin their numbers before they breach the surface.', 'Spitelash Depths', 'Legion thinned.', 8637, 10, 5839, 10);
 
--- D4: The Fel Pit (Kill Prince Tortheldrin - Level 61 Elite)
-DELETE FROM `quest_template` WHERE `ID` BETWEEN 300930 AND 300934;
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300930, 2, 61, 55, 0, 0, 5, 5, 2500, 10271, 1, 300311, 25, 300312, 15, 'The Fel Pit', 'Defeat Prince Tortheldrin.', 'The Prince has turned to demons for power. End his madness.', 'The Fel Pit', 'Prince defeated.', 11486, 1);
-
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300931, 2, 58, 54, 0, 0, 5, 5, 2200, 300311, 20, 300312, 12, 12143, 1, 0, 0, 'Lady Hederine', 'Defeat Lady Hederine.', 'Lady Hederine commands the Satyr forces. Defeat her to weaken their hold on the Fel Pit.', 'The Fel Pit', 'Hederine defeated.'),
-(300932, 2, 59, 55, 0, 0, 5, 5, 2300, 300311, 21, 300312, 13, 19261, 1, 0, 0, 'Infernal Warbringer', 'Slay the Infernal Warbringer.', 'An Infernal Warbringer has been summoned from the Twisting Nether. Banish it before it can open a portal.', 'The Fel Pit', 'Infernal banished.'),
-(300933, 2, 60, 56, 0, 0, 5, 5, 2400, 300311, 22, 300312, 14, 18044, 1, 0, 0, 'Doomguard Punisher', 'Slay the Doomguard Punisher.', 'The Doomguard Punisher leads the demon legions. Destroy it to scatter their forces.', 'The Fel Pit', 'Doomguard destroyed.'),
-(300934, 2, 57, 53, 0, 0, 5, 5, 2100, 300311, 19, 300312, 11, 6135, 8, 7671, 6, 'Demon Legion', 'Slay 8 Legashi Hellcallers and 6 Doomguard Commanders.', 'The demon forces grow stronger. Thin their ranks before they can summon reinforcements.', 'The Fel Pit', 'Legion weakened.');
+-- D4: The Searing Pit (Level 50-60)
+DELETE FROM `quest_template` WHERE `ID` BETWEEN 300930 AND 300936;
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, `RequiredNpcOrGo3`, `RequiredNpcOrGoCount3`) VALUES
+(300930, 2, 56, 51, 0, 0, 5, 5, 2000, 300311, 20, 300312, 10, 0, 0, 'Blackrock Incursion', 'Slay 12 Blackrock Soldiers or Slayers.', 'The Blackrock Orcs have seized the Searing Pit. Thin their ranks.', 'The Searing Pit', 'Incursion repelled.', 7025, 12, 7027, 12, 0, 0),
+(300931, 2, 57, 52, 0, 0, 5, 5, 2100, 300311, 21, 300312, 11, 0, 0, 'Spirestone Menace', 'Slay 10 Spirestone Ogres (Mystics, Lords, or Butchers).', 'Spirestone Ogres provide the muscle for the invasion. Crush them.', 'The Searing Pit', 'Ogres defeated.', 9198, 10, 9217, 10, 9219, 10),
+(300932, 2, 55, 51, 0, 0, 5, 5, 1900, 300311, 19, 300312, 9, 0, 0, 'Beasts of the Pit', 'Slay 10 Giant Ember Worgs or Tar Creepers.', 'The local wildlife has been corrupted or trained for war. Put them down.', 'The Searing Pit', 'Beasts slain.', 9697, 10, 6527, 10, 0, 0),
+(300933, 2, 55, 52, 0, 0, 5, 5, 2200, 300311, 22, 300312, 12, 0, 0, 'Ambassador\'s End', 'Slay Ambassador Flamelash.', 'Ambassador Flamelash commands the Dark Iron presence here. Send him back to the Firelands.', 'The Searing Pit', 'Flamelash defeated.', 9156, 1, 0, 0, 0, 0),
+(300934, 2, 57, 53, 0, 0, 5, 5, 2400, 300311, 24, 300312, 14, 0, 0, 'The Dark Iron General', 'Defeat General Angerforge.', 'General Angerforge coordinates the Blackrock military precision. Break his command.', 'The Searing Pit', 'Angerforge defeated.', 9033, 1, 0, 0, 0, 0),
+(300935, 2, 57, 53, 0, 0, 5, 5, 2400, 300311, 24, 300312, 14, 0, 0, 'Terrors from the Deep', 'Defeat Hydrospawn.', 'A corruption in the water table has spawned a massive elemental. Defeat Hydrospawn.', 'The Searing Pit', 'Hydrospawn defeated.', 13280, 1, 0, 0, 0, 0),
+(300936, 2, 59, 54, 0, 0, 5, 5, 2800, 10271, 1, 300311, 25, 300312, 15, 'Warlord of the Pit', 'Defeat Ghok Bashguud.', 'Ghok Bashguud rules this pit with an iron fist. End his reign.', 'The Searing Pit', 'Ghok Bashguud defeated.', 9718, 1, 0, 0, 0, 0);
 
 -- D5: Temple of Elune (Level 60-70)
 DELETE FROM `quest_template` WHERE `ID` BETWEEN 300940 AND 300946;
@@ -432,12 +432,12 @@ INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 (300083, 300920), (300083, 300921), (300083, 300922), (300083, 300923);
 
 -- D4: Slayer Vorith (300084)
-DELETE FROM `creature_queststarter` WHERE `id` = 300084 AND `quest` BETWEEN 300930 AND 300934;
-DELETE FROM `creature_questender` WHERE `id` = 300084 AND `quest` BETWEEN 300930 AND 300934;
+DELETE FROM `creature_queststarter` WHERE `id` = 300084 AND `quest` BETWEEN 300930 AND 300936;
+DELETE FROM `creature_questender` WHERE `id` = 300084 AND `quest` BETWEEN 300930 AND 300936;
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
-(300084, 300930), (300084, 300931), (300084, 300932), (300084, 300933), (300084, 300934);
+(300084, 300930), (300084, 300931), (300084, 300932), (300084, 300933), (300084, 300934), (300084, 300935), (300084, 300936);
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES
-(300084, 300930), (300084, 300931), (300084, 300932), (300084, 300933), (300084, 300934);
+(300084, 300930), (300084, 300931), (300084, 300932), (300084, 300933), (300084, 300934), (300084, 300935), (300084, 300936);
 
 -- D5: Priestess Lunara (300085)
 DELETE FROM `creature_queststarter` WHERE `id` = 300085 AND `quest` BETWEEN 300940 AND 300946;
@@ -534,9 +534,11 @@ INSERT INTO `quest_offer_reward` (`ID`, `RewardText`) VALUES
 (300931, 'Lady Hederine falls. The Satyr forces scatter.'),
 (300932, 'The Infernal is banished. The portal is sealed.'),
 (300933, 'The Doomguard Punisher is destroyed. The demon legion weakens.'),
-(300934, 'Their numbers are thinned. The Fel Pit grows quieter.'),
+(300934, 'General Angerforge commanded with an iron fist. His defeat leaves the legion rudderless.'),
+(300935, 'The waters are calm once more. Hydrospawn is no more.'),
+(300936, 'Ghok Bashguud has fallen! The Searing Pit is yours to command, briefly.'),
 -- D5 Quests (Temple of Elune)
-(300940, 'Priestess Delrissa has fallen. The Temple of Elune is purified.'),
+(300940, 'Priestess Delrissa... she was once a noble soul. You have done Elune a service.'),
 (300941, 'Twilight Lord Kelris is no more. The cultist threat is eliminated.'),
 (300942, 'The Arcane Torrent is destroyed. The temple\'s wards are stabilizing.'),
 (300943, 'High Priestess Arlokk has been defeated. The inner sanctum is accessible.'),

@@ -157,13 +157,16 @@
     *   **"Ambassador of Flame"**: Slay Ambassador Flamelash (Rare Elite).
     *   **"Faulty Engineering"**: Destroy the Faulty War Golem (Mini-Boss).
     *   **"The Iron Legion"**: Kill 10 Dark Iron Watchmen & 10 Dark Iron Geologists.
-4.  **D4: The Fel Pit (L50-60)** - Fel/Demon Theme
+4.  **D4: The Searing Pit (L50-60)** - Blackrock/Razorfen Theme
     *   **Quest Giver:** Slayer Vorith (300084)
-    *   **"The Fel Pit"**: Kill Prince Tortheldrin (Boss).
-    *   **"Lady Hederine"**: Defeat Lady Hederine (Mini-Boss).
-    *   **"Infernal Warbringer"**: Slay the Infernal Warbringer (Rare).
-    *   **"Doomguard Punisher"**: Slay the Doomguard Punisher (Rare).
-    *   **"Demon Legion"**: Slay 8 Legashi Hellcallers & 6 Doomguard Commanders.
+    *   **"Warlord of the Pit"**: Kill Ghok Bashguud (Boss).
+    *   **"The Dark Iron General"**: Defeat General Angerforge (Mini-Boss).
+    *   **"Ambassador's End"**: Slay Ambassador Flamelash (Rare Elite).
+    *   **"Terrors from the Deep"**: Defeat Hydrospawn (Water Boss).
+    *   **"Blackrock Incursion"**: Kill 12 Blackrock Soldiers & Slayers.
+    *   **"Spirestone Menace"**: Kill 10 Spirestone Ogres (Mystics/Lords).
+    *   **"Beasts of the Pit"**: Kill 10 Giant Ember Worgs & Tar Creepers.
+
 5.  **D5: Temple of Elune (L60-70)** - Night Elf/Arcane Theme
     *   **Quest Giver:** Priestess Lunara (300085)
     *   **"Temple of Elune"**: Defeat Priestess Delrissa (Boss).

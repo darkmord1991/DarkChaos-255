@@ -367,7 +367,7 @@ public:
 
         // Initialize first rare spawn timer (spawn first rare after 5-15 minutes)
         _nextRareSpawnTime = GameTime::GetGameTimeMS() + Milliseconds(urand(5 * 60 * 1000, 15 * 60 * 1000));
-        LOG_INFO("scripts.dc", "Giant Isles: First random rare spawn scheduled.");
+        // LOG_INFO("scripts.dc", "Giant Isles: First random rare spawn scheduled.");
     }
 
     // Called every server update - handles rare spawn timer
@@ -401,8 +401,8 @@ private:
 
         // NOTE: This is currently a placeholder manager. It logs spawn attempts,
         // but does not actually spawn anything until mapId/coords are finalized.
-        LOG_INFO("scripts.dc", "Giant Isles: Attempting to spawn random rare {} at ({}, {}, {})",
-            rareEntry, loc.x, loc.y, loc.z);
+        // LOG_INFO("scripts.dc", "Giant Isles: Attempting to spawn random rare {} at ({}, {}, {})",
+        //     rareEntry, loc.x, loc.y, loc.z);
 
         // Get the creature name for announcement
         std::string rareName;
@@ -416,8 +416,8 @@ private:
             default: rareName = "Unknown Rare"; break;
         }
 
-        // Announce the spawn server-wide (using zone chat instead of server message)
-        LOG_INFO("scripts.dc", "Giant Isles: Rare {} spawned", rareName);
+        // Placeholder manager: do not announce "spawned" since no creature is actually spawned yet.
+        // LOG_INFO("scripts.dc", "Giant Isles: Rare {} spawned", rareName);
 
         // Schedule next attempt
         ScheduleNextRareSpawn();
@@ -430,7 +430,7 @@ private:
             Milliseconds(urand(RARE_SPAWN_TIMER_MIN, RARE_SPAWN_TIMER_MAX));
         _rareIsAlive = false;
 
-        LOG_DEBUG("scripts.dc", "Giant Isles: Next random rare spawn scheduled.");
+        // LOG_DEBUG("scripts.dc", "Giant Isles: Next random rare spawn scheduled.");
     }
 };
 

@@ -1,0 +1,45 @@
+
+## Preserved Implementation Data (Code Reverted)
+
+### Map Pins Data (`DC-Mapupgrades`)
+```lua
+local JADEFOREST_PINS = {
+    { x=42.5, y=85.2, name="Paw'Don Village", desc="Arrival & Teleporters", icon="Interface\\Icons\\INV_Misc_Rune_06", type="Hub" },
+    { x=55.1, y=45.3, name="Dawn's Blossom", desc="Social Hub", icon="Interface\\Icons\\Spell_Holy_PrayerOfHealing", type="Social" },
+    { x=65.2, y=55.4, name="Temple of the Jade Serpent", desc="Tutorial Hub", icon="Interface\\Icons\\INV_Scroll_06", type="Tutorial" },
+    { x=45.8, y=35.1, name="Tian Monastery", desc="Training Grounds", icon="Interface\\Icons\\Ability_Warrior_OffensiveStance", type="Training" },
+    { x=75.5, y=35.8, name="The Arboretum", desc="Collections", icon="Interface\\Icons\\INV_Pet_PandaCub", type="Collection" },
+    { x=25.4, y=25.6, name="Honeydew Village", desc="Professions", icon="Interface\\Icons\\Trade_Engineering", type="Profession" },
+    { x=48.2, y=15.9, name="Terrace of Ten Thunders", desc="PvP Info", icon="Interface\\Icons\\Achievement_PVP_H_04", type="PvP" },
+    { x=68.1, y=65.2, name="Pearlfin Village", desc="Fishing", icon="Interface\\Icons\\Trade_Fishing", type="Relax" },
+    { x=85.3, y=75.4, name="Moonwater Retreat", desc="Bank & Auction", icon="Interface\\Icons\\INV_Misc_Coin_01", type="Service" },
+    { x=58.2, y=82.1, name="Grookin Hill", desc="Mount Display", icon="Interface\\Icons\\Ability_Mount_RidingHorse", type="Display" },
+    { x=15.4, y=45.6, name="Windward Isle", desc="Hidden Exploration", icon="Interface\\Icons\\INV_Misc_Spyglass_02", type="Exploration" },
+    { x=90.1, y=45.2, name="Sri-La Village", desc="World Boss Portal", icon="Interface\\Icons\\Spell_Shadow_DeathCoil", type="Portal" },
+    { x=32.1, y=65.4, name="Nectarbreeze Orchard", desc="Seasonal Events", icon="Interface\\Icons\\INV_Holiday_Christmas_Present_01", type="Event" },
+    { x=45.6, y=55.2, name="Serpent's Heart", desc="Lore Hub", icon="Interface\\Icons\\Spell_Holy_MindVision", type="Lore" }
+}
+```
+
+### Event Schedule (`DC-InfoBar`)
+```lua
+-- Day: 1=Sun, 2=Mon ... 7=Sat
+local SCHEDULE = {
+    { day=1, hour=14, min=0, name="Sunday Social", dur=60, zone="Jade Forest" },
+    { day=1, hour=20, min=0, name="Raid Assembly", dur=120, zone="Jade Forest" },
+    { day=3, hour=19, min=0, name="Midweek PvP", dur=60, zone="Jade Forest" },
+    { day=6, hour=21, min=0, name="Friday Night Party", dur=180, zone="Jade Forest" },
+    { day=7, hour=16, min=0, name="Saturday Parkour", dur=60, zone="Jade Forest" },
+}
+```
+
+### Welcome Panel Text (`DC-Welcome`)
+**Title**: "Welcome to Jadeforest!"
+**Description**: 
+"This is the new main social hub for Dark Chaos.
+
+Here you will find:
+- Portals to all major zones
+- Training Dummies & Vendors
+- Social Events & Gatherings
+- Parkour Challenges"

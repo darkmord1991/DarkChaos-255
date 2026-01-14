@@ -256,6 +256,7 @@ set(SCRIPTS_DC_CrossSystem
 # DC Commands - Unified command hub
 set(SCRIPTS_DC_Commands
     Commands/cs_dc_addons.cpp
+    Commands/cs_dc_challenge_modes.cpp
     Commands/cs_dc_dungeonquests.cpp
     Commands/cs_hl_bg.cpp
     Commands/mythic_plus_commands.cpp

@@ -147,6 +147,7 @@ void AddSC_dc_item_upgrade_commandscript();    // Commands/cs_dc_item_upgrade.cp
 void AddSC_dc_hotspot_commandscript();        // Commands/cs_dc_hotspot.cpp
 void AddSC_cs_dc_guildhouse();                // Commands/cs_dc_guildhouse.cpp
 void AddSC_dc_stresstest();                   // Commands/cs_dc_stresstest.cpp
+void AddSC_dc_challenge_modes_commandscript(); // Commands/cs_dc_challenge_modes.cpp
                      // Commands/cs_dc_perftest.cpp
 
 // --- Guild Housing ---
@@ -711,6 +712,7 @@ void AddDCScripts()
         AddSC_dc_prestige_commandscript();
         AddSC_dc_item_upgrade_commandscript();
         AddSC_dc_stresstest();
+        AddSC_dc_challenge_modes_commandscript();
         LOG_INFO("scripts.dc", ">>   ✓ DC addon commands and dungeon quest commands loaded");
         LOG_INFO("scripts.dc", ">>   ✓ Consolidated DC commands loaded (HLBG, M+, Season, Prestige, ItemUpgrade)");
     } catch (std::exception& e) {
