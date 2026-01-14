@@ -1,5 +1,5 @@
 # DarkChaos Custom Commands
-*Last Updated: 2026*
+*Last Updated: January 2026*
 
 This document provides a comprehensive list of custom commands available on the DarkChaos server.
 
@@ -8,6 +8,27 @@ This document provides a comprehensive list of custom commands available on the 
 ## Player Commands
 
 These commands are available to all players to manage various custom systems.
+
+### System: Jade Forest Training Grounds
+*Location:* Jade Forest (Map 745) – Talk to the **Training Master** NPC (entry 800029)
+
+The Training Master provides a gossip menu (no chat command) to spawn configurable boss-training dummies for practice.
+
+| Gossip Option | Description |
+| :--- | :--- |
+| **Spawn boss-training dummy** | Spawn one or more training dummies at the configured location. |
+| **Despawn my training dummies** | Despawn all dummies you previously spawned. |
+| **Profile: None / Cleave / Void / Stack / Add / Mixed** | Select the mechanic profile the dummy will use (frontal cleave, targeted void zones, stacking debuff, add-before-totem, or random mix). |
+| **Armor: Normal / Low / Bossy** | Adjust the dummy's armor multiplier for damage testing. |
+| **Movement: Stationary / Moving** | Toggle whether the dummy moves around during combat. |
+| **Targets: 1 / 2 / 3 / 5** | Set how many dummies to spawn at once. |
+| **Level: Match player / 80 / 255** | Set the dummy's level (default matches your level). |
+| **Visual: Random boss / Dummy model** | Toggle random boss appearance from the expansion display pool. |
+| **Spawn location: Anchor / Near master / Near player / Nearest pad** | Choose where dummies spawn (default: Anchor = fixed training area). |
+
+*Note: Training dummies are temporary, phased per-player, and auto-despawn after 5 minutes of inactivity.*
+
+---
 
 ### System: AoE Loot
 *Command:* `.aoeloot` (Alias: `.lp`)
@@ -96,10 +117,18 @@ These commands are available to all players to manage various custom systems.
 ### System: Challenges (Hardcore/Ironman)
 *Command:* `.challenge`
 
-| Subcommand | Arguments | Description |
-| :--- | :--- | :--- |
-| (none) | | View active challenge modes on your character. |
-*(Note: To start challenges, visit the Challenge Shrine in the starting area).*
+Displays all active challenge modes on your character. To start challenges, visit a **Challenge Shrine** in the starting area.
+
+| Mode | Effect |
+| :--- | :--- |
+| **Hardcore** | One life only – permanent death locks the character. |
+| **Semi-Hardcore** | Death causes gear loss. |
+| **Self-Crafted** | Can only equip self-crafted gear. |
+| **Item Quality** | Restricted to white/gray quality items. |
+| **Slow XP** | 50% XP gain rate. |
+| **Very Slow XP** | 25% XP gain rate. |
+| **Quest XP Only** | XP only from quests (no mob kills). |
+| **Iron Man** | Ultimate challenge – combines multiple restrictions. |
 
 ### System: Hinterland Battleground
 *Command:* `.hlbg`
@@ -263,3 +292,23 @@ These commands require GM or Administrator access levels.
 | :--- | :--- | :--- |
 | `reset` | `<player>` | Reset duel statistics for a player. |
 | `reload` | | Reload Phased Duels configuration. |
+
+### System: Stress Testing (`.stresstest`)
+*Command:* `.stresstest`
+
+Performance and stress testing tools for diagnosing server performance issues. Most subcommands can be run from console.
+
+| Subcommand | Arguments | Description |
+| :--- | :--- | :--- |
+| `sql` | | Run SQL stress tests (bulk select, repeated queries, transaction batches). |
+| `cache` | | Test ObjectMgr and ItemTemplate cache performance. |
+| `systems` | | Run subsystem tests (SpellMgr, WorldPacket, etc.). |
+| `stress` | | Run general stress tests. |
+| `dbasync` | `[iterations]` | Test async database query throughput. |
+| `path` | `[iterations]` | Test pathfinding performance (requires player context). |
+| `cpu` | | Run CPU benchmark tests. |
+| `loop` | `<seconds>` | Start a loop test that runs for the specified duration. |
+| `loopreport` | | Print the results of the last loop test. |
+| `mysql` | | Print MySQL connection and performance status. |
+| `full` | | Run all stress tests in sequence. |
+| `report` | `[file]` | Generate and optionally save a full performance report. |
