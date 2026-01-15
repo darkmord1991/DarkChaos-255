@@ -529,9 +529,13 @@ public:
         ObjectGuid playerGuid;
         uint32 joinTime;
         TeamId teamId;
+        bool active;
     };
 
     std::vector<QueueEntry> _queuedPlayers;
+    std::unordered_map<uint32, size_t> _queuedIndexByGuid;
+    uint32 _queuedAllianceCount = 0;
+    uint32 _queuedHordeCount = 0;
     uint32 _minPlayersToStart;
     uint32 _maxGroupSize;
     bool   _lockEnabled;               // enable lock window after win

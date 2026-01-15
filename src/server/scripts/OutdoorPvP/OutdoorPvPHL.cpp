@@ -211,6 +211,12 @@
 
         // Queue system initialization
         _queuedPlayers.clear();
+        _queuedIndexByGuid.clear();
+        _queuedAllianceCount = 0;
+        _queuedHordeCount = 0;
+        _queuedIndexByGuid.clear();
+        _queuedAllianceCount = 0;
+        _queuedHordeCount = 0;
         _affixTimerMs = 0;
         _activeAffix = AFFIX_NONE;
     _affixNextChangeEpoch = 0;
@@ -480,6 +486,9 @@
             bool hasConnectedQueued = false;
             for (QueueEntry const& entry : _queuedPlayers)
             {
+                if (!entry.active)
+                    continue;
+
                 if (ObjectAccessor::FindConnectedPlayer(entry.playerGuid))
                 {
                     hasConnectedQueued = true;

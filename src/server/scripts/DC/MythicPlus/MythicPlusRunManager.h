@@ -205,7 +205,7 @@ private:
     void UpdateHud(InstanceState* state, Map* map, bool forceBroadcast, std::string_view reason = {});
     void ProcessHudUpdatesInternal(InstanceState* state, Map* map);
     uint32 GetHudTimerDuration(uint32 mapId, uint8 keystoneLevel) const;
-    void MaybeSendAioSnapshot(InstanceState* state, Map* map, std::string_view reason);
+    void MaybeSendAioSnapshot(InstanceState* state, Map* map, std::string_view reason, bool forceBroadcast);
     void EnsureHudCacheTable();
     void PersistHudSnapshot(InstanceState* state, std::string_view payload, bool forceUpdate);
     void ClearHudSnapshot(InstanceState* state);

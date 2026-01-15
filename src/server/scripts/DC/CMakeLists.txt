@@ -87,7 +87,7 @@ set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/OutdoorPvPHL_Thresholds.cpp
     HinterlandBG/OutdoorPvPHL_Admin.cpp
     HinterlandBG/OutdoorPvPHL_Queue.cpp
-    HinterlandBG/OutdoorPvPHL_Commands.cpp
+    HinterlandBG/HinterlandBGQueueHandlers.cpp
     HinterlandBG/OutdoorPvPHL_StateMachine.cpp
     HinterlandBG/OutdoorPvPHL_Utils.cpp
     HinterlandBG/OutdoorPvPHL_Performance.cpp
@@ -161,7 +161,6 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4F
 set(SCRIPTS_DC_SeasonalSystem
     Seasons/SeasonalSystem.h
     Seasons/SeasonalSystem.cpp
-    Seasons/SeasonalSystemTest.cpp
     Seasons/HLBGSeasonalParticipant.cpp
 )
 

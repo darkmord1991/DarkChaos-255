@@ -51,6 +51,9 @@ void OutdoorPvPHL::TransitionToState(BGState newState)
         bool hasConnectedQueued = false;
         for (QueueEntry const& entry : _queuedPlayers)
         {
+            if (!entry.active)
+                continue;
+
             if (ObjectAccessor::FindConnectedPlayer(entry.playerGuid))
             {
                 hasConnectedQueued = true;
@@ -115,7 +118,7 @@ void OutdoorPvPHL::EnterWarmupState()
     _playerHKBaseline.clear();
 
     // Teleport any players who queued for the next match, then consume the queue.
-    if (!_queuedPlayers.empty())
+    if (GetQueuedPlayerCount() > 0)
     {
         TeleportQueuedPlayers();
         ClearQueue();

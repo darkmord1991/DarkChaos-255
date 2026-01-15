@@ -693,6 +693,176 @@ namespace DCPerfTest
         return result;
     }
 
+    TimingResult TestCoreCharacterTableQueries(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Core Character Table Queries (" + std::to_string(iterations) + " queries)";
+        result.iterations = iterations;
+        result.success = true;
+
+        std::vector<uint64> times;
+        times.reserve(iterations);
+
+        const char* tables[] = {
+            "characters",
+            "character_inventory",
+            "character_queststatus",
+            "character_achievement",
+            "mail",
+            "guild_member",
+            "group_member"
+        };
+
+        std::vector<char const*> existingTables;
+        existingTables.reserve(std::size(tables));
+        for (char const* table : tables)
+            if (CharacterTableExists(table))
+                existingTables.push_back(table);
+
+        if (existingTables.empty())
+        {
+            result.testName += " [SKIPPED: no core character tables present]";
+            result.iterations = 0;
+            result.totalUs = result.avgUs = result.minUs = result.maxUs = result.p95Us = result.p99Us = 0;
+            return result;
+        }
+
+        try
+        {
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                char const* table = existingTables[i % existingTables.size()];
+
+                std::ostringstream sql;
+                if (std::string(table) == "characters")
+                    sql << "SELECT guid, name, level FROM characters WHERE guid = " << (1 + (i % 500000));
+                else if (std::string(table) == "character_inventory")
+                    sql << "SELECT guid, bag, slot, item FROM character_inventory WHERE guid = " << (1 + (i % 500000)) << " LIMIT 25";
+                else if (std::string(table) == "character_queststatus")
+                    sql << "SELECT guid, quest FROM character_queststatus WHERE guid = " << (1 + (i % 500000)) << " LIMIT 25";
+                else if (std::string(table) == "character_achievement")
+                    sql << "SELECT guid, achievement FROM character_achievement WHERE guid = " << (1 + (i % 500000)) << " LIMIT 25";
+                else if (std::string(table) == "mail")
+                    sql << "SELECT id, receiver, subject FROM mail WHERE receiver = " << (1 + (i % 500000)) << " LIMIT 25";
+                else if (std::string(table) == "guild_member")
+                    sql << "SELECT guildid, guid, rank FROM guild_member WHERE guildid = " << (1 + (i % 50000)) << " LIMIT 50";
+                else if (std::string(table) == "group_member")
+                    sql << "SELECT guid, memberGuid FROM group_member WHERE guid = " << (1 + (i % 50000)) << " LIMIT 50";
+                else
+                    sql << "SELECT 1 FROM " << table << " LIMIT 1";
+
+                auto start = Clock::now();
+                QueryResult qr = CharacterDatabase.Query(sql.str().c_str());
+                (void)qr;
+                auto end = Clock::now();
+                times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
+            }
+
+            if (!times.empty())
+            {
+                std::sort(times.begin(), times.end());
+                result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
+                result.avgUs = result.totalUs / iterations;
+                result.minUs = times.front();
+                result.maxUs = times.back();
+                result.p95Us = GetPercentile(times, 95.0f);
+                result.p99Us = GetPercentile(times, 99.0f);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestCoreWorldTableQueries(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Core World Table Queries (" + std::to_string(iterations) + " queries)";
+        result.iterations = iterations;
+        result.success = true;
+
+        std::vector<uint64> times;
+        times.reserve(iterations);
+
+        const char* tables[] = {
+            "creature_template",
+            "item_template",
+            "quest_template",
+            "gameobject_template",
+            "npc_vendor",
+            "creature_loot_template",
+            "gameobject_loot_template"
+        };
+
+        std::vector<char const*> existingTables;
+        existingTables.reserve(std::size(tables));
+        for (char const* table : tables)
+            if (WorldTableExists(table))
+                existingTables.push_back(table);
+
+        if (existingTables.empty())
+        {
+            result.testName += " [SKIPPED: no core world tables present]";
+            result.iterations = 0;
+            result.totalUs = result.avgUs = result.minUs = result.maxUs = result.p95Us = result.p99Us = 0;
+            return result;
+        }
+
+        try
+        {
+            for (uint32 i = 0; i < iterations; ++i)
+            {
+                char const* table = existingTables[i % existingTables.size()];
+
+                std::ostringstream sql;
+                if (std::string(table) == "creature_template")
+                    sql << "SELECT entry, name FROM creature_template WHERE entry = " << (1 + (i % 500000));
+                else if (std::string(table) == "item_template")
+                    sql << "SELECT entry, name FROM item_template WHERE entry = " << (1 + (i % 800000));
+                else if (std::string(table) == "quest_template")
+                    sql << "SELECT ID, Title FROM quest_template WHERE ID = " << (1 + (i % 200000));
+                else if (std::string(table) == "gameobject_template")
+                    sql << "SELECT entry, name FROM gameobject_template WHERE entry = " << (1 + (i % 200000));
+                else if (std::string(table) == "npc_vendor")
+                    sql << "SELECT entry, item FROM npc_vendor WHERE entry = " << (1 + (i % 500000)) << " LIMIT 25";
+                else if (std::string(table) == "creature_loot_template")
+                    sql << "SELECT entry, item FROM creature_loot_template WHERE entry = " << (1 + (i % 500000)) << " LIMIT 25";
+                else if (std::string(table) == "gameobject_loot_template")
+                    sql << "SELECT entry, item FROM gameobject_loot_template WHERE entry = " << (1 + (i % 200000)) << " LIMIT 25";
+                else
+                    sql << "SELECT 1 FROM " << table << " LIMIT 1";
+
+                auto start = Clock::now();
+                QueryResult qr = WorldDatabase.Query(sql.str().c_str());
+                (void)qr;
+                auto end = Clock::now();
+                times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
+            }
+
+            if (!times.empty())
+            {
+                std::sort(times.begin(), times.end());
+                result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
+                result.avgUs = result.totalUs / iterations;
+                result.minUs = times.front();
+                result.maxUs = times.back();
+                result.p95Us = GetPercentile(times, 95.0f);
+                result.p99Us = GetPercentile(times, 99.0f);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
     // =========================================================================
     // Cache Performance Tests
     // =========================================================================
@@ -1919,6 +2089,26 @@ public:
                 return true;
             }
 
+            if (suite == "coredb")
+            {
+                if (printDetails)
+                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: Core DB ===|r");
+
+                uint32 iterations = 200;
+                if (args && *args)
+                {
+                    uint32 val = atoi(args);
+                    if (val > 0)
+                        iterations = val;
+                }
+                if (iterations > 2000)
+                    iterations = 2000;
+
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCoreCharacterTableQueries(iterations));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCoreWorldTableQueries(iterations));
+                return true;
+            }
+
             if (suite == "dbasync")
             {
                 if (printDetails)
@@ -2000,6 +2190,8 @@ public:
                 AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestGreatVaultSimulation(limitSafe * 2));
                 AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestGuildHouseLoadSimulation(limitSafe));
                 AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestMassMapEntityLoad((limitSafe > 2) ? (limitSafe * 4 / 10) : 1));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCoreCharacterTableQueries(limitSafe * 4));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestCoreWorldTableQueries(limitSafe * 4));
                 return true;
             }
 
@@ -2022,6 +2214,7 @@ public:
                 RunSuite(handler, "sql", "", printDetails, out);
                 RunSuite(handler, "cache", "", printDetails, out);
                 RunSuite(handler, "systems", "", printDetails, out);
+                RunSuite(handler, "coredb", "", printDetails, out);
                 RunSuite(handler, "stress", "", printDetails, out);
                 if (printDetails)
                     DCPerfTest::PrintMySQLStatus(handler);
@@ -2141,7 +2334,7 @@ public:
         // Usage:
         // .stresstest loop <suite> [loops=10] [sleepMs=1000] [suiteArgs...]
         // Optional: prefix suiteArgs with "quiet" to only print the final summary.
-        // suite: sql|cache|systems|stress|dbasync|path|cpu|mysql|full
+        // suite: sql|cache|systems|coredb|stress|dbasync|path|cpu|mysql|full
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: LOOP ===|r");
 
         std::string suite;
@@ -2483,6 +2676,7 @@ public:
             ChatCommandBuilder("sql",     HandlePerfTestSQL,     SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("cache",   HandlePerfTestCache,   SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("systems", HandlePerfTestSystems, SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("coredb",  HandlePerfTestCoreDB,  SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("stress",  HandlePerfTestStress,  SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("dbasync", HandlePerfTestDBAsync, SEC_GAMEMASTER, Console::Yes),
             // path requires an in-game Player context.
@@ -2545,6 +2739,30 @@ public:
         return true;
     }
 
+    static bool HandlePerfTestCoreDB(ChatHandler* handler, const char* args)
+    {
+        handler->SendSysMessage("|cff00ff00=== DC Performance Test: Core DB ===|r");
+
+        uint32 iterations = 200;
+        if (args && *args)
+        {
+            uint32 val = atoi(args);
+            if (val > 0)
+                iterations = val;
+        }
+        if (iterations > 2000)
+            iterations = 2000;
+
+        auto r1 = TestCoreCharacterTableQueries(iterations);
+        PrintResult(handler, r1);
+
+        auto r2 = TestCoreWorldTableQueries(iterations);
+        PrintResult(handler, r2);
+
+        handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");
+        return true;
+    }
+
     static bool HandlePerfTestStress(ChatHandler* handler, const char* args)
     {
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: STRESS SIMULATION ===|r");
@@ -2583,6 +2801,12 @@ public:
         auto r8 = TestMassMapEntityLoad((limitSafe > 2) ? (limitSafe * 4 / 10) : 1);
         PrintResult(handler, r8);
 
+        auto r9 = TestCoreCharacterTableQueries(limitSafe * 4);
+        PrintResult(handler, r9);
+
+        auto r10 = TestCoreWorldTableQueries(limitSafe * 4);
+        PrintResult(handler, r10);
+
         handler->SendSysMessage("|cff00ff00=== Stress Test Complete ===|r");
         return true;
     }
@@ -2601,6 +2825,7 @@ public:
         HandlePerfTestSQL(handler, "");
         HandlePerfTestCache(handler, "");
         HandlePerfTestSystems(handler, "");
+        HandlePerfTestCoreDB(handler, "");
         HandlePerfTestStress(handler, ""); 
         PrintMySQLStatus(handler, "");
 

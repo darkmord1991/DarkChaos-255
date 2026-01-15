@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------------
-// OutdoorPvPHL_Commands.cpp (deprecated)
+// HinterlandBGQueueHandlers.cpp
 // -----------------------------------------------------------------------------
-// Renamed to HinterlandBGQueueHandlers.cpp to avoid confusion with CommandScripts.
-// This file is kept only to preserve history; it is no longer built.
+// Queue command handlers for the HLBG controller.
+// (Renamed from OutdoorPvPHL_Commands.cpp to avoid confusion with CommandScripts.)
 // -----------------------------------------------------------------------------
 #include "HinterlandBG.h"
 #include "Player.h"

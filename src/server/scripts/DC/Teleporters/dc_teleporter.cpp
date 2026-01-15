@@ -7,6 +7,10 @@
 #include "CommandScript.h"
 #include "DatabaseEnv.h"
 
+#include <algorithm>
+#include <unordered_map>
+#include <vector>
+
 #include "../GuildHousing/guildhouse.h"
 
 using namespace Acore::ChatCommands;
@@ -32,10 +36,26 @@ struct TeleporterOption
 };
 
 std::map<uint32, TeleporterOption> sTeleporterOptions;
+std::unordered_map<uint32, std::vector<uint32>> sTeleporterByParent;
+
+void BuildTeleporterIndex()
+{
+    sTeleporterByParent.clear();
+    sTeleporterByParent.reserve(sTeleporterOptions.size());
+
+    for (auto const& [id, option] : sTeleporterOptions)
+        sTeleporterByParent[option.ParentId].push_back(id);
+
+    for (auto& [parentId, ids] : sTeleporterByParent)
+    {
+        std::sort(ids.begin(), ids.end());
+    }
+}
 
 void LoadTeleporterOptions()
 {
     sTeleporterOptions.clear();
+    sTeleporterByParent.clear();
     QueryResult result = WorldDatabase.Query("SELECT id, parent, type, faction, security_level, icon, name, map, x, y, z, o FROM dc_teleporter");
 
     if (!result)
@@ -65,6 +85,7 @@ void LoadTeleporterOptions()
 
     } while (result->NextRow());
 
+    BuildTeleporterIndex();
     LOG_INFO("server.loading", "Loaded {} teleporter options.", sTeleporterOptions.size());
 }
 
@@ -156,29 +177,25 @@ private:
     void ShowMenu(Player* player, Creature* creature, uint32 parentId)
     {
         ClearGossipMenuFor(player);
-
-        std::vector<TeleporterOption> options;
-        for (auto const& pair : sTeleporterOptions)
+        auto listIt = sTeleporterByParent.find(parentId);
+        if (listIt != sTeleporterByParent.end())
         {
-            if (pair.second.ParentId == parentId)
+            for (uint32 optionId : listIt->second)
             {
-                if (pair.second.Faction != -1 && (int32)player->GetTeamId() != pair.second.Faction)
+                auto optIt = sTeleporterOptions.find(optionId);
+                if (optIt == sTeleporterOptions.end())
                     continue;
 
-                if (player->GetSession()->GetSecurity() < pair.second.SecurityLevel)
+                TeleporterOption const& option = optIt->second;
+
+                if (option.Faction != -1 && static_cast<int32>(player->GetTeamId()) != option.Faction)
                     continue;
 
-                options.push_back(pair.second);
+                if (player->GetSession()->GetSecurity() < option.SecurityLevel)
+                    continue;
+
+                AddGossipItemFor(player, option.Icon, option.Name, 0, option.Id);
             }
-        }
-
-        std::sort(options.begin(), options.end(), [](TeleporterOption const& a, TeleporterOption const& b) {
-            return a.Id < b.Id;
-        });
-
-        for (auto const& option : options)
-        {
-            AddGossipItemFor(player, option.Icon, option.Name, 0, option.Id);
         }
 
         if (parentId != 0)

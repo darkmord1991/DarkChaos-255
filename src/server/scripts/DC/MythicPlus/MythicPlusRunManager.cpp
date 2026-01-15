@@ -92,8 +92,6 @@ void MythicPlusRunManager::Reset()
 {
     _instanceStates.clear();
     CacheBossMetadata();
-    _instanceStates.clear();
-    CacheBossMetadata();
     // EnsureHudCacheTable(); // Moved to SQL migration
     CharacterDatabase.DirectExecute("DELETE FROM `{}`", HUD_CACHE_TABLE);
     LOG_INFO("mythic.run", "Mythic+ Run Manager reset complete");
@@ -2210,7 +2208,7 @@ void MythicPlusRunManager::UpdateHud(InstanceState* state, Map* map, bool forceB
         }
     }
 
-    MaybeSendAioSnapshot(state, map, reason);
+    MaybeSendAioSnapshot(state, map, reason, forceBroadcast);
 }
 
 int32 MythicPlusRunManager::GetBossIndex(InstanceState const* state, uint32 bossEntry) const
@@ -2240,7 +2238,7 @@ void MythicPlusRunManager::MarkBossKilled(InstanceState* state, Map* map, uint32
     SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSS_KILLTIME_BASE + static_cast<uint32>(idx), killAt);
 }
 
-void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, std::string_view reason)
+void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, std::string_view reason, bool forceBroadcast)
 {
     if (!state || !map)
         return;
@@ -2250,8 +2248,7 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
 
     uint32 intervalMs = sConfigMgr->GetOption<uint32>("MythicPlus.Hud.Aio.IntervalMS", 1500u);
     uint64 nowMs = GameTime::GetGameTimeMS().count();
-    bool force = !reason.empty();
-    if (!force && intervalMs > 0 && nowMs < state->lastAioBroadcast + intervalMs)
+    if (!forceBroadcast && intervalMs > 0 && nowMs < state->lastAioBroadcast + intervalMs)
         return;
 
     state->lastAioBroadcast = nowMs;
@@ -2339,7 +2336,7 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     payload << '}';
 
     std::string data = payload.str();
-    PersistHudSnapshot(state, data, force);
+    PersistHudSnapshot(state, data, forceBroadcast);
 
 #ifndef HAS_AIO
     (void)map;

@@ -58,8 +58,14 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     // integral count into the uint32 joinTime field.
     entry.joinTime = static_cast<uint32>(GameTime::GetGameTime().count());
     entry.teamId = player->GetTeamId();
+    entry.active = true;
 
     _queuedPlayers.push_back(entry);
+    _queuedIndexByGuid[playerGuid.GetCounter()] = _queuedPlayers.size() - 1;
+    if (entry.teamId == TEAM_ALLIANCE)
+        ++_queuedAllianceCount;
+    else if (entry.teamId == TEAM_HORDE)
+        ++_queuedHordeCount;
 
     // Announce queue join
     std::string playerName = player->GetName();
@@ -84,14 +90,18 @@ void OutdoorPvPHL::RemovePlayerFromQueue(Player* player)
 
     ObjectGuid playerGuid = player->GetGUID();
 
-    auto it = std::find_if(_queuedPlayers.begin(), _queuedPlayers.end(),
-        [playerGuid](const QueueEntry& entry) {
-            return entry.playerGuid == playerGuid;
-        });
-
-    if (it != _queuedPlayers.end())
+    auto indexIt = _queuedIndexByGuid.find(playerGuid.GetCounter());
+    if (indexIt != _queuedIndexByGuid.end())
     {
-        _queuedPlayers.erase(it);
+        size_t index = indexIt->second;
+        QueueEntry& removed = _queuedPlayers[index];
+        removed.active = false;
+        _queuedIndexByGuid.erase(indexIt);
+
+        if (removed.teamId == TEAM_ALLIANCE && _queuedAllianceCount > 0)
+            --_queuedAllianceCount;
+        else if (removed.teamId == TEAM_HORDE && _queuedHordeCount > 0)
+            --_queuedHordeCount;
         ChatHandler(player->GetSession()).PSendSysMessage("You have left the Hinterland BG queue.");
         SendQueueStatusAIO(player);
         LOG_DEBUG("bg.battleground", "Player {} left HLBG queue", player->GetName());
@@ -107,25 +117,21 @@ bool OutdoorPvPHL::IsPlayerInQueue(Player* player)
     if (!player)
         return false;
 
-    ObjectGuid playerGuid = player->GetGUID();
-
-    return std::find_if(_queuedPlayers.begin(), _queuedPlayers.end(),
-        [playerGuid](const QueueEntry& entry) {
-            return entry.playerGuid == playerGuid;
-        }) != _queuedPlayers.end();
+    return _queuedIndexByGuid.find(player->GetGUID().GetCounter()) != _queuedIndexByGuid.end();
 }
 
 uint32 OutdoorPvPHL::GetQueuedPlayerCount()
 {
-    return static_cast<uint32>(_queuedPlayers.size());
+    return _queuedAllianceCount + _queuedHordeCount;
 }
 
 uint32 OutdoorPvPHL::GetQueuedPlayerCountByTeam(TeamId teamId)
 {
-    return static_cast<uint32>(std::count_if(_queuedPlayers.begin(), _queuedPlayers.end(),
-        [teamId](const QueueEntry& entry) {
-            return entry.teamId == teamId;
-        }));
+    if (teamId == TEAM_ALLIANCE)
+        return _queuedAllianceCount;
+    if (teamId == TEAM_HORDE)
+        return _queuedHordeCount;
+    return 0u;
 }
 
 void OutdoorPvPHL::ShowQueueStatus(Player* player)
@@ -145,18 +151,19 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
 
     if (IsPlayerInQueue(player))
     {
-        // Find player's position in queue
-        auto it = std::find_if(_queuedPlayers.begin(), _queuedPlayers.end(),
-            [player](const QueueEntry& entry) {
-                return entry.playerGuid == player->GetGUID();
-            });
-
-        if (it != _queuedPlayers.end())
+        auto indexIt = _queuedIndexByGuid.find(player->GetGUID().GetCounter());
+        if (indexIt != _queuedIndexByGuid.end())
         {
-            uint32 position = static_cast<uint32>(std::distance(_queuedPlayers.begin(), it) + 1);
-            // Use .count() to get an integral seconds value and compute wait time
-            // against the stored uint32 joinTime.
-            uint32 waitTime = static_cast<uint32>(GameTime::GetGameTime().count() - it->joinTime);
+            size_t index = indexIt->second;
+            uint32 position = 0;
+            for (size_t i = 0; i <= index && i < _queuedPlayers.size(); ++i)
+            {
+                if (_queuedPlayers[i].active)
+                    ++position;
+            }
+
+            QueueEntry const& entry = _queuedPlayers[index];
+            uint32 waitTime = static_cast<uint32>(GameTime::GetGameTime().count() - entry.joinTime);
             ch.PSendSysMessage("Your position: {} | Wait time: {} seconds", position, waitTime);
         }
     }
@@ -193,11 +200,22 @@ void OutdoorPvPHL::ProcessQueueSystem()
         return;
 
     // Prune stale/offline entries so we don't start warmup for disconnected players.
-    _queuedPlayers.erase(std::remove_if(_queuedPlayers.begin(), _queuedPlayers.end(),
-        [](QueueEntry const& entry) {
-            return ObjectAccessor::FindConnectedPlayer(entry.playerGuid) == nullptr;
-        }),
-        _queuedPlayers.end());
+    for (QueueEntry& entry : _queuedPlayers)
+    {
+        if (!entry.active)
+            continue;
+
+        if (ObjectAccessor::FindConnectedPlayer(entry.playerGuid))
+            continue;
+
+        entry.active = false;
+        _queuedIndexByGuid.erase(entry.playerGuid.GetCounter());
+
+        if (entry.teamId == TEAM_ALLIANCE && _queuedAllianceCount > 0)
+            --_queuedAllianceCount;
+        else if (entry.teamId == TEAM_HORDE && _queuedHordeCount > 0)
+            --_queuedHordeCount;
+    }
 
     // Check if we have enough players to start warmup
     uint32 queuedPlayers = GetQueuedPlayerCount();
@@ -222,13 +240,24 @@ void OutdoorPvPHL::StartWarmupPhase()
         return;
 
     // Re-prune offline entries right before starting, and require at least one connected player.
-    _queuedPlayers.erase(std::remove_if(_queuedPlayers.begin(), _queuedPlayers.end(),
-        [](QueueEntry const& entry) {
-            return ObjectAccessor::FindConnectedPlayer(entry.playerGuid) == nullptr;
-        }),
-        _queuedPlayers.end());
+    for (QueueEntry& entry : _queuedPlayers)
+    {
+        if (!entry.active)
+            continue;
 
-    if (_queuedPlayers.empty())
+        if (ObjectAccessor::FindConnectedPlayer(entry.playerGuid))
+            continue;
+
+        entry.active = false;
+        _queuedIndexByGuid.erase(entry.playerGuid.GetCounter());
+
+        if (entry.teamId == TEAM_ALLIANCE && _queuedAllianceCount > 0)
+            --_queuedAllianceCount;
+        else if (entry.teamId == TEAM_HORDE && _queuedHordeCount > 0)
+            --_queuedHordeCount;
+    }
+
+    if (GetQueuedPlayerCount() == 0)
         return;
 
     uint32 requiredPlayers = std::max<uint32>(_minPlayersToStart, 1u);
@@ -249,6 +278,9 @@ void OutdoorPvPHL::TeleportQueuedPlayers()
 
     for (const QueueEntry& entry : _queuedPlayers)
     {
+        if (!entry.active)
+            continue;
+
         Player* player = ObjectAccessor::FindConnectedPlayer(entry.playerGuid);
         if (!player)
             continue;
@@ -283,8 +315,11 @@ void OutdoorPvPHL::ClearQueue()
 {
     if (!_queuedPlayers.empty())
     {
-        LOG_DEBUG("bg.battleground", "HLBG: Clearing queue with {} players", _queuedPlayers.size());
+        LOG_DEBUG("bg.battleground", "HLBG: Clearing queue with {} players", GetQueuedPlayerCount());
         _queuedPlayers.clear();
+        _queuedIndexByGuid.clear();
+        _queuedAllianceCount = 0;
+        _queuedHordeCount = 0;
     }
 }
 
