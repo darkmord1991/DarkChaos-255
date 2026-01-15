@@ -51,6 +51,8 @@ namespace DCPerfTest
         std::string error;
     };
 
+    TimingResult TestGreatVaultSimulation(uint32 playerCount);
+
     // Calculate percentile from sorted vector
     uint64 GetPercentile(const std::vector<uint64>& sortedTimes, float percentile)
     {
@@ -745,7 +747,7 @@ namespace DCPerfTest
                 else if (std::string(table) == "mail")
                     sql << "SELECT id, receiver, subject FROM mail WHERE receiver = " << (1 + (i % 500000)) << " LIMIT 25";
                 else if (std::string(table) == "guild_member")
-                    sql << "SELECT guildid, guid, rank FROM guild_member WHERE guildid = " << (1 + (i % 50000)) << " LIMIT 50";
+                    sql << "SELECT guildid, guid, `rank` FROM guild_member WHERE guildid = " << (1 + (i % 50000)) << " LIMIT 50";
                 else if (std::string(table) == "group_member")
                     sql << "SELECT guid, memberGuid FROM group_member WHERE guid = " << (1 + (i % 50000)) << " LIMIT 50";
                 else
@@ -824,7 +826,7 @@ namespace DCPerfTest
                 else if (std::string(table) == "item_template")
                     sql << "SELECT entry, name FROM item_template WHERE entry = " << (1 + (i % 800000));
                 else if (std::string(table) == "quest_template")
-                    sql << "SELECT ID, Title FROM quest_template WHERE ID = " << (1 + (i % 200000));
+                    sql << "SELECT ID FROM quest_template WHERE ID = " << (1 + (i % 200000));
                 else if (std::string(table) == "gameobject_template")
                     sql << "SELECT entry, name FROM gameobject_template WHERE entry = " << (1 + (i % 200000));
                 else if (std::string(table) == "npc_vendor")
@@ -1216,6 +1218,13 @@ namespace DCPerfTest
             FormatTime(result.avgUs),
             FormatTime(result.minUs),
             FormatTime(result.maxUs)));
+
+        if (result.iterations > 0 && result.totalUs > 0)
+        {
+            double secs = double(result.totalUs) / 1000000.0;
+            double opsPerSec = secs > 0.0 ? (double(result.iterations) / secs) : 0.0;
+            handler->SendSysMessage(Acore::StringFormat("  Ops/s: {:.2f}", opsPerSec));
+        }
         
         if (result.iterations > 1)
         {
@@ -1579,6 +1588,101 @@ namespace DCPerfTest
                         std::ostringstream sql;
                         sql << "SELECT current_keystone_level FROM dc_player_keystones WHERE player_guid = " << fakeGuid;
                         CharacterDatabase.Query(sql.str().c_str());
+                    }
+                }
+
+                auto end = Clock::now();
+                times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
+            }
+
+            if (!times.empty())
+            {
+                std::sort(times.begin(), times.end());
+                result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
+                result.avgUs = result.totalUs / playerCount;
+                result.minUs = times.front();
+                result.maxUs = times.back();
+                result.p95Us = GetPercentile(times, 95.0f);
+                result.p99Us = GetPercentile(times, 99.0f);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            result.success = false;
+            result.error = e.what();
+        }
+
+        return result;
+    }
+
+    TimingResult TestPlayerCountSimulation(uint32 playerCount, bool includeCore, bool includeVault)
+    {
+        TimingResult result;
+        result.testName = "Player Count Simulation (" + std::to_string(playerCount) + " players)";
+        result.iterations = playerCount;
+        result.success = true;
+
+        std::vector<uint64> times;
+        times.reserve(playerCount);
+
+        bool hasCharacters = CharacterTableExists("characters");
+        bool hasCharInv = CharacterTableExists("character_inventory");
+        bool hasCharQuest = CharacterTableExists("character_queststatus");
+        bool hasMail = CharacterTableExists("mail");
+
+        try
+        {
+            for (uint32 i = 0; i < playerCount; ++i)
+            {
+                auto start = Clock::now();
+
+                uint32 fakeGuid = 10000 + (i % 500000);
+                uint32 actionRoll = urand(0, 99);
+
+                if (hasCharacters)
+                {
+                    std::ostringstream sql;
+                    sql << "SELECT guid, name, level FROM characters WHERE guid = " << fakeGuid;
+                    CharacterDatabase.Query(sql.str().c_str());
+                }
+
+                if (hasCharInv && actionRoll >= 10)
+                {
+                    std::ostringstream sql;
+                    sql << "SELECT guid, bag, slot, item FROM character_inventory WHERE guid = " << fakeGuid << " LIMIT 25";
+                    CharacterDatabase.Query(sql.str().c_str());
+                }
+
+                if (hasCharQuest && actionRoll >= 20)
+                {
+                    std::ostringstream sql;
+                    sql << "SELECT guid, quest FROM character_queststatus WHERE guid = " << fakeGuid << " LIMIT 25";
+                    CharacterDatabase.Query(sql.str().c_str());
+                }
+
+                if (hasMail && actionRoll >= 30)
+                {
+                    std::ostringstream sql;
+                    sql << "SELECT id, receiver, subject FROM mail WHERE receiver = " << fakeGuid << " LIMIT 10";
+                    CharacterDatabase.Query(sql.str().c_str());
+                }
+
+                if (includeCore)
+                {
+                    if (actionRoll % 2 == 0)
+                        WorldDatabase.Query("SELECT entry FROM item_template LIMIT 50");
+                    else
+                        WorldDatabase.Query("SELECT entry FROM creature_template LIMIT 50");
+                }
+
+                if (includeVault && actionRoll >= 70)
+                {
+                    auto r = TestGreatVaultSimulation(1);
+                    if (!r.success)
+                    {
+                        result.success = false;
+                        result.error = r.error;
+                        break;
                     }
                 }
 
@@ -2109,6 +2213,32 @@ public:
                 return true;
             }
 
+            if (suite == "playersim")
+            {
+                if (printDetails)
+                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: Player Count Simulation ===|r");
+
+                uint32 playerCount = 200;
+                uint32 includeCore = 1;
+                uint32 includeVault = 0;
+
+                if (args && *args)
+                {
+                    std::istringstream iss(args);
+                    iss >> playerCount;
+                    if (!(iss >> includeCore))
+                        includeCore = 1;
+                    if (!(iss >> includeVault))
+                        includeVault = 0;
+                }
+
+                if (playerCount > 5000)
+                    playerCount = 5000;
+
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestPlayerCountSimulation(playerCount, includeCore != 0, includeVault != 0));
+                return true;
+            }
+
             if (suite == "dbasync")
             {
                 if (printDetails)
@@ -2334,7 +2464,7 @@ public:
         // Usage:
         // .stresstest loop <suite> [loops=10] [sleepMs=1000] [suiteArgs...]
         // Optional: prefix suiteArgs with "quiet" to only print the final summary.
-        // suite: sql|cache|systems|coredb|stress|dbasync|path|cpu|mysql|full
+        // suite: sql|cache|systems|coredb|playersim|stress|dbasync|path|cpu|mysql|full
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: LOOP ===|r");
 
         std::string suite;
@@ -2401,6 +2531,10 @@ public:
                 ok = HandlePerfTestCache(handler, passArgs);
             else if (suite == "systems")
                 ok = HandlePerfTestSystems(handler, passArgs);
+            else if (suite == "coredb")
+                ok = HandlePerfTestCoreDB(handler, passArgs);
+            else if (suite == "playersim")
+                ok = HandlePerfTestPlayerSim(handler, passArgs);
             else if (suite == "stress" || suite == "big")
                 ok = HandlePerfTestStress(handler, passArgs);
             else if (suite == "dbasync")
@@ -2677,6 +2811,7 @@ public:
             ChatCommandBuilder("cache",   HandlePerfTestCache,   SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("systems", HandlePerfTestSystems, SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("coredb",  HandlePerfTestCoreDB,  SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("playersim", HandlePerfTestPlayerSim, SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("stress",  HandlePerfTestStress,  SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("dbasync", HandlePerfTestDBAsync, SEC_GAMEMASTER, Console::Yes),
             // path requires an in-game Player context.
@@ -2763,6 +2898,34 @@ public:
         return true;
     }
 
+    static bool HandlePerfTestPlayerSim(ChatHandler* handler, const char* args)
+    {
+        handler->SendSysMessage("|cff00ff00=== DC Performance Test: Player Count Simulation ===|r");
+
+        uint32 playerCount = 200;
+        uint32 includeCore = 1;
+        uint32 includeVault = 0;
+
+        if (args && *args)
+        {
+            std::istringstream iss(args);
+            iss >> playerCount;
+            if (!(iss >> includeCore))
+                includeCore = 1;
+            if (!(iss >> includeVault))
+                includeVault = 0;
+        }
+
+        if (playerCount > 5000)
+            playerCount = 5000;
+
+        auto r1 = TestPlayerCountSimulation(playerCount, includeCore != 0, includeVault != 0);
+        PrintResult(handler, r1);
+
+        handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");
+        return true;
+    }
+
     static bool HandlePerfTestStress(ChatHandler* handler, const char* args)
     {
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: STRESS SIMULATION ===|r");
@@ -2807,6 +2970,9 @@ public:
         auto r10 = TestCoreWorldTableQueries(limitSafe * 4);
         PrintResult(handler, r10);
 
+        auto r11 = TestPlayerCountSimulation(limitSafe * 4, true, false);
+        PrintResult(handler, r11);
+
         handler->SendSysMessage("|cff00ff00=== Stress Test Complete ===|r");
         return true;
     }
@@ -2826,6 +2992,7 @@ public:
         HandlePerfTestCache(handler, "");
         HandlePerfTestSystems(handler, "");
         HandlePerfTestCoreDB(handler, "");
+        HandlePerfTestPlayerSim(handler, "");
         HandlePerfTestStress(handler, ""); 
         PrintMySQLStatus(handler, "");
 

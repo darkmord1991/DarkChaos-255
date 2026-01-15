@@ -681,7 +681,7 @@ Appender.Server=2,5,0,Server.log,w
 # Appender.GM=2,5,15,gm_%s.log
 Appender.Errors=2,2,0,Errors.log,w
 # DarkChaos custom systems (DC scripts/modules)
-Appender.DC=2,5,0,dcsystem.log,a
+Appender.DC=2,5,0,dcsystem.log,w
 # Appender.DB=3,5,0
 # Appender.Dev=2,5,0,Dev.log,a
 

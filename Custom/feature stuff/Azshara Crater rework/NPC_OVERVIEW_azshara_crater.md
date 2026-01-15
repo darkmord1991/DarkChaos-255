@@ -220,22 +220,24 @@
 | **Razortalon** | **8210** | 44 | **RARE** | 1 |
 
 ### Zone 5: Western Cliffs (Level 40-50)
+*Theme Refactor: Timbermaw Furbolg Camps & Highborne Ruins (Matches Screenshots).*
+
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
-| Jadefire Satyr | **11791** | 49 | Demon | 12 |
-| Putridus Trickster | **11791** | 43 | Demon | 10 |
-| Putridus Satyr | **11790** | 42-43 | Demon | 8 |
-| Felpaw Ravager | **5866** | 45-47 | Demon | 10 |
-| Felhound | **5865** | 48-50 | Demon | 8 |
-| Fel Steed | **11464** | 42-44 | Demon | 6 |
-| Carrion Vulture | **2937** | 42-44 | Beast | 8 |
-| Rekk'tilac | **8277** | 48 | Beast | 10 |
-| Hellcalled Shadowstalker | **11452** | 44-46 | Demon | 8 |
-| **Monnos the Elder** | **6144** | 47 | **RARE** | 1 |
-| **Magronos the Unyielding** | **6146** | 48 | **RARE** | 1 |
-| **Andre Firebeard** | **14222** | 48 | **RARE** | 1 |
-| **Muskrat** | **14223** | 43 | **RARE** | 1 |
-| **Zul'arek Hatefury** | **14225** | 45 | **RARE** | 1 |
+| Timbermaw Warrior | **6185** | 47-48 | Humanoid (Furbolg) | 12 |
+| Timbermaw Watcher | **6187** | 49-50 | Humanoid (Furbolg) | 10 |
+| Timbermaw Shaman | **6188** | 50-51 | Humanoid (Furbolg) | 8 |
+| Ironfur Bear | **5268** | 44-45 | Beast | 8 |
+| Thunderhead Hippogryph| **6375** | 46-48 | Beast | 8 |
+| Thunderhead Skystormer| **6378** | 50-52 | Beast | 6 |
+| Highborne Apparition | **6116** | 45-46 | Undead (Ghost) | 10 |
+| Highborne Lichling | **6117** | 46-47 | Undead (Ghost) | 8 |
+| Ghostly Marauder | **11687** | 41-42 | Undead (Ghost) | 8 |
+| **Monnos the Elder** | **6144** | 47 | **RARE** | 1 (Furbolg) |
+| **Magronos the Unyielding** | **6146** | 48 | **RARE** | 1 (Furbolg) |
+| **Gatekeeper Rageroar** | **6651** | 49 | **RARE** | 1 (Furbolg) |
+| **General Fangferror** | **6115** | 50 | **RARE** | 1 (Ghost) |
+| **Lady Sesspira** | **6133** | 47 | **RARE** | 1 (Ghost) |
 
 ### Zone 6: Haldarr Territory (Level 50-60)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
