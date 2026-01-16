@@ -389,24 +389,40 @@
 ### ★D5: Temple of Elune (Level 60-70)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Deepmoss Creeper | **4005** | 60-61 | No |
-| Trash | Nerubian Webspinner | **10374** | 58-59 | No |
-| Trash | Shrieking Banshee | **10463** | 60-61 | No |
-| Trash | Wailing Banshee | **10464** | 61-62 | No |
-| Trash | Corrupted Sentinel | **3571** | 62-63 | **Yes** (Ghost) |
-| Trash | Kirin'Var Spectre | **20496** | 63-64 | No |
-| Trash | Smolderweb Hatchling | **10598** | 60 | No |
-| Trash | Warpwood Shredder | **7101** | 60-62 | No |
-| **Rare** | **Skul** | **10393** | 62 | **RARE** (Ghost) |
-| **Rare** | **Tendris Warpwood** | **11489** | 63 | **RARE** (Treant) |
-| **Mini-Boss**| **Mother Smolderweb** | **10596** | 60 | **Elite** (Spider) |
-| **Boss** | **Nerub'enkan** | **10437** | 62 | **Elite** (Spider Boss) |
-| **Boss** | **Baroness Anandara** | **14506** | 63 | **Elite** (Banshee Boss) |
+| Trash | Corrupted Spectre | **22041** | 65-66 | No |
+| Trash | Web Lord | **25294** | 69 | **Elite** (Spider) |
+| Trash | Black Morass Tarantula | **18983** | 67-68 | No |
+| Trash | Underbat | **17805** | 64-65 | No |
+| Trash | Fungal Giant | **17885** | 65-66 | **Elite** (Giant) |
+| Trash | **Forest Strider** | **21634** | 65-66 | No |
+| Trash | **Underbog Shambler** | **17871** | 63-64 | No |
+| Trash | Dread Bat | **1555** | 64-65 | No |
+| **Rare** | **Skul** | **10393** | 68 | **Rare Elite** (Ghost) |
+| **Rare** | **Tendris Warpwood** | **11489** | 69 | **Rare Elite** (Ancient) |
+| **Mini-Boss**| **Mother Smolderweb** | **10596** | 66 | **Elite** (Spider) |
+| **Boss** | **Nerub'enkan** | **10437** | 68 | **Elite** (Spider) |
+| **Boss** | **Baroness Anandara** | **14506** | 69 | **Elite** (Banshee) |
 | **Quest Giver**| **Priestess Lunara** | **300085** | 60 | **Ghost** |
 
 ---
 
-### ★D6: Sanctum of the Highborne (Level 75-80)
+### ★D6: The Azure Vault (Level 70)
+| Type | NPC Name | Entry ID | Level | Elite |
+|------|----------|----------|-------|-------|
+| Trash | Azure Scale-Binder | **26735** | 71 | **Elite** |
+| Trash | Arcane Wyrm | **26322** | 71 | **Elite** |
+| Trash | Blue Dragonspawn | **1049** | 62 | **Elite** (Upscale) |
+| Trash | Azure Spellbreaker | **30662** | 75 | **Elite** |
+| Trash | Mana Elemental | **15430** | 70 | **Elite** |
+| Trash | Blue Whelp | **10676** | 68 | No |
+| **Mini-Boss**| **General Cobaltus** | **1050** | 71 | **Elite** (Scalebane) |
+| **Mini-Boss**| **Matron Haleh** | **10929** | 71 | **Elite** (Dragon) |
+| **Boss** | **Azuregos** | **6109** | 72 | **Elite** (Main Boss) |
+| **Quest Giver**| **Scale-Keeper Valyria**| **300096** | 70 | **Humanoid** |
+
+---
+
+### ★D7: Sanctum of the Highborne (Level 75-80)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
 | Trash | Wretched Ghoul | **37881** | 80 | No |

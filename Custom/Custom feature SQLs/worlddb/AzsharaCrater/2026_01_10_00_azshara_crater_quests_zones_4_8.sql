@@ -604,14 +604,21 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (300031, 0, 7114, 1.0, 1.0, 0),    -- Engineer Whizzbang (Goblin Male)
 (300041, 0, 20585, 1.0, 1.0, 0),   -- Earthcaller Ryga (Tauren Female)
 (300051, 0, 17565, 1.0, 1.0, 0),   -- Vindicator Boros (Draenei Male Vindicator)
-(300061, 0, 20366, 1.0, 1.0, 0),   -- Ambassador Caelestrasz (Night Elf Male)
+(300096, 0, 21276, 1.0, 1.0, 0), -- Blood Elf Female (Amisi Azuregaze model)
 (300071, 0, 18888, 1.0, 1.0, 0);   -- Nexus-Prince Haramad (Ethereal)
 
 -- End of Script
 
 -- ----------------------------------------------------------------------------
--- CUSTOM NPC TEMPLATES (D5)
+-- CUSTOM NPC TEMPLATES (D5) - UPSCALING & CUSTOM
 -- ----------------------------------------------------------------------------
+-- Upscale D5 Bosses/Rares to Level 68-69 Elite
+UPDATE `creature_template` SET `minlevel`=68, `maxlevel`=68, `rank`=3, `HealthModifier`=5.0 WHERE `entry` IN (10393, 11489, 10437, 14506); -- Skul, Tendris, Nerub'enkan, Anandara
+UPDATE `creature_template` SET `minlevel`=66, `maxlevel`=66, `rank`=1 WHERE `entry` IN (10596); -- Mother Smolderweb
+
+-- Downrank D5 Trash to Normal (Level 64-68)
+UPDATE `creature_template` SET `rank`=0, `minlevel`=64, `maxlevel`=68, `HealthModifier`=1.0 WHERE `entry` IN (22041, 18983, 17805, 21634, 17871, 1555); -- Spectre, Tarantula, Underbat, Forest Strider, Underbog Shambler, Dread Bat
+
 DELETE FROM `creature_template` WHERE `entry` = 300085;
 -- Priestess Lunara (Ghost Model - DisplayID 2156 Ghost Night Elf)
 INSERT INTO `creature_template` (`entry`, `name`, `subname`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `scale`, `rank`, `unit_class`) VALUES
@@ -620,6 +627,7 @@ INSERT INTO `creature_template` (`entry`, `name`, `subname`, `minlevel`, `maxlev
 DELETE FROM `creature_template_model` WHERE `CreatureID` = 300085;
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (300085, 0, 2156, 1.0, 1.0, 0); -- Ghost Night Elf Female
+
 
 
 

@@ -21,11 +21,21 @@ DCWelcome.RestoreXP = DCWelcome.RestoreXP or {}
 
 local function GetSettings()
     DCWelcomeDB = DCWelcomeDB or {}
-    DCWelcomeDB.restoreXP = DCWelcomeDB.restoreXP or {
+
+    local defaults = {
         maxLevel = 255,
         debug = false,
-        enabled = true
+        enabled = true,
+        shortNumbers = false,
+        fontSize = 11,
     }
+
+    DCWelcomeDB.restoreXP = DCWelcomeDB.restoreXP or {}
+    for k, v in pairs(defaults) do
+        if DCWelcomeDB.restoreXP[k] == nil then
+            DCWelcomeDB.restoreXP[k] = v
+        end
+    end
     return DCWelcomeDB.restoreXP
 end
 
@@ -106,6 +116,39 @@ local function GetXPBarColor()
     return 0.58, 0.0, 0.55, 1.0
 end
 
+local function FormatNumber(num)
+    num = tonumber(num) or 0
+    if num >= 1000000 then
+        return string.format("%.1fm", num / 1000000)
+    end
+    if num >= 1000 then
+        return string.format("%.1fk", num / 1000)
+    end
+    return tostring(num)
+end
+
+local function FormatFullNumber(num)
+    num = tonumber(num) or 0
+    local s = tostring(math.floor(num + 0.5))
+    local negative = false
+    if s:sub(1, 1) == "-" then
+        negative = true
+        s = s:sub(2)
+    end
+
+    local formatted = s
+    while true do
+        local newStr, n = formatted:gsub("^(%d+)(%d%d%d)", "%1,%2")
+        formatted = newStr
+        if n == 0 then break end
+    end
+
+    if negative then
+        formatted = "-" .. formatted
+    end
+    return formatted
+end
+
 -------------------------------------------------------------------------------
 -- Create Custom XP Bar
 -------------------------------------------------------------------------------
@@ -115,7 +158,7 @@ local function CreateXPBar()
     
     local parent = UIParent
     local width = 1024
-    local height = 13
+    local height = 14
     local point, relativeTo, relativePoint, xOfs, yOfs
     
     if BlizzardXPBar then
@@ -153,10 +196,27 @@ local function CreateXPBar()
     bg:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
     bg:SetVertexColor(r * 0.25, g * 0.25, b * 0.25, 0.5)
     bar.bg = bg
+
+    -- Border/backdrop for readability
+    if bar.SetBackdrop then
+        bar:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 12,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 }
+        })
+        bar:SetBackdropColor(0, 0, 0, 0.6)
+        bar:SetBackdropBorderColor(0.8, 0.8, 0.8, 0.9)
+    end
     
     -- XP Text
     local text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     text:SetPoint("CENTER", bar, "CENTER", 0, 0)
+    if text.SetFont then
+        text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", GetSetting("fontSize") or 11, "OUTLINE")
+        text:SetShadowColor(0, 0, 0, 0.8)
+        text:SetShadowOffset(1, -1)
+    end
     text:SetText("")
     bar.text = text
     
@@ -164,7 +224,7 @@ local function CreateXPBar()
     local rested = bar:CreateTexture(nil, "OVERLAY")
     rested:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
     rested:SetPoint("LEFT", bar, "LEFT")
-    rested:SetHeight(13)
+    rested:SetHeight(height)
     rested:SetWidth(0)
     rested:SetVertexColor(0.0, 0.39, 0.88, 0.25)
     rested:Hide()
@@ -172,7 +232,7 @@ local function CreateXPBar()
     
     -- Exhaustion tick
     local tick = CreateFrame("Frame", "DCWelcome_XP_ExhaustionTick", bar)
-    tick:SetSize(32, 32)
+    tick:SetSize(28, 28)
     tick:SetPoint("CENTER", bar, "LEFT", 0, 0)
     local tickTex = tick:CreateTexture(nil, "OVERLAY")
     tickTex:SetTexture("Interface\\MainMenuBar\\UI-ExhaustionTickNormal")
@@ -261,12 +321,20 @@ local function UpdateXPBar()
     
     -- Update text
     local percent = (maxXP > 0) and ((currentXP / maxXP) * 100) or 0
-    local textStr = string.format("Level %d: %d / %d XP (%.1f%%)", level, currentXP, maxXP, percent)
+    local useShort = GetSetting("shortNumbers") == true
+    local curText = useShort and FormatNumber(currentXP) or FormatFullNumber(currentXP)
+    local maxText = useShort and FormatNumber(maxXP) or FormatFullNumber(maxXP)
+    local textStr = string.format("Level %d: %s / %s XP (%.1f%%)", level, curText, maxText, percent)
     if exhaustion > 0 then
-        textStr = textStr .. string.format(" |cFF4080FF+%d rested|r", exhaustion)
+        textStr = textStr .. string.format(" |cFF4080FF+%s rested|r", FormatFullNumber(exhaustion))
     end
     if addonXPBar.text then
         addonXPBar.text:SetText(textStr)
+        if exhaustion > 0 then
+            addonXPBar.text:SetTextColor(1, 0.82, 0, 1)
+        else
+            addonXPBar.text:SetTextColor(1, 1, 1, 1)
+        end
     end
     
     -- Update rested overlay

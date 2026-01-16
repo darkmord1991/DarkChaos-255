@@ -24,7 +24,8 @@
 | **D3** | Prospector Khazgorm | 300083 | Dwarf | Spitelash Depths |
 | **D4** | Slayer Vorith | 300084 | Blood Elf DH | The Fel Pit |
 | **D5** | Priestess Lunara | 300085 | Night Elf Priest | Temple of Elune |
-| **D6** | Image of Arcanigos | 300086 | Human (Blue Dragon) | Sanctum of Highborne |
+| **D6** | Scale-Keeper Valyria | 300096 | Humanoid | The Azure Vault |
+| **D7** | Image of Arcanigos | 300095 | Blue Dragon | Sanctum of Highborne |
 
 ---
 
@@ -178,8 +179,15 @@
     *   **"Highborne Corruption"**: Slay 8 Highborne Lichlings & 8 Highborne Summoners.
     *   **"Moonkin Madness"**: Slay 10 Moonkin Oracles & 5 Moonkin Matriarchs.
     *   **"Eldreth Incursion"**: Slay 8 Eldreth Sorcerers & 6 Eldreth Seethers.
-6.  **D6: Sanctum of the Highborne (L75-80)** - Highborne/Arcane Theme
-    *   **Quest Giver:** Image of Arcanigos (300086)
+6. ### ★Dungeon 6: The Azure Vault (Level 70)
+*   **Giver:** Scale-Keeper Valyria (300096)
+    1.  **"The Azure Vault"**: Defeat Azuregos.
+    2.  **"Arcane Instability"**: Slay 10 Mana Elementals & 10 Arcane Wyrms.
+    3.  **"Scale-Binder's Focus"**: Slay 8 Azure Scale-Binders.
+    4.  **"Dragonspawn Threat"**: Slay 12 Blue Dragonspawn.
+
+### ★Dungeon 7: Sanctum of the Highborne (Level 75-80)
+    *   **Quest Giver:** Image of Arcanigos (300095)
     *   **"Sanctum of the Highborne"**: Defeat Cyanigosa (Boss).
     *   **"Magister Kalendris"**: Defeat Magister Kalendris (Mini-Boss).
     *   **"The Forgotten Ones"**: Slay 10 Forgotten Ones.
