@@ -15,7 +15,9 @@ local addon = DCQOS
 local CombatLog = addon.modules and addon.modules.CombatLog
 
 if not CombatLog then
-    print("DC-QOS: CombatLog module not found, Enhanced features disabled")
+    if addon and addon.Debug then
+        addon:Debug("CombatLog module not found, Enhanced features disabled")
+    end
     return
 end
 
@@ -29,7 +31,7 @@ local SCHOOL_COLORS = {
     [0x02] = {r = 1.00, g = 0.90, b = 0.50, name = "Holy"},      -- Light Yellow
     [0x04] = {r = 1.00, g = 0.50, b = 0.00, name = "Fire"},      -- Orange
     [0x08] = {r = 0.30, g = 1.00, b = 0.30, name = "Nature"},    -- Green
-    [0x10] = {r = 0.50, g = 1.00, g = 1.00, name = "Frost"},     -- Cyan
+    [0x10] = {r = 0.50, g = 1.00, b = 1.00, name = "Frost"},     -- Cyan
     [0x20] = {r = 0.50, g = 0.50, b = 1.00, name = "Shadow"},    -- Purple
     [0x40] = {r = 1.00, g = 0.50, b = 1.00, name = "Arcane"},    -- Pink
 }
@@ -374,4 +376,6 @@ end
 -- REGISTER ENHANCED FEATURES
 -- ============================================================
 
-print("|cffFFCC00DC-QOS|r: Enhanced CombatLog features loaded")
+if addon and addon.Debug then
+    addon:Debug("Enhanced CombatLog features loaded")
+end

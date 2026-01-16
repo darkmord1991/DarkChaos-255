@@ -169,6 +169,107 @@ DC.mountSpeedBonus = 0
 -- Per-character applied transmog (slot -> appearanceId/displayId)
 DC.transmogState = {}
 
+-- Track last applied outfit so we can re-apply it after login if needed.
+-- Stored as equipment slot (0-based) -> appearanceId (displayId).
+function DC:StoreLastAppliedOutfit(slotsByEquipSlot, name, source)
+    if type(slotsByEquipSlot) ~= "table" then
+        return
+    end
+
+    DCCollectionCharDB = DCCollectionCharDB or {}
+    DCCollectionCharDB.lastAppliedOutfit = {
+        name = tostring(name or ""),
+        source = tostring(source or ""),
+        slots = slotsByEquipSlot,
+        savedAt = time(),
+    }
+end
+
+function DC:_LoginOutfitStateMatches(savedSlots, currentState)
+    if type(savedSlots) ~= "table" then
+        return true
+    end
+
+    local state = currentState or self.transmogState or {}
+    for slotStr, savedVal in pairs(savedSlots) do
+        local slotKey = tostring(slotStr)
+        local saved = tonumber(savedVal) or 0
+        local current = tonumber(state[slotKey]) or 0
+        if current ~= saved then
+            return false
+        end
+    end
+    return true
+end
+
+function DC:MaybeApplyLastOutfitOnLogin(currentState)
+    if not self._pendingLoginOutfitApply or self._loginOutfitApplied then
+        return
+    end
+
+    local now = (GetTime and GetTime()) or time()
+    if self._loginOutfitApplyExpiresAt and now > self._loginOutfitApplyExpiresAt then
+        self._pendingLoginOutfitApply = nil
+        return
+    end
+
+    if not (self.IsProtocolReady and self:IsProtocolReady()) then
+        return
+    end
+
+    local saved = DCCollectionCharDB and DCCollectionCharDB.lastAppliedOutfit
+    if not (saved and type(saved.slots) == "table") then
+        self._pendingLoginOutfitApply = nil
+        return
+    end
+
+    if self:_LoginOutfitStateMatches(saved.slots, currentState) then
+        self._pendingLoginOutfitApply = nil
+        self._loginOutfitApplied = true
+        return
+    end
+
+    local entries
+    local canBatch = type(self.ApplyTransmogBatchByEquipmentSlot) == "function"
+    if canBatch then
+        entries = {}
+    end
+
+    for slotStr, appearanceId in pairs(saved.slots) do
+        local equipSlot = tonumber(slotStr)
+        if equipSlot ~= nil then
+            local invSlotId = equipSlot + 1
+            if GetInventoryItemID("player", invSlotId) then
+                local n = tonumber(appearanceId) or 0
+                if canBatch then
+                    if n <= 0 then
+                        table.insert(entries, { slot = equipSlot, clear = true })
+                    else
+                        table.insert(entries, { slot = equipSlot, appearanceId = n, clear = false })
+                    end
+                else
+                    if n <= 0 then
+                        if self.RequestClearTransmogByEquipmentSlot then
+                            self:RequestClearTransmogByEquipmentSlot(equipSlot)
+                        end
+                    else
+                        if self.RequestSetTransmogByEquipmentSlot then
+                            self:RequestSetTransmogByEquipmentSlot(equipSlot, n)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if canBatch and entries and #entries > 0 then
+        self:ApplyTransmogBatchByEquipmentSlot(entries)
+    end
+
+    self._loginOutfitApplied = true
+    self._pendingLoginOutfitApply = nil
+end
+
 -- ============================================================================
 -- STATE MANAGEMENT
 -- ============================================================================
@@ -1357,6 +1458,12 @@ function events:ADDON_LOADED(addonName)
 end
 
 function events:PLAYER_LOGIN()
+    -- Allow a one-time attempt to re-apply the last outfit after login.
+    DC._pendingLoginOutfitApply = true
+    DC._loginOutfitApplied = nil
+    local now = (GetTime and GetTime()) or time()
+    DC._loginOutfitApplyExpiresAt = now + 30
+
     -- Apply mount speed bonus on login
     DC:ApplyMountSpeedBonus()
 

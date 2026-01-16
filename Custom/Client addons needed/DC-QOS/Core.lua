@@ -80,6 +80,12 @@ end
 addon.defaults = {
     -- Global settings
     minimapButton = true,
+
+    -- Profiles
+    profiles = {
+        enabled = true,
+        defaultProfile = "Default",
+    },
     
     -- Tooltip settings
     tooltips = {
@@ -143,6 +149,45 @@ addon.defaults = {
         hideWorldMap = false,
         largerWorldMap = false,
     },
+
+    -- Action Bars
+    actionBars = {
+        enabled = true,
+        mode = "blizzard", -- blizzard | custom
+        scale = 1.0,
+        buttonSize = 32,
+        spacing = 4,
+        showMainBar = true,
+        showBottomLeft = true,
+        showBottomRight = true,
+        showRightBar1 = true,
+        showRightBar2 = true,
+        customAnchor = { point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 40 },
+    },
+
+    -- Minimap
+    minimap = {
+        enabled = true,
+        style = "round", -- round | square
+        size = 160,
+        point = "TOPRIGHT",
+        relPoint = "TOPRIGHT",
+        x = -20,
+        y = -20,
+        hideZoom = true,
+        hideTracking = true,
+        hideClock = false,
+        hideCalendar = true,
+        hideWorldMapButton = true,
+        mouseWheelZoom = true,
+    },
+
+    -- Keybinds (hover-to-bind)
+    keybinds = {
+        enabled = true,
+        hoverBind = true,
+        onlyWhenBindingMode = true,
+    },
     
     -- Communication settings (server sync)
     communication = {
@@ -159,6 +204,150 @@ addon.defaults = {
 }
 
 addon.settings = {}
+addon.db = nil
+addon.activeProfile = nil
+addon.keybindMode = false
+
+local function GetCharacterKey()
+    local name = UnitName("player") or "Unknown"
+    local realm = GetRealmName() or "Unknown"
+    return name .. "-" .. realm
+end
+
+local function EnsureProfileTables(db, defaults)
+    if type(db.profiles) ~= "table" then
+        db.profiles = {}
+    end
+    if type(db.profileKeys) ~= "table" then
+        db.profileKeys = {}
+    end
+    if not db.globalProfile or db.globalProfile == "" then
+        db.globalProfile = (defaults.profiles and defaults.profiles.defaultProfile) or "Default"
+    end
+    if not db.profiles[db.globalProfile] then
+        db.profiles[db.globalProfile] = addon:DeepCopy(defaults)
+    end
+end
+
+function addon:GetActiveProfileName()
+    if not self.db then return nil end
+    local charKey = GetCharacterKey()
+    return self.db.profileKeys[charKey] or self.db.globalProfile
+end
+
+function addon:SetActiveProfile(name, perCharacter)
+    if not self.db or not name or name == "" then return end
+    if not self.db.profiles[name] then
+        self.db.profiles[name] = self:DeepCopy(self.defaults)
+    end
+    if perCharacter then
+        self.db.profileKeys[GetCharacterKey()] = name
+    else
+        self.db.globalProfile = name
+    end
+    self.activeProfile = name
+    self.settings = self.db.profiles[name]
+    self:MergeDefaults(self.settings, self.defaults)
+    self:SaveSettings()
+    self:PromptReloadUI()
+end
+
+function addon:CreateProfile(name, copyFrom)
+    if not self.db or not name or name == "" then return false end
+    if self.db.profiles[name] then return false end
+    if copyFrom and self.db.profiles[copyFrom] then
+        self.db.profiles[name] = self:DeepCopy(self.db.profiles[copyFrom])
+    else
+        self.db.profiles[name] = self:DeepCopy(self.defaults)
+    end
+    self:SaveSettings()
+    return true
+end
+
+function addon:DeleteProfile(name)
+    if not self.db or not name or name == "" then return false end
+    if name == (self.defaults.profiles and self.defaults.profiles.defaultProfile) then return false end
+    if not self.db.profiles[name] then return false end
+    self.db.profiles[name] = nil
+    if self.activeProfile == name then
+        self:SetActiveProfile(self.db.globalProfile or self.defaults.profiles.defaultProfile, true)
+    end
+    self:SaveSettings()
+    return true
+end
+
+local function EscapeProfileValue(value)
+    value = tostring(value)
+    value = value:gsub("\\", "\\\\")
+    value = value:gsub("\n", "\\n")
+    value = value:gsub("=", "\\=")
+    value = value:gsub(";", "\\;")
+    return value
+end
+
+local function UnescapeProfileValue(value)
+    value = value:gsub("\\;", ";")
+    value = value:gsub("\\=", "=")
+    value = value:gsub("\\n", "\n")
+    value = value:gsub("\\\\", "\\")
+    return value
+end
+
+local function SerializeTable(tbl, prefix, out)
+    for k, v in pairs(tbl) do
+        local key = prefix ~= "" and (prefix .. "." .. k) or k
+        if type(v) == "table" then
+            SerializeTable(v, key, out)
+        elseif type(v) ~= "function" then
+            table.insert(out, key .. "=" .. EscapeProfileValue(v))
+        end
+    end
+end
+
+function addon:ExportProfile(name)
+    if not self.db or not self.db.profiles[name] then return nil end
+    local out = {}
+    SerializeTable(self.db.profiles[name], "", out)
+    return table.concat(out, ";")
+end
+
+local function ApplyFlatKey(dest, path, value)
+    local cur = dest
+    local parts = {}
+    for part in string.gmatch(path, "[^%.]+") do
+        table.insert(parts, part)
+    end
+    for i = 1, #parts - 1 do
+        local p = parts[i]
+        cur[p] = cur[p] or {}
+        cur = cur[p]
+    end
+    local last = parts[#parts]
+    local num = tonumber(value)
+    if value == "true" then
+        cur[last] = true
+    elseif value == "false" then
+        cur[last] = false
+    elseif num ~= nil then
+        cur[last] = num
+    else
+        cur[last] = value
+    end
+end
+
+function addon:ImportProfile(name, data)
+    if not name or name == "" or not data or data == "" then return false end
+    local profile = self:DeepCopy(self.defaults)
+    for entry in string.gmatch(data, "[^;]+") do
+        local key, val = entry:match("^(.-)=(.*)$")
+        if key and val then
+            ApplyFlatKey(profile, key, UnescapeProfileValue(val))
+        end
+    end
+    self.db.profiles[name] = profile
+    self:SaveSettings()
+    return true
+end
 
 -- ============================================================
 -- Utility Functions
@@ -424,8 +613,27 @@ end
 function addon:LoadSettings()
     -- Load from SavedVariables
     if DCQoSDB then
-        self.settings = DCQoSDB
-        -- Merge any new defaults
+        -- Legacy migration: convert flat settings into profile storage
+        if DCQoSDB.profiles == nil and DCQoSDB.profileKeys == nil then
+            local legacy = DCQoSDB
+            DCQoSDB = {
+                profiles = {},
+                profileKeys = {},
+                globalProfile = (self.defaults.profiles and self.defaults.profiles.defaultProfile) or "Default",
+            }
+            DCQoSDB.profiles[DCQoSDB.globalProfile] = legacy
+        end
+        self.db = DCQoSDB
+        EnsureProfileTables(self.db, self.defaults)
+
+        local activeProfile = self:GetActiveProfileName() or (self.defaults.profiles and self.defaults.profiles.defaultProfile) or "Default"
+        if not self.db.profiles[activeProfile] then
+            self.db.profiles[activeProfile] = self:DeepCopy(self.defaults)
+        end
+        self.activeProfile = activeProfile
+        self.settings = self.db.profiles[activeProfile]
+
+        -- Merge any new defaults into active profile
         self:MergeDefaults(self.settings, self.defaults)
 
         -- One-time migration: enable DC debug routing for existing users
@@ -450,12 +658,18 @@ function addon:LoadSettings()
             end
         end
     else
-        self.settings = self:DeepCopy(self.defaults)
+        self.db = { profiles = {}, profileKeys = {}, globalProfile = (self.defaults.profiles and self.defaults.profiles.defaultProfile) or "Default" }
+        EnsureProfileTables(self.db, self.defaults)
+        self.activeProfile = self.db.globalProfile
+        self.settings = self.db.profiles[self.activeProfile]
     end
 end
 
 function addon:SaveSettings()
-    DCQoSDB = self.settings
+    if self.db and self.activeProfile and self.settings then
+        self.db.profiles[self.activeProfile] = self.settings
+    end
+    DCQoSDB = self.db or self.settings
 end
 
 function addon:GetSetting(path)
@@ -605,16 +819,82 @@ SlashCmdList["DCQOS"] = function(msg)
         addon:Print("Debug mode: " .. (addon.settings.communication.debugMode and "ENABLED" or "DISABLED"), true)
     elseif msg == "reset" then
         addon.settings = addon:DeepCopy(addon.defaults)
+        if addon.db and addon.activeProfile then
+            addon.db.profiles[addon.activeProfile] = addon.settings
+        end
         addon:SaveSettings()
-        addon:Print("Settings reset to defaults.", true)
+        addon:Print("Current profile reset to defaults.", true)
         ReloadUI()
     elseif msg == "reload" then
         ReloadUI()
+    elseif msg:find("^bind") then
+        addon.keybindMode = not addon.keybindMode
+        addon:Print("Keybind mode: " .. (addon.keybindMode and "ENABLED" or "DISABLED"), true)
+    elseif msg:find("^profile") then
+        local args = {}
+        for token in msg:gmatch("[^%s]+") do
+            table.insert(args, token)
+        end
+        local sub = args[2]
+        if sub == "list" then
+            if addon.db and addon.db.profiles then
+                addon:Print("Profiles: " .. table.concat((function()
+                    local names = {}
+                    for name in pairs(addon.db.profiles) do
+                        table.insert(names, name)
+                    end
+                    table.sort(names)
+                    return names
+                end)(), ", "), true)
+            end
+        elseif sub == "set" and args[3] then
+            addon:SetActiveProfile(args[3], true)
+        elseif sub == "setglobal" and args[3] then
+            addon:SetActiveProfile(args[3], false)
+        elseif sub == "new" and args[3] then
+            local copyFrom = args[4]
+            if addon:CreateProfile(args[3], copyFrom) then
+                addon:Print("Profile created: " .. args[3], true)
+            else
+                addon:Print("Profile already exists: " .. args[3], true)
+            end
+        elseif sub == "delete" and args[3] then
+            if addon:DeleteProfile(args[3]) then
+                addon:Print("Profile deleted: " .. args[3], true)
+            else
+                addon:Print("Unable to delete profile: " .. args[3], true)
+            end
+        elseif sub == "export" and args[3] then
+            local data = addon:ExportProfile(args[3])
+            if data then
+                addon:Print("Profile export (" .. args[3] .. "):", true)
+                print(data)
+            end
+        elseif sub == "import" and args[3] and args[4] then
+            local name = args[3]
+            local data = msg:gsub("^profile%s+import%s+" .. name .. "%s+", "")
+            if addon:ImportProfile(name, data) then
+                addon:Print("Profile imported: " .. name, true)
+            else
+                addon:Print("Profile import failed.", true)
+            end
+        else
+            addon:Print("Profile commands:", true)
+            print("  /dcqos profile list")
+            print("  /dcqos profile set <name>")
+            print("  /dcqos profile setglobal <name>")
+            print("  /dcqos profile new <name> [copyFrom]")
+            print("  /dcqos profile delete <name>")
+            print("  /dcqos profile export <name>")
+            print("  /dcqos profile import <name> <data>")
+        end
     elseif msg == "help" then
         addon:Print("Commands:", true)
         print("  |cffffd700/dcqos|r - Open settings panel")
         print("  |cffffd700/dcqos debug|r - Toggle debug mode")
         print("  |cffffd700/dcqos reset|r - Reset all settings to defaults")
+        print("  |cffffd700/dcqos bind|r - Toggle keybind mode")
+        print("  |cffffd700/dcqos profile ...|r - Manage profiles")
         print("  |cffffd700/dcqos reload|r - Reload UI")
         print("  |cffffd700/dcqos help|r - Show this help message")
     else

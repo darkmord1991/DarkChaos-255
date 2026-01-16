@@ -2576,6 +2576,10 @@ function DC:HandleTransmogState(data)
         pcall(function() self.TransmogBorders:UpdateCharacterBorders() end)
     end
 
+    if type(self.MaybeApplyLastOutfitOnLogin) == "function" then
+        pcall(function() self:MaybeApplyLastOutfitOnLogin(state) end)
+    end
+
     self:Debug(string.format("Received transmog state (%d slots)", self:TableCount(state)))
 end
 

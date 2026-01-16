@@ -880,6 +880,8 @@ function Wardrobe:LoadOutfit(outfit)
         lastUpdateAt = (GetTime and GetTime()) or 0,
     }
 
+    local appliedSlots = {}
+
     for slotKey, appearanceId in pairs(slots) do
         local invSlotId
 
@@ -949,7 +951,13 @@ function Wardrobe:LoadOutfit(outfit)
 
             self._pendingApplyOutfit.expectedByEquipSlot[equipmentSlot] = tonumber(n) or 0
             self._pendingApplyOutfit.slotLabelByEquipSlot[equipmentSlot] = tostring(slotKey)
+
+            appliedSlots[tostring(equipmentSlot)] = tonumber(n) or 0
         end
+    end
+
+    if DC and type(DC.StoreLastAppliedOutfit) == "function" and next(appliedSlots) ~= nil then
+        DC:StoreLastAppliedOutfit(appliedSlots, outfit.name or "", "wardrobe")
     end
 
     if canBatch and batchEntries and #batchEntries > 0 then

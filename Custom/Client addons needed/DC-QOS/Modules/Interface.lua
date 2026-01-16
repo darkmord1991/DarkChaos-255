@@ -153,7 +153,9 @@ function Interface.OnEnable()
     SetupQuestLevelText()
     SetupHideGryphons()
     SetupLargerWorldMap()
-    SetupEnhancedMinimap()
+    if not (addon.settings.minimap and addon.settings.minimap.enabled) then
+        SetupEnhancedMinimap()
+    end
 end
 
 function Interface.OnDisable()

@@ -358,6 +358,8 @@ function DC:ApplyOutfit(name)
         return false
     end
 
+    local appliedSlots = {}
+
     -- Clear current applied transmogs first
     for slotStr in pairs(self.transmogState or {}) do
         local slot = tonumber(slotStr)
@@ -380,7 +382,13 @@ function DC:ApplyOutfit(name)
                 equipmentSlot = slot
             end
             self:RequestSetTransmogByEquipmentSlot(equipmentSlot, app)
+
+            appliedSlots[tostring(equipmentSlot)] = app
         end
+    end
+
+    if type(self.StoreLastAppliedOutfit) == "function" and next(appliedSlots) ~= nil then
+        self:StoreLastAppliedOutfit(appliedSlots, name or "", "transmog")
     end
 
     return true

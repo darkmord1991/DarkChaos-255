@@ -383,30 +383,38 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
     if entity.kind == "boss" or entity.kind == "death" then
         local db = Pins.state and Pins.state.db
         local learned = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
-        
+
         -- First check: Try to match via MAP_TO_ZONE lookup
         local expectedZone = MAP_TO_ZONE[activeMapId]
         if expectedZone and expectedZone == entMapId then
             return true
         end
-        
+
         -- Second check: Try custom zone mapping (for non-standard maps like Azshara Crater)
         local customZone = CUSTOM_ZONE_MAPPING[activeMapId]
         if customZone and customZone == entMapId then
             return true
         end
-        
+
         -- Third check: Try runtime learned mapping
         if learned and learned == entMapId then
             return true
         end
-        
-        -- Fourth check: Direct match only if activeMapId is a custom/unknown zone
-        -- This prevents false positives on standard maps
+
+        -- Fourth check: Direct match only for unknown zones AND when zone name matches
+        -- This prevents false positives when map IDs overlap unrelated zones.
         if not expectedZone and not customZone and entMapId == activeMapId then
-            return true
+            local mapName = (GetMapNameByID and GetMapNameByID(activeMapId))
+            local zoneName = mapName or (GetZoneText and GetZoneText()) or nil
+            if entity.zoneLabel and zoneName then
+                if NormalizeZoneNameForMatch(entity.zoneLabel) == NormalizeZoneNameForMatch(zoneName) then
+                    return true
+                end
+            else
+                return true
+            end
         end
-        
+
         return false
     end
 

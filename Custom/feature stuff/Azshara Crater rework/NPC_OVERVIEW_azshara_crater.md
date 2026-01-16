@@ -211,13 +211,13 @@
 | Witherbark Shadowcaster | **2553** | 31-32 | Humanoid (Troll) | 10 |
 | Witherbark Witch Doctor | **2555** | 33-34 | Humanoid (Troll) | 8 |
 | Witherbark Berserker | **2558** | 36-37 | Humanoid (Troll) | 8 |
-| Stonard Scout | **861** | 36-37 | Humanoid | 6 |
-| Stonard Explorer | **862** | 37-38 | Humanoid | 6 |
-| Boneflayer Ghoul | **7347** | 36 | Undead | 8 (Ruins) |
-| Fenros | **507** | 32 | Beast (Wolf) | 6 |
+| Syndicate Prowler | **2588** | 36-37 | Humanoid | 6 |
+| Syndicate Conjuror | **2590** | 35-36 | Humanoid | 6 |
+| Fenros | **507** | 32 | Beast (Wolf) | **RARE**| 1 |
 | **Prince Nazjak** | **2779** | 41 | **RARE** | 1 |
 | **Plaguemaw the Rotting** | **7356** | 37 | **RARE** | 1 |
 | **Razortalon** | **8210** | 44 | **RARE** | 1 |
+| **Molok the Crusher** | **2604** | 39 | **RARE** | 1 (Ogre) |
 
 ### Zone 5: Western Cliffs (Level 40-50)
 *Theme Refactor: Timbermaw Furbolg Camps & Highborne Ruins (Matches Screenshots).*
@@ -233,11 +233,14 @@
 | Highborne Apparition | **6116** | 45-46 | Undead (Ghost) | 10 |
 | Highborne Lichling | **6117** | 46-47 | Undead (Ghost) | 8 |
 | Ghostly Marauder | **11687** | 41-42 | Undead (Ghost) | 8 |
-| **Monnos the Elder** | **6144** | 47 | **RARE** | 1 (Furbolg) |
-| **Magronos the Unyielding** | **6146** | 48 | **RARE** | 1 (Furbolg) |
+| **Ragepaw** | **14342** | 51 | **RARE** | 1 (Furbolg) |
 | **Gatekeeper Rageroar** | **6651** | 49 | **RARE** | 1 (Furbolg) |
-| **General Fangferror** | **6115** | 50 | **RARE** | 1 (Ghost) |
-| **Lady Sesspira** | **6133** | 47 | **RARE** | 1 (Ghost) |
+| **Varo'then's Ghost** | **6118** | 52 | **RARE** | 1 (Ghost) |
+| **The Evalcharr** | **8660** | 48 | **RARE** | 1 (Chimera) |
+| **Water Temple** |
+| Spitelash Siren | **6194** | 48-49 | Humanoid (Naga) | 6 |
+| Spitelash Myrmidon | **6193** | 47-48 | Humanoid (Naga) | 6 |
+| **Scalebeard** | **13896** | 52 | **RARE** | 1 (Turtle) |
 
 ### Zone 6: Haldarr Territory (Level 50-60)
 | NPC Name | Entry ID | Level | Type | Spawn Count |
@@ -386,21 +389,20 @@
 ### ★D5: Temple of Elune (Level 60-70)
 | Type | NPC Name | Entry ID | Level | Elite |
 |------|----------|----------|-------|-------|
-| Trash | Highborne Summoner | **6492** | 60-61 | No |
-| Trash | Twilight Keeper Mayna | **15200** | 60 | No |
-| Trash | Teldrassil Sentinel | **3571** | 65 | No |
-| Trash | Moonkin Oracle | **15467** | 63-64 | No |
-| Trash | Ancient Protector | **2041** | 60 | No |
-| Trash | Highborne Lichling | **10683** | 61-62 | **Yes** |
-| Trash | Arcane Aberration | **16488** | 65-66 | **Yes** |
-| Trash | Moonkin Matriarch | **15621** | 67-68 | **Yes** |
-| Trash | Twilight Emissary | **15539** | 66-67 | No |
-| Trash | Eldreth Sorcerer | **13019** | 64-65 | No |
-| Trash | Eldreth Seether | **13022** | 66-67 | **Yes** |
-| **Rare** | **Twilight Lord Kelris** | **4832** | 68 | **Elite** |
-| **Rare** | **Arcane Torrent** | **16485** | 69 | **Elite** |
-| **Mini-Boss**| **High Priestess Arlokk** | **14515** | 67 | **Elite** |
-| **Boss** | **Priestess Delrissa** | **24560** | 70 | **Elite** |
+| Trash | Deepmoss Creeper | **4005** | 60-61 | No |
+| Trash | Nerubian Webspinner | **10374** | 58-59 | No |
+| Trash | Shrieking Banshee | **10463** | 60-61 | No |
+| Trash | Wailing Banshee | **10464** | 61-62 | No |
+| Trash | Corrupted Sentinel | **3571** | 62-63 | **Yes** (Ghost) |
+| Trash | Kirin'Var Spectre | **20496** | 63-64 | No |
+| Trash | Smolderweb Hatchling | **10598** | 60 | No |
+| Trash | Warpwood Shredder | **7101** | 60-62 | No |
+| **Rare** | **Skul** | **10393** | 62 | **RARE** (Ghost) |
+| **Rare** | **Tendris Warpwood** | **11489** | 63 | **RARE** (Treant) |
+| **Mini-Boss**| **Mother Smolderweb** | **10596** | 60 | **Elite** (Spider) |
+| **Boss** | **Nerub'enkan** | **10437** | 62 | **Elite** (Spider Boss) |
+| **Boss** | **Baroness Anandara** | **14506** | 63 | **Elite** (Banshee Boss) |
+| **Quest Giver**| **Priestess Lunara** | **300085** | 60 | **Ghost** |
 
 ---
 

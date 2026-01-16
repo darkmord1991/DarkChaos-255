@@ -19,6 +19,10 @@ local FrameMover = {
             enabled = true,
             unlocked = false,
             showAnchors = false,
+            editorMode = false,
+            showGrid = false,
+            snapToGrid = true,
+            gridSize = 10,
             frames = {},
             profiles = {},
             currentProfile = "default",
@@ -84,6 +88,8 @@ local MOVABLE_FRAMES = {
 local anchorFrames = {}  -- Overlay frames for moving
 local originalPositions = {}  -- Store original positions for reset
 local isUnlocked = false
+local editorOverlay
+local gridOverlay
 
 -- ============================================================
 -- Utility Functions
@@ -125,6 +131,20 @@ local function SaveFramePosition(frameName)
     
     settings.frames[frameName] = GetFramePosition(frame)
     addon:SaveSettings()
+end
+
+local function ApplyAllSavedPositions()
+    local settings = addon.settings.frameMover
+    if settings and settings.frames then
+        for frameName in pairs(settings.frames) do
+            LoadFramePosition(frameName)
+        end
+    end
+end
+
+local function SnapValue(value, gridSize)
+    if not gridSize or gridSize <= 0 then return value end
+    return math.floor((value / gridSize) + 0.5) * gridSize
 end
 
 local function LoadFramePosition(frameName)
@@ -252,6 +272,12 @@ local function CreateAnchorFrame(frameInfo)
             
             -- Move the target frame to match anchor position
             local point, _, _, x, y = self:GetPoint()
+            local settings = addon.settings.frameMover
+            if settings and settings.snapToGrid then
+                local gridSize = settings.gridSize or 10
+                x = SnapValue(x, gridSize)
+                y = SnapValue(y, gridSize)
+            end
             targetFrame:ClearAllPoints()
             targetFrame:SetPoint(point, UIParent, point, x, y)
             
@@ -347,6 +373,149 @@ local function ToggleLock()
     end
 end
 
+local function EnsureGridOverlay()
+    if gridOverlay then return end
+    gridOverlay = CreateFrame("Frame", "DCQOS_GridOverlay", UIParent)
+    gridOverlay:SetAllPoints(UIParent)
+    gridOverlay:SetFrameStrata("BACKGROUND")
+    gridOverlay:Hide()
+    gridOverlay.lines = {}
+end
+
+local function UpdateGridOverlay()
+    local settings = addon.settings.frameMover
+    if not settings or not settings.showGrid then
+        if gridOverlay then gridOverlay:Hide() end
+        return
+    end
+
+    EnsureGridOverlay()
+    local gridSize = settings.gridSize or 10
+    local width = UIParent:GetWidth()
+    local height = UIParent:GetHeight()
+    local lines = gridOverlay.lines
+
+    for _, line in ipairs(lines) do
+        line:Hide()
+    end
+
+    local index = 1
+    for x = gridSize, width, gridSize do
+        local line = lines[index]
+        if not line then
+            line = gridOverlay:CreateTexture(nil, "BACKGROUND")
+            lines[index] = line
+        end
+        line:SetColorTexture(0.2, 0.7, 0.2, 0.12)
+        line:SetPoint("TOPLEFT", gridOverlay, "TOPLEFT", x, 0)
+        line:SetPoint("BOTTOMLEFT", gridOverlay, "TOPLEFT", x, -height)
+        line:SetWidth(1)
+        line:Show()
+        index = index + 1
+    end
+
+    for y = gridSize, height, gridSize do
+        local line = lines[index]
+        if not line then
+            line = gridOverlay:CreateTexture(nil, "BACKGROUND")
+            lines[index] = line
+        end
+        line:SetColorTexture(0.2, 0.7, 0.2, 0.12)
+        line:SetPoint("TOPLEFT", gridOverlay, "TOPLEFT", 0, -y)
+        line:SetPoint("TOPRIGHT", gridOverlay, "TOPLEFT", width, -y)
+        line:SetHeight(1)
+        line:Show()
+        index = index + 1
+    end
+
+    gridOverlay:Show()
+end
+
+local function EnsureEditorOverlay()
+    if editorOverlay then return end
+
+    editorOverlay = CreateFrame("Frame", "DCQOS_EditorOverlay", UIParent)
+    editorOverlay:SetPoint("TOP", UIParent, "TOP", 0, -20)
+    editorOverlay:SetSize(460, 34)
+    editorOverlay:SetFrameStrata("DIALOG")
+    editorOverlay:Hide()
+
+    editorOverlay.bg = editorOverlay:CreateTexture(nil, "BACKGROUND")
+    editorOverlay.bg:SetAllPoints()
+    editorOverlay.bg:SetColorTexture(0, 0, 0, 0.55)
+
+    local title = editorOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("LEFT", 10, 0)
+    title:SetText("DC-QoS Editor Mode")
+
+    local lockBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
+    lockBtn:SetPoint("LEFT", title, "RIGHT", 10, 0)
+    lockBtn:SetSize(70, 20)
+    lockBtn:SetText("Lock")
+    lockBtn:SetScript("OnClick", function()
+        ToggleLock()
+        lockBtn:SetText(isUnlocked and "Lock" or "Unlock")
+    end)
+    editorOverlay.lockBtn = lockBtn
+
+    local gridBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
+    gridBtn:SetPoint("LEFT", lockBtn, "RIGHT", 6, 0)
+    gridBtn:SetSize(70, 20)
+    gridBtn:SetText("Grid")
+    gridBtn:SetScript("OnClick", function()
+        addon.settings.frameMover.showGrid = not addon.settings.frameMover.showGrid
+        addon:SaveSettings()
+        UpdateGridOverlay()
+    end)
+
+    local snapBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
+    snapBtn:SetPoint("LEFT", gridBtn, "RIGHT", 6, 0)
+    snapBtn:SetSize(70, 20)
+    snapBtn:SetText("Snap")
+    snapBtn:SetScript("OnClick", function()
+        addon.settings.frameMover.snapToGrid = not addon.settings.frameMover.snapToGrid
+        addon:SaveSettings()
+    end)
+
+    local resetBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
+    resetBtn:SetPoint("LEFT", snapBtn, "RIGHT", 6, 0)
+    resetBtn:SetSize(70, 20)
+    resetBtn:SetText("Reset")
+    resetBtn:SetScript("OnClick", function()
+        ResetAllFrames()
+    end)
+
+    local closeBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
+    closeBtn:SetPoint("LEFT", resetBtn, "RIGHT", 6, 0)
+    closeBtn:SetSize(70, 20)
+    closeBtn:SetText("Close")
+    closeBtn:SetScript("OnClick", function()
+        addon.settings.frameMover.editorMode = false
+        addon:SaveSettings()
+        editorOverlay:Hide()
+        if gridOverlay then gridOverlay:Hide() end
+        LockFrames()
+    end)
+end
+
+local function EnableEditorMode()
+    EnsureEditorOverlay()
+    editorOverlay:Show()
+    if not isUnlocked then
+        UnlockFrames()
+    end
+    UpdateGridOverlay()
+    addon.settings.frameMover.editorMode = true
+    addon:SaveSettings()
+end
+
+local function DisableEditorMode()
+    if editorOverlay then editorOverlay:Hide() end
+    if gridOverlay then gridOverlay:Hide() end
+    addon.settings.frameMover.editorMode = false
+    addon:SaveSettings()
+end
+
 -- ============================================================
 -- Profile Management
 -- ============================================================
@@ -421,7 +590,28 @@ function FrameMover.OnEnable()
                 LoadFramePosition(frameName)
             end
         end
+        if settings.editorMode then
+            EnableEditorMode()
+        end
     end)
+
+    if not FrameMover.eventFrame then
+        local ev = CreateFrame("Frame")
+        ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+        ev:RegisterEvent("UNIT_ENTERED_VEHICLE")
+        ev:RegisterEvent("UNIT_EXITED_VEHICLE")
+        ev:RegisterEvent("GROUP_ROSTER_UPDATE")
+        ev:SetScript("OnEvent", function(_, event, unit)
+            if unit and unit ~= "player" then return end
+            addon:DelayedCall(0.3, function()
+                ApplyAllSavedPositions()
+                if addon.settings.frameMover.editorMode then
+                    UpdateGridOverlay()
+                end
+            end)
+        end)
+        FrameMover.eventFrame = ev
+    end
     
     -- Register slash commands
     SLASH_DCMOVE1 = "/dcmove"
@@ -431,10 +621,24 @@ function FrameMover.OnEnable()
         
         if msg == "" or msg == "toggle" then
             ToggleLock()
+        elseif msg == "editor" then
+            if addon.settings.frameMover.editorMode then
+                DisableEditorMode()
+                LockFrames()
+            else
+                EnableEditorMode()
+            end
         elseif msg == "lock" then
             LockFrames()
         elseif msg == "unlock" then
             UnlockFrames()
+        elseif msg == "grid" then
+            addon.settings.frameMover.showGrid = not addon.settings.frameMover.showGrid
+            addon:SaveSettings()
+            UpdateGridOverlay()
+        elseif msg == "snap" then
+            addon.settings.frameMover.snapToGrid = not addon.settings.frameMover.snapToGrid
+            addon:SaveSettings()
         elseif msg == "reset" then
             ResetAllFrames()
         elseif msg:match("^save%s+") then
@@ -450,6 +654,9 @@ function FrameMover.OnEnable()
         elseif msg == "help" then
             addon:Print("Frame Mover Commands:", true)
             print("  |cffffd700/dcmove|r - Toggle frame unlock")
+            print("  |cffffd700/dcmove editor|r - Toggle editor mode")
+            print("  |cffffd700/dcmove grid|r - Toggle grid overlay")
+            print("  |cffffd700/dcmove snap|r - Toggle snap to grid")
             print("  |cffffd700/dcmove lock|r - Lock all frames")
             print("  |cffffd700/dcmove unlock|r - Unlock all frames")
             print("  |cffffd700/dcmove reset|r - Reset all frames to default")
@@ -464,6 +671,7 @@ end
 function FrameMover.OnDisable()
     addon:Debug("FrameMover module disabling")
     LockFrames()
+    DisableEditorMode()
 end
 
 -- ============================================================
@@ -496,6 +704,58 @@ function FrameMover.CreateSettings(parent)
         self:SetText(isUnlocked and "Lock Frames" or "Unlock Frames")
     end)
     yOffset = yOffset - 35
+
+    -- Editor Mode Button
+    local editorBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    editorBtn:SetSize(150, 25)
+    editorBtn:SetPoint("TOPLEFT", 16, yOffset)
+    editorBtn:SetText(settings.editorMode and "Exit Editor" or "Enter Editor")
+    editorBtn:SetScript("OnClick", function(self)
+        if addon.settings.frameMover.editorMode then
+            DisableEditorMode()
+            LockFrames()
+        else
+            EnableEditorMode()
+        end
+        self:SetText(addon.settings.frameMover.editorMode and "Exit Editor" or "Enter Editor")
+    end)
+    yOffset = yOffset - 35
+
+    local showGridCb = addon:CreateCheckbox(parent)
+    showGridCb:SetPoint("TOPLEFT", 16, yOffset)
+    showGridCb.Text:SetText("Show grid overlay")
+    showGridCb:SetChecked(settings.showGrid)
+    showGridCb:SetScript("OnClick", function(self)
+        addon:SetSetting("frameMover.showGrid", self:GetChecked())
+        UpdateGridOverlay()
+    end)
+    yOffset = yOffset - 22
+
+    local snapCb = addon:CreateCheckbox(parent)
+    snapCb:SetPoint("TOPLEFT", 16, yOffset)
+    snapCb.Text:SetText("Snap frames to grid")
+    snapCb:SetChecked(settings.snapToGrid)
+    snapCb:SetScript("OnClick", function(self)
+        addon:SetSetting("frameMover.snapToGrid", self:GetChecked())
+    end)
+    yOffset = yOffset - 22
+
+    local gridSizeSlider = addon:CreateSlider(parent)
+    gridSizeSlider:SetPoint("TOPLEFT", 16, yOffset)
+    gridSizeSlider:SetWidth(200)
+    gridSizeSlider:SetMinMaxValues(5, 40)
+    gridSizeSlider:SetValueStep(1)
+    gridSizeSlider.Text:SetText("Grid Size")
+    gridSizeSlider.Low:SetText("5")
+    gridSizeSlider.High:SetText("40")
+    gridSizeSlider:SetValue(settings.gridSize or 10)
+    gridSizeSlider:SetScript("OnValueChanged", function(self, value)
+        addon:SetSetting("frameMover.gridSize", math.floor(value + 0.5))
+        if addon.settings.frameMover.showGrid then
+            UpdateGridOverlay()
+        end
+    end)
+    yOffset = yOffset - 50
     
     -- Reset All Button
     local resetBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")

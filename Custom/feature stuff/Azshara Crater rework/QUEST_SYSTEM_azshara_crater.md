@@ -77,22 +77,24 @@
 5.  **"Bounty: Prince Nazjak"**: Kill Prince Nazjak (Rare).
 6.  **"River Pollution"**: Cleanse 8 polluted spots.
 7.  **"Crab Meat"**: Collect 10 Crab Meat.
-8.  **"The Western Cliffs"**: Report to Vex'ara.
+8.  **"Syndicate Threat"**: Kill 8 Syndicate Prowlers and 8 Syndicate Conjurors.
+9.  **"Bounty: Molok the Crusher"**: Kill Molok the Crusher (Rare).
+10. **"The Western Cliffs"**: Report to Vex'ara.
 
 *   **Secondary Giver:** Engineer Whizzbang (300031)
 1.  **"High-Explosive Research"**: Kill 6 Cliff Breakers.
 2.  **"Stop the Screaming"**: Kill 8 Spitelash Sirens.
-3.  **"Survey Data Recovery"**: Kill 8 Spitelash Screamers.
+3.  **"Survey Data Recovery"**: Collect 8 Survey Data (from Ruins).
 
 ### Zone 5: The Cliffs (Level 40-50)
 *   **Giver:** Demonologist Vex'ara (300040)
-1.  **"Satyr Horns"**: Kill 12 Jadefire Satyrs.
-2.  **"Felhound Fangs"**: Kill 10 Felhounds.
-3.  **"Fel Steed Subjugation"**: Kill 8 Fel Steeds.
-4.  **"Shadowstalker Hunt"**: Kill 10 Hellcalled Shadowstalkers.
-5.  **"Bounty: Monnos the Elder"**: Kill Monnos the Elder (Rare).
-6.  **"Corrupted Soil"**: Collect 10 Soil Samples.
-7.  **"Demonic Runes"**: Collect 6 Runes from satyrs.
+1.  **"Timbermaw Encroachment"**: Kill 10 Timbermaw Warriors and 8 Timbermaw Watchers.
+2.  **"Spirits of the Highborne"**: Kill 8 Highborne Apparitions and 8 Highborne Lichlings.
+3.  **"Cleansing the Temple"**: Kill 8 Spitelash Sirens and 8 Spitelash Myrmidons.
+4.  **"Bounty: Ragepaw"**: Kill Ragepaw (Rare Furbolg).
+5.  **"Bounty: Varo'then"**: Kill Varo'then's Ghost (Rare Ghost).
+6.  **"The Water Beast"**: Kill Scalebeard (Rare Turtle).
+7.  **"Cliff Feathers"**: Collect 10 Hippogryph Feathers.
 8.  **"Into Haldarr Territory"**: Report to Kael'thos.
 
 *   **Secondary Giver:** Earthcaller Ryga (300041)

@@ -33,11 +33,11 @@ local moduleCategories = {
     },
     {
         name = "UI Customization",
-        modules = { "FrameMover", "Cooldowns", "ExtendedStats" }
+        modules = { "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Keybinds" }
     },
     {
         name = "Social & System",
-        modules = { "SocialEnhancements", "Mail", "Communication" }
+        modules = { "SocialEnhancements", "Mail", "Communication", "Profiles" }
     }
 }
 
@@ -57,9 +57,13 @@ local moduleDisplayNames = {
     ["FrameMover"] = "Move Frames",
     ["Cooldowns"] = "Cooldown Text",
     ["ExtendedStats"] = "Extended Stats",
+    ["ActionBars"] = "Action Bars",
+    ["Minimap"] = "Minimap",
+    ["Keybinds"] = "Keybinds",
     ["SocialEnhancements"] = "Social",
     ["Mail"] = "Mail",
     ["Communication"] = "Sync & Server",
+    ["Profiles"] = "Profiles",
 }
 
 -- Icons for buttons (standard WoW icons)
@@ -78,9 +82,13 @@ local moduleIcons = {
     ["FrameMover"] = "Interface\\Icons\\Inv_Misc_Map_01",
     ["Cooldowns"] = "Interface\\Icons\\Spell_Nature_TimeStop",
     ["ExtendedStats"] = "Interface\\Icons\\Spell_Holy_PowerWordShield",
+    ["ActionBars"] = "Interface\\Icons\\Ability_Warrior_BattleShout",
+    ["Minimap"] = "Interface\\Icons\\INV_Misc_Map_01",
+    ["Keybinds"] = "Interface\\Icons\\INV_Misc_Key_14",
     ["SocialEnhancements"] = "Interface\\Icons\\Spell_Holy_Stoicism",
     ["Mail"] = "Interface\\Icons\\Inv_Letter_02",
     ["Communication"] = "Interface\\Icons\\Spell_Holy_DivineProvidence",
+    ["Profiles"] = "Interface\\Icons\\INV_Misc_Note_02",
 }
 
 -- ============================================================

@@ -27,6 +27,12 @@ Modules\BagEnhancements.lua
 Modules\Cooldowns.lua
 Modules\Mail.lua
 
+# UI Overhauls
+Modules\ActionBars.lua
+Modules\Minimap.lua
+Modules\Keybinds.lua
+Modules\Profiles.lua
+
 # New Modules
 Modules\FrameMover.lua
 Modules\VendorPlus.lua

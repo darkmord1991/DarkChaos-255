@@ -749,8 +749,10 @@ function BagEnhancements.OnEnable()
         end
     end)
     BagEnhancements.eventFrame = ev
-    
-    print("|cff00ff00DC-QoS:|r Bag Enhancements Loaded. OneBag Mode: " .. tostring(settings.oneBag))
+
+    if addon and addon.Debug then
+        addon:Debug("Bag Enhancements Loaded. OneBag Mode: " .. tostring(settings.oneBag))
+    end
 end
 
 function BagEnhancements.OnDisable()

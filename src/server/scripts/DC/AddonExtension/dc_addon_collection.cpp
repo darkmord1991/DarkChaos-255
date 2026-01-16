@@ -4099,6 +4099,60 @@ namespace DCCollection
             TransmogCacheByGuid().erase(guid);
         }
 
+        static void ApplyCachedTransmogOnLogin(Player* player)
+        {
+            if (!player)
+                return;
+
+            uint32 guid = player->GetGUID().GetCounter();
+
+            CharacterTransmogCache cache = LoadCharacterTransmogCache(guid);
+            if (cache.bySlot.empty())
+            {
+                std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                TransmogCacheByGuid()[guid] = std::move(cache);
+                return;
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                TransmogCacheByGuid()[guid] = cache;
+            }
+
+            for (auto const& [slot, row] : cache.bySlot)
+            {
+                if (slot >= EQUIPMENT_SLOT_END)
+                    continue;
+
+                Item* equippedItem = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                if (!equippedItem)
+                    continue;
+
+                uint32 currentEntry = equippedItem->GetEntry();
+
+                if (currentEntry && row.realEntry && currentEntry != row.realEntry)
+                {
+                    CharacterDatabase.Execute(
+                        "UPDATE dc_character_transmog SET real_entry = {} WHERE guid = {} AND slot = {}",
+                        currentEntry, guid, static_cast<uint32>(slot));
+
+                    std::lock_guard<std::mutex> lock(TransmogCacheMutex());
+                    auto it = TransmogCacheByGuid().find(guid);
+                    if (it != TransmogCacheByGuid().end())
+                        it->second.bySlot[slot].realEntry = currentEntry;
+                }
+
+                if (row.fakeEntry)
+                {
+                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), row.fakeEntry);
+                }
+                else
+                {
+                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), 0);
+                }
+            }
+        }
+
         void OnPlayerLogin(Player* player) override
         {
             if (!sConfigMgr->GetOption<bool>(Config::ENABLED, true))
@@ -4113,6 +4167,9 @@ namespace DCCollection
 
             // Apply mount speed bonus on login
             UpdateMountSpeedBonus(player);
+
+            // Ensure applied transmogs are reflected on the player immediately after login.
+            ApplyCachedTransmogOnLogin(player);
 
             // Push current transmog state so the UI can show applied slots
             SendTransmogState(player);

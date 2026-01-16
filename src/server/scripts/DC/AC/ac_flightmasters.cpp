@@ -139,9 +139,9 @@ public:
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
 
-        AddGossipItemFor(player, 0, "Level 40+ to Camp", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_0);
-        AddGossipItemFor(player, 0, "Level 40+ to Level 30+", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_25);
-        AddGossipItemFor(player, 0, "Level 40+ to Level 60+", GOSSIP_SENDER_MAIN, GA_L40_SCENIC_40_TO_57);
+        AddGossipItemFor(player, 0, "Level 50+ to Camp", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_0);
+        AddGossipItemFor(player, 0, "Level 50+ to Level 30+", GOSSIP_SENDER_MAIN, GA_L40_BACK_TO_25);
+        AddGossipItemFor(player, 0, "Level 50+ to Level 60+", GOSSIP_SENDER_MAIN, GA_L40_SCENIC_40_TO_57);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
@@ -179,7 +179,7 @@ public:
 
         AddGossipItemFor(player, 0, "Level 60+ to Camp", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_0);
         AddGossipItemFor(player, 0, "Level 60+ to Level 30+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_25);
-        AddGossipItemFor(player, 0, "Level 60+ to Level 40+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_40);
+        AddGossipItemFor(player, 0, "Level 60+ to Level 50+", GOSSIP_SENDER_MAIN, GA_L60_BACK_TO_40);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }

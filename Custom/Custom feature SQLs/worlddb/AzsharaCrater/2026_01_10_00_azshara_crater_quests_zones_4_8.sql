@@ -147,41 +147,49 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
 (300407, 2, 34, 30, 0, 0, 0, 3, 0, 769, 5, 300311, 6, 300312, 4, 'Crab Meat', 'Collect 10 Tender Crab Meat.', 'The troops need food. The river crabs are edible, if tough.', 'Azshara Crater', 'Meat collected.', 3730, 10); -- Big Bear Meat as placeholder
 
+-- Quest 9: Syndicate Threat (Kill Syndicate)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300408, 2, 37, 33, 0, 0, 0, 4, 0, 1718, 1, 300311, 8, 300312, 5, 'Syndicate Threat', 'Kill 8 Syndicate Prowlers and 8 Syndicate Conjurors.', 'The Syndicate bandits are looting the ruins. Clear them out.', 'Azshara Crater', 'Syndicate defeated.', 2588, 8, 2590, 8);
+
+-- Quest 10: Bounty: Molok the Crusher (Rare Kill)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+(300409, 2, 39, 35, 0, 0, 0, 5, 1200, 300311, 15, 300312, 10, 0, 0, 'Bounty: Molok the Crusher', 'Slay Molok the Crusher.', 'A massive Ogre named Molok crushes all in his path. End his rampage.', 'Azshara Crater', 'Molok slain.', 2604, 1);
+
 -- ----------------------------------------------------------------------------
 -- ZONE 5 QUESTS (Level 40-50) - Demonologist Vex'ara (300040)
 -- ----------------------------------------------------------------------------
 
--- Quest 1: Satyr Horns (Kill Jadefire Satyrs)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300500, 2, 42, 38, 0, 0, 0, 4, 0, 1604, 1, 300311, 10, 300312, 7, 'Satyr Horns', 'Kill 12 Jadefire Satyrs.', 'These demons corrupt the land. Destroy them.', 'Azshara Crater', 'Satyrs slain.', 11791, 12);
+-- Quest 1: Timbermaw Encroachment (Kill Furbolgs)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300500, 2, 47, 43, 0, 0, 0, 4, 0, 1604, 1, 300311, 10, 300312, 7, 'Timbermaw Encroachment', 'Kill 10 Timbermaw Warriors and 8 Timbermaw Watchers.', 'The Timbermaw Furbolgs are becoming aggressive. Thin their numbers.', 'Azshara Crater', 'Furbolgs defeated.', 6185, 10, 6187, 8);
 
--- Quest 2: Felhound Fangs (Kill Felhounds)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300501, 2, 45, 41, 0, 0, 0, 4, 0, 1677, 1, 300311, 10, 300312, 7, 'Felhound Fangs', 'Kill 10 Felhounds.', 'Their fangs contain fel energy. I need samples.', 'Azshara Crater', 'Fangs collected.', 5865, 10);
+-- Quest 2: Spirits of the Highborne (Kill Ghosts)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300501, 2, 46, 42, 0, 0, 0, 4, 0, 1677, 1, 300311, 10, 300312, 7, 'Spirits of the Highborne', 'Kill 8 Highborne Apparitions and 8 Highborne Lichlings.', 'The ruins are haunted by restless spirits. Put them to ease.', 'Azshara Crater', 'Spirits quelled.', 6116, 8, 6117, 8);
 
--- Quest 3: Fel Steed Subjugation (Kill Fel Steeds)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300502, 2, 44, 40, 0, 0, 0, 4, 0, 4084, 1, 300311, 10, 300312, 7, 'Fel Steed Subjugation', 'Kill 8 Fel Steeds.', 'These mounts carry demons. Ground them permanently.', 'Azshara Crater', 'Steeds destroyed.', 11464, 8);
+-- Quest 3: Cleansing the Temple (Kill Naga)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300502, 2, 48, 44, 0, 0, 0, 4, 0, 4084, 1, 300311, 10, 300312, 7, 'Cleansing the Temple', 'Kill 8 Spitelash Sirens and 8 Spitelash Myrmidons.', 'A small water temple has been overrun by Naga. Clear it out.', 'Azshara Crater', 'Temple cleared.', 6194, 8, 6193, 8);
 
--- Quest 4: Shadowstalker Hunt (Kill Shadowstalkers)
+-- Quest 4: Bounty: Ragepaw (Rare Kill)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300503, 2, 46, 42, 0, 0, 0, 4, 0, 300311, 10, 300312, 7, 0, 0, 'Shadowstalker Hunt', 'Kill 10 Hellcalled Shadowstalkers.', 'They stalk from the shadows. Hunt the hunters.', 'Azshara Crater', 'Stalkers eliminated.', 11452, 10);
+(300503, 2, 51, 47, 0, 0, 0, 5, 1200, 300311, 15, 300312, 10, 0, 0, 'Bounty: Ragepaw', 'Slay Ragepaw.', 'A powerful Furbolg named Ragepaw leads the camp. Defeat him.', 'Azshara Crater', 'Ragepaw slain.', 14342, 1);
 
--- Quest 5: Bounty: Monnos the Elder (Rare Kill)
+-- Quest 5: Bounty: Varo''then (Rare Kill)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300504, 2, 48, 44, 0, 0, 0, 5, 1500, 300311, 15, 300312, 10, 0, 0, 'Bounty: Monnos the Elder', 'Slay Monnos the Elder.', 'An ancient satyr leads their cult. End him.', 'Azshara Crater', 'Monnos defeated.', 6144, 1);
+(300504, 2, 52, 48, 0, 0, 0, 5, 1500, 300311, 15, 300312, 10, 0, 0, 'Bounty: Varo''then', 'Slay Varo''then''s Ghost.', 'The ghost of Captain Varo''then haunts the tower. End his misery.', 'Azshara Crater', 'Varo''then defeated.', 6118, 1);
 
 -- Quest 6: Proceed to Haldarr (Travel)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
 (300505, 2, 50, 46, 0, 0, 0, 5, 0, 300311, 10, 300312, 7, 0, 0, 'Into Haldarr Territory', 'Report to Felsworn Kael''thos.', 'The demon lords gather in Haldarr. Investigate.', 'Azshara Crater', 'Kael''thos found.');
 
--- Quest 7: Corrupted Soil (Collect)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300506, 2, 43, 40, 0, 0, 0, 3, 0, 300311, 10, 300312, 7, 0, 0, 'Corrupted Soil', 'Collect 10 Corrupted Soil Samples.', 'The very earth bleeds with fel. Bring me samples for analysis.', 'Azshara Crater', 'Soil collected.', 300000, 10); -- Placeholder Item ID
+-- Quest 7: The Water Beast (Kill Scalebeard)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+(300506, 2, 52, 48, 0, 0, 0, 5, 1500, 300311, 15, 300312, 10, 0, 0, 'The Water Beast', 'Slay Scalebeard in the Water Temple.', 'An ancient turtle, Scalebeard, guards the temple waters. Remove him.', 'Azshara Crater', 'Scalebeard slain.', 13896, 1);
 
--- Quest 8: Demonic Runes (Collect)
+-- Quest 8: Cliff Feathers (Collect)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300507, 2, 47, 43, 0, 0, 0, 4, 0, 12662, 1, 300311, 10, 300312, 7, 'Demonic Runes', 'Collect 6 Demonic Runes from Satyrs.', 'The Satyrs use runes to channel their power. Seize them.', 'Azshara Crater', 'Runes collected.', 12662, 6); -- Demonic Rune
+(300507, 2, 48, 44, 0, 0, 0, 4, 0, 12662, 1, 300311, 10, 300312, 7, 'Cliff Feathers', 'Collect 10 Hippogryph Feathers.', 'The Thunderhead Hippogryphs have rare feathers. Collect them.', 'Azshara Crater', 'Feathers collected.', 8393, 10); -- Vibrant Plume as placeholder
 
 -- ----------------------------------------------------------------------------
 -- ZONE 6 QUESTS (Level 50-60) - Felsworn Kael'thos (300050)
@@ -457,10 +465,10 @@ INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 
 -- Kol'gar (Zone 4)
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
-(300030, 300400), (300030, 300401), (300030, 300402), (300030, 300403), (300030, 300404), (300030, 300405), (300030, 300406), (300030, 300407);
+(300030, 300400), (300030, 300401), (300030, 300402), (300030, 300403), (300030, 300404), (300030, 300405), (300030, 300406), (300030, 300407), (300030, 300408), (300030, 300409);
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 (300030, 300306), -- Arrive from Zone 3
-(300030, 300400), (300030, 300401), (300030, 300402), (300030, 300403), (300030, 300404), (300030, 300406), (300030, 300407);
+(300030, 300400), (300030, 300401), (300030, 300402), (300030, 300403), (300030, 300404), (300030, 300406), (300030, 300407), (300030, 300408), (300030, 300409);
 
 -- Vex'ara (Zone 5)
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
@@ -499,14 +507,19 @@ INSERT INTO `quest_offer_reward` (`ID`, `RewardText`) VALUES
 (300400, 'The waters run red with Strashaz blood. Good.'),
 (300401, 'These shells will reinforce our bunkers.'),
 (300402, 'Rock Elementals have been shattered.'),
-(300403, 'Hydra scales... excellent.'),
+(300403, 'These scales are beautiful. They will fetch a high price.'),
 (300404, 'Prince Nazjak is dead? HAH! The tides turn in our favor.'),
+(300408, 'The Syndicate will think twice before looting here again.'),
+(300409, 'Molok is dead! A mighty victory for the Horde... and you.'),
 (300406, 'The river is clearer already. Well done.'),
 (300407, 'It smells... potent. But it will feed the troops.'),
-(300500, 'One less demon to worry about.'),
-(300504, 'Monnos is slain. The satyrs will be in disarray.'),
-(300506, 'This soil is teeming with corruption. I will analyze it.'),
-(300507, 'These runes vibrate with dark power. Excellent.'),
+(300500, 'The woods are safer now. Good work.'),
+(300501, 'The spirits are at rest. For now.'),
+(300502, 'The temple is cleansed. The water flows pure.'),
+(300503, 'Ragepaw dealt with. The camp is leaderless.'),
+(300504, 'Varo''then was a formidable warrior. You did well.'),
+(300506, 'Scalebeard is no more. The temple is secure.'),
+(300507, 'These feathers possess strong magic. Excellent.'),
 (300603, 'Karlindos has fallen. The Pit is vulnerable.'),
 (300605, 'The portals flicker and fade. You have bought us time.'),
 (300606, 'Crude, but effective weaponry. We know their methods now.'),
@@ -595,6 +608,18 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (300071, 0, 18888, 1.0, 1.0, 0);   -- Nexus-Prince Haramad (Ethereal)
 
 -- End of Script
+
+-- ----------------------------------------------------------------------------
+-- CUSTOM NPC TEMPLATES (D5)
+-- ----------------------------------------------------------------------------
+DELETE FROM `creature_template` WHERE `entry` = 300085;
+-- Priestess Lunara (Ghost Model - DisplayID 2156 Ghost Night Elf)
+INSERT INTO `creature_template` (`entry`, `name`, `subname`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `scale`, `rank`, `unit_class`) VALUES
+(300085, 'Priestess Lunara', 'Spirit of the Temple', 60, 60, 35, 3, 1.0, 1, 1);
+
+DELETE FROM `creature_template_model` WHERE `CreatureID` = 300085;
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(300085, 0, 2156, 1.0, 1.0, 0); -- Ghost Night Elf Female
 
 
 
