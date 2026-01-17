@@ -292,7 +292,7 @@ function GOMove:MoveOnGuid(ID, guid, input)
         ARG = input
     end
 
-    DCAddonProtocol:Send("GOMV", 1, tid[1], guid, ARG)
+    DCAddonProtocol:Send(self.ActiveModule or "GOMV", 1, tid[1], guid, ARG)
 end
 
 local TIDs = 0
@@ -361,14 +361,14 @@ function GOMove:Move(ID, input)
         self._radiusSelecting = true
     end
     if(not trinityID[ID][2]) then
-        DCAddonProtocol:Send("GOMV", 1, trinityID[ID][1], 0, ARG)
+        DCAddonProtocol:Send(self.ActiveModule or "GOMV", 1, trinityID[ID][1], 0, ARG)
     elseif(trinityID[ID][3] and tonumber(ARG) and tonumber(ARG) > 0) then
-        DCAddonProtocol:Send("GOMV", 1, trinityID[ID][1], 0, ARG)
+        DCAddonProtocol:Send(self.ActiveModule or "GOMV", 1, trinityID[ID][1], 0, ARG)
     else
         local did = false
         for GUID, NAME in pairs(GOMove.Selected) do
             if(tonumber(GUID)) then
-                DCAddonProtocol:Send("GOMV", 1, trinityID[ID][1], GUID, ARG)
+                DCAddonProtocol:Send(self.ActiveModule or "GOMV", 1, trinityID[ID][1], GUID, ARG)
                 if(ID == "GOTO") then
                     return
                 end
@@ -379,7 +379,7 @@ function GOMove:Move(ID, input)
         -- UX: if nothing is selected, fall back to the last spawned object.
         -- This avoids accidental multi-moves and matches the "last spawned" workflow.
         if(not did and tonumber(self.LastSpawnedGUID)) then
-            DCAddonProtocol:Send("GOMV", 1, trinityID[ID][1], self.LastSpawnedGUID, ARG)
+            DCAddonProtocol:Send(self.ActiveModule or "GOMV", 1, trinityID[ID][1], self.LastSpawnedGUID, ARG)
             did = true
         end
 

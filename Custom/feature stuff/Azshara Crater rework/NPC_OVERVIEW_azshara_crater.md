@@ -246,7 +246,7 @@
 | NPC Name | Entry ID | Level | Type | Spawn Count |
 |----------|----------|-------|------|-------------|
 | Legashi Satyr | **6200** | 51-52 | Demon | 15 |
-| Legashi Rogue | **6134** | 60 | Demon | 12 |
+| Jadefire Trickster | **7107** | 52-53 | Demon | 12 |
 | Legashi Hellcaller | **6135** | 53-54 | Demon | 10 |
 | Felguard Sentinel | **6011** | 50 | Demon | 12 |
 | Infernal Sentry | **11466** | 55 | Demon | 8 |
@@ -392,13 +392,11 @@
 | Trash | Corrupted Spectre | **22041** | 65-66 | No |
 | Trash | Web Lord | **25294** | 69 | **Elite** (Spider) |
 | Trash | Black Morass Tarantula | **18983** | 67-68 | No |
-| Trash | Underbat | **17805** | 64-65 | No |
-| Trash | Fungal Giant | **17885** | 65-66 | **Elite** (Giant) |
-| Trash | **Forest Strider** | **21634** | 65-66 | No |
-| Trash | **Underbog Shambler** | **17871** | 63-64 | No |
+| Trash | **Plague Bat** | **8535** | 64-65 | No |
+| Trash | **Bonelasher** | **18470** | 64-65 | No |
+| Trash | **Plague Slime** | **8536** | 65-66 | No |
 | Trash | Dread Bat | **1555** | 64-65 | No |
 | **Rare** | **Skul** | **10393** | 68 | **Rare Elite** (Ghost) |
-| **Rare** | **Tendris Warpwood** | **11489** | 69 | **Rare Elite** (Ancient) |
 | **Mini-Boss**| **Mother Smolderweb** | **10596** | 66 | **Elite** (Spider) |
 | **Boss** | **Nerub'enkan** | **10437** | 68 | **Elite** (Spider) |
 | **Boss** | **Baroness Anandara** | **14506** | 69 | **Elite** (Banshee) |

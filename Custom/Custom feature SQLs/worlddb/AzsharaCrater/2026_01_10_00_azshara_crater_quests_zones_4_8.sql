@@ -610,14 +610,19 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 -- End of Script
 
 -- ----------------------------------------------------------------------------
--- CUSTOM NPC TEMPLATES (D5) - UPSCALING & CUSTOM
+-- CUSTOM NPC TEMPLATES (D5) - DUPLICATION & CUSTOMIZATION
 -- ----------------------------------------------------------------------------
--- Upscale D5 Bosses/Rares to Level 68-69 Elite
-UPDATE `creature_template` SET `minlevel`=68, `maxlevel`=68, `rank`=3, `HealthModifier`=5.0 WHERE `entry` IN (10393, 11489, 10437, 14506); -- Skul, Tendris, Nerub'enkan, Anandara
-UPDATE `creature_template` SET `minlevel`=66, `maxlevel`=66, `rank`=1 WHERE `entry` IN (10596); -- Mother Smolderweb
+-- ----------------------------------------------------------------------------
+-- D5 QUESTS (Temple of Elune)
+-- ----------------------------------------------------------------------------
+DELETE FROM `quest_template` WHERE `ID` BETWEEN 300510 AND 300514;
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, `RequiredNpcOrGo3`, `RequiredNpcOrGoCount3`, `RewardItem1`, `RewardAmount1`) VALUES
+(300510, 2, 69, 65, 0, 0, 5, 5, 'Temple of Elune', 'Defeat Baroness Anandara.', 'The Banshee Queen rules this corrupted temple. She must fall.', 'Temple of Elune', 'Anandara defeated.', 300103, 1, 0, 0, 0, 0, 300311, 25),
+(300511, 2, 68, 65, 0, 0, 5, 4, 'Purging the Darkness', 'Defeat Nerub\'enkan and Mother Smolderweb.', 'Spiders infest the lower levels. Clear them out.', 'Temple of Elune', 'Spiders defeated.', 300102, 1, 300104, 1, 0, 0, 300311, 20),
+(300512, 2, 68, 65, 0, 0, 5, 4, 'Rare Threats', 'Slay Skul and Tendris Warpwood.', 'Powerful entities roam these halls. Put them to rest.', 'Temple of Elune', 'Rares defeated.', 300100, 1, 300101, 1, 0, 0, 300311, 20),
+(300513, 2, 67, 65, 0, 0, 5, 3, 'The Corrupted Temple', 'Slay 10 Corrupted Spectres and 8 Black Morass Tarantulas.', 'The spirits and spiders are everywhere. Thin their numbers.', 'Temple of Elune', 'Temple thinned.', 300110, 10, 300111, 8, 0, 0, 300311, 15),
+(300514, 2, 67, 65, 0, 0, 5, 3, 'Clearing the Plague', 'Slay 8 Plague Bats, 8 Plague Slimes, and 6 Bonelashers.', 'The plague has twisted the very flora and fauna. Cleanse it.', 'Temple of Elune', 'Plague cleared.', 300112, 8, 300114, 8, 300113, 6, 300311, 15);
 
--- Downrank D5 Trash to Normal (Level 64-68)
-UPDATE `creature_template` SET `rank`=0, `minlevel`=64, `maxlevel`=68, `HealthModifier`=1.0 WHERE `entry` IN (22041, 18983, 17805, 21634, 17871, 1555); -- Spectre, Tarantula, Underbat, Forest Strider, Underbog Shambler, Dread Bat
 
 DELETE FROM `creature_template` WHERE `entry` = 300085;
 -- Priestess Lunara (Ghost Model - DisplayID 2156 Ghost Night Elf)
@@ -627,6 +632,26 @@ INSERT INTO `creature_template` (`entry`, `name`, `subname`, `minlevel`, `maxlev
 DELETE FROM `creature_template_model` WHERE `CreatureID` = 300085;
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (300085, 0, 2156, 1.0, 1.0, 0); -- Ghost Night Elf Female
+
+-- ----------------------------------------------------------------------------
+-- QUEST STARTERS / ENDERS
+-- ----------------------------------------------------------------------------
+DELETE FROM `creature_queststarter` WHERE `id` = 300085;
+DELETE FROM `creature_questender` WHERE `id` = 300085;
+INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
+(300085, 300510), -- Temple of Elune
+(300085, 300511), -- Purging the Darkness
+(300085, 300512), -- Rare Threats
+(300085, 300513), -- The Corrupted Temple
+(300085, 300514); -- Clearing the Plague
+
+INSERT INTO `creature_questender` (`id`, `quest`) VALUES
+(300085, 300510),
+(300085, 300511),
+(300085, 300512),
+(300085, 300513),
+(300085, 300514);
+
 
 
 

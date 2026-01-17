@@ -136,6 +136,7 @@ struct DCAddonProtocolConfig
     bool EnableLeaderboard;
     bool EnableTeleports;
     bool EnableGOMove;
+    bool EnableNPCMove;
     bool EnableGroupFinder;
     bool EnableHotspot;
     bool EnableWorld;
@@ -150,6 +151,7 @@ struct DCAddonProtocolConfig
     uint32 RateLimitAction;
     uint32 ChunkTimeoutMs;
     uint32 MinGOMoveSecurity;
+    uint32 MinNPCMoveSecurity;
 
     // Version
     std::string ProtocolVersion;
@@ -171,6 +173,7 @@ static void LoadAddonConfig()
     s_AddonConfig.EnableLeaderboard = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Leaderboard.Enable", true);
     s_AddonConfig.EnableTeleports   = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Teleports.Enable", true);
     s_AddonConfig.EnableGOMove     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GOMove.Enable", true);
+    s_AddonConfig.EnableNPCMove    = sConfigMgr->GetOption<bool>("DC.AddonProtocol.NPCMove.Enable", true);
     s_AddonConfig.EnableGroupFinder = sConfigMgr->GetOption<bool>("DC.AddonProtocol.GroupFinder.Enable", true);
     s_AddonConfig.EnableHotspot     = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Hotspot.Enable", true);
     s_AddonConfig.EnableWorld       = sConfigMgr->GetOption<bool>("DC.AddonProtocol.World.Enable", true);
@@ -184,6 +187,7 @@ static void LoadAddonConfig()
     s_AddonConfig.RateLimitAction       = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Action", 0);
     s_AddonConfig.ChunkTimeoutMs        = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.ChunkTimeout", 5000);
     s_AddonConfig.MinGOMoveSecurity     = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.GOMove.MinSecurity", 1);
+    s_AddonConfig.MinNPCMoveSecurity    = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.NPCMove.MinSecurity", 1);
 
     // Set global flag for S2C logging (needed by Message::Send before config is accessible)
     g_S2CLoggingEnabled = s_AddonConfig.EnableProtocolLogging;
@@ -204,6 +208,7 @@ static void LoadAddonConfig()
     router.SetModuleEnabled(DCAddon::Module::LEADERBOARD, s_AddonConfig.EnableLeaderboard);
     router.SetModuleEnabled(DCAddon::Module::TELEPORTS, s_AddonConfig.EnableTeleports);
     router.SetModuleEnabled(DCAddon::Module::GOMOVE, s_AddonConfig.EnableGOMove);
+    router.SetModuleEnabled(DCAddon::Module::NPCMOVE, s_AddonConfig.EnableNPCMove);
     router.SetModuleEnabled(DCAddon::Module::GROUP_FINDER, s_AddonConfig.EnableGroupFinder);
     router.SetModuleEnabled(DCAddon::Module::HOTSPOT, s_AddonConfig.EnableHotspot);
     router.SetModuleEnabled(DCAddon::Module::WORLD, s_AddonConfig.EnableWorld);
@@ -211,6 +216,7 @@ static void LoadAddonConfig()
     router.SetModuleEnabled(DCAddon::Module::QOS, s_AddonConfig.EnableQoS);
     router.SetModuleEnabled(DCAddon::Module::COLLECTION, s_AddonConfig.EnableCollection);
     router.SetModuleMinSecurity(DCAddon::Module::GOMOVE, s_AddonConfig.MinGOMoveSecurity);
+    router.SetModuleMinSecurity(DCAddon::Module::NPCMOVE, s_AddonConfig.MinNPCMoveSecurity);
 }
 
 // ============================================================================

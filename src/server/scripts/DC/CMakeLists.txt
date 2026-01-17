@@ -217,6 +217,7 @@ set(SCRIPTS_DC_GreatVault
     AddonExtension/dc_addon_groupfinder.cpp
     AddonExtension/dc_addon_groupfinder_mgr.cpp
     AddonExtension/dc_addon_groupfinder_npc.cpp
+    AddonExtension/dc_addon_npcmove.cpp
     AddonExtension/dc_addon_collection.cpp
     AddonExtension/dc_addon_wardrobe.cpp
 )

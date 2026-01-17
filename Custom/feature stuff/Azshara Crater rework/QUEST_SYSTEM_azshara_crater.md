@@ -172,13 +172,12 @@
 
 5.  **D5: Temple of Elune (L60-70)** - Night Elf/Arcane Theme
     *   **Quest Giver:** Priestess Lunara (300085)
-    *   **"Temple of Elune"**: Defeat Priestess Delrissa (Boss).
-    *   **"The Twilight Threat"**: Slay Twilight Lord Kelris (Rare).
-    *   **"Arcane Corruption"**: Defeat Arcane Torrent (Rare).
-    *   **"High Priestess Arlokk"**: Defeat High Priestess Arlokk (Mini-Boss).
-    *   **"Highborne Corruption"**: Slay 8 Highborne Lichlings & 8 Highborne Summoners.
-    *   **"Moonkin Madness"**: Slay 10 Moonkin Oracles & 5 Moonkin Matriarchs.
-    *   **"Eldreth Incursion"**: Slay 8 Eldreth Sorcerers & 6 Eldreth Seethers.
+    *   **"Temple of Elune"**: Defeat Baroness Anandara (Boss).
+    *   **"Purging the Darkness"**: Defeat Nerub'enkan (Boss) & Mother Smolderweb (Mini-Boss).
+    *   **"Rare Threats"**: Slay Skul (Rare) & Tendris Warpwood (Rare).
+    *   **"The Corrupted Temple"**: Slay 10 Corrupted Spectres & 8 Black Morass Tarantulas.
+    *   **"Clearing the Plague"**: Slay 8 Plague Bats & 8 Plague Slimes.
+    *   **"Nature's Corruption"**: Slay 6 Bonelashers & 6 Underbog Shamblers.
 6. ### ★Dungeon 6: The Azure Vault (Level 70)
 *   **Giver:** Scale-Keeper Valyria (300096)
     1.  **"The Azure Vault"**: Defeat Azuregos.

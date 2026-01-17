@@ -22,6 +22,7 @@ void AddSC_dc_addon_welcome();
 void AddSC_dc_addon_world();
 void AddSC_dc_addon_groupfinder();
 void AddSC_DCAddon_GOMove();
+void AddSC_DCAddon_NPCMove();
 void AddSC_npc_group_finder();
 void AddSC_dc_addon_duels();
 void AddSC_dc_addon_prestige();
@@ -49,6 +50,7 @@ void AddDCAddonExtensionScripts()
     AddSC_dc_addon_groupfinder();
     AddSC_dc_addon_world();
     AddSC_DCAddon_GOMove();
+    AddSC_DCAddon_NPCMove();
     DCAddon::AddTeleportScripts();
 
     // NPC scripts

@@ -3,13 +3,51 @@ local function ensureGOMoveSV()
     if(not GOMoveSV or type(GOMoveSV) ~= "table") then
         GOMoveSV = {}
     end
+    if (type(GOMoveSV.NPCFavL) ~= "table") then
+        GOMoveSV.NPCFavL = {}
+    end
 end
 ensureGOMoveSV()
+GOMove.Mode = GOMove.Mode or "GO"
+GOMove.ActiveModule = GOMove.ActiveModule or "GOMV"
+GOMove.ActiveChannel = GOMove.ActiveChannel or "GOMOVE"
+
+local function cloneFavs(source)
+    local out = {NameWidth = 17}
+    if (type(source) == "table") then
+        for _, v in ipairs(source) do
+            if (type(v) == "table") then
+                table.insert(out, {v[1], v[2]})
+            end
+        end
+    end
+    return out
+end
+
+local function saveFavsForMode(mode)
+    ensureGOMoveSV()
+    if (mode == "NPC") then
+        GOMoveSV.NPCFavL = cloneFavs(GOMove.FavL)
+    else
+        GOMoveSV.FavL = cloneFavs(GOMove.FavL)
+    end
+end
+
+local function loadFavsForMode(mode)
+    local source = (mode == "NPC") and GOMoveSV.NPCFavL or GOMoveSV.FavL
+    local data = cloneFavs(source)
+    for i = #GOMove.FavL, 1, -1 do
+        table.remove(GOMove.FavL, i)
+    end
+    for _, v in ipairs(data) do
+        table.insert(GOMove.FavL, v)
+    end
+    GOMove.FavL.NameWidth = 17
+end
 function GOMove.FavL:Add(name, guid)
     self:Del(guid)
     table.insert(self, 1, {name, guid})
-    ensureGOMoveSV()
-    GOMoveSV.FavL = self
+    saveFavsForMode(GOMove.Mode)
 end
 function GOMove.FavL:Del(guid)
     for k,v in ipairs(self) do
@@ -18,8 +56,7 @@ function GOMove.FavL:Del(guid)
             break
         end
     end
-    ensureGOMoveSV()
-    GOMoveSV.FavL = self
+    saveFavsForMode(GOMove.Mode)
 end
 
 local FavFrame, SelFrame
@@ -79,6 +116,43 @@ local focusSelectionRow
 local MainFrame = GOMove:CreateFrame("GOMove_UI", 220, 495)
 GOMove.MainFrame = MainFrame
 MainFrame:Position("LEFT", UIParent, "LEFT", 0, 85)
+loadFavsForMode(GOMove.Mode)
+
+function GOMove:SetMode(mode, showUI)
+    local newMode = (mode == "NPC") and "NPC" or "GO"
+    if (self.Mode ~= newMode) then
+        saveFavsForMode(self.Mode)
+        self.Mode = newMode
+        self.ActiveModule = (newMode == "NPC") and "NPCM" or "GOMV"
+        self.ActiveChannel = (newMode == "NPC") and "NPCMOVE" or "GOMOVE"
+        loadFavsForMode(newMode)
+        clearAllSelected()
+        clearSelectionList()
+        self.LastSpawnedGUID = nil
+    end
+
+    if SelInfoTitle then
+        SelInfoTitle:SetText((self.Mode == "NPC") and "Selected NPC" or "Selected GameObject")
+    end
+    if UpdateMainHeader then
+        UpdateMainHeader()
+    end
+    if UpdateSelectedInfoPanel then
+        UpdateSelectedInfoPanel()
+    end
+    if FavFrame and FavFrame.Update then
+        FavFrame:Update()
+    end
+    if SelFrame and SelFrame.Update then
+        SelFrame:Update()
+    end
+
+    if showUI and self.MainFrame and not self.MainFrame:IsVisible() then
+        self.MainFrame:Show()
+        if FavFrame then FavFrame:Show() end
+        if SelFrame then SelFrame:Show() end
+    end
+end
 MainFrame:Hide()  -- Hide at startup; open only via /gomove command
 
 -- Small info panel attached to the main UI to show the currently focused selection.
@@ -110,7 +184,7 @@ SelectedInfoPanel:Hide()
 
 local SelInfoTitle = SelectedInfoPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 SelInfoTitle:SetPoint("TOPLEFT", SelectedInfoPanel, "TOPLEFT", 8, -6)
-SelInfoTitle:SetText("Selected GameObject")
+SelInfoTitle:SetText((GOMove.Mode == "NPC") and "Selected NPC" or "Selected GameObject")
 
 local SelInfoGuid = SelectedInfoPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 SelInfoGuid:SetPoint("TOPLEFT", SelInfoTitle, "BOTTOMLEFT", 0, -4)
@@ -364,7 +438,7 @@ UpdateMainHeader = function()
         end
     end
 
-    local base = "GOMove UI"
+    local base = (GOMove.Mode == "NPC") and "NPCMove UI" or "GOMove UI"
     if (selectedCount == 0) then
         MainFrame.NameFrame.text:SetText(base)
         return
@@ -878,6 +952,45 @@ EmptyButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 SLASH_GOMOVE1 = '/gomove'
 function SlashCmdList.GOMOVE(msg, editBox)
+    GOMove:SetMode("GO")
+    if(msg ~= '') then
+        for k, v in pairs(GOMove.SCMD) do
+            if(type(k) == "string" and string.find(k, msg:lower()) == 1 and type(v) == "function") then
+                v()
+                break;
+            end
+        end
+        return
+    end
+    if(MainFrame:IsVisible()) then
+        MainFrame:Hide()
+        FavFrame:Hide()
+        SelFrame:Hide()
+        if (UpdateSelectedInfoPanel) then
+            UpdateSelectedInfoPanel()
+        end
+    else
+        MainFrame:Show()
+        FavFrame:Show()
+        SelFrame:Show()
+
+        if (UpdateMainHeader) then
+            UpdateMainHeader()
+        end
+        if (UpdateSelectedInfoPanel) then
+            UpdateSelectedInfoPanel()
+        end
+
+        -- Make sure no input box steals movement keys when opening.
+        for _, inputfield in ipairs(GOMove.Inputs) do
+            inputfield:ClearFocus()
+        end
+    end
+end
+
+SLASH_NPCMOVE1 = '/npcmove'
+function SlashCmdList.NPCMOVE(msg, editBox)
+    GOMove:SetMode("NPC")
     if(msg ~= '') then
         for k, v in pairs(GOMove.SCMD) do
             if(type(k) == "string" and string.find(k, msg:lower()) == 1 and type(v) == "function") then
@@ -929,17 +1042,19 @@ EventFrame:SetScript("OnEvent",
                     local module = parts[1]
                     local opcode = tonumber(parts[2]) or 0
                     -- Error opcodes: Core.SMSG_PERMISSION_DENIED (0x1E) or SMSG_ERROR (0x1F)
-                    if module == "GOMV" and (opcode == 0x1E or opcode == 0x1F) then
+                    if (module == "GOMV" or module == "NPCM") and (opcode == 0x1E or opcode == 0x1F) then
                         local errCode = tonumber(parts[3]) or 0
                         local errMsg = parts[4] or "Unknown error"
-                        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[GOMove] Error:|r " .. errMsg)
+                        local label = (module == "NPCM") and "NPCMove" or "GOMove"
+                        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[" .. label .. "] Error:|r " .. errMsg)
                         return
                     end
                 end
             end
             -- Legacy behaviour: original GOMove channel uses prefix "GOMOVE"
             if Sender ~= UnitName("player") then return end
-            if MSG ~= "GOMOVE" then return end
+            local activePrefix = GOMove.ActiveChannel or "GOMOVE"
+            if MSG ~= activePrefix then return end
             local ID, ENTRYORGUID, ARG2, ARG3, ARG4, ARG5, ARG6 = strsplit("|", MSG2)
             if(ID) then
                 --if(ID == "USED") then
@@ -1045,16 +1160,16 @@ EventFrame:SetScript("OnEvent",
             if(not GOMoveSV or type(GOMoveSV) ~= "table") then
                 GOMoveSV = {}
             end
-            if(GOMoveSV.FavL) then
-                for k,v in ipairs(GOMoveSV.FavL) do
-                    GOMove.FavL[k] = v
-                end
-            end
+            ensureGOMoveSV()
+            loadFavsForMode(GOMove.Mode)
             GOMove:Update()
             -- Register DC protocol error handler if DC library is present
             if DCAddonProtocol ~= nil and type(DC) == "table" and DC.RegisterErrorHandler then
                 DC:RegisterErrorHandler("GOMV", function(errCode, errMsg, opcode)
                     DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[GOMove] Error:|r " .. (errMsg or "Unknown error"))
+                end)
+                DC:RegisterErrorHandler("NPCM", function(errCode, errMsg, opcode)
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[NPCMove] Error:|r " .. (errMsg or "Unknown error"))
                 end)
             end
         end

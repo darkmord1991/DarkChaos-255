@@ -74,6 +74,7 @@ namespace DCAddon
         constexpr const char* WELCOME       = "WELC";   // First-start/welcome system
         constexpr const char* GROUP_FINDER  = "GRPF";   // Group Finder (M+, Raid Finder)
         constexpr const char* GOMOVE        = "GOMV";   // GOMove Object Mover
+        constexpr const char* NPCMOVE       = "NPCM";   // NPC Mover
         constexpr const char* TELEPORTS     = "TELE";   // Teleport system
         constexpr const char* EVENTS        = "EVNT";   // Dynamic events (invasions, rifts, etc.)
         constexpr const char* WORLD         = "WRLD";   // World Content (world bosses, hotspots, rares)
@@ -131,6 +132,14 @@ namespace DCAddon
             constexpr uint8 SMSG_MOVE_RESULT       = 0x10; // Result of move/spawn
             constexpr uint8 SMSG_SEARCH_RESULT     = 0x11; // Search results
             constexpr uint8 SMSG_TELE_LIST         = 0x12; // Teleport list data
+        }
+
+        // NPCMove opcodes
+        namespace NPCMove
+        {
+            constexpr uint8 CMSG_REQUEST_MOVE      = 0x01; // Standard move/spawn commands
+
+            constexpr uint8 SMSG_MOVE_RESULT       = 0x10; // Result of move/spawn
         }
 
         // Spectator opcodes
