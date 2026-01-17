@@ -366,6 +366,7 @@
             void _applyAffixEffects();
             void _clearAffixEffects();
             void _setAffixWeather();
+            void InitAffixDefaults();
             // Returns true if player is in one of our tracked BG raid groups for their team
             bool _isPlayerInBGRaid(Player* p) const;
             // Affix mapping helpers

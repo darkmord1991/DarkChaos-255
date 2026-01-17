@@ -20,6 +20,7 @@
 #include "MapMgr.h"
 #include "MythicDifficultyScaling.h"
 #include "MythicPlusConstants.h"
+#include "MythicPlusAffixes.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -1290,6 +1291,18 @@ void MythicPlusRunManager::ActivateAffixes(Map* map, const std::vector<uint32>& 
             SetHudWorldState(state, liveMap, MythicPlusConstants::Hud::AFFIX_TWO, affixTwo);
             UpdateHud(state, liveMap, true, "affix");
         }
+
+        // Activate affix handlers for this instance
+        std::vector<AffixType> handlerAffixes;
+        handlerAffixes.reserve(affixes.size());
+        for (uint32 affixId : affixes)
+        {
+            if (affixId > AFFIX_NONE && affixId <= AFFIX_VOLCANIC)
+                handlerAffixes.push_back(static_cast<AffixType>(affixId));
+        }
+
+        if (!handlerAffixes.empty())
+            sAffixMgr->ActivateAffixes(map, handlerAffixes, keystoneLevel);
 
         // Apply affix scaling multipliers to creatures
         // This would typically be handled by the MythicDifficultyScaling system

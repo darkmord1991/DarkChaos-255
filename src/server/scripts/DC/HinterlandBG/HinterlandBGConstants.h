@@ -17,6 +17,14 @@ namespace HinterlandBGConstants
     // -------------------------------------------------------------------------
     constexpr uint32 BG_DESERTER_SPELL = 26013;
 
+    // HLBG Affix Spell IDs (custom placeholders)
+    constexpr uint32 HLBG_AFFIX_SUNLIGHT_SPELL = 910010;      // Player haste buff
+    constexpr uint32 HLBG_AFFIX_CLEAR_SKIES_SPELL = 910011;   // Player damage buff
+    constexpr uint32 HLBG_AFFIX_GENTLE_BREEZE_SPELL = 910012; // Player healing received buff
+    constexpr uint32 HLBG_AFFIX_STORM_NPC_SPELL = 910020;     // NPC damage buff
+    constexpr uint32 HLBG_AFFIX_HEAVY_RAIN_NPC_SPELL = 910021; // NPC armor buff
+    constexpr uint32 HLBG_AFFIX_FOG_NPC_SPELL = 910022;       // NPC evasion buff
+
     // -------------------------------------------------------------------------
     // Gossip Actions
     // -------------------------------------------------------------------------

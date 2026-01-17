@@ -69,15 +69,38 @@ void OutdoorPvPHL::LoadConfig()
     _killSpellOnPlayerKillHorde    = sConfigMgr->GetOption<uint32>("HinterlandBG.KillSpell.PlayerKillHorde", _killSpellOnPlayerKillHorde);
     _killSpellOnNpcKill            = sConfigMgr->GetOption<uint32>("HinterlandBG.KillSpell.NpcKill", _killSpellOnNpcKill);
     // Affix system (optional)
-    // NOTE: Affix system has been removed. These settings are kept for backwards compatibility
-    // but the affix system is no longer functional. Set _affixEnabled to false to ensure
-    // no affix code runs even if old config has it enabled.
-    _affixEnabled = false;
-    _affixWeatherEnabled = false;
-    _affixPeriodSec = 0;
-    _affixRandomOnStart = false;
-    _affixAnnounce = false;
-    _affixWorldstateEnabled = false;
+    _affixEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Enabled", _affixEnabled);
+    _affixWeatherEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Weather.Enabled", _affixWeatherEnabled);
+    _affixPeriodSec = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.Period", _affixPeriodSec);
+    _affixRandomOnStart = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.RandomOnStart", _affixRandomOnStart);
+    _affixAnnounce = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Announce", _affixAnnounce);
+    _affixWorldstateEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Worldstate", _affixWorldstateEnabled);
+
+    // Populate default spell/weather mappings (can be overridden below)
+    InitAffixDefaults();
+
+    // Optional overrides for affix spells
+    _affixPlayerSpell[AFFIX_SUNLIGHT] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.PlayerSpell.Sunlight", _affixPlayerSpell[AFFIX_SUNLIGHT]);
+    _affixPlayerSpell[AFFIX_CLEAR_SKIES] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.PlayerSpell.ClearSkies", _affixPlayerSpell[AFFIX_CLEAR_SKIES]);
+    _affixPlayerSpell[AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.PlayerSpell.GentleBreeze", _affixPlayerSpell[AFFIX_GENTLE_BREEZE]);
+    _affixNpcSpell[AFFIX_STORM] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.NpcSpell.Storm", _affixNpcSpell[AFFIX_STORM]);
+    _affixNpcSpell[AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.NpcSpell.HeavyRain", _affixNpcSpell[AFFIX_HEAVY_RAIN]);
+    _affixNpcSpell[AFFIX_FOG] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.NpcSpell.Fog", _affixNpcSpell[AFFIX_FOG]);
+
+    // Optional overrides for affix weather
+    _affixWeatherType[AFFIX_SUNLIGHT] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.WeatherType.Sunlight", _affixWeatherType[AFFIX_SUNLIGHT]);
+    _affixWeatherType[AFFIX_CLEAR_SKIES] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.WeatherType.ClearSkies", _affixWeatherType[AFFIX_CLEAR_SKIES]);
+    _affixWeatherType[AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.WeatherType.GentleBreeze", _affixWeatherType[AFFIX_GENTLE_BREEZE]);
+    _affixWeatherType[AFFIX_STORM] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.WeatherType.Storm", _affixWeatherType[AFFIX_STORM]);
+    _affixWeatherType[AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.WeatherType.HeavyRain", _affixWeatherType[AFFIX_HEAVY_RAIN]);
+    _affixWeatherType[AFFIX_FOG] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.WeatherType.Fog", _affixWeatherType[AFFIX_FOG]);
+
+    _affixWeatherIntensity[AFFIX_SUNLIGHT] = sConfigMgr->GetOption<float>("HinterlandBG.Affix.WeatherIntensity.Sunlight", _affixWeatherIntensity[AFFIX_SUNLIGHT]);
+    _affixWeatherIntensity[AFFIX_CLEAR_SKIES] = sConfigMgr->GetOption<float>("HinterlandBG.Affix.WeatherIntensity.ClearSkies", _affixWeatherIntensity[AFFIX_CLEAR_SKIES]);
+    _affixWeatherIntensity[AFFIX_GENTLE_BREEZE] = sConfigMgr->GetOption<float>("HinterlandBG.Affix.WeatherIntensity.GentleBreeze", _affixWeatherIntensity[AFFIX_GENTLE_BREEZE]);
+    _affixWeatherIntensity[AFFIX_STORM] = sConfigMgr->GetOption<float>("HinterlandBG.Affix.WeatherIntensity.Storm", _affixWeatherIntensity[AFFIX_STORM]);
+    _affixWeatherIntensity[AFFIX_HEAVY_RAIN] = sConfigMgr->GetOption<float>("HinterlandBG.Affix.WeatherIntensity.HeavyRain", _affixWeatherIntensity[AFFIX_HEAVY_RAIN]);
+    _affixWeatherIntensity[AFFIX_FOG] = sConfigMgr->GetOption<float>("HinterlandBG.Affix.WeatherIntensity.Fog", _affixWeatherIntensity[AFFIX_FOG]);
     _statsIncludeManualResets = sConfigMgr->GetOption<bool>("HinterlandBG.Stats.IncludeManual", _statsIncludeManualResets);
     // Resource loss amounts
     _resourcesLossPlayerKill = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.PlayerKill", _resourcesLossPlayerKill);

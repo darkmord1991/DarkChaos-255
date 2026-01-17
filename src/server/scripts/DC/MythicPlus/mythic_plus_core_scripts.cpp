@@ -506,11 +506,13 @@ public:
         // Track all creature kills for statistics
         sMythicRuns->HandleCreatureKill(creature, killer);
 
+        // Dispatch affix death handlers for all creatures
+        sAffixMgr->OnCreatureDeath(creature, killer);
+
         // Handle boss-specific logic
         if (sMythicRuns->IsBossCreature(creature))
         {
             sMythicRuns->HandleBossDeath(creature, killer);
-            sAffixMgr->OnCreatureDeath(creature, killer);
         }
     }
 

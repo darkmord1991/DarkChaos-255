@@ -37,6 +37,39 @@ void OutdoorPvPHL::UpdateAffixWorldstateAll()
     ForEachPlayerInZone([&](Player* p){ UpdateAffixWorldstateForPlayer(p); });
 }
 
+// Initialize default affix spell/weather mappings (can be overridden by config)
+void OutdoorPvPHL::InitAffixDefaults()
+{
+    // Player buffs
+    _affixPlayerSpell[AFFIX_SUNLIGHT] = HLBG_AFFIX_SUNLIGHT_SPELL;
+    _affixPlayerSpell[AFFIX_CLEAR_SKIES] = HLBG_AFFIX_CLEAR_SKIES_SPELL;
+    _affixPlayerSpell[AFFIX_GENTLE_BREEZE] = HLBG_AFFIX_GENTLE_BREEZE_SPELL;
+
+    // NPC buffs
+    _affixNpcSpell[AFFIX_STORM] = HLBG_AFFIX_STORM_NPC_SPELL;
+    _affixNpcSpell[AFFIX_HEAVY_RAIN] = HLBG_AFFIX_HEAVY_RAIN_NPC_SPELL;
+    _affixNpcSpell[AFFIX_FOG] = HLBG_AFFIX_FOG_NPC_SPELL;
+
+    // Weather mapping (0=Fine, 1=Rain, 2=Snow/Fog, 3=Storm)
+    _affixWeatherType[AFFIX_SUNLIGHT] = 0;
+    _affixWeatherIntensity[AFFIX_SUNLIGHT] = 0.35f;
+
+    _affixWeatherType[AFFIX_CLEAR_SKIES] = 0;
+    _affixWeatherIntensity[AFFIX_CLEAR_SKIES] = 0.20f;
+
+    _affixWeatherType[AFFIX_GENTLE_BREEZE] = 1;
+    _affixWeatherIntensity[AFFIX_GENTLE_BREEZE] = 0.30f;
+
+    _affixWeatherType[AFFIX_STORM] = 3;
+    _affixWeatherIntensity[AFFIX_STORM] = 0.60f;
+
+    _affixWeatherType[AFFIX_HEAVY_RAIN] = 1;
+    _affixWeatherIntensity[AFFIX_HEAVY_RAIN] = 0.80f;
+
+    _affixWeatherType[AFFIX_FOG] = 2;
+    _affixWeatherIntensity[AFFIX_FOG] = 0.40f;
+}
+
 // Redirect legacy method: use new DCAddon::HLBG::SendAffixInfo
 void OutdoorPvPHL::SendAffixAddonToPlayer(Player* player) const
 {
