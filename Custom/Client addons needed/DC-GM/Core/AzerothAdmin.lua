@@ -2974,6 +2974,10 @@ local function CreateMinimapButton()
 
     -- Register with LibDBIcon
     icon:Register("AzerothAdmin", AzerothAdminLDB, AzerothAdminDb.minimap)
+    local ldbButton = _G["LibDBIcon10_AzerothAdmin"]
+    if ldbButton and ldbButton.RegisterForDrag then
+      ldbButton:RegisterForDrag("LeftButton", "RightButton")
+    end
 else
     -- Fallback: Create manual minimap button
     local minimapButton = CreateFrame("Button", "AzerothAdminMinimapButton", Minimap)

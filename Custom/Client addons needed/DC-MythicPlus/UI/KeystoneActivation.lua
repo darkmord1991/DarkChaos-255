@@ -37,6 +37,37 @@ KUI.AFFIX_ICONS = {
     [12] = "Interface\\Icons\\Spell_Nature_CorrosiveBreath", -- Bursting
 }
 
+local function ResolveAffixInfo(affix)
+    if type(affix) == "table" then
+        local id = affix.id or affix.spellId or affix.spellID or affix.affixId
+        local name = affix.name or affix.affixName or affix.spellName
+        local desc = affix.description or affix.desc or affix.affixDesc
+        local icon = affix.icon
+        if not icon and id and type(GetSpellTexture) == "function" then
+            icon = GetSpellTexture(id)
+        end
+        if not name and id and type(GetSpellInfo) == "function" then
+            name = GetSpellInfo(id)
+        end
+        return id, name, desc, icon
+    end
+    if type(affix) == "number" then
+        local name = type(GetSpellInfo) == "function" and GetSpellInfo(affix) or nil
+        local icon = type(GetSpellTexture) == "function" and GetSpellTexture(affix) or nil
+        return affix, name, nil, icon
+    end
+    if type(affix) == "string" then
+        local num = tonumber(affix)
+        if num then
+            local name = type(GetSpellInfo) == "function" and GetSpellInfo(num) or nil
+            local icon = type(GetSpellTexture) == "function" and GetSpellTexture(num) or nil
+            return num, name or affix, nil, icon
+        end
+        return nil, affix, nil, nil
+    end
+    return nil, nil, nil, nil
+end
+
 KUI.currentState = KUI.STATE.IDLE
 KUI.keystoneData = nil
 KUI.readyStates = {}
@@ -412,14 +443,21 @@ function KUI:SetKeystoneData(data)
         for i, affix in ipairs(data.affixes) do
             local affixFrame = self.frame.affixIcons[i]
             if affixFrame then
-                affixFrame.icon:SetTexture(self.AFFIX_ICONS[affix.id] or "Interface\\Icons\\INV_Misc_QuestionMark")
-                affixFrame.affixName = affix.name
-                affixFrame.affixDesc = affix.description
+                local id, name, desc, icon = ResolveAffixInfo(affix)
+                affixFrame.icon:SetTexture(self.AFFIX_ICONS[id] or icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                affixFrame.affixName = name
+                affixFrame.affixDesc = desc
                 affixFrame:Show()
             end
         end
         -- Hide unused affix slots
         for i = #data.affixes + 1, 4 do
+            if self.frame.affixIcons[i] then
+                self.frame.affixIcons[i]:Hide()
+            end
+        end
+    else
+        for i = 1, 4 do
             if self.frame.affixIcons[i] then
                 self.frame.affixIcons[i]:Hide()
             end

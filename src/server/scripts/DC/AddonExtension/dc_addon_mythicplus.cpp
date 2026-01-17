@@ -70,11 +70,18 @@ namespace MythicPlus
     // Send current week's affixes
     static void SendAffixes(Player* player)
     {
-        // Get current affixes from MythicPlusRunManager or config
-        // For now, query from database
+        // Calculate current week number
+        uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
+        uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
+
+        // Query affixes for current week by joining with dc_mplus_affixes
         QueryResult result = WorldDatabase.Query(
-            "SELECT affix_id, affix_name, affix_description FROM dc_mplus_weekly_affixes "
-            "WHERE week_number = (SELECT MAX(week_number) FROM dc_mplus_weekly_affixes)");
+            "SELECT a.affix_id, a.name, a.description "
+            "FROM dc_mplus_weekly_affixes w "
+            "LEFT JOIN dc_mplus_affixes a ON a.affix_id IN (w.affix1_id, w.affix2_id, w.affix3_id, w.affix4_id) "
+            "WHERE w.week_number = {} AND w.active = 1 AND a.affix_id IS NOT NULL "
+            "ORDER BY FIELD(a.affix_id, w.affix1_id, w.affix2_id, w.affix3_id, w.affix4_id)",
+            weekNumber);
 
         std::string affixList;
         if (result)
@@ -917,9 +924,18 @@ namespace MythicPlus
     // Send affixes as JSON
     void SendJsonAffixes(Player* player)
     {
+        // Calculate current week number
+        uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
+        uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
+
+        // Query affixes for current week by joining with dc_mplus_affixes
         QueryResult result = WorldDatabase.Query(
-            "SELECT affix_id, affix_name, affix_description FROM dc_mplus_weekly_affixes "
-            "WHERE week_number = (SELECT MAX(week_number) FROM dc_mplus_weekly_affixes)");
+            "SELECT a.affix_id, a.name, a.description "
+            "FROM dc_mplus_weekly_affixes w "
+            "LEFT JOIN dc_mplus_affixes a ON a.affix_id IN (w.affix1_id, w.affix2_id, w.affix3_id, w.affix4_id) "
+            "WHERE w.week_number = {} AND w.active = 1 AND a.affix_id IS NOT NULL "
+            "ORDER BY FIELD(a.affix_id, w.affix1_id, w.affix2_id, w.affix3_id, w.affix4_id)",
+            weekNumber);
 
         JsonValue affixArray;
         affixArray.SetArray();
@@ -936,10 +952,6 @@ namespace MythicPlus
                 affixArray.Push(affix);
             } while (result->NextRow());
         }
-
-        // Calculate current week number
-        uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
-        uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
 
         JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_AFFIXES)
             .Set("weekNumber", weekNumber)

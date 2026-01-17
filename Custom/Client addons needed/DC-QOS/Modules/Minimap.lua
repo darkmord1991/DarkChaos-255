@@ -10,6 +10,19 @@ local MinimapModule = {
     icon = "Interface\\Icons\\INV_Misc_Map_01",
 }
 
+local function RefreshLibDBIcons()
+    if not LibStub then
+        return
+    end
+    local iconLib = LibStub("LibDBIcon-1.0", true)
+    if not iconLib or not iconLib.Refresh or not iconLib.objects then
+        return
+    end
+    for name in pairs(iconLib.objects) do
+        iconLib:Refresh(name)
+    end
+end
+
 local function EnsureDcMinimapFrame()
     if Minimap.DCQOSFrame then
         return Minimap.DCQOSFrame
@@ -94,7 +107,7 @@ local function ApplyMinimapSkin()
 
             local posY = s.y
             if posY == nil or posY == -20 then
-                posY = -32
+                posY = -36
             end
 
             MinimapCluster:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", posX, posY)
@@ -141,6 +154,7 @@ local function ApplyMinimapSkin()
 
         -- Ensure addons that query shape behave correctly.
         _G.GetMinimapShape = function() return "ROUND" end
+        RefreshLibDBIcons()
     else
         if useDcFrame then
             local frame = EnsureDcMinimapFrame()
@@ -162,6 +176,7 @@ local function ApplyMinimapSkin()
         end
 
         _G.GetMinimapShape = function() return "SQUARE" end
+        RefreshLibDBIcons()
     end
 
     if s.mouseWheelZoom then
@@ -217,6 +232,8 @@ local function ApplyMinimapSkin()
         elseif Minimap.DCQOSFrame then
             Minimap.DCQOSFrame:Hide()
         end
+
+        RefreshLibDBIcons()
     end)
 end
 

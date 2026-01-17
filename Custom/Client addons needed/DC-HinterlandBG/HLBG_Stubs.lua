@@ -13,9 +13,12 @@ if not HLBG.GetAffixName then
     function HLBG.GetAffixName(affixId)
         local names = {
             [0] = "None",
-            [1] = "Fortified",
-            [2] = "Tyrannical",
-            [3] = "Necrotic",
+            [1] = "Sunlight",
+            [2] = "Clear Skies",
+            [3] = "Gentle Breeze",
+            [4] = "Storm",
+            [5] = "Heavy Rain",
+            [6] = "Fog",
         }
         return names[tonumber(affixId) or 0] or ("Affix " .. tostring(affixId))
     end

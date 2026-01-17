@@ -921,13 +921,35 @@ local function MapNameForId(id)
     return string.format("Map %d", id)
 end
 
+local function GetAffixDisplayName(affix)
+    if type(affix) == "table" then
+        local name = affix.name or affix.affixName or affix.spellName
+        if name and name ~= "" then
+            return name
+        end
+        local id = affix.spellId or affix.spellID or affix.id or affix.affixId
+        return SafelyGetSpellName(id)
+    end
+    if type(affix) == "number" then
+        return SafelyGetSpellName(affix)
+    end
+    if type(affix) == "string" then
+        local num = tonumber(affix)
+        if num then
+            return SafelyGetSpellName(num)
+        end
+        return affix
+    end
+    return "Unknown"
+end
+
 local function BuildAffixLine(list)
     if type(list) ~= "table" or #list == 0 then
         return "Affixes: none"
     end
     local names = {}
     for i = 1, #list do
-        names[#names + 1] = SafelyGetSpellName(list[i])
+        names[#names + 1] = GetAffixDisplayName(list[i])
     end
     return "Affixes: " .. table.concat(names, ", ")
 end

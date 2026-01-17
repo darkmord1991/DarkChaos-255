@@ -540,8 +540,19 @@ function DCInfoBar:CreateCommunicationTab(parent)
         
         -- Affixes
         dataText = dataText .. "|cff32c4ffAffixes:|r\n"
-        if self.serverData.affixes.names and #self.serverData.affixes.names > 0 then
-            dataText = dataText .. "  " .. table.concat(self.serverData.affixes.names, ", ") .. "\n"
+        local names = self.serverData.affixes.names or {}
+        if (#names == 0) and self.serverData.affixes.ids and #self.serverData.affixes.ids > 0 then
+            names = {}
+            for _, id in ipairs(self.serverData.affixes.ids) do
+                local name = nil
+                if id and id > 0 and type(GetSpellInfo) == "function" then
+                    name = GetSpellInfo(id)
+                end
+                names[#names + 1] = name or tostring(id or "Unknown")
+            end
+        end
+        if #names > 0 then
+            dataText = dataText .. "  " .. table.concat(names, ", ") .. "\n"
         else
             dataText = dataText .. "  No data\n"
         end

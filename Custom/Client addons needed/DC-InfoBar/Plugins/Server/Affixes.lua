@@ -24,14 +24,26 @@ local AffixesPlugin = {
 
 function AffixesPlugin:OnUpdate(elapsed)
     local affixData = DCInfoBar.serverData.affixes
-    
-    if affixData.names and #affixData.names > 0 then
+
+    local names = affixData.names or {}
+    if (#names == 0) and affixData.ids and #affixData.ids > 0 then
+        names = {}
+        for _, id in ipairs(affixData.ids) do
+            local name = nil
+            if id and id > 0 and type(GetSpellInfo) == "function" then
+                name = GetSpellInfo(id)
+            end
+            names[#names + 1] = name or tostring(id or "Unknown")
+        end
+    end
+
+    if #names > 0 then
         local textMode = DCInfoBar:GetPluginSetting(self.id, "textMode")
         
         if textMode then
             -- Abbreviated text: "Fort/Burst/Storm"
             local abbrevs = {}
-            for i, name in ipairs(affixData.names) do
+            for i, name in ipairs(names) do
                 -- Get first 4-5 chars as abbreviation
                 local abbrev = string.sub(name, 1, 4)
                 if #name > 5 then
@@ -42,7 +54,7 @@ function AffixesPlugin:OnUpdate(elapsed)
             return "", table.concat(abbrevs, "/")
         else
             -- Full names separated
-            return "", table.concat(affixData.names, ", ")
+            return "", table.concat(names, ", ")
         end
     else
         return "", "No Affixes"
@@ -54,9 +66,21 @@ function AffixesPlugin:OnTooltip(tooltip)
     
     tooltip:AddLine("Weekly Affixes", 1, 0.82, 0)
     DCInfoBar:AddTooltipSeparator(tooltip)
-    
-    if affixData.names and #affixData.names > 0 then
-        for i, name in ipairs(affixData.names) do
+
+    local names = affixData.names or {}
+    if (#names == 0) and affixData.ids and #affixData.ids > 0 then
+        names = {}
+        for _, id in ipairs(affixData.ids) do
+            local name = nil
+            if id and id > 0 and type(GetSpellInfo) == "function" then
+                name = GetSpellInfo(id)
+            end
+            names[#names + 1] = name or tostring(id or "Unknown")
+        end
+    end
+
+    if #names > 0 then
+        for i, name in ipairs(names) do
             tooltip:AddLine(" ")
             tooltip:AddLine("|cff32c4ff" .. name .. "|r")
             
@@ -87,12 +111,34 @@ end
 function AffixesPlugin:OnClick(button)
     if button == "LeftButton" then
         -- Show detailed affix popup
-        DCInfoBar:Print("Affixes: " .. table.concat(DCInfoBar.serverData.affixes.names or {}, ", "))
+        local names = DCInfoBar.serverData.affixes.names or {}
+        if (#names == 0) and DCInfoBar.serverData.affixes.ids and #DCInfoBar.serverData.affixes.ids > 0 then
+            names = {}
+            for _, id in ipairs(DCInfoBar.serverData.affixes.ids) do
+                local name = nil
+                if id and id > 0 and type(GetSpellInfo) == "function" then
+                    name = GetSpellInfo(id)
+                end
+                names[#names + 1] = name or tostring(id or "Unknown")
+            end
+        end
+        DCInfoBar:Print("Affixes: " .. table.concat(names, ", "))
     elseif button == "RightButton" then
         -- Link in chat
         local affixData = DCInfoBar.serverData.affixes
-        if affixData.names and #affixData.names > 0 then
-            local msg = "[This Week's Affixes: " .. table.concat(affixData.names, ", ") .. "]"
+        local names = affixData.names or {}
+        if (#names == 0) and affixData.ids and #affixData.ids > 0 then
+            names = {}
+            for _, id in ipairs(affixData.ids) do
+                local name = nil
+                if id and id > 0 and type(GetSpellInfo) == "function" then
+                    name = GetSpellInfo(id)
+                end
+                names[#names + 1] = name or tostring(id or "Unknown")
+            end
+        end
+        if #names > 0 then
+            local msg = "[This Week's Affixes: " .. table.concat(names, ", ") .. "]"
             ChatFrame1EditBox:SetText(msg)
             ChatFrame1EditBox:SetFocus()
         end

@@ -363,6 +363,13 @@ function HLBG.UpdateModernHUD(data)
     end
     -- Update affix (prefer explicit name, then authoritative affixName, then affixId -> name)
     local affixName = data.affixName or data.affix or nil
+    if affixName ~= nil then
+        local affixNum = tonumber(affixName)
+        if affixNum and type(HLBG.GetAffixName) == "function" then
+            local ok, res = pcall(function() return HLBG.GetAffixName(affixNum) end)
+            if ok and res then affixName = res end
+        end
+    end
     if not affixName and data.affixId then
         if type(HLBG.GetAffixName) == "function" then
             local ok, res = pcall(function() return HLBG.GetAffixName(data.affixId) end)

@@ -824,6 +824,90 @@ HinterlandBG.KillSpell.PlayerKillAlliance = 0
 HinterlandBG.KillSpell.PlayerKillHorde = 0
 HinterlandBG.KillSpell.NpcKill = 0
 
+# -------------------------------------------------------------------------
+# Hinterland BG Affixes
+# -------------------------------------------------------------------------
+
+#
+#    HinterlandBG.Affix.Enabled
+#        Description: Enable HLBG affix system
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Affix.Enabled = 1
+
+#
+#    HinterlandBG.Affix.Weather.Enabled
+#        Description: Enable weather changes driven by HLBG affixes
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Affix.Weather.Enabled = 1
+
+#
+#    HinterlandBG.Affix.Period
+#        Description: Affix rotation period in minutes (0 = static)
+#        Default:     0
+#
+HinterlandBG.Affix.Period = 0
+
+#
+#    HinterlandBG.Affix.RandomOnStart
+#        Description: Pick a random affix when match starts
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Affix.RandomOnStart = 1
+
+#
+#    HinterlandBG.Affix.Announce
+#        Description: Announce affix changes to the zone
+#        Default:     0 (Disabled)
+#
+HinterlandBG.Affix.Announce = 0
+
+#
+#    HinterlandBG.Affix.Worldstate
+#        Description: Broadcast affix state via worldstate
+#        Default:     0 (Disabled)
+#
+HinterlandBG.Affix.Worldstate = 0
+
+#
+#    HinterlandBG.Affix.PlayerSpell.*
+#        Description: Player-affecting affix spell IDs
+#
+HinterlandBG.Affix.PlayerSpell.Sunlight = 910010
+HinterlandBG.Affix.PlayerSpell.ClearSkies = 910011
+HinterlandBG.Affix.PlayerSpell.GentleBreeze = 910012
+
+#
+#    HinterlandBG.Affix.NpcSpell.*
+#        Description: NPC-affecting affix spell IDs
+#
+HinterlandBG.Affix.NpcSpell.Storm = 910020
+HinterlandBG.Affix.NpcSpell.HeavyRain = 910021
+HinterlandBG.Affix.NpcSpell.Fog = 910022
+
+#
+#    HinterlandBG.Affix.WeatherType.*
+#        Description: Weather type per affix (0=Fine,1=Rain,2=Snow,3=Storm)
+#
+HinterlandBG.Affix.WeatherType.Sunlight = 0
+HinterlandBG.Affix.WeatherType.ClearSkies = 0
+HinterlandBG.Affix.WeatherType.GentleBreeze = 1
+HinterlandBG.Affix.WeatherType.Storm = 3
+HinterlandBG.Affix.WeatherType.HeavyRain = 1
+HinterlandBG.Affix.WeatherType.Fog = 2
+
+#
+#    HinterlandBG.Affix.WeatherIntensity.*
+#        Description: Weather intensity per affix (0.0 - 1.0)
+#
+HinterlandBG.Affix.WeatherIntensity.Sunlight = 0.35
+HinterlandBG.Affix.WeatherIntensity.ClearSkies = 0.2
+HinterlandBG.Affix.WeatherIntensity.GentleBreeze = 0.3
+HinterlandBG.Affix.WeatherIntensity.Storm = 0.6
+HinterlandBG.Affix.WeatherIntensity.HeavyRain = 0.8
+HinterlandBG.Affix.WeatherIntensity.Fog = 0.4
+
 
 ###########################################################################
 #

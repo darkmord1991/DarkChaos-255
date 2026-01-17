@@ -269,7 +269,9 @@ local SEAS_SMSG_PROGRESS    = 0x12
 
 -- M+ Opcodes (if DC.Opcode.MPlus doesn't exist)
 local MPLUS_CMSG_GET_KEY_INFO = 0x01
+local MPLUS_CMSG_GET_AFFIXES  = 0x02
 local MPLUS_SMSG_KEY_INFO     = 0x10
+local MPLUS_SMSG_AFFIXES      = 0x11
 
 function DCInfoBar:SetupServerCommunication()
     DC = rawget(_G, "DCAddonProtocol")
@@ -303,6 +305,16 @@ function DCInfoBar:SetupServerCommunication()
     -- Keystone info (from MythicPlus module)
     DC:RegisterHandler("MPLUS", MPLUS_SMSG_KEY_INFO, function(data)
         DCInfoBar:HandleKeystoneData(data)
+    end)
+
+    -- Weekly affixes (from MythicPlus module)
+    DC:RegisterHandler("MPLUS", MPLUS_SMSG_AFFIXES, function(...)
+        local args = { ... }
+        local payload = args[1]
+        if payload == nil and #args > 0 then
+            payload = args
+        end
+        DCInfoBar:HandleAffixData(payload)
     end)
     
     -- We'll also hook into DCMythicPlusHUD if available for affix data
@@ -1014,6 +1026,7 @@ function DCInfoBar:RequestServerData(opts)
     end
     
     DC:Request("MPLUS", MPLUS_CMSG_GET_KEY_INFO, {})
+    DC:Request("MPLUS", MPLUS_CMSG_GET_AFFIXES, {})
     
     -- Hotspot list is now requested by Location.lua with TTL-based caching.
     -- The WRLD module below also includes hotspots in its response.
@@ -1025,6 +1038,101 @@ function DCInfoBar:RequestServerData(opts)
     
     -- Request prestige info
     DC:Request("PRES", 0x01, {})
+end
+
+local function NormalizeAffixPayload(data)
+    local out = {
+        ids = {},
+        names = {},
+        descriptions = {},
+        resetIn = 0,
+    }
+
+    if not data then
+        return out
+    end
+
+    if type(data) == "table" then
+        if data.affixIds or data.ids or data.affixNames or data.names then
+            out.ids = data.affixIds or data.ids or {}
+            out.names = data.affixNames or data.names or {}
+            out.descriptions = data.descriptions or data.descs or {}
+            out.resetIn = data.resetIn or data.reset or 0
+            if (#out.names == 0) and (#out.ids > 0) then
+                for _, id in ipairs(out.ids) do
+                    local name = nil
+                    if id and id > 0 and type(GetSpellInfo) == "function" then
+                        name = GetSpellInfo(id)
+                    end
+                    out.names[#out.names + 1] = name or tostring(id or "Unknown")
+                end
+            end
+            return out
+        end
+
+        if data.affixes and type(data.affixes) == "table" then
+            for _, affix in ipairs(data.affixes) do
+                local id, name, desc
+                if type(affix) == "table" then
+                    id = affix.id or affix.spellId or affix.spellID or affix.affixId
+                    name = affix.name or affix.affixName or affix.spellName
+                    desc = affix.description or affix.affixDesc or affix.desc
+                elseif type(affix) == "number" then
+                    id = affix
+                elseif type(affix) == "string" then
+                    local num = tonumber(affix)
+                    if num then
+                        id = num
+                    else
+                        name = affix
+                    end
+                end
+
+                if not name and id and type(GetSpellInfo) == "function" then
+                    name = GetSpellInfo(id)
+                end
+                if not name or name == "" then
+                    name = tostring(id or "Unknown")
+                end
+
+                out.ids[#out.ids + 1] = id or 0
+                out.names[#out.names + 1] = name
+                out.descriptions[#out.descriptions + 1] = desc
+            end
+            out.resetIn = data.resetIn or data.reset or 0
+            return out
+        end
+
+        if type(data.affixData) == "string" then
+            return NormalizeAffixPayload(data.affixData)
+        end
+    elseif type(data) == "string" then
+        for entry in tostring(data):gmatch("[^;]+") do
+            local idStr, name, desc = entry:match("^(%d+):([^:]*):?(.*)$")
+            if idStr then
+                local id = tonumber(idStr)
+                if (not name or name == "") and id and type(GetSpellInfo) == "function" then
+                    name = GetSpellInfo(id)
+                end
+                if not name or name == "" then
+                    name = tostring(id or "Unknown")
+                end
+                out.ids[#out.ids + 1] = id or 0
+                out.names[#out.names + 1] = name
+                out.descriptions[#out.descriptions + 1] = (desc ~= "" and desc or nil)
+            else
+                local onlyName = entry:match("^([^:]+)$")
+                if onlyName and onlyName ~= "" then
+                    out.ids[#out.ids + 1] = 0
+                    out.names[#out.names + 1] = onlyName
+                    out.descriptions[#out.descriptions + 1] = nil
+                end
+            end
+        end
+        return out
+    end
+
+    return out
 end
 
 -- Convenience getters for other addons/scripts to query current season token values
@@ -1162,17 +1270,20 @@ end
 -- Handle incoming affix data
 function DCInfoBar:HandleAffixData(data)
     if not data then return end
-    
-    self.serverData.affixes = {
-        ids = data.affixIds or data.ids or {},
-        names = data.affixNames or data.names or {},
-        descriptions = data.descriptions or {},
-        resetIn = data.resetIn or 0,
-    }
+
+    self.serverData.affixes = NormalizeAffixPayload(data)
     
     -- Notify affixes plugin
     if self.plugins["DCInfoBar_Affixes"] and self.plugins["DCInfoBar_Affixes"].OnServerData then
         self.plugins["DCInfoBar_Affixes"]:OnServerData(self.serverData.affixes)
+    end
+end
+
+function DCInfoBar:ImportMythicPlusAffixCache()
+    local hudDb = rawget(_G, "DCMythicPlusHUDDB")
+    local cache = hudDb and hudDb.cache or nil
+    if cache and type(cache.affixes) == "table" and #cache.affixes > 0 then
+        self:HandleAffixData({ affixes = cache.affixes })
     end
 end
 
@@ -1317,6 +1428,10 @@ function DCInfoBar:Initialize()
             self:Debug("Init: DC.RegisterJSONHandler=" .. (DCProtocol.RegisterJSONHandler and "yes" or "no"))
             self:Debug("Init: DC.PREFIX=" .. tostring(DCProtocol.PREFIX))
         end
+    end)
+
+    SafeStep("ImportMythicPlusAffixCache", function()
+        self:ImportMythicPlusAffixCache()
     end)
     
     -- Create the bar

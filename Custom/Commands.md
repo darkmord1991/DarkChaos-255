@@ -157,6 +157,82 @@ Displays all active challenge modes on your character. To start challenges, visi
 | :--- | :--- | :--- |
 | `status` | | Check if you are currently standing in an active XP Hotspot. |
 
+### Addon: DC-QoS
+*Command:* `/dcqos` (Alias: `/qos`)
+
+| Subcommand | Arguments | Description |
+| :--- | :--- | :--- |
+| *(none)* | | Open the DC-QoS settings panel. |
+| `debug` | | Toggle DC-QoS debug mode. |
+| `reset` | | Reset current profile to defaults and reload UI. |
+| `bind` | | Toggle keybind mode. |
+| `reload` | | Reload UI. |
+| `profile list` | | List available profiles. |
+| `profile set` | `<name>` | Switch to profile for this character. |
+| `profile setglobal` | `<name>` | Switch global profile for all characters. |
+| `profile new` | `<name> [copyFrom]` | Create a new profile (optional copy source). |
+| `profile delete` | `<name>` | Delete a profile. |
+| `profile export` | `<name>` | Print export string for a profile. |
+| `profile import` | `<name> <data>` | Import profile data. |
+| `help` | | Show DC-QoS help. |
+
+### Addon: DC-QoS Combat Log
+*Command:* `/dccombat` (Alias: `/dcqoscombat`)
+
+| Subcommand | Arguments | Description |
+| :--- | :--- | :--- |
+| *(none)* / `toggle` | | Toggle combat log window. |
+| `show` | | Show combat log window. |
+| `hide` | | Hide combat log window. |
+| `lock` | | Lock/unlock window position. |
+| `d` | | Damage mode. |
+| `h` | | Healing mode. |
+| `s` | | Spell breakdown for your character. |
+| `spells` | `<name>` | Spell breakdown for a player. |
+| `dispels` | | Show dispel summary. |
+| `absorbs` | | Show absorb summary. |
+| `activity` | | Show activity/uptime. |
+| `kb` | | Show killing blows. |
+| `cc` | | Show crowd control. |
+| `power` | | Show power gains. |
+| `ff` | | Show friendly fire. |
+| `consumables` | | Show potion/healthstone usage. |
+| `reset` | | Reset combat stats. |
+| `death` | | Show death recap. |
+
+### Addon: DC-QoS Frame Mover
+*Command:* `/dcmove` (Alias: `/dcm`)
+
+| Subcommand | Arguments | Description |
+| :--- | :--- | :--- |
+| *(none)* / `toggle` | | Toggle frame unlock. |
+| `editor` | | Toggle editor mode. |
+| `grid` | | Toggle grid overlay. |
+| `snap` | | Toggle snap to grid. |
+| `lock` | | Lock all frames. |
+| `unlock` | | Unlock all frames. |
+| `reset` | | Reset all frames to defaults. |
+| `save` | `<name>` | Save current layout. |
+| `load` | `<name>` | Load saved layout. |
+
+### Addon: DC-QoS Nameplates
+*Command:* `/dcnameplate` (Alias: `/dcnp`)
+
+| Subcommand | Arguments | Description |
+| :--- | :--- | :--- |
+| `tank` | | Tank threat mode. |
+| `dps` | | DPS/Healer threat mode. |
+| `blacklist` | `<aura>` | Add aura to blacklist. |
+| `whitelist` | `<aura>` | Add aura to whitelist. |
+| `help` | | Show nameplate command help. |
+
+### Addon: DC-QoS Social
+*Command:* `/dcfriend`
+
+| Subcommand | Arguments | Description |
+| :--- | :--- | :--- |
+| *(none)* | `<playername>` | Add a friend (if empty, uses current player target). |
+
 ---
 
 ## GM / Administrator Commands
@@ -303,12 +379,14 @@ Performance and stress testing tools for diagnosing server performance issues. M
 | `sql` | | Run SQL stress tests (bulk select, repeated queries, transaction batches). |
 | `cache` | | Test ObjectMgr and ItemTemplate cache performance. |
 | `systems` | | Run subsystem tests (SpellMgr, WorldPacket, etc.). |
-| `stress` | | Run general stress tests. |
-| `dbasync` | `[iterations]` | Test async database query throughput. |
-| `path` | `[iterations]` | Test pathfinding performance (requires player context). |
-| `cpu` | | Run CPU benchmark tests. |
-| `loop` | `<seconds>` | Start a loop test that runs for the specified duration. |
-| `loopreport` | | Print the results of the last loop test. |
+| `coredb` | `[iterations]` | Test core character/world DB query performance. |
+| `playersim` | `[playerCount] [includeCore=1|0] [includeVault=1|0]` | Simulate player counts with optional core/vault queries. |
+| `stress` | `[baseCount]` | Run heavy load simulations. |
+| `dbasync` | `[queries] [concurrency]` | Test async DB burst throughput. |
+| `path` | `[iterations]` | Test pathfinding performance (requires in-game player). |
+| `cpu` | `[iterations]` | Run CPU hot-path benchmark. |
 | `mysql` | | Print MySQL connection and performance status. |
 | `full` | | Run all stress tests in sequence. |
-| `report` | `[file]` | Generate and optionally save a full performance report. |
+| `report` | `[suite=full] [topN=10] [details=0|1] [format=chat|json|csv] [suiteArgs...]` | Generate a consolidated report (optionally write JSON/CSV). |
+| `loop` | `<suite> [loops=10] [sleepMs=1000] [suiteArgs...]` | Repeat a suite and summarize timings (use `quiet` to suppress per-loop output). |
+| `loopreport` | `<suite> [loops=0] [sleepMs=1000] [topN=10] [details=0|1] [format=json|csv] [suiteArgs...]` | Run repeated suite and write a JSON/CSV loop report. |

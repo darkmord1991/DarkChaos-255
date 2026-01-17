@@ -7,11 +7,12 @@
 HLBG.GetAffixName = HLBG.GetAffixName or function(affixId)
     local affixes = {
         [0] = "None",
-        [1] = "Haste",
-        [2] = "Slow",
-        [3] = "Reduced Healing",
-        [4] = "Reduced Armor",
-        [5] = "Boss Enrage"
+        [1] = "Sunlight",
+        [2] = "Clear Skies",
+        [3] = "Gentle Breeze",
+        [4] = "Storm",
+        [5] = "Heavy Rain",
+        [6] = "Fog"
     }
     return affixes[affixId] or "Unknown"
 end

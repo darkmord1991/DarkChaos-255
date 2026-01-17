@@ -786,15 +786,6 @@ CREATE TABLE IF NOT EXISTS `creature_respawn` (
   KEY `idx_instance` (`instanceId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Grid Loading System';
 
-CREATE TABLE IF NOT EXISTS `custom_solocraft_character_stats` (
-  `GUID` bigint unsigned NOT NULL,
-  `Difficulty` float NOT NULL,
-  `GroupSize` int NOT NULL,
-  `SpellPower` int unsigned NOT NULL DEFAULT '0',
-  `Stats` float NOT NULL DEFAULT '100',
-  PRIMARY KEY (`GUID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
-
 CREATE TABLE IF NOT EXISTS `daily_players_reports` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `creation_time` int unsigned NOT NULL DEFAULT '0',
@@ -829,17 +820,6 @@ CREATE TABLE IF NOT EXISTS `dc_account_outfits` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`account_id`,`outfit_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account-wide saved outfits';
-
-CREATE TABLE IF NOT EXISTS `dc_account_transmog_cache` (
-  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
-  `displayid` int unsigned NOT NULL COMMENT 'Item Display ID (appearance)',
-  `unlocked_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When first unlocked',
-  `source` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT 'unknown' COMMENT 'How it was unlocked: loot/quest/vendor/migration',
-  PRIMARY KEY (`account_id`,`displayid`),
-  KEY `idx_account` (`account_id`),
-  KEY `idx_displayid` (`displayid`),
-  KEY `idx_unlocked_at` (`unlocked_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Account-wide transmog appearance unlocks for fast lookup';
 
 CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
   `achievement_id` int unsigned NOT NULL,
@@ -886,7 +866,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
   KEY `idx_account` (`account_id`),
   KEY `idx_module` (`module`),
   KEY `idx_event_type` (`event_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=92 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=95 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -911,7 +891,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=82667 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=89084 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2638,7 +2618,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_cap_snapshot` (
   UNIQUE KEY `idx_player_season_week` (`player_guid`,`season_id`,`week_timestamp`),
   KEY `idx_season` (`season_id`),
   KEY `idx_week` (`week_timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
+) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
 
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',

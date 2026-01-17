@@ -915,7 +915,7 @@ CREATE TABLE IF NOT EXISTS `creature` (
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id1`),
   KEY `idx_phaseMask` (`phaseMask`)
-) ENGINE=InnoDB AUTO_INCREMENT=9000794 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
+) ENGINE=InnoDB AUTO_INCREMENT=9001045 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 CREATE TABLE IF NOT EXISTS `creature_addon` (
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -2254,6 +2254,14 @@ CREATE TABLE IF NOT EXISTS `dc_toy_definitions` (
   KEY `idx_category` (`category`),
   KEY `idx_rarity` (`rarity`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Toy definitions';
+
+CREATE TABLE IF NOT EXISTS `dc_training_boss_display_pool` (
+  `pool_id` tinyint unsigned NOT NULL,
+  `display_id` int unsigned NOT NULL,
+  `weight` float NOT NULL DEFAULT '1',
+  PRIMARY KEY (`pool_id`,`display_id`),
+  KEY `idx_pool_id` (`pool_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 
 CREATE TABLE IF NOT EXISTS `dc_upgrade_tracks` (
   `track_id` int NOT NULL AUTO_INCREMENT COMMENT 'Unique track identifier',
