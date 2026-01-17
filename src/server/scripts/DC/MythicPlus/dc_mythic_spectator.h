@@ -86,6 +86,14 @@ namespace DCMythicSpectator
         bool Deserialize(std::string const& data);
     };
 
+    // Replay Playback State
+    struct ReplayPlaybackState
+    {
+        RunReplay replay;
+        size_t nextEventIndex = 0;
+        uint64 playbackStartMs = 0;
+    };
+
     // ============================================================
     // Spectator Configuration
     // ============================================================
@@ -229,6 +237,7 @@ namespace DCMythicSpectator
         std::vector<std::pair<uint32, std::string>> GetRecentReplays(uint32 limit = 20);
         bool StartReplayPlayback(Player* player, uint32 replayId);
         void StopReplayPlayback(Player* player);
+        bool IsReplayPlayback(Player* player) const;
 
         // Broadcasting
         void BroadcastToSpectators(uint32 instanceId, std::string const& message);
@@ -256,8 +265,8 @@ namespace DCMythicSpectator
         std::unordered_map<ObjectGuid, SpectatorState> _spectators;    // spectator guid -> state
         std::unordered_map<std::string, SpectatorInvite> _inviteCodes; // code -> invite
         std::unordered_map<uint32, RunReplay> _activeReplays;          // instanceId -> recording
+        std::unordered_map<ObjectGuid, ReplayPlaybackState> _replayPlayback; // spectator guid -> replay state
         uint32 _updateTimer = 0;
-        uint32 _inviteCleanupTimer = 0;
     };
 
     #define sMythicSpectator DCMythicSpectator::MythicSpectatorManager::Get()

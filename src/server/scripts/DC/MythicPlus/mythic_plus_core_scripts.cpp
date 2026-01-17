@@ -18,6 +18,7 @@
 #include "Player.h"
 #include "Chat.h"
 #include "StringFormat.h"
+#include "DatabaseEnv.h"
 #include <cmath>
 #include <sstream>
 
@@ -325,7 +326,26 @@ public:
             if (!activeAffixes.empty())
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("|cffff8000Active Affixes:|r");
-                // TODO: Display affix names
+                std::ostringstream affixLine;
+                affixLine << "|cffff8000Active Affixes|r: ";
+                bool firstAffix = true;
+                for (auto affix : activeAffixes)
+                {
+                    uint32 affixId = static_cast<uint32>(affix);
+                    std::string affixName = "Unknown Affix";
+                    if (QueryResult affixResult = WorldDatabase.Query(
+                        "SELECT name FROM dc_mplus_affixes WHERE affix_id = {}", affixId))
+                    {
+                        affixName = affixResult->Fetch()[0].Get<std::string>();
+                    }
+
+                    if (!firstAffix)
+                        affixLine << ", ";
+                    firstAffix = false;
+                    affixLine << affixName;
+                }
+
+                ChatHandler(player->GetSession()).SendSysMessage(affixLine.str().c_str());
             }
         }
         else

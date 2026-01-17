@@ -197,6 +197,8 @@ struct DetailedLootStats
     uint32 filteredRare = 0;
     uint32 filteredEpic = 0;
     uint32 filteredLegendary = 0;
+
+    uint32 mythicBonusItems = 0;
 };
 
 struct PlayerAoELootData
@@ -1018,7 +1020,10 @@ public:
         if (sConfig.trackDetailedStats)
         {
             QueryResult statsResult = CharacterDatabase.Query(
-                "SELECT total_items, total_gold, poor_vendored, vendor_gold, skinned, upgrades "
+                "SELECT total_items, total_gold, poor_vendored, vendor_gold, skinned, mined, herbed, upgrades, "
+                "quality_poor, quality_common, quality_uncommon, quality_rare, quality_epic, quality_legendary, "
+                "filtered_poor, filtered_common, filtered_uncommon, filtered_rare, filtered_epic, filtered_legendary, "
+                "mythic_bonus_items "
                 "FROM dc_aoeloot_detailed_stats WHERE player_guid = {}",
                 player->GetGUID().GetCounter());
             if (statsResult)
@@ -1030,7 +1035,22 @@ public:
                 stats.poorItemsVendored = f[2].Get<uint32>();
                 stats.goldFromVendor = f[3].Get<uint32>();
                 stats.skinnedCorpses = f[4].Get<uint32>();
-                stats.upgradesFound = f[5].Get<uint32>();
+                stats.minedNodes = f[5].Get<uint32>();
+                stats.herbedNodes = f[6].Get<uint32>();
+                stats.upgradesFound = f[7].Get<uint32>();
+                stats.qualityPoor = f[8].Get<uint32>();
+                stats.qualityCommon = f[9].Get<uint32>();
+                stats.qualityUncommon = f[10].Get<uint32>();
+                stats.qualityRare = f[11].Get<uint32>();
+                stats.qualityEpic = f[12].Get<uint32>();
+                stats.qualityLegendary = f[13].Get<uint32>();
+                stats.filteredPoor = f[14].Get<uint32>();
+                stats.filteredCommon = f[15].Get<uint32>();
+                stats.filteredUncommon = f[16].Get<uint32>();
+                stats.filteredRare = f[17].Get<uint32>();
+                stats.filteredEpic = f[18].Get<uint32>();
+                stats.filteredLegendary = f[19].Get<uint32>();
+                stats.mythicBonusItems = f[20].Get<uint32>();
             }
         }
 
@@ -1071,11 +1091,18 @@ public:
                 DetailedLootStats& stats = statsIt->second;
                 CharacterDatabase.Execute(
                     "REPLACE INTO dc_aoeloot_detailed_stats "
-                    "(player_guid, total_items, total_gold, poor_vendored, vendor_gold, skinned, upgrades) "
-                    "VALUES ({}, {}, {}, {}, {}, {}, {})",
+                    "(player_guid, total_items, total_gold, poor_vendored, vendor_gold, skinned, mined, herbed, upgrades, "
+                    "quality_poor, quality_common, quality_uncommon, quality_rare, quality_epic, quality_legendary, "
+                    "filtered_poor, filtered_common, filtered_uncommon, filtered_rare, filtered_epic, filtered_legendary, "
+                    "mythic_bonus_items) "
+                    "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
                     player->GetGUID().GetCounter(),
                     stats.totalItemsLooted, stats.totalGoldLooted, stats.poorItemsVendored,
-                    stats.goldFromVendor, stats.skinnedCorpses, stats.upgradesFound);
+                    stats.goldFromVendor, stats.skinnedCorpses, stats.minedNodes, stats.herbedNodes, stats.upgradesFound,
+                    stats.qualityPoor, stats.qualityCommon, stats.qualityUncommon, stats.qualityRare,
+                    stats.qualityEpic, stats.qualityLegendary, stats.filteredPoor, stats.filteredCommon,
+                    stats.filteredUncommon, stats.filteredRare, stats.filteredEpic, stats.filteredLegendary,
+                    stats.mythicBonusItems);
                 sDetailedStats.erase(statsIt);
             }
         }

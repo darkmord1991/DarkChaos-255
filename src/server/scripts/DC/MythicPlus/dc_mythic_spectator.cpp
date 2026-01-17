@@ -23,6 +23,7 @@
 #include "SpellAuras.h"
 #include "SpellAuraEffects.h"
 #include "Guild.h"
+#include "../AddonExtension/dc_addon_namespace.h"
 
 #include <sstream>
 #include <random>
@@ -71,6 +72,47 @@ std::string RunReplay::Serialize() const
     }
     ss << "]}";
     return ss.str();
+}
+
+bool RunReplay::Deserialize(std::string const& data)
+{
+    DCAddon::JsonValue root = DCAddon::JsonParser::Parse(data);
+    if (!root.IsObject())
+        return false;
+
+    replayId = root.HasKey("replayId") ? root["replayId"].AsUInt32() : replayId;
+    instanceId = root.HasKey("instanceId") ? root["instanceId"].AsUInt32() : instanceId;
+    mapId = root.HasKey("mapId") ? root["mapId"].AsUInt32() : mapId;
+    keystoneLevel = root.HasKey("keystoneLevel") ? static_cast<uint8>(root["keystoneLevel"].AsUInt32()) : keystoneLevel;
+    startTime = root.HasKey("startTime") ? root["startTime"].AsUInt32() : startTime;
+    endTime = root.HasKey("endTime") ? root["endTime"].AsUInt32() : endTime;
+    completed = root.HasKey("completed") ? root["completed"].AsBool() : completed;
+    leaderName = root.HasKey("leaderName") ? root["leaderName"].AsString() : leaderName;
+
+    events.clear();
+    if (root.HasKey("events") && root["events"].IsArray())
+    {
+        for (auto const& entry : root["events"].AsArray())
+        {
+            if (!entry.IsObject())
+                continue;
+
+            ReplayEvent event;
+            event.timestamp = entry.HasKey("t") ? entry["t"].AsUInt32() : 0;
+            event.type = entry.HasKey("type")
+                ? static_cast<ReplayEventType>(entry["type"].AsUInt32())
+                : ReplayEventType::RUN_START;
+
+            if (entry.HasKey("data"))
+                event.data = entry["data"].Encode();
+            else
+                event.data = "null";
+
+            events.push_back(event);
+        }
+    }
+
+    return true;
 }
 
 // ============================================================
@@ -742,6 +784,61 @@ void MythicSpectatorManager::Update(uint32 diff)
 
         UpdateSpectatorViewpoint(spectator);
     }
+
+    if (!_replayPlayback.empty())
+    {
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        std::vector<ObjectGuid> finished;
+
+        for (auto& [guid, playback] : _replayPlayback)
+        {
+            Player* viewer = ObjectAccessor::FindPlayer(guid);
+            if (!viewer)
+            {
+                finished.push_back(guid);
+                continue;
+            }
+
+            uint64 elapsed = nowMs - playback.playbackStartMs;
+
+            while (playback.nextEventIndex < playback.replay.events.size())
+            {
+                ReplayEvent const& event = playback.replay.events[playback.nextEventIndex];
+                if (event.timestamp > elapsed)
+                    break;
+
+                const char* typeLabel = "Event";
+                switch (event.type)
+                {
+                    case ReplayEventType::RUN_START: typeLabel = "Run Start"; break;
+                    case ReplayEventType::BOSS_PULL: typeLabel = "Boss Pull"; break;
+                    case ReplayEventType::BOSS_KILL: typeLabel = "Boss Kill"; break;
+                    case ReplayEventType::PLAYER_DEATH: typeLabel = "Player Death"; break;
+                    case ReplayEventType::WIPE: typeLabel = "Wipe"; break;
+                    case ReplayEventType::HUD_UPDATE: typeLabel = "HUD Update"; break;
+                    case ReplayEventType::PLAYER_POSITION: typeLabel = "Position"; break;
+                    case ReplayEventType::COMBAT_LOG: typeLabel = "Combat Log"; break;
+                    case ReplayEventType::RUN_COMPLETE: typeLabel = "Run Complete"; break;
+                    case ReplayEventType::RUN_FAIL: typeLabel = "Run Fail"; break;
+                }
+
+                ChatHandler(viewer->GetSession()).PSendSysMessage("|cff00ff00[M+ Replay]|r %s: %s",
+                    typeLabel, event.data.c_str());
+
+                playback.nextEventIndex++;
+            }
+
+            if (playback.nextEventIndex >= playback.replay.events.size())
+                finished.push_back(guid);
+        }
+
+        for (ObjectGuid guid : finished)
+        {
+            if (Player* viewer = ObjectAccessor::FindPlayer(guid))
+                ChatHandler(viewer->GetSession()).SendSysMessage("|cffffd700[M+ Replay]|r Replay finished.");
+            _replayPlayback.erase(guid);
+        }
+    }
 }
 
 void MythicSpectatorManager::SaveSpectatorPosition(Player* player, SpectatorState& state)
@@ -1114,6 +1211,35 @@ bool MythicSpectatorManager::SaveReplay(uint32 instanceId)
     return true;
 }
 
+bool MythicSpectatorManager::LoadReplay(uint32 replayId, RunReplay& outReplay)
+{
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT id, map_id, keystone_level, leader_name, start_time, end_time, completed, replay_data "
+        "FROM dc_mplus_spec_replays WHERE id = {}",
+        replayId);
+
+    if (!result)
+        return false;
+
+    Field* fields = result->Fetch();
+    std::string replayData = fields[7].Get<std::string>();
+    if (replayData.empty())
+        return false;
+
+    if (!outReplay.Deserialize(replayData))
+        return false;
+
+    outReplay.replayId = fields[0].Get<uint32>();
+    outReplay.mapId = fields[1].Get<uint32>();
+    outReplay.keystoneLevel = fields[2].Get<uint8>();
+    outReplay.leaderName = fields[3].Get<std::string>();
+    outReplay.startTime = fields[4].Get<uint64>();
+    outReplay.endTime = fields[5].Get<uint64>();
+    outReplay.completed = fields[6].Get<bool>();
+
+    return true;
+}
+
 std::vector<std::pair<uint32, std::string>> MythicSpectatorManager::GetRecentReplays(uint32 limit)
 {
     std::vector<std::pair<uint32, std::string>> result;
@@ -1148,6 +1274,60 @@ std::vector<std::pair<uint32, std::string>> MythicSpectatorManager::GetRecentRep
     while (qr->NextRow());
 
     return result;
+}
+
+bool MythicSpectatorManager::StartReplayPlayback(Player* player, uint32 replayId)
+{
+    if (!_config.replayEnabled || !player)
+        return false;
+
+    RunReplay replay;
+    if (!LoadReplay(replayId, replay))
+    {
+        ChatHandler(player->GetSession()).SendSysMessage("|cffff0000[M+ Spectator]|r Replay not found or corrupted.");
+        return false;
+    }
+
+    StopReplayPlayback(player);
+    if (IsSpectating(player))
+        StopSpectating(player);
+
+    ReplayPlaybackState state;
+    state.replay = replay;
+    state.playbackStartMs = GameTime::GetGameTimeMS().count();
+    state.nextEventIndex = 0;
+    _replayPlayback[player->GetGUID()] = state;
+
+    std::string mapName = "Unknown";
+    if (MapEntry const* mapEntry = sMapStore.LookupEntry(replay.mapId))
+        mapName = mapEntry->name[0];
+
+    ChatHandler(player->GetSession()).PSendSysMessage(
+        "|cff00ff00[M+ Spectator]|r Replay %u loaded (%s, +%u). Type .spectate leave to stop.",
+        replayId, mapName.c_str(), uint32(replay.keystoneLevel));
+
+    return true;
+}
+
+void MythicSpectatorManager::StopReplayPlayback(Player* player)
+{
+    if (!player)
+        return;
+
+    auto it = _replayPlayback.find(player->GetGUID());
+    if (it == _replayPlayback.end())
+        return;
+
+    _replayPlayback.erase(it);
+    ChatHandler(player->GetSession()).SendSysMessage("|cffffd700[M+ Replay]|r Replay stopped.");
+}
+
+bool MythicSpectatorManager::IsReplayPlayback(Player* player) const
+{
+    if (!player)
+        return false;
+
+    return _replayPlayback.find(player->GetGUID()) != _replayPlayback.end();
 }
 
 } // namespace DCMythicSpectator
@@ -1280,13 +1460,16 @@ public:
         if (!player)
             return true;
 
-        if (!sMythicSpectator.IsSpectating(player))
+        bool isReplay = sMythicSpectator.IsReplayPlayback(player);
+        if (!sMythicSpectator.IsSpectating(player) && !isReplay)
         {
             handler->SendSysMessage("|cffff0000[M+ Spectator]|r You are not spectating.");
             return true;
         }
 
-        sMythicSpectator.StopSpectating(player);
+        sMythicSpectator.StopReplayPlayback(player);
+        if (sMythicSpectator.IsSpectating(player))
+            sMythicSpectator.StopSpectating(player);
         return true;
     }
 
@@ -1430,32 +1613,7 @@ public:
         if (!player)
             return true;
 
-        // Load replay from database
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT map_id, replay_data FROM dc_mplus_spec_replays WHERE id = {}",
-            replayId);
-
-        if (!result)
-        {
-            handler->SendSysMessage("|cffff0000[M+ Spectator]|r Replay not found.");
-            return true;
-        }
-
-        Field* fields = result->Fetch();
-        // uint32 mapId = fields[0].Get<uint32>(); // Reserved for future replay teleport
-        std::string replayData = fields[1].Get<std::string>();
-
-        if (replayData.empty())
-        {
-            handler->SendSysMessage("|cffff0000[M+ Spectator]|r Replay data is corrupted.");
-            return true;
-        }
-
-        // For now, just inform - full playback would need map teleport
-        handler->PSendSysMessage("|cff00ff00[M+ Spectator]|r Loading replay %u...", replayId);
-        handler->SendSysMessage("|cffffd700Note: Full replay playback requires being teleported to the dungeon.|r");
-
-        // TODO: Implement full replay playback with ghost player simulation
+        sMythicSpectator.StartReplayPlayback(player, replayId);
         return true;
     }
 
@@ -1480,6 +1638,9 @@ public:
     {
         if (sMythicSpectator.IsSpectating(player))
             sMythicSpectator.StopSpectating(player);
+
+        if (sMythicSpectator.IsReplayPlayback(player))
+            sMythicSpectator.StopReplayPlayback(player);
     }
 
     // Note: Spectator map change cleanup is handled by the spectator system itself

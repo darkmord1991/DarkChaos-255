@@ -25,6 +25,8 @@
 #include "Chat.h"
 #include "Player.h"
 #include "Item.h"
+#include "Config.h"
+#include "SharedDefines.h"
 #include "../ItemUpgrades/ItemUpgradeManager.h"
 #include "../ItemUpgrades/ItemUpgradeMechanics.h"
 #include "../ItemUpgrades/ItemUpgradeProcScaling.h"
@@ -33,9 +35,35 @@
 #include "../ItemUpgrades/ItemUpgradeSeasonal.h"
 #include <sstream>
 #include <iomanip>
+#include <map>
+#include <vector>
+#include <cstdlib>
+#include <cstring>
 
 using namespace Acore::ChatCommands;
 using namespace DarkChaos::ItemUpgrade;
+
+namespace
+{
+    struct ClassTestGearSet
+    {
+        std::vector<uint32> itemIds;
+        std::string description;
+    };
+
+    const std::map<uint8, ClassTestGearSet> kTestGearSets = {
+        {CLASS_WARRIOR, {{48685, 48687, 48683, 48689, 48691, 50415, 50356}, "Warrior Tier 9.5 + Weapons"}},
+        {CLASS_PALADIN, {{48627, 48625, 48623, 48621, 48629, 50415, 47661}, "Paladin Tier 9.5 + Weapons"}},
+        {CLASS_HUNTER, {{48261, 48263, 48265, 48267, 48259, 50034, 47267}, "Hunter Tier 9.5 + Weapons"}},
+        {CLASS_ROGUE, {{48221, 48223, 48225, 48227, 48229, 50276, 50415}, "Rogue Tier 9.5 + Weapons"}},
+        {CLASS_PRIEST, {{48073, 48075, 48077, 48079, 48071, 50173, 50179}, "Priest Tier 9.5 + Weapons"}},
+        {CLASS_DEATH_KNIGHT, {{48491, 48493, 48495, 48497, 48499, 50415}, "Death Knight Tier 9.5 + Weapon"}},
+        {CLASS_SHAMAN, {{48313, 48315, 48317, 48319, 48321, 50428, 47666}, "Shaman Tier 9.5 + Weapons"}},
+        {CLASS_MAGE, {{47751, 47753, 47755, 47757, 47749, 50173}, "Mage Tier 9.5 + Weapon"}},
+        {CLASS_WARLOCK, {{47796, 47798, 47800, 47802, 47804, 50173}, "Warlock Tier 9.5 + Weapon"}},
+        {CLASS_DRUID, {{48102, 48104, 48106, 48108, 48110, 50428, 47666}, "Druid Tier 9.5 + Weapons"}}
+    };
+}
 
 class ItemUpgradeCommands : public CommandScript
 {
@@ -857,16 +885,112 @@ public:
         return true;
     }
 
-    static bool HandleProgTierCapCommand(ChatHandler* handler, const char* /*args*/)
+    static bool HandleProgTierCapCommand(ChatHandler* handler, const char* args)
     {
-         handler->SendSysMessage("Not implemented.");
-         return true;
+        if (!handler)
+            return false;
+
+        if (!args || !*args)
+        {
+            handler->PSendSysMessage("Usage: .upgrade prog tiercap <tier_id> <max_level>");
+            return false;
+        }
+
+        char* tierStr = strtok((char*)args, " ");
+        char* levelStr = strtok(nullptr, " ");
+
+        if (!tierStr || !levelStr)
+        {
+            handler->PSendSysMessage("Usage: .upgrade prog tiercap <tier_id> <max_level>");
+            return false;
+        }
+
+        uint8 tierId = static_cast<uint8>(std::strtoul(tierStr, nullptr, 10));
+        uint8 maxLevel = static_cast<uint8>(std::strtoul(levelStr, nullptr, 10));
+
+        Player* target = handler->getSelectedPlayer();
+        if (!target)
+            target = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+
+        if (!target)
+        {
+            handler->SendSysMessage("No player selected.");
+            return false;
+        }
+
+        auto levelCapMgr = GetLevelCapManager();
+        if (!levelCapMgr)
+        {
+            handler->SendSysMessage("Level Cap Manager not available.");
+            return false;
+        }
+
+        levelCapMgr->SetPlayerTierCap(target->GetGUID().GetCounter(), tierId, maxLevel);
+        handler->PSendSysMessage("Set tier %u max level to %u for %s.",
+            tierId, maxLevel, target->GetName().c_str());
+
+        return true;
     }
 
     static bool HandleProgTestSetCommand(ChatHandler* handler, const char* /*args*/)
     {
-         handler->SendSysMessage("Not implemented.");
-         return true;
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+            return false;
+
+        uint8 playerClass = player->getClass();
+        auto it = kTestGearSets.find(playerClass);
+        if (it == kTestGearSets.end())
+        {
+            handler->PSendSysMessage("No test gear set configured for your class.");
+            return false;
+        }
+
+        const ClassTestGearSet& gearSet = it->second;
+        uint32 itemsAdded = 0;
+
+        for (uint32 itemId : gearSet.itemIds)
+        {
+            ItemPosCountVec dest;
+            InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, 1);
+            if (msg == EQUIP_ERR_OK)
+            {
+                if (Item* item = player->StoreNewItem(dest, itemId, true))
+                {
+                    player->SendNewItem(item, 1, true, false);
+                    itemsAdded++;
+                }
+            }
+        }
+
+        uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
+        uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
+        uint32 essenceAmount = sConfigMgr->GetOption<uint32>("ItemUpgrade.Test.EssenceGrant", 5000);
+        uint32 tokenAmount = sConfigMgr->GetOption<uint32>("ItemUpgrade.Test.TokensGrant", 2500);
+
+        ItemPosCountVec essenceDest;
+        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, essenceDest, essenceId, essenceAmount) == EQUIP_ERR_OK)
+        {
+            if (Item* essence = player->StoreNewItem(essenceDest, essenceId, true))
+                player->SendNewItem(essence, essenceAmount, true, false);
+        }
+
+        ItemPosCountVec tokenDest;
+        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, tokenDest, tokenId, tokenAmount) == EQUIP_ERR_OK)
+        {
+            if (Item* tokens = player->StoreNewItem(tokenDest, tokenId, true))
+                player->SendNewItem(tokens, tokenAmount, true, false);
+        }
+
+        handler->PSendSysMessage("|cffffd700===== Test Set Granted =====|r");
+        handler->PSendSysMessage("|cff00ff00Class:|r %s", player->GetName().c_str());
+        handler->PSendSysMessage("|cff00ff00Gear Set:|r %s", gearSet.description.c_str());
+        handler->PSendSysMessage("|cff00ff00Items Added:|r %u", itemsAdded);
+        handler->PSendSysMessage("|cff00ff00Upgrade Essence:|r %u", essenceAmount);
+        handler->PSendSysMessage("|cff00ff00Upgrade Tokens:|r %u", tokenAmount);
+        handler->PSendSysMessage("|cff00ffffYou can now test the upgrade system!|r");
+
+        return true;
     }
 
     // =================================================================

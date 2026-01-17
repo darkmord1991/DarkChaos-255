@@ -83,6 +83,11 @@ enum DCAchievements
     ACHIEVEMENT_LEVEL_150                   = 10701,
     ACHIEVEMENT_LEVEL_200                   = 10702,
     ACHIEVEMENT_LEVEL_255                   = 10703,
+
+    // Custom Quests
+    ACHIEVEMENT_CUSTOM_QUEST_NOVICE         = 10800,
+    ACHIEVEMENT_CUSTOM_QUEST_HERO           = 10801,
+    ACHIEVEMENT_CUSTOM_QUEST_MASTER         = 10802,
 };
 
 // Custom achievement criteria types
@@ -185,10 +190,41 @@ public:
     }
 
     // Quest achievements
-    void OnPlayerCompleteQuest(Player* /*player*/, Quest const* /*quest*/) override
+    void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
     {
-        // TODO: Track custom quest completions
-        // You would need to query how many custom quests the player has completed
+        if (!player || !quest || !IsEnabled())
+            return;
+
+        uint32 questId = quest->GetQuestId();
+        if (questId < 700000 || questId > 700999)
+            return;
+
+        uint32 completedCount = 0;
+        if (QueryResult result = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM character_queststatus_rewarded WHERE guid = {} AND quest BETWEEN 700000 AND 700999",
+            player->GetGUID().GetCounter()))
+        {
+            completedCount = result->Fetch()[0].Get<uint32>();
+        }
+
+        if (completedCount >= 25)
+            CompleteAchievement(player, ACHIEVEMENT_CUSTOM_QUEST_NOVICE);
+
+        if (completedCount >= 100)
+            CompleteAchievement(player, ACHIEVEMENT_CUSTOM_QUEST_HERO);
+
+        static uint32 totalCustomQuests = 0;
+        if (totalCustomQuests == 0)
+        {
+            if (QueryResult totalResult = WorldDatabase.Query(
+                "SELECT COUNT(*) FROM quest_template WHERE ID BETWEEN 700000 AND 700999"))
+            {
+                totalCustomQuests = totalResult->Fetch()[0].Get<uint32>();
+            }
+        }
+
+        if (totalCustomQuests > 0 && completedCount >= totalCustomQuests)
+            CompleteAchievement(player, ACHIEVEMENT_CUSTOM_QUEST_MASTER);
     }
 
     // Area exploration

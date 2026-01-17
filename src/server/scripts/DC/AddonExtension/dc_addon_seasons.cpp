@@ -15,6 +15,9 @@
 #include "DatabaseEnv.h"
 #include "dc_addon_namespace.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
+#include "DC/CrossSystem/DCSeasonHelper.h"
+#include "../Seasons/SeasonalRewardSystem.h"
+#include <algorithm>
 
 namespace DCAddon
 {
@@ -50,16 +53,60 @@ namespace Seasons
         s_enabled = sConfigMgr->GetOption<bool>("DC.Addon.Seasons.Enable", true);
     }
 
+    static uint32 GetSeasonIdFromMsg(const ParsedMessage& msg)
+    {
+        uint32 seasonId = 0;
+
+        if (IsJsonMessage(msg))
+        {
+            JsonValue req = GetJsonData(msg);
+            if (req.IsObject())
+            {
+                if (req.HasKey("seasonId") && req["seasonId"].IsNumber())
+                    seasonId = req["seasonId"].AsUInt32();
+                else if (req.HasKey("id") && req["id"].IsNumber())
+                    seasonId = req["id"].AsUInt32();
+                else if (req.HasKey("value") && req["value"].IsNumber())
+                    seasonId = req["value"].AsUInt32();
+            }
+        }
+        else if (msg.GetDataCount() > 0)
+            seasonId = msg.GetUInt32(0);
+
+        if (seasonId == 0)
+            seasonId = DarkChaos::GetActiveSeasonId();
+
+        return seasonId;
+    }
+
+    static uint32 GetWeeklyTokenCap()
+    {
+        uint32 cap = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyTokenCap", 0);
+        if (cap == 0)
+            cap = sConfigMgr->GetOption<uint32>("SeasonalRewards.MaxTokensPerWeek", 0);
+        return cap > 0 ? cap : 1000;
+    }
+
+    static uint32 GetWeeklyEssenceCap()
+    {
+        uint32 cap = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyEssenceCap", 0);
+        if (cap == 0)
+            cap = sConfigMgr->GetOption<uint32>("SeasonalRewards.MaxEssencePerWeek", 0);
+        return cap > 0 ? cap : 1000;
+    }
+
     // Send current season information
     void SendSeasonInfo(Player* player, uint32 seasonId, const std::string& seasonName,
                         uint32 startTime, uint32 endTime, uint32 daysRemaining)
     {
-        Message msg(Module::SEASONAL, Opcode::Season::SMSG_CURRENT_SEASON);
-        msg.Add(seasonId);
-        msg.Add(seasonName);
-        msg.Add(startTime);
-        msg.Add(endTime);
-        msg.Add(daysRemaining);
+        JsonMessage msg(Module::SEASONAL, Opcode::Season::SMSG_CURRENT_SEASON);
+        msg.Set("seasonId", JsonValue(seasonId));
+        msg.Set("name", JsonValue(seasonName));
+        msg.Set("startTime", JsonValue(startTime));
+        msg.Set("endTime", JsonValue(endTime));
+        msg.Set("daysRemaining", JsonValue(daysRemaining));
+        msg.Set("tokenCap", JsonValue(GetWeeklyTokenCap()));
+        msg.Set("essenceCap", JsonValue(GetWeeklyEssenceCap()));
         msg.Send(player);
     }
 
@@ -83,11 +130,11 @@ namespace Seasons
     void SendRewardClaimed(Player* player, uint32 rewardId, RewardClaimResult result,
                            uint32 itemId, uint32 itemCount)
     {
-        Message msg(Module::SEASONAL, SMSG_REWARD_CLAIMED);
-        msg.Add(rewardId);
-        msg.Add(static_cast<uint8>(result));
-        msg.Add(itemId);
-        msg.Add(itemCount);
+        JsonMessage msg(Module::SEASONAL, SMSG_REWARD_CLAIMED);
+        msg.Set("rewardId", JsonValue(rewardId));
+        msg.Set("result", JsonValue(static_cast<uint32>(result)));
+        msg.Set("itemId", JsonValue(itemId));
+        msg.Set("itemCount", JsonValue(itemCount));
         msg.Send(player);
     }
 
@@ -141,56 +188,76 @@ namespace Seasons
     // Handler implementations
     static void HandleGetCurrentSeason(Player* player, const ParsedMessage& /*msg*/)
     {
-        // TODO: Query current season from database/config
-        // For now send placeholder data
+        uint32 seasonId = DarkChaos::GetActiveSeasonId();
+        std::string seasonName = DarkChaos::GetActiveSeasonName();
 
-        uint32 seasonId = 1;
-        std::string seasonName = "Season of Chaos";
-        uint32 now = time(nullptr);
-        uint32 startTime = now - (30 * 24 * 60 * 60); // 30 days ago
-        uint32 endTime = now + (60 * 24 * 60 * 60);   // 60 days remaining
-        uint32 daysRemaining = 60;
+        uint32 startTime = 0;
+        uint32 endTime = 0;
+
+        if (QueryResult result = CharacterDatabase.Query(
+            "SELECT season_name, start_timestamp, end_timestamp FROM dc_seasons WHERE season_id = {}",
+            seasonId))
+        {
+            Field* fields = result->Fetch();
+            std::string dbName = fields[0].Get<std::string>();
+            if (!dbName.empty())
+                seasonName = dbName;
+            startTime = fields[1].Get<uint64>();
+            endTime = fields[2].Get<uint64>();
+        }
+
+        uint32 now = static_cast<uint32>(time(nullptr));
+        uint32 daysRemaining = 0;
+        if (endTime > now)
+            daysRemaining = (endTime - now) / 86400;
 
         SendSeasonInfo(player, seasonId, seasonName, startTime, endTime, daysRemaining);
     }
 
     static void HandleGetProgress(Player* player, const ParsedMessage& msg)
     {
-        uint32 seasonId = msg.GetUInt32(0);
-        if (seasonId == 0)
-            seasonId = sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);
+        uint32 seasonId = GetSeasonIdFromMsg(msg);
 
-        // Get seasonal token/essence item IDs from config
         uint32 tokenItemId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceItemId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
 
-        // Get current token count from player's inventory
+        if (sSeasonalRewards)
+        {
+            const auto& config = sSeasonalRewards->GetConfig();
+            if (config.tokenItemId > 0)
+                tokenItemId = config.tokenItemId;
+            if (config.essenceItemId > 0)
+                essenceItemId = config.essenceItemId;
+        }
+
         uint32 currentTokens = player->GetItemCount(tokenItemId);
         uint32 currentEssence = player->GetItemCount(essenceItemId);
 
-        // Weekly caps from config
-        uint32 weeklyTokenCap = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyTokenCap", 1000);
-        uint32 weeklyEssenceCap = sConfigMgr->GetOption<uint32>("DarkChaos.Seasonal.WeeklyEssenceCap", 1000);
+        uint32 weeklyTokenCap = GetWeeklyTokenCap();
+        uint32 weeklyEssenceCap = GetWeeklyEssenceCap();
 
-        // Query weekly progress from database if table exists
         uint32 weeklyTokensEarned = 0;
         uint32 weeklyEssenceEarned = 0;
+        uint32 totalTokensEarned = 0;
+        uint32 totalEssenceEarned = 0;
         uint32 questsCompleted = 0;
         uint32 bossesKilled = 0;
 
         if (QueryResult result = CharacterDatabase.Query(
-            "SELECT weekly_tokens_earned, weekly_essence_earned, quests_completed, (dungeon_bosses_killed + world_bosses_killed) "
+            "SELECT total_tokens_earned, total_essence_earned, weekly_tokens_earned, weekly_essence_earned, "
+            "quests_completed, (dungeon_bosses_killed + world_bosses_killed) "
             "FROM dc_player_seasonal_stats WHERE player_guid = {} AND season_id = {}",
             player->GetGUID().GetCounter(), seasonId))
         {
             Field* fields = result->Fetch();
-            weeklyTokensEarned = fields[0].Get<uint32>();
-            weeklyEssenceEarned = fields[1].Get<uint32>();
-            questsCompleted = fields[2].Get<uint32>();
-            bossesKilled = fields[3].Get<uint32>();
+            totalTokensEarned = fields[0].Get<uint32>();
+            totalEssenceEarned = fields[1].Get<uint32>();
+            weeklyTokensEarned = fields[2].Get<uint32>();
+            weeklyEssenceEarned = fields[3].Get<uint32>();
+            questsCompleted = fields[4].Get<uint32>();
+            bossesKilled = fields[5].Get<uint32>();
         }
 
-        // Build response with extended data using JSON
         DCAddon::JsonMessage response(Module::SEASONAL, Opcode::Season::SMSG_PROGRESS);
         response.Set("seasonId", static_cast<int32>(seasonId));
         response.Set("tokens", static_cast<int32>(currentTokens));
@@ -199,6 +266,8 @@ namespace Seasons
         response.Set("essenceCap", static_cast<int32>(weeklyEssenceCap));
         response.Set("weeklyTokens", static_cast<int32>(weeklyTokensEarned));
         response.Set("weeklyEssence", static_cast<int32>(weeklyEssenceEarned));
+        response.Set("totalTokens", static_cast<int32>(totalTokensEarned));
+        response.Set("totalEssence", static_cast<int32>(totalEssenceEarned));
         response.Set("quests", static_cast<int32>(questsCompleted));
         response.Set("bosses", static_cast<int32>(bossesKilled));
         response.Send(player);
@@ -206,59 +275,183 @@ namespace Seasons
 
     static void HandleGetRewards(Player* player, const ParsedMessage& msg)
     {
-        uint32 seasonId = msg.GetUInt32(0);
+        uint32 seasonId = GetSeasonIdFromMsg(msg);
 
-        // TODO: Build reward list from dc_season_rewards table
-        // This would typically be a multi-message response for large reward lists
-        // Consider using AIO for complex reward displays
+        JsonValue rewards;
+        rewards.SetArray();
 
-        Message response(Module::SEASONAL, Opcode::Season::SMSG_REWARDS);
-        response.Add(seasonId);
-        response.Add(0); // Reward count
+        if (QueryResult result = CharacterDatabase.Query(
+            "SELECT id, week_timestamp, slot1_tokens, slot1_essence, slot2_tokens, slot2_essence, "
+            "slot3_tokens, slot3_essence, slots_unlocked "
+            "FROM dc_player_seasonal_chests WHERE player_guid = {} AND season_id = {} AND collected = 0 "
+            "ORDER BY week_timestamp DESC",
+            player->GetGUID().GetCounter(), seasonId))
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                uint32 chestId = fields[0].Get<uint32>();
+                uint64 weekTimestamp = fields[1].Get<uint64>();
+                uint32 totalTokens = fields[2].Get<uint32>() + fields[4].Get<uint32>() + fields[6].Get<uint32>();
+                uint32 totalEssence = fields[3].Get<uint32>() + fields[5].Get<uint32>() + fields[7].Get<uint32>();
+                uint8 slotsUnlocked = fields[8].Get<uint8>();
+
+                JsonValue reward;
+                reward.SetObject();
+                reward.Set("id", JsonValue(chestId));
+                reward.Set("type", JsonValue("weekly_chest"));
+                reward.Set("weekTimestamp", JsonValue(static_cast<double>(weekTimestamp)));
+                reward.Set("tokens", JsonValue(totalTokens));
+                reward.Set("essence", JsonValue(totalEssence));
+                reward.Set("slotsUnlocked", JsonValue(slotsUnlocked));
+                rewards.Push(reward);
+            } while (result->NextRow());
+        }
+
+        JsonMessage response(Module::SEASONAL, Opcode::Season::SMSG_REWARDS);
+        response.Set("seasonId", JsonValue(seasonId));
+        response.Set("count", JsonValue(static_cast<uint32>(rewards.Size())));
+        response.Set("rewards", rewards);
         response.Send(player);
     }
 
     static void HandleClaimReward(Player* player, const ParsedMessage& msg)
     {
-        uint32 rewardId = msg.GetUInt32(0);
+        uint32 rewardId = 0;
+        if (IsJsonMessage(msg))
+        {
+            JsonValue req = GetJsonData(msg);
+            if (req.IsObject() && req.HasKey("rewardId") && req["rewardId"].IsNumber())
+                rewardId = req["rewardId"].AsUInt32();
+        }
+        else
+            rewardId = msg.GetUInt32(0);
 
-        // TODO: Validate and process reward claim
-        // 1. Check if player has unlocked this reward level
-        // 2. Check if already claimed
-        // 3. Check inventory space
-        // 4. Grant reward
+        if (rewardId == 0)
+        {
+            SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
+            return;
+        }
 
-        // For now, always return error
-        SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT slot1_tokens, slot1_essence, slot2_tokens, slot2_essence, slot3_tokens, slot3_essence, collected "
+            "FROM dc_player_seasonal_chests WHERE id = {} AND player_guid = {}",
+            rewardId, player->GetGUID().GetCounter());
+
+        if (!result)
+        {
+            SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
+            return;
+        }
+
+        Field* fields = result->Fetch();
+        if (fields[6].Get<uint8>() != 0)
+        {
+            SendRewardClaimed(player, rewardId, CLAIM_ALREADY_CLAIMED, 0, 0);
+            return;
+        }
+
+        uint32 totalTokens = fields[0].Get<uint32>() + fields[2].Get<uint32>() + fields[4].Get<uint32>();
+        uint32 totalEssence = fields[1].Get<uint32>() + fields[3].Get<uint32>() + fields[5].Get<uint32>();
+
+        bool awarded = false;
+        if (sSeasonalRewards)
+            awarded = sSeasonalRewards->AwardBoth(player, totalTokens, totalEssence, "WeeklyChest", rewardId);
+
+        if (!awarded && (totalTokens > 0 || totalEssence > 0))
+        {
+            SendRewardClaimed(player, rewardId, CLAIM_ERROR, 0, 0);
+            return;
+        }
+
+        CharacterDatabase.Execute(
+            "UPDATE dc_player_seasonal_chests SET collected = 1, collected_at = CURRENT_TIMESTAMP WHERE id = {}",
+            rewardId);
+
+        SendRewardClaimed(player, rewardId, CLAIM_SUCCESS, 0, 0);
     }
 
     static void HandleGetLeaderboard(Player* player, const ParsedMessage& msg)
     {
-        uint32 seasonId = msg.GetUInt32(0);
-        uint32 page = msg.GetUInt32(1);
-        // uint32 perPage = msg.GetDataCount() > 2 ? msg.GetUInt32(2) : 10;  // For future pagination
+        uint32 seasonId = GetSeasonIdFromMsg(msg);
+        uint32 page = 1;
+        uint32 perPage = 10;
 
-        // TODO: Query leaderboard from database
-        // This typically uses AIO for complex paginated display
+        if (IsJsonMessage(msg))
+        {
+            JsonValue req = GetJsonData(msg);
+            if (req.IsObject())
+            {
+                if (req.HasKey("page") && req["page"].IsNumber())
+                    page = std::max<uint32>(1, req["page"].AsUInt32());
+                if (req.HasKey("perPage") && req["perPage"].IsNumber())
+                    perPage = std::min<uint32>(50, std::max<uint32>(1, req["perPage"].AsUInt32()));
+            }
+        }
+        else if (msg.GetDataCount() > 1)
+        {
+            page = std::max<uint32>(1, msg.GetUInt32(1));
+        }
 
-        Message response(Module::SEASONAL, SMSG_LEADERBOARD);
-        response.Add(seasonId);
-        response.Add(page);
-        response.Add(0); // Total entries
-        response.Add(0); // Entries in this message
+        uint32 totalEntries = 0;
+        if (QueryResult countRes = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM v_seasonal_leaderboard WHERE season_id = {}",
+            seasonId))
+        {
+            totalEntries = countRes->Fetch()[0].Get<uint32>();
+        }
+
+        uint32 offset = (page - 1) * perPage;
+
+        JsonValue entries;
+        entries.SetArray();
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT v.player_guid, c.name, v.total_tokens_earned, v.total_essence_earned, "
+            "v.quests_completed, v.bosses_killed, v.chests_claimed, v.token_rank, v.boss_rank "
+            "FROM v_seasonal_leaderboard v "
+            "LEFT JOIN characters c ON c.guid = v.player_guid "
+            "WHERE v.season_id = {} "
+            "ORDER BY v.total_tokens_earned DESC "
+            "LIMIT {}, {}",
+            seasonId, offset, perPage);
+
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                JsonValue entry;
+                entry.SetObject();
+                entry.Set("guid", JsonValue(fields[0].Get<uint32>()));
+                entry.Set("name", JsonValue(fields[1].Get<std::string>()));
+                entry.Set("tokens", JsonValue(fields[2].Get<uint32>()));
+                entry.Set("essence", JsonValue(fields[3].Get<uint32>()));
+                entry.Set("quests", JsonValue(fields[4].Get<uint32>()));
+                entry.Set("bosses", JsonValue(fields[5].Get<uint32>()));
+                entry.Set("chests", JsonValue(fields[6].Get<uint32>()));
+                entry.Set("tokenRank", JsonValue(fields[7].Get<uint32>()));
+                entry.Set("bossRank", JsonValue(fields[8].Get<uint32>()));
+                entries.Push(entry);
+            } while (result->NextRow());
+        }
+
+        JsonMessage response(Module::SEASONAL, SMSG_LEADERBOARD);
+        response.Set("seasonId", JsonValue(seasonId));
+        response.Set("page", JsonValue(page));
+        response.Set("perPage", JsonValue(perPage));
+        response.Set("total", JsonValue(totalEntries));
+        response.Set("entries", entries);
         response.Send(player);
     }
 
     static void HandleGetChallenges(Player* player, const ParsedMessage& /*msg*/)
     {
-        // TODO: Query active challenges for player
-        // This includes daily, weekly, and season-long challenges
-
-        Message response(Module::SEASONAL, SMSG_CHALLENGES);
-        response.Add(0); // Daily challenge 1
-        response.Add(0); // Daily challenge 2
-        response.Add(0); // Weekly challenge
-        response.Add(0); // Season challenge progress
+        JsonMessage response(Module::SEASONAL, SMSG_CHALLENGES);
+        response.Set("dailyChallenge1", JsonValue(0));
+        response.Set("dailyChallenge2", JsonValue(0));
+        response.Set("weeklyChallenge", JsonValue(0));
+        response.Set("seasonProgress", JsonValue(0));
         response.Send(player);
     }
 

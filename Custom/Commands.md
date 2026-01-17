@@ -66,7 +66,7 @@ The Training Master provides a gossip menu (no chat command) to spawn configurab
 | `invite` | `[mins] [uses]` | Generate an invite code for your own run (Leader only). |
 | `guild` | | Broadcast a spectator invite link to your guild chat. |
 | `replays` | `[limit]` | List recent run replays. |
-| `replay` | `<id>` | Watch a replay (Note: requires being in the instance). |
+| `replay` | `<id>` | Watch a replay (plays recorded events in chat; no teleport). |
 
 ### System: Item Upgrades
 *Command:* `.upgrade`
@@ -281,8 +281,8 @@ These commands require GM or Administrator access levels.
 | `token remove` | `<player> <amt> <type>` | Remove tokens from a player. |
 | `token set` | `<player> <amt> <type>` | Set a player's token count. |
 | `prog unlocktier`| `<player> <tier>` | Force unlock a specific tier for a player. |
-| `prog tiercap` | `<tier> <level>` | View or set the global tier cap. |
-| `prog testset` | | Run the upgrade test set suite. |
+| `prog tiercap` | `<tier> <level>` | Set tier cap for the selected player (or self if none selected). |
+| `prog testset` | | Grant class test gear + upgrade currency to yourself. |
 | `season reset` | `<player>` | Reset a player's seasonal progress. |
 
 ### System: Mythic+ (`.mplus`)
