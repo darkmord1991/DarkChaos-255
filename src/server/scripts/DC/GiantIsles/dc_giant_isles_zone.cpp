@@ -391,7 +391,7 @@ private:
     {
         // Get a random rare entry and spawn location
         uint32 rareEntry = GetRandomRareEntry();
-        RareSpawnLocation loc = GetRandomSpawnLocation();
+        [[maybe_unused]] RareSpawnLocation loc = GetRandomSpawnLocation();
 
         if (rareEntry == 0)
         {

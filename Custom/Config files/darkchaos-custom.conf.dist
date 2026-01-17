@@ -2545,6 +2545,27 @@ DC.AddonProtocol.GOMove.MinSecurity = 1
 DC.AddonProtocol.GOMove.MinSecurityMove = 2
 
 #
+#    DC.AddonProtocol.NPCMove.Enable
+#        Description: Enable addon-based NPC mover integration
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.NPCMove.Enable = 1
+
+#
+#    DC.AddonProtocol.NPCMove.MinSecurity
+#        Description: Minimum server security level required to issue NPCMove addon commands
+#        Default:     1 (SEC_GAMEMASTER)
+#
+DC.AddonProtocol.NPCMove.MinSecurity = 1
+
+#
+#    DC.AddonProtocol.NPCMove.MinSecurityMove
+#        Description: Minimum server security level required to execute NPCMove 'move' commands
+#        Default:     2 (SEC_GAMEMASTER)
+#
+DC.AddonProtocol.NPCMove.MinSecurityMove = 2
+
+#
 #    DC.AddonProtocol.Teleports.Enable
 #        Description: Enable addon-based teleports integration
 #        Default:     1 (Enabled)

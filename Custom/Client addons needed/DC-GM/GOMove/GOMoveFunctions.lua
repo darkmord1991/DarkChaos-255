@@ -76,24 +76,26 @@ function GOMove:CreateFrame(name, width, height, DataTable, both, rowHeight)
     if(DataTable) then
         Frame.DataTable = DataTable
         function Frame:Update()
-            local maxValue = #DataTable
+            local tableRef = self.DataTable or DataTable
+            local maxValue = (tableRef and #tableRef) or 0
             FauxScrollFrame_Update(self.ScrollBar, maxValue, self.ButtonCount, rowHeight, nil, nil, nil, nil, nil, nil, true)
             local offset = FauxScrollFrame_GetOffset(self.ScrollBar)
             for Button = 1, self.ButtonCount do
                 local value = Button + offset
-                if value <= maxValue then
+                local row = tableRef and tableRef[value] or nil
+                if value <= maxValue and row then
                     local Button = self.Buttons[Button]
-                    local Label = DataTable[value][1]
-                    if(DataTable.NameWidth and strlen(DataTable[value][1]) > DataTable.NameWidth) then
-                        Label = DataTable[value][1]:sub(0, DataTable.NameWidth-2)..".."
+                    local Label = row[1]
+                    if(tableRef.NameWidth and strlen(row[1]) > tableRef.NameWidth) then
+                        Label = row[1]:sub(0, tableRef.NameWidth-2)..".."
                     end
                     if(not both) then
                         Button:SetText(Label)
                     else
-                        local guid = tostring(DataTable[value][2] or "")
-                        local entry = tostring(DataTable[value][3] or "")
+                        local guid = tostring(row[2] or "")
+                        local entry = tostring(row[3] or "")
                         local extra = entry ~= "" and (" ["..entry.."]") or ""
-                        local dist = DataTable[value][7]
+                        local dist = row[7]
                         if (type(dist) == "number") then
                             Button:SetText(guid..extra.." "..Label.."\n"..string.format("%.1f yd", dist))
                         else

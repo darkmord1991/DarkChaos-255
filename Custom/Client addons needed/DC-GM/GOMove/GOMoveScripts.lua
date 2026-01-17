@@ -12,6 +12,18 @@ GOMove.Mode = GOMove.Mode or "GO"
 GOMove.ActiveModule = GOMove.ActiveModule or "GOMV"
 GOMove.ActiveChannel = GOMove.ActiveChannel or "GOMOVE"
 
+local function GetMoverNoun()
+    return (GOMove.GetMoverNoun and GOMove:GetMoverNoun()) or ((GOMove.Mode == "NPC") and "creature" or "object")
+end
+
+local function GetMoverLabel()
+    return (GOMove.GetMoverLabel and GOMove:GetMoverLabel()) or ((GOMove.Mode == "NPC") and "NPC" or "GameObject")
+end
+
+local function GetMoverUiLabel()
+    return (GOMove.GetMoverUiLabel and GOMove:GetMoverUiLabel()) or ((GOMove.Mode == "NPC") and "NPCMove" or "GOMove")
+end
+
 local function cloneFavs(source)
     local out = {NameWidth = 17}
     if (type(source) == "table") then
@@ -61,26 +73,39 @@ end
 
 local FavFrame, SelFrame
 
-GOMove.SelL = {NameWidth = 30}
-function GOMove.SelL:Add(name, guid, entry, x, y, z)
-    table.insert(self, 1, {name, guid, entry, x, y, z})
-end
-function GOMove.SelL:Del(guid)
-    for k,v in ipairs(self) do
-        if(v[2] == guid) then
-            table.remove(self, k)
-            break
+local function CreateSelectionList()
+    local list = {NameWidth = 30}
+    function list:Add(name, guid, entry, x, y, z)
+        table.insert(self, 1, {name, guid, entry, x, y, z})
+    end
+    function list:Del(guid)
+        for k,v in ipairs(self) do
+            if(v[2] == guid) then
+                table.remove(self, k)
+                break
+            end
         end
     end
+    return list
 end
 
-GOMove.Selected = {}
-function GOMove.Selected:Add(name, guid)
-    self[guid] = name
+local function CreateSelectedMap()
+    local selected = {}
+    function selected:Add(name, guid)
+        self[guid] = name
+    end
+    function selected:Del(guid)
+        self[guid] = nil
+    end
+    return selected
 end
-function GOMove.Selected:Del(guid)
-    self[guid] = nil
-end
+
+GOMove.SelL = CreateSelectionList()
+GOMove.Selected = CreateSelectedMap()
+GOMove._modeState = GOMove._modeState or {
+    GO = { Selected = GOMove.Selected, SelL = GOMove.SelL, LastSpawnedGUID = nil },
+    NPC = { Selected = CreateSelectedMap(), SelL = CreateSelectionList(), LastSpawnedGUID = nil },
+}
 
 local function clearAllSelected()
     for guid, _ in pairs(GOMove.Selected) do
@@ -118,27 +143,74 @@ GOMove.MainFrame = MainFrame
 MainFrame:Position("LEFT", UIParent, "LEFT", 0, 85)
 loadFavsForMode(GOMove.Mode)
 
+do
+    local ModeSwitch = CreateFrame("Button", "GOMove_UI_ModeSwitch", MainFrame, "UIPanelButtonTemplate")
+    ModeSwitch:SetSize(52, 16)
+    ModeSwitch:SetPoint("TOPRIGHT", MainFrame, "TOPRIGHT", -28, -8)
+    ModeSwitch:SetText((GOMove.Mode == "NPC") and "GO" or "NPC")
+    ModeSwitch:SetScript("OnClick", function()
+        if (GOMove.Mode == "NPC") then
+            GOMove:SetMode("GO")
+        else
+            GOMove:SetMode("NPC")
+        end
+    end)
+    ModeSwitch:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("Switch mover mode", 1, 1, 1)
+        GameTooltip:AddLine("Switch between GameObject and NPC mover.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    ModeSwitch:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    GOMove.ModeSwitchButton = ModeSwitch
+end
+
 function GOMove:SetMode(mode, showUI)
     local newMode = (mode == "NPC") and "NPC" or "GO"
     if (self.Mode ~= newMode) then
         saveFavsForMode(self.Mode)
+        if (self._modeState) then
+            self._modeState[self.Mode] = {
+                Selected = self.Selected,
+                SelL = self.SelL,
+                LastSpawnedGUID = self.LastSpawnedGUID,
+            }
+        end
         self.Mode = newMode
         self.ActiveModule = (newMode == "NPC") and "NPCM" or "GOMV"
         self.ActiveChannel = (newMode == "NPC") and "NPCMOVE" or "GOMOVE"
         loadFavsForMode(newMode)
-        clearAllSelected()
-        clearSelectionList()
-        self.LastSpawnedGUID = nil
+        local state = self._modeState and self._modeState[newMode] or nil
+        if (not state) then
+            state = { Selected = CreateSelectedMap(), SelL = CreateSelectionList(), LastSpawnedGUID = nil }
+            self._modeState = self._modeState or {}
+            self._modeState[newMode] = state
+        end
+        self.Selected = state.Selected
+        self.SelL = state.SelL
+        self.LastSpawnedGUID = state.LastSpawnedGUID
+        if (self.SelFrame) then
+            SelFrame.DataTable = self.SelL
+        end
     end
 
     if SelInfoTitle then
         SelInfoTitle:SetText((self.Mode == "NPC") and "Selected NPC" or "Selected GameObject")
+    end
+    if self.NPCMoveApplyLabels then
+        self:NPCMoveApplyLabels()
+    end
+    if self.ModeSwitchButton and self.ModeSwitchButton.SetText then
+        self.ModeSwitchButton:SetText((self.Mode == "NPC") and "GO" or "NPC")
     end
     if UpdateMainHeader then
         UpdateMainHeader()
     end
     if UpdateSelectedInfoPanel then
         UpdateSelectedInfoPanel()
+    end
+    if self.UpdateEntryLabel then
+        self.UpdateEntryLabel()
     end
     if FavFrame and FavFrame.Update then
         FavFrame:Update()
@@ -185,6 +257,7 @@ SelectedInfoPanel:Hide()
 local SelInfoTitle = SelectedInfoPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 SelInfoTitle:SetPoint("TOPLEFT", SelectedInfoPanel, "TOPLEFT", 8, -6)
 SelInfoTitle:SetText((GOMove.Mode == "NPC") and "Selected NPC" or "Selected GameObject")
+GOMove.SelInfoTitle = SelInfoTitle
 
 local SelInfoGuid = SelectedInfoPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 SelInfoGuid:SetPoint("TOPLEFT", SelInfoTitle, "BOTTOMLEFT", 0, -4)
@@ -402,14 +475,16 @@ ENTRY_LABEL:SetTextColor(0.9, 0.9, 0.9)
 local function UpdateEntryLabel()
     local val = ENTRY:GetNumber() or 0
     if val == 0 then
-        ENTRY_LABEL:SetText("Focused ENTRY: (none)")
+        ENTRY_LABEL:SetText("Focused " .. GetMoverLabel() .. " Entry: (none)")
     else
-        ENTRY_LABEL:SetText("Focused ENTRY: " .. tostring(val))
+        ENTRY_LABEL:SetText("Focused " .. GetMoverLabel() .. " Entry: " .. tostring(val))
     end
 end
 -- Update when user changes ENTRY or when we set it programmatically
 ENTRY:SetScript("OnTextChanged", function() UpdateEntryLabel() end)
 UpdateEntryLabel()
+GOMove.EntryLabel = ENTRY_LABEL
+GOMove.UpdateEntryLabel = UpdateEntryLabel
 
 local function findSelRowByGuid(guid)
     if (not guid) then return nil end
@@ -562,6 +637,20 @@ local SPELLSPAWN = GOMove:CreateButton(MainFrame, "Send", 50, 25, 40, -415)
 function SPELLSPAWN:OnClick()
     GOMove:Move("SPAWNSPELL", SPELLENTRY:GetNumber())
 end
+GOMove.SpellEntryInput = SPELLENTRY
+GOMove.SpawnSpellButton = SPELLSPAWN
+SPELLSPAWN:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if (GOMove.Mode == "NPC") then
+        GameTooltip:AddLine("Spawn NPC", 1, 1, 1)
+        GameTooltip:AddLine("Spawns a creature by entry at your location.", 0.8, 0.8, 0.8, true)
+    else
+        GameTooltip:AddLine("Place object", 1, 1, 1)
+        GameTooltip:AddLine("Uses a placement spell to spawn the gameobject entry.", 0.8, 0.8, 0.8, true)
+    end
+    GameTooltip:Show()
+end)
+SPELLSPAWN:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 local RESETVALUES = GOMove:CreateButton(MainFrame, "Reset", 110, 25, 0, -440)
 function RESETVALUES:OnClick()
@@ -613,6 +702,7 @@ FavFrame = GOMove:CreateFrame("Favourite_List", 200, 280, GOMove.FavL, true)
 FavFrame:Position("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", 0, 0)
 FavFrame:Hide()  -- Hide at startup
 FavFrame:Hide()  -- Hide at startup
+GOMove.FavFrame = FavFrame
 function FavFrame:ButtonOnClick(ID)
     local entry = self.DataTable[FauxScrollFrame_GetOffset(self.ScrollBar) + ID][2]
     if IsShiftKeyDown() then
@@ -635,7 +725,7 @@ end
 function FavFrame:ButtonTooltip(ID, owner)
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:AddLine("Spawn favourite", 1, 1, 1)
-    GameTooltip:AddLine("Spawns the saved gameobject entry.", 0.8, 0.8, 0.8, true)
+    GameTooltip:AddLine("Spawns the saved " .. GetMoverNoun() .. " entry.", 0.8, 0.8, 0.8, true)
     GameTooltip:Show()
 end
 
@@ -651,22 +741,20 @@ SelFrame = GOMove:CreateFrame("Selection_List", 360, 320, GOMove.SelL, true, 36)
 SelFrame:Position("BOTTOMRIGHT", FavFrame, "TOPRIGHT", 0, 0)
 SelFrame:Hide()  -- Hide at startup
 SelFrame:Hide()  -- Hide at startup
+GOMove.SelFrame = SelFrame
+GOMove:SetMode(GOMove.Mode)
 function SelFrame:ButtonOnClick(ID)
     local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
+    local row = self.DataTable[DATAID]
+    if (not row) then
+        return
+    end
 
     -- After select-by-radius we want the user to pick a single object.
     if (GOMove._pickOneMode) then
-        local row = self.DataTable[DATAID]
-        if (row) then
-            focusSelectionRow(row)
-            GOMove._pickOneMode = false
-        end
+        focusSelectionRow(row)
+        GOMove._pickOneMode = false
     else
-        local row = self.DataTable[DATAID]
-        if (not row) then
-            return
-        end
-
         -- Default: focus the clicked object for modification (single-select + fill ENTRY).
         -- Shift-click preserves legacy multi-select toggle behavior.
         if (IsShiftKeyDown()) then
@@ -689,8 +777,12 @@ function SelFrame:ButtonOnClick(ID)
 end
 function SelFrame:MiscOnClick(ID)
     local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
-    GOMove.Selected:Del(self.DataTable[DATAID][2])
-    self.DataTable:Del(self.DataTable[DATAID][2])
+    local row = self.DataTable[DATAID]
+    if (not row) then
+        return
+    end
+    GOMove.Selected:Del(row[2])
+    self.DataTable:Del(row[2])
     if (UpdateMainHeader) then
         UpdateMainHeader()
     end
@@ -701,11 +793,16 @@ function SelFrame:MiscOnClick(ID)
 end
 function SelFrame:UpdateScript(ID)
     local DATAID = FauxScrollFrame_GetOffset(self.ScrollBar) + ID
-    if(self.DataTable[DATAID]) then
-        if(GOMove.Selected[self.DataTable[DATAID][2]]) then
-            self.Buttons[ID]:GetFontString():SetTextColor(1, 0.8, 0)
+    local row = self.DataTable[DATAID]
+    if(row) then
+        local btn = self.Buttons[ID]
+        if (not btn) then return end
+        local fs = btn:GetFontString()
+        if (not fs) then return end
+        if(GOMove.Selected[row[2]]) then
+            fs:SetTextColor(1, 0.8, 0)
         else
-            self.Buttons[ID]:GetFontString():SetTextColor(1, 1, 1)
+            fs:SetTextColor(1, 1, 1)
         end
     end
 end
@@ -716,15 +813,15 @@ function SelFrame:ButtonTooltip(ID, owner)
 
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     if (GOMove._pickOneMode) then
-        GameTooltip:AddLine("Choose this object", 1, 1, 1)
-        GameTooltip:AddLine("Selects only this object and exits pick mode.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Choose this " .. GetMoverNoun(), 1, 1, 1)
+        GameTooltip:AddLine("Selects only this " .. GetMoverNoun() .. " and exits pick mode.", 0.8, 0.8, 0.8, true)
     else
         if (GOMove.Selected[self.DataTable[DATAID][2]]) then
             GameTooltip:AddLine("Deselect", 1, 1, 1)
-            GameTooltip:AddLine("Removes this object from your selection.", 0.8, 0.8, 0.8, true)
+            GameTooltip:AddLine("Removes this " .. GetMoverNoun() .. " from your selection.", 0.8, 0.8, 0.8, true)
         else
             GameTooltip:AddLine("Select", 1, 1, 1)
-            GameTooltip:AddLine("Adds this object to your selection.", 0.8, 0.8, 0.8, true)
+            GameTooltip:AddLine("Adds this " .. GetMoverNoun() .. " to your selection.", 0.8, 0.8, 0.8, true)
         end
     end
     -- Show spawn ID and GO template entry for convenience
@@ -741,7 +838,7 @@ end
 function SelFrame:MiscTooltip(ID, owner)
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:AddLine("Remove from list", 1, 1, 1)
-    GameTooltip:AddLine("Removes this object from the selection list.", 0.8, 0.8, 0.8, true)
+    GameTooltip:AddLine("Removes this " .. GetMoverNoun() .. " from the selection list.", 0.8, 0.8, 0.8, true)
     GameTooltip:Show()
 end
 local ClearButton = CreateFrame("Button", SelFrame:GetName().."_ToggleSelect", SelFrame)
@@ -781,10 +878,10 @@ ClearButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     if (empty) then
         GameTooltip:AddLine("Select all", 1, 1, 1)
-        GameTooltip:AddLine("Selects all objects currently in the list.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Selects all " .. GetMoverNoun() .. "s currently in the list.", 0.8, 0.8, 0.8, true)
     else
         GameTooltip:AddLine("Clear selection", 1, 1, 1)
-        GameTooltip:AddLine("Unselects all currently selected objects.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Unselects all currently selected " .. GetMoverNoun() .. "s.", 0.8, 0.8, 0.8, true)
     end
     GameTooltip:Show()
 end)
@@ -794,6 +891,7 @@ for i = 1, SelFrame.ButtonCount do
     local Button = SelFrame.Buttons[rowIndex]
     local MiscButton = Button.MiscButton
     local FavButton = CreateFrame("Button", Button:GetName().."_Favourite", MiscButton)
+    FavButton:SetID(rowIndex)
     FavButton:SetSize(16, 16)
     FavButton:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
     FavButton:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
@@ -818,12 +916,13 @@ for i = 1, SelFrame.ButtonCount do
     FavButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Add to favourites", 1, 1, 1)
-        GameTooltip:AddLine("Saves this object so you can quickly spawn it again.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Saves this " .. GetMoverNoun() .. " so you can quickly spawn it again.", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     FavButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     local DeleteButton = CreateFrame("Button", Button:GetName().."_Delete", FavButton)
+    DeleteButton:SetID(rowIndex)
     DeleteButton:SetSize(16, 16)
     DeleteButton:SetNormalTexture("Interface\\PaperDollInfoFrame\\SpellSchoolIcon5")
     DeleteButton:SetPushedTexture("Interface\\PaperDollInfoFrame\\SpellSchoolIcon7")
@@ -838,13 +937,14 @@ for i = 1, SelFrame.ButtonCount do
     end)
     DeleteButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Delete object", 1, 1, 1)
-        GameTooltip:AddLine("Deletes this gameobject from the world.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Delete " .. GetMoverNoun(), 1, 1, 1)
+        GameTooltip:AddLine("Deletes this " .. GetMoverNoun() .. " from the world.", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     DeleteButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     local SpawnButton = CreateFrame("Button", Button:GetName().."_Spawn", DeleteButton)
+    SpawnButton:SetID(rowIndex)
     SpawnButton:SetSize(16, 16)
     SpawnButton:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Disabled")
     SpawnButton:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
@@ -859,12 +959,13 @@ for i = 1, SelFrame.ButtonCount do
     end)
     SpawnButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("Respawn object", 1, 1, 1)
-        GameTooltip:AddLine("Respawns this gameobject (useful if it was deleted/hidden).", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Respawn " .. GetMoverNoun(), 1, 1, 1)
+        GameTooltip:AddLine("Respawns this " .. GetMoverNoun() .. " (useful if it was deleted/hidden).", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     SpawnButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
     local UseEntryButton = CreateFrame("Button", Button:GetName().."_Use", SpawnButton)
+    UseEntryButton:SetID(rowIndex)
     UseEntryButton:SetSize(16, 16)
     UseEntryButton:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
     UseEntryButton:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
@@ -886,18 +987,19 @@ for i = 1, SelFrame.ButtonCount do
             UpdateEntryLabel()
             MainFrame:Show()
             entryInput:SetFocus()
-            DEFAULT_CHAT_FRAME:AddMessage("GOMove: ENTRY set to " .. tostring(row[3]))
+            DEFAULT_CHAT_FRAME:AddMessage(GetMoverUiLabel() .. ": ENTRY set to " .. tostring(row[3]))
         end
     end)
     UseEntryButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Use entry", 1, 1, 1)
-        GameTooltip:AddLine("Sets the ENTRY value to this object's entry so you can spawn it repeatedly.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Sets the ENTRY value to this " .. GetMoverNoun() .. " entry so you can spawn it repeatedly.", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     UseEntryButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     local FocusButton = CreateFrame("Button", Button:GetName().."_Focus", UseEntryButton)
+    FocusButton:SetID(rowIndex)
     FocusButton:SetSize(16, 16)
     FocusButton:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Disabled")
     FocusButton:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
@@ -913,7 +1015,7 @@ for i = 1, SelFrame.ButtonCount do
     FocusButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("Select for modify", 1, 1, 1)
-        GameTooltip:AddLine("Selects only this spawn GUID and fills ENTRY in the GOMove UI.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Selects only this spawn GUID and fills ENTRY in the " .. GetMoverUiLabel() .. " UI.", 0.8, 0.8, 0.8, true)
         GameTooltip:Show()
     end)
     FocusButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
