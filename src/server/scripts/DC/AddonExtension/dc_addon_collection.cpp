@@ -3829,7 +3829,11 @@ namespace DCCollection
     void HandleGetDefinitionsMessage(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::SendError(player, MODULE, "Invalid request format",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
+        }
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         // Client sends collType string, but we accept either string or numeric.
@@ -3909,14 +3913,41 @@ namespace DCCollection
             }
         }
 
-        if (type >= 1 && type <= 6 && type != static_cast<uint8>(CollectionType::TOY))
+        if (type == 0)
+        {
+            DCAddon::SendError(player, MODULE, "Unknown collection type",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        if (type == static_cast<uint8>(CollectionType::TOY))
+        {
+            DCAddon::JsonValue empty;
+            empty.SetObject();
+
+            DCAddon::JsonMessage msgOut(MODULE, DCAddon::Opcode::Collection::SMSG_DEFINITIONS);
+            msgOut.Set("type", "toys");
+            msgOut.Set("definitions", empty);
+            msgOut.Set("offset", offset);
+            msgOut.Set("limit", limit ? limit : 0);
+            msgOut.Set("total", 0);
+            msgOut.Set("more", false);
+            msgOut.Send(player);
+            return;
+        }
+
+        if (type >= 1 && type <= 6)
             SendDefinitions(player, type, offset, limit);
     }
 
     void HandleGetCollectionMessage(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::SendError(player, MODULE, "Invalid request format",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
+        }
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint8 type = 0;
@@ -3939,7 +3970,26 @@ namespace DCCollection
             }
         }
 
-        if (type >= 1 && type <= 6 && type != static_cast<uint8>(CollectionType::TOY))
+        if (type == 0)
+        {
+            DCAddon::SendError(player, MODULE, "Unknown collection type",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
+            return;
+        }
+
+        if (type == static_cast<uint8>(CollectionType::TOY))
+        {
+            DCAddon::JsonValue empty;
+            empty.SetObject();
+
+            DCAddon::JsonMessage msgOut(MODULE, DCAddon::Opcode::Collection::SMSG_COLLECTION);
+            msgOut.Set("type", "toys");
+            msgOut.Set("items", empty);
+            msgOut.Send(player);
+            return;
+        }
+
+        if (type >= 1 && type <= 6)
             SendCollection(player, type);
     }
 

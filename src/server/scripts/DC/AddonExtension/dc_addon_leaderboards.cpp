@@ -89,6 +89,30 @@ namespace
     };
     
     static LeaderboardCacheConfig s_CacheConfig;
+
+    static void SendRawJson(Player* player, uint8 opcode, std::string const& json, std::string requestId = {})
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        if (requestId.empty())
+            requestId = DCAddon::GetCurrentRequestId();
+        if (!requestId.empty() && !DCAddon::IsSafeRequestId(requestId))
+            requestId.clear();
+
+        std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(opcode);
+        if (!requestId.empty())
+            msg_str += "|RID:" + requestId;
+        msg_str += "|J|" + json;
+
+        WorldPacket data;
+        std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
+        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
+        player->SendDirectMessage(&data);
+
+        if (!requestId.empty())
+            DCAddon::NotifyResponseSent(player, requestId);
+    }
     
     // Helper to access cache lifetime (for IsValid() checks)
     uint32 GetCacheLifetime() { return s_CacheConfig.lifetimeSeconds; }
@@ -1228,6 +1252,13 @@ namespace
         if (!player || !player->GetSession())
             return;
 
+        if (!DCAddon::IsJsonMessage(msg))
+        {
+            DCAddon::SendError(player, MODULE_LEADERBOARD, "Invalid request format",
+                DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Core::SMSG_ERROR);
+            return;
+        }
+
         // Parse JSON data
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
 
@@ -1420,13 +1451,7 @@ namespace
         fullJson += "\"entries\":" + entriesJson;
         fullJson += "}";
 
-        // Send raw JSON message
-        std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(Opcode::SMSG_LEADERBOARD_DATA) + "|J|" + fullJson;
-
-        WorldPacket data;
-        std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
-        player->SendDirectMessage(&data);
+        SendRawJson(player, Opcode::SMSG_LEADERBOARD_DATA, fullJson);
     }
 
     void HandleGetCategories(Player* player, const DCAddon::ParsedMessage& /*msg*/)
@@ -1589,13 +1614,7 @@ namespace
         fullJson += "\"currentSeason\":" + std::to_string(currentSeason);
         fullJson += "}";
 
-        // Send raw JSON message
-        std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(Opcode::SMSG_TEST_RESULTS) + "|J|" + fullJson;
-
-        WorldPacket data;
-        std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
-        player->SendDirectMessage(&data);
+        SendRawJson(player, Opcode::SMSG_TEST_RESULTS, fullJson);
     }
 
     void HandleGetSeasons(Player* player, const DCAddon::ParsedMessage& /*msg*/)
@@ -1661,13 +1680,7 @@ namespace
         // Build full JSON response
         std::string fullJson = "{\"seasons\":" + seasonsJson + "}";
 
-        // Send raw JSON message
-        std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(Opcode::SMSG_SEASONS_LIST) + "|J|" + fullJson;
-
-        WorldPacket data;
-        std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
-        player->SendDirectMessage(&data);
+        SendRawJson(player, Opcode::SMSG_SEASONS_LIST, fullJson);
     }
 
     // v1.3.0: Handle request for available M+ dungeons
@@ -1706,13 +1719,7 @@ namespace
         // Build full JSON response
         std::string fullJson = "{\"seasonId\":" + std::to_string(seasonId) + ",\"dungeons\":" + dungeonsJson + "}";
 
-        // Send raw JSON message
-        std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(Opcode::SMSG_MPLUS_DUNGEONS) + "|J|" + fullJson;
-
-        WorldPacket data;
-        std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
-        player->SendDirectMessage(&data);
+        SendRawJson(player, Opcode::SMSG_MPLUS_DUNGEONS, fullJson);
     }
 
     // v1.5.0: Handle request for account-wide statistics
@@ -1734,12 +1741,7 @@ namespace
                 // Cache hit! Send cached response
                 LOG_DEBUG("server.scripts", "DC-Leaderboards: Account stats cache HIT for account {}", accountId);
                 
-                std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(Opcode::SMSG_ACCOUNT_STATS) + "|J|" + it->second.jsonResponse;
-                
-                WorldPacket data;
-                std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
-                ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
-                player->SendDirectMessage(&data);
+                SendRawJson(player, Opcode::SMSG_ACCOUNT_STATS, it->second.jsonResponse);
                 return;
             }
         }
@@ -1886,12 +1888,7 @@ namespace
         }
 
         // Send raw JSON message
-        std::string msg_str = std::string(MODULE_LEADERBOARD) + "|" + std::to_string(Opcode::SMSG_ACCOUNT_STATS) + "|J|" + fullJson;
-
-        WorldPacket data;
-        std::string fullMsg = std::string(DCAddon::DC_PREFIX) + "\t" + msg_str;
-        ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
-        player->SendDirectMessage(&data);
+        SendRawJson(player, Opcode::SMSG_ACCOUNT_STATS, fullJson);
     }
 
     // Error handler for future use

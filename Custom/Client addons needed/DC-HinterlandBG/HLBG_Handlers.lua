@@ -1304,20 +1304,18 @@ end
 SLASH_HLBGREFRESH1 = '/hlbgrefresh'
 SlashCmdList['HLBGREFRESH'] = function()
     DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Requesting fresh data from server...')
-    -- Request new data
-    if type(SendAddonMessage) == 'function' then
+    local adapter = rawget(_G, "HLBG_LeaderboardAdapter")
+    if adapter and adapter.RequestPlayerStats then
         pcall(function()
-            SendAddonMessage("HLBG_REQUEST", "HISTORY", "WHISPER", UnitName("player"))
-            SendAddonMessage("HLBG_REQUEST", "STATS", "WHISPER", UnitName("player"))
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Sent data requests via addon messages')
+            adapter:ClearCache()
+            adapter:RequestPlayerStats(0)
+            adapter:RequestLeaderboard(adapter.LeaderboardType.WINS, 0, 100)
         end)
+        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Requested leaderboard refresh via DCAddonProtocol')
+        return
     end
-    -- Also try slash command fallbacks
-    pcall(function()
-        SendChatMessage(".hlbg history", "GUILD")
-        SendChatMessage(".hlbg stats", "GUILD")
-        DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Sent fallback chat commands')
-    end)
+
+    DEFAULT_CHAT_FRAME:AddMessage('|cFFFF0000HLBG:|r DCAddonProtocol not available; refresh requires unified protocol.')
 end
 
 -- Protocol settings and control commands

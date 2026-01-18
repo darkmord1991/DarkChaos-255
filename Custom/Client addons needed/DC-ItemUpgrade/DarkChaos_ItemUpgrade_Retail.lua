@@ -4662,19 +4662,15 @@ end
 -- Send package selection to server
 function DarkChaos_ItemUpgrade_SendPackageSelection(packageId)
 	if not packageId then return end
-	
-	-- Send addon message to server with package selection
-	-- Format: DCUPGRADE:PACKAGE:<packageId>
-	local message = string.format("DCUPGRADE:PACKAGE:%d", packageId);
-	
-	-- Try sending via addon message channel
-	if ChatThrottleLib then
-		ChatThrottleLib:SendAddonMessage("NORMAL", "DCUPGRADE", message, "WHISPER", UnitName("player"));
-	else
-		SendAddonMessage("DCUPGRADE", message, "WHISPER", UnitName("player"));
+
+	-- Send via unified DCAddonProtocol
+	if DCProtocol and DCProtocol.Upgrade and DCProtocol.Upgrade.SelectPackage then
+		DCProtocol.Upgrade.SelectPackage(packageId)
+		DC.Debug("Sent package selection via DCAddonProtocol: " .. packageId)
+		return
 	end
-	
-	DC.Debug("Sent package selection to server: " .. message);
+
+	DEFAULT_CHAT_FRAME:AddMessage("|cffff0000DC-ItemUpgrade:|r DCAddonProtocol not available; cannot send package selection.")
 end
 
 -- NOTE: UpdateStatPackageSelector and DarkChaos_ItemUpgrade_GetPackageStatsAtLevel 

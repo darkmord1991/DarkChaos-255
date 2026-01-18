@@ -59,6 +59,19 @@ local function RunSlashCommand(cmd)
     end
 end
 
+local function OpenItemUpgrade(subcmd)
+    if SlashCmdList and type(SlashCmdList["DCUPGRADE"]) == "function" then
+        SlashCmdList["DCUPGRADE"](subcmd or "")
+        return
+    end
+
+    local cmd = "/dcu"
+    if subcmd and subcmd ~= "" then
+        cmd = cmd .. " " .. subcmd
+    end
+    RunSlashCommand(cmd)
+end
+
 local function BuildLauncherList()
     local launchers = {}
 
@@ -99,16 +112,11 @@ local function BuildLauncherList()
             hint = "Choose Item or Heirloom",
             onClick = function(launcherButton)
                 -- Dropdown (Item / Heirloom)
-                DEFAULT_CHAT_FRAME:AddMessage("ItemUpgrade onClick fired!")
-                DEFAULT_CHAT_FRAME:AddMessage("LaunchersPlugin.id = " .. tostring(LaunchersPlugin.id))
-                DEFAULT_CHAT_FRAME:AddMessage("DCInfoBar = " .. tostring(DCInfoBar))
-                DEFAULT_CHAT_FRAME:AddMessage("DCInfoBar.plugins = " .. tostring(DCInfoBar and DCInfoBar.plugins))
-                DEFAULT_CHAT_FRAME:AddMessage("plugin instance = " .. tostring(DCInfoBar and DCInfoBar.plugins and DCInfoBar.plugins[LaunchersPlugin.id]))
-                
                 if DCInfoBar and DCInfoBar.plugins and DCInfoBar.plugins[LaunchersPlugin.id] then
                     DCInfoBar.plugins[LaunchersPlugin.id]:ToggleItemUpgradeMenu(launcherButton)
                 else
-                    DEFAULT_CHAT_FRAME:AddMessage("|cffff0000ERROR: Plugin instance not found!|r")
+                    -- Fallback: open the standard Item Upgrade window directly.
+                    OpenItemUpgrade("")
                 end
             end,
         })
@@ -665,14 +673,14 @@ function LaunchersPlugin:ToggleItemUpgradeMenu(anchorButton)
             name = "Item Upgrade",
             icon = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Icons\\ItemUpgrade_64.tga",
             onClick = function()
-                RunSlashCommand("/dcu")
+                OpenItemUpgrade("")
             end,
         },
         {
             name = "Heirloom Upgrade",
             icon = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Icons\\Heirloom_64.tga",
             onClick = function()
-                RunSlashCommand("/dcu heirloom")
+                OpenItemUpgrade("heirloom")
             end,
         },
     }

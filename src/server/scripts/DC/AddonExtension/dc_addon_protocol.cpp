@@ -20,12 +20,61 @@
 #include "Config.h"
 #include "GameTime.h"
 #include "DatabaseEnv.h"
+#include "DC/CrossSystem/DCSeasonHelper.h"
+#include "DC/CrossSystem/EventBus.h"
+#include "DC/CrossSystem/CrossSystemCore.h"
+#include "ObjectAccessor.h"
 #include <unordered_map>
 #include <algorithm>
+#include <cctype>
+#include <memory>
+#include <ctime>
 
 // Forward declaration for S2C logging (defined later in file)
 static bool g_S2CLoggingEnabled = false;
-static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize);
+static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats);
+static void LogProtocolErrorEvent(Player* player, const std::string& payload, const std::string& eventType, const std::string& message);
+static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs = 0);
+static std::string EscapeSQLString(std::string s);
+
+static std::string NormalizeHandshakeVersionString(const DCAddon::ParsedMessage& msg)
+{
+    std::string version = msg.GetString(0);
+    if (version.find('|') == std::string::npos && msg.GetDataCount() >= 2)
+    {
+        std::string caps = msg.GetString(1);
+        if (!caps.empty() && std::all_of(caps.begin(), caps.end(), [](unsigned char c) { return std::isdigit(c); }))
+        {
+            version += "|" + caps;
+        }
+    }
+    return version;
+}
+
+static void StoreClientCaps(Player* player, const std::string& clientVersionStr, uint32 clientCaps, uint32 negotiatedCaps)
+{
+    if (!player || !player->GetSession())
+        return;
+
+    CharacterDatabase.Execute(
+        "INSERT INTO dc_addon_client_caps "
+        "(account_id, addon_name, version_string, capabilities, negotiated_caps, last_character_guid, last_character_name, last_seen) "
+        "VALUES ({}, 'DC', '{}', {}, {}, {}, '{}', NOW()) "
+        "ON DUPLICATE KEY UPDATE "
+        "version_string = VALUES(version_string), "
+        "capabilities = VALUES(capabilities), "
+        "negotiated_caps = VALUES(negotiated_caps), "
+        "last_character_guid = VALUES(last_character_guid), "
+        "last_character_name = VALUES(last_character_name), "
+        "last_seen = NOW()",
+        player->GetSession()->GetAccountId(),
+        EscapeSQLString(clientVersionStr),
+        clientCaps,
+        negotiatedCaps,
+        player->GetGUID().GetCounter(),
+        EscapeSQLString(player->GetName())
+    );
+}
 
 // ============================================================================
 // PROTOCOL METRICS - Real-time statistics for monitoring
@@ -73,12 +122,30 @@ namespace DCAddon
         if (!player || !player->GetSession())
             return;
 
-        std::string fullMessage = Build();
+        std::string effectiveRequestId = _requestId;
+        if (effectiveRequestId.empty())
+        {
+            const std::string& ctxReqId = GetCurrentRequestId();
+            if (IsSafeRequestId(ctxReqId))
+                effectiveRequestId = ctxReqId;
+        }
+
+        std::string fullMessage;
+        if (!effectiveRequestId.empty() && effectiveRequestId != _requestId)
+        {
+            Message tmp = *this;
+            tmp.SetRequestId(effectiveRequestId);
+            fullMessage = tmp.Build();
+        }
+        else
+        {
+            fullMessage = Build();
+        }
 
         // Log S2C message if enabled
         if (g_S2CLoggingEnabled)
         {
-            LogS2CMessageGlobal(player, _module, _opcode, fullMessage.length());
+            LogS2CMessageGlobal(player, _module, _opcode, fullMessage.length(), effectiveRequestId.empty());
         }
 
         // Check if chunking is needed
@@ -93,6 +160,11 @@ namespace DCAddon
         else
         {
             SendRaw(player, fullMessage);
+        }
+
+        if (!effectiveRequestId.empty())
+        {
+            NotifyResponseSent(player, effectiveRequestId);
         }
     }
 
@@ -150,6 +222,7 @@ struct DCAddonProtocolConfig
     uint32 MaxMessagesPerSecond;
     uint32 RateLimitAction;
     uint32 ChunkTimeoutMs;
+    uint32 RequestTimeoutMs;
     uint32 MinGOMoveSecurity;
     uint32 MinNPCMoveSecurity;
 
@@ -158,6 +231,123 @@ struct DCAddonProtocolConfig
 };
 
 static DCAddonProtocolConfig s_AddonConfig;
+
+// ============================================================================
+// REQUEST CONTEXT & ASYNC TRACKING
+// ============================================================================
+
+namespace DCAddon
+{
+    static thread_local std::string s_CurrentRequestId;
+
+    void SetCurrentRequestContext(const std::string& requestId)
+    {
+        s_CurrentRequestId = requestId;
+    }
+
+    void ClearCurrentRequestContext()
+    {
+        s_CurrentRequestId.clear();
+    }
+
+    const std::string& GetCurrentRequestId()
+    {
+        return s_CurrentRequestId;
+    }
+}
+
+struct PendingAddonRequest
+{
+    std::string requestId;
+    std::string module;
+    uint8 opcode = 0;
+    uint32 guid = 0;
+    uint64 startTimeMs = 0;
+};
+
+static std::unordered_map<uint32, std::unordered_map<std::string, PendingAddonRequest>> s_PendingRequests;
+static std::mutex s_PendingRequestsMutex;
+
+static void RegisterPendingRequest(Player* player, const DCAddon::ParsedMessage& msg)
+{
+    if (!player || !player->GetSession() || !msg.HasRequestId())
+        return;
+
+    PendingAddonRequest pending;
+    pending.requestId = msg.GetRequestId();
+    pending.module = msg.GetModule();
+    pending.opcode = msg.GetOpcode();
+    pending.guid = player->GetGUID().GetCounter();
+    pending.startTimeMs = GameTime::GetGameTimeMS().count();
+
+    uint32 accountId = player->GetSession()->GetAccountId();
+    std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
+    s_PendingRequests[accountId][pending.requestId] = std::move(pending);
+}
+
+static void CleanupExpiredRequests(Player* player)
+{
+    if (!player || !player->GetSession())
+        return;
+
+    uint32 accountId = player->GetSession()->GetAccountId();
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
+
+    std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
+    auto it = s_PendingRequests.find(accountId);
+    if (it == s_PendingRequests.end())
+        return;
+
+    auto& pendingMap = it->second;
+    for (auto reqIt = pendingMap.begin(); reqIt != pendingMap.end(); )
+    {
+        if (nowMs - reqIt->second.startTimeMs > s_AddonConfig.RequestTimeoutMs)
+        {
+            std::string payload = reqIt->second.module + DCAddon::DELIMITER + std::to_string(reqIt->second.opcode) +
+                DCAddon::DELIMITER + "RID:" + reqIt->second.requestId;
+
+            LogProtocolErrorEvent(player, payload, "timeout", "Addon request timed out");
+            UpdateProtocolStats(player, reqIt->second.module, true, true, false);
+            reqIt = pendingMap.erase(reqIt);
+        }
+        else
+        {
+            ++reqIt;
+        }
+    }
+
+    if (pendingMap.empty())
+        s_PendingRequests.erase(it);
+}
+
+namespace DCAddon
+{
+    void NotifyResponseSent(Player* player, const std::string& requestId)
+    {
+        if (!player || !player->GetSession() || requestId.empty())
+            return;
+
+        uint32 accountId = player->GetSession()->GetAccountId();
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+
+        std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
+        auto accountIt = s_PendingRequests.find(accountId);
+        if (accountIt == s_PendingRequests.end())
+            return;
+
+        auto& pendingMap = accountIt->second;
+        auto reqIt = pendingMap.find(requestId);
+        if (reqIt == pendingMap.end())
+            return;
+
+        uint32 responseTimeMs = static_cast<uint32>(nowMs - reqIt->second.startTimeMs);
+        UpdateProtocolStats(player, reqIt->second.module, false, false, false, responseTimeMs);
+        pendingMap.erase(reqIt);
+
+        if (pendingMap.empty())
+            s_PendingRequests.erase(accountIt);
+    }
+}
 
 static void LoadAddonConfig()
 {
@@ -186,6 +376,7 @@ static void LoadAddonConfig()
     s_AddonConfig.MaxMessagesPerSecond  = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Messages", 30);
     s_AddonConfig.RateLimitAction       = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RateLimit.Action", 0);
     s_AddonConfig.ChunkTimeoutMs        = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.ChunkTimeout", 5000);
+    s_AddonConfig.RequestTimeoutMs      = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RequestTimeoutMs", 8000);
     s_AddonConfig.MinGOMoveSecurity     = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.GOMove.MinSecurity", 1);
     s_AddonConfig.MinNPCMoveSecurity    = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.NPCMove.MinSecurity", 1);
 
@@ -392,7 +583,7 @@ static void FlushStats(uint32 guid = 0)
 }
 
 // Update player statistics in buffer
-static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout = false, bool isError = false, uint32 responseTimeMs = 0)
+static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs)
 {
     if (!s_AddonConfig.EnableProtocolLogging || !player) return;
 
@@ -493,7 +684,7 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
     );
 }
 
-static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize)
+static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats)
 {
     if (!player || !player->GetSession()) return;
 
@@ -516,7 +707,8 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
         dataSize
     );
 
-    UpdateProtocolStats(player, safeModule, false, false, false, 0); // isResponse=true implicit
+    if (updateStats)
+        UpdateProtocolStats(player, safeModule, false, false, false, 0); // isResponse=true implicit
 }
 
 // ============================================================================
@@ -614,7 +806,7 @@ static bool CheckRateLimit(Player* player)
 static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& msg)
 {
     // Client says hello with version string: "MAJOR.MINOR.PATCH" or "MAJOR.MINOR.PATCH|capabilities"
-    std::string clientVersionStr = msg.GetString(0);
+    std::string clientVersionStr = NormalizeHandshakeVersionString(msg);
 
     // Parse client version with capability flags
     auto clientVersion = DCAddon::ProtocolVersion::ParseClientVersion(clientVersionStr);
@@ -632,11 +824,16 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
     uint32 negotiatedCaps = clientVersion.capabilities & serverVersion.capabilities;
 
     // Send acknowledgment with server version and negotiated capabilities
-    DCAddon::Message(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_HANDSHAKE_ACK)
-        .Add(DCAddon::ProtocolVersion::BuildVersionString(serverVersion))
+    DCAddon::Message ackMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_HANDSHAKE_ACK);
+    if (msg.HasRequestId())
+        ackMsg.SetRequestId(msg.GetRequestId());
+    ackMsg.Add(DCAddon::ProtocolVersion::BuildVersionString(serverVersion))
         .Add(compatible)
         .Add(negotiatedCaps)  // Negotiated capability flags
         .Send(player);
+
+    // Store client addon caps/version per account
+    StoreClientCaps(player, clientVersionStr, clientVersion.capabilities, negotiatedCaps);
 
     if (!compatible)
     {
@@ -662,6 +859,19 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
     featureMsg.Add(s_AddonConfig.EnableWorld);
     featureMsg.Send(player);
 
+    // Send server context (season + phase) to all UI addons
+    {
+        uint32 seasonId = DarkChaos::GetActiveSeasonId();
+        std::string seasonName = DarkChaos::GetActiveSeasonName();
+        uint32 phaseMask = player->GetPhaseMask();
+
+        DCAddon::JsonMessage ctxMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_SERVER_CONTEXT);
+        ctxMsg.Set("seasonId", seasonId);
+        ctxMsg.Set("seasonName", seasonName);
+        ctxMsg.Set("phaseMask", phaseMask);
+        ctxMsg.Send(player);
+    }
+
     // Proactively send WRLD content snapshot after handshake
     if (s_AddonConfig.EnableWorld)
     {
@@ -676,16 +886,20 @@ static void HandleCoreVersionCheck(Player* player, const DCAddon::ParsedMessage&
     // Simple version comparison (could be made more sophisticated)
     bool compatible = (clientVersion == s_AddonConfig.ProtocolVersion);
 
-    DCAddon::Message(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_VERSION_RESULT)
-        .Add(compatible)
+    DCAddon::Message resultMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_VERSION_RESULT);
+    if (msg.HasRequestId())
+        resultMsg.SetRequestId(msg.GetRequestId());
+    resultMsg.Add(compatible)
         .Add(s_AddonConfig.ProtocolVersion)
         .Add(compatible ? "OK" : "Version mismatch - please update addon")
         .Send(player);
 }
 
-static void HandleCoreFeatureQuery(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+static void HandleCoreFeatureQuery(Player* player, const DCAddon::ParsedMessage& msg)
 {
     DCAddon::Message featureMsg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_FEATURE_LIST);
+    if (msg.HasRequestId())
+        featureMsg.SetRequestId(msg.GetRequestId());
     featureMsg.Add(s_AddonConfig.EnableAOELoot);
     featureMsg.Add(s_AddonConfig.EnableSpectator);
     featureMsg.Add(s_AddonConfig.EnableUpgrade);
@@ -737,6 +951,217 @@ static void HandleBatch(Player* player, const DCAddon::ParsedMessage& msg)
         }
     }
 }
+
+// ============================================================================
+// CROSS-SYSTEM EVENT -> ADDON BROADCAST
+// ============================================================================
+
+static const char* EventTypeToString(DarkChaos::CrossSystem::EventType type)
+{
+    using namespace DarkChaos::CrossSystem;
+    switch (type)
+    {
+        case EventType::PlayerLogin: return "PlayerLogin";
+        case EventType::PlayerLogout: return "PlayerLogout";
+        case EventType::PlayerLevelUp: return "PlayerLevelUp";
+        case EventType::PlayerDeath: return "PlayerDeath";
+        case EventType::PlayerPrestige: return "PlayerPrestige";
+        case EventType::CreatureKill: return "CreatureKill";
+        case EventType::BossKill: return "BossKill";
+        case EventType::WorldBossKill: return "WorldBossKill";
+        case EventType::PlayerKill: return "PlayerKill";
+        case EventType::DungeonEnter: return "DungeonEnter";
+        case EventType::DungeonLeave: return "DungeonLeave";
+        case EventType::DungeonComplete: return "DungeonComplete";
+        case EventType::DungeonFailed: return "DungeonFailed";
+        case EventType::DungeonReset: return "DungeonReset";
+        case EventType::MythicPlusStart: return "MythicPlusStart";
+        case EventType::MythicPlusComplete: return "MythicPlusComplete";
+        case EventType::MythicPlusFail: return "MythicPlusFail";
+        case EventType::MythicPlusAbandon: return "MythicPlusAbandon";
+        case EventType::KeystoneUpgrade: return "KeystoneUpgrade";
+        case EventType::QuestComplete: return "QuestComplete";
+        case EventType::DailyQuestComplete: return "DailyQuestComplete";
+        case EventType::WeeklyQuestComplete: return "WeeklyQuestComplete";
+        case EventType::TokensAwarded: return "TokensAwarded";
+        case EventType::EssenceAwarded: return "EssenceAwarded";
+        case EventType::ItemUpgraded: return "ItemUpgraded";
+        case EventType::LootReceived: return "LootReceived";
+        case EventType::WeeklyResetOccurred: return "WeeklyResetOccurred";
+        case EventType::SeasonStart: return "SeasonStart";
+        case EventType::SeasonEnd: return "SeasonEnd";
+        case EventType::VaultClaimed: return "VaultClaimed";
+        case EventType::AchievementUnlocked: return "AchievementUnlocked";
+        case EventType::MilestoneReached: return "MilestoneReached";
+        case EventType::DuelComplete: return "DuelComplete";
+        case EventType::HLBGMatchComplete: return "HLBGMatchComplete";
+        case EventType::ArenaMatchComplete: return "ArenaMatchComplete";
+        default: return "Unknown";
+    }
+}
+
+static void AppendEventDetails(DCAddon::JsonMessage& msg, const DarkChaos::CrossSystem::EventData& event)
+{
+    using namespace DarkChaos::CrossSystem;
+
+    if (auto const* kill = dynamic_cast<const CreatureKillEvent*>(&event))
+    {
+        msg.Set("creatureEntry", kill->creatureEntry);
+        msg.Set("isBoss", kill->isBoss);
+        msg.Set("isRare", kill->isRare);
+        msg.Set("isElite", kill->isElite);
+        msg.Set("keystoneLevel", kill->keystoneLevel);
+        msg.Set("partySize", kill->partySize);
+        msg.Set("tokensAwarded", kill->tokensAwarded);
+        msg.Set("essenceAwarded", kill->essenceAwarded);
+    }
+    else if (auto const* dungeon = dynamic_cast<const DungeonCompleteEvent*>(&event))
+    {
+        msg.Set("contentType", static_cast<uint32>(dungeon->contentType));
+        msg.Set("difficulty", static_cast<uint32>(dungeon->difficulty));
+        msg.Set("keystoneLevel", dungeon->keystoneLevel);
+        msg.Set("completionTimeSeconds", dungeon->completionTimeSeconds);
+        msg.Set("timerLimitSeconds", dungeon->timerLimitSeconds);
+        msg.Set("deaths", dungeon->deaths);
+        msg.Set("wipes", dungeon->wipes);
+        msg.Set("timedSuccess", dungeon->timedSuccess);
+        msg.Set("tokensAwarded", dungeon->tokensAwarded);
+        msg.Set("essenceAwarded", dungeon->essenceAwarded);
+    }
+    else if (auto const* quest = dynamic_cast<const QuestCompleteEvent*>(&event))
+    {
+        msg.Set("questId", quest->questId);
+        msg.Set("isDaily", quest->isDaily);
+        msg.Set("isWeekly", quest->isWeekly);
+        msg.Set("tokensAwarded", quest->tokensAwarded);
+        msg.Set("essenceAwarded", quest->essenceAwarded);
+    }
+    else if (auto const* upgrade = dynamic_cast<const ItemUpgradeEvent*>(&event))
+    {
+        msg.Set("itemGuid", upgrade->itemGuid);
+        msg.Set("itemEntry", upgrade->itemEntry);
+        msg.Set("fromLevel", upgrade->fromLevel);
+        msg.Set("toLevel", upgrade->toLevel);
+        msg.Set("tierId", upgrade->tierId);
+        msg.Set("tokensCost", upgrade->tokensCost);
+        msg.Set("essenceCost", upgrade->essenceCost);
+    }
+    else if (auto const* prestige = dynamic_cast<const PrestigeEvent*>(&event))
+    {
+        msg.Set("fromPrestige", prestige->fromPrestige);
+        msg.Set("toPrestige", prestige->toPrestige);
+        msg.Set("fromLevel", prestige->fromLevel);
+        msg.Set("keptGear", prestige->keptGear);
+    }
+    else if (auto const* vault = dynamic_cast<const VaultClaimEvent*>(&event))
+    {
+        msg.Set("seasonId", vault->seasonId);
+        msg.Set("slotClaimed", vault->slotClaimed);
+        msg.Set("itemId", vault->itemId);
+        msg.Set("tokensClaimed", vault->tokensClaimed);
+        msg.Set("essenceClaimed", vault->essenceClaimed);
+    }
+}
+
+static void SendCrossEventToPlayer(Player* player, const DarkChaos::CrossSystem::EventData& event)
+{
+    if (!player || !player->GetSession())
+        return;
+
+    DCAddon::JsonMessage msg(DCAddon::Module::CORE, DCAddon::Opcode::Core::SMSG_CROSS_EVENT);
+    msg.Set("eventType", static_cast<uint32>(event.type));
+    msg.Set("eventName", EventTypeToString(event.type));
+    msg.Set("timestamp", static_cast<uint32>(event.timestamp ? event.timestamp : time(nullptr)));
+    msg.Set("playerGuid", static_cast<uint32>(event.playerGuid.GetCounter()));
+    msg.Set("mapId", event.mapId);
+    msg.Set("instanceId", event.instanceId);
+    msg.Set("correlationId", static_cast<uint32>(event.correlationId));
+
+    AppendEventDetails(msg, event);
+    msg.Send(player);
+}
+
+class DCAddonCrossSystemBridge : public DarkChaos::CrossSystem::IEventHandler
+{
+public:
+    DarkChaos::CrossSystem::SystemId GetSystemId() const override
+    {
+        return DarkChaos::CrossSystem::SystemId::None;
+    }
+
+    const char* GetSystemName() const override
+    {
+        return "AddonProtocol";
+    }
+
+    std::vector<DarkChaos::CrossSystem::EventType> GetSubscribedEvents() const override
+    {
+        using namespace DarkChaos::CrossSystem;
+        return {
+            EventType::PlayerLogin,
+            EventType::PlayerLogout,
+            EventType::PlayerLevelUp,
+            EventType::PlayerDeath,
+            EventType::PlayerPrestige,
+            EventType::CreatureKill,
+            EventType::BossKill,
+            EventType::WorldBossKill,
+            EventType::PlayerKill,
+            EventType::DungeonEnter,
+            EventType::DungeonLeave,
+            EventType::DungeonComplete,
+            EventType::DungeonFailed,
+            EventType::DungeonReset,
+            EventType::MythicPlusStart,
+            EventType::MythicPlusComplete,
+            EventType::MythicPlusFail,
+            EventType::MythicPlusAbandon,
+            EventType::KeystoneUpgrade,
+            EventType::QuestComplete,
+            EventType::DailyQuestComplete,
+            EventType::WeeklyQuestComplete,
+            EventType::TokensAwarded,
+            EventType::EssenceAwarded,
+            EventType::ItemUpgraded,
+            EventType::LootReceived,
+            EventType::WeeklyResetOccurred,
+            EventType::SeasonStart,
+            EventType::SeasonEnd,
+            EventType::VaultClaimed,
+            EventType::AchievementUnlocked,
+            EventType::MilestoneReached,
+            EventType::DuelComplete,
+            EventType::HLBGMatchComplete,
+            EventType::ArenaMatchComplete
+        };
+    }
+
+    void OnEvent(const DarkChaos::CrossSystem::EventData& event) override
+    {
+        using namespace DarkChaos::CrossSystem;
+
+        // If this event includes explicit participants, send to each
+        if (auto const* dungeon = dynamic_cast<const DungeonCompleteEvent*>(&event))
+        {
+            if (!dungeon->participants.empty())
+            {
+                for (auto const& guid : dungeon->participants)
+                {
+                    if (Player* player = ObjectAccessor::FindConnectedPlayer(guid))
+                        SendCrossEventToPlayer(player, event);
+                }
+                return;
+            }
+        }
+
+        if (Player* player = ObjectAccessor::FindConnectedPlayer(event.playerGuid))
+        {
+            SendCrossEventToPlayer(player, event);
+        }
+    }
+};
+
+static std::unique_ptr<DCAddonCrossSystemBridge> s_CrossSystemBridge;
 
 static void RegisterCoreHandlers()
 {
@@ -816,6 +1241,10 @@ public:
         s_ChunkedMessages.erase(accountId);
         s_ChunkStartTimes.erase(accountId);
         s_MessageTrackers.erase(accountId);
+        {
+            std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
+            s_PendingRequests.erase(accountId);
+        }
 
         // FLUSH STATS for this player and remove from buffer
         FlushStats(player->GetGUID().GetCounter());
@@ -940,6 +1369,9 @@ public:
         }
 
         std::string payload = rawPayload;
+
+        // Cleanup expired async requests for this player
+        CleanupExpiredRequests(player);
         
         // Early logging: show ALL incoming DC messages
         uint8 incomingOpcode = ExtractOpcode(payload);
@@ -969,6 +1401,23 @@ public:
         // Parse module and opcode for logging
         // Note: We use the extracted module code which might be formatted nicely or raw
         std::string moduleStr = ExtractModuleCode(payload);
+
+        // Register pending request if request ID is present
+        DCAddon::ParsedMessage parsed(payload);
+        if (parsed.IsValid())
+        {
+            RegisterPendingRequest(player, parsed);
+
+            // Capture handshake caps even if CORE module is disabled
+            if (parsed.GetModule() == DCAddon::Module::CORE && parsed.GetOpcode() == DCAddon::Opcode::Core::CMSG_HANDSHAKE)
+            {
+                std::string clientVersionStr = NormalizeHandshakeVersionString(parsed);
+                auto clientVersion = DCAddon::ProtocolVersion::ParseClientVersion(clientVersionStr);
+                auto serverVersion = DCAddon::ProtocolVersion::GetServerVersion();
+                uint32 negotiatedCaps = clientVersion.capabilities & serverVersion.capabilities;
+                StoreClientCaps(player, clientVersionStr, clientVersion.capabilities, negotiatedCaps);
+            }
+        }
 
         // Route the message
         bool handled = DCAddon::MessageRouter::Instance().Route(player, payload);
@@ -1008,12 +1457,24 @@ public:
     {
         // Flush all pending stats on server shutdown
         FlushStats();
+
+        if (s_CrossSystemBridge)
+        {
+            DarkChaos::CrossSystem::EventBus::instance()->UnsubscribeHandler(s_CrossSystemBridge.get());
+            s_CrossSystemBridge.reset();
+        }
     }
 
     void OnStartup() override
     {
         LoadAddonConfig();
         RegisterCoreHandlers();
+
+        if (!s_CrossSystemBridge)
+        {
+            s_CrossSystemBridge = std::make_unique<DCAddonCrossSystemBridge>();
+            DarkChaos::CrossSystem::EventBus::instance()->SubscribeHandler(s_CrossSystemBridge.get());
+        }
 
         LOG_INFO("dc.addon", "===========================================");
         LOG_INFO("dc.addon", "Dark Chaos Addon Protocol v{} loaded", s_AddonConfig.ProtocolVersion);

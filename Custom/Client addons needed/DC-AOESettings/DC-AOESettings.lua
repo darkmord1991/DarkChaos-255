@@ -270,7 +270,6 @@ function addon:Initialize()
     
     -- Register events
     self.eventFrame = CreateFrame("Frame")
-    self.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
     self.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     self.eventFrame:RegisterEvent("PLAYER_LOGIN")
     self.eventFrame:RegisterEvent("PLAYER_LOGOUT")
@@ -294,13 +293,7 @@ end
 local _handlersRegistered = false
 
 function addon:OnEvent(event, ...)
-    if event == "CHAT_MSG_ADDON" then
-        local prefix, message, channel, sender = ...
-        -- Handle legacy prefix
-        if prefix == self.prefix then
-            self:HandleServerMessage(message)
-        end
-    elseif event == "PLAYER_ENTERING_WORLD" then
+    if event == "PLAYER_ENTERING_WORLD" then
         -- Load settings and request from server
         self:LoadSettings()
         self:UpdateUI()
@@ -530,20 +523,15 @@ function addon:SendToServer(messageType, data)
             return
         end
     end
-    
-    -- Legacy fallback: use old prefix
-    local message = messageType
-    if data then
-        message = message .. ":" .. data
-    end
-    SendAddonMessage(self.prefix, message, "WHISPER", UnitName("player"))
+
+    self:Print("DCAddonProtocol not available; server sync requires unified protocol.", true)
 end
 
 function addon:RequestSettings()
     if self.useDCProtocol and DC then
         DC.AOE.GetSettings()
     else
-        self:SendToServer("GET_SETTINGS")
+        self:Print("DCAddonProtocol not available; unable to request settings.", true)
     end
 end
 

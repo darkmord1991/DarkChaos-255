@@ -38,6 +38,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cmath>
+#include <cctype>
 #include <map>
 
 namespace DCAddon
@@ -99,6 +100,8 @@ namespace DCAddon
             constexpr uint8 SMSG_VERSION_RESULT    = 0x11;  // Server version check result
             constexpr uint8 SMSG_FEATURE_LIST      = 0x12;  // Server sends enabled features
             constexpr uint8 SMSG_RELOAD_UI         = 0x13;  // Server tells client to reload
+            constexpr uint8 SMSG_SERVER_CONTEXT    = 0x14;  // Season/phase server context
+            constexpr uint8 SMSG_CROSS_EVENT       = 0x15;  // CrossSystem event broadcast
             constexpr uint8 SMSG_PERMISSION_DENIED = 0x1E;  // Permission denied specific
             constexpr uint8 SMSG_ERROR             = 0x1F;  // Error response (Generic)
         }
@@ -650,6 +653,18 @@ namespace DCAddon
         }
     }
 
+    inline bool IsSafeRequestId(const std::string& id)
+    {
+        if (id.empty() || id.size() > 64)
+            return false;
+        for (unsigned char c : id)
+        {
+            if (!(std::isalnum(c) || c == '-' || c == '_' || c == ':' || c == '.'))
+                return false;
+        }
+        return true;
+    }
+
 
     // ========================================================================
     // ParsedMessage - Core parser for incoming DC addon messages
@@ -667,6 +682,8 @@ namespace DCAddon
         const std::string& GetModule() const { return _module; }
         uint8 GetOpcode() const { return _opcode; }
         size_t GetDataCount() const { return _data.size(); }
+        bool HasRequestId() const { return !_requestId.empty(); }
+        const std::string& GetRequestId() const { return _requestId; }
         bool HasMore() const { return _currentIndex < _data.size(); }
 
         // Get data at index with type conversion
@@ -748,8 +765,22 @@ namespace DCAddon
                 return;
             }
 
+            // Optional request ID token (RID:<id>) as first data field
+            size_t dataStart = 2;
+            if (tokens.size() > 2)
+            {
+                const std::string& maybeRid = tokens[2];
+                if (maybeRid.rfind("RID:", 0) == 0 || maybeRid.rfind("RID=", 0) == 0)
+                {
+                    _requestId = maybeRid.substr(4);
+                    if (!IsSafeRequestId(_requestId))
+                        _requestId.clear();
+                    dataStart = 3;
+                }
+            }
+
             // Remaining tokens are data
-            for (size_t i = 2; i < tokens.size(); ++i)
+            for (size_t i = dataStart; i < tokens.size(); ++i)
             {
                 _data.push_back(tokens[i]);
             }
@@ -762,6 +793,7 @@ namespace DCAddon
         uint8 _opcode = 0;
         std::vector<std::string> _data;
         mutable size_t _currentIndex = 0;
+        std::string _requestId;
     };
 
     // Parser - alias for ParsedMessage with sequential read support
@@ -876,6 +908,12 @@ namespace DCAddon
         Message(const std::string& module, uint8 opcode)
             : _module(module), _opcode(opcode) {}
 
+        Message& SetRequestId(const std::string& requestId)
+        {
+            _requestId = IsSafeRequestId(requestId) ? requestId : std::string();
+            return *this;
+        }
+
         // Build message for sending
         Message& Add(const std::string& value)
         {
@@ -920,6 +958,13 @@ namespace DCAddon
             result += DELIMITER;
             result += std::to_string(_opcode);
 
+            if (!_requestId.empty())
+            {
+                result += DELIMITER;
+                result += "RID:";
+                result += _requestId;
+            }
+
             for (auto const& d : _data)
             {
                 result += DELIMITER;
@@ -949,11 +994,18 @@ namespace DCAddon
         std::string _module;
         uint8 _opcode;
         std::vector<std::string> _data;
+        std::string _requestId;
     };
 
     // Forward declarations for helpers used by MessageRouter::Route
     inline void SendError(Player* player, const std::string& module, const std::string& errorMsg, uint32 errorCode, uint8 opcode);
     inline void SendPermissionDenied(Player* player, const std::string& module, const std::string& errorMsg);
+
+    // Request context helpers (defined in dc_addon_protocol.cpp)
+    void SetCurrentRequestContext(const std::string& requestId);
+    void ClearCurrentRequestContext();
+    const std::string& GetCurrentRequestId();
+    void NotifyResponseSent(Player* player, const std::string& requestId);
 
     // Quick permission helper: ensure module enabled and player has minimum security
     // (Moved below MessageRouter declaration to avoid forward-declare/ordering issues)
@@ -1007,6 +1059,13 @@ namespace DCAddon
 
             if (it != _handlers.end())
             {
+                // Set current request context so SendError can echo request ID
+                struct RequestContextScope
+                {
+                    RequestContextScope(const std::string& reqId) { DCAddon::SetCurrentRequestContext(reqId); }
+                    ~RequestContextScope() { DCAddon::ClearCurrentRequestContext(); }
+                } scope(msg.GetRequestId());
+
                 // Check module-wise min security if configured
                 uint32_t minSec = 0;
                 auto minIt = _moduleMinSecurity.find(msg.GetModule());
@@ -1068,6 +1127,9 @@ namespace DCAddon
         if (!player || !player->GetSession())
             return;
         Message errorMsgObj(module, opcode);
+        const std::string& reqId = GetCurrentRequestId();
+        if (!reqId.empty())
+            errorMsgObj.SetRequestId(reqId);
         errorMsgObj.Add(std::to_string(errorCode));
         errorMsgObj.Add(errorMsg);
         errorMsgObj.Send(player);
@@ -1469,6 +1531,12 @@ namespace DCAddon
             _json.SetObject();
         }
 
+        JsonMessage& SetRequestId(const std::string& requestId)
+        {
+            _requestId = IsSafeRequestId(requestId) ? requestId : std::string();
+            return *this;
+        }
+
         JsonMessage& Set(const std::string& key, bool v) { _json.Set(key, JsonValue(v)); return *this; }
         JsonMessage& Set(const std::string& key, int32 v) { _json.Set(key, JsonValue(v)); return *this; }
         JsonMessage& Set(const std::string& key, uint32 v) { _json.Set(key, JsonValue(v)); return *this; }
@@ -1483,6 +1551,12 @@ namespace DCAddon
             result += DELIMITER;
             result += std::to_string(_opcode);
             result += DELIMITER;
+            if (!_requestId.empty())
+            {
+                result += "RID:";
+                result += _requestId;
+                result += DELIMITER;
+            }
             result += JSON_MARKER;
             result += DELIMITER;
             result += _json.Encode();
@@ -1494,7 +1568,32 @@ namespace DCAddon
             if (!player || !player->GetSession())
                 return;
 
-            std::string payload = Build();
+            std::string effectiveRequestId = _requestId;
+            if (effectiveRequestId.empty())
+            {
+                const std::string& ctxReqId = GetCurrentRequestId();
+                if (IsSafeRequestId(ctxReqId))
+                    effectiveRequestId = ctxReqId;
+            }
+
+            std::string payload;
+            if (!effectiveRequestId.empty() && effectiveRequestId != _requestId)
+            {
+                payload = _module;
+                payload += DELIMITER;
+                payload += std::to_string(_opcode);
+                payload += DELIMITER;
+                payload += "RID:";
+                payload += effectiveRequestId;
+                payload += DELIMITER;
+                payload += JSON_MARKER;
+                payload += DELIMITER;
+                payload += _json.Encode();
+            }
+            else
+            {
+                payload = Build();
+            }
 
             // If the payload is large, split it into chunk frames.
             // Client-side DCAddonProtocol reassembles INDEX|TOTAL|DATA before parsing.
@@ -1508,6 +1607,8 @@ namespace DCAddon
                     ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
                     player->SendDirectMessage(&data);
                 }
+                if (!effectiveRequestId.empty())
+                    NotifyResponseSent(player, effectiveRequestId);
                 return;
             }
 
@@ -1518,12 +1619,16 @@ namespace DCAddon
             WorldPacket data;
             ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
             player->SendDirectMessage(&data);
+
+            if (!effectiveRequestId.empty())
+                NotifyResponseSent(player, effectiveRequestId);
         }
 
     private:
         std::string _module;
         uint8 _opcode;
         JsonValue _json;
+        std::string _requestId;
     };
 
     // Check if a parsed message contains JSON

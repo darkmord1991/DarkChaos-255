@@ -13,15 +13,19 @@
 #include "Player.h"
 #include "Creature.h"
 #include "CreatureAI.h"
+#include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "World.h"
 #include "Chat.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "DC/CrossSystem/WorldBossMgr.h"
+#include "MapMgr.h"
+#include "ObjectMgr.h"
 
 #include <unordered_map>
 #include <vector>
+#include <optional>
 
 // ============================================================================
 // ZONE CONSTANTS
@@ -159,6 +163,127 @@ static std::unordered_map<ObjectGuid, uint32> sGiantIslesLastZoneByPlayer;
 
 // Track last whisper time for the Spirit NPC to avoid repeated whisper spam.
 static std::unordered_map<ObjectGuid, uint32> sSpiritLastWhisperSecByPlayer;
+
+// ============================================================================
+// WORLD BOSS ROTATION HELPERS
+// ============================================================================
+
+static Creature* FindSpawnedCreatureBySpawnId(Map* map, uint32 spawnId, uint32 entry)
+{
+    if (!map)
+        return nullptr;
+
+    auto bounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
+    if (bounds.first != bounds.second)
+        return bounds.first->second;
+
+    return map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(entry, spawnId));
+}
+
+static bool LoadCreatureFromSpawnId(Map* map, uint32 spawnId)
+{
+    if (!map)
+        return false;
+
+    Creature* creature = new Creature();
+    if (!creature->LoadCreatureFromDB(spawnId, map))
+    {
+        delete creature;
+        return false;
+    }
+
+    sObjectMgr->AddCreatureToGrid(spawnId, sObjectMgr->GetCreatureData(spawnId));
+    return true;
+}
+
+static bool SetWorldBossActive(uint32 bossEntry, bool active)
+{
+    if (!sWorldBossMgr)
+        return false;
+
+    DC::WorldBossInfo* info = sWorldBossMgr->GetBossInfo(bossEntry);
+    if (!info || info->spawnId == 0)
+        return false;
+
+    CreatureData const* data = sObjectMgr->GetCreatureData(info->spawnId);
+    if (!data)
+        return false;
+
+    Map* map = sMapMgr->FindMap(data->mapid, 0);
+    if (!map)
+        return false;
+
+    Creature* creature = FindSpawnedCreatureBySpawnId(map, info->spawnId, bossEntry);
+    if (!creature)
+    {
+        if (!LoadCreatureFromSpawnId(map, info->spawnId))
+            return false;
+        creature = FindSpawnedCreatureBySpawnId(map, info->spawnId, bossEntry);
+    }
+
+    if (!creature)
+        return false;
+
+    if (active)
+    {
+        creature->SetRespawnTime(0);
+        creature->SaveRespawnTime();
+
+        if (!creature->IsAlive())
+            creature->Respawn();
+    }
+    else
+    {
+        creature->SetRespawnTime(7 * DAY);
+        creature->SaveRespawnTime();
+        creature->DespawnOrUnsummon(0ms);
+    }
+
+    return true;
+}
+
+static bool WorldBossScheduleTableExists()
+{
+    static std::optional<bool> cached;
+    if (cached.has_value())
+        return cached.value();
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_world_boss_schedule' AND COLUMN_NAME = 'boss_entry'");
+
+    if (!result)
+    {
+        cached = false;
+        return false;
+    }
+
+    Field* fields = result->Fetch();
+    cached = (fields[0].Get<uint64>() > 0);
+    return cached.value();
+}
+
+static std::vector<uint32> GetScheduledBossEntriesForDay(uint8 day)
+{
+    std::vector<uint32> entries;
+
+    if (!WorldBossScheduleTableExists())
+        return entries;
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT `boss_entry` FROM `dc_world_boss_schedule` WHERE `day_of_week` = {} AND `enabled` = 1",
+        day);
+
+    if (!result)
+        return entries;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        entries.push_back(fields[0].Get<uint32>());
+    } while (result->NextRow());
+
+    return entries;
+}
 
 static std::string FormatShortDuration(int32 totalSeconds)
 {
@@ -358,12 +483,20 @@ public:
         _nextRareSpawnTime = Milliseconds(0);
         _currentRareGUID = ObjectGuid::Empty;
         _rareIsAlive = false;
+        _lastRotationDay = 255;
+        _lastRotationKey = 0;
+        _lastRotationCheckSec = 0;
+        _lastScheduleFetchSec = 0;
+        _cachedScheduleDay = 255;
     }
 
     void OnStartup() override
     {
         LOG_INFO("scripts.dc", "Giant Isles zone manager loaded.");
         LOG_INFO("scripts.dc", "Today's active boss: Entry {}", GetActiveBossEntry());
+
+        // Apply daily boss rotation immediately on startup when map is available.
+        ApplyBossRotation(true);
 
         // Initialize first rare spawn timer (spawn first rare after 5-15 minutes)
         _nextRareSpawnTime = GameTime::GetGameTimeMS() + Milliseconds(urand(5 * 60 * 1000, 15 * 60 * 1000));
@@ -380,12 +513,78 @@ public:
         {
             TrySpawnRandomRare();
         }
+
+        // Check and apply daily boss rotation.
+        ApplyBossRotation(false);
     }
 
 private:
     Milliseconds _nextRareSpawnTime;
     ObjectGuid _currentRareGUID;
     bool _rareIsAlive;
+    uint8 _lastRotationDay;
+    uint32 _lastRotationKey;
+    time_t _lastRotationCheckSec;
+    time_t _lastScheduleFetchSec;
+    uint8 _cachedScheduleDay;
+    std::vector<uint32> _cachedScheduledEntries;
+
+    void ApplyBossRotation(bool force)
+    {
+        time_t nowSec = GameTime::GetGameTime().count();
+
+        if (!force)
+        {
+            // Throttle rotation checks to avoid excessive DB queries.
+            if (_lastRotationCheckSec != 0 && (nowSec - _lastRotationCheckSec) < 10)
+                return;
+            _lastRotationCheckSec = nowSec;
+        }
+
+        uint8 day = GetCurrentDayOfWeek();
+        std::vector<uint32> scheduledEntries;
+
+        bool needRefresh = force || day != _cachedScheduleDay;
+        if (!needRefresh && _lastScheduleFetchSec != 0 && (nowSec - _lastScheduleFetchSec) >= 300)
+            needRefresh = true;
+
+        if (needRefresh)
+        {
+            _cachedScheduledEntries = GetScheduledBossEntriesForDay(day);
+            _cachedScheduleDay = day;
+            _lastScheduleFetchSec = nowSec;
+        }
+
+        scheduledEntries = _cachedScheduledEntries;
+
+        if (scheduledEntries.empty())
+            scheduledEntries.push_back(GetActiveBossEntry());
+
+        uint32 rotationKey = 17;
+        for (uint32 entry : scheduledEntries)
+            rotationKey = rotationKey * 131 + entry;
+
+        if (!force && day == _lastRotationDay && rotationKey == _lastRotationKey)
+            return;
+
+        _lastRotationDay = day;
+        _lastRotationKey = rotationKey;
+
+        auto isScheduled = [&](uint32 entry)
+        {
+            for (uint32 e : scheduledEntries)
+            {
+                if (e == entry)
+                    return true;
+            }
+            return false;
+        };
+
+        // Enable scheduled bosses, disable the others.
+        SetWorldBossActive(NPC_OONDASTA, isScheduled(NPC_OONDASTA));
+        SetWorldBossActive(NPC_THOK, isScheduled(NPC_THOK));
+        SetWorldBossActive(NPC_NALAK, isScheduled(NPC_NALAK));
+    }
 
     void TrySpawnRandomRare()
     {

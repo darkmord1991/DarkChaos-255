@@ -2635,6 +2635,13 @@ DC.AddonProtocol.Debug.Enable = 0
 DC.AddonProtocol.ChunkTimeout = 5000
 
 #
+#    DC.AddonProtocol.RequestTimeoutMs
+#        Description: Timeout in milliseconds for awaiting request responses
+#        Default:     8000
+#
+DC.AddonProtocol.RequestTimeoutMs = 8000
+
+#
 #    DC.AddonProtocol.RateLimit.Messages
 #        Description: Maximum addon messages per player per second
 #        Default:     30

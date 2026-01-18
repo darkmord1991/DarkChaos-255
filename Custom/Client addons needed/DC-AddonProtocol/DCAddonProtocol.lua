@@ -46,13 +46,24 @@ DCAddonProtocol = {
     _features = {},
     _handshakeSent = false,
     _lastHandshakeTime = 0,
+
+    -- Server context (season/phase)
+    _serverContext = nil,
+    _serverContextHandlers = {},
+
+    -- CrossSystem event handlers
+    _crossEventHandlers = {},
     
     -- Request tracking system
     _requestLog = {},           -- Array of request entries
     _requestLogMax = 100,       -- Max entries to keep
     _responseLog = {},          -- Array of response entries
     _responseLogMax = 100,
-    _pendingRequests = {},      -- Requests waiting for response (keyed by module_opcode)
+    _pendingRequests = {},      -- Requests waiting for response (keyed by requestId)
+    _pendingRequestsLegacy = {},-- Legacy lookup by module_opcode
+
+    -- Request ID generator
+    _requestIdCounter = 0,
     
     -- Statistics tracking
     _stats = {
@@ -78,6 +89,34 @@ local DC = DCAddonProtocol
 
 function DC:GetHandshakeVersionString()
     return tostring(self.VERSION) .. "|" .. tostring(self.CAPABILITIES or 0)
+end
+
+function DC:NextRequestId()
+    self._requestIdCounter = (self._requestIdCounter or 0) + 1
+    if self._requestIdCounter > 1000000 then
+        self._requestIdCounter = 1
+    end
+    local t = time() or 0
+    return tostring(t) .. "-" .. tostring(self._requestIdCounter)
+end
+
+function DC:GetServerContext()
+    return self._serverContext
+end
+
+function DC:RegisterServerContextHandler(handler)
+    if type(handler) ~= "function" then return false end
+    table.insert(self._serverContextHandlers, handler)
+    if self._serverContext then
+        pcall(handler, self._serverContext)
+    end
+    return true
+end
+
+function DC:RegisterCrossEventHandler(handler)
+    if type(handler) ~= "function" then return false end
+    table.insert(self._crossEventHandlers, handler)
+    return true
 end
 
 -- ============================================================================
@@ -242,6 +281,9 @@ function DC:_CheckRequestTimeouts()
                 end
 
                 self._pendingRequests[key] = nil
+                if entry._legacyKey then
+                    self._pendingRequestsLegacy[entry._legacyKey] = nil
+                end
             end
         end
     end
@@ -446,7 +488,7 @@ DC.GroupFinderOpcodes = {
 }
 
 -- Log a request (only when logging is enabled for performance)
-function DC:LogRequest(module, opcode, data)
+function DC:LogRequest(module, opcode, data, requestId)
     -- Fast path: skip logging if disabled (performance optimization)
     if not self._loggingEnabled then
         -- Still track basic stats for display
@@ -463,6 +505,7 @@ function DC:LogRequest(module, opcode, data)
         moduleName = self.ModuleNames[module] or module,
         opcode = opcode,
         data = data,
+        requestId = requestId,
         status = "pending",
         responseTime = nil,
     }
@@ -476,8 +519,16 @@ function DC:LogRequest(module, opcode, data)
     table.insert(self._requestLog, 1, entry)
     
     -- Track pending request
-    local key = module .. "_" .. tostring(opcode)
-    self._pendingRequests[key] = entry
+    if requestId then
+        self._pendingRequests[requestId] = entry
+        local legacyKey = module .. "_" .. tostring(opcode)
+        self._pendingRequestsLegacy[legacyKey] = requestId
+        entry._legacyKey = legacyKey
+    else
+        local legacyKey = module .. "_" .. tostring(opcode)
+        self._pendingRequests[legacyKey] = entry
+        entry._legacyKey = legacyKey
+    end
     
     -- Update statistics
     self:UpdateStats("request", entry)
@@ -486,7 +537,7 @@ function DC:LogRequest(module, opcode, data)
 end
 
 -- Log a response (only when logging is enabled for performance)
-function DC:LogResponse(module, opcode, data, jsonStr)
+function DC:LogResponse(module, opcode, data, jsonStr, requestId)
     -- Fast path: skip logging if disabled (performance optimization)
     if not self._loggingEnabled then
         -- Still track basic stats for display
@@ -504,6 +555,7 @@ function DC:LogResponse(module, opcode, data, jsonStr)
         opcode = opcode,
         data = data,
         jsonLength = jsonStr and #jsonStr or 0,  -- Use # instead of string.len
+        requestId = requestId,
     }
     
     -- Use ring buffer instead of inserting at front
@@ -518,23 +570,41 @@ function DC:LogResponse(module, opcode, data, jsonStr)
     
     -- Check if this was a pending request (response opcode is usually request + 0x0F)
     -- e.g., CMSG 0x01 -> SMSG 0x10
-    local requestOpcode = opcode - 0x0F
-    if requestOpcode > 0 then
-        local key = module .. "_" .. tostring(requestOpcode)
-        local pending = self._pendingRequests[key]
-        if pending then
-            pending.status = "completed"
-            pending.responseTime = time() - pending.timestamp
-            
-            -- Update module avg response time
-            local mod = module
-            if self._stats.moduleStats[mod] then
-                local stats = self._stats.moduleStats[mod]
-                stats.totalResponseTime = stats.totalResponseTime + pending.responseTime
-                stats.avgResponseTime = stats.totalResponseTime / stats.responses
+    local pending = nil
+    local resolvedRequestId = requestId
+    if requestId then
+        pending = self._pendingRequests[requestId]
+    end
+    if not pending then
+        local requestOpcode = opcode - 0x0F
+        if requestOpcode > 0 then
+            local key = module .. "_" .. tostring(requestOpcode)
+            local rid = self._pendingRequestsLegacy[key]
+            if rid then
+                resolvedRequestId = rid
+                pending = self._pendingRequests[rid]
+            else
+                pending = self._pendingRequests[key]
             end
-            
-            self._pendingRequests[key] = nil
+        end
+    end
+    if pending then
+        pending.status = "completed"
+        pending.responseTime = time() - pending.timestamp
+
+        -- Update module avg response time
+        local mod = module
+        if self._stats.moduleStats[mod] then
+            local stats = self._stats.moduleStats[mod]
+            stats.totalResponseTime = stats.totalResponseTime + pending.responseTime
+            stats.avgResponseTime = stats.totalResponseTime / stats.responses
+        end
+
+        if resolvedRequestId and self._pendingRequests[resolvedRequestId] then
+            self._pendingRequests[resolvedRequestId] = nil
+        end
+        if pending._legacyKey and self._pendingRequestsLegacy[pending._legacyKey] then
+            self._pendingRequestsLegacy[pending._legacyKey] = nil
         end
     end
     
@@ -589,6 +659,7 @@ function DC:ClearLogs()
     self._requestLog = {}
     self._responseLog = {}
     self._pendingRequests = {}
+    self._pendingRequestsLegacy = {}
 end
 
 function DC:RegisterHandler(module, opcode, handler)
@@ -676,7 +747,8 @@ function DC:UnregisterJSONHandler(module, opcode, handler)
 end
 
 function DC:Send(module, opcode, a1, a2, a3, a4, a5)
-    local parts = {module, tostring(opcode)}
+    local requestId = self:NextRequestId()
+    local parts = {module, tostring(opcode), "RID:" .. tostring(requestId)}
     local args = {a1, a2, a3, a4, a5, nil}
     for i = 1, 5 do
         local v = args[i]
@@ -691,7 +763,7 @@ function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     local msg = table.concat(parts, "|")
     
     -- Log request
-    self:LogRequest(module, opcode, {a1, a2, a3, a4, a5})
+    self:LogRequest(module, opcode, {a1, a2, a3, a4, a5}, requestId)
     
     if self._debug then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending: " .. msg)
@@ -740,10 +812,11 @@ end
 
 function DC:SendJSON(module, opcode, data)
     local json = self:EncodeJSON(data)
-    local msg = module .. "|" .. tostring(opcode) .. "|J|" .. json
+    local requestId = self:NextRequestId()
+    local msg = module .. "|" .. tostring(opcode) .. "|RID:" .. tostring(requestId) .. "|J|" .. json
     
     -- Log request
-    self:LogRequest(module, opcode, data)
+    self:LogRequest(module, opcode, data, requestId)
     
     if self._debug then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending JSON: " .. module .. " opcode=" .. tostring(opcode) .. " size=" .. string.len(msg))
@@ -1026,6 +1099,8 @@ DC.Opcode = {
         SMSG_VERSION_RESULT = 0x11,
         SMSG_FEATURE_LIST = 0x12,
         SMSG_RELOAD_UI = 0x13,
+        SMSG_SERVER_CONTEXT = 0x14,
+        SMSG_CROSS_EVENT = 0x15,
         SMSG_PERMISSION_DENIED = 0x1E,
         SMSG_ERROR = 0x1F,
     },
@@ -1534,6 +1609,7 @@ DC.GroupFinder = {
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("CHAT_MSG_ADDON")
 frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("ADDON_LOADED")
 frame:SetScript("OnUpdate", function(self, elapsed)
     DC._tick = (DC._tick or 0) + (elapsed or 0)
     if DC._tick < 1.0 then
@@ -1624,6 +1700,12 @@ frame:SetScript("OnEvent", function()
             if #parts >= 2 then
                 local module = parts[1]
                 local opcode = tonumber(parts[2]) or 0
+                local dataStart = 3
+                local requestId = nil
+                if parts[3] and (string.sub(parts[3], 1, 4) == "RID:" or string.sub(parts[3], 1, 4) == "RID=") then
+                    requestId = string.sub(parts[3], 5)
+                    dataStart = 4
+                end
                 
                 -- Debug output
                 if DC._debug then
@@ -1633,8 +1715,8 @@ frame:SetScript("OnEvent", function()
                 -- Early: detect core error codes (SMSG_ERROR / SMSG_PERMISSION_DENIED)
                 if opcode == DC.Opcode.Core.SMSG_ERROR or opcode == DC.Opcode.Core.SMSG_PERMISSION_DENIED then
                     -- Parse error payload
-                    local errCode = tonumber(parts[3]) or 0
-                    local errMsg = parts[4] or ""
+                    local errCode = tonumber(parts[dataStart]) or 0
+                    local errMsg = parts[dataStart + 1] or ""
                     -- Call module-specific error handlers
                     local errHandlers = DC._errorHandlers[module]
                     if errHandlers then
@@ -1656,24 +1738,24 @@ frame:SetScript("OnEvent", function()
                         DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC] Error:|r " .. module .. ": " .. (errMsg or "Unknown error"))
                     end
                     -- Log response
-                    DC:LogResponse(module, opcode, {errCode, errMsg}, nil)
+                    DC:LogResponse(module, opcode, {errCode, errMsg}, nil, requestId)
                     return
                 end
 
                 -- Check if this is a JSON message (format: MODULE|OPCODE|J|{json} or MODULE|OPCODE|1|{json})
                 -- Note: Some servers send "1" instead of "J" as the JSON marker
-                local isJson = #parts >= 4 and (parts[3] == "J" or parts[3] == "1")
+                local isJson = #parts >= (dataStart + 1) and (parts[dataStart] == "J" or parts[dataStart] == "1")
                 if isJson then
                     -- JSON message - reconstruct JSON (in case it had | in it)
                     local jsonParts = {}
-                    for i = 4, #parts do
+                    for i = dataStart + 1, #parts do
                         table.insert(jsonParts, parts[i])
                     end
                     local jsonStr = table.concat(jsonParts, "|")
                     local data = DC:DecodeJSON(jsonStr)
                     
                     -- Log response
-                    DC:LogResponse(module, opcode, data, jsonStr)
+                    DC:LogResponse(module, opcode, data, jsonStr, requestId)
                     
                     if DC._debug then
                         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r JSON: " .. string.sub(jsonStr, 1, 200) .. (string.len(jsonStr) > 200 and "..." or ""))
@@ -1726,7 +1808,7 @@ frame:SetScript("OnEvent", function()
                     end
                 else
                     -- Regular message - log it too
-                    DC:LogResponse(module, opcode, {parts[3], parts[4], parts[5]}, nil)
+                    DC:LogResponse(module, opcode, {parts[dataStart], parts[dataStart + 1], parts[dataStart + 2]}, nil, requestId)
                     
                     local key = module .. "_" .. opcode
                     local h = DC._handlers[key]
@@ -1734,15 +1816,22 @@ frame:SetScript("OnEvent", function()
                         if DC._debug then
                             DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Handler(s) found: " .. key .. " (" .. tostring(#h) .. ")")
                         end
-                        for _, handler in ipairs(h) do pcall(handler, parts[3], parts[4], parts[5], parts[6], parts[7]) end
+                        for _, handler in ipairs(h) do pcall(handler, parts[dataStart], parts[dataStart + 1], parts[dataStart + 2], parts[dataStart + 3], parts[dataStart + 4]) end
                     else
                         if DC._debug then
                             DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Handler found: " .. key)
                         end
-                        pcall(h, parts[3], parts[4], parts[5], parts[6], parts[7]) 
+                        pcall(h, parts[dataStart], parts[dataStart + 1], parts[dataStart + 2], parts[dataStart + 3], parts[dataStart + 4]) 
                     end
                     -- handlers already dispatched above
                 end
+            end
+        end
+    elseif event == "ADDON_LOADED" then
+        if arg1 == "DC-AddonProtocol" or arg1 == "DCAddonProtocol" then
+            if IsLoggedIn and IsLoggedIn() then
+                DC._handshakeSent = false
+                DC:Send("CORE", 1, DC:GetHandshakeVersionString())
             end
         end
     elseif event == "PLAYER_LOGIN" then
@@ -2561,6 +2650,25 @@ DC:RegisterHandler("CORE", 0x12, function(...)
     DC:DebugPrint("Feature list received:", table.concat(features, ", "))
     for _, feat in ipairs(features) do
         DC._features[feat] = true
+    end
+end)
+
+DC:RegisterHandler("CORE", 0x14, function(data)
+    if type(data) ~= "table" then return end
+    DC._serverContext = {
+        seasonId = tonumber(data.seasonId) or 0,
+        seasonName = data.seasonName or data.name,
+        phaseMask = tonumber(data.phaseMask) or 1,
+    }
+    for _, handler in ipairs(DC._serverContextHandlers or {}) do
+        pcall(handler, DC._serverContext)
+    end
+end)
+
+DC:RegisterHandler("CORE", 0x15, function(data)
+    if type(data) ~= "table" then return end
+    for _, handler in ipairs(DC._crossEventHandlers or {}) do
+        pcall(handler, data)
     end
 end)
 

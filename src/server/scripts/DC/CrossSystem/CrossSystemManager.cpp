@@ -16,6 +16,7 @@
 #include "ScriptMgr.h"
 #include "Timer.h"
 #include "World.h"
+#include "WorldBossMgr.h"
 
 namespace DarkChaos
 {
@@ -483,6 +484,9 @@ namespace CrossSystem
     void CrossSystemManager::OnWorldUpdate(uint32 diff)
     {
         Update(diff);
+
+        // Tick WorldBossMgr so addon timers/countdowns remain accurate.
+        sWorldBossMgr->Update(diff);
     }
 
     // =========================================================================
