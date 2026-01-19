@@ -39,24 +39,18 @@ local Automation = {
     },
 }
 
--- Merge defaults
-for k, v in pairs(Automation.defaults) do
-    if addon.defaults[k] == nil then
-        addon.defaults[k] = v
-    else
-        for k2, v2 in pairs(v) do
-            if addon.defaults[k][k2] == nil then
-                addon.defaults[k][k2] = v2
-            end
-        end
-    end
-end
+-- Use shared utility for default merging
+addon:MergeModuleDefaults(Automation.defaults)
+
+-- Event frames storage for cleanup
+local eventFrames = {}
 
 -- ============================================================
 -- Auto Repair
 -- ============================================================
 local function SetupAutoRepair()
     local frame = CreateFrame("Frame")
+    table.insert(eventFrames, frame)
     frame:RegisterEvent("MERCHANT_SHOW")
     frame:SetScript("OnEvent", function(self, event)
         local settings = addon.settings.automation
@@ -499,7 +493,13 @@ end
 
 function Automation.OnDisable()
     addon:Debug("Automation module disabling")
-    -- Note: Event frames remain registered but check enabled state
+    -- Unregister all event frames to clean up
+    for _, frame in ipairs(eventFrames) do
+        if frame and frame.UnregisterAllEvents then
+            frame:UnregisterAllEvents()
+            frame:SetScript("OnEvent", nil)
+        end
+    end
 end
 
 -- ============================================================

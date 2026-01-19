@@ -13,8 +13,8 @@ local EventsPlugin = {
     name = "Zone Events",
     category = "server",
     type = "combo",
-    side = "left",
-    priority = 50,
+    side = "right",      -- Matches Settings.lua default
+    priority = 890,      -- Matches Settings.lua default
     icon = "Interface\\Icons\\Ability_Warrior_BattleShout",
     updateInterval = 1.0,
     

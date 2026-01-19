@@ -27,9 +27,14 @@ local WorldBossPlugin = {
     _lastSnapshotRequestAt = 0,
 }
 
+-- Use centralized name normalization from Core.lua (or fallback for robustness)
 local function _NormName(s)
+    -- If Core.lua provides NormName, use it
+    if DCInfoBar.NormName then
+        return DCInfoBar.NormName(s)
+    end
+    -- Fallback implementation (should match Core.lua)
     s = tostring(s or "")
-    -- Strip WoW formatting codes (colors/textures) to keep keys stable.
     s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
     s = string.gsub(s, "|r", "")
     s = string.gsub(s, "|T.-|t", "")
@@ -38,11 +43,8 @@ local function _NormName(s)
     return s
 end
 
-local DEFAULT_WORLD_BOSSES = (DCInfoBar and DCInfoBar.DEFAULT_WORLD_BOSSES) or {
-    { entry = 400100, spawnId = 9000190, name = "Oondasta, King of Dinosaurs", zone = "Devilsaur Gorge" },
-    { entry = 400101, spawnId = 9000189, name = "Thok the Bloodthirsty",     zone = "Raptor Ridge" },
-    { entry = 400102, spawnId = 9000191, name = "Nalak the Storm Lord",      zone = "Thundering Peaks" },
-}
+-- Use centralized boss definitions from Core.lua (single source of truth)
+local DEFAULT_WORLD_BOSSES = DCInfoBar.DEFAULT_WORLD_BOSSES or {}
 
 local function _GetUniqueBosses(rawBosses)
     local result = {}

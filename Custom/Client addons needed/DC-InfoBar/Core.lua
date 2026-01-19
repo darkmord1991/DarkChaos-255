@@ -26,34 +26,35 @@ DCInfoBar.TokenInfo = nil
 -- Timers (WotLK-safe)
 -- ============================================================================
 
--- WotLK 3.3.5a does not provide C_Timer; some clients/backports do.
--- Use C_Timer.After when available, otherwise fallback to a lightweight OnUpdate timer.
+-- WotLK 3.3.5a does not provide C_Timer natively, but Utils.lua provides a polyfill.
+-- This wrapper ensures safe callback scheduling.
 function DCInfoBar:After(seconds, fn)
     if type(fn) ~= "function" then
         return
     end
-
-    if _G.C_Timer and _G.C_Timer.After then
-        _G.C_Timer.After(seconds or 0, fn)
-        return
-    end
-
+    
     local delay = tonumber(seconds) or 0
     if delay <= 0 then
         pcall(fn)
         return
     end
-
-    local f = CreateFrame("Frame")
-    f._remaining = delay
-    f:SetScript("OnUpdate", function(self, elapsed)
-        self._remaining = self._remaining - (elapsed or 0)
-        if self._remaining <= 0 then
-            self:SetScript("OnUpdate", nil)
-            self:Hide()
-            pcall(fn)
-        end
-    end)
+    
+    -- Use C_Timer.After (provided by Utils.lua polyfill or native)
+    if C_Timer and C_Timer.After then
+        C_Timer.After(delay, fn)
+    else
+        -- Emergency fallback (should never happen since Utils.lua loads first)
+        local f = CreateFrame("Frame")
+        f._remaining = delay
+        f:SetScript("OnUpdate", function(self, elapsed)
+            self._remaining = self._remaining - (elapsed or 0)
+            if self._remaining <= 0 then
+                self:SetScript("OnUpdate", nil)
+                self:Hide()
+                pcall(fn)
+            end
+        end)
+    end
 end
 
 -- ============================================================================
@@ -337,7 +338,9 @@ function DCInfoBar:SetupServerCommunication()
             DCInfoBar:HandleEventRemove(data)
         end)
 
-        -- Fallback: also register non-JSON handlers for legacy server payloads
+        self:Debug("Registered JSON handlers for events")
+    elseif DC.RegisterHandler then
+        -- Fallback: register non-JSON handlers if JSON not available
         DC:RegisterHandler("EVNT", 0x10, function(data)
             DCInfoBar:Debug("Received legacy EVNT handler payload")
             DCInfoBar:HandleEventData(data)
@@ -350,36 +353,13 @@ function DCInfoBar:SetupServerCommunication()
             DCInfoBar:Debug("Received legacy EVNT remove payload")
             DCInfoBar:HandleEventRemove(data)
         end)
-
-        -- Also fallback for GRPF events if plain handler used
         DC:RegisterHandler("GRPF", 0x70, function(data)
             DCInfoBar:Debug("Received legacy GRPF event payload")
             DCInfoBar:HandleEventData(data)
         end)
-
-        self:Debug("Registered JSON handlers for events (and legacy fallbacks)")
+        self:Debug("Registered legacy handlers for events (JSON not available)")
     else
-        self:Debug("Warning: RegisterJSONHandler not available in DCAddonProtocol")
-    end
-
-    -- Fallback: register non-JSON handlers if available (ensure events are handled as well)
-    if DC.RegisterHandler then
-        DC:RegisterHandler("EVNT", 0x10, function(data)
-            DCInfoBar:Debug("Received legacy EVNT handler payload (fallback)")
-            DCInfoBar:HandleEventData(data)
-        end)
-        DC:RegisterHandler("EVNT", 0x11, function(data)
-            DCInfoBar:Debug("Received legacy EVNT spawn payload (fallback)")
-            DCInfoBar:HandleEventData(data)
-        end)
-        DC:RegisterHandler("EVNT", 0x12, function(data)
-            DCInfoBar:Debug("Received legacy EVNT remove payload (fallback)")
-            DCInfoBar:HandleEventRemove(data)
-        end)
-        DC:RegisterHandler("GRPF", 0x70, function(data)
-            DCInfoBar:Debug("Received legacy GRPF event payload (fallback)")
-            DCInfoBar:HandleEventData(data)
-        end)
+        self:Debug("Warning: No handler registration method available in DCAddonProtocol")
     end
 
     -- Register world content handlers (WRLD module)
@@ -463,11 +443,11 @@ function DCInfoBar:HandleEventData(data)
         table.insert(events, record)
     end
 
-    -- Debug: announce event data arrival and refresh UI immediately
+    -- Debug: announce event data arrival
     DCInfoBar:Debug(string.format("HandleEventData: id=%s name=%s type=%s state=%s active=%s", tostring(record.id or "0"), tostring(record.name), tostring(record.type), tostring(record.state), tostring(record.active)))
 
-    -- Force plugin refresh so UI updates immediately
-    DCInfoBar:RefreshAllPlugins()
+    -- Force visual update (lighter than full RefreshAllPlugins rebuild)
+    DCInfoBar:ForceUpdateAllPlugins()
 end
 
 function DCInfoBar:HandleEventRemove(data)
@@ -477,7 +457,7 @@ function DCInfoBar:HandleEventRemove(data)
     if not data then
         wipe(events)
         DCInfoBar:Debug("HandleEventRemove: wiped all events")
-        DCInfoBar:RefreshAllPlugins()
+        DCInfoBar:ForceUpdateAllPlugins()
         return
     end
 
@@ -485,7 +465,7 @@ function DCInfoBar:HandleEventRemove(data)
     if not targetId then
         wipe(events)
         DCInfoBar:Debug("HandleEventRemove: no target id, wiped all events")
-        DCInfoBar:RefreshAllPlugins()
+        DCInfoBar:ForceUpdateAllPlugins()
         return
     end
 
@@ -497,7 +477,7 @@ function DCInfoBar:HandleEventRemove(data)
         end
     end
 
-    DCInfoBar:RefreshAllPlugins()
+    DCInfoBar:ForceUpdateAllPlugins()
 end
 
 -- Handle world content payload: hotspots, bosses, events
@@ -530,22 +510,24 @@ DCInfoBar.DEFAULT_WORLD_BOSSES = DCInfoBar.DEFAULT_WORLD_BOSSES or {
     { entry = 400102, spawnId = 9000191, id = "nalak",    name = "Nalak the Storm Lord",      zone = "Thundering Peaks",    mapId = 5006, nx = 0.367, ny = 0.737 },
 }
 
-local DEFAULT_GIANT_ISLES_BOSSES = DCInfoBar.DEFAULT_WORLD_BOSSES
+-- Centralized name normalization for boss/entity matching
+-- Strips WoW formatting codes (colors/textures) and normalizes to lowercase alphanumeric
+function DCInfoBar:NormName(s)
+    s = tostring(s or "")
+    s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
+    s = string.gsub(s, "|r", "")
+    s = string.gsub(s, "|T.-|t", "")
+    s = string.lower(s)
+    s = string.gsub(s, "[^a-z0-9]+", "")
+    return s
+end
 
 function DCInfoBar:EnsureDefaultWorldBosses()
     self.serverData.worldBosses = self.serverData.worldBosses or {}
     local bosses = self.serverData.worldBosses
-
-    local function NormName(s)
-        s = tostring(s or "")
-        -- Strip WoW formatting codes so comparisons are stable.
-        s = string.gsub(s, "|c%x%x%x%x%x%x%x%x", "")
-        s = string.gsub(s, "|r", "")
-        s = string.gsub(s, "|T.-|t", "")
-        s = string.lower(s)
-        s = string.gsub(s, "[^a-z0-9]+", "")
-        return s
-    end
+    
+    -- Use centralized NormName method
+    local function NormName(s) return self:NormName(s) end
 
     local existingBySpawnId = {}
     local existingByEntry = {}
@@ -554,7 +536,7 @@ function DCInfoBar:EnsureDefaultWorldBosses()
     local defaultBySpawnId = {}
     local defaultByEntry = {}
     local defaultByName = {}
-    for _, def in ipairs(DEFAULT_GIANT_ISLES_BOSSES) do
+    for _, def in ipairs(self.DEFAULT_WORLD_BOSSES) do
         defaultBySpawnId[tonumber(def.spawnId)] = def
         defaultByEntry[tonumber(def.entry)] = def
         defaultByName[NormName(def.name)] = def
@@ -831,9 +813,9 @@ function DCInfoBar:HandleWorldContent(data)
         end
     end
 
-    -- Trigger UI refresh
+    -- Trigger visual update (lighter than full RefreshAllPlugins rebuild)
     self:Debug("HandleWorldContent: world content updated (bosses/events/hotspots)")
-    DCInfoBar:RefreshAllPlugins()
+    DCInfoBar:ForceUpdateAllPlugins()
 end
 
 -- Handle world content updates (partial updates - merge with existing state)
@@ -979,7 +961,7 @@ function DCInfoBar:HandleWorldUpdate(data)
     end
 
     self:Debug("HandleWorldUpdate: world updates merged")
-    DCInfoBar:RefreshAllPlugins()
+    DCInfoBar:ForceUpdateAllPlugins()
 end
 
 function DCInfoBar:RequestServerData(opts)
@@ -1287,32 +1269,33 @@ function DCInfoBar:ImportMythicPlusAffixCache()
     end
 end
 
+-- Centralized dungeon abbreviation lookup (single source of truth)
+DCInfoBar.DUNGEON_ABBREVS = DCInfoBar.DUNGEON_ABBREVS or {
+    ["Utgarde Keep"] = "UK",
+    ["Utgarde Pinnacle"] = "UP",
+    ["The Nexus"] = "Nex",
+    ["The Oculus"] = "Occ",
+    ["Halls of Stone"] = "HoS",
+    ["Halls of Lightning"] = "HoL",
+    ["The Culling of Stratholme"] = "CoS",
+    ["Azjol-Nerub"] = "AN",
+    ["Ahn'kahet"] = "AK",
+    ["Drak'Tharon Keep"] = "DTK",
+    ["Gundrak"] = "GD",
+    ["The Violet Hold"] = "VH",
+    ["Trial of the Champion"] = "ToC",
+    ["Forge of Souls"] = "FoS",
+    ["Pit of Saron"] = "PoS",
+    ["Halls of Reflection"] = "HoR",
+}
+
 -- Generate dungeon abbreviation from name
 function DCInfoBar:GenerateDungeonAbbrev(name)
     if not name or name == "" then return "" end
     
-    -- Known abbreviations
-    local known = {
-        ["Utgarde Keep"] = "UK",
-        ["Utgarde Pinnacle"] = "UP",
-        ["The Nexus"] = "Nex",
-        ["The Oculus"] = "Occ",
-        ["Halls of Stone"] = "HoS",
-        ["Halls of Lightning"] = "HoL",
-        ["The Culling of Stratholme"] = "CoS",
-        ["Azjol-Nerub"] = "AN",
-        ["Ahn'kahet"] = "AK",
-        ["Drak'Tharon Keep"] = "DTK",
-        ["Gundrak"] = "GD",
-        ["The Violet Hold"] = "VH",
-        ["Trial of the Champion"] = "ToC",
-        ["Forge of Souls"] = "FoS",
-        ["Pit of Saron"] = "PoS",
-        ["Halls of Reflection"] = "HoR",
-    }
-    
-    if known[name] then
-        return known[name]
+    -- Use centralized lookup
+    if self.DUNGEON_ABBREVS[name] then
+        return self.DUNGEON_ABBREVS[name]
     end
     
     -- Generate from first letters of words
@@ -1622,8 +1605,6 @@ function DCInfoBar:SetupSlashCommands()
             self:Print("  /infobar hideevent - Hide event display")
             self:Print("  /infobar testseason [weekly] [total] [id] - Test season data")
             self:Print("  /infobar showseason - Show current season data")
-            self:Print("  /infobar testevent - Inject test event")
-            self:Print("  /infobar events - List current events")
         end
     end
 end

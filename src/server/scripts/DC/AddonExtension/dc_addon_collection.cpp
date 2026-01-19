@@ -617,7 +617,7 @@ namespace DCCollection
 
     // Forward declarations: ensure functions are visible at call sites
     inline uint32 GetAccountId(Player* player);
-    bool WorldTableExists(std::string const& tableName);
+    // Note: WorldTableExists is already forward-declared at line 146
 
     void ImportExistingCollections(Player* player)
     {

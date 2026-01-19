@@ -201,68 +201,13 @@ namespace
     // Forward declarations
     uint32 GetCurrentSeasonId();
 
-    // Escape a string for safe embedding in JSON string literals.
-    // Produces content WITHOUT surrounding quotes.
-    std::string JsonEscape(const std::string& input)
-    {
-        std::string out;
-        out.reserve(input.size() + 8);
-
-        for (unsigned char ch : input)
-        {
-            switch (ch)
-            {
-                case '\\': out += "\\\\"; break;
-                case '"':  out += "\\\""; break;
-                case '\b': out += "\\b"; break;
-                case '\f': out += "\\f"; break;
-                case '\n': out += "\\n"; break;
-                case '\r': out += "\\r"; break;
-                case '\t': out += "\\t"; break;
-                default:
-                {
-                    // JSON does not allow unescaped control characters.
-                    if (ch < 0x20)
-                    {
-                        char buf[7];
-                        snprintf(buf, sizeof(buf), "\\u%04X", static_cast<unsigned int>(ch));
-                        out += buf;
-                    }
-                    else
-                    {
-                        out.push_back(static_cast<char>(ch));
-                    }
-                    break;
-                }
-            }
-        }
-
-        return out;
-    }
+    // Use centralized utilities from LeaderboardUtils.h to avoid duplication
+    using DarkChaos::Leaderboard::JsonEscape;
+    using DarkChaos::Leaderboard::GetClassNameFromId;
 
     // ========================================================================
     // LEADERBOARD DATA FETCHERS
     // ========================================================================
-
-
-    // Helper to get class name from class ID
-    std::string GetClassNameFromId(uint8 classId)
-    {
-        switch (classId)
-        {
-            case 1: return "WARRIOR";
-            case 2: return "PALADIN";
-            case 3: return "HUNTER";
-            case 4: return "ROGUE";
-            case 5: return "PRIEST";
-            case 6: return "DEATHKNIGHT";
-            case 7: return "SHAMAN";
-            case 8: return "MAGE";
-            case 9: return "WARLOCK";
-            case 11: return "DRUID";
-            default: return "UNKNOWN";
-        }
-    }
 
     // Get Mythic+ leaderboard
     // Note: dc_mplus_scores table has: character_guid, season_id, map_id, best_level, best_score, last_run_ts, total_runs

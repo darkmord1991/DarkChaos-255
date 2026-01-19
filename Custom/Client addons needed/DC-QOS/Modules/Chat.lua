@@ -42,44 +42,18 @@ local Chat = {
     },
 }
 
--- Merge defaults
-for k, v in pairs(Chat.defaults) do
-    if addon.defaults[k] == nil then
-        addon.defaults[k] = v
-    else
-        for k2, v2 in pairs(v) do
-            if addon.defaults[k][k2] == nil then
-                addon.defaults[k][k2] = v2
-            end
-        end
-    end
-end
+-- Use shared utility for default merging
+addon:MergeModuleDefaults(Chat.defaults)
 
--- ============================================================
--- Class Colors Reference
--- ============================================================
-local CLASS_COLORS = RAID_CLASS_COLORS or {
-    ["WARRIOR"]     = { r = 0.78, g = 0.61, b = 0.43 },
-    ["PALADIN"]     = { r = 0.96, g = 0.55, b = 0.73 },
-    ["HUNTER"]      = { r = 0.67, g = 0.83, b = 0.45 },
-    ["ROGUE"]       = { r = 1.00, g = 0.96, b = 0.41 },
-    ["PRIEST"]      = { r = 1.00, g = 1.00, b = 1.00 },
-    ["DEATHKNIGHT"] = { r = 0.77, g = 0.12, b = 0.23 },
-    ["SHAMAN"]      = { r = 0.00, g = 0.44, b = 0.87 },
-    ["MAGE"]        = { r = 0.41, g = 0.80, b = 0.94 },
-    ["WARLOCK"]     = { r = 0.58, g = 0.51, b = 0.79 },
-    ["DRUID"]       = { r = 1.00, g = 0.49, b = 0.04 },
-}
-
+-- Use shared CLASS_COLORS from Core.lua (addon.CLASS_COLORS)
 -- Cache for player class lookups
 local playerClassCache = {}
 
+-- Event frames storage for cleanup
+local eventFrames = {}
+
 local function GetClassColorCode(classToken)
-    local color = CLASS_COLORS[classToken]
-    if color then
-        return string.format("|cff%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
-    end
-    return "|cffffffff"
+    return addon:GetClassColorCode(classToken)
 end
 
 -- ============================================================
@@ -189,6 +163,7 @@ end
 -- Update class cache from events
 local function SetupClassCaching()
     local frame = CreateFrame("Frame")
+    table.insert(eventFrames, frame)
     
     -- Cache guild members
     frame:RegisterEvent("GUILD_ROSTER_UPDATE")
@@ -226,7 +201,7 @@ local function SetupClassCaching()
                 local name, _, class = GetFriendInfo(i)
                 if name and class then
                     -- Convert localized class name to token
-                    for token, info in pairs(CLASS_COLORS) do
+                    for token, info in pairs(addon.CLASS_COLORS) do
                         local localizedName = LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]
                         if localizedName == class then
                             playerClassCache[name] = token
@@ -319,7 +294,7 @@ local function SetupChatFrameHooks()
         -- or just:  Key: value
         local stripped = msg
         stripped = stripped:gsub("^|cff%x%x%x%x%x%x", "")
-        stripped = stripped:gsub("^%[\d\d:%d\d%]%s+", "")
+        stripped = stripped:gsub("^%[%d%d:%d%d%]%s+", "")
 
         if stripped:find("^%s%s+%S") then
             return true
@@ -802,6 +777,13 @@ end
 
 function Chat.OnDisable()
     addon:Debug("Chat module disabling")
+    -- Unregister all event frames to clean up
+    for _, frame in ipairs(eventFrames) do
+        if frame and frame.UnregisterAllEvents then
+            frame:UnregisterAllEvents()
+            frame:SetScript("OnEvent", nil)
+        end
+    end
 end
 
 -- ============================================================

@@ -16,6 +16,9 @@ local Interface = {
     icon = "Interface\\Icons\\INV_Misc_EngGizmos_01",
 }
 
+-- Event frames storage for cleanup (must be defined before functions that use it)
+local eventFrames = {}
+
 -- ============================================================
 -- Combat Nameplates
 -- ============================================================
@@ -24,6 +27,7 @@ local function SetupCombatPlates()
     if not settings.enabled or not settings.combatPlates then return end
     
     local frame = CreateFrame("Frame")
+    table.insert(eventFrames, frame)
     frame:RegisterEvent("PLAYER_REGEN_DISABLED")  -- Enter combat
     frame:RegisterEvent("PLAYER_REGEN_ENABLED")   -- Leave combat
     frame:SetScript("OnEvent", function(self, event)
@@ -50,6 +54,7 @@ local function SetupAutoQuestWatch()
     if not settings.enabled or not settings.autoQuestWatch then return end
     
     local frame = CreateFrame("Frame")
+    table.insert(eventFrames, frame)
     frame:RegisterEvent("QUEST_ACCEPTED")
     frame:SetScript("OnEvent", function(self, event, questLogIndex, questId)
         if questLogIndex then
@@ -242,6 +247,13 @@ end
 
 function Interface.OnDisable()
     addon:Debug("Interface module disabling")
+    -- Unregister all event frames to clean up
+    for _, frame in ipairs(eventFrames) do
+        if frame and frame.UnregisterAllEvents then
+            frame:UnregisterAllEvents()
+            frame:SetScript("OnEvent", nil)
+        end
+    end
 end
 
 -- ============================================================

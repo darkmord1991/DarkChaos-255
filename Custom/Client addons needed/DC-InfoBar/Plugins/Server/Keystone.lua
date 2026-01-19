@@ -20,25 +20,8 @@ local KEYSTONE_ITEM_IDS = (DCCentral and DCCentral.KEYSTONE_ITEM_IDS) or (DCprot
     [60002] = true,
 }
 
--- Dungeon name to abbreviation mapping
-local DUNGEON_ABBREVS = {
-    ["Utgarde Keep"] = "UK",
-    ["Utgarde Pinnacle"] = "UP",
-    ["The Nexus"] = "Nex",
-    ["The Oculus"] = "Occ",
-    ["Halls of Stone"] = "HoS",
-    ["Halls of Lightning"] = "HoL",
-    ["The Culling of Stratholme"] = "CoS",
-    ["Azjol-Nerub"] = "AN",
-    ["Ahn'kahet"] = "AK",
-    ["Drak'Tharon Keep"] = "DTK",
-    ["Gundrak"] = "GD",
-    ["The Violet Hold"] = "VH",
-    ["Trial of the Champion"] = "ToC",
-    ["Forge of Souls"] = "FoS",
-    ["Pit of Saron"] = "PoS",
-    ["Halls of Reflection"] = "HoR",
-}
+-- Use centralized dungeon abbreviations from Core.lua (single source of truth)
+local DUNGEON_ABBREVS = DCInfoBar.DUNGEON_ABBREVS or {}
 
 local KeystonePlugin = {
     id = "DCInfoBar_Keystone",
@@ -143,9 +126,12 @@ function KeystonePlugin:GetItemTooltipData(bag, slot)
     tooltip:ClearLines()
     tooltip:SetBagItem(bag, slot)
     
+    -- Get the tooltip's actual name for looking up text regions
+    local tooltipName = tooltip:GetName() or "DCInfoBarKeystoneScanTooltip"
+    
     local level, dungeon
     for i = 1, tooltip:NumLines() do
-        local line = _G["DCInfoBarKeystoneScanTooltipTextLeft" .. i]
+        local line = _G[tooltipName .. "TextLeft" .. i]
         if line then
             local text = line:GetText()
             if text then

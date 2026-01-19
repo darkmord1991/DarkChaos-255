@@ -133,15 +133,6 @@ local function SaveFramePosition(frameName)
     addon:SaveSettings()
 end
 
-local function ApplyAllSavedPositions()
-    local settings = addon.settings.frameMover
-    if settings and settings.frames then
-        for frameName in pairs(settings.frames) do
-            LoadFramePosition(frameName)
-        end
-    end
-end
-
 local function SnapValue(value, gridSize)
     if not gridSize or gridSize <= 0 then return value end
     return math.floor((value / gridSize) + 0.5) * gridSize
@@ -157,6 +148,15 @@ local function LoadFramePosition(frameName)
         return true
     end
     return false
+end
+
+local function ApplyAllSavedPositions()
+    local settings = addon.settings.frameMover
+    if settings and settings.frames then
+        for frameName in pairs(settings.frames) do
+            LoadFramePosition(frameName)
+        end
+    end
 end
 
 -- ============================================================

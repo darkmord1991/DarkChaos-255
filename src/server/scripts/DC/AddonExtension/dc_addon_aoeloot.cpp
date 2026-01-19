@@ -15,6 +15,7 @@
 #include "Config.h"
 #include "Log.h"
 #include "Chat.h"
+#include <mutex>
 
 // Forward declaration from dc_aoeloot_extensions.cpp to get live in-memory stats
 namespace DCAoELootExt
@@ -48,6 +49,7 @@ namespace AOELoot
     };
 
     static std::unordered_map<uint32, PlayerAOESettings> s_PlayerSettings;
+    static std::mutex s_SettingsMutex;  // Thread safety for settings access
 
     // Load settings from DB for player
     // Uses dc_aoeloot_preferences (same table as dc_aoeloot_extensions.cpp)

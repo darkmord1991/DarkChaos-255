@@ -35,6 +35,7 @@
 #include <ctime>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -58,6 +59,7 @@ namespace HLBG
     {
         // Avoid expensive lookups and allow rate-limiting without extra dependencies.
         static std::unordered_map<uint32, uint32> s_lastRequestMs;
+        static std::mutex s_rateLimitMutex;  // Thread safety for rate limiting
 
         static bool IsRateLimited(Player* player, uint32 cooldownMs)
         {
@@ -66,6 +68,8 @@ namespace HLBG
 
             uint32 now = GameTime::GetGameTimeMS().count();
             uint32 key = player->GetGUID().GetCounter();
+            
+            std::lock_guard<std::mutex> lock(s_rateLimitMutex);
             auto it = s_lastRequestMs.find(key);
             if (it != s_lastRequestMs.end() && (now - it->second) < cooldownMs)
                 return true;
@@ -591,30 +595,6 @@ namespace HLBG
         SendQueueInfo(player);
     }
 
-#if 0
-    static void HandleRequestStats(Player* player, const ParsedMessage& msg)
-    {
-        if (!player) return;
-        (void)msg;
-        // Deprecated: redundant with CMSG_GET_PLAYER_STATS / CMSG_GET_ALLTIME_STATS and DC-Leaderboards.
-        Message response(Module::HINTERLAND, SMSG_ERROR);
-        response.Add(std::string("HLBG stats request is deprecated. Use DC-Leaderboards (/leaderboard)."));
-        response.Send(player);
-    }
-
-    static void HandleRequestHistoryUI(Player* player, const ParsedMessage& msg)
-    {
-        if (!player)
-            return;
-
-        (void)msg;
-        // Deprecated: moved to DC-Leaderboards to avoid duplicate big transfers.
-        Message response(Module::HINTERLAND, SMSG_ERROR);
-        response.Add(std::string("HLBG history UI is deprecated. Use DC-Leaderboards (/leaderboard)."));
-        response.Send(player);
-    }
-#endif
-
     // Leaderboard and stats handlers
     static void HandleGetLeaderboard(Player* player, const ParsedMessage& msg)
     {
@@ -1102,6 +1082,3 @@ bool HandleHLBGQueueStatus(ChatHandler* handler, char const* /*args*/)
         hl->QueueCommandFromAddon(player, "queue", "status");
     return true;
 }
-
-// Legacy symbol expected by DC script loader; command registration is in cs_hl_bg.cpp.
-void AddSC_hlbg_addon() {}

@@ -18,6 +18,22 @@ addon.author = "DarkChaos Team"
 addon.description = "Quality of Life improvements for DarkChaos-255"
 
 -- ============================================================
+-- Shared Class Colors (3.3.5a)
+-- ============================================================
+addon.CLASS_COLORS = RAID_CLASS_COLORS or {
+    ["WARRIOR"]     = { r = 0.78, g = 0.61, b = 0.43 },
+    ["PALADIN"]     = { r = 0.96, g = 0.55, b = 0.73 },
+    ["HUNTER"]      = { r = 0.67, g = 0.83, b = 0.45 },
+    ["ROGUE"]       = { r = 1.00, g = 0.96, b = 0.41 },
+    ["PRIEST"]      = { r = 1.00, g = 1.00, b = 1.00 },
+    ["DEATHKNIGHT"] = { r = 0.77, g = 0.12, b = 0.23 },
+    ["SHAMAN"]      = { r = 0.00, g = 0.44, b = 0.87 },
+    ["MAGE"]        = { r = 0.41, g = 0.80, b = 0.94 },
+    ["WARLOCK"]     = { r = 0.58, g = 0.51, b = 0.79 },
+    ["DRUID"]       = { r = 1.00, g = 0.49, b = 0.04 },
+}
+
+-- ============================================================
 -- Module System
 -- ============================================================
 addon.modules = {}          -- Registered modules
@@ -575,14 +591,44 @@ function addon:RegisterModule(name, config)
     
     -- Merge module defaults into main defaults
     if config.defaults then
-        for k, v in pairs(config.defaults) do
-            if self.defaults[k] == nil then
-                self.defaults[k] = v
-            end
-        end
+        self:MergeModuleDefaults(config.defaults)
     end
     
     self:Debug("Registered module: " .. name)
+end
+
+-- Utility: Merge module defaults into addon.defaults (deep merge)
+-- This is the shared utility to avoid code duplication in each module
+function addon:MergeModuleDefaults(moduleDefaults)
+    if not moduleDefaults then return end
+    for k, v in pairs(moduleDefaults) do
+        if self.defaults[k] == nil then
+            if type(v) == "table" then
+                self.defaults[k] = self:DeepCopy(v)
+            else
+                self.defaults[k] = v
+            end
+        elseif type(v) == "table" and type(self.defaults[k]) == "table" then
+            for k2, v2 in pairs(v) do
+                if self.defaults[k][k2] == nil then
+                    if type(v2) == "table" then
+                        self.defaults[k][k2] = self:DeepCopy(v2)
+                    else
+                        self.defaults[k][k2] = v2
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Utility: Get class color code string for a class token
+function addon:GetClassColorCode(classToken)
+    local color = self.CLASS_COLORS[classToken]
+    if color then
+        return string.format("|cff%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
+    end
+    return "|cffffffff"
 end
 
 -- Get a registered module
