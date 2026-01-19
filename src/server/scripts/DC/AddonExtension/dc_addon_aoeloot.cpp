@@ -73,6 +73,7 @@ namespace AOELoot
             // lootRange is server-controlled, not stored per-player
         }
 
+        std::lock_guard<std::mutex> lock(s_SettingsMutex);
         s_PlayerSettings[guid] = settings;
     }
 
@@ -81,17 +82,20 @@ namespace AOELoot
     static void SavePlayerSettings(Player* player)
     {
         uint32 guid = player->GetGUID().GetCounter();
-        auto it = s_PlayerSettings.find(guid);
-        if (it == s_PlayerSettings.end())
-            return;
-
-        auto const& s = it->second;
+        PlayerAOESettings snapshot;
+        {
+            std::lock_guard<std::mutex> lock(s_SettingsMutex);
+            auto it = s_PlayerSettings.find(guid);
+            if (it == s_PlayerSettings.end())
+                return;
+            snapshot = it->second;
+        }
         CharacterDatabase.Execute(
             "REPLACE INTO dc_aoeloot_preferences "
             "(player_guid, aoe_enabled, show_messages, min_quality, auto_skin, smart_loot) "
             "VALUES ({}, {}, {}, {}, {}, {})",
-            guid, s.enabled ? 1 : 0, s.showMessages ? 1 : 0, s.minQuality,
-            s.autoSkin ? 1 : 0, s.smartLoot ? 1 : 0);
+            guid, snapshot.enabled ? 1 : 0, snapshot.showMessages ? 1 : 0, snapshot.minQuality,
+            snapshot.autoSkin ? 1 : 0, snapshot.smartLoot ? 1 : 0);
     }
 
     // Get player stats - uses live in-memory stats from dc_aoeloot_extensions first,
@@ -136,23 +140,34 @@ namespace AOELoot
     static void SendSettingsSync(Player* player)
     {
         uint32 guid = player->GetGUID().GetCounter();
-        auto it = s_PlayerSettings.find(guid);
-        if (it == s_PlayerSettings.end())
+        PlayerAOESettings snapshot;
+        bool needsLoad = false;
+        {
+            std::lock_guard<std::mutex> lock(s_SettingsMutex);
+            auto it = s_PlayerSettings.find(guid);
+            if (it == s_PlayerSettings.end())
+                needsLoad = true;
+            else
+                snapshot = it->second;
+        }
+
+        if (needsLoad)
+        {
             LoadPlayerSettings(player);
-
-        it = s_PlayerSettings.find(guid);
-        if (it == s_PlayerSettings.end())
-            return;
-
-        auto const& s = it->second;
+            std::lock_guard<std::mutex> lock(s_SettingsMutex);
+            auto it = s_PlayerSettings.find(guid);
+            if (it == s_PlayerSettings.end())
+                return;
+            snapshot = it->second;
+        }
 
         Message(Module::AOE_LOOT, Opcode::AOE::SMSG_SETTINGS_SYNC)
-            .Add(s.enabled)
-            .Add(s.showMessages)
-            .Add(s.minQuality)
-            .Add(s.autoSkin)
-            .Add(s.smartLoot)
-            .Add(s.lootRange)
+                .Add(snapshot.enabled)
+                .Add(snapshot.showMessages)
+                .Add(snapshot.minQuality)
+                .Add(snapshot.autoSkin)
+                .Add(snapshot.smartLoot)
+                .Add(snapshot.lootRange)
             .Send(player);
     }
 
@@ -162,7 +177,10 @@ namespace AOELoot
         uint32 guid = player->GetGUID().GetCounter();
         bool enabled = msg.GetBool(0);
 
-        s_PlayerSettings[guid].enabled = enabled;
+        {
+            std::lock_guard<std::mutex> lock(s_SettingsMutex);
+            s_PlayerSettings[guid].enabled = enabled;
+        }
 
         // Update in-memory prefs used by ac_aoeloot.cpp (critical for real-time effect)
         DCAoELootExt::SetPlayerAoELootEnabled(player->GetGUID(), enabled);
@@ -180,7 +198,10 @@ namespace AOELoot
         uint8 quality = static_cast<uint8>(msg.GetUInt32(0));
         if (quality > 6) quality = 0;
 
-        s_PlayerSettings[guid].minQuality = quality;
+        {
+            std::lock_guard<std::mutex> lock(s_SettingsMutex);
+            s_PlayerSettings[guid].minQuality = quality;
+        }
 
         // Update in-memory prefs used by ac_aoeloot.cpp (critical for real-time effect)
         DCAoELootExt::SetPlayerMinQuality(player->GetGUID(), quality);
@@ -210,7 +231,10 @@ namespace AOELoot
         uint32 guid = player->GetGUID().GetCounter();
         bool enabled = msg.GetBool(0);
 
-        s_PlayerSettings[guid].autoSkin = enabled;
+        {
+            std::lock_guard<std::mutex> lock(s_SettingsMutex);
+            s_PlayerSettings[guid].autoSkin = enabled;
+        }
         SavePlayerSettings(player);
         SendSettingsSync(player);
 
@@ -225,7 +249,10 @@ namespace AOELoot
         if (range < 5.0f) range = 5.0f;
         if (range > 100.0f) range = 100.0f;
 
-        s_PlayerSettings[guid].lootRange = range;
+        {
+            std::lock_guard<std::mutex> lock(s_SettingsMutex);
+            s_PlayerSettings[guid].lootRange = range;
+        }
         SavePlayerSettings(player);
         SendSettingsSync(player);
 
@@ -296,6 +323,7 @@ namespace AOELoot
     void OnPlayerLogout(Player* player)
     {
         uint32 guid = player->GetGUID().GetCounter();
+        std::lock_guard<std::mutex> lock(s_SettingsMutex);
         s_PlayerSettings.erase(guid);
     }
 
@@ -303,6 +331,7 @@ namespace AOELoot
     bool IsEnabledForPlayer(Player* player)
     {
         uint32 guid = player->GetGUID().GetCounter();
+        std::lock_guard<std::mutex> lock(s_SettingsMutex);
         auto it = s_PlayerSettings.find(guid);
         return (it != s_PlayerSettings.end()) ? it->second.enabled : true;
     }
@@ -310,6 +339,7 @@ namespace AOELoot
     float GetLootRangeForPlayer(Player* player)
     {
         uint32 guid = player->GetGUID().GetCounter();
+        std::lock_guard<std::mutex> lock(s_SettingsMutex);
         auto it = s_PlayerSettings.find(guid);
         return (it != s_PlayerSettings.end()) ? it->second.lootRange : 30.0f;
     }
@@ -317,6 +347,7 @@ namespace AOELoot
     uint8 GetMinQualityForPlayer(Player* player)
     {
         uint32 guid = player->GetGUID().GetCounter();
+        std::lock_guard<std::mutex> lock(s_SettingsMutex);
         auto it = s_PlayerSettings.find(guid);
         return (it != s_PlayerSettings.end()) ? it->second.minQuality : 0;
     }

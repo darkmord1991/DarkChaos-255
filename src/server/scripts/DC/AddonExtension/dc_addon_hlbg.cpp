@@ -800,6 +800,12 @@ void AddSC_dc_addon_hlbg()
     DCAddon::HLBG::RegisterHandlers();
 }
 
+// Compatibility wrapper for legacy loader symbol
+void AddSC_hlbg_addon()
+{
+    AddSC_dc_addon_hlbg();
+}
+
 // ============================================================================
 // Chat-prefixed addon fallback handlers (moved from DC/HinterlandBG/hlbg_addon.cpp)
 // These are called by the centralized .hlbg command table in src/server/scripts/Commands/cs_hl_bg.cpp
