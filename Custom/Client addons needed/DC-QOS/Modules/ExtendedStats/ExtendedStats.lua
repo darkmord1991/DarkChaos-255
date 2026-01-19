@@ -35,8 +35,8 @@ local ExtendedStats = {
             show = true,
             hideUnavailable = true,
             -- Slight overlap to avoid a visible seam between the two bordered frames.
-            anchorOffsetX = -18,
-            anchorOffsetY = -12,
+            anchorOffsetX = -6,
+            anchorOffsetY = 0,
             -- General
             showMovementSpeed = true,
             -- Melee
@@ -489,18 +489,18 @@ local function TryBuildUI()
 
         -- Never allow a visible gap between the CharacterFrame and this panel.
         -- Any offset that isn't sufficiently negative can leave a seam between borders.
-        if dx > -10 then
-            dx = -18
+        if dx > 0 then
+            dx = -6
             addon:SetSetting("extendedStats.anchorOffsetX", dx)
         end
 
         -- Avoid huge gaps caused by accidentally saved drag offsets.
         -- Keep the panel snapped close to the Character window by default.
         if dx > 40 or dx < -80 then
-            dx = -18
+            dx = -6
             addon:SetSetting("extendedStats.anchorOffsetX", dx)
         end
-        local dy = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetY) or -12
+        local dy = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetY) or 0
         frame:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", dx, dy)
         frame:SetHeight(CharacterFrame:GetHeight() - 24)
 
@@ -1128,12 +1128,10 @@ function ExtendedStats.CreateSettings(parent)
                 ctrl:ClearAllPoints()
                 ctrl:SetPoint("TOPLEFT", x, ctrl._dcqosY)
 
-                -- Prevent checkbox text being clipped; make it consume available space.
-                if ctrl.Text and ctrl.Text.SetWidth then
-                    ctrl:SetWidth(colW)
-                    ctrl.Text:SetWidth(math.max(40, colW - 30))
-                    if ctrl.Text.SetJustifyH then ctrl.Text:SetJustifyH("LEFT") end
-                    if ctrl.Text.SetNonSpaceWrap then ctrl.Text:SetNonSpaceWrap(false) end
+                -- Don't resize checkboxes - let them use natural size
+                -- Just update hit rect for clickability
+                if ctrl.Text then
+                    ctrl:SetHitRectInsets(0, -colW + 30, 0, 0)
                 end
             end
         end
@@ -1189,7 +1187,11 @@ function ExtendedStats.CreateSettings(parent)
     local function CreateStatToggle(label, settingKey, col)
         local cb = addon:CreateCheckbox(parent)
         cb:SetPoint("TOPLEFT", 16, yOffset)
-        cb.Text:SetText(label)
+        cb:SetHitRectInsets(0, -100, 0, 0)  -- Extend hit area to the right
+        if cb.Text then
+            cb.Text:SetText(label)
+            cb.Text:SetFontObject("GameFontHighlightSmall")
+        end
         cb:SetChecked(settings[settingKey] ~= false)
         cb:SetScript("OnClick", function(self)
             addon:SetSetting("extendedStats." .. settingKey, self:GetChecked())

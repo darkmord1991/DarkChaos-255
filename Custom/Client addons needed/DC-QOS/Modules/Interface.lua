@@ -120,6 +120,61 @@ local function SetupLargerWorldMap()
 end
 
 -- ============================================================
+-- Buff/Aura Frame Position
+-- ============================================================
+local function SetupBuffFramePosition()
+    local settings = addon.settings.interface
+    if not settings.enabled or not settings.buffFrameMove then return end
+
+    local x = settings.buffFrameOffsetX or 0
+    local y = settings.buffFrameOffsetY or 0
+
+    local function ApplyPosition()
+        if InCombatLockdown() then return end
+        
+        if BuffFrame then
+            -- Make it movable and prevent Blizzard from overriding
+            BuffFrame:SetMovable(true)
+            BuffFrame:SetUserPlaced(true)
+            BuffFrame:ClearAllPoints()
+            BuffFrame:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", x, y)
+            
+            -- Hook to prevent repositioning
+            if not BuffFrame._dcqosHooked then
+                BuffFrame._dcqosHooked = true
+                hooksecurefunc(BuffFrame, "SetPoint", function(self, ...)
+                    if self._dcqosRepositioning then return end
+                    self._dcqosRepositioning = true
+                    self:ClearAllPoints()
+                    self:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", x, y)
+                    self._dcqosRepositioning = nil
+                end)
+            end
+        end
+
+        if TemporaryEnchantFrame then
+            TemporaryEnchantFrame:ClearAllPoints()
+            TemporaryEnchantFrame:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", x, y)
+        end
+    end
+    
+    -- Use a frame to handle positioning after combat/loading
+    local positioner = CreateFrame("Frame")
+    positioner:RegisterEvent("PLAYER_ENTERING_WORLD")
+    positioner:RegisterEvent("PLAYER_REGEN_ENABLED")
+    positioner:SetScript("OnEvent", ApplyPosition)
+    
+    -- Apply immediately if not in combat
+    if not InCombatLockdown() then
+        ApplyPosition()
+    end
+    
+    -- Also try after a short delay for late-loading UI
+    addon:DelayedCall(0.5, ApplyPosition)
+    addon:DelayedCall(2.0, ApplyPosition)
+end
+
+-- ============================================================
 -- Enhanced Minimap
 -- ============================================================
 local function SetupEnhancedMinimap()
@@ -136,6 +191,31 @@ local function SetupEnhancedMinimap()
     -- Hide minimap zoom buttons
     MinimapZoomIn:Hide()
     MinimapZoomOut:Hide()
+end
+
+-- ============================================================
+-- Player Frame Offset
+-- ============================================================
+local function SetupPlayerFrameOffset()
+    local settings = addon.settings.interface
+    if not settings.enabled then return end
+    
+    local yOffset = settings.playerFrameOffsetY or -3
+    
+    local function ApplyOffset()
+        if InCombatLockdown() then return end
+        if not PlayerFrame then return end
+        
+        -- Get current position and nudge down
+        local point, relativeTo, relativePoint, x, y = PlayerFrame:GetPoint()
+        if point then
+            PlayerFrame:ClearAllPoints()
+            PlayerFrame:SetPoint(point, relativeTo, relativePoint, x, (y or 0) + yOffset)
+        end
+    end
+    
+    -- Apply after UI loads
+    addon:DelayedCall(0.5, ApplyOffset)
 end
 
 -- ============================================================
@@ -156,6 +236,8 @@ function Interface.OnEnable()
     if not (addon.settings.minimap and addon.settings.minimap.enabled) then
         SetupEnhancedMinimap()
     end
+    SetupBuffFramePosition()
+    SetupPlayerFrameOffset()
 end
 
 function Interface.OnDisable()
@@ -219,6 +301,54 @@ function Interface.CreateSettings(parent)
         addon:Print("Requires /reload to take effect", true)
     end)
     yOffset = yOffset - 25
+
+    -- ============================================================
+    -- Buff/Aura Frame Section
+    -- ============================================================
+    local auraHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    auraHeader:SetPoint("TOPLEFT", 16, yOffset)
+    auraHeader:SetText("Buff/Aura Frame")
+    yOffset = yOffset - 25
+
+    local moveBuffCb = addon:CreateCheckbox(parent)
+    moveBuffCb:SetPoint("TOPLEFT", 16, yOffset)
+    moveBuffCb.Text:SetText("Move Buff/Aura frame")
+    moveBuffCb:SetChecked(settings.buffFrameMove)
+    moveBuffCb:SetScript("OnClick", function(self)
+        addon:SetSetting("interface.buffFrameMove", self:GetChecked())
+        addon:Print("Requires /reload to take effect", true)
+    end)
+    yOffset = yOffset - 30
+
+    local offsetXSlider = addon:CreateSlider(parent)
+    offsetXSlider:SetPoint("TOPLEFT", 16, yOffset)
+    offsetXSlider:SetWidth(200)
+    offsetXSlider:SetMinMaxValues(-400, 200)
+    offsetXSlider:SetValueStep(5)
+    offsetXSlider.Text:SetText("Buff Frame X Offset")
+    offsetXSlider.Low:SetText("-400")
+    offsetXSlider.High:SetText("200")
+    offsetXSlider:SetValue(settings.buffFrameOffsetX or 0)
+    offsetXSlider:SetScript("OnValueChanged", function(self, value)
+        addon:SetSetting("interface.buffFrameOffsetX", math.floor(value + 0.5))
+        addon:PromptReloadUI()
+    end)
+    yOffset = yOffset - 50
+
+    local offsetYSlider = addon:CreateSlider(parent)
+    offsetYSlider:SetPoint("TOPLEFT", 16, yOffset)
+    offsetYSlider:SetWidth(200)
+    offsetYSlider:SetMinMaxValues(-200, 200)
+    offsetYSlider:SetValueStep(5)
+    offsetYSlider.Text:SetText("Buff Frame Y Offset")
+    offsetYSlider.Low:SetText("-200")
+    offsetYSlider.High:SetText("200")
+    offsetYSlider:SetValue(settings.buffFrameOffsetY or 0)
+    offsetYSlider:SetScript("OnValueChanged", function(self, value)
+        addon:SetSetting("interface.buffFrameOffsetY", math.floor(value + 0.5))
+        addon:PromptReloadUI()
+    end)
+    yOffset = yOffset - 50
     
     -- Quest Level Text
     local questLevelCb = addon:CreateCheckbox(parent)

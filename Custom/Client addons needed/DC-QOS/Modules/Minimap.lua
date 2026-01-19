@@ -55,33 +55,178 @@ end
 local function PositionLeftMinimapButtons(container)
     if not container then return end
 
-    local buttons = {
-        MiniMapTracking,
-        MiniMapBattlefieldFrame,
-        MiniMapWorldMapButton,
-        GameTimeFrame,
-        MiniMapMailFrame,
-        MinimapZoomIn,
-        MinimapZoomOut,
-    }
+    -- Only position buttons that are visible
+    local s = addon.settings.minimap
+    local step = (s and s.buttonSpacing) or 22
+    local x = 4   -- Position just outside the left edge of the minimap (positive = closer)
+    local y = 50  -- Start near the top, positive goes up from center
 
-    local x = 8
-    local y = -32
-    local step = 26
+    -- Standard buttons - only position if visible and not hidden by settings
+    local buttons = {}
+    if MiniMapTracking and MiniMapTracking:IsShown() and not s.hideTracking then
+        table.insert(buttons, MiniMapTracking)
+    end
+    if MiniMapBattlefieldFrame and MiniMapBattlefieldFrame:IsShown() then
+        table.insert(buttons, MiniMapBattlefieldFrame)
+    end
+    if MiniMapWorldMapButton and MiniMapWorldMapButton:IsShown() and not s.hideWorldMapButton then
+        table.insert(buttons, MiniMapWorldMapButton)
+    end
+    if GameTimeFrame and GameTimeFrame:IsShown() and not s.hideCalendar then
+        table.insert(buttons, GameTimeFrame)
+    end
+    if MiniMapMailFrame and MiniMapMailFrame:IsShown() then
+        table.insert(buttons, MiniMapMailFrame)
+    end
+    if MinimapZoomIn and MinimapZoomIn:IsShown() and not s.hideZoom then
+        table.insert(buttons, MinimapZoomIn)
+    end
+    if MinimapZoomOut and MinimapZoomOut:IsShown() and not s.hideZoom then
+        table.insert(buttons, MinimapZoomOut)
+    end
 
     for _, b in ipairs(buttons) do
         if b and b.ClearAllPoints and b.SetPoint then
             b:ClearAllPoints()
-            b:SetPoint("TOPLEFT", container, "TOPLEFT", x, y)
+            b:SetPoint("RIGHT", Minimap, "LEFT", x, y)
             y = y - step
         end
     end
 
-    -- Keep the clock where Blizzard expects (bottom). Only re-anchor if it's floating.
-    if TimeManagerClockButton and TimeManagerClockButton.ClearAllPoints and TimeManagerClockButton.SetPoint then
-        -- If the user prefers the clock centered under the minimap, leave it.
-        -- We avoid forcing it into the left column.
+    return y
+end
+
+local function IsIgnoredMinimapButton(button, name)
+    if not button then
+        return true
     end
+
+    if button == Minimap or button == MinimapCluster or button == MinimapBorder or button == MinimapBackdrop then
+        return true
+    end
+
+    name = name or (button.GetName and button:GetName()) or ""
+    
+    -- Ignore DC-Welcome button (has its own drag system)
+    if name == "DCWelcomeMinimapButton" then
+        return true
+    end
+    
+    -- Ignore LibDBIcon buttons (they have their own drag/position system)
+    -- This includes GOMove/AzerothAdmin button
+    if name:find("^LibDBIcon10_") then
+        return true
+    end
+    
+    if name == "MiniMapTracking" or name == "MiniMapTrackingButton" or name == "MiniMapTrackingFrame" then
+        return true
+    end
+    if name == "MiniMapBattlefieldFrame" or name == "MiniMapWorldMapButton" then
+        return true
+    end
+    if name == "MiniMapMailFrame" or name == "MiniMapMailBorder" or name == "MiniMapMailIcon" then
+        return true
+    end
+    if name == "GameTimeFrame" or name == "TimeManagerClockButton" then
+        return true
+    end
+    if name == "MinimapZoomIn" or name == "MinimapZoomOut" then
+        return true
+    end
+    if name == "MiniMapVoiceChatFrame" then
+        return true
+    end
+    if name == "Minimap" or name == "MinimapCluster" or name == "MinimapBorder" or name == "MinimapBorderTop" then
+        return true
+    end
+
+    return false
+end
+
+local function IsAddonMinimapButton(button)
+    if not button or not button.GetObjectType or button:GetObjectType() ~= "Button" then
+        return false
+    end
+
+    local name = button.GetName and button:GetName() or ""
+    if IsIgnoredMinimapButton(button, name) then
+        return false
+    end
+
+    local parent = button.GetParent and button:GetParent() or nil
+    if parent ~= Minimap and parent ~= MinimapCluster then
+        return false
+    end
+
+    local w = button.GetWidth and button:GetWidth() or 0
+    local h = button.GetHeight and button:GetHeight() or 0
+    if w > 0 and (w < 16 or w > 48) then
+        return false
+    end
+    if h > 0 and (h < 16 or h > 48) then
+        return false
+    end
+
+    if name:find("LibDBIcon", 1, true)
+        or name:find("MinimapButton", 1, true)
+        or name:find("MiniMapButton", 1, true)
+        or name:find("MinimapIcon", 1, true)
+        or name:find("MiniMapIcon", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+local function CollectAddonMinimapButtons()
+    local result = {}
+
+    local function collectFrom(parent)
+        if not parent or not parent.GetChildren then return end
+        local children = { parent:GetChildren() }
+        for _, child in ipairs(children) do
+            if IsAddonMinimapButton(child) then
+                table.insert(result, child)
+            end
+        end
+    end
+
+    collectFrom(Minimap)
+    collectFrom(MinimapCluster)
+
+    table.sort(result, function(a, b)
+        local nameA = a.GetName and a:GetName() or ""
+        local nameB = b.GetName and b:GetName() or ""
+        return nameA < nameB
+    end)
+
+    return result
+end
+
+local function PositionAddonMinimapButtons(container, startY)
+    local s = addon.settings.minimap
+    local step = (s and s.buttonSpacing) or 22
+    local x = 4   -- Position just outside the left edge of the minimap
+    local y = startY or 50
+
+    local buttons = CollectAddonMinimapButtons()
+    for _, b in ipairs(buttons) do
+        if b and b.ClearAllPoints and b.SetPoint and b:IsShown() then
+            b:ClearAllPoints()
+            -- Anchor to minimap's left edge, not container
+            b:SetPoint("RIGHT", Minimap, "LEFT", x, y)
+            y = y - step
+        end
+    end
+
+    return y
+end
+
+local function LayoutLeftMinimapButtons(container)
+    if not container then return end
+
+    local nextY = PositionLeftMinimapButtons(container)
+    PositionAddonMinimapButtons(container, nextY)
 end
 
 local function ApplyMinimapSkin()
@@ -106,8 +251,8 @@ local function ApplyMinimapSkin()
             end
 
             local posY = s.y
-            if posY == nil or posY == -20 then
-                posY = -36
+            if posY == nil or posY == -20 or posY == -32 or posY == -15 then
+                posY = -17
             end
 
             MinimapCluster:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", posX, posY)
@@ -140,7 +285,7 @@ local function ApplyMinimapSkin()
             local frame = EnsureDcMinimapFrame()
             frame:Show()
             if MinimapBorder then MinimapBorder:Hide() end
-            PositionLeftMinimapButtons(frame)
+            LayoutLeftMinimapButtons(frame)
         else
             if Minimap.DCQOSFrame then Minimap.DCQOSFrame:Hide() end
             if MinimapBorder then
@@ -159,7 +304,7 @@ local function ApplyMinimapSkin()
         if useDcFrame then
             local frame = EnsureDcMinimapFrame()
             frame:Show()
-            PositionLeftMinimapButtons(frame)
+            LayoutLeftMinimapButtons(frame)
         else
             if Minimap.DCQOSFrame then Minimap.DCQOSFrame:Hide() end
         end
@@ -228,12 +373,21 @@ local function ApplyMinimapSkin()
         if useDcFrame then
             local frame = EnsureDcMinimapFrame()
             frame:Show()
-            PositionLeftMinimapButtons(frame)
+            LayoutLeftMinimapButtons(frame)
         elseif Minimap.DCQOSFrame then
             Minimap.DCQOSFrame:Hide()
         end
 
         RefreshLibDBIcons()
+    end)
+
+    -- Re-apply layout after other addons finish positioning their minimap buttons.
+    addon:DelayedCall(1.0, function()
+        if useDcFrame then
+            local frame = EnsureDcMinimapFrame()
+            frame:Show()
+            LayoutLeftMinimapButtons(frame)
+        end
     end)
 end
 
@@ -275,19 +429,12 @@ function MinimapModule.CreateSettings(parent)
     end)
     yOffset = yOffset - 30
 
-    local styleLabel = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    styleLabel:SetPoint("TOPLEFT", 16, yOffset)
-    styleLabel:SetText("Style: round or square")
-    yOffset = yOffset - 22
-
-    local styleInput = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
-    styleInput:SetPoint("TOPLEFT", 16, yOffset)
-    styleInput:SetSize(140, 20)
-    styleInput:SetAutoFocus(false)
-    styleInput:SetText(settings.style or "round")
-    styleInput:SetScript("OnEnterPressed", function(self)
-        addon:SetSetting("minimap.style", self:GetText())
-        self:ClearFocus()
+    local squareStyleCb = addon:CreateCheckbox(parent)
+    squareStyleCb:SetPoint("TOPLEFT", 16, yOffset)
+    squareStyleCb.Text:SetText("Square minimap style")
+    squareStyleCb:SetChecked(settings.style == "square")
+    squareStyleCb:SetScript("OnClick", function(self)
+        addon:SetSetting("minimap.style", self:GetChecked() and "square" or "round")
         addon:PromptReloadUI()
     end)
     yOffset = yOffset - 30
@@ -397,6 +544,7 @@ function MinimapModule.CreateSettings(parent)
     spacingSlider:SetValue(settings.buttonSpacing or 22)
     spacingSlider:SetScript("OnValueChanged", function(self, value)
         addon:SetSetting("minimap.buttonSpacing", math.floor(value + 0.5))
+        addon:PromptReloadUI()
     end)
 end
 

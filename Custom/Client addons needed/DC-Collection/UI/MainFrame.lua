@@ -2395,6 +2395,11 @@ end
 function DC:OnFilterChanged()
     self.currentPage = 1
     self:PopulateGrid()
+    
+    -- Also update PetJournal if it's visible (pets tab uses separate frame)
+    if self.activeTab == "pets" and DC.PetJournal and DC.PetJournal.frame and DC.PetJournal.frame:IsShown() then
+        DC.PetJournal:UpdatePetList()
+    end
 end
 
 -- ============================================================================
@@ -2837,7 +2842,28 @@ function DC:ShowHeirloomPreview(itemId, options)
     end
 
     if options.canTryOn and model.TryOn then
-        model:TryOn(itemId)
+        -- TryOn requires an item link, not just itemId
+        local itemLink = nil
+        if type(itemId) == "number" then
+            -- Build item link: |Hitem:itemId:0:0:0:0:0:0:0|h[Name]|h
+            local name = GetItemInfo(itemId)
+            if name then
+                itemLink = string.format("|Hitem:%d:0:0:0:0:0:0:0|h[%s]|h", itemId, name)
+            else
+                -- Queue item info and retry
+                itemLink = "item:" .. itemId
+            end
+        elseif type(itemId) == "string" then
+            if itemId:find("item:") then
+                itemLink = itemId
+            else
+                itemLink = "item:" .. itemId
+            end
+        end
+        
+        if itemLink then
+            model:TryOn(itemLink)
+        end
     end
 
     if model.SetCamera then

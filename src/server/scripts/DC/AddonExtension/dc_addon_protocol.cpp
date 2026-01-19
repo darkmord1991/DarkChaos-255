@@ -32,7 +32,7 @@
 
 // Forward declaration for S2C logging (defined later in file)
 static bool g_S2CLoggingEnabled = false;
-static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats);
+static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview);
 static void LogProtocolErrorEvent(Player* player, const std::string& payload, const std::string& eventType, const std::string& message);
 static void UpdateProtocolStats(Player* player, const std::string& moduleCode, bool isRequest, bool isTimeout, bool isError, uint32 responseTimeMs = 0);
 static std::string EscapeSQLString(std::string s);
@@ -145,7 +145,8 @@ namespace DCAddon
         // Log S2C message if enabled
         if (g_S2CLoggingEnabled)
         {
-            LogS2CMessageGlobal(player, _module, _opcode, fullMessage.length(), effectiveRequestId.empty());
+            std::string preview = fullMessage.length() > 255 ? fullMessage.substr(0, 255) : fullMessage;
+            LogS2CMessageGlobal(player, _module, _opcode, fullMessage.length(), effectiveRequestId.empty(), preview);
         }
 
         // Check if chunking is needed
@@ -684,7 +685,7 @@ static void LogC2SMessage(Player* player, const std::string& payload, bool handl
     );
 }
 
-static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats)
+static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8 opcode, size_t dataSize, bool updateStats, const std::string& payloadPreview)
 {
     if (!player || !player->GetSession()) return;
 
@@ -694,17 +695,20 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
 
     std::string requestType = (safeModule == "SPOT" || safeModule == "SEAS" || safeModule == "MHUD") ? "AIO" : (safeModule == "LBRD" ? "JSON" : "STANDARD");
 
+    std::string preview = payloadPreview.length() > 255 ? payloadPreview.substr(0, 255) : payloadPreview;
+
     CharacterDatabase.Execute(
         "INSERT INTO dc_addon_protocol_log "
         "(guid, account_id, character_name, direction, request_type, module, opcode, data_size, data_preview, status) "
-        "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '', 'completed')",
+        "VALUES ({}, {}, '{}', 'S2C', '{}', '{}', {}, {}, '{}', 'completed')",
         player->GetGUID().GetCounter(),
         player->GetSession()->GetAccountId(),
-        player->GetName(), // Name update assumed safe or handled by Execute format in newer TC
+        EscapeSQLString(player->GetName()),
         requestType,
         safeModule,
         opcode,
-        dataSize
+        dataSize,
+        EscapeSQLString(preview)
     );
 
     if (updateStats)

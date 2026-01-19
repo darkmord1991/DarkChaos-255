@@ -17,7 +17,7 @@
                 GameTooltip:AddLine("Type /gomove reset to reset the GOMove UI positions and input values");
                 GameTooltip:AddLine(" ");
                 GameTooltip:AddLine("Left click to show/hide GO mover");
-                GameTooltip:AddLine("Middle click to show/hide NPC mover");
+                GameTooltip:AddLine("Right click to show/hide NPC mover");
                 GameTooltip:AddLine("Right click to drag this");
                 GameTooltip:Show();
             </OnEnter>
@@ -25,7 +25,7 @@
                 GameTooltip:Hide();
             </OnLeave>
             <OnClick>
-                if arg1 == "MiddleButton" then
+                if arg1 == "RightButton" then
                     if SlashCmdList and SlashCmdList.NPCMOVE then
                         SlashCmdList.NPCMOVE("")
                     end

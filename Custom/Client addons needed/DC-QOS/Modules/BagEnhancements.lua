@@ -436,7 +436,7 @@ local function CreateBagFrame(frameDefName)
     -- Search
     local search = CreateFrame("EditBox", "DCQoS_"..frameDefName.."_Search", f, "InputBoxTemplate")
     search:SetSize(120, 20)
-    search:SetPoint("TOPRIGHT", -30, -32) -- Moved down below title area
+    search:SetPoint("TOP", f, "TOP", 0, -30) -- Centered horizontally, moved up 2 pixels
     search:SetAutoFocus(false)
     search:SetScript("OnTextChanged", function(self)
         LayoutFrame(frameDefName)

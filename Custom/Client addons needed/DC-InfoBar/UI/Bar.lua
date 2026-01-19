@@ -15,6 +15,13 @@ local PLUGIN_PADDING = 6
 local SEPARATOR_WIDTH = 1
 local ICON_SIZE = 16
 
+local function ApplyIconStyle(icon)
+    if not icon then return end
+    if icon.SetTexCoord then
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    end
+end
+
 -- ============================================================================
 -- Bar Creation
 -- ============================================================================
@@ -127,6 +134,7 @@ function DCInfoBar:CreatePluginButton(bar, plugin)
         button.icon:SetSize(ICON_SIZE, ICON_SIZE)
         button.icon:SetPoint("LEFT", 4, 0)
         button.icon:SetTexture(plugin.icon)
+        ApplyIconStyle(button.icon)
     end
     
     -- Text

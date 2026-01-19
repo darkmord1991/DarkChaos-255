@@ -72,6 +72,14 @@ local function OpenItemUpgrade(subcmd)
     RunSlashCommand(cmd)
 end
 
+local function ApplyIconStyle(icon)
+    if not icon then return end
+    -- Crop default icon borders to keep a consistent look.
+    if icon.SetTexCoord then
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    end
+end
+
 local function BuildLauncherList()
     local launchers = {}
 
@@ -346,6 +354,7 @@ function LaunchersPlugin:Rebuild()
 
             b.icon = b:CreateTexture(nil, "ARTWORK")
             b.icon:SetAllPoints()
+            ApplyIconStyle(b.icon)
 
             b:SetScript("OnClick", function(self)
                 local l = self.launcher
@@ -379,6 +388,7 @@ function LaunchersPlugin:Rebuild()
         end
         b:SetSize(iconSize, iconSize)
         b.icon:SetTexture(launcher.icon)
+        ApplyIconStyle(b.icon)
         b:Show()
     end
 
@@ -400,6 +410,7 @@ function LaunchersPlugin:Rebuild()
 
         gearBtn.icon = gearBtn:CreateTexture(nil, "ARTWORK")
         gearBtn.icon:SetAllPoints()
+        ApplyIconStyle(gearBtn.icon)
 
         gearBtn:SetScript("OnClick", function(self)
             local l = self.launcher
@@ -429,6 +440,7 @@ function LaunchersPlugin:Rebuild()
     end
     gearBtn:SetSize(iconSize, iconSize)
     gearBtn.icon:SetTexture(settingsLauncher.icon)
+    ApplyIconStyle(gearBtn.icon)
     gearBtn:Show()
 
     -- Hide extras
@@ -603,6 +615,7 @@ local function ShowMenu(menu, anchor, entries, iconSize)
 
             row.icon = row:CreateTexture(nil, "ARTWORK")
             row.icon:SetPoint("LEFT", 6, 0)
+            ApplyIconStyle(row.icon)
 
             row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             row.text:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
@@ -634,6 +647,7 @@ local function ShowMenu(menu, anchor, entries, iconSize)
 
         row.icon:SetSize(iconSize, iconSize)
         row.icon:SetTexture(entry.icon)
+        ApplyIconStyle(row.icon)
         row.text:SetText(entry.name or "(unknown)")
         row:Show()
     end

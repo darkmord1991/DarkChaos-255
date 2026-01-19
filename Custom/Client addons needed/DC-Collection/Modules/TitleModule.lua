@@ -24,6 +24,54 @@ DC.TitleModule = TitleModule
 
 function TitleModule:Init()
     DC:Debug("TitleModule initialized")
+    
+    -- Seed known titles from client if server definitions are empty
+    DC.After(0.5, function()
+        self:SeedFromClientKnownTitles()
+    end)
+end
+
+-- ============================================================================
+-- SEED FROM CLIENT KNOWN TITLES
+-- ============================================================================
+
+function TitleModule:SeedFromClientKnownTitles()
+    DC.definitions = DC.definitions or {}
+    DC.definitions.titles = DC.definitions.titles or {}
+    DC.collections = DC.collections or {}
+    DC.collections.titles = DC.collections.titles or {}
+    
+    local titles = self:ScanKnownTitles()
+    local added = 0
+    
+    for titleId, data in pairs(titles) do
+        -- Add to definitions if not present
+        if not DC.definitions.titles[titleId] then
+            DC.definitions.titles[titleId] = {
+                id = titleId,
+                name = data.name,
+                displayName = data.name,
+                icon = "Interface\\Icons\\INV_Scroll_11",
+                rarity = 1,
+            }
+            added = added + 1
+        end
+        
+        -- Mark as collected
+        if not DC.collections.titles[titleId] then
+            DC.collections.titles[titleId] = {
+                obtained_date = time(),
+                is_favorite = false,
+                is_active = false,
+            }
+        end
+    end
+    
+    if added > 0 then
+        DC:Debug("Seeded " .. added .. " titles from client")
+    end
+    
+    return added > 0
 end
 
 -- ============================================================================

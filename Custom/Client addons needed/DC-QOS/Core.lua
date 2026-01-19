@@ -148,6 +148,10 @@ addon.defaults = {
         hideGryphons = false,
         hideWorldMap = false,
         largerWorldMap = false,
+        buffFrameMove = false,
+        buffFrameOffsetX = 10,
+        buffFrameOffsetY = -20,
+        playerFrameOffsetY = -3,
     },
 
     -- Action Bars
@@ -173,7 +177,7 @@ addon.defaults = {
         point = "TOPRIGHT",
         relPoint = "TOPRIGHT",
         x = -2,
-        y = -32,
+        y = -17,
         useBlizzardPosition = true,
         useDcFrame = true,
         fillFrame = true,
@@ -501,6 +505,18 @@ function addon:CreateSlider(parent, name)
             end
         end
     end
+    
+    -- Create value display fontstring
+    local valueText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    valueText:SetPoint("TOP", slider, "BOTTOM", 0, 0)
+    slider.Value = valueText
+    
+    -- Hook OnValueChanged to update value display
+    slider:HookScript("OnValueChanged", function(self, value)
+        if self.Value then
+            self.Value:SetText(math.floor(value + 0.5))
+        end
+    end)
     
     return slider
 end

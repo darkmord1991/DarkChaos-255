@@ -302,37 +302,8 @@ RadiusFinalizeFrame:SetScript("OnUpdate", function(self)
         end
 
         -- Sort by distance if coordinates are available
-        local px, py, pz
-        px, py, pz = GOMove._radiusOriginX, GOMove._radiusOriginY, GOMove._radiusOriginZ
-        if (not (px and py and pz) and type(UnitPosition) == "function") then
-            px, py, pz = UnitPosition("player")
-        end
-
-        if (px and py and pz) then
-            -- Cache distance (row[7]) and squared distance (row[8]) once per search.
-            for _, row in ipairs(GOMove.SelL) do
-                local rx, ry, rz = tonumber(row[4]), tonumber(row[5]), tonumber(row[6])
-                if (rx and ry and rz) then
-                    local dist2 = (rx - px)^2 + (ry - py)^2 + (rz - pz)^2
-                    row[8] = dist2
-                    row[7] = math.sqrt(dist2)
-                else
-                    row[8] = nil
-                    row[7] = nil
-                end
-            end
-
-            table.sort(GOMove.SelL, function(a, b)
-                local da = a[8]
-                local db = b[8]
-                if (da and db) then
-                    return da < db
-                end
-                if (da and not db) then
-                    return true
-                end
-                return false
-            end)
+        if (GOMove.SortSelectionByDistance) then
+            GOMove.SortSelectionByDistance(GOMove.SelL, GOMove._radiusOriginX, GOMove._radiusOriginY, GOMove._radiusOriginZ)
         end
 
         -- Always open the selection window when radius results are available.
@@ -355,6 +326,54 @@ RadiusFinalizeFrame:SetScript("OnUpdate", function(self)
         end
     end
 end)
+
+function GOMove.SortSelectionByDistance(list, px, py, pz)
+    if not list or #list <= 1 then
+        return
+    end
+
+    if (not (px and py and pz) and type(UnitPosition) == "function") then
+        px, py, pz = UnitPosition("player")
+    end
+
+    if not (px and py and pz) then
+        return
+    end
+
+    for _, row in ipairs(list) do
+        local rx, ry, rz = tonumber(row[4]), tonumber(row[5]), tonumber(row[6])
+        if (rx and ry and rz) then
+            local dist2 = (rx - px)^2 + (ry - py)^2 + (rz - pz)^2
+            row[8] = dist2
+            row[7] = math.sqrt(dist2)
+        else
+            row[8] = nil
+            row[7] = nil
+        end
+    end
+
+    table.sort(list, function(a, b)
+        local da = a[8]
+        local db = b[8]
+        if (da and db) then
+            if da == db then
+                local na = tostring(a[1] or "")
+                local nb = tostring(b[1] or "")
+                return na < nb
+            end
+            return da < db
+        end
+        if (da and not db) then
+            return true
+        end
+        if (not da and db) then
+            return false
+        end
+        local na = tostring(a[1] or "")
+        local nb = tostring(b[1] or "")
+        return na < nb
+    end)
+end
 
 local function scheduleRadiusFinalize()
     GOMove._radiusFinalizeAt = GetTime() + 0.25
@@ -1225,6 +1244,12 @@ EventFrame:SetScript("OnEvent",
                     end
                     if(not exists) then
                         GOMove.SelL:Add(ARG2, guid, ARG3, ARG4, ARG5, ARG6)
+                        if (GOMove.SortSelectionByDistance) then
+                            GOMove.SortSelectionByDistance(GOMove.SelL)
+                        end
+                        if (GOMove.SortSelectionByDistance) then
+                            GOMove.SortSelectionByDistance(GOMove.SelL)
+                        end
                     end
                     GOMove:Update()
                     if (UpdateMainHeader) then
