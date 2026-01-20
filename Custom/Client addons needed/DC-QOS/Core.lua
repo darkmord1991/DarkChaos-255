@@ -226,6 +226,16 @@ addon.defaults = {
         captureDcDebugFromOtherAddons = true,
         dcDebugTabName = "DCDebug",
     },
+
+    -- Talent Manager
+    talentManager = {
+        enabled = true,
+        showGlyphs = true,
+        confirmLearning = true,
+        frameScale = 1.0,
+        lockFrame = false,
+        autoBackup = true,
+    },
 }
 
 addon.settings = {}

@@ -36,6 +36,10 @@ local moduleCategories = {
         modules = { "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Keybinds" }
     },
     {
+        name = "Character",
+        modules = { "TalentManager" }
+    },
+    {
         name = "Social & System",
         modules = { "SocialEnhancements", "Mail", "Communication", "Profiles" }
     }
@@ -64,6 +68,7 @@ local moduleDisplayNames = {
     ["Mail"] = "Mail",
     ["Communication"] = "Sync & Server",
     ["Profiles"] = "Profiles",
+    ["TalentManager"] = "Talent Manager",
 }
 
 -- Icons for buttons (standard WoW icons)
@@ -89,6 +94,7 @@ local moduleIcons = {
     ["Mail"] = "Interface\\Icons\\Inv_Letter_02",
     ["Communication"] = "Interface\\Icons\\Spell_Holy_DivineProvidence",
     ["Profiles"] = "Interface\\Icons\\INV_Misc_Note_02",
+    ["TalentManager"] = "Interface\\Icons\\Ability_Marksmanship",
 }
 
 -- ============================================================

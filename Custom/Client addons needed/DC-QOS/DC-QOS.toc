@@ -39,3 +39,4 @@ Modules\VendorPlus.lua
 Modules\NameplatesPlus.lua
 Modules\SocialEnhancements.lua
 Modules\CombatLog.lua
+Modules\TalentManager.lua

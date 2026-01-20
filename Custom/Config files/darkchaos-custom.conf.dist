@@ -3112,6 +3112,13 @@ DCCollection.Debug = 0
 #
 DCCollection.Accountwide.SyncToCharacterOnLogin = 1
 
+#
+#    DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete
+#        Description: Flush achievement updates after accountwide sync completes (ensures client-side achievement state is consistent).
+#        Default:     1 (Enabled)
+#
+DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete = 1
+
 # Performance knobs for the login sync.
 # If players occasionally disconnect on login, increase DelayMs and/or reduce BatchSize.
 DCCollection.Accountwide.SyncToCharacterOnLogin.DelayMs = 1000

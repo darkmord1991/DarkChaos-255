@@ -726,6 +726,20 @@ function LaunchersPlugin:ToggleQoSMenu(anchorButton)
                 RunSlashCommand("/dccombat")
             end,
         },
+        {
+            name = "Talent Manager",
+            icon = "Interface\\Icons\\Ability_Marksmanship",
+            onClick = function()
+                local qos = rawget(_G, "DCQOS")
+                local tm = qos and qos.GetModule and qos:GetModule("TalentManager")
+                if tm and tm.Toggle then
+                    tm:Toggle()
+                else
+                    -- Fallback: open DC-QoS settings if module isn't available yet.
+                    RunSlashCommand("/dcqos")
+                end
+            end,
+        },
     }
 
     local iconSize = tonumber(DCInfoBar:GetPluginSetting(self.id, "iconSize")) or 16
