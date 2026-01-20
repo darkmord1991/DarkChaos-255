@@ -2837,6 +2837,13 @@ DCCustomLogin.StartingMount.Spell = 6653
 DCCustomLogin.StartingMount.Skill = 33388
 
 #
+#    DCCustomLogin.StartingMount.MinLevel
+#        Description: Minimum level required to grant riding/mounts
+#        Default:     10
+#
+DCCustomLogin.StartingMount.MinLevel = 10
+
+#
 #    DCCustomLogin.StartingProfessions.Enable
 #        Description: Teach professions to new characters on first login
 #        Default:     1 (Enabled)
@@ -2880,11 +2887,46 @@ DCCustomLogin.Skills = 0
 DCCustomLogin.Skills.List = ""
 
 #
+#    DCCustomLogin.LearnSpells.Enable
+#        Description: Teach class spells on first login (LearnSpells integration)
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.LearnSpells.Enable = 1
+
+#
+#    DCCustomLogin.LearnSpells.MaxLevel
+#        Description: Maximum level to learn class spells up to on first login
+#        Default:     80
+#
+DCCustomLogin.LearnSpells.MaxLevel = 80
+
+#
+#    DCCustomLogin.LearnSpells.ShamanTotems
+#        Description: Give Shaman totems on first login when LearnSpells is enabled
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.LearnSpells.ShamanTotems = 1
+
+#
 #    DCCustomLogin.SpecialAbility
 #        Description: Grant special spells, titles, or mounts on first login
 #        Default:     0 (Disabled)
 #
 DCCustomLogin.SpecialAbility = 0
+
+#
+#    DCCustomLogin.DualSpec.Enable
+#        Description: Grant free dual spec at the configured level
+#        Default:     1 (Enabled)
+#
+DCCustomLogin.DualSpec.Enable = 1
+
+#
+#    DCCustomLogin.DualSpec.Level
+#        Description: Minimum level to grant free dual spec
+#        Default:     10
+#
+DCCustomLogin.DualSpec.Level = 10
 
 #
 #    DCCustomLogin.SpecialAbility.*

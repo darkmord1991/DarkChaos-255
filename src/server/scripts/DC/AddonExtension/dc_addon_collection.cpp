@@ -919,6 +919,8 @@ namespace DCCollection
             // Titles are cheap to apply and don't need batching.
             uint32 titlesApplied = 0;
 
+            bool canSyncMounts = player->GetLevel() >= 10 || player->GetSkillValue(SKILL_RIDING) > 0;
+
             auto considerSpell = [&](uint32 spellId)
             {
                 if (!spellId)
@@ -955,7 +957,8 @@ namespace DCCollection
                         case CollectionType::MOUNT:
                         {
                             // Stored as mount spellIds
-                            considerSpell(entryId);
+                            if (canSyncMounts)
+                                considerSpell(entryId);
                             break;
                         }
                         case CollectionType::PET:

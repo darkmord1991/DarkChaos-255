@@ -36,6 +36,7 @@
 #include "CharacterDatabase.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "dc_firststart_learnspells.h"
 #include <sstream>
 #include <map>
 #include <vector>
@@ -69,6 +70,7 @@ namespace DCCustomLogin
         constexpr const char* MOUNT_ENABLE = "DCCustomLogin.StartingMount.Enable";
         constexpr const char* MOUNT_SPELL = "DCCustomLogin.StartingMount.Spell";
         constexpr const char* MOUNT_SKILL = "DCCustomLogin.StartingMount.Skill";
+        constexpr const char* MOUNT_MIN_LEVEL = "DCCustomLogin.StartingMount.MinLevel";
 
         // Starting Professions
         constexpr const char* PROF_ENABLE = "DCCustomLogin.StartingProfessions.Enable";
@@ -97,6 +99,10 @@ namespace DCCustomLogin
         constexpr const char* DC_PRESTIGE_BONUSES = "DCCustomLogin.PrestigeBonuses";
         constexpr const char* DC_MOBILE_TELEPORTER = "DCCustomLogin.MobileTeleporter.Enable";
         constexpr const char* DC_MOBILE_TELEPORTER_ITEM = "DCCustomLogin.MobileTeleporter.ItemId";
+
+        // Dual Spec
+        constexpr const char* DUALSPEC_ENABLE = "DCCustomLogin.DualSpec.Enable";
+        constexpr const char* DUALSPEC_LEVEL = "DCCustomLogin.DualSpec.Level";
     }
 
     // Class names for config lookups
@@ -267,6 +273,10 @@ namespace DCCustomLogin
         if (!sConfigMgr->GetOption<bool>(Config::MOUNT_ENABLE, false))
             return;
 
+        uint32 minLevel = sConfigMgr->GetOption<uint32>(Config::MOUNT_MIN_LEVEL, 10);
+        if (player->GetLevel() < minLevel)
+            return;
+
         uint32 ridingSkill = sConfigMgr->GetOption<uint32>(Config::MOUNT_SKILL, 0);
         uint32 mountSpell = sConfigMgr->GetOption<uint32>(Config::MOUNT_SPELL, 0);
 
@@ -283,6 +293,24 @@ namespace DCCustomLogin
             if (debug)
                 LOG_INFO("module.dc", "[DCCustomLogin] Granted mount {} to {}", mountSpell, player->GetName());
         }
+    }
+
+    void GrantDualSpec(Player* player, bool debug)
+    {
+        if (!sConfigMgr->GetOption<bool>(Config::DUALSPEC_ENABLE, true))
+            return;
+
+        uint32 level = sConfigMgr->GetOption<uint32>(Config::DUALSPEC_LEVEL, 10);
+        if (player->GetLevel() < level)
+            return;
+
+        if (player->GetSpecsCount() >= 2)
+            return;
+
+        player->UpdateSpecCount(2);
+
+        if (debug)
+            LOG_INFO("module.dc", "[DCCustomLogin] Granted free dual spec to {}", player->GetName());
     }
 
     // Grant starting bags
@@ -574,12 +602,14 @@ namespace DCCustomLogin
         // Standard rewards (from mod-customlogin)
         GrantProfessions(player, debug);
         GrantSkills(player, debug);
+        LearnSpells::GrantClassSpells(player, debug);
         GrantMount(player, debug);
         GrantBags(player, debug);
         GrantGold(player, debug);
         GrantBoAItems(player, debug);
         GrantSpecialAbilities(player, debug);
         SetReputations(player, debug);
+        GrantDualSpec(player, debug);
 
         // DC-specific integrations
         GrantSeasonalTokens(player, debug);
@@ -665,6 +695,23 @@ public:
             }
             ChatHandler(nullptr).SendGlobalSysMessage(ss.str().c_str());
         }
+    }
+
+    void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
+    {
+        if (!sConfigMgr->GetOption<bool>(DCCustomLogin::Config::ENABLE, true))
+            return;
+
+        bool debug = sConfigMgr->GetOption<bool>(DCCustomLogin::Config::DEBUG, false);
+        DCCustomLogin::LearnSpells::GrantClassSpellsOnLevelUp(player, oldLevel, debug);
+
+        uint32 mountLevel = sConfigMgr->GetOption<uint32>(DCCustomLogin::Config::MOUNT_MIN_LEVEL, 10);
+        if (oldLevel < mountLevel && player->GetLevel() >= mountLevel)
+            DCCustomLogin::GrantMount(player, debug);
+
+        uint32 dualSpecLevel = sConfigMgr->GetOption<uint32>(DCCustomLogin::Config::DUALSPEC_LEVEL, 10);
+        if (oldLevel < dualSpecLevel && player->GetLevel() >= dualSpecLevel)
+            DCCustomLogin::GrantDualSpec(player, debug);
     }
 };
 

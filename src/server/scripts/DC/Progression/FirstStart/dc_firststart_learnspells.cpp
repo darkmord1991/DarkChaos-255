@@ -1,0 +1,718 @@
+#include "dc_firststart_learnspells.h"
+
+#include "Chat.h"
+#include "Config.h"
+#include "DBCStores.h"
+#include "DatabaseEnv.h"
+#include "DisableMgr.h"
+#include "Log.h"
+#include "SharedDefines.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
+
+#include <algorithm>
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+namespace DCCustomLogin::LearnSpells
+{
+    namespace
+    {
+        constexpr char const* CONFIG_ENABLE = "DCCustomLogin.LearnSpells.Enable";
+        constexpr char const* CONFIG_MAX_LEVEL = "DCCustomLogin.LearnSpells.MaxLevel";
+        constexpr char const* CONFIG_SHAMAN_TOTEMS = "DCCustomLogin.LearnSpells.ShamanTotems";
+
+        struct AddSpell
+        {
+            uint32 spellId;
+            TeamId faction = TeamId::TEAM_NEUTRAL;
+        };
+
+        struct CachedSpell
+        {
+            uint32 spellId = 0;
+            uint8 reqLevel = 0;
+        };
+
+        using SpellFamilyToExtraSpells = std::unordered_map<uint32, std::vector<AddSpell>>;
+        using AdditionalSpellsList = std::unordered_map<uint8, SpellFamilyToExtraSpells>;
+
+        // Data list adapted from azerothcore/mod-learn-spells (AGPL-3.0)
+        static std::unordered_set<uint32> const kIgnoredSpells =
+        {
+            64380, 23885, 23880, 44461, 25346, 10274, 10273, 8418,  8419,  7270,  7269,  7268,  54648, 12536, 24530, 70909, 12494, 57933, 24224, 27095, 27096, 27097, 27099, 32841, 56131, 56160, 56161, 48153, 34754, 64844, 64904, 48085, 33110, 48084,
+            28276, 27874, 27873, 7001,  49821, 53022, 47757, 47750, 47758, 47666, 53001, 52983, 52998, 52986, 52987, 52999, 52984, 53002, 53003, 53000, 52988, 52985, 42208, 42209, 42210, 42211, 42212, 42213, 42198, 42937, 42938, 12484, 12485, 12486,
+            44461, 55361, 55362, 34913, 43043, 43044, 38703, 38700, 27076, 42844, 42845, 64891, 25912, 25914, 25911, 25913, 25902, 25903, 27175, 27176, 33073, 33074, 48822, 48820, 48823, 48821, 20154, 25997, 20467, 20425, 67,    26017, 34471, 53254,
+            13812, 14314, 14315, 27026, 49064, 49065, 60202, 60210, 13797, 14298, 14299, 14300, 14301, 27024, 49053, 49054, 52399, 1742,  24453, 53548, 53562, 52016, 26064, 35346, 57386, 57389, 57390, 57391, 57392, 57393, 55509, 35886, 43339, 45297,
+            45298, 45299, 45300, 45301, 45302, 49268, 49269, 8349,  8502,  8503,  11306, 11307, 25535, 25537, 61650, 61654, 63685, 45284, 45286, 45287, 45288, 45289, 45290, 45291, 45292, 45293, 45294, 45295, 45296, 49239, 49240, 26364, 26365, 26366,
+            26367, 26369, 26370, 26363, 26371, 26372, 49278, 49279, 32176, 32175, 21169, 47206, 27285, 47833, 47836, 42223, 42224, 42225, 42226, 42218, 47817, 47818, 42231, 42232, 42233, 42230, 48466, 44203, 44205, 44206, 44207, 44208, 48444, 48445,
+            33891, 52374, 57532, 59921, 52372, 49142, 52375, 47633, 47632, 52373, 50536, 27214, 47822, 11682, 11681, 5857,  1010,  24907, 24905, 53227, 61391, 61390, 61388, 61387, 64801, 5421,  9635,  1178,  20186, 20185, 20184, 20187, 25899, 24406,
+            50581, 30708, 48076, 62900, 62901, 62902, 59671, 50589, 66906, 66907, 24131, 23455, 23458, 23459, 27803, 27804, 27805, 25329, 48075, 42243, 42244, 42245, 42234, 58432, 58433, 65878, 18848, 16979, 49376, 54055, 20647, 42243, 24131, 45470,
+            31898, 31804, 53733, 31803, 53742, 53725, 53726, 1804, 348, 1455, 1456, 11687, 11688, 11689, 27222, 57946, 25306, 53652, 53653, 53654, 7328, 10322, 10324, 20772, 20773, 48949, 48950, 33878, 33876, 33982, 33986, 33987, 33983, 48563, 48565,
+            48566, 48564,
+
+            // Dalaran Brilliance and Dalaran Intellect (Mage)
+            61316, 61024,
+
+            // Cosmetic spells
+            28271, 28272, 61025, 61305, 61721, 61780,
+
+            // Optional quest spells
+            18540,
+        };
+
+        static AdditionalSpellsList const kAdditionalSpells =
+        {
+            {3,
+            {
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{348}, // Immolate
+                }},
+            }},
+            {6,
+            {
+                {SPELLFAMILY_WARRIOR,
+                {
+                    AddSpell{3127}, // Parry
+                }},
+            }},
+            {8,
+            {
+                {SPELLFAMILY_HUNTER,
+                {
+                    AddSpell{3127}, // Parry
+                }},
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{3127}, // Parry
+                }},
+            }},
+            {10,
+            {
+                {SPELLFAMILY_HUNTER,
+                {
+                    AddSpell{1515}, // Tame Beast
+                    AddSpell{6991}, // Feed Pet
+                    AddSpell{883}, // Call Pet
+                    AddSpell{2641}, // Dismiss Pet
+                }},
+            }},
+            {12,
+            {
+                {SPELLFAMILY_ROGUE,
+                {
+                    AddSpell{3127}, // Parry
+                }},
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{7328}, // Redemption (R1)
+                }},
+            }},
+            {14,
+            {
+                {SPELLFAMILY_HUNTER,
+                {
+                    AddSpell{6197}, // Eagle Eye
+                }},
+            }},
+            {16,
+            {
+                {SPELLFAMILY_ROGUE,
+                {
+                    AddSpell{1804}, // Pick Lock
+                }},
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{1455}, // Life Tap (R2)
+                }},
+            }},
+            {20,
+            {
+                {SPELLFAMILY_WARRIOR,
+                {
+                    AddSpell{674},   // Dual Wield
+                    AddSpell{12678}, // Stance Mastery
+                }},
+                {SPELLFAMILY_HUNTER,
+                {
+                    AddSpell{674}, // Dual Wield
+                }},
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{5784}, // Felsteed
+                }},
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{34769, TeamId::TEAM_HORDE},    // Summon Charger (Horde)
+                    AddSpell{13819, TeamId::TEAM_ALLIANCE}, // Summon Charger (Alliance)
+                }},
+                {SPELLFAMILY_MAGE,
+                {
+                    AddSpell{3567, TeamId::TEAM_HORDE},    // Teleport: Orgrimmar
+                    AddSpell{32272, TeamId::TEAM_HORDE},   // Teleport: Silvermoon
+                    AddSpell{3563, TeamId::TEAM_HORDE},    // Teleport: Undercity
+                    AddSpell{3561, TeamId::TEAM_ALLIANCE}, // Teleport: Stormwind
+                    AddSpell{3562, TeamId::TEAM_ALLIANCE}, // Teleport: Ironforge
+                    AddSpell{32271, TeamId::TEAM_ALLIANCE} // Teleport: Exodar
+                }},
+            }},
+            {24,
+            {
+                {SPELLFAMILY_HUNTER,
+                {
+                    AddSpell{1462},  // Beast Lore
+                    AddSpell{19885}, // Track Hidden
+                }},
+                {SPELLFAMILY_ROGUE,
+                {
+                    AddSpell{2836}, // Detect Traps
+                }},
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{5500}, // Sense Demons
+                }},
+                {SPELLFAMILY_SHAMAN,
+                {
+                    AddSpell{6196}, // Far Sight
+                }},
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{10322}, // Redemption (R2)
+                }},
+            }},
+            {26,
+            {
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{1456}, // Life Tap (R3)
+                }},
+            }},
+            {30,
+            {
+                {SPELLFAMILY_SHAMAN,
+                {
+                    AddSpell{66842}, // Call of the Elements
+                }},
+                {SPELLFAMILY_MAGE,
+                {
+                    AddSpell{3566, TeamId::TEAM_HORDE},    // Teleport: Thunder Bluff
+                    AddSpell{3565, TeamId::TEAM_ALLIANCE}, // Teleport: Darnassus
+                }},
+            }},
+            {32,
+            {
+                {SPELLFAMILY_DRUID,
+                {
+                    AddSpell{5225}, // Track Humanoids
+                }},
+            }},
+            {35,
+            {
+                {SPELLFAMILY_MAGE,
+                {
+                    AddSpell{49358, TeamId::TEAM_HORDE},    // Teleport: Stonard
+                    AddSpell{49361, TeamId::TEAM_HORDE},    // Portal: Stonard
+                    AddSpell{49359, TeamId::TEAM_ALLIANCE}, // Teleport: Theramore
+                    AddSpell{49360, TeamId::TEAM_ALLIANCE}  // Portal: Theramore
+                }},
+            }},
+            {36,
+            {
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{11687}, // Life Tap (R4)
+                }},
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{10324}, // Redemption (R3)
+                }},
+            }},
+            {40,
+            {
+                {SPELLFAMILY_SHAMAN,
+                {
+                    AddSpell{66843}, // Call of the Ancestors
+                    AddSpell{8737},  // Mail
+                }},
+                {SPELLFAMILY_HUNTER,
+                {
+                    AddSpell{8737}, // Mail
+                }},
+                {SPELLFAMILY_WARRIOR,
+                {
+                    AddSpell{750}, // Plate
+                }},
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{34767, TeamId::TEAM_HORDE},    // Summon Charger (Horde)
+                    AddSpell{23214, TeamId::TEAM_ALLIANCE}, // Summon Charger (Alliance)
+                    AddSpell{750},                          // Plate
+                }},
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{23161}, // Dreadsteed
+                }},
+                {SPELLFAMILY_DRUID,
+                {
+                    AddSpell{20719}, // Feline Grace
+                    AddSpell{62600}, // Savage Defense
+                }},
+                {SPELLFAMILY_MAGE,
+                {
+                    AddSpell{11417, TeamId::TEAM_HORDE},    // Portal: Orgrimmar
+                    AddSpell{32267, TeamId::TEAM_HORDE},    // Portal: Silvermoon
+                    AddSpell{11418, TeamId::TEAM_HORDE},    // Portal: Undercity
+                    AddSpell{10059, TeamId::TEAM_ALLIANCE}, // Portal: Stormwind
+                    AddSpell{11416, TeamId::TEAM_ALLIANCE}, // Portal: Ironforge
+                    AddSpell{32266, TeamId::TEAM_ALLIANCE}  // Portal: Exodar
+                }},
+            }},
+            {46,
+            {
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{11688}, // Life Tap (R5)
+                }},
+            }},
+            {48,
+            {
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{20772}, // Redemption (R4)
+                }},
+            }},
+            {50,
+            {
+                {SPELLFAMILY_SHAMAN,
+                {
+                    AddSpell{66844}, // Call of the Spirits
+                }},
+                {SPELLFAMILY_MAGE,
+                {
+                    AddSpell{11420, TeamId::TEAM_HORDE},    // Portal: Thunder Bluff
+                    AddSpell{11419, TeamId::TEAM_ALLIANCE}, // Portal: Darnassus
+                }},
+            }},
+            {56,
+            {
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{11689}, // Life Tap (R6)
+                }},
+            }},
+            {60,
+            {
+                {SPELLFAMILY_MAGE,
+                {
+                    AddSpell{35715, TeamId::TEAM_HORDE},    // Teleport: Shattrath
+                    AddSpell{33690, TeamId::TEAM_ALLIANCE}, // Teleport: Shattrath
+                }},
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{20773}, // Redemption (R5)
+                }},
+            }},
+            {62,
+            {
+                {SPELLFAMILY_MAGE,
+                {
+                    AddSpell{25306}, // Fireball (R12)
+                }},
+            }},
+            {65,
+            {
+                {SPELLFAMILY_MAGE,
+                {
+                    AddSpell{35717, TeamId::TEAM_HORDE},    // Portal: Shattrath
+                    AddSpell{33691, TeamId::TEAM_ALLIANCE}, // Portal: Shattrath
+                }},
+            }},
+            {66,
+            {
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{53736, TeamId::TEAM_HORDE},    // Seal of Corruption
+                    AddSpell{31801, TeamId::TEAM_ALLIANCE}, // Seal of Vengeance
+                }},
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{29858}, // Soulshatter
+                }},
+            }},
+            {68,
+            {
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{27222}, // Life Tap (R7)
+                }},
+            }},
+            {70,
+            {
+                {SPELLFAMILY_SHAMAN,
+                {
+                    AddSpell{2825, TeamId::TEAM_HORDE},     // Bloodlust
+                    AddSpell{32182, TeamId::TEAM_ALLIANCE}  // Heroism
+                }},
+            }},
+            {71,
+            {
+                {SPELLFAMILY_DRUID,
+                {
+                    AddSpell{40120}, // Swift Flight Form
+                }},
+            }},
+            {72,
+            {
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{48949}, // Redemption (R6)
+                }},
+            }},
+            {79,
+            {
+                {SPELLFAMILY_PALADIN,
+                {
+                    AddSpell{48950}, // Redemption (R7)
+                }},
+            }},
+            {80,
+            {
+                {SPELLFAMILY_WARLOCK,
+                {
+                    AddSpell{47836}, // Seed of Corruption (R3)
+                    AddSpell{57946}, // Life Tap (R8)
+                }},
+            }},
+        };
+
+        bool IsIgnoredSpell(uint32 spellId)
+        {
+            return kIgnoredSpells.find(spellId) != kIgnoredSpells.end();
+        }
+
+        uint32 GetSpellFamily(uint8 classId)
+        {
+            switch (classId)
+            {
+                case CLASS_ROGUE:
+                    return SPELLFAMILY_ROGUE;
+                case CLASS_DEATH_KNIGHT:
+                    return SPELLFAMILY_DEATHKNIGHT;
+                case CLASS_WARRIOR:
+                    return SPELLFAMILY_WARRIOR;
+                case CLASS_PRIEST:
+                    return SPELLFAMILY_PRIEST;
+                case CLASS_MAGE:
+                    return SPELLFAMILY_MAGE;
+                case CLASS_PALADIN:
+                    return SPELLFAMILY_PALADIN;
+                case CLASS_HUNTER:
+                    return SPELLFAMILY_HUNTER;
+                case CLASS_DRUID:
+                    return SPELLFAMILY_DRUID;
+                case CLASS_SHAMAN:
+                    return SPELLFAMILY_SHAMAN;
+                case CLASS_WARLOCK:
+                    return SPELLFAMILY_WARLOCK;
+                default:
+                    return SPELLFAMILY_GENERIC;
+            }
+        }
+
+        uint8 GetClassByFamily(uint32 family)
+        {
+            switch (family)
+            {
+                case SPELLFAMILY_ROGUE:
+                    return CLASS_ROGUE;
+                case SPELLFAMILY_DEATHKNIGHT:
+                    return CLASS_DEATH_KNIGHT;
+                case SPELLFAMILY_WARRIOR:
+                    return CLASS_WARRIOR;
+                case SPELLFAMILY_PRIEST:
+                    return CLASS_PRIEST;
+                case SPELLFAMILY_MAGE:
+                    return CLASS_MAGE;
+                case SPELLFAMILY_PALADIN:
+                    return CLASS_PALADIN;
+                case SPELLFAMILY_HUNTER:
+                    return CLASS_HUNTER;
+                case SPELLFAMILY_DRUID:
+                    return CLASS_DRUID;
+                case SPELLFAMILY_SHAMAN:
+                    return CLASS_SHAMAN;
+                case SPELLFAMILY_WARLOCK:
+                    return CLASS_WARLOCK;
+                default:
+                    return 0;
+            }
+        }
+
+        using SpellCacheMap = std::unordered_map<uint8, std::vector<CachedSpell>>;
+
+        std::once_flag g_cacheOnceFlag;
+        SpellCacheMap g_dbcSpellCache;
+        SpellCacheMap g_trainerSpellCache;
+
+        void BuildSpellCaches(bool debug)
+        {
+            std::call_once(g_cacheOnceFlag, [debug]()
+            {
+                for (uint8 classId = CLASS_WARRIOR; classId <= CLASS_DRUID; ++classId)
+                {
+                    g_dbcSpellCache[classId] = {};
+                    g_trainerSpellCache[classId] = {};
+                }
+
+                for (uint32 i = 0; i < sSpellMgr->GetSpellInfoStoreSize(); ++i)
+                {
+                    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(i);
+                    if (!spellInfo)
+                        continue;
+
+                    if (spellInfo->SpellLevel == 0 || spellInfo->BaseLevel == 0)
+                        continue;
+
+                    if (spellInfo->PowerType == POWER_FOCUS)
+                        continue;
+
+                    if (IsIgnoredSpell(spellInfo->Id))
+                        continue;
+
+                    if (!SpellMgr::IsSpellValid(spellInfo))
+                        continue;
+
+                    uint8 classId = GetClassByFamily(spellInfo->SpellFamilyName);
+                    if (!classId)
+                        continue;
+
+                    uint32 firstRank = sSpellMgr->GetFirstSpellInChain(spellInfo->Id);
+                    if (GetTalentSpellCost(firstRank) > 0)
+                        continue;
+
+                    bool valid = false;
+                    SkillLineAbilityMapBounds bounds = sSpellMgr->GetSkillLineAbilityMapBounds(spellInfo->Id);
+                    for (auto itr = bounds.first; itr != bounds.second; ++itr)
+                    {
+                        if (itr->second->Spell == spellInfo->Id && itr->second->RaceMask == 0 && itr->second->AcquireMethod == 0)
+                        {
+                            valid = true;
+                            break;
+                        }
+                    }
+
+                    if (!valid)
+                        continue;
+
+                    g_dbcSpellCache[classId].push_back({ spellInfo->Id, static_cast<uint8>(spellInfo->BaseLevel) });
+                }
+
+                QueryResult result = WorldDatabase.Query(
+                    "SELECT t.Requirement, ts.SpellId, ts.ReqLevel "
+                    "FROM trainer_spell ts "
+                    "INNER JOIN trainer t ON t.Id = ts.TrainerId "
+                    "WHERE t.Type = 0");
+
+                if (result)
+                {
+                    do
+                    {
+                        Field* fields = result->Fetch();
+                        uint8 classId = fields[0].Get<uint8>();
+                        uint32 spellId = fields[1].Get<uint32>();
+                        uint8 reqLevel = fields[2].Get<uint8>();
+
+                        if (classId < CLASS_WARRIOR || classId > CLASS_DRUID)
+                            continue;
+
+                        if (IsIgnoredSpell(spellId))
+                            continue;
+
+                        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
+                        if (!spellInfo || !SpellMgr::IsSpellValid(spellInfo))
+                            continue;
+
+                        g_trainerSpellCache[classId].push_back({ spellId, reqLevel });
+                    } while (result->NextRow());
+                }
+
+                if (debug)
+                    LOG_INFO("module.dc", "[DCCustomLogin] Built class spell caches (DBC + trainer tables)");
+            });
+        }
+
+        void ApplyAdditionalSpells(uint32 level, uint32 family, Player* player, bool debug)
+        {
+            auto levelIt = kAdditionalSpells.find(uint8(level));
+            if (levelIt == kAdditionalSpells.end())
+                return;
+
+            auto const& spellsMap = levelIt->second;
+            auto familyIt = spellsMap.find(family);
+            if (familyIt == spellsMap.end())
+                return;
+
+            for (auto const& spell : familyIt->second)
+            {
+                if (spell.faction != TeamId::TEAM_NEUTRAL && spell.faction != player->GetTeamId())
+                    continue;
+
+                if (!sSpellMgr->GetSpellInfo(spell.spellId))
+                {
+                    if (debug)
+                        LOG_WARN("module.dc", "[DCCustomLogin] Additional spell {} not found", spell.spellId);
+                    continue;
+                }
+
+                if (!player->HasSpell(spell.spellId))
+                {
+                    player->learnSpell(spell.spellId, false);
+                    if (debug)
+                        LOG_INFO("module.dc", "[DCCustomLogin] Learned additional spell {} at level {}", spell.spellId, level);
+                }
+            }
+        }
+
+        void LearnClassSpells(Player* player, uint32 fromLevel, uint32 toLevel, bool debug)
+        {
+            uint8 classId = player->getClass();
+            uint32 family = GetSpellFamily(classId);
+            if (family == SPELLFAMILY_GENERIC)
+                return;
+
+            BuildSpellCaches(debug);
+
+            for (uint32 level = fromLevel; level <= toLevel; ++level)
+                ApplyAdditionalSpells(level, family, player, debug);
+
+            uint32 learnedCount = 0;
+
+            auto const& dbcSpells = g_dbcSpellCache[classId];
+            for (auto const& cached : dbcSpells)
+            {
+                if (cached.reqLevel < fromLevel || cached.reqLevel > toLevel)
+                    continue;
+
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(cached.spellId);
+                if (!spellInfo)
+                    continue;
+
+                if ((spellInfo->AttributesEx7 & SPELL_ATTR7_ALLIANCE_SPECIFIC_SPELL && player->GetTeamId() != TEAM_ALLIANCE) ||
+                    (spellInfo->AttributesEx7 & SPELL_ATTR7_HORDE_SPECIFIC_SPELL && player->GetTeamId() != TEAM_HORDE))
+                {
+                    continue;
+                }
+
+                if (DisableMgr::IsDisabledFor(DISABLE_TYPE_SPELL, cached.spellId, player))
+                    continue;
+
+                if (!player->IsSpellFitByClassAndRace(cached.spellId))
+                    continue;
+
+                SpellInfo const* prevSpell = spellInfo->GetPrevRankSpell();
+                if (prevSpell && !player->HasSpell(prevSpell->Id))
+                    continue;
+
+                if (!player->HasSpell(cached.spellId))
+                {
+                    player->learnSpell(cached.spellId, false);
+                    ++learnedCount;
+                }
+            }
+
+            if (debug)
+                LOG_INFO("module.dc", "[DCCustomLogin] Learned {} class spells via DBC scan", learnedCount);
+        }
+
+        void LearnTrainerSpells(Player* player, uint32 maxLevel, bool debug)
+        {
+            uint8 classId = player->getClass();
+            BuildSpellCaches(debug);
+
+            uint32 learnedCount = 0;
+
+            auto const& trainerSpells = g_trainerSpellCache[classId];
+            for (auto const& cached : trainerSpells)
+            {
+                if (cached.reqLevel > maxLevel)
+                    continue;
+
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(cached.spellId);
+                if (!spellInfo)
+                    continue;
+
+                if ((spellInfo->AttributesEx7 & SPELL_ATTR7_ALLIANCE_SPECIFIC_SPELL && player->GetTeamId() != TEAM_ALLIANCE) ||
+                    (spellInfo->AttributesEx7 & SPELL_ATTR7_HORDE_SPECIFIC_SPELL && player->GetTeamId() != TEAM_HORDE))
+                {
+                    continue;
+                }
+
+                if (DisableMgr::IsDisabledFor(DISABLE_TYPE_SPELL, cached.spellId, player))
+                    continue;
+
+                if (!player->IsSpellFitByClassAndRace(cached.spellId))
+                    continue;
+
+                if (!player->HasSpell(cached.spellId))
+                {
+                    player->learnSpell(cached.spellId, false);
+                    ++learnedCount;
+                }
+            }
+
+            if (debug)
+                LOG_INFO("module.dc", "[DCCustomLogin] Learned {} class spells via trainer tables", learnedCount);
+        }
+    } // namespace
+
+    void GrantClassSpells(Player* player, bool debug)
+    {
+        if (!sConfigMgr->GetOption<bool>(CONFIG_ENABLE, true))
+            return;
+
+        uint8 maxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, 80);
+        uint8 playerLevel = player->GetLevel();
+        uint32 learnToLevel = std::min<uint8>(playerLevel, maxLevel);
+
+        if (learnToLevel < 1)
+            return;
+
+        LearnClassSpells(player, 1, learnToLevel, debug);
+        LearnTrainerSpells(player, learnToLevel, debug);
+
+        if (player->getClass() == CLASS_SHAMAN && sConfigMgr->GetOption<bool>(CONFIG_SHAMAN_TOTEMS, true))
+        {
+            player->AddItem(5175, 1); // Earth Totem
+            player->AddItem(5176, 1); // Fire Totem
+            player->AddItem(5177, 1); // Water Totem
+            player->AddItem(5178, 1); // Air Totem
+
+            if (debug)
+                LOG_INFO("module.dc", "[DCCustomLogin] Granted Shaman totems on first login");
+        }
+    }
+
+    void GrantClassSpellsOnLevelUp(Player* player, uint8 oldLevel, bool debug)
+    {
+        if (!sConfigMgr->GetOption<bool>(CONFIG_ENABLE, true))
+            return;
+
+        uint8 maxLevel = sConfigMgr->GetOption<uint8>(CONFIG_MAX_LEVEL, 80);
+        uint8 newLevel = player->GetLevel();
+
+        if (newLevel <= oldLevel || newLevel == 0)
+            return;
+
+        if (oldLevel >= maxLevel)
+            return;
+
+        uint32 fromLevel = oldLevel;
+        uint32 toLevel = std::min<uint8>(newLevel, maxLevel);
+
+        LearnClassSpells(player, fromLevel, toLevel, debug);
+        LearnTrainerSpells(player, toLevel, debug);
+    }
+} // namespace DCCustomLogin::LearnSpells
