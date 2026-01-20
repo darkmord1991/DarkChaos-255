@@ -9,7 +9,7 @@
 -- ====================================================================================
 
 -- ====================================================================================
--- SECTION 1: GAMEOBJECT TEMPLATES (1991001-1991033)
+-- SECTION 1: GAMEOBJECT TEMPLATES (1991001-1991048)
 -- ====================================================================================
 -- For GAMEOBJECT_TYPE_CHEST (type=3):
 --   Data0 = lockId (0 = NO LOCK, opens freely; 43 = existing lock entry, opens freely)
@@ -31,7 +31,7 @@
 --   Data16 = floatingTooltip (0 = default)
 -- ====================================================================================
 
-DELETE FROM gameobject_template WHERE entry BETWEEN 1991001 AND 1991033;
+DELETE FROM gameobject_template WHERE entry BETWEEN 1991001 AND 1991048;
 
 INSERT INTO gameobject_template 
   (entry, type, displayId, name, IconName, castBarCaption, unk1, size,
@@ -119,16 +119,56 @@ VALUES
   (1991032, 3, 259, 'Heirloom Hands Cache - Tank', '', 'Opening', '', 1.5,
    57, 1991032, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
   (1991033, 3, 259, 'Heirloom Wrists Cache - Haste', '', 'Opening', '', 1.5,
-   57, 1991033, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340);
+    57, 1991033, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  
+  -- Neck Caches (1991034-1991036)
+  (1991034, 3, 259, 'Heirloom Neck Cache - Might', '', 'Opening', '', 1.5,
+   57, 1991034, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991035, 3, 259, 'Heirloom Neck Cache - Agility', '', 'Opening', '', 1.5,
+   57, 1991035, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991036, 3, 259, 'Heirloom Neck Cache - Wisdom', '', 'Opening', '', 1.5,
+   57, 1991036, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+
+  -- Back Caches (1991037-1991039)
+  (1991037, 3, 259, 'Heirloom Back Cache - Valor', '', 'Opening', '', 1.5,
+   57, 1991037, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991038, 3, 259, 'Heirloom Back Cache - Swiftness', '', 'Opening', '', 1.5,
+   57, 1991038, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991039, 3, 259, 'Heirloom Back Cache - Insight', '', 'Opening', '', 1.5,
+   57, 1991039, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+
+  -- Ring Caches (1991040-1991042)
+  (1991040, 3, 259, 'Heirloom Ring Cache - Power', '', 'Opening', '', 1.5,
+   57, 1991040, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991041, 3, 259, 'Heirloom Ring Cache - Precision', '', 'Opening', '', 1.5,
+   57, 1991041, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991042, 3, 259, 'Heirloom Ring Cache - Intellect', '', 'Opening', '', 1.5,
+   57, 1991042, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+
+  -- Trinket Caches (1991043-1991045)
+  (1991043, 3, 259, 'Heirloom Trinket Cache - Might', '', 'Opening', '', 1.5,
+   57, 1991043, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991044, 3, 259, 'Heirloom Trinket Cache - Agility', '', 'Opening', '', 1.5,
+   57, 1991044, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991045, 3, 259, 'Heirloom Trinket Cache - Wisdom', '', 'Opening', '', 1.5,
+   57, 1991045, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+
+  -- Offhand/Shield Caches (1991046-1991048)
+  (1991046, 3, 259, 'Heirloom Shield Cache - Might', '', 'Opening', '', 1.5,
+   57, 1991046, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991047, 3, 259, 'Heirloom Shield Cache - Swiftness', '', 'Opening', '', 1.5,
+   57, 1991047, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340),
+  (1991048, 3, 259, 'Heirloom Offhand Cache - Insight', '', 'Opening', '', 1.5,
+   57, 1991048, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340);
 
 
 -- ====================================================================================
--- SECTION 2: GAMEOBJECT LOOT TABLES (1991001-1991033)
+-- SECTION 2: GAMEOBJECT LOOT TABLES (1991001-1991048)
 -- ====================================================================================
 -- Links treasures to heirloom items (one item per treasure)
 -- ====================================================================================
 
-DELETE FROM `gameobject_loot_template` WHERE `entry` BETWEEN 1991001 AND 1991033;
+DELETE FROM `gameobject_loot_template` WHERE `entry` BETWEEN 1991001 AND 1991048;
 
 INSERT INTO `gameobject_loot_template`
   (`entry`, `item`, `Reference`, `Chance`, `QuestRequired`, `LootMode`, `GroupId`, `MinCount`, `MaxCount`, `Comment`)
@@ -165,14 +205,29 @@ VALUES
   (1991030, 300361, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Trousers of Arcane Power'),
   (1991031, 300362, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Sabatons of Fury'),
   (1991032, 300363, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Boots of Haste'),
-  (1991033, 300364, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Sandals of Brilliance');
+  (1991033, 300364, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Sandals of Brilliance'),
+  (1991034, 300367, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Pendant of Might'),
+  (1991035, 300368, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Pendant of Agility'),
+  (1991036, 300369, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Pendant of Wisdom'),
+  (1991037, 300370, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Cape of Valor'),
+  (1991038, 300371, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Drape of Swiftness'),
+  (1991039, 300372, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Cloak of Insight'),
+  (1991040, 300373, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Band of Power'),
+  (1991041, 300374, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Band of Precision'),
+  (1991042, 300375, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Band of Intellect'),
+  (1991043, 300376, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Badge of Might'),
+  (1991044, 300377, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Charm of Agility'),
+  (1991045, 300378, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Stone of Wisdom'),
+  (1991046, 300379, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Bulwark of Might'),
+  (1991047, 300380, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Bulwark of Swiftness'),
+  (1991048, 300381, 0, 100, 0, 1, 0, 1, 1, 'Heirloom Tome of Insight');
 
 -- ====================================================================================
 -- SECTION 3: GAMEOBJECT TEMPLATE ADDON (Required for interaction)
 -- ====================================================================================
 -- flags=0 means no special flags (not locked, selectable, etc.)
 -- ====================================================================================
-DELETE FROM `gameobject_template_addon` WHERE `entry` BETWEEN 1991001 AND 1991033;
+DELETE FROM `gameobject_template_addon` WHERE `entry` BETWEEN 1991001 AND 1991048;
 INSERT INTO `gameobject_template_addon` (`entry`, `faction`, `flags`, `mingold`, `maxgold`) VALUES
 (1991001, 0, 0, 0, 0),
 (1991002, 0, 0, 0, 0),
@@ -206,7 +261,22 @@ INSERT INTO `gameobject_template_addon` (`entry`, `faction`, `flags`, `mingold`,
 (1991030, 0, 0, 0, 0),
 (1991031, 0, 0, 0, 0),
 (1991032, 0, 0, 0, 0),
-(1991033, 0, 0, 0, 0);
+(1991033, 0, 0, 0, 0),
+(1991034, 0, 0, 0, 0),
+(1991035, 0, 0, 0, 0),
+(1991036, 0, 0, 0, 0),
+(1991037, 0, 0, 0, 0),
+(1991038, 0, 0, 0, 0),
+(1991039, 0, 0, 0, 0),
+(1991040, 0, 0, 0, 0),
+(1991041, 0, 0, 0, 0),
+(1991042, 0, 0, 0, 0),
+(1991043, 0, 0, 0, 0),
+(1991044, 0, 0, 0, 0),
+(1991045, 0, 0, 0, 0),
+(1991046, 0, 0, 0, 0),
+(1991047, 0, 0, 0, 0),
+(1991048, 0, 0, 0, 0);
 
 
 -- ====================================================================================

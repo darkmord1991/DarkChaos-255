@@ -70,7 +70,7 @@ INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entr
 -- SECTION 2: CREATURE MODEL DATA (creature_template_model)
 -- ============================================================================
 
-DELETE FROM `creature_template_model` WHERE `CreatureID` IN (300030, 300040, 300050, 300060, 300070, 300081, 300082, 300083, 300084, 300085, 300086);
+DELETE FROM `creature_template_model` WHERE `CreatureID` IN (300030, 300031, 300040, 300041, 300050, 300051, 300060, 300070, 300071, 300081, 300082, 300083, 300084, 300085, 300086, 300096);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
 (300030, 0, 20272, 1, 1, 12340),   -- Wavemaster Kol'gar (Troll Male)
 (300040, 0, 20590, 1, 1, 12340),  -- Demonologist Vex'ara (Blood Elf Female)
@@ -85,7 +85,7 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (300086, 0, 26604, 1, 1, 12340);  -- D6: Arcanigos (Human Male with Runes)
 
 -- ============================================================================
--- SECTION 2: GAMEOBJECT TEMPLATES (gameobject_template)
+-- SECTION 3: GAMEOBJECT TEMPLATES (gameobject_template)
 -- ============================================================================
 
 -- Blue Dragon Egg (Quest 300705: Dragon Egg Hunt)
@@ -101,7 +101,7 @@ INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconNa
 -- Type 1 = Button/Loot, DisplayID 49 = Sludge/Ooze pile model
 
 -- ============================================================================
--- SECTION 3: QUEST TEMPLATES (quest_template)
+-- SECTION 4: QUEST TEMPLATES (quest_template)
 -- ============================================================================
 -- Quest IDs: Zone 4: 300400-300407, Zone 5: 300500-300507
 -- ============================================================================
@@ -195,33 +195,49 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 -- ZONE 6 QUESTS (Level 50-60) - Felsworn Kael'thos (300050)
 -- ----------------------------------------------------------------------------
 
--- Quest 1: Legashi Cull (Kill Satyrs)
+-- Quest 1: Satyr Purge (Kill Legashi Satyrs)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300600, 2, 52, 48, 0, 0, 0, 4, 0, 8270, 1, 300311, 12, 300312, 8, 'Satyr Purge', 'Kill 10 Legashi Satyrs and 8 Legashi Rogues.', 'The Legashi satyrs corrupt this land. Purge them.', 'Azshara Crater', 'Satyrs purged.', 6200, 10, 6201, 8);
+
+-- Quest 2: Jadefire Menace (Kill Jadefire Satyrs)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300601, 2, 53, 49, 0, 0, 0, 4, 0, 6660, 1, 300311, 12, 300312, 8, 'Jadefire Menace', 'Kill 8 Jadefire Tricksters and 8 Jadefire Felsworn.', 'The Jadefire clan grows bold. Thin their numbers.', 'Azshara Crater', 'Jadefire defeated.', 7107, 8, 7105, 8);
+
+-- Quest 3: Demonic Sentinels (Kill Felguards and Felhounds)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300602, 2, 55, 51, 0, 0, 0, 4, 0, 8318, 1, 300311, 12, 300312, 8, 'Demonic Sentinels', 'Kill 8 Felguard Sentinels and 10 Felhounds.', 'The Legion guards are everywhere. Break their watch.', 'Azshara Crater', 'Sentinels slain.', 6011, 8, 6010, 10);
+
+-- Quest 4: Hellcaller Threat (Kill Hellcallers)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300603, 2, 54, 50, 0, 0, 0, 4, 0, 23508, 1, 300311, 12, 300312, 8, 'Hellcaller Threat', 'Kill 8 Legashi Hellcallers and 6 Jadefire Hellcallers.', 'The Hellcallers summon reinforcements. Stop them.', 'Azshara Crater', 'Hellcallers silenced.', 6135, 8, 7110, 6);
+
+-- Quest 5: Bounty: Monnos the Elder (Rare Kill)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300600, 2, 52, 48, 0, 0, 0, 4, 0, 8270, 1, 300311, 12, 300312, 8, 'Legashi Cull', 'Kill 12 Legashi Satyrs.', 'The Legashi satyrs must be purged.', 'Azshara Crater', 'Satyrs culled.', 6200, 12);
+(300604, 2, 54, 50, 0, 0, 0, 5, 2000, 300311, 20, 300312, 10, 0, 0, 'Bounty: Monnos the Elder', 'Slay Monnos the Elder.', 'An ancient fire elemental, Monnos, terrorizes the territory. End his reign.', 'Azshara Crater', 'Monnos extinguished.', 6646, 1);
 
--- Quest 2: Infernal Cores (Collect Item)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300601, 2, 55, 50, 0, 0, 0, 4, 0, 6660, 1, 300311, 12, 300312, 8, 'Infernal Cores', 'Collect 8 Entropic Cores from Entropic Beasts.', 'The infernals are powered by chaotic cores. Retrieve them.', 'Azshara Crater', 'Cores collected.', 5218, 8); -- Using 'Cleaned Infernal Core' (5218) as placeholder
-
--- Quest 3: Doomguard Commander (Kill Elite)
+-- Quest 6: Bounty: Solenor the Slayer (Rare Kill)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300602, 2, 58, 52, 0, 0, 0, 5, 0, 8318, 1, 300311, 12, 300312, 8, 'Doomguard Commander', 'Kill 4 Doomguard Commanders.', 'The Legion forces here are led by Doomguards. Eliminate their leadership.', 'Azshara Crater', 'Commanders defeated.', 7671, 4);
+(300605, 2, 58, 54, 0, 0, 0, 5, 2500, 300311, 20, 300312, 15, 0, 0, 'Bounty: Solenor the Slayer', 'Slay Solenor the Slayer.', 'A rogue demon hunter, Solenor, hunts in Haldarr. Bring him down.', 'Azshara Crater', 'Solenor defeated.', 14530, 1);
 
--- Quest 4: Bounty: Gatekeeper Karlindos (Rare Kill)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300603, 2, 58, 54, 0, 0, 0, 5, 2000, 300311, 20, 300312, 10, 0, 0, 'Bounty: Gatekeeper Karlindos', 'Slay Gatekeeper Karlindos.', 'Karlindos guards the secrets of the Fel Pit. Remove him.', 'Azshara Crater', 'Karlindos slain.', 10831, 1);
-
--- Quest 5: Proceed to Dragon Coast (Travel)
+-- Quest 7: Proceed to Dragon Coast (Travel)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300604, 2, 60, 55, 0, 0, 0, 5, 0, 300311, 12, 300312, 8, 0, 0, 'Dragon Coast', 'Find Dragonbinder Seryth on the coast.', 'Dragons have been sighted on the coast. Secure the area.', 'Azshara Crater', 'Seryth found.');
+(300606, 2, 60, 55, 0, 0, 0, 5, 0, 300311, 12, 300312, 8, 0, 0, 'Dragon Coast', 'Find Dragonbinder Seryth on the coast.', 'Dragons have been sighted on the coast. Secure the area.', 'Azshara Crater', 'Seryth found.');
 
--- Quest 6: Portal Sabotage (Interact/Kill)
+-- Quest 8: Shadow Stalkers (Kill Jadefire Elites)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300607, 2, 55, 51, 0, 0, 0, 4, 0, 10246, 1, 300311, 12, 300312, 8, 'Shadow Stalkers', 'Kill 8 Jadefire Betrayers and 6 Jadefire Shadowstalkers.', 'The Jadefire assassins strike from the shadows. Hunt them down.', 'Azshara Crater', 'Assassins eliminated.', 7109, 8, 7106, 6);
+
+-- Quest 9: Burning Hounds (Kill Burning Felhounds)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300605, 2, 53, 50, 0, 0, 0, 4, 0, 300311, 12, 300312, 8, 0, 0, 'Portal Sabotage', 'Sabotage 3 Legion Portals (Kill Felguard Sentries).', 'The portals are protected by sentries. Kill them to disrupt the flow.', 'Azshara Crater', 'Sentries slain.', 8716, 6);
+(300608, 2, 55, 51, 0, 0, 0, 4, 0, 6660, 1, 300311, 12, 300312, 8, 'Burning Hounds', 'Kill 10 Burning Felhounds.', 'The fel-infused hounds burn everything they touch. Extinguish them.', 'Azshara Crater', 'Hounds extinguished.', 10261, 10);
 
--- Quest 7: Fel Armaments (Collect)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300606, 2, 56, 52, 0, 0, 0, 4, 0, 23508, 1, 300311, 12, 300312, 8, 'Fel Armaments', 'Collect 10 Fel Armaments.', 'Their weapons are forged in fel. We must study them to defeat them.', 'Azshara Crater', 'Armaments collected.', 23508, 10); -- Fel Armament
+-- Quest 10: Bounty: Lethtendris (Rare Kill)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+(300609, 2, 57, 53, 0, 0, 0, 5, 2200, 300311, 20, 300312, 12, 0, 0, 'Bounty: Lethtendris', 'Slay Lethtendris.', 'The satyr witch Lethtendris commands dark magic. End her reign.', 'Azshara Crater', 'Lethtendris defeated.', 14327, 1);
+
+-- Quest 11: Bounty: Obsidion (Rare Kill)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+(300610, 2, 58, 54, 0, 0, 0, 5, 2500, 300311, 20, 300312, 15, 0, 0, 'Bounty: Obsidion', 'Slay Obsidion.', 'A corrupted shadowguard, Obsidion, guards the inner sanctum. Destroy him.', 'Azshara Crater', 'Obsidion shattered.', 10507, 1);
 
 -- ----------------------------------------------------------------------------
 -- ZONE 7 QUESTS (Level 60-70) - Dragonbinder Seryth (300060)
@@ -587,9 +603,9 @@ INSERT INTO `gossip_menu` (`MenuID`, `TextID`) VALUES
 (300081, 300081), (300082, 300082), (300083, 300083), (300084, 300084), (300085, 300085), (300086, 300086);
 
 
--- =========================================================================
--- SECTION 9: Phase 4 Expansion - Secondary Quest Givers (Zones 4-8)
--- =========================================================================
+-- ============================================================================
+-- SECTION 5: SECONDARY QUEST GIVERS (Zones 4-8)
+-- ============================================================================
 
 DELETE FROM `creature_template` WHERE `entry` IN (300031, 300041, 300051, 300061, 300071);
 INSERT INTO `creature_template` (`entry`, `name`, `subname`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `scale`, `rank`, `unit_class`) VALUES
@@ -604,7 +620,7 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (300031, 0, 7114, 1.0, 1.0, 0),    -- Engineer Whizzbang (Goblin Male)
 (300041, 0, 20585, 1.0, 1.0, 0),   -- Earthcaller Ryga (Tauren Female)
 (300051, 0, 17565, 1.0, 1.0, 0),   -- Vindicator Boros (Draenei Male Vindicator)
-(300096, 0, 21276, 1.0, 1.0, 0), -- Blood Elf Female (Amisi Azuregaze model)
+(300061, 0, 21276, 1.0, 1.0, 0),   -- Ambassador Caelestrasz (Night Elf Female)
 (300071, 0, 18888, 1.0, 1.0, 0);   -- Nexus-Prince Haramad (Ethereal)
 
 -- End of Script
