@@ -653,9 +653,6 @@ namespace DCCustomLogin::LearnSpells
                 if (DisableMgr::IsDisabledFor(DISABLE_TYPE_SPELL, cached.spellId, player))
                     continue;
 
-                if (!player->IsSpellFitByClassAndRace(cached.spellId))
-                    continue;
-
                 if (!player->HasSpell(cached.spellId))
                 {
                     player->learnSpell(cached.spellId, false);
@@ -665,6 +662,57 @@ namespace DCCustomLogin::LearnSpells
 
             if (debug)
                 LOG_INFO("module.dc", "[DCCustomLogin] Learned {} class spells via trainer tables", learnedCount);
+        }
+
+        void EnsureCoreWeaponPassives(Player* player, bool debug)
+        {
+            if (!player)
+                return;
+
+            uint8 level = player->GetLevel();
+            uint8 classId = player->getClass();
+
+            // Dual Wield (674) should be available for these classes at low levels.
+            uint32 dualWieldSpell = 674;
+            uint8 requiredLevel = 0;
+
+            switch (classId)
+            {
+                case CLASS_WARRIOR:
+                    requiredLevel = 20;
+                    break;
+                case CLASS_HUNTER:
+                    requiredLevel = 20;
+                    break;
+                case CLASS_ROGUE:
+                    requiredLevel = 10;
+                    break;
+                default:
+                    return;
+            }
+
+            if (level < requiredLevel)
+                return;
+
+            if (!sSpellMgr->GetSpellInfo(dualWieldSpell))
+                return;
+
+            bool learned = false;
+            if (!player->HasSpell(dualWieldSpell))
+            {
+                player->learnSpell(dualWieldSpell, false);
+                learned = true;
+                if (debug)
+                    LOG_INFO("module.dc", "[DCCustomLogin] Learned Dual Wield for {} at level {}", player->GetName(), level);
+            }
+
+            // Dual Wield is a passive spell; ensure the flag is enabled for equip checks.
+            if (player->HasSpell(dualWieldSpell) && !player->CanDualWield())
+            {
+                player->SetCanDualWield(true);
+                if (debug && !learned)
+                    LOG_INFO("module.dc", "[DCCustomLogin] Enabled Dual Wield flag for {}", player->GetName());
+            }
         }
     } // namespace
 
@@ -682,6 +730,7 @@ namespace DCCustomLogin::LearnSpells
 
         LearnClassSpells(player, 1, learnToLevel, debug);
         LearnTrainerSpells(player, learnToLevel, debug);
+        EnsureCoreWeaponPassives(player, debug);
 
         if (player->getClass() == CLASS_SHAMAN && sConfigMgr->GetOption<bool>(CONFIG_SHAMAN_TOTEMS, true))
         {
@@ -714,5 +763,6 @@ namespace DCCustomLogin::LearnSpells
 
         LearnClassSpells(player, fromLevel, toLevel, debug);
         LearnTrainerSpells(player, toLevel, debug);
+        EnsureCoreWeaponPassives(player, debug);
     }
 } // namespace DCCustomLogin::LearnSpells

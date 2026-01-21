@@ -173,6 +173,54 @@ local function SafeGetTalentInfo(tab, index, inspect, pet, talentGroup)
     end
 end
 
+local function SafeGetTalentPrereqs(tab, index, inspect, pet, talentGroup)
+    if GetTalentPrereqs then
+        return GetTalentPrereqs(tab, index, inspect, pet, talentGroup)
+    end
+    return nil
+end
+
+local function NormalizeTalentIconPath(iconPath)
+    if not iconPath then return nil end
+    if type(iconPath) == "number" then
+        return iconPath
+    end
+    if type(iconPath) ~= "string" then
+        return nil
+    end
+    local path = iconPath
+    path = path:gsub("/", "\\")
+    if not path:find("\\") then
+        path = "Interface\\Icons\\" .. path
+    end
+    return path
+end
+
+-- Simple vertex color approach for talent icons (no shader dependency)
+local function SetTalentButtonDesaturated(button, desaturated, r, g, b)
+    if not button or not button.icon then return end
+    local icon = button.icon
+    
+    -- Try shader desaturation first
+    if desaturated then
+        local shaderOk = pcall(function() icon:SetDesaturated(true) end)
+        if not shaderOk then
+            icon:SetDesaturated(nil)  -- Fallback: clear any bad state
+        end
+        -- Apply color tint as fallback/overlay
+        r = r or 0.5
+        g = g or 0.5
+        b = b or 0.5
+    else
+        pcall(function() icon:SetDesaturated(false) end)
+        r = 1.0
+        g = 1.0
+        b = 1.0
+    end
+    
+    icon:SetVertexColor(r, g, b)
+end
+
 local function SafeGetNumGlyphSockets()
     if GetNumGlyphSockets then
         return GetNumGlyphSockets() or 0
@@ -1141,42 +1189,48 @@ end
 
 local function DrawPrereqLine(parent, fromButton, toButton, color)
     if not fromButton or not toButton then return nil end
+    if not parent:IsVisible() then return nil end
     
     local lines = {}
     
-    -- Get positions relative to container
-    local parentLeft, parentTop = parent:GetLeft(), parent:GetTop()
-    local fromLeft, fromBottom = fromButton:GetLeft(), fromButton:GetBottom()
-    local toLeft, toTop = toButton:GetLeft(), toButton:GetTop()
-    if not parentLeft or not parentTop or not fromLeft or not fromBottom or not toLeft or not toTop then
-        return nil
-    end
-
-    local x1 = fromLeft - parentLeft + TALENT_BUTTON_SIZE / 2
-    local y1 = parentTop - fromBottom + TALENT_BUTTON_SIZE / 2
-    local x2 = toLeft - parentLeft + TALENT_BUTTON_SIZE / 2
-    local y2 = parentTop - toTop - TALENT_BUTTON_SIZE / 2
+    -- Get button centers
+    local fromX = fromButton:GetLeft() and (fromButton:GetLeft() + TALENT_BUTTON_SIZE / 2) or nil
+    local fromY = fromButton:GetTop() and (fromButton:GetTop() - TALENT_BUTTON_SIZE / 2) or nil
+    local toX = toButton:GetLeft() and (toButton:GetLeft() + TALENT_BUTTON_SIZE / 2) or nil
+    local toY = toButton:GetTop() and (toButton:GetTop() - TALENT_BUTTON_SIZE / 2) or nil
     
-    -- Vertical line from prereq to midpoint
-    local vLine = GetLine(parent)
-    vLine:SetSize(2, math.abs(y1 - y2) / 2)
-    vLine:SetPoint("TOP", parent, "TOPLEFT", x1, -y1)
-    vLine:SetVertexColor(color.r, color.g, color.b, color.a or 1)
-    table.insert(lines, vLine)
+    if not fromX or not fromY or not toX or not toY then return nil end
     
-    -- Horizontal line at midpoint (if columns differ)
-    if math.abs(x1 - x2) > 2 then
+    local parentLeft = parent:GetLeft() or 0
+    local parentTop = parent:GetTop() or 0
+    
+    -- Convert to parent-relative coords
+    local x1 = fromX - parentLeft
+    local y1 = parentTop - fromY - TALENT_BUTTON_SIZE / 2  -- Bottom of prereq button
+    local x2 = toX - parentLeft
+    local y2 = parentTop - toY + TALENT_BUTTON_SIZE / 2  -- Top of target button
+    
+    -- Draw vertical line from bottom of prereq down
+    local vLine1 = GetLine(parent)
+    local midY = (y1 + y2) / 2
+    vLine1:SetSize(4, math.abs(midY - y1))
+    vLine1:SetPoint("TOPLEFT", parent, "TOPLEFT", x1 - 2, -y1)
+    vLine1:SetVertexColor(color.r, color.g, color.b, color.a or 1)
+    table.insert(lines, vLine1)
+    
+    -- If columns differ, draw horizontal connector
+    if math.abs(x1 - x2) > 4 then
         local hLine = GetLine(parent)
-        hLine:SetSize(math.abs(x2 - x1), 2)
-        hLine:SetPoint("TOPLEFT", parent, "TOPLEFT", math.min(x1, x2), -(y1 + (y2 - y1) / 2))
+        hLine:SetSize(math.abs(x2 - x1) + 4, 4)
+        hLine:SetPoint("TOPLEFT", parent, "TOPLEFT", math.min(x1, x2) - 2, -midY)
         hLine:SetVertexColor(color.r, color.g, color.b, color.a or 1)
         table.insert(lines, hLine)
     end
     
-    -- Vertical line from midpoint to target
+    -- Draw vertical line to top of target
     local vLine2 = GetLine(parent)
-    vLine2:SetSize(2, math.abs(y1 - y2) / 2)
-    vLine2:SetPoint("TOP", parent, "TOPLEFT", x2, -(y1 + (y2 - y1) / 2))
+    vLine2:SetSize(4, math.abs(y2 - midY))
+    vLine2:SetPoint("TOPLEFT", parent, "TOPLEFT", x2 - 2, -midY)
     vLine2:SetVertexColor(color.r, color.g, color.b, color.a or 1)
     table.insert(lines, vLine2)
     
@@ -1187,12 +1241,12 @@ end
 -- UI Constants
 -- ============================================================
 
-local TALENT_BUTTON_SIZE = 36
-local TALENT_SPACING_X = 48
-local TALENT_SPACING_Y = 48
-local TREE_WIDTH = 240
-local TREE_HEIGHT = 520
-local TREE_TOP_OFFSET = 40
+local TALENT_BUTTON_SIZE = 40
+local TALENT_SPACING_X = 52
+local TALENT_SPACING_Y = 52
+local TREE_WIDTH = 250
+local TREE_HEIGHT = 560
+local TREE_TOP_OFFSET = 35
 
 -- ============================================================
 -- UI: Talent Button Visual Update
@@ -1201,73 +1255,74 @@ local TREE_TOP_OFFSET = 40
 local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, targetRank)
     if not button then return end
     
-    -- Update rank text (Blizzard-style: always show if rank > 0)
-    if button.rankText then
-        if (currentRank or 0) > 0 then
-            button.rankText:SetText(currentRank .. "/" .. maxRank)
-            button.rankText:Show()
-        else
-            button.rankText:Hide()
-        end
-    end
+    -- Blizzard's exact logic from TalentFrameBase.lua
+    local prereqsSet = (state ~= "locked")
+    local displayRank = currentRank or 0
     
-    -- Blizzard's exact logic for talent appearance:
-    -- 1. If prerequisites met: bright, can be green if can increase
-    -- 2. If prerequisites NOT met: desaturated and gray
-    
-    -- Make sure icon is visible
-    if button.icon then
-        button.icon:Show()
-        button.icon:SetAlpha(1)
-    end
-    
-    if state == "locked" then
-        -- Prerequisites NOT met: Desaturate icon and gray slot
-        if button.icon then
-            if button.icon.SetDesaturated then
-                button.icon:SetDesaturated(true)
-            end
-            button.icon:SetVertexColor(0.65, 0.65, 0.65)
-        end
-        if button.border then
-            button.border:SetVertexColor(0.5, 0.5, 0.5)
-        end
+    -- Update rank display (Blizzard shows rank in the corner border)
+    if displayRank > 0 then
         if button.rankText then
-            button.rankText:SetTextColor(0.5, 0.5, 0.5)
+            button.rankText:SetText(displayRank)
+            button.rankText:Show()
+        end
+        if button.rankBorder then
+            button.rankBorder:Show()
         end
     else
-        -- Prerequisites met: NOT desaturated, full brightness
-        if button.icon then
-            if button.icon.SetDesaturated then
-                button.icon:SetDesaturated(false)
-            end
-            button.icon:SetVertexColor(1, 1, 1)
+        if button.rankText then
+            button.rankText:Hide()
         end
+        if button.rankBorder then
+            button.rankBorder:Hide()
+        end
+    end
+    
+    -- Always show the slot border (Blizzard style)
+    if button.slot then
+        button.slot:Show()
+    end
+    
+    if prereqsSet then
+        -- Prerequisites met: NOT desaturated, full color icon
+        SetTalentButtonDesaturated(button, false)
         
-        -- Set slot/border color based on state
-        if state == "available" and currentRank < maxRank then
-            -- Can increase talent right now: GREEN
-            if button.border then
-                button.border:SetVertexColor(0.1, 1.0, 0.1)
-            end
-            if button.rankText then
-                button.rankText:SetTextColor(0, 1, 0)
-            end
-        elseif state == "maxed" then
-            -- Maxed out: GOLD
-            if button.border then
-                button.border:SetVertexColor(1.0, 0.82, 0)
+        if displayRank > 0 and displayRank >= maxRank then
+            -- Maxed out: GOLD border
+            if button.slot then
+                button.slot:SetVertexColor(1, 0.82, 0)
             end
             if button.rankText then
                 button.rankText:SetTextColor(1, 0.82, 0)
+            end
+            if button.rankBorder then
+                button.rankBorder:SetVertexColor(1, 0.82, 0)
             end
         else
-            -- Normal/partial: WHITE/NORMAL
-            if button.border then
-                button.border:SetVertexColor(1, 1, 1)
+            -- Available (with or without points): GREEN border
+            if button.slot then
+                button.slot:SetVertexColor(0.1, 1, 0.1)
             end
             if button.rankText then
-                button.rankText:SetTextColor(1, 0.82, 0)
+                button.rankText:SetTextColor(0.1, 1, 0.1)
+            end
+            if button.rankBorder then
+                button.rankBorder:SetVertexColor(0.1, 1, 0.1)
+            end
+        end
+    else
+        -- Prerequisites NOT met: desaturated with no colored border
+        SetTalentButtonDesaturated(button, true, 0.65, 0.65, 0.65)
+        
+        if button.slot then
+            button.slot:SetVertexColor(0.3, 0.3, 0.3)
+        end
+        
+        if displayRank > 0 then
+            if button.rankText then
+                button.rankText:SetTextColor(0.5, 0.5, 0.5)
+            end
+            if button.rankBorder then
+                button.rankBorder:SetVertexColor(0.5, 0.5, 0.5)
             end
         end
     end
@@ -1278,13 +1333,13 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
             button.targetIndicator:Show()
             local diff = targetRank - currentRank
             if diff > 0 then
-                button.targetIndicator:SetVertexColor(0, 1, 0)  -- Green: need to add
+                button.targetIndicator:SetVertexColor(0, 1, 0)
                 if button.targetText then
                     button.targetText:SetText("+" .. diff)
                     button.targetText:SetTextColor(0, 1, 0)
                 end
             else
-                button.targetIndicator:SetVertexColor(1, 0, 0)  -- Red: over-spent
+                button.targetIndicator:SetVertexColor(1, 0, 0)
                 if button.targetText then
                     button.targetText:SetText(tostring(diff))
                     button.targetText:SetTextColor(1, 0, 0)
@@ -1310,31 +1365,56 @@ local function CreateTalentButton(parent, tab, index, pet)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(TALENT_BUTTON_SIZE, TALENT_BUTTON_SIZE)
     
-    -- Icon
+    -- Icon texture (main artwork)
     local icon = button:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
-    icon:SetTexture(iconPath)
+    icon:SetSize(TALENT_BUTTON_SIZE, TALENT_BUTTON_SIZE)
+    icon:SetPoint("CENTER")
+    local normalizedPath = NormalizeTalentIconPath(iconPath)
+    if normalizedPath then
+        icon:SetTexture(normalizedPath)
+    else
+        icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    end
     icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    icon:SetAlpha(1)
+    icon:SetVertexColor(1, 1, 1)
     button.icon = icon
     
-    -- Border
-    local border = button:CreateTexture(nil, "OVERLAY")
-    border:SetSize(TALENT_BUTTON_SIZE + 8, TALENT_BUTTON_SIZE + 8)
-    border:SetPoint("CENTER")
-    border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-    button.border = border
+    -- Slot border (colored frame around the icon - at the edges)
+    local slot = button:CreateTexture(nil, "OVERLAY")
+    slot:SetSize(TALENT_BUTTON_SIZE + 8, TALENT_BUTTON_SIZE + 8)
+    slot:SetPoint("CENTER")
+    slot:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+    slot:SetVertexColor(0.4, 0.4, 0.4)  -- Gray by default
+    button.slot = slot
     
-    -- Rank text (no background box)
+    -- Rank border (small circle behind rank text)
+    local rankBorder = button:CreateTexture(nil, "OVERLAY")
+    rankBorder:SetSize(18, 18)
+    rankBorder:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 2, -2)
+    rankBorder:SetTexture("Interface\\TalentFrame\\TalentFrame-RankBorder")
+    rankBorder:Hide()
+    button.rankBorder = rankBorder
+    
+    -- Rank text
     local rankText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rankText:SetPoint("BOTTOMRIGHT", -2, 2)
-    rankText:SetTextColor(1, 0.82, 0)
-    if (currentRank or 0) > 0 then
-        rankText:SetText(currentRank .. "/" .. maxRank)
-    else
-        rankText:SetText("")
-    end
+    rankText:SetPoint("CENTER", rankBorder, "CENTER", 0, 0)
     button.rankText = rankText
+    
+    -- Highlight texture (on mouseover)
+    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetSize(TALENT_BUTTON_SIZE, TALENT_BUTTON_SIZE)
+    highlight:SetPoint("CENTER")
+    highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+    highlight:SetBlendMode("ADD")
+    button.highlight = highlight
+    
+    -- Pushed texture (when clicking)
+    local pushed = button:CreateTexture(nil, "OVERLAY")
+    pushed:SetSize(TALENT_BUTTON_SIZE, TALENT_BUTTON_SIZE)
+    pushed:SetPoint("CENTER")
+    pushed:SetTexture("Interface\\Buttons\\UI-Quickslot-Depress")
+    pushed:Hide()
+    button.pushed = pushed
     
     -- Target indicator (for diff view)
     local targetIndicator = button:CreateTexture(nil, "OVERLAY")
@@ -1370,6 +1450,25 @@ local function CreateTalentButton(parent, tab, index, pet)
     
     button:SetScript("OnLeave", function()
         GameTooltip:Hide()
+    end)
+    
+    -- Push/release visual effects
+    button:SetScript("OnMouseDown", function(self)
+        if self.icon then
+            self.icon:SetPoint("CENTER", 1, -1)
+        end
+        if self.pushed then
+            self.pushed:Show()
+        end
+    end)
+    
+    button:SetScript("OnMouseUp", function(self)
+        if self.icon then
+            self.icon:SetPoint("CENTER", 0, 0)
+        end
+        if self.pushed then
+            self.pushed:Hide()
+        end
     end)
     
     -- Click handling
@@ -1461,7 +1560,7 @@ function TalentManager:CreateMainFrame()
     local settings = addon.settings.talentManager
     
     local frame = CreateFrame("Frame", "DCQoSTalentManagerFrame", UIParent)
-    frame:SetSize(780, 700)
+    frame:SetSize(820, 720)
     frame:SetPoint("CENTER", 50, 0)
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -1800,15 +1899,19 @@ end
 function TalentManager:PositionTalentFrameButton(button)
     if not button or not PlayerTalentFrame then return end
     button:ClearAllPoints()
-    -- Try to position below the right-side spec buttons if found
-    local anchor = self:FindTalentFrameRightAnchor(button)
-    if anchor then
-        -- Position: 1px left from previous, 40px down from previous
-        button:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 17, -54)
+    -- Position below the spec tabs on the right side
+    local specTab2 = _G["PlayerSpecTab2"]
+    if specTab2 and specTab2:IsShown() then
+        button:SetPoint("TOP", specTab2, "BOTTOM", 0, -15)
         return
     end
-    -- Fallback: inside the frame border near top-right
-    button:SetPoint("TOPRIGHT", PlayerTalentFrame, "TOPRIGHT", -11, -155)
+    local specTab1 = _G["PlayerSpecTab1"] 
+    if specTab1 and specTab1:IsShown() then
+        button:SetPoint("TOP", specTab1, "BOTTOM", 0, -55)
+        return
+    end
+    -- Fallback: position on right side below close button
+    button:SetPoint("TOPRIGHT", PlayerTalentFrame, "TOPRIGHT", -8, -90)
 end
 
 function TalentManager:ShowExportDialog(text, title)
@@ -1955,9 +2058,10 @@ function TalentManager:UpdateTalentDisplay()
 
                     -- Refresh icon display
                     if button.icon then
-                        local _, iconPath = SafeGetTalentInfo(tab, i, nil, pet, talentGroup)
-                        if iconPath then
-                            button.icon:SetTexture(iconPath)
+                        local _, iconPath = SafeGetTalentInfo(tab, i, nil, button.pet, talentGroup)
+                        local normalized = NormalizeTalentIconPath(iconPath)
+                        if normalized then
+                            button.icon:SetTexture(normalized)
                         else
                             button.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
                         end
@@ -1967,8 +2071,22 @@ function TalentManager:UpdateTalentDisplay()
                     button.currentRank = currentRank
                     UpdateTalentButtonVisual(button, state, currentRank, button.maxRank, targetRank)
                     
-                    -- Draw prereq line
-                    if button.prereqTalent and button.prereqTalent > 0 then
+                    -- Draw prereq lines using GetTalentPrereqs API
+                    local prereqTier, prereqColumn = SafeGetTalentPrereqs(tab, i, nil, button.pet, talentGroup)
+                    if prereqTier and prereqColumn then
+                        -- Find the prereq button by tier/column
+                        for prereqIdx, prereqBtn in pairs(tree.talentButtons) do
+                            if prereqBtn.tier == prereqTier and prereqBtn.column == prereqColumn then
+                                local color = state ~= "locked" and { r = 1, g = 0.82, b = 0 } or { r = 0.4, g = 0.4, b = 0.4 }
+                                local lines = DrawPrereqLine(tree.container, prereqBtn, button, color)
+                                if lines then
+                                    tree.prereqLines[i] = lines
+                                end
+                                break
+                            end
+                        end
+                    elseif button.prereqTalent and button.prereqTalent > 0 then
+                        -- Fallback to stored prereq index
                         local prereqBtn = tree.talentButtons[button.prereqTalent]
                         if prereqBtn then
                             local color = state ~= "locked" and { r = 1, g = 0.82, b = 0 } or { r = 0.4, g = 0.4, b = 0.4 }
@@ -2589,22 +2707,29 @@ hookFrame:SetScript("OnEvent", function(self, event, addonName)
             dcBtn:SetFrameLevel((PlayerTalentFrame:GetFrameLevel() or 0) + 25)
         end
 
+        -- Background slot
+        local slotBg = dcBtn:CreateTexture(nil, "BACKGROUND")
+        slotBg:SetSize(50, 50)
+        slotBg:SetPoint("CENTER")
+        slotBg:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+        dcBtn.slotBg = slotBg
+        
+        -- DC-QoS Icon - use a gear icon that's always available
         local icon = dcBtn:CreateTexture(nil, "ARTWORK")
         icon:SetSize(32, 32)
         icon:SetPoint("CENTER")
-        icon:SetDrawLayer("OVERLAY")
-        local ok = icon.SetTexture and icon:SetTexture(DCQOS_ICON)
-        if ok == false then
-            icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-        end
+        icon:SetTexture("Interface\\Icons\\INV_Misc_Gear_01")
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        icon:SetAlpha(1)
+        icon:SetVertexColor(1, 1, 1)  -- Ensure full color
         dcBtn.icon = icon
 
+        -- Border glow
         local border = dcBtn:CreateTexture(nil, "OVERLAY")
-        border:SetSize(66, 66)
+        border:SetSize(52, 52)
         border:SetPoint("CENTER")
-        border:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+        border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+        border:SetBlendMode("ADD")
+        border:SetVertexColor(0.3, 0.7, 1.0)  -- Blue tint for DC-QoS
         dcBtn.border = border
 
         local highlight = dcBtn:CreateTexture(nil, "HIGHLIGHT")
