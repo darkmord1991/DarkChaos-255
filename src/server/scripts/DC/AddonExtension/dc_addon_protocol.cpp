@@ -226,6 +226,11 @@ struct DCAddonProtocolConfig
     uint32 RequestTimeoutMs;
     uint32 MinGOMoveSecurity;
     uint32 MinNPCMoveSecurity;
+    
+    // Security limits (configurable for flexibility)
+    uint32 MaxChunksPerMessage;      // Maximum chunks allowed per message (memory protection)
+    uint32 MaxJsonPayloadSize;       // Maximum JSON payload size in bytes
+    uint32 MaxPendingChunks;         // Maximum concurrent pending chunked messages per account
 
     // Version
     std::string ProtocolVersion;
@@ -380,6 +385,11 @@ static void LoadAddonConfig()
     s_AddonConfig.RequestTimeoutMs      = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.RequestTimeoutMs", 8000);
     s_AddonConfig.MinGOMoveSecurity     = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.GOMove.MinSecurity", 1);
     s_AddonConfig.MinNPCMoveSecurity    = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.NPCMove.MinSecurity", 1);
+
+    // Security limits (must match client-side DC.MAX_CHUNKS_PER_MESSAGE and DC.MAX_JSON_PAYLOAD_SIZE)
+    s_AddonConfig.MaxChunksPerMessage   = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxChunksPerMessage", 200);
+    s_AddonConfig.MaxJsonPayloadSize    = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxJsonPayloadSize", 131072);
+    s_AddonConfig.MaxPendingChunks      = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxPendingChunks", 5);
 
     // Set global flag for S2C logging (needed by Message::Send before config is accessible)
     g_S2CLoggingEnabled = s_AddonConfig.EnableProtocolLogging;
@@ -1296,6 +1306,14 @@ public:
         if (totalChunks == 0 || chunkIndex >= totalChunks)
             return false;
 
+        // Security limit: prevent memory exhaustion via excessive chunk count
+        if (totalChunks > s_AddonConfig.MaxChunksPerMessage)
+        {
+            LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: totalChunks={} exceeds limit {}",
+                player->GetName(), totalChunks, s_AddonConfig.MaxChunksPerMessage);
+            return false;
+        }
+
         // Special case: if totalChunks == 1, this is a single-chunk message (short-circuit)
         // Just extract the data and return immediately without storing in buffer
         if (totalChunks == 1)
@@ -1317,6 +1335,16 @@ public:
         auto& chunkedMsg = s_ChunkedMessages[accountId];
         if (chunkIndex == 0)
         {
+            // Security: Check if adding this would exceed max pending chunks
+            // Count how many accounts have pending chunks (simple approach)
+            if (s_ChunkedMessages.find(accountId) == s_ChunkedMessages.end() && 
+                s_ChunkedMessages.size() >= s_AddonConfig.MaxPendingChunks * 10)  // Global limit = per-account * 10
+            {
+                LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: global pending chunks limit reached ({})",
+                    player->GetName(), s_ChunkedMessages.size());
+                return false;
+            }
+            
             // First chunk - reset buffer
             chunkedMsg = DCAddon::ChunkedMessage();
             s_ChunkStartTimes[accountId] = GameTime::GetGameTime().count() * 1000;
@@ -1373,6 +1401,15 @@ public:
         }
 
         std::string payload = rawPayload;
+
+        // Security limit: reject oversized payloads to prevent JSON parsing attacks
+        if (payload.length() > s_AddonConfig.MaxJsonPayloadSize)
+        {
+            LOG_WARN("module.dc", "[DC-SECURITY] player={}, REJECTED: payload size {} exceeds limit {}",
+                player->GetName(), payload.length(), s_AddonConfig.MaxJsonPayloadSize);
+            msg.clear();
+            return;
+        }
 
         // Cleanup expired async requests for this player
         CleanupExpiredRequests(player);

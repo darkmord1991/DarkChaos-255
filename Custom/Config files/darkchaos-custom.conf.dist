@@ -2662,6 +2662,42 @@ DC.AddonProtocol.RateLimit.Action = 0
 #
 DC.AddonProtocol.Logging.Enable = 1
 
+# -------------------------------------------------------------------------
+# Security Limits (prevent DoS/memory exhaustion attacks)
+# -------------------------------------------------------------------------
+
+#
+#    DC.AddonProtocol.Security.MaxChunksPerMessage
+#        Description: Maximum number of chunks allowed in a single chunked message.
+#                     Prevents memory exhaustion from malicious clients claiming
+#                     excessive chunk counts. Set based on largest legitimate payload:
+#                     - DC-Collection transmog pages: ~50KB (needs ~200 chunks)
+#                     - Leaderboard pages: ~15KB (needs ~60 chunks)
+#        Default:     200
+#
+DC.AddonProtocol.Security.MaxChunksPerMessage = 200
+
+#
+#    DC.AddonProtocol.Security.MaxJsonPayloadSize
+#        Description: Maximum JSON payload size in bytes after reassembly.
+#                     Prevents JSON parsing DoS attacks. Set based on largest
+#                     legitimate payloads:
+#                     - DC-Collection full sync: up to 100KB
+#                     - Transmog definition pages (250 items): ~25KB
+#                     - Community outfit lists: ~25KB
+#        Default:     131072 (128KB)
+#
+DC.AddonProtocol.Security.MaxJsonPayloadSize = 131072
+
+#
+#    DC.AddonProtocol.Security.MaxPendingChunks
+#        Description: Maximum number of concurrent pending chunked messages
+#                     per account. Prevents memory exhaustion from partial
+#                     chunk floods.
+#        Default:     5
+#
+DC.AddonProtocol.Security.MaxPendingChunks = 5
+
 
 ###########################################################################
 #

@@ -270,9 +270,9 @@ void WorldSession::HandleWhoOpcode(WorldPacket& recvData)
     wstrToLower(wpacketPlayerName);
     wstrToLower(wpacketGuildName);
 
-    // client send in case not set max level value 100 but Acore supports 255 max level,
-    // update it to show GMs with characters after 100 level
-    if (levelMax >= MAX_LEVEL)
+    // Client caps (3.3.5a) are <= 80/100, but server can be 255.
+    // If client max is at or above its cap and server supports higher levels, expand range.
+    if (MAX_LEVEL > levelMax && levelMax >= 80)
         levelMax = STRONG_MAX_LEVEL;
 
     uint32 team = _player->GetTeamId();

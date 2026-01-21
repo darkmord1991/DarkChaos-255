@@ -325,6 +325,31 @@ end
 
 function addon:CreateSettingsPanel()
     if self.settingsPanel then return end
+
+    -- Ensure Interface Options frame is enlarged for better layout space
+    if InterfaceOptionsFrame and not InterfaceOptionsFrame.__dcQoSResized then
+        InterfaceOptionsFrame.__dcQoSResized = true
+        InterfaceOptionsFrame:SetWidth(900)
+        InterfaceOptionsFrame:SetHeight(660)
+
+        if InterfaceOptionsFrameCategories then
+            InterfaceOptionsFrameCategories:SetHeight(InterfaceOptionsFrame:GetHeight() - 100)
+        end
+
+        if InterfaceOptionsFramePanelContainer then
+            InterfaceOptionsFramePanelContainer:ClearAllPoints()
+            if InterfaceOptionsFrameCategories then
+                InterfaceOptionsFramePanelContainer:SetPoint("TOPLEFT", InterfaceOptionsFrameCategories, "TOPRIGHT", 8, -8)
+            else
+                InterfaceOptionsFramePanelContainer:SetPoint("TOPLEFT", InterfaceOptionsFrame, "TOPLEFT", 160, -72)
+            end
+            InterfaceOptionsFramePanelContainer:SetPoint("BOTTOMRIGHT", InterfaceOptionsFrame, "BOTTOMRIGHT", -28, 32)
+
+            local leftWidth = InterfaceOptionsFrameCategories and InterfaceOptionsFrameCategories:GetWidth() or 150
+            InterfaceOptionsFramePanelContainer:SetWidth(InterfaceOptionsFrame:GetWidth() - leftWidth - 40)
+            InterfaceOptionsFramePanelContainer:SetHeight(InterfaceOptionsFrame:GetHeight() - 100)
+        end
+    end
     
     -- Main Panel
     local panel = CreateFrame("Frame", "DCQoSSettingsPanel", InterfaceOptionsFramePanelContainer)

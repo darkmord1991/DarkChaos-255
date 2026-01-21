@@ -113,7 +113,7 @@ local talentPrereqs = {}
 local TALENTED_MAP = "012345abcdefABCDEFmnopqrMNOPQRtuvwxy*"
 local WOWHEAD_MAP = "0zMcmVokRsaqbdrfwihuGINALpTjnyxtgevE"
 local BG_FELLEATHER = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
-local DCQOS_ICON = "Interface\\Icons\\Ability_Marksmanship"
+local DCQOS_ICON = "Interface\\AddOns\\Icons\\DC-QOS\\Icon_64.tga"
 
 -- Class to code mapping
 local CLASS_CODES = {
@@ -1201,33 +1201,74 @@ local TREE_TOP_OFFSET = 40
 local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, targetRank)
     if not button then return end
     
-    -- Update rank text
+    -- Update rank text (Blizzard-style: always show if rank > 0)
     if button.rankText then
-        button.rankText:SetText(currentRank .. "/" .. maxRank)
-    end
-    
-    -- Update border color based on state
-    local r, g, b, a = 1, 1, 1, 1
-    if state == "maxed" then
-        r, g, b = 1, 0.82, 0  -- Gold
-    elseif state == "locked" then
-        r, g, b, a = 0.5, 0.5, 0.5, 0.5  -- Grey/dim
-    elseif state == "partial" then
-        r, g, b = 0, 1, 0  -- Green
-    elseif state == "available" then
-        r, g, b = 0, 0.8, 0  -- Green
-    end
-    
-    if button.border then
-        button.border:SetVertexColor(r, g, b, a)
-    end
-    
-    -- Dim icon if locked
-    if button.icon then
-        if state == "locked" then
-            button.icon:SetVertexColor(0.5, 0.5, 0.5)
+        if (currentRank or 0) > 0 then
+            button.rankText:SetText(currentRank .. "/" .. maxRank)
+            button.rankText:Show()
         else
+            button.rankText:Hide()
+        end
+    end
+    
+    -- Blizzard's exact logic for talent appearance:
+    -- 1. If prerequisites met: bright, can be green if can increase
+    -- 2. If prerequisites NOT met: desaturated and gray
+    
+    -- Make sure icon is visible
+    if button.icon then
+        button.icon:Show()
+        button.icon:SetAlpha(1)
+    end
+    
+    if state == "locked" then
+        -- Prerequisites NOT met: Desaturate icon and gray slot
+        if button.icon then
+            if button.icon.SetDesaturated then
+                button.icon:SetDesaturated(true)
+            end
+            button.icon:SetVertexColor(0.65, 0.65, 0.65)
+        end
+        if button.border then
+            button.border:SetVertexColor(0.5, 0.5, 0.5)
+        end
+        if button.rankText then
+            button.rankText:SetTextColor(0.5, 0.5, 0.5)
+        end
+    else
+        -- Prerequisites met: NOT desaturated, full brightness
+        if button.icon then
+            if button.icon.SetDesaturated then
+                button.icon:SetDesaturated(false)
+            end
             button.icon:SetVertexColor(1, 1, 1)
+        end
+        
+        -- Set slot/border color based on state
+        if state == "available" and currentRank < maxRank then
+            -- Can increase talent right now: GREEN
+            if button.border then
+                button.border:SetVertexColor(0.1, 1.0, 0.1)
+            end
+            if button.rankText then
+                button.rankText:SetTextColor(0, 1, 0)
+            end
+        elseif state == "maxed" then
+            -- Maxed out: GOLD
+            if button.border then
+                button.border:SetVertexColor(1.0, 0.82, 0)
+            end
+            if button.rankText then
+                button.rankText:SetTextColor(1, 0.82, 0)
+            end
+        else
+            -- Normal/partial: WHITE/NORMAL
+            if button.border then
+                button.border:SetVertexColor(1, 1, 1)
+            end
+            if button.rankText then
+                button.rankText:SetTextColor(1, 0.82, 0)
+            end
         end
     end
     
@@ -1272,11 +1313,6 @@ local function CreateTalentButton(parent, tab, index, pet)
     -- Icon
     local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetAllPoints()
-    if not iconPath or iconPath == "" then
-        iconPath = "Interface\\Icons\\INV_Misc_QuestionMark"
-    elseif type(iconPath) == "string" and not iconPath:find("\\") then
-        iconPath = "Interface\\Icons\\" .. iconPath
-    end
     icon:SetTexture(iconPath)
     icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     icon:SetAlpha(1)
@@ -1289,16 +1325,15 @@ local function CreateTalentButton(parent, tab, index, pet)
     border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
     button.border = border
     
-    -- Rank text background
-    local rankBg = button:CreateTexture(nil, "OVERLAY")
-    rankBg:SetSize(24, 14)
-    rankBg:SetPoint("BOTTOMRIGHT", 2, -2)
-    rankBg:SetTexture(0, 0, 0, 0.7)
-    
-    -- Rank text
+    -- Rank text (no background box)
     local rankText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rankText:SetPoint("BOTTOMRIGHT", -1, 1)
-    rankText:SetText(currentRank .. "/" .. maxRank)
+    rankText:SetPoint("BOTTOMRIGHT", -2, 2)
+    rankText:SetTextColor(1, 0.82, 0)
+    if (currentRank or 0) > 0 then
+        rankText:SetText(currentRank .. "/" .. maxRank)
+    else
+        rankText:SetText("")
+    end
     button.rankText = rankText
     
     -- Target indicator (for diff view)
@@ -1765,8 +1800,15 @@ end
 function TalentManager:PositionTalentFrameButton(button)
     if not button or not PlayerTalentFrame then return end
     button:ClearAllPoints()
-    -- Position next to the close button area, inside the frame border
-    button:SetPoint("TOPRIGHT", PlayerTalentFrame, "TOPRIGHT", -35, -80)
+    -- Try to position below the right-side spec buttons if found
+    local anchor = self:FindTalentFrameRightAnchor(button)
+    if anchor then
+        -- Position: 1px left from previous, 40px down from previous
+        button:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 17, -54)
+        return
+    end
+    -- Fallback: inside the frame border near top-right
+    button:SetPoint("TOPRIGHT", PlayerTalentFrame, "TOPRIGHT", -11, -155)
 end
 
 function TalentManager:ShowExportDialog(text, title)
@@ -1887,6 +1929,7 @@ function TalentManager:UpdateTalentDisplay()
     if not mainFrame or not mainFrame:IsShown() then return end
     
     local current = GetCurrentTalents()
+    local talentGroup = SafeGetActiveTalentGroup(nil, nil)
     
     for tab = 1, 3 do
         local tree = mainFrame.trees[tab]
@@ -1909,6 +1952,17 @@ function TalentManager:UpdateTalentDisplay()
                     local targetRank = targetTemplate and targetTemplate.talents and 
                                        targetTemplate.talents[tab] and targetTemplate.talents[tab][i]
                     local state = GetTalentState(current, tab, i)
+
+                    -- Refresh icon display
+                    if button.icon then
+                        local _, iconPath = SafeGetTalentInfo(tab, i, nil, pet, talentGroup)
+                        if iconPath then
+                            button.icon:SetTexture(iconPath)
+                        else
+                            button.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                        end
+                        button.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+                    end
                     
                     button.currentRank = currentRank
                     UpdateTalentButtonVisual(button, state, currentRank, button.maxRank, targetRank)
@@ -1999,22 +2053,19 @@ function TalentManager:CreateGlyphFrame()
     end)
     frame:Hide()
     
-    -- Blizzard-style parchment background (using safe WotLK textures)
+    -- DC addon standard background (matching talent frame)
     frame:SetBackdrop({
-        bgFile = "Interface\\TalentFrame\\TalentFrameBackground",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Gold-Border",
-        tile = true, tileSize = 256, edgeSize = 26,
-        insets = { left = 6, right = 6, top = 6, bottom = 6 }
+        bgFile = BG_FELLEATHER,
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 256, edgeSize = 32,
+        insets = { left = 8, right = 8, top = 8, bottom = 8 }
     })
+    frame:SetBackdropColor(0.05, 0.05, 0.05, 0.92)
+    frame:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
     
-    -- Title bar
-    local titleBg = frame:CreateTexture(nil, "ARTWORK")
-    titleBg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
-    titleBg:SetSize(200, 64)
-    titleBg:SetPoint("TOP", 0, 12)
-    
-    local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    title:SetPoint("TOP", 0, -2)
+    -- Title
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -10)
     title:SetText("Glyphs")
     
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -2070,58 +2121,69 @@ function TalentManager:CreateGlyphFrame()
         end
     end)
 
-    -- Helper to create a circular glyph socket (Blizzard-like)
+    -- Helper to create a glyph socket (DC addon style)
     local function CreateGlyphSocket(parent, x, y, glyphType, index)
         local slot = CreateFrame("Button", nil, parent)
-        slot:SetSize(56, 56)
+        slot:SetSize(64, 64)
         slot:SetPoint("CENTER", parent, "CENTER", x, y)
         slot.slotIndex = index
         slot.slotKind = glyphType
         
-        -- Circular ring background - use spellbook glyph texture if available
-        local ring = slot:CreateTexture(nil, "BACKGROUND")
-        ring:SetSize(60, 60)
-        ring:SetPoint("CENTER")
-        -- Try glyph-specific texture, fall back to quickslot
-        ring:SetTexture("Interface\\Spellbook\\UI-GlyphFrame")
-        if not ring:GetTexture() then
-            ring:SetTexture("Interface\\Buttons\\UI-Quickslot")
+        -- Background ring (simple circle)
+        local background = slot:CreateTexture(nil, "BACKGROUND")
+        background:SetSize(70, 70)
+        background:SetPoint("CENTER")
+        background:SetTexture("Interface\\Minimap\\UI-Minimap-Border")
+        background:SetTexCoord(0, 1, 0, 1)
+        if glyphType == "major" then
+            background:SetVertexColor(1, 0.82, 0, 0.8)  -- Gold for major
+        else
+            background:SetVertexColor(0.5, 0.7, 1, 0.8)  -- Blue for minor
         end
-        ring:SetAlpha(0.6)
+        slot.background = background
+        
+        -- Inner socket backdrop
+        local socketBg = slot:CreateTexture(nil, "BORDER")
+        socketBg:SetSize(58, 58)
+        socketBg:SetPoint("CENTER")
+        socketBg:SetTexture("Interface\\Buttons\\UI-Quickslot")
+        socketBg:SetVertexColor(0.1, 0.1, 0.1, 0.9)
+        slot.socketBg = socketBg
+        
+        -- Glyph icon
+        local glyph = slot:CreateTexture(nil, "ARTWORK")
+        glyph:SetSize(52, 52)
+        glyph:SetPoint("CENTER")
+        glyph:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        slot.glyph = glyph
+        
+        -- Border highlight
+        local ring = slot:CreateTexture(nil, "OVERLAY")
+        ring:SetSize(66, 66)
+        ring:SetPoint("CENTER")
+        ring:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+        ring:SetBlendMode("ADD")
+        if glyphType == "major" then
+            ring:SetVertexColor(1, 0.82, 0, 1)
+        else
+            ring:SetVertexColor(0.5, 0.7, 1, 1)
+        end
         slot.ring = ring
         
-        -- Outer socket border (colored circle)
-        local border = slot:CreateTexture(nil, "BORDER")
-        border:SetSize(64, 64)
-        border:SetPoint("CENTER")
-        border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-        if glyphType == "major" then
-            border:SetVertexColor(1, 0.82, 0, 1) -- Gold for major
-        else
-            border:SetVertexColor(0.5, 0.5, 1, 1) -- Blue for minor
-        end
-        slot.border = border
+        -- Shine overlay (for filled sockets)
+        local shine = slot:CreateTexture(nil, "OVERLAY")
+        shine:SetSize(64, 64)
+        shine:SetPoint("CENTER")
+        shine:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+        shine:SetBlendMode("ADD")
+        shine:SetAlpha(0)
+        slot.shine = shine
         
-        -- Inner glow/highlight when filled
-        local glow = slot:CreateTexture(nil, "ARTWORK", nil, -1)
-        glow:SetSize(52, 52)
-        glow:SetPoint("CENTER")
-        glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-        glow:SetBlendMode("ADD")
-        glow:SetAlpha(0)
-        if glyphType == "major" then
-            glow:SetVertexColor(1, 0.82, 0, 0.5)
-        else
-            glow:SetVertexColor(0.5, 0.5, 1, 0.5)
-        end
-        slot.glow = glow
-
-        -- Icon (centered in the socket)
-        local icon = slot:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(40, 40)
-        icon:SetPoint("CENTER")
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        slot.icon = icon
+        -- Setting/decoration frame
+        slot.setting = socketBg  -- Reuse socket background
+        
+        -- Icon alias for compatibility
+        slot.icon = glyph
         
         -- Name label below the socket
         local nameLabel = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -2132,12 +2194,13 @@ function TalentManager:CreateGlyphFrame()
         slot.nameLabel = nameLabel
 
         -- Highlight on mouseover
-        local hl = slot:CreateTexture(nil, "HIGHLIGHT")
-        hl:SetSize(56, 56)
-        hl:SetPoint("CENTER")
-        hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
-        hl:SetBlendMode("ADD")
-        hl:SetAlpha(0.3)
+        local highlight = slot:CreateTexture(nil, "HIGHLIGHT")
+        highlight:SetSize(64, 64)
+        highlight:SetPoint("CENTER")
+        highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+        highlight:SetBlendMode("ADD")
+        highlight:SetAlpha(0.5)
+        slot.highlight = highlight
         
         slot:SetScript("OnEnter", function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -2170,11 +2233,11 @@ function TalentManager:CreateGlyphFrame()
     majorLabel:SetPoint("TOP", socketContainer, "TOP", 0, 0)
     majorLabel:SetText("|cFFFFD100Major Glyphs|r")
     
-    -- Major glyphs - arranged in a row
+    -- Major glyphs - arranged in a row with wider spacing
     frame.majorSlots = {}
     local majorY = -35
     for i = 1, 3 do
-        local xOffset = (i - 2) * 85  -- -85, 0, 85
+        local xOffset = (i - 2) * 100  -- -100, 0, 100 (wider spacing)
         local slot = CreateGlyphSocket(socketContainer, xOffset, majorY, "major", i)
         frame.majorSlots[i] = slot
     end
@@ -2183,11 +2246,11 @@ function TalentManager:CreateGlyphFrame()
     minorLabel:SetPoint("TOP", socketContainer, "TOP", 0, -120)
     minorLabel:SetText("|cFF8888FFMinor Glyphs|r")
     
-    -- Minor glyphs - arranged in a row below
+    -- Minor glyphs - arranged in a row below with wider spacing
     frame.minorSlots = {}
     local minorY = -155
     for i = 1, 3 do
-        local xOffset = (i - 2) * 85
+        local xOffset = (i - 2) * 100  -- -100, 0, 100 (wider spacing)
         local slot = CreateGlyphSocket(socketContainer, xOffset, minorY, "minor", i)
         frame.minorSlots[i] = slot
     end
@@ -2236,42 +2299,40 @@ function TalentManager:UpdateGlyphDisplay()
         slot.glyphData = nil
         slot.lockedText = nil
         
-        -- Default empty state - use a dimmed question mark
-        local emptyIcon = "Interface\\Icons\\INV_Misc_QuestionMark"
-        local glowAlpha = 0
-
         if not glyph then
             -- No glyph data at all
-            slot.icon:SetTexture(emptyIcon)
-            slot.icon:SetAlpha(0.3)
-            slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            slot.glyph:Hide()
+            slot.shine:SetAlpha(0)
+            slot.ring:SetAlpha(0.3)
             slot.lockedText = "Empty"
             if slot.nameLabel then slot.nameLabel:SetText("|cFF666666Empty|r") end
-            if slot.glow then slot.glow:SetAlpha(0) end
-            if slot.border then slot.border:SetAlpha(0.5) end
             return
         end
 
         if not glyph.enabled then
             -- Socket exists but is locked (level requirement)
-            slot.icon:SetTexture("Interface\\PaperDoll\\UI-Backpack-EmptySlot")
-            slot.icon:SetAlpha(0.4)
-            slot.icon:SetTexCoord(0, 1, 0, 1)
+            slot.glyph:Hide()
+            slot.shine:SetAlpha(0)
+            slot.ring:SetAlpha(0.2)
+            slot.socketBg:SetVertexColor(0.3, 0.3, 0.3, 0.9)
             slot.lockedText = "Locked (level)"
             if slot.nameLabel then slot.nameLabel:SetText("|cFF888888Locked|r") end
-            if slot.glow then slot.glow:SetAlpha(0) end
-            if slot.border then slot.border:SetAlpha(0.3) end
             return
         end
 
         if glyph.spellId then
             -- Has a glyph inscribed
-            slot.icon:SetTexture(glyph.icon or "Interface\\Icons\\INV_Inscription_Tradeskill01")
-            slot.icon:SetAlpha(1)
-            slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            slot.glyph:Show()
+            if glyph.icon then
+                slot.glyph:SetTexture(glyph.icon)
+            else
+                slot.glyph:SetTexture("Interface\\Icons\\INV_Inscription_Tradeskill01")
+            end
+            slot.shine:SetAlpha(0.3)
+            slot.ring:SetAlpha(1)
+            slot.socketBg:SetVertexColor(0.1, 0.1, 0.1, 0.9)
             slot.glyphData = glyph
             slot.lockedText = "Inscribed"
-            glowAlpha = 0.5
             
             -- Show glyph name
             local displayName = glyph.name or "Unknown"
@@ -2282,17 +2343,14 @@ function TalentManager:UpdateGlyphDisplay()
                 local color = kind == "major" and "|cFFFFD100" or "|cFF8888FF"
                 slot.nameLabel:SetText(color .. displayName .. "|r") 
             end
-            if slot.glow then slot.glow:SetAlpha(glowAlpha) end
-            if slot.border then slot.border:SetAlpha(1) end
         else
             -- Socket is open but no glyph
-            slot.icon:SetTexture(emptyIcon)
-            slot.icon:SetAlpha(0.4)
-            slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            slot.glyph:Hide()
+            slot.shine:SetAlpha(0)
+            slot.ring:SetAlpha(0.6)
+            slot.socketBg:SetVertexColor(0.1, 0.1, 0.1, 0.9)
             slot.lockedText = "Empty"
             if slot.nameLabel then slot.nameLabel:SetText("|cFF888888Empty|r") end
-            if slot.glow then slot.glow:SetAlpha(0) end
-            if slot.border then slot.border:SetAlpha(0.7) end
         end
     end
 

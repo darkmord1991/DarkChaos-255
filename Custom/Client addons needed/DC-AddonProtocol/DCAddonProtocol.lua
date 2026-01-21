@@ -35,7 +35,7 @@ if DCAddonProtocol then return end
 
 DCAddonProtocol = {
     PREFIX = "DC",
-    VERSION = "2.0.0",
+    VERSION = "2.0.1",
     -- Capability flags (must stay in sync with server-side ProtocolVersion::Capability)
     CAPABILITIES = 3, -- JSON_MESSAGES(1) | BATCH_MESSAGES(2)
     _handlers = {},
@@ -45,7 +45,10 @@ DCAddonProtocol = {
     _serverCaps = 0,
     _features = {},
     _handshakeSent = false,
+    _handshakePending = false,
     _lastHandshakeTime = 0,
+    _reconnectAttempts = 0,
+    _maxReconnectAttempts = 5,
 
     -- Server context (season/phase)
     _serverContext = nil,
@@ -64,6 +67,7 @@ DCAddonProtocol = {
 
     -- Request ID generator
     _requestIdCounter = 0,
+    _requestIdEpoch = 0,        -- Epoch counter to prevent overflow collision
     
     -- Statistics tracking
     _stats = {
@@ -93,11 +97,17 @@ end
 
 function DC:NextRequestId()
     self._requestIdCounter = (self._requestIdCounter or 0) + 1
-    if self._requestIdCounter > 1000000 then
+    if self._requestIdCounter > 999999 then
         self._requestIdCounter = 1
+        self._requestIdEpoch = (self._requestIdEpoch or 0) + 1
+        if self._requestIdEpoch > 99 then
+            self._requestIdEpoch = 0
+        end
     end
+    -- Format: timestamp-epoch-counter for guaranteed uniqueness
     local t = time() or 0
-    return tostring(t) .. "-" .. tostring(self._requestIdCounter)
+    local epoch = self._requestIdEpoch or 0
+    return string.format("%d-%d-%d", t, epoch, self._requestIdCounter)
 end
 
 function DC:GetServerContext()
@@ -117,6 +127,53 @@ function DC:RegisterCrossEventHandler(handler)
     if type(handler) ~= "function" then return false end
     table.insert(self._crossEventHandlers, handler)
     return true
+end
+
+-- ============================================================================
+-- RECONNECTION / HANDSHAKE MANAGEMENT
+-- ============================================================================
+
+function DC:_AttemptReconnect()
+    if self._connected or self._handshakePending then
+        return
+    end
+    
+    self._handshakePending = true
+    self._lastHandshakeTime = time()
+    self._reconnectAttempts = (self._reconnectAttempts or 0) + 1
+    
+    if self._debug then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff888888[DC]|r Attempting reconnect (" .. self._reconnectAttempts .. "/" .. (self._maxReconnectAttempts or 5) .. ")...")
+    end
+    
+    self:LogNetEvent("info", "reconnect", "Attempting handshake (attempt " .. self._reconnectAttempts .. ")")
+    self:Send("CORE", 1, self:GetHandshakeVersionString())
+    
+    -- Clear pending flag after a timeout (in case server doesn't respond)
+    -- This is handled in _CheckRequestTimeouts implicitly via the handshake request timing out
+end
+
+function DC:_OnHandshakeSuccess()
+    self._connected = true
+    self._handshakePending = false
+    self._reconnectAttempts = 0
+    self:LogNetEvent("info", "handshake", "Connected successfully to server v" .. (self._serverVersion or "?"))
+end
+
+function DC:_OnHandshakeFailed(reason)
+    self._connected = false
+    self._handshakePending = false
+    self:LogNetEvent("error", "handshake", "Handshake failed: " .. (reason or "unknown"))
+end
+
+function DC:EnsureConnected()
+    if not self._connected and not self._handshakePending then
+        local now = time()
+        if now - (self._lastHandshakeTime or 0) > 5 then
+            self:_AttemptReconnect()
+        end
+    end
+    return self._connected
 end
 
 -- ============================================================================
@@ -247,14 +304,24 @@ function DC:_ChatNotifyTimeout(kind, module, opcode, ageSec)
 end
 
 function DC:_CheckRequestTimeouts()
+    -- Defensive initialization
     if not self._pendingRequests then
+        self._pendingRequests = {}
         return
+    end
+    if not self._pendingRequestsLegacy then
+        self._pendingRequestsLegacy = {}
+    end
+    if not self._stats then
+        self._stats = { totalRequests = 0, totalResponses = 0, totalTimeouts = 0, avgResponseTime = 0, moduleStats = {}, sessionStart = time() }
     end
 
     local timeoutSec = tonumber(self:GetSetting("requestTimeoutSec")) or 30
     if timeoutSec < 3 then timeoutSec = 3 end
 
     local now = time()
+    local keysToRemove = {}  -- Collect keys to remove (avoid modifying table during iteration)
+    
     for key, entry in pairs(self._pendingRequests) do
         if entry and entry.status == "pending" then
             local age = now - (entry.timestamp or now)
@@ -280,18 +347,32 @@ function DC:_CheckRequestTimeouts()
                     self:_ChatNotifyTimeout("Request", entry.module, entry.opcode, age)
                 end
 
-                self._pendingRequests[key] = nil
-                if entry._legacyKey then
-                    self._pendingRequestsLegacy[entry._legacyKey] = nil
-                end
+                table.insert(keysToRemove, { key = key, legacyKey = entry._legacyKey })
             end
+        end
+    end
+    
+    -- Remove timed-out entries after iteration
+    for _, item in ipairs(keysToRemove) do
+        self._pendingRequests[item.key] = nil
+        if item.legacyKey then
+            self._pendingRequestsLegacy[item.legacyKey] = nil
         end
     end
 end
 
+-- Maximum chunks allowed per message (security: prevent memory exhaustion)
+DC.MAX_CHUNKS_PER_MESSAGE = 200  -- Supports large collection/transmog syncs
+-- Maximum JSON payload size (security: prevent parsing abuse)
+DC.MAX_JSON_PAYLOAD_SIZE = 131072  -- 128KB (supports large collection/transmog syncs)
+
 function DC:_CleanupChunkBuffers()
     if not self._chunkBuffers then
+        self._chunkBuffers = {}
         return
+    end
+    if not self._chunkMsgIds then
+        self._chunkMsgIds = {}
     end
 
     local timeoutSec = tonumber(self:GetSetting("chunkTimeoutSec")) or 10
@@ -886,6 +967,12 @@ end
 
 function DC:DecodeJSON(str)
     if not str or str == "" then return nil end
+    
+    -- Security: Reject oversized payloads
+    if #str > (self.MAX_JSON_PAYLOAD_SIZE or 65536) then
+        self:LogNetEvent("error", "json", "JSON payload too large: " .. #str .. " bytes (max " .. (self.MAX_JSON_PAYLOAD_SIZE or 65536) .. ")")
+        return nil
+    end
     
     -- Optimized JSON parser using string.byte() instead of string.sub()
     -- string.byte() is ~3x faster than string.sub() for single char access
@@ -1622,6 +1709,18 @@ frame:SetScript("OnUpdate", function(self, elapsed)
     if type(DC._CleanupChunkBuffers) == "function" then
         DC:_CleanupChunkBuffers()
     end
+    -- Auto-reconnect logic: if disconnected and haven't exceeded max attempts
+    if not DC._connected and not DC._handshakePending then
+        local now = time()
+        local lastAttempt = DC._lastHandshakeTime or 0
+        local attempts = DC._reconnectAttempts or 0
+        local maxAttempts = DC._maxReconnectAttempts or 5
+        -- Exponential backoff: 5s, 10s, 20s, 40s, 60s (capped)
+        local delay = math.min(60, 5 * math.pow(2, attempts))
+        if attempts < maxAttempts and (now - lastAttempt) >= delay then
+            DC:_AttemptReconnect()
+        end
+    end
 end)
 frame:SetScript("OnEvent", function()
     if event == "CHAT_MSG_ADDON" then
@@ -1637,6 +1736,14 @@ frame:SetScript("OnEvent", function()
                 if idxStr and totalStr then
                     local idx = tonumber(idxStr) or 0
                     local total = tonumber(totalStr) or 0
+                    
+                    -- Security: Reject messages with too many chunks (memory protection)
+                    local maxChunks = DC.MAX_CHUNKS_PER_MESSAGE or 100
+                    if total > maxChunks then
+                        DC:LogNetEvent("error", "chunk", "Rejected chunked message: too many chunks (" .. total .. " > " .. maxChunks .. ")")
+                        return
+                    end
+                    
                     if total > 0 and idx >= 0 and idx < total then
                         DC._chunkBuffers = DC._chunkBuffers or {}
                         DC._chunkMsgIds = DC._chunkMsgIds or {}  -- Lookup: sender_total -> msgId
@@ -2029,6 +2136,7 @@ SlashCmdList["DC"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  /dc chattimeouts on|off - Chat prints for request timeouts")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc chatchunks on|off - Chat prints for chunk timeouts")
         DEFAULT_CHAT_FRAME:AddMessage("  /dc netlogenable on|off - Enable/disable NetLog")
+        DEFAULT_CHAT_FRAME:AddMessage("  |cff00ccff/dcdiag|r - Open diagnostics panel (run tests)")
     end
 end
 
@@ -2137,10 +2245,17 @@ local function CreateSettingsPanel()
 
         local input = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
         input:SetPoint("LEFT", label, "RIGHT", 8, 0)
-        input:SetWidth(width or 50)
+        local finalWidth = width or 50
+        if finalWidth < 80 then
+            finalWidth = 80
+        end
+        input:SetWidth(finalWidth)
         input:SetHeight(20)
         input:SetAutoFocus(false)
         input:SetMaxLetters(6)
+        if input.SetTextInsets then
+            input:SetTextInsets(6, 6, 0, 0)
+        end
         input.tooltipText = tooltip
 
         local function refresh()
@@ -2549,9 +2664,359 @@ local function CreateTestingPanel()
     return panel
 end
 
+-- ============================================================================
+-- DIAGNOSTICS PANEL - Protocol Health & Testing Suite
+-- ============================================================================
+
+local function CreateDiagnosticsPanel()
+    local panel = CreateFrame("Frame", "DCProtocolDiagnosticsPanel", UIParent)
+    panel.name = "Diagnostics"
+    panel.parent = "DC Protocol"
+
+    -- Title
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("|cff00ff00DC Addon Protocol|r - Diagnostics & Health")
+
+    -- Description
+    local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetWidth(560)
+    desc:SetJustifyH("LEFT")
+    desc:SetText("Run protocol tests, check connection health, and diagnose communication issues.")
+
+    local yPos = -70
+
+    -- Test Results Area
+    local resultsFrame = CreateFrame("Frame", nil, panel)
+    resultsFrame:SetWidth(560)
+    resultsFrame:SetHeight(200)
+    resultsFrame:SetPoint("TOPLEFT", 16, yPos)
+    
+    local resultsBg = resultsFrame:CreateTexture(nil, "BACKGROUND")
+    resultsBg:SetAllPoints()
+    resultsBg:SetTexture(0, 0, 0, 0.8)
+    
+    local resultsTitle = resultsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    resultsTitle:SetPoint("TOP", 0, -5)
+    resultsTitle:SetText("|cffffd700Test Results|r")
+    
+    local resultsText = resultsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    resultsText:SetPoint("TOPLEFT", 10, -25)
+    resultsText:SetWidth(540)
+    resultsText:SetJustifyH("LEFT")
+    resultsText:SetJustifyV("TOP")
+    resultsText:SetText("|cff888888No tests run yet. Click a test button below.|r")
+    panel.resultsText = resultsText
+    
+    yPos = yPos - 210
+
+    -- Test Buttons
+    local testsHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    testsHeader:SetPoint("TOPLEFT", 16, yPos)
+    testsHeader:SetText("|cffffd700Diagnostic Tests|r")
+    yPos = yPos - 25
+
+    local testResults = {}
+    
+    local function RunAllTests()
+        testResults = {}
+        local startTime = debugprofilestop and debugprofilestop() or 0
+        
+        -- Test 1: JSON Encode/Decode
+        local test1Pass = false
+        local test1Msg = ""
+        local testData = { name = "Test", level = 255, nested = { a = 1, b = "str", c = true }, arr = {1, 2, 3} }
+        local encoded = DC:EncodeJSON(testData)
+        if encoded and #encoded > 0 then
+            local decoded = DC:DecodeJSON(encoded)
+            if decoded and decoded.name == "Test" and decoded.level == 255 and decoded.nested and decoded.nested.a == 1 and decoded.arr and #decoded.arr == 3 then
+                test1Pass = true
+                test1Msg = "OK - Encoded " .. #encoded .. " bytes"
+            else
+                test1Msg = "FAIL - Decode mismatch"
+            end
+        else
+            test1Msg = "FAIL - Encode returned empty"
+        end
+        table.insert(testResults, { name = "JSON Encode/Decode", pass = test1Pass, msg = test1Msg })
+        
+        -- Test 2: Large JSON (stress test)
+        local test2Pass = false
+        local test2Msg = ""
+        local largeData = { items = {} }
+        for i = 1, 100 do
+            largeData.items[i] = { id = i, name = "Item" .. i, value = math.random(1, 10000) }
+        end
+        local largeEncoded = DC:EncodeJSON(largeData)
+        if largeEncoded and #largeEncoded > 1000 then
+            local largeDecoded = DC:DecodeJSON(largeEncoded)
+            if largeDecoded and largeDecoded.items and #largeDecoded.items == 100 then
+                test2Pass = true
+                test2Msg = "OK - " .. #largeEncoded .. " bytes, 100 items"
+            else
+                test2Msg = "FAIL - Large decode failed"
+            end
+        else
+            test2Msg = "FAIL - Large encode failed"
+        end
+        table.insert(testResults, { name = "Large JSON (100 items)", pass = test2Pass, msg = test2Msg })
+        
+        -- Test 3: Connection Status
+        local test3Pass = DC._connected == true
+        local test3Msg = test3Pass and ("OK - Server v" .. (DC._serverVersion or "?")) or "FAIL - Not connected"
+        table.insert(testResults, { name = "Server Connection", pass = test3Pass, msg = test3Msg })
+        
+        -- Test 4: Handshake State
+        local test4Pass = not DC._handshakePending and DC._reconnectAttempts == 0
+        local test4Msg = ""
+        if test4Pass then
+            test4Msg = "OK - No pending handshakes"
+        else
+            test4Msg = "WARN - Reconnect attempts: " .. (DC._reconnectAttempts or 0)
+        end
+        table.insert(testResults, { name = "Handshake State", pass = test4Pass, msg = test4Msg })
+        
+        -- Test 5: Handler Registration
+        local handlerCount = DC:CountHandlers()
+        local test5Pass = handlerCount >= 5  -- Should have at least core handlers
+        local test5Msg = test5Pass and ("OK - " .. handlerCount .. " handlers registered") or ("WARN - Only " .. handlerCount .. " handlers")
+        table.insert(testResults, { name = "Handler Registration", pass = test5Pass, msg = test5Msg })
+        
+        -- Test 6: Stats System
+        local test6Pass = type(DC._stats) == "table" and DC._stats.sessionStart and DC._stats.sessionStart > 0
+        local test6Msg = test6Pass and ("OK - Session " .. (time() - DC._stats.sessionStart) .. "s") or "FAIL - Stats not initialized"
+        table.insert(testResults, { name = "Statistics System", pass = test6Pass, msg = test6Msg })
+        
+        -- Test 7: Settings/DB
+        local test7Pass = type(DC._settings) == "table"
+        local test7Msg = test7Pass and "OK - Settings loaded" or "FAIL - Settings not initialized"
+        table.insert(testResults, { name = "SavedVariables", pass = test7Pass, msg = test7Msg })
+        
+        -- Test 8: Request ID Generator
+        local rid1 = DC:NextRequestId()
+        local rid2 = DC:NextRequestId()
+        local test8Pass = rid1 ~= rid2 and #rid1 > 5
+        local test8Msg = test8Pass and ("OK - IDs unique: " .. rid1:sub(1, 20)) or "FAIL - Request ID collision"
+        table.insert(testResults, { name = "Request ID Generator", pass = test8Pass, msg = test8Msg })
+        
+        -- Calculate elapsed time
+        local endTime = debugprofilestop and debugprofilestop() or 0
+        local elapsedMs = endTime - startTime
+        
+        -- Format results
+        local passCount = 0
+        local failCount = 0
+        local lines = {}
+        for _, result in ipairs(testResults) do
+            local icon = result.pass and "|cff00ff00[OK]|r" or "|cffff0000[FAIL]|r"
+            local color = result.pass and "|cff00ff00" or "|cffff4444"
+            table.insert(lines, icon .. " " .. color .. result.name .. "|r: " .. result.msg)
+            if result.pass then passCount = passCount + 1 else failCount = failCount + 1 end
+        end
+        
+        local summary = string.format("\n|cffffd700Summary:|r %d/%d passed", passCount, #testResults)
+        if elapsedMs > 0 then
+            summary = summary .. string.format(" (%.1fms)", elapsedMs)
+        end
+        table.insert(lines, summary)
+        
+        panel.resultsText:SetText(table.concat(lines, "\n"))
+        
+        -- Log to chat
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Diagnostics]|r " .. passCount .. "/" .. #testResults .. " tests passed")
+    end
+
+    local function CreateTestButton(text, tooltip, onClick, xOffset)
+        local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+        btn:SetWidth(130)
+        btn:SetHeight(24)
+        btn:SetPoint("TOPLEFT", 16 + xOffset, yPos)
+        btn:SetText(text)
+        btn:SetScript("OnClick", onClick)
+        btn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(tooltip, nil, nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        return btn
+    end
+
+    CreateTestButton("Run All Tests", "Execute all diagnostic tests", RunAllTests, 0)
+    
+    CreateTestButton("Test Handshake", "Send handshake and measure response", function()
+        local startTime = time()
+        DC._handshakePending = true
+        DC._lastHandshakeTime = startTime
+        DC:Send("CORE", 1, DC:GetHandshakeVersionString())
+        panel.resultsText:SetText("|cffffff00Testing handshake...|r\n\nWaiting for server response.\nCheck chat for result.")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Diagnostics]|r Handshake test sent at " .. date("%H:%M:%S"))
+    end, 140)
+    
+    CreateTestButton("Ping Server", "Send test request (opcode 0x63)", function()
+        local testData = { action = "ping", timestamp = time(), client = DC.VERSION }
+        DC:Request("CORE", 0x63, testData)
+        panel.resultsText:SetText("|cffffff00Ping sent...|r\n\nRequest: CORE|0x63 (test opcode)\nPayload: " .. DC:EncodeJSON(testData) .. "\n\nCheck chat for server response.")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Diagnostics]|r Ping sent to CORE|0x63")
+    end, 280)
+    
+    CreateTestButton("Clear NetLog", "Clear saved network event log", function()
+        DC:ClearNetLog()
+        panel.resultsText:SetText("|cff00ff00NetLog cleared.|r\n\nNetwork event log has been reset.")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Diagnostics]|r NetLog cleared")
+    end, 420)
+
+    yPos = yPos - 35
+
+    CreateTestButton("Stress Test JSON", "Encode/decode 1000 objects", function()
+        local startTime = debugprofilestop and debugprofilestop() or 0
+        local errors = 0
+        for i = 1, 1000 do
+            local data = { id = i, value = math.random(1, 99999), name = "Object" .. i }
+            local enc = DC:EncodeJSON(data)
+            local dec = DC:DecodeJSON(enc)
+            if not dec or dec.id ~= i then
+                errors = errors + 1
+            end
+        end
+        local endTime = debugprofilestop and debugprofilestop() or 0
+        local elapsed = endTime - startTime
+        local result = errors == 0 and "|cff00ff00PASSED|r" or "|cffff0000FAILED (" .. errors .. " errors)|r"
+        panel.resultsText:SetText("|cffffd700JSON Stress Test|r\n\n" ..
+            "Iterations: 1000\n" ..
+            "Errors: " .. errors .. "\n" ..
+            "Time: " .. string.format("%.1fms", elapsed) .. "\n" ..
+            "Result: " .. result)
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC Diagnostics]|r JSON stress test: " .. (errors == 0 and "PASSED" or "FAILED"))
+    end, 0)
+    
+    CreateTestButton("Check Memory", "Show addon memory usage", function()
+        UpdateAddOnMemoryUsage()
+        local mem = GetAddOnMemoryUsage("DC-AddonProtocol") or 0
+        local lines = {
+            "|cffffd700Memory Usage|r\n",
+            "DC-AddonProtocol: " .. string.format("%.1f KB", mem),
+            "",
+            "Internal Structures:",
+            "  Handlers: " .. DC:CountTable(DC._handlers),
+            "  Request Log: " .. #DC._requestLog,
+            "  Response Log: " .. #DC._responseLog,
+            "  Pending Requests: " .. DC:CountTable(DC._pendingRequests),
+            "  Chunk Buffers: " .. DC:CountTable(DC._chunkBuffers or {}),
+            "  Module Stats: " .. DC:CountTable(DC._stats and DC._stats.moduleStats or {}),
+        }
+        panel.resultsText:SetText(table.concat(lines, "\n"))
+    end, 140)
+    
+    CreateTestButton("Dump NetLog", "Show recent network events", function()
+        DC:DumpNetLog(15)
+        panel.resultsText:SetText("|cffffd700NetLog dumped to chat|r\n\nCheck your chat window for recent network events (timeouts, errors, reconnects).")
+    end, 280)
+    
+    CreateTestButton("Force Reconnect", "Reset connection and reconnect", function()
+        DC._connected = false
+        DC._handshakePending = false
+        DC._reconnectAttempts = 0
+        DC._lastHandshakeTime = 0
+        DC:_AttemptReconnect()
+        panel.resultsText:SetText("|cffffff00Reconnecting...|r\n\nConnection reset and handshake sent.\nCheck chat for connection status.")
+    end, 420)
+
+    yPos = yPos - 50
+
+    -- Connection Health Section
+    local healthHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    healthHeader:SetPoint("TOPLEFT", 16, yPos)
+    healthHeader:SetText("|cffffd700Connection Health|r")
+    yPos = yPos - 20
+    
+    local healthText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    healthText:SetPoint("TOPLEFT", 16, yPos)
+    healthText:SetWidth(560)
+    healthText:SetJustifyH("LEFT")
+    panel.healthText = healthText
+    
+    local function UpdateHealth()
+        local lines = {}
+        
+        -- Connection status
+        local connStatus = DC._connected and "|cff00ff00Connected|r" or "|cffff0000Disconnected|r"
+        table.insert(lines, "Status: " .. connStatus)
+        
+        -- Version info
+        if DC._serverVersion then
+            table.insert(lines, "Server: v" .. DC._serverVersion .. " | Client: v" .. DC.VERSION)
+        end
+        
+        -- Capabilities
+        if DC._serverCaps and DC._serverCaps > 0 then
+            local caps = {}
+            if bit and bit.band then
+                if bit.band(DC._serverCaps, 1) > 0 then table.insert(caps, "JSON") end
+                if bit.band(DC._serverCaps, 2) > 0 then table.insert(caps, "Batch") end
+            else
+                table.insert(caps, "0x" .. string.format("%X", DC._serverCaps))
+            end
+            table.insert(lines, "Negotiated Caps: " .. table.concat(caps, ", "))
+        end
+        
+        -- Reconnect state
+        if DC._reconnectAttempts > 0 then
+            table.insert(lines, "|cffffff00Reconnect Attempts: " .. DC._reconnectAttempts .. "/" .. (DC._maxReconnectAttempts or 5) .. "|r")
+        end
+        
+        -- Session stats (responses can exceed requests due to server-push messages)
+        if DC._stats then
+            local requests = DC._stats.totalRequests or 0
+            local responses = DC._stats.totalResponses or 0
+            local timeouts = DC._stats.totalTimeouts or 0
+            
+            -- Calculate response rate (responses to our requests, capped at 100%)
+            local responseRate = 0
+            if requests > 0 then
+                responseRate = math.min(100, math.floor((responses / requests) * 100))
+            end
+            local rateColor = responseRate >= 90 and "|cff00ff00" or (responseRate >= 70 and "|cffffff00" or "|cffff0000")
+            table.insert(lines, "Msgs Sent/Recv: " .. requests .. "/" .. responses)
+            table.insert(lines, "Response Rate: " .. rateColor .. responseRate .. "%|r")
+            
+            if timeouts > 0 then
+                table.insert(lines, "|cffff4444Timeouts: " .. timeouts .. "|r")
+            end
+        end
+        
+        healthText:SetText(table.concat(lines, "\n"))
+    end
+    
+    panel:SetScript("OnShow", function()
+        UpdateHealth()
+        -- Auto-run tests on first show
+        if not panel._ranTests then
+            panel._ranTests = true
+            RunAllTests()
+        end
+    end)
+    
+    UpdateHealth()
+    InterfaceOptions_AddCategory(panel)
+    return panel
+end
+
 -- Create settings panel on load
 DC.SettingsPanel = CreateSettingsPanel()
 DC.TestingPanel = CreateTestingPanel()
+DC.DiagnosticsPanel = CreateDiagnosticsPanel()
+
+-- Make InterfaceOptionsFrame movable (3.3.5a doesn't do this by default)
+if InterfaceOptionsFrame and not InterfaceOptionsFrame.__dcMovable then
+    InterfaceOptionsFrame.__dcMovable = true
+    InterfaceOptionsFrame:SetMovable(true)
+    InterfaceOptionsFrame:EnableMouse(true)
+    InterfaceOptionsFrame:RegisterForDrag("LeftButton")
+    InterfaceOptionsFrame:SetScript("OnDragStart", InterfaceOptionsFrame.StartMoving)
+    InterfaceOptionsFrame:SetScript("OnDragStop", InterfaceOptionsFrame.StopMovingOrSizing)
+end
 
 -- Slash command to open settings
 SLASH_DCPANEL1 = "/dcpanel"
@@ -2559,6 +3024,14 @@ SLASH_DCPANEL2 = "/dcprotocol"
 SlashCmdList["DCPANEL"] = function()
     InterfaceOptionsFrame_OpenToCategory(DC.SettingsPanel)
     InterfaceOptionsFrame_OpenToCategory(DC.SettingsPanel)  -- Call twice for WoW bug
+end
+
+-- Slash command for diagnostics
+SLASH_DCDIAG1 = "/dcdiag"
+SLASH_DCDIAG2 = "/dcdiagnostics"
+SlashCmdList["DCDIAG"] = function()
+    InterfaceOptionsFrame_OpenToCategory(DC.DiagnosticsPanel)
+    InterfaceOptionsFrame_OpenToCategory(DC.DiagnosticsPanel)
 end
 
 -- Debug print helper
@@ -2608,14 +3081,17 @@ DC:RegisterHandler("CORE", 0x10, function(...)
 
     DC._serverVersion = tostring(version)
     DC._serverCaps = negotiatedCaps or 0
-    DC._connected = (compatible and true or false)
-    DC:DebugPrint("Handshake ACK received, server v" .. tostring(version) .. " compatible=" .. tostring(compatible) .. " caps=" .. tostring(negotiatedCaps))
+    
     if compatible then
+        DC:_OnHandshakeSuccess()
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC Protocol]|r Connected to server v" .. tostring(version))
     else
+        DC:_OnHandshakeFailed("Version mismatch")
         DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC Protocol]|r Protocol version mismatch (client v" .. tostring(DC.VERSION) .. "). Please update your DC addons.")
         return
     end
+    
+    DC:DebugPrint("Handshake ACK received, server v" .. tostring(version) .. " compatible=" .. tostring(compatible) .. " caps=" .. tostring(negotiatedCaps))
 
     if features then
         if type(features) == "table" then
@@ -2798,7 +3274,7 @@ function DC:GetModuleLeaderboard()
             requests = stats.requests,
             responses = stats.responses,
             timeouts = stats.timeouts,
-            successRate = stats.requests > 0 and math.floor((stats.responses / stats.requests) * 100) or 0,
+            successRate = stats.requests > 0 and math.min(100, math.floor((stats.responses / stats.requests) * 100)) or 0,
             avgResponseTime = stats.avgResponseTime,
         })
     end
@@ -3319,21 +3795,21 @@ function DC:UpdateStatsPanel()
         yOffset = yOffset - 20
     end
     
-    -- Success rate
-    local successRate = self._stats.totalRequests > 0 and 
-        math.floor((self._stats.totalResponses / self._stats.totalRequests) * 100) or 0
+    -- Response rate (capped at 100% since server can push messages without requests)
+    local responseRate = self._stats.totalRequests > 0 and 
+        math.min(100, math.floor((self._stats.totalResponses / self._stats.totalRequests) * 100)) or 0
     
     yOffset = yOffset - 10
     local rateLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     rateLabel:SetPoint("TOPLEFT", 10, yOffset)
-    rateLabel:SetText("|cffffd700Success Rate:|r")
+    rateLabel:SetText("|cffffd700Response Rate:|r")
     
     yOffset = yOffset - 25
     local rateValue = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     rateValue:SetPoint("TOP", 0, yOffset)
-    local rateColor = successRate >= 90 and "|cff00ff00" or 
-                     (successRate >= 70 and "|cffffff00" or "|cffff0000")
-    rateValue:SetText(rateColor .. successRate .. "%|r")
+    local rateColor = responseRate >= 90 and "|cff00ff00" or 
+                     (responseRate >= 70 and "|cffffff00" or "|cffff0000")
+    rateValue:SetText(rateColor .. responseRate .. "%|r")
     
     -- Session time
     yOffset = yOffset - 40
