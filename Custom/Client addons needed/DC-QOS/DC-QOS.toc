@@ -1,13 +1,268 @@
 ## Interface: 30300
 ## Title: |cffFFCC00DC|r QoS
-## Notes: Comprehensive Quality of Life improvements for DarkChaos-255
+## Notes: Comprehensive Quality of Life improvements for DarkChaos-255 (with WeakAuras built-in)
 ## Author: DarkChaos Team
 ## Version: 1.2.0
-## SavedVariables: DCQoSDB
+## SavedVariables: DCQoSDB, WeakAurasSaved, WeakAurasOptionsSaved, WeakAurasArchive
 ## Dependencies: DC-AddonProtocol
-## OptionalDeps: DC-AOESettings, DC-ItemUpgrade, NotPlater-3.3.5, Skada
+## OptionalDeps: DC-AOESettings, DC-ItemUpgrade, NotPlater-3.3.5, Skada, Masque, GTFO, LibButtonGlow-1.0
 
-# Core Framework
+# ============================================================
+# WEAKAURAS LIBRARIES (embedded)
+# ============================================================
+
+# LibStub (foundation)
+WeakAuras\Libs\LibStub\LibStub.lua
+
+# CallbackHandler
+WeakAuras\Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+
+# AceGUI-3.0
+WeakAuras\Libs\AceGUI-3.0\AceGUI-3.0.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIContainer-BlizOptionsGroup.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIContainer-DropDownGroup.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIContainer-Frame.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIContainer-InlineGroup.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIContainer-ScrollFrame.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIContainer-SimpleGroup.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIContainer-TabGroup.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIContainer-TreeGroup.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIContainer-Window.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-Button.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-CheckBox.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-ColorPicker.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-DropDown.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-DropDown-Items.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-EditBox.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-Heading.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-Icon.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-InteractiveLabel.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-Keybinding.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-Label.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-MultiLineEditBox.lua
+WeakAuras\Libs\AceGUI-3.0\widgets\AceGUIWidget-Slider.lua
+
+# AceConsole-3.0
+WeakAuras\Libs\AceConsole-3.0\AceConsole-3.0.lua
+
+# AceConfig-3.0
+WeakAuras\Libs\AceConfig-3.0\AceConfigRegistry-3.0\AceConfigRegistry-3.0.lua
+WeakAuras\Libs\AceConfig-3.0\AceConfigCmd-3.0\AceConfigCmd-3.0.lua
+WeakAuras\Libs\AceConfig-3.0\AceConfigDialog-3.0\AceConfigDialog-3.0.lua
+WeakAuras\Libs\AceConfig-3.0\AceConfig-3.0.lua
+
+# AceTimer-3.0
+WeakAuras\Libs\AceTimer-3.0\AceTimer-3.0.lua
+
+# AceSerializer-3.0
+WeakAuras\Libs\AceSerializer-3.0\AceSerializer-3.0.lua
+
+# AceComm-3.0
+WeakAuras\Libs\AceComm-3.0\AceComm-3.0.lua
+
+# AceEvent-3.0
+WeakAuras\Libs\AceEvent-3.0\AceEvent-3.0.lua
+
+# LibSharedMedia-3.0
+WeakAuras\Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+
+# AceGUI-3.0-SharedMediaWidgets
+WeakAuras\Libs\AceGUI-3.0-SharedMediaWidgets\prototypes.lua
+WeakAuras\Libs\AceGUI-3.0-SharedMediaWidgets\FontWidget.lua
+WeakAuras\Libs\AceGUI-3.0-SharedMediaWidgets\SoundWidget.lua
+WeakAuras\Libs\AceGUI-3.0-SharedMediaWidgets\StatusbarWidget.lua
+WeakAuras\Libs\AceGUI-3.0-SharedMediaWidgets\BorderWidget.lua
+WeakAuras\Libs\AceGUI-3.0-SharedMediaWidgets\BackgroundWidget.lua
+
+# Other Libraries
+WeakAuras\Libs\LibCompress\LibCompress.lua
+WeakAuras\Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+WeakAuras\Libs\LibSpellRange-1.0\LibSpellRange-1.0.lua
+WeakAuras\Libs\LibRangeCheck-2.0\LibRangeCheck-2.0.lua
+WeakAuras\Libs\LibDeflate\LibDeflate.lua
+WeakAuras\Libs\LibCustomGlow-1.0\LibCustomGlow-1.0.lua
+WeakAuras\Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+WeakAuras\Libs\LibGetFrame-1.0\LibGetFrame-1.0.lua
+
+# Archivist
+WeakAuras\Libs\Archivist\Archivist.lua
+WeakAuras\Libs\Archivist\stores\RawData.lua
+WeakAuras\Libs\Archivist\stores\ReadOnly.lua
+
+# LibSerialize
+WeakAuras\Libs\LibSerialize\LibSerialize.lua
+
+# ============================================================
+# WEAKAURAS CORE
+# ============================================================
+WeakAuras\compat.lua
+WeakAuras\Pools.lua
+WeakAuras\Init.lua
+
+# WeakAuras Locales
+WeakAuras\Locales\enUS.lua
+WeakAuras\Locales\deDE.lua
+WeakAuras\Locales\frFR.lua
+WeakAuras\Locales\koKR.lua
+WeakAuras\Locales\zhCN.lua
+WeakAuras\Locales\zhTW.lua
+WeakAuras\Locales\esES.lua
+WeakAuras\Locales\esMX.lua
+WeakAuras\Locales\ruRU.lua
+WeakAuras\Locales\ptBR.lua
+WeakAuras\Locales\itIT.lua
+
+# WeakAuras Archive Type
+WeakAuras\ArchiveTypes\Repository.lua
+WeakAuras\DefaultOptions.lua
+
+# WeakAuras Core Files
+WeakAuras\Types.lua
+WeakAuras\Prototypes.lua
+WeakAuras\Profiling.lua
+WeakAuras\WeakAuras.lua
+WeakAuras\History.lua
+WeakAuras\Transmission.lua
+WeakAuras\Modernize.lua
+WeakAuras\Animations.lua
+WeakAuras\Conditions.lua
+
+# WeakAuras Trigger Systems
+WeakAuras\BuffTrigger.lua
+WeakAuras\BuffTrigger2.lua
+WeakAuras\GenericTrigger.lua
+WeakAuras\AuraWarnings.lua
+WeakAuras\AuraEnvironment.lua
+
+# WeakAuras Region Types
+WeakAuras\RegionTypes\RegionPrototype.lua
+WeakAuras\RegionTypes\ProgressTexture.lua
+WeakAuras\RegionTypes\Texture.lua
+WeakAuras\RegionTypes\AuraBar.lua
+WeakAuras\RegionTypes\Icon.lua
+WeakAuras\RegionTypes\Text.lua
+WeakAuras\RegionTypes\Group.lua
+WeakAuras\RegionTypes\DynamicGroup.lua
+WeakAuras\RegionTypes\StopMotion.lua
+WeakAuras\RegionTypes\Model.lua
+
+# WeakAuras Sub-Region Types
+WeakAuras\SubRegionTypes\Background.lua
+WeakAuras\SubRegionTypes\SubText.lua
+WeakAuras\SubRegionTypes\Border.lua
+WeakAuras\SubRegionTypes\Glow.lua
+WeakAuras\SubRegionTypes\Tick.lua
+WeakAuras\SubRegionTypes\Model.lua
+
+# ============================================================
+# WEAKAURAS OPTIONS
+# ============================================================
+
+# WeakAurasOptions Locales
+WeakAurasOptions\Locales\enUS.lua
+WeakAurasOptions\Locales\deDE.lua
+WeakAurasOptions\Locales\frFR.lua
+WeakAurasOptions\Locales\koKR.lua
+WeakAurasOptions\Locales\zhCN.lua
+WeakAurasOptions\Locales\zhTW.lua
+WeakAurasOptions\Locales\esES.lua
+WeakAurasOptions\Locales\esMX.lua
+WeakAurasOptions\Locales\ruRU.lua
+WeakAurasOptions\Locales\ptBR.lua
+WeakAurasOptions\Locales\itIT.lua
+
+WeakAurasOptions\ForAllIndentsAndPurposes.lua
+
+# WeakAurasOptions Region Options
+WeakAurasOptions\RegionOptions\AuraBar.lua
+WeakAurasOptions\RegionOptions\Texture.lua
+WeakAurasOptions\RegionOptions\Icon.lua
+WeakAurasOptions\RegionOptions\Text.lua
+WeakAurasOptions\RegionOptions\Group.lua
+WeakAurasOptions\RegionOptions\DynamicGroup.lua
+WeakAurasOptions\RegionOptions\StopMotion.lua
+WeakAurasOptions\RegionOptions\Model.lua
+WeakAurasOptions\RegionOptions\ProgressTexture.lua
+
+# WeakAurasOptions Sub-Region Options
+WeakAurasOptions\SubRegionOptions\SubRegionCommon.lua
+WeakAurasOptions\SubRegionOptions\Background.lua
+WeakAurasOptions\SubRegionOptions\SubText.lua
+WeakAurasOptions\SubRegionOptions\Border.lua
+WeakAurasOptions\SubRegionOptions\Glow.lua
+WeakAurasOptions\SubRegionOptions\Tick.lua
+WeakAurasOptions\SubRegionOptions\Model.lua
+
+WeakAurasOptions\Cache.lua
+
+# WeakAurasOptions Core
+WeakAurasOptions\CommonOptions.lua
+WeakAurasOptions\GroupOptions.lua
+WeakAurasOptions\DisplayOptions.lua
+WeakAurasOptions\TriggerOptions.lua
+WeakAurasOptions\LoadOptions.lua
+WeakAurasOptions\ActionOptions.lua
+WeakAurasOptions\AnimationOptions.lua
+WeakAurasOptions\InformationOptions.lua
+
+# WeakAurasOptions Triggers
+WeakAurasOptions\BuffTrigger.lua
+WeakAurasOptions\BuffTrigger2.lua
+WeakAurasOptions\GenericTrigger.lua
+
+WeakAurasOptions\WeakAurasOptions.lua
+WeakAurasOptions\ConditionOptions.lua
+WeakAurasOptions\AuthorOptions.lua
+
+# WeakAurasOptions Frames
+WeakAurasOptions\OptionsFrames\OptionsFrame.lua
+WeakAurasOptions\OptionsFrames\CodeReview.lua
+WeakAurasOptions\OptionsFrames\IconPicker.lua
+WeakAurasOptions\OptionsFrames\ImportExport.lua
+WeakAurasOptions\OptionsFrames\ModelPicker.lua
+WeakAurasOptions\OptionsFrames\TextEditor.lua
+WeakAurasOptions\OptionsFrames\TexturePicker.lua
+WeakAurasOptions\OptionsFrames\Update.lua
+WeakAurasOptions\OptionsFrames\MoverSizer.lua
+WeakAurasOptions\OptionsFrames\FrameChooser.lua
+
+# WeakAurasOptions AceGUI Widgets
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasExpand.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasExpandSmall.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasIcon.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasNewHeaderButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasLoadedHeaderButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasDisplayButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasPendingInstallButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasPendingUpdateButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasTextureButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasIconButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasMultiLineEditBox.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasNewButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasImportButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasSortedDropDown.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasToolbarButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasTwoColumnDropDown.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasSnippetButton.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIContainer-WeakAurasTreeGroup.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIContainer-WeakAurasInlineGroup.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasExpandAnchor.lua
+WeakAurasOptions\AceGUI-Widgets\AceGUIWidget-WeakAurasSpacer.lua
+WeakAurasOptions\AceGUI-Widgets\AceGuiWidget-WeakAurasProgressBar.lua
+
+# ============================================================
+# WEAKAURAS ARCHIVE
+# ============================================================
+WeakAurasArchive\WeakAurasArchive.lua
+
+# ============================================================
+# WEAKAURAS MODEL PATHS
+# ============================================================
+WeakAurasModelPaths\ModelPaths.lua
+
+# ============================================================
+# DC-QOS CORE FRAMEWORK
+# ============================================================
 Core.lua
 Protocol.lua
 
@@ -35,8 +290,10 @@ Modules\Profiles.lua
 
 # New Modules
 Modules\FrameMover.lua
+Modules\WeakAurasIntegration.lua
 Modules\VendorPlus.lua
 Modules\NameplatesPlus.lua
 Modules\SocialEnhancements.lua
 Modules\CombatLog.lua
+Modules\CombatLog_Enhanced.lua
 Modules\TalentManager.lua

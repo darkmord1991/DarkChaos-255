@@ -22,6 +22,9 @@ local FrameMover = {
             editorMode = false,
             showGrid = false,
             snapToGrid = true,
+            lockPoints = true,
+            clampToScreen = true,
+            ignoreFramePositionManager = true,
             gridSize = 10,
             frames = {},
             profiles = {},
@@ -69,13 +72,12 @@ local MOVABLE_FRAMES = {
     { name = "MultiBarRight", displayName = "Right Bar", defaultScale = 1.0 },
     { name = "MultiBarLeft", displayName = "Right Bar 2", defaultScale = 1.0 },
     
-    -- Misc
-    { name = "ObjectiveTrackerFrame", displayName = "Quest Tracker", defaultScale = 1.0 },
-    { name = "WatchFrame", displayName = "Watch Frame", defaultScale = 1.0 },
+    -- Misc (3.3.5a compatible)
+    { name = "WatchFrame", displayName = "Quest Tracker", defaultScale = 1.0 },
     { name = "DurabilityFrame", displayName = "Durability", defaultScale = 1.0 },
     { name = "VehicleSeatIndicator", displayName = "Vehicle Seat", defaultScale = 1.0 },
     
-    -- Boss Frames
+    -- Boss Frames (may not exist on all servers)
     { name = "Boss1TargetFrame", displayName = "Boss Frame 1", defaultScale = 1.0 },
     { name = "Boss2TargetFrame", displayName = "Boss Frame 2", defaultScale = 1.0 },
     { name = "Boss3TargetFrame", displayName = "Boss Frame 3", defaultScale = 1.0 },
@@ -87,6 +89,8 @@ local MOVABLE_FRAMES = {
 -- ============================================================
 local anchorFrames = {}  -- Overlay frames for moving
 local originalPositions = {}  -- Store original positions for reset
+local originalFrameState = {}
+local pendingPositions = {}
 local isUnlocked = false
 local editorOverlay
 local gridOverlay
@@ -112,24 +116,75 @@ end
 
 local function ApplyFramePosition(frame, pos)
     if not frame or not pos then return end
-    
+    if frame.IsProtected and InCombatLockdown() and frame:IsProtected() then
+        pendingPositions[frame:GetName()] = pos
+        return
+    end
+
+    local settings = addon.settings.frameMover
+
+    if not originalFrameState[frame:GetName()] then
+        originalFrameState[frame:GetName()] = {
+            movable = frame.IsMovable and frame:IsMovable() or nil,
+            userPlaced = frame.IsUserPlaced and frame:IsUserPlaced() or nil,
+            clamped = frame.IsClampedToScreen and frame:IsClampedToScreen() or nil,
+            ignoreFPM = frame.ignoreFramePositionManager,
+        }
+    end
+
+    if settings.ignoreFramePositionManager and UIPARENT_MANAGED_FRAME_POSITIONS and UIPARENT_MANAGED_FRAME_POSITIONS[frame:GetName()] then
+        frame.ignoreFramePositionManager = true
+    end
+
+    if frame.SetMovable then
+        frame:SetMovable(true)
+    end
+    if frame.SetUserPlaced and frame ~= MainMenuBar then
+        frame:SetUserPlaced(true)
+    end
+    if settings.clampToScreen and frame.SetClampedToScreen then
+        frame:SetClampedToScreen(true)
+    end
+
+    if settings.lockPoints and not frame._dcqosPointHooked and frame.SetPoint then
+        frame._dcqosPointHooked = true
+        hooksecurefunc(frame, "SetPoint", function(self)
+            if self._dcqosLockPoint and not self._dcqosRepositioning then
+                local saved = addon.settings.frameMover.frames[self:GetName()]
+                if saved then
+                    self._dcqosRepositioning = true
+                    ApplyFramePosition(self, saved)
+                    self._dcqosRepositioning = false
+                end
+            end
+        end)
+    end
+
+    frame._dcqosLockPoint = settings.lockPoints or nil
+
+    frame._dcqosRepositioning = true
     frame:ClearAllPoints()
     local relativeTo = _G[pos.relativeTo] or UIParent
     frame:SetPoint(pos.point, relativeTo, pos.relativePoint, pos.x, pos.y)
-    
+
     if pos.scale and pos.scale > 0 then
         frame:SetScale(pos.scale)
     end
+    frame._dcqosRepositioning = false
 end
 
-local function SaveFramePosition(frameName)
+local function SaveFramePosition(frameName, posOverride)
     local frame = _G[frameName]
     if not frame then return end
     
     local settings = addon.settings.frameMover
     if not settings.frames then settings.frames = {} end
     
-    settings.frames[frameName] = GetFramePosition(frame)
+    local pos = posOverride or GetFramePosition(frame)
+    if pos then
+        settings.frames[frameName] = pos
+        frame._dcqosLockPoint = settings.lockPoints or nil
+    end
     addon:SaveSettings()
 end
 
@@ -148,6 +203,58 @@ local function LoadFramePosition(frameName)
         return true
     end
     return false
+end
+
+local function RestoreFrameState(frameName)
+    local frame = _G[frameName]
+    local state = frame and originalFrameState[frameName]
+    if not frame or not state then return end
+    if frame.SetClampedToScreen and state.clamped ~= nil then
+        frame:SetClampedToScreen(state.clamped)
+    end
+    if frame.SetUserPlaced and state.userPlaced ~= nil then
+        frame:SetUserPlaced(state.userPlaced)
+    end
+    if frame.SetMovable and state.movable ~= nil then
+        frame:SetMovable(state.movable)
+    end
+    if state.ignoreFPM ~= nil then
+        frame.ignoreFramePositionManager = state.ignoreFPM
+    end
+    frame._dcqosLockPoint = nil
+end
+
+local function ApplyPendingPositions()
+    if InCombatLockdown() then return end
+    for frameName, pos in pairs(pendingPositions) do
+        local frame = _G[frameName]
+        if frame then
+            ApplyFramePosition(frame, pos)
+        end
+        pendingPositions[frameName] = nil
+    end
+end
+
+local function ApplySettingsToFrames()
+    local settings = addon.settings.frameMover
+    for _, frameInfo in ipairs(MOVABLE_FRAMES) do
+        local frame = _G[frameInfo.name]
+        if frame then
+            if settings.lockPoints then
+                frame._dcqosLockPoint = true
+            else
+                frame._dcqosLockPoint = nil
+            end
+
+            if not settings.clampToScreen and originalFrameState[frameInfo.name] and originalFrameState[frameInfo.name].clamped ~= nil and frame.SetClampedToScreen then
+                frame:SetClampedToScreen(originalFrameState[frameInfo.name].clamped)
+            end
+
+            if not settings.ignoreFramePositionManager and originalFrameState[frameInfo.name] and originalFrameState[frameInfo.name].ignoreFPM ~= nil then
+                frame.ignoreFramePositionManager = originalFrameState[frameInfo.name].ignoreFPM
+            end
+        end
+    end
 end
 
 local function ApplyAllSavedPositions()
@@ -242,6 +349,7 @@ local function CreateAnchorFrame(frameInfo)
                         ApplyFramePosition(targetFrame, origPos)
                         addon.settings.frameMover.frames[frameInfo.name] = nil
                         addon:SaveSettings()
+                        RestoreFrameState(frameInfo.name)
                         UpdateAnchor()
                     end
                 end },
@@ -278,11 +386,19 @@ local function CreateAnchorFrame(frameInfo)
                 x = SnapValue(x, gridSize)
                 y = SnapValue(y, gridSize)
             end
-            targetFrame:ClearAllPoints()
-            targetFrame:SetPoint(point, UIParent, point, x, y)
-            
+            local pos = {
+                point = point,
+                relativeTo = "UIParent",
+                relativePoint = point,
+                x = x,
+                y = y,
+                scale = targetFrame:GetScale(),
+            }
+
+            ApplyFramePosition(targetFrame, pos)
+
             -- Save position
-            SaveFramePosition(frameInfo.name)
+            SaveFramePosition(frameInfo.name, pos)
             
             -- Update anchor to match
             UpdateAnchor()
@@ -406,7 +522,7 @@ local function UpdateGridOverlay()
             line = gridOverlay:CreateTexture(nil, "BACKGROUND")
             lines[index] = line
         end
-        line:SetColorTexture(0.2, 0.7, 0.2, 0.12)
+        line:SetTexture(0.2, 0.7, 0.2, 0.12)
         line:SetPoint("TOPLEFT", gridOverlay, "TOPLEFT", x, 0)
         line:SetPoint("BOTTOMLEFT", gridOverlay, "TOPLEFT", x, -height)
         line:SetWidth(1)
@@ -420,7 +536,7 @@ local function UpdateGridOverlay()
             line = gridOverlay:CreateTexture(nil, "BACKGROUND")
             lines[index] = line
         end
-        line:SetColorTexture(0.2, 0.7, 0.2, 0.12)
+        line:SetTexture(0.2, 0.7, 0.2, 0.12)
         line:SetPoint("TOPLEFT", gridOverlay, "TOPLEFT", 0, -y)
         line:SetPoint("TOPRIGHT", gridOverlay, "TOPLEFT", width, -y)
         line:SetHeight(1)
@@ -442,7 +558,7 @@ local function EnsureEditorOverlay()
 
     editorOverlay.bg = editorOverlay:CreateTexture(nil, "BACKGROUND")
     editorOverlay.bg:SetAllPoints()
-    editorOverlay.bg:SetColorTexture(0, 0, 0, 0.55)
+    editorOverlay.bg:SetTexture(0, 0, 0, 0.55)
 
     local title = editorOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", 10, 0)
@@ -556,6 +672,7 @@ local function ResetAllFrames()
         local frame = _G[frameName]
         if frame and origPos then
             ApplyFramePosition(frame, origPos)
+            RestoreFrameState(frameName)
         end
     end
     
@@ -598,13 +715,20 @@ function FrameMover.OnEnable()
     if not FrameMover.eventFrame then
         local ev = CreateFrame("Frame")
         ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+        ev:RegisterEvent("PLAYER_REGEN_ENABLED")
         ev:RegisterEvent("UNIT_ENTERED_VEHICLE")
         ev:RegisterEvent("UNIT_EXITED_VEHICLE")
         ev:RegisterEvent("GROUP_ROSTER_UPDATE")
         ev:SetScript("OnEvent", function(_, event, unit)
+            if event == "PLAYER_REGEN_ENABLED" then
+                ApplyPendingPositions()
+                return
+            end
             if unit and unit ~= "player" then return end
             addon:DelayedCall(0.3, function()
                 ApplyAllSavedPositions()
+                ApplyPendingPositions()
+                ApplySettingsToFrames()
                 if addon.settings.frameMover.editorMode then
                     UpdateGridOverlay()
                 end
@@ -737,6 +861,38 @@ function FrameMover.CreateSettings(parent)
     snapCb:SetChecked(settings.snapToGrid)
     snapCb:SetScript("OnClick", function(self)
         addon:SetSetting("frameMover.snapToGrid", self:GetChecked())
+    end)
+    yOffset = yOffset - 22
+
+    local lockPointsCb = addon:CreateCheckbox(parent)
+    lockPointsCb:SetPoint("TOPLEFT", 16, yOffset)
+    lockPointsCb.Text:SetText("Lock frame points")
+    lockPointsCb:SetChecked(settings.lockPoints)
+    lockPointsCb:SetScript("OnClick", function(self)
+        addon:SetSetting("frameMover.lockPoints", self:GetChecked())
+        ApplySettingsToFrames()
+    end)
+    yOffset = yOffset - 22
+
+    local clampCb = addon:CreateCheckbox(parent)
+    clampCb:SetPoint("TOPLEFT", 16, yOffset)
+    clampCb.Text:SetText("Clamp frames to screen")
+    clampCb:SetChecked(settings.clampToScreen)
+    clampCb:SetScript("OnClick", function(self)
+        addon:SetSetting("frameMover.clampToScreen", self:GetChecked())
+        ApplySettingsToFrames()
+        ApplyAllSavedPositions()
+    end)
+    yOffset = yOffset - 22
+
+    local ignoreManagerCb = addon:CreateCheckbox(parent)
+    ignoreManagerCb:SetPoint("TOPLEFT", 16, yOffset)
+    ignoreManagerCb.Text:SetText("Ignore Blizzard position manager")
+    ignoreManagerCb:SetChecked(settings.ignoreFramePositionManager)
+    ignoreManagerCb:SetScript("OnClick", function(self)
+        addon:SetSetting("frameMover.ignoreFramePositionManager", self:GetChecked())
+        ApplySettingsToFrames()
+        ApplyAllSavedPositions()
     end)
     yOffset = yOffset - 22
 

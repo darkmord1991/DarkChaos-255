@@ -39,8 +39,8 @@ local SCHOOL_COLORS = {
 function CombatLog.ShowEnhancedTooltip(self)
     local data = self.playerData
     if not data then return end
-    
-    local settings = addon.settings.combatLog
+
+    local settings = addon.settings and addon.settings.combatLog or {}
     local mode = settings.meterMode or "damage"
     
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -77,7 +77,8 @@ function CombatLog.ShowEnhancedTooltip(self)
                 local critRate = spell.hits > 0 and (spell.crits / spell.hits * 100) or 0
                 
                 -- Get school color
-                local schoolColor = SCHOOL_COLORS[spell.school] or {r=1, g=1, b=1}
+                local schoolColor = (settings.showSchoolColors == false) and {r=1, g=1, b=1}
+                    or SCHOOL_COLORS[spell.school] or {r=1, g=1, b=1}
                 
                 -- Format damage with school icon
                 local dmgText = string.format("%s (%.0f%%)", 
@@ -94,13 +95,15 @@ function CombatLog.ShowEnhancedTooltip(self)
                 -- Add details line for significant spells
                 if i <= 5 then
                     local details = ""
-                    if spell.glancing > 0 then
-                        details = details .. spell.glancing .. " glancing, "
+                    if settings.showGlancingCrushing ~= false then
+                        if spell.glancing > 0 then
+                            details = details .. spell.glancing .. " glancing, "
+                        end
+                        if spell.crushing > 0 then
+                            details = details .. spell.crushing .. " crushing, "
+                        end
                     end
-                    if spell.crushing > 0 then
-                        details = details .. spell.crushing .. " crushing, "
-                    end
-                    if spell.absorbed > 0 then
+                    if settings.showMitigationInTooltip ~= false and spell.absorbed > 0 then
                         details = details .. addon.FormatNumber and addon.FormatNumber(spell.absorbed) or spell.absorbed .. " absorbed"
                     end
                     if details ~= "" then
@@ -154,18 +157,20 @@ function CombatLog.ShowEnhancedTooltip(self)
         GameTooltip:AddLine(" ")
         
         -- Mitigation stats
-        if data.absorbedAmount and data.absorbedAmount > 0 then
-            GameTooltip:AddDoubleLine("Absorbed:", addon.FormatNumber and addon.FormatNumber(data.absorbedAmount) or tostring(data.absorbedAmount), 0.7, 0.7, 1, 1, 1, 1)
-        end
-        if data.blockAmount and data.blockAmount > 0 then
-            GameTooltip:AddDoubleLine("Blocked:", addon.FormatNumber and addon.FormatNumber(data.blockAmount) or tostring(data.blockAmount), 1, 0.7, 0.2, 1, 1, 1)
-        end
-        if data.resistAmount and data.resistAmount > 0 then
-            GameTooltip:AddDoubleLine("Resisted:", addon.FormatNumber and addon.FormatNumber(data.resistAmount) or tostring(data.resistAmount), 0.5, 1, 0.5, 1, 1, 1)
+        if settings.showMitigationInTooltip ~= false then
+            if data.absorbedAmount and data.absorbedAmount > 0 then
+                GameTooltip:AddDoubleLine("Absorbed:", addon.FormatNumber and addon.FormatNumber(data.absorbedAmount) or tostring(data.absorbedAmount), 0.7, 0.7, 1, 1, 1, 1)
+            end
+            if data.blockAmount and data.blockAmount > 0 then
+                GameTooltip:AddDoubleLine("Blocked:", addon.FormatNumber and addon.FormatNumber(data.blockAmount) or tostring(data.blockAmount), 1, 0.7, 0.2, 1, 1, 1)
+            end
+            if data.resistAmount and data.resistAmount > 0 then
+                GameTooltip:AddDoubleLine("Resisted:", addon.FormatNumber and addon.FormatNumber(data.resistAmount) or tostring(data.resistAmount), 0.5, 1, 0.5, 1, 1, 1)
+            end
         end
         
         -- Avoidance
-        if data.avoidance and data.avoidance > 0 then
+        if settings.trackAvoidance ~= false and data.avoidance and data.avoidance > 0 then
             GameTooltip:AddLine(" ")
             GameTooltip:AddDoubleLine("Avoided:", data.avoidance .. " attacks", 1, 1, 0.5, 1, 1, 1)
             if data.dodges > 0 then
@@ -204,9 +209,14 @@ end
 local deathRecapFrame = nil
 
 function CombatLog.ShowDeathRecap(playerData)
-    if not playerData or not playerData.deathLog or #playerData.deathLog == 0 then
+    local entries = CombatLog.GetDeathLogEntries and CombatLog.GetDeathLogEntries(playerData, true) or (playerData and playerData.deathLog) or {}
+    if not entries or #entries == 0 then
         return
     end
+
+    local settings = addon.settings and addon.settings.combatLog or {}
+    local maxEntries = math.max(5, settings.deathRecapCount or 15)
+    local showBuffs = settings.deathRecapShowBuffs ~= false
     
     -- Create frame if it doesn't exist
     if not deathRecapFrame then
@@ -268,7 +278,7 @@ function CombatLog.ShowDeathRecap(playerData)
     local totalHealing = 0
     local mitigationEvents = 0
     
-    for _, entry in ipairs(playerData.deathLog) do
+    for _, entry in ipairs(entries) do
         if entry.eventType == "damage" and entry.amount then
             totalDamage = totalDamage + math.abs(entry.amount)
         elseif entry.eventType == "heal" and entry.amount then
@@ -294,24 +304,32 @@ function CombatLog.ShowDeathRecap(playerData)
     
     -- Display events (most recent first)
     local yOffset = 0
-    for i = 1, math.min(15, #playerData.deathLog) do
-        local entry = playerData.deathLog[i]
+    local shown = 0
+    for i = 1, #entries do
+        if shown >= maxEntries then
+            break
+        end
+        local entry = entries[i]
+        if not showBuffs and (entry.eventType == "buff" or entry.eventType == "debuff") then
+            -- Skip buff/debuff rows when disabled
+        else
+            shown = shown + 1
         
-        local eventFrame = CreateFrame("Frame", nil, deathRecapFrame.scrollChild)
-        eventFrame:SetSize(380, 40)
-        eventFrame:SetPoint("TOPLEFT", 0, yOffset)
+            local eventFrame = CreateFrame("Frame", nil, deathRecapFrame.scrollChild)
+            eventFrame:SetSize(380, 40)
+            eventFrame:SetPoint("TOPLEFT", 0, yOffset)
         
-        -- Time
-        local timeText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        timeText:SetPoint("TOPLEFT", 5, -5)
-        timeText:SetText(string.format("%.1fs", entry.timestamp or 0))
-        timeText:SetTextColor(0.7, 0.7, 0.7)
+            -- Time
+            local timeText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            timeText:SetPoint("TOPLEFT", 5, -5)
+            timeText:SetText(string.format("%.1fs", entry.timestamp or 0))
+            timeText:SetTextColor(0.7, 0.7, 0.7)
         
-        -- Event description
-        local descText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        descText:SetPoint("TOPLEFT", 50, -5)
-        descText:SetWidth(250)
-        descText:SetJustifyH("LEFT")
+            -- Event description
+            local descText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            descText:SetPoint("TOPLEFT", 50, -5)
+            descText:SetWidth(250)
+            descText:SetJustifyH("LEFT")
         
         if entry.eventType == "damage" then
             local color = entry.critical and {r=1, g=0.3, b=0.3} or {r=1, g=0.5, b=0.5}
@@ -335,9 +353,9 @@ function CombatLog.ShowDeathRecap(playerData)
             descText:SetText(string.format("Debuff: %s", entry.spellName or "Unknown"))
         end
         
-        -- Amount
-        local amountText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        amountText:SetPoint("RIGHT", -5, -5)
+            -- Amount
+            local amountText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            amountText:SetPoint("RIGHT", -5, -5)
         
         if entry.eventType == "damage" then
             amountText:SetText(addon.FormatNumber and addon.FormatNumber(math.abs(entry.amount or 0)) or tostring(math.abs(entry.amount or 0)))
@@ -347,26 +365,27 @@ function CombatLog.ShowDeathRecap(playerData)
             amountText:SetTextColor(0.2, 1, 0.2)
         end
         
-        -- Health bar
-        if entry.healthMax and entry.healthMax > 0 then
-            local healthBar = CreateFrame("StatusBar", nil, eventFrame)
-            healthBar:SetSize(100, 8)
-            healthBar:SetPoint("RIGHT", amountText, "LEFT", -10, 0)
-            healthBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-            healthBar:SetMinMaxValues(0, entry.healthMax)
-            healthBar:SetValue(entry.health or 0)
-            
-            local pct = entry.healthPct or 0
-            if pct > 50 then
-                healthBar:SetStatusBarColor(0, 1, 0)
-            elseif pct > 20 then
-                healthBar:SetStatusBarColor(1, 1, 0)
-            else
-                healthBar:SetStatusBarColor(1, 0, 0)
+            -- Health bar
+            if entry.healthMax and entry.healthMax > 0 then
+                local healthBar = CreateFrame("StatusBar", nil, eventFrame)
+                healthBar:SetSize(100, 8)
+                healthBar:SetPoint("RIGHT", amountText, "LEFT", -10, 0)
+                healthBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+                healthBar:SetMinMaxValues(0, entry.healthMax)
+                healthBar:SetValue(entry.health or 0)
+                
+                local pct = entry.healthPct or 0
+                if pct > 50 then
+                    healthBar:SetStatusBarColor(0, 1, 0)
+                elseif pct > 20 then
+                    healthBar:SetStatusBarColor(1, 1, 0)
+                else
+                    healthBar:SetStatusBarColor(1, 0, 0)
+                end
             end
+            
+            yOffset = yOffset - 45
         end
-        
-        yOffset = yOffset - 45
     end
     
     deathRecapFrame:Show()

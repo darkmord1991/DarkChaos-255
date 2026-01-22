@@ -33,7 +33,7 @@ local moduleCategories = {
     },
     {
         name = "UI Customization",
-        modules = { "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Keybinds" }
+        modules = { "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Keybinds", "WeakAuras" }
     },
     {
         name = "Character",
@@ -59,6 +59,7 @@ local moduleDisplayNames = {
     ["VendorPlus"] = "Vendor",
     ["ItemScore"] = "Item Score / Pawn",
     ["FrameMover"] = "Move Frames",
+    ["WeakAuras"] = "WeakAuras",
     ["Cooldowns"] = "Cooldown Text",
     ["ExtendedStats"] = "Extended Stats",
     ["ActionBars"] = "Action Bars",
@@ -85,6 +86,7 @@ local moduleIcons = {
     ["VendorPlus"] = "Interface\\Icons\\Inv_Misc_Coin_02",
     ["ItemScore"] = "Interface\\Icons\\Inv_Sword_04",
     ["FrameMover"] = "Interface\\Icons\\Inv_Misc_Map_01",
+    ["WeakAuras"] = "Interface\\Icons\\Spell_Nature_WispSplode",
     ["Cooldowns"] = "Interface\\Icons\\Spell_Nature_TimeStop",
     ["ExtendedStats"] = "Interface\\Icons\\Spell_Holy_PowerWordShield",
     ["ActionBars"] = "Interface\\Icons\\Ability_Warrior_BattleShout",

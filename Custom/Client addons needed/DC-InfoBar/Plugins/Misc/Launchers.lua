@@ -727,6 +727,17 @@ function LaunchersPlugin:ToggleQoSMenu(anchorButton)
             end,
         },
         {
+            name = "WeakAuras",
+            icon = "Interface\\Icons\\Spell_Nature_WispSplode",
+            onClick = function()
+                if _G.WeakAuras and _G.WeakAuras.OpenOptions then
+                    _G.WeakAuras.OpenOptions()
+                else
+                    RunSlashCommand("/wa")
+                end
+            end,
+        },
+        {
             name = "Talent Manager",
             icon = "Interface\\Icons\\Ability_Marksmanship",
             onClick = function()

@@ -90,6 +90,9 @@ local CombatLog = {
             showMitigationInTooltip = true,  -- Show absorbed/blocked/resisted in tooltips
             -- Segments
             keepSegments = 5,
+            -- Timeline capture
+            trackTimeline = true,
+            timelineMaxEvents = 1500,
             -- Position (Skada-style)
             x = nil,              -- Center X relative to screen center
             y = nil,              -- Center Y relative to screen center
@@ -152,17 +155,105 @@ local healingTaken = {}
 -- Segments (fight history)
 local segments = {}
 local activeSegment = nil -- nil or 0 = current fight, >0 = segment index
+local segmentCounter = 0
+local currentTimeline = {}
 
 -- Death recap (ENHANCED)
-local deathLog = {}
 local MAX_DEATH_LOG = 15
+
+local function GetDeathLogLimit()
+    local settings = addon.settings and addon.settings.combatLog
+    local limit = settings and settings.deathRecapCount or MAX_DEATH_LOG
+    if limit < 5 then
+        limit = 5
+    end
+    return limit
+end
+
+local function ExtractDeathLogEntries(ring, newestFirst)
+    local entries = {}
+    if not ring or ring.size == 0 then
+        return entries
+    end
+
+    local size = ring.size or 0
+    local limit = ring.limit or size
+    if size == 0 or limit == 0 then
+        return entries
+    end
+
+    if newestFirst then
+        for i = 0, size - 1 do
+            local idx = ((ring.head - i - 1) % limit) + 1
+            local entry = ring._ring[idx]
+            if entry then
+                table.insert(entries, entry)
+            end
+        end
+    else
+        for i = size - 1, 0, -1 do
+            local idx = ((ring.head - i - 1) % limit) + 1
+            local entry = ring._ring[idx]
+            if entry then
+                table.insert(entries, entry)
+            end
+        end
+    end
+
+    return entries
+end
+
+local function InitDeathLogBuffer(data)
+    local limit = GetDeathLogLimit()
+    if not data.deathLog or not data.deathLog._ring then
+        data.deathLog = {
+            _ring = {},
+            head = 0,
+            size = 0,
+            limit = limit,
+        }
+        return
+    end
+
+    if data.deathLog.limit ~= limit then
+        local entries = ExtractDeathLogEntries(data.deathLog, true)
+        data.deathLog._ring = {}
+        data.deathLog.head = 0
+        data.deathLog.size = 0
+        data.deathLog.limit = limit
+        for i = #entries, 1, -1 do
+            local entry = entries[i]
+            data.deathLog.head = (data.deathLog.head % limit) + 1
+            data.deathLog._ring[data.deathLog.head] = entry
+            data.deathLog.size = math.min(data.deathLog.size + 1, limit)
+        end
+    end
+end
+
+local function AppendDeathLogEntry(data, entry)
+    if not data then return end
+    InitDeathLogBuffer(data)
+
+    local ring = data.deathLog
+    local limit = ring.limit or GetDeathLogLimit()
+    ring.head = (ring.head % limit) + 1
+    ring._ring[ring.head] = entry
+    ring.size = math.min((ring.size or 0) + 1, limit)
+end
 
 -- Add death log entry with enhanced details
 local function AddDeathLogEntry(targetGUID, eventType, data)
     if not targetGUID then return end
-    
+
+    local settings = addon.settings and addon.settings.combatLog
     local targetData = GetPlayerData(targetGUID)
-    if not targetData or not targetData.deathLog then return end
+    if not targetData then return end
+
+    if eventType == "damage" and settings and settings.deathRecapMinDamage and data and data.amount then
+        if data.amount < settings.deathRecapMinDamage then
+            return
+        end
+    end
     
     local timestamp = GetTime() - combatStartTime
     local health = 0
@@ -207,12 +298,7 @@ local function AddDeathLogEntry(targetGUID, eventType, data)
         entry[k] = v
     end
     
-    table.insert(targetData.deathLog, 1, entry)
-    
-    -- Trim old entries
-    while #targetData.deathLog > MAX_DEATH_LOG do
-        table.remove(targetData.deathLog)
-    end
+    AppendDeathLogEntry(targetData, entry)
 end
 
 -- Miss types mapping
@@ -593,6 +679,7 @@ local function GetPlayerData(guid, name, flags)
             totalHealing = 0,
             healingBySpell = {},  -- [spellId] = {amount, overheal, hits}
             healingTakenFrom = {},  -- [sourceGUID] = amount
+            healingTaken = 0,
             -- Defense tracking
             damageTaken = 0,
             damageTakenBySpell = {},  -- [spellId] = {amount, hits}
@@ -609,6 +696,18 @@ local function GetPlayerData(guid, name, flags)
             resistAmount = 0,  -- total damage resisted
             absorbedAmount = 0,  -- total damage absorbed
             avoidance = 0,  -- total avoided hits
+            avoidanceTable = {
+                dodges = 0,
+                parries = 0,
+                misses = 0,
+                blocks = 0,
+                resists = 0,
+                absorbs = 0,
+                absorbed = 0,
+                blockedAmount = 0,
+                resistedAmount = 0,
+                absorbedAmount = 0,
+            },
             -- Combat events
             deaths = 0,
             killingBlows = 0,
@@ -644,7 +743,12 @@ local function GetPlayerData(guid, name, flags)
             buffsApplied = {},  -- [spellId] = count
             debuffsApplied = {},  -- [spellId] = count
             -- Death log entries (ENHANCED)
-            deathLog = {},
+            deathLog = {
+                _ring = {},
+                head = 0,
+                size = 0,
+                limit = GetDeathLogLimit(),
+            },
         }
     end
     
@@ -653,13 +757,13 @@ end
 
 local function ResetPlayerData()
     wipe(playerData)
-    wipe(deathLog)
     wipe(buffData)
     wipe(debuffData)
     wipe(enemyData)
     wipe(petOwners)
     wipe(activeShields)
     wipe(healingTaken)
+    currentTimeline = {}
     combatStartTime = GetTime()
     combatEndTime = 0
     UpdateZoneModifier()
@@ -748,16 +852,88 @@ local function GetPetOwner(petGUID)
     return petOwners[petGUID]
 end
 
+local function ResolvePetOwner(petGUID)
+    if not petGUID then return nil end
+    local cached = GetPetOwner(petGUID)
+    if cached then return cached end
+
+    local units = {"pet"}
+    if IsInRaid() then
+        for i = 1, 40 do
+            units[#units + 1] = "raid" .. i .. "pet"
+        end
+    elseif IsInGroup() then
+        for i = 1, 4 do
+            units[#units + 1] = "party" .. i .. "pet"
+        end
+    end
+
+    for _, unit in ipairs(units) do
+        if UnitExists(unit) then
+            local guid = UnitGUID(unit)
+            if guid == petGUID then
+                local ownerUnit = unit:gsub("pet", "")
+                local ownerGUID = UnitGUID(ownerUnit)
+                if ownerGUID then
+                    RegisterPet(petGUID, ownerGUID)
+                    return ownerGUID
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+-- ============================================================
+-- Timeline Capture
+-- ============================================================
+
+local function RecordTimelineEvent(timestamp, event, sourceGUID, sourceName, destGUID, destName, spellId, spellName, amount, overkill, absorbed, school)
+    local settings = addon.settings and addon.settings.combatLog
+    if not settings or not settings.trackTimeline then return end
+    if not inCombat then return end
+
+    local limit = settings.timelineMaxEvents or 1500
+    if limit < 200 then
+        limit = 200
+    end
+
+    local elapsed = (combatStartTime and combatStartTime > 0) and (timestamp - combatStartTime) or 0
+    table.insert(currentTimeline, {
+        t = elapsed,
+        event = event,
+        sourceGUID = sourceGUID,
+        sourceName = sourceName,
+        destGUID = destGUID,
+        destName = destName,
+        spellId = spellId,
+        spellName = spellName,
+        amount = amount,
+        overkill = overkill,
+        absorbed = absorbed,
+        school = school,
+    })
+
+    while #currentTimeline > limit do
+        table.remove(currentTimeline, 1)
+    end
+end
+
 local function SaveSegment()
     local settings = addon.settings.combatLog
     
     if GetCombatTime() < 5 then return end  -- Don't save short fights
     
+    segmentCounter = segmentCounter + 1
     local segment = {
+        id = segmentCounter,
+        name = string.format("Fight %d", segmentCounter),
         startTime = combatStartTime,
         endTime = combatEndTime or GetTime(),
         duration = GetCombatTime(),
         data = {},
+        timeline = currentTimeline,
         totals = {
             players = 0,
             damage = 0,
@@ -827,6 +1003,26 @@ local function SaveSegment()
             end
         end
 
+        local avoidanceCopy = nil
+        if data.avoidanceTable then
+            avoidanceCopy = {}
+            for k, v in pairs(data.avoidanceTable) do
+                avoidanceCopy[k] = v
+            end
+        end
+
+        local petsCopy = nil
+        if data.pets then
+            petsCopy = {}
+            for petGuid, petData in pairs(data.pets) do
+                petsCopy[petGuid] = {
+                    name = petData.name,
+                    damage = petData.damage or 0,
+                    healing = petData.healing or 0,
+                }
+            end
+        end
+
         segment.data[guid] = {
             name = data.name,
             class = data.class,
@@ -857,6 +1053,10 @@ local function SaveSegment()
             friendlyDamage = data.friendlyDamage or 0,
             potionsUsed = data.potionsUsed or 0,
             healthstonesUsed = data.healthstonesUsed or 0,
+            petDamage = data.petDamage or 0,
+            petHealing = data.petHealing or 0,
+            pets = petsCopy or {},
+            avoidanceTable = avoidanceCopy,
             spells = spellsCopy,
             ccSpells = ccSpellsCopy,
         }
@@ -894,6 +1094,8 @@ local function SaveSegment()
     end
     
     table.insert(segments, 1, segment)
+
+    currentTimeline = {}
     
     -- Trim old segments
     while #segments > settings.keepSegments do
@@ -1365,7 +1567,8 @@ function CombatLog.UpdateFrame()
     local titleText = "|cffFFCC00DC|r " .. (modeNames[mode] or "Combat")
     
     if activeSegment and segments[activeSegment] then
-        titleText = titleText .. string.format(" (Fight %d)", activeSegment)
+        local seg = segments[activeSegment]
+        titleText = titleText .. string.format(" (%s)", seg.name or ("Fight " .. tostring(seg.id or activeSegment)))
     else
         titleText = titleText .. " (Current)"
     end
@@ -1397,6 +1600,10 @@ function CombatLog.UpdateFrame()
     end
 
     local sorted = {}
+    local dataSource = playerData
+    if activeSegment and segments[activeSegment] then
+        dataSource = segments[activeSegment].data
+    end
     if mode == "threat" then
         sorted = GetThreatSortedData()
     else
@@ -1455,7 +1662,7 @@ function CombatLog.UpdateFrame()
             end
             
             -- Store data for tooltip
-            bar.data = playerData[data.guid]
+            bar.data = dataSource and dataSource[data.guid] or playerData[data.guid]
             bar:Show()
         else
             bar:Hide()
@@ -1531,34 +1738,28 @@ end
 -- ============================================================
 -- Death Recap
 -- ============================================================
-local function RecordDamageForDeathRecap(timestamp, source, spellName, amount, school)
-    if #deathLog >= MAX_DEATH_LOG then
-        table.remove(deathLog, 1)
-    end
-    
-    table.insert(deathLog, {
-        time = timestamp,
-        source = source or "Unknown",
-        spell = spellName or "Melee",
-        amount = amount or 0,
-        school = school or 1,
-    })
+function CombatLog.GetDeathLogEntries(data, newestFirst)
+    if not data then return {} end
+    InitDeathLogBuffer(data)
+    return ExtractDeathLogEntries(data.deathLog, newestFirst ~= false)
 end
 
 local function ShowDeathRecap()
     local settings = addon.settings.combatLog
     if not settings.deathRecap then return end
-    
-    if #deathLog == 0 then
+
+    local data = GetPlayerData(playerGUID, playerName)
+    local entries = CombatLog.GetDeathLogEntries(data, false)
+    if #entries == 0 then
         addon:Print("No damage recorded before death.", true)
         return
     end
     
     addon:Print("=== Death Recap ===", true)
     
-    local count = math.min(settings.deathRecapCount, #deathLog)
-    for i = #deathLog - count + 1, #deathLog do
-        local entry = deathLog[i]
+    local count = math.min(settings.deathRecapCount, #entries)
+    for i = #entries - count + 1, #entries do
+        local entry = entries[i]
         if entry then
             local hpText = ""
             if entry.hp and entry.maxhp then
@@ -1713,11 +1914,12 @@ function CombatLog.OpenMenu(anchor)
     
     -- Add history segments
     for i, seg in ipairs(segments) do
-        local segText = string.format("Fight %d (%s)", i, FormatTime(seg.duration))
+        local segLabel = seg.name or ("Fight " .. tostring(seg.id or i))
+        local segText = string.format("%s (%s)", segLabel, FormatTime(seg.duration))
         if totalsDisplay == "menu" and seg.totals then
             segText = string.format(
-                "Fight %d (%s)  D:%s H:%s",
-                i,
+                "%s (%s)  D:%s H:%s",
+                segLabel,
                 FormatTime(seg.duration),
                 FormatNumber(seg.totals.damage or 0),
                 FormatNumber(seg.totals.healing or 0)
@@ -1971,6 +2173,41 @@ end
 -- ============================================================
 local eventFrame = CreateFrame("Frame")
 
+local function FindGroupUnitByGUID(guid)
+    if not guid then return nil end
+    if UnitGUID("player") == guid then
+        return "player"
+    end
+    for i = 1, 4 do
+        if UnitGUID("party" .. i) == guid then
+            return "party" .. i
+        end
+    end
+    for i = 1, 40 do
+        if UnitGUID("raid" .. i) == guid then
+            return "raid" .. i
+        end
+    end
+    return nil
+end
+
+local function EnsureAvoidanceTable(data)
+    if not data.avoidanceTable then
+        data.avoidanceTable = {
+            dodges = 0,
+            parries = 0,
+            misses = 0,
+            blocks = 0,
+            resists = 0,
+            absorbs = 0,
+            absorbed = 0,
+            blockedAmount = 0,
+            resistedAmount = 0,
+            absorbedAmount = 0,
+        }
+    end
+end
+
 local function UpdateActivity(data)
     local currentTime = GetTime()
     if not data.lastActive or data.lastActive == 0 then
@@ -1997,6 +2234,47 @@ local function OnCombatLogEvent(...)
     -- end
     
     local arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, arg19, arg20, arg21 = select(9, ...)
+
+    do
+        local timelineSpellId = nil
+        local timelineSpellName = nil
+        local timelineAmount = nil
+        local timelineOverkill = nil
+        local timelineAbsorbed = nil
+        local timelineSchool = nil
+
+        if event == "SWING_DAMAGE" then
+            timelineAmount = arg9 or 0
+            timelineOverkill = arg10 or 0
+            timelineSchool = arg11 or 0
+            timelineAbsorbed = arg14 or 0
+        elseif event == "SPELL_DAMAGE" or event == "SPELL_PERIODIC_DAMAGE" or event == "RANGE_DAMAGE" then
+            timelineSpellId = arg9
+            timelineSpellName = arg10
+            timelineSchool = arg11 or 0
+            timelineAmount = arg12 or 0
+            timelineOverkill = arg13 or 0
+            timelineAbsorbed = arg16 or 0
+        elseif event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL" then
+            timelineSpellId = arg9
+            timelineSpellName = arg10
+            timelineAmount = arg12 or 0
+            timelineOverkill = 0
+            timelineAbsorbed = arg14 or 0
+        elseif event == "SPELL_MISSED" or event == "RANGE_MISSED" then
+            timelineSpellId = arg9
+            timelineSpellName = arg10
+        elseif event == "SPELL_ENERGIZE" then
+            timelineSpellId = arg9
+            timelineSpellName = arg10
+            timelineAmount = arg12 or 0
+        elseif event == "SPELL_AURA_APPLIED" or event == "SPELL_AURA_REMOVED" then
+            timelineSpellId = arg9
+            timelineSpellName = arg10
+        end
+
+        RecordTimelineEvent(timestamp, event, sourceGUID, sourceName, destGUID, destName, timelineSpellId, timelineSpellName, timelineAmount, timelineOverkill, timelineAbsorbed, timelineSchool)
+    end
     
     -- Check if source is in our group
     if not playerGUID then playerGUID = UnitGUID("player") end -- Safety check
@@ -2021,9 +2299,25 @@ local function OnCombatLogEvent(...)
             isGroupDest = true
         end
     end
-    
 
-    
+    local isPetSource = bit.band(sourceFlags, COMBATLOG_OBJECT_TYPE_PET) > 0 or bit.band(sourceFlags, COMBATLOG_OBJECT_TYPE_GUARDIAN) > 0
+    local ownerGUID = nil
+    local ownerData = nil
+    local petStats = nil
+
+    if isPetSource and settings.trackGroup then
+        ownerGUID = ResolvePetOwner(sourceGUID)
+        if ownerGUID then
+            local ownerUnit = FindGroupUnitByGUID(ownerGUID)
+            local ownerName = ownerUnit and UnitName(ownerUnit) or nil
+            ownerData = GetPlayerData(ownerGUID, ownerName)
+            if ownerData and (settings.trackPetDamage or settings.trackPetHealing) then
+                ownerData.pets = ownerData.pets or {}
+                ownerData.pets[sourceGUID] = ownerData.pets[sourceGUID] or { name = sourceName or "Pet", damage = 0, healing = 0 }
+                petStats = ownerData.pets[sourceGUID]
+            end
+        end
+    end
     -- Helper to track spell breakdown with comprehensive stats
     local function TrackSpell(data, spellId, spellName, amount, isCrit, isHealing, isGlancing, missType, absorbed, overkill)
         if not data.spells then data.spells = {} end
@@ -2109,7 +2403,7 @@ local function OnCombatLogEvent(...)
     
     -- Track damage/healing dealt
     if isGroupSource then
-        local data = GetPlayerData(sourceGUID, sourceName, sourceFlags)
+        local data = ownerData or GetPlayerData(sourceGUID, sourceName, sourceFlags)
         if data then
             UpdateActivity(data)
             
@@ -2124,6 +2418,10 @@ local function OnCombatLogEvent(...)
                 local glancing = arg16
                 
                 data.damage = data.damage + amount
+                if petStats and settings.trackPetDamage then
+                    petStats.damage = petStats.damage + amount
+                    data.petDamage = (data.petDamage or 0) + amount
+                end
                 
                 if overkill > 0 then data.overkill = data.overkill + overkill end
                 if absorbed > 0 then data.totalDamage = data.totalDamage + amount + absorbed end
@@ -2151,6 +2449,10 @@ local function OnCombatLogEvent(...)
                 local glancing = arg18
                 
                 data.damage = data.damage + amount
+                if petStats and settings.trackPetDamage then
+                    petStats.damage = petStats.damage + amount
+                    data.petDamage = (data.petDamage or 0) + amount
+                end
 
                 if overkill > 0 then data.overkill = data.overkill + overkill end
                 if absorbed > 0 then data.totalDamage = data.totalDamage + amount + absorbed end
@@ -2175,6 +2477,10 @@ local function OnCombatLogEvent(...)
                 local critical = arg15
                 local effectiveHeal = amount - overheal
                 data.healing = data.healing + effectiveHeal
+                if petStats and settings.trackPetHealing then
+                    petStats.healing = petStats.healing + effectiveHeal
+                    data.petHealing = (data.petHealing or 0) + effectiveHeal
+                end
                 data.overhealing = data.overhealing + overheal
                 data.totalHealing = data.totalHealing + amount
                 TrackSpell(data, spellId, spellName, effectiveHeal, critical, true, false, nil, absorbed, 0)
@@ -2240,7 +2546,185 @@ local function OnCombatLogEvent(...)
             end
         end
     end
-    
+
+    -- Track damage taken, avoidance, mitigation, and death log for group members
+    if isGroupDest then
+        local destData = GetPlayerData(destGUID, destName, destFlags)
+        if destData then
+            UpdateActivity(destData)
+            EnsureAvoidanceTable(destData)
+
+            if event == "SWING_DAMAGE" then
+                local amount = arg9 or 0
+                local overkill = arg10 or 0
+                local school = arg11 or 0
+                local resisted = arg12 or 0
+                local blocked = arg13 or 0
+                local absorbed = arg14 or 0
+                local critical = arg15
+                local glancing = arg16
+
+                destData.damageTaken = destData.damageTaken + amount
+                destData.damageTakenBySpell[0] = destData.damageTakenBySpell[0] or { amount = 0, hits = 0 }
+                destData.damageTakenBySpell[0].amount = destData.damageTakenBySpell[0].amount + amount
+                destData.damageTakenBySpell[0].hits = destData.damageTakenBySpell[0].hits + 1
+
+                destData.damageTakenFrom[sourceGUID] = (destData.damageTakenFrom[sourceGUID] or 0) + amount
+
+                if settings.trackMitigation then
+                    if blocked > 0 then
+                        destData.blockAmount = destData.blockAmount + blocked
+                        destData.avoidanceTable.blockedAmount = destData.avoidanceTable.blockedAmount + blocked
+                    end
+                    if resisted > 0 then
+                        destData.resistAmount = destData.resistAmount + resisted
+                        destData.avoidanceTable.resistedAmount = destData.avoidanceTable.resistedAmount + resisted
+                    end
+                    if absorbed > 0 then
+                        destData.absorbedAmount = destData.absorbedAmount + absorbed
+                        destData.avoidanceTable.absorbedAmount = destData.avoidanceTable.absorbedAmount + absorbed
+                        destData.avoidanceTable.absorbed = destData.avoidanceTable.absorbed + 1
+                    end
+                end
+
+                AddDeathLogEntry(destGUID, "damage", {
+                    sourceName = sourceName,
+                    spellName = "Melee",
+                    spellId = 0,
+                    amount = amount,
+                    overkill = overkill,
+                    absorbed = absorbed,
+                    critical = critical,
+                    glancing = glancing,
+                    school = school,
+                })
+
+            elseif event == "SPELL_DAMAGE" or event == "SPELL_PERIODIC_DAMAGE" or event == "RANGE_DAMAGE" then
+                local spellId = arg9
+                local spellName = arg10
+                local school = arg11
+                local amount = arg12 or 0
+                local overkill = arg13 or 0
+                local resisted = arg14 or 0
+                local blocked = arg15 or 0
+                local absorbed = arg16 or 0
+                local critical = arg17
+                local glancing = arg18
+
+                destData.damageTaken = destData.damageTaken + amount
+                destData.damageTakenBySpell[spellId] = destData.damageTakenBySpell[spellId] or { amount = 0, hits = 0 }
+                destData.damageTakenBySpell[spellId].amount = destData.damageTakenBySpell[spellId].amount + amount
+                destData.damageTakenBySpell[spellId].hits = destData.damageTakenBySpell[spellId].hits + 1
+
+                destData.damageTakenFrom[sourceGUID] = (destData.damageTakenFrom[sourceGUID] or 0) + amount
+
+                if settings.trackMitigation then
+                    if blocked > 0 then
+                        destData.blockAmount = destData.blockAmount + blocked
+                        destData.avoidanceTable.blockedAmount = destData.avoidanceTable.blockedAmount + blocked
+                    end
+                    if resisted > 0 then
+                        destData.resistAmount = destData.resistAmount + resisted
+                        destData.avoidanceTable.resistedAmount = destData.avoidanceTable.resistedAmount + resisted
+                    end
+                    if absorbed > 0 then
+                        destData.absorbedAmount = destData.absorbedAmount + absorbed
+                        destData.avoidanceTable.absorbedAmount = destData.avoidanceTable.absorbedAmount + absorbed
+                        destData.avoidanceTable.absorbed = destData.avoidanceTable.absorbed + 1
+                    end
+                end
+
+                AddDeathLogEntry(destGUID, "damage", {
+                    sourceName = sourceName,
+                    spellName = spellName,
+                    spellId = spellId,
+                    amount = amount,
+                    overkill = overkill,
+                    absorbed = absorbed,
+                    critical = critical,
+                    glancing = glancing,
+                    school = school,
+                })
+
+            elseif event == "ENVIRONMENTAL_DAMAGE" then
+                local envType = arg9 or "Environment"
+                local amount = arg10 or 0
+                destData.damageTaken = destData.damageTaken + amount
+                destData.damageTakenBySpell[-1] = destData.damageTakenBySpell[-1] or { amount = 0, hits = 0 }
+                destData.damageTakenBySpell[-1].amount = destData.damageTakenBySpell[-1].amount + amount
+                destData.damageTakenBySpell[-1].hits = destData.damageTakenBySpell[-1].hits + 1
+
+                AddDeathLogEntry(destGUID, "damage", {
+                    sourceName = envType,
+                    spellName = envType,
+                    spellId = -1,
+                    amount = amount,
+                })
+
+            elseif event == "SWING_MISSED" then
+                local missType = arg9
+                if settings.trackAvoidance and MISS_TYPES[missType] then
+                    if missType ~= "ABSORB" then
+                        destData[MISS_TYPES[missType]] = (destData[MISS_TYPES[missType]] or 0) + 1
+                    end
+                    destData.avoidance = destData.avoidance + 1
+                    if missType == "ABSORB" then
+                        destData.avoidanceTable.absorbs = (destData.avoidanceTable.absorbs or 0) + 1
+                    else
+                        destData.avoidanceTable[MISS_TYPES[missType]] = (destData.avoidanceTable[MISS_TYPES[missType]] or 0) + 1
+                    end
+                end
+
+            elseif event == "SPELL_MISSED" or event == "RANGE_MISSED" then
+                local missType = arg12
+                if settings.trackAvoidance and MISS_TYPES[missType] then
+                    if missType ~= "ABSORB" then
+                        destData[MISS_TYPES[missType]] = (destData[MISS_TYPES[missType]] or 0) + 1
+                    end
+                    destData.avoidance = destData.avoidance + 1
+                    if missType == "ABSORB" then
+                        destData.avoidanceTable.absorbs = (destData.avoidanceTable.absorbs or 0) + 1
+                    else
+                        destData.avoidanceTable[MISS_TYPES[missType]] = (destData.avoidanceTable[MISS_TYPES[missType]] or 0) + 1
+                    end
+                end
+
+            elseif event == "SPELL_HEAL" or event == "SPELL_PERIODIC_HEAL" then
+                if settings.trackHealingTaken then
+                    local spellId = arg9
+                    local spellName = arg10
+                    local amount = arg12 or 0
+                    local overheal = arg13 or 0
+                    local effectiveHeal = amount - overheal
+
+                    destData.healingTakenFrom[sourceGUID] = (destData.healingTakenFrom[sourceGUID] or 0) + effectiveHeal
+                    destData.healingTaken = (destData.healingTaken or 0) + effectiveHeal
+
+                    AddDeathLogEntry(destGUID, "heal", {
+                        sourceName = sourceName,
+                        spellName = spellName,
+                        spellId = spellId,
+                        amount = effectiveHeal,
+                    })
+                end
+
+            elseif event == "SPELL_AURA_APPLIED" and settings.deathRecapShowBuffs then
+                local spellId = arg9
+                local spellName = arg10
+                local auraType = arg12
+                if auraType == "BUFF" then
+                    AddDeathLogEntry(destGUID, "buff", { spellName = spellName, spellId = spellId })
+                else
+                    AddDeathLogEntry(destGUID, "debuff", { spellName = spellName, spellId = spellId })
+                end
+            elseif event == "UNIT_DIED" then
+                if destGUID ~= playerGUID then
+                    destData.deaths = (destData.deaths or 0) + 1
+                end
+            end
+        end
+    end
+
     -- Track absorbs on group members (destination)
     if settings.trackAbsorbs then
         local isGroupDest = destGUID == playerGUID
@@ -2311,62 +2795,6 @@ local function OnCombatLogEvent(...)
         end
     end
 
-    -- Track damage taken by player with enhanced death logging
-    if destGUID == playerGUID then
-        local data = GetPlayerData(playerGUID, playerName)
-        if data then
-            local amount = 0
-            local spellName = nil
-            local spellId = nil
-            local absorbed = 0
-            local overkill = 0
-            local currentHP = UnitHealth("player")
-            local maxHP = UnitHealthMax("player")
-            
-            if event == "SWING_DAMAGE" then
-                amount = arg9 or 0
-                overkill = arg10 or 0
-                absorbed = arg14 or 0
-                spellName = "Melee"
-                spellId = 0
-            elseif event == "SPELL_DAMAGE" or event == "SPELL_PERIODIC_DAMAGE" or event == "RANGE_DAMAGE" then
-                spellId = arg9
-                spellName = arg10
-                amount = arg12 or 0
-                overkill = arg13 or 0
-                absorbed = arg16 or 0
-            elseif event == "ENVIRONMENTAL_DAMAGE" then
-                spellName = arg9 or "Environment"
-                amount = arg10 or 0
-                spellId = -1
-            end
-            
-            if amount > 0 then
-                data.damageTaken = data.damageTaken + amount
-                -- Enhanced death recap entry
-                if #deathLog >= MAX_DEATH_LOG then
-                    table.remove(deathLog, 1)
-                end
-                table.insert(deathLog, {
-                    time = timestamp,
-                    source = sourceName or "Unknown",
-                    spell = spellName or "Unknown",
-                    spellId = spellId,
-                    amount = amount,
-                    overkill = overkill,
-                    absorbed = absorbed,
-                    hp = currentHP,
-                    maxhp = maxHP,
-                    hpPercent = maxHP > 0 and (currentHP / maxHP * 100) or 0,
-                })
-            end
-            
-            if event == "UNIT_DIED" then
-                data.deaths = data.deaths + 1
-                ShowDeathRecap()
-            end
-        end
-    end
 end
 
 local function OnCombatEvent(self, event, ...)
@@ -2680,6 +3108,15 @@ function CombatLog.CreateSettings(parent)
         addon:SetSetting("combatLog.trackPetHealing", checked)
     end)
     yOffset = yOffset - 25
+
+    local timelineCb = addon:CreateCheckbox(parent)
+    timelineCb:SetPoint("TOPLEFT", 16, yOffset)
+    timelineCb.Text:SetText("Capture combat timeline events")
+    timelineCb:SetChecked(settings.trackTimeline ~= false)
+    timelineCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackTimeline", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
     
     local buffCb = addon:CreateCheckbox(parent)
     buffCb:SetPoint("TOPLEFT", 16, yOffset)
@@ -2713,6 +3150,183 @@ function CombatLog.CreateSettings(parent)
         addon:SetSetting("combatLog.showSchoolColors", self:GetChecked())
     end)
     yOffset = yOffset - 35
+
+    -- Detail Metrics & Tooltips
+    local detailHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    detailHeader:SetPoint("TOPLEFT", 16, yOffset)
+    detailHeader:SetText("Detail Metrics & Tooltips")
+    yOffset = yOffset - 25
+
+    local glancingCb = addon:CreateCheckbox(parent)
+    glancingCb:SetPoint("TOPLEFT", 16, yOffset)
+    glancingCb.Text:SetText("Show glancing/crushing hits in tooltips")
+    glancingCb:SetChecked(settings.showGlancingCrushing ~= false)
+    glancingCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.showGlancingCrushing", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local mitigationTipCb = addon:CreateCheckbox(parent)
+    mitigationTipCb:SetPoint("TOPLEFT", 16, yOffset)
+    mitigationTipCb.Text:SetText("Show absorbed/blocked/resisted in tooltips")
+    mitigationTipCb:SetChecked(settings.showMitigationInTooltip ~= false)
+    mitigationTipCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.showMitigationInTooltip", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local absorbsCb = addon:CreateCheckbox(parent)
+    absorbsCb:SetPoint("TOPLEFT", 16, yOffset)
+    absorbsCb.Text:SetText("Track absorbs")
+    absorbsCb:SetChecked(settings.trackAbsorbs ~= false)
+    absorbsCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackAbsorbs", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local overkillCb = addon:CreateCheckbox(parent)
+    overkillCb:SetPoint("TOPLEFT", 16, yOffset)
+    overkillCb.Text:SetText("Track overkill")
+    overkillCb:SetChecked(settings.trackOverkill ~= false)
+    overkillCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackOverkill", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local missCb = addon:CreateCheckbox(parent)
+    missCb:SetPoint("TOPLEFT", 16, yOffset)
+    missCb.Text:SetText("Track misses/dodges/parries")
+    missCb:SetChecked(settings.trackMisses ~= false)
+    missCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackMisses", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local critCb = addon:CreateCheckbox(parent)
+    critCb:SetPoint("TOPLEFT", 16, yOffset)
+    critCb.Text:SetText("Track critical hit details")
+    critCb:SetChecked(settings.trackCritDetails ~= false)
+    critCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackCritDetails", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local activityCb = addon:CreateCheckbox(parent)
+    activityCb:SetPoint("TOPLEFT", 16, yOffset)
+    activityCb.Text:SetText("Track activity/uptime")
+    activityCb:SetChecked(settings.trackActivity ~= false)
+    activityCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackActivity", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local powerCb = addon:CreateCheckbox(parent)
+    powerCb:SetPoint("TOPLEFT", 16, yOffset)
+    powerCb.Text:SetText("Track power gains")
+    powerCb:SetChecked(settings.trackPowerGains ~= false)
+    powerCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackPowerGains", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local kbCb = addon:CreateCheckbox(parent)
+    kbCb:SetPoint("TOPLEFT", 16, yOffset)
+    kbCb.Text:SetText("Track killing blows")
+    kbCb:SetChecked(settings.trackKillingBlows ~= false)
+    kbCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackKillingBlows", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local ccCb = addon:CreateCheckbox(parent)
+    ccCb:SetPoint("TOPLEFT", 16, yOffset)
+    ccCb.Text:SetText("Track crowd control")
+    ccCb:SetChecked(settings.trackCrowdControl ~= false)
+    ccCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackCrowdControl", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local ccTakenCb = addon:CreateCheckbox(parent)
+    ccTakenCb:SetPoint("TOPLEFT", 16, yOffset)
+    ccTakenCb.Text:SetText("Track crowd control received")
+    ccTakenCb:SetChecked(settings.trackCCTaken ~= false)
+    ccTakenCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackCCTaken", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local ccBreaksCb = addon:CreateCheckbox(parent)
+    ccBreaksCb:SetPoint("TOPLEFT", 16, yOffset)
+    ccBreaksCb.Text:SetText("Track crowd control breaks")
+    ccBreaksCb:SetChecked(settings.trackCCBreaks ~= false)
+    ccBreaksCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackCCBreaks", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local ffCb = addon:CreateCheckbox(parent)
+    ffCb:SetPoint("TOPLEFT", 16, yOffset)
+    ffCb.Text:SetText("Track friendly fire")
+    ffCb:SetChecked(settings.trackFriendlyFire ~= false)
+    ffCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackFriendlyFire", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local potionsCb = addon:CreateCheckbox(parent)
+    potionsCb:SetPoint("TOPLEFT", 16, yOffset)
+    potionsCb.Text:SetText("Track potions/consumables")
+    potionsCb:SetChecked(settings.trackPotions ~= false)
+    potionsCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackPotions", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local rezCb = addon:CreateCheckbox(parent)
+    rezCb:SetPoint("TOPLEFT", 16, yOffset)
+    rezCb.Text:SetText("Track resurrects")
+    rezCb:SetChecked(settings.trackResurrects ~= false)
+    rezCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackResurrects", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local dmgSchoolCb = addon:CreateCheckbox(parent)
+    dmgSchoolCb:SetPoint("TOPLEFT", 16, yOffset)
+    dmgSchoolCb.Text:SetText("Track damage by school")
+    dmgSchoolCb:SetChecked(settings.trackDamageBySchool ~= false)
+    dmgSchoolCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackDamageBySchool", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local dmgTakenSpellCb = addon:CreateCheckbox(parent)
+    dmgTakenSpellCb:SetPoint("TOPLEFT", 16, yOffset)
+    dmgTakenSpellCb.Text:SetText("Track damage taken per spell")
+    dmgTakenSpellCb:SetChecked(settings.trackDamageTakenBySpell ~= false)
+    dmgTakenSpellCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackDamageTakenBySpell", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local dmgTakenSourceCb = addon:CreateCheckbox(parent)
+    dmgTakenSourceCb:SetPoint("TOPLEFT", 16, yOffset)
+    dmgTakenSourceCb.Text:SetText("Track damage taken per source")
+    dmgTakenSourceCb:SetChecked(settings.trackDamageTakenBySource ~= false)
+    dmgTakenSourceCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackDamageTakenBySource", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local castsCb = addon:CreateCheckbox(parent)
+    castsCb:SetPoint("TOPLEFT", 16, yOffset)
+    castsCb.Text:SetText("Track spell casts")
+    castsCb:SetChecked(settings.trackCasts ~= false)
+    castsCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.trackCasts", self:GetChecked())
+    end)
+    yOffset = yOffset - 35
     
     -- Death Recap Section
     local deathHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -2726,6 +3340,69 @@ function CombatLog.CreateSettings(parent)
     deathCb:SetChecked(settings.deathRecap)
     deathCb:SetScript("OnClick", function(self)
         addon:SetSetting("combatLog.deathRecap", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local recapCount = addon:CreateSlider(parent)
+    recapCount:SetPoint("TOPLEFT", 20, yOffset - 10)
+    recapCount:SetWidth(220)
+    recapCount:SetMinMaxValues(5, 30)
+    recapCount:SetValueStep(1)
+    recapCount.Text:SetText("Recap entries")
+    recapCount.Low:SetText("5")
+    recapCount.High:SetText("30")
+    recapCount:SetValue(settings.deathRecapCount or 15)
+    recapCount:SetScript("OnValueChanged", function(self, value)
+        local v = math.floor(value + 0.5)
+        if self.Value then
+            self.Value:SetText(v)
+        end
+        addon:SetSetting("combatLog.deathRecapCount", v)
+    end)
+    yOffset = yOffset - 50
+
+    local recapMin = addon:CreateSlider(parent)
+    recapMin:SetPoint("TOPLEFT", 20, yOffset - 10)
+    recapMin:SetWidth(220)
+    recapMin:SetMinMaxValues(0, 5000)
+    recapMin:SetValueStep(50)
+    recapMin.Text:SetText("Minimum damage")
+    recapMin.Low:SetText("0")
+    recapMin.High:SetText("5000")
+    recapMin:SetValue(settings.deathRecapMinDamage or 0)
+    recapMin:SetScript("OnValueChanged", function(self, value)
+        local v = math.floor(value + 0.5)
+        if self.Value then
+            self.Value:SetText(v)
+        end
+        addon:SetSetting("combatLog.deathRecapMinDamage", v)
+    end)
+    yOffset = yOffset - 50
+
+    local recapBuffsCb = addon:CreateCheckbox(parent)
+    recapBuffsCb:SetPoint("TOPLEFT", 16, yOffset)
+    recapBuffsCb.Text:SetText("Show buffs/debuffs in recap")
+    recapBuffsCb:SetChecked(settings.deathRecapShowBuffs ~= false)
+    recapBuffsCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.deathRecapShowBuffs", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local announceDeathCb = addon:CreateCheckbox(parent)
+    announceDeathCb:SetPoint("TOPLEFT", 16, yOffset)
+    announceDeathCb.Text:SetText("Announce deaths to chat")
+    announceDeathCb:SetChecked(settings.announceDeaths)
+    announceDeathCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.announceDeaths", self:GetChecked())
+    end)
+    yOffset = yOffset - 25
+
+    local altDeathCb = addon:CreateCheckbox(parent)
+    altDeathCb:SetPoint("TOPLEFT", 16, yOffset)
+    altDeathCb.Text:SetText("Use separate bars per death")
+    altDeathCb:SetChecked(settings.alternativeDeathDisplay)
+    altDeathCb:SetScript("OnClick", function(self)
+        addon:SetSetting("combatLog.alternativeDeathDisplay", self:GetChecked())
     end)
     yOffset = yOffset - 35
     
