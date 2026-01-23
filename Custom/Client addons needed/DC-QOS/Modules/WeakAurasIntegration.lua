@@ -35,7 +35,7 @@ end
 
 -- WeakAurasOptions is also built-in now
 local function EnsureWeakAurasOptionsLoaded()
-    return IsWeakAurasAvailable() and _G.WeakAurasOptions ~= nil
+    return IsWeakAurasAvailable() and (_G.WeakAurasOptionsLoaded == true or _G.WeakAurasOptions ~= nil)
 end
 
 local function GetWeakAurasOptionsFrame()

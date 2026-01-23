@@ -25,6 +25,7 @@
 #   18. Collection System
 #   19. DC System Logging
 #   20. Invasion System
+#   21. Fake Players System
 #
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
@@ -3639,6 +3640,64 @@ GuildHouseBuyRank = 0
 #        Default:     0
 #
 GuildHouseSellRank = 0
+
+###########################################################################
+#
+#    SECTION 21: FAKE PLAYERS SYSTEM (Testing)
+#
+#    Generates synthetic players that appear in the /who list and count as
+#    online for testing/QA. These are not real characters.
+#
+###########################################################################
+
+#
+#    FakePlayers.Enable
+#        Description: Master toggle for fake players
+#        Default:     1 (Enabled)
+#
+FakePlayers.Enable = 1
+
+#
+#    FakePlayers.Count
+#        Description: Number of fake players to generate
+#        Default:     500
+#
+FakePlayers.Count = 500
+
+#
+#    FakePlayers.MinLevel
+#        Description: Minimum level for fake players
+#        Default:     1
+#
+FakePlayers.MinLevel = 1
+
+#
+#    FakePlayers.MaxLevel
+#        Description: Maximum level for fake players
+#        Default:     255
+#
+FakePlayers.MaxLevel = 255
+
+#
+#    FakePlayers.RefreshIntervalSeconds
+#        Description: How often to randomize fake players (0 = never)
+#        Default:     300
+#
+FakePlayers.RefreshIntervalSeconds = 300
+
+#
+#    FakePlayers.RandomizeEachRefresh
+#        Description: Re-roll race/class/level on each refresh (0 = only location)
+#        Default:     0
+#
+FakePlayers.RandomizeEachRefresh = 0
+
+#
+#    FakePlayers.Zones
+#        Description: CSV list of zone IDs used for random /who locations (empty = use all zones from DBC)
+#        Default:     ""
+#
+FakePlayers.Zones = ""
 
 ###########################################################################
 # END OF CONFIGURATION FILE

@@ -32,7 +32,7 @@ void WhoListCacheMgr::Update()
 {
     // clear current list
     _whoListStorage.clear();
-    _whoListStorage.reserve(sWorldSessionMgr->GetPlayerCount() + 1);
+    _whoListStorage.reserve(sWorldSessionMgr->GetPlayerCount() + GetExternalWhoListReserve() + 1);
 
     for (auto const& [guid, player] : ObjectAccessor::GetPlayers())
     {
@@ -60,4 +60,29 @@ void WhoListCacheMgr::Update()
             (player->IsSpectator() ? AREA_DALARAN : player->GetZoneId()), player->getGender(), player->IsVisible(),
             widePlayerName, wideGuildName, playerName, guildName);
     }
+
+    for (auto const& provider : _externalProviders)
+    {
+        if (provider.appender)
+            provider.appender(_whoListStorage);
+    }
+}
+
+void WhoListCacheMgr::RegisterExternalWhoListProvider(ExternalWhoListAppender appender, ExternalWhoListCountProvider countProvider)
+{
+    if (!appender)
+        return;
+
+    _externalProviders.push_back({ std::move(appender), std::move(countProvider) });
+}
+
+uint32 WhoListCacheMgr::GetExternalWhoListReserve() const
+{
+    uint32 extra = 0;
+    for (auto const& provider : _externalProviders)
+    {
+        if (provider.countProvider)
+            extra += provider.countProvider();
+    }
+    return extra;
 }

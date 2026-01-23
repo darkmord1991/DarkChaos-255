@@ -915,7 +915,7 @@ CREATE TABLE IF NOT EXISTS `creature` (
   KEY `idx_map` (`map`),
   KEY `idx_id` (`id1`),
   KEY `idx_phaseMask` (`phaseMask`)
-) ENGINE=InnoDB AUTO_INCREMENT=9001045 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
+) ENGINE=InnoDB AUTO_INCREMENT=9001231 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Creature System';
 
 CREATE TABLE IF NOT EXISTS `creature_addon` (
   `guid` int unsigned NOT NULL DEFAULT '0',
@@ -1455,7 +1455,7 @@ CREATE TABLE IF NOT EXISTS `dc_collection_achievement_defs` (
   PRIMARY KEY (`achievement_id`),
   KEY `idx_type` (`collection_type`),
   KEY `idx_count` (`required_count`)
-) ENGINE=InnoDB AUTO_INCREMENT=56 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection achievement definitions';
+) ENGINE=InnoDB AUTO_INCREMENT=67 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection achievement definitions';
 
 CREATE TABLE IF NOT EXISTS `dc_collection_definitions` (
   `collection_type` tinyint unsigned NOT NULL COMMENT '1=mount,2=pet,3=toy,4=heirloom,5=title,6=transmog',
@@ -1480,7 +1480,7 @@ CREATE TABLE IF NOT EXISTS `dc_collection_shop` (
   PRIMARY KEY (`id`),
   KEY `idx_enabled_time` (`enabled`,`available_from`,`available_until`),
   KEY `idx_type` (`collection_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection shop (generic)';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection shop (generic)';
 
 CREATE TABLE IF NOT EXISTS `dc_daily_quest_token_rewards` (
   `quest_id` int unsigned NOT NULL COMMENT 'Daily quest ID (700101-700104)',
@@ -1915,14 +1915,14 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_affix_schedule` (
 
 CREATE TABLE IF NOT EXISTS `dc_mplus_affixes` (
   `affix_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique affix identifier',
-  `name` varchar(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Affix name (e.g., "Tyrannical-Lite")',
-  `type` enum('boss','trash') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Target type: boss or trash',
+  `name` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Affix name',
+  `type` enum('boss','trash') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Target type: boss or trash',
   `spell_id` int unsigned NOT NULL COMMENT 'Spell ID to apply',
-  `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT 'Player-facing description',
+  `description` text COLLATE utf8mb4_unicode_ci COMMENT 'Player-facing description',
   `enabled` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Enable/disable affix',
   PRIMARY KEY (`affix_id`),
   KEY `idx_type` (`type`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Individual affix definitions';
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Individual affix definitions';
 
 CREATE TABLE IF NOT EXISTS `dc_mplus_dungeons` (
   `dungeon_id` int unsigned NOT NULL COMMENT 'Map ID',
@@ -2224,7 +2224,7 @@ CREATE TABLE IF NOT EXISTS `dc_teleporter` (
   `z` decimal(10,3) DEFAULT NULL,
   `o` decimal(10,3) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1001 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=1002 DEFAULT CHARSET=latin1;
 
 CREATE TABLE IF NOT EXISTS `dc_token_vendor_items` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -2314,6 +2314,16 @@ CREATE TABLE IF NOT EXISTS `dc_weekly_quest_token_rewards` (
   KEY `token_idx` (`token_item_id`),
   CONSTRAINT `dc_weekly_quest_token_rewards_ibfk_1` FOREIGN KEY (`token_item_id`) REFERENCES `dc_quest_reward_tokens` (`token_item_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly dungeon quest token rewards - triggers on QUEST_REWARDED status';
+
+CREATE TABLE IF NOT EXISTS `dc_world_boss_schedule` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `boss_entry` int unsigned NOT NULL,
+  `day_of_week` tinyint unsigned NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_boss_day` (`boss_entry`,`day_of_week`),
+  KEY `idx_day` (`day_of_week`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb3;
 
 CREATE TABLE IF NOT EXISTS `destructiblemodeldata_dbc` (
   `ID` int NOT NULL DEFAULT '0',
@@ -6573,19 +6583,19 @@ CREATE TABLE IF NOT EXISTS `worldmapoverlay_dbc` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 DROP TABLE IF EXISTS `v_heirloom_items`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_heirloom_items` AS select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`Quality` AS `rarity`,`i`.`InventoryType` AS `slot`,`i`.`subclass` AS `armor_type`,`i`.`displayid` AS `display_id` from `item_template` `i` where (`i`.`Quality` = 7)
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `acore_world`.`v_heirloom_items` AS select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`Quality` AS `rarity`,`i`.`InventoryType` AS `slot`,`i`.`subclass` AS `armor_type`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where (`i`.`Quality` = 7)
 ;
 
 DROP TABLE IF EXISTS `v_heirloom_packages_detailed`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_heirloom_packages_detailed` AS select `p`.`package_id` AS `package_id`,`p`.`package_name` AS `package_name`,`p`.`package_icon` AS `package_icon`,`p`.`description` AS `description`,`p`.`stat_type_1` AS `stat_type_1`,`p`.`stat_type_2` AS `stat_type_2`,`p`.`stat_type_3` AS `stat_type_3`,(case `p`.`stat_type_1` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' else concat('Stat ',`p`.`stat_type_1`) end) AS `stat_1_name`,(case `p`.`stat_type_2` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' else concat('Stat ',`p`.`stat_type_2`) end) AS `stat_2_name`,(case `p`.`stat_type_3` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' when NULL then NULL else concat('Stat ',`p`.`stat_type_3`) end) AS `stat_3_name`,concat('rgb(',`p`.`color_r`,',',`p`.`color_g`,',',`p`.`color_b`,')') AS `color_css`,`p`.`recommended_classes` AS `recommended_classes`,`p`.`recommended_specs` AS `recommended_specs`,`p`.`sort_order` AS `sort_order` from `dc_heirloom_stat_packages` `p` where (`p`.`is_enabled` = true) order by `p`.`sort_order`
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `acore_world`.`v_heirloom_packages_detailed` AS select `p`.`package_id` AS `package_id`,`p`.`package_name` AS `package_name`,`p`.`package_icon` AS `package_icon`,`p`.`description` AS `description`,`p`.`stat_type_1` AS `stat_type_1`,`p`.`stat_type_2` AS `stat_type_2`,`p`.`stat_type_3` AS `stat_type_3`,(case `p`.`stat_type_1` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' else concat('Stat ',`p`.`stat_type_1`) end) AS `stat_1_name`,(case `p`.`stat_type_2` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' else concat('Stat ',`p`.`stat_type_2`) end) AS `stat_2_name`,(case `p`.`stat_type_3` when 3 then 'Agility' when 4 then 'Strength' when 5 then 'Intellect' when 6 then 'Spirit' when 7 then 'Stamina' when 12 then 'Defense' when 13 then 'Dodge' when 14 then 'Parry' when 15 then 'Block' when 31 then 'Hit' when 32 then 'Crit' when 35 then 'Resilience' when 36 then 'Haste' when 37 then 'Expertise' when 44 then 'Armor Pen' when 45 then 'Spell Power' when NULL then NULL else concat('Stat ',`p`.`stat_type_3`) end) AS `stat_3_name`,concat('rgb(',`p`.`color_r`,',',`p`.`color_g`,',',`p`.`color_b`,')') AS `color_css`,`p`.`recommended_classes` AS `recommended_classes`,`p`.`recommended_specs` AS `recommended_specs`,`p`.`sort_order` AS `sort_order` from `acore_world`.`dc_heirloom_stat_packages` `p` where (`p`.`is_enabled` = true) order by `p`.`sort_order`
 ;
 
 DROP TABLE IF EXISTS `v_mount_items`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_mount_items` AS select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_1` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_1` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_2` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_2` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_3` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_3` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_4` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_4` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_5` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_5` > 0))
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `acore_world`.`v_mount_items` AS select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_1` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_1` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_2` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_2` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_3` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_3` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_4` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_4` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_5` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 5) and (`i`.`spellid_5` > 0))
 ;
 
 DROP TABLE IF EXISTS `v_pet_items`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `v_pet_items` AS select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_1` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_1` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_2` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_2` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_3` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_3` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_4` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_4` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_5` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_5` > 0))
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `acore_world`.`v_pet_items` AS select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_1` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_1` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_2` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_2` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_3` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_3` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_4` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_4` > 0)) union all select `i`.`entry` AS `item_id`,`i`.`name` AS `item_name`,`i`.`spellid_5` AS `spell_id`,`i`.`Quality` AS `rarity`,`i`.`displayid` AS `display_id` from `acore_world`.`item_template` `i` where ((`i`.`class` = 15) and (`i`.`subclass` = 2) and (`i`.`spellid_5` > 0))
 ;
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;

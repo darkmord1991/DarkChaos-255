@@ -833,6 +833,19 @@ CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
   PRIMARY KEY (`achievement_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Achievement definitions';
 
+CREATE TABLE IF NOT EXISTS `dc_addon_client_caps` (
+  `account_id` int unsigned NOT NULL,
+  `addon_name` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DC',
+  `version_string` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `capabilities` int unsigned NOT NULL DEFAULT '0',
+  `negotiated_caps` int unsigned NOT NULL DEFAULT '0',
+  `last_character_guid` int unsigned DEFAULT NULL,
+  `last_character_name` varchar(48) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `last_seen` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`account_id`,`addon_name`),
+  KEY `idx_last_seen` (`last_seen`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Addon client capabilities per account';
+
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_daily` (
   `date` date NOT NULL,
   `module` varchar(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -866,7 +879,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
   KEY `idx_account` (`account_id`),
   KEY `idx_module` (`module`),
   KEY `idx_event_type` (`event_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=95 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=261 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -891,7 +904,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=89084 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=100398 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2618,7 +2631,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_cap_snapshot` (
   UNIQUE KEY `idx_player_season_week` (`player_guid`,`season_id`,`week_timestamp`),
   KEY `idx_season` (`season_id`),
   KEY `idx_week` (`week_timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=14 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
+) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
 
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2835,7 +2848,7 @@ CREATE TABLE IF NOT EXISTS `dc_server_firsts` (
   `achievement_time` int unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_category` (`category`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_spectator_settings` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -2925,7 +2938,7 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_transaction_type` (`transaction_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=656 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
+) ENGINE=InnoDB AUTO_INCREMENT=813 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
 CREATE TABLE `dc_top_upgraders` (
 	`player_guid` INT UNSIGNED NOT NULL,

@@ -39,6 +39,25 @@ WorldSessionMgr::WorldSessionMgr()
     _maxPlayerCount = 0;
 }
 
+void WorldSessionMgr::RegisterExtraPlayerCountProvider(ExtraPlayerCountProvider provider)
+{
+    if (!provider)
+        return;
+
+    _extraPlayerCountProviders.push_back(std::move(provider));
+}
+
+uint32 WorldSessionMgr::GetExtraPlayerCount() const
+{
+    uint32 extra = 0;
+    for (auto const& provider : _extraPlayerCountProviders)
+    {
+        if (provider)
+            extra += provider();
+    }
+    return extra;
+}
+
 WorldSessionMgr::~WorldSessionMgr()
 {
     ///- Empty the kicked session set

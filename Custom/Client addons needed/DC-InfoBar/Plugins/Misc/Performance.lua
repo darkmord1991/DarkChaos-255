@@ -184,12 +184,24 @@ function PerformancePlugin:OnTooltip(tooltip)
         local info, infoTime = GetServerInfoSnapshot()
         local hasInfo = (type(info) == "table") and next(info) ~= nil
         if hasInfo then
+            local serverName = info.serverName or info.name
+            local seasonName = info.seasonName or (info.season and info.season.name)
+            local maxLevel = info.maxLevel
             local uptime = info.uptime or info.uptimeSeconds or info.uptimeSec or info.uptimeMinutes
             if type(uptime) == "number" and info.uptimeMinutes and not info.uptimeSeconds and not info.uptimeSec then
                 uptime = uptime * 60
             end
             local players = info.playersOnline or info.onlinePlayers or info.playerCount or info.players or info.online
 
+            if serverName then
+                tooltip:AddDoubleLine("Server:", tostring(serverName), 0.7, 0.7, 0.7, 1, 1, 1)
+            end
+            if seasonName then
+                tooltip:AddDoubleLine("Season:", tostring(seasonName), 0.7, 0.7, 0.7, 1, 1, 1)
+            end
+            if maxLevel then
+                tooltip:AddDoubleLine("Max level:", tostring(maxLevel), 0.7, 0.7, 0.7, 1, 1, 1)
+            end
             if uptime then
                 tooltip:AddDoubleLine("Uptime:", FormatDuration(uptime), 0.7, 0.7, 0.7, 1, 1, 1)
             end

@@ -1598,15 +1598,11 @@ function OptionsPrivate.OpenIconPicker(baseObject, paths, groupIcon)
 end
 
 function OptionsPrivate.OpenModelPicker(baseObject, path)
-  if not(IsAddOnLoaded("WeakAurasModelPaths")) then
-    local loaded, reason = LoadAddOn("WeakAurasModelPaths");
-    if not(loaded) then
-      reason = string.lower("|cffff2020" .. _G["ADDON_" .. reason] .. "|r.")
-      WeakAuras.prettyPrint(string.format(L["ModelPaths could not be loaded, the addon is %s"], reason));
-      WeakAuras.ModelPaths = {};
-    end
-    frame.modelPicker.modelTree:SetTree(WeakAuras.ModelPaths);
+  if not WeakAuras.ModelPaths or not next(WeakAuras.ModelPaths) then
+    WeakAuras.prettyPrint("ModelPaths could not be loaded, the addon is missing.")
+    WeakAuras.ModelPaths = WeakAuras.ModelPaths or {};
   end
+  frame.modelPicker.modelTree:SetTree(WeakAuras.ModelPaths);
   frame.modelPicker:Open(baseObject, path);
 end
 
@@ -1615,13 +1611,11 @@ function OptionsPrivate.OpenCodeReview(data)
 end
 
 function OptionsPrivate.OpenTriggerTemplate(data, targetId)
-  if not(IsAddOnLoaded("WeakAurasTemplates")) then
-    local loaded, reason = LoadAddOn("WeakAurasTemplates");
-    if not(loaded) then
-      reason = string.lower("|cffff2020" .. _G["ADDON_" .. reason] .. "|r.")
-      WeakAuras.prettyPrint(string.format(L["Templates could not be loaded, the addon is %s"], reason));
-      return;
-    end
+  if not WeakAuras.CreateTemplateView then
+    WeakAuras.prettyPrint("Templates could not be loaded, the addon is missing.")
+    return;
+  end
+  if not frame.newView then
     frame.newView = WeakAuras.CreateTemplateView(OptionsPrivate.Private, frame);
   end
   -- This is called multiple times if a group is selected

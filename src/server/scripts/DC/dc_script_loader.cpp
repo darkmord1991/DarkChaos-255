@@ -135,6 +135,7 @@ void AddSC_dc_firststart();                   // Progression/FirstStart/dc_first
 // --- Cross-System Integration Framework ---
 void AddSC_dc_cross_system_scripts();         // CrossSystem\\CrossSystemScripts.cpp
 void AddSC_dc_teleporter();                   // Teleporters\\dc_teleporter.cpp
+void AddSC_dc_fake_players();                 // FakePlayers/dc_fake_players.cpp
 
 // --- DC Commands (Unified command hub) ---
 void AddSC_dc_addons_commandscript();         // Commands/cs_dc_addons.cpp
@@ -183,6 +184,21 @@ void AddDCScripts()
         LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in DC Core Services: {}", e.what());
     } catch (...) {
         LOG_ERROR("scripts.dc", ">>   ✗ CRASH in DC Core Services");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FAKE PLAYERS SYSTEM (Testing)
+    // ═══════════════════════════════════════════════════════════════════════
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    LOG_INFO("scripts.dc", ">> Fake Players System");
+    LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
+    try {
+        AddSC_dc_fake_players();
+        LOG_INFO("scripts.dc", ">>   ✓ Fake players module loaded");
+    } catch (std::exception& e) {
+        LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in Fake Players: {}", e.what());
+    } catch (...) {
+        LOG_ERROR("scripts.dc", ">>   ✗ CRASH in Fake Players");
     }
 
     // ═══════════════════════════════════════════════════════════════════════

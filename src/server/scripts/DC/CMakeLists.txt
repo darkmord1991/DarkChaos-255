@@ -59,6 +59,11 @@ set(SCRIPTS_DC_PhasedDuels
     PhasedDuels/dc_phased_duels.cpp
 )
 
+# Fake Players System
+set(SCRIPTS_DC_FakePlayers
+    FakePlayers/dc_fake_players.cpp
+)
+
 # Main AC scripts
 set(SCRIPTS_DC_AC
     dc_script_loader.cpp
@@ -302,6 +307,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_Hotspot}
     ${SCRIPTS_DC_AoELoot}
     ${SCRIPTS_DC_PhasedDuels}
+    ${SCRIPTS_DC_FakePlayers}
     ${SCRIPTS_DC_AC}
     ${SCRIPTS_DC_HinterlandBG}
     ${SCRIPTS_DC_Gilneas}

@@ -124,6 +124,8 @@ namespace DCWelcome
         msg.Set("wikiUrl", sConfigMgr->GetOption<std::string>(Config::WIKI_URL, "wiki.darkchaos255.com"));
         msg.Set("seasonId", seasonId);
         msg.Set("seasonName", seasonName);
+        msg.Set("uptimeSeconds", sWorld->GetUptime());
+        msg.Set("playersOnline", sWorld->GetPlayerCount());
 
         msg.Send(player);
     }
@@ -145,6 +147,8 @@ namespace DCWelcome
         msg.Set("websiteUrl", sConfigMgr->GetOption<std::string>(Config::WEBSITE_URL, "darkchaos255.com"));
         msg.Set("seasonId", seasonId);
         msg.Set("seasonName", seasonName);
+        msg.Set("uptimeSeconds", sWorld->GetUptime());
+        msg.Set("playersOnline", sWorld->GetPlayerCount());
         msg.Set("isFirstLogin", true);
 
         msg.Send(player);

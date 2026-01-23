@@ -99,6 +99,9 @@ WeakAuras\compat.lua
 WeakAuras\Pools.lua
 WeakAuras\Init.lua
 
+# WeakAuras Model Paths (embedded)
+WeakAurasModelPaths\ModelPaths.lua
+
 # WeakAuras Locales
 WeakAuras\Locales\enUS.lua
 WeakAuras\Locales\deDE.lua

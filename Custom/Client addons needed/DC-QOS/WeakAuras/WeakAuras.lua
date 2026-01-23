@@ -909,6 +909,49 @@ Broker_WeakAuras = LDB:NewDataObject("WeakAuras", {
 
 do -- Archive stuff
   local Archivist = select(2, ...).Archivist
+  local function CreateArchiveStub()
+    local stub = {}
+    stub.stores = {}
+
+    function stub:Set(uid, data)
+      if not uid then
+        return nil
+      end
+      local entry = self.stores[uid]
+      if not entry then
+        entry = {}
+        self.stores[uid] = entry
+      end
+      entry.data = data
+      entry.timestamp = time()
+      return entry
+    end
+
+    function stub:Get(uid)
+      local entry = self.stores[uid]
+      if entry then
+        return uid, entry.data
+      end
+      return nil
+    end
+
+    function stub:GetData(uid)
+      local entry = self.stores[uid]
+      return entry and entry.data or nil
+    end
+
+    function stub:Drop(uid)
+      self.stores[uid] = nil
+    end
+
+    function stub:Clean()
+      -- no-op for stub
+    end
+
+    return stub
+  end
+
+  local archiveStub
   local function OpenArchive()
     if Archivist:IsInitialized() then
       return Archivist
@@ -916,8 +959,12 @@ do -- Archive stuff
       if not IsAddOnLoaded("WeakAurasArchive") then
         local ok, reason = LoadAddOn("WeakAurasArchive")
         if not ok then
+          if not archiveStub then
+            archiveStub = CreateArchiveStub()
+          end
           reason = string.lower("|cffff2020" .. _G["ADDON_" .. reason] .. "|r.")
-          error(string.format(L["Could not load WeakAuras Archive, the addon is %s"], reason))
+          print(string.format(L["Could not load WeakAuras Archive, the addon is %s"], reason))
+          return archiveStub
         end
       end
       Archivist:Initialize(WeakAurasArchive)
@@ -927,7 +974,13 @@ do -- Archive stuff
 
   function WeakAuras.LoadFromArchive(storeType, storeID)
     local Archivist = OpenArchive()
-    return Archivist:Load(storeType, storeID)
+    if Archivist and Archivist.Load then
+      return Archivist:Load(storeType, storeID)
+    end
+    if not archiveStub then
+      archiveStub = CreateArchiveStub()
+    end
+    return archiveStub
   end
 end
 

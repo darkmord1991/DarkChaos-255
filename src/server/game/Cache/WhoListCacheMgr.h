@@ -21,6 +21,8 @@
 #include "Common.h"
 #include "ObjectGuid.h"
 #include "SharedDefines.h"
+#include <functional>
+#include <vector>
 
 class WhoListPlayerInfo
 {
@@ -75,6 +77,17 @@ using WhoListInfoVector = std::vector<WhoListPlayerInfo>;
 
 class AC_GAME_API WhoListCacheMgr
 {
+public:
+    using ExternalWhoListAppender = std::function<void(WhoListInfoVector&)>;
+    using ExternalWhoListCountProvider = std::function<uint32()>;
+
+private:
+    struct ExternalWhoListProvider
+    {
+        ExternalWhoListAppender appender;
+        ExternalWhoListCountProvider countProvider;
+    };
+
     WhoListCacheMgr() = default;
     ~WhoListCacheMgr() = default;
 
@@ -88,9 +101,13 @@ public:
 
     void Update();
     WhoListInfoVector const& GetWhoList() const { return _whoListStorage; }
+    void RegisterExternalWhoListProvider(ExternalWhoListAppender appender, ExternalWhoListCountProvider countProvider = {});
 
 protected:
+    uint32 GetExternalWhoListReserve() const;
+
     WhoListInfoVector _whoListStorage;
+    std::vector<ExternalWhoListProvider> _externalProviders;
 };
 
 #define sWhoListCacheMgr WhoListCacheMgr::instance()

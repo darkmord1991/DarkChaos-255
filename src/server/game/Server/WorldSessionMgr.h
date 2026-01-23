@@ -22,8 +22,10 @@
 #include "IWorld.h"
 #include "LockedQueue.h"
 #include "ObjectGuid.h"
+#include <functional>
 #include <list>
 #include <unordered_map>
+#include <vector>
 
 class Player;
 class WorldPacket;
@@ -32,6 +34,8 @@ class WorldSession;
 class WorldSessionMgr
 {
 public:
+    using ExtraPlayerCountProvider = std::function<uint32()>;
+
     static WorldSessionMgr* Instance();
 
     WorldSessionMgr();
@@ -65,8 +69,10 @@ public:
     uint32 GetMaxQueuedSessionCount() const { return _maxQueuedSessionCount; }
     uint32 GetMaxActiveSessionCount() const { return _maxActiveSessionCount; }
     /// Get number of players
-    inline uint32 GetPlayerCount() const { return _playerCount; }
+    inline uint32 GetPlayerCount() const { return _playerCount + GetExtraPlayerCount(); }
     inline uint32 GetMaxPlayerCount() const { return _maxPlayerCount; }
+    void RegisterExtraPlayerCountProvider(ExtraPlayerCountProvider provider);
+    uint32 GetExtraPlayerCount() const;
     /// Active session server limit
     void SetPlayerAmountLimit(uint32 limit) { _playerLimit = limit; }
     uint32 GetPlayerAmountLimit() const { return _playerLimit; }
@@ -103,6 +109,7 @@ private:
     uint32 _maxQueuedSessionCount;
     uint32 _playerCount;
     uint32 _maxPlayerCount;
+    std::vector<ExtraPlayerCountProvider> _extraPlayerCountProviders;
 };
 
 #define sWorldSessionMgr WorldSessionMgr::Instance()

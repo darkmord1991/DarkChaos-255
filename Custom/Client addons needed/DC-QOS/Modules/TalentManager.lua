@@ -113,7 +113,7 @@ local talentPrereqs = {}
 local TALENTED_MAP = "012345abcdefABCDEFmnopqrMNOPQRtuvwxy*"
 local WOWHEAD_MAP = "0zMcmVokRsaqbdrfwihuGINALpTjnyxtgevE"
 local BG_FELLEATHER = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
-local DCQOS_ICON = "Interface\\AddOns\\Icons\\DC-QOS\\Icon_64.tga"
+local DCQOS_ICON = "Interface\\AddOns\\DC-QOS\\Textures\\Icon_64.tga"
 
 -- Class to code mapping
 local CLASS_CODES = {
@@ -1390,11 +1390,13 @@ local function CreateTalentButton(parent, tab, index, pet)
     icon:SetVertexColor(1, 1, 1)
     button.icon = icon
     
-    -- Slot border (Blizzard talent button border)
+    -- Slot border (Blizzard talent button border - exact from TalentButtonTemplate)
     local slot = button:CreateTexture(nil, "OVERLAY")
-    slot:SetSize(TALENT_BUTTON_SIZE + 6, TALENT_BUTTON_SIZE + 6)
+    slot:SetSize(TALENT_BUTTON_SIZE + 14, TALENT_BUTTON_SIZE + 14)
     slot:SetPoint("CENTER")
-    slot:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+    slot:SetTexture("Interface\\TalentFrame\\TalentFrame-Parts")
+    slot:SetTexCoord(0, 0.546875, 0, 0.546875)  -- Square border portion
+    slot:SetVertexColor(0.5, 0.5, 0.5)  -- Gray by default (locked)
     button.slot = slot
     
     -- Glow border for available/maxed talents (colored overlay)
@@ -1690,13 +1692,13 @@ function TalentManager:CreateMainFrame()
     
     local templateDropdown = CreateFrame("Frame", "DCQoSTalentTemplateDropdown", bottomPanel, "UIDropDownMenuTemplate")
     templateDropdown:SetPoint("TOPLEFT", templateLabel, "BOTTOMLEFT", -15, 0)
-    UIDropDownMenu_SetWidth(templateDropdown, 140)
+    UIDropDownMenu_SetWidth(templateDropdown, 130)
     frame.templateDropdown = templateDropdown
     
     -- Buttons row 1
     local saveBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    saveBtn:SetSize(50, 22)
-    saveBtn:SetPoint("LEFT", templateDropdown, "RIGHT", -5, 2)
+    saveBtn:SetSize(45, 22)
+    saveBtn:SetPoint("LEFT", templateDropdown, "RIGHT", -10, 2)
     saveBtn:SetText("Save")
     saveBtn:SetScript("OnClick", function()
         StaticPopupDialogs["DCQOS_SAVE_TEMPLATE"] = {
@@ -1723,7 +1725,7 @@ function TalentManager:CreateMainFrame()
     end)
     
     local loadBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    loadBtn:SetSize(50, 22)
+    loadBtn:SetSize(48, 22)
     loadBtn:SetPoint("LEFT", saveBtn, "RIGHT", 2, 0)
     loadBtn:SetText("Apply")
     loadBtn:SetScript("OnClick", function()
@@ -1732,7 +1734,7 @@ function TalentManager:CreateMainFrame()
     end)
     
     local copyBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    copyBtn:SetSize(50, 22)
+    copyBtn:SetSize(45, 22)
     copyBtn:SetPoint("LEFT", loadBtn, "RIGHT", 2, 0)
     copyBtn:SetText("Copy")
     copyBtn:SetScript("OnClick", function()
@@ -1744,7 +1746,7 @@ function TalentManager:CreateMainFrame()
     end)
     
     local deleteBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    deleteBtn:SetSize(50, 22)
+    deleteBtn:SetSize(55, 22)
     deleteBtn:SetPoint("LEFT", copyBtn, "RIGHT", 2, 0)
     deleteBtn:SetText("Delete")
     deleteBtn:SetScript("OnClick", function()
@@ -1756,7 +1758,7 @@ function TalentManager:CreateMainFrame()
     end)
     
     local targetBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    targetBtn:SetSize(50, 22)
+    targetBtn:SetSize(48, 22)
     targetBtn:SetPoint("LEFT", deleteBtn, "RIGHT", 2, 0)
     targetBtn:SetText("Target")
     targetBtn:SetScript("OnEnter", function(self)
@@ -1783,7 +1785,7 @@ function TalentManager:CreateMainFrame()
     
     -- Row 2
     local exportBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    exportBtn:SetSize(50, 22)
+    exportBtn:SetSize(48, 22)
     exportBtn:SetPoint("TOPLEFT", templateDropdown, "BOTTOMLEFT", 15, -2)
     exportBtn:SetText("Export")
     exportBtn:SetScript("OnClick", function()
@@ -1793,14 +1795,14 @@ function TalentManager:CreateMainFrame()
     end)
     
     local importBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    importBtn:SetSize(50, 22)
-    importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 2, 0)
+    importBtn:SetSize(48, 22)
+    importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 1, 0)
     importBtn:SetText("Import")
     importBtn:SetScript("OnClick", function() TalentManager:ShowImportDialog() end)
     
     local urlBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    urlBtn:SetSize(60, 22)
-    urlBtn:SetPoint("LEFT", importBtn, "RIGHT", 2, 0)
+    urlBtn:SetSize(65, 22)
+    urlBtn:SetPoint("LEFT", importBtn, "RIGHT", 1, 0)
     urlBtn:SetText("WoWHead")
     urlBtn:SetScript("OnClick", function()
         local selected = UIDropDownMenu_GetSelectedValue(templateDropdown)
@@ -1809,8 +1811,8 @@ function TalentManager:CreateMainFrame()
     end)
     
     local sendBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    sendBtn:SetSize(50, 22)
-    sendBtn:SetPoint("LEFT", urlBtn, "RIGHT", 2, 0)
+    sendBtn:SetSize(42, 22)
+    sendBtn:SetPoint("LEFT", urlBtn, "RIGHT", 1, 0)
     sendBtn:SetText("Send")
     sendBtn:SetScript("OnClick", function()
         StaticPopupDialogs["DCQOS_SEND_TEMPLATE"] = {
@@ -1836,15 +1838,15 @@ function TalentManager:CreateMainFrame()
     
     -- Inspect dropdown
     local inspectDropdown = CreateFrame("Frame", "DCQoSInspectDropdown", bottomPanel, "UIDropDownMenuTemplate")
-    inspectDropdown:SetPoint("LEFT", sendBtn, "RIGHT", -10, 0)
-    UIDropDownMenu_SetWidth(inspectDropdown, 80)
+    inspectDropdown:SetPoint("LEFT", sendBtn, "RIGHT", -12, 0)
+    UIDropDownMenu_SetWidth(inspectDropdown, 70)
     UIDropDownMenu_SetText(inspectDropdown, "Inspects")
     frame.inspectDropdown = inspectDropdown
     
     -- Glyph button
     local glyphBtn = CreateFrame("Button", nil, bottomPanel, "UIPanelButtonTemplate")
-    glyphBtn:SetSize(55, 22)
-    glyphBtn:SetPoint("LEFT", inspectDropdown, "RIGHT", -5, 2)
+    glyphBtn:SetSize(52, 22)
+    glyphBtn:SetPoint("LEFT", inspectDropdown, "RIGHT", -8, 2)
     glyphBtn:SetText("Glyphs")
     glyphBtn:SetScript("OnClick", function() TalentManager:ToggleGlyphFrame() end)
     
@@ -2012,7 +2014,7 @@ function TalentManager:UpdateTemplateDropdown()
         end
     end)
     
-    UIDropDownMenu_SetText(dropdown, "Select Template")
+    UIDropDownMenu_SetText(dropdown, "Select...")
 end
 
 function TalentManager:UpdateInspectDropdown()
@@ -2733,11 +2735,11 @@ hookFrame:SetScript("OnEvent", function(self, event, addonName)
         slotBg:SetTexture("Interface\\Buttons\\UI-Quickslot2")
         dcBtn.slotBg = slotBg
         
-        -- DC-QoS Icon - use a gear icon that's always available
+        -- DC-QoS Icon - use the addon's actual icon
         local icon = dcBtn:CreateTexture(nil, "ARTWORK")
         icon:SetSize(32, 32)
         icon:SetPoint("CENTER")
-        icon:SetTexture("Interface\\Icons\\INV_Misc_Gear_01")
+        icon:SetTexture(DCQOS_ICON)
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         icon:SetVertexColor(1, 1, 1)  -- Ensure full color
         dcBtn.icon = icon
