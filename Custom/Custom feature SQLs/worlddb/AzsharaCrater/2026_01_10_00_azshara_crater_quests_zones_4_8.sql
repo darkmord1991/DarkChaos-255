@@ -91,7 +91,7 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 -- Blue Dragon Egg (Quest 300705: Dragon Egg Hunt)
 DELETE FROM `gameobject_template` WHERE `entry` = 300705;
 INSERT INTO `gameobject_template` (`entry`, `type`, `displayId`, `name`, `IconName`, `castBarCaption`, `unk1`, `size`, `Data0`, `Data1`, `Data2`, `Data3`, `Data4`, `Data5`, `Data6`, `Data7`, `Data8`, `Data9`, `Data10`, `Data11`, `Data12`, `Data13`, `Data14`, `Data15`, `Data16`, `Data17`, `Data18`, `Data19`, `Data20`, `Data21`, `Data22`, `Data23`, `AIName`, `ScriptName`, `VerifiedBuild`) VALUES
-(300705, 1, 1271, 'Blue Dragon Egg', '', 'Destroying', '', 1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340);
+(300705, 1, 1271, 'Corrupted Blue Egg', '', 'Destroying', '', 1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', 12340);
 -- Type 1 = Button/Loot, DisplayID 1271 = Dragon Egg model
 
 -- Sludge Pile (Quest 300406: River Pollution)
@@ -245,7 +245,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 1: Whelpling Menace (Kill Whelps)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300700, 2, 62, 58, 0, 0, 0, 4, 0, 10246, 1, 300311, 15, 300312, 10, 'Whelpling Menace', 'Kill 12 Azure Whelplings.', 'The blue dragonflight breeds here. Thin their numbers.', 'Azshara Crater', 'Whelps slain.', 6130, 12);
+(300700, 2, 62, 58, 0, 0, 0, 4, 0, 10246, 1, 300311, 15, 300312, 10, 'Ghostly Presence', 'Kill 10 Kirin''Var Ghosts and 8 Ethereal Scavengers.', 'The coast is haunted by restless spirits. Put them to rest.', 'Azshara Crater', 'Ghosts banished.', 20480, 10, 18393, 8);
 
 -- Quest 2: Mana Surge (Kill Elementals)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
@@ -253,11 +253,11 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 3: Netherwing Presence (Kill Drake)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300702, 2, 68, 64, 0, 0, 0, 5, 0, 10367, 1, 300311, 15, 300312, 10, 'Netherwing Presence', 'Kill 6 Azure Netherwing Drakes.', 'Netherwing drakes corrupt the flight. Eliminate them.', 'Azshara Crater', 'Drakes grounded.', 23456, 6);
+(300702, 2, 68, 64, 0, 0, 0, 5, 0, 10367, 1, 300311, 15, 300312, 10, 'Whelp Corruption', 'Kill 8 Corrupted Blue Whelps.', 'The Blue Dragonflight has been corrupted. Cull their numbers.', 'Azshara Crater', 'Whelps defeated.', 14024, 8);
 
 -- Quest 4: Bounty: General Colbatann (Rare Kill)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300703, 2, 68, 65, 0, 0, 0, 5, 2500, 300311, 20, 300312, 15, 0, 0, 'Bounty: General Colbatann', 'Kill General Colbatann.', 'The Wyrmcult is led by Colbatann. Slay him.', 'Azshara Crater', 'General defeated.', 10196, 1);
+(300703, 2, 70, 66, 0, 0, 0, 5, 2500, 300311, 20, 300312, 15, 0, 0, 'Bounty: Nexus-Prince Shaffar', 'Kill Nexus-Prince Shaffar.', 'The Ethereal Prince Shaffar commands the corruption here. Slay him.', 'Azshara Crater', 'Shaffar defeated.', 18344, 1);
 
 -- Quest 5: The Temple Approach (Travel)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
@@ -265,11 +265,35 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 6: Dragon Egg Hunt (Collect/Destoy)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300705, 2, 64, 60, 0, 0, 0, 3, 0, 300311, 15, 300312, 10, 0, 0, 'Dragon Egg Hunt', 'Destroy 8 Blue Dragon Eggs.', 'The eggs must not hatch. Destroy them for the sanctity of the flight.', 'Azshara Crater', 'Eggs destroyed.', -300705, 8); -- Blue Dragon Egg GO
+(300705, 2, 64, 60, 0, 0, 0, 3, 0, 300311, 15, 300312, 10, 0, 0, 'Corrupted Egg Hunt', 'Destroy 8 Corrupted Blue Eggs.', 'The eggs have been corrupted by the Infinite. Destroy them before they hatch.', 'Azshara Crater', 'Eggs destroyed.', -300705, 8); -- Corrupted Blue Egg GO
 
 -- Quest 7: Cultist Orders (Collect)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300706, 2, 67, 65, 0, 0, 0, 4, 0, 300311, 15, 300312, 10, 0, 0, 'Cultist Orders', 'Collect 6 Wyrmcult Orders.', 'The cultists are up to something. Find their orders.', 'Azshara Crater', 'Orders collected.', 24449, 6); -- Wyrmcult Orders
+(300706, 2, 67, 65, 0, 0, 0, 4, 0, 300311, 15, 300312, 10, 0, 0, 'Cultist Plans', 'Collect 6 Cultist Orders.', 'The Shadow Council and Kil''sorrow cultists are plotting. Intercept their orders.', 'Azshara Crater', 'Plans collected.', 24449, 6); -- Placeholder item
+
+-- Quest 8: Clearing the Temple (Kill Temple Trash)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300707, 2, 68, 65, 0, 0, 0, 4, 0, 300311, 15, 300312, 10, 0, 0, 'Clearing the Temple', 'Kill 8 Mana Seekers and 8 Drained Phase Hunters.', 'The entrance to the temple is infested with mana-starved creatures. Clear a path.', 'Azshara Crater', 'Path cleared.', 18867, 8, 19595, 8);
+
+-- Quest 9: Bounty: Voidhunter Yar (Rare)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+(300708, 2, 68, 65, 0, 0, 0, 5, 2000, 300311, 20, 300312, 15, 'Bounty: Voidhunter Yar', 'Slay Voidhunter Yar.', 'A powerful Voidwalker, Yar, stalks the ruins. Banish him back to the Void.', 'Azshara Crater', 'Yar banished.', 18683, 1);
+
+-- Quest 10: Bounty: Doomsayer Jurim (Rare)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+(300709, 2, 64, 60, 0, 0, 0, 5, 2000, 300311, 20, 300312, 15, 'Bounty: Doomsayer Jurim', 'Slay Doomsayer Jurim.', 'The cultists are led by the fanatic Jurim. Silence his doomsaying forever.', 'Azshara Crater', 'Jurim silenced.', 18686, 1);
+
+-- Quest 11: Bounty: Marticar (Rare)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+(300710, 2, 63, 60, 0, 0, 0, 5, 2000, 300311, 20, 300312, 15, 'Bounty: Marticar', 'Slay Marticar.', 'A strange strider beast, Marticar, threatens our supply lines. Deal with it.', 'Azshara Crater', 'Marticar slain.', 18680, 1);
+
+-- Quest 12: Bounty: Collidus (Rare)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+(300711, 2, 68, 65, 0, 0, 0, 5, 2000, 300311, 20, 300312, 15, 'Bounty: Collidus', 'Slay Collidus the Warp-Watcher.', 'The beholder Collidus watches our every move. Blind him.', 'Azshara Crater', 'Collidus defeated.', 18694, 1);
+
+-- Quest 13: Restless Spirits (Rare Duo)
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
+(300712, 2, 68, 65, 0, 0, 0, 5, 2200, 300311, 25, 300312, 18, 'Restless Spirits', 'Slay Speaker Mar''grom and the Avatar of the Martyred.', 'Two powerful spirits refuse to fade. Grant them the peace of oblivion.', 'Azshara Crater', 'Spirits quelled.', 18693, 1, 18478, 1);
 
 -- ----------------------------------------------------------------------------
 -- ZONE 8 QUESTS (Level 70-80) - Archmage Thadeus (300070)
@@ -277,11 +301,11 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 1: Skeletal Army (Kill Skeletons)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300800, 2, 72, 70, 0, 0, 0, 4, 0, 24913, 1, 300311, 20, 300312, 15, 'Skeletal Army', 'Kill 12 Skeletal Craftsmen.', 'The enemy rebuilds their forces using the dead. Stop them.', 'Azshara Crater', 'Skeletons destroyed.', 32164, 12);
+(300800, 2, 72, 70, 0, 0, 0, 4, 0, 24913, 1, 300311, 20, 300312, 15, 'Skeletal Army', 'Kill 12 Blighted Corpses.', 'The enemy rebuilds their forces using the dead. Stop them.', 'Azshara Crater', 'Skeletons destroyed.', 28641, 12);
 
 -- Quest 2: Faceless Horror (Kill Aberrations)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300801, 2, 75, 72, 0, 0, 0, 4, 0, 36136, 1, 300311, 20, 300312, 15, 'Faceless Horror', 'Kill 8 Faceless Lurkers.', 'The Old Gods'' influence is strong here. Banish the Faceless.', 'Azshara Crater', 'Lurkers banished.', 31691, 8);
+(300801, 2, 75, 72, 0, 0, 0, 4, 0, 36136, 1, 300311, 20, 300312, 15, 'Scourge Vanguard', 'Kill 8 Risen Drakkari Warriors.', 'The Scourge vanguard has landed on the strand. Push them back.', 'Azshara Crater', 'Scourge slain.', 26637, 8);
 
 -- Quest 3: Forgotten Captains (Kill Elites)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
@@ -289,7 +313,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 4: Bounty: Antilos (Rare Kill)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300803, 2, 80, 78, 0, 0, 0, 5, 3000, 36032, 1, 300311, 25, 300312, 20, 'Bounty: Antilos', 'Slay Antilos.', 'A powerful griffin patrols the skies. Bring it down.', 'Azshara Crater', 'Antilos slain.', 6910, 1);
+(300803, 2, 80, 78, 0, 0, 0, 5, 3000, 36032, 1, 300311, 25, 300312, 20, 'Bounty: Vyragosa', 'Slay Vyragosa.', 'The blue dragon Vyragosa patrols the skies. Bring her down.', 'Azshara Crater', 'Vyragosa slain.', 22664, 1);
 
 -- Quest 5: Temple Artifacts (Collect)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
@@ -502,10 +526,12 @@ INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 
 -- Seryth (Zone 7)
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
-(300060, 300700), (300060, 300701), (300060, 300702), (300060, 300703), (300060, 300704), (300060, 300705), (300060, 300706);
+(300060, 300700), (300060, 300701), (300060, 300702), (300060, 300703), (300060, 300704), (300060, 300705), (300060, 300706),
+(300060, 300707), (300060, 300708), (300060, 300709), (300060, 300710), (300060, 300711), (300060, 300712);
 INSERT INTO `creature_questender` (`id`, `quest`) VALUES
 (300060, 300604), -- Arrive from Zone 6
-(300060, 300700), (300060, 300701), (300060, 300702), (300060, 300703), (300060, 300705), (300060, 300706);
+(300060, 300700), (300060, 300701), (300060, 300702), (300060, 300703), (300060, 300705), (300060, 300706),
+(300060, 300707), (300060, 300708), (300060, 300709), (300060, 300710), (300060, 300711), (300060, 300712);
 
 -- Thadeus (Zone 8)
 INSERT INTO `creature_queststarter` (`id`, `quest`) VALUES
@@ -545,6 +571,12 @@ INSERT INTO `quest_offer_reward` (`ID`, `RewardText`) VALUES
 (300703, 'Colbatann destroyed! The Wyrmcult will crumble.'),
 (300705, 'The eggs are smashed. The cycle is broken.'),
 (300706, 'These orders reveal their next move. Good work.'),
+(300707, 'The path to the temple is open.'),
+(300708, 'Yar is no more. The Void''s grip loosens.'),
+(300709, 'Jurim has been silenced. His prophecies were false.'),
+(300710, 'The beast is dead. Supply lines are secure.'),
+(300711, 'Collidus is blinded. We can move unseen.'),
+(300712, 'The spirits have found their rest.'),
 (300800, 'The skeletons are dusted. We can advance.'),
 (300803, 'Antilos grounded. The skies are ours.'),
 (300804, 'Exquisite artifacts. They belong in a museum, or my study.'),

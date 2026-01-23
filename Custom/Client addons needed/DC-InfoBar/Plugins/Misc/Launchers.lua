@@ -60,14 +60,18 @@ local function RunSlashCommand(cmd)
 end
 
 local function OpenItemUpgrade(subcmd)
+    local cmdArg = subcmd
+    if not cmdArg or cmdArg == "" then
+        cmdArg = "open"
+    end
     if SlashCmdList and type(SlashCmdList["DCUPGRADE"]) == "function" then
-        SlashCmdList["DCUPGRADE"](subcmd or "")
+        SlashCmdList["DCUPGRADE"](cmdArg)
         return
     end
 
     local cmd = "/dcu"
-    if subcmd and subcmd ~= "" then
-        cmd = cmd .. " " .. subcmd
+    if cmdArg and cmdArg ~= "" then
+        cmd = cmd .. " " .. cmdArg
     end
     RunSlashCommand(cmd)
 end

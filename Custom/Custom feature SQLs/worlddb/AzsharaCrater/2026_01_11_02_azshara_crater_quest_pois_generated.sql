@@ -710,11 +710,20 @@ FROM creature c WHERE c.map = 37 AND c.id1 = 300060 LIMIT 1;
 -- Quest 300700
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
 SELECT 300700, 0, 0, 37, 268, 0, 0, 3, 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 6130 LIMIT 1;
+FROM creature c WHERE c.map = 37 AND c.id1 = 20480 LIMIT 1;
 
 INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
 SELECT 300700, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 6130
+FROM creature c WHERE c.map = 37 AND c.id1 = 20480
+HAVING AVG(c.position_x) IS NOT NULL;
+
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300700, 1, 1, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18393 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300700, 1, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18393
 HAVING AVG(c.position_x) IS NOT NULL;
 
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
@@ -746,11 +755,12 @@ FROM creature c WHERE c.map = 37 AND c.id1 = 300060 LIMIT 1;
 -- Quest 300702
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
 SELECT 300702, 0, 0, 37, 268, 0, 0, 3, 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 23456 LIMIT 1;
+SELECT 300702, 0, 0, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 14024 LIMIT 1;
 
 INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
 SELECT 300702, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 23456
+FROM creature c WHERE c.map = 37 AND c.id1 = 14024
 HAVING AVG(c.position_x) IS NOT NULL;
 
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
@@ -764,11 +774,12 @@ FROM creature c WHERE c.map = 37 AND c.id1 = 300060 LIMIT 1;
 -- Quest 300703
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
 SELECT 300703, 0, 0, 37, 268, 0, 0, 3, 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 10196 LIMIT 1;
+SELECT 300703, 0, 0, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18344 LIMIT 1;
 
 INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
 SELECT 300703, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 10196
+FROM creature c WHERE c.map = 37 AND c.id1 = 18344
 HAVING AVG(c.position_x) IS NOT NULL;
 
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
@@ -1494,3 +1505,80 @@ ORDER BY qp.QuestID, qp.id;
 -- ============================================================================
 -- END OF SCRIPT
 -- ============================================================================
+-- Quest 300707 (Clearing the Temple)
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300707, 0, 0, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18867 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300707, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18867
+HAVING AVG(c.position_x) IS NOT NULL;
+
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300707, 1, 1, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 19595 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300707, 1, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 19595
+HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300708 (Bounty: Voidhunter Yar)
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300708, 0, 0, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18683 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300708, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18683
+HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300709 (Bounty: Doomsayer Jurim)
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300709, 0, 0, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18686 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300709, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18686
+HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300710 (Bounty: Marticar)
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300710, 0, 0, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18680 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300710, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18680
+HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300711 (Bounty: Collidus)
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300711, 0, 0, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18694 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300711, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18694
+HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300712 (Restless Spirits)
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300712, 0, 0, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18693 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300712, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18693
+HAVING AVG(c.position_x) IS NOT NULL;
+
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300712, 1, 1, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18478 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300712, 1, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 18478
+HAVING AVG(c.position_x) IS NOT NULL;

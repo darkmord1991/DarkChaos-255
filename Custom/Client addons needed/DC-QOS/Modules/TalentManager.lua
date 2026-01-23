@@ -1287,9 +1287,13 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
         SetTalentButtonDesaturated(button, false)
         
         if displayRank > 0 and displayRank >= maxRank then
-            -- Maxed out: GOLD border
+            -- Maxed out: GOLD glow
             if button.slot then
-                button.slot:SetVertexColor(1, 0.82, 0)
+                button.slot:SetVertexColor(1, 1, 1)
+            end
+            if button.glow then
+                button.glow:SetVertexColor(1, 0.82, 0)
+                button.glow:SetAlpha(0.5)
             end
             if button.rankText then
                 button.rankText:SetTextColor(1, 0.82, 0)
@@ -1298,9 +1302,13 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
                 button.rankBorder:SetVertexColor(1, 0.82, 0)
             end
         else
-            -- Available (with or without points): GREEN border
+            -- Available (with or without points): GREEN glow
             if button.slot then
-                button.slot:SetVertexColor(0.1, 1, 0.1)
+                button.slot:SetVertexColor(1, 1, 1)
+            end
+            if button.glow then
+                button.glow:SetVertexColor(0.1, 1, 0.1)
+                button.glow:SetAlpha(0.4)
             end
             if button.rankText then
                 button.rankText:SetTextColor(0.1, 1, 0.1)
@@ -1310,11 +1318,14 @@ local function UpdateTalentButtonVisual(button, state, currentRank, maxRank, tar
             end
         end
     else
-        -- Prerequisites NOT met: desaturated with no colored border
+        -- Prerequisites NOT met: desaturated, no glow
         SetTalentButtonDesaturated(button, true, 0.65, 0.65, 0.65)
         
         if button.slot then
-            button.slot:SetVertexColor(0.3, 0.3, 0.3)
+            button.slot:SetVertexColor(0.5, 0.5, 0.5)
+        end
+        if button.glow then
+            button.glow:SetAlpha(0)
         end
         
         if displayRank > 0 then
@@ -1379,13 +1390,21 @@ local function CreateTalentButton(parent, tab, index, pet)
     icon:SetVertexColor(1, 1, 1)
     button.icon = icon
     
-    -- Slot border (colored frame around the icon - at the edges)
+    -- Slot border (Blizzard talent button border)
     local slot = button:CreateTexture(nil, "OVERLAY")
-    slot:SetSize(TALENT_BUTTON_SIZE + 8, TALENT_BUTTON_SIZE + 8)
+    slot:SetSize(TALENT_BUTTON_SIZE + 6, TALENT_BUTTON_SIZE + 6)
     slot:SetPoint("CENTER")
     slot:SetTexture("Interface\\Buttons\\UI-Quickslot2")
-    slot:SetVertexColor(0.4, 0.4, 0.4)  -- Gray by default
     button.slot = slot
+    
+    -- Glow border for available/maxed talents (colored overlay)
+    local glow = button:CreateTexture(nil, "OVERLAY", nil, 1)
+    glow:SetSize(TALENT_BUTTON_SIZE + 14, TALENT_BUTTON_SIZE + 14)
+    glow:SetPoint("CENTER")
+    glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    glow:SetBlendMode("ADD")
+    glow:SetAlpha(0)
+    button.glow = glow
     
     -- Rank border (small circle behind rank text)
     local rankBorder = button:CreateTexture(nil, "OVERLAY")

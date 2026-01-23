@@ -8,6 +8,8 @@
 
 local addon = DCQOS
 
+local GetPlayerData
+
 -- ============================================================
 -- Module Configuration
 -- ============================================================
@@ -636,7 +638,7 @@ end
 -- ============================================================
 -- Player Data Management
 -- ============================================================
-local function GetPlayerData(guid, name, flags)
+GetPlayerData = function(guid, name, flags)
     if not guid then return nil end
     
     if not playerData[guid] then

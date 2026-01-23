@@ -18,6 +18,7 @@
 #include "Group.h"
 #include "../ItemUpgrades/ItemUpgradeManager.h"
 #include "GroupMgr.h"
+#include <algorithm>
 
 namespace DCAddon
 {
@@ -367,14 +368,14 @@ bool GroupFinderMgr::DeleteListing(Player* player, uint32 listingId)
     return true;
 }
 
-GroupFinderListing* GroupFinderMgr::GetListing(uint32 listingId)
+std::optional<GroupFinderListing> GroupFinderMgr::GetListing(uint32 listingId)
 {
     std::lock_guard<std::mutex> lock(_mutex);
 
     auto it = _listings.find(listingId);
     if (it != _listings.end())
-        return &it->second;
-    return nullptr;
+        return it->second;
+    return std::nullopt;
 }
 
 std::vector<GroupFinderListing> GroupFinderMgr::SearchListings(uint8 listingType, uint32 dungeonId,
@@ -907,6 +908,45 @@ void GroupFinderMgr::NotifyEventReminder(uint32 eventId)
 {
     (void)eventId; // unused currently
     // Implementation for NotifyEventReminder
+}
+
+void GroupFinderMgr::CleanupPlayerData(uint32 playerGuid)
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+
+    // Remove player's listings
+    auto listingIt = _playerListings.find(playerGuid);
+    if (listingIt != _playerListings.end())
+    {
+        for (uint32 listingId : listingIt->second)
+        {
+            _applications.erase(listingId);
+            _listings.erase(listingId);
+        }
+        _playerListings.erase(listingIt);
+    }
+
+    // Remove player's pending applications from all listings
+    for (auto& [listingId, apps] : _applications)
+    {
+        apps.erase(
+            std::remove_if(apps.begin(), apps.end(),
+                [playerGuid](const GroupFinderApplication& app) {
+                    return app.playerGuid == playerGuid && app.status == GF_APP_PENDING;
+                }),
+            apps.end());
+    }
+
+    // Remove player's event signups
+    for (auto& [eventId, signups] : _eventSignups)
+    {
+        signups.erase(
+            std::remove_if(signups.begin(), signups.end(),
+                [playerGuid](const EventSignup& signup) {
+                    return signup.playerGuid == playerGuid;
+                }),
+            signups.end());
+    }
 }
 
 std::vector<GroupFinderApplication> GroupFinderMgr::GetPlayerApplications(uint32 playerGuid)

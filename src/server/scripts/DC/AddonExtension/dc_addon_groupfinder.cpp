@@ -362,11 +362,11 @@ namespace GroupFinder
             appObj.Set("note", JsonValue(app.note));
 
             // Get listing details for context
-            if (DCAddon::GroupFinderListing* listing = sGroupFinderMgr.GetListing(app.listingId))
+            if (auto listingOpt = sGroupFinderMgr.GetListing(app.listingId))
             {
-                appObj.Set("dungeonName", JsonValue(listing->dungeonName));
-                appObj.Set("dungeonId", JsonValue(static_cast<int32>(listing->dungeonId)));
-                appObj.Set("keystoneLevel", JsonValue(static_cast<int32>(listing->keystoneLevel)));
+                appObj.Set("dungeonName", JsonValue(listingOpt->dungeonName));
+                appObj.Set("dungeonId", JsonValue(static_cast<int32>(listingOpt->dungeonId)));
+                appObj.Set("keystoneLevel", JsonValue(static_cast<int32>(listingOpt->keystoneLevel)));
             }
 
             appsArray.Push(appObj);
@@ -1320,8 +1320,27 @@ public:
     }
 };
 
+// ============================================================================
+// PLAYER SCRIPT: Cleanup player data on logout
+// ============================================================================
+
+class GroupFinderPlayerScript : public PlayerScript
+{
+public:
+    GroupFinderPlayerScript() : PlayerScript("GroupFinderPlayerScript") {}
+
+    void OnPlayerLogout(Player* player) override
+    {
+        if (player)
+        {
+            DCAddon::sGroupFinderMgr.CleanupPlayerData(player->GetGUID().GetCounter());
+        }
+    }
+};
+
 void AddSC_dc_addon_groupfinder()
 {
     DCAddon::GroupFinder::RegisterHandlers();
     new GroupFinderWorldScript();
+    new GroupFinderPlayerScript();
 }

@@ -25,7 +25,44 @@ local PerformancePlugin = {
     _latencyHome = 0,
     _latencyWorld = 0,
     _memory = 0,
+    _lastServerInfoRequestAt = 0,
 }
+
+local function FormatDuration(seconds)
+    if type(seconds) == "string" then
+        return seconds
+    end
+    seconds = tonumber(seconds) or 0
+    if seconds <= 0 then
+        return "0s"
+    end
+    local days = math.floor(seconds / 86400)
+    seconds = seconds - (days * 86400)
+    local hours = math.floor(seconds / 3600)
+    seconds = seconds - (hours * 3600)
+    local minutes = math.floor(seconds / 60)
+    seconds = seconds - (minutes * 60)
+
+    local parts = {}
+    if days > 0 then table.insert(parts, days .. "d") end
+    if hours > 0 then table.insert(parts, hours .. "h") end
+    if minutes > 0 then table.insert(parts, minutes .. "m") end
+    if #parts == 0 and seconds > 0 then table.insert(parts, seconds .. "s") end
+    return table.concat(parts, " ")
+end
+
+local function GetServerInfoSnapshot()
+    local DCWelcome = rawget(_G, "DCWelcome")
+    local info = nil
+    if DCWelcome and DCWelcome.GetServerInfo then
+        info = DCWelcome:GetServerInfo()
+    end
+    local infoTime = nil
+    if DCWelcomeDB and DCWelcomeDB.cache and DCWelcomeDB.cache.serverInfoTime then
+        infoTime = DCWelcomeDB.cache.serverInfoTime
+    end
+    return info, infoTime
+end
 
 function PerformancePlugin:OnUpdate(elapsed)
     -- Get FPS
@@ -138,6 +175,43 @@ function PerformancePlugin:OnTooltip(tooltip)
         end
         tooltip:AddDoubleLine("  " .. addon.name, memStr, 0.5, 0.5, 0.5, 0.7, 0.7, 0.7)
     end
+
+    local showServerInfo = DCInfoBar:GetPluginSetting(self.id, "showServerInfo")
+    if showServerInfo ~= false then
+        tooltip:AddLine(" ")
+        tooltip:AddLine("|cff32c4ffServer|r")
+
+        local info, infoTime = GetServerInfoSnapshot()
+        local hasInfo = (type(info) == "table") and next(info) ~= nil
+        if hasInfo then
+            local uptime = info.uptime or info.uptimeSeconds or info.uptimeSec or info.uptimeMinutes
+            if type(uptime) == "number" and info.uptimeMinutes and not info.uptimeSeconds and not info.uptimeSec then
+                uptime = uptime * 60
+            end
+            local players = info.playersOnline or info.onlinePlayers or info.playerCount or info.players or info.online
+
+            if uptime then
+                tooltip:AddDoubleLine("Uptime:", FormatDuration(uptime), 0.7, 0.7, 0.7, 1, 1, 1)
+            end
+            if players then
+                tooltip:AddDoubleLine("Players:", tostring(players), 0.7, 0.7, 0.7, 1, 1, 1)
+            end
+            if infoTime then
+                local age = time() - infoTime
+                tooltip:AddDoubleLine("Last update:", FormatDuration(age) .. " ago", 0.7, 0.7, 0.7, 0.8, 0.8, 0.8)
+            end
+        else
+            tooltip:AddLine("Server info: loading...", 0.7, 0.7, 0.7)
+            local DCWelcome = rawget(_G, "DCWelcome")
+            if DCWelcome and DCWelcome.RequestServerInfo then
+                local now = time()
+                if (now - (self._lastServerInfoRequestAt or 0)) > 60 then
+                    self._lastServerInfoRequestAt = now
+                    DCWelcome:RequestServerInfo()
+                end
+            end
+        end
+    end
 end
 
 function PerformancePlugin:OnClick(button)
@@ -185,7 +259,12 @@ function PerformancePlugin:OnCreateOptions(parent, yOffset)
     local memCB = DCInfoBar:CreateCheckbox(parent, "Show Memory Usage", 20, yOffset, function(checked)
         DCInfoBar:SetPluginSetting(self.id, "showMemory", checked)
     end, DCInfoBar:GetPluginSetting(self.id, "showMemory"))
-    
+    yOffset = yOffset - 30
+
+    local serverCB = DCInfoBar:CreateCheckbox(parent, "Show Server Info", 20, yOffset, function(checked)
+        DCInfoBar:SetPluginSetting(self.id, "showServerInfo", checked)
+    end, DCInfoBar:GetPluginSetting(self.id, "showServerInfo") ~= false)
+
     return yOffset - 30
 end
 

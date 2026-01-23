@@ -19,6 +19,8 @@
 #include <vector>
 #include <mutex>
 #include <set>
+#include <optional>
+#include <algorithm>
 
 namespace DCAddon
 {
@@ -191,7 +193,7 @@ namespace DCAddon
         uint32 CreateListing(Player* player, const GroupFinderListing& listing);
         bool UpdateListing(Player* player, uint32 listingId, const GroupFinderListing& updates);
         bool DeleteListing(Player* player, uint32 listingId);
-        GroupFinderListing* GetListing(uint32 listingId);
+        std::optional<GroupFinderListing> GetListing(uint32 listingId);
         std::vector<GroupFinderListing> SearchListings(uint8 listingType, uint32 dungeonId,
                                                         uint8 minLevel, uint8 maxLevel, uint16 minRating);
 
@@ -202,6 +204,9 @@ namespace DCAddon
         bool CancelApplication(Player* player, uint32 listingId);
         std::vector<GroupFinderApplication> GetApplicationsForListing(uint32 listingId);
         std::vector<GroupFinderApplication> GetPlayerApplications(uint32 playerGuid);
+
+        // Player Data Cleanup (call on logout to prevent memory leaks)
+        void CleanupPlayerData(uint32 playerGuid);
 
         // Rewards
         void HandleDungeonCompletion(Player* player, uint32 dungeonId, uint8 difficulty);

@@ -85,7 +85,7 @@ void MythicPlusAffixManager::OnCreatureDeath(Creature* creature, Unit* killer)
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
-        if (itr != _handlers.end())
+        if (itr != _handlers.end() && itr->second)
             itr->second->OnCreatureDeath(creature, killer);
     }
 }
@@ -103,7 +103,7 @@ void MythicPlusAffixManager::OnCreatureDamageDone(Creature* attacker, Unit* vict
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
-        if (itr != _handlers.end())
+        if (itr != _handlers.end() && itr->second)
             itr->second->OnCreatureDamageDone(attacker, victim, damage);
     }
 }
@@ -121,7 +121,7 @@ void MythicPlusAffixManager::OnCreatureDamageTaken(Creature* victim, Unit* attac
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
-        if (itr != _handlers.end())
+        if (itr != _handlers.end() && itr->second)
             itr->second->OnCreatureDamageTaken(victim, attacker, damage);
     }
 }
@@ -139,7 +139,7 @@ void MythicPlusAffixManager::OnPlayerDamageTaken(Player* player, Unit* attacker,
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
-        if (itr != _handlers.end())
+        if (itr != _handlers.end() && itr->second)
             itr->second->OnPlayerDamageTaken(player, attacker, damage);
     }
 }
@@ -157,7 +157,7 @@ void MythicPlusAffixManager::OnCreatureSelectLevel(Creature* creature)
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
-        if (itr != _handlers.end())
+        if (itr != _handlers.end() && itr->second)
             itr->second->OnCreatureSelectLevel(creature);
     }
 }
@@ -175,7 +175,7 @@ void MythicPlusAffixManager::OnPlayerUpdate(Player* player, uint32 diff)
     for (AffixType affix : state->activeAffixes)
     {
         auto itr = _handlers.find(affix);
-        if (itr != _handlers.end())
+        if (itr != _handlers.end() && itr->second)
             itr->second->OnPlayerUpdate(player, diff);
     }
 }

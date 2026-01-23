@@ -22,6 +22,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <mutex>
 
 using namespace Acore::ChatCommands;
 
@@ -97,6 +98,7 @@ namespace DCPhasedDuels
 
     static std::unordered_map<ObjectGuid, ActiveDuel> sActiveDuels;
     static std::unordered_set<uint32> sUsedPhases;
+    static std::mutex sDuelMutex;  // Thread safety for static containers
 
     // ============================================================
     // Helper Functions
@@ -146,12 +148,19 @@ namespace DCPhasedDuels
         }
 
         // Also consider globally used phases
-        for (uint32 phase : sUsedPhases)
-            usedPhases |= phase;
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            for (uint32 phase : sUsedPhases)
+                usedPhases |= phase;
+        }
 
         // Find first available phase (skip phase 1 which is normal)
-        for (uint32 phase = 2; phase <= sConfig.maxPhaseId && phase != 0; phase *= 2)
+        // Use bit shifting to avoid overflow: phase starts at 2 (bit 1), max 31 bits
+        for (uint32 bit = 1; bit < 31; ++bit)
         {
+            uint32 phase = 1u << bit;
+            if (phase > sConfig.maxPhaseId)
+                break;
             if (!(usedPhases & phase))
                 return phase;
         }
@@ -172,9 +181,12 @@ namespace DCPhasedDuels
         duel.player1DamageDealt = 0;
         duel.player2DamageDealt = 0;
 
-        sActiveDuels[p1->GetGUID()] = duel;
-        sActiveDuels[p2->GetGUID()] = duel;
-        sUsedPhases.insert(phaseId);
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            sActiveDuels[p1->GetGUID()] = duel;
+            sActiveDuels[p2->GetGUID()] = duel;
+            sUsedPhases.insert(phaseId);
+        }
 
         LOG_DEBUG("scripts.dc", "PhasedDuels: Started duel between {} and {} in phase {}",
                   p1->GetName(), p2->GetName(), phaseId);
@@ -185,23 +197,35 @@ namespace DCPhasedDuels
         if (!winner || !loser)
             return;
 
-        auto it = sActiveDuels.find(winner->GetGUID());
-        if (it == sActiveDuels.end())
-            it = sActiveDuels.find(loser->GetGUID());
+        ActiveDuel duel;
+        uint32 phaseId = 0;
+        {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
+            auto it = sActiveDuels.find(winner->GetGUID());
+            if (it == sActiveDuels.end())
+                it = sActiveDuels.find(loser->GetGUID());
 
-        if (it == sActiveDuels.end())
-            return;
+            if (it == sActiveDuels.end())
+                return;
 
-        ActiveDuel& duel = it->second;
+            duel = it->second;  // Copy the duel data
+            phaseId = duel.phaseId;
+
+            // Release phase
+            sUsedPhases.erase(phaseId);
+
+            // Cleanup active duels
+            sActiveDuels.erase(winner->GetGUID());
+            sActiveDuels.erase(loser->GetGUID());
+        }
+
         uint64 now = GameTime::GetGameTime().count();
         uint32 durationSeconds = static_cast<uint32>(now - duel.startTime);
-
-        // Release phase
-        sUsedPhases.erase(duel.phaseId);
 
         // Update statistics if enabled
         if (sConfig.trackStatistics)
         {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
             DuelStats& winnerStats = sPlayerDuelStats[winner->GetGUID()];
             DuelStats& loserStats = sPlayerDuelStats[loser->GetGUID()];
 
@@ -260,10 +284,6 @@ namespace DCPhasedDuels
                 winnerStats.totalDamageDealt, winnerStats.totalDamageTaken,
                 durationSeconds, durationSeconds, now, loser->GetGUID().GetCounter());
         }
-
-        // Cleanup
-        sActiveDuels.erase(winner->GetGUID());
-        sActiveDuels.erase(loser->GetGUID());
 
         LOG_DEBUG("scripts.dc", "PhasedDuels: Ended duel between {} and {} (winner: {}, duration: {}s)",
                   winner->GetName(), loser->GetName(), winner->GetName(), durationSeconds);
@@ -343,6 +363,7 @@ public:
             if (result)
             {
                 Field* fields = result->Fetch();
+                std::lock_guard<std::mutex> lock(sDuelMutex);
                 DuelStats& stats = sPlayerDuelStats[player->GetGUID()];
                 stats.wins = fields[0].Get<uint32>();
                 stats.losses = fields[1].Get<uint32>();
@@ -361,6 +382,7 @@ public:
     {
         if (player)
         {
+            std::lock_guard<std::mutex> lock(sDuelMutex);
             sPlayerDuelStats.erase(player->GetGUID());
             sActiveDuels.erase(player->GetGUID());
         }

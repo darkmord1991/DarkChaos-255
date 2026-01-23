@@ -29,99 +29,146 @@
 
 using namespace DungeonQuest;
 
-// Database helper functions
+// Database helper functions with caching for performance
 class DungeonQuestDB
 {
+private:
+    // Caches populated at startup
+    static std::unordered_map<uint32, uint32> _dailyTokenRewards;      // questId -> token count
+    static std::unordered_map<uint32, uint32> _weeklyTokenRewards;     // questId -> token count
+    static std::unordered_map<uint32, QuestDifficulty> _questDifficulties; // questId -> difficulty
+    static std::unordered_map<uint32, uint32> _questDungeonIds;        // questId -> dungeonId
+    static std::unordered_map<uint8, float> _difficultyTokenMultipliers;  // difficulty -> multiplier
+    static std::unordered_map<uint8, float> _difficultyGoldMultipliers;   // difficulty -> multiplier
+    static uint32 _tokenItemId;
+    static bool _cacheLoaded;
+
 public:
-    // Get token rewards for a daily quest
+    // Call this once at server startup
+    static void LoadCache()
+    {
+        if (_cacheLoaded)
+            return;
+
+        // Load daily token rewards
+        QueryResult result = WorldDatabase.Query("SELECT quest_id, token_count FROM dc_daily_quest_token_rewards");
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                _dailyTokenRewards[fields[0].Get<uint32>()] = fields[1].Get<uint32>();
+            } while (result->NextRow());
+        }
+        LOG_INFO("scripts.dc", "DungeonQuestDB: Loaded {} daily token rewards", _dailyTokenRewards.size());
+
+        // Load weekly token rewards
+        result = WorldDatabase.Query("SELECT quest_id, token_count FROM dc_weekly_quest_token_rewards");
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                _weeklyTokenRewards[fields[0].Get<uint32>()] = fields[1].Get<uint32>();
+            } while (result->NextRow());
+        }
+        LOG_INFO("scripts.dc", "DungeonQuestDB: Loaded {} weekly token rewards", _weeklyTokenRewards.size());
+
+        // Load token item ID
+        result = WorldDatabase.Query("SELECT token_item_id FROM dc_quest_reward_tokens LIMIT 1");
+        if (result)
+            _tokenItemId = (*result)[0].Get<uint32>();
+        LOG_INFO("scripts.dc", "DungeonQuestDB: Token item ID = {}", _tokenItemId);
+
+        // Load quest difficulty mappings (schema uses base_difficulty)
+        result = WorldDatabase.Query("SELECT quest_id, base_difficulty FROM dc_quest_difficulty_mapping");
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                uint32 questId = fields[0].Get<uint32>();
+                uint8 baseDifficulty = fields[1].Get<uint8>();
+
+                QuestDifficulty mappedDifficulty = DIFFICULTY_NORMAL;
+                switch (baseDifficulty)
+                {
+                    case 4: mappedDifficulty = DIFFICULTY_HEROIC; break;
+                    case 5: mappedDifficulty = DIFFICULTY_MYTHIC; break;
+                    case 3: mappedDifficulty = DIFFICULTY_HEROIC; break;
+                    case 2: mappedDifficulty = DIFFICULTY_NORMAL; break;
+                    case 1: mappedDifficulty = DIFFICULTY_NORMAL; break;
+                    default: mappedDifficulty = DIFFICULTY_NORMAL; break;
+                }
+
+                _questDifficulties[questId] = mappedDifficulty;
+            } while (result->NextRow());
+        }
+        LOG_INFO("scripts.dc", "DungeonQuestDB: Loaded {} quest difficulty mappings", _questDifficulties.size());
+
+        // Load difficulty configurations
+        result = WorldDatabase.Query("SELECT difficulty_id, token_multiplier, gold_multiplier FROM dc_difficulty_config");
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                uint8 diffId = fields[0].Get<uint8>();
+                _difficultyTokenMultipliers[diffId] = fields[1].Get<float>();
+                _difficultyGoldMultipliers[diffId] = fields[2].Get<float>();
+            } while (result->NextRow());
+        }
+        LOG_INFO("scripts.dc", "DungeonQuestDB: Loaded {} difficulty configs", _difficultyTokenMultipliers.size());
+
+        _cacheLoaded = true;
+        LOG_INFO("scripts.dc", "DungeonQuestDB: Cache loading complete");
+    }
+
+    // Get token rewards for a daily quest (cached)
     static uint32 GetDailyQuestTokenReward(uint32 questId)
     {
-        std::string sql = Acore::StringFormat("SELECT token_count FROM dc_daily_quest_token_rewards WHERE quest_id = {}", questId);
-        QueryResult result = WorldDatabase.Query(sql.c_str());
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            return fields[0].Get<uint32>();
-        }
-        return 0;
+        auto it = _dailyTokenRewards.find(questId);
+        return (it != _dailyTokenRewards.end()) ? it->second : 0;
     }
 
-    // Get token rewards for a weekly quest
+    // Get token rewards for a weekly quest (cached)
     static uint32 GetWeeklyQuestTokenReward(uint32 questId)
     {
-        std::string sql = Acore::StringFormat("SELECT token_count FROM dc_weekly_quest_token_rewards WHERE quest_id = {}", questId);
-        QueryResult result = WorldDatabase.Query(sql.c_str());
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            return fields[0].Get<uint32>();
-        }
-        return 0;
+        auto it = _weeklyTokenRewards.find(questId);
+        return (it != _weeklyTokenRewards.end()) ? it->second : 0;
     }
 
-    // Get token item ID from config table
+    // Get token item ID from config table (cached)
     static uint32 GetTokenItemId()
     {
-        QueryResult result = WorldDatabase.Query("SELECT token_item_id FROM dc_quest_reward_tokens LIMIT 1");
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            return fields[0].Get<uint32>();
-        }
-        return 0; // No token configured
+        return _tokenItemId;
     }
 
-    // v4.0: Get difficulty from quest ID
+    // v4.0: Get difficulty from quest ID (cached)
     static QuestDifficulty GetQuestDifficulty(uint32 questId)
     {
-        std::string sql = Acore::StringFormat(
-            "SELECT difficulty FROM dc_quest_difficulty_mapping WHERE quest_id = {}", questId
-        );
-        QueryResult result = WorldDatabase.Query(sql.c_str());
-
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            uint8 difficulty = fields[0].Get<uint8>();
-            return static_cast<QuestDifficulty>(difficulty);
-        }
-
-        return DIFFICULTY_NORMAL;
+        auto it = _questDifficulties.find(questId);
+        return (it != _questDifficulties.end()) ? it->second : DIFFICULTY_NORMAL;
     }
 
-    // v4.0: Get difficulty configuration
+    // v4.0: Get difficulty configuration (cached)
     static float GetDifficultyTokenMultiplier(QuestDifficulty difficulty)
     {
-        std::string sql = Acore::StringFormat(
-            "SELECT token_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}",
-            static_cast<uint32>(difficulty)
-        );
-        QueryResult result = WorldDatabase.Query(sql.c_str());
-
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            return fields[0].Get<float>();
-        }
-
-        return 1.0f;
+        auto it = _difficultyTokenMultipliers.find(static_cast<uint8>(difficulty));
+        return (it != _difficultyTokenMultipliers.end()) ? it->second : 1.0f;
     }
 
     static float GetDifficultyGoldMultiplier(QuestDifficulty difficulty)
     {
-        std::string sql = Acore::StringFormat(
-            "SELECT gold_multiplier FROM dc_difficulty_config WHERE difficulty_id = {}",
-            static_cast<uint32>(difficulty)
-        );
-        QueryResult result = WorldDatabase.Query(sql.c_str());
+        auto it = _difficultyGoldMultipliers.find(static_cast<uint8>(difficulty));
+        return (it != _difficultyGoldMultipliers.end()) ? it->second : 1.0f;
+    }
 
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            return fields[0].Get<float>();
-        }
-
-        return 1.0f;
+    // v4.0: Get dungeon ID from quest ID (cached)
+    static uint32 GetDungeonIdFromQuest(uint32 questId)
+    {
+        auto it = _questDungeonIds.find(questId);
+        return (it != _questDungeonIds.end()) ? it->second : 0;
     }
 
     // v4.0: Update difficulty-specific statistics
@@ -150,23 +197,6 @@ public:
 
         LOG_DEBUG("scripts.dc", "DungeonQuest: Updated {} for player {}",
                   statName, player->GetName());
-    }
-
-    // v4.0: Get dungeon ID from quest ID
-    static uint32 GetDungeonIdFromQuest(uint32 questId)
-    {
-        std::string sql = Acore::StringFormat(
-            "SELECT dungeon_id FROM dc_quest_difficulty_mapping WHERE quest_id = {}", questId
-        );
-        QueryResult result = WorldDatabase.Query(sql.c_str());
-
-        if (result)
-        {
-            Field* fields = result->Fetch();
-            return fields[0].Get<uint32>();
-        }
-
-        return 0;
     }
 
     // v4.0: Track difficulty completion
@@ -297,6 +327,16 @@ public:
         return 0;
     }
 };
+
+// Static member definitions for DungeonQuestDB cache
+std::unordered_map<uint32, uint32> DungeonQuestDB::_dailyTokenRewards;
+std::unordered_map<uint32, uint32> DungeonQuestDB::_weeklyTokenRewards;
+std::unordered_map<uint32, QuestDifficulty> DungeonQuestDB::_questDifficulties;
+std::unordered_map<uint32, uint32> DungeonQuestDB::_questDungeonIds;
+std::unordered_map<uint8, float> DungeonQuestDB::_difficultyTokenMultipliers;
+std::unordered_map<uint8, float> DungeonQuestDB::_difficultyGoldMultipliers;
+uint32 DungeonQuestDB::_tokenItemId = 0;
+bool DungeonQuestDB::_cacheLoaded = false;
 
 // Main PlayerScript for dungeon quest system
 class DungeonQuestPlayerScript : public PlayerScript
@@ -579,6 +619,9 @@ public:
     void OnStartup() override
     {
         LOG_INFO("server.loading", ">> Loading Dungeon Quest System...");
+
+        // Load cached data from database
+        DungeonQuestDB::LoadCache();
 
         // Verify database tables exist
         if (CheckDatabaseTables())
