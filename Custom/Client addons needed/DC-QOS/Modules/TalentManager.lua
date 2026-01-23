@@ -1241,11 +1241,11 @@ end
 -- UI Constants
 -- ============================================================
 
-local TALENT_BUTTON_SIZE = 40
-local TALENT_SPACING_X = 52
-local TALENT_SPACING_Y = 52
-local TREE_WIDTH = 250
-local TREE_HEIGHT = 560
+local TALENT_BUTTON_SIZE = 34
+local TALENT_SPACING_X = 44
+local TALENT_SPACING_Y = 44
+local TREE_WIDTH = 210
+local TREE_HEIGHT = 480
 local TREE_TOP_OFFSET = 35
 
 -- ============================================================
@@ -1581,7 +1581,7 @@ function TalentManager:CreateMainFrame()
     local settings = addon.settings.talentManager
     
     local frame = CreateFrame("Frame", "DCQoSTalentManagerFrame", UIParent)
-    frame:SetSize(820, 720)
+    frame:SetSize(700, 640)
     frame:SetPoint("CENTER", 50, 0)
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -1658,7 +1658,7 @@ function TalentManager:CreateMainFrame()
     
     -- Talent trees container
     local treesFrame = CreateFrame("Frame", nil, frame)
-    treesFrame:SetPoint("TOPLEFT", 8, -65)
+    treesFrame:SetPoint("TOPLEFT", 20, -65)
     treesFrame:SetPoint("RIGHT", -8, 0)
     treesFrame:SetHeight(TREE_HEIGHT + TREE_TOP_OFFSET)
     frame.treesFrame = treesFrame
@@ -1667,7 +1667,7 @@ function TalentManager:CreateMainFrame()
     frame.trees = {}
     local treeGap = 4
     local totalTreesWidth = (TREE_WIDTH * 3) + (treeGap * 2)
-    local availableWidth = frame:GetWidth() - 16 -- left+right padding
+    local availableWidth = frame:GetWidth() - 28 -- left+right padding
     local startX = 0
     if availableWidth and totalTreesWidth and availableWidth > totalTreesWidth then
         startX = math.floor(((availableWidth - totalTreesWidth) / 2) + 0.5)
@@ -1680,9 +1680,9 @@ function TalentManager:CreateMainFrame()
     
     -- Bottom panel
     local bottomPanel = CreateFrame("Frame", nil, frame)
-    bottomPanel:SetPoint("BOTTOMLEFT", 10, 12)
-    bottomPanel:SetPoint("BOTTOMRIGHT", -10, 12)
-    bottomPanel:SetHeight(85)
+    bottomPanel:SetPoint("BOTTOMLEFT", 15, 10)
+    bottomPanel:SetPoint("BOTTOMRIGHT", -10, 10)
+    bottomPanel:SetHeight(95)
     frame.bottomPanel = bottomPanel
     
     -- Template dropdown

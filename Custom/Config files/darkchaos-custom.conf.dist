@@ -3699,6 +3699,97 @@ FakePlayers.RandomizeEachRefresh = 0
 #
 FakePlayers.Zones = ""
 
+#
+#    FakePlayers.ZoneWeight.Default
+#        Description: Base weight for non-city, non-instance zones
+#        Default:     1
+#
+FakePlayers.ZoneWeight.Default = 1
+
+#
+#    FakePlayers.ZoneWeight.Capital
+#        Description: Weight multiplier for capital cities (AREA_FLAG_CAPITAL)
+#        Default:     8
+#
+FakePlayers.ZoneWeight.Capital = 8
+
+#
+#    FakePlayers.ZoneWeight.Town
+#        Description: Weight multiplier for towns with inns (AREA_FLAG_TOWN)
+#        Default:     3
+#
+FakePlayers.ZoneWeight.Town = 3
+
+#
+#    FakePlayers.ZoneWeight.Dungeon
+#        Description: Weight multiplier for 5-man dungeons
+#        Default:     5
+#
+FakePlayers.ZoneWeight.Dungeon = 5
+
+#
+#    FakePlayers.ZoneWeight.Raid
+#        Description: Weight multiplier for raid instances
+#        Default:     10
+#
+FakePlayers.ZoneWeight.Raid = 10
+
+#
+#    FakePlayers.ZoneWeight.Battleground
+#        Description: Weight multiplier for battleground maps
+#        Default:     8
+#
+FakePlayers.ZoneWeight.Battleground = 8
+
+#
+#    FakePlayers.ZoneWeight.Arena
+#        Description: Weight multiplier for arena maps
+#        Default:     4
+#
+FakePlayers.ZoneWeight.Arena = 4
+
+#
+#    FakePlayers.ZoneWeight.UseMaxPlayers
+#        Description: Multiply instance weights by map maxPlayers (DBC)
+#        Default:     1 (Enabled)
+#
+FakePlayers.ZoneWeight.UseMaxPlayers = 1
+
+#
+#    FakePlayers.AfkChancePercent
+#        Description: Chance (0-100) to append AFK suffix to fake player names
+#        Default:     10
+#
+FakePlayers.AfkChancePercent = 10
+
+#
+#    FakePlayers.AfkSuffix
+#        Description: Suffix appended to names when AFK (visual only)
+#        Default:     " AFK"
+#
+FakePlayers.AfkSuffix = " AFK"
+
+#
+#    FakePlayers.GuildTags.Enable
+#        Description: Enable fake guild tags in /who list
+#        Default:     1 (Enabled)
+#
+FakePlayers.GuildTags.Enable = 1
+
+#
+#    FakePlayers.GuildTags.Percent
+#        Description: Percentage of fake players that will show a guild tag
+#        Default:     35
+#
+FakePlayers.GuildTags.Percent = 35
+
+#
+#    FakePlayers.GuildTags.List
+#        Description: CSV list of guild names (empty = auto-generated)
+#        Default:     ""
+#
+FakePlayers.GuildTags.List = ""
+
 ###########################################################################
 # END OF CONFIGURATION FILE
 ###########################################################################

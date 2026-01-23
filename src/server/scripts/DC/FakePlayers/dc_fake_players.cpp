@@ -7,6 +7,7 @@
  */
 
 #include "Config.h"
+#include "DBCEnums.h"
 #include "DBCStores.h"
 #include "Log.h"
 #include "ObjectGuid.h"
@@ -29,15 +30,29 @@ namespace DCFakePlayers
         constexpr char const* ENABLE = "FakePlayers.Enable";
         constexpr char const* COUNT = "FakePlayers.Count";
         constexpr char const* MIN_LEVEL = "FakePlayers.MinLevel";
-        constexpr char const* MAX_LEVEL = "FakePlayers.MaxLevel";
+        constexpr char const* MAX_LEVEL_KEY = "FakePlayers.MaxLevel";
         constexpr char const* REFRESH_INTERVAL = "FakePlayers.RefreshIntervalSeconds";
         constexpr char const* RANDOMIZE_REFRESH = "FakePlayers.RandomizeEachRefresh";
         constexpr char const* ZONES = "FakePlayers.Zones";
+        constexpr char const* ZONE_WEIGHT_DEFAULT = "FakePlayers.ZoneWeight.Default";
+        constexpr char const* ZONE_WEIGHT_CAPITAL = "FakePlayers.ZoneWeight.Capital";
+        constexpr char const* ZONE_WEIGHT_TOWN = "FakePlayers.ZoneWeight.Town";
+        constexpr char const* ZONE_WEIGHT_DUNGEON = "FakePlayers.ZoneWeight.Dungeon";
+        constexpr char const* ZONE_WEIGHT_RAID = "FakePlayers.ZoneWeight.Raid";
+        constexpr char const* ZONE_WEIGHT_BATTLEGROUND = "FakePlayers.ZoneWeight.Battleground";
+        constexpr char const* ZONE_WEIGHT_ARENA = "FakePlayers.ZoneWeight.Arena";
+        constexpr char const* ZONE_WEIGHT_USE_MAX_PLAYERS = "FakePlayers.ZoneWeight.UseMaxPlayers";
+        constexpr char const* AFK_CHANCE = "FakePlayers.AfkChancePercent";
+        constexpr char const* AFK_SUFFIX = "FakePlayers.AfkSuffix";
+        constexpr char const* GUILD_TAGS_ENABLE = "FakePlayers.GuildTags.Enable";
+        constexpr char const* GUILD_TAGS_LIST = "FakePlayers.GuildTags.List";
+        constexpr char const* GUILD_TAGS_PERCENT = "FakePlayers.GuildTags.Percent";
     }
 
     struct ZoneEntry
     {
         uint32 zoneId = 0;
+        uint32 weight = 1;
     };
 
     struct RaceClassOption
@@ -56,8 +71,12 @@ namespace DCFakePlayers
         uint8 race = 1;
         uint8 gender = 0;
         uint32 zoneId = 0;
+        std::string baseName;
         std::string name;
         std::wstring wideName;
+        std::string guildName;
+        std::wstring wideGuildName;
+        bool isAfk = false;
     };
 
     static std::vector<RaceClassOption> const kRaceClassOptions = {
@@ -92,7 +111,7 @@ namespace DCFakePlayers
                 continue;
 
             seen.insert(zoneId);
-            out.push_back({ zoneId });
+            out.push_back({ zoneId, 1u });
         }
 
         return out;
@@ -132,6 +151,26 @@ namespace DCFakePlayers
         return out;
     }
 
+    static std::vector<std::string> ParseCsvStrings(std::string const& csv)
+    {
+        std::vector<std::string> out;
+        size_t start = 0;
+        while (start < csv.size())
+        {
+            size_t comma = csv.find(',', start);
+            std::string token = csv.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            token = Trim(token);
+            if (!token.empty())
+                out.push_back(token);
+
+            if (comma == std::string::npos)
+                break;
+
+            start = comma + 1;
+        }
+        return out;
+    }
+
     class FakePlayersManager
     {
     public:
@@ -140,9 +179,22 @@ namespace DCFakePlayers
             _enabled = sConfigMgr->GetOption<bool>(ConfigKeys::ENABLE, true);
             _count = sConfigMgr->GetOption<uint32>(ConfigKeys::COUNT, 500);
             _minLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>(ConfigKeys::MIN_LEVEL, 1));
-            _maxLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>(ConfigKeys::MAX_LEVEL, 255));
+            _maxLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>(ConfigKeys::MAX_LEVEL_KEY, 255));
             _refreshIntervalMs = sConfigMgr->GetOption<uint32>(ConfigKeys::REFRESH_INTERVAL, 300) * IN_MILLISECONDS;
             _randomizeEachRefresh = sConfigMgr->GetOption<bool>(ConfigKeys::RANDOMIZE_REFRESH, false);
+            _zoneWeightDefault = sConfigMgr->GetOption<uint32>(ConfigKeys::ZONE_WEIGHT_DEFAULT, 1);
+            _zoneWeightCapital = sConfigMgr->GetOption<uint32>(ConfigKeys::ZONE_WEIGHT_CAPITAL, 8);
+            _zoneWeightTown = sConfigMgr->GetOption<uint32>(ConfigKeys::ZONE_WEIGHT_TOWN, 3);
+            _zoneWeightDungeon = sConfigMgr->GetOption<uint32>(ConfigKeys::ZONE_WEIGHT_DUNGEON, 5);
+            _zoneWeightRaid = sConfigMgr->GetOption<uint32>(ConfigKeys::ZONE_WEIGHT_RAID, 10);
+            _zoneWeightBattleground = sConfigMgr->GetOption<uint32>(ConfigKeys::ZONE_WEIGHT_BATTLEGROUND, 8);
+            _zoneWeightArena = sConfigMgr->GetOption<uint32>(ConfigKeys::ZONE_WEIGHT_ARENA, 4);
+            _zoneWeightUseMaxPlayers = sConfigMgr->GetOption<bool>(ConfigKeys::ZONE_WEIGHT_USE_MAX_PLAYERS, true);
+            _afkChancePercent = sConfigMgr->GetOption<uint32>(ConfigKeys::AFK_CHANCE, 0);
+            _afkSuffix = sConfigMgr->GetOption<std::string>(ConfigKeys::AFK_SUFFIX, " AFK");
+            _guildTagsEnabled = sConfigMgr->GetOption<bool>(ConfigKeys::GUILD_TAGS_ENABLE, true);
+            _guildTagsList = ParseCsvStrings(sConfigMgr->GetOption<std::string>(ConfigKeys::GUILD_TAGS_LIST, ""));
+            _guildTagsPercent = std::min<uint32>(100u, sConfigMgr->GetOption<uint32>(ConfigKeys::GUILD_TAGS_PERCENT, 35));
 
             if (_minLevel == 0)
                 _minLevel = 1;
@@ -155,13 +207,15 @@ namespace DCFakePlayers
             {
                 auto values = ParseCsvU32(zoneCsv);
                 for (uint32 zoneId : values)
-                    _zones.push_back({ zoneId });
+                    _zones.push_back({ zoneId, 1u });
             }
             if (_zones.empty())
                 _zones = BuildZonesFromDBC();
 
             if (_zones.empty())
-                _zones.push_back({ 1519 });
+                _zones.push_back({ 1519, 1u });
+
+            ApplyZoneWeights();
 
             LOG_INFO("scripts.dc", "[FakePlayers] Config loaded (Enabled={}, Count={}, Zones={}, Refresh={}s)",
                 _enabled ? "Yes" : "No", _count, _zones.size(), _refreshIntervalMs / IN_MILLISECONDS);
@@ -172,6 +226,7 @@ namespace DCFakePlayers
             _refreshTimerMs = 0;
             _usedNames.clear();
             _players.clear();
+            _shuffleOrder.clear();
 
             if (!_enabled || _count == 0)
                 return;
@@ -181,14 +236,20 @@ namespace DCFakePlayers
             {
                 FakePlayerInfo info;
                 info.guid = MakeFakeGuid(i);
-                info.name = GenerateName();
+                info.baseName = GenerateName();
+                info.name = info.baseName;
                 info.wideName.clear();
                 if (!Utf8toWStr(info.name, info.wideName))
                     info.wideName = L"fake";
                 wstrToLower(info.wideName);
+                ApplyGuildTag(info, true);
                 RandomizePlayer(info, true);
+                ApplyAfkStatus(info, true);
                 _players.push_back(info);
             }
+
+            BuildShuffleOrder();
+            ShuffleOrder();
 
             LOG_INFO("scripts.dc", "[FakePlayers] Spawned {} fake players for /who list", _players.size());
         }
@@ -206,9 +267,13 @@ namespace DCFakePlayers
 
             _refreshTimerMs = _refreshIntervalMs;
 
+            ShuffleOrder();
+
             for (auto& player : _players)
             {
                 RandomizePlayer(player, _randomizeEachRefresh);
+                ApplyGuildTag(player, true);
+                ApplyAfkStatus(player, true);
             }
         }
 
@@ -222,11 +287,18 @@ namespace DCFakePlayers
             if (!_enabled)
                 return;
 
-            for (auto const& player : _players)
+            for (uint32 index : _shuffleOrder)
             {
-                out.emplace_back(player.guid, player.team, player.security, player.level,
+                if (index >= _players.size())
+                    continue;
+
+                auto const& player = _players[index];
+                WhoListPlayerInfo entry(player.guid, player.team, player.security, player.level,
                     player.classId, player.race, player.zoneId, player.gender, true,
-                    player.wideName, L"", player.name, "");
+                    player.wideName, player.wideGuildName, player.name, player.guildName);
+
+                uint32 insertPos = out.empty() ? 0u : urand(0u, static_cast<uint32>(out.size()));
+                out.insert(out.begin() + insertPos, std::move(entry));
             }
         }
 
@@ -245,9 +317,20 @@ namespace DCFakePlayers
         ZoneEntry RandomZone() const
         {
             if (_zones.empty())
-                return { 1519 };
+                return { 1519, 1u };
 
-            return _zones[urand(0u, static_cast<uint32>(_zones.size() - 1))];
+            if (_totalZoneWeight == 0)
+                return _zones[urand(0u, static_cast<uint32>(_zones.size() - 1))];
+
+            uint32 roll = urand(1u, _totalZoneWeight);
+            for (auto const& zone : _zones)
+            {
+                if (roll <= zone.weight)
+                    return zone;
+                roll -= zone.weight;
+            }
+
+            return _zones.back();
         }
 
         std::pair<uint8, uint8> RandomRaceClass() const
@@ -305,6 +388,165 @@ namespace DCFakePlayers
             return "Tester" + std::to_string(urand(1000u, 9999u));
         }
 
+        std::string GenerateGuildName()
+        {
+            if (!_guildTagsList.empty())
+                return _guildTagsList[urand(0u, static_cast<uint32>(_guildTagsList.size() - 1))];
+
+            static std::vector<std::string> const prefixes = {
+                "Crimson", "Silver", "Golden", "Shadow", "Storm", "Iron", "Emerald", "Obsidian", "Azure", "Radiant"
+            };
+            static std::vector<std::string> const suffixes = {
+                "Legion", "Order", "Guard", "Vanguard", "Circle", "Syndicate", "Crusade", "Brotherhood", "Company", "Clan"
+            };
+
+            return prefixes[urand(0u, static_cast<uint32>(prefixes.size() - 1))] + " " +
+                suffixes[urand(0u, static_cast<uint32>(suffixes.size() - 1))];
+        }
+
+        void ApplyAfkStatus(FakePlayerInfo& info, bool forceRoll)
+        {
+            if (_afkChancePercent == 0)
+            {
+                info.isAfk = false;
+                if (info.name != info.baseName)
+                {
+                    info.name = info.baseName;
+                    UpdateWideName(info);
+                }
+                return;
+            }
+
+            if (forceRoll || info.isAfk == false)
+            {
+                info.isAfk = (urand(1u, 100u) <= _afkChancePercent);
+            }
+
+            std::string displayName = info.baseName;
+            if (info.isAfk)
+            {
+                if (displayName.size() + _afkSuffix.size() <= 12)
+                    displayName += _afkSuffix;
+            }
+
+            if (info.name != displayName)
+            {
+                info.name = displayName;
+                UpdateWideName(info);
+            }
+        }
+
+        void UpdateWideName(FakePlayerInfo& info)
+        {
+            info.wideName.clear();
+            if (!Utf8toWStr(info.name, info.wideName))
+                info.wideName = L"fake";
+            wstrToLower(info.wideName);
+        }
+
+        void ApplyGuildTag(FakePlayerInfo& info, bool forceRoll)
+        {
+            if (!_guildTagsEnabled || _guildTagsPercent == 0)
+            {
+                info.guildName.clear();
+                info.wideGuildName.clear();
+                return;
+            }
+
+            if (forceRoll)
+            {
+                bool hasGuild = (urand(1u, 100u) <= _guildTagsPercent);
+                if (hasGuild)
+                    info.guildName = GenerateGuildName();
+                else
+                    info.guildName.clear();
+
+                info.wideGuildName.clear();
+                if (!info.guildName.empty())
+                {
+                    if (!Utf8toWStr(info.guildName, info.wideGuildName))
+                        info.wideGuildName = L"";
+                    wstrToLower(info.wideGuildName);
+                }
+            }
+        }
+
+        uint32 GetInstanceWeight(MapEntry const* mapEntry) const
+        {
+            if (!mapEntry)
+                return 1u;
+
+            if (!_zoneWeightUseMaxPlayers)
+                return 1u;
+
+            return std::max(1u, mapEntry->maxPlayers);
+        }
+
+        uint32 ComputeZoneWeight(AreaTableEntry const* area) const
+        {
+            if (!area)
+                return std::max(1u, _zoneWeightDefault);
+
+            uint64 weight = std::max<uint32>(1u, _zoneWeightDefault);
+            if (area->flags & (AREA_FLAG_CAPITAL | AREA_FLAG_SLAVE_CAPITAL | AREA_FLAG_SLAVE_CAPITAL2))
+                weight *= std::max(1u, _zoneWeightCapital);
+            else if (area->flags & AREA_FLAG_TOWN)
+                weight *= std::max(1u, _zoneWeightTown);
+
+            MapEntry const* mapEntry = sMapStore.LookupEntry(area->mapid);
+            if (mapEntry)
+            {
+                uint32 instanceWeight = GetInstanceWeight(mapEntry);
+                if (mapEntry->IsRaid())
+                    weight *= std::max(1u, _zoneWeightRaid) * instanceWeight;
+                else if (mapEntry->IsNonRaidDungeon())
+                    weight *= std::max(1u, _zoneWeightDungeon) * instanceWeight;
+                else if (mapEntry->IsBattleground())
+                    weight *= std::max(1u, _zoneWeightBattleground) * instanceWeight;
+                else if (mapEntry->IsBattleArena())
+                    weight *= std::max(1u, _zoneWeightArena) * instanceWeight;
+            }
+
+            if (weight == 0)
+                weight = 1;
+
+            return static_cast<uint32>(weight);
+        }
+
+        void ApplyZoneWeights()
+        {
+            _totalZoneWeight = 0;
+            for (auto& zone : _zones)
+            {
+                AreaTableEntry const* area = sAreaTableStore.LookupEntry(zone.zoneId);
+                zone.weight = ComputeZoneWeight(area);
+                _totalZoneWeight += zone.weight;
+            }
+
+            if (_totalZoneWeight == 0)
+                _totalZoneWeight = static_cast<uint32>(_zones.size());
+        }
+
+        void BuildShuffleOrder()
+        {
+            _shuffleOrder.clear();
+            _shuffleOrder.reserve(_players.size());
+            for (uint32 i = 0; i < _players.size(); ++i)
+                _shuffleOrder.push_back(i);
+        }
+
+        void ShuffleOrder()
+        {
+            if (_shuffleOrder.size() <= 1)
+                return;
+
+            for (size_t i = _shuffleOrder.size() - 1; i > 0; --i)
+            {
+                size_t j = static_cast<size_t>(urand(0u, static_cast<uint32>(i)));
+                std::swap(_shuffleOrder[i], _shuffleOrder[j]);
+            }
+        }
+
         bool _enabled = false;
         uint32 _count = 0;
         uint8 _minLevel = 1;
@@ -313,7 +555,22 @@ namespace DCFakePlayers
         uint32 _refreshTimerMs = 0;
         bool _randomizeEachRefresh = false;
         std::vector<ZoneEntry> _zones;
+        uint32 _zoneWeightDefault = 1;
+        uint32 _zoneWeightCapital = 8;
+        uint32 _zoneWeightTown = 3;
+        uint32 _zoneWeightDungeon = 5;
+        uint32 _zoneWeightRaid = 10;
+        uint32 _zoneWeightBattleground = 8;
+        uint32 _zoneWeightArena = 4;
+        bool _zoneWeightUseMaxPlayers = true;
+        uint32 _totalZoneWeight = 0;
+        uint32 _afkChancePercent = 0;
+        std::string _afkSuffix;
+        bool _guildTagsEnabled = true;
+        std::vector<std::string> _guildTagsList;
+        uint32 _guildTagsPercent = 35;
         std::vector<FakePlayerInfo> _players;
+        std::vector<uint32> _shuffleOrder;
         std::unordered_set<std::string> _usedNames;
     };
 

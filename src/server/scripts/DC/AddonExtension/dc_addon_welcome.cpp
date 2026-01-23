@@ -25,7 +25,9 @@
 
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "GameTime.h"
 #include "WorldSession.h"
+#include "WorldSessionMgr.h"
 #include "Chat.h"
 #include "WorldPacket.h"
 #include "DatabaseEnv.h"
@@ -124,8 +126,8 @@ namespace DCWelcome
         msg.Set("wikiUrl", sConfigMgr->GetOption<std::string>(Config::WIKI_URL, "wiki.darkchaos255.com"));
         msg.Set("seasonId", seasonId);
         msg.Set("seasonName", seasonName);
-        msg.Set("uptimeSeconds", sWorld->GetUptime());
-        msg.Set("playersOnline", sWorld->GetPlayerCount());
+        msg.Set("uptimeSeconds", uint32(GameTime::GetUptime().count()));
+        msg.Set("playersOnline", sWorldSessionMgr->GetPlayerCount());
 
         msg.Send(player);
     }
@@ -147,8 +149,8 @@ namespace DCWelcome
         msg.Set("websiteUrl", sConfigMgr->GetOption<std::string>(Config::WEBSITE_URL, "darkchaos255.com"));
         msg.Set("seasonId", seasonId);
         msg.Set("seasonName", seasonName);
-        msg.Set("uptimeSeconds", sWorld->GetUptime());
-        msg.Set("playersOnline", sWorld->GetPlayerCount());
+        msg.Set("uptimeSeconds", uint32(GameTime::GetUptime().count()));
+        msg.Set("playersOnline", sWorldSessionMgr->GetPlayerCount());
         msg.Set("isFirstLogin", true);
 
         msg.Send(player);
