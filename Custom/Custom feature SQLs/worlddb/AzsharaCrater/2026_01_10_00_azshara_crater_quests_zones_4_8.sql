@@ -305,7 +305,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 2: Faceless Horror (Kill Aberrations)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300801, 2, 75, 72, 0, 0, 0, 4, 0, 36136, 1, 300311, 20, 300312, 15, 'Scourge Vanguard', 'Kill 8 Risen Drakkari Warriors.', 'The Scourge vanguard has landed on the strand. Push them back.', 'Azshara Crater', 'Scourge slain.', 26637, 8);
+(300801, 2, 75, 72, 0, 0, 0, 4, 0, 36136, 1, 300311, 20, 300312, 15, 'Spectral Guardians', 'Kill 8 Moonrest Highborne.', 'The ancient Moonrest Highborne have been raised by the Scourge. Put them to rest.', 'Azshara Crater', 'Highborne slain.', 26455, 8);
 
 -- Quest 3: Forgotten Captains (Kill Elites)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
@@ -313,7 +313,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 4: Bounty: Antilos (Rare Kill)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300803, 2, 80, 78, 0, 0, 0, 5, 3000, 36032, 1, 300311, 25, 300312, 20, 'Bounty: Vyragosa', 'Slay Vyragosa.', 'The blue dragon Vyragosa patrols the skies. Bring her down.', 'Azshara Crater', 'Vyragosa slain.', 22664, 1);
+(300803, 2, 80, 78, 0, 0, 0, 5, 3000, 36032, 1, 300311, 25, 300312, 20, 'Bounty: Gondria', 'Slay Gondria.', 'The spectral beast Gondria stalks the ruins. Its spirit is restless. Grant it peace.', 'Azshara Crater', 'Gondria at peace.', 33776, 1);
 
 -- Quest 5: Temple Artifacts (Collect)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
@@ -385,7 +385,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 (300963, 2, 75, 72, 0, 0, 10, 5, 4000, 300311, 20, 300312, 12, 0, 0, 'Arcane Sentinels', 'Destroy 10 Arcane Sentinels.', 'The Arcane Sentinels guard the Sanctum\'s halls. Disable them to progress deeper.', 'Sanctum of the Highborne', 'Sentinels destroyed.', 15689, 10);
 
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300964, 2, 76, 73, 0, 0, 10, 5, 4200, 300311, 21, 300312, 13, 37881, 12, 31363, 8, 'Wretched Infestation', 'Slay 12 Wretched Ghouls and 8 Wretched Belchers.', 'The Wretched have infested the lower halls of the Sanctum. Purge them.', 'Sanctum of the Highborne', 'Wretched purged.'),
+(300964, 2, 76, 73, 0, 0, 10, 5, 4200, 300311, 21, 300312, 13, 29286, 12, 27223, 8, 'Scourge Infestation', 'Slay 12 Hungering Ghouls and 8 Lumbering Abominations.', 'The Scourge heavy infantry has arrived. Beat them back.', 'Sanctum of the Highborne', 'Scourge purged.'),
 (300965, 2, 77, 74, 0, 0, 10, 5, 4400, 300311, 22, 300312, 14, 6116, 10, 7850, 8, 'Highborne Spirits', 'Banish 10 Highborne Apparitions and 8 Ancient Highborne Spirits.', 'The ancient Highborne spirits linger in torment. Release them from their eternal prison.', 'Sanctum of the Highborne', 'Spirits released.'),
 (300966, 2, 78, 75, 0, 0, 10, 5, 4600, 300311, 23, 300312, 15, 27099, 6, 0, 0, 'Faceless Horror', 'Slay 6 Faceless Lurkers.', 'The Faceless Ones serve the Old Gods. They must not be allowed to corrupt the Sanctum further.', 'Sanctum of the Highborne', 'Faceless threat eliminated.');
 
@@ -578,7 +578,7 @@ INSERT INTO `quest_offer_reward` (`ID`, `RewardText`) VALUES
 (300711, 'Collidus is blinded. We can move unseen.'),
 (300712, 'The spirits have found their rest.'),
 (300800, 'The skeletons are dusted. We can advance.'),
-(300803, 'Antilos grounded. The skies are ours.'),
+(300803, 'Gondria fades into the mist. It is done.'),
 (300804, 'Exquisite artifacts. They belong in a museum, or my study.'),
 (300805, 'The essence dissipates. The spirits are free.'),
 (300900, 'The Highborne are at rest. Zin-Azshari is quiet.'),
@@ -611,7 +611,7 @@ INSERT INTO `quest_offer_reward` (`ID`, `RewardText`) VALUES
 (300961, 'Magister Kalendris falls. The Highborne spirits weaken.'),
 (300962, 'The Forgotten Ones are cleansed from the Sanctum.'),
 (300963, 'The Arcane Sentinels are disabled. The path is clear.'),
-(300964, 'The Wretched are purged. The halls are cleansed.'),
+(300964, 'The Scourge ranks are broken. Good work.'),
 (300965, 'The Highborne spirits are released. They can finally rest.'),
 (300966, 'The Faceless threat is eliminated. The Sanctum is safe... for now.');
 

@@ -828,11 +828,11 @@ FROM creature c WHERE c.map = 37 AND c.id1 = 300070 LIMIT 1;
 -- Quest 300801
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
 SELECT 300801, 0, 0, 37, 268, 0, 0, 3, 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 31691 LIMIT 1;
+FROM creature c WHERE c.map = 37 AND c.id1 = 23348 LIMIT 1;
 
 INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
 SELECT 300801, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 31691
+FROM creature c WHERE c.map = 37 AND c.id1 = 23348
 HAVING AVG(c.position_x) IS NOT NULL;
 
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
@@ -1417,11 +1417,20 @@ FROM creature c WHERE c.map = 37 AND c.id1 = 300086 LIMIT 1;
 -- Quest 300964
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
 SELECT 300964, 0, 0, 37, 268, 0, 0, 3, 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 37881 LIMIT 1;
+FROM creature c WHERE c.map = 37 AND c.id1 = 29286 LIMIT 1;
 
 INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
 SELECT 300964, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
-FROM creature c WHERE c.map = 37 AND c.id1 = 37881
+FROM creature c WHERE c.map = 37 AND c.id1 = 29286
+HAVING AVG(c.position_x) IS NOT NULL;
+
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300964, 1, 1, 37, 268, 0, 0, 3, 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 27223 LIMIT 1;
+
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300964, 1, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
+FROM creature c WHERE c.map = 37 AND c.id1 = 27223
 HAVING AVG(c.position_x) IS NOT NULL;
 
 INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)

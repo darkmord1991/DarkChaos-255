@@ -108,7 +108,7 @@ MangAdmin:RegisterDefaults("account",
     style = {
       updatedelay = "20000", -- Set to approx. 10 Minutes
       showtooltips = true,
-      showchat = false,
+      showchat = true,
       showminimenu = true,
       transparency = {
         buttons = 1.0,

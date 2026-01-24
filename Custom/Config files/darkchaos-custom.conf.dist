@@ -3756,20 +3756,6 @@ FakePlayers.ZoneWeight.Arena = 4
 FakePlayers.ZoneWeight.UseMaxPlayers = 1
 
 #
-#    FakePlayers.AfkChancePercent
-#        Description: Chance (0-100) to append AFK suffix to fake player names
-#        Default:     10
-#
-FakePlayers.AfkChancePercent = 10
-
-#
-#    FakePlayers.AfkSuffix
-#        Description: Suffix appended to names when AFK (visual only)
-#        Default:     " AFK"
-#
-FakePlayers.AfkSuffix = " AFK"
-
-#
 #    FakePlayers.GuildTags.Enable
 #        Description: Enable fake guild tags in /who list
 #        Default:     1 (Enabled)

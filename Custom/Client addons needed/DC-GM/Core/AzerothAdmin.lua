@@ -112,7 +112,7 @@ AzerothAdmin:RegisterDefaults("account",
     style = {
       updatedelay = "100000", -- Set to approx. 10 Minutes
       showtooltips = true,
-      showchat = false,
+      showchat = true,
       showminimenu = true,
       framestrata = "MEDIUM", -- Frame strata level: BACKGROUND, LOW, MEDIUM, HIGH, DIALOG, FULLSCREEN, FULLSCREEN_DIALOG (TOOLTIP not recommended)
       transparency = {

@@ -42,8 +42,6 @@ namespace DCFakePlayers
         constexpr char const* ZONE_WEIGHT_BATTLEGROUND = "FakePlayers.ZoneWeight.Battleground";
         constexpr char const* ZONE_WEIGHT_ARENA = "FakePlayers.ZoneWeight.Arena";
         constexpr char const* ZONE_WEIGHT_USE_MAX_PLAYERS = "FakePlayers.ZoneWeight.UseMaxPlayers";
-        constexpr char const* AFK_CHANCE = "FakePlayers.AfkChancePercent";
-        constexpr char const* AFK_SUFFIX = "FakePlayers.AfkSuffix";
         constexpr char const* GUILD_TAGS_ENABLE = "FakePlayers.GuildTags.Enable";
         constexpr char const* GUILD_TAGS_LIST = "FakePlayers.GuildTags.List";
         constexpr char const* GUILD_TAGS_PERCENT = "FakePlayers.GuildTags.Percent";
@@ -76,7 +74,6 @@ namespace DCFakePlayers
         std::wstring wideName;
         std::string guildName;
         std::wstring wideGuildName;
-        bool isAfk = false;
     };
 
     static std::vector<RaceClassOption> const kRaceClassOptions = {
@@ -190,8 +187,6 @@ namespace DCFakePlayers
             _zoneWeightBattleground = sConfigMgr->GetOption<uint32>(ConfigKeys::ZONE_WEIGHT_BATTLEGROUND, 8);
             _zoneWeightArena = sConfigMgr->GetOption<uint32>(ConfigKeys::ZONE_WEIGHT_ARENA, 4);
             _zoneWeightUseMaxPlayers = sConfigMgr->GetOption<bool>(ConfigKeys::ZONE_WEIGHT_USE_MAX_PLAYERS, true);
-            _afkChancePercent = sConfigMgr->GetOption<uint32>(ConfigKeys::AFK_CHANCE, 0);
-            _afkSuffix = sConfigMgr->GetOption<std::string>(ConfigKeys::AFK_SUFFIX, " AFK");
             _guildTagsEnabled = sConfigMgr->GetOption<bool>(ConfigKeys::GUILD_TAGS_ENABLE, true);
             _guildTagsList = ParseCsvStrings(sConfigMgr->GetOption<std::string>(ConfigKeys::GUILD_TAGS_LIST, ""));
             _guildTagsPercent = std::min<uint32>(100u, sConfigMgr->GetOption<uint32>(ConfigKeys::GUILD_TAGS_PERCENT, 35));
@@ -244,7 +239,6 @@ namespace DCFakePlayers
                 wstrToLower(info.wideName);
                 ApplyGuildTag(info, true);
                 RandomizePlayer(info, true);
-                ApplyAfkStatus(info, true);
                 _players.push_back(info);
             }
 
@@ -273,7 +267,6 @@ namespace DCFakePlayers
             {
                 RandomizePlayer(player, _randomizeEachRefresh);
                 ApplyGuildTag(player, true);
-                ApplyAfkStatus(player, true);
             }
         }
 
@@ -404,38 +397,6 @@ namespace DCFakePlayers
                 suffixes[urand(0u, static_cast<uint32>(suffixes.size() - 1))];
         }
 
-        void ApplyAfkStatus(FakePlayerInfo& info, bool forceRoll)
-        {
-            if (_afkChancePercent == 0)
-            {
-                info.isAfk = false;
-                if (info.name != info.baseName)
-                {
-                    info.name = info.baseName;
-                    UpdateWideName(info);
-                }
-                return;
-            }
-
-            if (forceRoll || info.isAfk == false)
-            {
-                info.isAfk = (urand(1u, 100u) <= _afkChancePercent);
-            }
-
-            std::string displayName = info.baseName;
-            if (info.isAfk)
-            {
-                if (displayName.size() + _afkSuffix.size() <= 12)
-                    displayName += _afkSuffix;
-            }
-
-            if (info.name != displayName)
-            {
-                info.name = displayName;
-                UpdateWideName(info);
-            }
-        }
-
         void UpdateWideName(FakePlayerInfo& info)
         {
             info.wideName.clear();
@@ -564,8 +525,6 @@ namespace DCFakePlayers
         uint32 _zoneWeightArena = 4;
         bool _zoneWeightUseMaxPlayers = true;
         uint32 _totalZoneWeight = 0;
-        uint32 _afkChancePercent = 0;
-        std::string _afkSuffix;
         bool _guildTagsEnabled = true;
         std::vector<std::string> _guildTagsList;
         uint32 _guildTagsPercent = 35;
