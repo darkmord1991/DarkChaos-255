@@ -27,7 +27,7 @@
 #include <random>
 #include <vector>
 
-#include "DC/CrossSystem/DCVaultUtils.h"
+#include "DC/CrossSystem/CrossSystemVaultUtils.h"
 
 namespace
 {

@@ -9,6 +9,7 @@
 #include "Chat.h"
 #include "ScriptMgr.h"
 #include "Config.h"
+#include "HinterlandBGConstants.h"
 #include "ObjectAccessor.h"
 #include "Group.h"
 
@@ -25,7 +26,7 @@ void OutdoorPvPHL::HandleQueueJoinCommand(Player* player)
         return;
     }
 
-    if (player->HasAura(26013)) // Deserter debuff
+    if (player->HasAura(HinterlandBGConstants::BG_DESERTER_SPELL)) // Deserter debuff
     {
         ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You cannot join while flagged as deserter.");
         return;

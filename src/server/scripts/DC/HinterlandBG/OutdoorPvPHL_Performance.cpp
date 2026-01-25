@@ -13,6 +13,7 @@
 #include "Map.h"
 #include "Chat.h"
 #include "Log.h"
+#include "HinterlandBGConstants.h"
 #include <vector>
 #include <unordered_set>
 
@@ -21,7 +22,6 @@ struct ZonePlayerCache
 {
     std::vector<ObjectGuid> playerGuids;
     uint32 lastUpdateTime;
-    static constexpr uint32 CACHE_DURATION_MS = 5000; // 5 seconds
 };
 
 static ZonePlayerCache s_zonePlayerCache;
@@ -32,7 +32,7 @@ void OutdoorPvPHL::CollectZonePlayers(std::vector<Player*>& players) const
     uint32 currentTime = GameTime::GetGameTimeMS().count();
 
     // Check if cache needs refresh
-    if (currentTime - s_zonePlayerCache.lastUpdateTime > ZonePlayerCache::CACHE_DURATION_MS)
+    if (currentTime - s_zonePlayerCache.lastUpdateTime > HinterlandBGConstants::CACHE_DURATION_MS)
     {
         s_zonePlayerCache.playerGuids.clear();
 

@@ -9,6 +9,7 @@
 #include "OutdoorPvP.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "HinterlandBGConstants.h"
 
 namespace HLBGUtils
 {
@@ -124,7 +125,7 @@ namespace HLBGUtils
             return NOT_MAX_LEVEL;
         }
 
-        if (player->HasAura(26013)) // Deserter debuff
+        if (player->HasAura(HinterlandBGConstants::BG_DESERTER_SPELL)) // Deserter debuff
         {
             errorMessage = "You cannot participate while flagged as deserter.";
             return HAS_DESERTER;

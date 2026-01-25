@@ -28,7 +28,7 @@
 #include "dc_addon_namespace.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 #include "OutdoorPvP/OutdoorPvPHL.h"
-#include "../HinterlandBG/HinterlandBGConstants.h"
+#include "../HinterlandBG/hlbg_constants.h"
 #include "Time/GameTime.h"
 #include <algorithm>
 #include <cctype>

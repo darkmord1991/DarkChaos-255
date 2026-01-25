@@ -35,7 +35,7 @@
 #include "Config.h"
 #include "World.h"
 #include "AchievementMgr.h"
-#include "../CrossSystem/DCSeasonHelper.h"
+#include "../CrossSystem/CrossSystemSeasonHelper.h"
 #include <string>
 #include <sstream>
 

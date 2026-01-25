@@ -70,33 +70,33 @@ set(SCRIPTS_DC_AC
     AC/ac_guard_npc.cpp
     AC/ac_flightmasters.cpp
     AC/ac_quest_npc_800009.cpp
-    HinterlandBG/npc_thrall_warchief.cpp
-    HinterlandBG/npc_Varian_hinterlandbg.cpp
+    HinterlandBG/hlbg_npc_thrall_warchief.cpp
+    HinterlandBG/hlbg_npc_varian.cpp
     HinterlandBG/outdoorpvp_hl_registration.cpp
-    HinterlandBG/npc_hinterlands_battlemaster.cpp
+    HinterlandBG/hlbg_npc_battlemaster.cpp
     # HinterlandBG/hlbg_addon.cpp (moved into AddonExtension/dc_addon_hlbg.cpp)
     HinterlandBG/hlbg_native_broadcast.cpp
-    HinterlandBG/HL_ScoreboardNPC.cpp
+    HinterlandBG/hlbg_scoreboard_npc.cpp
     # MapExtension/cs_gps_test.cpp  # DISABLED - requires AIO which is not compiled
 )
 
 # DC HinterlandBG split implementations (config, rewards, reset, afk)
 set(SCRIPTS_DC_HinterlandBG
-    HinterlandBG/OutdoorPvPHL_Config.cpp
-    HinterlandBG/OutdoorPvPHL_Rewards.cpp
-    HinterlandBG/OutdoorPvPHL_Reset.cpp
-    HinterlandBG/OutdoorPvPHL_AFK.cpp
-    HinterlandBG/OutdoorPvPHL_Announce.cpp
-    HinterlandBG/OutdoorPvPHL_Groups.cpp
-    HinterlandBG/OutdoorPvPHL_JoinLeave.cpp
-    HinterlandBG/OutdoorPvPHL_Thresholds.cpp
-    HinterlandBG/OutdoorPvPHL_Admin.cpp
-    HinterlandBG/OutdoorPvPHL_Queue.cpp
-    HinterlandBG/HinterlandBGQueueHandlers.cpp
-    HinterlandBG/OutdoorPvPHL_StateMachine.cpp
-    HinterlandBG/OutdoorPvPHL_Utils.cpp
-    HinterlandBG/OutdoorPvPHL_Performance.cpp
-    HinterlandBG/OutdoorPvPHL_Affixes.cpp
+    HinterlandBG/hlbg_config.cpp
+    HinterlandBG/hlbg_rewards.cpp
+    HinterlandBG/hlbg_reset.cpp
+    HinterlandBG/hlbg_afk.cpp
+    HinterlandBG/hlbg_announce.cpp
+    HinterlandBG/hlbg_groups.cpp
+    HinterlandBG/hlbg_join_leave.cpp
+    HinterlandBG/hlbg_thresholds.cpp
+    HinterlandBG/hlbg_admin.cpp
+    HinterlandBG/hlbg_queue.cpp
+    HinterlandBG/hlbg_queue_handlers.cpp
+    HinterlandBG/hlbg_state_machine.cpp
+    HinterlandBG/hlbg_utils.cpp
+    HinterlandBG/hlbg_performance.cpp
+    HinterlandBG/hlbg_affixes.cpp
     # HinterlandBG/cs_hl_bg.cpp (Moved to Commands)
 )
 
@@ -255,8 +255,8 @@ set(SCRIPTS_DC_CrossSystem
     CrossSystem/RewardDistributor.cpp
     CrossSystem/CrossSystemManager.cpp
     CrossSystem/CrossSystemScripts.cpp
-    CrossSystem/DCSpawnResolver.cpp
-    CrossSystem/WorldBossMgr.cpp
+    CrossSystem/CrossSystemSpawnResolver.cpp
+    CrossSystem/CrossSystemWorldBossMgr.cpp
 )
 
 # DC Commands - Unified command hub

@@ -22,6 +22,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <unordered_map>
 #include <vector>
@@ -191,7 +192,7 @@ namespace CrossSystem
         EventBus() = default;
 
         // Get sorted handlers for an event type
-        std::vector<EventSubscription*> GetHandlersForEvent(EventType type);
+        std::vector<EventSubscription> GetHandlersForEvent(EventType type);
 
         // Add to history
         void RecordHistory(const EventData& event, SystemId source, uint32 handlerCount, uint64 processingTimeUs);

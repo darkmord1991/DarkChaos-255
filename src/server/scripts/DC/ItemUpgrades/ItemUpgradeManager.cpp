@@ -517,9 +517,8 @@ namespace DarkChaos
             ItemUpgradeState* GetItemUpgradeState(uint32 item_guid) override
             {
                 // Check cache first
-                if (ItemUpgradeState* cached = item_state_cache.GetPtr(item_guid))
+                if (ItemUpgradeState* cached = item_state_cache.Get(item_guid))
                 {
-                    item_state_cache.Touch(item_guid); // Update LRU
                     stats.cache_hits++;
                     return cached;
                 }
@@ -544,8 +543,8 @@ namespace DarkChaos
                     if (default_state.tier_id == 0 || default_state.tier_id == TIER_INVALID)
                         default_state.tier_id = TIER_LEVELING;
 
-                    item_state_cache.Put(item_guid, default_state);
-                    return item_state_cache.GetPtr(item_guid);
+                    item_state_cache.Set(item_guid, default_state);
+                    return item_state_cache.Get(item_guid);
                 }
 
                 ItemUpgradeState state;
@@ -565,8 +564,8 @@ namespace DarkChaos
                 EnsureStateMetadata(state, state.player_guid);
 
                 // Cache and return
-                item_state_cache.Put(item_guid, state);
-                return item_state_cache.GetPtr(item_guid);
+                item_state_cache.Set(item_guid, state);
+                return item_state_cache.Get(item_guid);
             }
 
             bool SetItemUpgradeLevel(uint32 item_guid, uint8 level) override
@@ -1115,8 +1114,8 @@ namespace DarkChaos
             void InvalidatePlayerItems(uint32 player_guid)
             {
                 // Remove all cached item states for this player
-                // Using new RemoveIf capability
-                item_state_cache.RemoveIf([player_guid](const uint32& /*key*/, const ItemUpgradeState& state) {
+                // Using shared InvalidateIf capability
+                item_state_cache.InvalidateIf([player_guid](const uint32& /*key*/, const ItemUpgradeState& state) {
                     return state.player_guid == player_guid;
                 });
             }

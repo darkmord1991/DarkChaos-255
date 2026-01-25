@@ -3,7 +3,7 @@
 
 #include "dc_addon_namespace.h"
 
-#include "DC/CrossSystem/DCMapCoords.h"
+#include "DC/CrossSystem/CrossSystemMapCoords.h"
 #include "DBCStores.h"
 #include "GameTime.h"
 #include "ObjectMgr.h"

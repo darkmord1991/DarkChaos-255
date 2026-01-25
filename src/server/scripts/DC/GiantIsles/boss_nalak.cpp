@@ -24,7 +24,7 @@
 #include "GameTime.h"
 #include <algorithm>
 #include <random>
-#include "DC/CrossSystem/WorldBossMgr.h"
+#include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
 
 #include <cmath>
 

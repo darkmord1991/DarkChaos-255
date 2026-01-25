@@ -15,7 +15,7 @@
 #include "DatabaseEnv.h"
 #include "dc_addon_namespace.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
-#include "DC/CrossSystem/DCSeasonHelper.h"
+#include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "../Seasons/SeasonalRewardSystem.h"
 #include <algorithm>
 

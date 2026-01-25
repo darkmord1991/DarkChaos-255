@@ -11,6 +11,7 @@
 #ifndef DC_LEADERBOARD_UTILS_H
 #define DC_LEADERBOARD_UTILS_H
 
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -83,38 +84,7 @@ inline std::string GetClassNameFromId(uint8_t classId)
 
 inline std::string JsonEscape(const std::string& input)
 {
-    std::string out;
-    out.reserve(input.size() + 8);
-
-    for (unsigned char ch : input)
-    {
-        switch (ch)
-        {
-            case '\\': out += "\\\\"; break;
-            case '"':  out += "\\\""; break;
-            case '\b': out += "\\b"; break;
-            case '\f': out += "\\f"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default:
-            {
-                if (ch < 0x20)
-                {
-                    char buf[7];
-                    snprintf(buf, sizeof(buf), "\\u%04X", static_cast<unsigned int>(ch));
-                    out += buf;
-                }
-                else
-                {
-                    out.push_back(static_cast<char>(ch));
-                }
-                break;
-            }
-        }
-    }
-
-    return out;
+    return DCUtils::EscapeJson(input);
 }
 
 // =============================================================================

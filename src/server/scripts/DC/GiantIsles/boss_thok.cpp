@@ -22,7 +22,7 @@
 #include "World.h"
 #include "Chat.h"
 #include "GameTime.h"
-#include "DC/CrossSystem/WorldBossMgr.h"
+#include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
 
 #include <cmath>
 

@@ -56,18 +56,18 @@
         ------------------------------------
         This file holds the core orchestration for Hinterland BG. Many helper
         implementations are split into DC files for clarity and modularity:
-            - Config loader:           src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Config.cpp
-            - Rewards & combat:        src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Rewards.cpp
+            - Config loader:           src/server/scripts/DC/HinterlandBG/hlbg_config.cpp
+            - Rewards & combat:        src/server/scripts/DC/HinterlandBG/hlbg_rewards.cpp
                                                                     (includes Randomizer and HandleKill)
-            - Resets & teleports:      src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Reset.cpp
-            - AFK tracking helper:     src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_AFK.cpp
-            - Announcements:           src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Announce.cpp
-            - Raid lifecycle:          src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Groups.cpp
-            - Threshold announcements:  src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Thresholds.cpp
-            - WG-style HUD worldstates: src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Worldstates.cpp
-            - Admin/inspection helpers: src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_Admin.cpp
-            - Join/Leave handlers:      src/server/scripts/DC/HinterlandBG/OutdoorPvPHL_JoinLeave.cpp
-            - Movement hook (AFK):      src/server/scripts/DC/HinterlandBG/HLMovementHandlerScript.h
+            - Resets & teleports:      src/server/scripts/DC/HinterlandBG/hlbg_reset.cpp
+            - AFK tracking helper:     src/server/scripts/DC/HinterlandBG/hlbg_afk.cpp
+            - Announcements:           src/server/scripts/DC/HinterlandBG/hlbg_announce.cpp
+            - Raid lifecycle:          src/server/scripts/DC/HinterlandBG/hlbg_groups.cpp
+            - Threshold announcements:  src/server/scripts/DC/HinterlandBG/hlbg_thresholds.cpp
+            - WG-style HUD worldstates: src/server/scripts/DC/HinterlandBG/hlbg_worldstates.cpp
+            - Admin/inspection helpers: src/server/scripts/DC/HinterlandBG/hlbg_admin.cpp
+            - Join/Leave handlers:      src/server/scripts/DC/HinterlandBG/hlbg_join_leave.cpp
+            - Movement hook (AFK):      src/server/scripts/DC/HinterlandBG/hlbg_movement_handler.h
             - DC registration wrapper:  src/server/scripts/DC/HinterlandBG/outdoorpvp_hl_registration.cpp
 
         Tip: Search this file for lines beginning with "moved to DC/HinterlandBG" to
@@ -104,14 +104,12 @@
     #include <algorithm>
     #include <cmath>
     #include <cstdio>
-    #include "DC/HinterlandBG/OutdoorPvPHLResetWorker.h"
-    #include "DC/HinterlandBG/HLMovementHandlerScript.h"
+    #include "DC/HinterlandBG/hlbg_reset_worker.h"
+    #include "DC/HinterlandBG/hlbg_movement_handler.h"
 
-    #include "DC/HinterlandBG/HLMovementHandlerScript.h"
+    // HLZoneResetWorker moved to DC/HinterlandBG/hlbg_reset_worker.h
 
-    // HLZoneResetWorker moved to DC/HinterlandBG/OutdoorPvPHLResetWorker.h
-
-// HLZoneResetWorker moved to DC/HinterlandBG/OutdoorPvPHLResetWorker.h
+// HLZoneResetWorker moved to DC/HinterlandBG/hlbg_reset_worker.h
 
     OutdoorPvPHL::OutdoorPvPHL()
     {
@@ -298,11 +296,11 @@
         return true;
     }
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Worldstates.cpp
+    // moved to DC/HinterlandBG/hlbg_worldstates.cpp
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Worldstates.cpp
+    // moved to DC/HinterlandBG/hlbg_worldstates.cpp
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Worldstates.cpp
+    // moved to DC/HinterlandBG/hlbg_worldstates.cpp
 
     // small helper impls
     bool OutdoorPvPHL::IsMaxLevel(Player* player) const
@@ -384,7 +382,7 @@
         }
     }
 
-    // --- Admin/inspection helpers moved to DC/HinterlandBG/OutdoorPvPHL_Admin.cpp ---
+    // --- Admin/inspection helpers moved to DC/HinterlandBG/hlbg_admin.cpp ---
 
     bool OutdoorPvPHL::AddOrSetPlayerToCorrectBfGroup(Player* plr)
     {
@@ -435,11 +433,11 @@
         return true;
     }
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_JoinLeave.cpp
+    // moved to DC/HinterlandBG/hlbg_join_leave.cpp
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_JoinLeave.cpp
+    // moved to DC/HinterlandBG/hlbg_join_leave.cpp
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Announce.cpp
+    // moved to DC/HinterlandBG/hlbg_announce.cpp
 
     void OutdoorPvPHL::PlaySounds(bool side)
     {
@@ -450,7 +448,7 @@
     // Cosmetic: provide a Battleground-like item link prefix for chat/notifications
     // Example: |cff0070dd|Hitem:47241:0:0:0:0:0:0:0:0|h[Hinterland Defence]|h|r
     // Note: Using a harmless vanity item ID for link formatting. Only the text is shown; clicking opens an item tooltip.
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Announce.cpp
+    // moved to DC/HinterlandBG/hlbg_announce.cpp
 
     // AFK thresholds are configurable via LoadConfig()
 
@@ -712,7 +710,7 @@
         }
     }
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Groups.cpp
+    // moved to DC/HinterlandBG/hlbg_groups.cpp
 
     void OutdoorPvPHL::_tickAFK(uint32 diff)
     {
@@ -829,13 +827,13 @@
         }
     }
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Thresholds.cpp
+    // moved to DC/HinterlandBG/hlbg_thresholds.cpp
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Announce.cpp
+    // moved to DC/HinterlandBG/hlbg_announce.cpp
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Rewards.cpp
+    // moved to DC/HinterlandBG/hlbg_rewards.cpp
 
-    // moved to DC/HinterlandBG/OutdoorPvPHL_Rewards.cpp
+    // moved to DC/HinterlandBG/hlbg_rewards.cpp
 
     class OutdoorPvP_hinterland : public OutdoorPvPScript
     {
@@ -850,9 +848,9 @@
         }
     };
 
-    // LoadConfig moved to DC/HinterlandBG/OutdoorPvPHL_Config.cpp
+    // LoadConfig moved to DC/HinterlandBG/hlbg_config.cpp
 
-    // HLMovementHandlerScript moved to DC/HinterlandBG/HLMovementHandlerScript.h
+    // HLMovementHandlerScript moved to DC/HinterlandBG/hlbg_movement_handler.h
 
     void AddSC_outdoorpvp_hl()
     {
@@ -876,7 +874,7 @@
         sWorldState->setWorldState(0xDD0008, _affixNextChangeEpoch);
     }
 
-    // State persistence is now handled in OutdoorPvPHL_StateMachine.cpp
+    // State persistence is now handled in hlbg_state_machine.cpp
     // void OutdoorPvPHL::_persistState() const - removed duplicate
 
     // --- Affix system (scaffolding) ---

@@ -1,5 +1,5 @@
 #include "GreatVault.h"
-#include "DC/CrossSystem/DCVaultUtils.h"
+#include "DC/CrossSystem/CrossSystemVaultUtils.h"
 #include "DC/MythicPlus/MythicPlusRunManager.h"
 #include "Config.h"
 #include "DatabaseEnv.h"

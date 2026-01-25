@@ -9,7 +9,7 @@
 
 #include "CrossSystemManager.h"
 #include "CrossSystemAdapters.h"
-#include "WorldBossMgr.h"
+#include "CrossSystemWorldBossMgr.h"
 #include "Creature.h"
 #include "Log.h"
 #include "Map.h"

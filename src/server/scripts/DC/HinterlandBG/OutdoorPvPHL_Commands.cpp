@@ -4,6 +4,8 @@
 // Renamed to HinterlandBGQueueHandlers.cpp to avoid confusion with CommandScripts.
 // This file is kept only to preserve history; it is no longer built.
 // -----------------------------------------------------------------------------
+// Deprecated: replaced by HinterlandBGQueueHandlers.cpp (code disabled).
+#if 0
 #include "HinterlandBG.h"
 #include "Player.h"
 #include "Chat.h"
@@ -269,6 +271,7 @@ bool OutdoorPvPHL::HandlePlayerCommand(Player* player, const std::string& comman
 
     return false; // Command not handled
 }
+#endif // 0
 
 bool OutdoorPvPHL::HandleAdminCommand(Player* admin, const std::string& command, const std::string& args)
 {

@@ -190,26 +190,30 @@ namespace CrossSystem
     {
         auto startTime = std::chrono::high_resolution_clock::now();
 
-        std::vector<EventSubscription*> handlers = GetHandlersForEvent(event.type);
+        std::vector<EventSubscription> handlers = GetHandlersForEvent(event.type);
 
         uint32 handlerCount = 0;
 
-        for (auto* sub : handlers)
+        for (auto const& sub : handlers)
         {
-            if (!sub->Matches(event))
+            if (!sub.Matches(event))
                 continue;
 
             try
             {
-                sub->handler->OnEvent(event);
+                sub.handler->OnEvent(event);
                 handlerCount++;
-                stats_.totalHandlersInvoked++;
-                stats_.systemHandlerCounts[sub->subscriberSystem]++;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    stats_.totalHandlersInvoked++;
+                    stats_.systemHandlerCounts[sub.subscriberSystem]++;
+                }
             }
             catch (const std::exception& e)
             {
                 LOG_ERROR("dc.crosssystem.events", "Exception in event handler {}: {}",
-                          sub->handler->GetSystemName(), e.what());
+                          sub.handler->GetSystemName(), e.what());
+                std::lock_guard<std::mutex> lock(mutex_);
                 stats_.errors++;
             }
         }
@@ -217,9 +221,12 @@ namespace CrossSystem
         auto endTime = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
 
-        stats_.totalEventsPublished++;
-        stats_.totalEventsProcessed++;
-        stats_.eventCounts[event.type]++;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stats_.totalEventsPublished++;
+            stats_.totalEventsProcessed++;
+            stats_.eventCounts[event.type]++;
+        }
 
         if (historyEnabled_)
         {
@@ -473,19 +480,19 @@ namespace CrossSystem
     // Private Helpers
     // =========================================================================
 
-    std::vector<EventSubscription*> EventBus::GetHandlersForEvent(EventType type)
+    std::vector<EventSubscription> EventBus::GetHandlersForEvent(EventType type)
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        std::vector<EventSubscription*> result;
+        std::vector<EventSubscription> result;
 
         auto it = subscriptions_.find(type);
         if (it != subscriptions_.end())
         {
-            for (auto& sub : it->second)
+            for (auto const& sub : it->second)
             {
                 if (sub.enabled)
-                    result.push_back(&sub);
+                    result.push_back(sub);
             }
         }
 

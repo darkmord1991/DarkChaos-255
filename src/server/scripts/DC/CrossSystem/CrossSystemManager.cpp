@@ -16,7 +16,7 @@
 #include "ScriptMgr.h"
 #include "Timer.h"
 #include "World.h"
-#include "WorldBossMgr.h"
+#include "CrossSystemWorldBossMgr.h"
 
 namespace DarkChaos
 {

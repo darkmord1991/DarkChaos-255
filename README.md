@@ -509,7 +509,6 @@ All DC addons are included in `Custom/Client addons needed/` and feature a **uni
 ```bash
 # Core Modules
 git clone https://github.com/azerothcore/mod-ah-bot.git modules/mod-ah-bot
-git clone https://github.com/azerothcore/mod-learn-spells.git modules/mod-learn-spells
 git clone https://github.com/azerothcore/mod-world-chat.git modules/mod-world-chat
 git clone https://github.com/azerothcore/mod-cfbg.git modules/mod-cfbg
 git clone https://github.com/azerothcore/mod-skip-dk-starting-area.git modules/mod-skip-dk-starting-area
@@ -517,7 +516,6 @@ git clone https://github.com/azerothcore/mod-npc-services.git modules/mod-npc-se
 git clone https://github.com/azerothcore/mod-instance-reset.git modules/mod-instance-reset
 git clone https://github.com/azerothcore/mod-arac.git modules/mod-arac
 git clone https://github.com/azerothcore/mod-ale.git modules/mod-ale
-git clone https://github.com/Brian-Aldridge/mod-customlogin.git modules/mod-customlogin
 ```
 
 ---
@@ -546,7 +544,7 @@ src/server/scripts/DC/
 │   ├── EventBus.*                 # Inter-system events
 │   ├── RewardDistributor.*        # Unified rewards
 │   ├── SessionContext.*           # Player sessions
-│   ├── WorldBossMgr.*             # World boss management
+│   ├── CrossSystemWorldBossMgr.*  # World boss management
 ├── DungeonQuests/         # Daily/weekly dungeon quest system
 ├── GiantIsles/            # Custom zone with world bosses
 ├── Gilneas/               # Battle for Gilneas BG

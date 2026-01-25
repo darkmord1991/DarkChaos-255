@@ -16,7 +16,7 @@
 
 #include "DC/CrossSystem/RewardDistributor.h"
 #include "DC/CrossSystem/SessionContext.h"
-#include "DC/CrossSystem/DCSeasonHelper.h"
+#include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 
 #include "DC/Seasons/SeasonalRewardSystem.h"
 

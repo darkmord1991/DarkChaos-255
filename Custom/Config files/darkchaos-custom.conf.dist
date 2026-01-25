@@ -1,45 +1,551 @@
-# =====================================================================
+# =============================================================================
 # DarkChaos-255 Custom Server Configuration
-# =====================================================================
-# This unified configuration file contains all custom systems for the
-# DarkChaos-255 private server (WoW 3.3.5a - Level 255 progression)
+# =============================================================================
 #
-# Systems included:
-#   1.  AoE Loot System
-#   2.  Hotspots System
-#   3.  Hinterland Battleground
-#   4.  Mythic+ Dungeon System
-#   5.  Group Finder System
-#   6.  Prestige System
-#   7.  Challenge Modes System
-#   8.  Dungeon Quest NPC System
-#   9.  Item Upgrade System
-#   10. Unified Seasonal System
-#   11. AzerothCore Module Configurations
-#   12. Phased Dueling System
-#   13. Addon Communication Protocol
-#   14. Unified Leaderboard System
-#   15. Custom Login System
-#   16. DC-Welcome Addon System
-#   17. Cross-System Integration Framework
-#   18. Collection System
-#   19. DC System Logging
-#   20. Invasion System
-#   21. Fake Players System
+# Master configuration file for DarkChaos-255 private server (WoW 3.3.5a)
+# Level 255 progression with custom systems
 #
+# Last Updated: January 2026
+#
+# =============================================================================
+# TABLE OF CONTENTS
+# =============================================================================
+#
+# PART I - CORE SYSTEMS
+#   Section 1:  Global Server Settings
+#   Section 2:  Unified Seasonal System
+#   Section 3:  Addon Communication Protocol
+#
+# PART II - GAMEPLAY SYSTEMS
+#   Section 4:  AoE Loot System
+#   Section 5:  Hotspots System
+#   Section 6:  Item Upgrade System
+#   Section 7:  Collection System
+#
+# PART III - PVE CONTENT
+#   Section 8:  Mythic+ Dungeon System
+#   Section 9:  Dungeon Quest NPC System
+#   Section 10: Challenge Modes System
+#
+# PART IV - PVP CONTENT
+#   Section 11: Hinterland Battleground
+#   Section 12: Phased Dueling System
+#
+# PART V - PROGRESSION SYSTEMS
+#   Section 13: Prestige System
+#   Section 14: Custom Login System
+#   Section 15: DC-Welcome Addon System
+#
+# PART VI - SOCIAL & GROUP SYSTEMS
+#   Section 16: Group Finder System
+#   Section 17: Guild House System
+#   Section 18: Leaderboard System
+#
+# PART VII - WORLD CONTENT
+#   Section 19: Invasion System
+#
+# PART VIII - TESTING & DEVELOPMENT
+#   Section 20: Fake Players System
+#   Section 21: DC System Logging
+#
+# =============================================================================
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
 # Released under the GNU AGPL v3 license
-# =====================================================================
+# =============================================================================
 
-###########################################################################
+
+###############################################################################
+###############################################################################
+##
+##  PART I - CORE SYSTEMS
+##
+###############################################################################
+###############################################################################
+
+
+###############################################################################
 #
-#    SECTION 1: AOE LOOT SYSTEM
+#  SECTION 1: GLOBAL SERVER SETTINGS
 #
-#    Allows players to collect loot from multiple nearby corpses with a
-#    single interaction. Includes DC Extensions for quality filtering,
-#    profession integration, and Mythic+ bonuses.
+#  Server-wide toggles and cross-system integration settings.
 #
-###########################################################################
+###############################################################################
+
+#
+#    DarkChaos.ActiveSeasonID
+#        Description: Global active season ID used by all seasonal systems
+#                     (Mythic+, Item Upgrades, HLBG, Rewards)
+#        Default:     1
+#
+DarkChaos.ActiveSeasonID = 1
+
+#
+#    DC.Achievements.Enable
+#        Description: Enable server-side custom achievements system
+#        Default:     1 (Enabled)
+#
+DC.Achievements.Enable = 1
+
+#
+#    DC.Achievements.Debug
+#        Description: Enable debug logging for custom achievements
+#        Default:     0 (Disabled)
+#
+DC.Achievements.Debug = 0
+
+#
+#    OutdoorPvPCaptureRate
+#        Description: Rate multiplier for outdoor PvP capture points
+#        Default:     1.0
+#
+OutdoorPvPCaptureRate = 1
+
+
+###############################################################################
+#
+#  SECTION 2: UNIFIED SEASONAL SYSTEM
+#
+#  All seasonal systems (Rewards, M+, Item Upgrades, HLBG) share a unified
+#  season management framework with common currencies and weekly resets.
+#
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Seasonal Currency Configuration
+# -----------------------------------------------------------------------------
+
+#
+#    DarkChaos.Seasonal.TokenItemID
+#        Description: Item ID for Seasonal Tokens (primary currency)
+#        Default:     300311
+#
+DarkChaos.Seasonal.TokenItemID = 300311
+
+#
+#    DarkChaos.Seasonal.EssenceItemID
+#        Description: Item ID for Seasonal Essence (secondary currency)
+#        Default:     300312
+#
+DarkChaos.Seasonal.EssenceItemID = 300312
+
+#
+#    DarkChaos.Seasonal.WeeklyTokenCap
+#        Description: Maximum Seasonal Tokens earnable per week (0 = unlimited)
+#        Default:     1000
+#
+DarkChaos.Seasonal.WeeklyTokenCap = 1000
+
+#
+#    DarkChaos.Seasonal.WeeklyEssenceCap
+#        Description: Maximum Seasonal Essence earnable per week (0 = unlimited)
+#        Default:     1000
+#
+DarkChaos.Seasonal.WeeklyEssenceCap = 1000
+
+# -----------------------------------------------------------------------------
+# Seasonal Rewards Configuration
+# -----------------------------------------------------------------------------
+
+#
+#    SeasonalRewards.Enable
+#        Description: Master toggle for the Seasonal Reward system
+#        Default:     1 (Enabled)
+#
+SeasonalRewards.Enable = 1
+
+#
+#    SeasonalRewards.LogTransactions
+#        Description: Log all reward transactions to dc_reward_transactions table
+#        Default:     1 (Enabled)
+#
+SeasonalRewards.LogTransactions = 1
+
+#
+#    SeasonalRewards.AchievementTracking
+#        Description: Track achievement progress for seasonal activities
+#        Default:     1 (Enabled)
+#
+SeasonalRewards.AchievementTracking = 1
+
+# -----------------------------------------------------------------------------
+# Seasonal Reward Multipliers
+# -----------------------------------------------------------------------------
+
+#
+#    SeasonalRewards.QuestMultiplier
+#        Description: Global multiplier for quest rewards
+#        Default:     1.0
+#
+SeasonalRewards.QuestMultiplier = 1.0
+
+#
+#    SeasonalRewards.CreatureMultiplier
+#        Description: Global multiplier for creature kill rewards
+#        Default:     1.0
+#
+SeasonalRewards.CreatureMultiplier = 1.0
+
+#
+#    SeasonalRewards.WorldBossBonus
+#        Description: Bonus multiplier for world boss kills
+#        Default:     1.5
+#
+SeasonalRewards.WorldBossBonus = 1.5
+
+#
+#    SeasonalRewards.EventBossBonus
+#        Description: Bonus multiplier for seasonal event boss kills
+#        Default:     1.25
+#
+SeasonalRewards.EventBossBonus = 1.25
+
+# -----------------------------------------------------------------------------
+# Weekly Caps and Reset Schedule
+# -----------------------------------------------------------------------------
+
+#
+#    SeasonalRewards.MaxTokensPerWeek
+#        Description: Weekly token earning cap per character (0 = unlimited)
+#        Default:     0
+#
+SeasonalRewards.MaxTokensPerWeek = 0
+
+#
+#    SeasonalRewards.MaxEssencePerWeek
+#        Description: Weekly essence earning cap per character (0 = unlimited)
+#        Default:     0
+#
+SeasonalRewards.MaxEssencePerWeek = 0
+
+#
+#    SeasonalRewards.WeeklyResetDay
+#        Description: Day of week for weekly reset (0=Sun, 1=Mon, 2=Tue, etc.)
+#        Default:     2 (Tuesday)
+#
+SeasonalRewards.WeeklyResetDay = 2
+
+#
+#    SeasonalRewards.WeeklyResetHour
+#        Description: Hour of day for weekly reset (0-23, server timezone)
+#        Default:     15 (3:00 PM)
+#
+SeasonalRewards.WeeklyResetHour = 15
+
+
+###############################################################################
+#
+#  SECTION 3: ADDON COMMUNICATION PROTOCOL
+#
+#  Client-server communication framework for DarkChaos custom addons.
+#  Controls message routing, security limits, and per-system toggles.
+#
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Core Protocol Settings
+# -----------------------------------------------------------------------------
+
+#
+#    DC.AddonProtocol.Core.Enable
+#        Description: Master toggle for the DC Addon Protocol system
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Core.Enable = 1
+
+#
+#    DC.AddonProtocol.Debug.Enable
+#        Description: Enable debug logging for all addon protocol messages
+#        Default:     0 (Disabled)
+#
+DC.AddonProtocol.Debug.Enable = 0
+
+#
+#    DC.AddonProtocol.Logging.Enable
+#        Description: Enable database logging of addon protocol messages
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Logging.Enable = 1
+
+# -----------------------------------------------------------------------------
+# Message Handling Settings
+# -----------------------------------------------------------------------------
+
+#
+#    DC.AddonProtocol.ChunkTimeout
+#        Description: Timeout (ms) for reassembling chunked messages
+#        Default:     5000
+#
+DC.AddonProtocol.ChunkTimeout = 5000
+
+#
+#    DC.AddonProtocol.RequestTimeoutMs
+#        Description: Timeout (ms) for awaiting request responses
+#        Default:     8000
+#
+DC.AddonProtocol.RequestTimeoutMs = 8000
+
+# -----------------------------------------------------------------------------
+# Rate Limiting
+# -----------------------------------------------------------------------------
+
+#
+#    DC.AddonProtocol.RateLimit.Messages
+#        Description: Maximum addon messages per player per second
+#        Default:     30
+#
+DC.AddonProtocol.RateLimit.Messages = 30
+
+#
+#    DC.AddonProtocol.RateLimit.Action
+#        Description: Action when rate limit exceeded
+#                     0 = Log only
+#                     1 = Disconnect
+#                     2 = Mute addon messages
+#        Default:     0
+#
+DC.AddonProtocol.RateLimit.Action = 0
+
+# -----------------------------------------------------------------------------
+# Security Limits (DoS/Memory Protection)
+# -----------------------------------------------------------------------------
+
+#
+#    DC.AddonProtocol.Security.MaxChunksPerMessage
+#        Description: Maximum chunks allowed in a single chunked message
+#                     Prevents memory exhaustion from malicious clients
+#                     Largest legitimate: ~50KB transmog pages (~200 chunks)
+#        Default:     200
+#
+DC.AddonProtocol.Security.MaxChunksPerMessage = 200
+
+#
+#    DC.AddonProtocol.Security.MaxJsonPayloadSize
+#        Description: Maximum JSON payload size (bytes) after reassembly
+#                     Largest legitimate: ~100KB for collection sync
+#        Default:     131072 (128KB)
+#
+DC.AddonProtocol.Security.MaxJsonPayloadSize = 131072
+
+#
+#    DC.AddonProtocol.Security.MaxPendingChunks
+#        Description: Maximum concurrent pending chunked messages per account
+#        Default:     5
+#
+DC.AddonProtocol.Security.MaxPendingChunks = 5
+
+# -----------------------------------------------------------------------------
+# Per-System Protocol Toggles
+# -----------------------------------------------------------------------------
+
+#
+#    DC.AddonProtocol.QoS.Enable
+#        Description: Enable DC-QoS addon (settings sync, extended info)
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.QoS.Enable = 1
+
+#
+#    DC.AddonProtocol.QoS.Debug
+#        Description: Enable debug logging for DC-QoS addon handler
+#        Default:     0 (Disabled)
+#
+DC.AddonProtocol.QoS.Debug = 0
+
+#
+#    DC.AddonProtocol.AOELoot.Enable
+#        Description: Enable DCAOE prefix for AoE Loot addon sync
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.AOELoot.Enable = 1
+
+#
+#    DC.AddonProtocol.MythicPlus.Enable
+#        Description: Enable DC addon protocol for Mythic+ system
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.MythicPlus.Enable = 1
+
+#
+#    DC.AddonProtocol.Spectator.Enable
+#        Description: Enable DCSPEC prefix for Mythic+ Spectator addon
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Spectator.Enable = 1
+
+#
+#    DC.AddonProtocol.Upgrade.Enable
+#        Description: Enable DCUPG prefix for Item Upgrade addon sync
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Upgrade.Enable = 1
+
+#
+#    DC.AddonProtocol.Collection.Enable
+#        Description: Enable COLL prefix for Collection System
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Collection.Enable = 1
+
+#
+#    DC.AddonProtocol.Prestige.Enable
+#        Description: Enable DC addon protocol for Prestige system
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Prestige.Enable = 1
+
+#
+#    DCPrestigeAddon.Enable
+#        Description: Backward-compatible toggle for legacy prestige addon
+#        Default:     1 (Enabled)
+#
+DCPrestigeAddon.Enable = 1
+
+#
+#    DC.AddonProtocol.Duels.Enable
+#        Description: Enable DC addon protocol for Phased Dueling system
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Duels.Enable = 1
+
+#
+#    DCDuelAddon.Enable
+#        Description: Backward-compatible toggle for legacy duel addon
+#        Default:     1 (Enabled)
+#
+DCDuelAddon.Enable = 1
+
+#
+#    DC.AddonProtocol.Seasonal.Enable
+#        Description: Enable DC addon protocol for Seasonal system
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Seasonal.Enable = 1
+
+#
+#    DC.AddonProtocol.HinterlandBG.Enable
+#        Description: Enable DC addon protocol for Hinterland Battleground
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.HinterlandBG.Enable = 1
+
+#
+#    DC.Addon.HLBG.Enable
+#        Description: Enable Hinterland BG client addon support
+#        Default:     1 (Enabled)
+#
+DC.Addon.HLBG.Enable = 1
+
+#
+#    DC.AddonProtocol.Leaderboard.Enable
+#        Description: Enable DC addon protocol for Unified Leaderboards
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Leaderboard.Enable = 1
+
+#
+#    DC.AddonProtocol.GroupFinder.Enable
+#        Description: Enable addon-based Group Finder integration
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.GroupFinder.Enable = 1
+
+#
+#    DC.AddonProtocol.Hotspot.Enable
+#        Description: Enable addon-based Hotspot integration
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Hotspot.Enable = 1
+
+#
+#    DC.AddonProtocol.Teleports.Enable
+#        Description: Enable addon-based teleports integration
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Teleports.Enable = 1
+
+#
+#    DC.AddonProtocol.Events.Enable
+#        Description: Enable DC addon protocol for dynamic world events
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.Events.Enable = 1
+
+#
+#    DC.AddonProtocol.World.Enable
+#        Description: Enable World Content module (aggregated world info)
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.World.Enable = 1
+
+# -----------------------------------------------------------------------------
+# GM Tool Addon Protocols
+# -----------------------------------------------------------------------------
+
+#
+#    DC.AddonProtocol.GOMove.Enable
+#        Description: Enable addon-based GOMove integration
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.GOMove.Enable = 1
+
+#
+#    DC.AddonProtocol.GOMove.MinSecurity
+#        Description: Minimum GM level to use GOMove addon commands
+#        Default:     1 (SEC_GAMEMASTER)
+#
+DC.AddonProtocol.GOMove.MinSecurity = 1
+
+#
+#    DC.AddonProtocol.GOMove.MinSecurityMove
+#        Description: Minimum GM level to execute GOMove 'move' commands
+#        Default:     2 (SEC_ADMINISTRATOR)
+#
+DC.AddonProtocol.GOMove.MinSecurityMove = 2
+
+#
+#    DC.AddonProtocol.NPCMove.Enable
+#        Description: Enable addon-based NPC mover integration
+#        Default:     1 (Enabled)
+#
+DC.AddonProtocol.NPCMove.Enable = 1
+
+#
+#    DC.AddonProtocol.NPCMove.MinSecurity
+#        Description: Minimum GM level to use NPCMove addon commands
+#        Default:     1 (SEC_GAMEMASTER)
+#
+DC.AddonProtocol.NPCMove.MinSecurity = 1
+
+#
+#    DC.AddonProtocol.NPCMove.MinSecurityMove
+#        Description: Minimum GM level to execute NPCMove 'move' commands
+#        Default:     2 (SEC_ADMINISTRATOR)
+#
+DC.AddonProtocol.NPCMove.MinSecurityMove = 2
+
+
+###############################################################################
+###############################################################################
+##
+##  PART II - GAMEPLAY SYSTEMS
+##
+###############################################################################
+###############################################################################
+
+
+###############################################################################
+#
+#  SECTION 4: AOE LOOT SYSTEM
+#
+#  Allows players to collect loot from multiple nearby corpses with a single
+#  interaction. Includes extensions for quality filtering, professions, and
+#  Mythic+ bonuses.
+#
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Core AoE Loot Settings
+# -----------------------------------------------------------------------------
 
 #
 #    AoELoot.Enable
@@ -50,38 +556,36 @@ AoELoot.Enable = 1
 
 #
 #    AoELoot.Range
-#        Description: Maximum range (in yards) to collect loot from nearby corpses
+#        Description: Maximum range (yards) to collect loot from nearby corpses
+#        Range:       5.0 - 100.0
 #        Default:     30.0
 #
 AoELoot.Range = 30.0
 
 #
 #    AoELoot.MaxCorpses
-#        Description: Maximum number of corpses to include in a single AoE loot operation
+#        Description: Maximum corpses to include in a single AoE loot operation
+#        Range:       1 - 50
 #        Default:     10
 #
 AoELoot.MaxCorpses = 10
 
 #
-#    AoELoot.ShowMessage
-#        Description: GLOBAL toggle for AoE loot info messages
-#        Default:     1 (Enabled)
-#
-AoELoot.ShowMessage = 1
-
-#
 #    AoELoot.AutoLoot
 #        Description: Controls automatic looting behavior
-#        Default:     2 (Respect player's AutoLoot setting)
+#                     0 = Disabled
+#                     1 = Always auto-loot
+#                     2 = Respect player's AutoLoot client setting
+#        Default:     2
 #
 AoELoot.AutoLoot = 2
 
 #
-#    AoELoot.DebugPerCorpse
-#        Description: Enable debug logging for each corpse looted
-#        Default:     0 (Disabled)
+#    AoELoot.ShowMessage
+#        Description: Show AoE loot info messages to players
+#        Default:     1 (Enabled)
 #
-AoELoot.DebugPerCorpse = 0
+AoELoot.ShowMessage = 1
 
 #
 #    AoELoot.AllowInGroup
@@ -99,7 +603,7 @@ AoELoot.QuestItems = 1
 
 #
 #    AoELoot.IgnoreTapped
-#        Description: Skip corpses that are tapped by other players/groups
+#        Description: Skip corpses tapped by other players/groups
 #        Default:     1 (Enabled)
 #
 AoELoot.IgnoreTapped = 1
@@ -112,70 +616,75 @@ AoELoot.IgnoreTapped = 1
 AoELoot.PlayersOnly = 1
 
 #
-#    AoELoot.AutoStoreWindowSeconds
-#        Description: Time window to consider autostore "recent"
-#        Default:     5
+#    AoELoot.AutoCreditGold
+#        Description: Automatically credit gold when looting solo
+#        Default:     1 (Enabled)
 #
-AoELoot.AutoStoreWindowSeconds = 5
+AoELoot.AutoCreditGold = 1
 
 #
 #    AoELoot.MaxMergeSlots
-#        Description: Maximum number of item slots to merge into the client's loot window
+#        Description: Maximum item slots to merge into loot window
+#        Range:       1 - 16
 #        Default:     15
 #
 AoELoot.MaxMergeSlots = 15
 
 #
-#    AoELoot.AutoCreditGold
-#        Description: Automatically credit gold when solo
-#        Default:     1 (Enabled)
+#    AoELoot.AutoStoreWindowSeconds
+#        Description: Time window (seconds) to consider autostore "recent"
+#        Range:       1 - 60
+#        Default:     5
 #
-AoELoot.AutoCreditGold = 1
-
-# -------------------------------------------------------------------------
-# DC AoE Loot Extensions
-# -------------------------------------------------------------------------
+AoELoot.AutoStoreWindowSeconds = 5
 
 #
-#    AoELoot.Extensions.Enable
-
-
-#        Description: Master toggle for AoE Loot Extensions
-#        Default:     1 (Enabled)
+#    AoELoot.DebugPerCorpse
+#        Description: Enable debug logging for each corpse looted
+#        Default:     0 (Disabled)
 #
-AoELoot.Extensions.Enable = 1
+AoELoot.DebugPerCorpse = 0
+
+# -----------------------------------------------------------------------------
+# AoE Loot Extensions: Quality Filtering
+# -----------------------------------------------------------------------------
 
 #
 #    AoELoot.Extensions.QualityFilter.Enable
-#        Description: Enable quality-based loot filtering as DEFAULT behavior
-#        Default:     0 (Disabled)
+#        Description: Enable quality-based loot filtering (server default)
+#        Default:     0 (Disabled - players can enable per-character)
 #
 AoELoot.Extensions.QualityFilter.Enable = 0
 
 #
 #    AoELoot.Extensions.QualityFilter.MinQuality
-#        Description: [PLAYER OVERRIDABLE] Default minimum item quality to loot
+#        Description: Default minimum item quality to loot (player overridable)
+#                     0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary, 6=Artifact
 #        Default:     0 (Poor)
 #
 AoELoot.Extensions.QualityFilter.MinQuality = 0
 
 #
 #    AoELoot.Extensions.QualityFilter.MaxQuality
-#        Description: SERVER ENFORCED maximum quality
+#        Description: Server-enforced maximum quality (cannot be overridden)
 #        Default:     6 (Artifact)
 #
 AoELoot.Extensions.QualityFilter.MaxQuality = 6
 
 #
 #    AoELoot.Extensions.QualityFilter.AutoVendorPoor
-#        Description: [PLAYER OVERRIDABLE] Default auto-vendor poor items setting
+#        Description: Default auto-vendor poor quality items (player overridable)
 #        Default:     0 (Disabled)
 #
 AoELoot.Extensions.QualityFilter.AutoVendorPoor = 0
 
+# -----------------------------------------------------------------------------
+# AoE Loot Extensions: Profession Integration
+# -----------------------------------------------------------------------------
+
 #
 #    AoELoot.Extensions.Profession.AutoSkin
-#        Description: [PLAYER OVERRIDABLE] Default auto-skin setting
+#        Description: Server default for auto-skinning corpses (player overridable)
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.Profession.AutoSkin = 1
@@ -189,28 +698,33 @@ AoELoot.Extensions.Profession.AutoMine = 1
 
 #
 #    AoELoot.Extensions.Profession.AutoHerb
-#        Description: Server default for auto-herbing nodes
+#        Description: Server default for auto-gathering herb nodes
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.Profession.AutoHerb = 1
 
 #
 #    AoELoot.Extensions.Profession.Range
-#        Description: Range for auto-profession gathering
+#        Description: Range (yards) for auto-profession gathering
+#        Range:       1.0 - 100.0
 #        Default:     10.0
 #
 AoELoot.Extensions.Profession.Range = 10.0
 
+# -----------------------------------------------------------------------------
+# AoE Loot Extensions: Smart Loot
+# -----------------------------------------------------------------------------
+
 #
 #    AoELoot.Extensions.SmartLoot.PreferCurrentSpec
-#        Description: Prioritize items usable by current spec
+#        Description: Prioritize items usable by current talent spec
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.SmartLoot.PreferCurrentSpec = 1
 
 #
 #    AoELoot.Extensions.SmartLoot.PreferEquippable
-#        Description: Prioritize equippable items
+#        Description: Prioritize equippable items over non-equippable
 #        Default:     1 (Enabled)
 #
 AoELoot.Extensions.SmartLoot.PreferEquippable = 1
@@ -222,6 +736,10 @@ AoELoot.Extensions.SmartLoot.PreferEquippable = 1
 #
 AoELoot.Extensions.SmartLoot.PrioritizeUpgrades = 1
 
+# -----------------------------------------------------------------------------
+# AoE Loot Extensions: Mythic+ Integration
+# -----------------------------------------------------------------------------
+
 #
 #    AoELoot.Extensions.MythicPlus.Bonus
 #        Description: Apply bonus range/features in Mythic+ dungeons
@@ -231,10 +749,15 @@ AoELoot.Extensions.MythicPlus.Bonus = 1
 
 #
 #    AoELoot.Extensions.MythicPlus.RangeMultiplier
-#        Description: Multiply AoE loot range in Mythic+ dungeons
+#        Description: AoE loot range multiplier in Mythic+ dungeons
+#        Range:       1.0 - 5.0
 #        Default:     1.5
 #
 AoELoot.Extensions.MythicPlus.RangeMultiplier = 1.5
+
+# -----------------------------------------------------------------------------
+# AoE Loot Extensions: Raid Mode
+# -----------------------------------------------------------------------------
 
 #
 #    AoELoot.Extensions.Raid.Enable
@@ -250,6 +773,10 @@ AoELoot.Extensions.Raid.Enable = 1
 #
 AoELoot.Extensions.Raid.MaxCorpses = 25
 
+# -----------------------------------------------------------------------------
+# AoE Loot Extensions: Statistics
+# -----------------------------------------------------------------------------
+
 #
 #    AoELoot.Extensions.TrackDetailedStats
 #        Description: Track detailed loot statistics per player
@@ -258,13 +785,18 @@ AoELoot.Extensions.Raid.MaxCorpses = 25
 AoELoot.Extensions.TrackDetailedStats = 1
 
 
-###########################################################################
+###############################################################################
 #
-#    SECTION 2: HOTSPOTS SYSTEM
+#  SECTION 5: HOTSPOTS SYSTEM
 #
-#    Creates random XP bonus zones across the world that move periodically.
+#  Creates random XP bonus zones across the world that move periodically.
+#  Players inside hotspots receive bonus XP and can complete objectives.
 #
-###########################################################################
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Core Hotspot Settings
+# -----------------------------------------------------------------------------
 
 #
 #    Hotspots.Enable
@@ -275,14 +807,14 @@ Hotspots.Enable = 1
 
 #
 #    Hotspots.Duration
-#        Description: How long each hotspot lasts before expiring (in minutes)
+#        Description: How long each hotspot lasts before expiring (minutes)
 #        Default:     60
 #
 Hotspots.Duration = 60
 
 #
 #    Hotspots.ExperienceBonus
-#        Description: Experience bonus percentage (100 = double XP)
+#        Description: Experience bonus percentage (100 = double XP, 200 = triple)
 #        Default:     100
 #
 Hotspots.ExperienceBonus = 100
@@ -296,15 +828,19 @@ Hotspots.Radius = 150.0
 
 #
 #    Hotspots.MinDistance
-#        Description: Minimum distance (in yards) required between hotspot centers
-#                     to avoid clustering. Set to 0 to disable spacing enforcement.
+#        Description: Minimum distance between hotspot centers (prevents clustering)
+#                     Set to 0 to disable spacing enforcement
 #        Default:     300.0 (2x Radius)
 #
 Hotspots.MinDistance = 300.0
 
+# -----------------------------------------------------------------------------
+# Hotspot Population
+# -----------------------------------------------------------------------------
+
 #
 #    Hotspots.MaxActive
-#        Description: Maximum number of active hotspots
+#        Description: Maximum number of active hotspots at any time
 #        Default:     15
 #
 Hotspots.MaxActive = 15
@@ -318,14 +854,14 @@ Hotspots.MinActive = 12
 
 #
 #    Hotspots.MaxPerZone
-#        Description: Maximum number of hotspots allowed in the same zone
+#        Description: Maximum hotspots allowed in the same zone
 #        Default:     2
 #
 Hotspots.MaxPerZone = 2
 
 #
 #    Hotspots.RespawnDelay
-#        Description: Delay in minutes between hotspot spawns
+#        Description: Delay (minutes) between automatic hotspot spawns
 #        Default:     30
 #
 Hotspots.RespawnDelay = 30
@@ -337,21 +873,37 @@ Hotspots.RespawnDelay = 30
 #
 Hotspots.InitialPopulateCount = 5
 
-
+# -----------------------------------------------------------------------------
+# Visual Effects
+# -----------------------------------------------------------------------------
 
 #
 #    Hotspots.BuffSpell
 #        Description: Buff spell ID for visual effect AND XP bonus
-#        Default:     800001
+#        Default:     800001 (Custom spell)
 #
 Hotspots.BuffSpell = 800001
 
 #
 #    Hotspots.AuraSpell
-#        Description: Aura spell ID for secondary Hotspot effects
+#        Description: Aura spell ID for secondary hotspot effects
 #        Default:     800001
 #
 Hotspots.AuraSpell = 800001
+
+#
+#    Hotspots.SpawnVisualMarker
+#        Description: Spawn a GameObject marker at hotspot locations
+#        Default:     1 (Enabled)
+#
+Hotspots.SpawnVisualMarker = 1
+
+#
+#    Hotspots.MarkerGameObjectEntry
+#        Description: GameObject entry ID for visual marker
+#        Default:     179976
+#
+Hotspots.MarkerGameObjectEntry = 179976
 
 #
 #    Hotspots.MinimapIcon
@@ -362,14 +914,19 @@ Hotspots.MinimapIcon = 1
 
 #
 #    Hotspots.AnnounceRadius
-#        Description: Distance in yards at which players see minimap markers
+#        Description: Distance (yards) at which players see minimap markers
 #        Default:     500.0
 #
 Hotspots.AnnounceRadius = 500.0
 
+# -----------------------------------------------------------------------------
+# Zone Configuration
+# -----------------------------------------------------------------------------
+
 #
 #    Hotspots.EnabledMaps
 #        Description: Comma-separated list of map IDs where hotspots can spawn
+#                     0=Eastern Kingdoms, 1=Kalimdor, 530=Outland, 571=Northrend, 37=AzsharaCrater
 #        Default:     "0,1,530,571,37"
 #
 Hotspots.EnabledMaps = "0,1,530,571,37"
@@ -377,13 +934,14 @@ Hotspots.EnabledMaps = "0,1,530,571,37"
 #
 #    Hotspots.EnabledZones
 #        Description: Comma-separated list of zone IDs where hotspots can spawn
+#                     Empty = all zones on enabled maps
 #        Default:     ""
 #
 Hotspots.EnabledZones = ""
 
 #
 #    Hotspots.ExcludedZones
-#        Description: Comma-separated list of zone IDs where hotspots should NOT spawn
+#        Description: Comma-separated list of zone IDs where hotspots cannot spawn
 #        Default:     ""
 #
 Hotspots.ExcludedZones = ""
@@ -391,9 +949,14 @@ Hotspots.ExcludedZones = ""
 #
 #    Hotspots.EnabledZonesPerMap
 #        Description: Per-map list of enabled zone IDs
+#                     Format: "mapId:zoneId1,zoneId2;mapId2:zoneId3"
 #        Default:     "1:0;37:268"
 #
 Hotspots.EnabledZonesPerMap = "1:0;37:268"
+
+# -----------------------------------------------------------------------------
+# Announcements
+# -----------------------------------------------------------------------------
 
 #
 #    Hotspots.AnnounceSpawn
@@ -409,19 +972,9 @@ Hotspots.AnnounceSpawn = 1
 #
 Hotspots.AnnounceExpire = 1
 
-#
-#    Hotspots.SpawnVisualMarker
-#        Description: Spawn a GameObject marker at hotspot locations
-#        Default:     1 (Enabled)
-#
-Hotspots.SpawnVisualMarker = 1
-
-#
-#    Hotspots.MarkerGameObjectEntry
-#        Description: GameObject entry ID to use as visual marker
-#        Default:     179976
-#
-Hotspots.MarkerGameObjectEntry = 179976
+# -----------------------------------------------------------------------------
+# Addon Integration
+# -----------------------------------------------------------------------------
 
 #
 #    Hotspots.SendAddonPackets
@@ -439,51 +992,54 @@ Hotspots.IncludeTextureInAddon = 0
 
 #
 #    Hotspots.BuffTexture
-#        Description: Explicit texture path to include in HOTSPOT_ADDON
+#        Description: Explicit texture path for HOTSPOT_ADDON (if enabled)
 #        Default:     ""
 #
 Hotspots.BuffTexture = ""
 
+# -----------------------------------------------------------------------------
+# Admin Settings
+# -----------------------------------------------------------------------------
+
 #
 #    Hotspots.GMBypassLimit
-#        Description: Allow GM/manual spawn commands to bypass MaxActive limit
+#        Description: Allow GM commands to bypass MaxActive limit
 #        Default:     1 (Enabled)
 #
 Hotspots.GMBypassLimit = 1
 
 #
 #    Hotspots.AllowWorldwideSpawn
-#        Description: Enable the .hotspot spawnworld admin command
+#        Description: Enable .hotspot spawnworld admin command
 #        Default:     1 (Enabled)
 #
 Hotspots.AllowWorldwideSpawn = 1
 
-# -------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Dungeon Hotspots (Disabled by Default)
-# -------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 #
 #    Hotspots.Dungeons.Enable
-#        Description: Enable hotspots to spawn inside dungeons and instances
+#        Description: Enable hotspots inside dungeons and instances
 #        Default:     0 (Disabled)
 #
 Hotspots.Dungeons.Enable = 0
 
 #
 #    Hotspots.Dungeons.BonusMultiplier
-#        Description: Additional XP bonus % in dungeons (stacks with base bonus)
+#        Description: Additional XP bonus % in dungeons (stacks with base)
 #        Default:     50
 #
 Hotspots.Dungeons.BonusMultiplier = 50
 
-# -------------------------------------------------------------------------
-# Hotspot Objectives System
-# -------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Hotspot Objectives
+# -----------------------------------------------------------------------------
 
 #
 #    Hotspots.Objectives.Enable
 #        Description: Enable objective tracking (kills, survival time)
-#                     Results are shown to players when they leave or complete objectives
 #        Default:     1 (Enabled)
 #
 Hotspots.Objectives.Enable = 1
@@ -504,445 +1060,515 @@ Hotspots.Objectives.SurviveMinutes = 5
 
 #
 #    Hotspots.Objectives.ShowProgress
-#        Description: Show progress messages to players as they complete kills
+#        Description: Show progress messages as players complete objectives
 #        Default:     1 (Enabled)
 #
 Hotspots.Objectives.ShowProgress = 1
 
-# -------------------------------------------------------------------------
-# [REMOVED] Anti-Camping System - Removed in January 2026
-# -------------------------------------------------------------------------
-# The anti-camping diminishing returns system has been removed from the 
-# Hotspots system. The following settings are no longer used:
-#   - Hotspots.AntiCamping.Enabled
-#   - Hotspots.AntiCamping.Interval
-#   - Hotspots.AntiCamping.Tiers
 
-
-###########################################################################
+###############################################################################
 #
-#    SECTION 3: HINTERLAND BATTLEGROUND
+#  SECTION 6: ITEM UPGRADE SYSTEM
 #
-#    Custom 25v25 PvP battleground in The Hinterlands zone.
+#  Allows players to upgrade gear progressively using seasonal currency.
 #
-###########################################################################
+###############################################################################
 
 #
-#    HinterlandBG.MatchDuration
-#        Description: Match window duration in seconds
-#        Default:     3600
-#
-HinterlandBG.MatchDuration = 3600
-
-#
-#    HinterlandBG.WarmupDuration
-#        Description: Warmup phase duration in seconds
-#        Default:     120
-#
-HinterlandBG.WarmupDuration = 120
-
-#
-#    HinterlandBG.Queue.Enabled
-#        Description: Enable the queue system
+#    ItemUpgrade.Enable
+#        Description: Master toggle for the Item Upgrade system
 #        Default:     1 (Enabled)
 #
-HinterlandBG.Queue.Enabled = 1
+ItemUpgrade.Enable = 1
 
 #
-#    HinterlandBG.Queue.MinPlayers
-#        Description: Minimum number of players required to start a battle
-#        Default:     4
+#    ItemUpgrade.DebugToSay
+#        Description: Send debug messages to player via Say channel
+#        Default:     0 (Disabled)
 #
-HinterlandBG.Queue.MinPlayers = 4
+ItemUpgrade.DebugToSay = 0
+
+# -----------------------------------------------------------------------------
+# Currency Configuration
+# -----------------------------------------------------------------------------
 
 #
-#    HinterlandBG.Queue.MaxGroupSize
-#        Description: Maximum group size allowed to queue together
-#        Default:     5
+#    ItemUpgrade.Currency.UseSeasonalCurrency
+#        Description: Use canonical seasonal currency for upgrades
+#        Default:     0 (Disabled - use ItemUpgrade-specific items)
 #
-HinterlandBG.Queue.MaxGroupSize = 5
+ItemUpgrade.Currency.UseSeasonalCurrency = 0
 
 #
-#    HinterlandBG.MinLevel
-#        Description: Minimum player level required to enter
-#        Default:     1
+#    ItemUpgrade.Currency.TokenId
+#        Description: Item ID for Upgrade Tokens (if not using seasonal)
+#        Default:     300311
 #
-HinterlandBG.MinLevel = 1
+ItemUpgrade.Currency.TokenId = 300311
 
 #
-#    HinterlandBG.AFK.WarnSeconds
-#        Description: Seconds of inactivity before showing AFK warning
-#        Default:     120
+#    ItemUpgrade.Currency.EssenceId
+#        Description: Item ID for Upgrade Essence (if not using seasonal)
+#        Default:     300312
 #
-HinterlandBG.AFK.WarnSeconds = 120
+ItemUpgrade.Currency.EssenceId = 300312
+
+# -----------------------------------------------------------------------------
+# Testing/Development
+# -----------------------------------------------------------------------------
 
 #
-#    HinterlandBG.AFK.TeleportSeconds
-#        Description: Seconds of inactivity before teleporting player out
-#        Default:     180
+#    ItemUpgrade.Test.EssenceGrant
+#        Description: Essence amount granted by .upgradeprog testset command
+#        Default:     5000
 #
-HinterlandBG.AFK.TeleportSeconds = 180
+ItemUpgrade.Test.EssenceGrant = 5000
 
 #
-#    HinterlandBG.Broadcast.Enabled
-#        Description: Enable periodic status broadcasts to zone
+#    ItemUpgrade.Test.TokensGrant
+#        Description: Tokens amount granted by .upgradeprog testset command
+#        Default:     2500
+#
+ItemUpgrade.Test.TokensGrant = 2500
+
+
+###############################################################################
+#
+#  SECTION 7: COLLECTION SYSTEM
+#
+#  Retail-like collection management for mounts, pets, titles, transmog, and
+#  heirlooms with account-wide progression.
+#
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Core Collection Settings
+# -----------------------------------------------------------------------------
+
+#
+#    DCCollection.Enable
+#        Description: Master toggle for the Collection System
 #        Default:     1 (Enabled)
 #
-HinterlandBG.Broadcast.Enabled = 1
+DCCollection.Enable = 1
 
 #
-#    HinterlandBG.Broadcast.Period
-#        Description: Period in seconds between status broadcasts
-#        Default:     180
+#    DCCollection.Debug
+#        Description: Enable debug logging for the Collection System
+#        Default:     0 (Disabled)
 #
-HinterlandBG.Broadcast.Period = 180
+DCCollection.Debug = 0
+
+# -----------------------------------------------------------------------------
+# Module Toggles
+# -----------------------------------------------------------------------------
 
 #
-#    HinterlandBG.Announce.ExpiryWorld
-#        Description: Global announcement when timer expires
+#    DCCollection.Mounts.Enable
+#        Description: Enable mount collection and journal
 #        Default:     1 (Enabled)
 #
-HinterlandBG.Announce.ExpiryWorld = 1
+DCCollection.Mounts.Enable = 1
 
 #
-#    HinterlandBG.Announce.DepletionWorld
-#        Description: Global announcement when a side reaches 0 resources
+#    DCCollection.Titles.Enable
+#        Description: Enable title collection and management
 #        Default:     1 (Enabled)
 #
-HinterlandBG.Announce.DepletionWorld = 1
+DCCollection.Titles.Enable = 1
 
 #
-#    HinterlandBG.AutoReset.Teleport
-#        Description: Teleport players to faction start graveyards on reset
+#    DCCollection.Heirlooms.Enable
+#        Description: Enable heirloom collection (integrates with Item Upgrade)
 #        Default:     1 (Enabled)
 #
-HinterlandBG.AutoReset.Teleport = 1
+DCCollection.Heirlooms.Enable = 1
 
 #
-#    HinterlandBG.Expiry.Tiebreaker
-#        Description: At timer expiry, declare a winner by higher resources
+#    DCCollection.Transmog.Enable
+#        Description: Enable transmog appearance collection
 #        Default:     1 (Enabled)
 #
-HinterlandBG.Expiry.Tiebreaker = 1
+DCCollection.Transmog.Enable = 1
+
+# -----------------------------------------------------------------------------
+# Account-Wide Sync
+# -----------------------------------------------------------------------------
 
 #
-#    HinterlandBG.Resources.Alliance
-#        Description: Starting resources for Alliance team
-#        Default:     450
+#    DCCollection.Accountwide.SyncToCharacterOnLogin
+#        Description: Sync accountwide unlocks to character on login
+#                     (mounts, companions, titles usable in default Blizzard UI)
+#        Default:     1 (Enabled)
 #
-HinterlandBG.Resources.Alliance = 450
+DCCollection.Accountwide.SyncToCharacterOnLogin = 1
 
 #
-#    HinterlandBG.Resources.Horde
-#        Description: Starting resources for Horde team
-#        Default:     450
+#    DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete
+#        Description: Flush achievement updates after sync completes
+#        Default:     1 (Enabled)
 #
-HinterlandBG.Resources.Horde = 450
+DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete = 1
 
 #
-#    HinterlandBG.Base.Alliance.*
-#        Description: Alliance Base Coordinates
+#    DCCollection.Accountwide.SyncToCharacterOnLogin.DelayMs
+#        Description: Delay (ms) before starting login sync
+#        Default:     1000
 #
-HinterlandBG.Base.Alliance.Map = 0
-HinterlandBG.Base.Alliance.X = 62.083
-HinterlandBG.Base.Alliance.Y = -4714.99
-HinterlandBG.Base.Alliance.Z = 11.7937
-HinterlandBG.Base.Alliance.O = 2.50765
+DCCollection.Accountwide.SyncToCharacterOnLogin.DelayMs = 1000
 
 #
-#    HinterlandBG.Base.Horde.*
-#        Description: Horde Base Coordinates
-#
-HinterlandBG.Base.Horde.Map = 0
-HinterlandBG.Base.Horde.X = -628.484
-HinterlandBG.Base.Horde.Y = -4684.51
-HinterlandBG.Base.Horde.Z = 5.14442
-HinterlandBG.Base.Horde.O = 1.12528
-
-
-
-#
-#    HinterlandBG.Reward.MatchHonor
-#        Description: Base honor reward for match participation
-#        Default:     1500
-#
-HinterlandBG.Reward.MatchHonor = 1500
-
-#
-#    HinterlandBG.Reward.MatchHonorDepletion
-#        Description: Winner honor when opponent reaches 0 resources
-#        Default:     120
-#
-HinterlandBG.Reward.MatchHonorDepletion = 120
-
-#
-#    HinterlandBG.Reward.MatchHonorTiebreaker
-#        Description: Winner honor when win is by timer expiry
-#        Default:     70
-#
-HinterlandBG.Reward.MatchHonorTiebreaker = 70
-
-#
-#    HinterlandBG.Reward.MatchHonorLoser
-#        Description: Consolation honor for the losing team
-#        Default:     20
-#
-HinterlandBG.Reward.MatchHonorLoser = 20
-
-#
-#    HinterlandBG.Reward.KillItemId
-#        Description: Item granted on player kill
-#        Default:     40752
-#
-HinterlandBG.Reward.KillItemId = 40752
-
-#
-#    HinterlandBG.Reward.KillItemCount
-#        Description: Number of items to grant per player kill
-#        Default:     1
-#
-HinterlandBG.Reward.KillItemCount = 1
-
-#
-#    HinterlandBG.Reward.KillHonorValues
-#        Description: CSV list for random honor per kill
-#        Default:     "17,11,19,22"
-#
-HinterlandBG.Reward.KillHonorValues = "17,11,19,22"
-
-#
-#    HinterlandBG.ResourcesLoss.PlayerKill
-#        Description: Resources removed from opposing team when a player dies
-#        Default:     5
-#
-HinterlandBG.ResourcesLoss.PlayerKill = 5
-
-#
-#    HinterlandBG.ResourcesLoss.NpcNormal
-#        Description: Resources removed when a normal NPC dies
-#        Default:     5
-#
-HinterlandBG.ResourcesLoss.NpcNormal = 5
-
-#
-#    HinterlandBG.ResourcesLoss.NpcBoss
-#        Description: Resources removed when a boss NPC dies
+#    DCCollection.Accountwide.SyncToCharacterOnLogin.BatchSize
+#        Description: Items per batch during login sync
 #        Default:     200
 #
-HinterlandBG.ResourcesLoss.NpcBoss = 200
+DCCollection.Accountwide.SyncToCharacterOnLogin.BatchSize = 200
 
 #
-#    HinterlandBG.ResourcesLoss.NPC*Entries*
-#        Description: NPC Entry IDs for resource loss calculation
+#    DCCollection.Accountwide.SyncToCharacterOnLogin.BatchDelayMs
+#        Description: Delay (ms) between sync batches
+#        Default:     250
 #
-HinterlandBG.ResourcesLoss.NPCBossEntriesAlliance = 810003
-HinterlandBG.ResourcesLoss.NPCNormalEntriesAlliance = 600005,810001,600011
-HinterlandBG.ResourcesLoss.NPCBossEntriesHorde = 810002
-HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 600004,810000,600008
+DCCollection.Accountwide.SyncToCharacterOnLogin.BatchDelayMs = 250
+
+# -----------------------------------------------------------------------------
+# Mount Settings
+# -----------------------------------------------------------------------------
 
 #
-#    HinterlandBG.Reward.NPCTokenItemId
-#        Description: Token item ID granted to winning team on match end
-#        Default:     0
-#
-HinterlandBG.Reward.NPCTokenItemId = 300311
-
-#
-#    HinterlandBG.Reward.NPCTokenItemCount
-#        Description: Number of tokens to grant to winning team
-#        Default:     0
-#
-HinterlandBG.Reward.NPCTokenItemCount = 100
-
-#
-#    HinterlandBG.Reward.NPCEntries*
-#        Description: NPC entries that grant tokens when killed
-#
-HinterlandBG.Reward.NPCEntriesAlliance = 600005,810003,810001,600011
-HinterlandBG.Reward.NPCEntriesHorde = 600004,600008,810000,810002
-
-#
-#    HinterlandBG.Reward.NPCEntryCounts*
-#        Description: Specific token counts per entry
-#
-HinterlandBG.Reward.NPCEntryCountsAlliance = 600005:2,810003:3
-HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810000:3
-
-#
-#    HinterlandBG.Persistence.Enabled
-#        Description: Save/restore resources, timer, last winner across restarts
+#    DCCollection.Mounts.SmartMount
+#        Description: Auto-detect ground vs flying zone for random mount
 #        Default:     1 (Enabled)
 #
-HinterlandBG.Persistence.Enabled = 1
+DCCollection.Mounts.SmartMount = 1
 
 #
-#    HinterlandBG.Lock.Enabled
-#        Description: Enable lock window after a win
+#    DCCollection.Mounts.RandomFavoritesOnly
+#        Description: Random mount only picks from favorites (if any)
+#        Default:     0 (Disabled - picks from all mounts)
+#
+DCCollection.Mounts.RandomFavoritesOnly = 0
+
+# -----------------------------------------------------------------------------
+# Mount Collection Bonuses
+# -----------------------------------------------------------------------------
+
+#
+#    DCCollection.MountBonuses.Enable
+#        Description: Enable mount speed bonuses based on collection size
+#        Default:     1 (Enabled)
+#
+DCCollection.MountBonuses.Enable = 1
+
+#
+#    DCCollection.MountBonuses.Threshold[1-4]
+#        Description: Mount bonus thresholds "mounts_needed,bonus_percent"
+#        Defaults:    25=+2%, 50=+3%, 100=+3%, 150=+2% (total +10%)
+#
+DCCollection.MountBonuses.Threshold1 = "25,2"
+DCCollection.MountBonuses.Threshold2 = "50,3"
+DCCollection.MountBonuses.Threshold3 = "100,3"
+DCCollection.MountBonuses.Threshold4 = "150,2"
+
+# -----------------------------------------------------------------------------
+# Pet Definition Maintenance
+# -----------------------------------------------------------------------------
+
+#
+#    DCCollection.Pets.RebuildDefinitionsOnStartup
+#        Description: Rebuild dc_pet_definitions from server data on startup
 #        Default:     0 (Disabled)
 #
-HinterlandBG.Lock.Enabled = 0
+DCCollection.Pets.RebuildDefinitionsOnStartup = 0
 
 #
-#    HinterlandBG.Lock.Duration
-#        Description: Lock duration in seconds
-#        Default:     0
-#
-HinterlandBG.Lock.Duration = 0
-
-#
-#    HinterlandBG.Lock.Duration.Expiry
-#        Description: Override lock duration for timer-expiry wins
-#        Default:     0
-#
-HinterlandBG.Lock.Duration.Expiry = 0
-
-#
-#    HinterlandBG.Lock.Duration.Depletion
-#        Description: Override lock duration when a team depletes the opponent
-#        Default:     0
-#
-HinterlandBG.Lock.Duration.Depletion = 0
-
-#
-#    HinterlandBG.Season
-#        Description: Track season number for persistent stats (BG-specific)
-#        Default:     1
-#
-HinterlandBG.Season = 1
-
-#
-#    HinterlandBG.Stats.IncludeManual
-#        Description: Include manual resets in statistics by default
-#        Default:     1 (Enabled)
-#
-HinterlandBG.Stats.IncludeManual = 1
-
-#
-#    HinterlandBG.KillSpell.*
-#        Description: Per-Kill Spell Feedback
-#
-HinterlandBG.KillSpell.PlayerKillAlliance = 0
-HinterlandBG.KillSpell.PlayerKillHorde = 0
-HinterlandBG.KillSpell.NpcKill = 0
-
-# -------------------------------------------------------------------------
-# Hinterland BG Affixes
-# -------------------------------------------------------------------------
-
-#
-#    HinterlandBG.Affix.Enabled
-#        Description: Enable HLBG affix system
-#        Default:     1 (Enabled)
-#
-HinterlandBG.Affix.Enabled = 1
-
-#
-#    HinterlandBG.Affix.Weather.Enabled
-#        Description: Enable weather changes driven by HLBG affixes
-#        Default:     1 (Enabled)
-#
-HinterlandBG.Affix.Weather.Enabled = 1
-
-#
-#    HinterlandBG.Affix.Period
-#        Description: Affix rotation period in minutes (0 = static)
-#        Default:     0
-#
-HinterlandBG.Affix.Period = 0
-
-#
-#    HinterlandBG.Affix.RandomOnStart
-#        Description: Pick a random affix when match starts
-#        Default:     1 (Enabled)
-#
-HinterlandBG.Affix.RandomOnStart = 1
-
-#
-#    HinterlandBG.Affix.Announce
-#        Description: Announce affix changes to the zone
+#    DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate
+#        Description: TRUNCATE dc_pet_definitions before rebuilding
 #        Default:     0 (Disabled)
 #
-HinterlandBG.Affix.Announce = 0
+DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate = 0
 
 #
-#    HinterlandBG.Affix.Worldstate
-#        Description: Broadcast affix state via worldstate
+#    DCCollection.Pets.RebuildDefinitionsOnStartup.UseDbItemFilter
+#        Description: Query only companion items from item_template
+#        Default:     1 (Enabled)
+#
+DCCollection.Pets.RebuildDefinitionsOnStartup.UseDbItemFilter = 1
+
+#
+#    DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly
+#        Description: Scan Spell.dbc for spell-only minipet summons
 #        Default:     0 (Disabled)
 #
-HinterlandBG.Affix.Worldstate = 0
+DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly = 0
+
+# -----------------------------------------------------------------------------
+# Transmog Settings
+# -----------------------------------------------------------------------------
 
 #
-#    HinterlandBG.Affix.PlayerSpell.*
-#        Description: Player-affecting affix spell IDs
+#    DCCollection.Transmog.MinQuality
+#        Description: Minimum item quality for transmog unlocks
+#                     0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary
+#        Default:     0 (All qualities)
 #
-HinterlandBG.Affix.PlayerSpell.Sunlight = 910010
-HinterlandBG.Affix.PlayerSpell.ClearSkies = 910011
-HinterlandBG.Affix.PlayerSpell.GentleBreeze = 910012
+DCCollection.Transmog.MinQuality = 0
 
 #
-#    HinterlandBG.Affix.NpcSpell.*
-#        Description: NPC-affecting affix spell IDs
+#    DCCollection.Transmog.SlotItemsPageSize
+#        Description: Page size for transmog slot items responses
+#        Default:     100
 #
-HinterlandBG.Affix.NpcSpell.Storm = 910020
-HinterlandBG.Affix.NpcSpell.HeavyRain = 910021
-HinterlandBG.Affix.NpcSpell.Fog = 910022
+DCCollection.Transmog.SlotItemsPageSize = 100
 
 #
-#    HinterlandBG.Affix.WeatherType.*
-#        Description: Weather type per affix (0=Fine,1=Rain,2=Snow,3=Storm)
+#    DCCollection.Transmog.SkipUnlockCheck
+#        Description: Allow applying appearances without unlock check
+#        Default:     1 (Enabled)
 #
-HinterlandBG.Affix.WeatherType.Sunlight = 0
-HinterlandBG.Affix.WeatherType.ClearSkies = 0
-HinterlandBG.Affix.WeatherType.GentleBreeze = 1
-HinterlandBG.Affix.WeatherType.Storm = 3
-HinterlandBG.Affix.WeatherType.HeavyRain = 1
-HinterlandBG.Affix.WeatherType.Fog = 2
+DCCollection.Transmog.SkipUnlockCheck = 1
 
 #
-#    HinterlandBG.Affix.WeatherIntensity.*
-#        Description: Weather intensity per affix (0.0 - 1.0)
+#    DCCollection.Transmog.SkipCompatCheck
+#        Description: Skip armor/weapon type compatibility checks
+#        Default:     1 (Enabled)
 #
-HinterlandBG.Affix.WeatherIntensity.Sunlight = 0.35
-HinterlandBG.Affix.WeatherIntensity.ClearSkies = 0.2
-HinterlandBG.Affix.WeatherIntensity.GentleBreeze = 0.3
-HinterlandBG.Affix.WeatherIntensity.Storm = 0.6
-HinterlandBG.Affix.WeatherIntensity.HeavyRain = 0.8
-HinterlandBG.Affix.WeatherIntensity.Fog = 0.4
+DCCollection.Transmog.SkipCompatCheck = 1
+
+#
+#    DCCollection.Transmog.Definitions.IncludeSources
+#        Description: Include source metadata in transmog definitions
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.Definitions.IncludeSources = 0
+
+# Transmog Unlock Triggers
+DCCollection.Transmog.UnlockOnEquip = 1
+DCCollection.Transmog.UnlockOnCreate = 1
+DCCollection.Transmog.UnlockOnSoulbind = 1
+DCCollection.Transmog.UnlockOnLoot = 1
+DCCollection.Transmog.UnlockOnQuestReward = 0
+
+# Transmog Login Scan
+DCCollection.Transmog.LoginScan.Enable = 0
+DCCollection.Transmog.LoginScan.IncludeBank = 1
+
+# Transmog Session Settings
+DCCollection.Transmog.SessionNotificationDedup = 1
+
+# Transmog Legacy Import
+DCCollection.Transmog.LegacyImport.Enable = 1
+DCCollection.Transmog.LegacyImport.IncludeBank = 1
+DCCollection.Transmog.LegacyImport.RequireSoulbound = 0
+
+# -----------------------------------------------------------------------------
+# Outfit System
+# -----------------------------------------------------------------------------
+
+#
+#    DCCollection.Outfits.Enable
+#        Description: Enable account-wide outfit saving system
+#        Default:     1 (Enabled)
+#
+DCCollection.Outfits.Enable = 1
+
+#
+#    DCCollection.Outfits.MaxPerAccount
+#        Description: Maximum outfits per account
+#        Default:     50
+#
+DCCollection.Outfits.MaxPerAccount = 50
+
+#
+#    DCCollection.Outfits.AllowCommunityImport
+#        Description: Allow copying community outfits to personal collection
+#        Default:     1 (Enabled)
+#
+DCCollection.Outfits.AllowCommunityImport = 1
+
+# -----------------------------------------------------------------------------
+# Shop System
+# -----------------------------------------------------------------------------
+
+#
+#    DCCollection.Shop.Enable
+#        Description: Enable the collection shop
+#        Default:     1 (Enabled)
+#
+DCCollection.Shop.Enable = 1
+
+#
+#    DCCollection.Shop.CurrencyToken
+#        Description: Item ID for shop token currency
+#        Default:     300311
+#
+DCCollection.Shop.CurrencyToken = 300311
+
+#
+#    DCCollection.Shop.CurrencyEmblem
+#        Description: Item ID for shop emblem currency
+#        Default:     300312
+#
+DCCollection.Shop.CurrencyEmblem = 300312
+
+# -----------------------------------------------------------------------------
+# Wishlist System
+# -----------------------------------------------------------------------------
+
+#
+#    DCCollection.Wishlist.Enable
+#        Description: Enable the wishlist system
+#        Default:     1 (Enabled)
+#
+DCCollection.Wishlist.Enable = 1
+
+#
+#    DCCollection.Wishlist.MaxItems
+#        Description: Maximum wishlist items per account
+#        Default:     50
+#
+DCCollection.Wishlist.MaxItems = 50
+
+#
+#    DCCollection.Wishlist.NotifyOnZoneEnter
+#        Description: Notify when entering zone with wishlist item source
+#        Default:     1 (Enabled)
+#
+DCCollection.Wishlist.NotifyOnZoneEnter = 1
+
+# -----------------------------------------------------------------------------
+# Notifications
+# -----------------------------------------------------------------------------
+
+#
+#    DCCollection.Notifications.Enable
+#        Description: Enable toast notifications for new collections
+#        Default:     1 (Enabled)
+#
+DCCollection.Notifications.Enable = 1
+
+#
+#    DCCollection.Notifications.Sound
+#        Description: Play sound when collecting new items
+#        Default:     1 (Enabled)
+#
+DCCollection.Notifications.Sound = 1
+
+#
+#    DCCollection.SyncInterval
+#        Description: Interval (seconds) between automatic syncs
+#        Default:     30
+#
+DCCollection.SyncInterval = 30
+
+# -----------------------------------------------------------------------------
+# Leaderboard Integration
+# -----------------------------------------------------------------------------
+
+#
+#    DCCollection.Leaderboards.Enable
+#        Description: Enable collection leaderboards
+#        Default:     1 (Enabled)
+#
+DCCollection.Leaderboards.Enable = 1
+
+#
+#    DCCollection.Leaderboards.UpdateInterval
+#        Description: Leaderboard cache update interval (minutes)
+#        Default:     15
+#
+DCCollection.Leaderboards.UpdateInterval = 15
 
 
-###########################################################################
+###############################################################################
+###############################################################################
+##
+##  PART III - PVE CONTENT
+##
+###############################################################################
+###############################################################################
+
+
+###############################################################################
 #
-#    SECTION 4: MYTHIC+ DUNGEON SYSTEM
+#  SECTION 8: MYTHIC+ DUNGEON SYSTEM
 #
-#    Provides scaled dungeon difficulties (Normal, Heroic, Mythic+) with
-#    keystones, affixes, and spectator mode.
+#  Provides scaled dungeon difficulties with keystones, affixes, timers,
+#  and spectator mode. Includes weekly vault system.
 #
-###########################################################################
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Core Mythic+ Settings
+# -----------------------------------------------------------------------------
 
 #
 #    MythicPlus.Enable
-#        Description: Master toggle for the Mythic+ dungeon scaling system
+#        Description: Master toggle for Mythic+ dungeon scaling system
 #        Default:     1 (Enabled)
 #
 MythicPlus.Enable = 1
 
 #
+#    MythicPlus.FeaturedOnly
+#        Description: Restrict M+ to featured dungeons in current season
+#        Default:     1 (Enabled)
+#
+MythicPlus.FeaturedOnly = 1
+
+#
+#    MythicPlus.TeleportToEntrance
+#        Description: Teleport group to dungeon entrance when keystone activated
+#        Default:     1 (Enabled)
+#
+MythicPlus.TeleportToEntrance = 1
+
+#
+#    MythicPlus.CountdownDuration
+#        Description: Countdown seconds before M+ timer starts
+#        Default:     10
+#
+MythicPlus.CountdownDuration = 10
+
+#
+#    MythicPlus.CancellationTimeout
+#        Description: Seconds before auto-cancelling abandoned runs
+#        Default:     180
+#
+MythicPlus.CancellationTimeout = 180
+
+# -----------------------------------------------------------------------------
+# Keystone System
+# -----------------------------------------------------------------------------
+
+#
+#    MythicPlus.Keystone.Enabled
+#        Description: Enable Mythic+ keystone system
+#        Default:     1 (Enabled)
+#
+MythicPlus.Keystone.Enabled = 1
+
+# -----------------------------------------------------------------------------
+# Loot Configuration
+# -----------------------------------------------------------------------------
+
+#
 #    MythicPlus.BossLoot.Enabled
-#        Description: Enable retail-like spec-based loot drops from Mythic+ bosses
+#        Description: Enable retail-like spec-based loot from M+ bosses
 #        Default:     1 (Enabled)
 #
 MythicPlus.BossLoot.Enabled = 1
 
 #
 #    MythicPlus.BossItems
-#        Description: Number of spec-tailored personal loot items generated by non-final bosses
+#        Description: Spec-tailored loot items from non-final bosses
 #        Default:     1
 #
 MythicPlus.BossItems = 1
 
 #
 #    MythicPlus.FinalBossItems
-#        Description: Number of spec-tailored personal loot items generated by the final boss
+#        Description: Spec-tailored loot items from final boss
 #        Default:     2
 #
 MythicPlus.FinalBossItems = 2
@@ -956,135 +1582,18 @@ MythicPlus.BaseItemLevel = 226
 
 #
 #    MythicPlus.SuppressTrashLoot
-#        Description: Prevent non-boss creatures from dropping traditional loot in M+ dungeons
+#        Description: Prevent non-boss creatures from dropping loot in M+
 #        Default:     1 (Enabled)
 #
 MythicPlus.SuppressTrashLoot = 1
 
-#
-#    MythicPlus.CancellationTimeout
-#        Description: Seconds before auto-cancelling abandoned runs
-#        Default:     180
-#
-MythicPlus.CancellationTimeout = 180
-
-#
-#    MythicPlus.CountdownDuration
-#        Description: Countdown seconds before Mythic+ timer starts
-#        Default:     10
-#
-MythicPlus.CountdownDuration = 10
-
-#
-#    MythicPlus.Hud.WorldStates
-#        Description: Send worldstate packets for Mythic+ timer/stats
-#        Default:     1 (Enabled)
-#
-MythicPlus.Hud.WorldStates = 1
-
-#
-#    MythicPlus.Hud.UpdateInterval
-#        Description: Seconds between automatic worldstate timer updates
-#        Default:     1
-#
-MythicPlus.Hud.UpdateInterval = 1
-
-#
-#    MythicPlus.Hud.Timer.DefaultSeconds
-#        Description: Base timer length (in seconds)
-#        Default:     2400
-#
-MythicPlus.Hud.Timer.DefaultSeconds = 2400
-
-#
-#    MythicPlus.Hud.Timer.PerBossBonus
-#        Description: Additional seconds added for each boss beyond the first 3
-#        Default:     60
-#
-MythicPlus.Hud.Timer.PerBossBonus = 60
-
-#
-#    MythicPlus.Hud.Timer.PerLevelPenalty
-#        Description: Seconds removed per keystone level above the minimum
-#        Default:     0
-#
-MythicPlus.Hud.Timer.PerLevelPenalty = 0
-
-#
-#    MythicPlus.Hud.Timer.MinimumSeconds
-#        Description: Lower bound for timer calculations
-#        Default:     600
-#
-MythicPlus.Hud.Timer.MinimumSeconds = 600
-
-#
-#    MythicPlus.Hud.Aio.Enabled
-#        Description: Broadcast JSON snapshots over Rochet2 AIO
-#        Default:     1 (Enabled)
-#
-MythicPlus.Hud.Aio.Enabled = 1
-
-#
-#    MythicPlus.Hud.Aio.IntervalMS
-#        Description: Milliseconds between AIO HUD snapshots
-#        Default:     1500
-#
-MythicPlus.Hud.Aio.IntervalMS = 1500
-
-#
-#    MythicPlus.TeleportToEntrance
-#        Description: Teleport all group members to dungeon entrance when keystone activated
-#        Default:     1 (Enabled)
-#
-MythicPlus.TeleportToEntrance = 1
-
-#
-#    MythicPlus.AllowManualCancellation
-#        Description: Allow players to vote for run cancellation via .mplus cancel
-#        Default:     1 (Enabled)
-#
-MythicPlus.AllowManualCancellation = 1
-
-#
-#    MythicPlus.CancellationVotesRequired
-#        Description: Number of players needed to vote for cancellation
-#        Default:     2
-#
-MythicPlus.CancellationVotesRequired = 2
-
-#
-#    MythicPlus.CancellationVoteTimeout
-#        Description: Seconds before cancellation votes expire
-#        Default:     60
-#
-MythicPlus.CancellationVoteTimeout = 60
-
-#
-#    MythicPlus.Vault.Raid.Threshold*
-#        Description: Raid Vault Thresholds
-#
-MythicPlus.Vault.Raid.Threshold1 = 2
-MythicPlus.Vault.Raid.Threshold2 = 4
-MythicPlus.Vault.Raid.Threshold3 = 6
-
-#
-#    MythicPlus.Vault.PvP.Threshold*
-#        Description: PvP Vault Thresholds
-#
-MythicPlus.Vault.PvP.Threshold1 = 1
-MythicPlus.Vault.PvP.Threshold2 = 4
-MythicPlus.Vault.PvP.Threshold3 = 8
-
-#
-#    MythicPlus.Keystone.Enabled
-#        Description: Enable Mythic+ keystone system
-#        Default:     1 (Enabled)
-#
-MythicPlus.Keystone.Enabled = 1
+# -----------------------------------------------------------------------------
+# Death & Wipe Tracking
+# -----------------------------------------------------------------------------
 
 #
 #    MythicPlus.DeathBudget.Enabled
-#        Description: Enable death budget tracking
+#        Description: Enable death budget tracking (time penalties)
 #        Default:     1 (Enabled)
 #
 MythicPlus.DeathBudget.Enabled = 1
@@ -1103,24 +1612,39 @@ MythicPlus.WipeBudget.Enabled = 1
 #
 MythicPlus.WipeBudget.GraceWindow = 5
 
-#
-#    MythicPlus.Vault.Enabled
-#        Description: Enable weekly vault system
-#        Default:     1 (Enabled)
-#
-MythicPlus.Vault.Enabled = 1
+# -----------------------------------------------------------------------------
+# Cancellation System
+# -----------------------------------------------------------------------------
 
 #
-#    MythicPlus.Vault.RewardMode
-#        Description: Vault reward distribution mode (0=Tokens, 1=Gear, 2=Hybrid)
-#        Default:     1 (Gear)
+#    MythicPlus.AllowManualCancellation
+#        Description: Allow players to vote for run cancellation
+#        Default:     1 (Enabled)
 #
-MythicPlus.Vault.RewardMode = 1
+MythicPlus.AllowManualCancellation = 1
+
+#
+#    MythicPlus.CancellationVotesRequired
+#        Description: Players needed to vote for cancellation
+#        Default:     2
+#
+MythicPlus.CancellationVotesRequired = 2
+
+#
+#    MythicPlus.CancellationVoteTimeout
+#        Description: Seconds before cancellation votes expire
+#        Default:     60
+#
+MythicPlus.CancellationVoteTimeout = 60
+
+# -----------------------------------------------------------------------------
+# Affix System
+# -----------------------------------------------------------------------------
 
 #
 #    MythicPlus.Affixes.Enabled
 #        Description: Enable weekly affix modifiers
-#        Default:     1 (Enabled)
+#        Default:     0 (Disabled - work in progress)
 #
 MythicPlus.Affixes.Enabled = 0
 
@@ -1131,128 +1655,163 @@ MythicPlus.Affixes.Enabled = 0
 #
 MythicPlus.AffixDebug = 0
 
+# -----------------------------------------------------------------------------
+# HUD & Timer Settings
+# -----------------------------------------------------------------------------
+
 #
-#    MythicPlus.FeaturedOnly
-#        Description: Restrict Mythic+ to only featured dungeons in current season
+#    MythicPlus.Hud.WorldStates
+#        Description: Send worldstate packets for M+ timer/stats
 #        Default:     1 (Enabled)
 #
-MythicPlus.FeaturedOnly = 1
+MythicPlus.Hud.WorldStates = 1
 
-# -------------------------------------------------------------------------
-# M+ Spectator System
-# -------------------------------------------------------------------------
+#
+#    MythicPlus.Hud.UpdateInterval
+#        Description: Seconds between worldstate timer updates
+#        Default:     1
+#
+MythicPlus.Hud.UpdateInterval = 1
+
+#
+#    MythicPlus.Hud.Timer.DefaultSeconds
+#        Description: Base timer length (seconds)
+#        Default:     2400 (40 minutes)
+#
+MythicPlus.Hud.Timer.DefaultSeconds = 2400
+
+#
+#    MythicPlus.Hud.Timer.PerBossBonus
+#        Description: Additional seconds per boss beyond the first 3
+#        Default:     60
+#
+MythicPlus.Hud.Timer.PerBossBonus = 60
+
+#
+#    MythicPlus.Hud.Timer.PerLevelPenalty
+#        Description: Seconds removed per keystone level (0 = no penalty)
+#        Default:     0
+#
+MythicPlus.Hud.Timer.PerLevelPenalty = 0
+
+#
+#    MythicPlus.Hud.Timer.MinimumSeconds
+#        Description: Lower bound for timer calculations
+#        Default:     600 (10 minutes)
+#
+MythicPlus.Hud.Timer.MinimumSeconds = 600
+
+#
+#    MythicPlus.Hud.Aio.Enabled
+#        Description: Broadcast JSON snapshots via Rochet2 AIO
+#        Default:     1 (Enabled)
+#
+MythicPlus.Hud.Aio.Enabled = 1
+
+#
+#    MythicPlus.Hud.Aio.IntervalMS
+#        Description: Milliseconds between AIO HUD snapshots
+#        Default:     1500
+#
+MythicPlus.Hud.Aio.IntervalMS = 1500
+
+#
+#    DC.MythicPlus.AddonUI.AutoOpen
+#        Description: Auto-open Mythic+ addon UI at DC M+ NPCs
+#        Default:     1 (Enabled)
+#
+DC.MythicPlus.AddonUI.AutoOpen = 1
+
+# -----------------------------------------------------------------------------
+# Weekly Vault System
+# -----------------------------------------------------------------------------
+
+#
+#    MythicPlus.Vault.Enabled
+#        Description: Enable weekly vault system
+#        Default:     1 (Enabled)
+#
+MythicPlus.Vault.Enabled = 1
+
+#
+#    MythicPlus.Vault.RewardMode
+#        Description: Vault reward distribution mode
+#                     0 = Tokens
+#                     1 = Gear
+#                     2 = Hybrid
+#        Default:     1 (Gear)
+#
+MythicPlus.Vault.RewardMode = 1
+
+# Mythic+ Vault Thresholds (runs needed for each slot)
+MythicPlus.Vault.Raid.Threshold1 = 2
+MythicPlus.Vault.Raid.Threshold2 = 4
+MythicPlus.Vault.Raid.Threshold3 = 6
+
+# PvP Vault Thresholds (wins needed for each slot)
+MythicPlus.Vault.PvP.Threshold1 = 1
+MythicPlus.Vault.PvP.Threshold2 = 4
+MythicPlus.Vault.PvP.Threshold3 = 8
+
+# -----------------------------------------------------------------------------
+# Spectator System
+# -----------------------------------------------------------------------------
 
 #
 #    MythicSpectator.Enable
-#        Description: Master toggle for the M+ Spectator system
+#        Description: Master toggle for M+ Spectator system
 #        Default:     1 (Enabled)
 #
 MythicSpectator.Enable = 1
 
 #
 #    MythicSpectator.AllowWhileInProgress
-#        Description: Allow spectators to join runs that are already in progress
+#        Description: Allow spectators to join runs in progress
 #        Default:     1 (Enabled)
 #
 MythicSpectator.AllowWhileInProgress = 1
 
 #
 #    MythicSpectator.RequireSameRealm
-#        Description: Only allow spectating players from the same realm
+#        Description: Only allow spectating same-realm players
 #        Default:     0 (Disabled)
 #
 MythicSpectator.RequireSameRealm = 0
 
 #
 #    MythicSpectator.AnnounceNewSpectators
-#        Description: Notify run participants when spectators join
+#        Description: Notify participants when spectators join
 #        Default:     1 (Enabled)
 #
 MythicSpectator.AnnounceNewSpectators = 1
 
 #
 #    MythicSpectator.MaxSpectatorsPerRun
-#        Description: Maximum number of spectators per M+ run
+#        Description: Maximum spectators per M+ run
 #        Default:     50
 #
 MythicSpectator.MaxSpectatorsPerRun = 50
 
 #
 #    MythicSpectator.UpdateIntervalMs
-#        Description: How often to broadcast updates to spectators (milliseconds)
+#        Description: Spectator update broadcast interval (ms)
 #        Default:     1000
 #
 MythicSpectator.UpdateIntervalMs = 1000
 
 #
 #    MythicSpectator.MinKeystoneLevel
-#        Description: Minimum keystone level for runs to be spectateable
+#        Description: Minimum keystone level for spectatable runs
 #        Default:     2
 #
 MythicSpectator.MinKeystoneLevel = 2
 
 #
 #    MythicSpectator.AllowPublicListing
-#        Description: Allow runs to appear in the public spectate list
+#        Description: Allow runs in public spectate list
 #        Default:     1 (Enabled)
 #
 MythicSpectator.AllowPublicListing = 1
-
-#
-#    MythicSpectator.StreamModeEnabled
-#        Description: Allow spectators to use stream mode (anonymous viewing)
-#        Default:     1 (Enabled)
-#
-MythicSpectator.StreamModeEnabled = 1
-
-#
-#    MythicSpectator.DefaultStreamMode
-#        Description: Default stream mode for new spectators
-#        Default:     0 (Normal)
-#
-MythicSpectator.DefaultStreamMode = 0
-
-#
-#    MythicSpectator.InviteLinks.Enable
-#        Description: Enable invite link system for sharing spectate access
-#        Default:     1 (Enabled)
-#
-MythicSpectator.InviteLinks.Enable = 1
-
-#
-#    MythicSpectator.InviteLinks.ExpireSeconds
-#        Description: How long invite codes remain valid (in seconds)
-#        Default:     3600
-#
-MythicSpectator.InviteLinks.ExpireSeconds = 3600
-
-#
-#    MythicSpectator.Replay.Enable
-#        Description: Enable replay recording for completed M+ runs
-#        Default:     1 (Enabled)
-#
-MythicSpectator.Replay.Enable = 1
-
-#
-#    MythicSpectator.Replay.MaxStoredRuns
-#        Description: Maximum number of replays to store in database
-#        Default:     100
-#
-MythicSpectator.Replay.MaxStoredRuns = 100
-
-#
-#    MythicSpectator.Replay.RecordPositions
-#        Description: Record player positions during runs
-#        Default:     0 (Disabled)
-#
-MythicSpectator.Replay.RecordPositions = 0
-
-#
-#    MythicSpectator.Replay.RecordCombatLog
-#        Description: Record combat log events during runs
-#        Default:     0 (Disabled)
-#
-MythicSpectator.Replay.RecordCombatLog = 0
 
 #
 #    MythicSpectator.SyncHudToSpectators
@@ -1261,150 +1820,666 @@ MythicSpectator.Replay.RecordCombatLog = 0
 #
 MythicSpectator.SyncHudToSpectators = 1
 
+# Stream Mode
+MythicSpectator.StreamModeEnabled = 1
+MythicSpectator.DefaultStreamMode = 0
 
-###########################################################################
+# Invite Links
+MythicSpectator.InviteLinks.Enable = 1
+MythicSpectator.InviteLinks.ExpireSeconds = 3600
+
+# Replay Recording
+MythicSpectator.Replay.Enable = 1
+MythicSpectator.Replay.MaxStoredRuns = 100
+MythicSpectator.Replay.RecordPositions = 0
+MythicSpectator.Replay.RecordCombatLog = 0
+
+
+###############################################################################
 #
-#    SECTION 5: GROUP FINDER SYSTEM
+#  SECTION 9: DUNGEON QUEST NPC SYSTEM
 #
-#    Provides a comprehensive group-finding system for Mythic+ and Raids.
+#  Daily and weekly dungeon quests with NPC quest givers and phasing.
 #
-###########################################################################
+###############################################################################
 
 #
-#    DC.GroupFinder.Enable
-#        Description: Master toggle for the Group Finder system
+#    DungeonQuest.Enable
+#        Description: Master toggle for Dungeon Quest NPC system
 #        Default:     1 (Enabled)
 #
-DC.GroupFinder.Enable = 1
+DungeonQuest.Enable = 1
 
 #
-#    DC.GroupFinder.CrossFaction
-#        Description: Allow cross-faction group finding
+#    DungeonQuest.FollowerEnable
+#        Description: Enable Quest Master follower helper
+#        Default:     1 (Enabled)
+#
+DungeonQuest.FollowerEnable = 1
+
+#
+#    DungeonQuest.Debug.Enable
+#        Description: Debug logging level (0=Off, 1=Basic, 2=Verbose)
 #        Default:     0 (Disabled)
 #
-DC.GroupFinder.CrossFaction = 0
+DungeonQuest.Debug.Enable = 0
+
+
+###############################################################################
+#
+#  SECTION 10: CHALLENGE MODES SYSTEM
+#
+#  Hardcore and specialized challenge modes for extreme gameplay.
+#
+###############################################################################
 
 #
-#    DC.GroupFinder.MaxListingsPerPlayer
-#        Description: Maximum number of active group listings per player
-#        Default:     3
-#
-DC.GroupFinder.MaxListingsPerPlayer = 3
-
-#
-#    DC.GroupFinder.MaxApplicationsPerPlayer
-#        Description: Maximum number of pending applications per player
-#        Default:     10
-#
-DC.GroupFinder.MaxApplicationsPerPlayer = 10
-
-#
-#    DC.GroupFinder.ListingExpireMinutes
-#        Description: How long group listings stay active before auto-expiring
-#        Default:     120
-#
-DC.GroupFinder.ListingExpireMinutes = 120
-
-#
-#    DC.GroupFinder.Reward.Enable
-#        Description: Enable rewards for completing dungeons found via Group Finder
+#    ChallengeModes.Enable
+#        Description: Master toggle for all challenge modes
 #        Default:     1 (Enabled)
 #
-DC.GroupFinder.Reward.Enable = 1
+ChallengeModes.Enable = 1
+
+# -----------------------------------------------------------------------------
+# Hardcore Mode
+# -----------------------------------------------------------------------------
 
 #
-#    DC.GroupFinder.Reward.ItemID
-#        Description: Item ID to reward
-#        Default:     49426
+#    Hardcore.Enable
+#        Description: Enable Hardcore challenge mode (permadeath)
+#        Default:     1 (Enabled)
 #
-DC.GroupFinder.Reward.ItemID = 49426
+Hardcore.Enable = 1
+
+Hardcore.XPMultiplier = 1
+Hardcore.DisableLevel = 0
+Hardcore.ItemRewardAmount = 1
+Hardcore.AchievementReward = ""
+Hardcore.TalentRewards = ""
+Hardcore.TitleRewards = ""
+Hardcore.ItemRewards = ""
+
+# -----------------------------------------------------------------------------
+# Semi-Hardcore Mode
+# -----------------------------------------------------------------------------
 
 #
-#    DC.GroupFinder.Reward.ItemCount
-#        Description: Number of items to reward
-#        Default:     2
+#    SemiHardcore.Enable
+#        Description: Enable Semi-Hardcore mode (limited deaths)
+#        Default:     1 (Enabled)
 #
-DC.GroupFinder.Reward.ItemCount = 2
+SemiHardcore.Enable = 1
+
+SemiHardcore.XPMultiplier = 1
+SemiHardcore.DisableLevel = 0
+SemiHardcore.ItemRewardAmount = 1
+SemiHardcore.AchievementReward = ""
+SemiHardcore.TalentRewards = ""
+SemiHardcore.TitleRewards = ""
+SemiHardcore.ItemRewards = ""
+
+# -----------------------------------------------------------------------------
+# Self-Crafted Mode
+# -----------------------------------------------------------------------------
 
 #
-#    DC.GroupFinder.Reward.CurrencyID
-#        Description: Currency ID to reward
-#        Default:     0
+#    SelfCrafted.Enable
+#        Description: Enable Self-Crafted mode (only self-made gear)
+#        Default:     1 (Enabled)
 #
-DC.GroupFinder.Reward.CurrencyID = 0
+SelfCrafted.Enable = 1
+
+SelfCrafted.XPMultiplier = 1
+SelfCrafted.DisableLevel = 0
+SelfCrafted.ItemRewardAmount = 1
+SelfCrafted.AchievementReward = ""
+SelfCrafted.TalentRewards = ""
+SelfCrafted.TitleRewards = ""
+SelfCrafted.ItemRewards = ""
+
+# -----------------------------------------------------------------------------
+# Item Quality Level Mode
+# -----------------------------------------------------------------------------
 
 #
-#    DC.GroupFinder.Reward.CurrencyCount
-#        Description: Amount of currency to reward
-#        Default:     0
+#    ItemQualityLevel.Enable
+#        Description: Enable Item Quality Level mode (restricted gear quality)
+#        Default:     1 (Enabled)
 #
-DC.GroupFinder.Reward.CurrencyCount = 0
+ItemQualityLevel.Enable = 1
+
+ItemQualityLevel.XPMultiplier = 1
+ItemQualityLevel.DisableLevel = 0
+ItemQualityLevel.ItemRewardAmount = 1
+ItemQualityLevel.AchievementReward = ""
+ItemQualityLevel.TalentRewards = ""
+ItemQualityLevel.TitleRewards = ""
+ItemQualityLevel.ItemRewards = ""
+
+# -----------------------------------------------------------------------------
+# Quest XP Only Mode
+# -----------------------------------------------------------------------------
 
 #
-#    DC.GroupFinder.Reward.DailyLimit
-#        Description: Maximum number of times a player can receive rewards per day
+#    QuestXpOnly.Enable
+#        Description: Enable Quest XP Only mode (no mob kill XP)
+#        Default:     1 (Enabled)
+#
+QuestXpOnly.Enable = 1
+
+QuestXpOnly.XPMultiplier = 1
+QuestXpOnly.DisableLevel = 0
+QuestXpOnly.ItemRewardAmount = 1
+QuestXpOnly.AchievementReward = ""
+QuestXpOnly.TalentRewards = ""
+QuestXpOnly.TitleRewards = ""
+QuestXpOnly.ItemRewards = ""
+
+# -----------------------------------------------------------------------------
+# Iron Man Mode
+# -----------------------------------------------------------------------------
+
+#
+#    IronMan.Enable
+#        Description: Enable Iron Man mode (no deaths, no talents, white gear only)
+#        Default:     1 (Enabled)
+#
+IronMan.Enable = 1
+
+IronMan.XPMultiplier = 1
+IronMan.DisableLevel = 0
+IronMan.ItemRewardAmount = 1
+IronMan.AchievementReward = ""
+IronMan.TalentRewards = ""
+IronMan.TitleRewards = ""
+IronMan.ItemRewards = ""
+
+# -----------------------------------------------------------------------------
+# Iron Man Plus Mode
+# -----------------------------------------------------------------------------
+
+#
+#    IronManPlus.Enable
+#        Description: Enable Iron Man Plus mode (stricter Iron Man rules)
+#        Default:     1 (Enabled)
+#
+IronManPlus.Enable = 1
+
+IronManPlus.XPMultiplier = 1
+IronManPlus.DisableLevel = 0
+IronManPlus.ItemRewardAmount = 1
+IronManPlus.AchievementReward = ""
+IronManPlus.TalentRewards = ""
+IronManPlus.TitleRewards = ""
+IronManPlus.ItemRewards = ""
+
+# -----------------------------------------------------------------------------
+# Slow XP Gain Modes
+# -----------------------------------------------------------------------------
+
+#
+#    SlowXpGain.Enable
+#        Description: Enable Slow XP Gain mode
+#        Default:     1 (Enabled)
+#
+SlowXpGain.Enable = 1
+
+SlowXpGain.XPMultiplier = 0.5
+SlowXpGain.DisableLevel = 0
+SlowXpGain.ItemRewardAmount = 1
+SlowXpGain.AchievementReward = ""
+SlowXpGain.TalentRewards = ""
+SlowXpGain.TitleRewards = ""
+SlowXpGain.ItemRewards = ""
+
+#
+#    VerySlowXpGain.Enable
+#        Description: Enable Very Slow XP Gain mode
+#        Default:     1 (Enabled)
+#
+VerySlowXpGain.Enable = 1
+
+VerySlowXpGain.XPMultiplier = 0.25
+VerySlowXpGain.DisableLevel = 0
+VerySlowXpGain.ItemRewardAmount = 1
+VerySlowXpGain.AchievementReward = ""
+VerySlowXpGain.TalentRewards = ""
+VerySlowXpGain.TitleRewards = ""
+VerySlowXpGain.ItemRewards = ""
+
+
+###############################################################################
+###############################################################################
+##
+##  PART IV - PVP CONTENT
+##
+###############################################################################
+###############################################################################
+
+
+###############################################################################
+#
+#  SECTION 11: HINTERLAND BATTLEGROUND
+#
+#  Custom 25v25 PvP battleground in The Hinterlands zone with resource
+#  depletion mechanics, NPC bosses, and affix system.
+#
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Core BG Settings
+# -----------------------------------------------------------------------------
+
+#
+#    HinterlandBG.MatchDuration
+#        Description: Match window duration (seconds)
+#        Default:     3600 (1 hour)
+#
+HinterlandBG.MatchDuration = 3600
+
+#
+#    HinterlandBG.WarmupDuration
+#        Description: Warmup phase duration (seconds)
+#        Default:     120
+#
+HinterlandBG.WarmupDuration = 120
+
+#
+#    HinterlandBG.MinLevel
+#        Description: Minimum level required to enter
 #        Default:     1
 #
-DC.GroupFinder.Reward.DailyLimit = 1
+HinterlandBG.MinLevel = 1
 
 #
-#    DC.GroupFinder.RatingMatchRange
-#        Description: Maximum M+ rating difference for matchmaking suggestions
-#        Default:     200
+#    HinterlandBG.Season
+#        Description: Current season number for persistent stats
+#        Default:     1
 #
-DC.GroupFinder.RatingMatchRange = 200
+HinterlandBG.Season = 1
+
+# -----------------------------------------------------------------------------
+# Queue System
+# -----------------------------------------------------------------------------
 
 #
-#    DC.GroupFinder.KeyLevelMatchRange
-#        Description: Maximum keystone level difference for matchmaking
-#        Default:     3
+#    HinterlandBG.Queue.Enabled
+#        Description: Enable the queue system
+#        Default:     1 (Enabled)
 #
-DC.GroupFinder.KeyLevelMatchRange = 3
+HinterlandBG.Queue.Enabled = 1
 
 #
-#    DC.GroupFinder.CleanupIntervalMs
-#        Description: Interval (in milliseconds) between cleanup cycles
-#        Default:     60000
+#    HinterlandBG.Queue.MinPlayers
+#        Description: Minimum players required to start
+#        Default:     4
 #
-DC.GroupFinder.CleanupIntervalMs = 60000
+HinterlandBG.Queue.MinPlayers = 4
 
 #
-#    DC.GroupFinder.ApplicationExpireMinutes
-#        Description: How long pending applications stay before auto-expiring
-#        Default:     30
+#    HinterlandBG.Queue.MaxGroupSize
+#        Description: Maximum group size allowed to queue together
+#        Default:     5
 #
-DC.GroupFinder.ApplicationExpireMinutes = 30
+HinterlandBG.Queue.MaxGroupSize = 5
+
+# -----------------------------------------------------------------------------
+# AFK System
+# -----------------------------------------------------------------------------
 
 #
-#    DungeonFinder.AllowCompleted
-#        Description: Controls whether completed heroic dungeons are excluded from LFG queue.
-#        Default:     1 (Blizzlike)
+#    HinterlandBG.AFK.WarnSeconds
+#        Description: Seconds of inactivity before AFK warning
+#        Default:     120
 #
-DungeonFinder.AllowCompleted = 1
+HinterlandBG.AFK.WarnSeconds = 120
+
+#
+#    HinterlandBG.AFK.TeleportSeconds
+#        Description: Seconds of inactivity before teleporting out
+#        Default:     180
+#
+HinterlandBG.AFK.TeleportSeconds = 180
+
+# -----------------------------------------------------------------------------
+# Resource Configuration
+# -----------------------------------------------------------------------------
+
+#
+#    HinterlandBG.Resources.Alliance
+#        Description: Starting resources for Alliance team
+#        Default:     450
+#
+HinterlandBG.Resources.Alliance = 450
+
+#
+#    HinterlandBG.Resources.Horde
+#        Description: Starting resources for Horde team
+#        Default:     450
+#
+HinterlandBG.Resources.Horde = 450
+
+# Resource Loss Values
+HinterlandBG.ResourcesLoss.PlayerKill = 5
+HinterlandBG.ResourcesLoss.NpcNormal = 5
+HinterlandBG.ResourcesLoss.NpcBoss = 200
+
+# NPC Classification for Resource Loss (CSV entry IDs)
+HinterlandBG.ResourcesLoss.NPCBossEntriesAlliance = 810003
+HinterlandBG.ResourcesLoss.NPCNormalEntriesAlliance = 600005,810001,600011
+HinterlandBG.ResourcesLoss.NPCBossEntriesHorde = 810002
+HinterlandBG.ResourcesLoss.NPCNormalEntriesHorde = 600004,810000,600008
+
+# -----------------------------------------------------------------------------
+# Base Coordinates
+# -----------------------------------------------------------------------------
+
+# Alliance Base
+HinterlandBG.Base.Alliance.Map = 0
+HinterlandBG.Base.Alliance.X = 62.083
+HinterlandBG.Base.Alliance.Y = -4714.99
+HinterlandBG.Base.Alliance.Z = 11.7937
+HinterlandBG.Base.Alliance.O = 2.50765
+
+# Horde Base
+HinterlandBG.Base.Horde.Map = 0
+HinterlandBG.Base.Horde.X = -628.484
+HinterlandBG.Base.Horde.Y = -4684.51
+HinterlandBG.Base.Horde.Z = 5.14442
+HinterlandBG.Base.Horde.O = 1.12528
+
+# -----------------------------------------------------------------------------
+# Rewards
+# -----------------------------------------------------------------------------
+
+# Match Participation Honor
+HinterlandBG.Reward.MatchHonor = 1500
+HinterlandBG.Reward.MatchHonorDepletion = 120
+HinterlandBG.Reward.MatchHonorTiebreaker = 70
+HinterlandBG.Reward.MatchHonorLoser = 20
+
+# Kill Rewards
+HinterlandBG.Reward.KillItemId = 40752
+HinterlandBG.Reward.KillItemCount = 1
+HinterlandBG.Reward.KillHonorValues = "17,11,19,22"
+
+# NPC Token Rewards
+HinterlandBG.Reward.NPCTokenItemId = 300311
+HinterlandBG.Reward.NPCTokenItemCount = 100
+HinterlandBG.Reward.NPCEntriesAlliance = 600005,810003,810001,600011
+HinterlandBG.Reward.NPCEntriesHorde = 600004,600008,810000,810002
+HinterlandBG.Reward.NPCEntryCountsAlliance = 600005:2,810003:3
+HinterlandBG.Reward.NPCEntryCountsHorde = 600004:2,810000:3
+
+# Per-Kill Spell Feedback (0 = disabled)
+HinterlandBG.KillSpell.PlayerKillAlliance = 0
+HinterlandBG.KillSpell.PlayerKillHorde = 0
+HinterlandBG.KillSpell.NpcKill = 0
+
+# -----------------------------------------------------------------------------
+# Broadcasts & Announcements
+# -----------------------------------------------------------------------------
+
+#
+#    HinterlandBG.Broadcast.Enabled
+#        Description: Enable periodic status broadcasts
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Broadcast.Enabled = 1
+
+#
+#    HinterlandBG.Broadcast.Period
+#        Description: Seconds between status broadcasts
+#        Default:     180
+#
+HinterlandBG.Broadcast.Period = 180
+
+HinterlandBG.Announce.ExpiryWorld = 1
+HinterlandBG.Announce.DepletionWorld = 1
+
+# -----------------------------------------------------------------------------
+# Match End Behavior
+# -----------------------------------------------------------------------------
+
+#
+#    HinterlandBG.AutoReset.Teleport
+#        Description: Teleport players to faction graveyards on reset
+#        Default:     1 (Enabled)
+#
+HinterlandBG.AutoReset.Teleport = 1
+
+#
+#    HinterlandBG.Expiry.Tiebreaker
+#        Description: Declare winner by higher resources at timer expiry
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Expiry.Tiebreaker = 1
+
+# -----------------------------------------------------------------------------
+# Persistence
+# -----------------------------------------------------------------------------
+
+#
+#    HinterlandBG.Persistence.Enabled
+#        Description: Save/restore state across server restarts
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Persistence.Enabled = 1
+
+#
+#    HinterlandBG.Stats.IncludeManual
+#        Description: Include manual resets in statistics
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Stats.IncludeManual = 1
+
+# -----------------------------------------------------------------------------
+# Lock Window (After Win)
+# -----------------------------------------------------------------------------
+
+HinterlandBG.Lock.Enabled = 0
+HinterlandBG.Lock.Duration = 0
+HinterlandBG.Lock.Duration.Expiry = 0
+HinterlandBG.Lock.Duration.Depletion = 0
+
+# -----------------------------------------------------------------------------
+# Affix System
+# -----------------------------------------------------------------------------
+
+#
+#    HinterlandBG.Affix.Enabled
+#        Description: Enable HLBG affix system
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Affix.Enabled = 1
+
+#
+#    HinterlandBG.Affix.Weather.Enabled
+#        Description: Enable weather changes driven by affixes
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Affix.Weather.Enabled = 1
+
+#
+#    HinterlandBG.Affix.Period
+#        Description: Affix rotation period (minutes, 0 = static)
+#        Default:     0
+#
+HinterlandBG.Affix.Period = 0
+
+#
+#    HinterlandBG.Affix.RandomOnStart
+#        Description: Pick random affix when match starts
+#        Default:     1 (Enabled)
+#
+HinterlandBG.Affix.RandomOnStart = 1
+
+HinterlandBG.Affix.Announce = 0
+HinterlandBG.Affix.Worldstate = 0
+
+# Player-Affecting Affix Spells
+HinterlandBG.Affix.PlayerSpell.Sunlight = 910010
+HinterlandBG.Affix.PlayerSpell.ClearSkies = 910011
+HinterlandBG.Affix.PlayerSpell.GentleBreeze = 910012
+
+# NPC-Affecting Affix Spells
+HinterlandBG.Affix.NpcSpell.Storm = 910020
+HinterlandBG.Affix.NpcSpell.HeavyRain = 910021
+HinterlandBG.Affix.NpcSpell.Fog = 910022
+
+# Affix Weather Types (0=Fine, 1=Rain, 2=Snow, 3=Storm)
+HinterlandBG.Affix.WeatherType.Sunlight = 0
+HinterlandBG.Affix.WeatherType.ClearSkies = 0
+HinterlandBG.Affix.WeatherType.GentleBreeze = 1
+HinterlandBG.Affix.WeatherType.Storm = 3
+HinterlandBG.Affix.WeatherType.HeavyRain = 1
+HinterlandBG.Affix.WeatherType.Fog = 2
+
+# Affix Weather Intensity (0.0 - 1.0)
+HinterlandBG.Affix.WeatherIntensity.Sunlight = 0.35
+HinterlandBG.Affix.WeatherIntensity.ClearSkies = 0.2
+HinterlandBG.Affix.WeatherIntensity.GentleBreeze = 0.3
+HinterlandBG.Affix.WeatherIntensity.Storm = 0.6
+HinterlandBG.Affix.WeatherIntensity.HeavyRain = 0.8
+HinterlandBG.Affix.WeatherIntensity.Fog = 0.4
 
 
-###########################################################################
+###############################################################################
 #
-#    SECTION 6: PRESTIGE SYSTEM
+#  SECTION 12: PHASED DUELING SYSTEM
 #
-#    Allows level 255 players to reset to level 1 with permanent stat
-#    bonuses and exclusive rewards.
+#  Creates isolated phases for dueling players with automatic stat restoration.
 #
-###########################################################################
+###############################################################################
+
+#
+#    PhasedDuels.Enable
+#        Description: Master toggle for Phased Duels system
+#        Default:     1 (Enabled)
+#
+PhasedDuels.Enable = 1
+
+#
+#    PhasedDuels.AnnounceOnLogin
+#        Description: Notify players about phased duels on login
+#        Default:     1 (Enabled)
+#
+PhasedDuels.AnnounceOnLogin = 1
+
+# -----------------------------------------------------------------------------
+# Post-Duel Restoration
+# -----------------------------------------------------------------------------
+
+#
+#    PhasedDuels.ResetHealth
+#        Description: Reset players to full health after duel
+#        Default:     1 (Enabled)
+#
+PhasedDuels.ResetHealth = 1
+
+#
+#    PhasedDuels.ResetCooldowns
+#        Description: Reset all spell cooldowns after duel
+#        Default:     1 (Enabled)
+#
+PhasedDuels.ResetCooldowns = 1
+
+#
+#    PhasedDuels.RestorePower
+#        Description: Restore mana/energy/rage/runic power after duel
+#        Default:     1 (Enabled)
+#
+PhasedDuels.RestorePower = 1
+
+#
+#    PhasedDuels.RestorePetHealth
+#        Description: Restore pet health after duel
+#        Default:     1 (Enabled)
+#
+PhasedDuels.RestorePetHealth = 1
+
+#
+#    PhasedDuels.ExcludeRogueWarriorPower
+#        Description: Don't restore energy/rage for rogues/warriors
+#        Default:     0 (Disabled)
+#
+PhasedDuels.ExcludeRogueWarriorPower = 0
+
+# -----------------------------------------------------------------------------
+# Statistics & Restrictions
+# -----------------------------------------------------------------------------
+
+#
+#    PhasedDuels.TrackStatistics
+#        Description: Track and persist duel wins/losses to database
+#        Default:     1 (Enabled)
+#
+PhasedDuels.TrackStatistics = 1
+
+#
+#    PhasedDuels.AllowInDungeons
+#        Description: Allow phased dueling inside dungeons
+#        Default:     0 (Disabled)
+#
+PhasedDuels.AllowInDungeons = 0
+
+#
+#    PhasedDuels.ArenaZoneId
+#        Description: Restrict duels to specific zone (0 = allow everywhere)
+#        Default:     0
+#
+PhasedDuels.ArenaZoneId = 0
+
+#
+#    PhasedDuels.PhaseRadius
+#        Description: Radius (yards) to check for occupied phases
+#        Default:     100.0
+#
+PhasedDuels.PhaseRadius = 100.0
+
+#
+#    PhasedDuels.MaxPhaseId
+#        Description: Maximum phase ID to use for duels
+#        Default:     2147483647
+#
+PhasedDuels.MaxPhaseId = 2147483647
+
+
+###############################################################################
+###############################################################################
+##
+##  PART V - PROGRESSION SYSTEMS
+##
+###############################################################################
+###############################################################################
+
+
+###############################################################################
+#
+#  SECTION 13: PRESTIGE SYSTEM
+#
+#  Allows level 255 players to reset to level 1 with permanent stat bonuses
+#  and exclusive rewards.
+#
+###############################################################################
 
 #
 #    Prestige.Enable
-#        Description: Master toggle for the Prestige system
+#        Description: Master toggle for Prestige system
 #        Default:     1 (Enabled)
 #
 Prestige.Enable = 1
 
 #
 #    Prestige.Debug
-#        Description: Enables debug logging
+#        Description: Enable debug logging
 #        Default:     0 (Disabled)
 #
 Prestige.Debug = 0
+
+# -----------------------------------------------------------------------------
+# Requirements & Limits
+# -----------------------------------------------------------------------------
 
 #
 #    Prestige.RequiredLevel
@@ -1421,43 +2496,51 @@ Prestige.RequiredLevel = 255
 Prestige.MaxLevel = 10
 
 #
-#    Prestige.StatBonusPercent
-#        Description: Stat bonus percentage per prestige level
-#        Default:     1
-#
-Prestige.StatBonusPercent = 1
-
-#
 #    Prestige.ResetLevel
 #        Description: Level to reset player to after prestige
 #        Default:     1
 #
 Prestige.ResetLevel = 1
 
+# -----------------------------------------------------------------------------
+# Stat Bonuses
+# -----------------------------------------------------------------------------
+
+#
+#    Prestige.StatBonusPercent
+#        Description: Stat bonus percentage per prestige level
+#        Default:     1
+#
+Prestige.StatBonusPercent = 1
+
+# -----------------------------------------------------------------------------
+# Retention Settings
+# -----------------------------------------------------------------------------
+
 #
 #    Prestige.KeepGear
-#        Description: Allow players to keep equipped gear and inventory
+#        Description: Keep equipped gear and inventory after prestige
 #        Default:     1 (Enabled)
 #
 Prestige.KeepGear = 1
 
 #
 #    Prestige.KeepProfessions
-#        Description: Allow players to keep profession skills and recipes
+#        Description: Keep profession skills and recipes after prestige
 #        Default:     1 (Enabled)
 #
 Prestige.KeepProfessions = 1
 
 #
 #    Prestige.KeepGold
-#        Description: Allow players to keep their gold after prestige
+#        Description: Keep gold after prestige
 #        Default:     1 (Enabled)
 #
 Prestige.KeepGold = 1
 
 #
 #    Prestige.ClearBank
-#        Description: Remove items from player's bank on prestige
+#        Description: Remove items from bank on prestige
 #        Default:     0 (Disabled)
 #
 Prestige.ClearBank = 0
@@ -1469,19 +2552,27 @@ Prestige.ClearBank = 0
 #
 Prestige.GrantStarterGear = 0
 
+# -----------------------------------------------------------------------------
+# Rewards & Announcements
+# -----------------------------------------------------------------------------
+
 #
 #    Prestige.Rewards
-#        Description: Prestige rewards granted when reaching each level
+#        Description: Prestige rewards per level (format: "level:itemId:count;...")
 #        Default:     ""
 #
 Prestige.Rewards = ""
 
 #
 #    Prestige.AnnounceWorld
-#        Description: Announce prestige achievements to the entire server
+#        Description: Announce prestige achievements server-wide
 #        Default:     1 (Enabled)
 #
 Prestige.AnnounceWorld = 1
+
+# -----------------------------------------------------------------------------
+# Alt Character XP Bonus
+# -----------------------------------------------------------------------------
 
 #
 #    Prestige.AltBonus.Enable
@@ -1506,10 +2597,14 @@ Prestige.AltBonus.PercentPerChar = 5
 
 #
 #    Prestige.AltBonus.MaxCharacters
-#        Description: Maximum characters counted for bonus calculation
+#        Description: Maximum characters counted for bonus
 #        Default:     5
 #
 Prestige.AltBonus.MaxCharacters = 5
+
+# -----------------------------------------------------------------------------
+# Prestige Challenges
+# -----------------------------------------------------------------------------
 
 #
 #    Prestige.Challenges.Enable
@@ -1534,8 +2629,8 @@ Prestige.Challenges.Speed.Enable = 1
 
 #
 #    Prestige.Challenges.Speed.TimeLimit
-#        Description: Time limit for Speed Prestige challenge (in seconds)
-#        Default:     360000
+#        Description: Time limit for Speed Prestige (seconds)
+#        Default:     360000 (100 hours)
 #
 Prestige.Challenges.Speed.TimeLimit = 360000
 
@@ -1547,1207 +2642,47 @@ Prestige.Challenges.Speed.TimeLimit = 360000
 Prestige.Challenges.Solo.Enable = 1
 
 
-###########################################################################
+###############################################################################
 #
-#    SECTION 7: CHALLENGE MODES SYSTEM
+#  SECTION 14: CUSTOM LOGIN SYSTEM
 #
-#    Hardcore and specialized challenge modes for extreme gameplay.
+#  Enhanced first-login experience with BoA gear, skills, mounts, and
+#  integration with DC systems.
 #
-###########################################################################
+###############################################################################
 
-#
-#    ChallengeModes.Enable
-#        Description: Master toggle for all challenge modes
-#        Default:     1 (Enabled)
-#
-ChallengeModes.Enable = 1
-
-#
-#    Hardcore.Enable
-#        Description: Master toggle for Hardcore challenge mode
-#        Default:     1 (Enabled)
-#
-Hardcore.Enable = 1
-
-#
-#    Hardcore.XPMultiplier
-#        Description: XP multiplier for Hardcore mode
-#        Default:     1
-#
-Hardcore.XPMultiplier = 1
-
-#
-#    Hardcore.DisableLevel
-#        Description: Level at which Hardcore XP bonus stops
-#        Default:     0
-#
-Hardcore.DisableLevel = 0
-
-#
-#    Hardcore.ItemRewardAmount
-#        Description: Item reward quantity for Hardcore milestones
-#        Default:     1
-#
-Hardcore.ItemRewardAmount = 1
-
-#
-#    Hardcore.AchievementReward
-#        Description: Achievement ID granted for Hardcore completion
-#        Default:     ""
-#
-Hardcore.AchievementReward = ""
-
-#
-#    Hardcore.TalentRewards
-#        Description: Talent points rewarded for Hardcore progression
-#        Default:     ""
-#
-Hardcore.TalentRewards = ""
-
-#
-#    Hardcore.TitleRewards
-#        Description: Title ID granted for Hardcore completion
-#        Default:     ""
-#
-Hardcore.TitleRewards = ""
-
-#
-#    Hardcore.ItemRewards
-#        Description: Item rewards for Hardcore milestones
-#        Default:     ""
-#
-Hardcore.ItemRewards = ""
-
-#
-#    SemiHardcore.Enable
-#        Description: Master toggle for Semi-Hardcore mode
-#        Default:     1 (Enabled)
-#
-SemiHardcore.Enable = 1
-
-#
-#    SemiHardcore.XPMultiplier
-#        Description: XP multiplier for Semi-Hardcore mode
-#        Default:     1
-#
-SemiHardcore.XPMultiplier = 1
-
-#
-#    SemiHardcore.DisableLevel
-#        Description: Level at which Semi-Hardcore XP bonus stops
-#        Default:     0
-#
-SemiHardcore.DisableLevel = 0
-
-#
-#    SemiHardcore.ItemRewardAmount
-#        Description: Item reward quantity for Semi-Hardcore milestones
-#        Default:     1
-#
-SemiHardcore.ItemRewardAmount = 1
-
-#
-#    SemiHardcore.AchievementReward
-#        Description: Achievement ID granted for semi-hardcore completion
-#        Default:     ""
-#
-SemiHardcore.AchievementReward = ""
-
-#
-#    SemiHardcore.TalentRewards
-#        Description: Talent points rewarded for semi-hardcore progression
-#        Default:     ""
-#
-SemiHardcore.TalentRewards = ""
-
-#
-#    SemiHardcore.TitleRewards
-#        Description: Title ID granted for semi-hardcore completion
-#        Default:     ""
-#
-SemiHardcore.TitleRewards = ""
-
-#
-#    SemiHardcore.ItemRewards
-#        Description: Item rewards for semi-hardcore milestones
-#        Default:     ""
-#
-SemiHardcore.ItemRewards = ""
-
-#
-#    SelfCrafted.Enable
-#        Description: Master toggle for Self-Crafted mode
-#        Default:     1 (Enabled)
-#
-SelfCrafted.Enable = 1
-
-#
-#    SelfCrafted.XPMultiplier
-#        Description: XP multiplier for Self-Crafted mode
-#        Default:     1
-#
-SelfCrafted.XPMultiplier = 1
-
-#
-#    SelfCrafted.DisableLevel
-#        Description: Level at which Self-Crafted XP bonus stops
-#        Default:     0
-#
-SelfCrafted.DisableLevel = 0
-
-#
-#    SelfCrafted.ItemRewardAmount
-#        Description: Item reward quantity for Self-Crafted milestones
-#        Default:     1
-#
-SelfCrafted.ItemRewardAmount = 1
-
-#
-#    SelfCrafted.AchievementReward
-#        Description: Achievement ID granted for self-crafted completion
-#        Default:     ""
-#
-SelfCrafted.AchievementReward = ""
-
-#
-#    SelfCrafted.TalentRewards
-#        Description: Talent points rewarded for self-crafted progression
-#        Default:     ""
-#
-SelfCrafted.TalentRewards = ""
-
-#
-#    SelfCrafted.TitleRewards
-#        Description: Title ID granted for self-crafted completion
-#        Default:     ""
-#
-SelfCrafted.TitleRewards = ""
-
-#
-#    SelfCrafted.ItemRewards
-#        Description: Item rewards for self-crafted milestones
-#        Default:     ""
-#
-SelfCrafted.ItemRewards = ""
-
-#
-#    ItemQualityLevel.Enable
-#        Description: Master toggle for Item Quality Level mode
-#        Default:     1 (Enabled)
-#
-ItemQualityLevel.Enable = 1
-
-#
-#    ItemQualityLevel.XPMultiplier
-#        Description: XP multiplier for Item Quality Level mode
-#        Default:     1
-#
-ItemQualityLevel.XPMultiplier = 1
-
-#
-#    ItemQualityLevel.DisableLevel
-#        Description: Level at which Item Quality Level XP bonus stops
-#        Default:     0
-#
-ItemQualityLevel.DisableLevel = 0
-
-#
-#    ItemQualityLevel.ItemRewardAmount
-#        Description: Item reward quantity for Item Quality Level milestones
-#        Default:     1
-#
-ItemQualityLevel.ItemRewardAmount = 1
-
-#
-#    ItemQualityLevel.AchievementReward
-#        Description: Achievement ID granted for item quality level completion
-#        Default:     ""
-#
-ItemQualityLevel.AchievementReward = ""
-
-#
-#    ItemQualityLevel.TalentRewards
-#        Description: Talent points rewarded for item quality progression
-#        Default:     ""
-#
-ItemQualityLevel.TalentRewards = ""
-
-#
-#    ItemQualityLevel.TitleRewards
-#        Description: Title ID granted for item quality completion
-#        Default:     ""
-#
-ItemQualityLevel.TitleRewards = ""
-
-#
-#    ItemQualityLevel.ItemRewards
-#        Description: Item rewards for quality level milestones
-#        Default:     ""
-#
-ItemQualityLevel.ItemRewards = ""
-
-#
-#    QuestXpOnly.Enable
-#        Description: Master toggle for Quest XP Only mode
-#        Default:     1 (Enabled)
-#
-QuestXpOnly.Enable = 1
-
-#
-#    QuestXpOnly.XPMultiplier
-#        Description: XP multiplier for Quest XP Only mode
-#        Default:     1
-#
-QuestXpOnly.XPMultiplier = 1
-
-#
-#    QuestXpOnly.DisableLevel
-#        Description: Level at which Quest XP Only bonus stops
-#        Default:     0
-#
-QuestXpOnly.DisableLevel = 0
-
-#
-#    QuestXpOnly.ItemRewardAmount
-#        Description: Item reward quantity for Quest XP Only milestones
-#        Default:     1
-#
-QuestXpOnly.ItemRewardAmount = 1
-
-#
-#    QuestXpOnly.AchievementReward
-#        Description: Achievement ID granted for quest-only XP completion
-#        Default:     ""
-#
-QuestXpOnly.AchievementReward = ""
-
-#
-#    QuestXpOnly.TalentRewards
-#        Description: Talent points rewarded for quest-only progression
-#        Default:     ""
-#
-QuestXpOnly.TalentRewards = ""
-
-#
-#    QuestXpOnly.TitleRewards
-#        Description: Title ID granted for quest-only completion
-#        Default:     ""
-#
-QuestXpOnly.TitleRewards = ""
-
-#
-#    QuestXpOnly.ItemRewards
-#        Description: Item rewards for quest-only milestones
-#        Default:     ""
-#
-QuestXpOnly.ItemRewards = ""
-
-#
-#    IronMan.Enable
-#        Description: Master toggle for Iron Man mode
-#        Default:     1 (Enabled)
-#
-IronMan.Enable = 1
-
-#
-#    IronMan.XPMultiplier
-#        Description: XP multiplier for Iron Man mode
-#        Default:     1
-#
-IronMan.XPMultiplier = 1
-
-#
-#    IronMan.DisableLevel
-#        Description: Level at which Iron Man XP bonus stops
-#        Default:     0
-#
-IronMan.DisableLevel = 0
-
-#
-#    IronMan.ItemRewardAmount
-#        Description: Item reward quantity for Iron Man milestones
-#        Default:     1
-#
-IronMan.ItemRewardAmount = 1
-
-#
-#    IronMan.AchievementReward
-#        Description: Achievement ID granted for Iron Man completion
-#        Default:     ""
-#
-IronMan.AchievementReward = ""
-
-#
-#    IronMan.TalentRewards
-#        Description: Talent points rewarded for Iron Man progression
-#        Default:     ""
-#
-IronMan.TalentRewards = ""
-
-#
-#    IronMan.TitleRewards
-#        Description: Title ID granted for Iron Man completion
-#        Default:     ""
-#
-IronMan.TitleRewards = ""
-
-#
-#    IronMan.ItemRewards
-#        Description: Item rewards for Iron Man milestones
-#        Default:     ""
-#
-IronMan.ItemRewards = ""
-
-#
-#    IronManPlus.Enable
-#        Description: Master toggle for Iron Man Plus mode
-#        Default:     1 (Enabled)
-#
-IronManPlus.Enable = 1
-
-#
-#    IronManPlus.XPMultiplier
-#        Description: XP multiplier for Iron Man Plus mode
-#        Default:     1
-#
-IronManPlus.XPMultiplier = 1
-
-#
-#    IronManPlus.DisableLevel
-#        Description: Level at which Iron Man Plus XP bonus/logic stops
-#        Default:     0
-#
-IronManPlus.DisableLevel = 0
-
-#
-#    IronManPlus.ItemRewardAmount
-#        Description: Item reward quantity for Iron Man Plus milestones
-#        Default:     1
-#
-IronManPlus.ItemRewardAmount = 1
-
-#
-#    IronManPlus.AchievementReward
-#        Description: Achievement ID granted for Iron Man Plus completion
-#        Default:     ""
-#
-IronManPlus.AchievementReward = ""
-
-#
-#    IronManPlus.TalentRewards
-#        Description: Talent points rewarded for Iron Man Plus progression
-#        Default:     ""
-#
-IronManPlus.TalentRewards = ""
-
-#
-#    IronManPlus.TitleRewards
-#        Description: Title ID granted for Iron Man Plus completion
-#        Default:     ""
-#
-IronManPlus.TitleRewards = ""
-
-#
-#    IronManPlus.ItemRewards
-#        Description: Item rewards for Iron Man Plus milestones
-#        Default:     ""
-#
-IronManPlus.ItemRewards = ""
-
-
-###########################################################################
-#
-#    SECTION 8: DUNGEON QUEST NPC SYSTEM
-#
-#    Daily and weekly dungeon quests with NPC quest givers.
-#
-###########################################################################
-
-#
-#    DungeonQuest.Enable
-#        Description: Master toggle for the Dungeon Quest NPC system
-#        Default:     1 (Enabled)
-#
-DungeonQuest.Enable = 1
-
-#
-#    DungeonQuest.FollowerEnable
-#        Description: Enable the DungeonQuest follower/Quest Master helper
-#        Default:     1 (Enabled)
-#
-DungeonQuest.FollowerEnable = 1
-
-#
-#    DungeonQuest.Debug.Enable
-#        Description: Enable debug logging for dungeon quest system
-#        Default:     0 (Disabled)
-#
-DungeonQuest.Debug.Enable = 0
-
-
-###########################################################################
-#
-#    SECTION 9: ITEM UPGRADE SYSTEM
-#
-#    Allows players to upgrade gear progressively using currency.
-#
-###########################################################################
-
-#
-#    ItemUpgrade.Enable
-#        Description: Master toggle for the Item Upgrade system
-#        Default:     1 (Enabled)
-#
-ItemUpgrade.Enable = 1
-
-#
-#    ItemUpgrade.DebugToSay
-#        Description: Send debug messages to player via Say channel
-#        Default:     0 (Disabled)
-#
-ItemUpgrade.DebugToSay = 0
-
-#
-#    ItemUpgrade.Currency.UseSeasonalCurrency
-#        Description: Use the canonical seasonal currency for item upgrades
-#        Default:     0 (Disabled)
-#
-ItemUpgrade.Currency.UseSeasonalCurrency = 0
-
-#
-#    ItemUpgrade.Currency.EssenceId
-#        Description: Item ID for Upgrade Essence
-#        Default:     300312
-#
-ItemUpgrade.Currency.EssenceId = 300312
-
-#
-#    ItemUpgrade.Currency.TokenId
-#        Description: Item ID for Upgrade Tokens
-#        Default:     300311
-#
-ItemUpgrade.Currency.TokenId = 300311
-
-#
-#    ItemUpgrade.Test.EssenceGrant
-#        Description: Amount of essence granted by .upgradeprog testset
-#        Default:     5000
-#
-ItemUpgrade.Test.EssenceGrant = 5000
-
-#
-#    ItemUpgrade.Test.TokensGrant
-#        Description: Amount of tokens granted by .upgradeprog testset
-#        Default:     2500
-#
-ItemUpgrade.Test.TokensGrant = 2500
-
-
-###########################################################################
-#
-#    SECTION 10: UNIFIED SEASONAL SYSTEM
-#
-#    All seasonal systems (Rewards, M+, Item Upgrades, HLBG) use a unified
-#    season management framework.
-#
-###########################################################################
-
-#
-#    DarkChaos.ActiveSeasonID
-#        Description: Global active season ID for all seasonal systems
-#        Default:     1
-#
-DarkChaos.ActiveSeasonID = 1
-
-#
-#    DarkChaos.Seasonal.TokenItemID
-#        Description: Item ID for Seasonal Tokens (primary currency)
-#        Default:     300311
-#
-DarkChaos.Seasonal.TokenItemID = 300311
-
-#
-#    DarkChaos.Seasonal.EssenceItemID
-#        Description: Item ID for Seasonal Essence (secondary currency)
-#        Default:     300312
-#
-DarkChaos.Seasonal.EssenceItemID = 300312
-
-#
-#    DarkChaos.Seasonal.WeeklyTokenCap
-#        Description: Maximum number of Seasonal Tokens a player can earn per week
-#        Default:     1000
-#
-DarkChaos.Seasonal.WeeklyTokenCap = 1000
-
-#
-#    DarkChaos.Seasonal.WeeklyEssenceCap
-#        Description: Maximum number of Seasonal Essence a player can earn per week
-#        Default:     1000
-#
-DarkChaos.Seasonal.WeeklyEssenceCap = 1000
-
-#
-#    SeasonalRewards.ActiveSeasonID
-#        Description: Active season ID for Seasonal Rewards
-#        Default:     1
-#
-SeasonalRewards.ActiveSeasonID = 1
-
-#
-#    SeasonalRewards.Enable
-#        Description: Master toggle for the Seasonal Reward system
-#        Default:     1 (Enabled)
-#
-SeasonalRewards.Enable = 1
-
-#
-#    SeasonalRewards.LogTransactions
-#        Description: Enable transaction logging to dc_reward_transactions table
-#        Default:     1 (Enabled)
-#
-SeasonalRewards.LogTransactions = 1
-
-#
-#    SeasonalRewards.QuestMultiplier
-#        Description: Global multiplier for quest rewards
-#        Default:     1.0
-#
-SeasonalRewards.QuestMultiplier = 1.0
-
-#
-#    SeasonalRewards.CreatureMultiplier
-#        Description: Global multiplier for creature kill rewards
-#        Default:     1.0
-#
-SeasonalRewards.CreatureMultiplier = 1.0
-
-#
-#    SeasonalRewards.WorldBossBonus
-#        Description: Additional bonus multiplier for world bosses
-#        Default:     1.5
-#
-SeasonalRewards.WorldBossBonus = 1.5
-
-#
-#    SeasonalRewards.EventBossBonus
-#        Description: Additional bonus multiplier for seasonal event bosses
-#        Default:     1.25
-#
-SeasonalRewards.EventBossBonus = 1.25
-
-#
-#    SeasonalRewards.MaxTokensPerWeek
-#        Description: Weekly token earning cap per character
-#        Default:     0 (Unlimited)
-#
-SeasonalRewards.MaxTokensPerWeek = 0
-
-#
-#    SeasonalRewards.MaxEssencePerWeek
-#        Description: Weekly essence earning cap per character
-#        Default:     0 (Unlimited)
-#
-SeasonalRewards.MaxEssencePerWeek = 0
-
-#
-#    SeasonalRewards.WeeklyResetDay
-#        Description: Day of week for weekly reset (2=Tuesday)
-#        Default:     2
-#
-SeasonalRewards.WeeklyResetDay = 2
-
-#
-#    SeasonalRewards.WeeklyResetHour
-#        Description: Hour of day for weekly reset (15=3:00 PM)
-#        Default:     15
-#
-SeasonalRewards.WeeklyResetHour = 15
-
-#
-#    SeasonalRewards.AchievementTracking
-#        Description: Enable achievement progress tracking for seasonal activities
-#        Default:     1 (Enabled)
-#
-SeasonalRewards.AchievementTracking = 1
-
-
-###########################################################################
-#
-#    SECTION 11: AZEROTHCORE MODULE CONFIGURATIONS
-#
-#    Configuration for various AzerothCore gameplay modules.
-#
-###########################################################################
-
-###################################################################################################
-# AZEROTHCORE (CORE) - OUTDOORPVP
-#
-#     OutdoorPvPCaptureRate
-#        Description: Rate multiplier for outdoor PvP capture points.
-#        Default:     1.0
-#
-OutdoorPvPCaptureRate = 1
-
-###################################################################################################
-
-#
-#    SlowXpGain.Enable
-#        Description: Enable the Slow XP Gain module
-#        Default:     1 (Enabled)
-#
-SlowXpGain.Enable = 1
-
-#
-#    SlowXpGain.XPMultiplier
-#        Description: XP multiplier for slow XP mode
-#        Default:     0.5
-#
-SlowXpGain.XPMultiplier = 0.5
-
-#
-#    SlowXpGain.DisableLevel
-#        Description: Level at which slow XP is disabled
-#        Default:     0
-#
-SlowXpGain.DisableLevel = 0
-
-#
-#    SlowXpGain.ItemRewardAmount
-#        Description: Amount of reward items given for achievements
-#        Default:     1
-#
-SlowXpGain.ItemRewardAmount = 1
-
-#
-#    SlowXpGain.AchievementReward
-#        Description: Achievement ID granted for completing slow XP challenges
-#        Default:     ""
-#
-SlowXpGain.AchievementReward = ""
-
-#
-#    SlowXpGain.TalentRewards
-#        Description: Talent points rewarded for slow XP progression
-#        Default:     ""
-#
-SlowXpGain.TalentRewards = ""
-
-#
-#    SlowXpGain.TitleRewards
-#        Description: Title ID granted for slow XP completion
-#        Default:     ""
-#
-SlowXpGain.TitleRewards = ""
-
-#
-#    SlowXpGain.ItemRewards
-#        Description: Item rewards for slow XP milestones
-#        Default:     ""
-#
-SlowXpGain.ItemRewards = ""
-
-#
-#    VerySlowXpGain.Enable
-#        Description: Enable the Very Slow XP Gain module
-#        Default:     1 (Enabled)
-#
-VerySlowXpGain.Enable = 1
-
-#
-#    VerySlowXpGain.XPMultiplier
-#        Description: XP multiplier for very slow XP mode
-#        Default:     0.25
-#
-VerySlowXpGain.XPMultiplier = 0.25
-
-#
-#    VerySlowXpGain.DisableLevel
-#        Description: Level at which very slow XP is disabled
-#        Default:     0
-#
-VerySlowXpGain.DisableLevel = 0
-
-#
-#    VerySlowXpGain.ItemRewardAmount
-#        Description: Amount of reward items given for achievements
-#        Default:     1
-#
-VerySlowXpGain.ItemRewardAmount = 1
-
-#
-#    VerySlowXpGain.AchievementReward
-#        Description: Achievement ID granted for completing very slow XP challenges
-#        Default:     ""
-#
-VerySlowXpGain.AchievementReward = ""
-
-#
-#    VerySlowXpGain.TalentRewards
-#        Description: Talent points rewarded for very slow XP progression
-#        Default:     ""
-#
-VerySlowXpGain.TalentRewards = ""
-
-#
-#    VerySlowXpGain.TitleRewards
-#        Description: Title ID granted for very slow XP completion
-#        Default:     ""
-#
-VerySlowXpGain.TitleRewards = ""
-
-#
-#    VerySlowXpGain.ItemRewards
-#        Description: Item rewards for very slow XP milestones
-#        Default:     ""
-#
-VerySlowXpGain.ItemRewards = ""
-
-
-###########################################################################
-#
-#    SECTION 12: PHASED DUELING SYSTEM
-#
-#    Creates isolated phases for dueling players.
-#
-###########################################################################
-
-#
-#    PhasedDuels.Enable
-#        Description: Master toggle for the Phased Duels system
-#        Default:     1 (Enabled)
-#
-PhasedDuels.Enable = 1
-
-#
-#    PhasedDuels.AnnounceOnLogin
-#        Description: Notify players about phased duels on login
-#        Default:     1 (Enabled)
-#
-PhasedDuels.AnnounceOnLogin = 1
-
-#
-#    PhasedDuels.ResetHealth
-#        Description: Reset players to full health after duel ends
-#        Default:     1 (Enabled)
-#
-PhasedDuels.ResetHealth = 1
-
-#
-#    PhasedDuels.ResetCooldowns
-#        Description: Reset all spell cooldowns after duel ends
-#        Default:     1 (Enabled)
-#
-PhasedDuels.ResetCooldowns = 1
-
-#
-#    PhasedDuels.RestorePower
-#        Description: Restore mana/energy/rage/runic power after duel ends
-#        Default:     1 (Enabled)
-#
-PhasedDuels.RestorePower = 1
-
-#
-#    PhasedDuels.RestorePetHealth
-#        Description: Restore pet health after duel ends
-#        Default:     1 (Enabled)
-#
-PhasedDuels.RestorePetHealth = 1
-
-#
-#    PhasedDuels.ExcludeRogueWarriorPower
-#        Description: Don't restore energy/rage for rogues/warriors
-#        Default:     0 (Disabled)
-#
-PhasedDuels.ExcludeRogueWarriorPower = 0
-
-#
-#    PhasedDuels.TrackStatistics
-#        Description: Track and persist duel wins/losses/stats to database
-#        Default:     1 (Enabled)
-#
-PhasedDuels.TrackStatistics = 1
-
-#
-#    PhasedDuels.AllowInDungeons
-#        Description: Allow phased dueling inside dungeons
-#        Default:     0 (Disabled)
-#
-PhasedDuels.AllowInDungeons = 0
-
-#
-#    PhasedDuels.ArenaZoneId
-#        Description: If set, phased duels only occur in this zone ID
-#        Default:     0 (Allow everywhere)
-#
-PhasedDuels.ArenaZoneId = 0
-
-#
-#    PhasedDuels.PhaseRadius
-#        Description: Radius in yards to check for occupied phases
-#        Default:     100.0
-#
-PhasedDuels.PhaseRadius = 100.0
-
-#
-#    PhasedDuels.MaxPhaseId
-#        Description: Maximum phase ID to use for duels
-#        Default:     2147483647
-#
-PhasedDuels.MaxPhaseId = 2147483647
-
-
-###########################################################################
-#
-#    SECTION 13: ADDON COMMUNICATION PROTOCOL
-#
-#    Handles client-server communication for Dark Chaos custom addons.
-#
-###########################################################################
-
-#
-#    DC.AddonProtocol.Core.Enable
-#        Description: Master toggle for DC Addon Protocol system
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Core.Enable = 1
-
-#
-#    DC.AddonProtocol.QoS.Enable
-#        Description: Enable DC-QoS addon support (settings sync + extended item/NPC/spell info)
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.QoS.Enable = 1
-
-#
-#    DC.AddonProtocol.QoS.Debug
-#        Description: Enable debug logging for the DC-QoS addon handler
-#        Default:     0 (Disabled)
-#
-DC.AddonProtocol.QoS.Debug = 0
-
-#
-#    DC.AddonProtocol.AOELoot.Enable
-#        Description: Enable DCAOE prefix handling for AOE Loot addon sync
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.AOELoot.Enable = 1
-
-#
-#    DC.AddonProtocol.Spectator.Enable
-#        Description: Enable DCSPEC prefix handling for Mythic+ Spectator addon
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Spectator.Enable = 1
-
-#
-#    DC.AddonProtocol.Collection.Enable
-#        Description: Enable protocol routing for Collection System (COLL)
-#        Default:     1
-#
-DC.AddonProtocol.Collection.Enable = 1
-
-#
-#    DC.AddonProtocol.Upgrade.Enable
-#        Description: Enable DCUPG prefix handling for Item Upgrade addon sync
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Upgrade.Enable = 1
-
-#
-#    DC.AddonProtocol.Duels.Enable
-#        Description: Enable DC addon protocol for Phased Dueling system
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Duels.Enable = 1
-
-#
-#    DCDuelAddon.Enable
-#        Description: Backward-compatible toggle for the legacy duel addon interface
-#        Default:     1 (Enabled)
-#
-DCDuelAddon.Enable = 1
-
-#
-#    DC.AddonProtocol.MythicPlus.Enable
-#        Description: Enable DC addon protocol for Mythic+ system
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.MythicPlus.Enable = 1
-
-#
-#    DC.MythicPlus.AddonUI.AutoOpen
-#        Description: Auto-open Mythic+ addon UI when interacting with DC Mythic+ NPCs
-#        Default:     1 (Enabled)
-#
-DC.MythicPlus.AddonUI.AutoOpen = 1
-
-#
-#    DC.AddonProtocol.Prestige.Enable
-#        Description: Enable DC addon protocol for Prestige system
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Prestige.Enable = 1
-
-#
-#    DCPrestigeAddon.Enable
-#        Description: Backward-compatible toggle for the legacy prestige addon interface
-#        Default:     1 (Enabled)
-#
-DCPrestigeAddon.Enable = 1
-
-#
-#    DC.AddonProtocol.Seasonal.Enable
-#        Description: Enable DC addon protocol for Seasonal system
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Seasonal.Enable = 1
-
-#
-#    DC.AddonProtocol.HinterlandBG.Enable
-#        Description: Enable DC addon protocol for Hinterland Battleground
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.HinterlandBG.Enable = 1
-
-#
-#    DC.Addon.HLBG.Enable
-#        Description: Enable Hinterland BG client addon support
-#        Default:     1 (Enabled)
-#
-DC.Addon.HLBG.Enable = 1
-
-#
-#    DC.AddonProtocol.Events.Enable
-#        Description: Enable DC addon protocol for dynamic world events feed
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Events.Enable = 1
-
-#
-#    DC.AddonProtocol.GOMove.Enable
-#        Description: Enable addon-based GOMove integration
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.GOMove.Enable = 1
-
-#
-#    DC.AddonProtocol.GOMove.MinSecurity
-#        Description: Minimum server security level required to issue GOMove addon commands
-#        Default:     1 (SEC_GAMEMASTER)
-#
-DC.AddonProtocol.GOMove.MinSecurity = 1
-
-#
-#    DC.AddonProtocol.GOMove.MinSecurityMove
-#        Description: Minimum server security level required to execute GOMove 'move' commands
-#        Default:     2 (SEC_GAMEMASTER)
-#
-DC.AddonProtocol.GOMove.MinSecurityMove = 2
-
-#
-#    DC.AddonProtocol.NPCMove.Enable
-#        Description: Enable addon-based NPC mover integration
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.NPCMove.Enable = 1
-
-#
-#    DC.AddonProtocol.NPCMove.MinSecurity
-#        Description: Minimum server security level required to issue NPCMove addon commands
-#        Default:     1 (SEC_GAMEMASTER)
-#
-DC.AddonProtocol.NPCMove.MinSecurity = 1
-
-#
-#    DC.AddonProtocol.NPCMove.MinSecurityMove
-#        Description: Minimum server security level required to execute NPCMove 'move' commands
-#        Default:     2 (SEC_GAMEMASTER)
-#
-DC.AddonProtocol.NPCMove.MinSecurityMove = 2
-
-#
-#    DC.AddonProtocol.Teleports.Enable
-#        Description: Enable addon-based teleports integration
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Teleports.Enable = 1
-
-#
-#    DC.AddonProtocol.GroupFinder.Enable
-#        Description: Enable addon-based Group Finder integration
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.GroupFinder.Enable = 1
-
-#
-#    DC.AddonProtocol.Hotspot.Enable
-#        Description: Enable addon-based Hotspot integration
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Hotspot.Enable = 1
-
-#
-#    DC.AddonProtocol.World.Enable
-#        Description: Enable the World Content module for aggregated world info
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.World.Enable = 1
-
-# -------------------------------------------------------------------------
-# Leaderboard System Configuration
-# -------------------------------------------------------------------------
-
-#
-#    DC.Leaderboards.CacheLifetime
-#        Description: How long leaderboard data is cached in seconds
-#        Default:     60 (1 minute)
-#
-DC.Leaderboards.CacheLifetime = 60
-
-#
-#    DC.Leaderboards.AccountCacheLifetime
-#        Description: How long account statistics are cached in seconds
-#        Default:     120 (2 minutes)
-#
-DC.Leaderboards.AccountCacheLifetime = 120
-
-#
-#    DC.Leaderboards.MaxCacheEntries
-#        Description: Maximum number of leaderboards to keep cached
-#        Default:     100
-#
-DC.Leaderboards.MaxCacheEntries = 100
-
-
-
-#
-#    DC.AddonProtocol.Debug.Enable
-#        Description: Enable debug logging for all addon protocol messages
-#        Default:     0 (Disabled)
-#
-DC.AddonProtocol.Debug.Enable = 0
-
-#
-#    DC.AddonProtocol.ChunkTimeout
-#        Description: Timeout in milliseconds for reassembling chunked messages
-#        Default:     5000
-#
-DC.AddonProtocol.ChunkTimeout = 5000
-
-#
-#    DC.AddonProtocol.RequestTimeoutMs
-#        Description: Timeout in milliseconds for awaiting request responses
-#        Default:     8000
-#
-DC.AddonProtocol.RequestTimeoutMs = 8000
-
-#
-#    DC.AddonProtocol.RateLimit.Messages
-#        Description: Maximum addon messages per player per second
-#        Default:     30
-#
-DC.AddonProtocol.RateLimit.Messages = 30
-
-#
-#    DC.AddonProtocol.RateLimit.Action
-#        Description: Action when rate limit is exceeded (0=Log, 1=Disconnect, 2=Mute)
-#        Default:     0
-#
-DC.AddonProtocol.RateLimit.Action = 0
-
-#
-#    DC.AddonProtocol.Logging.Enable
-#        Description: Enable database logging of addon protocol messages
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Logging.Enable = 1
-
-# -------------------------------------------------------------------------
-# Security Limits (prevent DoS/memory exhaustion attacks)
-# -------------------------------------------------------------------------
-
-#
-#    DC.AddonProtocol.Security.MaxChunksPerMessage
-#        Description: Maximum number of chunks allowed in a single chunked message.
-#                     Prevents memory exhaustion from malicious clients claiming
-#                     excessive chunk counts. Set based on largest legitimate payload:
-#                     - DC-Collection transmog pages: ~50KB (needs ~200 chunks)
-#                     - Leaderboard pages: ~15KB (needs ~60 chunks)
-#        Default:     200
-#
-DC.AddonProtocol.Security.MaxChunksPerMessage = 200
-
-#
-#    DC.AddonProtocol.Security.MaxJsonPayloadSize
-#        Description: Maximum JSON payload size in bytes after reassembly.
-#                     Prevents JSON parsing DoS attacks. Set based on largest
-#                     legitimate payloads:
-#                     - DC-Collection full sync: up to 100KB
-#                     - Transmog definition pages (250 items): ~25KB
-#                     - Community outfit lists: ~25KB
-#        Default:     131072 (128KB)
-#
-DC.AddonProtocol.Security.MaxJsonPayloadSize = 131072
-
-#
-#    DC.AddonProtocol.Security.MaxPendingChunks
-#        Description: Maximum number of concurrent pending chunked messages
-#                     per account. Prevents memory exhaustion from partial
-#                     chunk floods.
-#        Default:     5
-#
-DC.AddonProtocol.Security.MaxPendingChunks = 5
-
-
-###########################################################################
-#
-#    SECTION 14: UNIFIED LEADERBOARD SYSTEM
-#
-#    Aggregates leaderboard data for all DC systems.
-#
-###########################################################################
-
-#
-#    DC.AddonProtocol.Leaderboard.Enable
-#        Description: Enable DC addon protocol for Unified Leaderboards
-#        Default:     1 (Enabled)
-#
-DC.AddonProtocol.Leaderboard.Enable = 1
-
-
-###########################################################################
-#
-#    SECTION 15: CUSTOM LOGIN SYSTEM
-#
-#    Enhanced first-login experience integrating mod-customlogin features.
-#
-###########################################################################
+# -----------------------------------------------------------------------------
+# Core Settings
+# -----------------------------------------------------------------------------
 
 #
 #    DCCustomLogin.Enable
-#        Description: Master toggle for the Custom Login system
+#        Description: Master toggle for Custom Login system
 #        Default:     1 (Enabled)
 #
 DCCustomLogin.Enable = 1
 
 #
 #    DCCustomLogin.Debug
-#        Description: Enable debug logging for custom login operations
+#        Description: Enable debug logging
 #        Default:     0 (Disabled)
 #
 DCCustomLogin.Debug = 0
 
+# -----------------------------------------------------------------------------
+# Announcements
+# -----------------------------------------------------------------------------
+
 #
 #    DCCustomLogin.Announce
-#        Description: Send welcome message to player on login
+#        Description: Send welcome message on login
 #        Default:     1 (Enabled)
 #
 DCCustomLogin.Announce = 1
 
 #
 #    DCCustomLogin.AnnounceMessage
-#        Description: Welcome message shown to all players on login
+#        Description: Welcome message text
 #        Default:     "Welcome to |cff00ff00DarkChaos-255|r! Type |cfffff000/welcome|r to get started."
 #
 DCCustomLogin.AnnounceMessage = "Welcome to |cff00ff00DarkChaos-255|r! Type |cfffff000/welcome|r to get started."
@@ -2759,14 +2694,18 @@ DCCustomLogin.AnnounceMessage = "Welcome to |cff00ff00DarkChaos-255|r! Type |cff
 #
 DCCustomLogin.PlayerAnnounce = 0
 
+# -----------------------------------------------------------------------------
+# Bind-on-Account Heirloom Items
+# -----------------------------------------------------------------------------
+
 #
 #    DCCustomLogin.BoA
-#        Description: Give new characters Bind-on-Account heirloom items
+#        Description: Give new characters heirloom items
 #        Default:     1 (Enabled)
 #
 DCCustomLogin.BoA = 1
 
-# Class-specific item configuration
+# Class-specific heirloom configuration (Shoulders, Chest, Trinket, Weapons)
 DCCustomLogin.Warrior.Shoulders = 42949
 DCCustomLogin.Warrior.Chest = 48685
 DCCustomLogin.Warrior.Trinket = 42991
@@ -2837,149 +2776,81 @@ DCCustomLogin.Druid.Weapon1 = 42948
 DCCustomLogin.Druid.Weapon2 = 0
 DCCustomLogin.Druid.Weapon3 = 0
 
-#
-#    DCCustomLogin.StartingGold.Enable
-#        Description: Grant starting currency to new characters
-#        Default:     1 (Enabled)
-#
-DCCustomLogin.StartingGold.Enable = 1
+# -----------------------------------------------------------------------------
+# Starting Gold
+# -----------------------------------------------------------------------------
 
-#
-#    DCCustomLogin.StartingGold.*
-#        Description: Amount of currency to grant
-#
+DCCustomLogin.StartingGold.Enable = 1
 DCCustomLogin.StartingGold.Gold = 10
 DCCustomLogin.StartingGold.Silver = 0
 DCCustomLogin.StartingGold.Copper = 0
 
-#
-#    DCCustomLogin.StartingMount.Enable
-#        Description: Grant a starting mount and riding skill to new characters
-#        Default:     1 (Enabled)
-#
+# -----------------------------------------------------------------------------
+# Starting Mount
+# -----------------------------------------------------------------------------
+
 DCCustomLogin.StartingMount.Enable = 1
-
-#
-#    DCCustomLogin.StartingMount.Spell
-#        Description: Mount spell ID to teach
-#        Default:     6653
-#
 DCCustomLogin.StartingMount.Spell = 6653
-
-#
-#    DCCustomLogin.StartingMount.Skill
-#        Description: Riding skill spell ID to teach
-#        Default:     33388
-#
 DCCustomLogin.StartingMount.Skill = 33388
-
-#
-#    DCCustomLogin.StartingMount.MinLevel
-#        Description: Minimum level required to grant riding/mounts
-#        Default:     10
-#
 DCCustomLogin.StartingMount.MinLevel = 10
 
-#
-#    DCCustomLogin.StartingProfessions.Enable
-#        Description: Teach professions to new characters on first login
-#        Default:     1 (Enabled)
-#
-DCCustomLogin.StartingProfessions.Enable = 1
+# -----------------------------------------------------------------------------
+# Starting Professions
+# -----------------------------------------------------------------------------
 
-#
-#    DCCustomLogin.StartingProfessions.List
-#        Description: Comma-separated list of profession spell IDs to teach
-#        Default:     "129,185,356"
-#
+DCCustomLogin.StartingProfessions.Enable = 1
 DCCustomLogin.StartingProfessions.List = "129,185,356"
 
-#
-#    DCCustomLogin.Bags.Default
-#        Description: Comma-separated list of bag item IDs to equip
-#        Default:     "21841,21841,21841,21841"
-#
-DCCustomLogin.Bags.Default = "21841,21841,21841,21841"
+# -----------------------------------------------------------------------------
+# Bags
+# -----------------------------------------------------------------------------
 
-#
-#    DCCustomLogin.Bags.*
-#        Description: Class-specific bag overrides
-#
+DCCustomLogin.Bags.Default = "21841,21841,21841,21841"
 DCCustomLogin.Bags.Hunter = 0
 DCCustomLogin.Bags.Warlock = 0
 DCCustomLogin.Bags.Rogue = 0
 
-#
-#    DCCustomLogin.Skills
-#        Description: Grant additional weapon skills to new characters
-#        Default:     0 (Disabled)
-#
-DCCustomLogin.Skills = 0
+# -----------------------------------------------------------------------------
+# Weapon Skills
+# -----------------------------------------------------------------------------
 
-#
-#    DCCustomLogin.Skills.List
-#        Description: Global skill spell list for all classes
-#        Default:     ""
-#
+DCCustomLogin.Skills = 0
 DCCustomLogin.Skills.List = ""
 
-#
-#    DCCustomLogin.LearnSpells.Enable
-#        Description: Teach class spells on first login (LearnSpells integration)
-#        Default:     1 (Enabled)
-#
+# -----------------------------------------------------------------------------
+# Learn Spells
+# -----------------------------------------------------------------------------
+
 DCCustomLogin.LearnSpells.Enable = 1
-
-#
-#    DCCustomLogin.LearnSpells.MaxLevel
-#        Description: Maximum level to learn class spells up to on first login
-#        Default:     80
-#
 DCCustomLogin.LearnSpells.MaxLevel = 80
-
-#
-#    DCCustomLogin.LearnSpells.ShamanTotems
-#        Description: Give Shaman totems on first login when LearnSpells is enabled
-#        Default:     1 (Enabled)
-#
 DCCustomLogin.LearnSpells.ShamanTotems = 1
 
-#
-#    DCCustomLogin.SpecialAbility
-#        Description: Grant special spells, titles, or mounts on first login
-#        Default:     0 (Disabled)
-#
-DCCustomLogin.SpecialAbility = 0
+# -----------------------------------------------------------------------------
+# Dual Spec
+# -----------------------------------------------------------------------------
 
-#
-#    DCCustomLogin.DualSpec.Enable
-#        Description: Grant free dual spec at the configured level
-#        Default:     1 (Enabled)
-#
 DCCustomLogin.DualSpec.Enable = 1
-
-#
-#    DCCustomLogin.DualSpec.Level
-#        Description: Minimum level to grant free dual spec
-#        Default:     10
-#
 DCCustomLogin.DualSpec.Level = 10
 
-#
-#    DCCustomLogin.SpecialAbility.*
-#        Description: Special ability configuration
-#
+# -----------------------------------------------------------------------------
+# Special Abilities
+# -----------------------------------------------------------------------------
+
+DCCustomLogin.SpecialAbility = 0
 DCCustomLogin.SpecialAbility.Spell1 = 0
 DCCustomLogin.SpecialAbility.Spell2 = 0
 DCCustomLogin.SpecialAbility.Title = 0
 DCCustomLogin.SpecialAbility.Mount = 0
 
-#
-#    DCCustomLogin.Reputation
-#        Description: Set custom starting reputation for new characters
-#        Default:     0 (Disabled)
-#
+# -----------------------------------------------------------------------------
+# Reputation
+# -----------------------------------------------------------------------------
+
 DCCustomLogin.Reputation = 0
+
+# -----------------------------------------------------------------------------
+# DC System Integrations
+# -----------------------------------------------------------------------------
 
 #
 #    DCCustomLogin.TriggerWelcome
@@ -2989,66 +2860,34 @@ DCCustomLogin.Reputation = 0
 DCCustomLogin.TriggerWelcome = 1
 
 #
-#    DCCustomLogin.SeasonalTokens.Enable
-#        Description: Grant seasonal starter tokens to new characters
-#        Default:     1 (Enabled)
-#
-DCCustomLogin.SeasonalTokens.Enable = 1
-
-#
-#    DCCustomLogin.SeasonalTokens.UseCanonicalCurrency
-#        Description: Use the canonical seasonal token defined in DarkChaos.Seasonal.TokenItemID
-#        Default:     1 (Enabled)
-#
-DCCustomLogin.SeasonalTokens.UseCanonicalCurrency = 1
-
-#
-#    DCCustomLogin.SeasonalTokens.ItemId
-#        Description: Custom item ID for starter tokens (if UseCanonicalCurrency=0)
-#        Default:     0
-#
-DCCustomLogin.SeasonalTokens.ItemId = 0
-
-#
-#    DCCustomLogin.SeasonalTokens.Amount
-#        Description: Number of seasonal tokens to grant
-#        Default:     100
-#
-DCCustomLogin.SeasonalTokens.Amount = 100
-
-#
 #    DCCustomLogin.PrestigeBonuses
 #        Description: Apply account-wide prestige bonuses to new characters
 #        Default:     1 (Enabled)
 #
 DCCustomLogin.PrestigeBonuses = 1
 
-#
-#    DCCustomLogin.MobileTeleporter.Enable
-#        Description: Grant mobile teleporter item to new characters
-#        Default:     1 (Enabled)
-#
-DCCustomLogin.MobileTeleporter.Enable = 1
+# Seasonal Starter Tokens
+DCCustomLogin.SeasonalTokens.Enable = 1
+DCCustomLogin.SeasonalTokens.UseCanonicalCurrency = 1
+DCCustomLogin.SeasonalTokens.ItemId = 0
+DCCustomLogin.SeasonalTokens.Amount = 100
 
-#
-#    DCCustomLogin.MobileTeleporter.ItemId
-#        Description: Item ID of the mobile teleporter to grant
-#        Default:     0
-#
+# Mobile Teleporter
+DCCustomLogin.MobileTeleporter.Enable = 1
 DCCustomLogin.MobileTeleporter.ItemId = 0
 
 
-###########################################################################
+###############################################################################
 #
-#    SECTION 16: DC-WELCOME ADDON SYSTEM
+#  SECTION 15: DC-WELCOME ADDON SYSTEM
 #
-#    First-start experience addon.
+#  First-start experience addon with progressive feature introduction.
 #
-###########################################################################
+###############################################################################
 
 #
 #    DCWelcome.Enable
-#        Description: Master toggle for the DC-Welcome system
+#        Description: Master toggle for DC-Welcome system
 #        Default:     1 (Enabled)
 #
 DCWelcome.Enable = 1
@@ -3062,21 +2901,21 @@ DCWelcome.ServerName = "DarkChaos-255"
 
 #
 #    DCWelcome.DiscordUrl
-#        Description: Discord invite URL shown to players
+#        Description: Discord invite URL
 #        Default:     "discord.gg/pNddMEMbb2"
 #
 DCWelcome.DiscordUrl = "discord.gg/pNddMEMbb2"
 
 #
 #    DCWelcome.WebsiteUrl
-#        Description: Website URL shown to players
+#        Description: Website URL
 #        Default:     "https://github.com/darkmord1991/DarkChaos-255"
 #
 DCWelcome.WebsiteUrl = "https://github.com/darkmord1991/DarkChaos-255"
 
 #
 #    DCWelcome.WikiUrl
-#        Description: Wiki/documentation URL shown to players
+#        Description: Wiki/documentation URL
 #        Default:     "https://github.com/darkmord1991/DarkChaos-255"
 #
 DCWelcome.WikiUrl = "https://github.com/darkmord1991/DarkChaos-255"
@@ -3089,516 +2928,149 @@ DCWelcome.WikiUrl = "https://github.com/darkmord1991/DarkChaos-255"
 DCWelcome.Progressive.Enabled = 1
 
 
-###########################################################################
+###############################################################################
+###############################################################################
+##
+##  PART VI - SOCIAL & GROUP SYSTEMS
+##
+###############################################################################
+###############################################################################
+
+
+###############################################################################
 #
-#    SECTION 17: CROSS-SYSTEM INTEGRATION FRAMEWORK
+#  SECTION 16: GROUP FINDER SYSTEM
 #
-#    Provides unified coordination between all DarkChaos-255 custom systems.
+#  Comprehensive group-finding system for Mythic+ and Raids with cross-faction
+#  support and reward system.
 #
-###########################################################################
+###############################################################################
 
 #
-#    DC.Achievements.Enable
-#        Description: Enable server-side achievements system
+#    DC.GroupFinder.Enable
+#        Description: Master toggle for Group Finder system
 #        Default:     1 (Enabled)
 #
-DC.Achievements.Enable = 1
+DC.GroupFinder.Enable = 1
 
 #
-#    DC.Achievements.Debug
-#        Description: Enable debug logging for achievements
+#    DC.GroupFinder.CrossFaction
+#        Description: Allow cross-faction group finding
 #        Default:     0 (Disabled)
 #
-DC.Achievements.Debug = 0
+DC.GroupFinder.CrossFaction = 0
 
-
-###########################################################################
-#
-#    SECTION 18: COLLECTION SYSTEM
-#
-#    Retail-like collection management for mounts, pets, toys, etc.
-#    Skipped: BattlePets, Toys (not implemented for WotLK 3.3.5a)
-#
-###########################################################################
+# -----------------------------------------------------------------------------
+# Listing Settings
+# -----------------------------------------------------------------------------
 
 #
-#    DCCollection.Enable
-#        Description: Master toggle for the Collection System
-#        Default:     1 (Enabled)
+#    DC.GroupFinder.MaxListingsPerPlayer
+#        Description: Maximum active group listings per player
+#        Default:     3
 #
-DCCollection.Enable = 1
+DC.GroupFinder.MaxListingsPerPlayer = 3
 
 #
-#    DCCollection.Debug
-#        Description: Enable debug logging for the Collection System
-#        Default:     0 (Disabled)
+#    DC.GroupFinder.ListingExpireMinutes
+#        Description: Minutes before listings auto-expire
+#        Default:     120
 #
-DCCollection.Debug = 0
-
-
-# -------------------------------------------------------------------------
-# DCCollection: Accountwide -> Character Sync
-# -------------------------------------------------------------------------
+DC.GroupFinder.ListingExpireMinutes = 120
 
 #
-#    DCCollection.Accountwide.SyncToCharacterOnLogin
-#        Description: On login, teach accountwide unlocks to the character so they are usable in the default Blizzard UI.
-#                     This primarily affects mounts, companions (non-battle pets), and titles.
-#                     Note: WotLK 3.3.5a has no native Blizzard collection UI for Transmog/Heirlooms; those remain addon-driven.
-#        Default:     1 (Enabled)
+#    DC.GroupFinder.MaxApplicationsPerPlayer
+#        Description: Maximum pending applications per player
+#        Default:     10
 #
-DCCollection.Accountwide.SyncToCharacterOnLogin = 1
+DC.GroupFinder.MaxApplicationsPerPlayer = 10
 
 #
-#    DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete
-#        Description: Flush achievement updates after accountwide sync completes (ensures client-side achievement state is consistent).
-#        Default:     1 (Enabled)
-#
-DCCollection.Accountwide.SyncToCharacterOnLogin.FlushAchievementsOnComplete = 1
-
-# Performance knobs for the login sync.
-# If players occasionally disconnect on login, increase DelayMs and/or reduce BatchSize.
-DCCollection.Accountwide.SyncToCharacterOnLogin.DelayMs = 1000
-DCCollection.Accountwide.SyncToCharacterOnLogin.BatchSize = 200
-DCCollection.Accountwide.SyncToCharacterOnLogin.BatchDelayMs = 250
-
-# ---------------------------------------------------------------------------
-# DC-Collection: Pet definition maintenance
-# ---------------------------------------------------------------------------
-# Optional: rebuild/update dc_pet_definitions using local server data (item_template + Spell/SummonProperties DBC).
-# This is useful if dc_pet_definitions.pet_spell_id was filled with placeholders (e.g. same spell for many rows).
-# Runs once at server startup when enabled.
-DCCollection.Pets.RebuildDefinitionsOnStartup = 0
-# If enabled, TRUNCATE dc_pet_definitions before rebuilding.
-DCCollection.Pets.RebuildDefinitionsOnStartup.Truncate = 0
-# Prefer querying only companion items (class=15, subclass=2) from item_template (fast).
-DCCollection.Pets.RebuildDefinitionsOnStartup.UseDbItemFilter = 1
-# Also scan Spell.dbc for spell-only minipet summons with no teaching item (slower).
-DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly = 0
-
-
-# -------------------------------------------------------------------------
-# DCCollection: Module Toggles
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Mounts.Enable
-#        Description: Enable mount collection and journal
-#        Default:     1 (Enabled)
-#
-DCCollection.Mounts.Enable = 1
-
-#
-#    DCCollection.Mounts.SmartMount
-#        Description: Automatically detect ground vs flying zone for random mount
-#        Default:     1 (Enabled)
-#
-DCCollection.Mounts.SmartMount = 1
-
-#
-#    DCCollection.Mounts.RandomFavoritesOnly
-#        Description: Random mount only picks from favorites (if any)
-#        Default:     0 (Disabled - picks from all mounts)
-#
-DCCollection.Mounts.RandomFavoritesOnly = 0
-
-#
-#    DCCollection.Titles.Enable
-#        Description: Enable title collection and management
-#        Default:     1 (Enabled)
-#
-DCCollection.Titles.Enable = 1
-
-#
-#    DCCollection.Heirlooms.Enable
-#        Description: Enable heirloom collection (integrates with Item Upgrade System)
-#        Default:     1 (Enabled)
-#
-DCCollection.Heirlooms.Enable = 1
-
-#
-#    DCCollection.Transmog.Enable
-#        Description: Enable transmog appearance collection
-#        Default:     1 (Enabled)
-#
-DCCollection.Transmog.Enable = 1
-
-# -------------------------------------------------------------------------
-# DCCollection: Mount Speed Bonuses
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.MountBonuses.Enable
-#        Description: Enable mount speed bonuses based on collection size
-#        Default:     1 (Enabled)
-#
-DCCollection.MountBonuses.Enable = 1
-
-#
-#    DCCollection.MountBonuses.Threshold1
-#        Description: First threshold (mounts needed, bonus %)
-#        Default:     "25,2" (25 mounts = +2% speed)
-#
-DCCollection.MountBonuses.Threshold1 = "25,2"
-
-#
-#    DCCollection.MountBonuses.Threshold2
-#        Description: Second threshold (mounts needed, bonus %)
-#        Default:     "50,3" (50 mounts = +3% speed)
-#
-DCCollection.MountBonuses.Threshold2 = "50,3"
-
-#
-#    DCCollection.MountBonuses.Threshold3
-#        Description: Third threshold (mounts needed, bonus %)
-#        Default:     "100,3" (100 mounts = +3% speed)
-#
-DCCollection.MountBonuses.Threshold3 = "100,3"
-
-#
-#    DCCollection.MountBonuses.Threshold4
-#        Description: Fourth threshold (mounts needed, bonus %)
-#        Default:     "150,2" (150 mounts = +2% speed, total +10%)
-#
-DCCollection.MountBonuses.Threshold4 = "150,2"
-
-# -------------------------------------------------------------------------
-# DCCollection: Shop System
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Shop.Enable
-#        Description: Enable the collection shop
-#        Default:     1 (Enabled)
-#
-DCCollection.Shop.Enable = 1
-
-#
-#    DCCollection.Shop.CurrencyToken
-#        Description: Item ID used as shop token currency
-#        Default:     0 (Use custom currency, not an item)
-#
-DCCollection.Shop.CurrencyToken = 300311
-
-#
-#    DCCollection.Shop.CurrencyEmblem
-#        Description: Item ID used as shop emblem currency
-#        Default:     0 (Use custom currency, not an item)
-#
-DCCollection.Shop.CurrencyEmblem = 300312
-
-# -------------------------------------------------------------------------
-# DCCollection: Wishlist System
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Wishlist.Enable
-#        Description: Enable the wishlist system
-#        Default:     1 (Enabled)
-#
-DCCollection.Wishlist.Enable = 1
-
-#
-#    DCCollection.Wishlist.MaxItems
-#        Description: Maximum items allowed on wishlist per account
-#        Default:     50
-#
-DCCollection.Wishlist.MaxItems = 50
-
-#
-#    DCCollection.Wishlist.NotifyOnZoneEnter
-#        Description: Notify player when entering a zone with wishlist item source
-#        Default:     1 (Enabled)
-#
-DCCollection.Wishlist.NotifyOnZoneEnter = 1
-
-# -------------------------------------------------------------------------
-# DCCollection: Account-Wide Outfits
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Outfits.Enable
-#        Description: Enable account-wide outfit saving system
-#        Default:     1 (Enabled)
-#
-DCCollection.Outfits.Enable = 1
-
-#
-#    DCCollection.Outfits.MaxPerAccount
-#        Description: Maximum number of outfits a player can save per account
-#        Default:     50
-#
-DCCollection.Outfits.MaxPerAccount = 50
-
-#
-#    DCCollection.Outfits.AllowCommunityImport
-#        Description: Allow players to copy community outfits to their collection
-#        Default:     1 (Enabled)
-#
-DCCollection.Outfits.AllowCommunityImport = 1
-
-# -------------------------------------------------------------------------
-# DCCollection: Notifications & UI
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Notifications.Enable
-#        Description: Enable toast notifications when items are collected
-#        Default:     1 (Enabled)
-#
-DCCollection.Notifications.Enable = 1
-
-#
-#    DCCollection.Notifications.Sound
-#        Description: Play sound when collecting new items
-#        Default:     1 (Enabled)
-#
-DCCollection.Notifications.Sound = 1
-
-#
-#    DCCollection.SyncInterval
-#        Description: Interval in seconds between automatic syncs
+#    DC.GroupFinder.ApplicationExpireMinutes
+#        Description: Minutes before applications auto-expire
 #        Default:     30
 #
-DCCollection.SyncInterval = 30
+DC.GroupFinder.ApplicationExpireMinutes = 30
 
-# -------------------------------------------------------------------------
-# DCCollection Transmog: Definitions
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Transmog.Definitions.IncludeSources
-#        Description: Include source metadata when building transmog definitions (implementation-dependent)
-#        Default:     0 (Disabled)
-#
-DCCollection.Transmog.Definitions.IncludeSources = 0
+# -----------------------------------------------------------------------------
+# Matchmaking
+# -----------------------------------------------------------------------------
 
 #
-#    DCCollection.Transmog.SlotItemsPageSize
-#        Description: Page size for transmog slot items responses (smaller = less hitching, more requests)
-#        Default:     100
+#    DC.GroupFinder.RatingMatchRange
+#        Description: Maximum M+ rating difference for suggestions
+#        Default:     200
 #
-DCCollection.Transmog.SlotItemsPageSize = 100
+DC.GroupFinder.RatingMatchRange = 200
 
 #
-#    DCCollection.Transmog.SkipUnlockCheck
-#        Description: Allow applying appearances even if they are not unlocked for the account
-#        Default:     0 (Disabled)
+#    DC.GroupFinder.KeyLevelMatchRange
+#        Description: Maximum keystone level difference for matchmaking
+#        Default:     3
 #
-DCCollection.Transmog.SkipUnlockCheck = 1
+DC.GroupFinder.KeyLevelMatchRange = 3
+
+# -----------------------------------------------------------------------------
+# Rewards
+# -----------------------------------------------------------------------------
 
 #
-#    DCCollection.Transmog.SkipCompatCheck
-#        Description: Skip compatibility validation (armor/weapon type checks). Still enforces slot/inventoryType.
-#        Default:     0 (Disabled)
-#
-DCCollection.Transmog.SkipCompatCheck = 1
-
-# -------------------------------------------------------------------------
-# DCCollection Transmog: Unlock Behavior
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Transmog.UnlockOnEquip
-#        Description: Automatically unlock a transmog appearance when the corresponding item is equipped
-#        Default:     0 (Disabled)
-#
-DCCollection.Transmog.UnlockOnEquip = 1
-
-#
-#    DCCollection.Transmog.UnlockOnCreate
-#        Description: Automatically unlock a transmog appearance when the item is created/earned (crafted, looted, or received)
+#    DC.GroupFinder.Reward.Enable
+#        Description: Enable rewards for Group Finder completions
 #        Default:     1 (Enabled)
 #
-DCCollection.Transmog.UnlockOnCreate = 1
+DC.GroupFinder.Reward.Enable = 1
+
+DC.GroupFinder.Reward.ItemID = 49426
+DC.GroupFinder.Reward.ItemCount = 2
+DC.GroupFinder.Reward.CurrencyID = 0
+DC.GroupFinder.Reward.CurrencyCount = 0
+DC.GroupFinder.Reward.DailyLimit = 1
+
+# -----------------------------------------------------------------------------
+# Maintenance
+# -----------------------------------------------------------------------------
 
 #
-#    DCCollection.Transmog.UnlockOnSoulbind
-#        Description: Automatically unlock a transmog appearance when the item becomes soulbound
-#        Default:     0 (Disabled)
+#    DC.GroupFinder.CleanupIntervalMs
+#        Description: Interval (ms) between cleanup cycles
+#        Default:     60000
 #
-DCCollection.Transmog.UnlockOnSoulbind = 1
+DC.GroupFinder.CleanupIntervalMs = 60000
 
 #
-#    DCCollection.Transmog.UnlockOnLoot
-#        Description: Automatically unlock transmog appearances when looting items
-#        Default:     0 (Disabled)
+#    DungeonFinder.AllowCompleted
+#        Description: Allow completed heroic dungeons in LFG queue
+#        Default:     1 (Blizzlike)
 #
-DCCollection.Transmog.UnlockOnLoot = 1
-
-#
-#    DCCollection.Transmog.UnlockOnQuestReward
-#        Description: Automatically unlock transmog appearances from quest reward items
-#        Default:     0 (Disabled)
-#
-DCCollection.Transmog.UnlockOnQuestReward = 0
-
-# -------------------------------------------------------------------------
-# DCCollection Transmog: Login Scanning
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Transmog.LoginScan.Enable
-#        Description: Scan player's equipped items, bags, and bank on login to unlock transmog appearances
-#        Default:     0 (Disabled)
-#
-DCCollection.Transmog.LoginScan.Enable = 0
-
-#
-#    DCCollection.Transmog.LoginScan.IncludeBank
-#        Description: Include bank slots and bank bags when scanning inventory on login
-#        Default:     1 (Enabled)
-#
-DCCollection.Transmog.LoginScan.IncludeBank = 1
-
-# -------------------------------------------------------------------------
-# DCCollection Transmog: Session & Quality Settings
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Transmog.SessionNotificationDedup
-#        Description: Prevent duplicate unlock notifications when multiple events trigger for the same appearance
-#        Default:     1 (Enabled)
-#
-DCCollection.Transmog.SessionNotificationDedup = 1
-
-#
-#    DCCollection.Transmog.MinQuality
-#        Description: Minimum item quality required to unlock transmog appearances (0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)
-#        Default:     0 (All qualities)
-#
-DCCollection.Transmog.MinQuality = 0
-
-# -------------------------------------------------------------------------
-# DCCollection: Leaderboard Integration
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Leaderboards.Enable
-#        Description: Enable collection leaderboards (integrates with DC-Leaderboards)
-#        Default:     1 (Enabled)
-#
-DCCollection.Leaderboards.Enable = 1
-
-#
-#    DCCollection.Leaderboards.UpdateInterval
-#        Description: How often to update leaderboard cache (in minutes)
-#        Default:     15
-#
-DCCollection.Leaderboards.UpdateInterval = 15
-
-# -------------------------------------------------------------------------
-# DCCollection Transmog: Legacy Import Settings
-# -------------------------------------------------------------------------
-
-#
-#    DCCollection.Transmog.LegacyImport.Enable
-#        Description: Enable the one-time legacy transmog import from existing inventory for all accounts on server start
-#        Default:     1 (Enabled)
-#
-DCCollection.Transmog.LegacyImport.Enable = 1
-
-#
-#    DCCollection.Transmog.LegacyImport.IncludeBank
-#        Description: Include bank and reagent bank items when performing the legacy import
-#        Default:     1 (Enabled)
-#
-DCCollection.Transmog.LegacyImport.IncludeBank = 1
-
-#
-#    DCCollection.Transmog.LegacyImport.RequireSoulbound
-#        Description: Only import items that are soulbound to prevent importing items not owned by the account
-#        Default:     0 (Disabled)
-#
-DCCollection.Transmog.LegacyImport.RequireSoulbound = 0
+DungeonFinder.AllowCompleted = 1
 
 
-###########################################################################
+###############################################################################
 #
-#    SECTION 20: INVASION SYSTEM
+#  SECTION 17: GUILD HOUSE SYSTEM
 #
-#    Configuration for the Giant Isles Invasion event system.
+#  Guild housing with customizable NPCs and upgrades.
 #
-###########################################################################
+###############################################################################
 
-#
-#    Invasion.ChatSpawnMessages
-#        Description: Emit server chat messages whenever invader creatures spawn
-#        Default:     1 (Enabled)
-#
-Invasion.ChatSpawnMessages = 1
-
-#
-#    Invasion.SendAddonPackets
-#        Description: Send CHAT_MSG_ADDON JSON messages to clients
-#        Default:     0 (Disabled)
-#
-Invasion.SendAddonPackets = 0
-
-
-###########################################################################
-#
-#    SECTION 19: DC SYSTEM LOGGING
-#
-#    Dedicated file logging for Dark Chaos custom systems.
-#
-###########################################################################
-
-#
-# Appender.DC
-#    Defines the log file destination.
-#    Type: 2 (File), Level: 5 (Debug), Flags: 0, Filename: dcsystem.log, Mode: a (Append)
-#
-Appender.DC=2,5,0,dcsystem.log,a
-
-#
-# Loggers
-#    Routes specific log categories to the DC appender.
-#
-# IMPORTANT:
-#   AzerothCore expects: Logger.name=LogLevel,AppenderList
-#   where AppenderList is a SPACE-separated list of appender NAMES (e.g. "Console DC").
-#   Do NOT use "Appender.DC" or extra commas.
-#
-
-# General scripts/modules used by DC systems
-Logger.scripts.dc=5,Console DC
-Logger.module.dc=5,Console DC
-Logger.modules.dc=5,Console DC
-
-# DC Addon Protocol
-Logger.dc.addon=5,Console DC
-
-# Mythic+ System
-Logger.mythic=5,Console DC
-Logger.mythic.run=5,Console DC
-
-# Hinterland BG
-Logger.hlbg=5,Console DC
-Logger.hlbg.aio=5,Console DC
-
-# Seasonal System
-Logger.seasonal=5,Console DC
-
-###################################################################################################
-# GUILD HOUSE SETTINGS
-###################################################################################################
+# -----------------------------------------------------------------------------
+# Currency Configuration
+# -----------------------------------------------------------------------------
 
 #
 #    GuildHouse.Currency.ItemId
-#        Description: Item ID of the currency used for purchasing Guild House upgrades.
-#        Default:     300311 Standard Token
-#        Set to 0 to use Money (Gold) instead.
+#        Description: Item ID for guild house upgrade currency
+#                     Set to 0 to use gold instead
+#        Default:     300311 (Standard Token)
 #
-
 GuildHouse.Currency.ItemId = 300311
 
-#
-#    GuildHouse.Cost.*
-#        Description: Costs for various Guild House upgrades.
-#        If GuildHouse.Currency.ItemId is set, these are token counts.
-#        If set to 0, these are copper amounts.
-#
+# -----------------------------------------------------------------------------
+# Purchase Costs
+# If GuildHouse.Currency.ItemId is set, these are token counts.
+# If set to 0, these are copper amounts.
+# -----------------------------------------------------------------------------
 
 CostGuildHouse = 10000000
 GuildHouseInnKeeper = 10
@@ -3612,43 +3084,122 @@ GuildHousePortal = 50
 GuildHouseProf = 30
 GuildHouseSpirit = 100
 
+# -----------------------------------------------------------------------------
+# Operation Costs (in copper)
+# -----------------------------------------------------------------------------
+
 #
 #    GuildHouse.MoveCost
-#        Description: Gold cost (in copper) to move a Guild House to a new location using the Guild House NPC.
+#        Description: Gold cost (copper) to move Guild House location
 #        Default:     0 (Free)
 #
 GuildHouse.MoveCost = 0
 
 #
 #    GuildHouse.ResetCost
-#        Description: Gold cost (in copper) to reset Guild House spawns (cleans up guild-phase objects/creatures and respawns core NPCs).
+#        Description: Gold cost (copper) to reset Guild House spawns
 #        Default:     0 (Free)
 #
 GuildHouse.ResetCost = 0
 
+# -----------------------------------------------------------------------------
+# Rank Requirements
+# -----------------------------------------------------------------------------
+
 #
-#    GuildHouse.Rank.Buy
-#        Description: Minimum Guild Rank required to purchase upgrades (0 = Guild Master).
+#    GuildHouseBuyRank
+#        Description: Minimum guild rank to purchase upgrades (0 = Guild Master)
 #        Default:     0
 #
-
 GuildHouseBuyRank = 0
 
 #
-#    GuildHouse.Rank.Sell
-#        Description: Minimum Guild Rank required to spawn/sell NPCs (0 = Guild Master).
+#    GuildHouseSellRank
+#        Description: Minimum guild rank to spawn/sell NPCs (0 = Guild Master)
 #        Default:     0
 #
 GuildHouseSellRank = 0
 
-###########################################################################
+
+###############################################################################
 #
-#    SECTION 21: FAKE PLAYERS SYSTEM (Testing)
+#  SECTION 18: LEADERBOARD SYSTEM
 #
-#    Generates synthetic players that appear in the /who list and count as
-#    online for testing/QA. These are not real characters.
+#  Unified leaderboard system aggregating data from all DC systems.
 #
-###########################################################################
+###############################################################################
+
+#
+#    DC.Leaderboards.CacheLifetime
+#        Description: Leaderboard data cache duration (seconds)
+#        Default:     60
+#
+DC.Leaderboards.CacheLifetime = 60
+
+#
+#    DC.Leaderboards.AccountCacheLifetime
+#        Description: Account statistics cache duration (seconds)
+#        Default:     120
+#
+DC.Leaderboards.AccountCacheLifetime = 120
+
+#
+#    DC.Leaderboards.MaxCacheEntries
+#        Description: Maximum leaderboards to keep cached
+#        Default:     100
+#
+DC.Leaderboards.MaxCacheEntries = 100
+
+
+###############################################################################
+###############################################################################
+##
+##  PART VII - WORLD CONTENT
+##
+###############################################################################
+###############################################################################
+
+
+###############################################################################
+#
+#  SECTION 19: INVASION SYSTEM
+#
+#  Configuration for the Giant Isles Invasion event system.
+#
+###############################################################################
+
+#
+#    Invasion.ChatSpawnMessages
+#        Description: Show chat messages when invaders spawn
+#        Default:     1 (Enabled)
+#
+Invasion.ChatSpawnMessages = 1
+
+#
+#    Invasion.SendAddonPackets
+#        Description: Send CHAT_MSG_ADDON JSON messages to clients
+#        Default:     0 (Disabled)
+#
+Invasion.SendAddonPackets = 0
+
+
+###############################################################################
+###############################################################################
+##
+##  PART VIII - TESTING & DEVELOPMENT
+##
+###############################################################################
+###############################################################################
+
+
+###############################################################################
+#
+#  SECTION 20: FAKE PLAYERS SYSTEM
+#
+#  Generates synthetic players in /who list for testing/QA purposes.
+#  These are not real characters.
+#
+###############################################################################
 
 #
 #    FakePlayers.Enable
@@ -3687,73 +3238,35 @@ FakePlayers.RefreshIntervalSeconds = 300
 
 #
 #    FakePlayers.RandomizeEachRefresh
-#        Description: Re-roll race/class/level on each refresh (0 = only location)
+#        Description: Re-roll race/class/level on refresh (0 = only location)
 #        Default:     0
 #
 FakePlayers.RandomizeEachRefresh = 0
 
+# -----------------------------------------------------------------------------
+# Zone Configuration
+# -----------------------------------------------------------------------------
+
 #
 #    FakePlayers.Zones
-#        Description: CSV list of zone IDs used for random /who locations (empty = use all zones from DBC)
+#        Description: CSV list of zone IDs for /who locations (empty = all)
 #        Default:     ""
 #
 FakePlayers.Zones = ""
 
-#
-#    FakePlayers.ZoneWeight.Default
-#        Description: Base weight for non-city, non-instance zones
-#        Default:     1
-#
+# Zone Weight Configuration
 FakePlayers.ZoneWeight.Default = 1
-
-#
-#    FakePlayers.ZoneWeight.Capital
-#        Description: Weight multiplier for capital cities (AREA_FLAG_CAPITAL)
-#        Default:     8
-#
 FakePlayers.ZoneWeight.Capital = 8
-
-#
-#    FakePlayers.ZoneWeight.Town
-#        Description: Weight multiplier for towns with inns (AREA_FLAG_TOWN)
-#        Default:     3
-#
 FakePlayers.ZoneWeight.Town = 3
-
-#
-#    FakePlayers.ZoneWeight.Dungeon
-#        Description: Weight multiplier for 5-man dungeons
-#        Default:     5
-#
 FakePlayers.ZoneWeight.Dungeon = 5
-
-#
-#    FakePlayers.ZoneWeight.Raid
-#        Description: Weight multiplier for raid instances
-#        Default:     10
-#
 FakePlayers.ZoneWeight.Raid = 10
-
-#
-#    FakePlayers.ZoneWeight.Battleground
-#        Description: Weight multiplier for battleground maps
-#        Default:     8
-#
 FakePlayers.ZoneWeight.Battleground = 8
-
-#
-#    FakePlayers.ZoneWeight.Arena
-#        Description: Weight multiplier for arena maps
-#        Default:     4
-#
 FakePlayers.ZoneWeight.Arena = 4
-
-#
-#    FakePlayers.ZoneWeight.UseMaxPlayers
-#        Description: Multiply instance weights by map maxPlayers (DBC)
-#        Default:     1 (Enabled)
-#
 FakePlayers.ZoneWeight.UseMaxPlayers = 1
+
+# -----------------------------------------------------------------------------
+# Guild Tags
+# -----------------------------------------------------------------------------
 
 #
 #    FakePlayers.GuildTags.Enable
@@ -3764,7 +3277,7 @@ FakePlayers.GuildTags.Enable = 1
 
 #
 #    FakePlayers.GuildTags.Percent
-#        Description: Percentage of fake players that will show a guild tag
+#        Description: Percentage of fake players with guild tags
 #        Default:     35
 #
 FakePlayers.GuildTags.Percent = 35
@@ -3776,6 +3289,51 @@ FakePlayers.GuildTags.Percent = 35
 #
 FakePlayers.GuildTags.List = ""
 
-###########################################################################
+
+###############################################################################
+#
+#  SECTION 21: DC SYSTEM LOGGING
+#
+#  Dedicated file logging for DarkChaos custom systems.
+#
+###############################################################################
+
+# -----------------------------------------------------------------------------
+# Log Appender Configuration
+# -----------------------------------------------------------------------------
+#
+# Appender.DC
+#    Type: 2 (File), Level: 5 (Debug), Flags: 0, Filename: dcsystem.log, Mode: a (Append)
+#
+Appender.DC=2,5,0,dcsystem.log,a
+
+# -----------------------------------------------------------------------------
+# Logger Configuration
+# -----------------------------------------------------------------------------
+#
+# Format: Logger.name=LogLevel,AppenderList (space-separated appender names)
+#
+
+# General DC scripts/modules
+Logger.scripts.dc=5,Console DC
+Logger.module.dc=5,Console DC
+Logger.modules.dc=5,Console DC
+
+# DC Addon Protocol
+Logger.dc.addon=5,Console DC
+
+# Mythic+ System
+Logger.mythic=5,Console DC
+Logger.mythic.run=5,Console DC
+
+# Hinterland BG
+Logger.hlbg=5,Console DC
+Logger.hlbg.aio=5,Console DC
+
+# Seasonal System
+Logger.seasonal=5,Console DC
+
+
+###############################################################################
 # END OF CONFIGURATION FILE
-###########################################################################
+###############################################################################

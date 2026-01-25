@@ -62,12 +62,12 @@ void AddSC_spell_hotspot_buff_800001();       // Hotspot\spell_hotspot_buff_8000
 void AddBattleForGilneasScripts();            // Gilneas\BattlegroundBFG.cpp
 
 // --- Hinterland Battleground System ---
-void AddSC_npc_thrall_hinterlandbg();         // HinterlandBG\npc_thrall_warchief.cpp
-void AddSC_hinterlandbg_Varian_wrynn();       // HinterlandBG\npc_Varian_hinterlandbg.cpp
+void AddSC_npc_thrall_hinterlandbg();         // HinterlandBG\hlbg_npc_thrall_warchief.cpp
+void AddSC_hinterlandbg_Varian_wrynn();       // HinterlandBG\hlbg_npc_varian.cpp
 
-void AddSC_hl_scoreboard();                   // HinterlandBG\HL_ScoreboardNPC.cpp
+void AddSC_hl_scoreboard();                   // HinterlandBG\hlbg_scoreboard_npc.cpp
 void AddSC_hlbg_addon();                      // HLBG chat fallback (in AddonExtension/dc_addon_hlbg.cpp)
-void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG\npc_hinterlands_battlemaster.cpp
+void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG\hlbg_npc_battlemaster.cpp
 void AddSC_hlbg_native_broadcast();           // HinterlandBG\hlbg_native_broadcast.cpp
 void AddSC_outdoorpvp_hl_dc();                // HinterlandBG\outdoorpvp_hl_registration.cpp
 // Note: HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
@@ -85,6 +85,7 @@ void AddSC_dc_challenge_modes();              // Progression/ChallengeMode/dc_ch
 void AddSC_dc_challenge_mode_equipment_restrictions(); // Progression/ChallengeMode/dc_challenge_mode_equipment_restrictions.cpp
 void AddSC_dc_challenge_mode_enforcement();   // Progression/ChallengeMode/dc_challenge_mode_enforcement.cpp
 void AddSC_spell_challenge_mode_auras();      // Progression/ChallengeMode/spell_challenge_mode_auras.cpp
+void AddSC_mod_challenge_modes();             // Module loader (mod_challenge_modes)
 
 // --- Custom Achievements ---
 void AddSC_dc_achievements();                 // Achievements\dc_achievements.cpp
@@ -338,6 +339,7 @@ void AddDCScripts()
     LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_challenge_modes();
+        AddSC_mod_challenge_modes();
         AddSC_dc_challenge_mode_equipment_restrictions();
         AddSC_dc_challenge_mode_enforcement();
         AddSC_spell_challenge_mode_auras();

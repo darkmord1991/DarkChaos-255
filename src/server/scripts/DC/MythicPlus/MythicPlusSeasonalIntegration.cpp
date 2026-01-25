@@ -9,7 +9,7 @@
 
 #include "MythicDifficultyScaling.h"
 #include "../Seasons/SeasonalSystem.h"
-#include "../CrossSystem/DCSeasonHelper.h"
+#include "../CrossSystem/CrossSystemSeasonHelper.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"

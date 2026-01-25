@@ -8,7 +8,7 @@
 #include "RewardDistributor.h"
 #include "CrossSystemManager.h"
 #include "SessionContext.h"
-#include "DC/CrossSystem/DCSeasonHelper.h"
+#include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "Item.h"

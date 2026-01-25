@@ -14,7 +14,7 @@
 #include "ObjectMgr.h"
 #include "DC/DungeonQuests/DungeonQuestConstants.h"
 #include "DC/Seasons/SeasonalSystem.h"
-#include "DC/CrossSystem/DCSeasonHelper.h"
+#include "DC/CrossSystem/CrossSystemSeasonHelper.h"
 #include <string>
 #include <cmath>
 #include <unordered_set>

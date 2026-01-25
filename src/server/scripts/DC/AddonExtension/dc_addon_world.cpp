@@ -19,8 +19,8 @@
 #include "DatabaseEnv.h"
 #include "ObjectMgr.h"
 
-#include "DC/CrossSystem/DCMapCoords.h"
-#include "DC/CrossSystem/DCSpawnResolver.h"
+#include "DC/CrossSystem/CrossSystemMapCoords.h"
+#include "DC/CrossSystem/CrossSystemSpawnResolver.h"
 
 #include "dc_addon_world_bosses.h"
 #include "dc_addon_death_markers.h"

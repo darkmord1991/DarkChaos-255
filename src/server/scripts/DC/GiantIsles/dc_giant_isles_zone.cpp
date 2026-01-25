@@ -19,7 +19,7 @@
 #include "Chat.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
-#include "DC/CrossSystem/WorldBossMgr.h"
+#include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
 

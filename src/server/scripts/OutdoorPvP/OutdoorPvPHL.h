@@ -200,7 +200,7 @@
 
             /* Rewards */
             void HandleRewards(Player * player, uint32 honorpointsorarena, bool honor, bool arena, bool both);
-            // DC extension: match-end helpers by winning team (implemented in DC/HinterlandBG/OutdoorPvPHL_Rewards.cpp)
+            // DC extension: match-end helpers by winning team (implemented in DC/HinterlandBG/hlbg_rewards.cpp)
             void HandleRewards(TeamId winner);
             void HandleBuffs(TeamId winner);
             void HandleWinMessage(TeamId winner);

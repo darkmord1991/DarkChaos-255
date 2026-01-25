@@ -14,7 +14,7 @@
 #include "ObjectAccessor.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
-#include "DC/CrossSystem/DCMapCoords.h"
+#include "DC/CrossSystem/CrossSystemMapCoords.h"
 #include "../AddonExtension/dc_addon_namespace.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"

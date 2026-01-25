@@ -51,8 +51,8 @@ namespace DarkChaos
                 }
                 else
                 {
-                    config_.activeSeason = sConfigMgr->GetOption<uint32>("SeasonalRewards.ActiveSeasonID", 1);
-                    LOG_WARN("module.dc", ">> [SeasonalRewards] No active season in SeasonalManager, using config: {}", config_.activeSeason);
+                    config_.activeSeason = sConfigMgr->GetOption<uint32>("DarkChaos.ActiveSeasonID", 1);
+                    LOG_WARN("module.dc", ">> [SeasonalRewards] No active season in SeasonalManager, using DarkChaos.ActiveSeasonID: {}", config_.activeSeason);
                 }
             }
             else
