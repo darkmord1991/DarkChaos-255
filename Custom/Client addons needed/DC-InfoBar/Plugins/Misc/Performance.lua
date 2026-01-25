@@ -113,6 +113,21 @@ function PerformancePlugin:OnUpdate(elapsed)
     if showMemory then
         table.insert(parts, string.format("%.0fMB", self._memory))
     end
+
+    local showServerInfo = DCInfoBar:GetPluginSetting(self.id, "showServerInfo")
+    if showServerInfo ~= false then
+        local now = time()
+        local info, infoTime = GetServerInfoSnapshot()
+        local lastUpdate = (type(infoTime) == "number") and infoTime or 0
+        local needsRefresh = (now - lastUpdate) >= 120
+        local DCWelcome = rawget(_G, "DCWelcome")
+        if needsRefresh and DCWelcome and DCWelcome.RequestServerInfo then
+            if (now - (self._lastServerInfoRequestAt or 0)) >= 120 then
+                self._lastServerInfoRequestAt = now
+                DCWelcome:RequestServerInfo()
+            end
+        end
+    end
     
     return "", table.concat(parts, " ")
 end

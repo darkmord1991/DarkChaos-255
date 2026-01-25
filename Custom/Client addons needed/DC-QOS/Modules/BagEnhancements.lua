@@ -93,6 +93,14 @@ local searchBoxes = {}  -- [frameName] = EditBox
 -- ============================================================
 local function GetItemKey(bag, slot) return bag .. ":" .. slot end
 
+local function NormalizeSearchText(text)
+    if not text then return "" end
+    text = text:lower()
+    text = text:gsub("^%s+", "")
+    text = text:gsub("%s+$", "")
+    return text
+end
+
 local function IsItemNew(bag, slot)
     local settings = addon.settings.bags
     if not settings.newItemGlow then return false end
@@ -140,6 +148,15 @@ local function CreateButtonVisuals(button)
     glow:SetVertexColor(0.2, 1.0, 0.2, 0.6)
     glow:Hide()
     visuals.glow = glow
+
+    -- Search highlight
+    local searchGlow = button:CreateTexture(nil, "OVERLAY")
+    searchGlow:SetAllPoints()
+    searchGlow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    searchGlow:SetBlendMode("ADD")
+    searchGlow:SetVertexColor(1.0, 0.82, 0.2, 0.6)
+    searchGlow:Hide()
+    visuals.searchGlow = searchGlow
     
     -- ILvl
     local ilvl = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
@@ -161,6 +178,7 @@ local function UpdateButtonVisuals(button, bag, slot, searchText)
     visuals.border:Hide()
     visuals.dim:Hide()
     visuals.glow:Hide()
+    visuals.searchGlow:Hide()
     visuals.ilvl:Hide()
     button:SetAlpha(1)
     
@@ -201,11 +219,11 @@ local function UpdateButtonVisuals(button, bag, slot, searchText)
     end
     
     -- 5. Search
-    if settings.searchHighlight and searchText and searchText ~= "" then
+    local search = NormalizeSearchText(searchText)
+    if settings.searchHighlight and search ~= "" then
         local match = false
         if link then
             local name, _, _, _, _, type, subtype, _, equipLoc = GetItemInfo(link)
-            local search = searchText:lower()
             
             if name and name:lower():find(search) then match = true end
             if type and type:lower():find(search) then match = true end
@@ -213,13 +231,12 @@ local function UpdateButtonVisuals(button, bag, slot, searchText)
             if equipLoc and _G[equipLoc] and _G[equipLoc]:lower():find(search) then match = true end
         end
         
-        if not match then
-            if settings.fadeNonMatch then
-                button:SetAlpha(settings.fadeAlpha)
-                visuals.border:Hide()
-            end
-        else
+        if match then
+            visuals.searchGlow:Show()
             button:SetAlpha(1)
+        elseif settings.fadeNonMatch then
+            button:SetAlpha(settings.fadeAlpha)
+            visuals.border:Hide()
         end
     end
 end
@@ -346,7 +363,7 @@ local function LayoutFrame(frameDefName)
     local padding = 10
     
     local col, row = 0, 0
-    local searchText = frame.searchBox:GetText()
+    local searchText = NormalizeSearchText(frame.searchBox:GetText())
     
     -- Clear all buttons first to prevent ghost items (e.g. when swapping to smaller bags)
     for _, bag in ipairs(def.bags) do
@@ -443,6 +460,21 @@ local function CreateBagFrame(frameDefName)
     end)
     search:SetScript("OnEscapePressed", function(self) self:ClearFocus() self:SetText("") end)
     f.searchBox = search
+
+    local sortBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    sortBtn:SetSize(50, 20)
+    sortBtn:SetPoint("RIGHT", search, "LEFT", -6, 0)
+    sortBtn:SetText("Sort")
+    sortBtn:SetScript("OnClick", function()
+        if frameDefName == "inventory" then
+            if SortBags then SortBags() end
+        else
+            if SortBankBags then SortBankBags() end
+        end
+        if frames[frameDefName] and frames[frameDefName]:IsShown() then
+            LayoutFrame(frameDefName)
+        end
+    end)
     
     local ph = search:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     ph:SetPoint("LEFT", 5, 0)
