@@ -85,7 +85,6 @@ void AddSC_dc_challenge_modes();              // Progression/ChallengeMode/dc_ch
 void AddSC_dc_challenge_mode_equipment_restrictions(); // Progression/ChallengeMode/dc_challenge_mode_equipment_restrictions.cpp
 void AddSC_dc_challenge_mode_enforcement();   // Progression/ChallengeMode/dc_challenge_mode_enforcement.cpp
 void AddSC_spell_challenge_mode_auras();      // Progression/ChallengeMode/spell_challenge_mode_auras.cpp
-void AddSC_mod_challenge_modes();             // Module loader (mod_challenge_modes)
 
 // --- Custom Achievements ---
 void AddSC_dc_achievements();                 // Achievements\dc_achievements.cpp
@@ -339,7 +338,6 @@ void AddDCScripts()
     LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_challenge_modes();
-        AddSC_mod_challenge_modes();
         AddSC_dc_challenge_mode_equipment_restrictions();
         AddSC_dc_challenge_mode_enforcement();
         AddSC_spell_challenge_mode_auras();
