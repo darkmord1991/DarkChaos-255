@@ -696,9 +696,13 @@ public:
              return;
         }
 
+        uint32 guildPhase = GetGuildPhase(player);
+        if (player->GetPhaseByAuras() != guildPhase)
+            player->SetPhaseMask(guildPhase, true);
+
         // Global Existence Check
         // Use current map and phase
-        if (GuildHouseManager::HasSpawn(player->GetMapId(), GetGuildPhase(player), entry, false))
+        if (GuildHouseManager::HasSpawn(player->GetMapId(), guildPhase, entry, false))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You already have this creature!");
             CloseGossipMenuFor(player);
@@ -766,12 +770,12 @@ public:
 
         Creature* creature = new Creature();
 
-        if (!creature->Create(player->GetMap()->GenerateLowGuid<HighGuid::Unit>(), player->GetMap(), GetGuildPhase(player), entry, 0, posX, posY, posZ, ori))
+        if (!creature->Create(player->GetMap()->GenerateLowGuid<HighGuid::Unit>(), player->GetMap(), guildPhase, entry, 0, posX, posY, posZ, ori))
         {
             delete creature;
             return;
         }
-        creature->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), GetGuildPhase(player));
+        creature->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), guildPhase);
         uint32 db_guid = creature->GetSpawnId();
 
         creature->CleanupsBeforeDelete();
@@ -827,7 +831,11 @@ public:
              return;
         }
 
-        if (GuildHouseManager::HasSpawn(player->GetMapId(), GetGuildPhase(player), entry, true))
+        uint32 guildPhase = GetGuildPhase(player);
+        if (player->GetPhaseByAuras() != guildPhase)
+            player->SetPhaseMask(guildPhase, true);
+
+        if (GuildHouseManager::HasSpawn(player->GetMapId(), guildPhase, entry, true))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You already have this object!");
             CloseGossipMenuFor(player);
@@ -908,14 +916,14 @@ public:
         GameObject* object = sObjectMgr->IsGameObjectStaticTransport(objectInfo->entry) ? new StaticTransport() : new GameObject();
         ObjectGuid::LowType guidLow = player->GetMap()->GenerateLowGuid<HighGuid::GameObject>();
 
-        if (!object->Create(guidLow, objectInfo->entry, player->GetMap(), GetGuildPhase(player), posX, posY, posZ, ori, G3D::Quat(), 0, GO_STATE_READY))
+        if (!object->Create(guidLow, objectInfo->entry, player->GetMap(), guildPhase, posX, posY, posZ, ori, G3D::Quat(), 0, GO_STATE_READY))
         {
             delete object;
             return;
         }
 
         // fill the gameobject data and save to the db
-        object->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), GetGuildPhase(player));
+        object->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), guildPhase);
         guidLow = object->GetSpawnId();
         // delete the old object and do a clean load from DB with a fresh new GameObject instance.
         // this is required to avoid weird behavior and memory leaks

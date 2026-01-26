@@ -160,12 +160,18 @@ bool GuildHouseManager::TeleportToGuildHouse(Player* player, uint32 guildId)
     if (!data)
         return false;
 
+    uint32 phase = data->phase ? data->phase : GetGuildPhase(guildId);
+
     // This guild housing implementation currently uses phasing on a shared map.
     // Setting phase mask before teleport helps ensure correct visibility immediately on arrival.
-    if (data->phase)
-        player->SetPhaseMask(data->phase, true);
+    if (phase)
+        player->SetPhaseMask(phase, true);
 
     player->TeleportTo(data->map, data->posX, data->posY, data->posZ, data->ori);
+
+    // Re-apply the phase after teleport to avoid phase resets on map change.
+    if (phase && player->GetPhaseMask() != phase)
+        player->SetPhaseMask(phase, true);
     return true;
 }
 
