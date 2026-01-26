@@ -1171,13 +1171,13 @@
     // ============================================================================
     // Stub implementations for removed functions (now handled by addon)
     // ============================================================================
-    
+
     void OutdoorPvPHL::UpdateWorldStatesAllPlayers()
     {
         // HUD worldstates removed - now handled by DC-Mapupgrades addon
         // Function kept for compatibility with older code paths
     }
-    
+
     void OutdoorPvPHL::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& /*packet*/)
     {
         // HUD worldstates removed - now handled by DC-Mapupgrades addon
@@ -1197,5 +1197,3 @@
             }
         }
     }
-
-

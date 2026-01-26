@@ -19,12 +19,12 @@ namespace DCAddon
 
         // Function declarations (implementations in dc_addon_hlbg.cpp)
         void SendStatus(Player* player, HLBGStatus status, uint32 mapId, uint32 timeRemaining);
-        
+
         void SendResources(Player* player, uint32 allianceRes, uint32 hordeRes,
                            uint32 allianceBases, uint32 hordeBases);
 
         void SendQueueUpdate(Player* player, uint8 queueStatus, uint32 position, uint32 estimatedTime,
-                             uint32 totalQueued, uint32 allianceQueued, uint32 hordeQueued, 
+                             uint32 totalQueued, uint32 allianceQueued, uint32 hordeQueued,
                              uint32 minPlayers, uint8 state);
 
         void SendQueueInfo(Player* player);

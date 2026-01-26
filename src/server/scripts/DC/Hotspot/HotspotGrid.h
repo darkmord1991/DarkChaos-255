@@ -9,7 +9,7 @@ class HotspotGrid
 {
 private:
     static constexpr float CELL_SIZE = 300.0f; // Large enough to cover most interaction ranges
-    
+
     struct GridCell
     {
         std::vector<uint32> hotspotIds;

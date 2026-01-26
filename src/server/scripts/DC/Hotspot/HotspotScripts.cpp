@@ -21,7 +21,7 @@ public:
         {
             sHotspotMgr->LoadFromDB();
             sHotspotMgr->RecreateHotspotVisualMarkers();
-            
+
             // Initial population
              if (sHotspotsConfig.minActive > 0 && sHotspotMgr->GetGrid().Count() < sHotspotsConfig.minActive)
              {
@@ -62,15 +62,15 @@ public:
         if (sHotspotsConfig.enabled)
             sHotspotMgr->CheckPlayerHotspotStatus(player);
     }
-    
+
     void OnPlayerUpdate(Player* player, uint32 /*diff*/) override
     {
         if (!sHotspotsConfig.enabled || !player) return;
-        
+
         // Poll every 2s (borrowed from legacy logic)
         // Ideally we'd optimize this to not use gettime every update or use a timer in player aux
         // But following original logic:
-        if (player->GetSession() && (GameTime::GetGameTime().count() % 2 == 0)) 
+        if (player->GetSession() && (GameTime::GetGameTime().count() % 2 == 0))
         {
              // Simple throttling: valid every second, checks count.
              // Better: static maps.
@@ -83,12 +83,12 @@ public:
              }
         }
     }
-    
+
     void OnPlayerResurrect(Player* player, float, bool) override
     {
         if (sHotspotsConfig.enabled) sHotspotMgr->CheckPlayerHotspotStatus(player);
     }
-    
+
 };
 
 class HotspotsPlayerGainXP : public PlayerScript

@@ -73,13 +73,13 @@ namespace DarkChaos
             std::unordered_map<uint8, TierDefinition> tier_definitions;     // tier_id -> definition
             std::unordered_map<uint32, uint8> item_to_tier;                 // item_id -> tier_id
             std::unordered_map<uint32, ChaosArtifact> artifacts;            // artifact_id -> artifact
-            
+
             // Caches
             LRUCache<uint32, ItemUpgradeState> item_state_cache{20000}; // Cache last 20k items
             // Currency Cache: Key is (High: PlayerGUID, Low: Type|Season) or similar.
-            // Simplified: We don't cache currency heavily yet as it's critical to be fresh, 
+            // Simplified: We don't cache currency heavily yet as it's critical to be fresh,
             // but we could. For now, let's stick to Item State caching as that's the heavy lifter.
-            
+
             UpgradeStatistics stats;
 
             void EnsureStateMetadata(ItemUpgradeState& state, uint32 owner_hint = 0)
@@ -476,7 +476,7 @@ namespace DarkChaos
                     spending_column, player_guid, amount));
 
                 stats.db_writes++;
-                
+
                 // Check balance after update (best effort verification)
                 return true;
             }
@@ -532,7 +532,7 @@ namespace DarkChaos
                     "stat_multiplier, first_upgraded_at, last_upgraded_at, season "
                     "FROM {} WHERE item_guid = {}",
                     ITEM_UPGRADES_TABLE, item_guid);
-                    
+
                 if (!result)
                 {
                     LOG_DEBUG("scripts.dc", "ItemUpgrade: Item {} not in upgrade database - creating default state", item_guid);
@@ -923,7 +923,7 @@ namespace DarkChaos
                 {
                     LOG_WARN("scripts.dc", "ItemUpgrade: [PERFORMANCE] Missing index 'idx_tier' on table '{}'. Recommend: ALTER TABLE {} ADD INDEX idx_tier (tier_id);", ITEM_UPGRADES_TABLE, ITEM_UPGRADES_TABLE);
                 }
-                
+
                 indexCheck = CharacterDatabase.Query("SHOW INDEX FROM dc_player_upgrade_tokens WHERE Key_name = 'idx_player_season'");
                 if (!indexCheck)
                 {
@@ -1096,7 +1096,7 @@ namespace DarkChaos
                     static_cast<uint32>(state->upgrade_level), state->tokens_invested,
                     static_cast<uint32>(state->upgrade_level), state->tokens_invested,
                     state->essence_invested, state->stat_multiplier, static_cast<uint32>(state->last_upgraded_at));
-                    
+
                 stats.db_writes++;
             }
 

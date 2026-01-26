@@ -146,7 +146,7 @@ namespace DCCollection
     AppearanceIndex const& GetTransmogAppearanceIndexCached();
     TransmogAppearanceVariant* FindAnyVariant(uint32 displayId);
     TransmogAppearanceVariant* FindBestVariantForSlot(uint32 displayId, uint8 slot, ItemTemplate const* equippedProto);
-    
+
     bool HasTransmogAppearanceUnlocked(uint32 accountId, uint32 displayId);
     void InvalidateAccountUnlockedTransmogAppearances(uint32 accountId);
     void UnlockTransmogAppearance(Player* player, ItemTemplate const* proto, std::string_view sourceType, bool notifyPlayer = true);
@@ -167,7 +167,7 @@ namespace DCCollection
     void SendCollection(Player* player, uint8 type);
     void SendDefinitions(Player* player, uint8 type, uint32 offset = 0, uint32 limit = 0);
     void SendItemSetDefinitions(Player* player);
-    
+
     // Wishlist
     std::vector<std::pair<uint8, uint32>> LoadWishlist(uint32 accountId);
     bool AddToWishlist(uint32 accountId, uint8 type, uint32 entryId);

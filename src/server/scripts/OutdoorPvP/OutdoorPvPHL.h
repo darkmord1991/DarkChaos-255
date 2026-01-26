@@ -575,28 +575,28 @@ public:
     uint32 _affixNpcSpell[7]    = {0};
     uint32 _affixWeatherType[7] = {0};   // WeatherType per affix
     float  _affixWeatherIntensity[7] = {0.0f};
-        std::unordered_map<uint32, uint8> _afkInfractions; // low GUID -> count
-        std::unordered_set<uint32> _afkFlagged; // currently AFK (edge-trigger)
-            // Movement-based AFK tracking
-            std::map<ObjectGuid, uint32> _playerLastMove; // ms since start
-            std::map<ObjectGuid, bool> _playerWarnedBeforeTeleport;
-            std::map<ObjectGuid, Position> _playerLastPos;
-            
-            // State Machine variables
-            uint32 _allianceScore;
-            uint32 _hordeScore;
-            uint32 _matchTimeRemaining; // ms
+    std::unordered_map<uint32, uint8> _afkInfractions; // low GUID -> count
+    std::unordered_set<uint32> _afkFlagged; // currently AFK (edge-trigger)
+    // Movement-based AFK tracking
+    std::map<ObjectGuid, uint32> _playerLastMove; // ms since start
+    std::map<ObjectGuid, bool> _playerWarnedBeforeTeleport;
+    std::map<ObjectGuid, Position> _playerLastPos;
 
-            // Group management: track battleground raid groups per faction
-            std::vector<ObjectGuid> _teamRaidGroups[2];
-        // Track when a member of a tracked raid group went offline (epoch seconds)
-        std::map<ObjectGuid, uint32> _memberOfflineSince;
-        // Per-player scoreboard for current match. Uses resource-point contribution as score.
-        // std::map is used for portability without relying on a custom hasher for ObjectGuid.
-        std::map<ObjectGuid, uint32> _playerScores;
-        // Baseline of lifetime honorable kills at first sighting during a match (to compute per-match HKs)
-        std::map<ObjectGuid, uint32> _playerHKBaseline;
-        // Efficient optimization: track players locally by zone hooks to avoid Map iteration
-        std::unordered_set<ObjectGuid> _playersInHinterlands;
+    // State Machine variables
+    uint32 _allianceScore;
+    uint32 _hordeScore;
+    uint32 _matchTimeRemaining; // ms
+
+    // Group management: track battleground raid groups per faction
+    std::vector<ObjectGuid> _teamRaidGroups[2];
+    // Track when a member of a tracked raid group went offline (epoch seconds)
+    std::map<ObjectGuid, uint32> _memberOfflineSince;
+    // Per-player scoreboard for current match. Uses resource-point contribution as score.
+    // std::map is used for portability without relying on a custom hasher for ObjectGuid.
+    std::map<ObjectGuid, uint32> _playerScores;
+    // Baseline of lifetime honorable kills at first sighting during a match (to compute per-match HKs)
+    std::map<ObjectGuid, uint32> _playerHKBaseline;
+    // Efficient optimization: track players locally by zone hooks to avoid Map iteration
+    std::unordered_set<ObjectGuid> _playersInHinterlands;
     };
     #endif

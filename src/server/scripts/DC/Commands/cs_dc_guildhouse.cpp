@@ -109,7 +109,7 @@ public:
         {
              // If not in the correct phase/map, maybe they should teleport first?
              // Or at least be at GM Island if that's the default zone
-             if (player->GetZoneId() != 876) 
+             if (player->GetZoneId() != 876)
              {
                 handler->SendSysMessage("You must be in your Guild House to use this command!");
                 handler->SetSentErrorMessage(true);
@@ -152,7 +152,7 @@ public:
         handler->PSendSysMessage("- Phase: %u", data->phase);
         handler->PSendSysMessage("- Map ID: %u", data->map);
         handler->PSendSysMessage("- Arrival Position: X:%f Y:%f Z:%f", data->posX, data->posY, data->posZ);
-        
+
         return true;
     }
 
@@ -177,7 +177,7 @@ public:
 
         handler->PSendSysMessage("Members currently in the Guild House:");
         uint32 count = 0;
-        
+
         Map* map = sMapMgr->FindMap(data->map, 0);
         if (map)
         {
@@ -225,7 +225,7 @@ public:
         GuildHouseManager::CleanupGuildHouseSpawns(data->map, data->phase);
         GuildHouseManager::SpawnTeleporterNPC(guild->GetId(), data->map, data->phase, data->posX, data->posY, data->posZ, data->ori);
         GuildHouseManager::SpawnButlerNPC(guild->GetId(), data->map, data->phase, data->posX + 2.0f, data->posY, data->posZ, data->ori);
-        
+
         handler->PSendSysMessage("Reset spawns for guild '%s'.", guild->GetName().c_str());
         return true;
     }
@@ -250,7 +250,7 @@ public:
         {
             handler->SendSysMessage("That guild does not own a Guild House.");
             handler->SetSentErrorMessage(true);
-            return false; 
+            return false;
         }
 
         return true;
@@ -444,7 +444,7 @@ public:
         else if (flagName == "move") flag = GH_PERM_MOVE;
         else if (flagName == "admin") flag = GH_PERM_ADMIN;
         else if (flagName == "workshop") flag = GH_PERM_WORKSHOP;
-        else 
+        else
         {
             handler->SendSysMessage("Unknown flag. valid: spawn, delete, move, admin, workshop");
             return false;
@@ -459,7 +459,7 @@ public:
             currentPerm |= flag;
         else if (action == "remove")
             currentPerm &= ~flag;
-        else 
+        else
         {
             handler->SendSysMessage("Unknown action. Use add or remove.");
             return false;
@@ -517,7 +517,7 @@ public:
         }
 
         uint32 locationId = (uint32)atoi(args);
-        
+
         // Note: Command bypasses cost check? Or should we enforce it?
         // Let's enforce it unless they are GM
         bool free = player->IsGameMaster();

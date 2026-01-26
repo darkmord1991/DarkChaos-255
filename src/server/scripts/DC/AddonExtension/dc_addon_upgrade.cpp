@@ -82,11 +82,11 @@ namespace Upgrade
              QueryResult heirloomResult = CharacterDatabase.Query(
                 "SELECT upgrade_level FROM dc_heirloom_upgrades WHERE item_guid = {}",
                 itemGUID);
-            
+
             uint32 upgradeLevel = 0;
             if (heirloomResult)
                 upgradeLevel = (*heirloomResult)[0].Get<uint32>();
-            
+
             float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
                 static_cast<uint8>(upgradeLevel), static_cast<uint8>(DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER));
 
@@ -145,7 +145,7 @@ namespace Upgrade
                 baseEntry);
              if (tierLookup)
                  tier = (*tierLookup)[0].Get<uint32>();
-             else 
+             else
                  tier = 1;
         }
 
@@ -161,7 +161,7 @@ namespace Upgrade
         // Calculate stat multiplier and ilvl
         float statMultiplier = DarkChaos::ItemUpgrade::StatScalingCalculator::GetFinalMultiplier(
                     static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
-        
+
         uint16 upgradedIlvl = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
                     static_cast<uint16>(baseItemLevel), static_cast<uint8>(upgradeLevel), static_cast<uint8>(tier));
 
@@ -317,11 +317,10 @@ namespace Upgrade
             for (uint8 slot = 0; slot < bagPtr->GetBagSize(); ++slot)
                 CheckItem(bagPtr->GetItemByPos(slot), bag, slot);
         }
-        
+
         // Scan backpack
         for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
             CheckItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), INVENTORY_SLOT_BAG_0, slot);
-
 
         // Send list (chunked if needed, but 2560 chars limit is usually enough for ~50 items)
         std::string itemList;
@@ -372,14 +371,14 @@ namespace Upgrade
              "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {}", currentEntry);
         if (baseResult)
              baseEntry = (*baseResult)[0].Get<uint32>();
-        
+
         uint32 tier = 1;
         if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
              tier = mgr->GetItemTier(baseEntry);
-        
+
         QueryResult stateResult = CharacterDatabase.Query(
              "SELECT upgrade_level FROM dc_item_upgrades WHERE item_guid = {}", itemGUID);
-        
+
         uint32 currentLevel = 0;
         if (stateResult)
              currentLevel = (*stateResult)[0].Get<uint32>();
@@ -402,7 +401,7 @@ namespace Upgrade
             "SELECT SUM(token_cost), SUM(essence_cost) FROM dc_item_upgrade_costs "
             "WHERE tier_id = {} AND upgrade_level BETWEEN {} AND {}",
             tier, currentLevel + 1, targetLevel);
-        
+
         uint32 tokensNeeded = 0;
         uint32 essenceNeeded = 0;
         if (costResult)
@@ -414,7 +413,7 @@ namespace Upgrade
         // Check currency
         uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
-        
+
         if (player->GetItemCount(tokenId) < tokensNeeded)
         {
              Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Not enough Tokens").Send(player);
@@ -430,7 +429,7 @@ namespace Upgrade
         QueryResult targetCloneRes = WorldDatabase.Query(
               "SELECT clone_item_id FROM dc_item_upgrade_clones WHERE base_item_id = {} AND tier_id = {} AND upgrade_level = {}",
               baseEntry, tier, targetLevel);
-        
+
         if (!targetCloneRes)
         {
              Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Target clone not found").Send(player);
@@ -445,7 +444,7 @@ namespace Upgrade
 
         // Perform Swap
         player->DestroyItem(bag, slot, true);
-        
+
         ItemPosCountVec dest;
         Item* newItem = nullptr;
         if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, targetEntry, 1) == EQUIP_ERR_OK)
@@ -474,7 +473,7 @@ namespace Upgrade
                           static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
                       state->upgraded_item_level = DarkChaos::ItemUpgrade::ItemLevelCalculator::GetUpgradedItemLevel(
                           static_cast<uint16>(newItem->GetTemplate()->ItemLevel), static_cast<uint8>(targetLevel), static_cast<uint8>(tier));
-                      
+
                       mgr->SaveItemUpgrade(newGuid);
                  }
             }
@@ -512,28 +511,28 @@ namespace Upgrade
             .Add(packageId)
             .Send(player);
     }
-    
+
     // HEIRLOOM HANDLERS
 
     static void HandleHeirloomQuery(Player* player, const ParsedMessage& msg)
     {
         uint32 extBag = msg.GetUInt32(0);
         uint32 extSlot = msg.GetUInt32(1);
-        
+
         uint8 bag, slot;
         if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
              return;
-        
+
         Item* item = player->GetItemByPos(bag, slot);
         if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
         {
              Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO).Add(0).Add("Invalid Heirloom").Send(player);
              return;
         }
-        
+
         uint32 itemGuid = item->GetGUID().GetCounter();
         QueryResult result = CharacterDatabase.Query("SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}", itemGuid);
-        
+
         uint32 level = 0;
         uint32 package = 0;
         if (result)
@@ -541,7 +540,7 @@ namespace Upgrade
              level = (*result)[0].Get<uint32>();
              package = (*result)[1].Get<uint32>();
         }
-        
+
         Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO)
              .Add(1)
              .Add(itemGuid)
@@ -570,34 +569,34 @@ namespace Upgrade
              "11|Warlord|Resilience,Stamina",
              "12|Balanced|Crit,Hit,Haste"
          };
-         
+
          Message m(Module::UPGRADE, Opcode::Upgrade::SMSG_PACKAGE_LIST);
          m.Add(static_cast<uint32>(pkgs.size()));
-         for (const auto& p : pkgs) m.Add(p);
+         for (auto const& p : pkgs) m.Add(p);
          m.Send(player);
     }
-    
+
     static void HandleHeirloomUpgrade(Player* player, const ParsedMessage& msg)
     {
          uint32 extBag = msg.GetUInt32(0);
          uint32 extSlot = msg.GetUInt32(1);
          uint32 targetLevel = msg.GetUInt32(2);
          uint32 packageId = msg.GetUInt32(3);
-         
+
         uint8 bag, slot;
         if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
         {
              Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Invalid slot").Send(player);
              return;
         }
-        
+
         Item* item = player->GetItemByPos(bag, slot);
         if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
         {
              Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Invalid Heirloom").Send(player);
              return;
         }
-        
+
         // Validate inputs
         if (packageId < 1 || packageId > HEIRLOOM_MAX_PACKAGE_ID)
         {
@@ -612,7 +611,7 @@ namespace Upgrade
 
         uint32 itemGuid = item->GetGUID().GetCounter();
         QueryResult result = CharacterDatabase.Query("SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}", itemGuid);
-        
+
         uint32 currentLevel = 0;
         uint32 currentPackage = 0;
         if (result)
@@ -620,7 +619,7 @@ namespace Upgrade
              currentLevel = (*result)[0].Get<uint32>();
              currentPackage = (*result)[1].Get<uint32>();
         }
-        
+
         if (targetLevel < currentLevel && packageId == currentPackage)
         {
               Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Already higher level").Send(player);
@@ -629,7 +628,7 @@ namespace Upgrade
 
         // Calculate Cost
         QueryResult costRes = WorldDatabase.Query("SELECT SUM(token_cost), SUM(essence_cost) FROM dc_heirloom_upgrade_costs WHERE upgrade_level BETWEEN {} AND {}", currentLevel + 1, targetLevel);
-        
+
         uint32 tokensNeeded = 0;
         uint32 essenceNeeded = 0;
         if (costRes)
@@ -637,11 +636,11 @@ namespace Upgrade
              if (!(*costRes)[0].IsNull()) tokensNeeded = (*costRes)[0].Get<uint32>();
              if (!(*costRes)[1].IsNull()) essenceNeeded = (*costRes)[1].Get<uint32>();
         }
-        
+
         // Check Currency
         uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
-        
+
         if (player->GetItemCount(tokenId) < tokensNeeded)
         {
              Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Not enough Tokens").Send(player);
@@ -652,7 +651,7 @@ namespace Upgrade
              Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Not enough Essence").Send(player);
              return;
         }
-        
+
         // Perform
         if (tokensNeeded > 0) player->DestroyItemCount(tokenId, tokensNeeded, true);
         if (essenceNeeded > 0) player->DestroyItemCount(essenceId, essenceNeeded, true);
@@ -660,7 +659,7 @@ namespace Upgrade
         // Apply Enchantment
         // ID: 900000 + (packageId * 100) + level
         uint32 enchantId = HEIRLOOM_ENCHANT_BASE_ID + (packageId * 100) + targetLevel;
-        
+
         player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
         item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, player->GetGUID());
         player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
@@ -681,7 +680,7 @@ namespace Upgrade
             .Add(packageId)
             .Add(enchantId)
             .Send(player);
-            
+
         SendCurrencyUpdate(player);
     }
 
@@ -714,7 +713,7 @@ namespace Upgrade
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_LIST_UPGRADEABLE, HandleListUpgradeable);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_DO_UPGRADE, HandleDoUpgrade);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_PACKAGE_SELECT, HandlePackageSelect);
-        
+
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_HEIRLOOM_QUERY, HandleHeirloomQuery);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_GET_PACKAGES, HandleGetPackages);
         DC_REGISTER_HANDLER(Module::UPGRADE, Opcode::Upgrade::CMSG_HEIRLOOM_UPGRADE, HandleHeirloomUpgrade);

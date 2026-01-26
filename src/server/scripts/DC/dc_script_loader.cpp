@@ -106,7 +106,6 @@ void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades\ItemUpgradeProcSca
 void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades\ItemUpgradeStatApplication.cpp
 void AddSC_ItemUpgradeQuestRewardHook();      // ItemUpgrades\ItemUpgradeQuestRewardHook.cpp
 
-
 // --- Mythic+ Dungeon System ---
 void AddMythicPlusScripts();                  // MythicPlus\mythic_plus_loader.cpp
 void AddSC_dc_mythic_spectator();             // MythicPlus\dc_mythic_spectator.cpp
@@ -114,7 +113,6 @@ void AddSC_dc_mythic_spectator();             // MythicPlus\dc_mythic_spectator.
 // --- Seasonal Reward System ---
 void AddSC_SeasonalRewardScripts();           // Seasons\SeasonalRewardScripts.cpp
 void AddSC_DCWeeklyResetHub();                // Seasons\DCWeeklyResetHub.cpp
-
 
 // --- Phased Duels System ---
 void AddSC_dc_phased_duels();                 // PhasedDuels\dc_phased_duels.cpp
@@ -422,8 +420,6 @@ void AddDCScripts()
         LOG_ERROR("scripts.dc", ">>   ✗ CRASH in core mechanics");
     }
 
-
-
     try {
 
         LOG_INFO("scripts.dc", ">>   ✓ Consolidated Item Upgrade commands loaded");
@@ -432,8 +428,6 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts.dc", ">>   ✗ CRASH in Item Upgrade commands");
     }
-
-
 
     try {
         AddSC_ItemUpgradeVendor();
@@ -453,8 +447,6 @@ void AddDCScripts()
         LOG_ERROR("scripts.dc", ">>   ✗ CRASH in curator");
     }
 
-
-
     try {
         AddSC_ItemUpgradeSeasonal();
         LOG_INFO("scripts.dc", ">>   ✓ Seasonal system loaded");
@@ -463,8 +455,6 @@ void AddDCScripts()
     } catch (...) {
         LOG_ERROR("scripts.dc", ">>   ✗ CRASH in seasonal");
     }
-
-
 
     try {
         AddSC_ItemUpgradeTransmutation();

@@ -36,7 +36,7 @@ void HotspotGrid::GetKeysInRange(uint32 mapId, float x, float y, float radius, s
 void HotspotGrid::Add(Hotspot const& hotspot)
 {
     _hotspots[hotspot.id] = hotspot;
-    
+
     // Register in all overlapping cells (radius + minimal buffer)
     std::vector<GridKey> keys;
     GetKeysInRange(hotspot.mapId, hotspot.x, hotspot.y, sHotspotsConfig.announceRadius, keys);

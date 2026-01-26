@@ -35,7 +35,7 @@ public:
         // Keep core management NPCs so the guild house remains usable.
         return entry == 95103 /*manager*/ || entry == 95104 /*butler*/ || entry == 800002 /*teleporter*/;
     }
-    
+
     static bool SpawnPresetsHaveMapColumn()
     {
         static std::optional<bool> cached;
@@ -62,7 +62,7 @@ public:
 
         void UpdateAI(uint32 /*diff*/) override
         {
-            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+            me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
         }
     };
 
@@ -102,7 +102,7 @@ public:
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Primary Profession Trainers", GOSSIP_SENDER_MAIN, 7);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Secondary Profession Trainers", GOSSIP_SENDER_MAIN, 8);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Sprirt Healer", GOSSIP_SENDER_MAIN, 6491, "Spawn a Spirit Healer?", GuildHouseSpirit, false);
-        
+
         // DC Extensions
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Spawn Mythic+ NPCs", GOSSIP_SENDER_MAIN, 20);
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Spawn Seasonal Vendors", GOSSIP_SENDER_MAIN, 21);
@@ -302,8 +302,6 @@ public:
         return true;
     }
 
-
-
     void SpawnNPC(uint32 entry, Player* player, uint32 spawnCost, bool chargePlayer, bool doBroadcast)
     {
         // Permission Check
@@ -318,7 +316,7 @@ public:
         // Since I can't easily edit Config.h/cpp instantly to add new valid config options without recompile issues if strict,
         // I'll stick to using the existing `GuildHouseSellRank` or a hardcoded sane default (Officer) if Config not present.
         // For now, let's assume `GuildHouseSellRank` is "Manage Guild House" rank.
-        
+
         int32 requiredRank = sConfigMgr->GetOption<int32>("GuildHouseSellRank", 0);
         if (!guild->GetMember(player->GetGUID())->IsRankNotLower(requiredRank))
         {
@@ -443,7 +441,6 @@ public:
             CloseGossipMenuFor(player);
             return;
         }
-
 
         float posX;
         float posY;

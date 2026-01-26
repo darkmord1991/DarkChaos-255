@@ -581,7 +581,6 @@ namespace DarkChaos
 
         // Legacy helpers removed to enforce self-registration pattern
 
-
         // =====================================================================
         // Utility Functions
         // =====================================================================

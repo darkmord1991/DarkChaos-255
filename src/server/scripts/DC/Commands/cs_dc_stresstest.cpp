@@ -1,6 +1,6 @@
 /*
  * DC Performance Testing System (.stresstest)
- * 
+ *
  * Provides stress testing tools for SQL, Cache, and Subsystems.
  * COMMAND: .stresstest <subcommand>
  * PERMISSION: GM only (SEC_GAMEMASTER)
@@ -542,16 +542,16 @@ namespace DCPerfTest
             for (uint32 i = 0; i < iterations; ++i)
             {
                 auto start = Clock::now();
-                
+
                 // Simple query that should hit cache after first run
                 QueryResult qr = WorldDatabase.Query("SELECT entry FROM creature_template WHERE entry = 1");
-                
+
                 auto end = Clock::now();
                 times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
             }
 
             std::sort(times.begin(), times.end());
-            
+
             result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
             result.avgUs = result.totalUs / iterations;
             result.minUs = times.front();
@@ -602,7 +602,7 @@ namespace DCPerfTest
 
             // Cleanup our test data
             trans->Append("DELETE FROM log_arena_memberstats WHERE fight_id >= 4290000000");
-            
+
             CharacterDatabase.CommitTransaction(trans);
 
             auto end = Clock::now();
@@ -629,7 +629,7 @@ namespace DCPerfTest
         result.success = true;
 
         std::vector<uint64> times;
-        
+
         // List of common DC tables to test (skip missing tables to avoid DB abort).
         const char* dcTables[] = {
             "dc_character_prestige",
@@ -884,16 +884,16 @@ namespace DCPerfTest
             for (uint32 i = 0; i < iterations; ++i)
             {
                 uint32 entry = (i % 1000) + 1; // Cycle through entries 1-1000
-                
+
                 auto start = Clock::now();
                 sObjectMgr->GetCreatureTemplate(entry);
                 auto end = Clock::now();
-                
+
                 times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
             }
 
             std::sort(times.begin(), times.end());
-            
+
             result.iterations = iterations;
             result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
             result.avgUs = result.totalUs / iterations;
@@ -926,16 +926,16 @@ namespace DCPerfTest
             for (uint32 i = 0; i < iterations; ++i)
             {
                 uint32 entry = (i % 5000) + 1; // Cycle through item entries
-                
+
                 auto start = Clock::now();
                 sObjectMgr->GetItemTemplate(entry);
                 auto end = Clock::now();
-                
+
                 times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
             }
 
             std::sort(times.begin(), times.end());
-            
+
             result.iterations = iterations;
             result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
             result.avgUs = result.totalUs / iterations;
@@ -1225,7 +1225,7 @@ namespace DCPerfTest
             double opsPerSec = secs > 0.0 ? (double(result.iterations) / secs) : 0.0;
             handler->SendSysMessage(Acore::StringFormat("  Ops/s: {:.2f}", opsPerSec));
         }
-        
+
         if (result.iterations > 1)
         {
             handler->SendSysMessage(Acore::StringFormat("  P95: {} | P99: {} ({} iterations)",
@@ -1350,7 +1350,7 @@ namespace DCPerfTest
             for (uint32 i = 0; i < iterations; ++i)
             {
                 uint32 fakeItemGuid = 100000 + (i * 7) % 50000; // Spread across range
-                
+
                 auto start = Clock::now();
                 std::ostringstream sql;
                 sql << "SELECT item_guid, tier_id, upgrade_level";
@@ -1361,7 +1361,7 @@ namespace DCPerfTest
                 sql << " FROM dc_item_upgrades WHERE item_guid = " << fakeItemGuid;
                 QueryResult qr = CharacterDatabase.Query(sql.str().c_str());
                 auto end = Clock::now();
-                
+
                 times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
             }
 
@@ -1428,13 +1428,13 @@ namespace DCPerfTest
             {
                 uint32 fakeAccountId = 1000 + (i % 100); // Simulate different accounts
                 char const* table = existingTables[i % existingTables.size()];
-                
+
                 auto start = Clock::now();
                 std::ostringstream sql;
                 sql << "SELECT COUNT(*) FROM " << table << " WHERE account_id = " << fakeAccountId;
                 QueryResult qr = CharacterDatabase.Query(sql.str().c_str());
                 auto end = Clock::now();
-                
+
                 times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
             }
 
@@ -1488,7 +1488,7 @@ namespace DCPerfTest
 
             // Immediately clean up our test data
             trans->Append("DELETE FROM log_arena_memberstats WHERE fight_id >= 4290100000");
-            
+
             CharacterDatabase.CommitTransaction(trans);
 
             auto end = Clock::now();
@@ -1525,7 +1525,7 @@ namespace DCPerfTest
             {
                 uint32 fakeGuid = 10000 + (i * 13) % 1000; // Spread across GUIDs
                 uint32 fakeAccount = 1000 + (i % 50);
-                
+
                 auto start = Clock::now();
 
                 // Query 1: Prestige data
@@ -1739,8 +1739,8 @@ namespace DCPerfTest
             {
                 uint32 fakeGuildId = 1 + (i % 100);
                 // Guild phase logic usually (guildId + 10) or similar, we just simulate the query
-                uint32 fakePhase = fakeGuildId + 10; 
-                
+                uint32 fakePhase = fakeGuildId + 10;
+
                 auto start = Clock::now();
 
                 // 1. Fetch House Data
@@ -1817,14 +1817,14 @@ namespace DCPerfTest
         times.reserve(iterations);
 
         // List of maps to simulate loading (use common ones)
-        const uint32 maps[] = { 0, 1, 530, 571 }; 
+        const uint32 maps[] = { 0, 1, 530, 571 };
 
         try
         {
             for (uint32 i = 0; i < iterations; ++i)
             {
                 uint32 mapId = maps[i % 4];
-                
+
                 auto start = Clock::now();
 
                 // Simulate loading all creatures and GOs for a map (or large section of it)
@@ -1915,13 +1915,13 @@ namespace DCPerfTest
             // 3. Check PvP history
             // 4. Query loot table for 3-9 items (World DB heavy query)
             // 5. Save results
-            
+
             for (uint32 i = 0; i < playerCount; ++i)
             {
-                uint32 fakeGuid = 10000 + (i * 13) % 1000; 
+                uint32 fakeGuid = 10000 + (i * 13) % 1000;
                 uint32 seasonId = 1;
                 uint32 weekStart = 1700000000; // Fake timestamp
-                
+
                 auto start = Clock::now();
 
                 // 1. M+ Runs Query
@@ -2055,7 +2055,7 @@ namespace DCPerfTest
             for (uint32 i = 0; i < iterations; ++i)
             {
                 auto start = Clock::now();
-                
+
                 if (i % 2 == 0)
                 {
                     // Even: Character DB lookup
@@ -2072,7 +2072,7 @@ namespace DCPerfTest
                     sql << "SELECT name FROM creature_template WHERE entry = " << fakeEntry;
                     WorldDatabase.Query(sql.str().c_str());
                 }
-                
+
                 auto end = Clock::now();
                 times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
             }
@@ -2993,7 +2993,7 @@ public:
         HandlePerfTestSystems(handler, "");
         HandlePerfTestCoreDB(handler, "");
         HandlePerfTestPlayerSim(handler, "");
-        HandlePerfTestStress(handler, ""); 
+        HandlePerfTestStress(handler, "");
         PrintMySQLStatus(handler, "");
 
         auto overallEnd = Clock::now();

@@ -204,7 +204,6 @@ public:
     }
 };
 
-
 class GuildHouseGlobal : public GlobalScript
 {
 public:

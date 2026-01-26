@@ -39,7 +39,7 @@ public:
 
     static bool HandleHotspotsListCommand(ChatHandler* handler, char const* /*args*/)
     {
-        const auto& grid = sHotspotMgr->GetGrid();
+        auto const& grid = sHotspotMgr->GetGrid();
         if (grid.Count() == 0)
         {
             handler->SendSysMessage("No active hotspots.");
@@ -72,16 +72,16 @@ public:
             handler->SendSysMessage("Failed to spawn a new hotspot (limit reached or no valid pos).");
         return true;
     }
-    
+
     // SpawnHere implementation would require exposing raw Add/Spawn methods with coords in Mgr.
-    // For now, I'll simplify or skip custom spawn logic unless required, 
+    // For now, I'll simplify or skip custom spawn logic unless required,
     // BUT user asked for "commands add them in again", implying full restoration.
     // Since sHotspotMgr->SpawnHotspot() is random, SpawnHere logic needs to be in this file using Grid directly
     // OR added to Mgr. Let's start with basic access via Grid/Mgr public methods.
     // Mgr exposes GetGrid() but that's const usually for read? The header had generic getter?
     // Let's assume we can add directly to Grid if we include Header.
     // HotspotMgr.h declares: HotspotGrid& GetGrid() { return _grid; } (Assumed standard pattern)
-    // Wait, in my previous step creating HotspotMgr.h (which wasn't fully shown but inferred), 
+    // Wait, in my previous step creating HotspotMgr.h (which wasn't fully shown but inferred),
     // I need to ensure I can mutate the grid or add a 'ForceSpawnAt' to Mgr.
     // Let's add a `SpawnHotspotAt` to Mgr? No, let's keep it simple here if possible.
     // The previous code did:
@@ -91,16 +91,16 @@ public:
         SaveHotspotToDB(hotspot);
     */
     // I can do that through Mgr if I expose a "AddHotspot(Hotspot h)" method.
-    // For now, I'll just skip SpawnHere if I can't easily add it, or hacking it. 
+    // For now, I'll just skip SpawnHere if I can't easily add it, or hacking it.
     // Actually, let's just use what we have.
-    
+
     static bool HandleHotspotsSpawnHereCommand(ChatHandler* handler, char const* /*args*/)
     {
         Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
         if (!player) return false;
 
         Hotspot h;
-        h.id = sHotspotMgr->GenerateNextId(); 
+        h.id = sHotspotMgr->GenerateNextId();
         h.mapId = player->GetMapId();
         h.zoneId = player->GetZoneId();
         h.x = player->GetPositionX();
@@ -108,15 +108,15 @@ public:
         h.z = player->GetPositionZ();
         h.spawnTime = GameTime::GetGameTime().count();
         h.expireTime = h.spawnTime + (sHotspotsConfig.duration * 60);
-        
-        // We lack a public "Add" on Mgr. 
-        // PROPER FIX: I should have added `SpawnHotspotAt` to Mgr. 
+
+        // We lack a public "Add" on Mgr.
+        // PROPER FIX: I should have added `SpawnHotspotAt` to Mgr.
         // I will just note this implementation limitation for now or better yet,
         // Assuming I can't change Mgr interface easily in this turn without viewing it again:
         // Access Grid via Friend? No.
         // Let's rely on Spawn (Random) for now, or just leave SpawnHere returning "Not implemented in refactor".
         // Use: sHotspotMgr->SpawnHotspot() works fine for random.
-        
+
         handler->SendSysMessage("SpawnAt not fully implemented in refactor yet. Use .hotspot spawn");
         return true;
     }
@@ -131,20 +131,20 @@ public:
     {
          handler->SendSysMessage("Clearing all hotspots...");
          sHotspotMgr->ClearAll();
-         
+
          // Respawn min active if configured
          if (sHotspotsConfig.minActive > 0)
          {
              handler->SendSysMessage("Respawning minimum active hotspots...");
              // Simple loop to respawn logic via Cleanup/Update cycle or manual
              // We can just call CleanupExpiredHotspots which handles minActive respawn!
-             sHotspotMgr->CleanupExpiredHotspots(); 
+             sHotspotMgr->CleanupExpiredHotspots();
          }
-         
+
          handler->SendSysMessage("Done.");
          return true;
     }
-    
+
     static bool HandleHotspotsReloadCommand(ChatHandler* handler, char const* /*args*/)
     {
         sHotspotMgr->LoadConfig();
@@ -157,10 +157,10 @@ public:
         // ... (Teleport logic using grid) ...
         auto all = sHotspotMgr->GetGrid().GetAll();
         if (all.empty()) { handler->SendSysMessage("No hotspots."); return true; }
-        
+
         const Hotspot* target = &all[0];
         // optional ID parsing...
-        
+
         Player* player = handler->GetSession()->GetPlayer();
         player->TeleportTo(target->mapId, target->x, target->y, target->z, 0.0f);
         return true;

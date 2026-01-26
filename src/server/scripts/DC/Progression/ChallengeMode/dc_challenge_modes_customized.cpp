@@ -990,7 +990,7 @@ public:
 
                 AddGossipItemFor(player, GOSSIP_ICON_DOT, Acore::StringFormat("Prestige Level: {} / {}", prestigeLevel, maxPrestige), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
                 AddGossipItemFor(player, GOSSIP_ICON_DOT, Acore::StringFormat("Current Bonus: {}% (Stats)", currentStatBonus), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
-                
+
                 if (altBonus > 0)
                 {
                     AddGossipItemFor(player, GOSSIP_ICON_DOT, Acore::StringFormat("Alt Bonus: {}% XP ({} Max-Level Chars)", altBonus, maxLevelChars), GOSSIP_SENDER_MAIN, ACTION_GOSSIP_NOOP);
@@ -1337,7 +1337,7 @@ void AddSC_dc_challenge_modes()
 {
     new ChallengeModes_WorldScript();
     new gobject_challenge_modes();
-    
+
     // Register scripts from ChallengeModeScripts.cpp
     AddSC_challenge_mode_scripts();
 }

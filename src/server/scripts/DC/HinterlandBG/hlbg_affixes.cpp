@@ -80,7 +80,7 @@ void OutdoorPvPHL::SendAffixAddonToPlayer(Player* player) const
     // 3 args for affixes (primary, secondary, tertiary) + season
     // HLBG currently only uses one active affix.
     uint32 affix1 = static_cast<uint32>(_activeAffix);
-    
+
     DCAddon::HLBG::SendAffixInfo(player, affix1, 0, 0, _season);
 }
 
@@ -125,7 +125,7 @@ void OutdoorPvPHL::SendStatusAddonToZone() const
     // or we can simplify this loop.
     uint32 apc = 0;
     uint32 hpc = 0;
-    
+
     // Just reuse the per-player logic
     ForEachPlayerInZone([&](Player* p){ SendStatusAddonToPlayer(p, apc, hpc); });
 }

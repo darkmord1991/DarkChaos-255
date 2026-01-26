@@ -33,21 +33,21 @@ struct Entry
     uint32_t score = 0;
     std::string extra;               // Additional info (runs, time, etc.)
     std::string score_str;           // For uint64 values sent as string (gold)
-    
+
     // Extended fields for specific leaderboard types
     uint32_t mapId = 0;              // M+ dungeon map ID
-    
+
     // Wins/Losses (HLBG seasonal)
     bool hasWinsLosses = false;
     uint32_t wins = 0;
     uint32_t losses = 0;
-    
+
     // Kill/Death stats (HLBG all-time)
     bool hasKD = false;
     uint32_t kills = 0;
     uint32_t deaths = 0;
     double kdRatio = 0.0;
-    
+
     // Quality breakdown (AOE Loot)
     bool hasQuality = false;
     uint32_t qLeg = 0;
@@ -98,22 +98,22 @@ inline std::string BuildEntryJson(const Entry& e)
     json += "\"name\":\"" + JsonEscape(e.name) + "\",";
     json += "\"class\":\"" + e.className + "\",";
     json += "\"score\":" + std::to_string(e.score);
-    
+
     if (!e.extra.empty())
         json += ",\"extra\":\"" + JsonEscape(e.extra) + "\"";
-    
+
     if (!e.score_str.empty())
         json += ",\"score_str\":\"" + e.score_str + "\"";
-    
+
     if (e.mapId > 0)
         json += ",\"mapId\":" + std::to_string(e.mapId);
-    
+
     if (e.hasWinsLosses)
     {
         json += ",\"wins\":" + std::to_string(e.wins);
         json += ",\"losses\":" + std::to_string(e.losses);
     }
-    
+
     if (e.hasKD)
     {
         json += ",\"kills\":" + std::to_string(e.kills);
@@ -123,7 +123,7 @@ inline std::string BuildEntryJson(const Entry& e)
         json += ",\"kd\":";
         json += kdBuf;
     }
-    
+
     if (e.hasQuality)
     {
         json += ",\"qLeg\":" + std::to_string(e.qLeg);
@@ -131,7 +131,7 @@ inline std::string BuildEntryJson(const Entry& e)
         json += ",\"qRare\":" + std::to_string(e.qRare);
         json += ",\"qUncommon\":" + std::to_string(e.qUncommon);
     }
-    
+
     json += "}";
     return json;
 }

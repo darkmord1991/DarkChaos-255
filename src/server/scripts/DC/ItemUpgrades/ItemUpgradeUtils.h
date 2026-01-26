@@ -16,11 +16,11 @@ namespace DarkChaos
         struct UpgradeStatistics
         {
             uint32_t upgrades_performed{0};
-			uint32_t cache_hits{0};
-			uint32_t cache_misses{0};
-			uint32_t db_reads{0};
-			uint32_t db_writes{0};
-			uint64_t total_latency_us{0}; // Microseconds
+            uint32_t cache_hits{0};
+            uint32_t cache_misses{0};
+            uint32_t db_reads{0};
+            uint32_t db_writes{0};
+            uint64_t total_latency_us{0}; // Microseconds
 
             void Reset()
             {

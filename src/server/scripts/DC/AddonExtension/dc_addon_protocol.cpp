@@ -89,7 +89,7 @@ struct ProtocolMetrics
     std::atomic<uint64_t> rateLimitDrops{0};
     std::atomic<uint64_t> parseErrors{0};
     std::atomic<uint64_t> handlerErrors{0};
-    
+
     void Reset()
     {
         messagesReceived = 0;
@@ -106,7 +106,6 @@ static ProtocolMetrics g_ProtocolMetrics;
 
 // Accessor for external monitoring
 const ProtocolMetrics& GetProtocolMetrics() { return g_ProtocolMetrics; }
-
 
 namespace DCAddon
 {
@@ -226,7 +225,7 @@ struct DCAddonProtocolConfig
     uint32 RequestTimeoutMs;
     uint32 MinGOMoveSecurity;
     uint32 MinNPCMoveSecurity;
-    
+
     // Security limits (configurable for flexibility)
     uint32 MaxChunksPerMessage;      // Maximum chunks allowed per message (memory protection)
     uint32 MaxJsonPayloadSize;       // Maximum JSON payload size in bytes
@@ -792,7 +791,7 @@ static bool CheckRateLimit(Player* player)
         {
             case 1:  // Disconnect
                 player->GetSession()->KickPlayer("Addon message spam");
-                LOG_WARN("dc.addon", "Player {} kicked for addon message spam (violations: {})", 
+                LOG_WARN("dc.addon", "Player {} kicked for addon message spam (violations: {})",
                         player->GetName(), tracker.violationCount);
                 break;
             case 2:  // Mute with exponential backoff
@@ -803,7 +802,7 @@ static bool CheckRateLimit(Player* player)
                 break;
             default:  // Log and drop
                 if (s_AddonConfig.EnableDebugLog)
-                    LOG_DEBUG("dc.addon", "Rate limit exceeded for player {} (violations: {})", 
+                    LOG_DEBUG("dc.addon", "Rate limit exceeded for player {} (violations: {})",
                              player->GetName(), tracker.violationCount);
                 break;
         }
@@ -828,7 +827,7 @@ static void HandleCoreHandshake(Player* player, const DCAddon::ParsedMessage& ms
 
     if (s_AddonConfig.EnableDebugLog)
         LOG_DEBUG("dc.addon", "Handshake from {} with client version {}.{}.{} caps=0x{:X}",
-                  player->GetName(), clientVersion.major, clientVersion.minor, 
+                  player->GetName(), clientVersion.major, clientVersion.minor,
                   clientVersion.patch, clientVersion.capabilities);
 
     // Check version compatibility (major must match)
@@ -944,15 +943,15 @@ static void HandleBatch(Player* player, const DCAddon::ParsedMessage& msg)
     }
 
     if (s_AddonConfig.EnableDebugLog)
-        LOG_DEBUG("dc.addon", "Processing batch of {} messages from {}", 
+        LOG_DEBUG("dc.addon", "Processing batch of {} messages from {}",
                   entries.size(), player->GetName());
 
     // Route each sub-message through the normal handler
-    for (const auto& entry : entries)
+    for (auto const& entry : entries)
     {
         // Reconstruct the message string: MODULE|OPCODE|data1|data2|...
         std::string subMsg = entry.module + DCAddon::DELIMITER + std::to_string(entry.opcode);
-        for (const auto& d : entry.data)
+        for (auto const& d : entry.data)
         {
             subMsg += DCAddon::DELIMITER;
             subMsg += d;
@@ -1337,14 +1336,14 @@ public:
         {
             // Security: Check if adding this would exceed max pending chunks
             // Count how many accounts have pending chunks (simple approach)
-            if (s_ChunkedMessages.find(accountId) == s_ChunkedMessages.end() && 
+            if (s_ChunkedMessages.find(accountId) == s_ChunkedMessages.end() &&
                 s_ChunkedMessages.size() >= s_AddonConfig.MaxPendingChunks * 10)  // Global limit = per-account * 10
             {
                 LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: global pending chunks limit reached ({})",
                     player->GetName(), s_ChunkedMessages.size());
                 return false;
             }
-            
+
             // First chunk - reset buffer
             chunkedMsg = DCAddon::ChunkedMessage();
             s_ChunkStartTimes[accountId] = GameTime::GetGameTime().count() * 1000;
@@ -1413,7 +1412,7 @@ public:
 
         // Cleanup expired async requests for this player
         CleanupExpiredRequests(player);
-        
+
         // Early logging: show ALL incoming DC messages
         uint8 incomingOpcode = ExtractOpcode(payload);
         LOG_INFO("module.dc", "[DC-INCOMING] player={}, module={}, opcode=0x{:02X}, payloadLen={}",

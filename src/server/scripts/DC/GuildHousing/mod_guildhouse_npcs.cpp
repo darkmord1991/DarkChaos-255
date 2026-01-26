@@ -236,7 +236,7 @@ public:
         }
 
         uint32 guildPhase = GetGuildPhase(player);
-        
+
         // Only clean up the CURRENT map location, we need to know where it is.
         // For reset, we are at the location, or we query DB.
         QueryResult result = CharacterDatabase.Query("SELECT `map` FROM `dc_guild_house` WHERE `guild` = {}", player->GetGuildId());
@@ -248,7 +248,6 @@ public:
         ChatHandler(player->GetSession()).PSendSysMessage("Guild House has been reset.");
         return true;
     }
-
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
@@ -335,7 +334,7 @@ public:
         if (action >= ACTION_MOVE_LOCATION_BASE && action < 3000)
         {
             uint32 locationId = action - ACTION_MOVE_LOCATION_BASE;
-            
+
             // Check Money
             uint32 moveCost = sConfigMgr->GetOption<uint32>("GuildHouse.MoveCost", 0);
             if (moveCost && player->GetMoney() < moveCost)
@@ -354,7 +353,7 @@ public:
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("Error moving Guild House.");
             }
-            
+
             CloseGossipMenuFor(player);
             return true;
         }
@@ -405,7 +404,7 @@ public:
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {})",
                 player->GetGuildId(), ::GetGuildPhase(player), map, posX, posY, posZ, ori);
-            
+
             // Update Cache potentially needed here if not handled by Spawn
             GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(::GetGuildPhase(player), map, posX, posY, posZ, ori));
 
@@ -421,7 +420,7 @@ public:
         if (action >= ACTION_ADMIN_MOVE_LOCATION_BASE && action < 12000)
         {
             uint32 locationId = action - ACTION_ADMIN_MOVE_LOCATION_BASE;
-            
+
             if (GuildHouseManager::MoveGuildHouse(player->GetGuildId(), locationId))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("GM: Guild House moved for free.");
@@ -616,14 +615,10 @@ public:
         return true;
     }
 
-
-
     bool RemoveGuildHouse(Player* player)
     {
         return GuildHouseManager::RemoveGuildHouse(player->GetGuild());
     }
-
-
 
     bool BuyGuildHouse(Guild* guild, Player* player, Creature* creature)
     {

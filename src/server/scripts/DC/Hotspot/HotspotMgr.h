@@ -34,12 +34,12 @@ public:
     void LoadFromDB();
     bool SpawnHotspot();
     void CleanupExpiredHotspots();
-    
+
     // Player interactions
     Hotspot const* GetPlayerHotspot(Player* player);
     void CheckPlayerHotspotStatus(Player* player);
     void OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim);
-    
+
     // API for Commands/Scripts
     bool CanSpawnInZone(uint32 zoneId);
     uint32 GetZoneHotspotCount(uint32 zoneId);
@@ -47,11 +47,11 @@ public:
     void RecreateHotspotVisualMarkers();
     uint32 GenerateNextId() { return _nextHotspotId++; }
     void ClearAll();
-    
+
     // DB Helpers
     void SaveHotspotToDB(Hotspot const& hotspot);
     void DeleteHotspotFromDB(uint32 id);
-    
+
     // Utils
     std::string GetZoneName(uint32 zoneId);
 };

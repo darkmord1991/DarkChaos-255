@@ -688,7 +688,7 @@ public:
             handler->PSendSysMessage("|cffffd700===== Respec Information =====|r");
             handler->PSendSysMessage("|cff00ff00Respecs Today:|r %u / %u",
                 count_today, respecMgr->GetConfig().daily_respec_limit);
-            
+
             if (cooldown > 0)
             {
                 uint32 minutes = cooldown / 60;
@@ -705,9 +705,9 @@ public:
 
         char* subCmd = strtok((char*)args, " ");
         if (!subCmd) return false;
-        
+
         std::string subCommand = subCmd;
-        
+
         if (subCommand == "all")
         {
              if (!respecMgr->GetConfig().allow_full_respec)
@@ -715,7 +715,7 @@ public:
                  handler->SendSysMessage("Full respec is disabled.");
                  return true;
              }
-             
+
              char* confirm = strtok(nullptr, " ");
              if (!confirm || std::string(confirm) != "confirm")
              {
@@ -760,7 +760,7 @@ public:
         }
         else
         {
-            for (const auto& ach : achievements)
+            for (auto const& ach : achievements)
             {
                 handler->PSendSysMessage("|cff00ff00[%s]|r: %s", ach.name.c_str(), ach.description.c_str());
             }
@@ -776,7 +776,7 @@ public:
             handler->SendSysMessage("You must be in a guild.");
             return true;
         }
-        
+
         auto guildMgr = GetGuildProgressionManager();
         if (!guildMgr) return false;
 
@@ -848,7 +848,7 @@ public:
         }
 
         uint32 tierId = atoi(tierStr);
-        
+
         auto levelCapMgr = GetLevelCapManager();
         if (levelCapMgr)
         {
@@ -872,14 +872,14 @@ public:
         if (!costMgr) return false;
 
         const CostScalingConfig& config = costMgr->GetConfig();
-        
+
         uint32 spentEssence = costMgr->GetWeeklySpending(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE);
         uint32 spentTokens = costMgr->GetWeeklySpending(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN);
 
         handler->PSendSysMessage("|cffffd700===== Weekly Spending =====|r");
-        handler->PSendSysMessage("Essence: %u / %u (Hard Cap: %u)", 
+        handler->PSendSysMessage("Essence: %u / %u (Hard Cap: %u)",
             spentEssence, config.softcap_weekly_essence, config.hardcap_weekly_essence);
-        handler->PSendSysMessage("Tokens: %u / %u (Hard Cap: %u)", 
+        handler->PSendSysMessage("Tokens: %u / %u (Hard Cap: %u)",
             spentTokens, config.softcap_weekly_tokens, config.hardcap_weekly_tokens);
 
         return true;

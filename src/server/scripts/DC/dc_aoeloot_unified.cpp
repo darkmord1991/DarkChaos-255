@@ -285,14 +285,14 @@ static bool IsItemUpgrade(Player* player, uint32 itemId, int32& outIlvlDelta)
 {
     outIlvlDelta = 0;
     if (!player) return false;
-    
+
     ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
     if (!proto) return false;
-    
+
     // Only check equipment
     if (proto->Class != ITEM_CLASS_WEAPON && proto->Class != ITEM_CLASS_ARMOR)
         return false;
-    
+
     // Determine equipment slot
     uint8 slot = EQUIPMENT_SLOT_END;
     switch (proto->InventoryType)
@@ -321,19 +321,19 @@ static bool IsItemUpgrade(Player* player, uint32 itemId, int32& outIlvlDelta)
         case INVTYPE_RANGEDRIGHT: slot = EQUIPMENT_SLOT_RANGED; break;
         default: return false;
     }
-    
+
     if (slot >= EQUIPMENT_SLOT_END) return false;
-    
+
     Item* equipped = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-    if (!equipped) 
+    if (!equipped)
     {
         outIlvlDelta = proto->ItemLevel;
         return true;  // Empty slot = upgrade
     }
-    
+
     ItemTemplate const* equippedProto = equipped->GetTemplate();
     if (!equippedProto) return false;
-    
+
     outIlvlDelta = static_cast<int32>(proto->ItemLevel) - static_cast<int32>(equippedProto->ItemLevel);
     return outIlvlDelta > 0;
 }
@@ -345,19 +345,18 @@ static LootItemHighlight GetItemHighlight(Player* player, uint32 itemId)
 {
     LootItemHighlight highlight;
     highlight.itemId = itemId;
-    
+
     if (!player) return highlight;
-    
+
     // Check if upgrade
     highlight.isUpgrade = IsItemUpgrade(player, itemId, highlight.ilvlDelta);
-    
+
     // Note: isTransmogNew and isCollectionNew would require integration with
     // the CollectionSystem (dc_collection_*.cpp) - placeholder for now
-    
+
     return highlight;
 }
 */
-
 
 // =============================================================================
 // Helper Functions

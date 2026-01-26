@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
  * Customized for DarkChaos-255 by darkmord1991
- * 
+ *
  * ChallengeModeScripts.cpp - Player scripts for Challenge Mode system
  * Split from dc_challenge_modes_customized.cpp
  */

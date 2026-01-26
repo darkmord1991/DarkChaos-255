@@ -230,16 +230,16 @@ namespace Hotspot
     {
         // Build hotspot object with all fields
         JsonValue hs = BuildHotspotObject(id, mapId, zoneId, zoneName, x, y, z, duration, bonus);
-        
+
         // Build message
         JsonMessage msg(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_SPAWN);
         msg.Set("hotspot", hs);
-        
+
         // Send to all online players
         sWorldSessionMgr->DoForAllOnlinePlayers([&msg](Player* player) {
             msg.Send(player);
         });
-        
+
         LOG_DEBUG("dc.addon", "Broadcast hotspot spawn: id={} map={} zone={}", id, mapId, zoneId);
     }
 
@@ -248,12 +248,12 @@ namespace Hotspot
     {
         JsonMessage msg(MODULE_HOTSPOT, Opcode::Hotspot::SMSG_HOTSPOT_EXPIRE);
         msg.Set("id", id);
-        
+
         // Send to all online players
         sWorldSessionMgr->DoForAllOnlinePlayers([&msg](Player* player) {
             msg.Send(player);
         });
-        
+
         LOG_DEBUG("dc.addon", "Broadcast hotspot expire: id={}", id);
     }
 

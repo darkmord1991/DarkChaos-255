@@ -214,7 +214,6 @@ namespace DarkChaos
         // Helper Functions
         // =====================================================================
 
-
         // Season utilities
         std::string FormatSeasonTimeRemaining(time_t seconds);
         std::string GetSeasonStatusText(uint32 season_id);

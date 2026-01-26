@@ -130,7 +130,7 @@ void HotspotMgr::LoadConfig()
     sHotspotsConfig.sendAddonPackets = sConfigMgr->GetOption<bool>("Hotspots.SendAddonPackets", false);
     sHotspotsConfig.gmBypassLimit = sConfigMgr->GetOption<bool>("Hotspots.GMBypassLimit", true);
     sHotspotsConfig.allowWorldwideSpawn = sConfigMgr->GetOption<bool>("Hotspots.AllowWorldwideSpawn", true);
-    
+
     // Dungeon support
     sHotspotsConfig.dungeonHotspotsEnabled = sConfigMgr->GetOption<bool>("Hotspots.Dungeons.Enable", false);
     sHotspotsConfig.dungeonBonusMultiplier = sConfigMgr->GetOption<uint32>("Hotspots.Dungeons.BonusMultiplier", 50);
@@ -241,7 +241,7 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
                 allowedCoords.push_back(c);
 
         if (allowedCoords.empty()) continue; // Skip fallbacks for brevity, assume presets exist
-        
+
         std::shuffle(allowedCoords.begin(), allowedCoords.end(), gen);
         Map* map = GetBaseMapSafe(candidateMapId);
         if (!map) continue;
@@ -299,7 +299,7 @@ bool HotspotMgr::SpawnHotspot()
                 float mz = z;
                 float sz = m->GetHeight(x, y, z);
                 if (std::isfinite(sz) && sz > MIN_HEIGHT) { mz = sz + 0.5f; h.z = mz; }
-                
+
                 if (go->Create(m->GenerateLowGuid<HighGuid::GameObject>(), sHotspotsConfig.markerGameObjectEntry, m, 0, x, y, mz, 0.0f, G3D::Quat(), 255, GO_STATE_READY))
                 {
                     go->SetRespawnTime(sHotspotsConfig.duration * MINUTE);
@@ -319,12 +319,12 @@ bool HotspotMgr::SpawnHotspot()
     if (sHotspotsConfig.announceSpawn)
     {
         std::string zoneName = GetSafeZoneName(h.zoneId);
-        std::string mapName = "Unknown Map"; 
+        std::string mapName = "Unknown Map";
         if (const MapEntry* me = sMapStore.LookupEntry(h.mapId)) mapName = me->name[0];
-        
+
         std::ostringstream ss;
         ss << "|cFFFFD700[Hotspot]|r A new XP Hotspot in " << mapName << " (" << zoneName << ")! +" << sHotspotsConfig.experienceBonus << "% XP";
-        
+
         // Announce to players on map
         sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str().c_str(), nullptr); // Broadcast all? No, logical code iterated sessions.
         // Simplified broadcast:
@@ -334,7 +334,7 @@ bool HotspotMgr::SpawnHotspot()
                 if (p->GetMapId() == h.mapId)
                     sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, ss.str(), p);
         }
-        
+
         // Send WRLD packet
         DCAddon::JsonValue hotspotsArr; hotspotsArr.SetArray();
         DCAddon::JsonValue j; j.SetObject();
@@ -346,10 +346,10 @@ bool HotspotMgr::SpawnHotspot()
         j.Set("z", DCAddon::JsonValue(h.z));
         j.Set("action", DCAddon::JsonValue("spawn"));
         hotspotsArr.Push(j);
-        
+
         DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
         wmsg.Set("hotspots", hotspotsArr);
-        
+
         for (auto const& sess : sWorldSessionMgr->GetAllSessions())
             if (Player* p = sess.second->GetPlayer())
                 wmsg.Send(p);
@@ -361,7 +361,7 @@ void HotspotMgr::CleanupExpiredHotspots()
 {
     std::vector<Hotspot> all = _grid.GetAll();
     time_t now = GameTime::GetGameTime().count();
-    
+
     for (const Hotspot& h : all)
     {
         if (h.expireTime <= now)
@@ -376,10 +376,10 @@ void HotspotMgr::CleanupExpiredHotspots()
                         go->Delete();
                     }
             }
-            
+
             DeleteHotspotFromDB(h.id);
             _grid.Remove(h.id);
-            
+
             // Announce expire
             if (sHotspotsConfig.announceExpire)
             {
@@ -391,7 +391,7 @@ void HotspotMgr::CleanupExpiredHotspots()
                 hotspotsArr.Push(j);
                 DCAddon::JsonMessage wmsg(DCAddon::Module::WORLD, DCAddon::Opcode::World::SMSG_UPDATE);
                 wmsg.Set("hotspots", hotspotsArr);
-                
+
                 // Notify players
                 for (auto const& sess : sWorldSessionMgr->GetAllSessions())
                 {
@@ -405,14 +405,14 @@ void HotspotMgr::CleanupExpiredHotspots()
             }
         }
     }
-    
+
     // Clean player expiry
     for (auto it = _playerExpiry.begin(); it != _playerExpiry.end(); )
     {
         if (it->second <= now) it = _playerExpiry.erase(it);
         else ++it;
     }
-    
+
     // Respawn min active
     if (sHotspotsConfig.minActive > 0 && _grid.Count() < sHotspotsConfig.minActive)
     {
@@ -424,13 +424,13 @@ void HotspotMgr::CleanupExpiredHotspots()
 void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
 {
     if (!player) return;
-    
+
     Hotspot const* hotspot = GetPlayerHotspot(player);
     bool isDungeonHotspot = sHotspotsConfig.dungeonHotspotsEnabled && player->GetMap() && player->GetMap()->IsDungeon();
     bool shouldHaveBuff = (hotspot != nullptr) || isDungeonHotspot;
 
     bool hasBuff = player->HasAura(sHotspotsConfig.buffSpell);
-    
+
     if (shouldHaveBuff && !hasBuff)
     {
         // Enter
@@ -440,7 +440,7 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
         ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot]|r You have entered an XP Hotspot! +{}% experience!", bonus);
         player->CastSpell(player, sHotspotsConfig.auraSpell, true);
         player->CastSpell(player, sHotspotsConfig.buffSpell, true);
-        
+
         if (hotspot)
              _playerExpiry[player->GetGUID()] = hotspot->expireTime;
         else if (isDungeonHotspot)
@@ -452,7 +452,7 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
             auto& obj = _playerObjectives[player->GetGUID()];
             uint32 targetId = hotspot ? hotspot->id : 0; // 0 for generic dungeon hotspot ID for now? Or MapID?
             if (isDungeonHotspot) targetId = player->GetMapId() + 100000; // Fake ID for dungeon maps
-            
+
             if (obj.hotspotId != targetId)
             {
                 obj = HotspotObjectives();
@@ -468,7 +468,7 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
         player->RemoveAura(sHotspotsConfig.auraSpell); // Also remove visuals
         ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF6347[Hotspot Notice]|r You left the XP Hotspot.");
         _playerExpiry.erase(player->GetGUID());
-        
+
         // Results
         if (sHotspotsConfig.objectivesEnabled)
         {
@@ -489,7 +489,7 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
     if (!sHotspotsConfig.enabled || !player) return;
 
     bool isBuffed = player->HasAura(sHotspotsConfig.buffSpell) || player->HasAura(sHotspotsConfig.auraSpell);
-    
+
     // Check server expiry fallback
     if (!isBuffed)
     {
@@ -510,7 +510,7 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
 
         uint32 bonus = (amount * bonusPct) / 100;
         amount += bonus;
-        
+
         ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot XP]|r +{} XP ({}% bonus)", bonus, bonusPct);
 
         // Track objectives
@@ -519,11 +519,11 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
              // Check valid context: Grid Hotspot OR Dungeon
              Hotspot const* cur = GetPlayerHotspot(player);
              bool isDungeon = sHotspotsConfig.dungeonHotspotsEnabled && player->GetMap() && player->GetMap()->IsDungeon();
-             
+
              if (cur || isDungeon)
              {
                  uint32 targetId = cur ? cur->id : (player->GetMapId() + 100000); // Same fake ID logic
-                 
+
                  auto& obj = _playerObjectives[player->GetGUID()];
                  if (obj.hotspotId == targetId)
                  {
@@ -556,11 +556,11 @@ void HotspotMgr::ClearAll()
                     go->Delete();
                 }
         }
-        
+
         DeleteHotspotFromDB(h.id);
         _grid.Remove(h.id);
     }
-    
+
     // Reset ID if desired? No, keep incrementing safer.
 }
 
@@ -611,14 +611,14 @@ bool HotspotMgr::CanSpawnInZone(uint32 zoneId)
         if (ex == zoneId)
             return false;
     }
-    
+
     // If enabledZones is specified and not empty, zone must be in it
     if (!sHotspotsConfig.enabledZones.empty())
     {
-        return std::find(sHotspotsConfig.enabledZones.begin(), 
-                        sHotspotsConfig.enabledZones.end(), 
+        return std::find(sHotspotsConfig.enabledZones.begin(),
+                        sHotspotsConfig.enabledZones.end(),
                         zoneId) != sHotspotsConfig.enabledZones.end();
     }
-    
+
     return true;
 }

@@ -149,13 +149,13 @@ namespace DeathMarkers
         {
             marker.killerType = "unknown";
         }
-        else if (killer->GetTypeId() == TYPEID_UNIT)
+        else if (killer->IsCreature())
         {
             marker.killerType = "creature";
             marker.killerEntry = killer->GetEntry();
             marker.killerName = killer->GetName();
         }
-        else if (killer->GetTypeId() == TYPEID_PLAYER)
+        else if (killer->IsPlayer())
         {
             marker.killerType = "player";
             marker.killerName = killer->GetName();

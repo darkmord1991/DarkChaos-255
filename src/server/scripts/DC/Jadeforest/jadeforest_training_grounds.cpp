@@ -192,7 +192,6 @@ namespace
         return p;
     }
 
-
     enum class BossDisplayPoolId : uint8
     {
         Vanilla = 0,

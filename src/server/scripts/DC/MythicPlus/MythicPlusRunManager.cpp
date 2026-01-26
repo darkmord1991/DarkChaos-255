@@ -419,7 +419,7 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* killer)
         if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
             ChatHandler(owner->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r Death recorded. %u remaining.", remaining);
     }
-    
+
     // Track per-player deaths
     state->deathsByPlayer[player->GetGUID().GetCounter()]++;
 
@@ -991,8 +991,8 @@ void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool succ
     CharacterDatabase.Execute(
         "INSERT INTO dc_mplus_runs (run_id, map_id, season_id, keystone_level, duration, completed, success, deaths, score, owner_guid, participants, completed_at) "
         "VALUES ('{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', {})",
-        state->instanceKey, state->mapId, state->seasonId, state->keystoneLevel, duration, 
-        state->completed ? 1 : 0, success ? 1 : 0, state->deaths, unsignedScore, 
+        state->instanceKey, state->mapId, state->seasonId, state->keystoneLevel, duration,
+        state->completed ? 1 : 0, success ? 1 : 0, state->deaths, unsignedScore,
         state->ownerGuid.GetCounter(), SerializeParticipants(state), now);
 
     // Track Dungeon Statistics
@@ -1003,7 +1003,7 @@ void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool succ
         "INSERT INTO dc_mythic_dungeon_stats (season_id, map_id, keystone_level, runs_completed, total_time, deaths_total) "
         "VALUES ({}, {}, {}, {}, {}, {}) "
         "ON DUPLICATE KEY UPDATE {}, total_time = total_time + {}, deaths_total = deaths_total + {}",
-        state->seasonId, state->mapId, state->keystoneLevel, 
+        state->seasonId, state->mapId, state->keystoneLevel,
         success ? 1 : 0, duration, state->deaths,
         runsCompletedInc, duration, state->deaths);
 
@@ -1012,23 +1012,23 @@ void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool succ
     if (success)
     {
         uint32 weekStart = GetWeekStartTimestamp();
-        
+
         for (auto const& guidLow : state->participants)
         {
             // Check if this run is better than their current best
             // Better defined as: Higher Key OR (Same Key AND Faster Time)
             // SQL ON DUPLICATE doesn't support complex "IF" conditions easily for rows that exist
             // So we do a read-check-write pattern or a clever SQL
-            
+
             // We use a clever SQL:
-            // INSERT ... ON DUPLICATE KEY UPDATE 
+            // INSERT ... ON DUPLICATE KEY UPDATE
             // score = IF(VALUES(score) > score, VALUES(score), score),
             // completion_time = IF(VALUES(score) > score, VALUES(completion_time), IF(VALUES(score) = score AND VALUES(completion_time) < completion_time, VALUES(completion_time), completion_time)),
             // keystone_level = IF(VALUES(keystone_level) > keystone_level, VALUES(keystone_level), keystone_level)
-            
+
             // Actually, simply tracking by score uses specific logic.
             // For now, let's just insert/update if the score is higher.
-            
+
             CharacterDatabase.Execute(
                 "INSERT INTO dc_mythic_weekly_best (week_start, player_guid, map_id, keystone_level, score, completion_time) "
                 "VALUES ({}, {}, {}, {}, {}, {}) "

@@ -74,7 +74,7 @@ namespace DC
         if (!info)
         {
             // Boss not registered, but still send the update
-            LOG_DEBUG("scripts.worldboss", "WorldBossMgr::OnBossSpawned - Boss {} not registered", 
+            LOG_DEBUG("scripts.worldboss", "WorldBossMgr::OnBossSpawned - Boss {} not registered",
                       boss->GetEntry());
         }
         else

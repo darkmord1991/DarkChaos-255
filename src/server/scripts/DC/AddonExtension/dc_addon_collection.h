@@ -8,7 +8,6 @@
 #ifndef DC_ADDON_COLLECTION_H
 #define DC_ADDON_COLLECTION_H
 
-
 #include "dc_addon_namespace.h"
 #include <vector>
 #include <string>

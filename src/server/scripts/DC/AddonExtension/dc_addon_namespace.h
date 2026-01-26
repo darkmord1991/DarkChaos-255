@@ -489,7 +489,7 @@ namespace DCAddon
             constexpr uint8 CMSG_GET_COLLECTED_APPEARANCES = 0x36; // Get all collected displayIds (for tooltip)
             constexpr uint8 CMSG_GET_TRANSMOG_STATE      = 0x37;  // Request current per-slot state
             constexpr uint8 CMSG_APPLY_TRANSMOG_PREVIEW  = 0x38;  // Apply all pending preview slots at once
-            
+
             // Client -> Server: Outfits
             constexpr uint8 CMSG_SAVE_OUTFIT         = 0x39; // Save current equipment set
             constexpr uint8 CMSG_DELETE_OUTFIT       = 0x3A; // Delete saved outfit
@@ -540,7 +540,7 @@ namespace DCAddon
 
             // Server -> Client: Inspection
             constexpr uint8 SMSG_INSPECT_TRANSMOG     = 0x66; // Inspection data (JSON)
-            
+
             // Server -> Client: Wishlist
             constexpr uint8 SMSG_WISHLIST_DATA       = 0x60;  // Wishlist items (JSON)
             constexpr uint8 SMSG_WISHLIST_AVAILABLE  = 0x61;  // Item on wishlist now available
@@ -605,7 +605,7 @@ namespace DCAddon
 
             bool IsCompatible(const VersionInfo& other) const
             {
-                // Major version must match, minor can be >= 
+                // Major version must match, minor can be >=
                 return (major == other.major);
             }
 
@@ -623,8 +623,8 @@ namespace DCAddon
         {
             VersionInfo info = { 0, 0, 0, 0 };
             size_t pipePos = versionStr.find('|');
-            std::string version = (pipePos != std::string::npos) 
-                                  ? versionStr.substr(0, pipePos) 
+            std::string version = (pipePos != std::string::npos)
+                                  ? versionStr.substr(0, pipePos)
                                   : versionStr;
 
             // Parse "MAJOR.MINOR.PATCH"
@@ -646,8 +646,8 @@ namespace DCAddon
         // Build version string for client
         inline std::string BuildVersionString(const VersionInfo& info)
         {
-            return std::to_string(info.major) + "." + 
-                   std::to_string(info.minor) + "." + 
+            return std::to_string(info.major) + "." +
+                   std::to_string(info.minor) + "." +
                    std::to_string(info.patch) + "|" +
                    std::to_string(info.capabilities);
         }
@@ -664,7 +664,6 @@ namespace DCAddon
         }
         return true;
     }
-
 
     // ========================================================================
     // ParsedMessage - Core parser for incoming DC addon messages
@@ -1040,7 +1039,7 @@ namespace DCAddon
                 return false;
 
             std::string key = msg.GetModule() + "_" + std::to_string(msg.GetOpcode());
-            
+
             // Debug: log all routed messages
             LOG_DEBUG("module.dc", "[MessageRouter] Route: player={}, module={}, opcode=0x{:02X}, key={}",
                 player ? player->GetName() : "NULL", msg.GetModule(), msg.GetOpcode(), key);
@@ -1054,7 +1053,7 @@ namespace DCAddon
                 return false;
             }
             auto it = _handlers.find(key);
-            
+
             LOG_INFO("module.dc", "[MessageRouter] Looking for handler key='{}', found={}", key, (it != _handlers.end()));
 
             if (it != _handlers.end())

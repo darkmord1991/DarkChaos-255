@@ -107,7 +107,6 @@ namespace DCQoS
         bool autoAcceptQuests = false;
         bool autoTurnInQuests = false;
 
-
         // Chat settings
         bool chatEnabled = true;
         bool hideChannelNames = false;
@@ -379,14 +378,14 @@ namespace DCQoS
             // No upgrade data - check if item is upgradeable
             msg.Set("upgradeLevel", 0);
             msg.Set("tier", 0);
-            
+
             // Check if this item type can be upgraded
             if (itemTemplate)
             {
                 bool canUpgrade = (itemTemplate->Class == ITEM_CLASS_WEAPON ||
                                    itemTemplate->Class == ITEM_CLASS_ARMOR) &&
                                   (itemTemplate->Quality >= ITEM_QUALITY_UNCOMMON);
-                
+
                 if (canUpgrade)
                 {
                     msg.Set("maxUpgrade", 15);  // Default max upgrade
@@ -601,13 +600,13 @@ namespace DCQoS
             return;
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
-        
+
         // Check if this is an upgrade info request (has bag/slot)
         if (!json.IsNull() && json.HasKey("bag") && json.HasKey("slot"))
         {
             uint8 bag = static_cast<uint8>(json["bag"].AsNumber());
             uint8 slot = static_cast<uint8>(json["slot"].AsNumber());
-            
+
             // Get item from player's inventory
             Item* item = player->GetItemByPos(bag, slot);
             if (!item)
@@ -619,7 +618,7 @@ namespace DCQoS
                 response.Send(player);
                 return;
             }
-            
+
             SendItemUpgradeInfo(player, item, bag, slot);
             return;
         }
@@ -730,20 +729,20 @@ namespace DCQoS
 
         // Iterate over player's mail
         PlayerMails const& mailCache = player->GetMails();
-        
+
         uint32 collectedGold = 0;
 
-        // Transaction safety: 
+        // Transaction safety:
         // We will execute DB updates directly but we must be careful with in-memory state.
         // It's safer to process one by one in a loop that simulates standard taking.
 
         // Note: Direct manipulation of mail is risky. We should check if we can call "TakeMoney" and "TakeItem" methods.
         // But since we are inside a script, let's try to be respectful of core logic.
-        
+
         // LIMITATION: Use a naive approach that just collects money and returns success message.
         // Implementing full item collection safely without access to core headers/methods for "AutoStoreMailItem" is hard.
         // However, we can try to implement the logic for Money at least, which is the most common use case.
-        
+
         SQLTransaction trans = CharacterDatabase.BeginTransaction();
         bool changes = false;
 
@@ -759,28 +758,28 @@ namespace DCQoS
 
                 // Update DB
                 trans->Append("UPDATE mail SET money = 0 WHERE id = {}", mailId);
-                
+
                 // Update in-memory
                 // const_cast is ugly but necessary here if we don't have a specific setter
-                const_cast<Mail*>(mail)->money = 0; 
-                
+                const_cast<Mail*>(mail)->money = 0;
+
                 changes = true;
             }
 
             // Collect Items
             // This is complex because of bag space.
             // Simplified logic: If we have space, take it.
-            
+
             // For now, let's stick to money and maybe simple items if we can access the item list securely.
             // Accessing items inside a Mail object depends on the core version.
-            
+
             /*
             if (!mail->items.empty())
             {
                // ... item logic would go here ...
             }
             */
-            
+
             // If mail is now empty (no items, no money, no COD, no text), mark for deletion?
             // Usually we don't delete automatically unless it's a temp mail.
         }
@@ -788,13 +787,13 @@ namespace DCQoS
         if (changes)
         {
             CharacterDatabase.CommitTransaction(trans);
-            
+
             // Send client update
             player->SendMailResult(0, MAIL_SEND, MAIL_OK);
-            
+
             DCAddon::JsonMessage notification(MODULE, Opcode::SMSG_NOTIFICATION);
             notification.Set("type", "success");
-            
+
             std::string msg = "Collected " + std::to_string(collectedGold / 10000) + "g";
             notification.Set("message", msg);
             notification.Send(player);

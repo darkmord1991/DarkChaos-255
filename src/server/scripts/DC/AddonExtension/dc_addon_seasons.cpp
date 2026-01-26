@@ -223,7 +223,7 @@ namespace Seasons
 
         if (sSeasonalRewards)
         {
-            const auto& config = sSeasonalRewards->GetConfig();
+            auto const& config = sSeasonalRewards->GetConfig();
             if (config.tokenItemId > 0)
                 tokenItemId = config.tokenItemId;
             if (config.essenceItemId > 0)

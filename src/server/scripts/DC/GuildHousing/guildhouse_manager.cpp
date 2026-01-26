@@ -77,7 +77,7 @@ bool GuildHouseManager::RemoveGuildHouse(Guild* guild)
 
     // Fetch data first (will load from DB if not in cache)
     GuildHouseData* data = GetGuildHouseData(guildId);
-    
+
     if (data)
     {
         uint32 mapId = data->map;
@@ -286,9 +286,12 @@ bool GuildHouseManager::UndoAction(Player* player, uint32 logId)
 
     // Fetch Log Entry
     QueryResult result;
-    if (logId > 0) {
+    if (logId > 0)
+    {
         result = CharacterDatabase.Query("SELECT * FROM `dc_guild_house_log` WHERE `id` = {} AND `guildId` = {}", logId, player->GetGuildId());
-    } else {
+    }
+    else
+    {
          // Get Last Action
         result = CharacterDatabase.Query("SELECT * FROM `dc_guild_house_log` WHERE `guildId` = {} ORDER BY `id` DESC LIMIT 1", player->GetGuildId());
     }
@@ -306,7 +309,7 @@ bool GuildHouseManager::UndoAction(Player* player, uint32 logId)
     float y = fields[9].Get<float>();
     float z = fields[10].Get<float>();
     float o = fields[11].Get<float>();
-    
+
     uint32 phase = GetGuildPhase(player);
 
     Map* map = sMapMgr->FindMap(mapId, 0);
@@ -408,6 +411,6 @@ bool GuildHouseManager::MoveGuildHouse(uint32 guildId, uint32 locationId)
     // 5. Respawn Core NPCs
     SpawnTeleporterNPC(guildId, newMap, currentData->phase, posX, posY, posZ, ori);
     SpawnButlerNPC(guildId, newMap, currentData->phase, posX + 2.0f, posY, posZ, ori);
-    
+
     return true;
 }

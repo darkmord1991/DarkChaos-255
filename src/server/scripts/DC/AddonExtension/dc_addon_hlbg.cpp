@@ -68,7 +68,7 @@ namespace HLBG
 
             uint32 now = GameTime::GetGameTimeMS().count();
             uint32 key = player->GetGUID().GetCounter();
-            
+
             std::lock_guard<std::mutex> lock(s_rateLimitMutex);
             auto it = s_lastRequestMs.find(key);
             if (it != s_lastRequestMs.end() && (now - it->second) < cooldownMs)
@@ -175,7 +175,7 @@ namespace HLBG
     }
 
     void SendQueueUpdate(Player* player, uint8 queueStatus, uint32 position, uint32 estimatedTime,
-                         uint32 totalQueued, uint32 allianceQueued, uint32 hordeQueued, 
+                         uint32 totalQueued, uint32 allianceQueued, uint32 hordeQueued,
                          uint32 minPlayers, uint8 state)
     {
         Message msg(Module::HINTERLAND, SMSG_QUEUE_UPDATE);
@@ -204,7 +204,7 @@ namespace HLBG
 
         uint8 queueStatus = hl->IsPlayerQueued(player) ? 1 : 0;
         uint32 position = 0; // Position logic not yet exposed
-        uint32 estimatedTime = 0; 
+        uint32 estimatedTime = 0;
 
         uint32 totalQueued = hl->GetQueuedPlayerCount();
         uint32 allianceQueued = hl->GetQueuedPlayerCountByTeam(TEAM_ALLIANCE);
@@ -212,7 +212,7 @@ namespace HLBG
         uint32 minPlayers = hl->GetMinPlayersToStart();
         uint8 state = static_cast<uint8>(hl->GetBGState());
 
-        SendQueueUpdate(player, queueStatus, position, estimatedTime, 
+        SendQueueUpdate(player, queueStatus, position, estimatedTime,
                         totalQueued, allianceQueued, hordeQueued, minPlayers, state);
     }
 

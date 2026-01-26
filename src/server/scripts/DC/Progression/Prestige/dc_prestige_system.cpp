@@ -369,7 +369,7 @@ public:
             o = fields[4].Get<float>();
             found = true;
         }
-        
+
         // 2. Try race fallback
         if (!found)
         {
@@ -399,7 +399,7 @@ public:
         }
         else
         {
-            LOG_ERROR("scripts.dc", "Prestige: No starting location found for Race {} Class {} in playercreateinfo!", 
+            LOG_ERROR("scripts.dc", "Prestige: No starting location found for Race {} Class {} in playercreateinfo!",
                 player->getRace(), player->getClass());
             ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000ERROR: Could not determine starting location. Please contact a GM.|r");
         }
@@ -718,7 +718,7 @@ private:
                     player->DestroyItem(INVENTORY_SLOT_BAG_0, i, true);
                 }
             }
-            
+
             // Bank Bags and their contents
             for (uint8 i = BANK_SLOT_BAG_START; i < BANK_SLOT_BAG_END; ++i)
             {
@@ -768,7 +768,7 @@ private:
         // Secondary skills (Fishing, Cooking, First Aid) - always reset if mode is 0 (Reset All)
         // If mode is 1 (Keep Main), we still reset secondaries? Usually "Keep Main" implies keeping primary professions only.
         // Let's assume mode 1 keeps primary, resets secondary.
-        
+
         // Helper to reset a specific skill
         auto ResetSkill = [&](uint32 skillId) {
             if (player->HasSkill(skillId))
@@ -806,9 +806,9 @@ private:
 
     uint32 GetSpellIdForSkill(uint32 /*skill*/)
     {
-        // This is tricky without a full lookup table. 
+        // This is tricky without a full lookup table.
         // For now, SetSkill(skill, 0, 0, 0) is the best we can do without massive switch cases.
-        return 0; 
+        return 0;
     }
 };
 

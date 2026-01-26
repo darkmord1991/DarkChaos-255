@@ -68,7 +68,7 @@ void GOMove::SendAdd(Player * player, ObjectGuid::LowType lowguid)
     GameObjectTemplate const* temp = sObjectMgr->GetGameObjectTemplate(data->id);
     if (!temp)
         return;
-    
+
     std::string name = temp->name;
     if (name.empty())
         name = "Unknown Object";

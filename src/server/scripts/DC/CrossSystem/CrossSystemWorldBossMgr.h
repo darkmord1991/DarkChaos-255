@@ -5,7 +5,7 @@
  * - Boss registration and state tracking
  * - Unified WRLD addon messaging
  * - Spawn/respawn timer management
- * 
+ *
  * Usage in boss scripts:
  *   void JustAppeared() { sWorldBossMgr->OnBossSpawned(me); }
  *   void JustEngagedWith(Unit*) { sWorldBossMgr->OnBossEngaged(me); }
@@ -50,7 +50,7 @@ namespace DC
 
         // ========== Registration ==========
         // Call during server startup to register world bosses
-        void RegisterBoss(uint32 entry, uint32 spawnId, std::string_view displayName, 
+        void RegisterBoss(uint32 entry, uint32 spawnId, std::string_view displayName,
                           uint32 zoneId, uint32 respawnTimeSeconds = 1800);
 
         // ========== Boss Script Hooks ==========
@@ -78,7 +78,7 @@ namespace DC
         WorldBossMgr() = default;
 
         void BroadcastBossUpdate(Creature* boss, std::string_view action, bool active, int32 spawnIn = -1);
-        void BuildBossJson(DCAddon::JsonValue& b, Creature* boss, std::string_view action, 
+        void BuildBossJson(DCAddon::JsonValue& b, Creature* boss, std::string_view action,
                            bool active, int32 spawnIn) const;
 
         std::unordered_map<uint32, WorldBossInfo> _bossesByEntry;

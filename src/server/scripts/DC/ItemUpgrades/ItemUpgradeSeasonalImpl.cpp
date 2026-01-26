@@ -524,7 +524,7 @@ void AddSC_ItemUpgradeSeasonal()
     reg.priority = 100;
 
     // Map Seasonal System events to Item Upgrade Manager logic
-    
+
     // On Player Season Change
     reg.on_player_season_change = [](uint32 player_guid, uint32 old_season, uint32 new_season) {
         (void)old_season;
@@ -534,7 +534,8 @@ void AddSC_ItemUpgradeSeasonal()
 
     // On Season Event (Start/End)
     reg.on_season_event = [](uint32 season_id, SeasonEventType event_type) {
-        if (event_type == SEASON_EVENT_START) {
+        if (event_type == SEASON_EVENT_START)
+        {
             // Trigger global reset logic if needed, simplify leaderboards
              DarkChaos::ItemUpgrade::GetLeaderboardManager()->UpdateLeaderboards(season_id);
         }
@@ -551,7 +552,8 @@ void AddSC_ItemUpgradeSeasonal()
             player_guid, season_id);
     };
 
-    if (GetSeasonalManager()) {
+    if (GetSeasonalManager())
+    {
         GetSeasonalManager()->RegisterSystem(reg);
     }
 }

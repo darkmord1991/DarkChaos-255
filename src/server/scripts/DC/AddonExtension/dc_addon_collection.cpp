@@ -118,7 +118,6 @@ namespace DCCollection
         constexpr const char* PET_DEFINITIONS_REBUILD_INCLUDE_SPELL_ONLY = "DCCollection.Pets.RebuildDefinitionsOnStartup.IncludeSpellOnly";
     }
 
-
     // Currency IDs
     // Reuse the existing ItemUpgrade currency implementation (used by CrossSystem/Seasons).
     // These values intentionally match DarkChaos::ItemUpgrade::CurrencyType.
@@ -150,18 +149,18 @@ namespace DCCollection
     void HandleSetTitle(Player* player, uint32 entryId);
     void HandleSummonHeirloom(Player* player, uint32 entryId);
     uint32 FindCompanionSpellIdForItem(uint32 itemId);
-    
+
     uint32 FindCompanionItemIdForSpell(uint32 spellId)
     {
         // Static cache: spellId -> itemId mapping (0 means not found)
         static std::unordered_map<uint32, uint32> s_companionItemCache;
         [[maybe_unused]] static bool s_cacheInitialized = false;
-        
+
         // Check cache first
         auto it = s_companionItemCache.find(spellId);
         if (it != s_companionItemCache.end())
             return it->second;
-        
+
         // Companion pets in 3.3.5a are typically taught by item_template (class=15, subclass=2).
         QueryResult r = WorldDatabase.Query(
             "SELECT MIN(entry) FROM item_template "
@@ -177,7 +176,7 @@ namespace DCCollection
             if (!f[0].IsNull())
                 result = f[0].Get<uint32>();
         }
-        
+
         // Cache the result (including 0 for "not found")
         s_companionItemCache[spellId] = result;
         return result;
@@ -187,12 +186,12 @@ namespace DCCollection
     {
         // Static cache: spellId -> itemId mapping (0 means not found)
         static std::unordered_map<uint32, uint32> s_mountItemCache;
-        
+
         // Check cache first
         auto it = s_mountItemCache.find(spellId);
         if (it != s_mountItemCache.end())
             return it->second;
-        
+
         // Mounts are typically taught by item_template (class=15, subclass=5).
         QueryResult r = WorldDatabase.Query(
             "SELECT MIN(entry) FROM item_template "
@@ -208,7 +207,7 @@ namespace DCCollection
             if (!f[0].IsNull())
                 result = f[0].Get<uint32>();
         }
-        
+
         // Cache the result (including 0 for "not found")
         s_mountItemCache[spellId] = result;
         return result;
@@ -515,7 +514,6 @@ namespace DCCollection
         return 0;
     }
 
-
     // Forward declarations used by early migration helpers.
     uint32 GetItemDisplayId(ItemTemplate const* proto);
     bool IsItemEligibleForTransmogUnlock(ItemTemplate const* proto);
@@ -571,7 +569,6 @@ namespace DCCollection
 
         return cached;
     }
-
 
     bool ShouldRunTransmogLegacyImport(uint32 accountId)
     {
@@ -1159,7 +1156,6 @@ namespace DCCollection
     // =======================================================================
     // Database Queries
     // =======================================================================
-
 
     // Load player's collection for a specific type
     std::vector<uint32> LoadPlayerCollection(uint32 accountId, CollectionType type)
@@ -2433,7 +2429,6 @@ namespace DCCollection
     // Use Item Handlers (Summon Mount, Set Title, Summon Heirloom)
     // =======================================================================
 
-
     void HandleUseItemMessage(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!player || !player->GetSession())
@@ -2447,7 +2442,7 @@ namespace DCCollection
         }
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
-        
+
         std::string typeStr = json.HasKey("type") ? json["type"].AsString() : "";
         uint32 entryId = json.HasKey("entryId") ? json["entryId"].AsUInt32() : 0;
         bool random = json.HasKey("random") && json["random"].AsBool();
@@ -2488,7 +2483,7 @@ namespace DCCollection
         {
             // Get all collected mounts for this account
             std::vector<uint32> mounts = LoadPlayerCollection(accountId, CollectionType::MOUNT);
-            
+
             if (mounts.empty())
             {
                 DCAddon::SendError(player, MODULE, "No mounts in collection",
@@ -2548,7 +2543,7 @@ namespace DCCollection
                     QueryResult defResult = WorldDatabase.Query(
                         "SELECT spell_id, mount_type FROM dc_mount_definitions WHERE spell_id IN ({})",
                         mountListStr);
-                    
+
                     std::unordered_map<uint32, uint8> mountTypes;
                     if (defResult)
                     {
@@ -2834,22 +2829,15 @@ namespace DCCollection
         SendWishlistData(player);
     }
 
-
     // =======================================================================
     // Transmog Slot-Based UI Handlers (Transmogrification addon style)
     // =======================================================================
 
     // Map visual slot IDs (from Transmogrification addon) to equipment slot
-    // Implementations for VisualSlotToEquipmentSlot and GetInvTypesForVisualSlot 
+    // Implementations for VisualSlotToEquipmentSlot and GetInvTypesForVisualSlot
     // were moved to dc_addon_wardrobe.cpp. They are declared in dc_addon_collection.h.
 
     // Helper: Get collected appearances for a slot, optionally filtered by search
-
-
-
-
-
-
 
     // =======================================================================
     // Definitions / Per-Type Sync
@@ -3143,9 +3131,9 @@ namespace DCCollection
             QueryResult r = WorldDatabase.Query(
                 "SELECT md.spell_id, md.name, md.icon, md.rarity, md.mount_type, md.source, "
                 "(SELECT MIN(i.entry) FROM item_template i "
-                " WHERE i.class = 15 AND i.subclass = 5 AND (" 
+                " WHERE i.class = 15 AND i.subclass = 5 AND ("
                 "   i.spellid_1 = md.spell_id OR i.spellid_2 = md.spell_id OR i.spellid_3 = md.spell_id OR "
-                "   i.spellid_4 = md.spell_id OR i.spellid_5 = md.spell_id" 
+                "   i.spellid_4 = md.spell_id OR i.spellid_5 = md.spell_id"
                 ")) AS item_id "
                 "FROM dc_mount_definitions md");
             if (r)
@@ -3344,7 +3332,7 @@ namespace DCCollection
                         {
                             if (CreatureModel const* m = cInfo->GetFirstValidModel())
                                 displayId = m->CreatureDisplayID;
-                            
+
                             // Fallback name from creature if still missing
                             if (isUnknownName(name))
                                 name = cInfo->Name;
@@ -3420,7 +3408,7 @@ namespace DCCollection
                 {
                     Field* f = r->Fetch();
                     uint32 itemId = f[0].Get<uint32>();
-                    
+
                     uint32 displayId = 0;
                     if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId))
                         displayId = proto->DisplayInfoID;
@@ -3556,7 +3544,7 @@ namespace DCCollection
                         {
                             if (spellInfo->SpellName[0])
                                 name = spellInfo->SpellName[0];
-                            
+
                             // Try to find displayId
                             for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
                             {
@@ -3575,7 +3563,7 @@ namespace DCCollection
                         uint32 spellId = 0;
                         uint32 creatureId = 0;
                         bool isValidCompanion = false;
-                        
+
                         if (ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entryId))
                         {
                             // Validate this is actually a companion item (Class 15, Subclass 2)
@@ -3583,7 +3571,7 @@ namespace DCCollection
                             {
                                 name = proto->Name1;
                                 rarity = std::min<uint32>(proto->Quality, 4u);
-                                
+
                                 // Try to find spellId -> creatureId -> displayId
                                 spellId = FindCompanionSpellIdForItem(entryId);
                                 if (spellId)
@@ -3607,7 +3595,7 @@ namespace DCCollection
                                                         {
                                                             if (CreatureModel const* m = cInfo->GetFirstValidModel())
                                                                 displayId = m->CreatureDisplayID;
-                                                            
+
                                                             // Fallback name from creature if item name is missing/unknown
                                                             if (name.empty() || name == "Unknown")
                                                                 name = cInfo->Name;
@@ -3626,7 +3614,7 @@ namespace DCCollection
                             // Fallback if entryId is actually a spellId (legacy)
                             // But only if it's a valid companion summon spell
                             spellId = entryId;
-                            
+
                             for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
                             {
                                 if (spellInfo->Effects[i].Effect == SPELL_EFFECT_SUMMON ||
@@ -3638,7 +3626,7 @@ namespace DCCollection
                                         isValidCompanion = true;
                                         if (spellInfo->SpellName[0])
                                             name = spellInfo->SpellName[0];
-                                        
+
                                         creatureId = spellInfo->Effects[i].MiscValue;
                                         if (creatureId)
                                         {
@@ -3653,14 +3641,14 @@ namespace DCCollection
                                 }
                             }
                         }
-                        
+
                         // Skip this entry if it's not actually a valid companion
                         if (!isValidCompanion)
                         {
                             LOG_WARN("module.dc", "DC-Collection: Skipping invalid companion entry {} for account {}", entryId, accountId);
                             continue;
                         }
-                        
+
                         // Build the definition with all resolved IDs
                         DCAddon::JsonValue d;
                         d.SetObject();
@@ -3678,7 +3666,7 @@ namespace DCCollection
                             d.Set("creatureId", creatureId);
                         if (displayId > 0)
                             d.Set("displayId", displayId);
-                        
+
                         defs.Set(std::to_string(entryId), d);
                         sentIds.insert(entryId);
                         continue; // Skip the generic addDef call below
@@ -4046,10 +4034,6 @@ namespace DCCollection
     // =======================================================================
     // Player Event Hooks
     // =======================================================================
-
-
-
-
 
     class CollectionPlayerScript : public PlayerScript
     {
@@ -4532,7 +4516,6 @@ namespace DCCollection
                 UnlockTransmogAppearance(player, proto, "QUEST_REWARD");
         }
 
-
         void OnPlayerLogout(Player* player) override
         {
             if (!player)
@@ -4647,8 +4630,6 @@ void AddSC_dc_addon_collection()
     // Actions: Use item (summon mount, set title, summon heirloom)
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_USE_ITEM, HandleUseItemMessage);
     DC_REGISTER_HANDLER(MODULE, Opcode::Collection::CMSG_SET_FAVORITE, HandleSetFavoriteMessage);
-
-
 
     // Register player and world scripts
     new CollectionPlayerScript();

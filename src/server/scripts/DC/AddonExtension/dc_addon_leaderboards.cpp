@@ -76,18 +76,18 @@ namespace
         uint32 lifetimeSeconds = 60;           // Default: 1 minute
         uint32 accountCacheLifetimeSeconds = 120;  // Default: 2 minutes for account stats
         uint32 maxCacheEntries = 100;          // Default: Max cached leaderboards
-        
+
         void Load()
         {
             lifetimeSeconds = sConfigMgr->GetOption<uint32>("DC.Leaderboards.CacheLifetime", 60);
             accountCacheLifetimeSeconds = sConfigMgr->GetOption<uint32>("DC.Leaderboards.AccountCacheLifetime", 120);
             maxCacheEntries = sConfigMgr->GetOption<uint32>("DC.Leaderboards.MaxCacheEntries", 100);
-            
+
             LOG_DEBUG("server.scripts", "DC-Leaderboards: Cache config loaded (lifetime={}s, account={}s, max={})",
                      lifetimeSeconds, accountCacheLifetimeSeconds, maxCacheEntries);
         }
     };
-    
+
     static LeaderboardCacheConfig s_CacheConfig;
 
     static void SendRawJson(Player* player, uint8 opcode, std::string const& json, std::string requestId = {})
@@ -113,7 +113,7 @@ namespace
         if (!requestId.empty())
             DCAddon::NotifyResponseSent(player, requestId);
     }
-    
+
     // Helper to access cache lifetime (for IsValid() checks)
     uint32 GetCacheLifetime() { return s_CacheConfig.lifetimeSeconds; }
     uint32 GetAccountCacheLifetime() { return s_CacheConfig.accountCacheLifetimeSeconds; }
@@ -154,7 +154,7 @@ namespace
         std::vector<LeaderboardEntry> entries;
         uint32 totalEntries;
         time_t lastUpdate;
-        
+
         bool IsValid() const
         {
             return (time(nullptr) - lastUpdate) < static_cast<time_t>(GetCacheLifetime());
@@ -166,7 +166,7 @@ namespace
     {
         std::string jsonResponse;
         time_t lastUpdate;
-        
+
         bool IsValid() const
         {
             return (time(nullptr) - lastUpdate) < static_cast<time_t>(GetAccountCacheLifetime());
@@ -180,10 +180,10 @@ namespace
     std::mutex g_cacheMutex;  // Thread safety
 
     // Helper to generate cache key
-    std::string MakeCacheKey(const std::string& category, const std::string& subcategory, 
+    std::string MakeCacheKey(const std::string& category, const std::string& subcategory,
                              uint32 seasonId, uint32 page, uint32 limit)
     {
-        return category + "_" + subcategory + "_" + std::to_string(seasonId) + 
+        return category + "_" + subcategory + "_" + std::to_string(seasonId) +
                "_" + std::to_string(page) + "_" + std::to_string(limit);
     }
 
@@ -195,8 +195,6 @@ namespace
         g_accountStatsCache.clear();
         LOG_DEBUG("server.scripts", "DC-Leaderboards: All caches cleared");
     }
-
-
 
     // Forward declarations
     uint32 GetCurrentSeasonId();
@@ -1299,7 +1297,7 @@ namespace
             // ===== STORE IN CACHE =====
             {
                 std::lock_guard<std::mutex> lock(g_cacheMutex);
-                
+
                 // Evict old entries if cache is too large
                 if (g_leaderboardCache.size() >= s_CacheConfig.maxCacheEntries)
                 {
@@ -1317,13 +1315,13 @@ namespace
                     if (!oldestKey.empty())
                         g_leaderboardCache.erase(oldestKey);
                 }
-                
+
                 LeaderboardCacheEntry cacheEntry;
                 cacheEntry.entries = entries;
                 cacheEntry.totalEntries = totalEntries;
                 cacheEntry.lastUpdate = time(nullptr);
                 g_leaderboardCache[cacheKey] = std::move(cacheEntry);
-                
+
                 LOG_DEBUG("server.scripts", "DC-Leaderboards: Cached {} entries for {}", entries.size(), cacheKey);
             }
         }  // End of if (!useCache)
@@ -1685,7 +1683,7 @@ namespace
             {
                 // Cache hit! Send cached response
                 LOG_DEBUG("server.scripts", "DC-Leaderboards: Account stats cache HIT for account {}", accountId);
-                
+
                 SendRawJson(player, Opcode::SMSG_ACCOUNT_STATS, it->second.jsonResponse);
                 return;
             }
