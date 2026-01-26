@@ -337,6 +337,7 @@ These commands require GM or Administrator access levels.
 | `admin delete` | `<guild>` | Delete a guild house (GM only). |
 | `admin buy` | `<guild>` | Force-buy a guild house for a guild. |
 | `admin reset` | `<guild>` | Reset a guild house to defaults. |
+| `admin level` | `<guild> [1-4]` | Get or set a guild house level for spawn gating. |
 
 ### System: Hotspots (`.hotspot`)
 *Command:* `.hotspots` (Alias: `.hotspot`)

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS `dc_guild_house_spawns` (
   `posZ` float NOT NULL DEFAULT '0',
   `orientation` float NOT NULL DEFAULT '0',
   `comment` varchar(500) DEFAULT '0',
+  `guildhouse_level` tinyint unsigned NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `map_entry` (`map`,`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;

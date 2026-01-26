@@ -260,11 +260,11 @@ public:
             }
 
             CharacterDatabase.Query(
-                "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
-                "VALUES ({}, {}, {}, {}, {}, {}, {})",
+                "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) "
+                "VALUES ({}, {}, {}, {}, {}, {}, {}, 1)",
                 player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
 
-            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori));
+            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori, 1));
 
             player->ModifyMoney(-static_cast<int64>(cost));
 
@@ -272,10 +272,6 @@ public:
             player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "We now have a Guild House!", LANG_UNIVERSAL);
             player->GetGuild()->BroadcastToGuild(player->GetSession(), false, "In chat, type `.guildhouse teleport` or `.gh tele` to meet me there!", LANG_UNIVERSAL);
             LOG_INFO("modules.dc", "GUILDHOUSE: GuildId: '{}' has purchased a guildhouse at location ID {}", player->GetGuildId(), locationId);
-
-            // Spawn the portal and the guild house butler automatically as part of purchase.
-            GuildHouseManager::SpawnTeleporterNPC(player);
-            GuildHouseManager::SpawnButlerNPC(player);
 
             CloseGossipMenuFor(player);
             return true;
@@ -352,15 +348,12 @@ public:
             float ori = fields[4].Get<float>();
 
             CharacterDatabase.Query(
-                "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
-                "VALUES ({}, {}, {}, {}, {}, {}, {})",
+                "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) "
+                "VALUES ({}, {}, {}, {}, {}, {}, {}, 1)",
                 player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
 
             // Update Cache potentially needed here if not handled by Spawn
-            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori));
-
-            GuildHouseManager::SpawnTeleporterNPC(player);
-            GuildHouseManager::SpawnButlerNPC(player);
+            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori, 1));
 
             ChatHandler(player->GetSession()).PSendSysMessage("GM: Guild House purchased for free.");
             CloseGossipMenuFor(player);

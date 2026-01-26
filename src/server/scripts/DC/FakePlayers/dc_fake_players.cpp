@@ -557,9 +557,6 @@ void AddSC_dc_fake_players()
 {
     using namespace DCFakePlayers;
 
-    sFakePlayersMgr.LoadConfig();
-    sFakePlayersMgr.Initialize();
-
     sWhoListCacheMgr->RegisterExternalWhoListProvider(
         [](WhoListInfoVector& out) { sFakePlayersMgr.AppendWhoList(out); },
         []() { return sFakePlayersMgr.GetCount(); });

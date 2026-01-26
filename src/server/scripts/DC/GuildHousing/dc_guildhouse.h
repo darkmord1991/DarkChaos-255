@@ -54,10 +54,11 @@ struct GuildHouseData
     float posY;
     float posZ;
     float ori;
+    uint8 level;
 
-    GuildHouseData() : phase(0), map(0), posX(0.0f), posY(0.0f), posZ(0.0f), ori(0.0f) {}
-    GuildHouseData(uint32 _phase, uint32 _map, float _x, float _y, float _z, float _o)
-        : phase(_phase), map(_map), posX(_x), posY(_y), posZ(_z), ori(_o) {}
+    GuildHouseData() : phase(0), map(0), posX(0.0f), posY(0.0f), posZ(0.0f), ori(0.0f), level(1) {}
+    GuildHouseData(uint32 _phase, uint32 _map, float _x, float _y, float _z, float _o, uint8 _level)
+        : phase(_phase), map(_map), posX(_x), posY(_y), posZ(_z), ori(_o), level(_level) {}
 };
 
 class GuildHouseManager
@@ -72,6 +73,8 @@ public:
     static void UpdateGuildHouseData(uint32 guildId, GuildHouseData const& data);
     static void RemoveGuildHouseData(uint32 guildId);
     static bool MoveGuildHouse(uint32 guildId, uint32 locationId);
+    static uint8 GetGuildHouseLevel(uint32 guildId);
+    static bool SetGuildHouseLevel(uint32 guildId, uint8 level);
 
     // Spawn Management
     static bool HasSpawn(uint32 mapId, uint32 phase, uint32 entry, bool isGameObject);

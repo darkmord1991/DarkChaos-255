@@ -46,7 +46,8 @@ public:
             { "teleport", HandleAdminTeleportCommand, SEC_GAMEMASTER, Console::Yes },
             { "delete",   HandleAdminDeleteCommand,   SEC_GAMEMASTER, Console::Yes },
             { "buy",      HandleAdminBuyCommand,      SEC_GAMEMASTER, Console::Yes },
-            { "reset",    HandleAdminResetCommand,    SEC_GAMEMASTER, Console::Yes }
+            { "reset",    HandleAdminResetCommand,    SEC_GAMEMASTER, Console::Yes },
+            { "level",    HandleAdminLevelCommand,    SEC_GAMEMASTER, Console::Yes }
         };
 
         return AdminCommandTable;
@@ -149,9 +150,10 @@ public:
         }
 
         handler->PSendSysMessage("Guild House Information:");
-        handler->PSendSysMessage("- Phase: %u", data->phase);
-        handler->PSendSysMessage("- Map ID: %u", data->map);
-        handler->PSendSysMessage("- Arrival Position: X:%f Y:%f Z:%f", data->posX, data->posY, data->posZ);
+        handler->PSendSysMessage("- Phase: {}", data->phase);
+        handler->PSendSysMessage("- Map ID: {}", data->map);
+        handler->PSendSysMessage("- Arrival Position: X:{:.3f} Y:{:.3f} Z:{:.3f}", data->posX, data->posY, data->posZ);
+        handler->PSendSysMessage("- Level: {}", data->level ? data->level : 1);
 
         return true;
     }
@@ -187,7 +189,7 @@ public:
                  Player* p = itr->GetSource();
                  if (p && p->GetPhaseByAuras() == data->phase)
                  {
-                     handler->PSendSysMessage("- %s", p->GetName().c_str());
+                     handler->PSendSysMessage("- {}", p->GetName());
                      count++;
                  }
              }
@@ -196,7 +198,7 @@ public:
         if (count == 0)
             handler->SendSysMessage("No members found.");
         else
-            handler->PSendSysMessage("Total: %u members", count);
+            handler->PSendSysMessage("Total: {} members", count);
 
         return true;
     }
@@ -226,7 +228,7 @@ public:
         GuildHouseManager::SpawnTeleporterNPC(guild->GetId(), data->map, data->phase, data->posX, data->posY, data->posZ, data->ori);
         GuildHouseManager::SpawnButlerNPC(guild->GetId(), data->map, data->phase, data->posX + 2.0f, data->posY, data->posZ, data->ori);
 
-        handler->PSendSysMessage("Reset spawns for guild '%s'.", guild->GetName().c_str());
+        handler->PSendSysMessage("Reset spawns for guild '{}'.", guild->GetName());
         return true;
     }
 
@@ -280,6 +282,111 @@ public:
             handler->SendSysMessage("Failed to delete Guild House (or they didn't have one).");
         }
 
+        return true;
+    }
+
+    static bool HandleAdminLevelCommand(ChatHandler* handler, const char* args)
+    {
+        if (!handler || !handler->GetSession() || !handler->GetSession()->GetPlayer())
+            return false;
+
+        if (!args || !*args)
+        {
+            handler->SendSysMessage("Usage: .gh admin level <guildName|guildId> [level 1-4]");
+            return false;
+        }
+
+        std::string input = args;
+        TrimString(input);
+        if (input.empty())
+            return false;
+
+        uint32 guildId = 0;
+        Guild* guild = nullptr;
+        bool hasLevel = false;
+        uint8 level = 1;
+
+        std::string firstToken;
+        std::string remainder;
+        size_t spacePos = input.find_first_of(" \t");
+        if (spacePos == std::string::npos)
+        {
+            firstToken = input;
+        }
+        else
+        {
+            firstToken = input.substr(0, spacePos);
+            remainder = input.substr(spacePos + 1);
+            TrimString(remainder);
+        }
+
+        if (IsAllDigits(firstToken))
+        {
+            guildId = static_cast<uint32>(std::stoul(firstToken));
+            guild = sGuildMgr->GetGuildById(guildId);
+            if (!remainder.empty() && IsAllDigits(remainder))
+            {
+                level = static_cast<uint8>(std::stoul(remainder));
+                hasLevel = true;
+            }
+        }
+        else
+        {
+            std::string guildName = input;
+            size_t lastSpace = guildName.find_last_of(" \t");
+            if (lastSpace != std::string::npos)
+            {
+                std::string maybeLevel = guildName.substr(lastSpace + 1);
+                if (IsAllDigits(maybeLevel))
+                {
+                    level = static_cast<uint8>(std::stoul(maybeLevel));
+                    hasLevel = true;
+                    guildName = guildName.substr(0, lastSpace);
+                    TrimString(guildName);
+                }
+            }
+
+            guild = sGuildMgr->GetGuildByName(guildName);
+            if (guild)
+                guildId = guild->GetId();
+        }
+
+        if (!guild || !guildId)
+        {
+            handler->SendSysMessage("Guild not found.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        GuildHouseData* data = GuildHouseManager::GetGuildHouseData(guildId);
+        if (!data)
+        {
+            handler->SendSysMessage("That guild does not own a Guild House.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        if (!hasLevel)
+        {
+            handler->PSendSysMessage("Guild House level for '{}' is {}.", guild->GetName(), data->level ? data->level : 1);
+            return true;
+        }
+
+        if (level < 1 || level > 4)
+        {
+            handler->SendSysMessage("Level must be between 1 and 4.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        if (!GuildHouseManager::SetGuildHouseLevel(guildId, level))
+        {
+            handler->SendSysMessage("Failed to update guild house level.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        handler->PSendSysMessage("Guild House level for '{}' set to {}.", guild->GetName(), level);
         return true;
     }
 
@@ -393,15 +500,11 @@ public:
         float ori = fields[5].Get<float>();
 
         uint32 guildPhase = ::GetGuildPhase(guildId);
-        CharacterDatabase.Query("INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) VALUES ({}, {}, {}, {}, {}, {}, {})",
+        CharacterDatabase.Query("INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) VALUES ({}, {}, {}, {}, {}, {}, {}, 1)",
             guildId, guildPhase, map, posX, posY, posZ, ori);
 
         // Update Cache
-        GuildHouseManager::UpdateGuildHouseData(guildId, GuildHouseData(guildPhase, map, posX, posY, posZ, ori));
-
-        // Spawn NPCs using the new centralized helpers
-        GuildHouseManager::SpawnTeleporterNPC(guildId, map, guildPhase, posX, posY, posZ, ori);
-        GuildHouseManager::SpawnButlerNPC(guildId, map, guildPhase, posX + 2.0f, posY, posZ, ori);
+        GuildHouseManager::UpdateGuildHouseData(guildId, GuildHouseData(guildPhase, map, posX, posY, posZ, ori, 1));
 
         handler->PSendSysMessage("Purchased Guild House for guild '{}' at location {} (no cost).", guild->GetName(), locationId);
         return true;
@@ -466,7 +569,7 @@ public:
         }
 
         GuildHouseManager::SetPermission(player->GetGuildId(), rankId, currentPerm);
-        handler->PSendSysMessage("Updated permissions for Rank %u. New Mask: %u", rankId, currentPerm);
+        handler->PSendSysMessage("Updated permissions for Rank {}. New Mask: {}", rankId, currentPerm);
         return true;
     }
 

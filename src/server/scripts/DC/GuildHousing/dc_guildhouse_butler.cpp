@@ -15,7 +15,10 @@
 #include "CreatureAI.h"
 #include "dc_guildhouse.h"
 
+#include <cctype>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace
 {
@@ -41,6 +44,9 @@ public:
     static constexpr uint32 ACTION_GM_MENU = 9000000;
     static constexpr uint32 ACTION_GM_SPAWN_ALL = 9000001;
     static constexpr uint32 ACTION_GM_DESPAWN_ALL = 9000002;
+    static constexpr uint32 ACTION_GM_LEVEL_BASE = 9000003;
+    static constexpr uint32 ACTION_PRESET_CATEGORY_BASE = 9001000;
+    static constexpr uint32 ACTION_PRESET_ENTRY_BASE = 10000000;
 
     static bool ShouldKeepCreatureEntryOnDespawnAll(uint32 entry)
     {
@@ -66,6 +72,261 @@ public:
         Field* fields = result->Fetch();
         cached = (fields[0].Get<uint64>() > 0);
         return cached.value();
+    }
+
+    static bool SpawnPresetsHaveMetadataColumns()
+    {
+        static std::optional<bool> cached;
+        if (cached.has_value())
+            return cached.value();
+
+        QueryResult result = WorldDatabase.Query(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_guild_house_spawns' "
+            "AND COLUMN_NAME IN ('spawn_type','category','label','enabled','sort_order','preset')");
+
+        if (!result)
+        {
+            cached = false;
+            return false;
+        }
+
+        Field* fields = result->Fetch();
+        cached = (fields[0].Get<uint64>() >= 6);
+        return cached.value();
+    }
+
+    static bool SpawnPresetsHaveLevelColumn()
+    {
+        static std::optional<bool> cached;
+        if (cached.has_value())
+            return cached.value();
+
+        QueryResult result = WorldDatabase.Query(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_guild_house_spawns' AND COLUMN_NAME = 'guildhouse_level'");
+
+        if (!result)
+        {
+            cached = false;
+            return false;
+        }
+
+        Field* fields = result->Fetch();
+        cached = (fields[0].Get<uint64>() > 0);
+        return cached.value();
+    }
+
+    static uint8 GetCurrentGuildHouseLevel(Player* player)
+    {
+        if (!player || !player->GetGuildId())
+            return 1;
+
+        if (player->IsGameMaster())
+            return 255;
+
+        return GuildHouseManager::GetGuildHouseLevel(player->GetGuildId());
+    }
+
+    struct PresetCategory
+    {
+        std::string name;
+        int32 sortOrder;
+    };
+
+    struct PresetEntry
+    {
+        uint32 entry;
+        std::string spawnType;
+        std::string category;
+        std::string label;
+        int32 sortOrder;
+    };
+
+    static std::string GetSpawnPresetName()
+    {
+        std::string preset = sConfigMgr->GetOption<std::string>("GuildHouseSpawnPreset", "default");
+        WorldDatabase.EscapeString(preset);
+        return preset;
+    }
+
+    static std::string FormatCategoryLabel(std::string category)
+    {
+        if (!category.empty())
+            category[0] = static_cast<char>(std::toupper(category[0]));
+        return "Spawn " + category;
+    }
+
+    static std::string GetTemplateLabel(uint32 entry, std::string const& spawnType)
+    {
+        if (spawnType == "GAMEOBJECT")
+        {
+            if (GameObjectTemplate const* objectTemplate = sObjectMgr->GetGameObjectTemplate(entry))
+                return objectTemplate->name;
+            return std::to_string(entry);
+        }
+
+        if (CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(entry))
+            return creatureTemplate->Name;
+
+        return std::to_string(entry);
+    }
+
+    static int32 GetSpawnCostForPreset(std::string const& category, std::string const& spawnType, uint32 entry)
+    {
+        if (spawnType == "GAMEOBJECT")
+        {
+            if (entry == 184137)
+                return s_guildHouseCostMailbox;
+            return s_guildHouseCostObject;
+        }
+
+        if (category == "auctioneer")
+            return s_guildHouseCostAuctioneer;
+
+        if (category == "trainer")
+            return s_guildHouseCostProfession;
+
+        if (category == "service")
+        {
+            if (entry == 800001)
+                return s_guildHouseCostInnkeeper;
+            if (entry == 30605)
+                return s_guildHouseCostBank;
+            if (entry == 6491)
+                return s_guildHouseCostSpirit;
+            return s_guildHouseCostVendor;
+        }
+
+        return s_guildHouseCostVendor;
+    }
+
+    static std::vector<PresetCategory> GetPresetCategories(uint32 mapId, uint8 guildLevel)
+    {
+        std::vector<PresetCategory> categories;
+        if (!SpawnPresetsHaveMetadataColumns())
+            return categories;
+
+        std::string preset = GetSpawnPresetName();
+        QueryResult result;
+        if (SpawnPresetsHaveMapColumn())
+        {
+            result = WorldDatabase.Query(
+                "SELECT `category`, MIN(`sort_order`) AS `sort_order` "
+                "FROM `dc_guild_house_spawns` "
+                "WHERE `enabled`=1 AND `preset`='{}' AND `map`={} {} "
+                "GROUP BY `category` ORDER BY `sort_order`, `category`",
+                preset, mapId, SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+        }
+        else
+        {
+            result = WorldDatabase.Query(
+                "SELECT `category`, MIN(`sort_order`) AS `sort_order` "
+                "FROM `dc_guild_house_spawns` "
+                "WHERE `enabled`=1 AND `preset`='{}' {} "
+                "GROUP BY `category` ORDER BY `sort_order`, `category`",
+                preset, SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+        }
+
+        if (!result)
+            return categories;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            PresetCategory category;
+            category.name = fields[0].Get<std::string>();
+            category.sortOrder = fields[1].Get<int32>();
+            categories.push_back(category);
+        } while (result->NextRow());
+
+        return categories;
+    }
+
+    static std::vector<PresetEntry> GetPresetEntriesForCategory(uint32 mapId, uint8 guildLevel, std::string category)
+    {
+        std::vector<PresetEntry> entries;
+        if (!SpawnPresetsHaveMetadataColumns())
+            return entries;
+
+        std::string preset = GetSpawnPresetName();
+        WorldDatabase.EscapeString(category);
+
+        QueryResult result;
+        if (SpawnPresetsHaveMapColumn())
+        {
+            result = WorldDatabase.Query(
+                "SELECT `entry`, `spawn_type`, `category`, `label`, `sort_order` "
+                "FROM `dc_guild_house_spawns` "
+                "WHERE `enabled`=1 AND `preset`='{}' AND `map`={} AND `category`='{}' {} "
+                "ORDER BY `sort_order`, `entry`",
+                preset, mapId, category, SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+        }
+        else
+        {
+            result = WorldDatabase.Query(
+                "SELECT `entry`, `spawn_type`, `category`, `label`, `sort_order` "
+                "FROM `dc_guild_house_spawns` "
+                "WHERE `enabled`=1 AND `preset`='{}' AND `category`='{}' {} "
+                "ORDER BY `sort_order`, `entry`",
+                preset, category, SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+        }
+
+        if (!result)
+            return entries;
+
+        do
+        {
+            Field* fields = result->Fetch();
+            PresetEntry entry;
+            entry.entry = fields[0].Get<uint32>();
+            entry.spawnType = fields[1].Get<std::string>();
+            entry.category = fields[2].Get<std::string>();
+            entry.label = fields[3].Get<std::string>();
+            entry.sortOrder = fields[4].Get<int32>();
+            entries.push_back(entry);
+        } while (result->NextRow());
+
+        return entries;
+    }
+
+    static std::optional<PresetEntry> GetPresetByEntry(uint32 mapId, uint8 guildLevel, uint32 entryId)
+    {
+        if (!SpawnPresetsHaveMetadataColumns())
+            return std::nullopt;
+
+        std::string preset = GetSpawnPresetName();
+        QueryResult result;
+        if (SpawnPresetsHaveMapColumn())
+        {
+            result = WorldDatabase.Query(
+                "SELECT `entry`, `spawn_type`, `category`, `label`, `sort_order` "
+                "FROM `dc_guild_house_spawns` "
+                "WHERE `enabled`=1 AND `preset`='{}' AND `map`={} AND `entry`={} {} "
+                "ORDER BY `sort_order`, `entry` LIMIT 1",
+                preset, mapId, entryId, SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+        }
+        else
+        {
+            result = WorldDatabase.Query(
+                "SELECT `entry`, `spawn_type`, `category`, `label`, `sort_order` "
+                "FROM `dc_guild_house_spawns` "
+                "WHERE `enabled`=1 AND `preset`='{}' AND `entry`={} {} "
+                "ORDER BY `sort_order`, `entry` LIMIT 1",
+                preset, entryId, SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+        }
+
+        if (!result)
+            return std::nullopt;
+
+        Field* fields = result->Fetch();
+        PresetEntry entry;
+        entry.entry = fields[0].Get<uint32>();
+        entry.spawnType = fields[1].Get<std::string>();
+        entry.category = fields[2].Get<std::string>();
+        entry.label = fields[3].Get<std::string>();
+        entry.sortOrder = fields[4].Get<int32>();
+        return entry;
     }
 
     struct GuildHouseSpawnerAI : public ScriptedAI
@@ -103,22 +364,39 @@ public:
         }
 
         ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Innkeeper", GOSSIP_SENDER_MAIN, 800001, "Add an Innkeeper?", s_guildHouseCostInnkeeper, false);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Mailbox", GOSSIP_SENDER_MAIN, 184137, "Spawn a Mailbox?", s_guildHouseCostMailbox, false);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Stable Master", GOSSIP_SENDER_MAIN, 28690, "Spawn a Stable Master?", s_guildHouseCostVendor, false);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Vendor", GOSSIP_SENDER_MAIN, 3);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Objects", GOSSIP_SENDER_MAIN, 4);
-        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Bank", GOSSIP_SENDER_MAIN, 30605, "Spawn a Banker?", s_guildHouseCostBank, false);
-        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Auctioneer", GOSSIP_SENDER_MAIN, 6, "Spawn an Auctioneer?", s_guildHouseCostAuctioneer, false);
-        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Neutral Auctioneer", GOSSIP_SENDER_MAIN, 9858, "Spawn a Neutral Auctioneer?", s_guildHouseCostAuctioneer, false);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Primary Profession Trainers", GOSSIP_SENDER_MAIN, 7);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Secondary Profession Trainers", GOSSIP_SENDER_MAIN, 8);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Spirit Healer", GOSSIP_SENDER_MAIN, 6491, "Spawn a Spirit Healer?", s_guildHouseCostSpirit, false);
+        if (SpawnPresetsHaveMetadataColumns())
+        {
+            uint8 guildLevel = GetCurrentGuildHouseLevel(player);
+            std::vector<PresetCategory> categories = GetPresetCategories(player->GetMapId(), guildLevel);
+            if (!categories.empty())
+            {
+                for (size_t i = 0; i < categories.size(); ++i)
+                    AddGossipItemFor(player, GOSSIP_ICON_TALK, FormatCategoryLabel(categories[i].name), GOSSIP_SENDER_MAIN, ACTION_PRESET_CATEGORY_BASE + static_cast<uint32>(i));
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("No enabled spawn presets found for this map/preset.");
+            }
+        }
+        else
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Innkeeper", GOSSIP_SENDER_MAIN, 800001, "Add an Innkeeper?", s_guildHouseCostInnkeeper, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Mailbox", GOSSIP_SENDER_MAIN, 184137, "Spawn a Mailbox?", s_guildHouseCostMailbox, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Stable Master", GOSSIP_SENDER_MAIN, 28690, "Spawn a Stable Master?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Vendor", GOSSIP_SENDER_MAIN, 3);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Objects", GOSSIP_SENDER_MAIN, 4);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Bank", GOSSIP_SENDER_MAIN, 30605, "Spawn a Banker?", s_guildHouseCostBank, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Auctioneer", GOSSIP_SENDER_MAIN, 6, "Spawn an Auctioneer?", s_guildHouseCostAuctioneer, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Neutral Auctioneer", GOSSIP_SENDER_MAIN, 9858, "Spawn a Neutral Auctioneer?", s_guildHouseCostAuctioneer, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Primary Profession Trainers", GOSSIP_SENDER_MAIN, 7);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Secondary Profession Trainers", GOSSIP_SENDER_MAIN, 8);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Spirit Healer", GOSSIP_SENDER_MAIN, 6491, "Spawn a Spirit Healer?", s_guildHouseCostSpirit, false);
 
-        // DC Extensions
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Spawn Mythic+ NPCs", GOSSIP_SENDER_MAIN, 20);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Spawn Seasonal Vendors", GOSSIP_SENDER_MAIN, 21);
-        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Special Vendors", GOSSIP_SENDER_MAIN, 22);
+            // DC Extensions
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Spawn Mythic+ NPCs", GOSSIP_SENDER_MAIN, 20);
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Spawn Seasonal Vendors", GOSSIP_SENDER_MAIN, 21);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Special Vendors", GOSSIP_SENDER_MAIN, 22);
+        }
 
         if (player->IsGameMaster())
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM Menu", GOSSIP_SENDER_MAIN, ACTION_GM_MENU);
@@ -135,6 +413,10 @@ public:
             ClearGossipMenuFor(player);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Spawn everything (free)", GOSSIP_SENDER_MAIN, ACTION_GM_SPAWN_ALL);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Despawn everything", GOSSIP_SENDER_MAIN, ACTION_GM_DESPAWN_ALL);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 1", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 1);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 2", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 2);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 3", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 3);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 4", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 4);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, ACTION_BACK);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             return true;
@@ -152,6 +434,83 @@ public:
             DespawnAll(player);
             OnGossipHello(player, creature);
             return true;
+        }
+
+        if (action > ACTION_GM_LEVEL_BASE && action <= ACTION_GM_LEVEL_BASE + 10)
+        {
+            if (!player || !player->GetGuildId())
+            {
+                OnGossipHello(player, creature);
+                return true;
+            }
+
+            uint8 newLevel = static_cast<uint8>(action - ACTION_GM_LEVEL_BASE);
+            if (!GuildHouseManager::SetGuildHouseLevel(player->GetGuildId(), newLevel))
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("Failed to update guild house level.");
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("Guild House level set to {}.", newLevel);
+            }
+
+            OnGossipHello(player, creature);
+            return true;
+        }
+
+        if (SpawnPresetsHaveMetadataColumns())
+        {
+            if (action >= ACTION_PRESET_ENTRY_BASE)
+            {
+                uint32 entryId = action - ACTION_PRESET_ENTRY_BASE;
+                uint8 guildLevel = GetCurrentGuildHouseLevel(player);
+                std::optional<PresetEntry> presetEntry = GetPresetByEntry(player->GetMapId(), guildLevel, entryId);
+                if (!presetEntry)
+                {
+                    ChatHandler(player->GetSession()).PSendSysMessage("This spawn preset is disabled or missing.");
+                    OnGossipHello(player, creature);
+                    return true;
+                }
+
+                int32 spawnCost = GetSpawnCostForPreset(presetEntry->category, presetEntry->spawnType, entryId);
+                if (presetEntry->spawnType == "GAMEOBJECT")
+                    SpawnObject(entryId, player, spawnCost, true, true);
+                else
+                    SpawnNPC(entryId, player, spawnCost, true, true);
+
+                OnGossipHello(player, creature);
+                return true;
+            }
+
+            if (action >= ACTION_PRESET_CATEGORY_BASE && action < ACTION_PRESET_ENTRY_BASE)
+            {
+                uint32 categoryIndex = action - ACTION_PRESET_CATEGORY_BASE;
+                uint8 guildLevel = GetCurrentGuildHouseLevel(player);
+                std::vector<PresetCategory> categories = GetPresetCategories(player->GetMapId(), guildLevel);
+                if (categoryIndex >= categories.size())
+                {
+                    OnGossipHello(player, creature);
+                    return true;
+                }
+
+                std::string category = categories[categoryIndex].name;
+                std::vector<PresetEntry> entries = GetPresetEntriesForCategory(player->GetMapId(), guildLevel, category);
+                ClearGossipMenuFor(player);
+                for (PresetEntry const& presetEntry : entries)
+                {
+                    std::string label = presetEntry.label;
+                    if (label.empty())
+                        label = GetTemplateLabel(presetEntry.entry, presetEntry.spawnType);
+
+                    int32 spawnCost = GetSpawnCostForPreset(presetEntry.category, presetEntry.spawnType, presetEntry.entry);
+                    AddGossipItemFor(player, GOSSIP_ICON_TALK, label, GOSSIP_SENDER_MAIN,
+                        ACTION_PRESET_ENTRY_BASE + presetEntry.entry, "Spawn this?", spawnCost, false);
+                }
+
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, ACTION_BACK);
+                SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+                return true;
+            }
         }
 
         switch (action)
@@ -352,7 +711,28 @@ public:
         float ori;
 
         QueryResult result;
-        if (SpawnPresetsHaveMapColumn())
+        uint8 guildLevel = GetCurrentGuildHouseLevel(player);
+        if (SpawnPresetsHaveMetadataColumns())
+        {
+            std::string preset = GetSpawnPresetName();
+            if (SpawnPresetsHaveMapColumn())
+            {
+                result = WorldDatabase.Query(
+                    "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` "
+                    "WHERE `enabled`=1 AND `preset`='{}' AND `map`={} AND `entry`={} AND `spawn_type`='CREATURE' {}",
+                    preset, player->GetMapId(), entry,
+                    SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+            }
+            else
+            {
+                result = WorldDatabase.Query(
+                    "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` "
+                    "WHERE `enabled`=1 AND `preset`='{}' AND `entry`={} AND `spawn_type`='CREATURE' {}",
+                    preset, entry,
+                    SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+            }
+        }
+        else if (SpawnPresetsHaveMapColumn())
         {
             // Map-aware spawn presets (supports multiple guildhouse locations on different maps)
             result = WorldDatabase.Query(
@@ -460,7 +840,28 @@ public:
         float ori;
 
         QueryResult result;
-        if (SpawnPresetsHaveMapColumn())
+        uint8 guildLevel = GetCurrentGuildHouseLevel(player);
+        if (SpawnPresetsHaveMetadataColumns())
+        {
+            std::string preset = GetSpawnPresetName();
+            if (SpawnPresetsHaveMapColumn())
+            {
+                result = WorldDatabase.Query(
+                    "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` "
+                    "WHERE `enabled`=1 AND `preset`='{}' AND `map`={} AND `entry`={} AND `spawn_type`='GAMEOBJECT' {}",
+                    preset, player->GetMapId(), entry,
+                    SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+            }
+            else
+            {
+                result = WorldDatabase.Query(
+                    "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_spawns` "
+                    "WHERE `enabled`=1 AND `preset`='{}' AND `entry`={} AND `spawn_type`='GAMEOBJECT' {}",
+                    preset, entry,
+                    SpawnPresetsHaveLevelColumn() ? "AND `guildhouse_level` <= " + std::to_string(guildLevel) : "");
+            }
+        }
+        else if (SpawnPresetsHaveMapColumn())
         {
             // Map-aware spawn presets (supports multiple guildhouse locations on different maps)
             result = WorldDatabase.Query(

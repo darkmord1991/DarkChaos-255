@@ -6,9 +6,35 @@
 #include "MapMgr.h"
 #include "ObjectMgr.h"
 
+#include <cmath>
+#include <optional>
 #include <unordered_map>
 
 static std::unordered_map<uint32, GuildHouseData> s_guildHouseCache;
+
+namespace
+{
+    bool HasGuildHouseLevelColumn()
+    {
+        static std::optional<bool> cached;
+        if (cached.has_value())
+            return cached.value();
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_guild_house' AND COLUMN_NAME = 'guildhouse_level'");
+
+        if (!result)
+        {
+            cached = false;
+            return false;
+        }
+
+        Field* fields = result->Fetch();
+        cached = (fields[0].Get<uint64>() > 0);
+        return cached.value();
+    }
+}
 
 GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
 {
@@ -18,10 +44,21 @@ GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
         return &it->second;
 
     // Load from DB
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT `phase`, `map`, `positionX`, `positionY`, `positionZ`, `orientation` "
-        "FROM `dc_guild_house` WHERE `guild` = {}",
-        guildId);
+    QueryResult result;
+    if (HasGuildHouseLevelColumn())
+    {
+        result = CharacterDatabase.Query(
+            "SELECT `phase`, `map`, `positionX`, `positionY`, `positionZ`, `orientation`, `guildhouse_level` "
+            "FROM `dc_guild_house` WHERE `guild` = {}",
+            guildId);
+    }
+    else
+    {
+        result = CharacterDatabase.Query(
+            "SELECT `phase`, `map`, `positionX`, `positionY`, `positionZ`, `orientation` "
+            "FROM `dc_guild_house` WHERE `guild` = {}",
+            guildId);
+    }
 
     if (!result)
         return nullptr;
@@ -33,10 +70,46 @@ GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
     float posY = fields[3].Get<float>();
     float posZ = fields[4].Get<float>();
     float ori = fields[5].Get<float>();
+    uint8 level = HasGuildHouseLevelColumn() ? fields[6].Get<uint8>() : 1;
+
+    bool shouldUpdate = false;
+
+    // Fix invalid or legacy phase values.
+    uint32 expectedPhase = GetGuildPhase(guildId);
+    if (phase == 0 || phase == PHASEMASK_NORMAL)
+    {
+        phase = expectedPhase;
+        shouldUpdate = true;
+    }
+
+    // Fix missing coordinates (e.g., 0/0/0) by falling back to the first location on the same map.
+    if (std::fabs(posX) < 0.001f && std::fabs(posY) < 0.001f)
+    {
+        QueryResult locationResult = WorldDatabase.Query(
+            "SELECT `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_locations` WHERE `map` = {} ORDER BY `id` ASC LIMIT 1",
+            map);
+
+        if (locationResult)
+        {
+            Field* locFields = locationResult->Fetch();
+            posX = locFields[0].Get<float>();
+            posY = locFields[1].Get<float>();
+            posZ = locFields[2].Get<float>();
+            ori = locFields[3].Get<float>();
+            shouldUpdate = true;
+        }
+    }
+
+    if (shouldUpdate)
+    {
+        CharacterDatabase.Execute(
+            "UPDATE `dc_guild_house` SET `phase` = {}, `positionX` = {}, `positionY` = {}, `positionZ` = {}, `orientation` = {} WHERE `guild` = {}",
+            phase, posX, posY, posZ, ori, guildId);
+    }
 
     // Store in Cache
     GuildHouseData& data = s_guildHouseCache[guildId];
-    data = GuildHouseData(phase, map, posX, posY, posZ, ori);
+    data = GuildHouseData(phase, map, posX, posY, posZ, ori, level);
     return &data;
 }
 
@@ -48,6 +121,34 @@ void GuildHouseManager::UpdateGuildHouseData(uint32 guildId, GuildHouseData cons
 void GuildHouseManager::RemoveGuildHouseData(uint32 guildId)
 {
     s_guildHouseCache.erase(guildId);
+}
+
+uint8 GuildHouseManager::GetGuildHouseLevel(uint32 guildId)
+{
+    GuildHouseData* data = GetGuildHouseData(guildId);
+    if (!data)
+        return 1;
+
+    return data->level ? data->level : 1;
+}
+
+bool GuildHouseManager::SetGuildHouseLevel(uint32 guildId, uint8 level)
+{
+    if (!guildId)
+        return false;
+
+    if (!HasGuildHouseLevelColumn())
+        return false;
+
+    CharacterDatabase.Execute(
+        "UPDATE `dc_guild_house` SET `guildhouse_level` = {} WHERE `guild` = {}",
+        level, guildId);
+
+    GuildHouseData* data = GetGuildHouseData(guildId);
+    if (data)
+        data->level = level;
+
+    return true;
 }
 
 bool GuildHouseManager::TeleportToGuildHouse(Player* player, uint32 guildId)
@@ -402,7 +503,7 @@ bool GuildHouseManager::MoveGuildHouse(uint32 guildId, uint32 locationId)
 
     // 3. Update Cache & Spawn at NEW location
     // Note: Phase remains valid (guildId + 10)
-    GuildHouseData newData(currentData->phase, newMap, posX, posY, posZ, ori);
+    GuildHouseData newData(currentData->phase, newMap, posX, posY, posZ, ori, currentData->level);
     UpdateGuildHouseData(guildId, newData);
 
     // 4. Ensure NEW location is also clean (in case we moved back to a map that had orphans)

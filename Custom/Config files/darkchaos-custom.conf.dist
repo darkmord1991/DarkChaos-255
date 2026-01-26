@@ -3059,6 +3059,14 @@ DungeonFinder.AllowCompleted = 1
 # -----------------------------------------------------------------------------
 
 #
+#    GuildHouseSpawnPreset
+#        Description: Active spawn preset name used by guild house butler menus
+#                     (matches dc_guild_house_spawns.preset)
+#        Default:     default
+#
+GuildHouseSpawnPreset = default
+
+#
 #    GuildHouse.Currency.ItemId
 #        Description: Item ID for guild house upgrade currency
 #                     Set to 0 to use gold instead
