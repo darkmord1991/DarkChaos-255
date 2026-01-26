@@ -1,6 +1,6 @@
 #include "GreatVault.h"
 #include "DC/CrossSystem/CrossSystemVaultUtils.h"
-#include "DC/MythicPlus/MythicPlusRunManager.h"
+#include "DC/MythicPlus/dc_mythicplus_run_manager.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "DBCStores.h"
@@ -201,10 +201,10 @@ bool GreatVaultMgr::GenerateVaultRewardPool(ObjectGuid::LowType playerGuid, uint
         rewardMode = VAULT_MODE_TOKENS;
     }
 
-    uint32 classMask = DC::VaultUtils::GetPlayerClassMask(player);
-    uint8 roleMask = DC::VaultUtils::GetPlayerRoleMask(player);
-    std::string playerSpec = DC::VaultUtils::GetPlayerSpec(player);
-    std::string armorType = DC::VaultUtils::GetPlayerArmorType(player);
+    uint32 classMask = DarkChaos::CrossSystem::VaultUtils::GetPlayerClassMask(player);
+    uint8 roleMask = DarkChaos::CrossSystem::VaultUtils::GetPlayerRoleMask(player);
+    std::string playerSpec = DarkChaos::CrossSystem::VaultUtils::GetPlayerSpec(player);
+    std::string armorType = DarkChaos::CrossSystem::VaultUtils::GetPlayerArmorType(player);
 
     uint8 mplusThresholds[4] = { 0, GetVaultThreshold(1), GetVaultThreshold(2), GetVaultThreshold(3) };
     uint8 raidThresholds[4] =

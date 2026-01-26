@@ -2,13 +2,14 @@
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  *
- * MythicPlusConstants.h - Shared constants for Mythic+ system
+ * dc_mythicplus_constants.h - Shared constants for Mythic+ system
  * Eliminates code duplication across multiple files
  */
 
-#ifndef MYTHIC_PLUS_CONSTANTS_H
-#define MYTHIC_PLUS_CONSTANTS_H
+#ifndef DC_MYTHICPLUS_CONSTANTS_H
+#define DC_MYTHICPLUS_CONSTANTS_H
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 
@@ -185,4 +186,4 @@ namespace MythicPlusConstants
     }
 }
 
-#endif // MYTHIC_PLUS_CONSTANTS_H
+#endif // DC_MYTHICPLUS_CONSTANTS_H

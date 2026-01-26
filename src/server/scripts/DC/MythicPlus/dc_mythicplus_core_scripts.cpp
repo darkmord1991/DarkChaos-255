@@ -5,9 +5,9 @@
 
 #include "ScriptMgr.h"
 #include "AllMapScript.h"
-#include "MythicDifficultyScaling.h"
-#include "MythicPlusRunManager.h"
-#include "MythicPlusAffixes.h"
+#include "dc_mythicplus_difficulty_scaling.h"
+#include "dc_mythicplus_run_manager.h"
+#include "dc_mythicplus_affixes.h"
 #include "UnitScript.h"
 #include "Unit.h"
 #include "Creature.h"

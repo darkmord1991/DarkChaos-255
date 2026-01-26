@@ -84,7 +84,7 @@ inline std::string GetClassNameFromId(uint8_t classId)
 
 inline std::string JsonEscape(const std::string& input)
 {
-    return DCUtils::EscapeJson(input);
+    return DarkChaos::CrossSystem::Utils::EscapeJson(input);
 }
 
 // =============================================================================

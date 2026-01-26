@@ -162,4 +162,13 @@ namespace DCUtils
 
 } // namespace DCUtils
 
+// Canonical namespace alias
+namespace DarkChaos
+{
+namespace CrossSystem
+{
+    namespace Utils = ::DCUtils;
+}
+}
+
 #endif // DC_UTILITIES_H

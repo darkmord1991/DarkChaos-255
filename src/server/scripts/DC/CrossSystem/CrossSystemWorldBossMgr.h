@@ -86,4 +86,14 @@ namespace DC
     };
 }
 
-#define sWorldBossMgr DC::WorldBossMgr::Instance()
+// Canonical namespace alias
+namespace DarkChaos
+{
+namespace CrossSystem
+{
+    using WorldBossInfo = ::DC::WorldBossInfo;
+    using WorldBossMgr = ::DC::WorldBossMgr;
+}
+}
+
+#define sWorldBossMgr DarkChaos::CrossSystem::WorldBossMgr::Instance()

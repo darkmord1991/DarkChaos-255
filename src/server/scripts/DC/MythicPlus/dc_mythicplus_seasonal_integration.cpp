@@ -7,7 +7,7 @@
  * Date: November 22, 2025
  */
 
-#include "MythicDifficultyScaling.h"
+#include "dc_mythicplus_difficulty_scaling.h"
 #include "../Seasons/SeasonalSystem.h"
 #include "../CrossSystem/CrossSystemSeasonHelper.h"
 #include "Config.h"

@@ -79,3 +79,12 @@ namespace MapCoords
     }
 }
 }
+
+// Canonical namespace alias
+namespace DarkChaos
+{
+namespace CrossSystem
+{
+    namespace MapCoords = ::DC::MapCoords;
+}
+}

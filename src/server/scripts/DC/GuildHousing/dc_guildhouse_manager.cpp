@@ -1,4 +1,4 @@
-#include "guildhouse.h"
+#include "dc_guildhouse.h"
 
 #include "Chat.h"
 #include "DatabaseEnv.h"
@@ -8,13 +8,13 @@
 
 #include <unordered_map>
 
-static std::unordered_map<uint32, GuildHouseData> s_GuildHouseCache;
+static std::unordered_map<uint32, GuildHouseData> s_guildHouseCache;
 
 GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
 {
     // Check Cache
-    auto it = s_GuildHouseCache.find(guildId);
-    if (it != s_GuildHouseCache.end())
+    auto it = s_guildHouseCache.find(guildId);
+    if (it != s_guildHouseCache.end())
         return &it->second;
 
     // Load from DB
@@ -35,19 +35,19 @@ GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
     float ori = fields[5].Get<float>();
 
     // Store in Cache
-    GuildHouseData& data = s_GuildHouseCache[guildId];
+    GuildHouseData& data = s_guildHouseCache[guildId];
     data = GuildHouseData(phase, map, posX, posY, posZ, ori);
     return &data;
 }
 
 void GuildHouseManager::UpdateGuildHouseData(uint32 guildId, GuildHouseData const& data)
 {
-    s_GuildHouseCache[guildId] = data;
+    s_guildHouseCache[guildId] = data;
 }
 
 void GuildHouseManager::RemoveGuildHouseData(uint32 guildId)
 {
-    s_GuildHouseCache.erase(guildId);
+    s_guildHouseCache.erase(guildId);
 }
 
 bool GuildHouseManager::TeleportToGuildHouse(Player* player, uint32 guildId)

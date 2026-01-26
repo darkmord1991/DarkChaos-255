@@ -17,8 +17,8 @@
 #include "Config.h"
 #include "Log.h"
 #include "DBCStores.h"
-#include "../MythicPlus/MythicPlusRunManager.h"
-#include "../MythicPlus/MythicPlusConstants.h"
+#include "../MythicPlus/dc_mythicplus_run_manager.h"
+#include "../MythicPlus/dc_mythicplus_constants.h"
 #include "dc_addon_mythicplus.h"
 
 #include <unordered_map>

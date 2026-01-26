@@ -3,8 +3,8 @@
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  */
 
-#include "MythicDifficultyScaling.h"
-#include "MythicPlusRunManager.h"
+#include "dc_mythicplus_difficulty_scaling.h"
+#include "dc_mythicplus_run_manager.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"

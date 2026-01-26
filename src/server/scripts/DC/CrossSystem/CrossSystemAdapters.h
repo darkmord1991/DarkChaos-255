@@ -23,7 +23,7 @@
 #include "Chat.h"
 
 // Include existing system headers with correct paths
-#include "../MythicPlus/MythicPlusRunManager.h"
+#include "../MythicPlus/dc_mythicplus_run_manager.h"
 #include "../Seasons/SeasonalRewardSystem.h"
 #include "../ItemUpgrades/ItemUpgradeManager.h"
 #include "../Progression/Prestige/dc_prestige_api.h"

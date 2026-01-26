@@ -374,7 +374,8 @@ namespace CrossSystem
         auto* session = sessionManager_->GetSession(player);
         uint8 keystoneLevel = session ? session->GetActiveContent().keystoneLevel : 0;
 
-        session->IncrementTrashKills(1);
+        if (session)
+            session->IncrementTrashKills(1);
 
         eventBus_->PublishCreatureKill(player, creature, false, keystoneLevel,
                                        player->GetGroup() ? player->GetGroup()->GetMembersCount() : 1);

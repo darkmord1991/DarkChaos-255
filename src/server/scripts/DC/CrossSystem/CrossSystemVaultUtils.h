@@ -151,3 +151,12 @@ namespace VaultUtils
     }
 }
 }
+
+// Canonical namespace alias
+namespace DarkChaos
+{
+namespace CrossSystem
+{
+    namespace VaultUtils = ::DC::VaultUtils;
+}
+}

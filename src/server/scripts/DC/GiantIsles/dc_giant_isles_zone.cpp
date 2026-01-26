@@ -201,7 +201,7 @@ static bool SetWorldBossActive(uint32 bossEntry, bool active)
     if (!sWorldBossMgr)
         return false;
 
-    DC::WorldBossInfo* info = sWorldBossMgr->GetBossInfo(bossEntry);
+    DarkChaos::CrossSystem::WorldBossInfo* info = sWorldBossMgr->GetBossInfo(bossEntry);
     if (!info || info->spawnId == 0)
         return false;
 
@@ -311,8 +311,8 @@ static void SendBossStatusList(Player* player)
     if (!sWorldBossMgr)
         return;
 
-    std::vector<DC::WorldBossInfo const*> bossesInZone;
-    for (DC::WorldBossInfo const* info : sWorldBossMgr->GetAllBosses())
+    std::vector<DarkChaos::CrossSystem::WorldBossInfo const*> bossesInZone;
+    for (DarkChaos::CrossSystem::WorldBossInfo const* info : sWorldBossMgr->GetAllBosses())
     {
         if (info && info->zoneId == ZONE_GIANT_ISLES)
             bossesInZone.push_back(info);
@@ -321,7 +321,7 @@ static void SendBossStatusList(Player* player)
     ChatHandler handler(player->GetSession());
     handler.PSendSysMessage("|cFFFF8000[Giant Isles]|r World boss status:");
 
-    auto sendOne = [&](char const* displayName, DC::WorldBossInfo const* info)
+    auto sendOne = [&](char const* displayName, DarkChaos::CrossSystem::WorldBossInfo const* info)
     {
         if (!displayName || !displayName[0])
             displayName = "Unknown";
@@ -351,7 +351,7 @@ static void SendBossStatusList(Player* player)
     // Preferred: use the WorldBossMgr zone registrations.
     if (!bossesInZone.empty())
     {
-        for (DC::WorldBossInfo const* info : bossesInZone)
+        for (DarkChaos::CrossSystem::WorldBossInfo const* info : bossesInZone)
             sendOne(info->displayName.c_str(), info);
         return;
     }

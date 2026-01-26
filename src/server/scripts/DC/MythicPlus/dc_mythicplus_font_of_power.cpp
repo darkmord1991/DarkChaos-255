@@ -19,8 +19,8 @@
 #include "GameObject.h"
 #include "GameTime.h"
 #include "Group.h"
-#include "MythicDifficultyScaling.h"
-#include "MythicPlusRunManager.h"
+#include "dc_mythicplus_difficulty_scaling.h"
+#include "dc_mythicplus_run_manager.h"
 #include "Player.h"
 #include "StringFormat.h"
 

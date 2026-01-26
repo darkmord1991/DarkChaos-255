@@ -4,7 +4,7 @@ This document summarizes custom spell IDs currently referenced by DC systems in 
 
 ## Mythic+ Affix Spells
 
-Defined in [src/server/scripts/DC/MythicPlus/MythicPlusAffixes.h](src/server/scripts/DC/MythicPlus/MythicPlusAffixes.h) and used in affix handlers:
+Defined in [src/server/scripts/DC/MythicPlus/dc_mythicplus_affixes.h](src/server/scripts/DC/MythicPlus/dc_mythicplus_affixes.h) and used in affix handlers:
 
 - 900010 — Affix: Bolstering (stacking buff visual/aura)
 - 900020 — Affix: Necrotic (stacking wound aura)

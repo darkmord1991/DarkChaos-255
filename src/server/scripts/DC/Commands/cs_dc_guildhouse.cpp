@@ -4,7 +4,7 @@
 #include "Player.h"
 #include "Guild.h"
 #include "GuildMgr.h"
-#include "../GuildHousing/guildhouse.h"
+#include "../GuildHousing/dc_guildhouse.h"
 #include "Maps/MapMgr.h"
 #include "Map.h"
 #include "Tokenize.h"

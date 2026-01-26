@@ -3,13 +3,13 @@
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  */
 
-#ifndef MYTHIC_PLUS_RUN_MANAGER_H
-#define MYTHIC_PLUS_RUN_MANAGER_H
+#ifndef DC_MYTHICPLUS_RUN_MANAGER_H
+#define DC_MYTHICPLUS_RUN_MANAGER_H
 
 #include "Config.h"
 #include "GameObject.h"
-#include "MythicDifficultyScaling.h"
-#include "MythicPlusConstants.h"
+#include "dc_mythicplus_difficulty_scaling.h"
+#include "dc_mythicplus_constants.h"
 #include "ObjectGuid.h"
 #include "Optional.h"
 #include "SharedDefines.h"
@@ -292,4 +292,4 @@ inline bool MythicPlusRunManager::CanActivateKeystone(Player* player, GameObject
 
 #define sMythicRuns MythicPlusRunManager::instance()
 
-#endif // MYTHIC_PLUS_RUN_MANAGER_H
+#endif // DC_MYTHICPLUS_RUN_MANAGER_H

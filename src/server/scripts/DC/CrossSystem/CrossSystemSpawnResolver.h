@@ -75,3 +75,12 @@ namespace SpawnResolver
     }
 }
 }
+
+// Canonical namespace alias
+namespace DarkChaos
+{
+namespace CrossSystem
+{
+    namespace SpawnResolver = ::DC::SpawnResolver;
+}
+}

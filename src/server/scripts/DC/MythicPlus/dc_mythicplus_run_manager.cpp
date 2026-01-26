@@ -3,7 +3,7 @@
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  */
 
-#include "MythicPlusRunManager.h"
+#include "dc_mythicplus_run_manager.h"
 #include "DC/Seasons/DCWeeklyResetHub.h"
 
 #include "Chat.h"
@@ -18,9 +18,9 @@
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
-#include "MythicDifficultyScaling.h"
-#include "MythicPlusConstants.h"
-#include "MythicPlusAffixes.h"
+#include "dc_mythicplus_difficulty_scaling.h"
+#include "dc_mythicplus_constants.h"
+#include "dc_mythicplus_affixes.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"

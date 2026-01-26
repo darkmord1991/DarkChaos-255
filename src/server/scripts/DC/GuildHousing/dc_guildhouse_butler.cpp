@@ -13,11 +13,23 @@
 #include "GameObject.h"
 #include "Transport.h"
 #include "CreatureAI.h"
-#include "guildhouse.h"
+#include "dc_guildhouse.h"
 
 #include <optional>
 
-int cost, GuildHouseInnKeeper, GuildHouseBank, GuildHouseMailBox, GuildHouseAuctioneer, GuildHouseTrainer, GuildHouseVendor, GuildHouseObject, GuildHousePortal, GuildHouseSpirit, GuildHouseProf, GuildHouseBuyRank, GuildHouseCurrency;
+namespace
+{
+    int32 s_guildHouseCostInnkeeper = 0;
+    int32 s_guildHouseCostBank = 0;
+    int32 s_guildHouseCostMailbox = 0;
+    int32 s_guildHouseCostAuctioneer = 0;
+    int32 s_guildHouseCostVendor = 0;
+    int32 s_guildHouseCostObject = 0;
+    int32 s_guildHouseCostPortal = 0;
+    int32 s_guildHouseCostSpirit = 0;
+    int32 s_guildHouseCostProfession = 0;
+    int32 s_guildHouseBuyRank = 0;
+}
 
 class GuildHouseSpawner : public CreatureScript
 {
@@ -78,7 +90,7 @@ public:
             Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId());
             Guild::Member const* memberMe = guild->GetMember(player->GetGUID());
 
-            if (!memberMe->IsRankNotLower(GuildHouseBuyRank))
+            if (!memberMe->IsRankNotLower(s_guildHouseBuyRank))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("You are not authorized to make Guild House purchases.");
                 return false;
@@ -91,17 +103,17 @@ public:
         }
 
         ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Innkeeper", GOSSIP_SENDER_MAIN, 800001, "Add an Innkeeper?", GuildHouseInnKeeper, false);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Mailbox", GOSSIP_SENDER_MAIN, 184137, "Spawn a Mailbox?", GuildHouseMailBox, false);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Stable Master", GOSSIP_SENDER_MAIN, 28690, "Spawn a Stable Master?", GuildHouseVendor, false);
+        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Innkeeper", GOSSIP_SENDER_MAIN, 800001, "Add an Innkeeper?", s_guildHouseCostInnkeeper, false);
+        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Mailbox", GOSSIP_SENDER_MAIN, 184137, "Spawn a Mailbox?", s_guildHouseCostMailbox, false);
+        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Stable Master", GOSSIP_SENDER_MAIN, 28690, "Spawn a Stable Master?", s_guildHouseCostVendor, false);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Vendor", GOSSIP_SENDER_MAIN, 3);
         AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Objects", GOSSIP_SENDER_MAIN, 4);
-        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Bank", GOSSIP_SENDER_MAIN, 30605, "Spawn a Banker?", GuildHouseBank, false);
-        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Auctioneer", GOSSIP_SENDER_MAIN, 6, "Spawn an Auctioneer?", GuildHouseAuctioneer, false);
-        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Neutral Auctioneer", GOSSIP_SENDER_MAIN, 9858, "Spawn a Neutral Auctioneer?", GuildHouseAuctioneer, false);
+        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Bank", GOSSIP_SENDER_MAIN, 30605, "Spawn a Banker?", s_guildHouseCostBank, false);
+        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Auctioneer", GOSSIP_SENDER_MAIN, 6, "Spawn an Auctioneer?", s_guildHouseCostAuctioneer, false);
+        AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Neutral Auctioneer", GOSSIP_SENDER_MAIN, 9858, "Spawn a Neutral Auctioneer?", s_guildHouseCostAuctioneer, false);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Primary Profession Trainers", GOSSIP_SENDER_MAIN, 7);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Secondary Profession Trainers", GOSSIP_SENDER_MAIN, 8);
-        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Sprirt Healer", GOSSIP_SENDER_MAIN, 6491, "Spawn a Spirit Healer?", GuildHouseSpirit, false);
+        AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Spirit Healer", GOSSIP_SENDER_MAIN, 6491, "Spawn a Spirit Healer?", s_guildHouseCostSpirit, false);
 
         // DC Extensions
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Spawn Mythic+ NPCs", GOSSIP_SENDER_MAIN, 20);
@@ -146,46 +158,46 @@ public:
         {
         case 20: // Mythic+
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (190004)", GOSSIP_SENDER_MAIN, 190004, "Spawn Mythic NPC (190004)?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100050)", GOSSIP_SENDER_MAIN, 100050, "Spawn Mythic NPC (100050)?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100051)", GOSSIP_SENDER_MAIN, 100051, "Spawn Mythic NPC (100051)?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100101)", GOSSIP_SENDER_MAIN, 100101, "Spawn Mythic NPC (100101)?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100100)", GOSSIP_SENDER_MAIN, 100100, "Spawn Mythic NPC (100100)?", GuildHouseVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (190004)", GOSSIP_SENDER_MAIN, 190004, "Spawn Mythic NPC (190004)?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100050)", GOSSIP_SENDER_MAIN, 100050, "Spawn Mythic NPC (100050)?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100051)", GOSSIP_SENDER_MAIN, 100051, "Spawn Mythic NPC (100051)?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100101)", GOSSIP_SENDER_MAIN, 100101, "Spawn Mythic NPC (100101)?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Mythic NPC (100100)", GOSSIP_SENDER_MAIN, 100100, "Spawn Mythic NPC (100100)?", s_guildHouseCostVendor, false);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, ACTION_BACK);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
 
         case 21: // Seasonal
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Seasonal Trader", GOSSIP_SENDER_MAIN, 95100, "Spawn Seasonal Trader?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Holiday Ambassador", GOSSIP_SENDER_MAIN, 95101, "Spawn Holiday Ambassador?", GuildHouseVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Seasonal Trader", GOSSIP_SENDER_MAIN, 95100, "Spawn Seasonal Trader?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Holiday Ambassador", GOSSIP_SENDER_MAIN, 95101, "Spawn Holiday Ambassador?", s_guildHouseCostVendor, false);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, 9);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
         case 22: // Special
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Omni-Crafter", GOSSIP_SENDER_MAIN, 95102, "Spawn Omni-Crafter?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Services NPC", GOSSIP_SENDER_MAIN, 55002, "Spawn Services NPC?", GuildHouseVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Omni-Crafter", GOSSIP_SENDER_MAIN, 95102, "Spawn Omni-Crafter?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Services NPC", GOSSIP_SENDER_MAIN, 55002, "Spawn Services NPC?", s_guildHouseCostVendor, false);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, 9);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
         case 3: // Vendors
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Trade Supplies", GOSSIP_SENDER_MAIN, 28692, "Spawn Trade Supplies?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Tabard Vendor", GOSSIP_SENDER_MAIN, 28776, "Spawn Tabard Vendor?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Food & Drink Vendor", GOSSIP_SENDER_MAIN, 19572, "Spawn Food & Drink Vendor?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Reagent Vendor", GOSSIP_SENDER_MAIN, 29636, "Spawn Reagent Vendor?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Ammo & Repair Vendor", GOSSIP_SENDER_MAIN, 29493, "Spawn Ammo & Repair Vendor?", GuildHouseVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Poisons Vendor", GOSSIP_SENDER_MAIN, 2622, "Spawn Poisons Vendor?", GuildHouseVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Trade Supplies", GOSSIP_SENDER_MAIN, 28692, "Spawn Trade Supplies?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Tabard Vendor", GOSSIP_SENDER_MAIN, 28776, "Spawn Tabard Vendor?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Food & Drink Vendor", GOSSIP_SENDER_MAIN, 19572, "Spawn Food & Drink Vendor?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Reagent Vendor", GOSSIP_SENDER_MAIN, 29636, "Spawn Reagent Vendor?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Ammo & Repair Vendor", GOSSIP_SENDER_MAIN, 29493, "Spawn Ammo & Repair Vendor?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Poisons Vendor", GOSSIP_SENDER_MAIN, 2622, "Spawn Poisons Vendor?", s_guildHouseCostVendor, false);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, 9);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
         case 4: // Objects (Portals Removed)
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Forge", GOSSIP_SENDER_MAIN, 1685, "Add a forge?", GuildHouseObject, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Anvil", GOSSIP_SENDER_MAIN, 4087, "Add an Anvil?", GuildHouseObject, false);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Guild Vault", GOSSIP_SENDER_MAIN, 187293, "Add Guild Vault?", GuildHouseObject, false);
-            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Barber Chair", GOSSIP_SENDER_MAIN, 191028, "Add a Barber Chair?", GuildHouseObject, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Forge", GOSSIP_SENDER_MAIN, 1685, "Add a forge?", s_guildHouseCostObject, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Anvil", GOSSIP_SENDER_MAIN, 4087, "Add an Anvil?", s_guildHouseCostObject, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Guild Vault", GOSSIP_SENDER_MAIN, 187293, "Add Guild Vault?", s_guildHouseCostObject, false);
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Barber Chair", GOSSIP_SENDER_MAIN, 191028, "Add a Barber Chair?", s_guildHouseCostObject, false);
 
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, 9);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -194,35 +206,35 @@ public:
         {
             uint32 auctioneer = 0;
             auctioneer = player->GetTeamId() == TEAM_ALLIANCE ? 8719 : 9856;
-            SpawnNPC(auctioneer, player, GuildHouseAuctioneer, true, true);
+            SpawnNPC(auctioneer, player, s_guildHouseCostAuctioneer, true, true);
             break;
         }
         case 9858: // Neutral Auctioneer
-            SpawnNPC(action, player, GuildHouseAuctioneer, true, true);
+            SpawnNPC(action, player, s_guildHouseCostAuctioneer, true, true);
             break;
         case 7: // Spawn Profession Trainers
             ClearGossipMenuFor(player);
             // Custom profession trainers (see worlddb/Trainers/npc_trainer_new.sql)
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Alchemy Trainer", GOSSIP_SENDER_MAIN, 95001, "Spawn Alchemy Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Blacksmithing Trainer", GOSSIP_SENDER_MAIN, 95002, "Spawn Blacksmithing Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Enchanting Trainer", GOSSIP_SENDER_MAIN, 95003, "Spawn Enchanting Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Engineering Trainer", GOSSIP_SENDER_MAIN, 95004, "Spawn Engineering Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Herbalism Trainer", GOSSIP_SENDER_MAIN, 95005, "Spawn Herbalism Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Inscription Trainer", GOSSIP_SENDER_MAIN, 95006, "Spawn Inscription Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Jewelcrafting Trainer", GOSSIP_SENDER_MAIN, 95007, "Spawn Jewelcrafting Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Leatherworking Trainer", GOSSIP_SENDER_MAIN, 95008, "Spawn Leatherworking Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Mining Trainer", GOSSIP_SENDER_MAIN, 95009, "Spawn Mining Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Skinning Trainer", GOSSIP_SENDER_MAIN, 95010, "Spawn Skinning Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Tailoring Trainer", GOSSIP_SENDER_MAIN, 95011, "Spawn Tailoring Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Alchemy Trainer", GOSSIP_SENDER_MAIN, 95001, "Spawn Alchemy Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Blacksmithing Trainer", GOSSIP_SENDER_MAIN, 95002, "Spawn Blacksmithing Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Enchanting Trainer", GOSSIP_SENDER_MAIN, 95003, "Spawn Enchanting Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Engineering Trainer", GOSSIP_SENDER_MAIN, 95004, "Spawn Engineering Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Herbalism Trainer", GOSSIP_SENDER_MAIN, 95005, "Spawn Herbalism Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Inscription Trainer", GOSSIP_SENDER_MAIN, 95006, "Spawn Inscription Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Jewelcrafting Trainer", GOSSIP_SENDER_MAIN, 95007, "Spawn Jewelcrafting Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Leatherworking Trainer", GOSSIP_SENDER_MAIN, 95008, "Spawn Leatherworking Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Mining Trainer", GOSSIP_SENDER_MAIN, 95009, "Spawn Mining Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Skinning Trainer", GOSSIP_SENDER_MAIN, 95010, "Spawn Skinning Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Tailoring Trainer", GOSSIP_SENDER_MAIN, 95011, "Spawn Tailoring Trainer?", s_guildHouseCostProfession, false);
 
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, ACTION_BACK);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
         case 8: // Secondary Profession Trainers
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "First Aid Trainer", GOSSIP_SENDER_MAIN, 95013, "Spawn First Aid Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Fishing Trainer", GOSSIP_SENDER_MAIN, 95014, "Spawn Fishing Trainer?", GuildHouseProf, false);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Cooking Trainer", GOSSIP_SENDER_MAIN, 95012, "Spawn Cooking Trainer?", GuildHouseProf, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "First Aid Trainer", GOSSIP_SENDER_MAIN, 95013, "Spawn First Aid Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Fishing Trainer", GOSSIP_SENDER_MAIN, 95014, "Spawn Fishing Trainer?", s_guildHouseCostProfession, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Cooking Trainer", GOSSIP_SENDER_MAIN, 95012, "Spawn Cooking Trainer?", s_guildHouseCostProfession, false);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, 9);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             break;
@@ -232,10 +244,10 @@ public:
         case 10: // PVP toggle
             break;
         case 30605: // Banker
-            SpawnNPC(action, player, GuildHouseBank, true, true);
+            SpawnNPC(action, player, s_guildHouseCostBank, true, true);
             break;
         case 800001: // Innkeeper
-            SpawnNPC(action, player, GuildHouseInnKeeper, true, true);
+            SpawnNPC(action, player, s_guildHouseCostInnkeeper, true, true);
             break;
         case 95001: // Alchemy
         case 95002: // Blacksmithing
@@ -253,7 +265,7 @@ public:
         case 95014: // Fishing
         case 95025: // Weapon Trainer
         case 95026: // Riding Trainer
-            SpawnNPC(action, player, GuildHouseProf, true, true);
+            SpawnNPC(action, player, s_guildHouseCostProfession, true, true);
             break;
         case 28692: // Trade Supplies
         case 28776: // Tabard Vendor
@@ -271,22 +283,22 @@ public:
         case 95101: // Holiday Ambassador
         case 95102: // Omni-Crafter
         case 55002: // Services NPC
-            SpawnNPC(action, player, GuildHouseVendor, true, true);
+            SpawnNPC(action, player, s_guildHouseCostVendor, true, true);
             break;
         //
         // Objects
         //
         case 184137: // Mailbox
-            SpawnObject(action, player, GuildHouseMailBox, true, true);
+            SpawnObject(action, player, s_guildHouseCostMailbox, true, true);
             break;
         case 6491: // Spirit Healer
-            SpawnNPC(action, player, GuildHouseSpirit, true, true);
+            SpawnNPC(action, player, s_guildHouseCostSpirit, true, true);
             break;
         case 1685:   // Forge
         case 4087:   // Anvil
         case 187293: // Guild Vault
         case 191028: // Barber Chair
-            SpawnObject(action, player, GuildHouseObject, true, true);
+            SpawnObject(action, player, s_guildHouseCostObject, true, true);
             break;
         case GetGameObjectEntry(1): // Darnassus Portal
         case GetGameObjectEntry(2): // Exodar Portal
@@ -296,7 +308,7 @@ public:
         case GetGameObjectEntry(7): // Undercity Portal
         case GetGameObjectEntry(8): // Shattrath Portal
         case GetGameObjectEntry(9): // Dalaran Portal
-            SpawnObject(action, player, GuildHousePortal, true, true);
+            SpawnObject(action, player, s_guildHouseCostPortal, true, true);
             break;
         }
         return true;
@@ -327,7 +339,7 @@ public:
 
         // Global Existence Check
         // Use current map and phase
-        if (GuildHouseManager::HasSpawn(player->GetMapId(), ::GetGuildPhase(player), entry, false))
+        if (GuildHouseManager::HasSpawn(player->GetMapId(), GetGuildPhase(player), entry, false))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You already have this creature!");
             CloseGossipMenuFor(player);
@@ -374,12 +386,12 @@ public:
 
         Creature* creature = new Creature();
 
-        if (!creature->Create(player->GetMap()->GenerateLowGuid<HighGuid::Unit>(), player->GetMap(), ::GetGuildPhase(player), entry, 0, posX, posY, posZ, ori))
+        if (!creature->Create(player->GetMap()->GenerateLowGuid<HighGuid::Unit>(), player->GetMap(), GetGuildPhase(player), entry, 0, posX, posY, posZ, ori))
         {
             delete creature;
             return;
         }
-        creature->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), ::GetGuildPhase(player));
+        creature->SaveToDB(player->GetMapId(), (1 << player->GetMap()->GetSpawnMode()), GetGuildPhase(player));
         uint32 db_guid = creature->GetSpawnId();
 
         creature->CleanupsBeforeDelete();
@@ -407,7 +419,7 @@ public:
             CharacterDatabase.Execute(
                 "INSERT INTO `dc_guild_house_purchase_log` (`created_at`, `guild_id`, `player_guid`, `player_name`, `map`, `phaseMask`, `spawn_type`, `entry`, `template_name`, `cost`) "
                 "VALUES (UNIX_TIMESTAMP(), {}, {}, '{}', {}, {}, 'CREATURE', {}, '{}', {})",
-                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), ::GetGuildPhase(player), entry, safeSpawnedName, spawnCost);
+                guild->GetId(), player->GetGUID().GetRawValue(), safePlayerName, player->GetMapId(), GetGuildPhase(player), entry, safeSpawnedName, spawnCost);
 
             if (doBroadcast)
             {
@@ -435,7 +447,7 @@ public:
              return;
         }
 
-        if (GuildHouseManager::HasSpawn(player->GetMapId(), ::GetGuildPhase(player), entry, true))
+        if (GuildHouseManager::HasSpawn(player->GetMapId(), GetGuildPhase(player), entry, true))
         {
             ChatHandler(player->GetSession()).PSendSysMessage("You already have this object!");
             CloseGossipMenuFor(player);
@@ -734,19 +746,16 @@ public:
 
     void OnBeforeConfigLoad(bool /*reload*/) override
     {
-        GuildHouseInnKeeper = sConfigMgr->GetOption<int32>("GuildHouseInnKeeper", 1000000);
-        GuildHouseBank = sConfigMgr->GetOption<int32>("GuildHouseBank", 1000000);
-        GuildHouseMailBox = sConfigMgr->GetOption<int32>("GuildHouseMailbox", 500000);
-        GuildHouseAuctioneer = sConfigMgr->GetOption<int32>("GuildHouseAuctioneer", 500000);
-        GuildHouseTrainer = sConfigMgr->GetOption<int32>("GuildHouseTrainerCost", 1000000);
-        GuildHouseVendor = sConfigMgr->GetOption<int32>("GuildHouseVendor", 500000);
-        GuildHouseObject = sConfigMgr->GetOption<int32>("GuildHouseObject", 500000);
-        GuildHousePortal = sConfigMgr->GetOption<int32>("GuildHousePortal", 500000);
-        GuildHouseProf = sConfigMgr->GetOption<int32>("GuildHouseProf", 500000);
-        GuildHouseSpirit = sConfigMgr->GetOption<int32>("GuildHouseSpirit", 100000);
-        GuildHouseSpirit = sConfigMgr->GetOption<int32>("GuildHouseSpirit", 100000);
-        GuildHouseBuyRank = sConfigMgr->GetOption<int32>("GuildHouseBuyRank", 4);
-        GuildHouseCurrency = sConfigMgr->GetOption<int32>("DarkChaos.Seasonal.TokenItemID", 0);
+        s_guildHouseCostInnkeeper = sConfigMgr->GetOption<int32>("GuildHouseInnKeeper", 1000000);
+        s_guildHouseCostBank = sConfigMgr->GetOption<int32>("GuildHouseBank", 1000000);
+        s_guildHouseCostMailbox = sConfigMgr->GetOption<int32>("GuildHouseMailbox", 500000);
+        s_guildHouseCostAuctioneer = sConfigMgr->GetOption<int32>("GuildHouseAuctioneer", 500000);
+        s_guildHouseCostVendor = sConfigMgr->GetOption<int32>("GuildHouseVendor", 500000);
+        s_guildHouseCostObject = sConfigMgr->GetOption<int32>("GuildHouseObject", 500000);
+        s_guildHouseCostPortal = sConfigMgr->GetOption<int32>("GuildHousePortal", 500000);
+        s_guildHouseCostProfession = sConfigMgr->GetOption<int32>("GuildHouseProf", 500000);
+        s_guildHouseCostSpirit = sConfigMgr->GetOption<int32>("GuildHouseSpirit", 100000);
+        s_guildHouseBuyRank = sConfigMgr->GetOption<int32>("GuildHouseBuyRank", 4);
     }
 };
 

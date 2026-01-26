@@ -225,7 +225,7 @@ namespace DC
 
         // Normalized coordinates for map pin placement
         float nx = 0.0f, ny = 0.0f;
-        if (DC::MapCoords::TryComputeNormalized(zoneId, boss->GetPositionX(), boss->GetPositionY(), nx, ny))
+        if (DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(zoneId, boss->GetPositionX(), boss->GetPositionY(), nx, ny))
         {
             b.Set("nx", DCAddon::JsonValue(nx));
             b.Set("ny", DCAddon::JsonValue(ny));

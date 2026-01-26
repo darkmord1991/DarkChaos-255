@@ -14,7 +14,7 @@
 #include "GameObject.h"
 #include "Transport.h"
 #include "Maps/MapMgr.h"
-#include "guildhouse.h"
+#include "dc_guildhouse.h"
 
 class GuildHouseSeller : public CreatureScript
 {
@@ -152,57 +152,6 @@ public:
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
-    bool CleanupGuildHouseSpawns(uint32 guildPhase, uint32 mapId = 1)
-    {
-        QueryResult CreatureResult;
-        QueryResult GameobjResult;
-        Map* map = sMapMgr->FindMap(mapId, 0);
-        if (!map)
-            return false;
-
-        GameobjResult = WorldDatabase.Query("SELECT `guid` FROM `gameobject` WHERE `map` = {} AND `phaseMask` = {}", mapId, guildPhase);
-        CreatureResult = WorldDatabase.Query("SELECT `guid` FROM `creature` WHERE `map` = {} AND `phaseMask` = {}", mapId, guildPhase);
-
-        if (CreatureResult)
-        {
-            do
-            {
-                Field* fields = CreatureResult->Fetch();
-                uint32 lowguid = fields[0].Get<uint32>();
-                if (CreatureData const* cr_data = sObjectMgr->GetCreatureData(lowguid))
-                {
-                    if (Creature* creature = map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(cr_data->id1, lowguid)))
-                    {
-                        creature->CombatStop();
-                        creature->DeleteFromDB();
-                        creature->AddObjectToRemoveList();
-                    }
-                }
-            } while (CreatureResult->NextRow());
-        }
-
-        if (GameobjResult)
-        {
-            do
-            {
-                Field* fields = GameobjResult->Fetch();
-                uint32 lowguid = fields[0].Get<uint32>();
-                if (GameObjectData const* go_data = sObjectMgr->GetGameObjectData(lowguid))
-                {
-                    if (GameObject* gobject = map->GetGameObject(ObjectGuid::Create<HighGuid::GameObject>(go_data->id, lowguid)))
-                    {
-                        gobject->SetRespawnTime(0);
-                        gobject->Delete();
-                        gobject->DeleteFromDB();
-                        gobject->CleanupsBeforeDelete();
-                    }
-                }
-            } while (GameobjResult->NextRow());
-        }
-
-        return true;
-    }
-
     bool ResetGuildHouse(Player* player, bool free)
     {
         if (!player || !player->GetGuild())
@@ -313,7 +262,9 @@ public:
             CharacterDatabase.Query(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {})",
-                player->GetGuildId(), ::GetGuildPhase(player), map, posX, posY, posZ, ori);
+                player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
+
+            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori));
 
             player->ModifyMoney(-static_cast<int64>(cost));
 
@@ -403,10 +354,10 @@ public:
             CharacterDatabase.Query(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation) "
                 "VALUES ({}, {}, {}, {}, {}, {}, {})",
-                player->GetGuildId(), ::GetGuildPhase(player), map, posX, posY, posZ, ori);
+                player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
 
             // Update Cache potentially needed here if not handled by Spawn
-            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(::GetGuildPhase(player), map, posX, posY, posZ, ori));
+            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori));
 
             GuildHouseManager::SpawnTeleporterNPC(player);
             GuildHouseManager::SpawnButlerNPC(player);

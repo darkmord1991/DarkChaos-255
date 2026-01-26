@@ -40,7 +40,7 @@ namespace DCCustomLogin::LearnSpells
         using AdditionalSpellsList = std::unordered_map<uint8, SpellFamilyToExtraSpells>;
 
         // Data list adapted from azerothcore/mod-learn-spells (AGPL-3.0)
-        static std::unordered_set<uint32> const kIgnoredSpells =
+        static std::vector<uint32> const kIgnoredSpellsList =
         {
             64380, 23885, 23880, 44461, 25346, 10274, 10273, 8418,  8419,  7270,  7269,  7268,  54648, 12536, 24530, 70909, 12494, 57933, 24224, 27095, 27096, 27097, 27099, 32841, 56131, 56160, 56161, 48153, 34754, 64844, 64904, 48085, 33110, 48084,
             28276, 27874, 27873, 7001,  49821, 53022, 47757, 47750, 47758, 47666, 53001, 52983, 52998, 52986, 52987, 52999, 52984, 53002, 53003, 53000, 52988, 52985, 42208, 42209, 42210, 42211, 42212, 42213, 42198, 42937, 42938, 12484, 12485, 12486,
@@ -62,6 +62,15 @@ namespace DCCustomLogin::LearnSpells
             // Optional quest spells
             18540,
         };
+
+        static std::unordered_set<uint32> const kIgnoredSpells = []
+        {
+            std::unordered_set<uint32> ids;
+            ids.reserve(kIgnoredSpellsList.size());
+            for (uint32 id : kIgnoredSpellsList)
+                ids.insert(id);
+            return ids;
+        }();
 
         static AdditionalSpellsList const kAdditionalSpells =
         {
@@ -758,8 +767,11 @@ namespace DCCustomLogin::LearnSpells
         if (oldLevel >= maxLevel)
             return;
 
-        uint32 fromLevel = oldLevel;
+        uint32 fromLevel = static_cast<uint32>(oldLevel) + 1;
         uint32 toLevel = std::min<uint8>(newLevel, maxLevel);
+
+        if (fromLevel > toLevel)
+            return;
 
         LearnClassSpells(player, fromLevel, toLevel, debug);
         LearnTrainerSpells(player, toLevel, debug);

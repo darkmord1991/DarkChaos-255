@@ -107,7 +107,7 @@ void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades\ItemUpgradeStatApp
 void AddSC_ItemUpgradeQuestRewardHook();      // ItemUpgrades\ItemUpgradeQuestRewardHook.cpp
 
 // --- Mythic+ Dungeon System ---
-void AddMythicPlusScripts();                  // MythicPlus\mythic_plus_loader.cpp
+void AddMythicPlusScripts();                  // MythicPlus/dc_mythicplus_loader.cpp
 void AddSC_dc_mythic_spectator();             // MythicPlus\dc_mythic_spectator.cpp
 
 // --- Seasonal Reward System ---
@@ -150,8 +150,8 @@ void AddSC_dc_challenge_modes_commandscript(); // Commands/cs_dc_challenge_modes
                      // Commands/cs_dc_perftest.cpp
 
 // --- Guild Housing ---
-void AddGuildHouseScripts();                  // mod_guildhouse.cpp
-void AddGuildHouseButlerScripts();            // mod_guildhouse_butler.cpp
+void AddGuildHouseScripts();                  // GuildHousing/dc_guildhouse.cpp
+void AddGuildHouseButlerScripts();            // GuildHousing/dc_guildhouse_butler.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()

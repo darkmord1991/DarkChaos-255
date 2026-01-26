@@ -64,7 +64,7 @@ namespace DeathMarkers
         {
             float nx = 0.0f;
             float ny = 0.0f;
-            if (!DC::MapCoords::TryComputeNormalized(zoneId, x, y, nx, ny))
+            if (!DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(zoneId, x, y, nx, ny))
                 return {};
 
             return std::make_pair(nx, ny);

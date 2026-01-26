@@ -10,27 +10,14 @@
 #include "GuildMgr.h"
 #include "Define.h"
 #include "GossipDef.h"
-#include "DataMap.h"
 #include "GameObject.h"
 #include "Transport.h"
 #include "Maps/MapMgr.h"
-#include "guildhouse.h"
+#include "dc_guildhouse.h"
 
 #include <algorithm>
 #include <cctype>
 #include <string>
-
-class GuildData : public DataMap::Base
-{
-public:
-    GuildData() {}
-    GuildData(uint32 phase, float posX, float posY, float posZ, float ori) : phase(phase), posX(posX), posY(posY), posZ(posZ), ori(ori) {}
-    uint32 phase;
-    float posX;
-    float posY;
-    float posZ;
-    float ori;
-};
 
 class GuildHelper : public GuildScript
 {
@@ -41,11 +28,6 @@ public:
     void OnCreate(Guild* /*guild*/, Player* leader, const std::string& /*name*/)
     {
         ChatHandler(leader->GetSession()).PSendSysMessage("You now own a guild. You can purchase a Guild House!");
-    }
-
-    uint32 GetGuildPhase(Guild* guild)
-    {
-        return ::GetGuildPhase(guild);
     }
 
     void OnDisband(Guild* guild)
@@ -161,17 +143,8 @@ public:
 
     void CheckPlayer(Player* player)
     {
-        GuildData* guildData = player->CustomData.GetDefault<GuildData>("phase");
-        QueryResult result = CharacterDatabase.Query("SELECT `id`, `guild`, `phase`, `map`,`positionX`, `positionY`, `positionZ`, `orientation` FROM dc_guild_house WHERE `guild` = {}", player->GetGuildId());
-
-        if (result)
-        {
-            do
-            {
-                Field* fields = result->Fetch();
-                guildData->phase = fields[2].Get<uint32>();
-            } while (result->NextRow());
-        }
+        GuildHouseData const* houseData = GuildHouseManager::GetGuildHouseData(player->GetGuildId());
+        uint32 guildPhase = houseData ? houseData->phase : GetGuildPhase(player);
 
         if (player->GetZoneId() == 876 && player->GetAreaId() == 876) // GM Island
         {
@@ -181,21 +154,21 @@ public:
             // If player is not in a guild he doesnt have a guild house teleport away
             // TODO: What if they are in a guild, but somehow are in the wrong phaseMask and seeing someone else's area?
 
-            if (!result || !player->GetGuild())
+            if (!houseData || !player->GetGuild())
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("Your guild does not own a Guild House.");
-                teleportToDefault(player);
+                TeleportToDefault(player);
                 return;
             }
 
-            player->SetPhaseMask(guildData->phase, true);
-            EnsureButlerSpawned(player, guildData->phase);
+            player->SetPhaseMask(guildPhase, true);
+            EnsureButlerSpawned(player, guildPhase);
         }
         else
             player->SetPhaseMask(GetNormalPhase(player), true);
     }
 
-    void teleportToDefault(Player* player)
+    void TeleportToDefault(Player* player)
     {
         if (player->GetTeamId() == TEAM_ALLIANCE)
             player->TeleportTo(0, -8833.379883f, 628.627991f, 94.006599f, 1.0f);

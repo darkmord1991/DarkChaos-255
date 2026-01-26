@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../GuildHousing/guildhouse.h"
+#include "../GuildHousing/dc_guildhouse.h"
 
 using namespace Acore::ChatCommands;
 

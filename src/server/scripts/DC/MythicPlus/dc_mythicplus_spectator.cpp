@@ -7,7 +7,7 @@
  */
 
 #include "ScriptMgr.h"
-#include "dc_mythic_spectator.h"
+#include "dc_mythicplus_spectator.h"
 #include "Player.h"
 #include "Pet.h"
 #include "Config.h"
@@ -19,7 +19,7 @@
 #include "MapMgr.h"
 #include "InstanceScript.h"
 #include "Log.h"
-#include "MythicPlusRunManager.h"
+#include "dc_mythicplus_run_manager.h"
 #include "SpellAuras.h"
 #include "SpellAuraEffects.h"
 #include "Guild.h"

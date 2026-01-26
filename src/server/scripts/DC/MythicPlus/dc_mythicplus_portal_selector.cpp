@@ -9,7 +9,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "ScriptedGossip.h"
-#include "MythicDifficultyScaling.h"
+#include "dc_mythicplus_difficulty_scaling.h"
 #include "WorldSession.h"
 #include "Map.h"
 #include "Log.h"

@@ -9,10 +9,10 @@
 #include "Player.h"
 #include "Creature.h"
 #include "ScriptMgr.h"
-#include "../MythicPlus/MythicPlusRunManager.h"
-#include "../MythicPlus/MythicPlusAffixes.h"
-#include "../MythicPlus/MythicDifficultyScaling.h"
-#include "../MythicPlus/MythicPlusConstants.h"
+#include "../MythicPlus/dc_mythicplus_run_manager.h"
+#include "../MythicPlus/dc_mythicplus_affixes.h"
+#include "../MythicPlus/dc_mythicplus_difficulty_scaling.h"
+#include "../MythicPlus/dc_mythicplus_constants.h"
 #include "StringFormat.h"
 #include <cstdlib>
 

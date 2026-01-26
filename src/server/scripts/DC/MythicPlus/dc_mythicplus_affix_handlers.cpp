@@ -3,8 +3,8 @@
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  */
 
-#include "MythicPlusAffixes.h"
-#include "MythicPlusRunManager.h"
+#include "dc_mythicplus_affixes.h"
+#include "dc_mythicplus_run_manager.h"
 #include "Creature.h"
 #include "Map.h"
 #include "Player.h"

@@ -6,8 +6,7 @@
  * Generates spec-appropriate loot for Mythic+ dungeons (retail-like)
  */
 
-#include "MythicPlusRunManager.h"
-#include "MythicPlusRewards.h"
+#include "dc_mythicplus_run_manager.h"
 #include "Chat.h"
 #include "Config.h"
 #include "DatabaseEnv.h"
@@ -22,7 +21,6 @@
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include <algorithm>
-#include <array>
 #include <array>
 #include <random>
 #include <vector>
@@ -67,12 +65,12 @@ bool TrySelectLootItem(Player* player, uint32 targetItemLevel, uint32& outItemId
     if (classId == 0)
         return false;
 
-    uint32 classMask = DC::VaultUtils::GetPlayerClassMask(player);
+    uint32 classMask = DarkChaos::CrossSystem::VaultUtils::GetPlayerClassMask(player);
     if (classMask == 0) classMask = 1u << (classId - 1);
 
-    std::string spec = DC::VaultUtils::GetPlayerSpec(player);
-    std::string armor = DC::VaultUtils::GetPlayerArmorType(player);
-    uint8 roleMask = DC::VaultUtils::GetPlayerRoleMask(player);
+    std::string spec = DarkChaos::CrossSystem::VaultUtils::GetPlayerSpec(player);
+    std::string armor = DarkChaos::CrossSystem::VaultUtils::GetPlayerArmorType(player);
+    uint8 roleMask = DarkChaos::CrossSystem::VaultUtils::GetPlayerRoleMask(player);
 
     WorldDatabase.EscapeString(spec);
     WorldDatabase.EscapeString(armor);

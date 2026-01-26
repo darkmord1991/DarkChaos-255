@@ -3,8 +3,8 @@
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  */
 
-#ifndef MYTHIC_PLUS_AFFIXES_H
-#define MYTHIC_PLUS_AFFIXES_H
+#ifndef DC_MYTHICPLUS_AFFIXES_H
+#define DC_MYTHICPLUS_AFFIXES_H
 
 #include "ObjectGuid.h"
 #include "SharedDefines.h"
@@ -99,4 +99,4 @@ private:
 
 #define sAffixMgr MythicPlusAffixManager::instance()
 
-#endif // MYTHIC_PLUS_AFFIXES_H
+#endif // DC_MYTHICPLUS_AFFIXES_H

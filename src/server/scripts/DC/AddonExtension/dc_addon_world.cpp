@@ -203,7 +203,7 @@ namespace World
 
                 float outNx = 0.0f;
                 float outNy = 0.0f;
-                if (DC::MapCoords::TryComputeNormalized(zoneId, cData->posX, cData->posY, outNx, outNy))
+                if (DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(zoneId, cData->posX, cData->posY, outNx, outNy))
                 {
                     nx = outNx;
                     ny = outNy;
@@ -332,8 +332,8 @@ namespace World
 
         // Centralized spawn position resolution.
         // preferLive=true helps when the target is currently moving and loaded near the player.
-        DC::SpawnResolver::ResolvedPosition resolved = DC::SpawnResolver::ResolveAny(
-            DC::SpawnResolver::Type::Creature, player, spawnId, entry, true);
+        DarkChaos::CrossSystem::SpawnResolver::ResolvedPosition resolved = DarkChaos::CrossSystem::SpawnResolver::ResolveAny(
+            DarkChaos::CrossSystem::SpawnResolver::Type::Creature, player, spawnId, entry, true);
 
         JsonMessage reply(Module::WORLD, Opcode::World::SMSG_RESOLVE_RESULT);
         reply.Set("entityId", JsonValue(entityId));

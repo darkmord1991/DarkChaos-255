@@ -181,17 +181,23 @@ set(SCRIPTS_DC_SeasonalRewards
 
 # DC Mythic+ System - Dungeon Scaling, Keystone System & Spectator
 set(SCRIPTS_DC_MythicPlus
-    MythicPlus/MythicDifficultyScaling.h
-    MythicPlus/MythicDifficultyScaling.cpp
-    MythicPlus/MythicPlusRunManager.h
-    MythicPlus/MythicPlusRunManager.cpp
-    MythicPlus/MythicPlusSeasonalIntegration.cpp
-    MythicPlus/go_mythic_plus_font_of_power.cpp
-    MythicPlus/npc_mythic_token_vendor.cpp
-    MythicPlus/mythic_plus_core_scripts.cpp
-    MythicPlus/mythic_plus_loader.cpp
-    MythicPlus/npc_dungeon_portal_selector.cpp
-    MythicPlus/dc_mythic_spectator.cpp
+    MythicPlus/dc_mythicplus_difficulty_scaling.h
+    MythicPlus/dc_mythicplus_difficulty_scaling.cpp
+    MythicPlus/dc_mythicplus_run_manager.h
+    MythicPlus/dc_mythicplus_run_manager.cpp
+    MythicPlus/dc_mythicplus_seasonal_integration.cpp
+    MythicPlus/dc_mythicplus_font_of_power.cpp
+    MythicPlus/dc_mythicplus_token_vendor.cpp
+    MythicPlus/dc_mythicplus_core_scripts.cpp
+    MythicPlus/dc_mythicplus_loader.cpp
+    MythicPlus/dc_mythicplus_portal_selector.cpp
+    MythicPlus/dc_mythicplus_spectator.cpp
+    MythicPlus/dc_mythicplus_affixes.cpp
+    MythicPlus/dc_mythicplus_affix_handlers.cpp
+    MythicPlus/dc_mythicplus_constants.h
+    MythicPlus/dc_mythicplus_loot_generator.cpp
+    MythicPlus/dc_mythicplus_keystone_item.cpp
+    MythicPlus/dc_mythicplus_keystone_vendor.cpp
 )
 
 # DC Great Vault System
@@ -276,10 +282,10 @@ set(SCRIPTS_DC_Commands
 
 # DC Guild Housing
 set(SCRIPTS_DC_GuildHousing
-    GuildHousing/mod_guildhouse.cpp
-    GuildHousing/mod_guildhouse_npcs.cpp
-    GuildHousing/mod_guildhouse_butler.cpp
-    GuildHousing/guildhouse_manager.cpp
+    GuildHousing/dc_guildhouse.cpp
+    GuildHousing/dc_guildhouse_npcs.cpp
+    GuildHousing/dc_guildhouse_butler.cpp
+    GuildHousing/dc_guildhouse_manager.cpp
 )
 
 # DC Teleporters

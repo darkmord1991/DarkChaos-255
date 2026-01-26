@@ -210,6 +210,24 @@ namespace DCCustomLogin
         return "";
     }
 
+    bool HasFirstLoginMarker(ObjectGuid guid)
+    {
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT 1 FROM dc_player_welcome WHERE guid = {} LIMIT 1",
+            guid.GetCounter()
+        );
+
+        return result != nullptr;
+    }
+
+    void MarkFirstLoginComplete(ObjectGuid guid)
+    {
+        CharacterDatabase.Execute(
+            "INSERT IGNORE INTO dc_player_welcome (guid, is_new_character, created_at) VALUES ({}, 1, NOW())",
+            guid.GetCounter()
+        );
+    }
+
     // Grant starting professions
     void GrantProfessions(Player* player, bool debug)
     {
@@ -639,13 +657,16 @@ public:
 
         bool debug = sConfigMgr->GetOption<bool>(DCCustomLogin::Config::DEBUG, false);
 
-        // Check for first login using total played time
-        if (player->GetTotalPlayedTime() == 0)
+        bool hasFirstLoginMarker = DCCustomLogin::HasFirstLoginMarker(player->GetGUID());
+
+        // Check for first login using marker + total played time
+        if (!hasFirstLoginMarker && player->GetTotalPlayedTime() == 0)
         {
             if (debug)
                 LOG_INFO("module.dc", "[DCCustomLogin] First login detected for {}", player->GetName());
 
             DCCustomLogin::GiveFirstLoginRewards(player);
+            DCCustomLogin::MarkFirstLoginComplete(player->GetGUID());
         }
 
         // Announce module if enabled

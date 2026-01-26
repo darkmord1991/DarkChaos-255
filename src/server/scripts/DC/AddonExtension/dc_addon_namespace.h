@@ -234,7 +234,7 @@ namespace DCAddon
             // =================================================================
             // Mythic+ Token Vendor UI (NPC-driven)
             // =================================================================
-            // Note: These are UI helpers around npc_mythic_token_vendor.cpp
+            // Note: These are UI helpers around dc_mythicplus_token_vendor.cpp
             constexpr uint8 SMSG_TOKEN_VENDOR_OPEN   = 0x80; // Server -> Client: open vendor UI + initial state
             constexpr uint8 CMSG_TOKEN_VENDOR_CHOICES = 0x81; // Client -> Server: request item choices for ilvl+slot
             constexpr uint8 SMSG_TOKEN_VENDOR_CHOICES = 0x82; // Server -> Client: item choices response
@@ -246,7 +246,7 @@ namespace DCAddon
             // =================================================================
             // Seasonal Dungeon Teleporter UI (NPC-driven)
             // =================================================================
-            // Note: These are UI helpers around npc_dungeon_portal_selector.cpp
+            // Note: These are UI helpers around dc_mythicplus_portal_selector.cpp
             constexpr uint8 SMSG_SEASONAL_PORTAL_OPEN  = 0x90; // Server -> Client: open seasonal teleporter UI
             constexpr uint8 CMSG_SEASONAL_PORTAL_TELEPORT = 0x91; // Client -> Server: teleport request
             constexpr uint8 SMSG_SEASONAL_PORTAL_RESULT = 0x92; // Server -> Client: teleport result

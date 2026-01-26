@@ -58,7 +58,7 @@ namespace SpawnResolver
                     out.y = c->GetPositionY();
                     out.z = c->GetPositionZ();
                     c->GetZoneAndAreaId(out.zoneId, out.areaId);
-                    out.hasNormalized = DC::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
+                    out.hasNormalized = DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
                     return out;
                 }
             }
@@ -78,7 +78,7 @@ namespace SpawnResolver
                 out.y = cData->posY;
                 out.z = cData->posZ;
                 FillZoneArea(out.phaseMask, out.mapId, out.x, out.y, out.z, out.zoneId, out.areaId);
-                out.hasNormalized = DC::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
+                out.hasNormalized = DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
                 return out;
             }
         }
@@ -118,7 +118,7 @@ namespace SpawnResolver
         if (out.zoneId == 0 || out.areaId == 0)
             FillZoneArea(out.phaseMask, out.mapId, out.x, out.y, out.z, out.zoneId, out.areaId);
 
-        out.hasNormalized = DC::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
+        out.hasNormalized = DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
         return out;
     }
 
@@ -153,7 +153,7 @@ namespace SpawnResolver
                     out.y = go->GetPositionY();
                     out.z = go->GetPositionZ();
                     go->GetZoneAndAreaId(out.zoneId, out.areaId);
-                    out.hasNormalized = DC::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
+                    out.hasNormalized = DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
                     return out;
                 }
             }
@@ -173,7 +173,7 @@ namespace SpawnResolver
                 out.y = gData->posY;
                 out.z = gData->posZ;
                 FillZoneArea(out.phaseMask, out.mapId, out.x, out.y, out.z, out.zoneId, out.areaId);
-                out.hasNormalized = DC::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
+                out.hasNormalized = DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
                 return out;
             }
         }
@@ -213,7 +213,7 @@ namespace SpawnResolver
         if (out.zoneId == 0 || out.areaId == 0)
             FillZoneArea(out.phaseMask, out.mapId, out.x, out.y, out.z, out.zoneId, out.areaId);
 
-        out.hasNormalized = DC::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
+        out.hasNormalized = DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
         return out;
     }
 
@@ -231,7 +231,7 @@ namespace SpawnResolver
         out.y = player->GetPositionY();
         out.z = player->GetPositionZ();
         player->GetZoneAndAreaId(out.zoneId, out.areaId);
-        out.hasNormalized = DC::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
+        out.hasNormalized = DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(out.zoneId, out.x, out.y, out.nx, out.ny);
         return out;
     }
 

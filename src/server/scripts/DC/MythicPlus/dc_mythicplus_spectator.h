@@ -7,8 +7,8 @@
  * Features: Live run watching, leaderboard view, stream mode, invite links, replays.
  */
 
-#ifndef DC_MYTHIC_SPECTATOR_H
-#define DC_MYTHIC_SPECTATOR_H
+#ifndef DC_MYTHICPLUS_SPECTATOR_H
+#define DC_MYTHICPLUS_SPECTATOR_H
 
 #include "Player.h"
 #include "ObjectGuid.h"
@@ -273,4 +273,4 @@ namespace DCMythicSpectator
 
 } // namespace DCMythicSpectator
 
-#endif // DC_MYTHIC_SPECTATOR_H
+#endif // DC_MYTHICPLUS_SPECTATOR_H

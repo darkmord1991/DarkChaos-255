@@ -23,7 +23,7 @@
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
 #include "Vehicle.h"
-#include "DC/MythicPlus/MythicPlusRunManager.h"
+#include "DC/MythicPlus/dc_mythicplus_run_manager.h"
 #include "utgarde_pinnacle.h"
 
 enum Misc

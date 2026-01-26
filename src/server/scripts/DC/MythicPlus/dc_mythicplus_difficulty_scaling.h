@@ -3,8 +3,8 @@
  * Copyright (C) 2025+ DarkChaos-255 Custom Scripts
  */
 
-#ifndef MYTHIC_DIFFICULTY_SCALING_H
-#define MYTHIC_DIFFICULTY_SCALING_H
+#ifndef DC_MYTHICPLUS_DIFFICULTY_SCALING_H
+#define DC_MYTHICPLUS_DIFFICULTY_SCALING_H
 
 #include "ScriptMgr.h"
 #include "Creature.h"
@@ -102,4 +102,4 @@ private:
 
 #define sMythicScaling MythicDifficultyScaling::instance()
 
-#endif // MYTHIC_DIFFICULTY_SCALING_H
+#endif // DC_MYTHICPLUS_DIFFICULTY_SCALING_H

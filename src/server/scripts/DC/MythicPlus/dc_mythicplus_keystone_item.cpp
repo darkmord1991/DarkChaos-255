@@ -11,9 +11,9 @@
 #include "Item.h"
 #include "Chat.h"
 #include "ScriptedGossip.h"
-#include "MythicPlusRunManager.h"
-#include "MythicPlusConstants.h"
-#include "MythicDifficultyScaling.h"
+#include "dc_mythicplus_run_manager.h"
+#include "dc_mythicplus_constants.h"
+#include "dc_mythicplus_difficulty_scaling.h"
 #include "StringFormat.h"
 
 namespace

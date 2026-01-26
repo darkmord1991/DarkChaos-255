@@ -31,7 +31,7 @@
 #include "ScriptMgr.h"
 #include "Map.h"
 #include "Group.h"
-#include "DC/MythicPlus/MythicDifficultyScaling.h"
+#include "DC/MythicPlus/dc_mythicplus_difficulty_scaling.h"
 
 // forward declaration of helpers implemented in DC_AddonHelpers.cpp
 void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");

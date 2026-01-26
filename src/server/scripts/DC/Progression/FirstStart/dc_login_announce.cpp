@@ -2,7 +2,6 @@
 #include "Chat.h"
 #include "Player.h"
 #include "World.h"
-#include "WorldSessionMgr.h"
 #include <array>
 #include <string>
 
@@ -26,7 +25,7 @@ namespace
 
     static std::string MakeClassColoredName(Player* player)
     {
-    uint8 cls = player->getClass();
+        uint8 cls = player->getClass();
         char const* hex = (cls < kClassHex.size() && kClassHex[cls] && *kClassHex[cls]) ? kClassHex[cls] : "FFFFFF";
         // |cffHEX|Hplayer:|h [Name]|h|r
         std::string out = "|cff";
