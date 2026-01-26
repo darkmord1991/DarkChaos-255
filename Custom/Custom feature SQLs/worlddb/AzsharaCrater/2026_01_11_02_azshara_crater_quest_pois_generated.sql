@@ -1591,3 +1591,43 @@ INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBu
 SELECT 300712, 1, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0
 FROM creature c WHERE c.map = 37 AND c.id1 = 18478
 HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300803: Bounty: Gondria
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300803, 0, 0, 37, 268, 0, 0, 3, 0 FROM creature c WHERE c.map = 37 AND c.id1 = 33776 LIMIT 1;
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300803, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0 FROM creature c WHERE c.map = 37 AND c.id1 = 33776 HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300960: Sanctum of Highborne (Dusk Shaman)
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300960, 0, 0, 37, 268, 0, 0, 3, 0 FROM creature c WHERE c.map = 37 AND c.id1 = 26694 LIMIT 1;
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300960, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0 FROM creature c WHERE c.map = 37 AND c.id1 = 26694 HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300964: Scourge Infestation
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300964, 0, 0, 37, 268, 0, 0, 3, 0 FROM creature c WHERE c.map = 37 AND c.id1 = 29517 LIMIT 1;
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300964, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0 FROM creature c WHERE c.map = 37 AND c.id1 = 29517 HAVING AVG(c.position_x) IS NOT NULL;
+
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300964, 1, 1, 37, 268, 0, 0, 3, 0 FROM creature c WHERE c.map = 37 AND c.id1 = 29518 LIMIT 1;
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300964, 1, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0 FROM creature c WHERE c.map = 37 AND c.id1 = 29518 HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300965: Highborne Spirits
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300965, 0, 0, 37, 268, 0, 0, 3, 0 FROM creature c WHERE c.map = 37 AND c.id1 = 29519 LIMIT 1;
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300965, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0 FROM creature c WHERE c.map = 37 AND c.id1 = 29519 HAVING AVG(c.position_x) IS NOT NULL;
+
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300965, 1, 1, 37, 268, 0, 0, 3, 0 FROM creature c WHERE c.map = 37 AND c.id1 = 26455 LIMIT 1;
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300965, 1, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0 FROM creature c WHERE c.map = 37 AND c.id1 = 26455 HAVING AVG(c.position_x) IS NOT NULL;
+
+-- Quest 300966: Lady Nightswood
+INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)
+SELECT 300966, 0, 0, 37, 268, 0, 0, 3, 0 FROM creature c WHERE c.map = 37 AND c.id1 = 29770 LIMIT 1;
+INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)
+SELECT 300966, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0 FROM creature c WHERE c.map = 37 AND c.id1 = 29770 HAVING AVG(c.position_x) IS NOT NULL;

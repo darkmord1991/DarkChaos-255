@@ -244,7 +244,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 -- ----------------------------------------------------------------------------
 
 -- Quest 1: Whelpling Menace (Kill Whelps)
-INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
+INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
 (300700, 2, 62, 58, 0, 0, 0, 4, 0, 10246, 1, 300311, 15, 300312, 10, 'Ghostly Presence', 'Kill 10 Kirin''Var Ghosts and 8 Ethereal Scavengers.', 'The coast is haunted by restless spirits. Put them to rest.', 'Azshara Crater', 'Ghosts banished.', 20480, 10, 18393, 8);
 
 -- Quest 2: Mana Surge (Kill Elementals)
@@ -309,7 +309,7 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 3: Forgotten Captains (Kill Elites)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300802, 2, 78, 75, 0, 0, 0, 5, 0, 36141, 1, 300311, 20, 300312, 15, 'Forgotten Captains', 'Kill 4 Forgotten Captains.', 'Undead captains command the temple grounds. Slay them.', 'Azshara Crater', 'Captains slain.', 27220, 4);
+(300802, 2, 78, 75, 0, 0, 0, 5, 0, 36141, 1, 300311, 20, 300312, 15, 'Forgotten Captains', 'Kill 4 Shadowy Necromancers.', 'The Necromancers command the risen forces. Slay them to break their control.', 'Azshara Crater', 'Necromancers slain.', 29518, 4);
 
 -- Quest 4: Bounty: Antilos (Rare Kill)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
@@ -379,15 +379,15 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 -- D6: Sanctum of the Highborne (Level 75-80)
 DELETE FROM `quest_template` WHERE `ID` BETWEEN 300960 AND 300966;
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300960, 2, 77, 74, 0, 0, 10, 5, 5000, 34138, 1, 300311, 25, 300312, 15, 'Sanctum of the Highborne', 'Defeat Cyanigosa.', 'The Blue Dragonflight protects this Sanctum. Prove your strength against Cyanigosa.', 'Sanctum of the Highborne', 'Cyanigosa defeated.', 29317, 1),
+(300960, 2, 77, 74, 0, 0, 10, 5, 5000, 34138, 1, 300311, 25, 300312, 15, 'Sanctum of the Highborne', 'Defeat the Ymirjar Dusk Shaman.', 'The Scourge have seized the Sanctum. Their leader, a powerful Dusk Shaman, must be destroyed.', 'Sanctum of the Highborne', 'Shaman defeated.', 26694, 1),
 (300961, 2, 76, 73, 0, 0, 10, 5, 4500, 300311, 22, 300312, 13, 0, 0, 'Magister Kalendris', 'Defeat Magister Kalendris.', 'Magister Kalendris commands the Highborne spirits. Defeat him to weaken their hold on the Sanctum.', 'Sanctum of the Highborne', 'Kalendris defeated.', 11487, 1),
 (300962, 2, 75, 72, 0, 0, 10, 5, 4000, 300311, 20, 300312, 12, 0, 0, 'The Forgotten Ones', 'Slay 10 Forgotten Ones.', 'The Forgotten Ones lurk in the shadows of the Sanctum. Cleanse them from this sacred place.', 'Sanctum of the Highborne', 'Forgotten Ones cleansed.', 27959, 10),
 (300963, 2, 75, 72, 0, 0, 10, 5, 4000, 300311, 20, 300312, 12, 0, 0, 'Arcane Sentinels', 'Destroy 10 Arcane Sentinels.', 'The Arcane Sentinels guard the Sanctum\'s halls. Disable them to progress deeper.', 'Sanctum of the Highborne', 'Sentinels destroyed.', 15689, 10);
 
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300964, 2, 76, 73, 0, 0, 10, 5, 4200, 300311, 21, 300312, 13, 29286, 12, 27223, 8, 'Scourge Infestation', 'Slay 12 Hungering Ghouls and 8 Lumbering Abominations.', 'The Scourge heavy infantry has arrived. Beat them back.', 'Sanctum of the Highborne', 'Scourge purged.'),
-(300965, 2, 77, 74, 0, 0, 10, 5, 4400, 300311, 22, 300312, 14, 6116, 10, 7850, 8, 'Highborne Spirits', 'Banish 10 Highborne Apparitions and 8 Ancient Highborne Spirits.', 'The ancient Highborne spirits linger in torment. Release them from their eternal prison.', 'Sanctum of the Highborne', 'Spirits released.'),
-(300966, 2, 78, 75, 0, 0, 10, 5, 4600, 300311, 23, 300312, 15, 27099, 6, 0, 0, 'Faceless Horror', 'Slay 6 Faceless Lurkers.', 'The Faceless Ones serve the Old Gods. They must not be allowed to corrupt the Sanctum further.', 'Sanctum of the Highborne', 'Faceless threat eliminated.');
+(300964, 2, 76, 73, 0, 0, 10, 5, 4200, 300311, 21, 300312, 13, 29517, 12, 29518, 8, 'Scourge Infestation', 'Slay 12 Darkmender\'s Ghouls and 8 Shadowy Necromancers.', 'The Scourge heavy infantry has arrived. Beat them back.', 'Sanctum of the Highborne', 'Scourge purged.'),
+(300965, 2, 77, 74, 0, 0, 10, 5, 4400, 300311, 22, 300312, 14, 29519, 10, 26455, 8, 'Highborne Spirits', 'Slay 10 Servants of Setaal and 8 Moonrest Highborne.', 'The ancient Highborne spirits guard the inner sanctum. Release them.', 'Sanctum of the Highborne', 'Spirits released.'),
+(300966, 2, 78, 75, 0, 0, 10, 5, 4600, 300311, 23, 300312, 15, 29770, 1, 0, 0, 'Lady Nightswood', 'Slay Lady Nightswood.', 'The Banshee Lady Nightswood guards the upper tier. Silence her scream forever.', 'Sanctum of the Highborne', 'Nightswood defeated.');
 
 -- ============================================================================
 -- DUNGEON INTRODUCTION QUESTS (Breadcrumbs from Zone Givers)
@@ -665,11 +665,11 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 -- ----------------------------------------------------------------------------
 DELETE FROM `quest_template` WHERE `ID` BETWEEN 300510 AND 300514;
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`, `RequiredNpcOrGo3`, `RequiredNpcOrGoCount3`, `RewardItem1`, `RewardAmount1`) VALUES
-(300510, 2, 69, 65, 0, 0, 5, 5, 'Temple of Elune', 'Defeat Baroness Anandara.', 'The Banshee Queen rules this corrupted temple. She must fall.', 'Temple of Elune', 'Anandara defeated.', 300103, 1, 0, 0, 0, 0, 300311, 25),
-(300511, 2, 68, 65, 0, 0, 5, 4, 'Purging the Darkness', 'Defeat Nerub\'enkan and Mother Smolderweb.', 'Spiders infest the lower levels. Clear them out.', 'Temple of Elune', 'Spiders defeated.', 300102, 1, 300104, 1, 0, 0, 300311, 20),
-(300512, 2, 68, 65, 0, 0, 5, 4, 'Rare Threats', 'Slay Skul and Tendris Warpwood.', 'Powerful entities roam these halls. Put them to rest.', 'Temple of Elune', 'Rares defeated.', 300100, 1, 300101, 1, 0, 0, 300311, 20),
-(300513, 2, 67, 65, 0, 0, 5, 3, 'The Corrupted Temple', 'Slay 10 Corrupted Spectres and 8 Black Morass Tarantulas.', 'The spirits and spiders are everywhere. Thin their numbers.', 'Temple of Elune', 'Temple thinned.', 300110, 10, 300111, 8, 0, 0, 300311, 15),
-(300514, 2, 67, 65, 0, 0, 5, 3, 'Clearing the Plague', 'Slay 8 Plague Bats, 8 Plague Slimes, and 6 Bonelashers.', 'The plague has twisted the very flora and fauna. Cleanse it.', 'Temple of Elune', 'Plague cleared.', 300112, 8, 300114, 8, 300113, 6, 300311, 15);
+(300510, 2, 69, 65, 0, 0, 5, 5, 'Temple of Elune', 'Defeat Baroness Anandara.', 'The Banshee Queen rules this corrupted temple. She must fall.', 'Temple of Elune', 'Anandara defeated.', 14506, 1, 0, 0, 0, 0, 300311, 25),
+(300511, 2, 68, 65, 0, 0, 5, 4, 'Purging the Darkness', 'Defeat Nerub\'enkan and Mother Smolderweb.', 'Spiders infest the lower levels. Clear them out.', 'Temple of Elune', 'Spiders defeated.', 10437, 1, 10596, 1, 0, 0, 300311, 20),
+(300512, 2, 68, 65, 0, 0, 5, 4, 'Rare Threats', 'Slay Skul and Tendris Warpwood.', 'Powerful entities roam these halls. Put them to rest.', 'Temple of Elune', 'Rares defeated.', 10393, 1, 11489, 1, 0, 0, 300311, 20),
+(300513, 2, 67, 65, 0, 0, 5, 3, 'The Corrupted Temple', 'Slay 10 Corrupted Spectres and 8 Black Morass Tarantulas.', 'The spirits and spiders are everywhere. Thin their numbers.', 'Temple of Elune', 'Temple thinned.', 22041, 10, 18983, 8, 0, 0, 300311, 15),
+(300514, 2, 67, 65, 0, 0, 5, 3, 'Clearing the Plague', 'Slay 8 Plague Bats, 8 Plague Slimes, and 6 Bonelashers.', 'The plague has twisted the very flora and fauna. Cleanse it.', 'Temple of Elune', 'Plague cleared.', 8535, 8, 8536, 8, 18470, 6, 300311, 15);
 
 
 DELETE FROM `creature_template` WHERE `entry` = 300085;
