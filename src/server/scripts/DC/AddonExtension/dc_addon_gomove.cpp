@@ -66,7 +66,7 @@ namespace DCAddon
 
             if (msg.GetDataCount() < 1)
             {
-                DCAddon::SendError(player, Module::GOMOVE, "Missing command id", DCAddon::ErrorCode::INVALID_REQUEST, Opcode::Core::SMSG_ERROR);
+                DCAddon::SendError(player, Module::GOMOVE, "Missing command id", DCAddon::ErrorCode::BAD_FORMAT, Opcode::Core::SMSG_ERROR);
                 return;
             }
 
@@ -215,14 +215,14 @@ namespace DCAddon
             // Format: DC|GOMV|0x02|SEARCH_TERM
             if (msg.GetDataCount() < 1)
             {
-                DCAddon::SendError(player, Module::GOMOVE, "Missing search term", DCAddon::ErrorCode::INVALID_REQUEST, Opcode::Core::SMSG_ERROR);
+                DCAddon::SendError(player, Module::GOMOVE, "Missing search term", DCAddon::ErrorCode::BAD_FORMAT, Opcode::Core::SMSG_ERROR);
                 return;
             }
 
             std::string searchTerm = msg.GetString(0);
             if (searchTerm.empty())
             {
-                DCAddon::SendError(player, Module::GOMOVE, "Empty search term", DCAddon::ErrorCode::INVALID_REQUEST, Opcode::Core::SMSG_ERROR);
+                DCAddon::SendError(player, Module::GOMOVE, "Empty search term", DCAddon::ErrorCode::BAD_FORMAT, Opcode::Core::SMSG_ERROR);
                 return;
             }
 

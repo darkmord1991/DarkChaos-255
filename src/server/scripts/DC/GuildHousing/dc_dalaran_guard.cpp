@@ -11,6 +11,8 @@
 
 namespace
 {
+    constexpr uint32 DALARAN_GUARD_TEXT_ID = 8000300;
+
     struct DalaranGuardPOI
     {
         const char* name;
@@ -25,7 +27,8 @@ namespace
 
     static const DalaranGuardPOI dalaran_guard_pois[] =
     {
-        {"Bank", 1409, 1202.201f, 1135.176f, 530.336f, 3.296f, ICON_POI_SMALL_HOUSE, GOSSIP_ICON_TAXI}
+        {"Bank", 1409, 1202.201f, 1135.176f, 530.336f, 3.296f, ICON_POI_SMALL_HOUSE, GOSSIP_ICON_TAXI},
+        {"Mythic+", 1409, 1102.5204f, 1198.4127f, 536.79785f, 1.6015308f, ICON_POI_SMALL_HOUSE, GOSSIP_ICON_TAXI}
     };
 
     void SendPoiMarker(Player* player, float x, float y, uint32 icon, uint32 flags, uint32 importance, std::string const& name)
@@ -62,11 +65,11 @@ public:
             AddGossipItemFor(player, poi.menuIcon, label, GOSSIP_SENDER_MAIN, idx);
         }
 
-        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+        SendGossipMenuFor(player, DALARAN_GUARD_TEXT_ID, creature->GetGUID());
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action) override
     {
         if (action >= std::size(dalaran_guard_pois))
         {

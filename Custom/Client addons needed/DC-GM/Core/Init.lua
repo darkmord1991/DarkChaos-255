@@ -16,6 +16,11 @@
 --
 -------------------------------------------------------------------------------------------------------------
 
+-- Guard against missing global chat strings (prevents ChatFrame format errors)
+if not _G.CHAT_NOT_IN_LFG then
+  _G.CHAT_NOT_IN_LFG = "You are not in Looking For Group channel."
+end
+
 --Convention:
 -- AzerothAdmin:PrepareScript(*nameofbutton*                    , Locale["*tooltiplocalisation*"]         , function() *functionnameandparameters()* end)
 
