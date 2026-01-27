@@ -2727,8 +2727,8 @@ DCCustomLogin.Hunter.Weapon1 = 42943
 DCCustomLogin.Hunter.Weapon2 = 0
 DCCustomLogin.Hunter.Weapon3 = 0
 
-DCCustomLogin.Rogue.Shoulders = 42950
-DCCustomLogin.Rogue.Chest = 48677
+DCCustomLogin.Rogue.Shoulders = 42952
+DCCustomLogin.Rogue.Chest = 48689
 DCCustomLogin.Rogue.Trinket = 42991
 DCCustomLogin.Rogue.Weapon1 = 42944
 DCCustomLogin.Rogue.Weapon2 = 42944
@@ -2770,7 +2770,7 @@ DCCustomLogin.Warlock.Weapon2 = 0
 DCCustomLogin.Warlock.Weapon3 = 0
 
 DCCustomLogin.Druid.Shoulders = 42984
-DCCustomLogin.Druid.Chest = 48718
+DCCustomLogin.Druid.Chest = 48689
 DCCustomLogin.Druid.Trinket = 42992
 DCCustomLogin.Druid.Weapon1 = 42948
 DCCustomLogin.Druid.Weapon2 = 0

@@ -56,7 +56,7 @@ struct GuildHouseData
     float ori;
     uint8 level;
 
-    GuildHouseData() : phase(0), map(0), posX(0.0f), posY(0.0f), posZ(0.0f), ori(0.0f), level(1) {}
+    GuildHouseData() : phase(0), map(0), posX(0.0f), posY(0.0f), posZ(0.0f), ori(0.0f), level(0) {}
     GuildHouseData(uint32 _phase, uint32 _map, float _x, float _y, float _z, float _o, uint8 _level)
         : phase(_phase), map(_map), posX(_x), posY(_y), posZ(_z), ori(_o), level(_level) {}
 };

@@ -89,6 +89,7 @@ DCMythicPlusHUDDB = DCMythicPlusHUDDB or {}
 DCMythicPlusHUDDB.position = DCMythicPlusHUDDB.position or { point = "CENTER", relativePoint = "CENTER", x = 0, y = 120 }
 DCMythicPlusHUDDB.locked = DCMythicPlusHUDDB.locked or false
 DCMythicPlusHUDDB.hidden = DCMythicPlusHUDDB.hidden or false
+DCMythicPlusHUDDB.firstLoginByChar = DCMythicPlusHUDDB.firstLoginByChar or {}
 
 -- Cache structure for static/weekly data
 DCMythicPlusHUDDB.cache = DCMythicPlusHUDDB.cache or {}
@@ -117,6 +118,21 @@ local reasonText
 local lastPayload
 local lastRequestTime = 0
 local REQUEST_COOLDOWN = 1.0
+
+local function GetCharacterKey()
+    local name = (type(UnitName) == "function" and UnitName("player")) or "Unknown"
+    local realm = (type(GetRealmName) == "function" and GetRealmName()) or ""
+    if realm ~= "" then
+        return realm .. ":" .. name
+    end
+    return name
+end
+
+local function ClearFirstLoginSuppression()
+    if namespace._suppressHudThisSession then
+        namespace._suppressHudThisSession = false
+    end
+end
 
 -- =====================================================================
 -- LOCAL RUN TIMER (non-Mythic runs)
@@ -1143,6 +1159,11 @@ local function SetFrameVisibility(shouldShow)
         return
     end
 
+    if namespace._suppressHudThisSession then
+        frame:Hide()
+        return
+    end
+
     if IsOnGMIsland() then
         frame:Hide()
         return
@@ -1843,6 +1864,7 @@ local function ToggleVisibility()
         SetFrameVisibility(false)
         Print("HUD hidden. Use /dcm to show again.")
     else
+        ClearFirstLoginSuppression()
         Print("HUD shown.")
         if not activeState then
             ShowIdleState()
@@ -1884,6 +1906,7 @@ SlashCmdList.DCM = function(msg)
         Print("Frame unlocked")
     elseif cmd == "show" then
         DCMythicPlusHUDDB.hidden = false
+        ClearFirstLoginSuppression()
         UpdateLocalRunTrackingFromInstance()
         SetFrameVisibility(true)
         if (activeState and activeState.inProgress) or localRun.active or localRun.finished then
@@ -2092,6 +2115,11 @@ loader:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 loader:SetScript("OnEvent", function(self, event)
     -- Clear any stale activeState on login
     if event == "PLAYER_LOGIN" then
+        local key = GetCharacterKey()
+        if key and DCMythicPlusHUDDB.firstLoginByChar and not DCMythicPlusHUDDB.firstLoginByChar[key] then
+            DCMythicPlusHUDDB.firstLoginByChar[key] = true
+            namespace._suppressHudThisSession = true
+        end
         activeState = nil
     end
     

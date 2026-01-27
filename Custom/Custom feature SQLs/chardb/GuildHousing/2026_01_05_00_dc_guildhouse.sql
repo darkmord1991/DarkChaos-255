@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS `dc_guild_house` (
   `positionY` float NOT NULL DEFAULT '0',
   `positionZ` float NOT NULL DEFAULT '0',
   `orientation` float NOT NULL DEFAULT '0',
-  `guildhouse_level` tinyint unsigned NOT NULL DEFAULT '1',
+  `guildhouse_level` tinyint unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `guild` (`guild`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;

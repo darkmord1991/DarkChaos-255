@@ -413,6 +413,7 @@ public:
             ClearGossipMenuFor(player);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Spawn everything (free)", GOSSIP_SENDER_MAIN, ACTION_GM_SPAWN_ALL);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Despawn everything", GOSSIP_SENDER_MAIN, ACTION_GM_DESPAWN_ALL);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 0", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 0);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 1", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 1);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 2", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 2);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 3", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 3);
@@ -436,7 +437,7 @@ public:
             return true;
         }
 
-        if (action > ACTION_GM_LEVEL_BASE && action <= ACTION_GM_LEVEL_BASE + 10)
+        if (action >= ACTION_GM_LEVEL_BASE && action <= ACTION_GM_LEVEL_BASE + 10)
         {
             if (!player || !player->GetGuildId())
             {

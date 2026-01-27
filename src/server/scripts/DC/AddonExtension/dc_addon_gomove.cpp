@@ -64,8 +64,11 @@ namespace DCAddon
             // Format: DC|GOMV|0x01|ID|LOWGUID|ARG
             // This maps to the original .gomove command args
 
-            if (msg.GetDataCount() < 3)
+            if (msg.GetDataCount() < 1)
+            {
+                DCAddon::SendError(player, Module::GOMOVE, "Missing command id", DCAddon::ErrorCode::INVALID_REQUEST, Opcode::Core::SMSG_ERROR);
                 return;
+            }
 
             uint32 ID = msg.GetUInt32(0);
             uint32 lowguid = msg.GetUInt32(1);
@@ -205,12 +208,23 @@ namespace DCAddon
         static void HandleRequestSearch(Player* player, const ParsedMessage& msg)
         {
             if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMinSecurity))
+            {
+                DCAddon::SendPermissionDenied(player, Module::GOMOVE, "Insufficient GM level to use addon commands");
                 return;
+            }
             // Format: DC|GOMV|0x02|SEARCH_TERM
-            if (msg.GetDataCount() < 1) return;
+            if (msg.GetDataCount() < 1)
+            {
+                DCAddon::SendError(player, Module::GOMOVE, "Missing search term", DCAddon::ErrorCode::INVALID_REQUEST, Opcode::Core::SMSG_ERROR);
+                return;
+            }
 
             std::string searchTerm = msg.GetString(0);
-            if (searchTerm.empty()) return;
+            if (searchTerm.empty())
+            {
+                DCAddon::SendError(player, Module::GOMOVE, "Empty search term", DCAddon::ErrorCode::INVALID_REQUEST, Opcode::Core::SMSG_ERROR);
+                return;
+            }
 
             // Convert to lowercase for case-insensitive search
             std::transform(searchTerm.begin(), searchTerm.end(), searchTerm.begin(), ::tolower);
@@ -254,7 +268,10 @@ namespace DCAddon
         {
             (void)msg; // msg is intentionally unused in this handler
             if (!DCAddon::CheckAddonPermission(player, Module::GOMOVE, s_gomoveMinSecurity))
+            {
+                DCAddon::SendPermissionDenied(player, Module::GOMOVE, "Insufficient GM level to use addon commands");
                 return;
+            }
             // Format: DC|GOMV|0x03
 
             JsonValue response;

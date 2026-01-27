@@ -152,6 +152,7 @@ void AddSC_dc_challenge_modes_commandscript(); // Commands/cs_dc_challenge_modes
 // --- Guild Housing ---
 void AddGuildHouseScripts();                  // GuildHousing/dc_guildhouse.cpp
 void AddGuildHouseButlerScripts();            // GuildHousing/dc_guildhouse_butler.cpp
+void AddSC_dc_dalaran_guard();                 // GuildHousing/dc_dalaran_guard.cpp
 
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
@@ -667,6 +668,7 @@ void AddDCScripts()
     try {
         AddGuildHouseScripts();
         AddGuildHouseButlerScripts();
+        AddSC_dc_dalaran_guard();
         AddSC_cs_dc_guildhouse();
         LOG_INFO("scripts.dc", ">>   ✓ Guild Housing scripts loaded");
     } catch (std::exception& e) {

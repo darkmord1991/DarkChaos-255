@@ -56,6 +56,13 @@ local function GetClassColorCode(classToken)
     return addon:GetClassColorCode(classToken)
 end
 
+-- Ensure missing channel notice globalstrings exist to prevent ChatFrame format errors
+local function EnsureChannelNoticeStrings()
+    if not _G.CHAT_NOT_IN_LFG then
+        _G.CHAT_NOT_IN_LFG = "You are not in Looking For Group channel."
+    end
+end
+
 -- ============================================================
 -- Channel Name Shortening
 -- ============================================================
@@ -762,6 +769,8 @@ end
 
 function Chat.OnEnable()
     addon:Debug("Chat module enabling")
+
+    EnsureChannelNoticeStrings()
     
     -- Setup all features
     SetupChatFrameHooks()

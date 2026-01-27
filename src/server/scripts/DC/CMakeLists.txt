@@ -286,6 +286,7 @@ set(SCRIPTS_DC_GuildHousing
     GuildHousing/dc_guildhouse_npcs.cpp
     GuildHousing/dc_guildhouse_butler.cpp
     GuildHousing/dc_guildhouse_manager.cpp
+    GuildHousing/dc_dalaran_guard.cpp
 )
 
 # DC Teleporters

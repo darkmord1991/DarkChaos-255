@@ -70,7 +70,7 @@ GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
     float posY = fields[3].Get<float>();
     float posZ = fields[4].Get<float>();
     float ori = fields[5].Get<float>();
-    uint8 level = HasGuildHouseLevelColumn() ? fields[6].Get<uint8>() : 1;
+    uint8 level = HasGuildHouseLevelColumn() ? fields[6].Get<uint8>() : 0;
 
     bool shouldUpdate = false;
 
@@ -127,9 +127,9 @@ uint8 GuildHouseManager::GetGuildHouseLevel(uint32 guildId)
 {
     GuildHouseData* data = GetGuildHouseData(guildId);
     if (!data)
-        return 1;
+        return 0;
 
-    return data->level ? data->level : 1;
+    return data->level;
 }
 
 bool GuildHouseManager::SetGuildHouseLevel(uint32 guildId, uint8 level)

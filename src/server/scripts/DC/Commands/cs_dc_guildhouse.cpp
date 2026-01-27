@@ -153,7 +153,7 @@ public:
         handler->PSendSysMessage("- Phase: {}", data->phase);
         handler->PSendSysMessage("- Map ID: {}", data->map);
         handler->PSendSysMessage("- Arrival Position: X:{:.3f} Y:{:.3f} Z:{:.3f}", data->posX, data->posY, data->posZ);
-        handler->PSendSysMessage("- Level: {}", data->level ? data->level : 1);
+        handler->PSendSysMessage("- Level: {}", data->level);
 
         return true;
     }
@@ -292,7 +292,7 @@ public:
 
         if (!args || !*args)
         {
-            handler->SendSysMessage("Usage: .gh admin level <guildName|guildId> [level 1-4]");
+            handler->SendSysMessage("Usage: .gh admin level <guildName|guildId> [level 0-4]");
             return false;
         }
 
@@ -368,13 +368,13 @@ public:
 
         if (!hasLevel)
         {
-            handler->PSendSysMessage("Guild House level for '{}' is {}.", guild->GetName(), data->level ? data->level : 1);
+            handler->PSendSysMessage("Guild House level for '{}' is {}.", guild->GetName(), data->level);
             return true;
         }
 
-        if (level < 1 || level > 4)
+        if (level > 4)
         {
-            handler->SendSysMessage("Level must be between 1 and 4.");
+            handler->SendSysMessage("Level must be between 0 and 4.");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -500,11 +500,11 @@ public:
         float ori = fields[5].Get<float>();
 
         uint32 guildPhase = ::GetGuildPhase(guildId);
-        CharacterDatabase.Query("INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) VALUES ({}, {}, {}, {}, {}, {}, {}, 1)",
+        CharacterDatabase.Query("INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) VALUES ({}, {}, {}, {}, {}, {}, {}, 0)",
             guildId, guildPhase, map, posX, posY, posZ, ori);
 
         // Update Cache
-        GuildHouseManager::UpdateGuildHouseData(guildId, GuildHouseData(guildPhase, map, posX, posY, posZ, ori, 1));
+        GuildHouseManager::UpdateGuildHouseData(guildId, GuildHouseData(guildPhase, map, posX, posY, posZ, ori, 0));
 
         handler->PSendSysMessage("Purchased Guild House for guild '{}' at location {} (no cost).", guild->GetName(), locationId);
         return true;

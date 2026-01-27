@@ -261,10 +261,10 @@ public:
 
             CharacterDatabase.Query(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) "
-                "VALUES ({}, {}, {}, {}, {}, {}, {}, 1)",
+                "VALUES ({}, {}, {}, {}, {}, {}, {}, 0)",
                 player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
 
-            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori, 1));
+            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori, 0));
 
             player->ModifyMoney(-static_cast<int64>(cost));
 
@@ -349,11 +349,11 @@ public:
 
             CharacterDatabase.Query(
                 "INSERT INTO `dc_guild_house` (guild, phase, map, positionX, positionY, positionZ, orientation, guildhouse_level) "
-                "VALUES ({}, {}, {}, {}, {}, {}, {}, 1)",
+                "VALUES ({}, {}, {}, {}, {}, {}, {}, 0)",
                 player->GetGuildId(), GetGuildPhase(player), map, posX, posY, posZ, ori);
 
             // Update Cache potentially needed here if not handled by Spawn
-            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori, 1));
+            GuildHouseManager::UpdateGuildHouseData(player->GetGuildId(), GuildHouseData(GetGuildPhase(player), map, posX, posY, posZ, ori, 0));
 
             ChatHandler(player->GetSession()).PSendSysMessage("GM: Guild House purchased for free.");
             CloseGossipMenuFor(player);
