@@ -189,7 +189,7 @@ public:
 
         if (category == "service")
         {
-            if (entry == 800001)
+            if (entry == 800001 || entry == 800031)
                 return s_guildHouseCostInnkeeper;
             if (entry == 30605)
                 return s_guildHouseCostBank;
@@ -607,6 +607,7 @@ public:
             SpawnNPC(action, player, s_guildHouseCostBank, true, true);
             break;
         case 800001: // Innkeeper
+        case 800031: // Dalaran Innkeeper
             SpawnNPC(action, player, s_guildHouseCostInnkeeper, true, true);
             break;
         case 95001: // Alchemy
