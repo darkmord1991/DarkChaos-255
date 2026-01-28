@@ -43,6 +43,10 @@ local function MaybeLearnZoneMapping(state, activeMapId, zoneId, zoneLabel)
     db.customZoneMapping = db.customZoneMapping or {}
     if db.customZoneMapping[activeMapId] then return end
 
+    -- Do not learn over static known mappings
+    if CUSTOM_ZONE_MAPPING[activeMapId] then return end
+    if MAP_TO_ZONE[activeMapId] then return end
+
     local curZone = (GetZoneText and GetZoneText()) or nil
     if not curZone or curZone == "" then return end
 
@@ -172,6 +176,7 @@ local CUSTOM_ZONE_MAPPING = {
     [1100] = 5006,
     [1101] = 5006,
     [1102] = 5006,
+    [745] = 745, -- Jade Forest (Explicit mapping to prevent incorrect learning)
     -- Add more custom zones here as needed
 }
 

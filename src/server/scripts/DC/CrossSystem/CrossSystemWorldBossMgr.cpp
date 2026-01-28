@@ -261,8 +261,31 @@ namespace DC
             b.Set("entry", DCAddon::JsonValue(static_cast<int32>(info.creatureEntry)));
             b.Set("spawnId", DCAddon::JsonValue(static_cast<int32>(info.spawnId)));
             b.Set("name", DCAddon::JsonValue(info.displayName));
+            b.Set("mapId", DCAddon::JsonValue(static_cast<int32>(info.zoneId))); // Use zoneId as mapId for client WRLD compatibility
             b.Set("zoneId", DCAddon::JsonValue(static_cast<int32>(info.zoneId)));
             b.Set("active", DCAddon::JsonValue(info.isActive));
+
+            // Normalized coordinates for map pin placement
+            // We need to look up the creature definition to get X/Y if the boss isn't spawned
+            float posX = 0.0f, posY = 0.0f;
+            bool havePos = false;
+
+            if (const CreatureData* data = sObjectMgr->GetCreatureData(info.spawnId))
+            {
+                posX = data->posX;
+                posY = data->posY;
+                havePos = true;
+            }
+
+            if (havePos)
+            {
+                float nx = 0.0f, ny = 0.0f;
+                if (DarkChaos::CrossSystem::MapCoords::TryComputeNormalized(info.zoneId, posX, posY, nx, ny))
+                {
+                    b.Set("nx", DCAddon::JsonValue(nx));
+                    b.Set("ny", DCAddon::JsonValue(ny));
+                }
+            }
 
             if (!info.isActive && info.respawnCountdown > 0)
             {
@@ -275,7 +298,10 @@ namespace DC
             }
             else
             {
-                b.Set("status", DCAddon::JsonValue("unknown"));
+                // If not active and no timer, it's ready to spawn (or just unknown).
+                // Usually this means it's available.
+                b.Set("status", DCAddon::JsonValue("active"));
+                b.Set("active", DCAddon::JsonValue(true)); // Force active flag if it's "ready"
             }
 
             // Zone name from DBC

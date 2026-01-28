@@ -123,6 +123,7 @@ void AddSC_DungeonQuestPhasing();             // DungeonQuests\\DungeonQuestPhas
 void AddSC_DungeonQuestMasterFollower();      // DungeonQuests\\DungeonQuestMasterFollower.cpp
 void AddSC_npc_dungeon_quest_master();        // DungeonQuests\\npc_dungeon_quest_master.cpp
 void AddSC_npc_dungeon_quest_daily_weekly();  // DungeonQuests\\npc_dungeon_quest_daily_weekly.cpp
+void AddSC_npc_universal_quest_master();      // DungeonQuests\\npc_universal_quest_master.cpp
 
 // --- Addon Extension System ---
 void AddDCAddonExtensionScripts();            // AddonExtension\\dc_addon_extension_loader.cpp
@@ -697,7 +698,9 @@ void AddDCScripts()
         AddSC_DungeonQuestMasterFollower();
         AddSC_npc_dungeon_quest_master();
         AddSC_npc_dungeon_quest_daily_weekly();
+        AddSC_npc_universal_quest_master();
         LOG_INFO("scripts.dc", "║   ✓ Dungeon quest mechanics and NPCs loaded");
+        LOG_INFO("scripts.dc", "║   ✓ Universal Quest Master NPC loaded (Entry 700100)");
     } catch (std::exception& e) {
         LOG_ERROR("scripts.dc", "║   ✗ EXCEPTION in Dungeon Quest System: {}", e.what());
     } catch (...) {
