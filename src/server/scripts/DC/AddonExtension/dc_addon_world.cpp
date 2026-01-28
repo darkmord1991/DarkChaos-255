@@ -21,6 +21,7 @@
 
 #include "DC/CrossSystem/CrossSystemMapCoords.h"
 #include "DC/CrossSystem/CrossSystemSpawnResolver.h"
+#include "DC/CrossSystem/CrossSystemWorldBossMgr.h"
 
 #include "dc_addon_world_bosses.h"
 #include "dc_addon_death_markers.h"
@@ -36,8 +37,8 @@ extern uint32 GetHotspotXPBonusPercentage();
 
 // Worldstate IDs for Giant Isles invasion (used to detect active invasion state)
 // These match values in dc_giant_isles_invasion.cpp
-constexpr uint32 WORLD_STATE_INVASION_ACTIVE = 20000;
-constexpr uint32 WORLD_STATE_INVASION_WAVE   = 20001;
+// constexpr uint32 WORLD_STATE_INVASION_ACTIVE = 20000;
+// constexpr uint32 WORLD_STATE_INVASION_WAVE   = 20001;
 
 namespace DCAddon
 {
@@ -94,6 +95,13 @@ namespace World
             arr.Push(h);
         } while (result->NextRow());
 
+        return arr;
+    }
+
+    // Helper: Build events array (Stub for now)
+    static JsonValue BuildEventsArray()
+    {
+        JsonValue arr; arr.SetArray();
         return arr;
     }
 

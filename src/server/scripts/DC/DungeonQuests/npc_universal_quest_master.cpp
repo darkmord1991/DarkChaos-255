@@ -201,7 +201,11 @@ enum UniversalQuestMasterActions
     ACTION_SHOW_IN_PROGRESS      = 2004,
     ACTION_SHOW_STATS            = 2005,
     ACTION_BACK_TO_MAIN          = 2006,
+    ACTION_PAGE_CHANGE           = 2100
 };
+static const uint32 GOSSIP_SENDER_QUEST_MANUAL = 5000;
+static const uint32 GOSSIP_SENDER_QUEST_REWARD = 5005;
+static const uint32 ITEMS_PER_PAGE             = 25;
 
 // =====================================================================
 // UNIVERSAL QUEST MASTER CREATURE SCRIPT
@@ -241,6 +245,20 @@ public:
                 LOG_DEBUG("scripts.dc", "UniversalQuestMaster: Set DisplayId to {} for map {} on spawn",
                           displayId, mapId);
             }
+        }
+
+        void MoveInLineOfSight(Unit* who) override
+        {
+            // Follow behavior: If player is close and I'm not following anyone
+            if (who->GetTypeId() == TYPEID_PLAYER && me->IsWithinDistInMap(who, 20.0f))
+            {
+                // Only follow if we aren't already following something
+                if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+                {
+                    me->GetMotionMaster()->MoveFollow(who, 2.0f, me->GetFollowAngle());
+                }
+            }
+            ScriptedAI::MoveInLineOfSight(who);
         }
     };
 
@@ -321,7 +339,7 @@ public:
         return true;
     }
 
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
+    bool OnGossipSelect(Player* player, Creature* creature, uint32 sender, uint32 action) override
     {
         ClearGossipMenuFor(player);
 
@@ -355,8 +373,51 @@ public:
                 OnGossipHello(player, creature);
                 return true;
 
+            case ACTION_PAGE_CHANGE:
+            {
+                 // Decode Sender: (ListType << 16) | TargetPage
+                 uint32 listType = (sender >> 16) & 0xFFFF;
+                 uint32 page = sender & 0xFFFF;
+                 
+                 if (listType == ACTION_SHOW_DUNGEON_QUESTS)
+                     ShowDungeonQuests(player, creature, page);
+                 else if (listType == ACTION_SHOW_DAILY_QUESTS)
+                     ShowDailyQuests(player, creature, page);
+                 else if (listType == ACTION_SHOW_WEEKLY_QUESTS)
+                     ShowWeeklyQuests(player, creature, page);
+                 break;
+            }
+
             default:
-                CloseGossipMenuFor(player);
+                // Handle manual quest selection (sender 5000)
+                if (sender == GOSSIP_SENDER_QUEST_MANUAL)
+                {
+                    uint32 questId = action;
+                    Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+                    if (quest)
+                    {
+                        // Native Window: Now blocked by DB check, BUT we populated DB!
+                        player->PlayerTalkClass->SendQuestGiverQuestDetails(quest, creature->GetGUID(), true);
+                    }
+                }
+                else if (sender == GOSSIP_SENDER_QUEST_REWARD)
+                {
+                    uint32 questId = action;
+                    Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+                    if (quest)
+                    {
+                         if (player->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
+                         {
+                             // Native Window for Reward
+                             // Handles choices automatically
+                             player->PlayerTalkClass->SendQuestGiverOfferReward(quest, creature->GetGUID(), true);
+                         }
+                    }
+                }
+                else
+                {
+                    CloseGossipMenuFor(player);
+                }
                 break;
         }
 
@@ -381,82 +442,69 @@ public:
     }
 
 private:
-    void ShowDungeonQuests(Player* player, Creature* creature)
+private:
+    void ShowDungeonQuests(Player* player, Creature* creature, uint32 page = 0)
     {
         uint32 currentMapId = player->GetMapId();
-        auto const& dungeonQuests = UniversalQuestMasterCache::GetQuestsForDungeon(currentMapId);
-
-        bool hasQuests = false;
-        for (uint32 questId : dungeonQuests)
-        {
-            Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
-            if (!quest)
-                continue;
-
-            QuestStatus status = player->GetQuestStatus(questId);
-            if (status == QUEST_STATUS_NONE && player->CanTakeQuest(quest, false))
-            {
-                // Add quest to gossip menu using AC's built-in quest menu
-                player->PlayerTalkClass->GetQuestMenu().AddMenuItem(questId, 2); // 2 = Quest giver icon
-                hasQuests = true;
-            }
-        }
-
-        if (!hasQuests)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No dungeon quests available for this dungeon.", GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
-        }
-
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back to Main Menu", GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
-        player->SendPreparedGossip(creature);
+        auto const& quests = UniversalQuestMasterCache::GetQuestsForDungeon(currentMapId);
+        ShowQuestPage(player, creature, quests, page, ACTION_SHOW_DUNGEON_QUESTS, "dungeon quests");
     }
 
-    void ShowDailyQuests(Player* player, Creature* creature)
+    void ShowDailyQuests(Player* player, Creature* creature, uint32 page = 0)
     {
-        bool hasQuests = false;
-        for (uint32 questId : UniversalQuestMasterCache::GetDailyQuests())
-        {
-            Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
-            if (!quest)
-                continue;
-
-            QuestStatus status = player->GetQuestStatus(questId);
-            if (status == QUEST_STATUS_NONE && player->CanTakeQuest(quest, false))
-            {
-                player->PlayerTalkClass->GetQuestMenu().AddMenuItem(questId, 2);
-                hasQuests = true;
-            }
-        }
-
-        if (!hasQuests)
-        {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No daily quests available.", GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
-        }
-
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back to Main Menu", GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
-        player->SendPreparedGossip(creature);
+        ShowQuestPage(player, creature, UniversalQuestMasterCache::GetDailyQuests(), page, ACTION_SHOW_DAILY_QUESTS, "daily quests");
     }
 
-    void ShowWeeklyQuests(Player* player, Creature* creature)
+    void ShowWeeklyQuests(Player* player, Creature* creature, uint32 page = 0)
     {
-        bool hasQuests = false;
-        for (uint32 questId : UniversalQuestMasterCache::GetWeeklyQuests())
-        {
-            Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
-            if (!quest)
-                continue;
+        ShowQuestPage(player, creature, UniversalQuestMasterCache::GetWeeklyQuests(), page, ACTION_SHOW_WEEKLY_QUESTS, "weekly quests");
+    }
 
-            QuestStatus status = player->GetQuestStatus(questId);
-            if (status == QUEST_STATUS_NONE && player->CanTakeQuest(quest, false))
-            {
-                player->PlayerTalkClass->GetQuestMenu().AddMenuItem(questId, 2);
-                hasQuests = true;
-            }
+    void ShowQuestPage(Player* player, Creature* creature, std::vector<uint32> const& quests, uint32 page, uint32 actionType, std::string const& typeName)
+    {
+        uint32 start = page * ITEMS_PER_PAGE;
+        uint32 end = start + ITEMS_PER_PAGE;
+
+        // Count TOTAL available first to decide if pagination needed
+        std::vector<uint32> availableQuests;
+        for (uint32 questId : quests)
+        {
+             Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+             if (!quest) continue;
+             if (player->GetQuestStatus(questId) == QUEST_STATUS_NONE && player->CanTakeQuest(quest, false))
+             {
+                 availableQuests.push_back(questId);
+             }
+        }
+        
+        if (availableQuests.empty())
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, fmt::format("No {} available.", typeName), GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back to Main Menu", GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
+            player->SendPreparedGossip(creature);
+            return;
         }
 
-        if (!hasQuests)
+        // Add items for current page
+        for (uint32 i = start; i < end && i < availableQuests.size(); ++i)
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "No weekly quests available.", GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
+            uint32 questId = availableQuests[i];
+            Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+            std::string title = fmt::format("Accept: {}", quest->GetTitle());
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, title, GOSSIP_SENDER_QUEST_MANUAL, questId);
+        }
+
+        // Pagination Controls
+        // Sender format: (ListType << 16) | TargetPage
+        if (page > 0)
+        {
+            uint32 senderVal = (actionType << 16) | (page - 1);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Previous Page", senderVal, ACTION_PAGE_CHANGE);
+        }
+        if (end < availableQuests.size())
+        {
+            uint32 senderVal = (actionType << 16) | (page + 1);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Next Page", senderVal, ACTION_PAGE_CHANGE);
         }
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back to Main Menu", GOSSIP_SENDER_MAIN, ACTION_BACK_TO_MAIN);
@@ -474,28 +522,45 @@ private:
         {
             if (player->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
             {
-                player->PlayerTalkClass->GetQuestMenu().AddMenuItem(questId, 4); // 4 = Quest completer icon
-                hasQuests = true;
+                Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+                if (quest)
+                {
+                    std::string title = fmt::format("Turn In: {}", quest->GetTitle());
+                    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, title, GOSSIP_SENDER_QUEST_REWARD, questId);
+                    hasQuests = true;
+                }
             }
         }
 
+        // Check daily quests
         // Check daily quests
         for (uint32 questId : UniversalQuestMasterCache::GetDailyQuests())
         {
             if (player->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
             {
-                player->PlayerTalkClass->GetQuestMenu().AddMenuItem(questId, 4);
-                hasQuests = true;
+                Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+                if (quest)
+                {
+                    std::string title = fmt::format("Turn In: {}", quest->GetTitle());
+                    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, title, GOSSIP_SENDER_QUEST_REWARD, questId);
+                    hasQuests = true;
+                }
             }
         }
 
+        // Check weekly quests
         // Check weekly quests
         for (uint32 questId : UniversalQuestMasterCache::GetWeeklyQuests())
         {
             if (player->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
             {
-                player->PlayerTalkClass->GetQuestMenu().AddMenuItem(questId, 4);
-                hasQuests = true;
+                Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+                if (quest)
+                {
+                    std::string title = fmt::format("Turn In: {}", quest->GetTitle());
+                    AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, title, GOSSIP_SENDER_QUEST_REWARD, questId);
+                    hasQuests = true;
+                }
             }
         }
 
@@ -533,7 +598,7 @@ private:
                         totalObjectives++;
                         uint32 required = quest->RequiredNpcOrGoCount[i] > 0 ? 
                                          quest->RequiredNpcOrGoCount[i] : quest->RequiredItemCount[i];
-                        uint32 current = player->GetQuestSlotCounter(player->GetQuestSlot(questId), i);
+                        uint32 current = player->GetQuestSlotCounter(player->FindQuestSlot(questId), i);
                         if (current >= required)
                             completedObjectives++;
                     }

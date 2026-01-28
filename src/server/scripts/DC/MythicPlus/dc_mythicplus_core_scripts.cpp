@@ -259,7 +259,8 @@ public:
         sMythicRuns->RegisterPlayerEnter(player);
 
         DungeonProfile* profile = sMythicScaling->GetDungeonProfile(map->GetId());
-
+        
+        // Define helper lambda first so it's available for both branches
         auto FormatScalingText = [](float hpMult, float damageMult) -> std::string
         {
             auto percentString = [](float mult) -> std::string
@@ -277,33 +278,69 @@ public:
             return result.str();
         };
 
+        // Determine dungeon name
+        std::string dungeonName;
+        if (profile)
+            dungeonName = profile->name;
+        else
+        {
+            // Fallback to DBC map name for non-Mythic+ instances (e.g. Raids)
+            MapEntry const* mapEntry = sMapStore.LookupEntry(map->GetId());
+            if (mapEntry)
+                dungeonName = mapEntry->name[0]; // 0 is usually localized name
+            else
+                dungeonName = "Unknown Instance";
+        }
+
         // Announce difficulty on dungeon entry
         Difficulty diff = sMythicScaling->ResolveDungeonDifficulty(map);
         std::string diffName;
         std::string scaling;
 
-        switch (diff)
+        if (map->IsRaid())
         {
-            case DUNGEON_DIFFICULTY_NORMAL:
-                diffName = "|cffffffffNormal|r";
-                scaling = "Base creature stats";
-                break;
-            case DUNGEON_DIFFICULTY_HEROIC:
-                diffName = "|cff0070ddHeroic|r";
-                scaling = profile ? FormatScalingText(profile->heroicHealthMult, profile->heroicDamageMult)
-                                   : "+15% HP, +10% Damage";
-                break;
-            case DUNGEON_DIFFICULTY_EPIC:
-                diffName = "|cffff8000Mythic|r";
-                scaling = profile ? FormatScalingText(profile->mythicHealthMult, profile->mythicDamageMult)
-                                   : "+35% HP, +20% Damage";
-                break;
-            default:
-                return; // Don't announce for other difficulties
+            switch (map->GetDifficulty())
+            {
+                case RAID_DIFFICULTY_10MAN_NORMAL:
+                    diffName = "|cffffffff10 Player|r";
+                    break;
+                case RAID_DIFFICULTY_25MAN_NORMAL:
+                    diffName = "|cffffffff25 Player|r";
+                    break;
+                case RAID_DIFFICULTY_10MAN_HEROIC:
+                    diffName = "|cff0070dd10 Player (Heroic)|r";
+                    break;
+                case RAID_DIFFICULTY_25MAN_HEROIC:
+                    diffName = "|cff0070dd25 Player (Heroic)|r";
+                    break;
+                default:
+                    diffName = "|cffff0000Raid|r";
+                    break;
+            }
         }
-
-        // Get dungeon name
-        std::string dungeonName = profile ? profile->name : "Unknown Dungeon";
+        else
+        {
+            switch (diff)
+            {
+                case DUNGEON_DIFFICULTY_NORMAL:
+                    diffName = "|cffffffffNormal|r";
+                    scaling = "Base creature stats";
+                    break;
+                case DUNGEON_DIFFICULTY_HEROIC:
+                    diffName = "|cff0070ddHeroic|r";
+                    scaling = profile ? FormatScalingText(profile->heroicHealthMult, profile->heroicDamageMult)
+                                    : "+15% HP, +10% Damage";
+                    break;
+                case DUNGEON_DIFFICULTY_EPIC:
+                    diffName = "|cffff8000Mythic|r";
+                    scaling = profile ? FormatScalingText(profile->mythicHealthMult, profile->mythicDamageMult)
+                                    : "+35% HP, +20% Damage";
+                    break;
+                default:
+                    diffName = "Unknown";
+                    break;
+            }
+        }
 
         // Check if this is a Mythic+ run
         uint8 keystoneLevel = sMythicScaling->GetKeystoneLevel(map);
@@ -350,11 +387,16 @@ public:
         }
         else
         {
-            // Regular difficulty - show full message with scaling info
+            // Regular difficulty - universal display
             ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00=== Dungeon Entered ===");
             ChatHandler(player->GetSession()).SendSysMessage(("Dungeon: |cffffffff" + dungeonName + "|r").c_str());
             ChatHandler(player->GetSession()).SendSysMessage(("Difficulty: " + diffName).c_str());
-            ChatHandler(player->GetSession()).SendSysMessage(("Scaling: |cffaaaaaa" + scaling + "|r").c_str());
+            
+            // Only show Scaling info if a profile exists and thus scaling is actually active
+            if (profile)
+            {
+                ChatHandler(player->GetSession()).SendSysMessage(("Scaling: |cffaaaaaa" + scaling + "|r").c_str());
+            }
         }
     }
 

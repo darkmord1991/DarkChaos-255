@@ -49,7 +49,9 @@ static uint32 GetQuestMasterEntryForMap(uint32 mapId)
 
     if (result)
     {
-        return (*result)[0].Get<uint32>();
+        // v4.1: Always use the Universal Quest Master (700100)
+        // It will dynamically adapt its display ID based on the map.
+        return NPC_UNIVERSAL_QUEST_MASTER;
     }
 
     LOG_WARN("scripts.dc", "DungeonQuestMaster: No quest master found for map ID {}, using default", mapId);
@@ -63,6 +65,14 @@ static Creature* SpawnQuestMasterFollower(Player* player)
         return nullptr;
 
     uint32 entry = GetQuestMasterEntryForMap(player->GetMapId());
+
+    // Check if one is already nearby (handling grid unload/reload edge cases)
+    if (Creature* existing = player->FindNearestCreature(entry, 50.0f))
+    {
+        // Re-link it if we lost track
+        sQuestMasterFollowers[player->GetGUID()] = existing->GetGUID();
+        return existing;
+    }
 
     // Get spawn position near player
     float x, y, z, o;
@@ -79,6 +89,19 @@ static Creature* SpawnQuestMasterFollower(Player* player)
         // Configure follower behavior
         summon->SetReactState(REACT_PASSIVE); // Don't attack
         summon->ReplaceAllNpcFlags(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+
+        // Set display ID for this dungeon (AI constructor may not run for temp summons)
+        QueryResult displayResult = WorldDatabase.Query(
+            "SELECT display_id FROM dc_dungeon_npc_mapping WHERE map_id = {} AND display_id IS NOT NULL",
+            player->GetMapId()
+        );
+        if (displayResult)
+        {
+            uint32 displayId = (*displayResult)[0].Get<uint32>();
+            summon->SetDisplayId(displayId);
+            LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Set DisplayId to {} for map {}",
+                      displayId, player->GetMapId());
+        }
 
         // Debug logging
         LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Spawned entry={} for player {} at ({:.2f},{:.2f},{:.2f})",
@@ -156,7 +179,11 @@ public:
         uint32 mapId = player->GetMapId();
         MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
         if (!mapEntry || !mapEntry->IsDungeon())
+        {
+            // Player left dungeon -> Despawn follower if exists
+            DespawnQuestMasterFollower(player);
             return;
+        }
 
         // Don't spawn quest masters in Mythic or Mythic+ difficulties
         Map* map = player->GetMap();

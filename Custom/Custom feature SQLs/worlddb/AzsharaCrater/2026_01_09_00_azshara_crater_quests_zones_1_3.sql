@@ -15,32 +15,32 @@
 -- Zone 1: Scout Thalindra (Night Elf Scout Female)
 DELETE FROM `creature_template` WHERE `entry` = 300001;
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(300001, 0, 0, 0, 0, 0, 'Scout Thalindra', 'Crater Reconnaissance', 'quest', 300001, 10, 10, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 2, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1.5, 1, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
+(300001, 0, 0, 0,  268, 0, 'Scout Thalindra', 'Crater Reconnaissance', 'quest', 300001, 10, 10, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 2, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1.5, 1, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
 
 -- Zone 1: Warden Stonebrook (Dwarf Hunter Male)
 DELETE FROM `creature_template` WHERE `entry` = 300002;
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(300002, 0, 0, 0, 0, 0, 'Warden Stonebrook', 'Rare Beast Hunter', 'quest', 300002, 12, 12, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
+(300002, 0, 0, 0,  268, 0, 'Warden Stonebrook', 'Rare Beast Hunter', 'quest', 300002, 12, 12, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
 
 -- Zone 2: Arcanist Melia (High Elf Mage Female)
 DELETE FROM `creature_template` WHERE `entry` = 300010;
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(300010, 0, 0, 0, 0, 0, 'Arcanist Melia', 'Kirin Tor Researcher', 'quest', 300010, 20, 20, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 8, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1.5, 2, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
+(300010, 0, 0, 0,  268, 0, 'Arcanist Melia', 'Kirin Tor Researcher', 'quest', 300010, 20, 20, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 8, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1.5, 2, 1, 1, 0, 0, 1, 0, 0, 2, '', 12340);
 
 -- Zone 2: Spirit of Kelvenar (Ghostly Highborne Male)
 DELETE FROM `creature_template` WHERE `entry` = 300011;
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(300011, 0, 0, 0, 0, 0, 'Spirit of Kelvenar', 'Echo of the Past', 'quest', 300011, 20, 20, 0, 35, 3, 1, 1.14286, 1, 1, 20, 0.9, 0, 0, 1, 2000, 2000, 1, 1, 8, 768, 2048, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 0.5, 1, 0, 0, 1, 0, 0, 2, '', 12340);
+(300011, 0, 0, 0,  268, 0, 'Spirit of Kelvenar', 'Echo of the Past', 'quest', 300011, 20, 20, 0, 35, 3, 1, 1.14286, 1, 1, 20, 0.9, 0, 0, 1, 2000, 2000, 1, 1, 8, 768, 2048, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 1, 1, 0.5, 1, 0, 0, 1, 0, 0, 2, '', 12340);
 
 -- Zone 3: Pathfinder Gor'nash (Orc Scout Male)
 DELETE FROM `creature_template` WHERE `entry` = 300020;
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(300020, 0, 0, 0, 0, 0, 'Pathfinder Gor''nash', 'Eastern Outpost Scout', 'quest', 300020, 30, 30, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1.5, 1, 0, 0, 1, 0, 0, 2, '', 12340);
+(300020, 0, 0, 0,  268, 0, 'Pathfinder Gor''nash', 'Eastern Outpost Scout', 'quest', 300020, 30, 30, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1, 0, 0, 1, 2000, 2000, 1, 1, 1, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 2, 1, 1.5, 1, 0, 0, 1, 0, 0, 2, '', 12340);
 
 -- Zone 3: Elder Greymane (Worgen Elder Male - Escort NPC)
 DELETE FROM `creature_template` WHERE `entry` = 300021;
 INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(300021, 0, 0, 0, 0, 0, 'Elder Greymane', 'Thistlefur Prisoner', 'quest', 0, 28, 28, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1.1, 0, 0, 1, 2000, 2000, 1, 1, 2, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 3, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_elder_greymane_escort', 12340);
+(300021, 0, 0, 0,  268, 0, 'Elder Greymane', 'Thistlefur Prisoner', 'quest', 0, 28, 28, 0, 35, 3, 1, 1.14286, 1, 1, 20, 1.1, 0, 0, 1, 2000, 2000, 1, 1, 2, 768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 3, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_elder_greymane_escort', 12340);
 
 -- ============================================================================
 -- SECTION 2: CREATURE MODEL DATA (creature_template_model)
@@ -202,35 +202,35 @@ DELETE FROM `quest_template` WHERE `ID` BETWEEN 300100 AND 300308;
 
 -- Quest 1: Welcome to Crater (Talk to Thalindra)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300100, 2, 1, 1, 0, 0, 0, 3, 0, 117, 5, 300311, 1, 300312, 1, 'Welcome to Crater', 'Speak with Scout Thalindra at the outpost.', 'Welcome, adventurer! This crater is dangerous, but we have established a foothold. Take this supply bag to get started.', 'Azshara Crater', 'You have reported for duty.');
+(300100, 2, 1, 1,  268, 0, 0, 3, 0, 117, 5, 300311, 1, 300312, 1, 'Welcome to Crater', 'Speak with Scout Thalindra at the outpost.', 'Welcome, adventurer! This crater is dangerous, but we have established a foothold. Take this supply bag to get started.', 'Azshara Crater', 'You have reported for duty.');
 
 -- Quest 2: Wildlife Survey (Kill Boars and Wolves)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`, `RequiredNpcOrGo2`, `RequiredNpcOrGoCount2`) VALUES
-(300101, 2, 4, 1, 0, 0, 0, 3, 0, 38, 1, 300311, 2, 300312, 1, 'Wildlife Survey', 'Kill 6 Young Thistle Boars and 6 Mangy Wolves.', 'The local wildlife is aggressive. We need to clear the area around the camp. Thin out the boars and wolves.', 'Azshara Crater', 'Usage of local wildlife controlled.', 1984, 6, 525, 6);
+(300101, 2, 4, 1,  268, 0, 0, 3, 0, 38, 1, 300311, 2, 300312, 1, 'Wildlife Survey', 'Kill 6 Young Thistle Boars and 6 Mangy Wolves.', 'The local wildlife is aggressive. We need to clear the area around the camp. Thin out the boars and wolves.', 'Azshara Crater', 'Usage of local wildlife controlled.', 1984, 6, 525, 6);
 
 -- Quest 3: Bear Bounty (Kill Bears)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300102, 2, 6, 2, 0, 0, 0, 3, 500, 300311, 2, 300312, 1, 0, 0, 'Bear Bounty', 'Kill 8 Young Forest Bears.', 'The bears have been encroaching on our supplies. Eliminate them and I will reward you with coin.', 'Azshara Crater', 'Bears defeated.', 822, 8);
+(300102, 2, 6, 2,  268, 0, 0, 3, 500, 300311, 2, 300312, 1, 0, 0, 'Bear Bounty', 'Kill 8 Young Forest Bears.', 'The bears have been encroaching on our supplies. Eliminate them and I will reward you with coin.', 'Azshara Crater', 'Bears defeated.', 822, 8);
 
 -- Quest 4: Strange Energies (Kill Timberlings)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300103, 2, 8, 4, 0, 0, 0, 3, 0, 35, 1, 300311, 2, 300312, 2, 'Strange Energies', 'Kill 8 Timberlings.', 'The elementals here act strangely. Defeat the Timberlings to study their essence.', 'Azshara Crater', 'Timberlings defeated.', 2022, 8);
+(300103, 2, 8, 4,  268, 0, 0, 3, 0, 35, 1, 300311, 2, 300312, 2, 'Strange Energies', 'Kill 8 Timberlings.', 'The elementals here act strangely. Defeat the Timberlings to study their essence.', 'Azshara Crater', 'Timberlings defeated.', 2022, 8);
 
 -- Quest 5: Web of Danger (Kill Spiders)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300104, 2, 9, 5, 0, 0, 0, 3, 0, 25, 1, 300311, 3, 300312, 2, 'Web of Danger', 'Kill 10 Webwood Lurkers.', 'Spiders infest the northern ridge. Clear them out before they overrun us.', 'Azshara Crater', 'Spiders cleared.', 1998, 10);
+(300104, 2, 9, 5,  268, 0, 0, 3, 0, 25, 1, 300311, 3, 300312, 2, 'Web of Danger', 'Kill 10 Webwood Lurkers.', 'Spiders infest the northern ridge. Clear them out before they overrun us.', 'Azshara Crater', 'Spiders cleared.', 1998, 10);
 
 -- Quest 6: Ancient''s Lair (Boss Kill - Kill 12 Timberlings as placeholder for boss event)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300105, 2, 10, 7, 0, 0, 0, 4, 0, 209, 1, 300311, 5, 300312, 3, 'Ancient''s Lair', 'Defeat 12 Timberlings.', 'We believe an ancient force drives them. Thin their numbers significantly to draw it out.', 'Azshara Crater', 'Threat reduced.', 2022, 12);
+(300105, 2, 10, 7,  268, 0, 0, 4, 0, 209, 1, 300311, 5, 300312, 3, 'Ancient''s Lair', 'Defeat 12 Timberlings.', 'We believe an ancient force drives them. Thin their numbers significantly to draw it out.', 'Azshara Crater', 'Threat reduced.', 2022, 12);
 
 -- Quest 7: Report to North (Travel Quest)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300106, 2, 10, 8, 0, 0, 0, 5, 0, 118, 5, 300311, 3, 300312, 2, 'Report to North', 'Travel to the northern checkpoint and inspect the area.', 'Your work here is done. Scout the northern pass for our next expansion.', 'Azshara Crater', 'Area inspected.');
+(300106, 2, 10, 8,  268, 0, 0, 5, 0, 118, 5, 300311, 3, 300312, 2, 'Report to North', 'Travel to the northern checkpoint and inspect the area.', 'Your work here is done. Scout the northern pass for our next expansion.', 'Azshara Crater', 'Area inspected.');
 
 -- Quest 8: Pelt Collection (Collect Light Hide)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300107, 2, 5, 2, 0, 0, 0, 3, 0, 117, 5, 300311, 2, 300312, 1, 'Pelt Collection', 'Collect 8 Light Hides.', 'The outpost needs warm bedding. Collect hides from the wolves nearby.', 'Azshara Crater', 'Hides collected.', 783, 8);
+(300107, 2, 5, 2,  268, 0, 0, 3, 0, 117, 5, 300311, 2, 300312, 1, 'Pelt Collection', 'Collect 8 Light Hides.', 'The outpost needs warm bedding. Collect hides from the wolves nearby.', 'Azshara Crater', 'Hides collected.', 783, 8);
 
 -- ----------------------------------------------------------------------------
 -- ZONE 2 QUESTS (Level 10-20) - Arcanist Melia (300010)
@@ -238,36 +238,36 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 1: Haunted Grounds (Kill Skeletons)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300200, 2, 12, 10, 0, 0, 0, 3, 0, 837, 1, 300311, 3, 300312, 2, 'Haunted Grounds', 'Kill 10 Dreadbone Skeletons.', 'The ruins ahead are haunted by the restless dead. Put them to rest.', 'Azshara Crater', 'Skeletons defeated.', 16303, 10);
+(300200, 2, 12, 10,  268, 0, 0, 3, 0, 837, 1, 300311, 3, 300312, 2, 'Haunted Grounds', 'Kill 10 Dreadbone Skeletons.', 'The ruins ahead are haunted by the restless dead. Put them to rest.', 'Azshara Crater', 'Skeletons defeated.', 16303, 10);
 
 -- Quest 2: Spectral Samples (Kill Voidwalkers)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300201, 2, 14, 11, 0, 0, 0, 3, 0, 846, 1, 300311, 4, 300312, 2, 'Spectral Samples', 'Kill 8 Lesser Voidwalkers.', 'Void energies permeate this place. Destroy the voidwalkers manifesting near the ley lines.', 'Azshara Crater', 'Voidwalkers banished.', 418, 8);
+(300201, 2, 14, 11,  268, 0, 0, 3, 0, 846, 1, 300311, 4, 300312, 2, 'Spectral Samples', 'Kill 8 Lesser Voidwalkers.', 'Void energies permeate this place. Destroy the voidwalkers manifesting near the ley lines.', 'Azshara Crater', 'Voidwalkers banished.', 418, 8);
 
 -- Quest 3: Ancient Relics (Kill Golems)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300202, 2, 16, 12, 0, 0, 0, 3, 0, 804, 1, 300311, 4, 300312, 3, 'Ancient Relics', 'Destroy 8 Harvest Golems.', 'These constructs have gone haywire. Dismantle them so we can salvage their parts.', 'Azshara Crater', 'Golems dismantled.', 36, 8);
+(300202, 2, 16, 12,  268, 0, 0, 3, 0, 804, 1, 300311, 4, 300312, 3, 'Ancient Relics', 'Destroy 8 Harvest Golems.', 'These constructs have gone haywire. Dismantle them so we can salvage their parts.', 'Azshara Crater', 'Golems dismantled.', 36, 8);
 
 -- Quest 4: Commune Spirit (Talk to Spirit of Kelvenar)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300203, 2, 16, 13, 0, 0, 0, 3, 0, 118, 5, 300311, 3, 300312, 2, 'Commune with Spirit', 'Speak with the Spirit of Kelvenar nearby.', 'A ghost wanders these ruins. He does not seem hostile. See if he knows the history of this place.', 'Azshara Crater', 'Spirit spoken to.');
+(300203, 2, 16, 13,  268, 0, 0, 3, 0, 118, 5, 300311, 3, 300312, 2, 'Commune with Spirit', 'Speak with the Spirit of Kelvenar nearby.', 'A ghost wanders these ruins. He does not seem hostile. See if he knows the history of this place.', 'Azshara Crater', 'Spirit spoken to.');
 
 -- Quest 5: Wailing Noble (Kill Skeletal Warriors)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300204, 2, 18, 14, 0, 0, 0, 3, 0, 852, 1, 300311, 5, 300312, 3, 'The Wailing Noble', 'Defeat 12 Skeletal Warriors.', 'The elite guard of the old Highborne still serves in death. Break their ranks.', 'Azshara Crater', 'Guards defeated.', 48, 12);
+(300204, 2, 18, 14,  268, 0, 0, 3, 0, 852, 1, 300311, 5, 300312, 3, 'The Wailing Noble', 'Defeat 12 Skeletal Warriors.', 'The elite guard of the old Highborne still serves in death. Break their ranks.', 'Azshara Crater', 'Guards defeated.', 48, 12);
 
 -- Quest 6: Varo''then''s Journal (Collect Item quest - using Dummy Item for now or Kill Trigger)
 -- Using Kill Trigger for simplicity (Kill 1 Skeletal Warrior labeled as 'Varo'then's Guard' conceptually)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300205, 2, 19, 15, 0, 0, 0, 4, 0, 858, 3, 300311, 6, 300312, 4, 'Varo''then''s Journal', 'Retrieve the Journal from the ruins (Kill 15 Skeletons).', 'Somewhere in these piles of bones is a journal of the Highborne. Find it.', 'Azshara Crater', 'Journal found.', 16303, 15);
+(300205, 2, 19, 15,  268, 0, 0, 4, 0, 858, 3, 300311, 6, 300312, 4, 'Varo''then''s Journal', 'Retrieve the Journal from the ruins (Kill 15 Skeletons).', 'Somewhere in these piles of bones is a journal of the Highborne. Find it.', 'Azshara Crater', 'Journal found.', 16303, 15);
 
 -- Quest 7: Into the Slopes (Travel)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300206, 2, 20, 16, 0, 0, 0, 5, 0, 300311, 4, 300312, 3, 0, 0, 'Into the Slopes', 'Proceed to the eastern slopes and find the Orc Scout.', 'The magical interference is stronger to the east. Go there and meet our scout.', 'Azshara Crater', 'Scout found.');
+(300206, 2, 20, 16,  268, 0, 0, 5, 0, 300311, 4, 300312, 3, 0, 0, 'Into the Slopes', 'Proceed to the eastern slopes and find the Orc Scout.', 'The magical interference is stronger to the east. Go there and meet our scout.', 'Azshara Crater', 'Scout found.');
 
 -- Quest 8: Dust to Dust (Collect Gold Dust)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300207, 2, 15, 12, 0, 0, 0, 3, 0, 300311, 3, 300312, 2, 0, 0, 'Dust to Dust', 'Collect 10 Gold Dust.', 'The bones of these skeletons are infused with magic. Bring me samples of their dust for study.', 'Azshara Crater', 'Dust collected.', 773, 10);
+(300207, 2, 15, 12,  268, 0, 0, 3, 0, 300311, 3, 300312, 2, 0, 0, 'Dust to Dust', 'Collect 10 Gold Dust.', 'The bones of these skeletons are infused with magic. Bring me samples of their dust for study.', 'Azshara Crater', 'Dust collected.', 773, 10);
 
 -- ----------------------------------------------------------------------------
 -- ZONE 3 QUESTS (Level 20-30) - Pathfinder Gor'nash (300020)
@@ -275,36 +275,36 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 
 -- Quest 1: Proving Strength (Kill Satyrs)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300300, 2, 22, 18, 0, 0, 0, 3, 0, 847, 1, 300311, 4, 300312, 2, 'Proving Strength', 'Kill 10 Haldarr Satyrs (or any Satyr).', 'The Satyrs to the east are a plague. Show me your strength by slaying them.', 'Azshara Crater', 'Satyrs slain.', 2044, 10);
+(300300, 2, 22, 18,  268, 0, 0, 3, 0, 847, 1, 300311, 4, 300312, 2, 'Proving Strength', 'Kill 10 Haldarr Satyrs (or any Satyr).', 'The Satyrs to the east are a plague. Show me your strength by slaying them.', 'Azshara Crater', 'Satyrs slain.', 2044, 10);
 
 -- Quest 2: Satyr Horns (Collect Item)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300301, 2, 24, 20, 0, 0, 0, 3, 0, 300311, 5, 300312, 3, 0, 0, 'Satyr Horns', 'Collect 10 Satyr Horns.', 'Their horns can be ground into a powerful powder. Bring me a dozen.', 'Azshara Crater', 'Horns collected.', 21974, 10);
+(300301, 2, 24, 20,  268, 0, 0, 3, 0, 300311, 5, 300312, 3, 0, 0, 'Satyr Horns', 'Collect 10 Satyr Horns.', 'Their horns can be ground into a powerful powder. Bring me a dozen.', 'Azshara Crater', 'Horns collected.', 21974, 10);
 
 -- Quest 3: Destroy The Totem (Object Interaction - using Kill Credit or Dummy Object)
 -- Using Kill Credit NPC for "Totem Destroyed"
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300302, 2, 25, 21, 0, 0, 0, 3, 0, 1296, 1, 300311, 5, 300312, 3, 'Smash the Totems', 'Destroy 5 Thistlefur Totems.', 'The Furbolgs use totems to channel their dark magic. Smash them.', 'Azshara Crater', 'Totems smashed.', 3922, 5);
+(300302, 2, 25, 21,  268, 0, 0, 3, 0, 1296, 1, 300311, 5, 300312, 3, 'Smash the Totems', 'Destroy 5 Thistlefur Totems.', 'The Furbolgs use totems to channel their dark magic. Smash them.', 'Azshara Crater', 'Totems smashed.', 3922, 5);
 
 -- Quest 4: Elder''s Request (Rescue Elder Greymane)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300303, 2, 26, 23, 0, 0, 0, 3, 0, 851, 1, 300311, 6, 300312, 4, 'Elder''s Request', 'Kill Thistlefur Shamans (10).', 'They hold an elder prisoner. We must weaken their magic before we can free him. Kill their Shamans.', 'Azshara Crater', 'Shamans defeated.', 3924, 10);
+(300303, 2, 26, 23,  268, 0, 0, 3, 0, 851, 1, 300311, 6, 300312, 4, 'Elder''s Request', 'Kill Thistlefur Shamans (10).', 'They hold an elder prisoner. We must weaken their magic before we can free him. Kill their Shamans.', 'Azshara Crater', 'Shamans defeated.', 3924, 10);
 
 -- Quest 5: Corruption Source (Kill more Avengers)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300304, 2, 28, 24, 0, 0, 0, 3, 0, 862, 1, 300311, 7, 300312, 5, 'Source of Corruption', 'Kill 15 Thistlefur Avengers.', 'The corruption flows from the top. Cut down their elite guards.', 'Azshara Crater', 'Elites defeated.', 3925, 15);
+(300304, 2, 28, 24,  268, 0, 0, 3, 0, 862, 1, 300311, 7, 300312, 5, 'Source of Corruption', 'Kill 15 Thistlefur Avengers.', 'The corruption flows from the top. Cut down their elite guards.', 'Azshara Crater', 'Elites defeated.', 3925, 15);
 
 -- Quest 6: Cleansing Ritual (Kill mass Thistlefurs)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300305, 2, 30, 25, 0, 0, 0, 4, 0, 929, 5, 300311, 10, 300312, 6, 'Cleansing Ritual', 'Defeat 20 Thistlefurs of any kind.', 'We are ready to drive them out completely. Launch a full assault.', 'Azshara Crater', 'Assault successful.', 3926, 20);
+(300305, 2, 30, 25,  268, 0, 0, 4, 0, 929, 5, 300311, 10, 300312, 6, 'Cleansing Ritual', 'Defeat 20 Thistlefurs of any kind.', 'We are ready to drive them out completely. Launch a full assault.', 'Azshara Crater', 'Assault successful.', 3926, 20);
 
 -- Quest 7: The River Awaits (Final XP)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`) VALUES
-(300306, 2, 30, 25, 0, 0, 0, 5, 0, 300311, 5, 300312, 4, 0, 0, 'The River Awaits', 'Return to Scout Thalindra.', 'You have done well. Return to the outpost and report our victory.', 'Azshara Crater', 'Victory reported.');
+(300306, 2, 30, 25,  268, 0, 0, 5, 0, 300311, 5, 300312, 4, 0, 0, 'The River Awaits', 'Return to Scout Thalindra.', 'You have done well. Return to the outpost and report our victory.', 'Azshara Crater', 'Victory reported.');
 
 -- Quest 8: Furbolg Resources (Collect Gnoll War Beads)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredItemId1`, `RequiredItemCount1`) VALUES
-(300307, 2, 23, 20, 0, 0, 0, 3, 0, 118, 5, 300311, 5, 300312, 3, 'Furbolg Beads', 'Collect 10 Gnoll War Beads.', 'The Furbolgs carry beads similar to Gnolls. Collect them for analysis.', 'Azshara Crater', 'Beads collected.', 527, 10);
+(300307, 2, 23, 20,  268, 0, 0, 3, 0, 118, 5, 300311, 5, 300312, 3, 'Furbolg Beads', 'Collect 10 Gnoll War Beads.', 'The Furbolgs carry beads similar to Gnolls. Collect them for analysis.', 'Azshara Crater', 'Beads collected.', 527, 10);
 
 -- ----------------------------------------------------------------------------
 -- WATER QUESTS (Zones 1-3) - Using Existing WotLK NPCs
@@ -313,17 +313,17 @@ INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `Ques
 -- Quest: Murloc Menace (Zone 1 - Level 8)
 -- Kill 10 Murloc Foragers (Entry 46)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300108, 2, 8, 5, 0, 0, 0, 3, 0, 36, 1, 300311, 3, 300312, 2, 'Murloc Menace', 'Slay 10 Murloc Foragers along the coast.', 'The murlocs along the newly formed coast are becoming a nuisance. They are encroaching on our supply lines.\\n\\nThin their numbers, $N. Show them this crater belongs to us.', 'Azshara Crater', 'Slay 10 Murloc Foragers.', 46, 10);
+(300108, 2, 8, 5,  268, 0, 0, 3, 0, 36, 1, 300311, 3, 300312, 2, 'Murloc Menace', 'Slay 10 Murloc Foragers along the coast.', 'The murlocs along the newly formed coast are becoming a nuisance. They are encroaching on our supply lines.\\n\\nThin their numbers, $N. Show them this crater belongs to us.', 'Azshara Crater', 'Slay 10 Murloc Foragers.', 46, 10);
 
 -- Quest: Elemental Imbalance (Zone 2 - Level 18)
 -- Kill 8 Corrupt Water Spirits (Entry 5897)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300208, 2, 18, 14, 0, 0, 0, 3, 0, 159, 5, 300311, 5, 300312, 3, 'Elemental Imbalance', 'Defeat 8 Corrupt Water Spirits.', 'The water elementals here have become unstable. Their corruption threatens the ley lines.\\n\\nDestroy them before they can spread further.', 'Azshara Crater', 'Defeat 8 Corrupt Water Spirits.', 5897, 8);
+(300208, 2, 18, 14,  268, 0, 0, 3, 0, 159, 5, 300311, 5, 300312, 3, 'Elemental Imbalance', 'Defeat 8 Corrupt Water Spirits.', 'The water elementals here have become unstable. Their corruption threatens the ley lines.\\n\\nDestroy them before they can spread further.', 'Azshara Crater', 'Defeat 8 Corrupt Water Spirits.', 5897, 8);
 
 -- Quest: Crocolisk Crisis (Zone 3 - Level 25)
 -- Kill 6 Giant Wetlands Crocolisks (Entry 2089)
 INSERT INTO `quest_template` (`ID`, `QuestType`, `QuestLevel`, `MinLevel`, `QuestSortID`, `QuestInfoID`, `SuggestedGroupNum`, `RewardXPDifficulty`, `RewardMoney`, `RewardItem1`, `RewardAmount1`, `RewardItem2`, `RewardAmount2`, `RewardItem3`, `RewardAmount3`, `LogTitle`, `LogDescription`, `QuestDescription`, `AreaDescription`, `QuestCompletionLog`, `RequiredNpcOrGo1`, `RequiredNpcOrGoCount1`) VALUES
-(300308, 2, 25, 21, 0, 0, 0, 3, 0, 200, 1, 300311, 6, 300312, 4, 'Crocolisk Crisis', 'Hunt 6 Giant Wetlands Crocolisks.', 'The river crocolisks have grown massive and aggressive. They threaten our supply routes.\\n\\nHunt them down before they attack the caravan.', 'Azshara Crater', 'Hunt 6 Giant Wetlands Crocolisks.', 2089, 6);
+(300308, 2, 25, 21,  268, 0, 0, 3, 0, 200, 1, 300311, 6, 300312, 4, 'Crocolisk Crisis', 'Hunt 6 Giant Wetlands Crocolisks.', 'The river crocolisks have grown massive and aggressive. They threaten our supply routes.\\n\\nHunt them down before they attack the caravan.', 'Azshara Crater', 'Hunt 6 Giant Wetlands Crocolisks.', 2089, 6);
 
 -- ============================================================================
 -- SECTION 7: NPC QUEST RELATIONS (creature_queststarter / creature_questender)

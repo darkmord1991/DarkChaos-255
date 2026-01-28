@@ -13,18 +13,13 @@
 -- Create creature_template entry for Universal Quest Master
 DELETE FROM creature_template WHERE entry = 700100;
 INSERT INTO `creature_template` 
-(`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, 
-`name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, 
-`speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, 
-`dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, 
-`unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, 
-`trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, 
-`PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, 
-`HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, 
-`RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`)
+(`entry`, `name`, `subname`, `IconName`, `minlevel`, `maxlevel`, `faction`, `npcflag`, `type`, `unit_class`, `flags_extra`, `ScriptName`, `VerifiedBuild`)
 VALUES
--- Universal Quest Master: Dynamic dungeon/raid NPC
-(700100, 0, 0, 0, 0, 0, 'Universal Quest Master', 'Dungeon & Raid Quests', 'Speak', 0, 80, 80, 2, 35, 3, 1, 1.14286, 1, 1, 50, 1, 1, 0, 1, 2000, 2000, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 500, '', 0, 1, 2, 1, 1, 1, 0, 0, 1, 0, 0, 2, 'npc_universal_quest_master', 0);
+(700100, 'Universal Quest Master', 'Dungeon & Raid Quests', 'Speak', 80, 80, 35, 3, 7, 1, 2, 'npc_universal_quest_master', 0);
+-- Add model definition (Required since creature_template has no ModelId columns)
+DELETE FROM creature_template_model WHERE CreatureID = 700100;
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) 
+VALUES (700100, 0, 16466, 1, 1, 0);
 
 -- =====================================================================
 -- Add display_id column to dc_dungeon_npc_mapping if not exists
@@ -115,3 +110,30 @@ UNION ALL
 SELECT 'Raid Quests (NPCs 700055-700071)' AS Type, COUNT(*) AS Count
 FROM dc_dungeon_quest_mapping dqm
 WHERE dqm.dungeon_id IN (SELECT map_id FROM dc_dungeon_npc_mapping WHERE quest_master_entry BETWEEN 700055 AND 700071);
+
+-- 1. Fix ScriptName for Universal Quest Master (Entry 700100)
+-- This resolves the "Script named 'npc_universal_quest_master' is not assigned" error
+UPDATE creature_template 
+SET ScriptName = 'npc_universal_quest_master' 
+WHERE entry = 700100;
+
+-- 2. Fix Invalid Display IDs causing client crashes
+-- The following NPCs had display IDs that don't exist in the client.
+-- We update the MAPPING table so the Universal Quest Master uses a safe ID.
+-- (We skip updating creature_template directly as ModelId columns vary by core version)
+
+-- Replace with Safe Default: 16466 (Human Male Quest Giver)
+
+-- 700015 (Uldaman?) - Was 4258
+UPDATE dc_dungeon_npc_mapping SET display_id = 16466 WHERE quest_master_entry = 700015;
+
+-- 700022 (Scholomance?) - Was 19457
+UPDATE dc_dungeon_npc_mapping SET display_id = 16466 WHERE quest_master_entry = 700022;
+
+-- 700052 (Utgarde Pinnacle?) - Was 30294
+UPDATE dc_dungeon_npc_mapping SET display_id = 16466 WHERE quest_master_entry = 700052;
+
+-- 700063 (Naxxramas?) - Was 19457
+UPDATE dc_dungeon_npc_mapping SET display_id = 16466 WHERE quest_master_entry = 700063;
+
+SELECT 'Universal Quest Master fixes applied successfully.' as status;

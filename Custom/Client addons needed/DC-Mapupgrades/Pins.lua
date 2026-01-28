@@ -20,6 +20,134 @@ local function DebugPrint(...)
     end
 end
 
+
+-- Custom zone map ID to zone ID mapping
+-- Some custom zones report different map IDs than their zone IDs
+-- IMPORTANT: Must be defined before HotspotMatchesMap function
+local CUSTOM_ZONE_MAPPING = {
+    [614] = 268,  -- Azshara Crater: WoW reports map 614, but zone is 268
+    [1405] = 5006, -- Slippy Quagmire (custom): client MapAreaID 1405, server zoneId 5006
+    -- Slippy Quagmire / Isles of Giants (custom): clients may report any of these map IDs depending on UI / floors
+    [1100] = 5006,
+    [1101] = 5006,
+    [1102] = 5006,
+    [745] = 745, -- Jade Forest (Explicit mapping to prevent incorrect learning)
+    -- Add more custom zones here as needed
+}
+
+-- WoW 3.3.5 Map ID to Zone ID mapping
+-- WoW's internal map IDs (GetCurrentMapAreaID) don't match server zone IDs
+-- This maps WoW map IDs -> server zone IDs
+-- NOTE: In WoW 3.3.5, GetCurrentMapAreaID returns the MapAreaID which is 
+-- NOT the same as AreaID/ZoneID that the server uses!
+local MAP_TO_ZONE = {
+    -- Kalimdor (MapAreaID -> AreaID)
+    [41] = 141,   -- Teldrassil (MapAreaID 41 -> AreaID 141)
+    [42] = 148,   -- Darkshore
+    [43] = 331,   -- Ashenvale  
+    [61] = 405,   -- Desolace
+    [81] = 400,   -- Thousand Needles
+    [101] = 15,   -- Dustwallow Marsh
+    [181] = 215,  -- Mulgore
+    [321] = 493,  -- Moonglade
+    [141] = 16,   -- Azshara
+    [161] = 14,   -- Durotar
+    [362] = 17,   -- The Barrens (MapAreaID might be different)
+    [11] = 17,    -- The Barrens alternate
+    [12] = 17,    -- The Barrens (you saw map 12 in logs)
+    [14] = 33,    -- Stranglethorn Vale (you saw map 14 in logs)
+    [182] = 1637, -- Orgrimmar
+    [201] = 357,  -- Feralas
+    [241] = 490,  -- Un'Goro Crater
+    [261] = 361,  -- Felwood
+    [281] = 1377, -- Silithus
+    [301] = 440,  -- Tanaris
+    [341] = 618,  -- Winterspring
+    [381] = 1657, -- Darnassus
+    [382] = 406,  -- Stonetalon Mountains
+    [9] = 1638,   -- Thunder Bluff
+    
+    -- Eastern Kingdoms (MapAreaID -> AreaID)
+    [1] = 1,      -- Dun Morogh
+    [2] = 1537,   -- Ironforge
+    [4] = 12,     -- Elwynn Forest
+    [5] = 1519,   -- Stormwind City
+    [19] = 38,    -- Loch Modan
+    [15] = 44,    -- Redridge Mountains
+    [13] = 10,    -- Duskwood
+    [16] = 40,    -- Westfall
+    [17] = 11,    -- Wetlands
+    [20] = 85,    -- Tirisfal Glades
+    [21] = 130,   -- Silverpine Forest
+    [22] = 36,    -- Alterac Mountains
+    [23] = 267,   -- Hillsbrad Foothills
+    [24] = 47,    -- The Hinterlands
+    [26] = 45,    -- Arathi Highlands
+    [27] = 3,     -- Badlands
+    [28] = 8,     -- Swamp of Sorrows
+    [29] = 51,    -- Searing Gorge
+    [30] = 46,    -- Burning Steppes
+    [32] = 4,     -- Blasted Lands
+    [34] = 28,    -- Western Plaguelands
+    [35] = 139,   -- Eastern Plaguelands
+    [36] = 41,    -- Deadwind Pass
+    [37] = 1497,  -- Undercity
+    [39] = 1584,  -- Blackrock Mountain
+    
+    -- Blood Elf / Draenei starting zones
+    [462] = 3430, -- Eversong Woods
+    [463] = 3433, -- Ghostlands
+    [464] = 3487, -- Silvermoon City
+    [465] = 3525, -- Bloodmyst Isle
+    [466] = 3524, -- Azuremyst Isle
+    [467] = 3557, -- The Exodar
+    
+    -- Outland (MapAreaID -> AreaID)
+    [465] = 3483, -- Hellfire Peninsula
+    [467] = 3518, -- Nagrand
+    [478] = 3519, -- Terokkar Forest
+    [473] = 3520, -- Shadowmoon Valley
+    [466] = 3521, -- Zangarmarsh
+    [475] = 3522, -- Blade's Edge Mountains
+    [479] = 3523, -- Netherstorm
+    [481] = 3703, -- Shattrath City
+    
+    -- Northrend (MapAreaID -> AreaID)
+    [486] = 3537, -- Borean Tundra
+    [488] = 65,   -- Dragonblight
+    [490] = 394,  -- Grizzly Hills
+    [491] = 495,  -- Howling Fjord
+    [492] = 210,  -- Icecrown
+    [493] = 3711, -- Sholazar Basin
+    [495] = 67,   -- Storm Peaks
+    [496] = 66,   -- Zul'Drak
+    [504] = 4395, -- Dalaran
+    [541] = 4197, -- Wintergrasp
+    
+    -- Azshara Crater (custom)
+    [614] = 268,  -- Azshara Crater
+}
+
+-- Reverse mapping: Server zone ID -> WoW map ID (for lookup)
+local ZONE_TO_MAP = {}
+for mapId, zoneId in pairs(MAP_TO_ZONE) do
+    ZONE_TO_MAP[zoneId] = mapId
+end
+
+-- Continent map IDs in WoW 3.3.5 (these are the MapAreaIDs for continent-level views)
+-- IMPORTANT: GetCurrentMapAreaID returns different IDs than server continent IDs!
+-- When viewing the world map at continent level (zoomed out), these are the MapAreaIDs:
+-- NOTE: Do NOT include 0, 1, 530, 571 here - those are server continent IDs in hotspot.map,
+--       NOT client MapAreaIDs returned by GetCurrentMapAreaID()
+local CONTINENT_MAP_IDS = {
+    -- WoW 3.3.5 continent view MapAreaIDs
+    [-1] = true,   -- Cosmic/World view
+    [13] = true,   -- Kalimdor continent view (GetCurrentMapAreaID when zoomed out)
+    [14] = true,   -- Eastern Kingdoms continent view
+    [466] = true,  -- Outland continent view
+    [485] = true,  -- Northrend continent view
+}
+
 local function NowEpoch()
     if GetServerTime then
         return GetServerTime()
@@ -166,132 +294,6 @@ local function ActiveWorldMapId()
     return nil
 end
 
--- Custom zone map ID to zone ID mapping
--- Some custom zones report different map IDs than their zone IDs
--- IMPORTANT: Must be defined before HotspotMatchesMap function
-local CUSTOM_ZONE_MAPPING = {
-    [614] = 268,  -- Azshara Crater: WoW reports map 614, but zone is 268
-    [1405] = 5006, -- Slippy Quagmire (custom): client MapAreaID 1405, server zoneId 5006
-    -- Slippy Quagmire / Isles of Giants (custom): clients may report any of these map IDs depending on UI / floors
-    [1100] = 5006,
-    [1101] = 5006,
-    [1102] = 5006,
-    [745] = 745, -- Jade Forest (Explicit mapping to prevent incorrect learning)
-    -- Add more custom zones here as needed
-}
-
--- WoW 3.3.5 Map ID to Zone ID mapping
--- WoW's internal map IDs (GetCurrentMapAreaID) don't match server zone IDs
--- This maps WoW map IDs -> server zone IDs
--- NOTE: In WoW 3.3.5, GetCurrentMapAreaID returns the MapAreaID which is 
--- NOT the same as AreaID/ZoneID that the server uses!
-local MAP_TO_ZONE = {
-    -- Kalimdor (MapAreaID -> AreaID)
-    [41] = 141,   -- Teldrassil (MapAreaID 41 -> AreaID 141)
-    [42] = 148,   -- Darkshore
-    [43] = 331,   -- Ashenvale  
-    [61] = 405,   -- Desolace
-    [81] = 400,   -- Thousand Needles
-    [101] = 15,   -- Dustwallow Marsh
-    [181] = 215,  -- Mulgore
-    [321] = 493,  -- Moonglade
-    [141] = 16,   -- Azshara
-    [161] = 14,   -- Durotar
-    [362] = 17,   -- The Barrens (MapAreaID might be different)
-    [11] = 17,    -- The Barrens alternate
-    [12] = 17,    -- The Barrens (you saw map 12 in logs)
-    [14] = 33,    -- Stranglethorn Vale (you saw map 14 in logs)
-    [182] = 1637, -- Orgrimmar
-    [201] = 357,  -- Feralas
-    [241] = 490,  -- Un'Goro Crater
-    [261] = 361,  -- Felwood
-    [281] = 1377, -- Silithus
-    [301] = 440,  -- Tanaris
-    [341] = 618,  -- Winterspring
-    [381] = 1657, -- Darnassus
-    [382] = 406,  -- Stonetalon Mountains
-    [9] = 1638,   -- Thunder Bluff
-    
-    -- Eastern Kingdoms (MapAreaID -> AreaID)
-    [1] = 1,      -- Dun Morogh
-    [2] = 1537,   -- Ironforge
-    [4] = 12,     -- Elwynn Forest
-    [5] = 1519,   -- Stormwind City
-    [19] = 38,    -- Loch Modan
-    [15] = 44,    -- Redridge Mountains
-    [13] = 10,    -- Duskwood
-    [16] = 40,    -- Westfall
-    [17] = 11,    -- Wetlands
-    [20] = 85,    -- Tirisfal Glades
-    [21] = 130,   -- Silverpine Forest
-    [22] = 36,    -- Alterac Mountains
-    [23] = 267,   -- Hillsbrad Foothills
-    [24] = 47,    -- The Hinterlands
-    [26] = 45,    -- Arathi Highlands
-    [27] = 3,     -- Badlands
-    [28] = 8,     -- Swamp of Sorrows
-    [29] = 51,    -- Searing Gorge
-    [30] = 46,    -- Burning Steppes
-    [32] = 4,     -- Blasted Lands
-    [34] = 28,    -- Western Plaguelands
-    [35] = 139,   -- Eastern Plaguelands
-    [36] = 41,    -- Deadwind Pass
-    [37] = 1497,  -- Undercity
-    [39] = 1584,  -- Blackrock Mountain
-    
-    -- Blood Elf / Draenei starting zones
-    [462] = 3430, -- Eversong Woods
-    [463] = 3433, -- Ghostlands
-    [464] = 3487, -- Silvermoon City
-    [465] = 3525, -- Bloodmyst Isle
-    [466] = 3524, -- Azuremyst Isle
-    [467] = 3557, -- The Exodar
-    
-    -- Outland (MapAreaID -> AreaID)
-    [465] = 3483, -- Hellfire Peninsula
-    [467] = 3518, -- Nagrand
-    [478] = 3519, -- Terokkar Forest
-    [473] = 3520, -- Shadowmoon Valley
-    [466] = 3521, -- Zangarmarsh
-    [475] = 3522, -- Blade's Edge Mountains
-    [479] = 3523, -- Netherstorm
-    [481] = 3703, -- Shattrath City
-    
-    -- Northrend (MapAreaID -> AreaID)
-    [486] = 3537, -- Borean Tundra
-    [488] = 65,   -- Dragonblight
-    [490] = 394,  -- Grizzly Hills
-    [491] = 495,  -- Howling Fjord
-    [492] = 210,  -- Icecrown
-    [493] = 3711, -- Sholazar Basin
-    [495] = 67,   -- Storm Peaks
-    [496] = 66,   -- Zul'Drak
-    [504] = 4395, -- Dalaran
-    [541] = 4197, -- Wintergrasp
-    
-    -- Azshara Crater (custom)
-    [614] = 268,  -- Azshara Crater
-}
-
--- Reverse mapping: Server zone ID -> WoW map ID (for lookup)
-local ZONE_TO_MAP = {}
-for mapId, zoneId in pairs(MAP_TO_ZONE) do
-    ZONE_TO_MAP[zoneId] = mapId
-end
-
--- Continent map IDs in WoW 3.3.5 (these are the MapAreaIDs for continent-level views)
--- IMPORTANT: GetCurrentMapAreaID returns different IDs than server continent IDs!
--- When viewing the world map at continent level (zoomed out), these are the MapAreaIDs:
--- NOTE: Do NOT include 0, 1, 530, 571 here - those are server continent IDs in hotspot.map,
---       NOT client MapAreaIDs returned by GetCurrentMapAreaID()
-local CONTINENT_MAP_IDS = {
-    -- WoW 3.3.5 continent view MapAreaIDs
-    [-1] = true,   -- Cosmic/World view
-    [13] = true,   -- Kalimdor continent view (GetCurrentMapAreaID when zoomed out)
-    [14] = true,   -- Eastern Kingdoms continent view
-    [466] = true,  -- Outland continent view
-    [485] = true,  -- Northrend continent view
-}
 
 local function HotspotMatchesMap(hotspot, mapId, showAll)
     if not hotspot then return false end
