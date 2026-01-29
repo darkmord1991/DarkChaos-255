@@ -2586,8 +2586,14 @@ if DC then
         end
     end)
     
-    -- SMSG_SCHEDULED_EVENTS (0x30) - List of scheduled events
-    DC:RegisterHandler("MPLUS", 0x30, function(...)
+    -- =========================================================================
+    -- GRPF (Group Finder) Protocol Handlers
+    -- =========================================================================
+    
+    local GFOpcodes = DC.GroupFinderOpcodes or {}
+
+    -- SMSG_SCHEDULED_EVENTS (0x72) - List of scheduled events
+    DC:RegisterHandler("GRPF", GFOpcodes.SMSG_SCHEDULED_EVENTS or 0x72, function(...)
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
@@ -2596,12 +2602,6 @@ if DC then
             end
         end
     end)
-    
-    -- =========================================================================
-    -- GRPF (Group Finder) Protocol Handlers
-    -- =========================================================================
-    
-    local GFOpcodes = DC.GroupFinderOpcodes or {}
     
     -- SMSG_LISTING_CREATED (0x30) - Confirm listing created
     DC:RegisterHandler("GRPF", GFOpcodes.SMSG_LISTING_CREATED or 0x30, function(...)

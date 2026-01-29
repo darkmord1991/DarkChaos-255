@@ -63,6 +63,11 @@ namespace DarkChaos
         uint32 GetUpgradeTokenItemId();
         uint32 GetArtifactEssenceItemId();
 
+        // Unified currency access - respects UseSeasonalCurrency config
+        // Returns physical item count from player inventory (the canonical source)
+        uint32 GetPlayerTokens(Player* player);
+        uint32 GetPlayerEssence(Player* player);
+
         // =====================================================================
         // Upgrade Cost Structure
         // =====================================================================

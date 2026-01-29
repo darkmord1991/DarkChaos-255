@@ -56,6 +56,63 @@ local mockScheduledEvents = {
     },
 }
 
+local function ParseScheduledTime(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+
+    local dayName, hour, minute = text:match("^%s*([%a]+)%s+(%d%d?):(%d%d)%s*$")
+    if not hour then
+        hour, minute = text:match("^%s*(%d%d?):(%d%d)%s*$")
+    end
+    if not hour or not minute then
+        return nil
+    end
+
+    hour = tonumber(hour)
+    minute = tonumber(minute)
+    if not hour or not minute then
+        return nil
+    end
+
+    local now = time()
+    local nowDate = date("*t", now)
+    local target = {
+        year = nowDate.year,
+        month = nowDate.month,
+        day = nowDate.day,
+        hour = hour,
+        min = minute,
+        sec = 0,
+    }
+
+    if dayName then
+        local dayMap = {
+            sun = 0, mon = 1, tue = 2, wed = 3, thu = 4, fri = 5, sat = 6,
+        }
+        local targetDow = dayMap[string.lower(dayName)]
+        if targetDow == nil then
+            return nil
+        end
+        local currentDow = tonumber(date("%w", now)) or 0
+        local delta = (targetDow - currentDow) % 7
+        if delta == 0 then
+            local candidate = time(target)
+            if candidate <= now then
+                delta = 7
+            end
+        end
+        target.day = target.day + delta
+    else
+        local candidate = time(target)
+        if candidate <= now then
+            target.day = target.day + 1
+        end
+    end
+
+    return time(target)
+end
+
 -- =====================================================================
 -- Create Scheduled Tab
 -- =====================================================================
@@ -183,6 +240,18 @@ function GF:PopulateScheduledEvents(events)
     GF.Print("Populating " .. #events .. " scheduled events")
     
     for i, event in ipairs(events) do
+        local eventType = event.eventType or event.type or EVENT_TYPES.OTHER
+        local title = event.title or event.dungeonName or "Scheduled Event"
+        local description = event.description or event.note or ""
+        local organizer = event.organizer or event.leaderName or "Unknown"
+        local scheduledTime = event.dateTime
+        if not scheduledTime and event.scheduledTime then
+            scheduledTime = date("%a %H:%M", event.scheduledTime)
+        end
+        local signups = event.signups or event.currentSignups or 0
+        local maxSignups = event.maxSignups or 0
+        local confirmed = event.confirmed or event.currentSignups or 0
+
         local row = CreateFrame("Frame", nil, scrollChild)
         row:SetSize(contentWidth - 40, rowHeight - 4)
         row:SetPoint("TOPLEFT", 5, -yOffset)
@@ -194,11 +263,11 @@ function GF:PopulateScheduledEvents(events)
         -- Event type icon/badge
         local typeBadge = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         typeBadge:SetPoint("TOPLEFT", 10, -8)
-        if event.type == EVENT_TYPES.MYTHIC_PLUS then
+        if eventType == EVENT_TYPES.MYTHIC_PLUS then
             typeBadge:SetText("|cff32c4ff[M+]|r")
-        elseif event.type == EVENT_TYPES.RAID then
+        elseif eventType == EVENT_TYPES.RAID then
             typeBadge:SetText("|cffff9900[RAID]|r")
-        elseif event.type == EVENT_TYPES.PVP then
+        elseif eventType == EVENT_TYPES.PVP then
             typeBadge:SetText("|cffff4444[PVP]|r")
         else
             typeBadge:SetText("|cff888888[EVENT]|r")
@@ -207,45 +276,45 @@ function GF:PopulateScheduledEvents(events)
         -- Title
         local titleText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         titleText:SetPoint("LEFT", typeBadge, "RIGHT", 10, 0)
-        titleText:SetText(event.title)
+        titleText:SetText(title)
         
         -- Date/Time
         local dateText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         dateText:SetPoint("TOPRIGHT", -90, -8)
-        dateText:SetText("|cff44ff44" .. event.dateTime .. "|r")
+        dateText:SetText("|cff44ff44" .. (scheduledTime or "") .. "|r")
         
         -- Description
         local descText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         descText:SetPoint("TOPLEFT", 10, -28)
         descText:SetPoint("RIGHT", -100, 0)
         descText:SetJustifyH("LEFT")
-        descText:SetText(event.description)
+        descText:SetText(description)
         descText:SetTextColor(0.7, 0.7, 0.7)
         
         -- Organizer
         local orgText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         orgText:SetPoint("BOTTOMLEFT", 10, 20)
-        orgText:SetText("Organizer: |cffffffff" .. event.organizer .. "|r")
+        orgText:SetText("Organizer: |cffffffff" .. organizer .. "|r")
         
         -- Signups
         local signupText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         signupText:SetPoint("BOTTOMLEFT", 10, 6)
-        local signupColor = event.signups >= event.maxSignups and "ffaa44" or "44ff44"
+        local signupColor = signups >= maxSignups and "ffaa44" or "44ff44"
         signupText:SetText(string.format("Signups: |cff%s%d/%d|r  (Confirmed: %d)",
-            signupColor, event.signups, event.maxSignups, event.confirmed))
+            signupColor, signups, maxSignups, confirmed))
         
         -- Sign Up button
         local signupBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
         signupBtn:SetSize(80, 26)
         signupBtn:SetPoint("RIGHT", -10, 0)
         
-        if event.signups >= event.maxSignups then
+        if signups >= maxSignups and maxSignups > 0 then
             signupBtn:SetText("Full")
             signupBtn:Disable()
         else
             signupBtn:SetText("Sign Up")
             signupBtn:SetScript("OnClick", function()
-                GF:SignUpForEvent(event.id, event.title)
+                GF:SignUpForEvent(event.eventId or event.id, title)
             end)
         end
         
@@ -279,7 +348,11 @@ function GF:RefreshScheduledEvents()
     GF.Print("Refreshing scheduled events...")
     local DC = rawget(_G, "DCAddonProtocol")
     if DC then
-        DC:Request("MPLUS", 0x30, { action = "list_scheduled" })
+        if DC.GroupFinderOpcodes and DC.GroupFinderOpcodes.CMSG_GET_SCHEDULED_EVENTS then
+            DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_GET_SCHEDULED_EVENTS, {})
+        else
+            DC:Request("GRPF", 0x63, {})
+        end
     else
         -- Demo mode - use mock data
         self:PopulateScheduledEvents(mockScheduledEvents)
@@ -290,7 +363,11 @@ function GF:SignUpForEvent(eventId, eventTitle)
     GF.Print("Signing up for: " .. eventTitle)
     local DC = rawget(_G, "DCAddonProtocol")
     if DC then
-        DC:Request("MPLUS", 0x31, { event_id = eventId })
+        if DC.GroupFinderOpcodes and DC.GroupFinderOpcodes.CMSG_SIGNUP_EVENT then
+            DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_SIGNUP_EVENT, { eventId = eventId })
+        else
+            DC:Request("GRPF", 0x61, { eventId = eventId })
+        end
     end
 end
 
@@ -457,7 +534,27 @@ function GF:CreateScheduledEvent(eventData)
     GF.Print("Creating event: " .. eventData.title)
     local DC = rawget(_G, "DCAddonProtocol")
     if DC then
-        DC:Request("MPLUS", 0x32, eventData)
+        local scheduledTime = ParseScheduledTime(eventData.dateTime)
+        if not scheduledTime then
+            UIErrorsFrame:AddMessage("Invalid date/time. Use 'HH:MM' or 'Sat 20:00'.", 1.0, 0.0, 0.0, 1.0, UIERRORS_HOLD_TIME)
+            return
+        end
+
+        local payload = {
+            eventType = eventData.type,
+            dungeonId = 0,
+            dungeonName = eventData.title,
+            keyLevel = 0,
+            scheduledTime = scheduledTime,
+            maxSignups = eventData.maxSignups or 5,
+            note = eventData.description or "",
+        }
+
+        if DC.GroupFinderOpcodes and DC.GroupFinderOpcodes.CMSG_CREATE_EVENT then
+            DC:Request("GRPF", DC.GroupFinderOpcodes.CMSG_CREATE_EVENT, payload)
+        else
+            DC:Request("GRPF", 0x60, payload)
+        end
     end
 end
 

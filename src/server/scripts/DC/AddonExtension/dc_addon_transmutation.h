@@ -12,6 +12,7 @@ namespace DCAddon
     namespace Upgrade
     {
         void SendOpenTransmutationUI(Player* player);
+        void SendCurrencyUpdate(Player* player);  // Shared with dc_addon_upgrade.cpp
     }
 }
 

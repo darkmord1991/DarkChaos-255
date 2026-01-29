@@ -364,20 +364,12 @@ public:
 
     uint32 GetWeeklySpending(uint32 player_guid, CurrencyType currency) const override
     {
-        // Get start of current week (Sunday 00:00)
-        time_t now = time(nullptr);
-        struct tm* timeinfo = localtime(&now);
-        timeinfo->tm_hour = 0;
-        timeinfo->tm_min = 0;
-        timeinfo->tm_sec = 0;
-        timeinfo->tm_mday -= timeinfo->tm_wday;  // Go back to Sunday
-        time_t week_start = mktime(timeinfo);
-
         std::string column = (currency == CURRENCY_ARTIFACT_ESSENCE) ? "essence_spent" : "tokens_spent";
 
+        // week_start is DATE type, use DATE_SUB to get Monday of current week
         QueryResult result = CharacterDatabase.Query(
-            "SELECT {} FROM dc_weekly_spending WHERE player_guid = {} AND week_start = {}",
-            column, player_guid, week_start);
+            "SELECT {} FROM dc_weekly_spending WHERE player_guid = {} AND week_start = DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)",
+            column, player_guid);
 
         return result ? result->Fetch()[0].Get<uint32>() : 0;
     }

@@ -950,7 +950,7 @@ local function EscapeJSONString(s)
     s = string.gsub(s, "\r", "\\r")
     s = string.gsub(s, "\t", "\\t")
     -- Control characters (0x00-0x1F) - escape as \uXXXX
-    s = string.gsub(s, "[\000-\031]", function(c)
+    s = string.gsub(s, "%c", function(c)
         return string.format("\\u%04x", string.byte(c))
     end)
     return s

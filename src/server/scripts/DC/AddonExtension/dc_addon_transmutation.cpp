@@ -13,6 +13,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Item.h"
+#include "Chat.h"
 #include "DC/ItemUpgrades/ItemUpgradeTransmutation.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 
@@ -20,8 +21,27 @@ namespace DCAddon
 {
 namespace Upgrade
 {
-    // Forward declaration
-    void SendCurrencyUpdate(Player* player);
+    static int32 JsonGetInt(const JsonValue& json, const std::string& key, int32 defaultVal = 0)
+    {
+        if (!json.IsObject() || !json.HasKey(key))
+            return defaultVal;
+        const JsonValue& v = json[key];
+        if (v.IsNumber())
+            return v.AsInt32();
+        if (v.IsString())
+            return std::atoi(v.AsString().c_str());
+        return defaultVal;
+    }
+
+    static std::string JsonGetString(const JsonValue& json, const std::string& key, const std::string& defaultVal = "")
+    {
+        if (!json.IsObject() || !json.HasKey(key))
+            return defaultVal;
+        const JsonValue& v = json[key];
+        if (v.IsString())
+            return v.AsString();
+        return defaultVal;
+    }
 
     // Send Open UI Signal
     void SendOpenTransmutationUI(Player* player)
@@ -47,51 +67,41 @@ namespace Upgrade
         // 3. Get Synthesis Recipes
         auto recipes = synthMgr->GetSynthesisRecipes(player->GetGUID().GetCounter());
 
-        // Build JSON response
-        std::ostringstream json;
-        json << "{";
+        JsonValue exchange;
+        exchange.SetObject();
+        exchange.Set("tokensToEssence", JsonValue(tokensToEssence));
+        exchange.Set("essenceToTokens", JsonValue(essenceToTokens));
 
-        // Exchange Rates
-        json << "\"exchange\":{"
-             << "\"tokensToEssence\":" << tokensToEssence << ","
-             << "\"essenceToTokens\":" << essenceToTokens
-             << "},";
-
-        // Session Status
         bool sessionActive = (session.player_guid != 0 && !session.completed);
-        json << "\"session\":{"
-             << "\"active\":" << (sessionActive ? "true" : "false") << ","
-             << "\"completed\":" << (session.completed ? "true" : "false") << ","
-             << "\"recipeId\":" << session.recipe_id << ","
-             << "\"success\":" << (session.success ? "true" : "false") << ","
-             << "\"startTime\":" << session.start_time << ","
-             << "\"endTime\":" << session.end_time
-             << "},";
+        JsonValue sessionObj;
+        sessionObj.SetObject();
+        sessionObj.Set("active", JsonValue(sessionActive));
+        sessionObj.Set("completed", JsonValue(session.completed));
+        sessionObj.Set("recipeId", JsonValue(session.recipe_id));
+        sessionObj.Set("success", JsonValue(session.success));
+        sessionObj.Set("startTime", JsonValue(static_cast<double>(session.start_time)));
+        sessionObj.Set("endTime", JsonValue(static_cast<double>(session.end_time)));
 
-        // Recipes
-        json << "\"recipes\":[";
-        bool first = true;
+        JsonValue recipesArray;
+        recipesArray.SetArray();
         for (auto const& recipe : recipes)
         {
-            if (!first) json << ",";
-            first = false;
-
-            json << "{"
-                 << "\"id\":" << recipe.recipe_id << ","
-                 << "\"name\":\"" << recipe.name << "\"," // Should escape quotes
-                 << "\"desc\":\"" << recipe.description << "\","
-                 << "\"reqTier\":" << (int)recipe.required_tier << ","
-                 << "\"inEssence\":" << recipe.input_essence << ","
-                 << "\"inTokens\":" << recipe.input_tokens << ","
-                 << "\"successRate\":" << recipe.success_rate_base
-                 << "}";
+            JsonValue rec;
+            rec.SetObject();
+            rec.Set("id", JsonValue(recipe.recipe_id));
+            rec.Set("name", JsonValue(recipe.name));
+            rec.Set("desc", JsonValue(recipe.description));
+            rec.Set("reqTier", JsonValue(static_cast<int32>(recipe.required_tier)));
+            rec.Set("inEssence", JsonValue(recipe.input_essence));
+            rec.Set("inTokens", JsonValue(recipe.input_tokens));
+            rec.Set("successRate", JsonValue(recipe.success_rate_base));
+            recipesArray.Push(rec);
         }
-        json << "]";
-
-        json << "}";
 
         JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_INFO)
-            .Set("data", json.str()) // Nested JSON string for now, or could structure it directly
+            .Set("exchange", exchange)
+            .Set("session", sessionObj)
+            .Set("recipes", recipesArray)
             .Send(player);
     }
 
@@ -107,7 +117,43 @@ namespace Upgrade
         // Type 2: Currency Exchange (Type, Amount)
         // Type 3: Synthesis (RecipeID)
 
+        LOG_DEBUG("scripts.dc", "HandleDoTransmute called for player {} with {} data fields",
+                  player->GetGUID().GetCounter(), msg.GetDataCount());
+
         uint32 type = msg.GetUInt32(0);
+        uint32 exchangeType = msg.GetUInt32(1);
+        uint32 amount = msg.GetUInt32(2);
+
+        JsonValue json;
+        if (IsJsonMessage(msg))
+        {
+            json = GetJsonData(msg);
+        }
+        else if (msg.GetDataCount() >= 1)
+        {
+            std::string raw = msg.GetString(0);
+            if (!raw.empty() && raw.front() == '{')
+                json = JsonParser::Parse(raw);
+        }
+
+        if (json.IsObject())
+        {
+            std::string action = JsonGetString(json, "action", "");
+            LOG_DEBUG("scripts.dc", "HandleDoTransmute JSON parsed: action={}", action);
+            if (action == "exchange")
+            {
+                type = 2;
+                exchangeType = static_cast<uint32>(JsonGetInt(json, "type", 0));
+                amount = static_cast<uint32>(JsonGetInt(json, "amount", 0));
+                LOG_DEBUG("scripts.dc", "HandleDoTransmute exchange: type={} exchangeType={} amount={}",
+                          type, exchangeType, amount);
+            }
+            else if (action == "synthesis")
+            {
+                type = 3;
+                amount = static_cast<uint32>(JsonGetInt(json, "recipeId", 0));
+            }
+        }
 
         using namespace DarkChaos::ItemUpgrade;
 
@@ -117,31 +163,65 @@ namespace Upgrade
         }
         else if (type == 2) // Currency Exchange
         {
-            uint32 exchangeType = msg.GetUInt32(1); // 1=Token->Essence, 2=Essence->Token
-            // Amount logic would go here
-
             TransmutationManager* transMgr = GetTransmutationManager();
             bool success = false;
 
-            // Use the manager's ExchangeCurrency interface
-            success = transMgr->ExchangeCurrency(player->GetGUID().GetCounter(), exchangeType == 1, 1);
+            LOG_DEBUG("scripts.dc", "HandleDoTransmute currency exchange: transMgr={} exchangeType={} amount={}",
+                      (transMgr != nullptr), exchangeType, amount);
 
-            Message(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
-                .Add(success)
-                .Add(type)
+            if (!transMgr || exchangeType < 1 || exchangeType > 2 || amount == 0)
+            {
+                LOG_WARN("scripts.dc", "HandleDoTransmute invalid params: transMgr={} exchangeType={} amount={}",
+                         (transMgr != nullptr), exchangeType, amount);
+                JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
+                    .Set("success", false)
+                    .Set("type", static_cast<int32>(type))
+                    .Set("message", "Invalid exchange request")
+                    .Send(player);
+                return;
+            }
+
+            // Use the manager's ExchangeCurrency interface
+            success = transMgr->ExchangeCurrency(player->GetGUID().GetCounter(), exchangeType == 1, amount);
+
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
+                .Set("success", success)
+                .Set("type", static_cast<int32>(type))
+                .Set("message", success ? "Exchange complete" : "Exchange failed")
                 .Send(player);
 
             if (success)
-                SendCurrencyUpdate(player); // Defined in dc_addon_upgrade.cpp, need to link or duplicate
+            {
+                // Send chat confirmation
+                if (exchangeType == 1)
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Transmutation]|r Exchanged {} tokens for {} essence.", amount * 2, amount);
+                else
+                    ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Transmutation]|r Exchanged {} essence for {} tokens.", amount, amount);
+
+                SendCurrencyUpdate(player);
+                SendTransmutationInfo(player);
+            }
+            else
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF0000[Transmutation]|r Exchange failed - insufficient currency.");
+            }
         }
         else if (type == 3) // Synthesis
         {
             // Need to gather input items from player inventory... complex logic
             // For now, just send error
-            Message(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
-                .Add(0)
-                .Add(type)
-                .Add("Not implemented via addon yet")
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
+                .Set("success", false)
+                .Set("type", static_cast<int32>(type))
+                .Set("message", "Not implemented via addon yet")
+                .Send(player);
+        }
+        else
+        {
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_RESULT)
+                .Set("success", false)
+                .Set("type", static_cast<int32>(type))
+                .Set("message", "Unknown transmutation request")
                 .Send(player);
         }
     }

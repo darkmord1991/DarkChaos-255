@@ -760,22 +760,28 @@ function DC.RegisterDCProtocolHandlers()
 	
 	-- SMSG_CURRENCY_UPDATE (0x14) - Token/Essence balance update
 	DCProtocol:RegisterHandler("UPG", 0x14, function(data)
-		DC.Debug("Received SMSG_CURRENCY_UPDATE: " .. (data or "nil"));
-		if not data or data == "" then return; end
+		DC.Debug("Received SMSG_CURRENCY_UPDATE: " .. tostring(data));
+		if not data then return; end
 		
-		-- Check for JSON format
+		-- Check for JSON format - DCAddonProtocol may pass decoded table or raw string
 		local tokens, essence
-		local isJSON = string.sub(data, 1, 1) == "{"
 		
-		if isJSON and DC.useDCProtocolJSON then
-			local parsed = DC.ParseJSON(data)
-			if parsed then
-				tokens = parsed.tokens
-				essence = parsed.essence
+		if type(data) == "table" then
+			-- Already decoded by DCAddonProtocol
+			tokens = data.tokens
+			essence = data.essence
+		elseif type(data) == "string" and data ~= "" then
+			local isJSON = string.sub(data, 1, 1) == "{"
+			if isJSON and DC.useDCProtocolJSON then
+				local parsed = DC.ParseJSON(data)
+				if parsed then
+					tokens = parsed.tokens
+					essence = parsed.essence
+				end
+			else
+				-- Parse legacy format: tokens|essence
+				tokens, essence = string.match(data, "^(%d+)|(%d+)$")
 			end
-		else
-			-- Parse legacy format: tokens|essence
-			tokens, essence = string.match(data, "^(%d+)|(%d+)$")
 		end
 		
 		if tokens and essence then

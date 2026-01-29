@@ -16,6 +16,7 @@
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "World.h"
+#include "ObjectAccessor.h"
 #include <sstream>
 #include <algorithm>
 
@@ -430,10 +431,25 @@ namespace DarkChaos
             bool ExchangeCurrency(uint32 player_guid, bool tokens_to_essence, uint32 amount) override
             {
                 if (amount == 0)
+                {
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - amount is 0 for player {}", player_guid);
                     return false;
+                }
 
-                UpgradeManager* mgr = GetUpgradeManager();
-                uint32 season = GetCurrentSeasonId();
+                // Find the player
+                Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid));
+                if (!player)
+                {
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - player {} not found", player_guid);
+                    return false;
+                }
+
+                // Use unified currency helpers
+                uint32 tokenItemId = GetUpgradeTokenItemId();
+                uint32 essenceItemId = GetArtifactEssenceItemId();
+
+                LOG_DEBUG("scripts.dc", "ItemUpgrade: ExchangeCurrency - player {} amount {} tokens_to_essence {}",
+                          player_guid, amount, tokens_to_essence);
 
                 try
                 {
@@ -441,33 +457,53 @@ namespace DarkChaos
 
                     if (tokens_to_essence)
                     {
-                        // Tokens to essence
-                        exchange_rate = 2; // 2 tokens = 1 essence
+                        // Tokens to Essence: 2 tokens = 1 essence
+                        exchange_rate = 2;
                         uint32 required_tokens = amount * exchange_rate;
                         fee_amount = required_tokens * config.currency_exchange_fee_percent / 100;
                         final_amount = amount;
 
-                        uint32 current_tokens = mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, season);
-                        if (current_tokens < (required_tokens + fee_amount))
-                            return false;
+                        uint32 total_needed = required_tokens + fee_amount;
+                        uint32 current_tokens = GetPlayerTokens(player);
 
-                        mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, required_tokens + fee_amount, season);
-                        mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, final_amount, season);
+                        LOG_DEBUG("scripts.dc", "ItemUpgrade: Tokens->Essence: current {} required {} fee {} total_needed {}",
+                                  current_tokens, required_tokens, fee_amount, total_needed);
+
+                        if (current_tokens < total_needed)
+                        {
+                            LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - insufficient tokens ({} < {}) for player {}",
+                                     current_tokens, total_needed, player_guid);
+                            return false;
+                        }
+
+                        // Remove tokens and add essence
+                        player->DestroyItemCount(tokenItemId, total_needed, true);
+                        player->AddItem(essenceItemId, final_amount);
                     }
                     else
                     {
-                        // Essence to tokens
-                        exchange_rate = 1; // 1 essence = 1 token (unfavorable rate)
+                        // Essence to Tokens: 1 essence = 1 token
+                        exchange_rate = 1;
                         uint32 required_essence = amount * exchange_rate;
                         fee_amount = required_essence * config.currency_exchange_fee_percent / 100;
                         final_amount = amount;
 
-                        uint32 current_essence = mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, season);
-                        if (current_essence < (required_essence + fee_amount))
-                            return false;
+                        uint32 total_needed = required_essence + fee_amount;
+                        uint32 current_essence = GetPlayerEssence(player);
 
-                        mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, required_essence + fee_amount, season);
-                        mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, final_amount, season);
+                        LOG_DEBUG("scripts.dc", "ItemUpgrade: Essence->Tokens: current {} required {} fee {} total_needed {}",
+                                  current_essence, required_essence, fee_amount, total_needed);
+
+                        if (current_essence < total_needed)
+                        {
+                            LOG_WARN("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - insufficient essence ({} < {}) for player {}",
+                                     current_essence, total_needed, player_guid);
+                            return false;
+                        }
+
+                        // Remove essence and add tokens
+                        player->DestroyItemCount(essenceItemId, total_needed, true);
+                        player->AddItem(tokenItemId, final_amount);
                     }
 
                     LOG_INFO("scripts.dc", "ItemUpgrade: Player {} exchanged {} {} for {} {} (fee: {})",
@@ -475,7 +511,6 @@ namespace DarkChaos
                             final_amount, tokens_to_essence ? "essence" : "tokens", fee_amount);
 
                     return true;
-
                 }
                 catch (const std::exception& e)
                 {

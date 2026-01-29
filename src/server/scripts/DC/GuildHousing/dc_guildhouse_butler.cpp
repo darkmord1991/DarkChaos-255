@@ -13,8 +13,10 @@
 #include "GameObject.h"
 #include "Transport.h"
 #include "CreatureAI.h"
+#include "Weather.h"
 #include "dc_guildhouse.h"
 
+#include <array>
 #include <cctype>
 #include <optional>
 #include <string>
@@ -51,7 +53,45 @@ public:
     static constexpr uint32 ACTION_GM_DESPAWN_ALL = 9000002;
     static constexpr uint32 ACTION_GM_LEVEL_BASE = 9000003;
     static constexpr uint32 ACTION_PRESET_CATEGORY_BASE = 9001000;
+    static constexpr uint32 ACTION_WEATHER_MENU = 9002000;
+    static constexpr uint32 ACTION_WEATHER_BASE = 9002100;
     static constexpr uint32 ACTION_PRESET_ENTRY_BASE = 10000000;
+
+    struct WeatherOption
+    {
+        char const* label;
+        char const* icon;
+        WeatherState state;
+        float grade;
+    };
+
+    static constexpr WeatherOption s_weatherOptions[] =
+    {
+        { "Clear Skies", "Interface\\Icons\\Spell_Nature_Sentinal", WEATHER_STATE_FINE, 0.0f },
+        { "Light Rain", "Interface\\Icons\\Spell_Nature_Rain", WEATHER_STATE_LIGHT_RAIN, 0.25f },
+        { "Heavy Rain", "Interface\\Icons\\Spell_Nature_Rain", WEATHER_STATE_HEAVY_RAIN, 0.9f },
+        { "Light Snow", "Interface\\Icons\\Spell_Frost_Frost", WEATHER_STATE_LIGHT_SNOW, 0.35f },
+        { "Heavy Snow", "Interface\\Icons\\Spell_Frost_Frost", WEATHER_STATE_HEAVY_SNOW, 0.9f },
+        { "Sandstorm", "Interface\\Icons\\Spell_Nature_Cyclone", WEATHER_STATE_LIGHT_SANDSTORM, 0.6f },
+        { "Thunders", "Interface\\Icons\\Spell_Nature_StormReach", WEATHER_STATE_THUNDERS, 0.75f },
+        { "Black Rain", "Interface\\Icons\\Spell_Shadow_RainOfFire", WEATHER_STATE_BLACKRAIN, 0.75f }
+    };
+
+    static void ShowWeatherMenu(Player* player, Creature* creature)
+    {
+        ClearGossipMenuFor(player);
+        for (uint32 i = 0; i < std::size(s_weatherOptions); ++i)
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_TALK,
+                MakeLargeGossipText(s_weatherOptions[i].icon, s_weatherOptions[i].label),
+                GOSSIP_SENDER_MAIN, ACTION_WEATHER_BASE + i);
+        }
+
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            MakeLargeGossipText("Interface\\Icons\\Ability_Arrow_Up", "Go Back!"),
+            GOSSIP_SENDER_MAIN, ACTION_BACK);
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
 
     static bool ShouldKeepCreatureEntryOnDespawnAll(uint32 entry)
     {
@@ -433,6 +473,10 @@ public:
                 GOSSIP_SENDER_MAIN, 22);
         }
 
+        AddGossipItemFor(player, GOSSIP_ICON_TALK,
+            MakeLargeGossipText("Interface\\Icons\\Spell_Nature_StormReach", "Change Weather"),
+            GOSSIP_SENDER_MAIN, ACTION_WEATHER_MENU);
+
         if (player->IsGameMaster())
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
                 MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "GM Menu"),
@@ -444,6 +488,29 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
+
+        if (action == ACTION_WEATHER_MENU)
+        {
+            ShowWeatherMenu(player, creature);
+            return true;
+        }
+
+        if (action >= ACTION_WEATHER_BASE && action < ACTION_WEATHER_BASE + std::size(s_weatherOptions))
+        {
+            uint32 index = action - ACTION_WEATHER_BASE;
+            if (!player)
+                return true;
+
+            Map* map = player->GetMap();
+            if (!map)
+                return true;
+
+            uint32 zoneId = player->GetZoneId();
+            map->SetZoneWeather(zoneId, s_weatherOptions[index].state, s_weatherOptions[index].grade);
+            ChatHandler(player->GetSession()).PSendSysMessage("Weather set to {}.", s_weatherOptions[index].label);
+            ShowWeatherMenu(player, creature);
+            return true;
+        }
 
         if (action == ACTION_GM_MENU)
         {

@@ -84,7 +84,7 @@ end
 function DarkChaos_Transmutation_RequestInfo()
     local DCProtocol = rawget(_G, "DCAddonProtocol");
     if DCProtocol then
-        DCProtocol:Send(MODULE, OPCODE_CMSG_GET_TRANSMUTE_INFO, "");
+        DCProtocol:Request(MODULE, OPCODE_CMSG_GET_TRANSMUTE_INFO, {});
     end
 end
 
@@ -201,9 +201,11 @@ function DarkChaos_Transmutation_DoExchange(type)
 
     local DCProtocol = rawget(_G, "DCAddonProtocol");
     if DCProtocol then
-        -- Send JSON payload
-        local payload = string.format("{\"action\":\"exchange\",\"type\":%d,\"amount\":%d}", type, amount);
-        DCProtocol:Send(MODULE, OPCODE_CMSG_DO_TRANSMUTE, payload);
+        DCProtocol:Request(MODULE, OPCODE_CMSG_DO_TRANSMUTE, {
+            action = "exchange",
+            type = type,
+            amount = amount,
+        });
     end
 end
 

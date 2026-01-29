@@ -5,7 +5,7 @@
     and reports any missing tables. The server will continue to start,
     but features with missing tables will be disabled.
     
-    Updated: 2026-01-13 (synced with world/acore_chars schema dumps)
+    Updated: 2026-01-29 (synced with world/acore_chars schema dumps)
     
     This script now strictly reflects the tables present in:
     - Custom/Custom feature SQLs/world schema.sql
@@ -24,8 +24,8 @@ local DC_TABLE_CHECKER = {
     -- Table definitions: {schema, table_name, feature, critical}
     REQUIRED_TABLES = {
         {"acore_chars", "dc_account_outfits", "Collection System", false},
-        {"acore_chars", "dc_account_transmog_cache", "Collection System", false},
         {"acore_chars", "dc_achievement_definitions", "Achievements", false},
+        {"acore_chars", "dc_addon_client_caps", "Protocol Logging", false},
         {"acore_chars", "dc_addon_protocol_daily", "Protocol Logging", false},
         {"acore_chars", "dc_addon_protocol_errors", "Protocol Logging", false},
         {"acore_chars", "dc_addon_protocol_log", "Protocol Logging", false},
@@ -183,6 +183,7 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_dungeon_entrances", "Dungeon System", false},
         {"acore_world", "dc_dungeon_mythic_profile", "Dungeon System", true},
         {"acore_world", "dc_dungeon_npc_mapping", "Dungeon System", false},
+        {"acore_world", "dc_dungeon_quest_mapping", "Quest System", false},
         {"acore_world", "dc_dungeon_setup", "Dungeon System", false},
         {"acore_world", "dc_guild_house_locations", "Guild Housing", true},
         {"acore_world", "dc_guild_house_spawns", "Guild Housing", false},
@@ -230,9 +231,11 @@ local DC_TABLE_CHECKER = {
         {"acore_world", "dc_teleporter", "Teleporters", false},
         {"acore_world", "dc_token_vendor_items", "Token System", false},
         {"acore_world", "dc_toy_definitions", "Collection System", true},
+        {"acore_world", "dc_training_boss_display_pool", "Training System", false},
         {"acore_world", "dc_upgrade_tracks", "Item Upgrade", false},
         {"acore_world", "dc_vault_loot_table", "Weekly Vault", false},
         {"acore_world", "dc_weekly_quest_token_rewards", "Quest Rewards", false},
+        {"acore_world", "dc_world_boss_schedule", "World Bosses", false},
     },
 
     -- Deprecated tables (empty as we have synced with schema)

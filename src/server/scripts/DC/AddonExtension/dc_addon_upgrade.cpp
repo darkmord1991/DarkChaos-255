@@ -9,7 +9,9 @@
  */
 
 #include "dc_addon_namespace.h"
+#include "dc_addon_transmutation.h"
 #include "ScriptMgr.h"
+#include "DC/ItemUpgrades/ItemUpgradeSeasonResolver.h"
 #include "Player.h"
 #include "Item.h"
 #include "DatabaseEnv.h"
@@ -32,18 +34,23 @@ namespace Upgrade
     static std::mutex s_PackageSelectionsMutex;  // Thread safety for package selections
 
     // Send currency update to client
+    // Uses unified GetPlayerTokens/GetPlayerEssence which read physical item counts
     void SendCurrencyUpdate(Player* player)
     {
+        if (!player)
+            return;
+
+        // Use unified currency helpers (reads physical item counts)
+        uint32 tokens = DarkChaos::ItemUpgrade::GetPlayerTokens(player);
+        uint32 essence = DarkChaos::ItemUpgrade::GetPlayerEssence(player);
         uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
-        uint32 tokens = player->GetItemCount(tokenId);
-        uint32 essence = player->GetItemCount(essenceId);
 
-        Message(Module::UPGRADE, Opcode::Upgrade::SMSG_CURRENCY_UPDATE)
-            .Add(tokens)
-            .Add(essence)
-            .Add(tokenId)
-            .Add(essenceId)
+        JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_CURRENCY_UPDATE)
+            .Set("tokens", static_cast<uint32>(tokens))
+            .Set("essence", static_cast<uint32>(essence))
+            .Set("tokenId", static_cast<uint32>(tokenId))
+            .Set("essenceId", static_cast<uint32>(essenceId))
             .Send(player);
     }
 

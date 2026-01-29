@@ -61,6 +61,22 @@ namespace DarkChaos
             return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
         }
 
+        // Unified currency access - returns physical item counts from player inventory
+        // This is the canonical source that matches what client addons (InfoBar, etc.) display
+        uint32 GetPlayerTokens(Player* player)
+        {
+            if (!player)
+                return 0;
+            return player->GetItemCount(GetUpgradeTokenItemId());
+        }
+
+        uint32 GetPlayerEssence(Player* player)
+        {
+            if (!player)
+                return 0;
+            return player->GetItemCount(GetArtifactEssenceItemId());
+        }
+
         // =====================================================================
         // Upgrade Manager Implementation
         // =====================================================================
@@ -468,10 +484,10 @@ namespace DarkChaos
                     "WHERE player_guid = {} AND currency_type = '{}' AND season = {} AND amount >= {}",
                     amount, player_guid, currency_str, season, amount));
 
-                // Record weekly spending
+                // Record weekly spending (week_start is DATE type, use Monday as week start)
                 CharacterDatabase.DirectExecute(fmt::format(
                     "INSERT INTO dc_weekly_spending (player_guid, week_start, {0}) "
-                    "VALUES ({1}, UNIX_TIMESTAMP(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)), {2}) "
+                    "VALUES ({1}, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), {2}) "
                     "ON DUPLICATE KEY UPDATE {0} = {0} + {2}",
                     spending_column, player_guid, amount));
 

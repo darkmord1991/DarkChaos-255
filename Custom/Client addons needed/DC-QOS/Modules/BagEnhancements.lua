@@ -398,7 +398,13 @@ local function LayoutFrame(frameDefName)
     
     if col == 0 then row = row - 1 end
     local width = (cols * (size + spacing)) + (padding * 2) - spacing
-    local height = ((row + 1) * (size + spacing)) + padding + 40 + 5  -- Reduced bottom padding since info/money moved to top
+    local baseHeight = ((row + 1) * (size + spacing)) + padding + 40 + 5
+    
+    -- Add extra height for bank bag slots container
+    local height = baseHeight
+    if frameDefName == "bank" then
+        height = baseHeight + 130  -- Extra space for bag slots + purchase (increased)
+    end
     
     frame:SetSize(width, height)
     
@@ -514,6 +520,43 @@ local function CreateBagFrame(frameDefName)
     return f
 end
 
+local function StripBankFrameVisuals()
+    if not BankFrame then return end
+
+    local regions = {
+        BankFramePortrait,
+        BankFrameTitleText,
+        BankFrameBg,
+        BankFrameBackground,
+        BankFrameTopLeft,
+        BankFrameTopRight,
+        BankFrameBottomLeft,
+        BankFrameBottomRight,
+        BankFrameTexture0,
+        BankFrameTexture1,
+        BankFrameTexture2,
+        BankFrameTexture3,
+        BankFrameCloseButton,
+        BankFrameMoneyFrame,
+    }
+
+    for _, region in ipairs(regions) do
+        if region then
+            region:Hide()
+        end
+    end
+
+    if BankFrame.SetBackdrop then
+        BankFrame:SetBackdrop(nil)
+    end
+    if BankFrame.SetBackdropColor then
+        BankFrame:SetBackdropColor(0, 0, 0, 0)
+    end
+    if BankFrame.SetBackdropBorderColor then
+        BankFrame:SetBackdropBorderColor(0, 0, 0, 0)
+    end
+end
+
 -- ============================================================
 -- Default Frame Support (Fallback)
 -- ============================================================
@@ -597,15 +640,99 @@ local function CloseInventory()
     if frames.inventory then frames.inventory:Hide() end
 end
 
+local function EmbedBankBagSlots(bankFrame)
+    if not BankFrame then return end
+    if bankFrame._bankSlotsEmbedded then return end
+    bankFrame._bankSlotsEmbedded = true
+
+    -- Create a container for bank bag slots at the bottom of the DC bank frame
+    local bagSlotsContainer = CreateFrame("Frame", nil, bankFrame)
+    bagSlotsContainer:SetSize(400, 130)
+    bagSlotsContainer:SetPoint("BOTTOM", bankFrame, "BOTTOM", 0, 8)
+    bankFrame.bagSlotsContainer = bagSlotsContainer
+
+    -- Title for bag slots
+    local bagSlotsTitle = bagSlotsContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    bagSlotsTitle:SetPoint("TOP", bagSlotsContainer, "TOP", 0, 0)
+    bagSlotsTitle:SetText("Bag Slots")
+
+    -- Reparent the bank bag slot buttons (BankSlotsFrame children)
+    local slotSize = 37
+    local spacing = 4
+    local numBankSlots = NUM_BANKBAGSLOTS or 7
+    local totalWidth = (numBankSlots * slotSize) + ((numBankSlots - 1) * spacing)
+    local startX = -totalWidth / 2 + slotSize / 2
+
+    for i = 1, numBankSlots do
+        local bagSlot = _G["BankFrameBag" .. i]
+        if bagSlot then
+            bagSlot:SetParent(bagSlotsContainer)
+            bagSlot:ClearAllPoints()
+            bagSlot:SetPoint("CENTER", bagSlotsContainer, "TOP", startX + ((i - 1) * (slotSize + spacing)), -35)
+            bagSlot:Show()
+        end
+    end
+
+    -- Reparent purchase info text (Do you wish to purchase...)
+    if BankFramePurchaseInfo then
+        BankFramePurchaseInfo:SetParent(bagSlotsContainer)
+        BankFramePurchaseInfo:ClearAllPoints()
+        BankFramePurchaseInfo:SetPoint("TOP", bagSlotsContainer, "TOP", 0, -60)
+        BankFramePurchaseInfo:Show()
+    end
+
+    -- Reparent cost text
+    if BankFrameSlotCost then
+        BankFrameSlotCost:SetParent(bagSlotsContainer)
+        BankFrameSlotCost:ClearAllPoints()
+        BankFrameSlotCost:SetPoint("BOTTOM", bagSlotsContainer, "BOTTOM", -40, 10)
+        BankFrameSlotCost:Show()
+    end
+
+    -- Reparent purchase button
+    if BankFramePurchaseButton then
+        BankFramePurchaseButton:SetParent(bagSlotsContainer)
+        BankFramePurchaseButton:ClearAllPoints()
+        BankFramePurchaseButton:SetPoint("BOTTOM", bagSlotsContainer, "BOTTOM", 40, 8)
+        BankFramePurchaseButton:Show()
+    end
+end
+
 local function OpenBank()
     if not addon.settings.bags.oneBag then return end
     local f = CreateBagFrame("bank")
+    f:ClearAllPoints()
+    -- Position at original Blizzard bank frame location (top-right area)
+    f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 70, -104)
     f:Show()
     LayoutFrame("bank")
+
+    -- Embed bag slot purchase area into our frame
+    EmbedBankBagSlots(f)
+
+    -- Completely hide the Blizzard BankFrame but keep it "open" for server interaction
+    if BankFrame then
+        StripBankFrameVisuals()
+
+        -- Hide the main item slots (we show them in our frame)
+        for slot = 1, 28 do
+            local button = _G["BankFrameItem" .. slot]
+            if button then button:Hide() end
+        end
+
+        -- Move BankFrame off-screen but keep it enabled for purchase functionality
+        BankFrame:ClearAllPoints()
+        BankFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -5000, 5000)
+        BankFrame:SetAlpha(0)
+    end
 end
 
 local function CloseBank()
     if frames.bank then frames.bank:Hide() end
+    if BankFrame then
+        BankFrame:SetAlpha(1)
+        BankFrame:Hide()
+    end
 end
 
 -- ============================================================
