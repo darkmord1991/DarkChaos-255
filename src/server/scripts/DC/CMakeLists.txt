@@ -2,14 +2,12 @@
 
 # Prestige System scripts
 set(SCRIPTS_DC_Prestige
-    Prestige/dc_prestige_system.cpp
-    Prestige/dc_prestige_system.cpp
+    Progression/Prestige/dc_prestige_system.cpp
     # Prestige/dc_prestige_chat.cpp (Moved to Commands)
-    Prestige/dc_prestige_spells.cpp
-    Prestige/dc_prestige_spells.cpp
-    Prestige/dc_prestige_alt_bonus.cpp
-    Prestige/dc_prestige_challenges.cpp
-    Prestige/spell_prestige_alt_bonus_aura.cpp
+    Progression/Prestige/dc_prestige_spells.cpp
+    Progression/Prestige/dc_prestige_alt_bonus.cpp
+    Progression/Prestige/dc_prestige_challenges.cpp
+    Progression/Prestige/spell_prestige_alt_bonus_aura.cpp
 )
 
 set(SCRIPTS_DC_ChallengeMode
@@ -127,7 +125,6 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4A
     ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
     ItemUpgrades/ItemUpgradeStatApplication.cpp
     ItemUpgrades/ItemUpgradeProcScaling.cpp
-    ItemUpgrades/ItemUpgradeProcScaling.cpp
     # ItemUpgrades/dc_item_upgrade_commands.cpp (Moved to Commands)
     ItemUpgrades/heirloom_scaling_255.cpp
     ItemUpgrades/go_heirloom_cache.cpp
@@ -209,6 +206,7 @@ set(SCRIPTS_DC_GreatVault
 )
 
 # DC Addon Extension System - Unified client/server protocol
+set(SCRIPTS_DC_AddonExtension
     AddonExtension/dc_addon_extension_loader.cpp
     AddonExtension/dc_addon_protocol.cpp
     AddonExtension/dc_addon_aoeloot.cpp
@@ -231,6 +229,9 @@ set(SCRIPTS_DC_GreatVault
     AddonExtension/dc_addon_npcmove.cpp
     AddonExtension/dc_addon_collection.cpp
     AddonExtension/dc_addon_wardrobe.cpp
+    AddonExtension/dc_addon_qos.cpp
+    AddonExtension/dc_addon_gomove.cpp
+    AddonExtension/dc_addon_teleports.cpp
 )
 
 # DC Collection System - Retail-like collection management (Split Structure)

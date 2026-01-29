@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -122,6 +123,7 @@ namespace
 
     static std::unordered_map<ObjectGuid, TrainingConfig> s_configByPlayer;
     static std::unordered_map<ObjectGuid, TrainingSession> s_sessionByPlayer;
+    static std::mutex s_trainingMutex;  // Thread safety for static containers
 
     // Personal phasing to avoid players seeing each other's spawned configurations.
     // Uses a small set of high bits to reduce collision with existing content.
@@ -138,6 +140,8 @@ namespace
     {
         if (!player)
             return 0;
+
+        std::lock_guard<std::mutex> lock(s_trainingMutex);
 
         auto it = s_personalPhaseByPlayer.find(player->GetGUID());
         if (it != s_personalPhaseByPlayer.end())
@@ -168,6 +172,8 @@ namespace
     {
         if (!player)
             return;
+
+        std::lock_guard<std::mutex> lock(s_trainingMutex);
 
         auto it = s_personalPhaseByPlayer.find(player->GetGUID());
         if (it == s_personalPhaseByPlayer.end())

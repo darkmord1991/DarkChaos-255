@@ -27,6 +27,11 @@ class jadeforest_flightmaster : public CreatureScript
 public:
     jadeforest_flightmaster() : CreatureScript("jadeforest_flightmaster") { }
 
+    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
+    {
+        return "|T" + icon + ":40:40:-18|t " + text;
+    }
+
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         // Prepare quest menu if this NPC offers quests
@@ -35,7 +40,9 @@ public:
 
         // Add your custom flight destinations here
         // Example:
-        // AddGossipItemFor(player, GOSSIP_ICON_TAXI, "Fly to destination", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+        // AddGossipItemFor(player, GOSSIP_ICON_TAXI,
+        //     MakeLargeGossipText("Interface\\Icons\\Ability_Mount_Wyvern_01", "Fly to destination"),
+        //     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;

@@ -279,66 +279,6 @@ struct LootItemHighlight
     int32 ilvlDelta = 0;          // How much of an upgrade (+5, +10, etc)
 };
 
-// Check if item would be an upgrade for the player's equipped slot (currently unused)
-/*
-static bool IsItemUpgrade(Player* player, uint32 itemId, int32& outIlvlDelta)
-{
-    outIlvlDelta = 0;
-    if (!player) return false;
-
-    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
-    if (!proto) return false;
-
-    // Only check equipment
-    if (proto->Class != ITEM_CLASS_WEAPON && proto->Class != ITEM_CLASS_ARMOR)
-        return false;
-
-    // Determine equipment slot
-    uint8 slot = EQUIPMENT_SLOT_END;
-    switch (proto->InventoryType)
-    {
-        case INVTYPE_HEAD:      slot = EQUIPMENT_SLOT_HEAD; break;
-        case INVTYPE_NECK:      slot = EQUIPMENT_SLOT_NECK; break;
-        case INVTYPE_SHOULDERS: slot = EQUIPMENT_SLOT_SHOULDERS; break;
-        case INVTYPE_CHEST:
-        case INVTYPE_ROBE:      slot = EQUIPMENT_SLOT_CHEST; break;
-        case INVTYPE_WAIST:     slot = EQUIPMENT_SLOT_WAIST; break;
-        case INVTYPE_LEGS:      slot = EQUIPMENT_SLOT_LEGS; break;
-        case INVTYPE_FEET:      slot = EQUIPMENT_SLOT_FEET; break;
-        case INVTYPE_WRISTS:    slot = EQUIPMENT_SLOT_WRISTS; break;
-        case INVTYPE_HANDS:     slot = EQUIPMENT_SLOT_HANDS; break;
-        case INVTYPE_FINGER:    slot = EQUIPMENT_SLOT_FINGER1; break;
-        case INVTYPE_TRINKET:   slot = EQUIPMENT_SLOT_TRINKET1; break;
-        case INVTYPE_CLOAK:     slot = EQUIPMENT_SLOT_BACK; break;
-        case INVTYPE_WEAPON:
-        case INVTYPE_2HWEAPON:
-        case INVTYPE_WEAPONMAINHAND: slot = EQUIPMENT_SLOT_MAINHAND; break;
-        case INVTYPE_WEAPONOFFHAND:
-        case INVTYPE_SHIELD:
-        case INVTYPE_HOLDABLE:  slot = EQUIPMENT_SLOT_OFFHAND; break;
-        case INVTYPE_RANGED:
-        case INVTYPE_THROWN:
-        case INVTYPE_RANGEDRIGHT: slot = EQUIPMENT_SLOT_RANGED; break;
-        default: return false;
-    }
-
-    if (slot >= EQUIPMENT_SLOT_END) return false;
-
-    Item* equipped = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
-    if (!equipped)
-    {
-        outIlvlDelta = proto->ItemLevel;
-        return true;  // Empty slot = upgrade
-    }
-
-    ItemTemplate const* equippedProto = equipped->GetTemplate();
-    if (!equippedProto) return false;
-
-    outIlvlDelta = static_cast<int32>(proto->ItemLevel) - static_cast<int32>(equippedProto->ItemLevel);
-    return outIlvlDelta > 0;
-}
-*/
-
 // Get full highlight info for an item (currently unused)
 /*
 static LootItemHighlight GetItemHighlight(Player* player, uint32 itemId)

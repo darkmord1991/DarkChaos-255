@@ -694,12 +694,18 @@ namespace GroupFinder
             return;
         }
 
+        // Escape user-provided strings to prevent SQL injection
+        std::string safeDungeonName = dungeonName;
+        std::string safeNote = note;
+        CharacterDatabase.EscapeString(safeDungeonName);
+        CharacterDatabase.EscapeString(safeNote);
+
         // Insert the event
         CharacterDatabase.Execute(
             "INSERT INTO dc_group_finder_scheduled_events "
             "(leader_guid, event_type, dungeon_id, dungeon_name, keystone_level, scheduled_time, max_signups, note, status) "
             "VALUES ({}, {}, {}, '{}', {}, FROM_UNIXTIME({}), {}, '{}', 1)",
-            guid, eventType, dungeonId, dungeonName, keystoneLevel, scheduledTime, maxSignups, note);
+            guid, eventType, dungeonId, safeDungeonName, keystoneLevel, scheduledTime, maxSignups, safeNote);
 
         // Get the event ID
         QueryResult idResult = CharacterDatabase.Query("SELECT LAST_INSERT_ID()");
@@ -787,11 +793,15 @@ namespace GroupFinder
             return;
         }
 
+        // Escape user-provided note to prevent SQL injection
+        std::string safeNote = note;
+        CharacterDatabase.EscapeString(safeNote);
+
         // Insert signup
         CharacterDatabase.Execute(
             "INSERT INTO dc_group_finder_event_signups (event_id, player_guid, player_name, role, note, status) "
             "VALUES ({}, {}, '{}', {}, '{}', 0)",
-            eventId, guid, player->GetName(), role, note);
+            eventId, guid, player->GetName(), role, safeNote);
 
         // Update current signups count
         CharacterDatabase.Execute(

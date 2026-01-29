@@ -47,6 +47,16 @@ enum GossipAction : uint32
     GA_L70_BACK_TO_65 = 20
 };
 
+static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
+{
+    return "|T" + icon + ":40:40:-18|t " + text;
+}
+
+static std::string MakeFlightText(std::string const& text)
+{
+    return MakeLargeGossipText("Interface\\Icons\\Ability_Mount_Wyvern_01", text);
+}
+
 static bool StartDbcTaxiFlight(Player* player, Creature* creature, std::initializer_list<uint32> nodeList)
 {
     if (!player || !creature)
@@ -80,10 +90,10 @@ public:
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
 
-        AddGossipItemFor(player, 0, "Camp to Level 30+", GOSSIP_SENDER_MAIN, GA_TOUR_30);
-        AddGossipItemFor(player, 0, "Camp to Level 50+", GOSSIP_SENDER_MAIN, GA_L50_DIRECT);
-        AddGossipItemFor(player, 0, "Camp to Level 65+", GOSSIP_SENDER_MAIN, GA_L0_TO_65);
-        AddGossipItemFor(player, 0, "Camp to Level 70+", GOSSIP_SENDER_MAIN, GA_L0_TO_70);
+        AddGossipItemFor(player, 0, MakeFlightText("Camp to Level 30+"), GOSSIP_SENDER_MAIN, GA_TOUR_30);
+        AddGossipItemFor(player, 0, MakeFlightText("Camp to Level 50+"), GOSSIP_SENDER_MAIN, GA_L50_DIRECT);
+        AddGossipItemFor(player, 0, MakeFlightText("Camp to Level 65+"), GOSSIP_SENDER_MAIN, GA_L0_TO_65);
+        AddGossipItemFor(player, 0, MakeFlightText("Camp to Level 70+"), GOSSIP_SENDER_MAIN, GA_L0_TO_70);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
@@ -118,10 +128,10 @@ public:
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
 
-        AddGossipItemFor(player, 0, "Level 30+ to Camp", GOSSIP_SENDER_MAIN, GA_RETURN_STARTCAMP);
-        AddGossipItemFor(player, 0, "Level 30+ to Level 50+", GOSSIP_SENDER_MAIN, GA_L30_TO_50);
-        AddGossipItemFor(player, 0, "Level 30+ to Level 65+", GOSSIP_SENDER_MAIN, GA_L30_TO_65);
-        AddGossipItemFor(player, 0, "Level 30+ to Level 70+", GOSSIP_SENDER_MAIN, GA_L30_TO_70);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 30+ to Camp"), GOSSIP_SENDER_MAIN, GA_RETURN_STARTCAMP);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 30+ to Level 50+"), GOSSIP_SENDER_MAIN, GA_L30_TO_50);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 30+ to Level 65+"), GOSSIP_SENDER_MAIN, GA_L30_TO_65);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 30+ to Level 70+"), GOSSIP_SENDER_MAIN, GA_L30_TO_70);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
@@ -156,10 +166,10 @@ public:
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
 
-        AddGossipItemFor(player, 0, "Level 50+ to Camp", GOSSIP_SENDER_MAIN, GA_L50_BACK_TO_0);
-        AddGossipItemFor(player, 0, "Level 50+ to Level 30+", GOSSIP_SENDER_MAIN, GA_L50_BACK_TO_30);
-        AddGossipItemFor(player, 0, "Level 50+ to Level 65+", GOSSIP_SENDER_MAIN, GA_L50_TO_65);
-        AddGossipItemFor(player, 0, "Level 50+ to Level 70+", GOSSIP_SENDER_MAIN, GA_L50_TO_70);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 50+ to Camp"), GOSSIP_SENDER_MAIN, GA_L50_BACK_TO_0);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 50+ to Level 30+"), GOSSIP_SENDER_MAIN, GA_L50_BACK_TO_30);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 50+ to Level 65+"), GOSSIP_SENDER_MAIN, GA_L50_TO_65);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 50+ to Level 70+"), GOSSIP_SENDER_MAIN, GA_L50_TO_70);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
@@ -194,10 +204,10 @@ public:
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
 
-        AddGossipItemFor(player, 0, "Level 65+ to Camp", GOSSIP_SENDER_MAIN, GA_L65_BACK_TO_0);
-        AddGossipItemFor(player, 0, "Level 65+ to Level 30+", GOSSIP_SENDER_MAIN, GA_L65_BACK_TO_30);
-        AddGossipItemFor(player, 0, "Level 65+ to Level 50+", GOSSIP_SENDER_MAIN, GA_L65_BACK_TO_50);
-        AddGossipItemFor(player, 0, "Level 65+ to Level 70+", GOSSIP_SENDER_MAIN, GA_L65_TO_70);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 65+ to Camp"), GOSSIP_SENDER_MAIN, GA_L65_BACK_TO_0);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 65+ to Level 30+"), GOSSIP_SENDER_MAIN, GA_L65_BACK_TO_30);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 65+ to Level 50+"), GOSSIP_SENDER_MAIN, GA_L65_BACK_TO_50);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 65+ to Level 70+"), GOSSIP_SENDER_MAIN, GA_L65_TO_70);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }
@@ -232,10 +242,10 @@ public:
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
 
-        AddGossipItemFor(player, 0, "Level 70+ to Camp", GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_0);
-        AddGossipItemFor(player, 0, "Level 70+ to Level 30+", GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_30);
-        AddGossipItemFor(player, 0, "Level 70+ to Level 50+", GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_50);
-        AddGossipItemFor(player, 0, "Level 70+ to Level 65+", GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_65);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 70+ to Camp"), GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_0);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 70+ to Level 30+"), GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_30);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 70+ to Level 50+"), GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_50);
+        AddGossipItemFor(player, 0, MakeFlightText("Level 70+ to Level 65+"), GOSSIP_SENDER_MAIN, GA_L70_BACK_TO_65);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
         return true;
     }

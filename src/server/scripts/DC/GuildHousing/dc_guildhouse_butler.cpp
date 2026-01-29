@@ -40,6 +40,11 @@ class GuildHouseSpawner : public CreatureScript
 public:
     GuildHouseSpawner() : CreatureScript("GuildHouseSpawner") {}
 
+    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
+    {
+        return "|T" + icon + ":40:40:-18|t " + text;
+    }
+
     static constexpr uint32 ACTION_BACK = 9;
     static constexpr uint32 ACTION_GM_MENU = 9000000;
     static constexpr uint32 ACTION_GM_SPAWN_ALL = 9000001;
@@ -371,7 +376,9 @@ public:
             if (!categories.empty())
             {
                 for (size_t i = 0; i < categories.size(); ++i)
-                    AddGossipItemFor(player, GOSSIP_ICON_TALK, FormatCategoryLabel(categories[i].name), GOSSIP_SENDER_MAIN, ACTION_PRESET_CATEGORY_BASE + static_cast<uint32>(i));
+                    AddGossipItemFor(player, GOSSIP_ICON_TALK,
+                        MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_03", FormatCategoryLabel(categories[i].name)),
+                        GOSSIP_SENDER_MAIN, ACTION_PRESET_CATEGORY_BASE + static_cast<uint32>(i));
             }
             else
             {
@@ -380,26 +387,56 @@ public:
         }
         else
         {
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Innkeeper", GOSSIP_SENDER_MAIN, 800001, "Add an Innkeeper?", s_guildHouseCostInnkeeper, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Mailbox", GOSSIP_SENDER_MAIN, 184137, "Spawn a Mailbox?", s_guildHouseCostMailbox, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Stable Master", GOSSIP_SENDER_MAIN, 28690, "Spawn a Stable Master?", s_guildHouseCostVendor, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Vendor", GOSSIP_SENDER_MAIN, 3);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Objects", GOSSIP_SENDER_MAIN, 4);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Bank", GOSSIP_SENDER_MAIN, 30605, "Spawn a Banker?", s_guildHouseCostBank, false);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Auctioneer", GOSSIP_SENDER_MAIN, 6, "Spawn an Auctioneer?", s_guildHouseCostAuctioneer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Neutral Auctioneer", GOSSIP_SENDER_MAIN, 9858, "Spawn a Neutral Auctioneer?", s_guildHouseCostAuctioneer, false);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Primary Profession Trainers", GOSSIP_SENDER_MAIN, 7);
-            AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Spawn Secondary Profession Trainers", GOSSIP_SENDER_MAIN, 8);
-            AddGossipItemFor(player, GOSSIP_ICON_TALK, "Spawn Spirit Healer", GOSSIP_SENDER_MAIN, 6491, "Spawn a Spirit Healer?", s_guildHouseCostSpirit, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Key_03", "Spawn Innkeeper"),
+                GOSSIP_SENDER_MAIN, 800001, "Add an Innkeeper?", s_guildHouseCostInnkeeper, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK,
+                MakeLargeGossipText("Interface\\Icons\\INV_Letter_15", "Spawn Mailbox"),
+                GOSSIP_SENDER_MAIN, 184137, "Spawn a Mailbox?", s_guildHouseCostMailbox, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK,
+                MakeLargeGossipText("Interface\\Icons\\Ability_Hunter_BeastCall", "Spawn Stable Master"),
+                GOSSIP_SENDER_MAIN, 28690, "Spawn a Stable Master?", s_guildHouseCostVendor, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_02", "Spawn Vendor"),
+                GOSSIP_SENDER_MAIN, 3);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK,
+                MakeLargeGossipText("Interface\\Icons\\INV_Crate_01", "Spawn Objects"),
+                GOSSIP_SENDER_MAIN, 4);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Bag_04", "Spawn Bank"),
+                GOSSIP_SENDER_MAIN, 30605, "Spawn a Banker?", s_guildHouseCostBank, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_01", "Spawn Auctioneer"),
+                GOSSIP_SENDER_MAIN, 6, "Spawn an Auctioneer?", s_guildHouseCostAuctioneer, false);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_05", "Spawn Neutral Auctioneer"),
+                GOSSIP_SENDER_MAIN, 9858, "Spawn a Neutral Auctioneer?", s_guildHouseCostAuctioneer, false);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER,
+                MakeLargeGossipText("Interface\\Icons\\INV_Scroll_02", "Spawn Primary Profession Trainers"),
+                GOSSIP_SENDER_MAIN, 7);
+            AddGossipItemFor(player, GOSSIP_ICON_TRAINER,
+                MakeLargeGossipText("Interface\\Icons\\INV_Scroll_03", "Spawn Secondary Profession Trainers"),
+                GOSSIP_SENDER_MAIN, 8);
+            AddGossipItemFor(player, GOSSIP_ICON_TALK,
+                MakeLargeGossipText("Interface\\Icons\\Spell_Holy_SpiritHeal", "Spawn Spirit Healer"),
+                GOSSIP_SENDER_MAIN, 6491, "Spawn a Spirit Healer?", s_guildHouseCostSpirit, false);
 
             // DC Extensions
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Spawn Mythic+ NPCs", GOSSIP_SENDER_MAIN, 20);
-            AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Spawn Seasonal Vendors", GOSSIP_SENDER_MAIN, 21);
-            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG, "Spawn Special Vendors", GOSSIP_SENDER_MAIN, 22);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+                MakeLargeGossipText("Interface\\Icons\\Ability_DualWield", "Spawn Mythic+ NPCs"),
+                GOSSIP_SENDER_MAIN, 20);
+            AddGossipItemFor(player, GOSSIP_ICON_VENDOR,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Seasoning", "Spawn Seasonal Vendors"),
+                GOSSIP_SENDER_MAIN, 21);
+            AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Gem_01", "Spawn Special Vendors"),
+                GOSSIP_SENDER_MAIN, 22);
         }
 
         if (player->IsGameMaster())
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM Menu", GOSSIP_SENDER_MAIN, ACTION_GM_MENU);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "GM Menu"),
+                GOSSIP_SENDER_MAIN, ACTION_GM_MENU);
 
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
         return true;
@@ -411,14 +448,30 @@ public:
         if (action == ACTION_GM_MENU)
         {
             ClearGossipMenuFor(player);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Spawn everything (free)", GOSSIP_SENDER_MAIN, ACTION_GM_SPAWN_ALL);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Despawn everything", GOSSIP_SENDER_MAIN, ACTION_GM_DESPAWN_ALL);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 0", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 0);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 1", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 1);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 2", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 2);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 3", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 3);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "GM: Set Guild House Level 4", GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 4);
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Go Back!", GOSSIP_SENDER_MAIN, ACTION_BACK);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                MakeLargeGossipText("Interface\\Icons\\Spell_Nature_WispSplode", "GM: Spawn everything (free)"),
+                GOSSIP_SENDER_MAIN, ACTION_GM_SPAWN_ALL);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                MakeLargeGossipText("Interface\\Icons\\Ability_Rogue_Disguise", "GM: Despawn everything"),
+                GOSSIP_SENDER_MAIN, ACTION_GM_DESPAWN_ALL);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_11", "GM: Set Guild House Level 0"),
+                GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 0);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_12", "GM: Set Guild House Level 1"),
+                GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 1);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_13", "GM: Set Guild House Level 2"),
+                GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 2);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_14", "GM: Set Guild House Level 3"),
+                GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 3);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Herb_15", "GM: Set Guild House Level 4"),
+                GOSSIP_SENDER_MAIN, ACTION_GM_LEVEL_BASE + 4);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                MakeLargeGossipText("Interface\\Icons\\Ability_Arrow_Up", "Go Back!"),
+                GOSSIP_SENDER_MAIN, ACTION_BACK);
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
             return true;
         }

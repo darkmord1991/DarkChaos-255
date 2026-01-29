@@ -730,21 +730,23 @@ static void LogS2CMessageGlobal(Player* player, const std::string& module, uint8
 
 struct PlayerMessageTracker
 {
-    uint32 messageCount;
-    uint32 lastResetTime;
-    bool isMuted;
-    uint32 muteExpireTime;
-    uint32 violationCount;     // Track repeated violations for exponential backoff
-    uint32 lastViolationTime;  // For violation decay
+    uint32 messageCount = 0;
+    uint32 lastResetTime = 0;
+    bool isMuted = false;
+    uint32 muteExpireTime = 0;
+    uint32 violationCount = 0;     // Track repeated violations for exponential backoff
+    uint32 lastViolationTime = 0;  // For violation decay
 };
 
 static std::unordered_map<uint32, PlayerMessageTracker> s_MessageTrackers;
+static std::mutex s_MessageTrackersMutex;  // Thread safety for rate limiting
 
 static bool CheckRateLimit(Player* player)
 {
     uint32 accountId = player->GetSession()->GetAccountId();
     uint32 now = GameTime::GetGameTime().count();
 
+    std::lock_guard<std::mutex> lock(s_MessageTrackersMutex);
     auto& tracker = s_MessageTrackers[accountId];
 
     // Decay violation count if no violations in 5 minutes
@@ -1194,11 +1196,13 @@ static void RegisterCoreHandlers()
 
 static std::unordered_map<uint32, DCAddon::ChunkedMessage> s_ChunkedMessages;
 static std::unordered_map<uint32, uint32> s_ChunkStartTimes;
+static std::mutex s_ChunkedMessagesMutex;  // Thread safety for chunked message tracking
 
 static void CleanupExpiredChunks()
 {
     uint32 now = GameTime::GetGameTime().count() * 1000;  // Convert to ms
 
+    std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
     std::vector<uint32> toRemove;
     for (auto const& [accountId, startTime] : s_ChunkStartTimes)
     {
@@ -1237,7 +1241,13 @@ public:
         uint32 accountId = player->GetSession()->GetAccountId();
 
         // If this player had an in-flight chunked message, record it as an event
-        if (s_AddonConfig.EnableProtocolLogging && s_ChunkStartTimes.find(accountId) != s_ChunkStartTimes.end())
+        bool hadPendingChunks = false;
+        {
+            std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
+            hadPendingChunks = s_ChunkStartTimes.find(accountId) != s_ChunkStartTimes.end();
+        }
+
+        if (s_AddonConfig.EnableProtocolLogging && hadPendingChunks)
         {
             CharacterDatabase.Execute(
                 "INSERT INTO dc_addon_protocol_errors "
@@ -1251,9 +1261,15 @@ public:
             UpdateProtocolStats(player, "CHUNK", true, true, false);
         }
 
-        s_ChunkedMessages.erase(accountId);
-        s_ChunkStartTimes.erase(accountId);
-        s_MessageTrackers.erase(accountId);
+        {
+            std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
+            s_ChunkedMessages.erase(accountId);
+            s_ChunkStartTimes.erase(accountId);
+        }
+        {
+            std::lock_guard<std::mutex> lock(s_MessageTrackersMutex);
+            s_MessageTrackers.erase(accountId);
+        }
         {
             std::lock_guard<std::mutex> lock(s_PendingRequestsMutex);
             s_PendingRequests.erase(accountId);
@@ -1330,7 +1346,8 @@ public:
         LOG_DEBUG("module.dc", "[DC-CHUNK] player={}, chunk={}/{}, dataLen={}",
             player->GetName(), chunkIndex + 1, totalChunks, chunkData.length());
 
-        // Store chunk
+        // Store chunk with thread safety
+        std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
         auto& chunkedMsg = s_ChunkedMessages[accountId];
         if (chunkIndex == 0)
         {

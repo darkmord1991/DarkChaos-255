@@ -62,6 +62,10 @@ public:
                 artifactEssence = result->Fetch()[0].Get<uint32>();
             }
         }
+        catch (std::exception const& e)
+        {
+            LOG_WARN("scripts.dc", "ItemUpgrade: Curator NPC database query failed: {}", e.what());
+        }
         catch (...)
         {
             // Database not set up yet - use defaults
@@ -112,8 +116,16 @@ public:
                         "You have discovered " + std::to_string(discoveredCount) + " artifacts so far.",
                         GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
                 }
+                catch (std::exception const& e)
+                {
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Curator artifact query failed: {}", e.what());
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                        "Database not configured yet. Import SQL files first.",
+                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                }
                 catch (...)
                 {
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Curator artifact query failed (unknown error)");
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT,
                         "Database not configured yet. Import SQL files first.",
                         GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
@@ -159,8 +171,16 @@ public:
                         "Total Artifact Essence: " + std::to_string(essence),
                         GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
                 }
+                catch (std::exception const& e)
+                {
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Curator statistics query failed: {}", e.what());
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                        "Database not configured yet. Import SQL files first.",
+                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
+                }
                 catch (...)
                 {
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Curator statistics query failed (unknown error)");
                     AddGossipItemFor(player, GOSSIP_ICON_CHAT,
                         "Database not configured yet. Import SQL files first.",
                         GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);

@@ -21,6 +21,7 @@
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include "DC/ItemUpgrades/ItemUpgradeMechanics.h"
 #include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
+#include <mutex>
 
 namespace DCAddon
 {
@@ -28,6 +29,7 @@ namespace Upgrade
 {
     using namespace DarkChaos::ItemUpgrade::UI;
     static std::map<uint32, uint32> s_PlayerPackageSelections;
+    static std::mutex s_PackageSelectionsMutex;  // Thread safety for package selections
 
     // Send currency update to client
     void SendCurrencyUpdate(Player* player)
@@ -501,7 +503,10 @@ namespace Upgrade
         }
 
         // Store selection
-        s_PlayerPackageSelections[playerGuid] = packageId;
+        {
+            std::lock_guard<std::mutex> lock(s_PackageSelectionsMutex);
+            s_PlayerPackageSelections[playerGuid] = packageId;
+        }
 
         LOG_DEBUG("dc.addon.upgrade", "Player {} selected heirloom package {}",
             player->GetName(), packageId);
@@ -691,6 +696,7 @@ namespace Upgrade
             return 0;
 
         uint32 playerGuid = player->GetGUID().GetCounter();
+        std::lock_guard<std::mutex> lock(s_PackageSelectionsMutex);
         auto it = s_PlayerPackageSelections.find(playerGuid);
         return (it != s_PlayerPackageSelections.end()) ? it->second : 0;
     }
@@ -702,6 +708,7 @@ namespace Upgrade
             return;
 
         uint32 playerGuid = player->GetGUID().GetCounter();
+        std::lock_guard<std::mutex> lock(s_PackageSelectionsMutex);
         s_PlayerPackageSelections.erase(playerGuid);
     }
 
@@ -729,7 +736,10 @@ namespace Upgrade
 
         // Initialize package selection to 0 (none)
         uint32 playerGuid = player->GetGUID().GetCounter();
-        s_PlayerPackageSelections[playerGuid] = 0;
+        {
+            std::lock_guard<std::mutex> lock(s_PackageSelectionsMutex);
+            s_PlayerPackageSelections[playerGuid] = 0;
+        }
 
         SendCurrencyUpdate(player);
     }

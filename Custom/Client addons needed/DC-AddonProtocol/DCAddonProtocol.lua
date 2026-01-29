@@ -941,12 +941,27 @@ end
 -- Alias for Request
 DC.RequestJSON = DC.Request
 
+-- JSON string escaping helper (security: proper escape sequences)
+local function EscapeJSONString(s)
+    -- Order matters: escape backslash first to avoid double-escaping
+    s = string.gsub(s, "\\", "\\\\")
+    s = string.gsub(s, "\"", "\\\"")
+    s = string.gsub(s, "\n", "\\n")
+    s = string.gsub(s, "\r", "\\r")
+    s = string.gsub(s, "\t", "\\t")
+    -- Control characters (0x00-0x1F) - escape as \uXXXX
+    s = string.gsub(s, "[\000-\031]", function(c)
+        return string.format("\\u%04x", string.byte(c))
+    end)
+    return s
+end
+
 function DC:EncodeJSON(val)
     local t = type(val)
     if val == nil then return "null"
     elseif t == "boolean" then return val and "true" or "false"
     elseif t == "number" then return tostring(val)
-    elseif t == "string" then return "\"" .. string.gsub(val, "\"", "\\\"") .. "\""
+    elseif t == "string" then return "\"" .. EscapeJSONString(val) .. "\""
     elseif t == "table" then
         local parts = {}
         local isArr = (val[1] ~= nil)
@@ -957,7 +972,7 @@ function DC:EncodeJSON(val)
             return "[" .. table.concat(parts, ",") .. "]"
         else
             for k, v in pairs(val) do
-                table.insert(parts, "\"" .. tostring(k) .. "\":" .. self:EncodeJSON(v))
+                table.insert(parts, "\"" .. EscapeJSONString(tostring(k)) .. "\":" .. self:EncodeJSON(v))
             end
             return "{" .. table.concat(parts, ",") .. "}"
         end

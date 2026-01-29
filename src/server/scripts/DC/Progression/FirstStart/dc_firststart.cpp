@@ -191,9 +191,13 @@ namespace DCCustomLogin
                 if (id > 0)
                     result.push_back(id);
             }
+            catch (std::exception const& e)
+            {
+                LOG_DEBUG("scripts.dc", "FirstStart: Invalid token '{}' in config list: {}", token, e.what());
+            }
             catch (...)
             {
-                // Skip invalid tokens
+                LOG_DEBUG("scripts.dc", "FirstStart: Invalid token '{}' in config list (unknown error)", token);
             }
         }
         return result;

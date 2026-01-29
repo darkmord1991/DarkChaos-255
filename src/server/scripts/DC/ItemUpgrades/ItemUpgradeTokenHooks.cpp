@@ -264,6 +264,10 @@ namespace DarkChaos
                         return;  // Already claimed
                     }
                 }
+                catch (std::exception const& e)
+                {
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: dc_player_artifact_discoveries query failed: {}", e.what());
+                }
                 catch (...)
                 {
                     // Table may not exist yet - skip artifact discovery check
@@ -284,6 +288,10 @@ namespace DarkChaos
                         "INSERT INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovery_type, discovered_at) "
                         "VALUES ({}, {}, 'event', NOW())",
                         player->GetGUID().GetCounter(), achievement->ID);
+                }
+                catch (std::exception const& e)
+                {
+                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Could not insert into dc_player_artifact_discoveries: {}", e.what());
                 }
                 catch (...)
                 {

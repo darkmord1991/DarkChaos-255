@@ -117,6 +117,11 @@ class AC_Guard_NPC : public CreatureScript {
 public:
     AC_Guard_NPC() : CreatureScript("AC_Guard_NPC") { }
 
+    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
+    {
+        return "|T" + icon + ":40:40:-18|t " + text;
+    }
+
     // Called when a player interacts with the NPC
     bool OnGossipHello(Player* player, Creature* creature) override {
         // Build the gossip menu by iterating the static POI list. We intentionally
@@ -126,7 +131,8 @@ public:
             uint32 idx = static_cast<uint32>(i);
             ACGuardPOI const& poi = ac_guard_pois[i];
             std::string label = (poi.teleport ? "Teleport: " : "Show on map: ") + std::string(poi.name);
-            AddGossipItemFor(player, poi.menuIcon, label, GOSSIP_SENDER_MAIN, idx);
+            std::string icon = poi.teleport ? "Interface\\Icons\\Spell_Arcane_TeleportDalaran" : "Interface\\Icons\\INV_Misc_Map_01";
+            AddGossipItemFor(player, poi.menuIcon, MakeLargeGossipText(icon, label), GOSSIP_SENDER_MAIN, idx);
         }
         // Show the gossip menu to the player
         SendGossipMenuFor(player, 1, creature->GetGUID());

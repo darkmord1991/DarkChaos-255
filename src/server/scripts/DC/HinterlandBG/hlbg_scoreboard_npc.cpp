@@ -56,6 +56,11 @@ class npc_hl_scoreboard : public CreatureScript
 public:
     npc_hl_scoreboard() : CreatureScript("npc_hl_scoreboard") {}
 
+    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
+    {
+        return "|T" + icon + ":40:40:-18|t " + text;
+    }
+
     // Use centralized constants for backwards compatibility
     static const char* AffixName(uint8 a)
     {
@@ -571,10 +576,18 @@ public:
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         ClearGossipMenuFor(player);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Show Hinterland BG status", GOSSIP_SENDER_MAIN, ACTION_STATUS);
-    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Show Hinterland BG history", GOSSIP_SENDER_MAIN, ACTION_HISTORY);
-    AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Show Hinterland BG statistics", GOSSIP_SENDER_MAIN, ACTION_STATS);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, ACTION_CLOSE);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            MakeLargeGossipText("Interface\\Icons\\INV_Misc_Map_01", "Show Hinterland BG status"),
+            GOSSIP_SENDER_MAIN, ACTION_STATUS);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            MakeLargeGossipText("Interface\\Icons\\INV_Misc_Book_09", "Show Hinterland BG history"),
+            GOSSIP_SENDER_MAIN, ACTION_HISTORY);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            MakeLargeGossipText("Interface\\Icons\\INV_Misc_Book_11", "Show Hinterland BG statistics"),
+            GOSSIP_SENDER_MAIN, ACTION_STATS);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+            MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "Close"),
+            GOSSIP_SENDER_MAIN, ACTION_CLOSE);
         SendGossipMenuFor(player, 1, creature->GetGUID());
         return true;
     }

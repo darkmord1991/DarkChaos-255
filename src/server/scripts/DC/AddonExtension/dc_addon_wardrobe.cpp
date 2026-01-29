@@ -679,25 +679,30 @@ namespace DCCollection
     static std::unordered_map<uint32, std::unordered_set<uint32>> s_AccountUnlockedTransmogAppearances;
     constexpr size_t MAX_NOTIFIED_APPEARANCES_PER_PLAYER = 10000;
     static std::unordered_map<uint32, std::unordered_set<uint32>> sessionNotifiedAppearances;
+    static std::mutex s_WardrobeMutex;  // Thread safety for wardrobe caches
 
     void InvalidateAccountUnlockedTransmogAppearances(uint32 accountId)
     {
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
         s_AccountUnlockedTransmogAppearances.erase(accountId);
     }
 
     // Session notification helpers: keep the actual storage private to this translation unit.
     void ClearSessionNotifiedAppearances(uint32 guid)
     {
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
         sessionNotifiedAppearances[guid].clear();
     }
 
     void EraseSessionNotifiedAppearances(uint32 guid)
     {
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
         sessionNotifiedAppearances.erase(guid);
     }
 
-    static std::unordered_set<uint32> const& GetAccountUnlockedTransmogAppearances(uint32 accountId)
+    static std::unordered_set<uint32> GetAccountUnlockedTransmogAppearances(uint32 accountId)
     {
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
         auto it = s_AccountUnlockedTransmogAppearances.find(accountId);
         if (it != s_AccountUnlockedTransmogAppearances.end()) return it->second;
 
@@ -718,14 +723,14 @@ namespace DCCollection
             } while (result->NextRow());
         }
 
-        auto [insertedIt, _] = s_AccountUnlockedTransmogAppearances.emplace(accountId, std::move(unlocked));
-        return insertedIt->second;
+        s_AccountUnlockedTransmogAppearances[accountId] = unlocked;
+        return unlocked;
     }
 
     bool HasTransmogAppearanceUnlocked(uint32 accountId, uint32 displayId)
     {
         if (!accountId || !displayId) return false;
-        auto const& unlocked = GetAccountUnlockedTransmogAppearances(accountId);
+        auto unlocked = GetAccountUnlockedTransmogAppearances(accountId);
         return unlocked.find(displayId) != unlocked.end();
     }
 
@@ -762,6 +767,7 @@ namespace DCCollection
         if (sConfigMgr->GetOption<bool>(TRANSMOG_SESSION_NOTIFICATION_DEDUP, true))
         {
              uint32 guid = player->GetGUID().GetCounter();
+             std::lock_guard<std::mutex> lock(s_WardrobeMutex);
              auto& playerNotifications = sessionNotifiedAppearances[guid];
              if (playerNotifications.count(displayId)) shouldNotify = false;
              else if (playerNotifications.size() < MAX_NOTIFIED_APPEARANCES_PER_PLAYER)

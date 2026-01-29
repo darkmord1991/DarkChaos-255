@@ -53,6 +53,11 @@ class DalaranGuardNPC : public CreatureScript
 public:
     DalaranGuardNPC() : CreatureScript("DalaranGuardNPC") { }
 
+    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
+    {
+        return "|T" + icon + ":40:40:-18|t " + text;
+    }
+
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         ClearGossipMenuFor(player);
@@ -62,7 +67,9 @@ public:
             uint32 idx = static_cast<uint32>(i);
             DalaranGuardPOI const& poi = dalaran_guard_pois[i];
             std::string label = "Teleport: " + std::string(poi.name);
-            AddGossipItemFor(player, poi.menuIcon, label, GOSSIP_SENDER_MAIN, idx);
+            AddGossipItemFor(player, poi.menuIcon,
+                MakeLargeGossipText("Interface\\Icons\\Spell_Arcane_TeleportDalaran", label),
+                GOSSIP_SENDER_MAIN, idx);
         }
 
         SendGossipMenuFor(player, DALARAN_GUARD_TEXT_ID, creature->GetGUID());

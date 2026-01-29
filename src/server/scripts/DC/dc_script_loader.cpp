@@ -153,6 +153,30 @@ void AddGuildHouseScripts();                  // GuildHousing/dc_guildhouse.cpp
 void AddGuildHouseButlerScripts();            // GuildHousing/dc_guildhouse_butler.cpp
 void AddSC_dc_dalaran_guard();                 // GuildHousing/dc_dalaran_guard.cpp
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Helper template for safe script loading - reduces boilerplate
+// ═══════════════════════════════════════════════════════════════════════════
+template<typename Func>
+inline bool TryLoadScript(const char* name, Func&& loader)
+{
+    try
+    {
+        loader();
+        LOG_INFO("scripts.dc", ">>   ✓ {} loaded", name);
+        return true;
+    }
+    catch (std::exception& e)
+    {
+        LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in {}: {}", name, e.what());
+        return false;
+    }
+    catch (...)
+    {
+        LOG_ERROR("scripts.dc", ">>   ✗ CRASH in {} (unknown exception)", name);
+        return false;
+    }
+}
+
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddDCScripts()

@@ -61,6 +61,11 @@ class jadeforest_guard : public CreatureScript
 public:
     jadeforest_guard() : CreatureScript("jadeforest_guard") { }
 
+    static std::string MakeLargeGossipText(std::string const& icon, std::string const& text)
+    {
+        return "|T" + icon + ":40:40:-18|t " + text;
+    }
+
     bool OnGossipHello(Player* player, Creature* creature) override
     {
         // Prepare quest menu if available
@@ -70,7 +75,9 @@ public:
         // Add teleport options
         for (auto const& tp : teleportPoints)
         {
-            AddGossipItemFor(player, GOSSIP_ICON_TAXI, tp.name, GOSSIP_SENDER_MAIN, tp.id);
+            AddGossipItemFor(player, GOSSIP_ICON_TAXI,
+                MakeLargeGossipText("Interface\\Icons\\Spell_Arcane_TeleportDarnassus", tp.name),
+                GOSSIP_SENDER_MAIN, tp.id);
         }
 
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());

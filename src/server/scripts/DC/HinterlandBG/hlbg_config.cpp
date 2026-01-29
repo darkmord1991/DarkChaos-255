@@ -115,7 +115,9 @@ void OutdoorPvPHL::LoadConfig()
             {
                 size_t comma = csv.find(',', start);
                 std::string token = csv.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-                try { uint32 v = static_cast<uint32>(std::stoul(token)); parsed.push_back(v); } catch (...) {}
+                try { uint32 v = static_cast<uint32>(std::stoul(token)); parsed.push_back(v); }
+                catch (std::exception const&) { /* Skip invalid numeric token */ }
+                catch (...) { /* Skip unknown parse error */ }
                 if (comma == std::string::npos) break; else start = comma + 1;
             }
             if (!parsed.empty())
@@ -131,7 +133,9 @@ void OutdoorPvPHL::LoadConfig()
         {
             size_t comma = in.find(',', start);
             std::string token = in.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-            try { if (!token.empty()) out.push_back(static_cast<uint32>(std::stoul(token))); } catch (...) {}
+            try { if (!token.empty()) out.push_back(static_cast<uint32>(std::stoul(token))); }
+            catch (std::exception const&) { /* Skip invalid numeric token */ }
+            catch (...) { /* Skip unknown parse error */ }
             if (comma == std::string::npos) break; else start = comma + 1;
         }
         return out;
@@ -158,7 +162,9 @@ void OutdoorPvPHL::LoadConfig()
                     uint32 count = static_cast<uint32>(std::stoul(pair.substr(colon + 1)));
                     if (entry && count)
                         out[entry] = count;
-                } catch (...) {}
+                }
+                catch (std::exception const&) { /* Skip invalid entry:count pair */ }
+                catch (...) { /* Skip unknown parse error */ }
             }
             if (comma == std::string::npos) break; else start = comma + 1;
         }
