@@ -399,8 +399,8 @@ namespace DCDuelAddon
             msg.Send(player2);
         }
 
-        LOG_DEBUG("scripts.addon", "DCDuelAddon: Sent duel start notifications for {} vs {}",
-                  player1->GetName(), player2->GetName());
+        LOG_DEBUG("dc.addon", "DCDuelAddon: Sent duel start notifications for {} vs {}",
+            player1->GetName(), player2->GetName());
     }
 
     /**
@@ -430,8 +430,8 @@ namespace DCDuelAddon
             msg.Send(loser);
         }
 
-        LOG_DEBUG("scripts.addon", "DCDuelAddon: Sent duel end notifications ({} beat {})",
-                  winner->GetName(), loser->GetName());
+        LOG_DEBUG("dc.addon", "DCDuelAddon: Sent duel end notifications ({} beat {})",
+            winner->GetName(), loser->GetName());
     }
 
 } // namespace DCDuelAddon
@@ -463,11 +463,11 @@ public:
             router.RegisterHandler(DCDuelAddon::MODULE, DCDuelAddon::Opcode::CMSG_SPECTATE_DUEL,
                 DCDuelAddon::HandleSpectateDuel);
 
-            LOG_INFO("scripts.addon", "DCDuelAddon: Duel addon handler initialized");
+            LOG_INFO("dc.addon", "DCDuelAddon: Duel addon handler initialized");
         }
         else
         {
-            LOG_INFO("scripts.addon", "DCDuelAddon: Duel addon handler disabled in config");
+            LOG_INFO("dc.addon", "DCDuelAddon: Duel addon handler disabled in config");
         }
     }
 };

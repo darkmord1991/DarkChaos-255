@@ -31,6 +31,7 @@
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
 #include <mutex>
+#include <algorithm>
 
 using namespace DungeonQuest;
 using namespace DungeonQuestHelpers;
@@ -125,10 +126,9 @@ private:
         }
         LOG_INFO("scripts.dc", "UniversalQuestMaster: Loaded {} display ID mappings", _dungeonDisplayIds.size());
 
-        // Load daily quests (from quest_template in our range)
+        // Load daily quests (prefer reward table, fallback to quest_template range)
         result = WorldDatabase.Query(
-            "SELECT ID FROM quest_template WHERE ID BETWEEN {} AND {}",
-            QUEST_DAILY_MIN, QUEST_DAILY_MAX
+            "SELECT quest_id FROM dc_daily_quest_token_rewards"
         );
         if (result)
         {
@@ -137,12 +137,33 @@ private:
                 _dailyQuests.push_back((*result)[0].Get<uint32>());
             } while (result->NextRow());
         }
-        LOG_INFO("scripts.dc", "UniversalQuestMaster: Loaded {} daily quests", _dailyQuests.size());
 
-        // Load weekly quests
+        if (_dailyQuests.empty())
+        {
+            result = WorldDatabase.Query(
+                "SELECT ID FROM quest_template WHERE ID BETWEEN {} AND {}",
+                QUEST_DAILY_MIN, QUEST_DAILY_MAX
+            );
+            if (result)
+            {
+                do
+                {
+                    _dailyQuests.push_back((*result)[0].Get<uint32>());
+                } while (result->NextRow());
+            }
+            LOG_INFO("scripts.dc", "UniversalQuestMaster: Loaded {} daily quests (fallback to quest_template)", _dailyQuests.size());
+        }
+        else
+        {
+            LOG_INFO("scripts.dc", "UniversalQuestMaster: Loaded {} daily quests (from rewards table)", _dailyQuests.size());
+        }
+
+        std::sort(_dailyQuests.begin(), _dailyQuests.end());
+        _dailyQuests.erase(std::unique(_dailyQuests.begin(), _dailyQuests.end()), _dailyQuests.end());
+
+        // Load weekly quests (prefer reward table, fallback to quest_template range)
         result = WorldDatabase.Query(
-            "SELECT ID FROM quest_template WHERE ID BETWEEN {} AND {}",
-            QUEST_WEEKLY_MIN, QUEST_WEEKLY_MAX
+            "SELECT quest_id FROM dc_weekly_quest_token_rewards"
         );
         if (result)
         {
@@ -151,7 +172,29 @@ private:
                 _weeklyQuests.push_back((*result)[0].Get<uint32>());
             } while (result->NextRow());
         }
-        LOG_INFO("scripts.dc", "UniversalQuestMaster: Loaded {} weekly quests", _weeklyQuests.size());
+
+        if (_weeklyQuests.empty())
+        {
+            result = WorldDatabase.Query(
+                "SELECT ID FROM quest_template WHERE ID BETWEEN {} AND {}",
+                QUEST_WEEKLY_MIN, QUEST_WEEKLY_MAX
+            );
+            if (result)
+            {
+                do
+                {
+                    _weeklyQuests.push_back((*result)[0].Get<uint32>());
+                } while (result->NextRow());
+            }
+            LOG_INFO("scripts.dc", "UniversalQuestMaster: Loaded {} weekly quests (fallback to quest_template)", _weeklyQuests.size());
+        }
+        else
+        {
+            LOG_INFO("scripts.dc", "UniversalQuestMaster: Loaded {} weekly quests (from rewards table)", _weeklyQuests.size());
+        }
+
+        std::sort(_weeklyQuests.begin(), _weeklyQuests.end());
+        _weeklyQuests.erase(std::unique(_weeklyQuests.begin(), _weeklyQuests.end()), _weeklyQuests.end());
 
         // Audit mapping consistency (logs to scripts.dc)
         QuestMappingAuditResult audit = DungeonQuestHelpers::AuditQuestMappings(true);
@@ -308,6 +351,8 @@ public:
 
         // Count available quests for display
         uint32 dungeonQuestCount = 0;
+        uint32 dailyQuestCount = 0;
+        uint32 weeklyQuestCount = 0;
         uint32 completableCount = 0;
 
         // Check dungeon quests
@@ -328,12 +373,30 @@ public:
         // Check daily/weekly completable
         for (uint32 questId : UniversalQuestMasterCache::GetDailyQuests())
         {
-            if (player->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
+            QuestStatus status = player->GetQuestStatus(questId);
+            if (status == QUEST_STATUS_NONE)
+            {
+                if (Quest const* quest = sObjectMgr->GetQuestTemplate(questId))
+                {
+                    if (player->CanTakeQuest(quest, false))
+                        ++dailyQuestCount;
+                }
+            }
+            else if (status == QUEST_STATUS_COMPLETE)
                 ++completableCount;
         }
         for (uint32 questId : UniversalQuestMasterCache::GetWeeklyQuests())
         {
-            if (player->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
+            QuestStatus status = player->GetQuestStatus(questId);
+            if (status == QUEST_STATUS_NONE)
+            {
+                if (Quest const* quest = sObjectMgr->GetQuestTemplate(questId))
+                {
+                    if (player->CanTakeQuest(quest, false))
+                        ++weeklyQuestCount;
+                }
+            }
+            else if (status == QUEST_STATUS_COMPLETE)
                 ++completableCount;
         }
 
@@ -364,8 +427,13 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_2, inProgressOption.str(), GOSSIP_SENDER_MAIN, ACTION_SHOW_IN_PROGRESS);
         }
 
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Daily Quests", GOSSIP_SENDER_MAIN, ACTION_SHOW_DAILY_QUESTS);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Weekly Quests", GOSSIP_SENDER_MAIN, ACTION_SHOW_WEEKLY_QUESTS);
+        std::ostringstream dailyOption;
+        dailyOption << "Daily Quests (" << dailyQuestCount << " available)";
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, dailyOption.str(), GOSSIP_SENDER_MAIN, ACTION_SHOW_DAILY_QUESTS);
+
+        std::ostringstream weeklyOption;
+        weeklyOption << "Weekly Quests (" << weeklyQuestCount << " available)";
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, weeklyOption.str(), GOSSIP_SENDER_MAIN, ACTION_SHOW_WEEKLY_QUESTS);
         AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "View My Statistics", GOSSIP_SENDER_MAIN, ACTION_SHOW_STATS);
 
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -618,6 +686,10 @@ private:
                 Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
                 if (!quest)
                     continue;
+
+                uint16 slot = player->FindQuestSlot(questId);
+                if (slot >= MAX_QUEST_LOG_SIZE)
+                    continue;
                 
                 // Calculate progress percentage
                 uint32 totalObjectives = 0;
@@ -630,7 +702,7 @@ private:
                         totalObjectives++;
                         uint32 required = quest->RequiredNpcOrGoCount[i] > 0 ? 
                                          quest->RequiredNpcOrGoCount[i] : quest->RequiredItemCount[i];
-                        uint32 current = player->GetQuestSlotCounter(player->FindQuestSlot(questId), i);
+                        uint32 current = player->GetQuestSlotCounter(slot, i);
                         if (current >= required)
                             completedObjectives++;
                     }

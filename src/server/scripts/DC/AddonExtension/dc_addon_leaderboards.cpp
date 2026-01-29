@@ -1862,7 +1862,7 @@ namespace
         router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_GET_MPLUS_DUNGEONS, HandleGetMythicPlusDungeons);
         router.RegisterHandler(MODULE_LEADERBOARD, Opcode::CMSG_GET_ACCOUNT_STATS, HandleGetAccountStats);
 
-        LOG_INFO("server.scripts", "DC-Leaderboards: Addon protocol handlers registered");
+        LOG_INFO("dc.addon", "DC-Leaderboards: Addon protocol handlers registered");
     }
 
 }  // anonymous namespace

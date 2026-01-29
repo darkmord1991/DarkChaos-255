@@ -403,8 +403,14 @@ function DC:GetCurrencyBalances()
             if type(getter) == "function" then
                 local ok, a, b = pcall(getter, central)
                 if ok then
-                    tokens = a
-                    essence = b
+                    if type(a) == "table" then
+                        local byItem = a.byItemId or a.by_item_id
+                        tokens = a.tokens or a.token or (byItem and byItem[central.TOKEN_ITEM_ID or 300311])
+                        essence = a.emblems or a.essence or (byItem and byItem[central.ESSENCE_ITEM_ID or 300312])
+                    else
+                        tokens = a
+                        essence = b
+                    end
                     break
                 end
             end
@@ -417,8 +423,14 @@ function DC:GetCurrencyBalances()
             if type(getter) == "function" then
                 local ok, a, b = pcall(getter, c)
                 if ok then
-                    tokens = tokens or a
-                    essence = essence or b
+                    if type(a) == "table" then
+                        local byItem = a.byItemId or a.by_item_id
+                        tokens = tokens or a.tokens or a.token or (byItem and byItem[central.TOKEN_ITEM_ID or 300311])
+                        essence = essence or a.emblems or a.essence or (byItem and byItem[central.ESSENCE_ITEM_ID or 300312])
+                    else
+                        tokens = tokens or a
+                        essence = essence or b
+                    end
                 end
             end
         end

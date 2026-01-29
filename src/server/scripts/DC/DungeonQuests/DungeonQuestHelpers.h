@@ -45,8 +45,8 @@ struct PlayerStatsCache
 };
 
 // Global cache map (GUID -> cached stats)
-static std::unordered_map<uint64, PlayerStatsCache> g_PlayerStatsCache;
-constexpr uint32 CACHE_TTL_SECONDS = 30;
+inline std::unordered_map<uint64, PlayerStatsCache> g_PlayerStatsCache;
+inline constexpr uint32 CACHE_TTL_SECONDS = 30;
 
 /**
  * Get cached statistics or fetch from database if expired
@@ -361,7 +361,11 @@ inline QuestMappingAuditResult AuditQuestMappings(bool logDetails = true)
         "SELECT m.quest_id FROM ("
         "SELECT quest_id FROM dc_dungeon_quest_mapping "
         "UNION "
-        "SELECT quest_id FROM dc_quest_difficulty_mapping"
+        "SELECT quest_id FROM dc_quest_difficulty_mapping "
+        "UNION "
+        "SELECT quest_id FROM dc_daily_quest_token_rewards "
+        "UNION "
+        "SELECT quest_id FROM dc_weekly_quest_token_rewards"
         ") m "
         "LEFT JOIN quest_template qt ON qt.ID = m.quest_id "
         "WHERE qt.ID IS NULL"

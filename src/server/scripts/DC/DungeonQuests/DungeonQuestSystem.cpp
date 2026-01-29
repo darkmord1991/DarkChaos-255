@@ -82,7 +82,7 @@ public:
         LOG_INFO("scripts.dc", "DungeonQuestDB: Token item ID = {}", _tokenItemId);
 
         // Load quest difficulty mappings (schema uses base_difficulty)
-        result = WorldDatabase.Query("SELECT quest_id, base_difficulty, dungeon_id FROM dc_quest_difficulty_mapping");
+        result = WorldDatabase.Query("SELECT quest_id, base_difficulty FROM dc_quest_difficulty_mapping");
         if (result)
         {
             do
@@ -90,7 +90,6 @@ public:
                 Field* fields = result->Fetch();
                 uint32 questId = fields[0].Get<uint32>();
                 uint8 baseDifficulty = fields[1].Get<uint8>();
-            uint32 dungeonId = fields[2].Get<uint32>();
 
                 QuestDifficulty mappedDifficulty = DIFFICULTY_NORMAL;
                 switch (baseDifficulty)
@@ -104,11 +103,24 @@ public:
                 }
 
                 _questDifficulties[questId] = mappedDifficulty;
+            } while (result->NextRow());
+        }
+        LOG_INFO("scripts.dc", "DungeonQuestDB: Loaded {} quest difficulty mappings", _questDifficulties.size());
+
+        // Load quest -> dungeon mappings from mapping table (schema-safe)
+        result = WorldDatabase.Query("SELECT quest_id, dungeon_id FROM dc_dungeon_quest_mapping");
+        if (result)
+        {
+            do
+            {
+                Field* fields = result->Fetch();
+                uint32 questId = fields[0].Get<uint32>();
+                uint32 dungeonId = fields[1].Get<uint32>();
                 if (dungeonId > 0)
                     _questDungeonIds[questId] = dungeonId;
             } while (result->NextRow());
         }
-        LOG_INFO("scripts.dc", "DungeonQuestDB: Loaded {} quest difficulty mappings", _questDifficulties.size());
+        LOG_INFO("scripts.dc", "DungeonQuestDB: Loaded {} quest dungeon mappings", _questDungeonIds.size());
 
         // Validate quest_template entries referenced by difficulty mapping
         std::unordered_set<uint32> templateQuestIds;
@@ -650,7 +662,7 @@ public:
 
     void OnStartup() override
     {
-        LOG_INFO("server.loading", ">> Loading Dungeon Quest System...");
+        LOG_INFO("scripts.dc", ">> Loading Dungeon Quest System...");
 
         // Load cached data from database
         DungeonQuestDB::LoadCache();
@@ -658,11 +670,11 @@ public:
         // Verify database tables exist
         if (CheckDatabaseTables())
         {
-            LOG_INFO("server.loading", ">> Dungeon Quest System loaded successfully");
+            LOG_INFO("scripts.dc", ">> Dungeon Quest System loaded successfully");
         }
         else
         {
-            LOG_ERROR("server.loading", ">> Dungeon Quest System: Database tables not found! Please execute SQL files.");
+            LOG_ERROR("scripts.dc", ">> Dungeon Quest System: Database tables not found! Please execute SQL files.");
         }
     }
 
@@ -685,7 +697,7 @@ private:
             QueryResult result = CharacterDatabase.Query(sql.c_str());
             if (!result)
             {
-                LOG_ERROR("server.loading", "DungeonQuest: Missing character table: {}", tableName);
+                LOG_ERROR("scripts.dc", "DungeonQuest: Missing character table: {}", tableName);
                 allTablesExist = false;
             }
         }
@@ -703,7 +715,7 @@ private:
             QueryResult result = WorldDatabase.Query(sql.c_str());
             if (!result)
             {
-                LOG_ERROR("server.loading", "DungeonQuest: Missing world table: {}", tableName);
+                LOG_ERROR("scripts.dc", "DungeonQuest: Missing world table: {}", tableName);
                 allTablesExist = false;
             }
         }

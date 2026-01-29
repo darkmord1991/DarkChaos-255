@@ -29,6 +29,7 @@ local FRAME_HEIGHT = 500
 local CATEGORY_WIDTH = 180
 local ACHIEVEMENT_HEIGHT = 80
 local SCROLL_BAR_WIDTH = 26
+local SHOW_ROW_BACKGROUND = false
 
 -- Use a stable, known-good texture path ("..." can be nil or non-addon-name in some load paths).
 local BG_FELLEATHER = "Interface\\AddOns\\DC-Collection\\Textures\\Backgrounds\\FelLeather_512.tga"
@@ -396,8 +397,8 @@ function AchievementsUI:UpdateAchievements(categoryId)
         if isCompleted then
             btn.name:SetTextColor(1, 0.82, 0) -- Gold
             btn.icon:SetDesaturated(false)
-            btn.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
-            btn.border:SetVertexColor(1, 0.82, 0, 1) -- Gold border
+            if btn.bg then btn.bg:SetTexture(0.2, 0.2, 0.2, 0.8) end
+            if btn.border then btn.border:SetVertexColor(1, 0.82, 0, 1) end -- Gold border
             
             if accountCompleted and not completed then
                 btn.status:SetText("Completed (Account)")
@@ -409,8 +410,8 @@ function AchievementsUI:UpdateAchievements(categoryId)
         else
             btn.name:SetTextColor(0.6, 0.6, 0.6) -- Grey
             btn.icon:SetDesaturated(true)
-            btn.bg:SetTexture(0.1, 0.1, 0.1, 0.8)
-            btn.border:SetVertexColor(0.5, 0.5, 0.5, 1) -- Grey border
+            if btn.bg then btn.bg:SetTexture(0.1, 0.1, 0.1, 0.8) end
+            if btn.border then btn.border:SetVertexColor(0.5, 0.5, 0.5, 1) end -- Grey border
             btn.status:SetText("")
         end
 
@@ -432,16 +433,18 @@ function AchievementsUI:CreateAchievementButton(parent, width, height)
     local btn = CreateFrame("Frame", nil, parent)
     btn:SetSize(width, height)
     
-    -- Background
-    btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-    btn.bg:SetAllPoints()
-    btn.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
-    
-    -- Border (Gold/Grey)
-    btn.border = btn:CreateTexture(nil, "BORDER")
-    btn.border:SetPoint("TOPLEFT", -2, 2)
-    btn.border:SetPoint("BOTTOMRIGHT", 2, -2)
-    btn.border:SetTexture("Interface\\Tooltips\\UI-Tooltip-Border")
+    if SHOW_ROW_BACKGROUND then
+        -- Background
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        btn.bg:SetTexture(0.2, 0.2, 0.2, 0.8)
+
+        -- Border (Gold/Grey)
+        btn.border = btn:CreateTexture(nil, "BORDER")
+        btn.border:SetPoint("TOPLEFT", -2, 2)
+        btn.border:SetPoint("BOTTOMRIGHT", 2, -2)
+        btn.border:SetTexture("Interface\\Tooltips\\UI-Tooltip-Border")
+    end
     
     -- Icon
     btn.icon = btn:CreateTexture(nil, "ARTWORK")

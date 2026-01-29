@@ -212,8 +212,8 @@ namespace DCPrestigeAddon
 
         msg.Send(player);
 
-        LOG_DEBUG("scripts.addon", "DCPrestigeAddon: Sent prestige level-up notification to {} (level {})",
-                  player->GetName(), newLevel);
+        LOG_DEBUG("dc.addon", "DCPrestigeAddon: Sent prestige level-up notification to {} (level {})",
+            player->GetName(), newLevel);
     }
 
 } // namespace DCPrestigeAddon
@@ -242,11 +242,11 @@ public:
             router.RegisterHandler(DCPrestigeAddon::MODULE, DCPrestigeAddon::Opcode::CMSG_GET_BONUSES,
                 DCPrestigeAddon::HandleGetBonuses);
 
-            LOG_INFO("scripts.addon", "DCPrestigeAddon: Prestige addon handler initialized");
+            LOG_INFO("dc.addon", "DCPrestigeAddon: Prestige addon handler initialized");
         }
         else
         {
-            LOG_INFO("scripts.addon", "DCPrestigeAddon: Prestige addon handler disabled in config");
+            LOG_INFO("dc.addon", "DCPrestigeAddon: Prestige addon handler disabled in config");
         }
     }
 };

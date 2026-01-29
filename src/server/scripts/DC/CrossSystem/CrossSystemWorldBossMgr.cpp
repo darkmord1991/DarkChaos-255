@@ -32,7 +32,7 @@ namespace DC
         _bossesByEntry[entry] = info;
         _spawnIdToEntry[spawnId] = entry;
 
-        LOG_INFO("server.loading", "WorldBossMgr: Registered boss {} (entry={}, spawnId={}, zone={})",
+        LOG_INFO("scripts.dc", "WorldBossMgr: Registered boss {} (entry={}, spawnId={}, zone={})",
                  displayName, entry, spawnId, zoneId);
     }
 

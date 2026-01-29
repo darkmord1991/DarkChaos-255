@@ -16,6 +16,7 @@
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "Player.h"
 
 class npc_dungeon_quest_daily_weekly : public PlayerScript
 {
@@ -95,10 +96,20 @@ private:
     {
         // Update database: mark not completed
         std::string sql = Acore::StringFormat(
-            "UPDATE dc_player_daily_quest_progress SET completed_today = 0 WHERE guid = {} AND daily_quest_entry = {}",
+            "UPDATE dc_player_daily_quest_progress SET completed_today = 0, last_completed = NULL "
+            "WHERE guid = {} AND daily_quest_entry = {}",
             player->GetGUID().GetCounter(), questId
         );
         CharacterDatabase.Execute(sql.c_str());
+
+        // Clear core quest status so the daily is available again
+        if (player->GetQuestStatus(questId) != QUEST_STATUS_NONE)
+            player->RemoveActiveQuest(questId, false);
+
+        CharacterDatabase.Execute(Acore::StringFormat(
+            "DELETE FROM character_queststatus_daily WHERE guid = {} AND quest = {}",
+            player->GetGUID().GetCounter(), questId
+        ));
 
         // Notify player
         ChatHandler(player->GetSession()).SendSysMessage("A daily dungeon quest is now available!");
@@ -108,10 +119,21 @@ private:
     {
         // Update database: mark not completed
         std::string sql = Acore::StringFormat(
-            "UPDATE dc_player_weekly_quest_progress SET completed_this_week = 0 WHERE guid = {} AND weekly_quest_entry = {}",
+            "UPDATE dc_player_weekly_quest_progress "
+            "SET completed_this_week = 0, week_reset_date = NOW(), last_completed = NULL "
+            "WHERE guid = {} AND weekly_quest_entry = {}",
             player->GetGUID().GetCounter(), questId
         );
         CharacterDatabase.Execute(sql.c_str());
+
+        // Clear core quest status so the weekly is available again
+        if (player->GetQuestStatus(questId) != QUEST_STATUS_NONE)
+            player->RemoveActiveQuest(questId, false);
+
+        CharacterDatabase.Execute(Acore::StringFormat(
+            "DELETE FROM character_queststatus_weekly WHERE guid = {} AND quest = {}",
+            player->GetGUID().GetCounter(), questId
+        ));
 
         // Notify player
         ChatHandler(player->GetSession()).SendSysMessage("A weekly dungeon quest is now available!");

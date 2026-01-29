@@ -39,8 +39,8 @@
 #include "WorldDatabase.h"
 #include "CharacterDatabase.h"
 #include "Creature.h"
-#include "DungeonQuestConstants.h"
-#include "DungeonQuestHelpers.h"
+#include "../DungeonQuests/DungeonQuestConstants.h"
+#include "../DungeonQuests/DungeonQuestHelpers.h"
 #include <string>
 #include <sstream>
 
@@ -401,7 +401,7 @@ namespace DC_DungeonQuests
             // Show all DC dungeon quests for player
             handler->PSendSysMessage("DC Dungeon Quests for %s:", playerName);
             handler->SendSysMessage("Daily Quests:");
-            for (uint32 i = DAILY_QUEST_MIN; i <= DAILY_QUEST_MAX; ++i)
+            for (uint32 i = DungeonQuest::QUEST_DAILY_MIN; i <= DungeonQuest::QUEST_DAILY_MAX; ++i)
             {
                 if (player->GetQuestStatus(i) != QUEST_STATUS_NONE)
                 {
@@ -410,7 +410,7 @@ namespace DC_DungeonQuests
                 }
             }
             handler->SendSysMessage("Weekly Quests:");
-            for (uint32 i = WEEKLY_QUEST_MIN; i <= WEEKLY_QUEST_MAX; ++i)
+            for (uint32 i = DungeonQuest::QUEST_WEEKLY_MIN; i <= DungeonQuest::QUEST_WEEKLY_MAX; ++i)
             {
                 if (player->GetQuestStatus(i) != QUEST_STATUS_NONE)
                 {
@@ -454,9 +454,9 @@ namespace DC_DungeonQuests
         else
         {
             // Reset all DC dungeon quests
-            for (uint32 i = DAILY_QUEST_MIN; i <= DAILY_QUEST_MAX; ++i)
+            for (uint32 i = DungeonQuest::QUEST_DAILY_MIN; i <= DungeonQuest::QUEST_DAILY_MAX; ++i)
                 player->SetQuestStatus(i, QUEST_STATUS_NONE);
-            for (uint32 i = WEEKLY_QUEST_MIN; i <= WEEKLY_QUEST_MAX; ++i)
+            for (uint32 i = DungeonQuest::QUEST_WEEKLY_MIN; i <= DungeonQuest::QUEST_WEEKLY_MAX; ++i)
                 player->SetQuestStatus(i, QUEST_STATUS_NONE);
             handler->PSendSysMessage("All DC dungeon quests reset for player %s", playerName);
             DebugLog("All quests reset for player: " + std::string(playerName));
@@ -567,7 +567,7 @@ namespace DC_DungeonQuests
 
         handler->SendSysMessage("DC Dungeon Quests: running mapping audit (check server logs)...");
 
-        QuestMappingAuditResult audit = DungeonQuestHelpers::AuditQuestMappings(true);
+        DungeonQuestHelpers::QuestMappingAuditResult audit = DungeonQuestHelpers::AuditQuestMappings(true);
 
         LOG_INFO("scripts.dc", "DCQuests Audit: {} mapped quests missing in quest_template", audit.missingQuestTemplate);
         LOG_INFO("scripts.dc", "DCQuests Audit: {} enabled dungeons without quest mappings", audit.missingDungeons);

@@ -50,13 +50,46 @@ local function SetButtonHidden(hidden)
 end
 
 -- =============================================================================
--- Position Calculation (for circular movement around minimap)
+-- Position Calculation (supports round/square minimap shapes)
 -- =============================================================================
+
+local minimapShapes = {
+    ["ROUND"] = {true, true, true, true},
+    ["SQUARE"] = {false, false, false, false},
+    ["CORNER-TOPLEFT"] = {true, false, false, false},
+    ["CORNER-TOPRIGHT"] = {false, false, true, false},
+    ["CORNER-BOTTOMLEFT"] = {false, true, false, false},
+    ["CORNER-BOTTOMRIGHT"] = {false, false, false, true},
+    ["SIDE-LEFT"] = {true, true, false, false},
+    ["SIDE-RIGHT"] = {false, false, true, true},
+    ["SIDE-TOP"] = {true, false, true, false},
+    ["SIDE-BOTTOM"] = {false, true, false, true},
+    ["TRICORNER-TOPLEFT"] = {true, true, true, false},
+    ["TRICORNER-TOPRIGHT"] = {true, true, false, true},
+    ["TRICORNER-BOTTOMLEFT"] = {true, false, true, true},
+    ["TRICORNER-BOTTOMRIGHT"] = {false, true, true, true},
+}
+
+local function GetMinimapShapeSafe()
+    return (GetMinimapShape and GetMinimapShape()) or "ROUND"
+end
 
 local function UpdateButtonPosition(button, angle)
     local radians = math.rad(angle)
-    local x = math.cos(radians) * BUTTON_RADIUS
-    local y = math.sin(radians) * BUTTON_RADIUS
+    local x, y = math.cos(radians), math.sin(radians)
+    local q = 1
+    if x < 0 then q = q + 1 end
+    if y > 0 then q = q + 2 end
+
+    local quadTable = minimapShapes[GetMinimapShapeSafe()] or minimapShapes.ROUND
+    if quadTable[q] then
+        x, y = x * BUTTON_RADIUS, y * BUTTON_RADIUS
+    else
+        local diagRadius = math.sqrt(2 * (BUTTON_RADIUS * BUTTON_RADIUS)) - 10
+        x = math.max(-BUTTON_RADIUS, math.min(x * diagRadius, BUTTON_RADIUS))
+        y = math.max(-BUTTON_RADIUS, math.min(y * diagRadius, BUTTON_RADIUS))
+    end
+
     button:ClearAllPoints()
     button:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end

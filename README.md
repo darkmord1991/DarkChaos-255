@@ -212,7 +212,7 @@ The Cross-System Manager coordinates all DC custom systems:
 ### ⚔️ Hinterland Battleground (HLBG)
 *Open-world PvP zone with objective-based gameplay*
 
-- **Zone 47** - Dedicated PvP area in The Hinterlands
+- **Own Hinterland BG Zone** - Dedicated PvP area in The Hinterlands
 - **Resource Victory** - Team-based objective system with score thresholds
 - **State Machine** - Queue → Warmup → Active → Ending phases
 - **Auto Raid Group** - Automatically forms raid groups when joining
@@ -278,7 +278,7 @@ The Cross-System Manager coordinates all DC custom systems:
 | **Nalak** | 400102 | Thundering Peaks | Storm Lord |
 
 ### 📜 Dungeon Quest System
-*Enhanced daily, weekly, and event-based dungeon quests*
+*Enhanced daily, weekly, and event-based dungeon quests in one universal NPC*
 
 - **Daily Quests** - Rotating dungeon objectives with categorization
 - **Weekly Challenges** - Raid and special content quests
@@ -287,7 +287,6 @@ The Cross-System Manager coordinates all DC custom systems:
 - **Quest Phasing** - Proper phasing for quest objectives
 - **Enhanced UX** - Categorized gossip menus (Daily/Weekly/Dungeon/All)
 - **Player Statistics** - Track completion progress
-- **Standard AC Integration** - Uses `creature_questrelation`, `creature_involvedrelation` tables
 
 ### 🌡️ Hotspot XP System
 *Dynamic XP bonus zones*
@@ -449,11 +448,12 @@ All DC addons are included in `Custom/Client addons needed/` and feature a **uni
 
 #### Content Summary
 - **~130 Unique NPCs** using existing WotLK creature entry IDs
-- **5 Mini-Dungeons** with 5 trash + 1 boss each (Zin-Azshari, Timbermaw Deep, Spitelash Depths, Fel Pit, Sanctum of the Highborne)
+- **6 Mini-Dungeons** with 5 trash + 1 boss each (Zin-Azshari, Timbermaw Deep, Spitelash Depths, Fel Pit, Sanctum of the Highborne)
 - **4 World Bosses** - One per major tier
 - **5 Combined Faction Bases** - Both Alliance and Horde welcome
 - **8 Zone Rares** - Using existing rare NPCs
 - **Safe Road System** - Protected path connecting all bases
+- **Flightmasters & Guards** - for all major bases, level areas
 
 #### Inhabitant Factions
 | Faction | Role | Theme |
@@ -469,13 +469,8 @@ All DC addons are included in `Custom/Client addons needed/` and feature a **uni
 
 - **Zone ID 5000** - Custom zone ported from Pandaria's Isle of Giants
 - **Subzones** - Dinotamer Camp, Primal Basin, Devilsaur Gorge, Raptor Ridge, Thundering Peaks, Bone Wastes, Ancient Ruins
-
-#### World Bosses
-| Boss | Entry | Zone Area | Description |
-|------|-------|-----------|-------------|
-| Oondasta | 400100 | Devilsaur Gorge | King of Dinosaurs |
-| Thok | 400101 | Raptor Ridge | The Bloodthirsty |
-| Nalak | 400102 | Thundering Peaks | Storm Lord |
+- **Daily Quest Zone** - Hub with daily quests and vendors
+- **World Bosses** - Oondasta, Thok the Bloodthirsty, Nalak the Storm Lord
 
 #### Features
 - **Zone Announcements** - Welcome messages on entry
@@ -485,10 +480,6 @@ All DC addons are included in `Custom/Client addons needed/` and feature a **uni
 - **Cannon Quests** - Interactive cannon gameplay
 - **Water Monster** - Unique aquatic encounter
 - **Special NPCs** - Elder Zuljin, Witch Doctor, Rokhan
-
-#### Rare Elites
-- Static: Primal Direhorn (400050), Chaos Rex (400051), Ancient Primordial (400052), Savage Matriarch (400053), Alpha Raptor (400054)
-- Dynamic: Bonecrusher (400055), Gorespine (400056), Venomfang (400057), Skyscreamer (400058), Gulrok (400059)
 
 ### Other Zones
 
