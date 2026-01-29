@@ -58,6 +58,19 @@ function SeasonPlugin:OnActivate()
         DCInfoBar.serverData.season = DCInfoBar.serverData.season or {}
 
         local season = DCInfoBar.serverData.season
+        
+        -- Use server-backed currency from DCAddonProtocol (single source of truth)
+        local central = rawget(_G, "DCAddonProtocol")
+        if central and type(central.GetServerCurrencyBalance) == "function" then
+            local balance = central:GetServerCurrencyBalance()
+            if balance then
+                season.totalTokens = balance.tokens or 0
+                season.totalEssence = balance.emblems or 0
+                return
+            end
+        end
+        
+        -- Fallback: use GetItemCountSafe only if DCAddonProtocol not available
         season.totalTokens = GetItemCountSafe(SEASONAL_TOKEN_ID)
         season.totalEssence = GetItemCountSafe(SEASONAL_ESSENCE_ID)
     end

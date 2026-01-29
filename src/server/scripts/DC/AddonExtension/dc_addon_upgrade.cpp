@@ -11,7 +11,7 @@
 #include "dc_addon_namespace.h"
 #include "dc_addon_transmutation.h"
 #include "ScriptMgr.h"
-#include "DC/ItemUpgrades/ItemUpgradeSeasonResolver.h"
+#include "DC/CrossSystem/SeasonResolver.h"
 #include "Player.h"
 #include "Item.h"
 #include "DatabaseEnv.h"
@@ -40,9 +40,16 @@ namespace Upgrade
         if (!player)
             return;
 
-        // Use unified currency helpers (reads physical item counts)
-        uint32 tokens = DarkChaos::ItemUpgrade::GetPlayerTokens(player);
-        uint32 essence = DarkChaos::ItemUpgrade::GetPlayerEssence(player);
+        // Use DB-backed currency (single source of truth)
+        uint32 tokens = 0;
+        uint32 essence = 0;
+        if (auto* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
+        {
+            uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+            uint32 playerGuid = player->GetGUID().GetCounter();
+            tokens = mgr->GetCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, season);
+            essence = mgr->GetCurrency(playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, season);
+        }
         uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
 

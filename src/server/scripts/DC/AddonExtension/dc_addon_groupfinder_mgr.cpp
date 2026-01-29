@@ -17,6 +17,7 @@
 #include "World.h"
 #include "Group.h"
 #include "../ItemUpgrades/ItemUpgradeManager.h"
+#include "../CrossSystem/CrossSystemUtilities.h"
 #include "GroupMgr.h"
 #include <algorithm>
 
@@ -1031,13 +1032,14 @@ void GroupFinderMgr::GiveReward(Player* player)
     // Give Currency
     if (_rewardCurrencyId > 0 && _rewardCurrencyCount > 0)
     {
-        // If the ItemUpgrade manager is available and the currency id maps to its enum, use it.
-        if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
-        {
-            // Try to add currency via upgrade manager (tokens/essence etc.)
-            mgr->AddCurrency(player->GetGUID().GetCounter(), static_cast<DarkChaos::ItemUpgrade::CurrencyType>(_rewardCurrencyId), _rewardCurrencyCount);
-        }
-        else
+        // Award currency using centralized utility
+        if (!DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+            player->GetGUID().GetCounter(),
+            static_cast<DarkChaos::ItemUpgrade::CurrencyType>(_rewardCurrencyId),
+            _rewardCurrencyCount,
+            DarkChaos::ItemUpgrade::GetCurrentSeasonId(),
+            player,
+            true))
         {
             // Fall back to ModifyMoney for gold-based rewards (if configured as such)
             player->ModifyMoney(static_cast<int32>(_rewardCurrencyCount));

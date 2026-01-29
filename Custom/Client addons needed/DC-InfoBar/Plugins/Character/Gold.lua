@@ -189,14 +189,22 @@ function GoldPlugin:OnTooltip(tooltip)
         end
     end
     
-    -- Also check for core token/essence even if 0
-    local tokenCount = GetItemCount(SEASONAL_TOKEN_ID)
-    local essenceCount = GetItemCount(SEASONAL_ESSENCE_ID)
+    -- Get currency from server (single source of truth via DCAddonProtocol)
+    local tokenCount = 0
+    local essenceCount = 0
+    local central = rawget(_G, "DCAddonProtocol")
+    if central and type(central.GetServerCurrencyBalance) == "function" then
+        local balance = central:GetServerCurrencyBalance()
+        if balance then
+            tokenCount = balance.tokens or 0
+            essenceCount = balance.emblems or 0
+        end
+    end
     
-    -- Use server-provided inventory counts as a fallback if we didn't find any in bags
+    -- Fallback to season data if central not available
     local seasonData = DCInfoBar.serverData and DCInfoBar.serverData.season
-    local serverTokens = seasonData and seasonData.totalTokens
-    local serverEssence = seasonData and seasonData.totalEssence
+    local serverTokens = tokenCount > 0 and tokenCount or (seasonData and seasonData.totalTokens)
+    local serverEssence = essenceCount > 0 and essenceCount or (seasonData and seasonData.totalEssence)
     
     if not foundAny or tokenCount == 0 then
         local displayTokens = tokenCount

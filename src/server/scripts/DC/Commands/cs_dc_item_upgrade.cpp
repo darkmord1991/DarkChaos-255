@@ -28,6 +28,7 @@
 #include "Config.h"
 #include "SharedDefines.h"
 #include "../ItemUpgrades/ItemUpgradeManager.h"
+#include "../CrossSystem/CrossSystemUtilities.h"
 #include "../ItemUpgrades/ItemUpgradeMechanics.h"
 #include "../ItemUpgrades/ItemUpgradeProcScaling.h"
 #include "../ItemUpgrades/ItemUpgradeAdvanced.h"
@@ -384,11 +385,11 @@ public:
             return false;
         }
 
-        // Award tokens
-        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-        if (mgr)
+        // Award currency using centralized utility
+        uint32 targetGuid = target->GetGUID().GetCounter();
+        if (DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+            targetGuid, (DarkChaos::ItemUpgrade::CurrencyType)currency, amount, 1, target, true))
         {
-            mgr->AddCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount);
             handler->PSendSysMessage("Added %u %s to player %s", amount,
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
 
@@ -439,22 +440,20 @@ public:
             return false;
         }
 
-        DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-        if (mgr)
+        uint32 targetGuid = target->GetGUID().GetCounter();
+        if (DarkChaos::CrossSystem::CurrencyUtils::RemoveCurrencyAndSync(
+            targetGuid, (DarkChaos::ItemUpgrade::CurrencyType)currency, amount, 1, target, true))
         {
-            if (mgr->RemoveCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount))
-            {
-                handler->PSendSysMessage("Removed %u %s from player %s", amount,
-                    currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
-                ChatHandler targetHandler(target->GetSession());
-                targetHandler.PSendSysMessage("|cffff0000%u %s was removed by GM.|r", amount,
-                    currency == 1 ? "Upgrade Tokens" : "Artifact Essence");
-            }
-            else
-                handler->SendSysMessage("Player does not have enough tokens.");
+            handler->PSendSysMessage("Removed %u %s from player %s", amount,
+                currency == 1 ? "Upgrade Tokens" : "Artifact Essence", target->GetName().c_str());
+            ChatHandler targetHandler(target->GetSession());
+            targetHandler.PSendSysMessage("|cffff0000%u %s was removed by GM.|r", amount,
+                currency == 1 ? "Upgrade Tokens" : "Artifact Essence");
         }
         else
-            handler->SendSysMessage("Error: Upgrade Manager not initialized.");
+        {
+            handler->SendSysMessage("Player does not have enough tokens.");
+        }
 
         return true;
     }
@@ -495,15 +494,25 @@ public:
             return false;
         }
 
-        // Query current amount, then adjust
+        // Query current amount, then adjust using centralized utilities
         DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
         if (mgr)
         {
-            uint32 current = mgr->GetCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency);
+            uint32 targetGuid = target->GetGUID().GetCounter();
+            uint32 current = mgr->GetCurrency(targetGuid, (DarkChaos::ItemUpgrade::CurrencyType)currency);
+            
+            bool success = true;
             if (amount > current)
-                mgr->AddCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, amount - current);
+                success = DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+                    targetGuid, (DarkChaos::ItemUpgrade::CurrencyType)currency, amount - current, 1, target, true);
             else if (amount < current)
-                mgr->RemoveCurrency(target->GetGUID().GetCounter(), (DarkChaos::ItemUpgrade::CurrencyType)currency, current - amount);
+                success = DarkChaos::CrossSystem::CurrencyUtils::RemoveCurrencyAndSync(
+                    targetGuid, (DarkChaos::ItemUpgrade::CurrencyType)currency, current - amount, 1, target, true);
+            
+            if (!success) {
+                handler->SendSysMessage("Failed to set currency.");
+                return true;
+            }
 
             handler->PSendSysMessage("Set %s to %u for player %s",
                 currency == 1 ? "Upgrade Tokens" : "Artifact Essence", amount, target->GetName().c_str());

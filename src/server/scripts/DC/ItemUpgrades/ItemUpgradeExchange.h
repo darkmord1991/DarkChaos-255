@@ -1,15 +1,16 @@
 /*
- * DarkChaos Item Upgrade System - Phase 5: Item Transmutation
+ * DarkChaos Item Upgrade System - Currency Exchange
  *
- * Item Transmutation allows players to convert upgraded items between tiers,
- * exchange currencies, and synthesize rare items from common upgrades.
+ * Currency Exchange allows players to convert between Upgrade Tokens and
+ * Artifact Essence. Synthesis system removed (Jan 2026).
  *
  * Author: DarkChaos Development Team
  * Date: November 5, 2025
+ * Updated: January 2026 - Renamed from Transmutation to Exchange
  */
 
-#ifndef ITEM_UPGRADE_TRANSMUTATION_H
-#define ITEM_UPGRADE_TRANSMUTATION_H
+#ifndef ITEM_UPGRADE_EXCHANGE_H
+#define ITEM_UPGRADE_EXCHANGE_H
 
 #include "ItemUpgradeManager.h"
 #include <vector>
@@ -20,11 +21,11 @@ namespace DarkChaos
     namespace ItemUpgrade
     {
         // =====================================================================
-        // Transmutation Types and Configurations
+        // Exchange Types and Configurations (Legacy Transmutation types kept for compatibility)
         // =====================================================================
 
         /**
-         * Transmutation recipe types
+         * Exchange/Transmutation recipe types (legacy, mostly unused)
          */
         enum TransmutationType
         {
@@ -221,9 +222,13 @@ namespace DarkChaos
     namespace ItemUpgrade
     {
         /**
-         * Get the global transmutation manager instance (currency exchange)
+         * Get the global exchange manager instance (currency exchange)
+         * Legacy alias: GetTransmutationManager
          */
         TransmutationManager* GetTransmutationManager();
+
+        // Alias for cleaner naming
+        inline TransmutationManager* GetExchangeManager() { return GetTransmutationManager(); }
 
         /**
          * Get the global tier conversion manager instance
@@ -233,4 +238,4 @@ namespace DarkChaos
     }
 }
 
-#endif // ITEM_UPGRADE_TRANSMUTATION_H
+#endif // ITEM_UPGRADE_EXCHANGE_H

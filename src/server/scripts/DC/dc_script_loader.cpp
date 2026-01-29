@@ -99,12 +99,12 @@ void AddSC_GOMove_commandscript();            // GOMove\GOMoveScripts.cpp
 void AddSC_ItemUpgradeMechanicsImpl();        // ItemUpgrades\ItemUpgradeMechanicsImpl.cpp (MUST load first)
 void AddSC_ItemUpgradeVendor();               // ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator();              // ItemUpgrades\ItemUpgradeNPC_Curator.cpp
-void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades\ItemUpgradeSeasonalImpl.cpp (Deprecated)
-void AddSC_ItemUpgradeTransmutation();        // ItemUpgrades\ItemUpgradeTransmutationNPC.cpp
+void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades\ItemUpgradeSeasonalImpl.cpp (Deprecated - migrate to SeasonalSystem)
+void AddSC_ItemUpgradeExchange();            // ItemUpgrades\ItemUpgradeExchangeNPC.cpp (Currency Exchange NPC)
 void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades\ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades\ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades\ItemUpgradeStatApplication.cpp
-void AddSC_ItemUpgradeQuestRewardHook();      // ItemUpgrades\ItemUpgradeQuestRewardHook.cpp
+// AddSC_ItemUpgradeQuestRewardHook REMOVED - Use SeasonalRewardSystem.ProcessQuestReward instead
 
 // --- Mythic+ Dungeon System ---
 void AddMythicPlusScripts();                  // MythicPlus/dc_mythicplus_loader.cpp
@@ -481,12 +481,12 @@ void AddDCScripts()
     }
 
     try {
-        AddSC_ItemUpgradeTransmutation();
-        LOG_INFO("scripts.dc", ">>   ✓ Transmutation NPC loaded");
+        AddSC_ItemUpgradeExchange();
+        LOG_INFO("scripts.dc", ">>   ✓ Currency Exchange NPC loaded");
     } catch (std::exception& e) {
-        LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in transmutation: {}", e.what());
+        LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in exchange: {}", e.what());
     } catch (...) {
-        LOG_ERROR("scripts.dc", ">>   ✗ CRASH in transmutation");
+        LOG_ERROR("scripts.dc", ">>   ✗ CRASH in exchange");
     }
 
     try {
@@ -516,14 +516,7 @@ void AddDCScripts()
         LOG_ERROR("scripts.dc", ">>   ✗ CRASH in stat application");
     }
 
-    try {
-        AddSC_ItemUpgradeQuestRewardHook();
-        LOG_INFO("scripts.dc", ">>   ✓ Quest reward hooks loaded");
-    } catch (std::exception& e) {
-        LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in quest reward hooks: {}", e.what());
-    } catch (...) {
-        LOG_ERROR("scripts.dc", ">>   ✗ CRASH in quest reward hooks");
-    }
+    // Quest reward hooks removed - use SeasonalRewardSystem.ProcessQuestReward for quest rewards
 
     LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts.dc", ">> Item Upgrade System: All modules loaded successfully");

@@ -151,12 +151,11 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4E
     # ItemUpgrades/ItemUpgradeAddonHandler.cpp (Removed)
 )
 
-# Phase 4F: Transmutation System
+# Phase 4F: Currency Exchange System (renamed from Transmutation Jan 2026)
+# Synthesis removed - only currency exchange needed
 set(SCRIPTS_DC_ItemUpgrade_Phase4F
-    ItemUpgrades/ItemUpgradeSynthesisImpl.cpp
-    ItemUpgrades/ItemUpgradeTierConversionImpl.cpp
-    ItemUpgrades/ItemUpgradeTransmutationImpl.cpp
-    ItemUpgrades/ItemUpgradeTransmutationNPC.cpp
+    ItemUpgrades/ItemUpgradeExchangeImpl.cpp
+    ItemUpgrades/ItemUpgradeExchangeNPC.cpp
 )
 
 # DC Seasonal System - Independent Framework
@@ -264,6 +263,7 @@ set(SCRIPTS_DC_CrossSystem
     CrossSystem/CrossSystemScripts.cpp
     CrossSystem/CrossSystemSpawnResolver.cpp
     CrossSystem/CrossSystemWorldBossMgr.cpp
+    # CrossSystem/ItemUpgradeQuestRewardHook.cpp # REMOVED - Use SeasonalRewardSystem.ProcessQuestReward instead
 )
 
 # DC Commands - Unified command hub

@@ -23,7 +23,7 @@
 #include "Player.h"
 #include "ItemUpgradeManager.h"
 #include "ItemUpgradeUIHelpers.h"
-#include "ItemUpgradeSeasonResolver.h"
+#include "DC/CrossSystem/SeasonResolver.h"
 #include "DatabaseEnv.h"
 #include <sstream>
 
@@ -37,39 +37,16 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        // Get player's token balances and artifact discovery count
+        // Get player's token balances (item-based currency)
         uint32 upgradeTokens = 0;
         uint32 artifactEssence = 0;
 
-        try
+        auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+        if (mgr)
         {
-            auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-            if (mgr)
-            {
-                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
-                upgradeTokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, season);
-                artifactEssence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, season);
-            }
-
-            // Also query from database to verify
             uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence' AND season = {}",
-                player->GetGUID().GetCounter(), season);
-
-            if (result)
-            {
-                artifactEssence = result->Fetch()[0].Get<uint32>();
-            }
-        }
-        catch (std::exception const& e)
-        {
-            LOG_WARN("scripts.dc", "ItemUpgrade: Curator NPC database query failed: {}", e.what());
-        }
-        catch (...)
-        {
-            // Database not set up yet - use defaults
-            LOG_WARN("scripts.dc", "ItemUpgrade: Curator NPC failed to query database (tables missing?)");
+            upgradeTokens = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, season);
+            artifactEssence = mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, season);
         }
 
         // Clear any previous menu
@@ -157,34 +134,14 @@ public:
             }
             case GOSSIP_ACTION_INFO_DEF + 4: // Statistics
             {
-                try
-                {
-                    // Query database for artifact essence
-                    uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
-                    QueryResult result = CharacterDatabase.Query(
-                        "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'artifact_essence' AND season = {}",
-                        player->GetGUID().GetCounter(), season);
+                // Get essence from item-based currency
+                auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+                uint32 essence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, season) : 0;
 
-                    uint32 essence = result ? result->Fetch()[0].Get<uint32>() : 0;
-
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                        "Total Artifact Essence: " + std::to_string(essence),
-                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
-                }
-                catch (std::exception const& e)
-                {
-                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Curator statistics query failed: {}", e.what());
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                        "Database not configured yet. Import SQL files first.",
-                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
-                }
-                catch (...)
-                {
-                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Curator statistics query failed (unknown error)");
-                    AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                        "Database not configured yet. Import SQL files first.",
-                        GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
-                }
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "Total Artifact Essence: " + std::to_string(essence),
+                    GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID());
                 break;

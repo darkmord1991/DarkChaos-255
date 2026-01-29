@@ -20,7 +20,8 @@
 #include "Log.h"
 #include "Chat.h"
 #include "ItemUpgradeManager.h"
-#include "ItemUpgradeSeasonResolver.h"
+#include "DC/CrossSystem/SeasonResolver.h"
+#include "../CrossSystem/CrossSystemUtilities.h"
 #include "Common.h"
 #include <sstream>
 
@@ -133,27 +134,14 @@ namespace DarkChaos
                 player_guid, currency_type, amount, safeTransaction, safeReason);
         }
 
-        // Check if player is at weekly token cap
-        static bool IsAtWeeklyTokenCap(uint32 player_guid, uint32 season = 1)
+        // NOTE: Weekly cap tracking removed - dc_player_upgrade_tokens table deprecated
+        // Item-based currency (items 300311/300312) doesn't support weekly tracking
+        // Weekly caps can be re-implemented via addon tracking if needed
+        [[maybe_unused]] static bool IsAtWeeklyTokenCap([[maybe_unused]] uint32 player_guid, [[maybe_unused]] uint32 season = 1)
         {
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT weekly_earned FROM dc_player_upgrade_tokens "
-                "WHERE player_guid = {} AND currency_type = 'upgrade_token' AND season = {}",
-                player_guid, season);
-            if (!result)
-                return false;
-
-            uint32 weekly_earned = result->Fetch()[0].Get<uint32>();
-            return weekly_earned >= WEEKLY_TOKEN_CAP;
-        }
-
-        // Update weekly earned counter
-        static void UpdateWeeklyEarned(uint32 player_guid, uint32 amount, uint32 season = 1)
-        {
-            CharacterDatabase.Execute(
-                "UPDATE dc_player_upgrade_tokens SET weekly_earned = weekly_earned + {} "
-                "WHERE player_guid = {} AND currency_type = 'upgrade_token' AND season = {}",
-                amount, player_guid, season);
+            // Weekly cap disabled - return false to allow unlimited earning
+            // TODO: Re-implement via separate tracking table if weekly caps needed
+            return false;
         }
 
         // =====================================================================
@@ -182,9 +170,10 @@ namespace DarkChaos
                     return;
                 }
 
-                // Award tokens
-                    DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(killer->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, reward, season);
-                    UpdateWeeklyEarned(killer->GetGUID().GetCounter(), reward, season);
+                // Award tokens using centralized utility
+                uint32 killerGuid = killer->GetGUID().GetCounter();
+                DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+                    killerGuid, CURRENCY_UPGRADE_TOKEN, reward, season, killer, true);
 
                 // Log transaction
                 std::ostringstream reason;
@@ -220,12 +209,10 @@ namespace DarkChaos
                     return;
                 }
 
-                // Cap reward if it would exceed weekly limit
-                UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
-
-                // Award tokens
-                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, reward, season);
-                    UpdateWeeklyEarned(player->GetGUID().GetCounter(), reward, season);
+                // Award tokens using centralized utility
+                uint32 playerGuid = player->GetGUID().GetCounter();
+                DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+                    playerGuid, CURRENCY_UPGRADE_TOKEN, reward, season, player, true);
 
                 // Log transaction
                 std::ostringstream reason;
@@ -278,8 +265,10 @@ namespace DarkChaos
                 uint8 loc = player->GetSession() ? player->GetSession()->GetSessionDbcLocale() : 0;
                 std::string achName = achievement->name[loc] ? achievement->name[loc] : "<unknown>";
 
-                // Award essence
-                DarkChaos::ItemUpgrade::GetUpgradeManager()->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward, season);
+                // Award essence using centralized utility
+                uint32 playerGuid = player->GetGUID().GetCounter();
+                DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+                    playerGuid, CURRENCY_ARTIFACT_ESSENCE, essence_reward, season, player, true);
 
                 // Mark as claimed (using 'event' as discovery_type for achievements)
                 try
@@ -394,10 +383,7 @@ namespace DarkChaos
                 // Award tokens and essence
                 UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
                 if (token_reward > 0)
-                {
                     mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, token_reward, season);
-                    UpdateWeeklyEarned(player->GetGUID().GetCounter(), token_reward, season);
-                }
                 if (essence_reward > 0)
                     mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward, season);
 

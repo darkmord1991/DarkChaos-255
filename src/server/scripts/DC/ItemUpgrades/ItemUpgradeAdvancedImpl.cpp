@@ -19,7 +19,7 @@
 #include "Guild.h"
 #include "ItemUpgradeAdvanced.h"
 #include "ItemUpgradeManager.h"
-#include "ItemUpgradeSeasonResolver.h"
+#include "DC/CrossSystem/SeasonResolver.h"
 #include <sstream>
 #include <iomanip>
 #include <cstdlib>
@@ -81,23 +81,17 @@ public:
             uint32 essence_refund = (essence_invested * config.refund_percent) / 100;
             uint32 tokens_refund = (tokens_invested * config.refund_percent) / 100;
 
-            // Add currency back to player (season-scoped)
-            if (essence_refund > 0)
+            // Add currency back to player using item-based system
+            auto mgr = GetUpgradeManager();
+            if (mgr)
             {
-                CharacterDatabase.Execute(
-                    "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-                    "VALUES ({}, 'artifact_essence', {}, {}) "
-                    "ON DUPLICATE KEY UPDATE amount = amount + {}",
-                    player_guid, essence_refund, season, essence_refund);
-            }
+                if (essence_refund > 0)
+                    mgr->AddCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_refund, season);
+                if (tokens_refund > 0)
+                    mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, tokens_refund, season);
 
-            if (tokens_refund > 0)
-            {
-                CharacterDatabase.Execute(
-                    "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-                    "VALUES ({}, 'upgrade_token', {}, {}) "
-                    "ON DUPLICATE KEY UPDATE amount = amount + {}",
-                    player_guid, tokens_refund, season, tokens_refund);
+                LOG_INFO("scripts.dc", "ItemUpgrade: Respec refund for player {} - {} tokens, {} essence",
+                    player_guid, tokens_refund, essence_refund);
             }
         }
 
@@ -364,12 +358,11 @@ public:
 
         if (ach->reward_tokens > 0)
         {
+            // Award tokens using item-based currency system
             uint32 season = GetCurrentSeasonId();
-            CharacterDatabase.Execute(
-                "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-                "VALUES ({}, 'upgrade_token', {}, {}) "
-                "ON DUPLICATE KEY UPDATE amount = amount + {}",
-                player_guid, ach->reward_tokens, season, ach->reward_tokens);
+            auto mgr = GetUpgradeManager();
+            if (mgr)
+                mgr->AddCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, ach->reward_tokens, season);
         }
     }
 
@@ -625,12 +618,31 @@ public:
         // Award bonus tokens to all guild members based on tier
         uint32 bonus_tokens = tier * 10;  // 10 tokens per tier
 
+        // NOTE: With item-based currency, guild bonuses must be awarded to online members
+        // or queued for delivery via in-game mail. For now, get online guild members.
         uint32 season = GetCurrentSeasonId();
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-            "SELECT gm.guid, 'upgrade_token', {}, {} FROM guild_member gm WHERE gm.guildid = {} "
-            "ON DUPLICATE KEY UPDATE amount = amount + VALUES(amount)",
-            bonus_tokens, season, guild_id);
+        auto mgr = GetUpgradeManager();
+        if (!mgr)
+            return;
+
+        // Query guild members
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT guid FROM guild_member WHERE guildid = {}", guild_id);
+
+        if (!result)
+            return;
+
+        uint32 awarded_count = 0;
+        do
+        {
+            uint32 member_guid = result->Fetch()[0].Get<uint32>();
+            // Award tokens - AddCurrency will add items if player online, otherwise queued
+            mgr->AddCurrency(member_guid, CURRENCY_UPGRADE_TOKEN, bonus_tokens, season);
+            awarded_count++;
+        } while (result->NextRow());
+
+        LOG_INFO("scripts.dc", "ItemUpgrade: Guild {} (tier {}) awarded {} tokens to {} members",
+            guild_id, tier, bonus_tokens, awarded_count);
     }
 
     uint8 GetGuildTier(uint32 guild_id) override

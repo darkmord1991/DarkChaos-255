@@ -26,6 +26,31 @@ local currentStatus = {};
 local BG_FELLEATHER = "Interface\\AddOns\\DC-ItemUpgrade\\Textures\\Backgrounds\\FelLeather_512.tga";
 local BG_TINT_ALPHA = 0.60;
 
+local function GetCurrencyBalances()
+    local tokens, essence
+    local central = rawget(_G, "DCAddonProtocol")
+    if central then
+        local getter = central.GetServerCurrencyBalance or central.GetCurrencyBalance or central.GetCurrencyBalances
+        if type(getter) == "function" then
+            local ok, a, b = pcall(getter, central)
+            if ok then
+                if type(a) == "table" then
+                    local byItem = a.byItemId or a.by_item_id
+                    tokens = a.tokens or a.token or (byItem and byItem[central.TOKEN_ITEM_ID or 300311])
+                    essence = a.emblems or a.essence or (byItem and byItem[central.ESSENCE_ITEM_ID or 300312])
+                else
+                    tokens = a
+                    essence = b
+                end
+            end
+        end
+    end
+
+    tokens = tonumber(tokens) or DC.playerTokens or 0
+    essence = tonumber(essence) or DC.playerEssence or 0
+    return tokens, essence
+end
+
 local function ApplyLeaderboardsStyle(frame)
     if not frame or frame.__dcLeaderboardsStyled then
         return
@@ -175,9 +200,8 @@ end
 function DarkChaos_Transmutation_UpdateExchangeTab()
     local frame = DarkChaos_TransmutationFrame.ExchangeFrame;
     
-    -- Get player currency (from DC-ItemUpgrade global state)
-    local essence = DC.playerEssence or 0;
-    local tokens = DC.playerTokens or 0;
+    -- Get player currency (prefer DCAddonProtocol shared balance)
+    local tokens, essence = GetCurrencyBalances();
     
     frame.BalanceText:SetText(string.format("|cffffffffEssence:|r |cff00ff00%d|r   |cffffffffTokens:|r |cff00ff00%d|r", essence, tokens));
     

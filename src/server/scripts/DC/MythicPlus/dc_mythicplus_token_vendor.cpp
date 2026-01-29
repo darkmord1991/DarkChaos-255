@@ -15,6 +15,7 @@
 #include "DatabaseEnv.h"
 #include "../AddonExtension/dc_addon_namespace.h"
 #include "../ItemUpgrades/ItemUpgradeManager.h"
+#include "../CrossSystem/CrossSystemUtilities.h"
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include "ObjectAccessor.h"
@@ -709,8 +710,18 @@ namespace
             }
 
             player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), amount, true);
-            upgradeMgr->AddCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceDelta);
-            SendVendorResult(player, true, Acore::StringFormat("Exchanged {} tokens for {} essence.", amount, essenceDelta));
+            uint32 playerGuid = player->GetGUID().GetCounter();
+            
+            if (DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+                playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceDelta,
+                DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
+            {
+                SendVendorResult(player, true, Acore::StringFormat("Exchanged {} tokens for {} essence.", amount, essenceDelta));
+            }
+            else
+            {
+                SendVendorResult(player, false, "Failed to add essence.");
+            }
             return;
         }
 
@@ -732,7 +743,10 @@ namespace
                 return;
             }
 
-            if (!upgradeMgr->RemoveCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceDelta))
+            uint32 playerGuid = player->GetGUID().GetCounter();
+            if (!DarkChaos::CrossSystem::CurrencyUtils::RemoveCurrencyAndSync(
+                playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceDelta,
+                DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
             {
                 SendVendorResult(player, false, "Failed to remove essence.");
                 return;
@@ -954,8 +968,14 @@ public:
                 if (player->HasItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToTake))
                 {
                     player->DestroyItemCount(DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToTake, true);
-                    upgradeMgr->AddCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToGive);
-                    ChatHandler(player->GetSession()).PSendSysMessage("Exchanged %u Tokens for %u Essence.", tokensToTake, essenceToGive);
+                    uint32 playerGuid = player->GetGUID().GetCounter();
+                    
+                    if (DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+                        playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToGive,
+                        DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
+                    {
+                        ChatHandler(player->GetSession()).PSendSysMessage("Exchanged %u Tokens for %u Essence.", tokensToTake, essenceToGive);
+                    }
                 }
                 else
                     ChatHandler(player->GetSession()).SendSysMessage("You don't have enough tokens.");
@@ -969,7 +989,10 @@ public:
                     InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), tokensToGive);
                     if (msg == EQUIP_ERR_OK)
                     {
-                        if (upgradeMgr->RemoveCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToTake))
+                        uint32 playerGuid = player->GetGUID().GetCounter();
+                        if (DarkChaos::CrossSystem::CurrencyUtils::RemoveCurrencyAndSync(
+                            playerGuid, DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, essenceToTake,
+                            DarkChaos::ItemUpgrade::GetCurrentSeasonId(), player, true))
                         {
                             if (Item* item = player->StoreNewItem(dest, DarkChaos::ItemUpgrade::GetUpgradeTokenItemId(), true))
                             {

@@ -17,7 +17,7 @@
 #include "DBCStores.h"
 #include "../AddonExtension/dc_addon_namespace.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
-#include "DC/ItemUpgrades/ItemUpgradeSeasonResolver.h"
+#include "DC/CrossSystem/SeasonResolver.h"
 
 #include <sstream>
 #include <ctime>

@@ -15,7 +15,7 @@
 #include "CreatureScript.h"
 #include "Player.h"
 #include "ItemUpgradeManager.h"
-#include "ItemUpgradeSeasonResolver.h"
+#include "DC/CrossSystem/SeasonResolver.h"
 #include "ItemUpgradeUIHelpers.h"
 #include "DatabaseEnv.h"
 #include <sstream>
@@ -117,20 +117,21 @@ public:
             }
             case GOSSIP_ACTION_INFO_DEF + 5: // Weekly Stats
             {
+                // Item-based currency doesn't track weekly earned
+                // Show current balance instead
+                auto mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
-                // Query weekly earnings
-                QueryResult result = CharacterDatabase.Query(
-                    "SELECT weekly_earned FROM dc_player_upgrade_tokens WHERE player_guid = {} AND currency_type = 'upgrade_token' AND season = {}",
-                    player->GetGUID().GetCounter(), season);
-
-                uint32 weeklyEarned = result ? result->Fetch()[0].Get<uint32>() : 0;
-                uint32 remaining = (weeklyEarned >= 500) ? 0 : (500 - weeklyEarned);
+                uint32 tokens = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, season) : 0;
+                uint32 essence = mgr ? mgr->GetCurrency(player->GetGUID().GetCounter(), DarkChaos::ItemUpgrade::CURRENCY_ARTIFACT_ESSENCE, season) : 0;
 
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                    "Tokens earned this week: " + std::to_string(weeklyEarned) + " / 500",
+                    "Current Upgrade Tokens: " + std::to_string(tokens),
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                    "Remaining tokens: " + std::to_string(remaining),
+                    "Current Artifact Essence: " + std::to_string(essence),
+                    GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    "(Weekly tracking moved to addon - type /dc tokens)",
                     GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
                 AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 20);
                 player->PlayerTalkClass->SendGossipMenu(1, creature->GetGUID());

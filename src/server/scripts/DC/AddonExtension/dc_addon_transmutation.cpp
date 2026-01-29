@@ -1,10 +1,11 @@
 /*
- * Dark Chaos - Item Upgrade Transmutation Addon Handler
- * =====================================================
+ * Dark Chaos - Item Upgrade Currency Exchange Addon Handler
+ * =========================================================
  *
- * Handles DC|UPG|... messages for the Transmutation system.
+ * Handles DC|UPG|... messages for the Currency Exchange system.
+ * (Renamed from Transmutation, Jan 2026)
  *
- * Copyright (C) 2025 Dark Chaos Development Team
+ * Copyright (C) 2025-2026 Dark Chaos Development Team
  */
 
 #include "Common.h"
@@ -14,7 +15,7 @@
 #include "Player.h"
 #include "Item.h"
 #include "Chat.h"
-#include "DC/ItemUpgrades/ItemUpgradeTransmutation.h"
+#include "DC/ItemUpgrades/ItemUpgradeExchange.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 
 namespace DCAddon
@@ -49,13 +50,12 @@ namespace Upgrade
         Message(Module::UPGRADE, Opcode::Upgrade::SMSG_OPEN_TRANSMUTE_UI).Send(player);
     }
 
-    // Send Transmutation Info (Recipes, Rates, Status)
+    // Send Currency Exchange Info (Rates, Status)
     static void SendTransmutationInfo(Player* player)
     {
         using namespace DarkChaos::ItemUpgrade;
 
         TransmutationManager* transMgr = GetTransmutationManager();
-        SynthesisManager* synthMgr = GetSynthesisManager();
 
         // 1. Get Exchange Rates
         uint32 tokensToEssence, essenceToTokens;
@@ -63,9 +63,6 @@ namespace Upgrade
 
         // 2. Get Transmutation Status
         TransmutationSession session = transMgr->GetTransmutationStatus(player->GetGUID().GetCounter());
-
-        // 3. Get Synthesis Recipes
-        auto recipes = synthMgr->GetSynthesisRecipes(player->GetGUID().GetCounter());
 
         JsonValue exchange;
         exchange.SetObject();
@@ -82,21 +79,9 @@ namespace Upgrade
         sessionObj.Set("startTime", JsonValue(static_cast<double>(session.start_time)));
         sessionObj.Set("endTime", JsonValue(static_cast<double>(session.end_time)));
 
+        // Empty recipes array - Synthesis system removed
         JsonValue recipesArray;
         recipesArray.SetArray();
-        for (auto const& recipe : recipes)
-        {
-            JsonValue rec;
-            rec.SetObject();
-            rec.Set("id", JsonValue(recipe.recipe_id));
-            rec.Set("name", JsonValue(recipe.name));
-            rec.Set("desc", JsonValue(recipe.description));
-            rec.Set("reqTier", JsonValue(static_cast<int32>(recipe.required_tier)));
-            rec.Set("inEssence", JsonValue(recipe.input_essence));
-            rec.Set("inTokens", JsonValue(recipe.input_tokens));
-            rec.Set("successRate", JsonValue(recipe.success_rate_base));
-            recipesArray.Push(rec);
-        }
 
         JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_TRANSMUTE_INFO)
             .Set("exchange", exchange)
@@ -113,9 +98,9 @@ namespace Upgrade
     static void HandleDoTransmute(Player* player, const ParsedMessage& msg)
     {
         // Format: Type|Arg1|Arg2...
-        // Type 1: Tier Conversion (ItemGUID, TargetTier)
+        // Type 1: Tier Conversion (ItemGUID, TargetTier) - Not implemented
         // Type 2: Currency Exchange (Type, Amount)
-        // Type 3: Synthesis (RecipeID)
+        // Type 3: Synthesis - REMOVED
 
         LOG_DEBUG("scripts.dc", "HandleDoTransmute called for player {} with {} data fields",
                   player->GetGUID().GetCounter(), msg.GetDataCount());

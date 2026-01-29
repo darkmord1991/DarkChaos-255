@@ -18,7 +18,7 @@
 #include "DatabaseEnv.h"
 #include "ItemUpgradeSeasonal.h"
 #include "ItemUpgradeManager.h"
-#include "ItemUpgradeSeasonResolver.h"
+#include "DC/CrossSystem/SeasonResolver.h"
 #include "../Seasons/SeasonalSystem.h" // Include Seasonal System
 #include <sstream>
 #include <iomanip>
@@ -59,59 +59,39 @@ public:
                 ITEM_UPGRADES_TABLE, player_guid);
         }
 
-        // Calculate carryover currencies (migrate old season balances into the new season)
+        // Calculate carryover currencies using item-based system
+        // NOTE: With item-based currency, season transitions work differently:
+        // - Get current item counts (tokens/essence items in inventory)
+        // - Apply carryover percentage by removing excess items
         uint32 old_season_id = GetCurrentSeasonId();
         if (old_season_id == 0)
             old_season_id = 1;
 
-        uint32 essence = 0;
-        uint32 tokens = 0;
-
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT currency_type, amount FROM dc_player_upgrade_tokens "
-            "WHERE player_guid = {} AND season = {} AND currency_type IN ('artifact_essence', 'upgrade_token')",
-            player_guid, old_season_id);
-
-        if (result)
-        {
-            do
-            {
-                Field* fields = result->Fetch();
-                std::string currency = fields[0].Get<std::string>();
-                uint32 amount = fields[1].Get<uint32>();
-
-                if (currency == "artifact_essence")
-                    essence = amount;
-                else if (currency == "upgrade_token")
-                    tokens = amount;
-            } while (result->NextRow());
-        }
+        // Get current currency from items (via UpgradeManager)
+        auto mgr = GetUpgradeManager();
+        uint32 essence = mgr ? mgr->GetCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, old_season_id) : 0;
+        uint32 tokens = mgr ? mgr->GetCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, old_season_id) : 0;
 
         uint32 essence_percent = config.reset_currencies ? config.essence_carryover_percent : 100;
         uint32 token_percent = config.reset_currencies ? config.token_carryover_percent : 100;
         uint32 essence_carryover = (essence * essence_percent) / 100;
         uint32 tokens_carryover = (tokens * token_percent) / 100;
 
-        // Move balances into the new season (and clear old season balances so they can't leak)
-        if (old_season_id != new_season_id)
+        // Remove excess currency items (carryover penalty)
+        // This requires the player to be online - handled by SeasonalSystem hooks
+        if (config.reset_currencies && mgr)
         {
-            CharacterDatabase.Execute(
-                "UPDATE dc_player_upgrade_tokens SET amount = 0 "
-                "WHERE player_guid = {} AND season = {} AND currency_type IN ('artifact_essence', 'upgrade_token')",
-                player_guid, old_season_id);
+            uint32 essence_to_remove = essence - essence_carryover;
+            uint32 tokens_to_remove = tokens - tokens_carryover;
+
+            if (essence_to_remove > 0)
+                mgr->SpendCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_to_remove, new_season_id);
+            if (tokens_to_remove > 0)
+                mgr->SpendCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, tokens_to_remove, new_season_id);
+
+            LOG_INFO("scripts.dc", "ItemUpgrade: Season reset for player {} - carried over {} tokens (was {}), {} essence (was {})",
+                player_guid, tokens_carryover, tokens, essence_carryover, essence);
         }
-
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-            "VALUES ({}, 'artifact_essence', {}, {}) "
-            "ON DUPLICATE KEY UPDATE amount = {}",
-            player_guid, essence_carryover, new_season_id, essence_carryover);
-
-        CharacterDatabase.Execute(
-            "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-            "VALUES ({}, 'upgrade_token', {}, {}) "
-            "ON DUPLICATE KEY UPDATE amount = {}",
-            player_guid, tokens_carryover, new_season_id, tokens_carryover);
 
         // Reset weekly spending counters
         CharacterDatabase.Execute(

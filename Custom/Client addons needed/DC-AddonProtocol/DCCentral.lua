@@ -68,7 +68,17 @@ local function InstallDCCentral(DC)
     end
 
     function DC:GetServerCurrencyBalance()
-        return self.ServerCurrencyBalance
+        -- AzerothCore Standard: Use GetItemCount directly (inventory items ARE the currency)
+        local tokens = GetItemCount(self.TOKEN_ITEM_ID) or 0
+        local emblems = GetItemCount(self.ESSENCE_ITEM_ID) or 0
+        return {
+            tokens = tokens,
+            emblems = emblems,
+            byItemId = {
+                [self.TOKEN_ITEM_ID] = tokens,
+                [self.ESSENCE_ITEM_ID] = emblems
+            }
+        }
     end
 
     function DC:GetTokenInfo(itemID)
@@ -98,17 +108,14 @@ local function InstallDCCentral(DC)
     end
 
     function DC:GetPlayerTokenCount(itemID)
+        -- AzerothCore Standard: Use GetItemCount directly (inventory items ARE the currency)
         if itemID then
-            local bal = self.ServerCurrencyBalance
-            if bal and bal.byItemId and bal.byItemId[itemID] ~= nil then
-                return bal.byItemId[itemID] or 0
-            end
             return GetItemCount(itemID) or 0
         end
 
         local total = 0
         for id in pairs(self.TokenInfo) do
-            total = total + (self:GetPlayerTokenCount(id) or 0)
+            total = total + (GetItemCount(id) or 0)
         end
         return total
     end

@@ -3798,13 +3798,20 @@ function DarkChaos_ItemUpgrade_UpdatePlayerCurrencies()
 	local frame = DarkChaos_ItemUpgradeFrame;
 	if not frame then return end
 	
-	-- Update internal currency values
-	-- Use default IDs if not set
-	local tokenID = DC.TOKEN_ITEM_ID or 49426; -- Frost Emblem as default placeholder
-	local essenceID = DC.ESSENCE_ITEM_ID or 43102; -- Dream Shard as default placeholder
+	-- Use server-backed currency from DCAddonProtocol (single source of truth)
+	-- This is updated via SMSG_CURRENCY_UPDATE messages from server
+	local central = rawget(_G, "DCAddonProtocol")
+	if central and type(central.GetServerCurrencyBalance) == "function" then
+		local balance = central:GetServerCurrencyBalance()
+		if balance then
+			DC.playerTokens = balance.tokens or 0
+			DC.playerEssence = balance.emblems or 0
+		end
+	end
 	
-	DC.playerTokens = GetItemCount(tokenID) or 0;
-	DC.playerEssence = GetItemCount(essenceID) or 0;
+	-- Fallback: ensure values exist even if central not available yet
+	DC.playerTokens = DC.playerTokens or 0
+	DC.playerEssence = DC.playerEssence or 0
 	
 	-- PlayerCurrencies is deprecated - keep it hidden, CostFrame handles display now
 	if frame.PlayerCurrencies then

@@ -764,12 +764,14 @@ function DC.RegisterDCProtocolHandlers()
 		if not data then return; end
 		
 		-- Check for JSON format - DCAddonProtocol may pass decoded table or raw string
-		local tokens, essence
+		local tokens, essence, tokenId, essenceId
 		
 		if type(data) == "table" then
 			-- Already decoded by DCAddonProtocol
 			tokens = data.tokens
 			essence = data.essence
+			tokenId = data.tokenId or data.tokenID
+			enessenceId = data.essenceId or data.essenceID
 		elseif type(data) == "string" and data ~= "" then
 			local isJSON = string.sub(data, 1, 1) == "{"
 			if isJSON and DC.useDCProtocolJSON then
@@ -777,6 +779,8 @@ function DC.RegisterDCProtocolHandlers()
 				if parsed then
 					tokens = parsed.tokens
 					essence = parsed.essence
+					tokenId = parsed.tokenId or parsed.tokenID
+					enessenceId = parsed.essenceId or parsed.essenceID
 				end
 			else
 				-- Parse legacy format: tokens|essence
@@ -787,9 +791,27 @@ function DC.RegisterDCProtocolHandlers()
 		if tokens and essence then
 			DC.playerTokens = tonumber(tokens) or 0;
 			DC.playerEssence = tonumber(essence) or 0;
+			if tokenId then
+				DC.TOKEN_ITEM_ID = tonumber(tokenId) or DC.TOKEN_ITEM_ID;
+			end
+			if essenceId then
+				DC.ESSENCE_ITEM_ID = tonumber(essenceId) or DC.ESSENCE_ITEM_ID;
+			end
 			
 			DC.Debug(string.format("Currency updated: %d tokens, %d essence", 
 				DC.playerTokens, DC.playerEssence));
+			
+			-- Bridge: expose server currency into DCAddonProtocol's shared balance
+			local central = rawget(_G, "DCAddonProtocol")
+			if central and type(central.SetServerCurrencyBalance) == "function" then
+				if tokenId then
+					central.TOKEN_ITEM_ID = tonumber(tokenId) or central.TOKEN_ITEM_ID
+				end
+				if essenceId then
+					central.ESSENCE_ITEM_ID = tonumber(essenceId) or central.ESSENCE_ITEM_ID
+				end
+				central:SetServerCurrencyBalance(DC.playerTokens, DC.playerEssence)
+			end
 			
 			-- Update UI currency display
 			if DC.UpdateCurrencyDisplay then

@@ -1,14 +1,15 @@
 /*
- * DarkChaos Item Upgrade System - Phase 5: Item Transmutation Implementation
+ * DarkChaos Item Upgrade System - Currency Exchange Implementation
  *
- * Implementation of the transmutation system for tier conversion,
- * currency exchange, and item synthesis.
+ * Implementation of currency exchange between Upgrade Tokens and Artifact Essence.
+ * Synthesis system removed (Jan 2026).
  *
  * Author: DarkChaos Development Team
  * Date: November 5, 2025
+ * Updated: January 2026 - Renamed from Transmutation, removed synthesis
  */
 
-#include "ItemUpgradeTransmutation.h"
+#include "ItemUpgradeExchange.h"
 #include "ItemUpgradeManager.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "../CrossSystem/CrossSystemUtilities.h"

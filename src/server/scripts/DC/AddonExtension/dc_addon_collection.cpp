@@ -25,6 +25,7 @@
 #include "../../ScriptPCH.h"
 #include "dc_addon_namespace.h"
 #include "dc_addon_collection.h"
+#include "../CrossSystem/CrossSystemUtilities.h"
 
 void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include "Config.h"
@@ -38,7 +39,7 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include "ScriptMgr.h"
 #include "DBCStores.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
-#include "DC/ItemUpgrades/ItemUpgradeSeasonResolver.h"
+#include "DC/CrossSystem/SeasonResolver.h"
 #include <string>
 #include <sstream>
 #include <unordered_set>
@@ -2226,6 +2227,10 @@ namespace DCCollection
             msg.Send(player);
             return;
         }
+
+        // Sync inventory ONCE after all currency operations (using centralized utility)
+        DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
+            playerGuid, season, player, DarkChaos::ItemUpgrade::CURRENCY_UPGRADE_TOKEN, 0, true);
 
         // Process purchase - use transaction for granting/recording
         auto trans = CharacterDatabase.BeginTransaction();

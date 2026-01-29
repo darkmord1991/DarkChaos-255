@@ -10,7 +10,8 @@
 
 #include "ItemUpgradeManager.h"
 #include "ItemUpgradeMechanics.h"
-#include "ItemUpgradeAdvanced.h"
+#include "DC/CrossSystem/SeasonResolver.h"
+#include "DC/CrossSystem/CrossSystemUtilities.h"
 #include "Player.h"
 #include "Item.h"
 #include "DatabaseEnv.h"
@@ -61,12 +62,17 @@ namespace DarkChaos
             return sConfigMgr->GetOption<uint32>("ItemUpgrade.Currency.EssenceId", 300312);
         }
 
-        // Unified currency access - returns physical item counts from player inventory
-        // This is the canonical source that matches what client addons (InfoBar, etc.) display
+        // Unified currency access - returns DB-backed balances (single source of truth)
+        // Fallbacks to item counts only if the UpgradeManager is unavailable.
         uint32 GetPlayerTokens(Player* player)
         {
             if (!player)
                 return 0;
+            if (UpgradeManager* mgr = GetUpgradeManager())
+            {
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+                return mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, season);
+            }
             return player->GetItemCount(GetUpgradeTokenItemId());
         }
 
@@ -74,6 +80,11 @@ namespace DarkChaos
         {
             if (!player)
                 return 0;
+            if (UpgradeManager* mgr = GetUpgradeManager())
+            {
+                uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
+                return mgr->GetCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, season);
+            }
             return player->GetItemCount(GetArtifactEssenceItemId());
         }
 
@@ -321,12 +332,22 @@ namespace DarkChaos
                     {
                         if (!RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state->season))
                             return false;
+                        
+                        Player* player = ObjectAccessor::FindPlayer(ObjectGuid(HighGuid::Player, player_guid));
+                        DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
+                            player_guid, state->season, player, CURRENCY_ARTIFACT_ESSENCE, 0, false);
+                        
                         state->essence_invested += essence_cost;
                     }
                     else
                     {
                         if (!RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, state->season))
                             return false;
+                        
+                        Player* player = ObjectAccessor::FindPlayer(ObjectGuid(HighGuid::Player, player_guid));
+                        DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
+                            player_guid, state->season, player, CURRENCY_UPGRADE_TOKEN, 0, false);
+                        
                         state->tokens_invested += token_cost;
                     }
 
@@ -430,100 +451,76 @@ namespace DarkChaos
                 }
             }
 
-            bool AddCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 season) override
+            bool AddCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 /*season*/) override
             {
                 if (amount == 0)
                     return true;
 
                 if (player_guid == 0)
+                    return false;
+
+                // AzerothCore Standard: Use inventory items directly as currency
+                Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid));
+                if (!player)
+                    return false;
+
+                uint32 itemId = (currency == CURRENCY_UPGRADE_TOKEN) ? GetUpgradeTokenItemId() : GetArtifactEssenceItemId();
+
+                // Check inventory space
+                ItemPosCountVec dest;
+                InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, amount);
+                if (msg != EQUIP_ERR_OK)
                 {
-                    LOG_ERROR("scripts.dc", "ItemUpgrade: Invalid player_guid {} in AddCurrency", player_guid);
+                    player->SendEquipError(msg, nullptr, nullptr, itemId);
                     return false;
                 }
 
-                // Build currency type string
-                std::string currency_str = (currency == CURRENCY_UPGRADE_TOKEN) ? "upgrade_token" : "artifact_essence";
-
-                try
-                {
-                    // Insert or update using parameterized query
-                    CharacterDatabase.Execute(
-                        "INSERT INTO dc_player_upgrade_tokens (player_guid, currency_type, amount, season) "
-                        "VALUES ({}, '{}', {}, {}) "
-                        "ON DUPLICATE KEY UPDATE amount = amount + {}",
-                        player_guid, currency_str, amount, season, amount);
-
-                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Added {} {} to player {}", amount, currency_str, player_guid);
-                    stats.db_writes++;
-                    return true;
-                }
-                catch (const std::exception& e)
-                {
-                    LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to add currency for player {}: {}", player_guid, e.what());
-                    return false;
-                }
-            }
-
-            bool RemoveCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 season) override
-            {
-                if (player_guid == 0)
-                {
-                    LOG_ERROR("scripts.dc", "ItemUpgrade: Invalid player_guid {} in RemoveCurrency", player_guid);
-                    return false;
-                }
-
-                if (amount == 0)
-                    return true;
-
-                std::string currency_str = (currency == CURRENCY_UPGRADE_TOKEN) ? "upgrade_token" : "artifact_essence";
-                std::string spending_column = (currency == CURRENCY_UPGRADE_TOKEN) ? "tokens_spent" : "essence_spent";
-
-                // ATOMIC: Use UPDATE with WHERE clause to prevent race conditions
-                CharacterDatabase.DirectExecute(fmt::format(
-                    "UPDATE dc_player_upgrade_tokens SET amount = amount - {} "
-                    "WHERE player_guid = {} AND currency_type = '{}' AND season = {} AND amount >= {}",
-                    amount, player_guid, currency_str, season, amount));
-
-                // Record weekly spending (week_start is DATE type, use Monday as week start)
-                CharacterDatabase.DirectExecute(fmt::format(
-                    "INSERT INTO dc_weekly_spending (player_guid, week_start, {0}) "
-                    "VALUES ({1}, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), {2}) "
-                    "ON DUPLICATE KEY UPDATE {0} = {0} + {2}",
-                    spending_column, player_guid, amount));
-
-                stats.db_writes++;
-
-                // Check balance after update (best effort verification)
+                player->AddItem(itemId, amount);
+                LOG_DEBUG("scripts.dc", "ItemUpgrade: Added {} items ({}) to player {}", amount, itemId, player_guid);
                 return true;
             }
 
-            uint32 GetCurrency(uint32 player_guid, CurrencyType currency, uint32 season) override
+            bool RemoveCurrency(uint32 player_guid, CurrencyType currency, uint32 amount, uint32 /*season*/) override
+            {
+                if (player_guid == 0 || amount == 0)
+                    return amount == 0;
+
+                // AzerothCore Standard: Use inventory items directly as currency
+                Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid));
+                if (!player)
+                    return false;
+
+                uint32 itemId = (currency == CURRENCY_UPGRADE_TOKEN) ? GetUpgradeTokenItemId() : GetArtifactEssenceItemId();
+
+                // Check if player has enough
+                if (player->GetItemCount(itemId) < amount)
+                    return false;
+
+                player->DestroyItemCount(itemId, amount, true);
+                LOG_DEBUG("scripts.dc", "ItemUpgrade: Removed {} items ({}) from player {}", amount, itemId, player_guid);
+                return true;
+            }
+
+            bool SyncInventoryToDB(uint32 /*player_guid*/, uint32 /*season*/, Player* /*player_ptr*/, 
+                                  CurrencyType /*specific_currency*/, uint32 /*db_amount*/, bool /*sync_both*/) override
+            {
+                // AzerothCore Standard: No DB sync needed - inventory items ARE the currency
+                // This is now a no-op since we removed dc_player_upgrade_tokens dependency
+                return true;
+            }
+
+            uint32 GetCurrency(uint32 player_guid, CurrencyType currency, uint32 /*season*/) override
             {
                 if (player_guid == 0)
-                {
-                    LOG_ERROR("scripts.dc", "ItemUpgrade: Invalid player_guid {} in GetCurrency", player_guid);
                     return 0;
-                }
 
-                std::string currency_str = (currency == CURRENCY_UPGRADE_TOKEN) ? "upgrade_token" : "artifact_essence";
-
-                try
-                {
-                    QueryResult result = CharacterDatabase.Query(
-                        "SELECT amount FROM dc_player_upgrade_tokens WHERE player_guid = {} "
-                        "AND currency_type = '{}' AND season = {}",
-                        player_guid, currency_str, season);
-
-                    if (!result)
-                        return 0;
-
-                    return result->Fetch()[0].Get<uint32>();
-                }
-                catch (const std::exception& e)
-                {
-                    LOG_ERROR("scripts.dc", "ItemUpgrade: Failed to get currency for player {}: {}", player_guid, e.what());
+                // AzerothCore Standard: Use inventory items directly as currency
+                Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid));
+                if (!player)
                     return 0;
-                }
+
+                uint32 itemId = (currency == CURRENCY_UPGRADE_TOKEN) ? GetUpgradeTokenItemId() : GetArtifactEssenceItemId();
+                return player->GetItemCount(itemId);
             }
 
             // ====================================================================
@@ -940,11 +937,7 @@ namespace DarkChaos
                     LOG_WARN("scripts.dc", "ItemUpgrade: [PERFORMANCE] Missing index 'idx_tier' on table '{}'. Recommend: ALTER TABLE {} ADD INDEX idx_tier (tier_id);", ITEM_UPGRADES_TABLE, ITEM_UPGRADES_TABLE);
                 }
 
-                indexCheck = CharacterDatabase.Query("SHOW INDEX FROM dc_player_upgrade_tokens WHERE Key_name = 'idx_player_season'");
-                if (!indexCheck)
-                {
-                    LOG_WARN("scripts.dc", "ItemUpgrade: [PERFORMANCE] Missing index 'idx_player_season' on table 'dc_player_upgrade_tokens'. Recommend: ALTER TABLE dc_player_upgrade_tokens ADD INDEX idx_player_season (player_guid, season);");
-                }
+                // NOTE: dc_player_upgrade_tokens table deprecated - using item-based currency
 
                 tier_definitions.clear();
                 upgrade_costs.clear();
