@@ -273,8 +273,14 @@ These commands require GM or Administrator access levels.
 | `progress` | `<player> [id]` | Check a player's progress on a quest. |
 | `reset` | `<player> [id]` | Reset quest data for a player. |
 | `debug` | | Toggle or print debug info for dungeon quest system. |
+| `audit` | | Log missing quest mappings and quest_template gaps. |
 | `achievement` | `<player> <id>` | Award a custom achievement. |
 | `title` | `<player> <id>` | Award a custom title. |
+
+### System: Dungeon Quests (Reload)
+*Command:* `.reload dc_dungeon_quests`
+
+Reloads the Universal Quest Master cache (quest mappings, display IDs, daily/weekly lists).
 
 ### System: Item Upgrades (`.upgrade`)
 *Command:* `.upgrade`

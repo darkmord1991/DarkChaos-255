@@ -39,6 +39,8 @@
 #include "WorldDatabase.h"
 #include "CharacterDatabase.h"
 #include "Creature.h"
+#include "DungeonQuestConstants.h"
+#include "DungeonQuestHelpers.h"
 #include <string>
 #include <sstream>
 
@@ -60,17 +62,10 @@ namespace DC_DungeonQuests
     };
 
     // Quest type ranges
-    static constexpr uint32 DAILY_QUEST_MIN = 700101;
-    static constexpr uint32 DAILY_QUEST_MAX = 700104;
-    static constexpr uint32 WEEKLY_QUEST_MIN = 700201;
-    static constexpr uint32 WEEKLY_QUEST_MAX = 700204;
-    static constexpr uint32 DUNGEON_QUEST_MIN = 700701;
-    static constexpr uint32 DUNGEON_QUEST_MAX = 700999;
-
     inline void DebugLog(std::string const& msg)
     {
         if (DEBUG_MODE)
-            LOG_INFO("dc.dungeonquests", msg);
+            LOG_INFO("scripts.dc", msg);
     }
 
     inline void SendCommandError(ChatHandler* handler, const std::string& msg)
@@ -87,11 +82,11 @@ namespace DC_DungeonQuests
 
     static std::string GetQuestType(uint32 questId)
     {
-        if (questId >= DAILY_QUEST_MIN && questId <= DAILY_QUEST_MAX)
+        if (questId >= DungeonQuest::QUEST_DAILY_MIN && questId <= DungeonQuest::QUEST_DAILY_MAX)
             return "Daily";
-        else if (questId >= WEEKLY_QUEST_MIN && questId <= WEEKLY_QUEST_MAX)
+        else if (questId >= DungeonQuest::QUEST_WEEKLY_MIN && questId <= DungeonQuest::QUEST_WEEKLY_MAX)
             return "Weekly";
-        else if (questId >= DUNGEON_QUEST_MIN && questId <= DUNGEON_QUEST_MAX)
+        else if (questId >= DungeonQuest::QUEST_DUNGEON_MIN && questId <= DungeonQuest::QUEST_DUNGEON_MAX)
             return "Dungeon";
         return "Unknown";
     }
@@ -110,6 +105,7 @@ namespace DC_DungeonQuests
         handler->PSendSysMessage(".dcquests debug [on|off]            - Toggle debug logging");
         handler->PSendSysMessage(".dcquests achievement <player> <ach_id> - Award achievement");
         handler->PSendSysMessage(".dcquests title <player> <title_id> - Award title");
+        handler->PSendSysMessage(".dcquests audit                     - Log missing mappings and quest_template gaps");
         return true;
     }
 
@@ -123,7 +119,7 @@ namespace DC_DungeonQuests
         // Query DC quest templates directly (IDs in our DC ranges)
         QueryResult result = WorldDatabase.Query(
             "SELECT `Id`, `Title` FROM `quest_template` WHERE `Id` BETWEEN {} AND {}",
-            700101, 700999);
+            DungeonQuest::QUEST_SYSTEM_MIN, DungeonQuest::QUEST_SYSTEM_MAX);
 
         if (!result)
         {
@@ -142,9 +138,9 @@ namespace DC_DungeonQuests
             std::string questName = fields[1].Get<std::string>();
 
             if (type == "all" ||
-                (type == "daily" && questId >= DAILY_QUEST_MIN && questId <= DAILY_QUEST_MAX) ||
-                (type == "weekly" && questId >= WEEKLY_QUEST_MIN && questId <= WEEKLY_QUEST_MAX) ||
-                (type == "dungeon" && questId >= DUNGEON_QUEST_MIN && questId <= DUNGEON_QUEST_MAX))
+                (type == "daily" && questId >= DungeonQuest::QUEST_DAILY_MIN && questId <= DungeonQuest::QUEST_DAILY_MAX) ||
+                (type == "weekly" && questId >= DungeonQuest::QUEST_WEEKLY_MIN && questId <= DungeonQuest::QUEST_WEEKLY_MAX) ||
+                (type == "dungeon" && questId >= DungeonQuest::QUEST_DUNGEON_MIN && questId <= DungeonQuest::QUEST_DUNGEON_MAX))
             {
                 std::string questType = GetQuestType(questId);
                 handler->PSendSysMessage("[%u] %s (%s)", questId, questName.c_str(), questType.c_str());
@@ -563,6 +559,24 @@ namespace DC_DungeonQuests
         DebugLog("Title awarded - Player: " + std::string(playerName) + ", Title: " + std::to_string(titleId));
         return true;
     }
+
+    static bool HandleDCQuestsAudit(ChatHandler* handler, char const* /*args*/)
+    {
+        if (!handler)
+            return false;
+
+        handler->SendSysMessage("DC Dungeon Quests: running mapping audit (check server logs)...");
+
+        QuestMappingAuditResult audit = DungeonQuestHelpers::AuditQuestMappings(true);
+
+        LOG_INFO("scripts.dc", "DCQuests Audit: {} mapped quests missing in quest_template", audit.missingQuestTemplate);
+        LOG_INFO("scripts.dc", "DCQuests Audit: {} enabled dungeons without quest mappings", audit.missingDungeons);
+        LOG_INFO("scripts.dc", "DCQuests Audit: {} duplicate dungeon quest mappings", audit.duplicateMappings);
+
+        handler->PSendSysMessage("Audit complete. Missing quest_template entries: %u. Dungeons without mappings: %u. Duplicate mappings: %u.",
+                                 audit.missingQuestTemplate, audit.missingDungeons, audit.duplicateMappings);
+        return true;
+    }
 }
 
 class dc_dungeonquests_commandscript : public CommandScript
@@ -583,7 +597,8 @@ public:
             { "reset",        DC_DungeonQuests::HandleDCQuestsReset,       SEC_ADMINISTRATOR, Console::No },
             { "debug",        DC_DungeonQuests::HandleDCQuestsDebug,       SEC_ADMINISTRATOR, Console::No },
             { "achievement",  DC_DungeonQuests::HandleDCQuestsAchievement, SEC_ADMINISTRATOR, Console::No },
-            { "title",        DC_DungeonQuests::HandleDCQuestsTitle,       SEC_ADMINISTRATOR, Console::No }
+            { "title",        DC_DungeonQuests::HandleDCQuestsTitle,       SEC_ADMINISTRATOR, Console::No },
+            { "audit",        DC_DungeonQuests::HandleDCQuestsAudit,       SEC_ADMINISTRATOR, Console::No }
         };
 
         static ChatCommandTable commandTable =

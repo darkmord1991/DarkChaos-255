@@ -42,7 +42,7 @@ constexpr uint32 QUEST_SYSTEM_MAX   = 708999;
 // Dungeon Quest Master NPCs (53 NPCs, one per dungeon)
 constexpr uint32 NPC_QUEST_MASTER_MIN     = 700000;
 constexpr uint32 NPC_QUEST_MASTER_MAX     = 700052;
-constexpr uint32 NPC_DEFAULT_QUEST_MASTER = 700000;  // Ragefire Chasm default
+constexpr uint32 NPC_DEFAULT_QUEST_MASTER = 700100;  // Universal Quest Master (fallback)
 constexpr uint32 NPC_UNIVERSAL_QUEST_MASTER = 700100; // v4.1: Universal dynamic quest master
 
 // Phase visibility for quest masters

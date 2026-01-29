@@ -119,9 +119,7 @@ void AddSC_dc_phased_duels();                 // PhasedDuels\dc_phased_duels.cpp
 
 // --- Dungeon Quest System (Loaded Last) ---
 void AddSC_DungeonQuestSystem();              // DungeonQuests\\DungeonQuestSystem.cpp
-void AddSC_DungeonQuestPhasing();             // DungeonQuests\\DungeonQuestPhasing.cpp
 void AddSC_DungeonQuestMasterFollower();      // DungeonQuests\\DungeonQuestMasterFollower.cpp
-void AddSC_npc_dungeon_quest_master();        // DungeonQuests\\npc_dungeon_quest_master.cpp
 void AddSC_npc_dungeon_quest_daily_weekly();  // DungeonQuests\\npc_dungeon_quest_daily_weekly.cpp
 void AddSC_npc_universal_quest_master();      // DungeonQuests\\npc_universal_quest_master.cpp
 
@@ -694,9 +692,7 @@ void AddDCScripts()
     LOG_INFO("scripts.dc", "╚══════════════════════════════════════════════════════════");
     try {
         AddSC_DungeonQuestSystem();
-        AddSC_DungeonQuestPhasing();
         AddSC_DungeonQuestMasterFollower();
-        AddSC_npc_dungeon_quest_master();
         AddSC_npc_dungeon_quest_daily_weekly();
         AddSC_npc_universal_quest_master();
         LOG_INFO("scripts.dc", "║   ✓ Dungeon quest mechanics and NPCs loaded");

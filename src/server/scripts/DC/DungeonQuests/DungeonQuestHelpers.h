@@ -339,6 +339,88 @@ inline uint32 GetDifficultyCompletionCount(Player* player, uint32 dungeonId, Que
 // UTILITY FUNCTIONS
 // =====================================================================
 
+struct QuestMappingAuditResult
+{
+    uint32 missingQuestTemplate = 0;
+    uint32 missingDungeons = 0;
+    uint32 duplicateMappings = 0;
+};
+
+/**
+ * Audit dungeon quest mappings and log issues to scripts.dc
+ * - Missing quest_template entries referenced by mapping tables
+ * - Enabled dungeons with no quest mappings
+ * - Duplicate mappings in dc_dungeon_quest_mapping
+ */
+inline QuestMappingAuditResult AuditQuestMappings(bool logDetails = true)
+{
+    QuestMappingAuditResult result;
+
+    // Missing quest_template entries referenced by mapping tables
+    QueryResult missing = WorldDatabase.Query(
+        "SELECT m.quest_id FROM ("
+        "SELECT quest_id FROM dc_dungeon_quest_mapping "
+        "UNION "
+        "SELECT quest_id FROM dc_quest_difficulty_mapping"
+        ") m "
+        "LEFT JOIN quest_template qt ON qt.ID = m.quest_id "
+        "WHERE qt.ID IS NULL"
+    );
+
+    if (missing)
+    {
+        do
+        {
+            uint32 questId = (*missing)[0].Get<uint32>();
+            ++result.missingQuestTemplate;
+            if (logDetails)
+                LOG_ERROR("scripts.dc", "DungeonQuest Audit: Missing quest_template entry for mapped quest_id={}", questId);
+        } while (missing->NextRow());
+    }
+
+    // Enabled dungeons with no quest mappings
+    QueryResult missingDungeons = WorldDatabase.Query(
+        "SELECT m.map_id FROM dc_dungeon_npc_mapping m "
+        "LEFT JOIN dc_dungeon_quest_mapping q ON q.dungeon_id = m.map_id "
+        "WHERE m.enabled = 1 AND q.dungeon_id IS NULL"
+    );
+
+    if (missingDungeons)
+    {
+        do
+        {
+            uint32 mapId = (*missingDungeons)[0].Get<uint32>();
+            ++result.missingDungeons;
+            if (logDetails)
+                LOG_WARN("scripts.dc", "DungeonQuest Audit: Dungeon map_id={} has no quest mappings", mapId);
+        } while (missingDungeons->NextRow());
+    }
+
+    // Duplicate mappings
+    QueryResult dupes = WorldDatabase.Query(
+        "SELECT dungeon_id, quest_id, COUNT(*) AS c "
+        "FROM dc_dungeon_quest_mapping "
+        "GROUP BY dungeon_id, quest_id "
+        "HAVING c > 1"
+    );
+
+    if (dupes)
+    {
+        do
+        {
+            Field* fields = dupes->Fetch();
+            uint32 dungeonId = fields[0].Get<uint32>();
+            uint32 questId = fields[1].Get<uint32>();
+            uint32 count = fields[2].Get<uint32>();
+            ++result.duplicateMappings;
+            if (logDetails)
+                LOG_WARN("scripts.dc", "DungeonQuest Audit: Duplicate mapping dungeon_id={} quest_id={} (x{})", dungeonId, questId, count);
+        } while (dupes->NextRow());
+    }
+
+    return result;
+}
+
 /**
  * Format quest statistics for display in gossip menu
  * OPTIMIZED: Uses cached stats (1 query per 30 seconds instead of 7 per gossip)

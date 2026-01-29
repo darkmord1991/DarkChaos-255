@@ -153,6 +153,15 @@ private:
         }
         LOG_INFO("scripts.dc", "UniversalQuestMaster: Loaded {} weekly quests", _weeklyQuests.size());
 
+        // Audit mapping consistency (logs to scripts.dc)
+        QuestMappingAuditResult audit = DungeonQuestHelpers::AuditQuestMappings(true);
+        if (audit.missingQuestTemplate > 0)
+            LOG_ERROR("scripts.dc", "UniversalQuestMaster: {} mapped quest entries are missing in quest_template", audit.missingQuestTemplate);
+        if (audit.missingDungeons > 0)
+            LOG_WARN("scripts.dc", "UniversalQuestMaster: {} enabled dungeons have no quest mappings", audit.missingDungeons);
+        if (audit.duplicateMappings > 0)
+            LOG_WARN("scripts.dc", "UniversalQuestMaster: {} duplicate dungeon quest mappings detected", audit.duplicateMappings);
+
         _cacheLoaded = true;
         LOG_INFO("scripts.dc", "UniversalQuestMaster: Cache loading complete");
     }
@@ -235,12 +244,16 @@ public:
 
         void InitializeDisplay()
         {
+            if (!UniversalQuestMasterCache::IsCacheLoaded())
+                UniversalQuestMasterCache::LoadCache();
+
             // Use creature's map, not player's - this works immediately on spawn
             uint32 mapId = me->GetMapId();
             uint32 displayId = UniversalQuestMasterCache::GetDisplayIdForDungeon(mapId);
             
             if (me->GetDisplayId() != displayId)
             {
+                me->SetNativeDisplayId(displayId);
                 me->SetDisplayId(displayId);
                 LOG_DEBUG("scripts.dc", "UniversalQuestMaster: Set DisplayId to {} for map {} on spawn",
                           displayId, mapId);
@@ -249,8 +262,11 @@ public:
 
         void MoveInLineOfSight(Unit* who) override
         {
-            // Follow behavior: If player is close and I'm not following anyone
-            if (who->GetTypeId() == TYPEID_PLAYER && me->IsWithinDistInMap(who, 20.0f))
+            if (!who || who->GetTypeId() != TYPEID_PLAYER)
+                return;
+
+            // Follow behavior: only follow the last player who interacted
+            if (_followTargetGuid && who->GetGUID() == _followTargetGuid && me->IsWithinDistInMap(who, 20.0f))
             {
                 // Only follow if we aren't already following something
                 if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
@@ -260,6 +276,14 @@ public:
             }
             ScriptedAI::MoveInLineOfSight(who);
         }
+
+        void SetFollowTarget(ObjectGuid guid)
+        {
+            _followTargetGuid = guid;
+        }
+
+    private:
+        ObjectGuid _followTargetGuid;
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -269,6 +293,15 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
+        if (!UniversalQuestMasterCache::IsCacheLoaded())
+            UniversalQuestMasterCache::LoadCache();
+
+        if (auto* ai = creature->AI())
+        {
+            if (auto* uqm = dynamic_cast<npc_universal_quest_masterAI*>(ai))
+                uqm->SetFollowTarget(player->GetGUID());
+        }
+
         ClearGossipMenuFor(player);
 
         uint32 currentMapId = player->GetMapId();
@@ -441,7 +474,6 @@ public:
         return false;
     }
 
-private:
 private:
     void ShowDungeonQuests(Player* player, Creature* creature, uint32 page = 0)
     {

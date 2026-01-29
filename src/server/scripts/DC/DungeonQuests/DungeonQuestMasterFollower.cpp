@@ -29,6 +29,7 @@
 #include "DatabaseEnv.h"
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
+#include <unordered_map>
 
 using namespace Acore::ChatCommands;
 using namespace DungeonQuest;
@@ -37,25 +38,44 @@ using namespace DungeonQuestHelpers;
 // Storage for active quest master followers
 // Key: Player GUID (leader), Value: Creature GUID (follower)
 static std::unordered_map<ObjectGuid, ObjectGuid> sQuestMasterFollowers;
+static std::unordered_map<uint32, uint32> sDungeonDisplayIdCache;
 
 // Helper: Get the appropriate quest master entry for a map
-// v4.0: Now database-driven via dc_dungeon_npc_mapping table
+// Always returns Universal Quest Master (700100)
 static uint32 GetQuestMasterEntryForMap(uint32 mapId)
 {
+    // Check if this dungeon has quest support (for logging purposes)
     QueryResult result = WorldDatabase.Query(
-        "SELECT quest_master_entry FROM dc_dungeon_npc_mapping WHERE map_id = {} AND enabled = 1",
+        "SELECT 1 FROM dc_dungeon_npc_mapping WHERE map_id = {} AND enabled = 1 LIMIT 1",
         mapId
     );
 
-    if (result)
+    if (!result)
     {
-        // v4.1: Always use the Universal Quest Master (700100)
-        // It will dynamically adapt its display ID based on the map.
-        return NPC_UNIVERSAL_QUEST_MASTER;
+        LOG_WARN("scripts.dc", "DungeonQuestMaster: No mapping found for map ID {}", mapId);
     }
+    
+    // Always return Universal Quest Master
+    return NPC_UNIVERSAL_QUEST_MASTER;
+}
 
-    LOG_WARN("scripts.dc", "DungeonQuestMaster: No quest master found for map ID {}, using default", mapId);
-    return NPC_DEFAULT_QUEST_MASTER;
+// Helper: Get display ID for a map (cached)
+static uint32 GetDisplayIdForMap(uint32 mapId)
+{
+    auto it = sDungeonDisplayIdCache.find(mapId);
+    if (it != sDungeonDisplayIdCache.end())
+        return it->second;
+
+    uint32 displayId = 16466; // Default display: Human Male Quest Giver
+    QueryResult displayResult = WorldDatabase.Query(
+        "SELECT display_id FROM dc_dungeon_npc_mapping WHERE map_id = {} AND display_id IS NOT NULL AND display_id > 0",
+        mapId
+    );
+    if (displayResult)
+        displayId = (*displayResult)[0].Get<uint32>();
+
+    sDungeonDisplayIdCache[mapId] = displayId;
+    return displayId;
 }
 
 // Helper: Spawn quest master follower for player
@@ -83,25 +103,20 @@ static Creature* SpawnQuestMasterFollower(Player* player)
     x += 2.0f * cos(angle);
     y += 2.0f * sin(angle);
 
-    // Spawn quest master follower for player
-    if (TempSummon* summon = player->SummonCreature(entry, x, y, z, o, TEMPSUMMON_MANUAL_DESPAWN))
+    // Spawn quest master follower for player (visible to all players in dungeon)
+    Position pos(x, y, z, o);
+    if (TempSummon* summon = player->GetMap()->SummonCreature(entry, pos, nullptr, 0, player))
     {
         // Configure follower behavior
         summon->SetReactState(REACT_PASSIVE); // Don't attack
         summon->ReplaceAllNpcFlags(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
 
         // Set display ID for this dungeon (AI constructor may not run for temp summons)
-        QueryResult displayResult = WorldDatabase.Query(
-            "SELECT display_id FROM dc_dungeon_npc_mapping WHERE map_id = {} AND display_id IS NOT NULL",
-            player->GetMapId()
-        );
-        if (displayResult)
-        {
-            uint32 displayId = (*displayResult)[0].Get<uint32>();
-            summon->SetDisplayId(displayId);
-            LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Set DisplayId to {} for map {}",
-                      displayId, player->GetMapId());
-        }
+        uint32 displayId = GetDisplayIdForMap(player->GetMapId());
+        summon->SetNativeDisplayId(displayId);
+        summon->SetDisplayId(displayId);
+        LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Set DisplayId to {} for map {}",
+                  displayId, player->GetMapId());
 
         // Debug logging
         LOG_DEBUG("scripts.dc", "DungeonQuestMaster: Spawned entry={} for player {} at ({:.2f},{:.2f},{:.2f})",

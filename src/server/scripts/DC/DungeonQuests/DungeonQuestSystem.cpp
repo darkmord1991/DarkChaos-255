@@ -26,6 +26,7 @@
 #include "DungeonQuestConstants.h"
 #include "DungeonQuestHelpers.h"
 #include "DC/CrossSystem/CrossSystemRewards.h"
+#include <unordered_set>
 
 using namespace DungeonQuest;
 
@@ -81,7 +82,7 @@ public:
         LOG_INFO("scripts.dc", "DungeonQuestDB: Token item ID = {}", _tokenItemId);
 
         // Load quest difficulty mappings (schema uses base_difficulty)
-        result = WorldDatabase.Query("SELECT quest_id, base_difficulty FROM dc_quest_difficulty_mapping");
+        result = WorldDatabase.Query("SELECT quest_id, base_difficulty, dungeon_id FROM dc_quest_difficulty_mapping");
         if (result)
         {
             do
@@ -89,6 +90,7 @@ public:
                 Field* fields = result->Fetch();
                 uint32 questId = fields[0].Get<uint32>();
                 uint8 baseDifficulty = fields[1].Get<uint8>();
+            uint32 dungeonId = fields[2].Get<uint32>();
 
                 QuestDifficulty mappedDifficulty = DIFFICULTY_NORMAL;
                 switch (baseDifficulty)
@@ -102,9 +104,39 @@ public:
                 }
 
                 _questDifficulties[questId] = mappedDifficulty;
+                if (dungeonId > 0)
+                    _questDungeonIds[questId] = dungeonId;
             } while (result->NextRow());
         }
         LOG_INFO("scripts.dc", "DungeonQuestDB: Loaded {} quest difficulty mappings", _questDifficulties.size());
+
+        // Validate quest_template entries referenced by difficulty mapping
+        std::unordered_set<uint32> templateQuestIds;
+        QueryResult qt = WorldDatabase.Query(
+            "SELECT ID FROM quest_template WHERE ID BETWEEN {} AND {}",
+            QUEST_SYSTEM_MIN, QUEST_SYSTEM_MAX
+        );
+        if (qt)
+        {
+            do
+            {
+                templateQuestIds.insert((*qt)[0].Get<uint32>());
+            } while (qt->NextRow());
+        }
+
+        uint32 missingTemplate = 0;
+        for (auto const& entry : _questDifficulties)
+        {
+            if (templateQuestIds.find(entry.first) == templateQuestIds.end())
+            {
+                ++missingTemplate;
+                LOG_ERROR("scripts.dc", "DungeonQuestDB: Missing quest_template entry for quest_id={} (difficulty mapping)", entry.first);
+            }
+        }
+        if (missingTemplate > 0)
+        {
+            LOG_ERROR("scripts.dc", "DungeonQuestDB: {} difficulty-mapped quests are missing in quest_template", missingTemplate);
+        }
 
         // Load difficulty configurations
         result = WorldDatabase.Query("SELECT difficulty_id, token_multiplier, gold_multiplier FROM dc_difficulty_config");

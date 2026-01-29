@@ -470,9 +470,26 @@ namespace DCWelcome
         response.Send(player);
     }
 
-    // NOTE: NPC info handling has been consolidated to DC-QoS addon
-    // Use DC-QoS's CMSG_GET_NPC_INFO (0x04) and SMSG_NPC_INFO (0x13) instead
-    // This handler has been removed to avoid code duplication
+    // =======================================================================
+    // Deprecated Handler - NPC Info (moved to QOS module)
+    // =======================================================================
+
+    void HandleGetNPCInfoDeprecated(Player* player, const DCAddon::ParsedMessage& /*msg*/)
+    {
+        if (!player || !player->GetSession())
+            return;
+
+        // Send error response directing clients to QOS module
+        // NOTE: NPC info handling has been consolidated to DC-QoS addon
+        // Use DC-QoS's CMSG_GET_NPC_INFO (0x04) and SMSG_NPC_INFO (0x13) instead
+        DCAddon::JsonMessage(MODULE, Opcode::SMSG_NPC_INFO)
+            .Set("deprecated", true)
+            .Set("error", "NPC info functionality moved to QOS module")
+            .Set("message", "Please update your addon to use QOS module opcode 0x04 (CMSG_GET_NPC_INFO) instead")
+            .Set("redirectModule", "QOS")
+            .Set("redirectOpcode", 0x04)
+            .Send(player);
+    }
 
     void RegisterHandlers()
     {
@@ -484,7 +501,7 @@ namespace DCWelcome
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_MARK_FEATURE_SEEN, HandleMarkFeatureSeen);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_WHATS_NEW, HandleGetWhatsNew);
         MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_PROGRESS, HandleGetProgress);
-        // NPC info handling moved to DC-QoS addon for consolidation
+        MessageRouter::Instance().RegisterHandler(MODULE, Opcode::CMSG_GET_NPC_INFO, HandleGetNPCInfoDeprecated);  // Deprecated - redirects to QOS
 
         MessageRouter::Instance().SetModuleEnabled(MODULE, true);
     }

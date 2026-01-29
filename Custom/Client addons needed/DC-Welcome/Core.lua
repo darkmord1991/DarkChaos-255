@@ -146,7 +146,7 @@ DCWelcome.Opcode = {
     CMSG_MARK_FEATURE_SEEN = 0x04,
     CMSG_GET_WHATS_NEW = 0x05,
     CMSG_GET_PROGRESS = 0x06,        -- NEW: Request progress data
-    CMSG_GET_NPC_INFO = 0x07,        -- NEW: Request NPC info (DB GUID)
+    -- CMSG_GET_NPC_INFO = 0x07,     -- REMOVED: Moved to DC-QOS (QOS opcode 0x04)
     
     -- Server -> Client
     SMSG_SHOW_WELCOME = 0x10,
@@ -156,7 +156,7 @@ DCWelcome.Opcode = {
     SMSG_WHATS_NEW = 0x14,
     SMSG_LEVEL_MILESTONE = 0x15,
     SMSG_PROGRESS_DATA = 0x16,       -- NEW: Progress data response
-    SMSG_NPC_INFO = 0x17,            -- NEW: NPC info response
+    -- SMSG_NPC_INFO = 0x17,         -- REMOVED: Moved to DC-QOS (QOS opcode 0x13)
 }
 
 -- =============================================================================

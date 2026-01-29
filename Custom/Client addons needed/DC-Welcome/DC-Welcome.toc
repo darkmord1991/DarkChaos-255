@@ -24,4 +24,4 @@ RestoreXP.lua
 Seasons.lua
 
 ## Tooltip helpers
-NPCTooltip.lua
+NPCTooltip.lua - REMOVED (now in DC-QOS)
