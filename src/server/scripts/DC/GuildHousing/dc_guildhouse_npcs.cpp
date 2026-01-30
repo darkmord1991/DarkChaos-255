@@ -233,9 +233,19 @@ public:
             }
 
             uint32 locationId = action - ACTION_BUY_LOCATION_BASE;
-            QueryResult locationResult = WorldDatabase.Query(
-                "SELECT `map`, `posX`, `posY`, `posZ`, `orientation`, `cost` FROM `dc_guild_house_locations` WHERE `id` = {}",
-                locationId);
+            QueryResult locationResult;
+            if (GuildHouseManager::HasLocationEnabledColumn() && !player->IsGameMaster())
+            {
+                locationResult = WorldDatabase.Query(
+                    "SELECT `map`, `posX`, `posY`, `posZ`, `orientation`, `cost` FROM `dc_guild_house_locations` WHERE `id` = {} AND `enabled` = 1",
+                    locationId);
+            }
+            else
+            {
+                locationResult = WorldDatabase.Query(
+                    "SELECT `map`, `posX`, `posY`, `posZ`, `orientation`, `cost` FROM `dc_guild_house_locations` WHERE `id` = {}",
+                    locationId);
+            }
 
             if (!locationResult)
             {
@@ -365,7 +375,7 @@ public:
         {
             uint32 locationId = action - ACTION_ADMIN_MOVE_LOCATION_BASE;
 
-            if (GuildHouseManager::MoveGuildHouse(player->GetGuildId(), locationId))
+            if (GuildHouseManager::MoveGuildHouse(player->GetGuildId(), locationId, true))
             {
                 ChatHandler(player->GetSession()).PSendSysMessage("GM: Guild House moved for free.");
             }
@@ -388,7 +398,11 @@ public:
             case ACTION_MOVE_MENU:
                 {
                     ClearGossipMenuFor(player);
-                    QueryResult locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations`");
+                    QueryResult locations;
+                    if (GuildHouseManager::HasLocationEnabledColumn() && !player->IsGameMaster())
+                        locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations` WHERE `enabled` = 1");
+                    else
+                        locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations`");
                     if (!locations)
                     {
                         ChatHandler(player->GetSession()).PSendSysMessage("No Guild House locations are currently available.");
@@ -577,7 +591,11 @@ public:
 
         ClearGossipMenuFor(player);
 
-        QueryResult locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations`");
+        QueryResult locations;
+        if (GuildHouseManager::HasLocationEnabledColumn() && !player->IsGameMaster())
+            locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations` WHERE `enabled` = 1");
+        else
+            locations = WorldDatabase.Query("SELECT `id`, `name`, `cost`, `comment` FROM `dc_guild_house_locations`");
 
         if (!locations)
         {

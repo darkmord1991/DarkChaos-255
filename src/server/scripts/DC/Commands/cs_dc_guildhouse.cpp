@@ -632,7 +632,7 @@ public:
             return false;
         }
 
-        if (GuildHouseManager::MoveGuildHouse(player->GetGuildId(), locationId))
+        if (GuildHouseManager::MoveGuildHouse(player->GetGuildId(), locationId, player->IsGameMaster()))
         {
             if (!free && moveCost) player->ModifyMoney(-static_cast<int64>(moveCost));
             handler->SendSysMessage("Guild House has been moved.");

@@ -36,6 +36,27 @@ namespace
     }
 }
 
+bool GuildHouseManager::HasLocationEnabledColumn()
+{
+    static std::optional<bool> cached;
+    if (cached.has_value())
+        return cached.value();
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_guild_house_locations' AND COLUMN_NAME = 'enabled'");
+
+    if (!result)
+    {
+        cached = false;
+        return false;
+    }
+
+    Field* fields = result->Fetch();
+    cached = (fields[0].Get<uint64>() > 0);
+    return cached.value();
+}
+
 GuildHouseData* GuildHouseManager::GetGuildHouseData(uint32 guildId)
 {
     // Check Cache
@@ -474,7 +495,7 @@ bool GuildHouseManager::UndoAction(Player* player, uint32 logId)
     return true;
 }
 
-bool GuildHouseManager::MoveGuildHouse(uint32 guildId, uint32 locationId)
+bool GuildHouseManager::MoveGuildHouse(uint32 guildId, uint32 locationId, bool ignoreDisabled)
 {
     if (!guildId || !locationId)
         return false;
@@ -485,9 +506,19 @@ bool GuildHouseManager::MoveGuildHouse(uint32 guildId, uint32 locationId)
         return false; // Cannot move what doesn't exist
 
     // Fetch New Location Data
-    QueryResult locationResult = WorldDatabase.Query(
-        "SELECT `map`, `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_locations` WHERE `id` = {}",
-        locationId);
+    QueryResult locationResult;
+    if (HasLocationEnabledColumn() && !ignoreDisabled)
+    {
+        locationResult = WorldDatabase.Query(
+            "SELECT `map`, `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_locations` WHERE `id` = {} AND `enabled` = 1",
+            locationId);
+    }
+    else
+    {
+        locationResult = WorldDatabase.Query(
+            "SELECT `map`, `posX`, `posY`, `posZ`, `orientation` FROM `dc_guild_house_locations` WHERE `id` = {}",
+            locationId);
+    }
 
     if (!locationResult)
         return false; // Invalid location

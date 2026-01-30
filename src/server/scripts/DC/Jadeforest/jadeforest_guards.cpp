@@ -31,7 +31,8 @@ enum JadeforestTeleports
     TELEPORT_ENTRANCE_MAIN     = 10581,
     TELEPORT_ENTRANCE_NORTH    = 10582,
     TELEPORT_JADETOP           = 10583,
-    TELEPORT_TRAINING_GROUNDS  = 10584
+    TELEPORT_TRAINING_GROUNDS  = 10584,
+    TELEPORT_PROFESSIONS       = 10585
 };
 
 struct JadeforestTeleportData
@@ -53,7 +54,8 @@ static const JadeforestTeleportData teleportPoints[] =
     { TELEPORT_ENTRANCE_MAIN,    1069.73f,   -2151.01f,   134.324f, 1.17923f,  745, "Interface\\Icons\\INV_Misc_Map_01",        "Jade Entrance Main" },
     { TELEPORT_ENTRANCE_NORTH,   1331.35f,   -2404.91f,   141.917f, 0.163741f, 745, "Interface\\Icons\\INV_Misc_Map_01",        "Jade Entrance North" },
     { TELEPORT_JADETOP,          1452.68f,   -3104.49f,   331.667f, 0.610619f, 745, "Interface\\Icons\\Spell_Nature_StormReach", "Jade Top" },
-    { TELEPORT_TRAINING_GROUNDS, 1252.4359f, -2478.3853f, 143.6f,   6.201568f, 745, "Interface\\Icons\\Ability_DualWield",      "Training Grounds" }
+    { TELEPORT_TRAINING_GROUNDS, 1252.4359f, -2478.3853f, 143.6f,   6.201568f, 745, "Interface\\Icons\\Ability_DualWield",      "Training Grounds" },
+    { TELEPORT_PROFESSIONS,      844.8203f,  -2461.8f,    174.9611f, 4.4291763f, 745, "Interface\\Icons\\INV_Misc_Tool_01",        "Professions" }
 };
 
 // Jadeforest Guard - Template

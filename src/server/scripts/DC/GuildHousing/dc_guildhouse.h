@@ -72,9 +72,10 @@ public:
     static GuildHouseData* GetGuildHouseData(uint32 guildId);
     static void UpdateGuildHouseData(uint32 guildId, GuildHouseData const& data);
     static void RemoveGuildHouseData(uint32 guildId);
-    static bool MoveGuildHouse(uint32 guildId, uint32 locationId);
+    static bool MoveGuildHouse(uint32 guildId, uint32 locationId, bool ignoreDisabled = false);
     static uint8 GetGuildHouseLevel(uint32 guildId);
     static bool SetGuildHouseLevel(uint32 guildId, uint8 level);
+    static bool HasLocationEnabledColumn();
 
     // Spawn Management
     static bool HasSpawn(uint32 mapId, uint32 phase, uint32 entry, bool isGameObject);

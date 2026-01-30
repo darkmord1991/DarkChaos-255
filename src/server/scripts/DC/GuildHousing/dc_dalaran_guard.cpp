@@ -29,7 +29,8 @@ namespace
     static const DalaranGuardPOI dalaran_guard_pois[] =
     {
         {"Bank", 1409, 1202.201f, 1135.176f, 530.336f, 3.296f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_Bag_04", GOSSIP_ICON_TAXI},
-        {"Mythic+", 1409, 1102.5204f, 1198.4127f, 536.79785f, 1.6015308f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_DualWield", GOSSIP_ICON_TAXI}
+        {"Mythic+", 1409, 1102.5204f, 1198.4127f, 536.79785f, 1.6015308f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_DualWield", GOSSIP_ICON_TAXI},
+        {"Training Grounds", 1409, 975.2226f, 1221.9116f, 542.86456f, 4.9999466f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Warrior_WeaponMastery", GOSSIP_ICON_TAXI}
     };
 
     void SendPoiMarker(Player* player, float x, float y, uint32 icon, uint32 flags, uint32 importance, std::string const& name)

@@ -66,7 +66,8 @@ namespace
         float o;
     };
 
-    static constexpr SpawnCoord TRAINING_SPAWN_ANCHOR = { 1204.1191f, -2456.6824f, 139.72493f, 5.9718385f };
+    static constexpr SpawnCoord TRAINING_SPAWN_ANCHOR = { 1165.2761f, -2461.5117f, 136.51105f, 0.049914345f };
+    static constexpr SpawnCoord TRAINING_TELEPORT_ANCHOR = { 1165.2761f, -2461.5117f, 137.01105f, 0.049914345f };
     static constexpr float TRAINING_SPAWN_Z_OFFSET = 0.5f;
 
     // ---------------------------------------------------------------------
@@ -103,8 +104,17 @@ namespace
         ArmorMode armor = ArmorMode::Normal;
         bool moving = false;
         uint8 multiTargetCount = 1; // 1/2/3/5
-        bool levelMatchPlayer = true;
-        uint8 fixedLevel = 80;
+        enum class LevelMode : uint8
+        {
+            Match = 0,
+            MatchPlus3 = 1,
+            MatchPlus5 = 2,
+            Fixed80 = 3,
+            Fixed100 = 4,
+            Fixed130 = 5,
+            Fixed255 = 6,
+        };
+        LevelMode levelMode = LevelMode::Match;
         bool randomBossVisual = true;
         enum class SpawnLocation : uint8
         {
@@ -125,6 +135,7 @@ namespace
     static std::unordered_map<ObjectGuid, TrainingSession> s_sessionByPlayer;
     static std::mutex s_trainingMutex;  // Thread safety for static containers
     static std::unordered_map<ObjectGuid, uint32> s_spawnRequestByPlayer;
+    static std::unordered_map<ObjectGuid, Position> s_spawnCenterOverrideByPlayer;
 
     // Personal phasing to avoid players seeing each other's spawned configurations.
     // Uses a small set of high bits to reduce collision with existing content.
@@ -133,6 +144,8 @@ namespace
         (1u << 30), (1u << 29), (1u << 28), (1u << 27), (1u << 26),
         (1u << 25), (1u << 24), (1u << 23), (1u << 22), (1u << 21), (1u << 20)
     };
+
+    constexpr size_t PERSONAL_PHASE_CAPACITY = sizeof(PERSONAL_PHASE_BITS) / sizeof(PERSONAL_PHASE_BITS[0]);
 
     static std::unordered_map<ObjectGuid, uint32> s_personalPhaseByPlayer;
     static std::unordered_set<uint32> s_usedPersonalPhaseBits;
@@ -326,6 +339,29 @@ namespace
         return uint8(level);
     }
 
+    uint8 ResolveTrainingLevel(Player* owner, TrainingConfig const& cfg)
+    {
+        uint32 base = owner ? owner->GetLevel() : 1u;
+        switch (cfg.levelMode)
+        {
+            case TrainingConfig::LevelMode::MatchPlus3:
+                return ClampLevel(base + 3);
+            case TrainingConfig::LevelMode::MatchPlus5:
+                return ClampLevel(base + 5);
+            case TrainingConfig::LevelMode::Fixed80:
+                return ClampLevel(80);
+            case TrainingConfig::LevelMode::Fixed100:
+                return ClampLevel(100);
+            case TrainingConfig::LevelMode::Fixed130:
+                return ClampLevel(130);
+            case TrainingConfig::LevelMode::Fixed255:
+                return ClampLevel(255);
+            case TrainingConfig::LevelMode::Match:
+            default:
+                return ClampLevel(base);
+        }
+    }
+
     TrainingConfig& GetOrCreateConfig(Player* player)
     {
         auto it = s_configByPlayer.find(player->GetGUID());
@@ -361,31 +397,48 @@ namespace
 
         TrainingConfig& cfg = GetOrCreateConfig(player);
 
+        Position center;
+        auto overrideIt = s_spawnCenterOverrideByPlayer.find(player->GetGUID());
+        if (overrideIt != s_spawnCenterOverrideByPlayer.end())
+        {
+            center = overrideIt->second;
+            s_spawnCenterOverrideByPlayer.erase(overrideIt);
+        }
+        else
+        {
+            switch (cfg.spawnLocation)
+            {
+                case TrainingConfig::SpawnLocation::NearMaster:
+                    center = master ? master->GetPosition() : GetTrainingSpawnCenter();
+                    break;
+                case TrainingConfig::SpawnLocation::NearPlayer:
+                    center = player->GetPosition();
+                    center.m_positionZ += TRAINING_SPAWN_Z_OFFSET;
+                    break;
+                case TrainingConfig::SpawnLocation::NearestPad:
+                    center = GetNearestBossPadPosition(master);
+                    break;
+                case TrainingConfig::SpawnLocation::Anchor:
+                default:
+                    center = GetTrainingSpawnCenter();
+                    break;
+            }
+        }
+
         // Put the player in a personal phase bit (adds to their phase mask) so spawned dummies
         // can be hidden from other players without writing any DB spawns.
         uint32 personalPhaseBit = EnsurePlayerPersonalPhase(player);
-
-        uint8 count = cfg.multiTargetCount;
-        Position center;
-        switch (cfg.spawnLocation)
+        if (!personalPhaseBit)
         {
-            case TrainingConfig::SpawnLocation::NearMaster:
-                center = master ? master->GetPosition() : GetTrainingSpawnCenter();
-                break;
-            case TrainingConfig::SpawnLocation::NearPlayer:
-                center = player->GetPosition();
-                center.m_positionZ += TRAINING_SPAWN_Z_OFFSET;
-                break;
-            case TrainingConfig::SpawnLocation::NearestPad:
-                center = GetNearestBossPadPosition(master);
-                break;
-            case TrainingConfig::SpawnLocation::Anchor:
-            default:
-                center = GetTrainingSpawnCenter();
-                break;
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "All personal training phases are in use ({}). Try again later.",
+                PERSONAL_PHASE_CAPACITY);
+            return;
         }
 
-        uint8 chosenLevel = cfg.levelMatchPlayer ? ClampLevel(player->GetLevel()) : ClampLevel(cfg.fixedLevel);
+        uint8 count = cfg.multiTargetCount;
+
+        uint8 chosenLevel = ResolveTrainingLevel(player, cfg);
 
         for (uint8 i = 0; i < count; ++i)
         {
@@ -447,10 +500,10 @@ namespace
         ChatHandler(player->GetSession()).PSendSysMessage("Spawned {} training {}.", spawnedCount, spawnedCount == 1 ? "dummy" : "dummies");
     }
 
-    void ApplyBossDummyConfig(Creature* me, Player* owner, TrainingConfig const& cfg)
+    bool ApplyBossDummyConfig(Creature* me, Player* owner, TrainingConfig const& cfg, bool allowVisual)
     {
         // Cosmetic level toggle (we don't rebuild creature base stats here, since dummies are invulnerable).
-        uint8 level = cfg.levelMatchPlayer ? ClampLevel(owner->GetLevel()) : ClampLevel(cfg.fixedLevel);
+        uint8 level = ResolveTrainingLevel(owner, cfg);
         me->SetLevel(level);
 
         // Armor/resist modifiers.
@@ -475,15 +528,21 @@ namespace
         me->UpdateAllStats();
 
         // Visual: optionally copy a boss model.
-        if (cfg.randomBossVisual)
+        bool visualApplied = false;
+        if (allowVisual && cfg.randomBossVisual)
         {
             if (uint32 displayId = TryPickBossVisualDisplayId())
+            {
                 ApplyDisplayId(me, displayId);
+                visualApplied = true;
+            }
         }
 
         // Passive dummy behavior baseline.
         me->SetReactState(REACT_PASSIVE);
         me->SetCombatMovement(false);
+
+        return visualApplied;
     }
 
     TrainingProfile ResolveProfile(TrainingProfile configured)
@@ -537,8 +596,12 @@ namespace
         ACTION_MULTI_5 = 503,
 
         ACTION_LEVEL_MATCH = 600,
-        ACTION_LEVEL_80 = 601,
-        ACTION_LEVEL_255 = 602,
+        ACTION_LEVEL_MATCH_PLUS_3 = 601,
+        ACTION_LEVEL_MATCH_PLUS_5 = 602,
+        ACTION_LEVEL_80 = 603,
+        ACTION_LEVEL_100 = 604,
+        ACTION_LEVEL_130 = 605,
+        ACTION_LEVEL_255 = 606,
 
         ACTION_VISUAL_TOGGLE = 700,
 
@@ -582,7 +645,11 @@ namespace
     void BuildLevelMenu(Player* player, Creature* creature)
     {
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: Match player", GOSSIP_SENDER_MAIN, ACTION_LEVEL_MATCH);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: Player +3", GOSSIP_SENDER_MAIN, ACTION_LEVEL_MATCH_PLUS_3);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: Player +5", GOSSIP_SENDER_MAIN, ACTION_LEVEL_MATCH_PLUS_5);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: 80", GOSSIP_SENDER_MAIN, ACTION_LEVEL_80);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: 100", GOSSIP_SENDER_MAIN, ACTION_LEVEL_100);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: 130", GOSSIP_SENDER_MAIN, ACTION_LEVEL_130);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: 255", GOSSIP_SENDER_MAIN, ACTION_LEVEL_255);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK);
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
@@ -634,8 +701,17 @@ namespace
         AddGossipItemFor(player, GOSSIP_ICON_VENDOR, targetsText.c_str(), GOSSIP_SENDER_MAIN, ACTION_OPEN_TARGET_MENU);
 
         char const* levelText = "Level: Match player";
-        if (!cfg.levelMatchPlayer)
-            levelText = (cfg.fixedLevel == 255) ? "Level: 255" : "Level: 80";
+        switch (cfg.levelMode)
+        {
+            case TrainingConfig::LevelMode::MatchPlus3: levelText = "Level: Player +3"; break;
+            case TrainingConfig::LevelMode::MatchPlus5: levelText = "Level: Player +5"; break;
+            case TrainingConfig::LevelMode::Fixed80: levelText = "Level: 80"; break;
+            case TrainingConfig::LevelMode::Fixed100: levelText = "Level: 100"; break;
+            case TrainingConfig::LevelMode::Fixed130: levelText = "Level: 130"; break;
+            case TrainingConfig::LevelMode::Fixed255: levelText = "Level: 255"; break;
+            case TrainingConfig::LevelMode::Match:
+            default: levelText = "Level: Match player"; break;
+        }
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, levelText, GOSSIP_SENDER_MAIN, ACTION_OPEN_LEVEL_MENU);
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, cfg.randomBossVisual ? "Visual: Random boss (toggle)" : "Visual: Dummy model (toggle)", GOSSIP_SENDER_MAIN, ACTION_VISUAL_TOGGLE);
@@ -932,6 +1008,7 @@ public:
         uint32 inactivityTimer = INACTIVITY_DESPAWN_MS;
         ObjectGuid totemGuid;
         TrainingProfile resolvedProfile = TrainingProfile::None;
+        bool visualApplied = false;
 
         TrainingConfig GetConfigSafe(Player* owner)
         {
@@ -961,12 +1038,13 @@ public:
             if (Player* owner = ObjectAccessor::FindPlayer(summonerGuid))
             {
                 TrainingConfig cfg = GetConfigSafe(owner);
-                ApplyBossDummyConfig(me, owner, cfg);
+                if (ApplyBossDummyConfig(me, owner, cfg, !visualApplied))
+                    visualApplied = true;
                 resolvedProfile = ResolveProfile(cfg.profile);
 
                 if (resolvedProfile == TrainingProfile::AddBeforeTotem)
                 {
-                    Position p = me->GetPosition();
+                    Position p = RandomPosAround(me->GetPosition(), 5.0f);
                     p.m_positionZ += 0.25f;
                     if (Creature* totem = me->SummonCreature(NPC_TRAINING_TOTEM, p, TEMPSUMMON_TIMED_DESPAWN, 300000))
                     {
@@ -1371,9 +1449,11 @@ public:
                         break;
                 }
 
-                // Teleport player to the training center, then start after 3 seconds.
-                player->TeleportTo(player->GetMapId(), center.m_positionX, center.m_positionY, center.m_positionZ, center.m_orientation);
+                // Teleport player to the fixed training spot, then start after 3 seconds.
+                player->TeleportTo(player->GetMapId(), TRAINING_TELEPORT_ANCHOR.x, TRAINING_TELEPORT_ANCHOR.y, TRAINING_TELEPORT_ANCHOR.z, TRAINING_TELEPORT_ANCHOR.o);
                 ChatHandler(player->GetSession()).PSendSysMessage("Training starts in 3 seconds...");
+
+                s_spawnCenterOverrideByPlayer[player->GetGUID()] = center;
 
                 ObjectGuid playerGuid = player->GetGUID();
                 ObjectGuid masterGuid = creature ? creature->GetGUID() : ObjectGuid::Empty;
@@ -1422,15 +1502,25 @@ public:
             case ACTION_MULTI_5: cfg.multiTargetCount = 5; break;
 
             case ACTION_LEVEL_MATCH:
-                cfg.levelMatchPlayer = true;
+                cfg.levelMode = TrainingConfig::LevelMode::Match;
+                break;
+            case ACTION_LEVEL_MATCH_PLUS_3:
+                cfg.levelMode = TrainingConfig::LevelMode::MatchPlus3;
+                break;
+            case ACTION_LEVEL_MATCH_PLUS_5:
+                cfg.levelMode = TrainingConfig::LevelMode::MatchPlus5;
                 break;
             case ACTION_LEVEL_80:
-                cfg.levelMatchPlayer = false;
-                cfg.fixedLevel = 80;
+                cfg.levelMode = TrainingConfig::LevelMode::Fixed80;
+                break;
+            case ACTION_LEVEL_100:
+                cfg.levelMode = TrainingConfig::LevelMode::Fixed100;
+                break;
+            case ACTION_LEVEL_130:
+                cfg.levelMode = TrainingConfig::LevelMode::Fixed130;
                 break;
             case ACTION_LEVEL_255:
-                cfg.levelMatchPlayer = false;
-                cfg.fixedLevel = 255;
+                cfg.levelMode = TrainingConfig::LevelMode::Fixed255;
                 break;
 
             case ACTION_SPAWNLOC_ANCHOR:
@@ -1481,6 +1571,7 @@ public:
         s_sessionByPlayer.erase(player->GetGUID());
         s_configByPlayer.erase(player->GetGUID());
         s_spawnRequestByPlayer.erase(player->GetGUID());
+        s_spawnCenterOverrideByPlayer.erase(player->GetGUID());
     }
 
     void OnPlayerMapChanged(Player* player) override
@@ -1488,6 +1579,7 @@ public:
         // Avoid leaving training summons behind when teleporting away.
         DespawnSession(player);
         s_spawnRequestByPlayer.erase(player->GetGUID());
+        s_spawnCenterOverrideByPlayer.erase(player->GetGUID());
 
         if (player && player->GetMapId() == 745)
             EnsurePlayerPersonalPhase(player);
