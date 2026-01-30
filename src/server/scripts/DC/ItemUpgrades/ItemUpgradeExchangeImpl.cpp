@@ -36,9 +36,6 @@ namespace DarkChaos
             std::map<uint32, TransmutationRecipe> recipes;
             std::map<uint32, TransmutationSession> active_sessions;
 
-            // Forward declaration for private method used before definition
-            void CompleteTransmutation(uint32 player_guid);
-
             // Configuration
             struct TransmutationConfig
             {
@@ -373,9 +370,6 @@ namespace DarkChaos
                 }
 
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
-                uint32 tokenItemId = GetUpgradeTokenItemId();
-                uint32 essenceItemId = GetArtifactEssenceItemId();
-
                 LOG_DEBUG("scripts.dc", "ItemUpgrade: ExchangeCurrency - player {} amount {} tokens_to_essence {}",
                           player_guid, amount, tokens_to_essence);
 

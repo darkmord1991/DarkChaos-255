@@ -580,7 +580,7 @@ local function PopulateFeatures(scrollChild)
             unlock = L["FEATURE_SEASONS"].unlock,
             commands = {
                 { cmd = "/season", desc = "View current season info" },
-                { cmd = "/leaderboard", desc = "Open leaderboards" },
+                { cmd = "/dcboard", desc = "Open leaderboards" },
             },
         },
         {
@@ -908,8 +908,10 @@ local function PopulateSeasonPreview(scrollChild)
     lbBtn:SetScript("OnClick", function()
         -- Close welcome frame and execute command
         if DCWelcomeFrame then DCWelcomeFrame:Hide() end
-        if SlashCmdList["LEADERBOARD"] then
-            SlashCmdList["LEADERBOARD"]("")
+        if DCLeaderboards and DCLeaderboards.Toggle then
+            DCLeaderboards:Toggle()
+        elseif SlashCmdList["DCBOARD"] then
+            SlashCmdList["DCBOARD"]("")
         else
             DCWelcome.Print("Leaderboard addon not loaded.")
         end

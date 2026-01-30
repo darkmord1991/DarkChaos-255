@@ -211,7 +211,7 @@ function addon:SyncSettingToServer(settingKey, value)
             self:SendServerCommand(value and ".lp msg 1" or ".lp msg 0")
         elseif settingKey == "smartLoot" then
             -- TODO: Add smartLoot to protocol
-            self:SendServerCommand(value and ".lp smartset 1" or ".lp smartset 0")
+            self:SendServerCommand(".lp smart")
         end
         return
     end
@@ -238,11 +238,7 @@ function addon:SyncSettingToServer(settingKey, value)
             self:SendServerCommand(".lp skinset 0")
         end
     elseif settingKey == "smartLoot" then
-        if value then
-            self:SendServerCommand(".lp smartset 1")
-        else
-            self:SendServerCommand(".lp smartset 0")
-        end
+        self:SendServerCommand(".lp smart")
     elseif settingKey == "goldOnly" then
         if value then
             self:SendServerCommand(".lp goldonly 1")

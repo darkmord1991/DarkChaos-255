@@ -428,13 +428,13 @@ public:
         else
         {
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Key_03", "Spawn Innkeeper"),
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_InnKey", "Spawn Innkeeper"),
                 GOSSIP_SENDER_MAIN, 800001, "Add an Innkeeper?", s_guildHouseCostInnkeeper, false);
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\INV_Letter_15", "Spawn Mailbox"),
+                MakeLargeGossipText("Interface\\Icons\\INV_Letter_18", "Spawn Mailbox"),
                 GOSSIP_SENDER_MAIN, 184137, "Spawn a Mailbox?", s_guildHouseCostMailbox, false);
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\Ability_Hunter_BeastCall", "Spawn Stable Master"),
+                MakeLargeGossipText("Interface\\Icons\\Ability_Mount_RidingHorse", "Spawn Stable Master"),
                 GOSSIP_SENDER_MAIN, 28690, "Spawn a Stable Master?", s_guildHouseCostVendor, false);
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
                 MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_02", "Spawn Vendor"),
@@ -446,19 +446,19 @@ public:
                 MakeLargeGossipText("Interface\\Icons\\INV_Misc_Bag_04", "Spawn Bank"),
                 GOSSIP_SENDER_MAIN, 30605, "Spawn a Banker?", s_guildHouseCostBank, false);
             AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_01", "Spawn Auctioneer"),
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_03", "Spawn Auctioneer"),
                 GOSSIP_SENDER_MAIN, 6, "Spawn an Auctioneer?", s_guildHouseCostAuctioneer, false);
             AddGossipItemFor(player, GOSSIP_ICON_MONEY_BAG,
                 MakeLargeGossipText("Interface\\Icons\\INV_Misc_Coin_05", "Spawn Neutral Auctioneer"),
                 GOSSIP_SENDER_MAIN, 9858, "Spawn a Neutral Auctioneer?", s_guildHouseCostAuctioneer, false);
             AddGossipItemFor(player, GOSSIP_ICON_TRAINER,
-                MakeLargeGossipText("Interface\\Icons\\INV_Scroll_02", "Spawn Primary Profession Trainers"),
+                MakeLargeGossipText("Interface\\Icons\\INV_Scroll_05", "Spawn Primary Profession Trainers"),
                 GOSSIP_SENDER_MAIN, 7);
             AddGossipItemFor(player, GOSSIP_ICON_TRAINER,
                 MakeLargeGossipText("Interface\\Icons\\INV_Scroll_03", "Spawn Secondary Profession Trainers"),
                 GOSSIP_SENDER_MAIN, 8);
             AddGossipItemFor(player, GOSSIP_ICON_TALK,
-                MakeLargeGossipText("Interface\\Icons\\Spell_Holy_SpiritHeal", "Spawn Spirit Healer"),
+                MakeLargeGossipText("Interface\\Icons\\Spell_Holy_Resurrection", "Spawn Spirit Healer"),
                 GOSSIP_SENDER_MAIN, 6491, "Spawn a Spirit Healer?", s_guildHouseCostSpirit, false);
 
             // DC Extensions

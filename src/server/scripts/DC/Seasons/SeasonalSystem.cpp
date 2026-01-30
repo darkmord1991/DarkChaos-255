@@ -56,10 +56,10 @@ namespace DarkChaos
                 std::string safeDesc = season.season_description;
                 std::string safeTheme = season.theme_name;
                 std::string safeBanner = season.banner_path;
-                CharacterDatabase.EscapeString(safeName);
-                CharacterDatabase.EscapeString(safeDesc);
-                CharacterDatabase.EscapeString(safeTheme);
-                CharacterDatabase.EscapeString(safeBanner);
+                WorldDatabase.EscapeString(safeName);
+                WorldDatabase.EscapeString(safeDesc);
+                WorldDatabase.EscapeString(safeTheme);
+                WorldDatabase.EscapeString(safeBanner);
 
                 // Insert into database
                 std::ostringstream oss;
@@ -71,7 +71,7 @@ namespace DarkChaos
                     << (season.allow_carryover ? 1 : 0) << ", " << season.carryover_percentage << ", "
                     << (season.reset_on_end ? 1 : 0) << ", '" << safeTheme << "', '" << safeBanner << "')";
 
-                CharacterDatabase.Execute(oss.str().c_str());
+                WorldDatabase.Execute(oss.str().c_str());
 
                 seasons_[season.season_id] = season;
                 LOG_INFO("seasonal", "Created season {}: {}", season.season_id, season.season_name);
@@ -107,7 +107,7 @@ namespace DarkChaos
                     << "banner_path = '" << safeBanner << "' "
                     << "WHERE season_id = " << season_id;
 
-                CharacterDatabase.Execute(oss.str().c_str());
+                WorldDatabase.Execute(oss.str().c_str());
 
                 seasons_[season_id] = season;
                 LOG_INFO("seasonal", "Updated season {}", season_id);
@@ -123,7 +123,7 @@ namespace DarkChaos
                 std::ostringstream oss;
                 oss << "DELETE FROM dc_seasons WHERE season_id = " << season_id;
 
-                CharacterDatabase.Execute(oss.str().c_str());
+                WorldDatabase.Execute(oss.str().c_str());
 
                 seasons_.erase(it);
                 LOG_INFO("seasonal", "Deleted season {}", season_id);
@@ -511,7 +511,7 @@ namespace DarkChaos
 
             void LoadSeasons()
             {
-                QueryResult result = CharacterDatabase.Query(
+                QueryResult result = WorldDatabase.Query(
                     "SELECT season_id, season_name, season_description, season_type, season_state, "
                     "start_timestamp, end_timestamp, created_timestamp, allow_carryover, "
                     "carryover_percentage, reset_on_end, theme_name, banner_path "
@@ -547,7 +547,7 @@ namespace DarkChaos
 
             void LoadActiveSeason()
             {
-                QueryResult result = CharacterDatabase.Query(
+                QueryResult result = WorldDatabase.Query(
                     "SELECT season_id FROM dc_seasons WHERE season_state = {} ORDER BY season_id DESC LIMIT 1",
                     (int)SEASON_STATE_ACTIVE);
 

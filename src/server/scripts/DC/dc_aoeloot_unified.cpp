@@ -1066,6 +1066,7 @@ public:
             { "messages", HandleMessages, SEC_PLAYER,        Console::No },
             { "quality",  HandleQuality,  SEC_PLAYER,        Console::No },
             { "skin",     HandleSkin,     SEC_PLAYER,        Console::No },
+            { "smart",    HandleSmart,    SEC_PLAYER,        Console::No },
             { "stats",    HandleStats,    SEC_PLAYER,        Console::No },
             { "info",     HandleInfo,     SEC_PLAYER,        Console::No },
             { "reload",   HandleReload,   SEC_ADMINISTRATOR, Console::No },
@@ -1138,6 +1139,16 @@ public:
         return true;
     }
 
+    static bool HandleSmart(ChatHandler* handler)
+    {
+        Player* player = handler->GetPlayer();
+        if (!player) return true;
+        PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
+        prefs.smartLootEnabled = !prefs.smartLootEnabled;
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Smart Loot: %s", prefs.smartLootEnabled ? "On" : "Off");
+        return true;
+    }
+
     static bool HandleStats(ChatHandler* handler)
     {
         Player* player = handler->GetPlayer();
@@ -1149,6 +1160,7 @@ public:
         handler->PSendSysMessage("Messages: %s", prefs.showMessages ? "On" : "Off");
         handler->PSendSysMessage("Min Quality: %s", GetQualityName(prefs.minQuality));
         handler->PSendSysMessage("Auto-Skin: %s", prefs.autoSkin ? "On" : "Off");
+        handler->PSendSysMessage("Smart Loot: %s", prefs.smartLootEnabled ? "On" : "Off");
 
         auto it = sDetailedStats.find(player->GetGUID());
         if (it != sDetailedStats.end())

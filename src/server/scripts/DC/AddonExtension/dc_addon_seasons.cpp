@@ -194,7 +194,7 @@ namespace Seasons
         uint32 startTime = 0;
         uint32 endTime = 0;
 
-        if (QueryResult result = CharacterDatabase.Query(
+        if (QueryResult result = WorldDatabase.Query(
             "SELECT season_name, start_timestamp, end_timestamp FROM dc_seasons WHERE season_id = {}",
             seasonId))
         {

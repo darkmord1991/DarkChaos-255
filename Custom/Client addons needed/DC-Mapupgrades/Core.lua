@@ -82,7 +82,8 @@ local defaults = {
     entityStatus = {},
     
     -- Blacklist maps from showing boss pins (e.g., custom zones without real bosses)
-    bossBlacklistMaps = { [745] = true }, -- Jade Forest
+    -- Keep server map ID here; client map IDs are handled by name-based blacklist.
+    bossBlacklistMaps = { [745] = true },
 }
 
 local function EnsureEntityTables(db)
@@ -1081,6 +1082,13 @@ function Core:ADDON_LOADED(name)
     -- Ensure blacklist is initialized (for users upgrading from older versions)
     if type(state.db.bossBlacklistMaps) ~= "table" then
         state.db.bossBlacklistMaps = { [745] = true } -- Jade Forest
+    else
+        -- Always enforce the Jade Forest server map id
+        state.db.bossBlacklistMaps[745] = true
+        -- Clear client map ids so Isles of Giants isn't hidden
+        state.db.bossBlacklistMaps[1100] = nil
+        state.db.bossBlacklistMaps[1101] = nil
+        state.db.bossBlacklistMaps[1102] = nil
     end
 
     if RegisterAddonMessagePrefix then

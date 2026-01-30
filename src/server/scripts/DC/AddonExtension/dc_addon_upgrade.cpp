@@ -33,6 +33,50 @@ namespace Upgrade
     static std::map<uint32, uint32> s_PlayerPackageSelections;
     static std::mutex s_PackageSelectionsMutex;  // Thread safety for package selections
 
+    namespace
+    {
+        enum UpgradeErrorCode : uint32
+        {
+            UPGRADE_ERR_NONE = 0,
+            UPGRADE_ERR_ITEM_NOT_FOUND = 1,
+            UPGRADE_ERR_MAX_LEVEL = 2,
+            UPGRADE_ERR_NOT_ENOUGH_TOKENS = 3,
+            UPGRADE_ERR_NOT_ENOUGH_ESSENCE = 4,
+            UPGRADE_ERR_NOT_UPGRADEABLE = 5,
+            UPGRADE_ERR_IN_COMBAT = 6
+        };
+
+        inline bool TryGetJsonUInt(const ParsedMessage& msg, const char* key, uint32& out)
+        {
+            if (!IsJsonMessage(msg))
+                return false;
+
+            JsonValue data = GetJsonData(msg);
+            if (!data.IsObject() || !data.HasKey(key))
+                return false;
+
+            const JsonValue& val = data[key];
+            if (!val.IsNumber())
+                return false;
+
+            out = val.AsUInt32();
+            return true;
+        }
+
+        inline void SendUpgradeResult(Player* player, const std::string& requestId, bool success, uint32 itemGuid, uint32 newLevel, uint32 newEntry, uint32 errorCode, const std::string& errorMsg)
+        {
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT)
+                .SetRequestId(requestId)
+                .Set("success", success)
+                .Set("itemId", itemGuid)
+                .Set("newLevel", newLevel)
+                .Set("newEntry", newEntry)
+                .Set("errorCode", errorCode)
+                .Set("errorMsg", errorMsg)
+                .Send(player);
+        }
+    }
+
     // Send currency update to client
     // Uses unified GetPlayerTokens/GetPlayerEssence which read physical item counts
     void SendCurrencyUpdate(Player* player)
@@ -64,15 +108,21 @@ namespace Upgrade
     // Handler: Get item upgrade info
     static void HandleGetItemInfo(Player* player, const ParsedMessage& msg)
     {
-        uint32 extBag = msg.GetUInt32(0);
-        uint32 extSlot = msg.GetUInt32(1);
+        uint32 extBag = 0;
+        uint32 extSlot = 0;
+
+        if (!TryGetJsonUInt(msg, "bag", extBag))
+            extBag = msg.GetUInt32(0);
+        if (!TryGetJsonUInt(msg, "slot", extSlot))
+            extSlot = msg.GetUInt32(1);
 
         uint8 bag = 0, slot = 0;
         if (!DarkChaos::ItemUpgrade::UI::TranslateAddonBagSlot(extBag, extSlot, bag, slot))
         {
-            Message(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
-                .Add(0)  // error
-                .Add("Invalid slot")
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
+                .SetRequestId(msg.GetRequestId())
+                .Set("success", false)
+                .Set("errorMsg", "Invalid slot")
                 .Send(player);
             return;
         }
@@ -80,9 +130,10 @@ namespace Upgrade
         Item* item = player->GetItemByPos(bag, slot);
         if (!item)
         {
-            Message(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
-                .Add(0)
-                .Add("Item not found")
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
+                .SetRequestId(msg.GetRequestId())
+                .Set("success", false)
+                .Set("errorMsg", "Item not found")
                 .Send(player);
             return;
         }
@@ -114,18 +165,21 @@ namespace Upgrade
                 cloneMap += std::to_string(i) + "-" + std::to_string(DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY);
             }
 
-            Message(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
-                .Add(1)
-                .Add(itemGUID)
-                .Add(upgradeLevel)
-                .Add(DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
-                .Add(DarkChaos::ItemUpgrade::UI::HEIRLOOM_MAX_LEVEL)
-                .Add(baseItemLevel) // base ilvl
-                .Add(baseItemLevel) // upgraded ilvl (heirlooms don't change ilvl usually, just stats)
-                .Add(statMultiplier)
-                .Add(DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
-                .Add(DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
-                .Add(cloneMap)
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
+                .SetRequestId(msg.GetRequestId())
+                .Set("success", true)
+                .Set("itemID", itemGUID)
+                .Set("currentUpgrade", upgradeLevel)
+                .Set("maxUpgrade", DarkChaos::ItemUpgrade::UI::HEIRLOOM_MAX_LEVEL)
+                .Set("tier", DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
+                .Set("tokenCost", 0u)
+                .Set("essenceCost", 0u)
+                .Set("baseEntry", DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
+                .Set("currentEntry", DarkChaos::ItemUpgrade::UI::HEIRLOOM_SHIRT_ENTRY)
+                .Set("cloneMap", cloneMap)
+                .Set("baseIlvl", baseItemLevel)
+                .Set("upgradedIlvl", baseItemLevel)
+                .Set("statMultiplier", statMultiplier)
                 .Send(player);
             return;
         }
@@ -221,33 +275,44 @@ namespace Upgrade
              cloneMap = ss.str();
 
         // Send response
-        Message(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
-            .Add(1)  // success
-            .Add(itemGUID)
-            .Add(upgradeLevel)
-            .Add(tier)
-            .Add(maxLevel)
-            .Add(baseItemLevel)
-            .Add(upgradedIlvl)
-            .Add(statMultiplier)
-            .Add(baseEntry)
-            .Add(currentEntry)
-            .Add(cloneMap)
+        JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_ITEM_INFO)
+            .SetRequestId(msg.GetRequestId())
+            .Set("success", true)
+            .Set("itemID", itemGUID)
+            .Set("currentUpgrade", upgradeLevel)
+            .Set("maxUpgrade", maxLevel)
+            .Set("tier", tier)
+            .Set("tokenCost", 0u)
+            .Set("essenceCost", 0u)
+            .Set("baseEntry", baseEntry)
+            .Set("currentEntry", currentEntry)
+            .Set("cloneMap", cloneMap)
+            .Set("baseIlvl", baseItemLevel)
+            .Set("upgradedIlvl", upgradedIlvl)
+            .Set("statMultiplier", statMultiplier)
             .Send(player);
     }
 
     // Handler: Get upgrade costs
     static void HandleGetCosts(Player* player, const ParsedMessage& msg)
     {
-        uint32 tier = msg.GetUInt32(0);
-        uint32 fromLevel = msg.GetUInt32(1);
-        uint32 toLevel = msg.GetUInt32(2);
+        uint32 tier = 0;
+        uint32 fromLevel = 0;
+        uint32 toLevel = 0;
+
+        if (!TryGetJsonUInt(msg, "tier", tier))
+            tier = msg.GetUInt32(0);
+        if (!TryGetJsonUInt(msg, "fromLevel", fromLevel))
+            fromLevel = msg.GetUInt32(1);
+        if (!TryGetJsonUInt(msg, "toLevel", toLevel))
+            toLevel = msg.GetUInt32(2);
 
         if (tier < 1 || tier > 3 || fromLevel >= toLevel)
         {
-            Message(Module::UPGRADE, Opcode::Upgrade::SMSG_COST_INFO)
-                .Add(0)  // error
-                .Add("Invalid parameters")
+            JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_COST_INFO)
+                .SetRequestId(msg.GetRequestId())
+                .Set("success", false)
+                .Set("errorMsg", "Invalid parameters")
                 .Send(player);
             return;
         }
@@ -266,18 +331,19 @@ namespace Upgrade
                 essence = (*result)[1].Get<uint32>();
         }
 
-        Message(Module::UPGRADE, Opcode::Upgrade::SMSG_COST_INFO)
-            .Add(1)  // success
-            .Add(tier)
-            .Add(fromLevel)
-            .Add(toLevel)
-            .Add(tokens)
-            .Add(essence)
+        JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_COST_INFO)
+            .SetRequestId(msg.GetRequestId())
+            .Set("success", true)
+            .Set("tier", tier)
+            .Set("fromLevel", fromLevel)
+            .Set("toLevel", toLevel)
+            .Set("tokens", tokens)
+            .Set("essence", essence)
             .Send(player);
     }
 
     // Handler: List upgradeable items in inventory
-    static void HandleListUpgradeable(Player* player, const ParsedMessage& /*msg*/)
+    static void HandleListUpgradeable(Player* player, const ParsedMessage& msg)
     {
         // Scan player inventory for upgradeable items
         std::vector<std::string> items;
@@ -310,7 +376,7 @@ namespace Upgrade
              if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
              {
                  uint32 tier = mgr->GetItemTier(baseEntry);
-                 if (tier > 0)
+                 if (tier > 0 && tier != DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
                  {
                      std::ostringstream ss;
                      uint8 addonBag = (bag == INVENTORY_SLOT_BAG_0) ? 0 : (bag - INVENTORY_SLOT_BAG_START + 1);
@@ -338,44 +404,54 @@ namespace Upgrade
         for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
             CheckItem(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot), INVENTORY_SLOT_BAG_0, slot);
 
-        // Send list (chunked if needed, but 2560 chars limit is usually enough for ~50 items)
-        std::string itemList;
-        for (size_t i = 0; i < items.size(); ++i)
-        {
-            if (i > 0) itemList += ";";
-            itemList += items[i];
-        }
+        // Send list as JSON array (strings: bag:slot:guid:entry:tier)
+        JsonValue arr;
+        arr.SetArray();
+        for (auto const& it : items)
+            arr.Push(JsonValue(it));
 
-        Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADEABLE_LIST)
-            .Add(static_cast<uint32>(items.size()))
-            .Add(itemList)
+        JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADEABLE_LIST)
+            .SetRequestId(msg.GetRequestId())
+            .Set("count", static_cast<uint32>(items.size()))
+            .Set("items", arr)
             .Send(player);
     }
 
     // Handler: Perform upgrade (Unified Native Logic)
     static void HandleDoUpgrade(Player* player, const ParsedMessage& msg)
     {
-        uint32 extBag = msg.GetUInt32(0);
-        uint32 extSlot = msg.GetUInt32(1);
-        uint32 targetLevel = msg.GetUInt32(2);
+        uint32 extBag = 0;
+        uint32 extSlot = 0;
+        uint32 targetLevel = 0;
+
+        if (!TryGetJsonUInt(msg, "bag", extBag))
+            extBag = msg.GetUInt32(0);
+        if (!TryGetJsonUInt(msg, "slot", extSlot))
+            extSlot = msg.GetUInt32(1);
+        if (!TryGetJsonUInt(msg, "targetLevel", targetLevel))
+            targetLevel = msg.GetUInt32(2);
 
         uint8 bag = 0, slot = 0;
-        if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
+           if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
         {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Invalid slot").Send(player);
+               LOG_WARN("dc.addon.upgrade", "Upgrade failed: invalid slot (extBag={}, extSlot={}) for player {}",
+                  extBag, extSlot, player->GetName());
+               SendUpgradeResult(player, msg.GetRequestId(), false, 0, 0, 0, UPGRADE_ERR_ITEM_NOT_FOUND, "Invalid slot");
              return;
         }
 
         Item* item = player->GetItemByPos(bag, slot);
         if (!item)
         {
-            Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Item not found").Send(player);
+            LOG_WARN("dc.addon.upgrade", "Upgrade failed: item not found at bag={}, slot={} for player {}",
+                bag, slot, player->GetName());
+            SendUpgradeResult(player, msg.GetRequestId(), false, 0, 0, 0, UPGRADE_ERR_ITEM_NOT_FOUND, "Item not found");
             return;
         }
 
-        if (item->GetEntry() == HEIRLOOM_SHIRT_ENTRY)
+           if (item->GetEntry() == HEIRLOOM_SHIRT_ENTRY)
         {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Use Heirloom Upgrade for this item").Send(player);
+               SendUpgradeResult(player, msg.GetRequestId(), false, item->GetGUID().GetCounter(), 0, 0, UPGRADE_ERR_NOT_UPGRADEABLE, "Use Heirloom Upgrade for this item");
              return;
         }
 
@@ -392,6 +468,14 @@ namespace Upgrade
         if (DarkChaos::ItemUpgrade::UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager())
              tier = mgr->GetItemTier(baseEntry);
 
+        // Disallow tier 3 (heirloom tier) in standard item upgrade flow
+        if (tier == DarkChaos::ItemUpgrade::UI::HEIRLOOM_TIER)
+        {
+            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, 0, currentEntry, UPGRADE_ERR_NOT_UPGRADEABLE,
+                "Tier 3 items must be upgraded via the Heirloom interface");
+            return;
+        }
+
         QueryResult stateResult = CharacterDatabase.Query(
              "SELECT upgrade_level FROM dc_item_upgrades WHERE item_guid = {}", itemGUID);
 
@@ -406,9 +490,9 @@ namespace Upgrade
                  currentLevel = (*cloneLevelCheck)[0].Get<uint32>();
         }
 
-        if (targetLevel <= currentLevel)
+           if (targetLevel <= currentLevel)
         {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Target level must be higher").Send(player);
+               SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_MAX_LEVEL, "Target level must be higher");
              return;
         }
 
@@ -430,14 +514,14 @@ namespace Upgrade
         uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
 
-        if (player->GetItemCount(tokenId) < tokensNeeded)
+           if (player->GetItemCount(tokenId) < tokensNeeded)
         {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Not enough Tokens").Send(player);
+               SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_NOT_ENOUGH_TOKENS, "Not enough Tokens");
              return;
         }
-        if (player->GetItemCount(essenceId) < essenceNeeded)
+           if (player->GetItemCount(essenceId) < essenceNeeded)
         {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Not enough Essence").Send(player);
+               SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_NOT_ENOUGH_ESSENCE, "Not enough Essence");
              return;
         }
 
@@ -448,7 +532,9 @@ namespace Upgrade
 
         if (!targetCloneRes)
         {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Target clone not found").Send(player);
+               std::ostringstream err;
+               err << "Target clone not found (tier=" << tier << ", level=" << targetLevel << ")";
+            SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_NOT_UPGRADEABLE, err.str());
              return;
         }
 
@@ -494,24 +580,28 @@ namespace Upgrade
                  }
             }
             // Send success
-            Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(1).Add(newGuid).Add(targetLevel).Send(player);
+              SendUpgradeResult(player, msg.GetRequestId(), true, newGuid, targetLevel, targetEntry, UPGRADE_ERR_NONE, "");
             SendCurrencyUpdate(player);
         }
         else
         {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT).Add(0).Add("Inventory full").Send(player);
+               SendUpgradeResult(player, msg.GetRequestId(), false, itemGUID, currentLevel, currentEntry, UPGRADE_ERR_NONE, "Inventory full");
         }
     }
 
     // Handler: Package selection (migrated from itemupgrade_communication.lua)
     static void HandlePackageSelect(Player* player, const ParsedMessage& msg)
     {
-        uint32 packageId = msg.GetUInt32(0);
+        uint32 packageId = 0;
+        if (!TryGetJsonUInt(msg, "packageId", packageId))
+            packageId = msg.GetUInt32(0);
         uint32 playerGuid = player->GetGUID().GetCounter();
 
         // Validate package ID (1-12)
         if (packageId < 1 || packageId > 12)
         {
+            LOG_WARN("dc.addon.upgrade", "Invalid package ID {} (dataCount={}) from player {}",
+                packageId, msg.GetDataCount(), player->GetName());
             ChatHandler(player->GetSession()).PSendSysMessage("|cffff0000Invalid package ID.|r");
             return;
         }
@@ -526,8 +616,10 @@ namespace Upgrade
             player->GetName(), packageId);
 
         // Send confirmation
-        Message(Module::UPGRADE, Opcode::Upgrade::SMSG_PACKAGE_SELECTED)
-            .Add(packageId)
+        JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_PACKAGE_SELECTED)
+            .SetRequestId(msg.GetRequestId())
+            .Set("success", true)
+            .Set("packageId", packageId)
             .Send(player);
     }
 
@@ -535,19 +627,35 @@ namespace Upgrade
 
     static void HandleHeirloomQuery(Player* player, const ParsedMessage& msg)
     {
-        uint32 extBag = msg.GetUInt32(0);
-        uint32 extSlot = msg.GetUInt32(1);
+        uint32 extBag = 0;
+        uint32 extSlot = 0;
+
+        if (!TryGetJsonUInt(msg, "bag", extBag))
+            extBag = msg.GetUInt32(0);
+        if (!TryGetJsonUInt(msg, "slot", extSlot))
+            extSlot = msg.GetUInt32(1);
 
         uint8 bag, slot;
-        if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
-             return;
+           if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
+           {
+               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO)
+                  .SetRequestId(msg.GetRequestId())
+                  .Set("success", false)
+                  .Set("errorMsg", "Invalid slot")
+                  .Send(player);
+               return;
+           }
 
         Item* item = player->GetItemByPos(bag, slot);
-        if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
-        {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO).Add(0).Add("Invalid Heirloom").Send(player);
-             return;
-        }
+           if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
+           {
+               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO)
+                  .SetRequestId(msg.GetRequestId())
+                  .Set("success", false)
+                  .Set("errorMsg", "Invalid Heirloom")
+                  .Send(player);
+               return;
+           }
 
         uint32 itemGuid = item->GetGUID().GetCounter();
         QueryResult result = CharacterDatabase.Query("SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}", itemGuid);
@@ -560,14 +668,15 @@ namespace Upgrade
              package = (*result)[1].Get<uint32>();
         }
 
-        Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO)
-             .Add(1)
-             .Add(itemGuid)
-             .Add(level)
-             .Add(package)
-             .Add(HEIRLOOM_MAX_LEVEL)
-             .Add(HEIRLOOM_MAX_PACKAGE_ID)
-             .Send(player);
+           JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_INFO)
+               .SetRequestId(msg.GetRequestId())
+               .Set("success", true)
+               .Set("itemGuid", itemGuid)
+               .Set("level", level)
+               .Set("packageId", package)
+               .Set("maxLevel", HEIRLOOM_MAX_LEVEL)
+               .Set("maxPackage", HEIRLOOM_MAX_PACKAGE_ID)
+               .Send(player);
     }
 
     static void HandleGetPackages(Player* player, const ParsedMessage& /*msg*/)
@@ -597,36 +706,61 @@ namespace Upgrade
 
     static void HandleHeirloomUpgrade(Player* player, const ParsedMessage& msg)
     {
-         uint32 extBag = msg.GetUInt32(0);
-         uint32 extSlot = msg.GetUInt32(1);
-         uint32 targetLevel = msg.GetUInt32(2);
-         uint32 packageId = msg.GetUInt32(3);
+         uint32 extBag = 0;
+         uint32 extSlot = 0;
+         uint32 targetLevel = 0;
+         uint32 packageId = 0;
+
+         if (!TryGetJsonUInt(msg, "bag", extBag))
+             extBag = msg.GetUInt32(0);
+         if (!TryGetJsonUInt(msg, "slot", extSlot))
+             extSlot = msg.GetUInt32(1);
+         if (!TryGetJsonUInt(msg, "targetLevel", targetLevel))
+             targetLevel = msg.GetUInt32(2);
+         if (!TryGetJsonUInt(msg, "packageId", packageId))
+             packageId = msg.GetUInt32(3);
 
         uint8 bag, slot;
-        if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
-        {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Invalid slot").Send(player);
-             return;
-        }
+           if (!TranslateAddonBagSlot(extBag, extSlot, bag, slot))
+           {
+               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                  .SetRequestId(msg.GetRequestId())
+                  .Set("success", false)
+                  .Set("errorMsg", "Invalid slot")
+                  .Send(player);
+               return;
+           }
 
         Item* item = player->GetItemByPos(bag, slot);
-        if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
-        {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Invalid Heirloom").Send(player);
-             return;
-        }
+           if (!item || item->GetEntry() != HEIRLOOM_SHIRT_ENTRY)
+           {
+               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                  .SetRequestId(msg.GetRequestId())
+                  .Set("success", false)
+                  .Set("errorMsg", "Invalid Heirloom")
+                  .Send(player);
+               return;
+           }
 
         // Validate inputs
-        if (packageId < 1 || packageId > HEIRLOOM_MAX_PACKAGE_ID)
-        {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Invalid Package").Send(player);
-             return;
-        }
-        if (targetLevel > HEIRLOOM_MAX_LEVEL)
-        {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Level too high").Send(player);
-             return;
-        }
+           if (packageId < 1 || packageId > HEIRLOOM_MAX_PACKAGE_ID)
+           {
+               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                  .SetRequestId(msg.GetRequestId())
+                  .Set("success", false)
+                  .Set("errorMsg", "Invalid Package")
+                  .Send(player);
+               return;
+           }
+           if (targetLevel > HEIRLOOM_MAX_LEVEL)
+           {
+               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                  .SetRequestId(msg.GetRequestId())
+                  .Set("success", false)
+                  .Set("errorMsg", "Level too high")
+                  .Send(player);
+               return;
+           }
 
         uint32 itemGuid = item->GetGUID().GetCounter();
         QueryResult result = CharacterDatabase.Query("SELECT upgrade_level, package_id FROM dc_heirloom_upgrades WHERE item_guid = {}", itemGuid);
@@ -639,11 +773,15 @@ namespace Upgrade
              currentPackage = (*result)[1].Get<uint32>();
         }
 
-        if (targetLevel < currentLevel && packageId == currentPackage)
-        {
-              Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Already higher level").Send(player);
+          if (targetLevel < currentLevel && packageId == currentPackage)
+          {
+              JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                .SetRequestId(msg.GetRequestId())
+                .Set("success", false)
+                .Set("errorMsg", "Already higher level")
+                .Send(player);
               return;
-        }
+          }
 
         // Calculate Cost
         QueryResult costRes = WorldDatabase.Query("SELECT SUM(token_cost), SUM(essence_cost) FROM dc_heirloom_upgrade_costs WHERE upgrade_level BETWEEN {} AND {}", currentLevel + 1, targetLevel);
@@ -660,16 +798,24 @@ namespace Upgrade
         uint32 tokenId = DarkChaos::ItemUpgrade::GetUpgradeTokenItemId();
         uint32 essenceId = DarkChaos::ItemUpgrade::GetArtifactEssenceItemId();
 
-        if (player->GetItemCount(tokenId) < tokensNeeded)
-        {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Not enough Tokens").Send(player);
-             return;
-        }
-        if (player->GetItemCount(essenceId) < essenceNeeded)
-        {
-             Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT).Add(0).Add("Not enough Essence").Send(player);
-             return;
-        }
+           if (player->GetItemCount(tokenId) < tokensNeeded)
+           {
+               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                  .SetRequestId(msg.GetRequestId())
+                  .Set("success", false)
+                  .Set("errorMsg", "Not enough Tokens")
+                  .Send(player);
+               return;
+           }
+           if (player->GetItemCount(essenceId) < essenceNeeded)
+           {
+               JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+                  .SetRequestId(msg.GetRequestId())
+                  .Set("success", false)
+                  .Set("errorMsg", "Not enough Essence")
+                  .Send(player);
+               return;
+           }
 
         // Perform
         if (tokensNeeded > 0) player->DestroyItemCount(tokenId, tokensNeeded, true);
@@ -683,21 +829,22 @@ namespace Upgrade
         item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, player->GetGUID());
         player->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
 
-        // Update DB
-        CharacterDatabase.Execute("REPLACE INTO dc_heirloom_upgrades (player_guid, item_guid, item_entry, upgrade_level, package_id, enchant_id, last_upgraded_at) VALUES ({}, {}, {}, {}, {}, {}, UNIX_TIMESTAMP())",
+        // Update DB (timestamps use column defaults)
+        CharacterDatabase.Execute("REPLACE INTO dc_heirloom_upgrades (player_guid, item_guid, item_entry, upgrade_level, package_id, enchant_id) VALUES ({}, {}, {}, {}, {}, {})",
             player->GetGUID().GetCounter(), itemGuid, HEIRLOOM_SHIRT_ENTRY, targetLevel, packageId, enchantId);
 
         // Log
-        CharacterDatabase.Execute("INSERT INTO dc_heirloom_upgrade_log (player_guid, item_guid, from_level, to_level, from_package, to_package, cost_token, cost_essence, timestamp) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, UNIX_TIMESTAMP())",
-             player->GetGUID().GetCounter(), itemGuid, currentLevel, targetLevel, currentPackage, packageId, tokensNeeded, essenceNeeded);
+        CharacterDatabase.Execute("INSERT INTO dc_heirloom_upgrade_log (player_guid, item_guid, item_entry, from_level, to_level, from_package, to_package, enchant_id, token_cost, essence_cost) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+            player->GetGUID().GetCounter(), itemGuid, HEIRLOOM_SHIRT_ENTRY, currentLevel, targetLevel, currentPackage, packageId, enchantId, tokensNeeded, essenceNeeded);
 
         // Success
-        Message(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
-            .Add(1)
-            .Add(itemGuid)
-            .Add(targetLevel)
-            .Add(packageId)
-            .Add(enchantId)
+        JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_HEIRLOOM_RESULT)
+            .SetRequestId(msg.GetRequestId())
+            .Set("success", true)
+            .Set("itemGuid", itemGuid)
+            .Set("newLevel", targetLevel)
+            .Set("packageId", packageId)
+            .Set("enchantId", enchantId)
             .Send(player);
 
         SendCurrencyUpdate(player);

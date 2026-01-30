@@ -3,7 +3,7 @@
  *
  * This header provides a simple, unified way to access the current active season
  * across ALL DarkChaos systems. Use this instead of querying individual season
- * tables (dc_mplus_seasons, dc_hlbg_seasons, dc_seasons, etc.)
+ * tables (dc_seasons, dc_mplus_seasons, dc_hlbg_seasons, etc.)
  *
  * IMPORTANT: This is the SINGLE SOURCE OF TRUTH for season ID access.
  *
@@ -13,9 +13,8 @@
  *
  * The function uses the following priority:
  *   1. Config value: DarkChaos.ActiveSeasonID (from worldserver.conf)
- *   2. Database fallback: dc_seasons table
- *   3. Legacy fallback: dc_mplus_seasons table
- *   4. Default: 1
+ *   2. Database fallback: dc_seasons table (WorldDatabase)
+ *   3. Default: 1
  *
  * Author: DarkChaos Development Team
  * Date: December 2025
@@ -86,8 +85,8 @@ namespace DarkChaos
             return seasonId;
         }
 
-        // Priority 2: Database fallback (dc_seasons in CharacterDatabase)
-        if (QueryResult result = CharacterDatabase.Query(
+        // Priority 2: Database fallback (dc_seasons in WorldDatabase)
+        if (QueryResult result = WorldDatabase.Query(
             "SELECT season_id FROM dc_seasons WHERE season_state = 1 ORDER BY season_id DESC LIMIT 1"))
         {
             seasonId = (*result)[0].Get<uint32>();
@@ -95,22 +94,6 @@ namespace DarkChaos
             {
                 Internal::g_cachedSeasonId.store(seasonId);
                 Internal::g_lastSeasonRefresh.store(now);
-                return seasonId;
-            }
-        }
-
-        // Priority 3: Secondary database fallback (dc_mplus_seasons in WorldDatabase)
-        // This is for backward compatibility during migration
-        if (QueryResult result = WorldDatabase.Query(
-            "SELECT season FROM dc_mplus_seasons WHERE is_active = 1 LIMIT 1"))
-        {
-            seasonId = (*result)[0].Get<uint32>();
-            if (seasonId > 0)
-            {
-                Internal::g_cachedSeasonId.store(seasonId);
-                Internal::g_lastSeasonRefresh.store(now);
-                LOG_WARN("dc.season", "Using legacy dc_mplus_seasons table for season ID. "
-                         "Consider migrating to unified dc_seasons table.");
                 return seasonId;
             }
         }
@@ -141,18 +124,9 @@ namespace DarkChaos
     {
         uint32 seasonId = GetActiveSeasonId();
 
-        // Try CharacterDatabase first (primary)
-        if (QueryResult result = CharacterDatabase.Query(
-            "SELECT season_name FROM dc_seasons WHERE season_id = {} LIMIT 1", seasonId))
-        {
-            std::string name = (*result)[0].Get<std::string>();
-            if (!name.empty())
-                return name;
-        }
-
-        // Fallback to WorldDatabase (legacy)
+        // Try WorldDatabase first (primary)
         if (QueryResult result = WorldDatabase.Query(
-            "SELECT name FROM dc_mplus_seasons WHERE season = {} LIMIT 1", seasonId))
+            "SELECT season_name FROM dc_seasons WHERE season_id = {} LIMIT 1", seasonId))
         {
             std::string name = (*result)[0].Get<std::string>();
             if (!name.empty())
@@ -169,9 +143,9 @@ namespace DarkChaos
  * MIGRATION NOTES:
  *
  * The DarkChaos codebase previously had multiple season tables:
- *   - dc_seasons (CharacterDatabase) - Used by SeasonalSystem, ItemUpgrades
- *   - dc_mplus_seasons (WorldDatabase) - Used by MythicPlus, addon handlers
- *   - dc_hlbg_seasons (WorldDatabase) - Used by HinterlandBG
+ *   - dc_seasons (WorldDatabase) - Used by SeasonalSystem, ItemUpgrades
+ *   - dc_mplus_seasons (WorldDatabase) - Used by MythicPlus config data
+ *   - dc_hlbg_seasons (WorldDatabase) - Used by HinterlandBG config data
  *
  * These are being consolidated:
  *   1. dc_seasons remains the PRIMARY source (CharacterDatabase)

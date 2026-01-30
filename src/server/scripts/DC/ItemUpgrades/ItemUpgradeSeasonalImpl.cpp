@@ -85,9 +85,9 @@ public:
             uint32 tokens_to_remove = tokens - tokens_carryover;
 
             if (essence_to_remove > 0)
-                mgr->SpendCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_to_remove, new_season_id);
+                mgr->RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_to_remove, new_season_id);
             if (tokens_to_remove > 0)
-                mgr->SpendCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, tokens_to_remove, new_season_id);
+                mgr->RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, tokens_to_remove, new_season_id);
 
             LOG_INFO("scripts.dc", "ItemUpgrade: Season reset for player {} - carried over {} tokens (was {}), {} essence (was {})",
                 player_guid, tokens_carryover, tokens, essence_carryover, essence);

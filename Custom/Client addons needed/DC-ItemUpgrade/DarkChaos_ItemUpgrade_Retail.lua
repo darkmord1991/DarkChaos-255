@@ -309,7 +309,7 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 	local playerTokens = DC.playerTokens or 0;
 	local playerEssence = DC.playerEssence or 0;
 	
-	-- For heirloom mode, show essence; for standard mode, show tokens
+	-- Default display (may be adjusted after cost calc)
 	local displayCurrency = isHeirloomMode and playerEssence or playerTokens;
 	local displayCurrencyItemID = isHeirloomMode and DC.ESSENCE_ITEM_ID or DC.TOKEN_ITEM_ID;
 	
@@ -360,20 +360,57 @@ function DarkChaos_ItemUpgrade_UpdateCost()
 	if frame.CostFrame then frame.CostFrame:Show() end
 
 	-- Calculate total cost for the upgrade
-	local totals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
-	if missingLevel then
-		return;
+	local totals, missingLevel
+	local totalTokens = 0
+	local totalEssence = 0
+
+	if isHeirloomMode then
+		local heirloomTotals = DarkChaos_ItemUpgrade_ComputeHeirloomCostTotals(currentLevel, targetLevel)
+		totalEssence = (heirloomTotals and heirloomTotals.essence) or 0
+		-- Fallback to tier costs if heirloom table yields 0 (legacy token costs)
+		if totalEssence == 0 then
+			totals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
+			if missingLevel then
+				return;
+			end
+			totalTokens = (totals and totals.tokens) or 0
+		else
+			totalTokens = 0
+		end
+	else
+		totals, missingLevel = DarkChaos_ItemUpgrade_ComputeCostTotals(tier, currentLevel, targetLevel);
+		if missingLevel then
+			return;
+		end
+		totalTokens = (totals and totals.tokens) or 0;
+		totalEssence = (totals and totals.essence) or 0;
 	end
 
-	local totalTokens = (totals and totals.tokens) or 0;
-	local totalEssence = (totals and totals.essence) or 0;
 	local playerTokens = DC.playerTokens or 0;
 	local playerEssence = DC.playerEssence or 0;
-	
-	-- For heirloom mode, use essence cost; for standard mode, use token cost
-	local totalCost = isHeirloomMode and totalEssence or totalTokens;
-	local playerCurrency = isHeirloomMode and playerEssence or playerTokens;
-	local costCurrencyItemID = isHeirloomMode and DC.ESSENCE_ITEM_ID or DC.TOKEN_ITEM_ID;
+
+	-- Pick currency based on computed cost
+	local useEssence = isHeirloomMode and totalEssence > 0
+	local totalCost = useEssence and totalEssence or totalTokens;
+	local playerCurrency = useEssence and playerEssence or playerTokens;
+	local costCurrencyItemID = useEssence and DC.ESSENCE_ITEM_ID or DC.TOKEN_ITEM_ID;
+
+	-- Update Owned display to match cost currency
+	displayCurrency = useEssence and playerEssence or playerTokens
+	displayCurrencyItemID = useEssence and DC.ESSENCE_ITEM_ID or DC.TOKEN_ITEM_ID
+	if frame.CostFrame and frame.CostFrame.OwnedValue then
+		frame.CostFrame.OwnedValue:SetText(tostring(displayCurrency))
+		frame.CostFrame.OwnedValue:Show()
+	end
+	if frame.CostFrame and frame.CostFrame.OwnedIcon then
+		frame.CostFrame.OwnedIcon:Show()
+		if displayCurrencyItemID then
+			local icon = GetItemIcon(displayCurrencyItemID)
+			if icon then
+				frame.CostFrame.OwnedIcon:SetTexture(icon)
+			end
+		end
+	end
 
 	-- Determine cost color based on affordability
 	local costColor;
@@ -524,7 +561,7 @@ DarkChaos_ItemUpgrade_RequestItemInfo = function()
 	if not DC.currentItem then return end
 	local bag = DC.currentItem.serverBag or DC.currentItem.bag;
 	local serverSlot = DC.currentItem.serverSlot;
-	if bag == nil or serverSlot == nil then return end
+	if bag == nil or serverSlot == nil then return end -- Ensure bag and serverSlot are defined
 	local locationKey = DC.currentItem.locationKey or BuildLocationKey(bag, serverSlot);
 	DC.currentItem.locationKey = locationKey;
 	DC.currentItem.serverBag = bag;
@@ -1737,7 +1774,8 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 	local _, itemLink = tooltip:GetItem();
 	if itemLink then
 		local _, _, quality, _, _, itemType, _, _, equipLoc = GetItemInfo(itemLink);
-		if quality == 7 then
+		local itemId = tonumber(itemLink:match("item:(%d+)")) or 0;
+		if quality == 7 and itemId ~= 300365 then
 			return;
 		end
 		if itemType ~= "Armor" and itemType ~= "Weapon" then
@@ -1794,7 +1832,13 @@ local function DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, data)
 		
 		-- For heirlooms, show the installed stat package
 		if isHeirloom then
-			local packageId = data.heirloomPackageId or DC.selectedStatPackage;
+			local packageId = data.heirloomPackageId or data.packageId;
+			if (not packageId or packageId <= 0) and data.guid and DC.itemUpgradeCache and DC.itemUpgradeCache[data.guid] then
+				packageId = DC.itemUpgradeCache[data.guid].heirloomPackageId;
+			end
+			if (not packageId or packageId <= 0) and DC.selectedStatPackage then
+				packageId = DC.selectedStatPackage;
+			end
 			if packageId and packageId > 0 and DC.STAT_PACKAGES and DC.STAT_PACKAGES[packageId] then
 				local pkg = DC.STAT_PACKAGES[packageId];
 				local colorHex = string.format("%.2x%.2x%.2x", pkg.color.r*255, pkg.color.g*255, pkg.color.b*255);
@@ -1848,6 +1892,107 @@ local function DarkChaos_ItemUpgrade_HandleTooltipContext(context, data, errorMs
 	elseif errorMsg then
 		tooltip:AddLine(string.format("|cffff0000Upgrade data unavailable: %s|r", errorMsg));
 		tooltip:Show();
+	end
+end
+
+function DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
+	if type(info) ~= "table" then
+		return;
+	end
+
+	local guid = tonumber(info.itemID or info.itemId or info.guid) or 0;
+	if guid == 0 then
+		return;
+	end
+
+	local existing = (DC.itemUpgradeCache and DC.itemUpgradeCache[guid]) or nil;
+	local cloneEntries = info.cloneEntries or DC.ParseCloneMap and DC.ParseCloneMap(info.cloneMap) or nil;
+	local data = {
+		guid = guid,
+		tier = tonumber(info.tier) or 0,
+		baseItemLevel = tonumber(info.baseIlvl or info.baseItemLevel) or 0,
+		upgradedItemLevel = tonumber(info.upgradedIlvl or info.upgradedItemLevel) or 0,
+		statMultiplier = tonumber(info.statMultiplier) or 1.0,
+		baseEntry = tonumber(info.baseEntry) or 0,
+		currentEntry = tonumber(info.currentEntry) or 0,
+		currentUpgrade = tonumber(info.currentUpgrade) or 0,
+		maxUpgrade = tonumber(info.maxUpgrade) or 0,
+		cloneEntries = cloneEntries,
+		timestamp = GetTime and GetTime() or 0,
+	};
+
+	if info.heirloomPackageId or info.packageId or (existing and existing.heirloomPackageId) then
+		data.heirloomPackageId = info.heirloomPackageId or info.packageId or (existing and existing.heirloomPackageId) or 0;
+	end
+
+	DC.itemUpgradeCache = DC.itemUpgradeCache or {};
+	DC.itemUpgradeCache[guid] = data;
+
+	local matchedInFlight = false;
+	if DC.queryInFlight then
+		local locationKey = DC.queryInFlight.key;
+		local bagStr, slotStr = string.match(locationKey, "(%d+):(%d+)");
+		local queryBag = tonumber(bagStr);
+		local querySlot = tonumber(slotStr);
+		local queryLink = nil;
+		if queryBag == 255 then
+			queryLink = GetInventoryItemLink("player", querySlot + 1);
+		else
+			queryLink = GetContainerItemLink(queryBag, querySlot + 1);
+		end
+		if queryLink then
+			local queryItemId = tonumber(string.match(queryLink, "item:(%d+)"));
+			if queryItemId and (queryItemId == data.currentEntry or queryItemId == data.baseEntry) then
+				DC.itemLocationCache = DC.itemLocationCache or {};
+				DC.itemLocationCache[locationKey] = guid;
+				matchedInFlight = true;
+
+				if DC.currentItem and DC.currentItem.locationKey == locationKey then
+					DarkChaos_ItemUpgrade_ApplyQueryData(DC.currentItem, data);
+					DarkChaos_ItemUpgrade_UpdateUI();
+				end
+
+				local finished = DarkChaos_ItemUpgrade_CompleteQuery();
+				if finished and finished.contexts then
+					for _, ctx in ipairs(finished.contexts) do
+						if ctx.callback then
+							ctx.callback(data);
+						else
+							DarkChaos_ItemUpgrade_HandleTooltipContext(ctx, data);
+						end
+					end
+				end
+			end
+		end
+	end
+
+	if not matchedInFlight then
+		-- Try to map by scanning equipment and bags
+		for slotID = 1, 19 do
+			local link = GetInventoryItemLink("player", slotID);
+			if link then
+				local itemId = tonumber(string.match(link, "item:(%d+)"));
+				if itemId == data.currentEntry or itemId == data.baseEntry then
+					DC.itemLocationCache = DC.itemLocationCache or {};
+					DC.itemLocationCache["255:" .. (slotID - 1)] = guid;
+					break;
+				end
+			end
+		end
+		for bag = 0, 4 do
+			local numSlots = GetContainerNumSlots(bag);
+			for slot = 1, numSlots do
+				local link = GetContainerItemLink(bag, slot);
+				if link then
+					local itemId = tonumber(string.match(link, "item:(%d+)"));
+					if itemId == data.currentEntry or itemId == data.baseEntry then
+						DC.itemLocationCache = DC.itemLocationCache or {};
+						DC.itemLocationCache[bag .. ":" .. (slot - 1)] = guid;
+						return;
+					end
+				end
+			end
+		end
 	end
 end
 
@@ -1910,6 +2055,12 @@ function DarkChaos_ItemUpgrade_ApplyQueryData(item, data)
 	end
 	if data.serverSlot then
 		item.serverSlot = data.serverSlot;
+	end
+	if data.heirloomPackageId or data.packageId then
+		item.heirloomPackageId = data.heirloomPackageId or data.packageId;
+	end
+	if data.heirloomPackageLevel then
+		item.heirloomPackageLevel = data.heirloomPackageLevel;
 	end
 	if item.serverBag and item.serverSlot then
 		item.locationKey = BuildLocationKey(item.serverBag, item.serverSlot);
@@ -1998,6 +2149,35 @@ local function DarkChaos_ItemUpgrade_ResetTooltip(tooltip)
 	end
 end
 
+local function DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(itemLink, serverBag, serverSlot, cached)
+	if not itemLink or serverBag == nil or serverSlot == nil then
+		return;
+	end
+
+	local itemId = tonumber(itemLink:match("item:(%d+)")) or 0;
+	if itemId ~= 300365 then
+		return;
+	end
+
+	if cached and cached.heirloomPackageId and cached.heirloomPackageId > 0 then
+		return;
+	end
+
+	DC.heirloomQueryStamps = DC.heirloomQueryStamps or {};
+	local locationKey = BuildLocationKey(serverBag, serverSlot);
+	local now = GetTime and GetTime() or 0;
+	local lastStamp = DC.heirloomQueryStamps[locationKey] or 0;
+	if (now - lastStamp) < 3 then
+		return;
+	end
+	DC.heirloomQueryStamps[locationKey] = now;
+
+	local DCProtocol = rawget(_G, "DCAddonProtocol");
+	if DCProtocol and DCProtocol.Request then
+		DCProtocol:Request("UPG", 0x06, { bag = serverBag, slot = serverSlot }); -- CMSG_HEIRLOOM_QUERY
+	end
+end
+
 function DarkChaos_ItemUpgrade_OnTooltipSetBagItem(tooltip, bag, slot)
 	if not tooltip or bag == nil or slot == nil then
 		return;
@@ -2013,8 +2193,11 @@ function DarkChaos_ItemUpgrade_OnTooltipSetBagItem(tooltip, bag, slot)
 	local cached = DarkChaos_ItemUpgrade_GetCachedDataForLocation(serverBag, serverSlot);
 	if cached then
 		DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, cached);
+		DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag, serverSlot, cached);
 		return;
 	end
+
+	DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag, serverSlot, cached);
 
 	DarkChaos_ItemUpgrade_QueueQuery(serverBag, serverSlot, {
 		type = "tooltip",
@@ -2048,8 +2231,11 @@ function DarkChaos_ItemUpgrade_OnTooltipSetInventoryItem(tooltip, unit, slot)
 	local cached = DarkChaos_ItemUpgrade_GetCachedDataForLocation(serverBag, serverSlot);
 	if cached then
 		DarkChaos_ItemUpgrade_AttachTooltipLines(tooltip, cached);
+		DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag, serverSlot, cached);
 		return;
 	end
+
+	DarkChaos_ItemUpgrade_MaybeRequestHeirloomInfo(link, serverBag, serverSlot, cached);
 
 	DarkChaos_ItemUpgrade_QueueQuery(serverBag, serverSlot, {
 		type = "tooltip",
@@ -3509,9 +3695,13 @@ function DarkChaos_ItemUpgrade_UpgradeButton_OnClick(self)
 	-- Use different command for heirloom shirt upgrades (includes package ID)
 	if isHeirloomShirt then
 		if DCProtocol and DC.useDCProtocol then
-			local data = string.format("%d|%d|%d|%d", serverBag, serverSlot, targetLevel, packageId)
-			DCProtocol:Send("UPG", 0x07, data) -- CMSG_HEIRLOOM_UPGRADE
-			DC.Debug("Sending heirloom upgrade: " .. data)
+			DCProtocol:Request("UPG", 0x07, {
+				bag = serverBag,
+				slot = serverSlot,
+				targetLevel = targetLevel,
+				packageId = packageId,
+			}) -- CMSG_HEIRLOOM_UPGRADE
+			DC.Debug(string.format("Sending heirloom upgrade: %d|%d|%d|%d", serverBag, serverSlot, targetLevel, packageId))
 		else
 			command = string.format(".dcheirloom upgrade %d %d %d %d", serverBag, serverSlot, targetLevel, packageId);
 			SendChatMessage(command, "SAY");
@@ -3733,7 +3923,7 @@ function DarkChaos_ItemUpgrade_SelectItemBySlot(bag, slot)
 	if itemID == HEIRLOOM_SHIRT_ID then
 		DC.Debug("SelectItemBySlot: Sending heirloom query for item 300365");
 		if DCProtocol and DC.useDCProtocol then
-			DCProtocol:Send("UPG", 0x06, string.format("%d|%d", serverBag, serverSlot)) -- CMSG_HEIRLOOM_QUERY
+			DCProtocol:Request("UPG", 0x06, { bag = serverBag, slot = serverSlot }) -- CMSG_HEIRLOOM_QUERY
 		else
 			local heirloomCmd = string.format(".dcheirloom query %d %d", serverBag, serverSlot);
 			SendChatMessage(heirloomCmd, "SAY");
@@ -3962,9 +4152,13 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 	
 	-- Check if this is the heirloom shirt for special package stat display
 	local isHeirloomShirt = false;
+	local activePackageId = nil;
 	if DC.uiMode == "HEIRLOOM" and item.link then
 		local itemID = tonumber(item.link:match("item:(%d+)"));
 		isHeirloomShirt = (itemID == 300365);
+	end
+	if isHeirloomShirt then
+		activePackageId = item.heirloomPackageId or DC.selectedStatPackage;
 	end
 	
 	-- Create or update package indicator for heirloom mode
@@ -3975,8 +4169,8 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 		frame.PackageIndicator = indicator;
 	end
 	
-	if isHeirloomShirt and DC.selectedStatPackage and DC.STAT_PACKAGES[DC.selectedStatPackage] then
-		local pkg = DC.STAT_PACKAGES[DC.selectedStatPackage];
+	if isHeirloomShirt and activePackageId and DC.STAT_PACKAGES[activePackageId] then
+		local pkg = DC.STAT_PACKAGES[activePackageId];
 		local colorHex = string.format("%.2x%.2x%.2x", pkg.color.r*255, pkg.color.g*255, pkg.color.b*255);
 		frame.PackageIndicator:SetText(string.format("|cff888888Package:|r |cff%s%s|r", colorHex, pkg.name));
 		frame.PackageIndicator:Show();
@@ -4000,9 +4194,9 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 			end
 			
 			-- Add current package stats for heirloom shirt
-			if isHeirloomShirt and DC.selectedStatPackage and currentUpgrade > 0 then
+			if isHeirloomShirt and activePackageId and currentUpgrade > 0 then
 				text = text .. "|n|cff00ccff-- Package Stats --|r|n";
-				local pkgStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(DC.selectedStatPackage, currentUpgrade);
+				local pkgStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(activePackageId, currentUpgrade);
 				if pkgStats then
 					for _, pstat in ipairs(pkgStats) do
 						text = text .. string.format("|cffffffff%s: %d|r|n", pstat.name, pstat.value);
@@ -4030,11 +4224,11 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 			end
 			
 			-- Add preview package stats for heirloom shirt
-			if isHeirloomShirt and DC.selectedStatPackage then
+			if isHeirloomShirt and activePackageId then
 				local targetLevel = DC.targetUpgradeLevel or (currentUpgrade + 1);
 				text = text .. "|n|cff00ccff-- Package Stats --|r|n";
-				local pkgStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(DC.selectedStatPackage, targetLevel);
-				local currentPkgStats = (currentUpgrade > 0) and DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(DC.selectedStatPackage, currentUpgrade) or nil;
+				local pkgStats = DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(activePackageId, targetLevel);
+				local currentPkgStats = (currentUpgrade > 0) and DarkChaos_ItemUpgrade_GetPackageStatsAtLevel(activePackageId, currentUpgrade) or nil;
 				
 				if pkgStats then
 					for i, pstat in ipairs(pkgStats) do
@@ -4049,7 +4243,7 @@ function DarkChaos_ItemUpgrade_UpdateUI()
 						text = text .. string.format("|cff00ff00%s: %d%s|r|n", pstat.name, pstat.value, diffStr);
 					end
 				end
-			elseif isHeirloomShirt and not DC.selectedStatPackage then
+			elseif isHeirloomShirt and not activePackageId then
 				text = text .. "|n|cffff8800Select a stat package above|r|n";
 			end
 			
@@ -4268,6 +4462,7 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 				DC.Debug("Using serverUpgradeLevel as currentUpgrade: " .. tostring(currentUpgrade));
 			end
 			
+			local existing = DC.itemUpgradeCache[guid];
 			-- Build the cached data object
 			local data = {
 				guid = guid,
@@ -4285,7 +4480,7 @@ function DarkChaos_ItemUpgrade_OnChatMessage(message, sender)
 			
 			-- For heirlooms, include the selected package ID (will be updated by DCHEIRLOOM_QUERY later)
 			if isHeirloom then
-				data.heirloomPackageId = DC.selectedStatPackage or 0;
+				data.heirloomPackageId = (existing and existing.heirloomPackageId) or DC.selectedStatPackage or 0;
 			end
 			
 			-- Store in cache

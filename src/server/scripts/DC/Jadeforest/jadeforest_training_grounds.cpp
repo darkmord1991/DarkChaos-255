@@ -43,15 +43,15 @@ namespace
     // ---------------------------------------------------------------------
     // Entries (DB)
     // ---------------------------------------------------------------------
-    // NOTE: Per request, all Training Grounds NPC entries start at 800028.
+    // NOTE: Per request, all Training Grounds NPC entries start at 800040.
     // Boss-display dummies (pads): three different creature templates, each with a model pool in DB
     // (creature_template_model supports up to 4 models via Idx 0..3).
-    constexpr uint32 NPC_BOSS_DISPLAY_PAD_A = 800028;
-    constexpr uint32 NPC_BOSS_DISPLAY_PAD_B = 800033;
-    constexpr uint32 NPC_BOSS_DISPLAY_PAD_C = 800034;
-    constexpr uint32 NPC_BOSS_TRAINING_DUMMY = 800030;
-    constexpr uint32 NPC_TRAINING_ADD        = 800031;
-    constexpr uint32 NPC_TRAINING_TOTEM      = 800032;
+    constexpr uint32 NPC_BOSS_DISPLAY_PAD_A = 800040;
+    constexpr uint32 NPC_BOSS_TRAINING_DUMMY = 800041;
+    constexpr uint32 NPC_TRAINING_ADD        = 800042;
+    constexpr uint32 NPC_TRAINING_TOTEM      = 800043;
+    constexpr uint32 NPC_BOSS_DISPLAY_PAD_B = 800044;
+    constexpr uint32 NPC_BOSS_DISPLAY_PAD_C = 800045;
 
     // Pads are meant to be DB-spawned (persistent). Keep summon fallback off to avoid duplicates
     // if someone places the pads manually or via SQL.
@@ -124,6 +124,7 @@ namespace
     static std::unordered_map<ObjectGuid, TrainingConfig> s_configByPlayer;
     static std::unordered_map<ObjectGuid, TrainingSession> s_sessionByPlayer;
     static std::mutex s_trainingMutex;  // Thread safety for static containers
+    static std::unordered_map<ObjectGuid, uint32> s_spawnRequestByPlayer;
 
     // Personal phasing to avoid players seeing each other's spawned configurations.
     // Uses a small set of high bits to reduce collision with existing content.
@@ -197,6 +198,9 @@ namespace
         p.m_orientation = TRAINING_SPAWN_ANCHOR.o;
         return p;
     }
+
+    Position OffsetPosition(Position const& base, float forward, float right);
+    Position GetNearestBossPadPosition(Creature* master);
 
     enum class BossDisplayPoolId : uint8
     {
@@ -350,6 +354,99 @@ namespace
         s_sessionByPlayer[player->GetGUID()].spawned.push_back(creature->GetGUID());
     }
 
+    void SpawnTrainingDummies(Player* player, Creature* master)
+    {
+        if (!player || player->GetMapId() != 745)
+            return;
+
+        TrainingConfig& cfg = GetOrCreateConfig(player);
+
+        // Put the player in a personal phase bit (adds to their phase mask) so spawned dummies
+        // can be hidden from other players without writing any DB spawns.
+        uint32 personalPhaseBit = EnsurePlayerPersonalPhase(player);
+
+        uint8 count = cfg.multiTargetCount;
+        Position center;
+        switch (cfg.spawnLocation)
+        {
+            case TrainingConfig::SpawnLocation::NearMaster:
+                center = master ? master->GetPosition() : GetTrainingSpawnCenter();
+                break;
+            case TrainingConfig::SpawnLocation::NearPlayer:
+                center = player->GetPosition();
+                center.m_positionZ += TRAINING_SPAWN_Z_OFFSET;
+                break;
+            case TrainingConfig::SpawnLocation::NearestPad:
+                center = GetNearestBossPadPosition(master);
+                break;
+            case TrainingConfig::SpawnLocation::Anchor:
+            default:
+                center = GetTrainingSpawnCenter();
+                break;
+        }
+
+        uint8 chosenLevel = cfg.levelMatchPlayer ? ClampLevel(player->GetLevel()) : ClampLevel(cfg.fixedLevel);
+
+        for (uint8 i = 0; i < count; ++i)
+        {
+            Position pos = center;
+
+            // Deterministic, anchor-based offsets so spawns don't end up player-relative.
+            static constexpr float kOffsetsExactCenter[5][2] =
+            {
+                // First dummy spawns exactly at the configured center (requested teleport coords).
+                { 0.0f,  0.0f },
+                { 4.0f,  0.0f },
+                { -4.0f, 0.0f },
+                { 0.0f,  4.0f },
+                { 0.0f, -4.0f },
+            };
+
+            static constexpr float kOffsetsAvoidCaster[5][2] =
+            {
+                // Avoid spawning exactly on the caster/master.
+                { 6.0f,  0.0f },
+                { 6.0f,  4.0f },
+                { 6.0f, -4.0f },
+                { 10.0f,  0.0f },
+                { 10.0f,  4.0f },
+            };
+
+            uint8 offIdx = (i < 5) ? i : (i % 5);
+            bool avoidCaster = (cfg.spawnLocation == TrainingConfig::SpawnLocation::NearMaster) || (cfg.spawnLocation == TrainingConfig::SpawnLocation::NearPlayer);
+            float forward = avoidCaster ? kOffsetsAvoidCaster[offIdx][0] : kOffsetsExactCenter[offIdx][0];
+            float right   = avoidCaster ? kOffsetsAvoidCaster[offIdx][1] : kOffsetsExactCenter[offIdx][1];
+            pos = OffsetPosition(pos, forward, right);
+
+            if (Creature* dummy = player->SummonCreature(NPC_BOSS_TRAINING_DUMMY, pos, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 300000, 0, nullptr, true))
+            {
+                // Keep personal phase behavior, but ensure the creature matches the player's full phase mask.
+                if (personalPhaseBit)
+                    dummy->SetPhaseMask(player->GetPhaseMask(), true);
+                else
+                    dummy->SetPhaseMask(player->GetPhaseMask(), true);
+
+                // Apply level immediately (in case AI Reset hasn't run yet).
+                dummy->SetLevel(chosenLevel);
+                dummy->UpdateAllStats();
+
+                if (player->IsGameMaster())
+                {
+                    float dist = player->GetDistance(dummy);
+                    ChatHandler(player->GetSession()).PSendSysMessage(
+                        "Boss dummy spawned at: {} {} {} (dist {:.1f}). Player phase: {} Dummy phase: {}.",
+                        dummy->GetPositionX(), dummy->GetPositionY(), dummy->GetPositionZ(), dist,
+                        uint32(player->GetPhaseMask()), uint32(dummy->GetPhaseMask()));
+                }
+
+                TrackSpawn(player, dummy);
+            }
+        }
+
+        uint32 spawnedCount = count;
+        ChatHandler(player->GetSession()).PSendSysMessage("Spawned {} training {}.", spawnedCount, spawnedCount == 1 ? "dummy" : "dummies");
+    }
+
     void ApplyBossDummyConfig(Creature* me, Player* owner, TrainingConfig const& cfg)
     {
         // Cosmetic level toggle (we don't rebuild creature base stats here, since dummies are invulnerable).
@@ -414,6 +511,13 @@ namespace
         ACTION_SPAWN = 100,
         ACTION_DESPAWN = 101,
 
+        ACTION_OPEN_PROFILE_MENU = 150,
+        ACTION_OPEN_ARMOR_MENU = 151,
+        ACTION_OPEN_TARGET_MENU = 152,
+        ACTION_OPEN_LEVEL_MENU = 153,
+        ACTION_OPEN_SPAWNLOC_MENU = 154,
+        ACTION_BACK = 155,
+
         ACTION_PROFILE_NONE = 200,
         ACTION_PROFILE_CLEAVE = 201,
         ACTION_PROFILE_VOID = 202,
@@ -444,6 +548,56 @@ namespace
         ACTION_SPAWNLOC_PAD    = 803,
     };
 
+    void BuildProfileMenu(Player* player, Creature* creature)
+    {
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: None", GOSSIP_SENDER_MAIN, ACTION_PROFILE_NONE);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Frontal cleave", GOSSIP_SENDER_MAIN, ACTION_PROFILE_CLEAVE);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Targeted void zones", GOSSIP_SENDER_MAIN, ACTION_PROFILE_VOID);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Stacking debuff", GOSSIP_SENDER_MAIN, ACTION_PROFILE_STACK);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Kill add before totem", GOSSIP_SENDER_MAIN, ACTION_PROFILE_ADD);
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Mixed (random)", GOSSIP_SENDER_MAIN, ACTION_PROFILE_MIXED);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+    }
+
+    void BuildArmorMenu(Player* player, Creature* creature)
+    {
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Armor: Normal", GOSSIP_SENDER_MAIN, ACTION_ARMOR_NORMAL);
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Armor: Low", GOSSIP_SENDER_MAIN, ACTION_ARMOR_LOW);
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Armor: Bossy", GOSSIP_SENDER_MAIN, ACTION_ARMOR_BOSSY);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+    }
+
+    void BuildTargetsMenu(Player* player, Creature* creature)
+    {
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Targets: 1", GOSSIP_SENDER_MAIN, ACTION_MULTI_1);
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Targets: 2", GOSSIP_SENDER_MAIN, ACTION_MULTI_2);
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Targets: 3", GOSSIP_SENDER_MAIN, ACTION_MULTI_3);
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Targets: 5", GOSSIP_SENDER_MAIN, ACTION_MULTI_5);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+    }
+
+    void BuildLevelMenu(Player* player, Creature* creature)
+    {
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: Match player", GOSSIP_SENDER_MAIN, ACTION_LEVEL_MATCH);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: 80", GOSSIP_SENDER_MAIN, ACTION_LEVEL_80);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: 255", GOSSIP_SENDER_MAIN, ACTION_LEVEL_255);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+    }
+
+    void BuildSpawnLocationMenu(Player* player, Creature* creature)
+    {
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Center (Temple Grounds)", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_ANCHOR);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Near master", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_MASTER);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Near player", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_PLAYER);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Nearest pad", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_PAD);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Back", GOSSIP_SENDER_MAIN, ACTION_BACK);
+        SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+    }
+
     void BuildMainMenu(Player* player, Creature* creature)
     {
         TrainingConfig const& cfg = GetOrCreateConfig(player);
@@ -451,45 +605,52 @@ namespace
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Spawn boss-training dummy", GOSSIP_SENDER_MAIN, ACTION_SPAWN);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Despawn my training dummies", GOSSIP_SENDER_MAIN, ACTION_DESPAWN);
 
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: None", GOSSIP_SENDER_MAIN, ACTION_PROFILE_NONE);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Frontal cleave", GOSSIP_SENDER_MAIN, ACTION_PROFILE_CLEAVE);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Targeted void zones", GOSSIP_SENDER_MAIN, ACTION_PROFILE_VOID);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Stacking debuff", GOSSIP_SENDER_MAIN, ACTION_PROFILE_STACK);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Kill add before totem", GOSSIP_SENDER_MAIN, ACTION_PROFILE_ADD);
-        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, "Profile: Mixed (random)", GOSSIP_SENDER_MAIN, ACTION_PROFILE_MIXED);
+        char const* profileText = "Profile: Mixed (random)";
+        switch (cfg.profile)
+        {
+            case TrainingProfile::None: profileText = "Profile: None"; break;
+            case TrainingProfile::Cleave: profileText = "Profile: Frontal cleave"; break;
+            case TrainingProfile::VoidZone: profileText = "Profile: Targeted void zones"; break;
+            case TrainingProfile::StackingDebuff: profileText = "Profile: Stacking debuff"; break;
+            case TrainingProfile::AddBeforeTotem: profileText = "Profile: Kill add before totem"; break;
+            case TrainingProfile::MixedRandom:
+            default: profileText = "Profile: Mixed (random)"; break;
+        }
+        AddGossipItemFor(player, GOSSIP_ICON_TRAINER, profileText, GOSSIP_SENDER_MAIN, ACTION_OPEN_PROFILE_MENU);
 
-        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Armor: Normal", GOSSIP_SENDER_MAIN, ACTION_ARMOR_NORMAL);
-        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Armor: Low", GOSSIP_SENDER_MAIN, ACTION_ARMOR_LOW);
-        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, "Armor: Bossy", GOSSIP_SENDER_MAIN, ACTION_ARMOR_BOSSY);
+        char const* armorText = "Armor: Normal";
+        switch (cfg.armor)
+        {
+            case ArmorMode::Low: armorText = "Armor: Low"; break;
+            case ArmorMode::Bossy: armorText = "Armor: Bossy"; break;
+            case ArmorMode::Normal:
+            default: armorText = "Armor: Normal"; break;
+        }
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, armorText, GOSSIP_SENDER_MAIN, ACTION_OPEN_ARMOR_MENU);
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, cfg.moving ? "Movement: Moving (toggle)" : "Movement: Stationary (toggle)", GOSSIP_SENDER_MAIN, ACTION_MOVE_TOGGLE);
 
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Targets: 1", GOSSIP_SENDER_MAIN, ACTION_MULTI_1);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Targets: 2", GOSSIP_SENDER_MAIN, ACTION_MULTI_2);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Targets: 3", GOSSIP_SENDER_MAIN, ACTION_MULTI_3);
-        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, "Targets: 5", GOSSIP_SENDER_MAIN, ACTION_MULTI_5);
+        std::string targetsText = "Targets: " + std::to_string(cfg.multiTargetCount);
+        AddGossipItemFor(player, GOSSIP_ICON_VENDOR, targetsText.c_str(), GOSSIP_SENDER_MAIN, ACTION_OPEN_TARGET_MENU);
 
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: Match player", GOSSIP_SENDER_MAIN, ACTION_LEVEL_MATCH);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: 80", GOSSIP_SENDER_MAIN, ACTION_LEVEL_80);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Level: 255", GOSSIP_SENDER_MAIN, ACTION_LEVEL_255);
+        char const* levelText = "Level: Match player";
+        if (!cfg.levelMatchPlayer)
+            levelText = (cfg.fixedLevel == 255) ? "Level: 255" : "Level: 80";
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, levelText, GOSSIP_SENDER_MAIN, ACTION_OPEN_LEVEL_MENU);
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, cfg.randomBossVisual ? "Visual: Random boss (toggle)" : "Visual: Dummy model (toggle)", GOSSIP_SENDER_MAIN, ACTION_VISUAL_TOGGLE);
 
         // Spawn location
-        char const* spawnLocText = "Spawn: Anchor";
+        char const* spawnLocText = "Spawn location: Center (Temple Grounds)";
         switch (cfg.spawnLocation)
         {
-            case TrainingConfig::SpawnLocation::NearMaster: spawnLocText = "Spawn: Near master"; break;
-            case TrainingConfig::SpawnLocation::NearPlayer: spawnLocText = "Spawn: Near player"; break;
-            case TrainingConfig::SpawnLocation::NearestPad: spawnLocText = "Spawn: Nearest pad"; break;
+            case TrainingConfig::SpawnLocation::NearMaster: spawnLocText = "Spawn location: Near master"; break;
+            case TrainingConfig::SpawnLocation::NearPlayer: spawnLocText = "Spawn location: Near player"; break;
+            case TrainingConfig::SpawnLocation::NearestPad: spawnLocText = "Spawn location: Nearest pad"; break;
             case TrainingConfig::SpawnLocation::Anchor:
-            default: spawnLocText = "Spawn: Anchor"; break;
+            default: spawnLocText = "Spawn location: Center (Temple Grounds)"; break;
         }
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, spawnLocText, GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_ANCHOR);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Anchor", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_ANCHOR);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Near master", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_MASTER);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Near player", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_PLAYER);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Spawn location: Nearest pad", GOSSIP_SENDER_MAIN, ACTION_SPAWNLOC_PAD);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, spawnLocText, GOSSIP_SENDER_MAIN, ACTION_OPEN_SPAWNLOC_MENU);
 
         SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
     }
@@ -1162,6 +1323,25 @@ public:
 
         switch (action)
         {
+            case ACTION_OPEN_PROFILE_MENU:
+                BuildProfileMenu(player, creature);
+                return true;
+            case ACTION_OPEN_ARMOR_MENU:
+                BuildArmorMenu(player, creature);
+                return true;
+            case ACTION_OPEN_TARGET_MENU:
+                BuildTargetsMenu(player, creature);
+                return true;
+            case ACTION_OPEN_LEVEL_MENU:
+                BuildLevelMenu(player, creature);
+                return true;
+            case ACTION_OPEN_SPAWNLOC_MENU:
+                BuildSpawnLocationMenu(player, creature);
+                return true;
+            case ACTION_BACK:
+                BuildMainMenu(player, creature);
+                return true;
+
             case ACTION_SPAWN:
             {
                 DespawnSession(player);
@@ -1172,11 +1352,6 @@ public:
                     break;
                 }
 
-                // Put the player in a personal phase bit (adds to their phase mask) so spawned dummies
-                // can be hidden from other players without writing any DB spawns.
-                uint32 personalPhaseBit = EnsurePlayerPersonalPhase(player);
-
-                uint8 count = cfg.multiTargetCount;
                 Position center;
                 switch (cfg.spawnLocation)
                 {
@@ -1196,66 +1371,30 @@ public:
                         break;
                 }
 
-                uint8 chosenLevel = cfg.levelMatchPlayer ? ClampLevel(player->GetLevel()) : ClampLevel(cfg.fixedLevel);
+                // Teleport player to the training center, then start after 3 seconds.
+                player->TeleportTo(player->GetMapId(), center.m_positionX, center.m_positionY, center.m_positionZ, center.m_orientation);
+                ChatHandler(player->GetSession()).PSendSysMessage("Training starts in 3 seconds...");
 
-                for (uint8 i = 0; i < count; ++i)
+                ObjectGuid playerGuid = player->GetGUID();
+                ObjectGuid masterGuid = creature ? creature->GetGUID() : ObjectGuid::Empty;
+                uint32 requestId = ++s_spawnRequestByPlayer[playerGuid];
+
+                player->m_Events.AddEventAtOffset([playerGuid, masterGuid, requestId]
                 {
-                    Position pos = center;
+                    Player* owner = ObjectAccessor::FindPlayer(playerGuid);
+                    if (!owner)
+                        return;
 
-                    // Deterministic, anchor-based offsets so spawns don't end up player-relative.
-                    static constexpr float kOffsetsExactCenter[5][2] =
-                    {
-                        // First dummy spawns exactly at the configured center (requested teleport coords).
-                        { 0.0f,  0.0f },
-                        { 4.0f,  0.0f },
-                        { -4.0f, 0.0f },
-                        { 0.0f,  4.0f },
-                        { 0.0f, -4.0f },
-                    };
+                    auto it = s_spawnRequestByPlayer.find(playerGuid);
+                    if (it == s_spawnRequestByPlayer.end() || it->second != requestId)
+                        return;
 
-                    static constexpr float kOffsetsAvoidCaster[5][2] =
-                    {
-                        // Avoid spawning exactly on the caster/master.
-                        { 6.0f,  0.0f },
-                        { 6.0f,  4.0f },
-                        { 6.0f, -4.0f },
-                        { 10.0f,  0.0f },
-                        { 10.0f,  4.0f },
-                    };
+                    Creature* master = nullptr;
+                    if (!masterGuid.IsEmpty())
+                        master = ObjectAccessor::GetCreature(*owner, masterGuid);
 
-                    uint8 offIdx = (i < 5) ? i : (i % 5);
-                    bool avoidCaster = (cfg.spawnLocation == TrainingConfig::SpawnLocation::NearMaster) || (cfg.spawnLocation == TrainingConfig::SpawnLocation::NearPlayer);
-                    float forward = avoidCaster ? kOffsetsAvoidCaster[offIdx][0] : kOffsetsExactCenter[offIdx][0];
-                    float right   = avoidCaster ? kOffsetsAvoidCaster[offIdx][1] : kOffsetsExactCenter[offIdx][1];
-                    pos = OffsetPosition(pos, forward, right);
-
-                    if (Creature* dummy = player->SummonCreature(NPC_BOSS_TRAINING_DUMMY, pos, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 300000, 0, nullptr, true))
-                    {
-                        // Keep personal phase behavior, but ensure the creature matches the player's full phase mask.
-                        if (personalPhaseBit)
-                            dummy->SetPhaseMask(player->GetPhaseMask(), true);
-                        else
-                            dummy->SetPhaseMask(player->GetPhaseMask(), true);
-
-                        // Apply level immediately (in case AI Reset hasn't run yet).
-                        dummy->SetLevel(chosenLevel);
-                        dummy->UpdateAllStats();
-
-                        if (player->IsGameMaster())
-                        {
-                            float dist = player->GetDistance(dummy);
-                            ChatHandler(player->GetSession()).PSendSysMessage(
-                                "Boss dummy spawned at: {} {} {} (dist {:.1f}). Player phase: {} Dummy phase: {}.",
-                                dummy->GetPositionX(), dummy->GetPositionY(), dummy->GetPositionZ(), dist,
-                                uint32(player->GetPhaseMask()), uint32(dummy->GetPhaseMask()));
-                        }
-
-                        TrackSpawn(player, dummy);
-                    }
-                }
-
-                uint32 spawnedCount = count;
-                ChatHandler(player->GetSession()).PSendSysMessage("Spawned {} training {}.", spawnedCount, spawnedCount == 1 ? "dummy" : "dummies");
+                    SpawnTrainingDummies(owner, master);
+                }, 3s);
                 break;
             }
 
@@ -1341,12 +1480,14 @@ public:
         ReleasePlayerPersonalPhase(player);
         s_sessionByPlayer.erase(player->GetGUID());
         s_configByPlayer.erase(player->GetGUID());
+        s_spawnRequestByPlayer.erase(player->GetGUID());
     }
 
     void OnPlayerMapChanged(Player* player) override
     {
         // Avoid leaving training summons behind when teleporting away.
         DespawnSession(player);
+        s_spawnRequestByPlayer.erase(player->GetGUID());
 
         if (player && player->GetMapId() == 745)
             EnsurePlayerPersonalPhase(player);

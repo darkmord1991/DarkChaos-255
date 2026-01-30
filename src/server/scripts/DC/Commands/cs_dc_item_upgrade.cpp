@@ -1009,7 +1009,7 @@ public:
     static bool HandleSeasonInfoCommand(ChatHandler* handler, const char* /*args*/)
     {
          // Get current season
-        QueryResult result = CharacterDatabase.Query(
+        QueryResult result = WorldDatabase.Query(
             "SELECT season_id, season_name, start_timestamp FROM dc_seasons WHERE is_active = 1");
 
         if (!result)
@@ -1065,7 +1065,7 @@ public:
             type = args;
 
         // Get current season - optimized to just get ID
-        QueryResult result = CharacterDatabase.Query(
+        QueryResult result = WorldDatabase.Query(
             "SELECT season_id FROM dc_seasons WHERE is_active = 1");
 
         if (!result)

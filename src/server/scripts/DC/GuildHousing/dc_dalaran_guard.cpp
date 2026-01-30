@@ -22,13 +22,14 @@ namespace
         float z;
         float o;
         uint32 poiIcon;
+        const char* gossipIcon;
         uint32 menuIcon;
     };
 
     static const DalaranGuardPOI dalaran_guard_pois[] =
     {
-        {"Bank", 1409, 1202.201f, 1135.176f, 530.336f, 3.296f, ICON_POI_SMALL_HOUSE, GOSSIP_ICON_TAXI},
-        {"Mythic+", 1409, 1102.5204f, 1198.4127f, 536.79785f, 1.6015308f, ICON_POI_SMALL_HOUSE, GOSSIP_ICON_TAXI}
+        {"Bank", 1409, 1202.201f, 1135.176f, 530.336f, 3.296f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_Bag_04", GOSSIP_ICON_TAXI},
+        {"Mythic+", 1409, 1102.5204f, 1198.4127f, 536.79785f, 1.6015308f, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_DualWield", GOSSIP_ICON_TAXI}
     };
 
     void SendPoiMarker(Player* player, float x, float y, uint32 icon, uint32 flags, uint32 importance, std::string const& name)
@@ -67,8 +68,9 @@ public:
             uint32 idx = static_cast<uint32>(i);
             DalaranGuardPOI const& poi = dalaran_guard_pois[i];
             std::string label = "Teleport: " + std::string(poi.name);
+            std::string icon = (poi.gossipIcon && *poi.gossipIcon) ? poi.gossipIcon : "Interface\\Icons\\Spell_Arcane_TeleportDalaran";
             AddGossipItemFor(player, poi.menuIcon,
-                MakeLargeGossipText("Interface\\Icons\\Spell_Arcane_TeleportDalaran", label),
+                MakeLargeGossipText(icon, label),
                 GOSSIP_SENDER_MAIN, idx);
         }
 

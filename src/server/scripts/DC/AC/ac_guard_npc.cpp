@@ -71,6 +71,7 @@ struct ACGuardPOI {
     float x, y, z, o;   // Coordinates and orientation
     bool teleport;      // If true, selecting this entry teleports instead of marking
     uint32 poiIcon;     // Poi_Icon (map/minimap marker)
+    const char* gossipIcon; // Large gossip icon (texture path)
     uint32 menuIcon;    // GossipOptionIcon (menu icon)
 };
 
@@ -79,18 +80,18 @@ struct ACGuardPOI {
 // candidate for being moved to a configuration file in a future change.
 static const ACGuardPOI ac_guard_pois[] = {
     // Teleport entries
-    {"Startcamp",            37,  131.000f, 1012.000f, 295.000f, 5.000f,      true,  ICON_POI_SMALL_HOUSE, GOSSIP_ICON_TAXI},
-    {"Flightmaster Startcamp", 37, 72.5327f, 932.2570f, 339.3900f, 0.0680255f, true, ICON_POI_BLUETOWER,   GOSSIP_ICON_TAXI},
+    {"Startcamp",            37,  131.000f, 1012.000f, 295.000f, 5.000f,      true,  ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_Campfire",      GOSSIP_ICON_TAXI},
+    {"Flightmaster Startcamp", 37, 72.5327f, 932.2570f, 339.3900f, 0.0680255f, true, ICON_POI_BLUETOWER,   "Interface\\Icons\\Ability_Mount_Wyvern_01", GOSSIP_ICON_TAXI},
 
     // Map/minimap POI entries
-    {"Innkeeper",            37,  100.973f, 1037.9f,  297.107f, 2.56106f,     false, ICON_POI_SMALL_HOUSE, GOSSIP_ICON_TALK},
-    {"Auction House",        37,  117.113f, 1051.78f, 297.107f, 0.92979f,     false, ICON_POI_SMALL_HOUSE, GOSSIP_ICON_MONEY_BAG},
-    {"Stable Master",        37,   95.3867f, 1027.84f, 297.107f, 2.5163f,     false, ICON_POI_SMALL_HOUSE, GOSSIP_ICON_VENDOR},
-    {"Riding Trainer",       37,  120.768f, 955.565f, 295.072f, 5.15048f,     false, ICON_POI_GREYTOWER,   GOSSIP_ICON_TRAINER},
-    {"Profession Trainers",  37,   43.905f, 1172.420f, 367.342f, 2.560f,      false, ICON_POI_BWTOWER,     GOSSIP_ICON_TRAINER},
-    {"Weapon Trainer",       37,  100.351f, 1004.96f, 296.329f, 0.258275f,    false, ICON_POI_GREYTOWER,   GOSSIP_ICON_TRAINER},
-    {"Violet Temple",        37, -574.179f, -208.159f, 355.034f, 3.8202f,     false, ICON_POI_BWTOWER,     GOSSIP_ICON_CHAT},
-    {"Dragon Statues",       37,  -53.4259f, -40.4419f, 271.541f, 3.42052f,   false, ICON_POI_TOMBSTONE,   GOSSIP_ICON_DOT}
+    {"Innkeeper",            37,  100.973f, 1037.9f,  297.107f, 2.56106f,     false, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_InnKey",        GOSSIP_ICON_TALK},
+    {"Auction House",        37,  117.113f, 1051.78f, 297.107f, 0.92979f,     false, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_Coin_02",      GOSSIP_ICON_MONEY_BAG},
+    {"Stable Master",        37,   95.3867f, 1027.84f, 297.107f, 2.5163f,     false, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Hunter_BeastCall", GOSSIP_ICON_VENDOR},
+    {"Riding Trainer",       37,  120.768f, 955.565f, 295.072f, 5.15048f,     false, ICON_POI_GREYTOWER,   "Interface\\Icons\\Ability_Mount_RidingHorse", GOSSIP_ICON_TRAINER},
+    {"Profession Trainers",  37,   43.905f, 1172.420f, 367.342f, 2.560f,      false, ICON_POI_BWTOWER,     "Interface\\Icons\\INV_Scroll_05",        GOSSIP_ICON_TRAINER},
+    {"Weapon Trainer",       37,  100.351f, 1004.96f, 296.329f, 0.258275f,    false, ICON_POI_GREYTOWER,   "Interface\\Icons\\INV_Sword_04",         GOSSIP_ICON_TRAINER},
+    {"Violet Temple",        37, -574.179f, -208.159f, 355.034f, 3.8202f,     false, ICON_POI_BWTOWER,     "Interface\\Icons\\Spell_Arcane_MindMastery", GOSSIP_ICON_CHAT},
+    {"Dragon Statues",       37,  -53.4259f, -40.4419f, 271.541f, 3.42052f,   false, ICON_POI_TOMBSTONE,   "Interface\\Icons\\INV_Misc_StoneDragon",  GOSSIP_ICON_DOT}
 };
 
 namespace
@@ -131,7 +132,7 @@ public:
             uint32 idx = static_cast<uint32>(i);
             ACGuardPOI const& poi = ac_guard_pois[i];
             std::string label = (poi.teleport ? "Teleport: " : "Show on map: ") + std::string(poi.name);
-            std::string icon = poi.teleport ? "Interface\\Icons\\Spell_Arcane_TeleportDalaran" : "Interface\\Icons\\INV_Misc_Map_01";
+            std::string icon = (poi.gossipIcon && *poi.gossipIcon) ? poi.gossipIcon : (poi.teleport ? "Interface\\Icons\\Spell_Arcane_TeleportDalaran" : "Interface\\Icons\\INV_Misc_Map_01");
             AddGossipItemFor(player, poi.menuIcon, MakeLargeGossipText(icon, label), GOSSIP_SENDER_MAIN, idx);
         }
         // Show the gossip menu to the player

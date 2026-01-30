@@ -789,14 +789,19 @@ function DarkChaos_ItemUpgrade_PerformHeirloomUpgrade(item, targetLevel)
 	-- Try DCAddonProtocol first
 	local DCProtocol = rawget(_G, "DCAddonProtocol");
 	if DCProtocol and DC.useDCProtocol then
-		local data = string.format("%d|%d|%d|%d", serverBag, serverSlot, targetLevel, DC.selectedStatPackage)
-		DCProtocol:Send("UPG", 0x07, data) -- CMSG_HEIRLOOM_UPGRADE
-		DC.Debug("Sending heirloom upgrade via Protocol: " .. data)
+		DCProtocol:Request("UPG", 0x07, {
+			bag = serverBag,
+			slot = serverSlot,
+			targetLevel = targetLevel,
+			packageId = DC.selectedStatPackage,
+		}) -- CMSG_HEIRLOOM_UPGRADE
+		DC.Debug(string.format("Sending heirloom upgrade via Protocol: %d|%d|%d|%d", serverBag, serverSlot, targetLevel, DC.selectedStatPackage))
 	else
 		-- Fallback to chat command
 		local command = string.format(".dcheirloom upgrade %d %d %d %d", 
 			serverBag, serverSlot, targetLevel, DC.selectedStatPackage);
 		SendChatMessage(command, "SAY");
+		DC.Debug("Sending heirloom upgrade via chat: " .. command)
 	end
 	
 	DC.pendingUpgrade = {
@@ -809,6 +814,5 @@ function DarkChaos_ItemUpgrade_PerformHeirloomUpgrade(item, targetLevel)
 		isHeirloom = true,
 	};
 	
-	DC.Debug("Sending heirloom upgrade: " .. command);
-	SendChatMessage(command, "SAY");
+	-- (Do not send duplicate chat command when using protocol)
 end

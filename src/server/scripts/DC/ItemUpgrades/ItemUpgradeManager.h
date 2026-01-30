@@ -134,6 +134,8 @@ namespace DarkChaos
         struct TierDefinition
         {
             uint8 tier_id;
+            uint16 min_ilvl;
+            uint16 max_ilvl;
             uint8 max_upgrade_level;
             float stat_multiplier_max;
             bool is_artifact;

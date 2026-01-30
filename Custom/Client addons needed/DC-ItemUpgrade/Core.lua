@@ -614,35 +614,17 @@ function DC.RegisterDCProtocolHandlers()
 	
 	-- SMSG_ITEM_INFO (0x10) - Item upgrade information response
 	DCProtocol:RegisterHandler("UPG", 0x10, function(data)
-		DC.Debug("Received SMSG_ITEM_INFO: " .. (data or "nil"));
-		if not data or data == "" then return; end
+		DC.Debug("Received SMSG_ITEM_INFO: " .. tostring(data or "nil"));
+		if type(data) ~= "table" then return; end
 		
-		-- Check for JSON format
-		local isJSON = string.sub(data, 1, 1) == "{"
-		local info
-		
-		if isJSON and DC.useDCProtocolJSON then
-			info = DC.ParseJSON(data)
-			if info then
-				info.cloneEntries = info.cloneEntries or DC.ParseCloneMap(info.cloneMap)
-			end
-		else
-			-- Parse legacy format: itemId|currentUpgrade|maxUpgrade|tier|tokenCost|essenceCost|baseEntry|cloneMap
-			local itemId, currentUpgrade, maxUpgrade, tier, tokenCost, essenceCost, baseEntry, cloneMap = 
-				string.match(data, "^(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|?(.*)$")
-			
-			if itemId then
-				info = {
-					itemID = tonumber(itemId),
-					currentUpgrade = tonumber(currentUpgrade) or 0,
-					maxUpgrade = tonumber(maxUpgrade) or 10,
-					tier = tonumber(tier) or 1,
-					tokenCost = tonumber(tokenCost) or 0,
-					essenceCost = tonumber(essenceCost) or 0,
-					baseEntry = tonumber(baseEntry) or tonumber(itemId),
-					cloneEntries = DC.ParseCloneMap(cloneMap),
-				}
-			end
+		local info = data
+		info.itemID = info.itemID or info.itemId
+		if info then
+			info.cloneEntries = info.cloneEntries or DC.ParseCloneMap(info.cloneMap)
+		end
+		if DarkChaos_ItemUpgrade_HandleJsonItemInfo then
+			DarkChaos_ItemUpgrade_HandleJsonItemInfo(info)
+			return
 		end
 		
 		if info and info.itemID then
@@ -665,33 +647,15 @@ function DC.RegisterDCProtocolHandlers()
 	
 	-- SMSG_UPGRADE_RESULT (0x11) - Upgrade success/failure notification
 	DCProtocol:RegisterHandler("UPG", 0x11, function(data)
-		DC.Debug("Received SMSG_UPGRADE_RESULT: " .. (data or "nil"));
-		if not data or data == "" then return; end
+		DC.Debug("Received SMSG_UPGRADE_RESULT: " .. tostring(data or "nil"));
+		if type(data) ~= "table" then return; end
 		
-		-- Check for JSON format
-		local isJSON = string.sub(data, 1, 1) == "{"
-		local success, itemId, newLevel, newEntry, errorCode, errorMsg
-		
-		if isJSON and DC.useDCProtocolJSON then
-			local parsed = DC.ParseJSON(data)
-			if parsed then
-				success = parsed.success
-				itemId = parsed.itemId
-				newLevel = parsed.newLevel or 0
-				newEntry = parsed.newEntry
-				errorCode = parsed.errorCode or 0
-				errorMsg = parsed.errorMsg
-			end
-		else
-			-- Parse legacy format: success|itemId|newLevel|newEntry|errorCode|errorMsg
-			success, itemId, newLevel, newEntry, errorCode, errorMsg = 
-				string.match(data, "^(%d)|(%d+)|(%d+)|(%d+)|(%d+)|?(.*)$")
-			success = (success == "1")
-			itemId = tonumber(itemId)
-			newLevel = tonumber(newLevel) or 0
-			newEntry = tonumber(newEntry)
-			errorCode = tonumber(errorCode) or 0
-		end
+		local success = data.success
+		local itemId = data.itemId or data.itemID
+		local newLevel = data.newLevel or 0
+		local newEntry = data.newEntry
+		local errorCode = data.errorCode or 0
+		local errorMsg = data.errorMsg
 		
 		if success then
 			-- Upgrade successful
@@ -761,32 +725,12 @@ function DC.RegisterDCProtocolHandlers()
 	-- SMSG_CURRENCY_UPDATE (0x14) - Token/Essence balance update
 	DCProtocol:RegisterHandler("UPG", 0x14, function(data)
 		DC.Debug("Received SMSG_CURRENCY_UPDATE: " .. tostring(data));
-		if not data then return; end
+		if type(data) ~= "table" then return; end
 		
-		-- Check for JSON format - DCAddonProtocol may pass decoded table or raw string
-		local tokens, essence, tokenId, essenceId
-		
-		if type(data) == "table" then
-			-- Already decoded by DCAddonProtocol
-			tokens = data.tokens
-			essence = data.essence
-			tokenId = data.tokenId or data.tokenID
-			enessenceId = data.essenceId or data.essenceID
-		elseif type(data) == "string" and data ~= "" then
-			local isJSON = string.sub(data, 1, 1) == "{"
-			if isJSON and DC.useDCProtocolJSON then
-				local parsed = DC.ParseJSON(data)
-				if parsed then
-					tokens = parsed.tokens
-					essence = parsed.essence
-					tokenId = parsed.tokenId or parsed.tokenID
-					enessenceId = parsed.essenceId or parsed.essenceID
-				end
-			else
-				-- Parse legacy format: tokens|essence
-				tokens, essence = string.match(data, "^(%d+)|(%d+)$")
-			end
-		end
+		local tokens = data.tokens
+		local essence = data.essence
+		local tokenId = data.tokenId or data.tokenID
+		local essenceId = data.essenceId or data.essenceID
 		
 		if tokens and essence then
 			DC.playerTokens = tonumber(tokens) or 0;
@@ -823,40 +767,33 @@ function DC.RegisterDCProtocolHandlers()
 	-- SMSG_BATCH_ITEM_INFO (0x12) - Multiple items info response (for inventory scan)
 	DCProtocol:RegisterHandler("UPG", 0x12, function(data)
 		DC.Debug("Received SMSG_BATCH_ITEM_INFO");
-		if not data or data == "" then return; end
+		if type(data) ~= "table" then return; end
 		
-		-- Check for JSON format
-		local isJSON = string.sub(data, 1, 1) == "["
-		
-		if isJSON and DC.useDCProtocolJSON then
-			local items = DC.ParseJSON(data)
-			if items and type(items) == "table" then
-				DC.itemUpgradeCache = DC.itemUpgradeCache or {}
-				for _, item in ipairs(items) do
-					if item.itemId then
-						DC.itemUpgradeCache[item.itemId] = {
-							itemID = item.itemId,
+		local items = data.items or data
+		if items and type(items) == "table" then
+			DC.itemUpgradeCache = DC.itemUpgradeCache or {}
+			for _, item in ipairs(items) do
+				if type(item) == "table" then
+					local itemId = item.itemId or item.itemID
+					if itemId then
+						DC.itemUpgradeCache[itemId] = {
+							itemID = itemId,
 							currentUpgrade = item.currentUpgrade or 0,
 							maxUpgrade = item.maxUpgrade or 10,
 							tier = item.tier or 1,
 						}
 					end
-				end
-			end
-		else
-			-- Parse legacy format: multiple items separated by semicolon
-			for itemData in string.gmatch(data, "[^;]+") do
-				local itemId, currentUpgrade, maxUpgrade, tier = 
-					string.match(itemData, "^(%d+)|(%d+)|(%d+)|(%d+)")
-				
-				if itemId then
-					DC.itemUpgradeCache = DC.itemUpgradeCache or {}
-					DC.itemUpgradeCache[tonumber(itemId)] = {
-						itemID = tonumber(itemId),
-						currentUpgrade = tonumber(currentUpgrade) or 0,
-						maxUpgrade = tonumber(maxUpgrade) or 10,
-						tier = tonumber(tier) or 1,
-					}
+				elseif type(item) == "string" then
+					local bag, slot, guid, entry, tier = string.match(item, "^(%d+):(%d+):(%d+):(%d+):(%d+)")
+					if entry then
+						local entryId = tonumber(entry)
+						DC.itemUpgradeCache[entryId] = {
+							itemID = entryId,
+							currentUpgrade = 0,
+							maxUpgrade = 10,
+							tier = tonumber(tier) or 1,
+						}
+					end
 				end
 			end
 		end
@@ -866,6 +803,82 @@ function DC.RegisterDCProtocolHandlers()
 			DC.RefreshInventoryOverlays();
 		end
 	end);
+
+	-- SMSG_HEIRLOOM_INFO (0x16) - Heirloom upgrade info
+	DCProtocol:RegisterHandler("UPG", 0x16, function(data)
+		DC.Debug("Received SMSG_HEIRLOOM_INFO: " .. tostring(data or "nil"));
+		if type(data) ~= "table" then return; end
+
+		local success, itemGuid, level, packageId, maxLevel, maxPackage
+		success = data.success
+		itemGuid = data.itemGuid or data.itemID
+		level = data.level or data.upgradeLevel
+		packageId = data.packageId
+		maxLevel = data.maxLevel
+		maxPackage = data.maxPackage
+
+		if success then
+			DC.selectedStatPackage = (packageId and packageId > 0) and packageId or DC.selectedStatPackage
+			if DC.currentItem and DC.currentItem.guid == itemGuid then
+				DC.currentItem.currentUpgrade = level
+				DC.currentItem.maxUpgrade = maxLevel
+				DC.currentItem.heirloomPackageId = packageId
+			end
+			if itemGuid then
+				DC.itemUpgradeCache = DC.itemUpgradeCache or {}
+				local cached = DC.itemUpgradeCache[itemGuid] or {}
+				cached.itemID = cached.itemID or itemGuid
+				cached.currentUpgrade = level or cached.currentUpgrade
+				cached.maxUpgrade = maxLevel or cached.maxUpgrade
+				cached.heirloomPackageId = packageId or cached.heirloomPackageId
+				DC.itemUpgradeCache[itemGuid] = cached
+			end
+			if DarkChaos_ItemUpgrade_UpdateUI then
+				DarkChaos_ItemUpgrade_UpdateUI()
+			end
+		else
+			local msg = data.errorMsg or data.message or "Heirloom query failed."
+			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000" .. msg .. "|r")
+		end
+	end)
+
+	-- SMSG_HEIRLOOM_RESULT (0x17) - Heirloom upgrade result
+	DCProtocol:RegisterHandler("UPG", 0x17, function(data)
+		DC.Debug("Received SMSG_HEIRLOOM_RESULT: " .. tostring(data or "nil"));
+		if type(data) ~= "table" then return; end
+
+		local success, itemGuid, newLevel, packageId, enchantId
+		success = data.success
+		itemGuid = data.itemGuid or data.itemID
+		newLevel = data.newLevel or data.level
+		packageId = data.packageId
+		enchantId = data.enchantId
+
+		if success then
+			if DC.currentItem and DC.currentItem.guid == itemGuid then
+				DC.currentItem.currentUpgrade = newLevel
+				DC.currentItem.heirloomPackageId = packageId or DC.currentItem.heirloomPackageId
+			end
+			if itemGuid then
+				DC.itemUpgradeCache = DC.itemUpgradeCache or {}
+				local cached = DC.itemUpgradeCache[itemGuid] or {}
+				cached.itemID = cached.itemID or itemGuid
+				cached.currentUpgrade = newLevel or cached.currentUpgrade
+				cached.heirloomPackageId = packageId or cached.heirloomPackageId
+				DC.itemUpgradeCache[itemGuid] = cached
+			end
+			if packageId and packageId > 0 then
+				DC.selectedStatPackage = packageId
+			end
+			if DarkChaos_ItemUpgrade_UpdateUI then
+				DarkChaos_ItemUpgrade_UpdateUI()
+			end
+			DEFAULT_CHAT_FRAME:AddMessage(string.format("|cff00ff00Heirloom upgraded to level %d.|r", newLevel))
+		else
+			local msg = data.errorMsg or data.message or "Heirloom upgrade failed."
+			DEFAULT_CHAT_FRAME:AddMessage("|cffff0000" .. msg .. "|r")
+		end
+	end)
 end
 
 --[[=====================================================
@@ -1070,12 +1083,7 @@ function DC.CreateCommPanel()
 	
 	-- Row 0: Test buttons
 	CreateButton("PingDC", "Ping DC Protocol", 0, 0, function()
-		if DC.useDCProtocol and DCProtocol then
-			DCProtocol:Send("UPG", 0xFF, "PING")
-			Print("Sent PING via DCAddonProtocol")
-		else
-			Print("|cffff0000DCAddonProtocol not available!|r")
-		end
+		Print("Ping disabled in JSON-only mode")
 	end)
 	
 	CreateButton("PingAIO", "Ping AIO", 1, 0, function()
@@ -1160,72 +1168,27 @@ end
 function DC.RequestItemInfo(bag, slot, itemLink)
 	-- Try DC Protocol first
 	if DCProtocol and DC.useDCProtocol then
-		local data = string.format("%d|%d", bag, slot)
-		DCProtocol:Send("UPG", 0x01, data) -- CMSG_GET_ITEM_INFO
-		DC.Debug("Sent item info request via DC protocol: " .. data)
+		DCProtocol:Request("UPG", 0x01, { bag = bag, slot = slot }) -- CMSG_GET_ITEM_INFO
+		DC.Debug(string.format("Sent item info request via DC protocol: %d|%d", bag, slot))
 		return
-	end
-	
-	-- Fallback to AIO
-	if DC.hasAIO and AIO and AIO.Handle then
-		AIO.Handle("DC_ItemUpgrade", "RequestItemInfo", bag, slot)
-		DC.Debug("Sent item info request via AIO")
-		return
-	end
-	
-	-- Final fallback to chat command
-	if DC_ItemUpgrade_Settings.useChatFallback ~= false then
-		SendChatMessage(string.format(".dcupgrade query %d %d", bag, slot), "SAY")
-		DC.Debug("Sent item info request via chat command")
 	end
 end
 
 function DC.RequestUpgrade(bag, slot, targetLevel)
 	-- Try DC Protocol first
 	if DCProtocol and DC.useDCProtocol then
-		local data = string.format("%d|%d|%d", bag, slot, targetLevel or 1)
-		DCProtocol:Send("UPG", 0x02, data) -- CMSG_DO_UPGRADE
-		DC.Debug("Sent upgrade request via DC protocol: " .. data)
+		local level = targetLevel or 1
+		DCProtocol:Request("UPG", 0x02, { bag = bag, slot = slot, targetLevel = level }) -- CMSG_DO_UPGRADE
+		DC.Debug(string.format("Sent upgrade request via DC protocol: %d|%d|%d", bag, slot, level))
 		return
-	end
-	
-	-- Fallback to AIO
-	if DC.hasAIO and AIO and AIO.Handle then
-		AIO.Handle("DC_ItemUpgrade", "RequestUpgrade", bag, slot, targetLevel)
-		DC.Debug("Sent upgrade request via AIO")
-		return
-	end
-	
-	-- Final fallback to chat command
-	if DC_ItemUpgrade_Settings.useChatFallback ~= false then
-		local cmd = string.format(".dcupgrade perform %d %d %d", bag, slot, targetLevel or 1)
-		SendChatMessage(cmd, "SAY")
-		DC.Debug("Sent upgrade request via chat command")
 	end
 end
 
 function DC.RequestCurrencySync()
-	-- Deprecated: Server pushes currency updates based on events.
-	-- Keeping for AIO/Legacy fallback just in case.
-	
-	-- Try DC Protocol first
+	-- Server pushes currency updates based on events.
 	if DCProtocol and DC.useDCProtocol then
-		-- DCProtocol:Send("UPG", 0x04, "") -- CMSG_GET_COSTS (Requires args, not currency sync)
-		-- DC.Debug("Currency request suppressed (Server managed)")
+		DCProtocol:Request("UPG", 0x04, {})
 		return
-	end
-	
-	-- Fallback to AIO
-	if DC.hasAIO and AIO and AIO.Handle then
-		AIO.Handle("DC_ItemUpgrade", "RequestCurrency")
-		DC.Debug("Sent currency sync request via AIO")
-		return
-	end
-	
-	-- Final fallback to chat command
-	if DC_ItemUpgrade_Settings.useChatFallback ~= false then
-		SendChatMessage(".dcupgrade init", "SAY")
-		DC.Debug("Sent currency sync request via chat command")
 	end
 end
 
@@ -1234,79 +1197,12 @@ function DC.RequestBatchItemInfo(itemIds)
 	
 	-- Try DC Protocol first
 	if DCProtocol and DC.useDCProtocol then
-		local data = table.concat(itemIds, ",")
-		DCProtocol:Send("UPG", 0x03, data) -- CMSG_BATCH_REQUEST
+		DCProtocol:Request("UPG", 0x03, { items = itemIds }) -- CMSG_BATCH_REQUEST
 		DC.Debug("Sent batch item request via DC protocol: " .. #itemIds .. " items")
 		return
 	end
-	
-	-- Fallback to AIO
-	if DC.hasAIO and AIO and AIO.Handle then
-		AIO.Handle("DC_ItemUpgrade", "BatchRequest", itemIds)
-		DC.Debug("Sent batch item request via AIO")
-		return
-	end
-	
-	-- Final fallback - send individual chat commands
-	if DC_ItemUpgrade_Settings.useChatFallback ~= false then
-		for _, itemId in ipairs(itemIds) do
-			DC.RequestItemInfo(itemId)
-		end
-	end
 end
 
---[[=====================================================
-	PROCESS UPGRADE PAYLOAD (JSON/Legacy)
-=======================================================]]
-
-function DC.ProcessUpgradePayload(data, isJSON)
-	if not data then return nil end
-	
-	local info
-	if isJSON then
-		info = DC.ParseJSON(data)
-		if not info then
-			DC.Debug("Failed to parse JSON payload")
-			return nil
-		end
-	else
-		-- Parse legacy format: itemId|currentUpgrade|maxUpgrade|tier|tokenCost|essenceCost|baseEntry|cloneMap
-		local itemId, currentUpgrade, maxUpgrade, tier, tokenCost, essenceCost, baseEntry, cloneMap = 
-			string.match(data, "^(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|(%d+)|?(.*)$")
-		
-		if not itemId then return nil end
-		
-		info = {
-			itemID = tonumber(itemId),
-			currentUpgrade = tonumber(currentUpgrade) or 0,
-			maxUpgrade = tonumber(maxUpgrade) or 10,
-			tier = tonumber(tier) or 1,
-			tokenCost = tonumber(tokenCost) or 0,
-			essenceCost = tonumber(essenceCost) or 0,
-			baseEntry = tonumber(baseEntry) or tonumber(itemId),
-			cloneEntries = DC.ParseCloneMap(cloneMap),
-		}
-	end
-	
-	-- Store in cache
-	DC.itemUpgradeCache = DC.itemUpgradeCache or {}
-	DC.itemUpgradeCache[info.itemID] = info
-	
-	-- Trigger UI update if we have a pending item
-	if DC.pendingUpgrade and DC.pendingUpgrade.itemID == info.itemID then
-		DC.pendingUpgrade = nil
-		if DarkChaos_ItemUpgrade_UpdateUI then
-			DarkChaos_ItemUpgrade_UpdateUI()
-		end
-	end
-	
-	if DC.verboseProtocol then
-		DC.Debug(string.format("Processed item %d: tier=%d, level=%d/%d", 
-			info.itemID, info.tier, info.currentUpgrade, info.maxUpgrade))
-	end
-	
-	return info
-end
 
 -- Initialize DC protocol handlers and communication panel
 DC.RegisterDCProtocolHandlers()

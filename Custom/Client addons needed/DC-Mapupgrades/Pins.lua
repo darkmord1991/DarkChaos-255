@@ -163,6 +163,96 @@ local function NormalizeZoneNameForMatch(name)
     return name:lower()
 end
 
+local function CustomZoneForMap(mapId)
+    local custom = CUSTOM_ZONE_MAPPING[mapId]
+    if not custom then return nil end
+
+    -- Avoid mapping Jade Forest client maps to Giant Isles zoneId.
+    if mapId == 1100 or mapId == 1101 or mapId == 1102 then
+        local zoneText = nil
+        if GetRealZoneText then
+            zoneText = GetRealZoneText()
+        end
+        if (not zoneText or zoneText == "") and GetZoneText then
+            zoneText = GetZoneText()
+        end
+        local normZone = NormalizeZoneNameForMatch(zoneText)
+        if normZone and string.find(normZone, "jade forest", 1, true) then
+            return nil
+        end
+
+        if GetMapNameByID then
+            local name = NormalizeZoneNameForMatch(GetMapNameByID(mapId))
+            if name and string.find(name, "jade forest", 1, true) then
+                return nil
+            end
+        end
+    end
+
+    return custom
+end
+
+-- Some custom maps can report inconsistent IDs; allow name-based blacklist checks.
+local BOSS_BLACKLIST_MAP_NAMES = {
+    ["jade forest"] = true,
+}
+
+local function MapNameIsBlacklisted(mapId)
+    if not mapId or not GetMapNameByID then return false end
+    local name = GetMapNameByID(mapId)
+    local normalized = NormalizeZoneNameForMatch(name)
+    return normalized and BOSS_BLACKLIST_MAP_NAMES[normalized] or false
+end
+
+local function IsBossBlacklistedMap(activeMapId)
+    local db = Pins.state and Pins.state.db
+    if not db or not db.bossBlacklistMaps then return false end
+
+    if activeMapId and db.bossBlacklistMaps[activeMapId] then
+        return true
+    end
+    if MapNameIsBlacklisted(activeMapId) then
+        return true
+    end
+
+    if GetCurrentMapAreaID then
+        local cur = GetCurrentMapAreaID()
+        if cur and db.bossBlacklistMaps[cur] then
+            return true
+        end
+        if MapNameIsBlacklisted(cur) then
+            return true
+        end
+    end
+
+    if WorldMapFrame then
+        if WorldMapFrame.GetMapID then
+            local ok, mapId = pcall(WorldMapFrame.GetMapID, WorldMapFrame)
+            if ok and mapId then
+                if db.bossBlacklistMaps[mapId] or MapNameIsBlacklisted(mapId) then
+                    return true
+                end
+            end
+        end
+        if WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer.GetMapID then
+            local ok, mapId = pcall(WorldMapFrame.ScrollContainer.GetMapID, WorldMapFrame.ScrollContainer)
+            if ok and mapId then
+                if db.bossBlacklistMaps[mapId] or MapNameIsBlacklisted(mapId) then
+                    return true
+                end
+            end
+        end
+        if WorldMapFrame.mapID then
+            local mapId = WorldMapFrame.mapID
+            if db.bossBlacklistMaps[mapId] or MapNameIsBlacklisted(mapId) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 local function MaybeLearnZoneMapping(state, activeMapId, zoneId, zoneLabel)
     local db = state and state.db
     if not db or not activeMapId or not zoneId or not zoneLabel then return end
@@ -172,7 +262,7 @@ local function MaybeLearnZoneMapping(state, activeMapId, zoneId, zoneLabel)
     if db.customZoneMapping[activeMapId] then return end
 
     -- Do not learn over static known mappings
-    if CUSTOM_ZONE_MAPPING[activeMapId] then return end
+    if CustomZoneForMap(activeMapId) then return end
     if MAP_TO_ZONE[activeMapId] then return end
 
     local curZone = (GetZoneText and GetZoneText()) or nil
@@ -335,7 +425,7 @@ local function HotspotMatchesMap(hotspot, mapId, showAll)
     -- Strategy 2: Check custom zone mappings (for special zones like Azshara Crater)
     local db = Pins.state and Pins.state.db
     local learned = db and db.customZoneMapping and db.customZoneMapping[mapId]
-    local resolvedZoneId = learned or CUSTOM_ZONE_MAPPING[mapId] or mapId
+    local resolvedZoneId = learned or CustomZoneForMap(mapId) or mapId
     if hotspotZone == resolvedZoneId then
         DebugPrint("Match via custom mapping: map", mapId, "-> zone", resolvedZoneId)
         return true
@@ -374,11 +464,8 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
     if CONTINENT_MAP_IDS[activeMapId] then return false end
     
     -- Check blacklist for boss/death entities
-    if (entity.kind == "boss" or entity.kind == "death") then
-        local db = Pins.state and Pins.state.db
-        if db and db.bossBlacklistMaps and db.bossBlacklistMaps[activeMapId] then
-            return false
-        end
+    if (entity.kind == "boss" or entity.kind == "death") and IsBossBlacklistedMap(activeMapId) then
+        return false
     end
     
     if showAll then return true end
@@ -389,6 +476,10 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
     -- Server-provided entities (bosses/deaths) use server zone/area ID in mapId.
     if entity.kind == "boss" or entity.kind == "death" then
         local db = Pins.state and Pins.state.db
+        -- Block by server map/zone id directly if blacklisted
+        if db and db.bossBlacklistMaps and db.bossBlacklistMaps[entMapId] then
+            return false
+        end
         local learned = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
 
         -- First check: Try to match via MAP_TO_ZONE lookup
@@ -398,7 +489,7 @@ local function EntityMatchesMap(entity, activeMapId, showAll)
         end
 
         -- Second check: Try custom zone mapping (for non-standard maps like Azshara Crater)
-        local customZone = CUSTOM_ZONE_MAPPING[activeMapId]
+        local customZone = CustomZoneForMap(activeMapId)
         if customZone and customZone == entMapId then
             return true
         end
@@ -1155,6 +1246,15 @@ function Pins:UpdateWorldPinsInternal()
     end
 
     -- Entities (world bosses / rares)
+    if IsBossBlacklistedMap(activeMapId) then
+        for id, pin in pairs(self.entityWorldPins) do
+            pin:Hide()
+        end
+        DebugPrint("Entities: skipped due to boss blacklist map")
+        DebugPrint("UpdateWorldPins: Map", activeMapId, "- Showing", visibleCount, "of", self:CountHotspots(), "pins")
+        return
+    end
+
     local entSeen = {}
     local list = db.entities and db.entities.list
     if type(list) == "table" then
@@ -1162,8 +1262,9 @@ function Pins:UpdateWorldPinsInternal()
         local totalEntities, missingPos = 0, 0
         local totalBoss, enabledBoss, matchedBoss, shownBoss = 0, 0, 0, 0
         local sampleBoss
+        local dbgBossDetailsCount = 0
         local learnedActive = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
-        local resolvedZoneId = learnedActive or CUSTOM_ZONE_MAPPING[activeMapId] or MAP_TO_ZONE[activeMapId] or activeMapId
+        local resolvedZoneId = learnedActive or CustomZoneForMap(activeMapId) or MAP_TO_ZONE[activeMapId] or activeMapId
         for _, ent in ipairs(list) do
             if ent and ent.id then
                 totalEntities = totalEntities + 1
@@ -1174,7 +1275,7 @@ function Pins:UpdateWorldPinsInternal()
                 if (kind == "boss" or kind == "death") and ent.zoneLabel and activeMapId then
                     MaybeLearnZoneMapping(self.state, activeMapId, ent.mapId, ent.zoneLabel)
                     learnedActive = db and db.customZoneMapping and db.customZoneMapping[activeMapId]
-                    resolvedZoneId = learnedActive or CUSTOM_ZONE_MAPPING[activeMapId] or MAP_TO_ZONE[activeMapId] or activeMapId
+                    resolvedZoneId = learnedActive or CustomZoneForMap(activeMapId) or MAP_TO_ZONE[activeMapId] or activeMapId
                 end
 
                 local enabled = (kind == "boss" and db.showWorldBossPins) or (kind == "rare" and db.showRarePins) or (kind == "death")
@@ -1183,6 +1284,39 @@ function Pins:UpdateWorldPinsInternal()
                     if enabled then
                         enabledBoss = enabledBoss + 1
                     end
+                end
+
+                if db.debug and kind == "boss" and dbgBossDetailsCount < 10 then
+                    dbgBossDetailsCount = dbgBossDetailsCount + 1
+                    local mapName = (GetMapNameByID and GetMapNameByID(activeMapId)) or "nil"
+                    local curMap = GetCurrentMapAreaID and GetCurrentMapAreaID() or "nil"
+                    local frameMap = WorldMapFrame and WorldMapFrame.mapID or "nil"
+                    local frameMapId = "nil"
+                    local scrollMapId = "nil"
+                    if WorldMapFrame and WorldMapFrame.GetMapID then
+                        local ok, mid = pcall(WorldMapFrame.GetMapID, WorldMapFrame)
+                        if ok and mid then frameMapId = mid end
+                    end
+                    if WorldMapFrame and WorldMapFrame.ScrollContainer and WorldMapFrame.ScrollContainer.GetMapID then
+                        local ok, mid = pcall(WorldMapFrame.ScrollContainer.GetMapID, WorldMapFrame.ScrollContainer)
+                        if ok and mid then scrollMapId = mid end
+                    end
+                    local customZone = CustomZoneForMap(activeMapId)
+                    local expectedZone = MAP_TO_ZONE[activeMapId]
+                    DebugPrint("Boss dbg:",
+                        "id=" .. tostring(ent.id),
+                        "name=" .. tostring(ent.name),
+                        "entMapId=" .. tostring(ent.mapId),
+                        "activeMapId=" .. tostring(activeMapId),
+                        "activeMapName=" .. tostring(mapName),
+                        "curMapId=" .. tostring(curMap),
+                        "frame.mapID=" .. tostring(frameMap),
+                        "frame.GetMapID=" .. tostring(frameMapId),
+                        "scroll.GetMapID=" .. tostring(scrollMapId),
+                        "expectedZone=" .. tostring(expectedZone),
+                        "customZone=" .. tostring(customZone),
+                        "learnedZone=" .. tostring(learnedActive),
+                        "zoneLabel=" .. tostring(ent.zoneLabel))
                 end
 
                 local matches = enabled and EntityMatchesMap(ent, activeMapId, false)

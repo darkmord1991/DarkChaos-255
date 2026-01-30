@@ -27,6 +27,7 @@
 #include "Log.h"
 #include "Config.h"
 #include "../CrossSystem/LeaderboardUtils.h"
+#include "../CrossSystem/CrossSystemSeasonHelper.h"
 #include <cstdio>  // for snprintf
 #include <sstream>
 #include <unordered_set>
@@ -1171,23 +1172,7 @@ namespace
     // Helper to get the current active season ID
     uint32 GetCurrentSeasonId()
     {
-        // Try to get from HLBG seasons first (most commonly used)
-        // Note: Season config tables are in WorldDatabase, not CharacterDatabase
-        QueryResult result = WorldDatabase.Query(
-            "SELECT season FROM dc_hlbg_seasons WHERE is_active = 1 ORDER BY season DESC LIMIT 1");
-
-        if (result)
-            return result->Fetch()[0].Get<uint32>();
-
-        // Fallback: try dc_mplus_seasons (uses 'season' as primary key)
-        result = WorldDatabase.Query(
-            "SELECT season FROM dc_mplus_seasons WHERE is_active = 1 ORDER BY season DESC LIMIT 1");
-
-        if (result)
-            return result->Fetch()[0].Get<uint32>();
-
-        // Ultimate fallback
-        return 1;
+        return DarkChaos::GetActiveSeasonId();
     }
 
     void HandleGetLeaderboard(Player* player, const DCAddon::ParsedMessage& msg)
@@ -1460,8 +1445,7 @@ namespace
 
     // Tables that are in WorldDatabase instead of CharacterDatabase
     static const std::unordered_set<std::string> WorldDatabaseTables = {
-        "dc_mplus_seasons",
-        "dc_hlbg_seasons"
+        "dc_seasons"
     };
 
     // Test if a table exists and get row count
@@ -1522,8 +1506,7 @@ namespace
             "dc_duel_statistics",
             "dc_aoeloot_detailed_stats",
             "dc_player_achievements",
-            "dc_hlbg_seasons",
-            "dc_mplus_seasons"
+            "dc_seasons"
         };
 
         // Build JSON response manually for array support
@@ -1571,9 +1554,8 @@ namespace
         std::string seasonsJson = "[";
         bool first = true;
 
-        // Try HLBG seasons first (season config is in WorldDatabase)
         QueryResult result = WorldDatabase.Query(
-            "SELECT season, is_active FROM dc_hlbg_seasons ORDER BY season DESC LIMIT 10");
+            "SELECT season_id, season_state FROM dc_seasons ORDER BY season_id DESC LIMIT 10");
 
         if (result)
         {
@@ -1581,7 +1563,7 @@ namespace
             {
                 Field* fields = result->Fetch();
                 uint32 seasonId = fields[0].Get<uint32>();
-                bool isActive = fields[1].Get<uint8>() != 0;
+                bool isActive = fields[1].Get<uint8>() == 1;
 
                 if (!first) seasonsJson += ",";
                 first = false;
@@ -1591,31 +1573,6 @@ namespace
                 seasonsJson += "\"active\":" + std::string(isActive ? "true" : "false");
                 seasonsJson += "}";
             } while (result->NextRow());
-        }
-
-        // Also try M+ seasons if we got nothing (uses 'season' as primary key)
-        if (first)
-        {
-            result = WorldDatabase.Query(
-                "SELECT season, is_active FROM dc_mplus_seasons ORDER BY season DESC LIMIT 10");
-
-            if (result)
-            {
-                do
-                {
-                    Field* fields = result->Fetch();
-                    uint32 seasonId = fields[0].Get<uint32>();
-                    bool isActive = fields[1].Get<uint8>() != 0;
-
-                    if (!first) seasonsJson += ",";
-                    first = false;
-
-                    seasonsJson += "{";
-                    seasonsJson += "\"id\":" + std::to_string(seasonId) + ",";
-                    seasonsJson += "\"active\":" + std::string(isActive ? "true" : "false");
-                    seasonsJson += "}";
-                } while (result->NextRow());
-            }
         }
 
         seasonsJson += "]";

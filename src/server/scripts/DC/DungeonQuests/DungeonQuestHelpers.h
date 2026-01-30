@@ -240,12 +240,12 @@ inline uint32 GetMythicPlusQuestCompletions(Player* player)
 
 /**
  * Get dungeon ID from quest ID (v4.0 - database-driven)
- * Queries: dc_quest_difficulty_mapping.dungeon_id
+ * Queries: dc_dungeon_quest_mapping.dungeon_id
  */
 inline uint32 GetDungeonIdFromQuest(uint32 questId)
 {
     QueryResult result = WorldDatabase.Query(
-        "SELECT dungeon_id FROM dc_quest_difficulty_mapping WHERE quest_id = {}",
+        "SELECT dungeon_id FROM dc_dungeon_quest_mapping WHERE quest_id = {} AND enabled = 1 LIMIT 1",
         questId
     );
 

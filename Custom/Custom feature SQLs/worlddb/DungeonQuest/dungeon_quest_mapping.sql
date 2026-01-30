@@ -759,6 +759,150 @@ INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enable
 	(8113, 309, 1),
 	(8116, 309, 1);
 
+-- Zul'Aman (map_id 568) quest mappings
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(11132, 568, 1),
+	(11165, 568, 1),
+	(11166, 568, 1),
+	(11178, 568, 1),
+	(11195, 568, 1),
+	(11196, 568, 1);
+
+-- Hellfire Citadel - Shattered Halls (map_id 540)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(9496, 540, 1),
+	(9493, 540, 1),
+	(9494, 540, 1),
+	(9492, 540, 1),
+	(9495, 540, 1),
+	(9525, 540, 1),
+	(9524, 540, 1),
+	(9497, 540, 1),
+	(11364, 540, 1),
+	(11363, 540, 1),
+	(10558, 540, 1),
+	(10559, 540, 1);
+
+-- Hellfire Citadel - The Blood Furnace (map_id 542)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(9589, 542, 1),
+	(9590, 542, 1),
+	(9607, 542, 1),
+	(9608, 542, 1),
+	(11362, 542, 1);
+
+-- Magtheridon's Lair (map_id 544)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(10888, 544, 1),
+	(13430, 544, 1);
+
+-- Serpentshrine Cavern (map_id 548)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(9738, 548, 1),
+	(9766, 548, 1),
+	(9767, 548, 1),
+	(9876, 548, 1),
+	(10459, 548, 1),
+	(11368, 548, 1),
+	(11369, 548, 1),
+	(11370, 548, 1),
+	(11371, 548, 1);
+
+-- Trial of the Crusader (map_id 649)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(24589, 649, 1);
+
+-- Caverns of Time - Old Hillsbrad (map_id 560)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(10282, 560, 1),
+	(10284, 560, 1),
+	(10283, 560, 1),
+	(11378, 560, 1);
+
+-- Caverns of Time - Black Morass (map_id 269)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(10277, 269, 1),
+	(10296, 269, 1),
+	(12513, 269, 1),
+	(10285, 269, 1),
+	(10445, 269, 1),
+	(10297, 269, 1),
+	(10464, 269, 1),
+	(9836, 269, 1),
+	(10279, 269, 1),
+	(10298, 269, 1),
+	(10461, 269, 1),
+	(13432, 269, 1),
+	(12515, 269, 1),
+	(10469, 269, 1),
+	(11106, 269, 1),
+	(11382, 269, 1),
+	(10737, 269, 1),
+	(10470, 269, 1),
+	(10466, 269, 1),
+	(10462, 269, 1),
+	(10474, 269, 1),
+	(11383, 269, 1),
+	(10472, 269, 1),
+	(10468, 269, 1),
+	(10465, 269, 1),
+	(10475, 269, 1),
+	(10460, 269, 1),
+	(10463, 269, 1),
+	(10467, 269, 1),
+	(11103, 269, 1),
+	(10473, 269, 1),
+	(11105, 269, 1),
+	(10471, 269, 1),
+	(11104, 269, 1),
+	(10746, 269, 1),
+	(10561, 269, 1);
+
+-- Tempest Keep (map_id 550)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(10560, 550, 1),
+	(10704, 550, 1),
+	(10705, 550, 1),
+	(10882, 550, 1),
+	(10946, 550, 1),
+	(11007, 550, 1),
+	(11384, 550, 1),
+	(11385, 550, 1),
+	(11386, 550, 1),
+	(11387, 550, 1),
+	(11388, 550, 1),
+	(11389, 550, 1);
+
+-- The Eye of Eternity (map_id 616)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(13384, 616, 1),
+	(13385, 616, 1),
+	(24584, 616, 1);
+
+-- The Nexus (map_id 576)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(11905, 576, 1),
+	(11911, 576, 1),
+	(11973, 576, 1),
+	(13094, 576, 1),
+	(13095, 576, 1);
+
+-- Utgarde Keep (map_id 574)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(11252, 574, 1),
+	(11262, 574, 1),
+	(11272, 574, 1),
+	(13205, 574, 1),
+	(13206, 574, 1);
+
+-- Sethekk Halls (map_id 556)
+INSERT IGNORE INTO `dc_dungeon_quest_mapping` (`quest_id`, `dungeon_id`, `enabled`) VALUES
+	(10165, 556, 1),
+	(10216, 556, 1),
+	(10218, 556, 1),
+	(10977, 556, 1),
+	(10981, 556, 1);
+
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
 /*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
 /*!40014 SET FOREIGN_KEY_CHECKS=IFNULL(@OLD_FOREIGN_KEY_CHECKS, 1) */;

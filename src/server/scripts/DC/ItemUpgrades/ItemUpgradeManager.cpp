@@ -781,16 +781,30 @@ namespace DarkChaos
                 if (item_id >= HEIRLOOM_ITEM_ID_MIN && item_id <= HEIRLOOM_ITEM_ID_MAX)
                     return TIER_HEIRLOOM;
 
-                // First check explicit database mapping
-                auto it = item_to_tier.find(item_id);
-                if (it != item_to_tier.end())
-                    return it->second;
-
-                // Fallback: Get item template and determine tier by item level
-                ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(item_id);
-                if (itemTemplate)
+                // Helper to resolve tier by item level ranges
+                auto resolveTierByIlvl = [&](uint16 itemLevel) -> uint8
                 {
-                    uint16 itemLevel = itemTemplate->ItemLevel;
+                    // Prefer tier definitions from DB (min/max ilvl)
+                    uint8 matchedTier = TIER_INVALID;
+                    for (auto const& [tierId, def] : tier_definitions)
+                    {
+                        // Skip artifact-only tiers when mapping regular items
+                        if (def.is_artifact)
+                            continue;
+                        if (def.min_ilvl == 0 && def.max_ilvl == 0)
+                            continue;
+
+                        bool withinMin = itemLevel >= def.min_ilvl;
+                        bool withinMax = (def.max_ilvl == 0) ? true : (itemLevel <= def.max_ilvl);
+                        if (withinMin && withinMax)
+                        {
+                            // Prefer the highest matching tier
+                            if (tierId > matchedTier)
+                                matchedTier = tierId;
+                        }
+                    }
+                    if (matchedTier != TIER_INVALID)
+                        return matchedTier;
 
                     // Determine tier based on item level ranges (general item id check)
                     if (itemLevel < 213)
@@ -799,7 +813,26 @@ namespace DarkChaos
                         return TIER_HEROIC;       // T2: 213-226 ilevel
                     else
                         return TIER_HEIRLOOM;     // T3: >226 ilevel (heirlooms/special items)
+                };
+
+                // First check explicit database mapping
+                auto it = item_to_tier.find(item_id);
+                if (it != item_to_tier.end())
+                {
+                    uint8 mappedTier = it->second;
+                    // If ilvl-based tier is higher than the mapped tier, prefer ilvl
+                    if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(item_id))
+                    {
+                        uint8 ilvlTier = resolveTierByIlvl(itemTemplate->ItemLevel);
+                        if (ilvlTier != TIER_INVALID && ilvlTier > mappedTier)
+                            return ilvlTier;
+                    }
+                    return mappedTier;
                 }
+
+                // Fallback: Get item template and determine tier by item level
+                if (ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(item_id))
+                    return resolveTierByIlvl(itemTemplate->ItemLevel);
 
                 // If item template not found, return invalid
                 return TIER_INVALID;
@@ -956,12 +989,16 @@ namespace DarkChaos
                     {
                         Field* fields = result->Fetch();
                         uint8 tier_id = fields[0].Get<uint8>();
+                        uint16 min_ilvl = fields[2].Get<uint16>();
+                        uint16 max_ilvl = fields[3].Get<uint16>();
                         uint8 max_upgrade_level = fields[4].Get<uint8>();
                         float stat_multiplier_max = fields[5].Get<float>();
                         bool is_artifact = fields[8].Get<bool>();
 
                         TierDefinition def;
                         def.tier_id = tier_id;
+                        def.min_ilvl = min_ilvl;
+                        def.max_ilvl = max_ilvl;
                         def.max_upgrade_level = max_upgrade_level;
                         def.stat_multiplier_max = stat_multiplier_max;
                         def.is_artifact = is_artifact;
@@ -971,6 +1008,10 @@ namespace DarkChaos
                     } while (result->NextRow());
 
                     LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} tier definitions", count);
+                }
+                else
+                {
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: No tier definitions found. Check table 'dc_item_upgrade_tiers' and season {}", season);
                 }
 
                 // Load upgrade costs
@@ -999,6 +1040,10 @@ namespace DarkChaos
 
                     LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} upgrade cost entries", count);
                 }
+                else
+                {
+                    LOG_ERROR("scripts.dc", "ItemUpgrade: No upgrade costs found. Check table 'dc_item_upgrade_costs' and season {}", season);
+                }
 
                 // Load item to tier mappings
                 result = WorldDatabase.Query(
@@ -1018,6 +1063,10 @@ namespace DarkChaos
                     } while (result->NextRow());
 
                     LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} item-to-tier mappings", count);
+                }
+                else
+                {
+                    LOG_WARN("scripts.dc", "ItemUpgrade: No item-to-tier mappings found. Check table 'dc_item_templates_upgrade' and season {}", season);
                 }
 
                 // Load artifacts
@@ -1072,6 +1121,10 @@ namespace DarkChaos
                     } while (result->NextRow());
 
                     LOG_INFO("scripts.dc", "ItemUpgrade: Loaded {} chaos artifacts", count);
+                }
+                else
+                {
+                    LOG_WARN("scripts.dc", "ItemUpgrade: No chaos artifacts found. Check table 'dc_chaos_artifact_items'");
                 }
 
                 LOG_INFO("scripts.dc", "ItemUpgrade: Data loading complete for season {}", season);

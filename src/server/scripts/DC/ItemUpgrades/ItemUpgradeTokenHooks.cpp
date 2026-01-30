@@ -33,7 +33,6 @@ namespace DarkChaos
         // Constants for Token Rewards
         // =====================================================================
 
-    static const uint32 WEEKLY_TOKEN_CAP = 500;
     [[maybe_unused]] static const uint32 DAILY_QUEST_CAP = 100;
 
         // Quest reward tier: base tokens awarded for quest completion

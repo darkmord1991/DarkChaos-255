@@ -520,6 +520,53 @@ INSERT INTO `quest_request_items` (`ID`, `CompletionText`) VALUES
 (300307, 'We need more leather. The Furbolgs have plenty.');
 
 -- ============================================================================
+-- SECTION 8: SEASONAL REWARD HOOKS (dc_seasonal_quest_rewards)
+-- ============================================================================
+-- Populate seasonal rewards for Azshara Crater quests in this file.
+-- Uses token/essence amounts from quest_template reward items (300311/300312).
+
+INSERT INTO `dc_seasonal_quest_rewards`
+	(`season_id`, `quest_id`, `reward_type`, `base_token_amount`, `base_essence_amount`,
+	 `quest_difficulty`, `seasonal_multiplier`, `is_daily`, `is_weekly`, `enabled`)
+SELECT
+	1 AS season_id,
+	q.ID AS quest_id,
+	CASE
+		WHEN q.token_amt > 0 AND q.essence_amt > 0 THEN 3
+		WHEN q.token_amt > 0 THEN 1
+		WHEN q.essence_amt > 0 THEN 2
+		ELSE 3
+	END AS reward_type,
+	q.token_amt,
+	q.essence_amt,
+	2 AS quest_difficulty,
+	1.0 AS seasonal_multiplier,
+	0 AS is_daily,
+	0 AS is_weekly,
+	1 AS enabled
+FROM (
+	SELECT
+		`ID`,
+		(IF(`RewardItem1` = 300311, `RewardAmount1`, 0)
+		 + IF(`RewardItem2` = 300311, `RewardAmount2`, 0)
+		 + IF(`RewardItem3` = 300311, `RewardAmount3`, 0)) AS token_amt,
+		(IF(`RewardItem1` = 300312, `RewardAmount1`, 0)
+		 + IF(`RewardItem2` = 300312, `RewardAmount2`, 0)
+		 + IF(`RewardItem3` = 300312, `RewardAmount3`, 0)) AS essence_amt
+	FROM `quest_template`
+	WHERE `ID` BETWEEN 300100 AND 300308
+) q
+WHERE q.token_amt > 0 OR q.essence_amt > 0
+ON DUPLICATE KEY UPDATE
+	`reward_type` = VALUES(`reward_type`),
+	`base_token_amount` = VALUES(`base_token_amount`),
+	`base_essence_amount` = VALUES(`base_essence_amount`),
+	`quest_difficulty` = VALUES(`quest_difficulty`),
+	`seasonal_multiplier` = VALUES(`seasonal_multiplier`),
+	`enabled` = VALUES(`enabled`),
+	`updated_at` = CURRENT_TIMESTAMP;
+
+-- ============================================================================
 -- SECTION 9: NPC GOSSIP (npc_text / gossip_menu)
 -- ============================================================================
 
