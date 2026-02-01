@@ -14,6 +14,7 @@
 #include "Log.h"
 #include "GameTime.h"
 #include "ObjectAccessor.h"
+#include "MapMgr.h"
 #include "World.h"
 #include "Group.h"
 #include "../ItemUpgrades/ItemUpgradeManager.h"
@@ -214,7 +215,9 @@ void GroupFinderMgr::CleanupExpiredListings()
         auto& listing = _listings[id];
 
         // Notify leader
-        if (Player* leader = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(listing.leaderGuid)))
+        Map* leaderMap = listing.leaderMapId ? sMapMgr->FindMap(listing.leaderMapId, listing.leaderInstanceId) : nullptr;
+        if (leaderMap)
+            if (Player* leader = ObjectAccessor::GetPlayer(leaderMap, ObjectGuid::Create<HighGuid::Player>(listing.leaderGuid)))
         {
             JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
                 .Set("action", "expired")
@@ -323,6 +326,8 @@ uint32 GroupFinderMgr::CreateListing(Player* player, const GroupFinderListing& l
         newListing.id = listingId;
         newListing.leaderGuid = guid;
         newListing.groupGuid = groupGuid;
+        newListing.leaderMapId = player->GetMapId();
+        newListing.leaderInstanceId = player->GetInstanceId();
         newListing.createdAt = GameTime::GetGameTime().count();
         newListing.expiresAt = newListing.createdAt + (_listingExpireMinutes * 60);
         newListing.active = true;
@@ -483,6 +488,8 @@ bool GroupFinderMgr::ApplyToListing(Player* player, uint32 listingId, uint8 role
         app.id = appId;
         app.listingId = listingId;
         app.playerGuid = guid;
+        app.playerMapId = player->GetMapId();
+        app.playerInstanceId = player->GetInstanceId();
         app.playerName = player->GetName();
         app.role = role;
         app.playerClass = player->getClass();
@@ -553,7 +560,9 @@ bool GroupFinderMgr::AcceptApplication(Player* leader, uint32 listingId, uint32 
             NotifyApplicationStatus(applicantGuid, listingId, GF_APP_ACCEPTED, "Your application was accepted!");
 
             // Invite to group
-            if (Player* applicant = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(applicantGuid)))
+            Map* applicantMap = app.playerMapId ? sMapMgr->FindMap(app.playerMapId, app.playerInstanceId) : nullptr;
+            if (applicantMap)
+                if (Player* applicant = ObjectAccessor::GetPlayer(applicantMap, ObjectGuid::Create<HighGuid::Player>(applicantGuid)))
             {
                 if (Group* group = leader->GetGroup())
                 {
@@ -644,7 +653,9 @@ void GroupFinderMgr::NotifyGroupReady(uint32 listingId)
         return;
 
     // Notify leader
-    if (Player* leader = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(it->second.leaderGuid)))
+    Map* leaderMap = it->second.leaderMapId ? sMapMgr->FindMap(it->second.leaderMapId, it->second.leaderInstanceId) : nullptr;
+    if (leaderMap)
+        if (Player* leader = ObjectAccessor::GetPlayer(leaderMap, ObjectGuid::Create<HighGuid::Player>(it->second.leaderGuid)))
     {
         JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_GROUP_UPDATED)
             .Set("action", "ready")
@@ -856,7 +867,22 @@ void GroupFinderMgr::NotifyNewListing(const GroupFinderListing& listing)
 
 void GroupFinderMgr::NotifyApplicationStatus(uint32 playerGuid, uint32 listingId, uint8 status, const std::string& message)
 {
-    if (Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(playerGuid)))
+    Map* playerMap = nullptr;
+    auto appsIt = _applications.find(listingId);
+    if (appsIt != _applications.end())
+    {
+        for (auto const& app : appsIt->second)
+        {
+            if (app.playerGuid == playerGuid)
+            {
+                playerMap = app.playerMapId ? sMapMgr->FindMap(app.playerMapId, app.playerInstanceId) : nullptr;
+                break;
+            }
+        }
+    }
+
+    if (playerMap)
+        if (Player* player = ObjectAccessor::GetPlayer(playerMap, ObjectGuid::Create<HighGuid::Player>(playerGuid)))
     {
         std::string statusStr;
         switch (status)
@@ -879,7 +905,18 @@ void GroupFinderMgr::NotifyApplicationStatus(uint32 playerGuid, uint32 listingId
 
 void GroupFinderMgr::NotifyNewApplication(uint32 leaderGuid, const GroupFinderApplication& app)
 {
-    if (Player* leader = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(leaderGuid)))
+    Map* leaderMap = nullptr;
+    for (auto const& [id, listing] : _listings)
+    {
+        if (listing.leaderGuid == leaderGuid)
+        {
+            leaderMap = listing.leaderMapId ? sMapMgr->FindMap(listing.leaderMapId, listing.leaderInstanceId) : nullptr;
+            break;
+        }
+    }
+
+    if (leaderMap)
+        if (Player* leader = ObjectAccessor::GetPlayer(leaderMap, ObjectGuid::Create<HighGuid::Player>(leaderGuid)))
     {
         std::string roleStr;
         switch (app.role)

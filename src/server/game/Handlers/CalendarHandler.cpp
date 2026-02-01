@@ -35,6 +35,7 @@ Copied events should probably have a new owner
 
 #include "ArenaTeamMgr.h"
 #include "CalendarMgr.h"
+#include "CharacterCache.h"
 #include "CalendarPackets.h"
 #include "DatabaseEnv.h"
 #include "DisableMgr.h"
@@ -525,7 +526,11 @@ void WorldSession::HandleCalendarEventInvite(WorldPacket& recvData)
 
     recvData >> eventId >> inviteId >> name >> isPreInvite >> isGuildEvent;
 
-    if (Player* player = ObjectAccessor::FindPlayerByName(name.c_str(), false))
+    Player* player = nullptr;
+    if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            player = session->GetPlayer();
+    if (player)
     {
         // Invitee is online
         inviteeGuid = player->GetGUID();

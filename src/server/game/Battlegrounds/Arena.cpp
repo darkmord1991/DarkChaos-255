@@ -107,7 +107,12 @@ void Arena::AddPlayer(Player* player)
         bool isCrossfaction = false;
         for (Group::member_citerator mitr = group->GetMemberSlots().begin(); mitr != group->GetMemberSlots().end(); ++mitr)
         {
-            Player* member = ObjectAccessor::FindPlayer(mitr->guid);
+            Player* member = nullptr;
+            Map* map = GetBgMap();
+            if (map)
+                member = ObjectAccessor::GetPlayer(map, mitr->guid);
+            else if (WorldSession* session = sWorld->FindSession(mitr->guid.GetCounter()))
+                member = session->GetPlayer();
             if (!member || member->GetGUID() == player->GetGUID())
             {
                 continue;

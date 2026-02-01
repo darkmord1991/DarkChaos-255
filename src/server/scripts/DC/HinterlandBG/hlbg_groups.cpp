@@ -25,7 +25,7 @@ void OutdoorPvPHL::_tickRaidLifecycle()
                 continue;
             for (auto const& slot : g->GetMemberSlots())
             {
-                Player* m = ObjectAccessor::FindPlayer(slot.guid);
+                Player* m = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), slot.guid) : nullptr;
                 if (m && m->IsInWorld())
                     _memberOfflineSince.erase(slot.guid);
                 else if (_memberOfflineSince.find(slot.guid) == _memberOfflineSince.end())
@@ -82,7 +82,7 @@ void OutdoorPvPHL::_tickRaidLifecycle()
                 for (auto const& slot : g->GetMemberSlots()) { lastGuid = slot.guid; break; }
                 if (!lastGuid.IsEmpty())
                 {
-                    if (Player* last = ObjectAccessor::FindPlayer(lastGuid))
+                    if (Player* last = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), lastGuid) : nullptr)
                     {
                         Group* lg = last->GetGroup();
                         if (!lg || !lg->isRaidGroup())

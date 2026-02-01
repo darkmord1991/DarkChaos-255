@@ -316,7 +316,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
         }
     }
 
-    ConsumePlayerKeystone(player->GetGUID().GetCounter());
+    ConsumePlayerKeystone(player);
 
     // Teleport all players to entrance
     TeleportGroupToEntrance(player, map);
@@ -815,9 +815,8 @@ bool MythicPlusRunManager::LoadPlayerKeystone(Player* player, uint32 expectedMap
     return false;
 }
 
-void MythicPlusRunManager::ConsumePlayerKeystone(ObjectGuid::LowType playerGuidLow)
+void MythicPlusRunManager::ConsumePlayerKeystone(Player* player)
 {
-    Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(playerGuidLow));
     if (!player)
         return;
 
@@ -829,7 +828,7 @@ void MythicPlusRunManager::ConsumePlayerKeystone(ObjectGuid::LowType playerGuidL
         if (player->HasItemCount(keystoneItemId, 1, false))
         {
             player->DestroyItemCount(keystoneItemId, 1, true);
-            LOG_INFO("mythic.run", "Consumed keystone item {} from player {}", keystoneItemId, playerGuidLow);
+            LOG_INFO("mythic.run", "Consumed keystone item {} from player {}", keystoneItemId, player->GetGUID().GetCounter());
             return;
         }
     }
@@ -1528,9 +1527,11 @@ void MythicPlusRunManager::GenerateNewKeystone(ObjectGuid::LowType playerGuid, u
         return;
 
     // Get player from guid
-    Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(playerGuid));
-    if (player)
+    if (WorldSession* session = sWorld->FindSession(playerGuid))
     {
+        Player* player = session->GetPlayer();
+        if (!player)
+            return;
         // Add keystone to player inventory
         ItemPosCountVec dest;
         if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, keystoneItemId, 1) == EQUIP_ERR_OK)
@@ -1819,7 +1820,7 @@ void MythicPlusRunManager::ProcessCountdowns()
             announcedIntervals.erase(key);
 
             // Find the keystone owner to start the run
-            Player* owner = ObjectAccessor::FindPlayer(state.ownerGuid);
+            Player* owner = ObjectAccessor::GetPlayer(map, state.ownerGuid);
             if (owner)
                 StartRunAfterCountdown(&state, map, owner);
         }

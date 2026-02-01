@@ -606,7 +606,8 @@ bool OPvPCapturePointNA::Update(uint32 diff)
     {
         for (ObjectGuid playerGuid : playerSet)
         {
-            if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            Map* map = _capturePoint->GetMap();
+            if (Player* player = map ? ObjectAccessor::GetPlayer(map, playerGuid) : ObjectAccessor::FindPlayer(playerGuid))
                 if (!_capturePoint->IsWithinDistInMap(player, radius) || !player->IsOutdoorPvPActive())
                     HandlePlayerLeave(player);
         }

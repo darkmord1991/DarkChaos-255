@@ -162,7 +162,7 @@ private:
     InstanceState const* GetState(Map* map) const;
     void RegisterGroupMembers(Player* activator, InstanceState* state);
     bool LoadPlayerKeystone(Player* player, uint32 expectedMap, KeystoneDescriptor& outDescriptor);
-    void ConsumePlayerKeystone(ObjectGuid::LowType playerGuidLow);
+    void ConsumePlayerKeystone(Player* player);
     void AnnounceToInstance(Map* map, std::string_view message) const;
     void ApplyEntryBarrier(Map* map) const;
     void ApplyCountdownRoot(Map* map) const;

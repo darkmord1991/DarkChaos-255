@@ -18,6 +18,7 @@
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
 #include "BattlegroundMgr.h"
+#include "CharacterCache.h"
 #include "ObjectMgr.h"
 #include "Opcodes.h"
 #include "Player.h"
@@ -34,7 +35,7 @@ void WorldSession::HandleInspectArenaTeamsOpcode(WorldPacket& recvData)
     recvData >> guid;
     LOG_DEBUG("network", "Inspect Arena stats ({})", guid.ToString());
 
-    Player* player = ObjectAccessor::FindPlayer(guid);
+    Player* player = ObjectAccessor::GetPlayer(GetPlayer()->GetMap(), guid);
     if (!player)
     {
         return;
@@ -97,7 +98,10 @@ void WorldSession::HandleArenaTeamInviteOpcode(WorldPacket& recvData)
         if (!normalizePlayerName(invitedName))
             return;
 
-        player = ObjectAccessor::FindPlayerByName(invitedName, false);
+        ObjectGuid inviteeGuid = sCharacterCache->GetCharacterGuidByName(invitedName);
+        if (inviteeGuid)
+            if (WorldSession* inviteeSession = sWorld->FindSession(inviteeGuid.GetCounter()))
+                player = inviteeSession->GetPlayer();
     }
 
     if (!player)

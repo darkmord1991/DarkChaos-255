@@ -18,6 +18,7 @@
 #include "AreaDefines.h"
 #include "ArenaSpectator.h"
 #include "BattlegroundMgr.h"
+#include "CharacterCache.h"
 #include "LFGMgr.h"
 #include "Map.h"
 #include "Pet.h"
@@ -25,6 +26,18 @@
 #include "SpellAuraEffects.h"
 #include "SpellAuras.h"
 #include "World.h"
+
+namespace
+{
+    Player* FindOnlinePlayerByName(std::string const& name)
+    {
+        if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
+            if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+                return session->GetPlayer();
+
+        return nullptr;
+    }
+}
 
 bool ArenaSpectator::HandleSpectatorSpectateCommand(ChatHandler* handler, std::string const& name)
 {
@@ -48,7 +61,7 @@ bool ArenaSpectator::HandleSpectatorSpectateCommand(ChatHandler* handler, std::s
         return true;
     }
 
-    Player* spectate = ObjectAccessor::FindPlayerByName(name);
+    Player* spectate = FindOnlinePlayerByName(name);
     if (!spectate)
     {
         handler->SendSysMessage("Requested player not found.");
@@ -187,7 +200,7 @@ bool ArenaSpectator::HandleSpectatorWatchCommand(ChatHandler* handler, std::stri
     if (!bg || bg->GetStatus() != STATUS_IN_PROGRESS)
         return true;
 
-    Player* spectate = ObjectAccessor::FindPlayerByName(name);
+    Player* spectate = FindOnlinePlayerByName(name);
     if (!spectate || !spectate->IsAlive() || spectate->IsSpectator() || spectate->GetGUID() == player->GetGUID() || !spectate->IsInWorld() || !spectate->FindMap() || spectate->IsBeingTeleported() || spectate->FindMap() != player->FindMap() || !bg->IsPlayerInBattleground(spectate->GetGUID()))
         return true;
 

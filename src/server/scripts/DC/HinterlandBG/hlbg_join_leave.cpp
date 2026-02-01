@@ -189,7 +189,7 @@ void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
                     else if (g->GetMembersCount() == 1 && !otherGuid.IsEmpty())
                     {
                         // Core may auto-disband groups that shrink to 1. Ensure the remaining player stays in a BG raid by recreating it.
-                        if (Player* other = ObjectAccessor::FindPlayer(otherGuid))
+                        if (Player* other = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), otherGuid) : nullptr)
                         {
                             // If the remaining player lost their group or it is no longer a raid, create a fresh raid for them
                             Group* og = other->GetGroup();

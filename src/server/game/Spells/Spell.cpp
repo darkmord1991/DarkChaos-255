@@ -1959,7 +1959,7 @@ void Spell::SelectEffectTypeImplicitTargets(uint8 effIndex)
         case SPELL_EFFECT_SUMMON_PLAYER:
             if (m_caster->IsPlayer() && m_caster->ToPlayer()->GetTarget())
             {
-                WorldObject* target = ObjectAccessor::FindPlayer(m_caster->ToPlayer()->GetTarget());
+                WorldObject* target = ObjectAccessor::GetPlayer(m_caster->GetMap(), m_caster->ToPlayer()->GetTarget());
 
                 CallScriptObjectTargetSelectHandlers(target, SpellEffIndex(effIndex), SpellImplicitTargetInfo());
 
@@ -1996,7 +1996,7 @@ void Spell::SelectEffectTypeImplicitTargets(uint8 effIndex)
                     if (Corpse* corpseTarget = m_targets.GetCorpseTarget())
                     {
                         /// @todo: this is a workaround - corpses should be added to spell target map too, but we can't do that so we add owner instead
-                        if (Player* owner = ObjectAccessor::FindPlayer(corpseTarget->GetOwnerGUID()))
+                        if (Player* owner = ObjectAccessor::GetPlayer(m_caster->GetMap(), corpseTarget->GetOwnerGUID()))
                             target = owner;
                     }
                 }
@@ -2537,7 +2537,8 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
             return;
         // find unit in world
         // Xinef: FindUnit Access without Map check!!! Intended
-        effectUnit = ObjectAccessor::FindPlayer(target->targetGUID);
+        if (WorldSession* session = sWorld->FindSession(target->targetGUID.GetCounter()))
+            effectUnit = session->GetPlayer();
         if (!effectUnit)
             return;
 
@@ -6439,7 +6440,7 @@ SpellCastResult Spell::CheckCast(bool strict)
                     if (!m_caster->GetTarget())
                         return SPELL_FAILED_BAD_TARGETS;
 
-                    Player* target = ObjectAccessor::FindPlayer(m_caster->ToPlayer()->GetTarget());
+                    Player* target = ObjectAccessor::GetPlayer(m_caster->GetMap(), m_caster->ToPlayer()->GetTarget());
                     if (!target || (!target->IsInSameRaidWith(m_caster->ToPlayer()) && m_spellInfo->Id != 48955)) // refer-a-friend spell
                         return SPELL_FAILED_BAD_TARGETS;
 
@@ -6477,7 +6478,7 @@ SpellCastResult Spell::CheckCast(bool strict)
                     if (!(playerCaster->GetTarget()))
                         return SPELL_FAILED_BAD_TARGETS;
 
-                    Player* target = ObjectAccessor::FindPlayer(m_caster->ToPlayer()->GetTarget());
+                    Player* target = ObjectAccessor::GetPlayer(m_caster->GetMap(), m_caster->ToPlayer()->GetTarget());
 
                     if (!target ||
                             !(target->GetSession()->GetRecruiterId() == playerCaster->GetSession()->GetAccountId() || target->GetSession()->GetAccountId() == playerCaster->GetSession()->GetRecruiterId()))
@@ -8968,7 +8969,7 @@ namespace Acore
         if (Corpse* corpseTarget = target->ToCorpse())
         {
             // use ofter for party/assistance checks
-            if (Player* owner = ObjectAccessor::FindPlayer(corpseTarget->GetOwnerGUID()))
+            if (Player* owner = ObjectAccessor::GetPlayer(_caster->GetMap(), corpseTarget->GetOwnerGUID()))
                 unitTarget = owner;
             else
                 return false;

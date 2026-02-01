@@ -220,6 +220,8 @@ void MythicSpectatorManager::UnregisterActiveRun(uint32 instanceId)
     if (it == _activeRuns.end())
         return;
 
+    Map* runMap = sMapMgr->FindMap(it->second.mapId, instanceId);
+
     // Stop and save replay
     if (_config.replayEnabled)
         StopRecording(instanceId, true);
@@ -227,7 +229,10 @@ void MythicSpectatorManager::UnregisterActiveRun(uint32 instanceId)
     // Kick all spectators from this run
     for (ObjectGuid guid : it->second.spectators)
     {
-        if (Player* spectator = ObjectAccessor::FindPlayer(guid))
+        if (!runMap)
+            continue;
+
+        if (Player* spectator = ObjectAccessor::GetPlayer(runMap, guid))
         {
             ChatHandler(spectator->GetSession()).SendSysMessage(
                 "|cffff0000[M+ Spectator]|r The run has ended. You have been returned to your previous location.");
@@ -633,10 +638,12 @@ std::vector<Player*> MythicSpectatorManager::GetSpectatorsForInstance(uint32 ins
     if (runIt == _activeRuns.end())
         return result;
 
+    Map* runMap = sMapMgr->FindMap(runIt->second.mapId, instanceId);
     for (ObjectGuid guid : runIt->second.spectators)
     {
-        if (Player* p = ObjectAccessor::FindPlayer(guid))
-            result.push_back(p);
+        if (runMap)
+            if (Player* p = ObjectAccessor::GetPlayer(runMap, guid))
+                result.push_back(p);
     }
 
     return result;
@@ -651,13 +658,16 @@ void MythicSpectatorManager::BroadcastToSpectators(uint32 instanceId, std::strin
     if (runIt == _activeRuns.end())
         return;
 
+    Map* runMap = sMapMgr->FindMap(runIt->second.mapId, instanceId);
+
     WorldPacket data;
     CreatePacket(data, message);
 
     for (ObjectGuid guid : runIt->second.spectators)
     {
-        if (Player* p = ObjectAccessor::FindPlayer(guid))
-            p->SendDirectMessage(&data);
+        if (runMap)
+            if (Player* p = ObjectAccessor::GetPlayer(runMap, guid))
+                p->SendDirectMessage(&data);
     }
 }
 
@@ -757,7 +767,8 @@ void MythicSpectatorManager::Update(uint32 diff)
     std::vector<ObjectGuid> orphanedGuids;
     for (auto const& [guid, state] : _spectators)
     {
-        if (!ObjectAccessor::FindPlayer(guid))
+        Map* map = sMapMgr->FindMap(state.targetMapId, state.targetInstanceId);
+        if (!map || !ObjectAccessor::GetPlayer(map, guid))
             orphanedGuids.push_back(guid);
     }
     for (ObjectGuid guid : orphanedGuids)
@@ -778,7 +789,8 @@ void MythicSpectatorManager::Update(uint32 diff)
     // Update spectator viewpoints for valid spectators
     for (auto& [guid, state] : _spectators)
     {
-        Player* spectator = ObjectAccessor::FindPlayer(guid);
+        Map* map = sMapMgr->FindMap(state.targetMapId, state.targetInstanceId);
+        Player* spectator = map ? ObjectAccessor::GetPlayer(map, guid) : nullptr;
         if (!spectator)
             continue;
 
@@ -792,7 +804,8 @@ void MythicSpectatorManager::Update(uint32 diff)
 
         for (auto& [guid, playback] : _replayPlayback)
         {
-            Player* viewer = ObjectAccessor::FindPlayer(guid);
+            Map* viewerMap = sMapMgr->FindMap(playback.viewerMapId, playback.viewerInstanceId);
+            Player* viewer = viewerMap ? ObjectAccessor::GetPlayer(viewerMap, guid) : nullptr;
             if (!viewer)
             {
                 finished.push_back(guid);
@@ -834,9 +847,15 @@ void MythicSpectatorManager::Update(uint32 diff)
 
         for (ObjectGuid guid : finished)
         {
-            if (Player* viewer = ObjectAccessor::FindPlayer(guid))
-                ChatHandler(viewer->GetSession()).SendSysMessage("|cffffd700[M+ Replay]|r Replay finished.");
-            _replayPlayback.erase(guid);
+            auto it = _replayPlayback.find(guid);
+            if (it != _replayPlayback.end())
+            {
+                Map* viewerMap = sMapMgr->FindMap(it->second.viewerMapId, it->second.viewerInstanceId);
+                if (viewerMap)
+                    if (Player* viewer = ObjectAccessor::GetPlayer(viewerMap, guid))
+                        ChatHandler(viewer->GetSession()).SendSysMessage("|cffffd700[M+ Replay]|r Replay finished.");
+                _replayPlayback.erase(it);
+            }
         }
     }
 }
@@ -869,7 +888,8 @@ void MythicSpectatorManager::UpdateSpectatorViewpoint(Player* spectator)
     // If watching a player, update position to follow
     if (!state.watchingPlayer.IsEmpty())
     {
-        Player* target = ObjectAccessor::FindPlayer(state.watchingPlayer);
+        Map* map = sMapMgr->FindMap(state.targetMapId, state.targetInstanceId);
+        Player* target = map ? ObjectAccessor::GetPlayer(map, state.watchingPlayer) : nullptr;
         if (target && target->IsAlive() && target->GetInstanceId() == state.targetInstanceId)
         {
             // Ensure viewpoint is maintained
@@ -1109,7 +1129,11 @@ void MythicSpectatorManager::BroadcastHudUpdate(uint32 instanceId, std::unordere
 
     for (ObjectGuid guid : runIt->second.spectators)
     {
-        if (Player* spectator = ObjectAccessor::FindPlayer(guid))
+        Map* map = sMapMgr->FindMap(runIt->second.mapId, instanceId);
+        if (!map)
+            continue;
+
+        if (Player* spectator = ObjectAccessor::GetPlayer(map, guid))
         {
             for (auto const& [worldStateId, value] : worldStates)
                 spectator->SendUpdateWorldState(worldStateId, value);
@@ -1296,6 +1320,11 @@ bool MythicSpectatorManager::StartReplayPlayback(Player* player, uint32 replayId
     state.replay = replay;
     state.playbackStartMs = GameTime::GetGameTimeMS().count();
     state.nextEventIndex = 0;
+    if (Map* map = player->GetMap())
+    {
+        state.viewerMapId = map->GetId();
+        state.viewerInstanceId = map->GetInstanceId();
+    }
     _replayPlayback[player->GetGUID()] = state;
 
     std::string mapName = "Unknown";

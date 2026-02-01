@@ -1000,9 +1000,10 @@ bool ArenaTeam::FinishWeek()
 bool ArenaTeam::IsFighting() const
 {
     for (MemberList::const_iterator itr = Members.begin(); itr != Members.end(); ++itr)
-        if (Player* player = ObjectAccessor::FindPlayer(itr->Guid))
-            if (player->GetMap()->IsBattleArena())
-                return true;
+        if (WorldSession* session = sWorld->FindSession(itr->Guid.GetCounter()))
+            if (Player* player = session->GetPlayer())
+                if (player->GetMap()->IsBattleArena())
+                    return true;
 
     return false;
 }

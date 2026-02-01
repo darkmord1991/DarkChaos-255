@@ -1737,7 +1737,7 @@ SpellCastResult SpellInfo::CheckTarget(Unit const* caster, WorldObject const* ta
         if (corpseTarget->GetType() == CORPSE_BONES)
             return SPELL_FAILED_BAD_TARGETS;
         // we have to use owner for some checks (aura preventing resurrection for example)
-        if (Player* owner = ObjectAccessor::FindPlayer(corpseTarget->GetOwnerGUID()))
+        if (Player* owner = ObjectAccessor::GetPlayer(corpseTarget->GetMap(), corpseTarget->GetOwnerGUID()))
             unitTarget = owner;
         // we're not interested in corpses without owner
         else

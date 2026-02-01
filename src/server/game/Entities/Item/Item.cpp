@@ -548,7 +548,10 @@ ItemTemplate const* Item::GetTemplate() const
 
 Player* Item::GetOwner()const
 {
-    return ObjectAccessor::FindPlayer(GetOwnerGUID());
+    if (WorldSession* session = sWorld->FindSession(GetOwnerGUID().GetCounter()))
+        return session->GetPlayer();
+
+    return nullptr;
 }
 
 // Legacy / Shortcut

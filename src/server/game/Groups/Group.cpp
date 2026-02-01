@@ -42,6 +42,20 @@
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
 
+namespace
+{
+    Player* FindOnlinePlayer(ObjectGuid guid)
+    {
+        if (!guid)
+            return nullptr;
+
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            return session->GetPlayer();
+
+        return nullptr;
+    }
+}
+
 Roll::Roll(ObjectGuid _guid, LootItem const& li) : itemGUID(_guid), itemid(li.itemid),
     itemRandomPropId(li.randomPropertyId), itemRandomSuffix(li.randomSuffix), itemCount(li.count),
     totalPlayersRolling(0), totalNeed(0), totalGreed(0), totalPass(0), itemSlot(0),
@@ -282,7 +296,7 @@ void Group::ConvertToLFG(bool restricted /*= true*/)
 bool Group::CheckLevelForRaid()
 {
     for (member_citerator citr = m_memberSlots.begin(); citr != m_memberSlots.end(); ++citr)
-        if (Player* player = ObjectAccessor::FindPlayer(citr->guid))
+        if (Player* player = FindOnlinePlayer(citr->guid))
             if (player->GetLevel() < sConfigMgr->GetOption<int32>("Group.Raid.LevelRestriction", 10))
                 return true;
 
@@ -309,7 +323,7 @@ void Group::ConvertToRaid()
 
     // update quest related GO states (quest activity dependent from raid membership)
     for (member_citerator citr = m_memberSlots.begin(); citr != m_memberSlots.end(); ++citr)
-        if (Player* player = ObjectAccessor::FindPlayer(citr->guid))
+        if (Player* player = FindOnlinePlayer(citr->guid))
             player->UpdateForQuestWorldObjects();
 
     // pussywizard: client automatically clears df "eye" near minimap, so remove from raid browser
@@ -1059,7 +1073,7 @@ void Group::GroupLoot(Loot* loot, WorldObject* pLootedObject)
                 {
                     for (Roll::PlayerVote::const_iterator itr = r->playerVote.begin(); itr != r->playerVote.end(); ++itr)
                     {
-                        Player* p = ObjectAccessor::FindPlayer(itr->first);
+                        Player* p = FindOnlinePlayer(itr->first);
                         if (!p)
                             continue;
 
@@ -1210,7 +1224,7 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
                 //Broadcast Pass and Send Rollstart
                 for (Roll::PlayerVote::const_iterator itr = r->playerVote.begin(); itr != r->playerVote.end(); ++itr)
                 {
-                    Player* p = ObjectAccessor::FindPlayer(itr->first);
+                    Player* p = FindOnlinePlayer(itr->first);
                     if (!p)
                         continue;
 
@@ -1280,7 +1294,7 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
             //Broadcast Pass and Send Rollstart
             for (Roll::PlayerVote::const_iterator itr = r->playerVote.begin(); itr != r->playerVote.end(); ++itr)
             {
-                Player* p = ObjectAccessor::FindPlayer(itr->first);
+                Player* p = FindOnlinePlayer(itr->first);
                 if (!p)
                     continue;
 
@@ -1446,7 +1460,7 @@ void Group::CountTheRoll(Rolls::iterator rollI, Map* allowedMap)
                 if (itr->second != NEED)
                     continue;
 
-                player = ObjectAccessor::FindPlayer(itr->first);
+                player = FindOnlinePlayer(itr->first);
                 if (!player || (allowedMap != nullptr && player->FindMap() != allowedMap))
                 {
                     --roll->totalNeed;
@@ -1465,7 +1479,7 @@ void Group::CountTheRoll(Rolls::iterator rollI, Map* allowedMap)
             if (maxguid) // pussywizard: added condition
             {
                 SendLootRollWon(ObjectGuid::Empty, maxguid, maxresul, ROLL_NEED, *roll);
-                player = ObjectAccessor::FindPlayer(maxguid);
+                player = FindOnlinePlayer(maxguid);
 
                 if (player)
                 {
@@ -1512,7 +1526,7 @@ void Group::CountTheRoll(Rolls::iterator rollI, Map* allowedMap)
                 if (itr->second != GREED && itr->second != DISENCHANT)
                     continue;
 
-                player = ObjectAccessor::FindPlayer(itr->first);
+                player = FindOnlinePlayer(itr->first);
                 if (!player || (allowedMap != nullptr && player->FindMap() != allowedMap))
                 {
                     --roll->totalGreed;
@@ -1532,7 +1546,7 @@ void Group::CountTheRoll(Rolls::iterator rollI, Map* allowedMap)
             if (maxguid) // pussywizard: added condition
             {
                 SendLootRollWon(ObjectGuid::Empty, maxguid, maxresul, rollvote, *roll);
-                player = ObjectAccessor::FindPlayer(maxguid);
+                player = FindOnlinePlayer(maxguid);
 
                 if (player)
                 {
@@ -1879,7 +1893,7 @@ void Group::UpdateLooterGuid(WorldObject* pLootedObject, bool ifneed)
         if (ifneed)
         {
             // not update if only update if need and ok
-            Player* looter = ObjectAccessor::FindPlayer(guid_itr->guid);
+            Player* looter = FindOnlinePlayer(guid_itr->guid);
             if (looter && looter->IsAtLootRewardDistance(pLootedObject))
                 return;
         }
@@ -1890,7 +1904,7 @@ void Group::UpdateLooterGuid(WorldObject* pLootedObject, bool ifneed)
     Player* pNewLooter = nullptr;
     for (member_citerator itr = guid_itr; itr != m_memberSlots.end(); ++itr)
     {
-        if (Player* player = ObjectAccessor::FindPlayer(itr->guid))
+        if (Player* player = FindOnlinePlayer(itr->guid))
             if (player->IsAtLootRewardDistance(pLootedObject))
             {
                 pNewLooter = player;
@@ -1903,7 +1917,7 @@ void Group::UpdateLooterGuid(WorldObject* pLootedObject, bool ifneed)
         // search from start
         for (member_citerator itr = m_memberSlots.begin(); itr != guid_itr; ++itr)
         {
-            if (Player* player = ObjectAccessor::FindPlayer(itr->guid))
+            if (Player* player = FindOnlinePlayer(itr->guid))
                 if (player->IsAtLootRewardDistance(pLootedObject))
                 {
                     pNewLooter = player;
@@ -2212,7 +2226,7 @@ void Group::BroadcastGroupUpdate(void)
     // -- not very efficient but safe
     for (member_citerator citr = m_memberSlots.begin(); citr != m_memberSlots.end(); ++citr)
     {
-        Player* pp = ObjectAccessor::FindPlayer(citr->guid);
+        Player* pp = FindOnlinePlayer(citr->guid);
         if (pp)
         {
             pp->ForceValuesUpdateAtIndex(UNIT_FIELD_BYTES_2);
@@ -2228,7 +2242,7 @@ void Group::ResetMaxEnchantingLevel()
     Player* pMember = nullptr;
     for (member_citerator citr = m_memberSlots.begin(); citr != m_memberSlots.end(); ++citr)
     {
-        pMember = ObjectAccessor::FindPlayer(citr->guid);
+        pMember = FindOnlinePlayer(citr->guid);
         if (pMember && pMember->GetSession() && !pMember->GetSession()->IsSocketClosed()
             && m_maxEnchantingLevel < pMember->GetSkillValue(SKILL_ENCHANTING))
         {

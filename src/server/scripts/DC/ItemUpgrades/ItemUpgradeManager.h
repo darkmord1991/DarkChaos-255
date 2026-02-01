@@ -233,6 +233,10 @@ namespace DarkChaos
         uint32 GetUpgradeTokenItemId();
         uint32 GetArtifactEssenceItemId();
 
+        // Player map context helpers for map-scoped lookups
+        void CachePlayerMapContext(Player* player);
+        Player* FindPlayerWithContext(uint32 player_guid);
+
         // =====================================================================
         // Stat Application Helper (defined in ItemUpgradeStatApplication.cpp)
         // =====================================================================

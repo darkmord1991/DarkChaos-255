@@ -310,7 +310,9 @@ void Creature::AddToWorld()
         // it's also initialized in AIM_Initialize(), few lines below, but it's not a problem
         Motion_Initialize();
 
-        GetMap()->GetObjectsStore().Insert<Creature>(GetGUID(), this);
+        if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
+            GetMap()->GetObjectsStore().Insert<Creature>(GetGUID(), this);
+        GetMap()->RegisterPartitionedObject(this);
         if (m_spawnId)
         {
             GetMap()->GetCreatureBySpawnIdStore().insert(std::make_pair(m_spawnId, this));
@@ -357,7 +359,9 @@ void Creature::RemoveFromWorld()
         if (m_spawnId)
             Acore::Containers::MultimapErasePair(GetMap()->GetCreatureBySpawnIdStore(), m_spawnId, this);
 
-        GetMap()->GetObjectsStore().Remove<Creature>(GetGUID());
+        if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
+            GetMap()->GetObjectsStore().Remove<Creature>(GetGUID());
+        GetMap()->UnregisterPartitionedObject(this);
     }
 }
 

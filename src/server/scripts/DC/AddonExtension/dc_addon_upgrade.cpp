@@ -63,6 +63,12 @@ namespace Upgrade
             return true;
         }
 
+        inline void CacheContext(Player* player)
+        {
+            if (player)
+                DarkChaos::ItemUpgrade::CachePlayerMapContext(player);
+        }
+
         inline void SendUpgradeResult(Player* player, const std::string& requestId, bool success, uint32 itemGuid, uint32 newLevel, uint32 newEntry, uint32 errorCode, const std::string& errorMsg)
         {
             JsonMessage(Module::UPGRADE, Opcode::Upgrade::SMSG_UPGRADE_RESULT)
@@ -84,6 +90,7 @@ namespace Upgrade
         if (!player)
             return;
 
+        CacheContext(player);
         // Use DB-backed currency (single source of truth)
         uint32 tokens = 0;
         uint32 essence = 0;
@@ -105,6 +112,8 @@ namespace Upgrade
             .Send(player);
     }
 
+        CacheContext(player);
+
     // Handler: Get item upgrade info
     static void HandleGetItemInfo(Player* player, const ParsedMessage& msg)
     {
@@ -112,6 +121,7 @@ namespace Upgrade
         uint32 extSlot = 0;
 
         if (!TryGetJsonUInt(msg, "bag", extBag))
+            CacheContext(player);
             extBag = msg.GetUInt32(0);
         if (!TryGetJsonUInt(msg, "slot", extSlot))
             extSlot = msg.GetUInt32(1);
@@ -179,6 +189,8 @@ namespace Upgrade
                 .Set("cloneMap", cloneMap)
                 .Set("baseIlvl", baseItemLevel)
                 .Set("upgradedIlvl", baseItemLevel)
+
+            CacheContext(player);
                 .Set("statMultiplier", statMultiplier)
                 .Send(player);
             return;
@@ -296,6 +308,7 @@ namespace Upgrade
     // Handler: Get upgrade costs
     static void HandleGetCosts(Player* player, const ParsedMessage& msg)
     {
+        CacheContext(player);
         uint32 tier = 0;
         uint32 fromLevel = 0;
         uint32 toLevel = 0;
@@ -345,6 +358,7 @@ namespace Upgrade
     // Handler: List upgradeable items in inventory
     static void HandleListUpgradeable(Player* player, const ParsedMessage& msg)
     {
+        CacheContext(player);
         // Scan player inventory for upgradeable items
         std::vector<std::string> items;
 
@@ -420,6 +434,7 @@ namespace Upgrade
     // Handler: Perform upgrade (Unified Native Logic)
     static void HandleDoUpgrade(Player* player, const ParsedMessage& msg)
     {
+        CacheContext(player);
         uint32 extBag = 0;
         uint32 extSlot = 0;
         uint32 targetLevel = 0;
@@ -592,6 +607,7 @@ namespace Upgrade
     // Handler: Package selection (migrated from itemupgrade_communication.lua)
     static void HandlePackageSelect(Player* player, const ParsedMessage& msg)
     {
+        CacheContext(player);
         uint32 packageId = 0;
         if (!TryGetJsonUInt(msg, "packageId", packageId))
             packageId = msg.GetUInt32(0);
@@ -627,6 +643,7 @@ namespace Upgrade
 
     static void HandleHeirloomQuery(Player* player, const ParsedMessage& msg)
     {
+        CacheContext(player);
         uint32 extBag = 0;
         uint32 extSlot = 0;
 
@@ -681,6 +698,7 @@ namespace Upgrade
 
     static void HandleGetPackages(Player* player, const ParsedMessage& /*msg*/)
     {
+        CacheContext(player);
          // DCHEIRLOOM_PACKAGES format equivalent
          // ID|Name|Description
          std::vector<std::string> pkgs = {
@@ -706,6 +724,7 @@ namespace Upgrade
 
     static void HandleHeirloomUpgrade(Player* player, const ParsedMessage& msg)
     {
+        CacheContext(player);
          uint32 extBag = 0;
          uint32 extSlot = 0;
          uint32 targetLevel = 0;
@@ -903,6 +922,8 @@ namespace Upgrade
         }
 
         SendCurrencyUpdate(player);
+
+        CacheContext(player);
     }
 
 }  // namespace Upgrade

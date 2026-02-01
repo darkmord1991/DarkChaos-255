@@ -1740,7 +1740,8 @@ namespace lfg
         // Teleport Player
         for (GuidUnorderedSet::const_iterator it = playersToTeleport.begin(); it != playersToTeleport.end(); ++it)
         {
-            if (Player* player = ObjectAccessor::FindPlayer(*it))
+            if (WorldSession* session = sWorld->FindSession(it->GetCounter()))
+            if (Player* player = session->GetPlayer())
             {
                 if (player->GetGroup() != grp) // pussywizard: could not add because group was full
                     continue;
@@ -1932,9 +1933,10 @@ namespace lfg
         // pussywizard: add cooldown for not accepting (after 40 secs) or declining
         for (LfgProposalPlayerContainer::iterator it = proposal.players.begin(); it != proposal.players.end(); ++it)
             if (it->second.accept == LFG_ANSWER_DENY)
-                if (Player* plr = ObjectAccessor::FindPlayer(it->first))
-                    if (Aura* aura = plr->AddAura(LFG_SPELL_DUNGEON_COOLDOWN, plr))
-                        aura->SetDuration(150 * IN_MILLISECONDS);
+                if (WorldSession* session = sWorld->FindSession(it->first.GetCounter()))
+                    if (Player* plr = session->GetPlayer())
+                        if (Aura* aura = plr->AddAura(LFG_SPELL_DUNGEON_COOLDOWN, plr))
+                            aura->SetDuration(150 * IN_MILLISECONDS);
 
         // Mark players/groups to be removed
         LfgGuidSet toRemove;
@@ -2255,7 +2257,9 @@ namespace lfg
                 continue;
             }
 
-            Player* player = ObjectAccessor::FindPlayer(guid);
+            Player* player = nullptr;
+            if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+                player = session->GetPlayer();
             if (!player || player->FindMap() != currMap) // pussywizard: currMap - multithreading crash if on other map (map id check is not enough, binding system is not reliable)
             {
                 LOG_DEBUG("lfg", "LFGMgr::FinishDungeon: [{}] not found in world", guid.ToString());

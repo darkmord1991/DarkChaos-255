@@ -22,6 +22,7 @@
 #include "Map.h"
 #include "MapMgr.h"
 #include "Metric.h"
+#include "PartitionUpdateWorker.h"
 
 class UpdateRequest
 {
@@ -90,6 +91,33 @@ private:
     uint32 m_diff;
 };
 
+class PartitionUpdateRequest : public UpdateRequest
+{
+public:
+    PartitionUpdateRequest(Map& map, MapUpdater& updater, uint32 partitionId, uint32 diff, uint32 s_diff)
+        : _map(map), _updater(updater), _partitionId(partitionId), _diff(diff), _sDiff(s_diff)
+    {
+    }
+
+    void call() override
+    {
+        METRIC_TIMER("partition_update_time_diff",
+            METRIC_TAG("map_id", std::to_string(_map.GetId())),
+            METRIC_TAG("partition_id", std::to_string(_partitionId)));
+
+        PartitionUpdateWorker worker(_map, _partitionId, _diff, _sDiff);
+        worker.Execute();
+        _updater.update_finished();
+    }
+
+private:
+    Map& _map;
+    MapUpdater& _updater;
+    uint32 _partitionId;
+    uint32 _diff;
+    uint32 _sDiff;
+};
+
 MapUpdater::MapUpdater() : pending_requests(0), _cancelationToken(false)
 {
 }
@@ -151,6 +179,11 @@ void MapUpdater::schedule_map_preload(uint32 mapid)
 void MapUpdater::schedule_lfg_update(uint32 diff)
 {
     schedule_task(new LFGUpdateRequest(*this, diff));
+}
+
+void MapUpdater::schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff)
+{
+    schedule_task(new PartitionUpdateRequest(map, *this, partitionId, diff, s_diff));
 }
 
 bool MapUpdater::activated()

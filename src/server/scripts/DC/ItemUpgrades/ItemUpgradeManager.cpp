@@ -16,11 +16,15 @@
 #include "Item.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectGuid.h"
 #include "ObjectMgr.h"
 #include "StringFormat.h"
 #include "Config.h"
+#include "World.h"
+#include <mutex>
+#include <unordered_map>
 #include <sstream>
 
 namespace
@@ -42,12 +46,60 @@ namespace
             pos += 2;
         }
     }
+
+    struct PlayerMapContext
+    {
+        uint32 mapId = 0;
+        uint32 instanceId = 0;
+    };
+
+    std::unordered_map<uint32, PlayerMapContext> s_PlayerMapContextCache;
+    std::mutex s_PlayerMapContextMutex;
 }
 
 namespace DarkChaos
 {
     namespace ItemUpgrade
     {
+        void CachePlayerMapContext(Player* player)
+        {
+            if (!player)
+                return;
+
+            Map* map = player->GetMap();
+            if (!map)
+                return;
+
+            std::lock_guard<std::mutex> lock(s_PlayerMapContextMutex);
+            s_PlayerMapContextCache[player->GetGUID().GetCounter()] = { map->GetId(), map->GetInstanceId() };
+        }
+
+        Player* FindPlayerWithContext(uint32 player_guid)
+        {
+            if (player_guid == 0)
+                return nullptr;
+
+            Map* map = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(s_PlayerMapContextMutex);
+                auto it = s_PlayerMapContextCache.find(player_guid);
+                if (it != s_PlayerMapContextCache.end())
+                    map = sMapMgr->FindMap(it->second.mapId, it->second.instanceId);
+            }
+
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(player_guid);
+            if (map)
+            {
+                if (Player* player = ObjectAccessor::GetPlayer(map, guid))
+                    return player;
+            }
+
+            if (WorldSession* session = sWorld->FindSession(player_guid))
+                return session->GetPlayer();
+
+            return nullptr;
+        }
+
         uint32 GetUpgradeTokenItemId()
         {
             if (sConfigMgr->GetOption<bool>("ItemUpgrade.Currency.UseSeasonalCurrency", false))
@@ -165,7 +217,7 @@ namespace DarkChaos
 
                 if ((state.tier_id == 0 || state.tier_id == TIER_INVALID || state.base_item_level == 0 || state.base_item_name.empty()) && state.player_guid != 0)
                 {
-                    if (Player* owner = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(state.player_guid)))
+                    if (Player* owner = FindPlayerWithContext(state.player_guid))
                     {
                         if (Item* ownedItem = owner->GetItemByGuid(ObjectGuid::Create<HighGuid::Item>(state.item_guid)))
                         {
@@ -333,7 +385,7 @@ namespace DarkChaos
                         if (!RemoveCurrency(player_guid, CURRENCY_ARTIFACT_ESSENCE, essence_cost, state->season))
                             return false;
                         
-                        Player* player = ObjectAccessor::FindPlayer(ObjectGuid(HighGuid::Player, player_guid));
+                        Player* player = FindPlayerWithContext(player_guid);
                         DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
                             player_guid, state->season, player, CURRENCY_ARTIFACT_ESSENCE, 0, false);
                         
@@ -344,7 +396,7 @@ namespace DarkChaos
                         if (!RemoveCurrency(player_guid, CURRENCY_UPGRADE_TOKEN, token_cost, state->season))
                             return false;
                         
-                        Player* player = ObjectAccessor::FindPlayer(ObjectGuid(HighGuid::Player, player_guid));
+                        Player* player = FindPlayerWithContext(player_guid);
                         DarkChaos::CrossSystem::CurrencyUtils::SyncInventoryToDB(
                             player_guid, state->season, player, CURRENCY_UPGRADE_TOKEN, 0, false);
                         
@@ -414,7 +466,7 @@ namespace DarkChaos
                         static_cast<double>(old_multiplier), static_cast<double>(new_multiplier),
                         log_timestamp, state->season);
 
-                    if (Player* onlinePlayer = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid)))
+                    if (Player* onlinePlayer = FindPlayerWithContext(player_guid))
                         ForcePlayerStatUpdate(onlinePlayer);
 
                     // Award artifact mastery points for Phase 4B progression system
@@ -460,7 +512,7 @@ namespace DarkChaos
                     return false;
 
                 // AzerothCore Standard: Use inventory items directly as currency
-                Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid));
+                Player* player = FindPlayerWithContext(player_guid);
                 if (!player)
                     return false;
 
@@ -486,7 +538,7 @@ namespace DarkChaos
                     return amount == 0;
 
                 // AzerothCore Standard: Use inventory items directly as currency
-                Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid));
+                Player* player = FindPlayerWithContext(player_guid);
                 if (!player)
                     return false;
 
@@ -515,7 +567,7 @@ namespace DarkChaos
                     return 0;
 
                 // AzerothCore Standard: Use inventory items directly as currency
-                Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid));
+                Player* player = FindPlayerWithContext(player_guid);
                 if (!player)
                     return 0;
 

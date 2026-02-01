@@ -18,6 +18,7 @@
 #include "Chat.h"
 #include "AccountMgr.h"
 #include "CellImpl.h"
+#include "CharacterCache.h"
 #include "Common.h"
 #include "GridNotifiersImpl.h"
 #include "Language.h"
@@ -28,6 +29,18 @@
 #include "ScriptMgr.h"
 #include "Tokenize.h"
 #include "World.h"
+namespace
+{
+    Player* FindOnlinePlayerByName(std::string const& name)
+    {
+        if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
+            if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+                return session->GetPlayer();
+
+        return nullptr;
+    }
+}
+
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
@@ -715,7 +728,7 @@ ObjectGuid::LowType ChatHandler::extractLowGuidFromLink(char* text, HighGuid& gu
                 if (!normalizePlayerName(name))
                     return 0;
 
-                if (Player* player = ObjectAccessor::FindPlayerByName(name, false))
+                if (Player* player = FindOnlinePlayerByName(name))
                     return player->GetGUID().GetCounter();
 
                 if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
@@ -776,7 +789,7 @@ bool ChatHandler::extractPlayerTarget(char* args, Player** player, ObjectGuid* p
             return false;
         }
 
-        Player* pl = ObjectAccessor::FindPlayerByName(name, false);
+        Player* pl = FindOnlinePlayerByName(name);
 
         // if allowed player pointer
         if (player)
@@ -931,7 +944,7 @@ bool ChatHandler::GetPlayerGroupAndGUIDByName(const char* cname, Player*& player
                 return false;
             }
 
-            player = ObjectAccessor::FindPlayerByName(name, false);
+            player = FindOnlinePlayerByName(name);
             if (offline)
             {
                 guid = sCharacterCache->GetCharacterGuidByName(name);

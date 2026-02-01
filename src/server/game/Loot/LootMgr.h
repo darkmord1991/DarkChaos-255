@@ -122,6 +122,7 @@ class Player;
 class LootStore;
 class ConditionMgr;
 class GameObject;
+class Map;
 struct Loot;
 
 struct LootStoreItem
@@ -329,6 +330,7 @@ struct Loot
     ObjectGuid containerGUID;
     ObjectGuid sourceWorldObjectGUID;
     GameObject* sourceGameObject{nullptr};
+    Map* lootMap{nullptr};
 
     Loot(uint32 _gold = 0) : gold(_gold) { }
     ~Loot() { clear(); }
@@ -360,6 +362,7 @@ struct Loot
         gold = 0;
         unlootedCount = 0;
         roundRobinPlayer.Clear();
+        lootMap = nullptr;
         i_LootValidatorRefMgr.clearReferences();
         loot_type = LOOT_NONE;
     }

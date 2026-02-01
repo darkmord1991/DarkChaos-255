@@ -25,6 +25,7 @@
 #include "HomeMovementGenerator.h"
 #include "IdleMovementGenerator.h"
 #include "Log.h"
+#include "Map.h"
 #include "MoveSpline.h"
 #include "MoveSplineInit.h"
 #include "PointMovementGenerator.h"
@@ -317,6 +318,17 @@ void MotionMaster::MoveChase(Unit* target, std::optional<ChaseRange> dist, std::
     if (!target || target == _owner || _owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionPathRelay(ownerPartition, _owner->GetGUID(), target->GetGUID());
+            return;
+        }
+    }
+
     if (GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
     {
         if (_owner->IsPlayer())
@@ -451,6 +463,17 @@ void MotionMaster::MoveFollow(Unit* target, float dist, float angle, MovementSlo
         return;
     }
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionPathRelay(ownerPartition, _owner->GetGUID(), target->GetGUID());
+            return;
+        }
+    }
+
     //_owner->AddUnitState(UNIT_STATE_FOLLOW);
     if (_owner->IsPlayer())
     {
@@ -475,6 +498,17 @@ void MotionMaster::MovePoint(uint32 id, float x, float y, float z, ForcedMovemen
 {
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionPointRelay(ownerPartition, _owner->GetGUID(), id, x, y, z, forcedMovement, speed, orientation, generatePath, forceDestination, slot, animTier.has_value(), animTier.value_or(AnimTier::Ground));
+            return;
+        }
+    }
 
     if (_owner->IsPlayer())
     {
@@ -758,6 +792,17 @@ void MotionMaster::MoveSeekAssistance(float x, float y, float z)
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionAssistRelay(ownerPartition, _owner->GetGUID(), x, y, z);
+            return;
+        }
+    }
+
     if (_owner->IsPlayer())
     {
         LOG_ERROR("movement.motionmaster", "Player ({}) attempt to seek assistance", _owner->GetGUID().ToString());
@@ -777,6 +822,17 @@ void MotionMaster::MoveSeekAssistanceDistract(uint32 time)
     // Xinef: do not allow to move with UNIT_FLAG_DISABLE_MOVE
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionAssistDistractRelay(ownerPartition, _owner->GetGUID(), time);
+            return;
+        }
+    }
 
     if (_owner->IsPlayer())
     {

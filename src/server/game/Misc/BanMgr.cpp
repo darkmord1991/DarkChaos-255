@@ -223,14 +223,18 @@ BanReturn BanMgr::BanIP(std::string const& IP, std::string const& Duration, std:
 /// Ban an character, duration will be parsed using TimeStringToSecs if it is positive, otherwise permban
 BanReturn BanMgr::BanCharacter(std::string const& CharacterName, std::string const& Duration, std::string const& Reason, std::string const& Author)
 {
-    Player* target = ObjectAccessor::FindPlayerByName(CharacterName, false);
+    Player* target = nullptr;
+    ObjectGuid targetGuid = sCharacterCache->GetCharacterGuidByName(CharacterName);
+    if (targetGuid)
+        if (WorldSession* session = sWorld->FindSession(targetGuid.GetCounter()))
+            target = session->GetPlayer();
     uint32 DurationSecs = TimeStringToSecs(Duration);
     ObjectGuid TargetGUID;
 
     /// Pick a player to ban if not online
     if (!target)
     {
-        TargetGUID = sCharacterCache->GetCharacterGuidByName(CharacterName);
+        TargetGUID = targetGuid;
         if (!TargetGUID)
             return BAN_NOTFOUND;
     }
@@ -311,12 +315,16 @@ bool BanMgr::RemoveBanIP(std::string const& IP)
 /// Remove a ban from a character
 bool BanMgr::RemoveBanCharacter(std::string const& CharacterName)
 {
-    Player* pBanned = ObjectAccessor::FindPlayerByName(CharacterName, false);
+    Player* pBanned = nullptr;
+    ObjectGuid targetGuid = sCharacterCache->GetCharacterGuidByName(CharacterName);
+    if (targetGuid)
+        if (WorldSession* session = sWorld->FindSession(targetGuid.GetCounter()))
+            pBanned = session->GetPlayer();
     ObjectGuid guid;
 
     /// Pick a player to ban if not online
     if (!pBanned)
-        guid = sCharacterCache->GetCharacterGuidByName(CharacterName);
+        guid = targetGuid;
     else
         guid = pBanned->GetGUID();
 

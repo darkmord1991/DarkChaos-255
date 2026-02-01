@@ -16,6 +16,7 @@
  */
 
 #include "AccountMgr.h"
+#include "World.h"
 #include "Common.h"
 #include "DatabaseEnv.h"
 #include "ObjectAccessor.h"
@@ -117,11 +118,13 @@ namespace AccountMgr
                 ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>((*result)[0].Get<uint32>());
 
                 // Kick if player is online
-                if (Player* p = ObjectAccessor::FindPlayer(guid))
+                if (WorldSession* s = sWorld->FindSession(guid.GetCounter()))
                 {
-                    WorldSession* s = p->GetSession();
-                    s->KickPlayer("Delete account");            // mark session to remove at next session list update
-                    s->LogoutPlayer(false);                     // logout player without waiting next session list update
+                    if (Player* p = s->GetPlayer())
+                    {
+                        s->KickPlayer("Delete account");            // mark session to remove at next session list update
+                        s->LogoutPlayer(false);                     // logout player without waiting next session list update
+                    }
                 }
 
                 Player::DeleteFromDB(guid.GetCounter(), accountId, false, true);       // no need to update realm characters

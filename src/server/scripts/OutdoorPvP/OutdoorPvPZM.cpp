@@ -322,7 +322,8 @@ void OPvPCapturePointZM_Graveyard::SetBeaconState(TeamId controlling_factionId)
                 if (m_FlagCarrierGUID)
                 {
                     // remove flag from carrier, reset flag carrier guid
-                    Player* p = ObjectAccessor::FindPlayer(m_FlagCarrierGUID);
+                    Map* map = _pvp->GetMap();
+                    Player* p = map ? ObjectAccessor::GetPlayer(map, m_FlagCarrierGUID) : ObjectAccessor::FindPlayer(m_FlagCarrierGUID);
                     if (p)
                     {
                         p->RemoveAurasDueToSpell(ZM_BATTLE_STANDARD_A);

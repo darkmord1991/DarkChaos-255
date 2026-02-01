@@ -249,10 +249,10 @@ public:
     void setDirty(bool isDirty) { iThreatContainer.setDirty(isDirty); }
 
     // Reset all aggro without modifying the threadlist.
-    void ResetThreat(Unit const* who) { if (auto* ref = FindReference(who, true)) ref->SetThreat(0.0f); }
+    void ResetThreat(Unit const* who);
     void ResetAllThreat();
 
-    void ClearThreat(Unit const* who) { if (auto* ref = FindReference(who, true)) ref->removeReference(); }
+    void ClearThreat(Unit const* who);
     void ClearAllThreat();
 
     // Reset all aggro of unit in threadlist satisfying the predicate.

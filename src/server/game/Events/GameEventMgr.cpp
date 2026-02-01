@@ -40,7 +40,8 @@
 GameEventMgr* GameEventMgr::instance()
 {
     static GameEventMgr instance;
-    return &instance;
+#include "Map.h"
+#include "MapStoredObjectTypesContainer.h"
 }
 
 bool GameEventMgr::CheckOneGameEvent(uint16 entry) const
@@ -1909,7 +1910,10 @@ void GameEventMgr::RunSmartAIScripts(uint16 eventId, bool activate)
     {
         GameEventAIHookWorker worker(eventId, activate);
         TypeContainerVisitor<GameEventAIHookWorker, MapStoredObjectTypesContainer> visitor(worker);
-        visitor.Visit(map->GetObjectsStore());
+        map->VisitAllObjectStores([&visitor](MapStoredObjectTypesContainer& store)
+        {
+            visitor.Visit(store);
+        });
     });
 }
 

@@ -44,7 +44,11 @@ void Corpse::AddToWorld()
 {
     ///- Register the corpse for guid lookup
     if (!IsInWorld())
-        GetMap()->GetObjectsStore().Insert<Corpse>(GetGUID(), this);
+    {
+        if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
+            GetMap()->GetObjectsStore().Insert<Corpse>(GetGUID(), this);
+        GetMap()->RegisterPartitionedObject(this);
+    }
 
     Object::AddToWorld();
 }
@@ -53,7 +57,11 @@ void Corpse::RemoveFromWorld()
 {
     ///- Remove the corpse from the accessor
     if (IsInWorld())
-        GetMap()->GetObjectsStore().Remove<Corpse>(GetGUID());
+    {
+        if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
+            GetMap()->GetObjectsStore().Remove<Corpse>(GetGUID());
+        GetMap()->UnregisterPartitionedObject(this);
+    }
 
     WorldObject::RemoveFromWorld();
 }

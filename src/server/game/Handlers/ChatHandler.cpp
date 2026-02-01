@@ -16,6 +16,7 @@
  */
 
 #include "AccountMgr.h"
+#include "CharacterCache.h"
 #include "CellImpl.h"
 #include "ChannelMgr.h"
 #include "Chat.h"
@@ -405,7 +406,10 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recvData)
                     break;
                 }
 
-                Player* receiver = ObjectAccessor::FindPlayerByName(to, false);
+                Player* receiver = nullptr;
+                if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(to))
+                    if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+                        receiver = session->GetPlayer();
                 bool senderIsPlayer = AccountMgr::IsPlayerAccount(GetSecurity());
                 bool receiverIsPlayer = AccountMgr::IsPlayerAccount(receiver ? receiver->GetSession()->GetSecurity() : SEC_PLAYER);
 

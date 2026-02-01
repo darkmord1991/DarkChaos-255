@@ -16,13 +16,19 @@
  */
 
 #include "DynamicVisibility.h"
+#include "Log.h"
 
 uint8 DynamicVisibilityMgr::visibilitySettingsIndex = 0;
 
 void DynamicVisibilityMgr::Update(uint32 sessionCount)
 {
+    uint8 previousIndex = visibilitySettingsIndex;
+
     if (sessionCount >= (visibilitySettingsIndex + 1) * ((uint32)VISIBILITY_SETTINGS_PLAYER_INTERVAL) && visibilitySettingsIndex < VISIBILITY_SETTINGS_MAX_INTERVAL_NUM - 1)
         ++visibilitySettingsIndex;
     else if (visibilitySettingsIndex && sessionCount < visibilitySettingsIndex * ((uint32)VISIBILITY_SETTINGS_PLAYER_INTERVAL) - 100)
         --visibilitySettingsIndex;
+
+    if (visibilitySettingsIndex != previousIndex)
+        LOG_INFO("visibility.dynamic", "Dynamic visibility tier changed: {} -> {} (sessions: {})", previousIndex, visibilitySettingsIndex, sessionCount);
 }

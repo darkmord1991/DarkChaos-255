@@ -16,6 +16,7 @@
  */
 
 #include "MapMgr.h"
+#include "Maps/Partitioning/PartitionManager.h"
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "GridDefines.h"
@@ -85,6 +86,8 @@ Map* MapMgr::CreateBaseMap(uint32 id)
                 map = new MapInstanced(id);
             else
                 map = new Map(id, 0, REGULAR_DIFFICULTY);
+
+            map->SetPartitioned(sPartitionMgr->IsEnabled() && sPartitionMgr->IsMapPartitioned(id));
 
             i_maps[id] = map;
 

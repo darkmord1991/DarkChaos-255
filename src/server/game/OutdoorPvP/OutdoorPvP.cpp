@@ -328,7 +328,13 @@ bool OPvPCapturePoint::Update(uint32 diff)
             ObjectGuid playerGuid = *itr;
             ++itr;
 
-            if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            Player* player = nullptr;
+            Map* map = _pvp ? _pvp->GetMap() : nullptr;
+            if (map)
+                player = ObjectAccessor::GetPlayer(map, playerGuid);
+            else if (WorldSession* session = sWorld->FindSession(playerGuid.GetCounter()))
+                player = session->GetPlayer();
+            if (player)
                 if (!_capturePoint->IsWithinDistInMap(player, radius) || !player->IsOutdoorPvPActive())
                     HandlePlayerLeave(player);
         }
@@ -459,7 +465,7 @@ void OutdoorPvP::SendUpdateWorldState(uint32 field, uint32 value)
     if (_sendUpdate)
         for (auto const& _player : _players)
             for (auto itr : _player)
-                if (Player* const player = ObjectAccessor::FindPlayer(itr))
+                if (Player* const player = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), itr) : (sWorld->FindSession(itr.GetCounter()) ? sWorld->FindSession(itr.GetCounter())->GetPlayer() : nullptr))
                     player->SendUpdateWorldState(field, value);
 }
 
@@ -469,7 +475,7 @@ void OPvPCapturePoint::SendUpdateWorldState(uint32 field, uint32 value)
     {
         // send to all players present in the area
         for (auto itr : activePlayer)
-            if (Player* const player = ObjectAccessor::FindPlayer(itr))
+            if (Player* const player = (_pvp && _pvp->GetMap()) ? ObjectAccessor::GetPlayer(_pvp->GetMap(), itr) : (sWorld->FindSession(itr.GetCounter()) ? sWorld->FindSession(itr.GetCounter())->GetPlayer() : nullptr))
                 player->SendUpdateWorldState(field, value);
     }
 }
@@ -491,7 +497,7 @@ void OPvPCapturePoint::SendObjectiveComplete(uint32 id, ObjectGuid guid)
 
     // send to all players present in the area
     for (auto itr : _activePlayers[team])
-        if (Player* const player = ObjectAccessor::FindPlayer(itr))
+        if (Player* const player = (_pvp && _pvp->GetMap()) ? ObjectAccessor::GetPlayer(_pvp->GetMap(), itr) : (sWorld->FindSession(itr.GetCounter()) ? sWorld->FindSession(itr.GetCounter())->GetPlayer() : nullptr))
             player->KilledMonsterCredit(id, guid);
 }
 
@@ -635,8 +641,17 @@ void OutdoorPvP::BroadcastPacket(WorldPacket& data) const
     // This is faster than sWorld->SendZoneMessage
     for (auto const& playerSet : _players)
         for (auto itr : playerSet)
-            if (Player* const player = ObjectAccessor::FindPlayer(itr))
+        {
+            Player* player = nullptr;
+            Map* map = GetMap();
+            if (map)
+                player = ObjectAccessor::GetPlayer(map, itr);
+            else if (WorldSession* session = sWorld->FindSession(itr.GetCounter()))
+                player = session->GetPlayer();
+
+            if (player)
                 player->SendDirectMessage(&data);
+        }
 }
 
 void OutdoorPvP::RegisterZone(uint32 zoneId)
@@ -655,16 +670,32 @@ void OutdoorPvP::TeamCastSpell(TeamId team, int32 spellId, Player* sameMapPlr)
     if (spellId > 0)
     {
         for (auto itr : _players[team])
-            if (Player* const player = ObjectAccessor::FindPlayer(itr))
-                if (!sameMapPlr || sameMapPlr->FindMap() == player->FindMap())
-                    player->CastSpell(player, (uint32)spellId, true);
+        {
+            Player* player = nullptr;
+            Map* map = GetMap();
+            if (map)
+                player = ObjectAccessor::GetPlayer(map, itr);
+            else if (WorldSession* session = sWorld->FindSession(itr.GetCounter()))
+                player = session->GetPlayer();
+
+            if (player && (!sameMapPlr || sameMapPlr->FindMap() == player->FindMap()))
+                player->CastSpell(player, (uint32)spellId, true);
+        }
     }
     else
     {
         for (auto itr : _players[team])
-            if (Player* const player = ObjectAccessor::FindPlayer(itr))
-                if (!sameMapPlr || sameMapPlr->FindMap() == player->FindMap())
-                    player->RemoveAura((uint32) - spellId); // by stack?
+        {
+            Player* player = nullptr;
+            Map* map = GetMap();
+            if (map)
+                player = ObjectAccessor::GetPlayer(map, itr);
+            else if (WorldSession* session = sWorld->FindSession(itr.GetCounter()))
+                player = session->GetPlayer();
+
+            if (player && (!sameMapPlr || sameMapPlr->FindMap() == player->FindMap()))
+                player->RemoveAura((uint32) - spellId); // by stack?
+        }
     }
 }
 

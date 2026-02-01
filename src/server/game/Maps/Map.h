@@ -64,6 +64,11 @@ class StaticTransport;
 class MotionTransport;
 class PathGenerator;
 class WorldSession;
+enum AuraRemoveMode : uint8;
+enum WeaponAttackType : uint8;
+enum MovementSlot;
+enum ForcedMovement;
+enum class AnimTier : uint8;
 
 enum WeatherState : uint32;
 
@@ -194,6 +199,11 @@ public:
 
     [[nodiscard]] float GetVisibilityRange() const { return m_VisibleDistance; }
     void SetVisibilityRange(float range) { m_VisibleDistance = range; }
+    bool IsPartitioned() const { return _isPartitioned; }
+    void SetPartitioned(bool value) { _isPartitioned = value; }
+    bool UseParallelPartitions() const { return _useParallelPartitions; }
+    void SetUseParallelPartitions(bool value) { _useParallelPartitions = value; }
+    void SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff);
     void OnCreateMap();
     //function for setting up visibility distance for maps on per-type/per-Id basis
     virtual void InitVisibilityDistance();
@@ -202,6 +212,26 @@ public:
     void CreatureRelocation(Creature* creature, float x, float y, float z, float o);
     void GameObjectRelocation(GameObject* go, float x, float y, float z, float o);
     void DynamicObjectRelocation(DynamicObject* go, float x, float y, float z, float o);
+
+    uint32 GetPartitionIdForUnit(Unit const* unit) const;
+    uint32 GetActivePartitionContext() const { return _activePartitionId; }
+    void SetActivePartitionContext(uint32 partitionId) { _activePartitionId = partitionId; }
+    bool IsProcessingPartitionRelays() const { return _processingPartitionRelays; }
+    void QueuePartitionThreatRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& victimGuid, float threat, SpellSchoolMask schoolMask, uint32 spellId);
+    void QueuePartitionThreatClearAll(uint32 partitionId, ObjectGuid const& ownerGuid);
+    void QueuePartitionThreatResetAll(uint32 partitionId, ObjectGuid const& ownerGuid);
+    void QueuePartitionThreatTargetClear(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& targetGuid);
+    void QueuePartitionThreatTargetReset(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& targetGuid);
+    void QueuePartitionTauntApply(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid);
+    void QueuePartitionTauntFade(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid);
+    void QueuePartitionProcRelay(uint32 partitionId, ObjectGuid const& actorGuid, ObjectGuid const& targetGuid, bool isVictim, uint32 procFlag, uint32 procExtra, uint32 amount, WeaponAttackType attackType, uint32 procSpellId, uint32 procAuraId, int8 procAuraEffectIndex, uint32 procPhase);
+    void QueuePartitionAuraRelay(uint32 partitionId, ObjectGuid const& casterGuid, ObjectGuid const& targetGuid, uint32 spellId, uint8 effMask, bool apply, AuraRemoveMode removeMode);
+    void QueuePartitionPathRelay(uint32 partitionId, ObjectGuid const& moverGuid, ObjectGuid const& targetGuid);
+    void QueuePartitionPointRelay(uint32 partitionId, ObjectGuid const& moverGuid, uint32 pointId, float x, float y, float z, ForcedMovement forcedMovement, float speed, float orientation, bool generatePath, bool forceDestination, MovementSlot slot, bool hasAnimTier, AnimTier animTier);
+    void QueuePartitionAssistRelay(uint32 partitionId, ObjectGuid const& moverGuid, float x, float y, float z);
+    void QueuePartitionAssistDistractRelay(uint32 partitionId, ObjectGuid const& moverGuid, uint32 timeMs);
+
+    void VisitAllObjectStores(std::function<void(MapStoredObjectTypesContainer&)> const& visitor);
 
     template<class T, class CONTAINER> void Visit(const Cell& cell, TypeContainerVisitor<T, CONTAINER>& visitor);
 
@@ -507,6 +537,119 @@ public:
 
     typedef std::vector<WorldObject*> UpdatableObjectList;
     typedef std::unordered_set<WorldObject*> PendingAddUpdatableObjectList;
+    typedef std::unordered_map<uint32, UpdatableObjectList> PartitionedUpdatableObjectLists;
+
+    struct PartitionThreatRelay
+    {
+        ObjectGuid ownerGuid;
+        ObjectGuid victimGuid;
+        float threat = 0.0f;
+        SpellSchoolMask schoolMask = SPELL_SCHOOL_MASK_NORMAL;
+        uint32 spellId = 0;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionThreatActionRelay
+    {
+        ObjectGuid ownerGuid;
+        uint8 action = 0; // 1 = ClearAll, 2 = ResetAll
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionThreatTargetActionRelay
+    {
+        ObjectGuid ownerGuid;
+        ObjectGuid targetGuid;
+        uint8 action = 0; // 1 = ClearTarget, 2 = ResetTarget
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionTauntRelay
+    {
+        ObjectGuid ownerGuid;
+        ObjectGuid taunterGuid;
+        uint8 action = 0; // 1 = Apply, 2 = Fade
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionProcRelay
+    {
+        ObjectGuid actorGuid;
+        ObjectGuid targetGuid;
+        uint32 procFlag = 0;
+        uint32 procExtra = 0;
+        uint32 amount = 0;
+        WeaponAttackType attackType = static_cast<WeaponAttackType>(0);
+        uint32 procSpellId = 0;
+        uint32 procAuraId = 0;
+        int8 procAuraEffectIndex = -1;
+        uint32 procPhase = 0;
+        bool isVictim = false;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionAuraRelay
+    {
+        ObjectGuid casterGuid;
+        ObjectGuid targetGuid;
+        uint32 spellId = 0;
+        uint8 effMask = 0;
+        bool apply = true;
+        AuraRemoveMode removeMode = static_cast<AuraRemoveMode>(0);
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionPathRelay
+    {
+        ObjectGuid moverGuid;
+        ObjectGuid targetGuid;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionPointRelay
+    {
+        ObjectGuid moverGuid;
+        uint32 pointId = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        ForcedMovement forcedMovement = static_cast<ForcedMovement>(0);
+        float speed = 0.0f;
+        float orientation = 0.0f;
+        bool generatePath = true;
+        bool forceDestination = true;
+        MovementSlot slot = static_cast<MovementSlot>(0);
+        bool hasAnimTier = false;
+        AnimTier animTier = static_cast<AnimTier>(0);
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionAssistRelay
+    {
+        ObjectGuid moverGuid;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionAssistDistractRelay
+    {
+        ObjectGuid moverGuid;
+        uint32 timeMs = 0;
+        uint64 queuedMs = 0;
+    };
+
+    void AddToPartitionedUpdateList(WorldObject* obj);
+    void RemoveFromPartitionedUpdateList(WorldObject* obj);
+    void UpdatePartitionedOwnership(WorldObject* obj);
+    void RegisterPartitionedObject(WorldObject* obj);
+    void UnregisterPartitionedObject(WorldObject* obj);
+    void UpdatePartitionedObjectStore(WorldObject* obj);
+    template<class T> T* FindPartitionedObject(ObjectGuid const& guid);
+    void ProcessPartitionRelays(uint32 partitionId);
+    PartitionedUpdatableObjectLists& GetPartitionedUpdatableObjectLists() { return _partitionedUpdatableObjectLists; }
+    Unit* GetUnitByGuid(ObjectGuid const& guid) const;
 
     void AddWorldObjectToFarVisibleMap(WorldObject* obj);
     void RemoveWorldObjectFromFarVisibleMap(WorldObject* obj);
@@ -557,6 +700,11 @@ protected:
     uint32 i_InstanceId;
     uint32 m_unloadTimer;
     float m_VisibleDistance;
+    bool _isPartitioned = false;
+    bool _partitionLogShown = false;
+    uint32 _activePartitionId = 0;
+    bool _processingPartitionRelays = false;
+    bool _useParallelPartitions = false;
     DynamicMapTree _dynamicTree;
     time_t _instanceResetPeriod; // pussywizard
 
@@ -584,6 +732,21 @@ private:
 
     bool i_scriptLock;
     std::unordered_set<WorldObject*> i_objectsToRemove;
+
+    PartitionedUpdatableObjectLists _partitionedUpdatableObjectLists;
+    std::unordered_map<WorldObject*, std::pair<uint32, size_t>> _partitionedUpdatableIndex;
+    std::unordered_map<uint32, MapStoredObjectTypesContainer> _partitionedObjectsStore;
+    std::unordered_map<ObjectGuid, uint32> _partitionedObjectIndex;
+    std::unordered_map<uint32, std::vector<PartitionThreatRelay>> _partitionThreatRelays;
+    std::unordered_map<uint32, std::vector<PartitionThreatActionRelay>> _partitionThreatActionRelays;
+    std::unordered_map<uint32, std::vector<PartitionThreatTargetActionRelay>> _partitionThreatTargetActionRelays;
+    std::unordered_map<uint32, std::vector<PartitionTauntRelay>> _partitionTauntRelays;
+    std::unordered_map<uint32, std::vector<PartitionProcRelay>> _partitionProcRelays;
+    std::unordered_map<uint32, std::vector<PartitionAuraRelay>> _partitionAuraRelays;
+    std::unordered_map<uint32, std::vector<PartitionPathRelay>> _partitionPathRelays;
+    std::unordered_map<uint32, std::vector<PartitionPointRelay>> _partitionPointRelays;
+    std::unordered_map<uint32, std::vector<PartitionAssistRelay>> _partitionAssistRelays;
+    std::unordered_map<uint32, std::vector<PartitionAssistDistractRelay>> _partitionAssistDistractRelays;
 
     typedef std::multimap<time_t, ScriptAction> ScriptScheduleMap;
     ScriptScheduleMap m_scriptSchedule;

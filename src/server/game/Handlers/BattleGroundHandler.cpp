@@ -309,14 +309,14 @@ void WorldSession::HandleBattlegroundPlayerPositionsOpcode(WorldPacket& /*recvDa
 
     if (ObjectGuid guid = bg->GetFlagPickerGUID(TEAM_ALLIANCE))
     {
-        allianceFlagCarrier = ObjectAccessor::FindPlayer(guid);
+        allianceFlagCarrier = ObjectAccessor::GetPlayer(bg->GetBgMap(), guid);
         if (allianceFlagCarrier)
             ++flagCarrierCount;
     }
 
     if (ObjectGuid guid = bg->GetFlagPickerGUID(TEAM_HORDE))
     {
-        hordeFlagCarrier = ObjectAccessor::FindPlayer(guid);
+        hordeFlagCarrier = ObjectAccessor::GetPlayer(bg->GetBgMap(), guid);
         if (hordeFlagCarrier)
             ++flagCarrierCount;
     }
@@ -905,7 +905,7 @@ void WorldSession::HandleReportPvPAFK(WorldPacket& recvData)
 {
     ObjectGuid playerGuid;
     recvData >> playerGuid;
-    Player* reportedPlayer = ObjectAccessor::FindPlayer(playerGuid);
+    Player* reportedPlayer = ObjectAccessor::GetPlayer(_player->GetMap(), playerGuid);
 
     if (!reportedPlayer)
     {

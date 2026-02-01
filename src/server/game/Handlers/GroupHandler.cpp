@@ -16,6 +16,7 @@
  */
 
 #include "Chat.h"
+#include "CharacterCache.h"
 #include "DatabaseEnv.h"
 #include "Group.h"
 #include "GroupMgr.h"
@@ -77,7 +78,10 @@ void WorldSession::HandleGroupInviteOpcode(WorldPacket& recvData)
     }
 
     Player* invitingPlayer = GetPlayer();
-    Player* invitedPlayer = ObjectAccessor::FindPlayerByName(membername, false);
+    Player* invitedPlayer = nullptr;
+    if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(membername))
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            invitedPlayer = session->GetPlayer();
 
     // no player or cheat self-invite
     if (!invitedPlayer || invitedPlayer == invitingPlayer)
@@ -633,7 +637,10 @@ void WorldSession::HandleGroupChangeSubGroupOpcode(WorldPacket& recvData)
     if (!group->HasFreeSlotSubGroup(groupNr))
         return;
 
-    Player* movedPlayer = ObjectAccessor::FindPlayerByName(name, false);
+    Player* movedPlayer = nullptr;
+    if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            movedPlayer = session->GetPlayer();
     ObjectGuid guid;
     if (movedPlayer)
     {
@@ -1132,21 +1139,16 @@ void WorldSession::HandleGroupSwapSubGroupOpcode(WorldPacket& recv_data)
             return ObjectGuid::Empty;
         }
 
-        if (Player* player = ObjectAccessor::FindPlayerByName(playerName.c_str()))
+        if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(playerName))
         {
-            return player->GetGUID();
+            if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+                if (Player* player = session->GetPlayer())
+                    return player->GetGUID();
+
+            return guid;
         }
-        else
-        {
-            if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(playerName))
-            {
-                return guid;
-            }
-            else
-            {
-                return ObjectGuid::Empty; // no player - again, cheating?
-            }
-        }
+
+        return ObjectGuid::Empty; // no player - again, cheating?
     };
 
     ObjectGuid guid1 = getGuid(playerName1);

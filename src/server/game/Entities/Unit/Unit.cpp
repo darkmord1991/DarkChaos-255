@@ -41,6 +41,7 @@
 #include "Group.h"
 #include "Log.h"
 #include "MapMgr.h"
+#include "Map.h"
 #include "MoveSpline.h"
 #include "MoveSplineInit.h"
 #include "MovementGenerator.h"
@@ -4903,6 +4904,16 @@ void Unit::RemoveAura(AuraApplicationMap::iterator& i, AuraRemoveMode mode)
     if (aurApp->GetRemoveMode())
         return;
     Aura* aura = aurApp->GetBase();
+    if (aura)
+    {
+        if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        {
+            uint32 targetPartition = map->GetPartitionIdForUnit(this);
+            uint32 activePartition = map->GetActivePartitionContext();
+            if (targetPartition && targetPartition != activePartition)
+                map->QueuePartitionAuraRelay(targetPartition, aura->GetCasterGUID(), GetGUID(), aura->GetId(), aura->GetEffectMask(), false, mode);
+        }
+    }
     _UnapplyAura(i, mode);
     // Remove aura - for Area and Target auras
     if (aura->GetOwner() == this)
@@ -4911,6 +4922,14 @@ void Unit::RemoveAura(AuraApplicationMap::iterator& i, AuraRemoveMode mode)
 
 void Unit::RemoveAura(uint32 spellId, ObjectGuid caster, uint8 reqEffMask, AuraRemoveMode removeMode)
 {
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 targetPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (targetPartition && targetPartition != activePartition)
+            map->QueuePartitionAuraRelay(targetPartition, caster, GetGUID(), spellId, reqEffMask, false, removeMode);
+    }
+
     AuraApplicationMapBoundsNonConst range = m_appliedAuras.equal_range(spellId);
     for (AuraApplicationMap::iterator iter = range.first; iter != range.second;)
     {
@@ -6615,6 +6634,32 @@ void Unit::SendSpellNonMeleeDamageLog(Unit* target, SpellInfo const* spellInfo, 
 
 void Unit::ProcDamageAndSpell(Unit* actor, Unit* victim, uint32 procAttacker, uint32 procVictim, uint32 procExtra, uint32 amount, WeaponAttackType attType, SpellInfo const* procSpellInfo, SpellInfo const* procAura, int8 procAuraEffectIndex, Spell const* procSpell, DamageInfo* damageInfo, HealInfo* healInfo, uint32 procPhase)
 {
+    if (actor && victim)
+    {
+        if (Map* map = actor->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        {
+            uint32 activePartition = map->GetActivePartitionContext();
+            if (procAttacker)
+            {
+                uint32 actorPartition = map->GetPartitionIdForUnit(actor);
+                if (actorPartition && actorPartition != activePartition)
+                    map->QueuePartitionProcRelay(actorPartition, actor->GetGUID(), victim->GetGUID(), false, procAttacker, procExtra, amount, attType, procSpellInfo ? procSpellInfo->Id : 0, procAura ? procAura->Id : 0, procAuraEffectIndex, procPhase);
+                else
+                    actor->ProcDamageAndSpellFor(false, victim, procAttacker, procExtra, attType, procSpellInfo, amount, procAura, procAuraEffectIndex, procSpell, damageInfo, healInfo, procPhase);
+            }
+
+            if (victim->IsAlive() && procVictim)
+            {
+                uint32 victimPartition = map->GetPartitionIdForUnit(victim);
+                if (victimPartition && victimPartition != activePartition)
+                    map->QueuePartitionProcRelay(victimPartition, victim->GetGUID(), actor->GetGUID(), true, procVictim, procExtra, amount, attType, procSpellInfo ? procSpellInfo->Id : 0, procAura ? procAura->Id : 0, procAuraEffectIndex, procPhase);
+                else
+                    victim->ProcDamageAndSpellFor(true, actor, procVictim, procExtra, attType, procSpellInfo, amount, procAura, procAuraEffectIndex, procSpell, damageInfo, healInfo, procPhase);
+            }
+            return;
+        }
+    }
+
     // Not much to do if no flags are set.
     if (procAttacker && actor)
         actor->ProcDamageAndSpellFor(false, victim, procAttacker, procExtra, attType, procSpellInfo, amount, procAura, procAuraEffectIndex, procSpell, damageInfo, healInfo, procPhase);
@@ -14773,6 +14818,16 @@ void Unit::AddThreat(Unit* victim, float fThreat, SpellSchoolMask schoolMask, Sp
     // Only mobs can manage threat lists
     if (CanHaveThreatList() && !HasUnitState(UNIT_STATE_EVADE))
     {
+        if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        {
+            uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+            uint32 activePartition = map->GetActivePartitionContext();
+            if (ownerPartition && ownerPartition != activePartition && victim)
+            {
+                map->QueuePartitionThreatRelay(ownerPartition, GetGUID(), victim->GetGUID(), fThreat, schoolMask, threatSpell ? threatSpell->Id : 0);
+                return;
+            }
+        }
         m_ThreatMgr.AddThreat(victim, fThreat, schoolMask, threatSpell);
     }
 }
@@ -14785,7 +14840,19 @@ void Unit::TauntApply(Unit* taunter)
 
     if (!taunter || (taunter->IsPlayer() && taunter->ToPlayer()->IsGameMaster()))
         return;
-
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionTauntApply(ownerPartition, GetGUID(), taunter->GetGUID());
+            sPartitionMgr->SetPartitionOverride(GetGUID(), ownerPartition, 2000);
+            sPartitionMgr->SetPartitionOverride(taunter->GetGUID(), ownerPartition, 2000);
+            return;
+        }
+    }
+    m_ThreatMgr.tauntApply(taunter);
     if (!CanHaveThreatList())
         return;
 
@@ -14869,9 +14936,19 @@ Unit* Creature::SelectVictim()
 
     if (CanHaveThreatList())
     {
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionTauntFade(ownerPartition, GetGUID(), taunter->GetGUID());
+            return;
+        }
+    }
         if (!target && !m_ThreatMgr.isThreatListEmpty())
             target = m_ThreatMgr.getHostileTarget();
-    }
+    m_ThreatMgr.tauntFadeOut(taunter);
     else if (!HasReactState(REACT_PASSIVE))
     {
         // we have player pet probably
@@ -18032,7 +18109,7 @@ void Unit::Kill(Unit* killer, Unit* victim, bool durabilityLoss, WeaponAttackTyp
                 group->UpdateLooterGuid(creature, true);
                 if (group->GetLooterGuid() && group->GetLootMethod() != FREE_FOR_ALL)
                 {
-                    looter = ObjectAccessor::FindPlayer(group->GetLooterGuid());
+                    looter = ObjectAccessor::GetPlayer(player->GetMap(), group->GetLooterGuid());
                     if (looter)
                     {
                         hasLooterGuid = true;
@@ -19144,6 +19221,14 @@ Aura* Unit::AddAura(SpellInfo const* spellInfo, uint8 effMask, Unit* target)
 
     if (target->IsImmunedToSpell(spellInfo))
         return nullptr;
+
+    if (Map* map = target->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 targetPartition = map->GetPartitionIdForUnit(target);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (targetPartition && targetPartition != activePartition)
+            map->QueuePartitionAuraRelay(targetPartition, GetGUID(), target->GetGUID(), spellInfo->Id, effMask, true, AURA_REMOVE_BY_DEFAULT);
+    }
 
     for (uint32 i = 0; i < MAX_SPELL_EFFECTS; ++i)
     {

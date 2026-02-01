@@ -1190,7 +1190,8 @@
         // Optimized: Iterate locally tracked players (O(N_zone))
         for (ObjectGuid const& guid : _playersInHinterlands)
         {
-            if (Player* p = ObjectAccessor::FindPlayer(guid))
+            Map* map = GetMap();
+            if (Player* p = map ? ObjectAccessor::GetPlayer(map, guid) : ObjectAccessor::FindPlayer(guid))
             {
                 if (p->GetZoneId() == zoneId && p->IsInWorld())
                     f(p);

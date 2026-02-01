@@ -28,6 +28,12 @@
 #include "InstanceScript.h"
 #include "IVMapMgr.h"
 #include "LFGMgr.h"
+#include "Log.h"
+#include "Maps/Partitioning/PartitionManager.h"
+#include <unordered_map>
+#include <vector>
+#include <algorithm>
+#include <optional>
 #include "MapGrid.h"
 #include "MapInstanced.h"
 #include "Metric.h"
@@ -38,12 +44,20 @@
 #include "ObjectMgr.h"
 #include "Pet.h"
 #include "ScriptMgr.h"
+#include "SpellMgr.h"
 #include "Transport.h"
 #include "VMapFactory.h"
 #include "Vehicle.h"
 #include "VMapMgr2.h"
 #include "Weather.h"
 #include "WeatherMgr.h"
+#include "Unit.h"
+#include "MapUpdater.h"
+
+namespace
+{
+    constexpr size_t kPartitionRelayLimit = 1024;
+}
 
 #define MAP_INVALID_ZONE        0xFFFFFFFF
 
@@ -429,8 +443,631 @@ void Map::UpdatePlayerZoneStats(uint32 oldZone, uint32 newZone)
         ++_zonePlayerCountMap[newZone];
 }
 
+uint32 Map::GetPartitionIdForUnit(Unit const* unit) const
+{
+    if (!unit)
+        return 0;
+
+    return sPartitionMgr->GetPartitionIdForPosition(GetId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetGUID());
+}
+
+void Map::QueuePartitionThreatRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& victimGuid, float threat, SpellSchoolMask schoolMask, uint32 spellId)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionThreatRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionThreatRelay relay;
+    relay.ownerGuid = ownerGuid;
+    relay.victimGuid = victimGuid;
+    relay.threat = threat;
+    relay.schoolMask = schoolMask;
+    relay.spellId = spellId;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionThreatClearAll(uint32 partitionId, ObjectGuid const& ownerGuid)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionThreatActionRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionThreatActionRelay relay;
+    relay.ownerGuid = ownerGuid;
+    relay.action = 1;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionThreatResetAll(uint32 partitionId, ObjectGuid const& ownerGuid)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionThreatActionRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionThreatActionRelay relay;
+    relay.ownerGuid = ownerGuid;
+    relay.action = 2;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+void Map::QueuePartitionThreatTargetClear(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& targetGuid)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionThreatTargetActionRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionThreatTargetActionRelay relay;
+    relay.ownerGuid = ownerGuid;
+    relay.targetGuid = targetGuid;
+    relay.action = 1;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionThreatTargetReset(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& targetGuid)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionThreatTargetActionRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionThreatTargetActionRelay relay;
+    relay.ownerGuid = ownerGuid;
+    relay.targetGuid = targetGuid;
+    relay.action = 2;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionTauntApply(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionTauntRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionTauntRelay relay;
+    relay.ownerGuid = ownerGuid;
+    relay.taunterGuid = taunterGuid;
+    relay.action = 1;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionTauntFade(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionTauntRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionTauntRelay relay;
+    relay.ownerGuid = ownerGuid;
+    relay.taunterGuid = taunterGuid;
+    relay.action = 2;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionProcRelay(uint32 partitionId, ObjectGuid const& actorGuid, ObjectGuid const& targetGuid, bool isVictim, uint32 procFlag, uint32 procExtra, uint32 amount, WeaponAttackType attackType, uint32 procSpellId, uint32 procAuraId, int8 procAuraEffectIndex, uint32 procPhase)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    if (!procFlag)
+        return;
+
+    auto& queue = _partitionProcRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionProcRelay relay;
+    relay.actorGuid = actorGuid;
+    relay.targetGuid = targetGuid;
+    relay.isVictim = isVictim;
+    relay.procFlag = procFlag;
+    relay.procExtra = procExtra;
+    relay.amount = amount;
+    relay.attackType = attackType;
+    relay.procSpellId = procSpellId;
+    relay.procAuraId = procAuraId;
+    relay.procAuraEffectIndex = procAuraEffectIndex;
+    relay.procPhase = procPhase;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionAuraRelay(uint32 partitionId, ObjectGuid const& casterGuid, ObjectGuid const& targetGuid, uint32 spellId, uint8 effMask, bool apply, AuraRemoveMode removeMode)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionAuraRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionAuraRelay relay;
+    relay.casterGuid = casterGuid;
+    relay.targetGuid = targetGuid;
+    relay.spellId = spellId;
+    relay.effMask = effMask;
+    relay.apply = apply;
+    relay.removeMode = removeMode;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionPathRelay(uint32 partitionId, ObjectGuid const& moverGuid, ObjectGuid const& targetGuid)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionPathRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionPathRelay relay;
+    relay.moverGuid = moverGuid;
+    relay.targetGuid = targetGuid;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionPointRelay(uint32 partitionId, ObjectGuid const& moverGuid, uint32 pointId, float x, float y, float z, ForcedMovement forcedMovement, float speed, float orientation, bool generatePath, bool forceDestination, MovementSlot slot, bool hasAnimTier, AnimTier animTier)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionPointRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionPointRelay relay;
+    relay.moverGuid = moverGuid;
+    relay.pointId = pointId;
+    relay.x = x;
+    relay.y = y;
+    relay.z = z;
+    relay.forcedMovement = forcedMovement;
+    relay.speed = speed;
+    relay.orientation = orientation;
+    relay.generatePath = generatePath;
+    relay.forceDestination = forceDestination;
+    relay.slot = slot;
+    relay.hasAnimTier = hasAnimTier;
+    relay.animTier = animTier;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionAssistRelay(uint32 partitionId, ObjectGuid const& moverGuid, float x, float y, float z)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionAssistRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionAssistRelay relay;
+    relay.moverGuid = moverGuid;
+    relay.x = x;
+    relay.y = y;
+    relay.z = z;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::QueuePartitionAssistDistractRelay(uint32 partitionId, ObjectGuid const& moverGuid, uint32 timeMs)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    auto& queue = _partitionAssistDistractRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+        return;
+
+    PartitionAssistDistractRelay relay;
+    relay.moverGuid = moverGuid;
+    relay.timeMs = timeMs;
+    relay.queuedMs = GameTime::GetGameTimeMS().count();
+    queue.push_back(relay);
+}
+
+void Map::VisitAllObjectStores(std::function<void(MapStoredObjectTypesContainer&)> const& visitor)
+{
+    if (!visitor)
+        return;
+
+    if (!_isPartitioned)
+    {
+        visitor(_objectsStore);
+        return;
+    }
+
+    if (!sPartitionMgr->UsePartitionStoreOnly())
+        visitor(_objectsStore);
+
+    for (auto& pair : _partitionedObjectsStore)
+        visitor(pair.second);
+}
+
+Unit* Map::GetUnitByGuid(ObjectGuid const& guid) const
+{
+    if (!guid)
+        return nullptr;
+
+    if (guid.IsPlayer())
+        return ObjectAccessor::GetPlayer(this, guid);
+
+    if (guid.IsPet())
+        return GetPet(guid);
+
+    if (guid.IsCreatureOrVehicle())
+        return GetCreature(guid);
+
+    return nullptr;
+}
+
+void Map::ProcessPartitionRelays(uint32 partitionId)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    struct RelayGuard
+    {
+        explicit RelayGuard(Map* map) : _map(map) { _map->_processingPartitionRelays = true; }
+        ~RelayGuard() { _map->_processingPartitionRelays = false; }
+        Map* _map;
+    } guard(this);
+
+    if (auto threatIt = _partitionThreatRelays.find(partitionId); threatIt != _partitionThreatRelays.end())
+    {
+        std::vector<PartitionThreatRelay> relays;
+        relays.swap(threatIt->second);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 totalLatency = 0;
+        uint64 maxLatency = 0;
+        for (PartitionThreatRelay const& relay : relays)
+        {
+            Unit* owner = GetUnitByGuid(relay.ownerGuid);
+            Unit* victim = GetUnitByGuid(relay.victimGuid);
+            if (!owner || !victim)
+                continue;
+
+            SpellInfo const* threatSpell = relay.spellId ? sSpellMgr->GetSpellInfo(relay.spellId) : nullptr;
+            owner->AddThreat(victim, relay.threat, relay.schoolMask, threatSpell);
+            if (relay.queuedMs)
+            {
+                uint64 latency = nowMs - relay.queuedMs;
+                totalLatency += latency;
+                maxLatency = std::max(maxLatency, latency);
+            }
+        }
+        if (!relays.empty())
+        {
+            uint64 avgLatency = totalLatency / relays.size();
+            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "threat"));
+            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "threat"));
+        }
+    }
+
+    if (auto threatActionIt = _partitionThreatActionRelays.find(partitionId); threatActionIt != _partitionThreatActionRelays.end())
+    {
+        std::vector<PartitionThreatActionRelay> relays;
+        relays.swap(threatActionIt->second);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 totalLatency = 0;
+        uint64 maxLatency = 0;
+        for (PartitionThreatActionRelay const& relay : relays)
+        {
+            Unit* owner = GetUnitByGuid(relay.ownerGuid);
+            if (!owner)
+                continue;
+
+            if (relay.action == 1)
+                owner->GetThreatMgr().ClearAllThreat();
+            else if (relay.action == 2)
+                owner->GetThreatMgr().ResetAllThreat();
+
+            if (relay.queuedMs)
+            {
+                uint64 latency = nowMs - relay.queuedMs;
+                totalLatency += latency;
+                maxLatency = std::max(maxLatency, latency);
+            }
+        }
+        if (!relays.empty())
+        {
+            uint64 avgLatency = totalLatency / relays.size();
+            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "threat_action"));
+            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "threat_action"));
+        }
+    }
+
+    if (auto procIt = _partitionProcRelays.find(partitionId); procIt != _partitionProcRelays.end())
+    {
+        std::vector<PartitionProcRelay> relays;
+        relays.swap(procIt->second);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 totalLatency = 0;
+        uint64 maxLatency = 0;
+        for (PartitionProcRelay const& relay : relays)
+        {
+            Unit* actor = GetUnitByGuid(relay.actorGuid);
+            Unit* target = GetUnitByGuid(relay.targetGuid);
+            if (!actor || !target)
+                continue;
+
+            SpellInfo const* procSpellInfo = relay.procSpellId ? sSpellMgr->GetSpellInfo(relay.procSpellId) : nullptr;
+            SpellInfo const* procAuraInfo = relay.procAuraId ? sSpellMgr->GetSpellInfo(relay.procAuraId) : nullptr;
+            if (relay.isVictim)
+                actor->ProcDamageAndSpellFor(true, target, relay.procFlag, relay.procExtra, relay.attackType, procSpellInfo, relay.amount, procAuraInfo, relay.procAuraEffectIndex, nullptr, nullptr, nullptr, relay.procPhase);
+            else
+                actor->ProcDamageAndSpellFor(false, target, relay.procFlag, relay.procExtra, relay.attackType, procSpellInfo, relay.amount, procAuraInfo, relay.procAuraEffectIndex, nullptr, nullptr, nullptr, relay.procPhase);
+            if (relay.queuedMs)
+            {
+                uint64 latency = nowMs - relay.queuedMs;
+                totalLatency += latency;
+                maxLatency = std::max(maxLatency, latency);
+            }
+        }
+        if (!relays.empty())
+        {
+            uint64 avgLatency = totalLatency / relays.size();
+            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "proc"));
+            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "proc"));
+        }
+    }
+
+    if (auto auraIt = _partitionAuraRelays.find(partitionId); auraIt != _partitionAuraRelays.end())
+    {
+        std::vector<PartitionAuraRelay> relays;
+        relays.swap(auraIt->second);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 totalLatency = 0;
+        uint64 maxLatency = 0;
+        for (PartitionAuraRelay const& relay : relays)
+        {
+            Unit* caster = GetUnitByGuid(relay.casterGuid);
+            Unit* target = GetUnitByGuid(relay.targetGuid);
+            if (!target)
+                continue;
+
+            if (relay.apply)
+            {
+                if (!caster)
+                    continue;
+
+                if (target->HasAura(relay.spellId, relay.casterGuid))
+                    continue;
+
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(relay.spellId);
+                if (!spellInfo)
+                    continue;
+
+                caster->AddAura(spellInfo, relay.effMask, target);
+            }
+            else
+            {
+                target->RemoveAura(relay.spellId, relay.casterGuid, relay.effMask, relay.removeMode);
+            }
+            if (relay.queuedMs)
+            {
+                uint64 latency = nowMs - relay.queuedMs;
+                totalLatency += latency;
+                maxLatency = std::max(maxLatency, latency);
+            }
+        }
+        if (!relays.empty())
+        {
+            uint64 avgLatency = totalLatency / relays.size();
+            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "aura"));
+            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "aura"));
+        }
+    }
+
+    if (auto pathIt = _partitionPathRelays.find(partitionId); pathIt != _partitionPathRelays.end())
+    {
+        std::vector<PartitionPathRelay> relays;
+        relays.swap(pathIt->second);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 totalLatency = 0;
+        uint64 maxLatency = 0;
+        for (PartitionPathRelay const& relay : relays)
+        {
+            Unit* mover = GetUnitByGuid(relay.moverGuid);
+            Unit* target = GetUnitByGuid(relay.targetGuid);
+            if (!mover || !target || !mover->GetMotionMaster())
+                continue;
+
+            mover->GetMotionMaster()->MoveChase(target);
+            if (relay.queuedMs)
+            {
+                uint64 latency = nowMs - relay.queuedMs;
+                totalLatency += latency;
+                maxLatency = std::max(maxLatency, latency);
+            }
+        }
+        if (!relays.empty())
+        {
+            uint64 avgLatency = totalLatency / relays.size();
+            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "path"));
+            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "path"));
+        }
+    }
+
+    if (auto pointIt = _partitionPointRelays.find(partitionId); pointIt != _partitionPointRelays.end())
+    {
+        std::vector<PartitionPointRelay> relays;
+        relays.swap(pointIt->second);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 totalLatency = 0;
+        uint64 maxLatency = 0;
+        for (PartitionPointRelay const& relay : relays)
+        {
+            Unit* mover = GetUnitByGuid(relay.moverGuid);
+            if (!mover || !mover->GetMotionMaster())
+                continue;
+
+            std::optional<AnimTier> animTier;
+            if (relay.hasAnimTier)
+                animTier = relay.animTier;
+
+            mover->GetMotionMaster()->MovePoint(relay.pointId, relay.x, relay.y, relay.z, relay.forcedMovement, relay.speed, relay.orientation, relay.generatePath, relay.forceDestination, relay.slot, animTier);
+            if (relay.queuedMs)
+            {
+                uint64 latency = nowMs - relay.queuedMs;
+                totalLatency += latency;
+                maxLatency = std::max(maxLatency, latency);
+            }
+        }
+        if (!relays.empty())
+        {
+            uint64 avgLatency = totalLatency / relays.size();
+            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "point"));
+            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "point"));
+        }
+    }
+
+    if (auto assistIt = _partitionAssistRelays.find(partitionId); assistIt != _partitionAssistRelays.end())
+    {
+        std::vector<PartitionAssistRelay> relays;
+        relays.swap(assistIt->second);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 totalLatency = 0;
+        uint64 maxLatency = 0;
+        for (PartitionAssistRelay const& relay : relays)
+        {
+            Unit* mover = GetUnitByGuid(relay.moverGuid);
+            if (!mover || !mover->GetMotionMaster())
+                continue;
+
+            mover->GetMotionMaster()->MoveSeekAssistance(relay.x, relay.y, relay.z);
+            if (relay.queuedMs)
+            {
+                uint64 latency = nowMs - relay.queuedMs;
+                totalLatency += latency;
+                maxLatency = std::max(maxLatency, latency);
+            }
+        }
+        if (!relays.empty())
+        {
+            uint64 avgLatency = totalLatency / relays.size();
+            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "assist"));
+            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "assist"));
+        }
+    }
+
+    if (auto distractIt = _partitionAssistDistractRelays.find(partitionId); distractIt != _partitionAssistDistractRelays.end())
+    {
+        std::vector<PartitionAssistDistractRelay> relays;
+        relays.swap(distractIt->second);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 totalLatency = 0;
+        uint64 maxLatency = 0;
+        for (PartitionAssistDistractRelay const& relay : relays)
+        {
+            Unit* mover = GetUnitByGuid(relay.moverGuid);
+            if (!mover || !mover->GetMotionMaster())
+                continue;
+
+            mover->GetMotionMaster()->MoveSeekAssistanceDistract(relay.timeMs);
+            if (relay.queuedMs)
+            {
+                uint64 latency = nowMs - relay.queuedMs;
+                totalLatency += latency;
+                maxLatency = std::max(maxLatency, latency);
+            }
+        }
+        if (!relays.empty())
+        {
+            uint64 avgLatency = totalLatency / relays.size();
+            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "assist_distract"));
+            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "assist_distract"));
+        }
+    }
+}
+
 void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 {
+    if (_isPartitioned && !_useParallelPartitions && !_partitionLogShown)
+    {
+        _partitionLogShown = true;
+        LOG_WARN("map.partition", "Map {} is marked partitioned but uses legacy update routing (set UseParallelPartitions for threaded updates)", GetId());
+    }
+
+    if (_isPartitioned && t_diff)
+        sPartitionMgr->UpdatePartitionsForMap(GetId(), t_diff);
+
     if (t_diff)
         _dynamicTree.update(t_diff);
 
@@ -462,27 +1099,118 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     _updatableObjectListRecheckTimer.Update(t_diff);
     resetMarkedCells();
 
-    // Update players
-    for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
+    if (_isPartitioned)
     {
-        Player* player = m_mapRefIter->GetSource();
+        std::unordered_map<uint32, std::vector<Player*>> partitionBuckets;
+        uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
 
-        if (!player || !player->IsInWorld())
-            continue;
-
-        player->Update(s_diff);
-
-        if (_updatableObjectListRecheckTimer.Passed())
+        for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
         {
-            MarkNearbyCellsOf(player);
+            Player* player = m_mapRefIter->GetSource();
+            if (!player || !player->IsInWorld())
+                continue;
 
-            // If player is using far sight, update viewpoint
-            if (WorldObject* viewPoint = player->GetViewpoint())
+            uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), player->GetGUID());
+            partitionBuckets[partitionId].push_back(player);
+        }
+
+        if (partitionCount == 0)
+            partitionCount = 1;
+
+        for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
+        {
+            METRIC_VALUE("partition_relay_queue_threat", uint64(_partitionThreatRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            METRIC_VALUE("partition_relay_queue_threat_action", uint64(_partitionThreatActionRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            METRIC_VALUE("partition_relay_queue_threat_target", uint64(_partitionThreatTargetActionRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            METRIC_VALUE("partition_relay_queue_taunt", uint64(_partitionTauntRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            METRIC_VALUE("partition_relay_queue_proc", uint64(_partitionProcRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            METRIC_VALUE("partition_relay_queue_aura", uint64(_partitionAuraRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            METRIC_VALUE("partition_relay_queue_path", uint64(_partitionPathRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            METRIC_VALUE("partition_relay_queue_point", uint64(_partitionPointRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            METRIC_VALUE("partition_relay_queue_assist", uint64(_partitionAssistRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            METRIC_VALUE("partition_relay_queue_assist_distract", uint64(_partitionAssistDistractRelays[partitionId].size()),
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)));
+            SetActivePartitionContext(partitionId);
+            ProcessPartitionRelays(partitionId);
+            auto& bucket = partitionBuckets[partitionId];
+            uint32 boundaryPlayers = 0;
+            for (Player* player : bucket)
             {
-                if (Creature* viewCreature = viewPoint->ToCreature())
-                    MarkNearbyCellsOf(viewCreature);
-                else if (DynamicObject* viewObject = viewPoint->ToDynObject())
-                    MarkNearbyCellsOf(viewObject);
+                if (sPartitionMgr->IsNearPartitionBoundary(GetId(), player->GetPositionX(), player->GetPositionY()))
+                {
+                    ++boundaryPlayers;
+                    sPartitionMgr->RegisterBoundaryObject(GetId(), partitionId, player->GetGUID());
+                    sPartitionMgr->SetPartitionOverride(player->GetGUID(), partitionId, 500);
+                }
+            }
+            sPartitionMgr->UpdatePartitionPlayerCount(GetId(), partitionId, static_cast<uint32>(bucket.size()));
+            sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, boundaryPlayers);
+
+            for (Player* player : bucket)
+            {
+                player->Update(s_diff);
+
+                if (_updatableObjectListRecheckTimer.Passed())
+                {
+                    MarkNearbyCellsOf(player);
+
+                    // If player is using far sight, update viewpoint
+                    if (WorldObject* viewPoint = player->GetViewpoint())
+                    {
+                        if (Creature* viewCreature = viewPoint->ToCreature())
+                            MarkNearbyCellsOf(viewCreature);
+                        else if (DynamicObject* viewObject = viewPoint->ToDynObject())
+                            MarkNearbyCellsOf(viewObject);
+                    }
+                }
+            }
+        }
+        SetActivePartitionContext(0);
+    }
+    else
+    {
+        SetActivePartitionContext(0);
+        // Update players (legacy path)
+        for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
+        {
+            Player* player = m_mapRefIter->GetSource();
+
+            if (!player || !player->IsInWorld())
+                continue;
+
+            player->Update(s_diff);
+
+            if (_updatableObjectListRecheckTimer.Passed())
+            {
+                MarkNearbyCellsOf(player);
+
+                // If player is using far sight, update viewpoint
+                if (WorldObject* viewPoint = player->GetViewpoint())
+                {
+                    if (Creature* viewCreature = viewPoint->ToCreature())
+                        MarkNearbyCellsOf(viewCreature);
+                    else if (DynamicObject* viewObject = viewPoint->ToDynObject())
+                        MarkNearbyCellsOf(viewObject);
+                }
             }
         }
     }
@@ -510,13 +1238,88 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
     sScriptMgr->OnMapUpdate(this, t_diff);
 
-    METRIC_VALUE("map_creatures", uint64(GetObjectsStore().Size<Creature>()),
+    if (_isPartitioned)
+    {
+        uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+        if (partitionCount == 0)
+            partitionCount = 1;
+
+        for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
+        {
+            PartitionManager::PartitionStats stats;
+            if (sPartitionMgr->GetPartitionStats(GetId(), partitionId, stats))
+            {
+                METRIC_VALUE("partition_players", uint64(stats.players),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_creatures", uint64(stats.creatures),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_boundary_objects", uint64(stats.boundaryObjects),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_visibility_count", uint64(sPartitionMgr->GetVisibilityCount(GetId(), partitionId)),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+            }
+        }
+
+        METRIC_VALUE("partition_combat_handoffs", uint64(sPartitionMgr->ConsumeCombatHandoffCount(GetId())),
+            METRIC_TAG("map_id", std::to_string(GetId())));
+        METRIC_VALUE("partition_path_handoffs", uint64(sPartitionMgr->ConsumePathHandoffCount(GetId())),
+            METRIC_TAG("map_id", std::to_string(GetId())));
+    }
+
+    uint64 creatureCount = 0;
+    uint64 gameObjectCount = 0;
+    if (_isPartitioned && sPartitionMgr->UsePartitionStoreOnly())
+    {
+        for (auto const& pair : _partitionedObjectsStore)
+        {
+            creatureCount += pair.second.Size<Creature>();
+            gameObjectCount += pair.second.Size<GameObject>();
+        }
+    }
+    else
+    {
+        creatureCount = GetObjectsStore().Size<Creature>();
+        gameObjectCount = GetObjectsStore().Size<GameObject>();
+    }
+
+    METRIC_VALUE("map_creatures", creatureCount,
         METRIC_TAG("map_id", std::to_string(GetId())),
         METRIC_TAG("map_instanceid", std::to_string(GetInstanceId())));
 
-    METRIC_VALUE("map_gameobjects", uint64(GetObjectsStore().Size<GameObject>()),
+    METRIC_VALUE("map_gameobjects", gameObjectCount,
         METRIC_TAG("map_id", std::to_string(GetId())),
         METRIC_TAG("map_instanceid", std::to_string(GetInstanceId())));
+}
+
+void Map::SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff)
+{
+    if (!_isPartitioned || !_useParallelPartitions)
+        return;
+
+    MapUpdater* updater = sMapMgr->GetMapUpdater();
+    if (!updater || !updater->activated())
+    {
+        LOG_WARN("map.partition", "Map {}: SchedulePartitionUpdates called but MapUpdater is not active", GetId());
+        return;
+    }
+
+    uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+    if (partitionCount == 0)
+        partitionCount = 1;
+
+    LOG_DEBUG("map.partition", "Map {}: Scheduling {} partition updates in parallel", GetId(), partitionCount);
+
+    for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
+    {
+        updater->schedule_partition_update(*this, partitionId, t_diff, s_diff);
+    }
+
+    // Wait for all partition updates to complete before proceeding
+    updater->wait();
 }
 
 void Map::UpdateNonPlayerObjects(uint32 const diff)
@@ -525,7 +1328,76 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
         _AddObjectToUpdateList(obj);
     _pendingAddUpdatableObjectList.clear();
 
-    if (_updatableObjectListRecheckTimer.Passed())
+    bool recheck = _updatableObjectListRecheckTimer.Passed();
+
+    if (_isPartitioned)
+    {
+        std::unordered_map<uint32, uint32> partitionCreatureCounts;
+        std::unordered_map<uint32, uint32> partitionBoundaryObjectCounts;
+
+        uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+        if (partitionCount == 0)
+            partitionCount = 1;
+
+        for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
+        {
+            SetActivePartitionContext(partitionId);
+            auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
+            if (listIt == _partitionedUpdatableObjectLists.end())
+                continue;
+
+            auto& bucket = listIt->second;
+            for (WorldObject* obj : bucket)
+            {
+                if (!obj->IsInWorld())
+                    continue;
+
+                if (obj->ToCreature())
+                    ++partitionCreatureCounts[partitionId];
+
+                if (sPartitionMgr->IsNearPartitionBoundary(GetId(), obj->GetPositionX(), obj->GetPositionY()))
+                {
+                    ++partitionBoundaryObjectCounts[partitionId];
+                    sPartitionMgr->RegisterBoundaryObject(GetId(), partitionId, obj->GetGUID());
+                    sPartitionMgr->SetPartitionOverride(obj->GetGUID(), partitionId, 500);
+                }
+
+                obj->Update(diff);
+            }
+
+            sPartitionMgr->UpdatePartitionCreatureCount(GetId(), partitionId, partitionCreatureCounts[partitionId]);
+            sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, partitionBoundaryObjectCounts[partitionId]);
+        }
+
+        SetActivePartitionContext(0);
+
+        if (recheck)
+        {
+            for (uint32 i = 0; i < _updatableObjectList.size();)
+            {
+                WorldObject* obj = _updatableObjectList[i];
+                if (!obj->IsInWorld())
+                {
+                    ++i;
+                    continue;
+                }
+
+                if (!obj->IsUpdateNeeded())
+                {
+                    _RemoveObjectFromUpdateList(obj);
+                }
+                else
+                {
+                    ++i;
+                }
+            }
+            _updatableObjectListRecheckTimer.Reset();
+        }
+
+        return;
+    }
+
+    if (recheck)
     {
         for (uint32 i = 0; i < _updatableObjectList.size();)
         {
@@ -536,6 +1408,46 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 continue;
             }
 
+
+            if (auto threatTargetIt = _partitionThreatTargetActionRelays.find(partitionId); threatTargetIt != _partitionThreatTargetActionRelays.end())
+            {
+                std::vector<PartitionThreatTargetActionRelay> relays;
+                relays.swap(threatTargetIt->second);
+                uint64 nowMs = GameTime::GetGameTimeMS().count();
+                uint64 totalLatency = 0;
+                uint64 maxLatency = 0;
+                for (PartitionThreatTargetActionRelay const& relay : relays)
+                {
+                    Unit* owner = GetUnitByGuid(relay.ownerGuid);
+                    Unit* target = GetUnitByGuid(relay.targetGuid);
+                    if (!owner || !target)
+                        continue;
+
+                    if (relay.action == 1)
+                        owner->GetThreatMgr().ClearThreat(target);
+                    else if (relay.action == 2)
+                        owner->GetThreatMgr().ResetThreat(target);
+
+                    if (relay.queuedMs)
+                    {
+                        uint64 latency = nowMs - relay.queuedMs;
+                        totalLatency += latency;
+                        maxLatency = std::max(maxLatency, latency);
+                    }
+                }
+                if (!relays.empty())
+                {
+                    uint64 avgLatency = totalLatency / relays.size();
+                    METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                        METRIC_TAG("map_id", std::to_string(GetId())),
+                        METRIC_TAG("partition_id", std::to_string(partitionId)),
+                        METRIC_TAG("type", "threat_target"));
+                    METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                        METRIC_TAG("map_id", std::to_string(GetId())),
+                        METRIC_TAG("partition_id", std::to_string(partitionId)),
+                        METRIC_TAG("type", "threat_target"));
+                }
+            }
             obj->Update(diff);
 
             if (!obj->IsUpdateNeeded())
@@ -558,6 +1470,46 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 continue;
 
             obj->Update(diff);
+        }
+    }
+
+    if (auto tauntIt = _partitionTauntRelays.find(partitionId); tauntIt != _partitionTauntRelays.end())
+    {
+        std::vector<PartitionTauntRelay> relays;
+        relays.swap(tauntIt->second);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 totalLatency = 0;
+        uint64 maxLatency = 0;
+        for (PartitionTauntRelay const& relay : relays)
+        {
+            Unit* owner = GetUnitByGuid(relay.ownerGuid);
+            Unit* taunter = GetUnitByGuid(relay.taunterGuid);
+            if (!owner || !taunter)
+                continue;
+
+            if (relay.action == 1)
+                owner->GetThreatMgr().tauntApply(taunter);
+            else if (relay.action == 2)
+                owner->GetThreatMgr().tauntFadeOut(taunter);
+
+            if (relay.queuedMs)
+            {
+                uint64 latency = nowMs - relay.queuedMs;
+                totalLatency += latency;
+                maxLatency = std::max(maxLatency, latency);
+            }
+        }
+        if (!relays.empty())
+        {
+            uint64 avgLatency = totalLatency / relays.size();
+            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "taunt"));
+            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                METRIC_TAG("map_id", std::to_string(GetId())),
+                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("type", "taunt"));
         }
     }
 }
@@ -584,6 +1536,7 @@ void Map::_AddObjectToUpdateList(WorldObject* obj)
     mapUpdatableObject->SetUpdateState(UpdatableMapObject::UpdateState::Updating);
     mapUpdatableObject->SetMapUpdateListOffset(_updatableObjectList.size());
     _updatableObjectList.push_back(obj);
+    AddToPartitionedUpdateList(obj);
 }
 
 // Internal use only
@@ -600,6 +1553,168 @@ void Map::_RemoveObjectFromUpdateList(WorldObject* obj)
 
     _updatableObjectList.pop_back();
     mapUpdatableObject->SetUpdateState(UpdatableMapObject::UpdateState::NotUpdating);
+    RemoveFromPartitionedUpdateList(obj);
+}
+
+void Map::AddToPartitionedUpdateList(WorldObject* obj)
+{
+    if (!_isPartitioned || !obj)
+        return;
+
+                uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), obj->GetGUID());
+    auto& list = _partitionedUpdatableObjectLists[partitionId];
+    list.push_back(obj);
+    _partitionedUpdatableIndex[obj] = { partitionId, list.size() - 1 };
+}
+
+void Map::RemoveFromPartitionedUpdateList(WorldObject* obj)
+{
+    if (!_isPartitioned || !obj)
+        return;
+
+    auto it = _partitionedUpdatableIndex.find(obj);
+    if (it == _partitionedUpdatableIndex.end())
+        return;
+
+    uint32 partitionId = it->second.first;
+    size_t index = it->second.second;
+    auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
+    if (listIt == _partitionedUpdatableObjectLists.end())
+    {
+        _partitionedUpdatableIndex.erase(it);
+        return;
+    }
+
+    auto& list = listIt->second;
+    if (index < list.size() - 1)
+    {
+        WorldObject* swapped = list.back();
+        list[index] = swapped;
+        _partitionedUpdatableIndex[swapped] = { partitionId, index };
+    }
+    list.pop_back();
+    _partitionedUpdatableIndex.erase(it);
+}
+
+void Map::UpdatePartitionedOwnership(WorldObject* obj)
+{
+    if (!_isPartitioned || !obj)
+        return;
+
+    uint32 newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY());
+    auto it = _partitionedUpdatableIndex.find(obj);
+    if (it == _partitionedUpdatableIndex.end())
+    {
+        AddToPartitionedUpdateList(obj);
+        return;
+    }
+
+    if (it->second.first != newPartitionId)
+    {
+        RemoveFromPartitionedUpdateList(obj);
+        AddToPartitionedUpdateList(obj);
+    }
+
+    UpdatePartitionedObjectStore(obj);
+}
+
+void Map::RegisterPartitionedObject(WorldObject* obj)
+{
+    if (!_isPartitioned || !obj)
+        return;
+
+    ObjectGuid guid = obj->GetGUID();
+    uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), obj->GetGUID());
+    if (obj->IsPlayer())
+    {
+        uint32 persistedPartition = 0;
+        if (sPartitionMgr->GetPersistentPartition(guid, GetId(), persistedPartition) && persistedPartition != 0)
+            partitionId = persistedPartition;
+    }
+    _partitionedObjectIndex[guid] = partitionId;
+    sPartitionMgr->NotifyVisibilityAttach(guid, GetId(), partitionId);
+
+    if (obj->IsPlayer())
+        sPartitionMgr->PersistPartitionOwnership(guid, GetId(), partitionId);
+
+    auto& store = _partitionedObjectsStore[partitionId];
+    if (Creature* creature = obj->ToCreature())
+        store.Insert<Creature>(guid, creature);
+    else if (GameObject* go = obj->ToGameObject())
+        store.Insert<GameObject>(guid, go);
+    else if (DynamicObject* dynObj = obj->ToDynamicObject())
+        store.Insert<DynamicObject>(guid, dynObj);
+    else if (Corpse* corpse = obj->ToCorpse())
+        store.Insert<Corpse>(guid, corpse);
+}
+
+void Map::UnregisterPartitionedObject(WorldObject* obj)
+{
+    if (!_isPartitioned || !obj)
+        return;
+
+    ObjectGuid guid = obj->GetGUID();
+    auto it = _partitionedObjectIndex.find(guid);
+    if (it == _partitionedObjectIndex.end())
+        return;
+
+    uint32 partitionId = it->second;
+    auto storeIt = _partitionedObjectsStore.find(partitionId);
+    if (storeIt != _partitionedObjectsStore.end())
+    {
+        auto& store = storeIt->second;
+        if (obj->ToCreature())
+            store.Remove<Creature>(guid);
+        else if (obj->ToGameObject())
+            store.Remove<GameObject>(guid);
+        else if (obj->ToDynamicObject())
+            store.Remove<DynamicObject>(guid);
+        else if (obj->ToCorpse())
+            store.Remove<Corpse>(guid);
+    }
+
+    _partitionedObjectIndex.erase(it);
+    sPartitionMgr->NotifyVisibilityDetach(guid, GetId(), partitionId);
+}
+
+void Map::UpdatePartitionedObjectStore(WorldObject* obj)
+{
+    if (!_isPartitioned || !obj)
+        return;
+
+    ObjectGuid guid = obj->GetGUID();
+    uint32 newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), obj->GetGUID());
+    auto it = _partitionedObjectIndex.find(guid);
+    if (it == _partitionedObjectIndex.end())
+    {
+        RegisterPartitionedObject(obj);
+        return;
+    }
+
+    if (it->second != newPartitionId)
+    {
+        UnregisterPartitionedObject(obj);
+        RegisterPartitionedObject(obj);
+        if (obj->IsPlayer())
+            sPartitionMgr->PersistPartitionOwnership(guid, GetId(), newPartitionId);
+    }
+}
+
+template<class T>
+T* Map::FindPartitionedObject(ObjectGuid const& guid)
+{
+    if (!_isPartitioned)
+        return nullptr;
+
+    auto it = _partitionedObjectIndex.find(guid);
+    if (it == _partitionedObjectIndex.end())
+        return nullptr;
+
+    auto storeIt = _partitionedObjectsStore.find(it->second);
+    if (storeIt == _partitionedObjectsStore.end())
+        return nullptr;
+
+    return storeIt->second.Find<T>(guid);
 }
 
 void Map::RemoveObjectFromMapUpdateList(WorldObject* obj)
@@ -783,6 +1898,20 @@ void Map::RemoveFromMap(Transport* obj, bool remove)
 
 void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
 {
+    uint32 oldPartitionId = 0;
+    uint32 newPartitionId = 0;
+    bool partitionChanged = false;
+
+    if (_isPartitioned)
+    {
+        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), player->GetGUID());
+        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, player->GetGUID());
+        partitionChanged = (oldPartitionId != newPartitionId);
+
+        if (partitionChanged)
+            sPartitionMgr->BeginRelocation(player->GetGUID(), GetId(), oldPartitionId, newPartitionId);
+    }
+
     Cell old_cell(player->GetPositionX(), player->GetPositionY());
     Cell new_cell(x, y);
 
@@ -801,10 +1930,47 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
         player->GetVehicleKit()->RelocatePassengers();
     player->UpdatePositionData();
     player->UpdateObjectVisibility(false);
+
+    if (_isPartitioned && partitionChanged)
+    {
+        if (!player->IsInWorld())
+        {
+            sPartitionMgr->RollbackRelocation(player->GetGUID());
+        }
+        else
+        {
+            sPartitionMgr->CommitRelocation(player->GetGUID());
+            sPartitionMgr->NotifyVisibilityDetach(player->GetGUID(), GetId(), oldPartitionId);
+            sPartitionMgr->NotifyVisibilityAttach(player->GetGUID(), GetId(), newPartitionId);
+            LOG_DEBUG("visibility.partition", "Player {} crossed partition {} -> {} on map {}", player->GetGUID().GetCounter(), oldPartitionId, newPartitionId, GetId());
+            if (player->IsInCombat())
+            {
+                LOG_WARN("combat.partition", "Player {} crossed partition while in combat (handoff pending)", player->GetGUID().GetCounter());
+                sPartitionMgr->RecordCombatHandoff(GetId());
+                sPartitionMgr->SetPartitionOverride(player->GetGUID(), newPartitionId, 2000);
+                if (Unit* victim = player->GetVictim())
+                    sPartitionMgr->SetPartitionOverride(victim->GetGUID(), newPartitionId, 2000);
+            }
+        }
+    }
 }
 
 void Map::CreatureRelocation(Creature* creature, float x, float y, float z, float o)
 {
+    uint32 oldPartitionId = 0;
+    uint32 newPartitionId = 0;
+    bool partitionChanged = false;
+
+    if (_isPartitioned)
+    {
+        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), creature->GetPositionX(), creature->GetPositionY(), creature->GetGUID());
+        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, creature->GetGUID());
+        partitionChanged = (oldPartitionId != newPartitionId);
+
+        if (partitionChanged)
+            sPartitionMgr->BeginRelocation(creature->GetGUID(), GetId(), oldPartitionId, newPartitionId);
+    }
+
     Cell old_cell = creature->GetCurrentCell();
     Cell new_cell(x, y);
 
@@ -823,10 +1989,56 @@ void Map::CreatureRelocation(Creature* creature, float x, float y, float z, floa
         creature->GetVehicleKit()->RelocatePassengers();
     creature->UpdatePositionData();
     creature->UpdateObjectVisibility(false);
+
+    if (_isPartitioned && partitionChanged)
+    {
+        if (!creature->IsInWorld())
+        {
+            sPartitionMgr->RollbackRelocation(creature->GetGUID());
+        }
+        else
+        {
+            sPartitionMgr->CommitRelocation(creature->GetGUID());
+            sPartitionMgr->NotifyVisibilityDetach(creature->GetGUID(), GetId(), oldPartitionId);
+            sPartitionMgr->NotifyVisibilityAttach(creature->GetGUID(), GetId(), newPartitionId);
+            LOG_DEBUG("visibility.partition", "Creature {} crossed partition {} -> {} on map {}", creature->GetGUID().GetCounter(), oldPartitionId, newPartitionId, GetId());
+            UpdatePartitionedOwnership(creature);
+            if (creature->IsInCombat())
+            {
+                LOG_WARN("combat.partition", "Creature {} crossed partition while in combat (handoff pending)", creature->GetGUID().GetCounter());
+                sPartitionMgr->RecordCombatHandoff(GetId());
+                sPartitionMgr->SetPartitionOverride(creature->GetGUID(), newPartitionId, 2000);
+                if (Unit* victim = creature->GetVictim())
+                    sPartitionMgr->SetPartitionOverride(victim->GetGUID(), newPartitionId, 2000);
+                if (Unit* victim = creature->GetVictim())
+                    QueuePartitionPathRelay(newPartitionId, creature->GetGUID(), victim->GetGUID());
+            }
+            if (creature->GetMotionMaster())
+            {
+                LOG_DEBUG("path.partition", "Creature {} crossed partition; path handoff pending", creature->GetGUID().GetCounter());
+                sPartitionMgr->RecordPathHandoff(GetId());
+                sPartitionMgr->SetPartitionOverride(creature->GetGUID(), newPartitionId, 1000);
+            }
+        }
+    }
 }
 
 void Map::GameObjectRelocation(GameObject* go, float x, float y, float z, float o)
 {
+    uint32 oldPartitionId = 0;
+    uint32 newPartitionId = 0;
+    bool partitionChanged = false;
+
+    if (_isPartitioned)
+    {
+        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), go->GetPositionX(), go->GetPositionY(), go->GetGUID());
+        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, go->GetGUID());
+        partitionChanged = (oldPartitionId != newPartitionId);
+
+        if (partitionChanged)
+            sPartitionMgr->BeginRelocation(go->GetGUID(), GetId(), oldPartitionId, newPartitionId);
+    }
+
     Cell old_cell = go->GetCurrentCell();
     Cell new_cell(x, y);
 
@@ -844,10 +2056,40 @@ void Map::GameObjectRelocation(GameObject* go, float x, float y, float z, float 
     go->UpdateModelPosition();
     go->SetPositionDataUpdate();
     go->UpdateObjectVisibility(false);
+
+    if (_isPartitioned && partitionChanged)
+    {
+        if (!go->IsInWorld())
+        {
+            sPartitionMgr->RollbackRelocation(go->GetGUID());
+        }
+        else
+        {
+            sPartitionMgr->CommitRelocation(go->GetGUID());
+            sPartitionMgr->NotifyVisibilityDetach(go->GetGUID(), GetId(), oldPartitionId);
+            sPartitionMgr->NotifyVisibilityAttach(go->GetGUID(), GetId(), newPartitionId);
+            LOG_DEBUG("visibility.partition", "GameObject {} crossed partition {} -> {} on map {}", go->GetGUID().GetCounter(), oldPartitionId, newPartitionId, GetId());
+            UpdatePartitionedOwnership(go);
+        }
+    }
 }
 
 void Map::DynamicObjectRelocation(DynamicObject* dynObj, float x, float y, float z, float o)
 {
+    uint32 oldPartitionId = 0;
+    uint32 newPartitionId = 0;
+    bool partitionChanged = false;
+
+    if (_isPartitioned)
+    {
+        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetGUID());
+        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, dynObj->GetGUID());
+        partitionChanged = (oldPartitionId != newPartitionId);
+
+        if (partitionChanged)
+            sPartitionMgr->BeginRelocation(dynObj->GetGUID(), GetId(), oldPartitionId, newPartitionId);
+    }
+
     Cell old_cell = dynObj->GetCurrentCell();
     Cell new_cell(x, y);
 
@@ -864,6 +2106,22 @@ void Map::DynamicObjectRelocation(DynamicObject* dynObj, float x, float y, float
     dynObj->Relocate(x, y, z, o);
     dynObj->SetPositionDataUpdate();
     dynObj->UpdateObjectVisibility(false);
+
+    if (_isPartitioned && partitionChanged)
+    {
+        if (!dynObj->IsInWorld())
+        {
+            sPartitionMgr->RollbackRelocation(dynObj->GetGUID());
+        }
+        else
+        {
+            sPartitionMgr->CommitRelocation(dynObj->GetGUID());
+            sPartitionMgr->NotifyVisibilityDetach(dynObj->GetGUID(), GetId(), oldPartitionId);
+            sPartitionMgr->NotifyVisibilityAttach(dynObj->GetGUID(), GetId(), newPartitionId);
+            LOG_DEBUG("visibility.partition", "DynamicObject {} crossed partition {} -> {} on map {}", dynObj->GetGUID().GetCounter(), oldPartitionId, newPartitionId, GetId());
+            UpdatePartitionedOwnership(dynObj);
+        }
+    }
 }
 
 void Map::AddCreatureToMoveList(Creature* c)
@@ -2356,11 +3614,17 @@ Corpse* Map::GetCorpse(ObjectGuid const& guid)
 
 Creature* Map::GetCreature(ObjectGuid const& guid)
 {
+    if (_isPartitioned)
+        if (Creature* creature = FindPartitionedObject<Creature>(guid))
+            return creature;
     return _objectsStore.Find<Creature>(guid);
 }
 
 GameObject* Map::GetGameObject(ObjectGuid const& guid)
 {
+    if (_isPartitioned)
+        if (GameObject* go = FindPartitionedObject<GameObject>(guid))
+            return go;
     return _objectsStore.Find<GameObject>(guid);
 }
 
@@ -2380,6 +3644,9 @@ Transport* Map::GetTransport(ObjectGuid const& guid)
 
 DynamicObject* Map::GetDynamicObject(ObjectGuid const& guid)
 {
+    if (_isPartitioned)
+        if (DynamicObject* dynObj = FindPartitionedObject<DynamicObject>(guid))
+            return dynObj;
     return _objectsStore.Find<DynamicObject>(guid);
 }
 

@@ -531,7 +531,12 @@ void Loot::AddItem(LootStoreItem const& item)
 
         // In some cases, a dropped item should be visible/lootable only for some players in group
         bool canSeeItemInLootWindow = false;
-        if (auto player = ObjectAccessor::FindPlayer(lootOwnerGUID))
+        Player* player = nullptr;
+        if (lootMap)
+            player = ObjectAccessor::GetPlayer(lootMap, lootOwnerGUID);
+        else if (WorldSession* session = sWorld->FindSession(lootOwnerGUID.GetCounter()))
+            player = session->GetPlayer();
+        if (player)
         {
             if (auto group = player->GetGroup())
             {
@@ -575,6 +580,7 @@ bool Loot::FillLoot(uint32 lootId, LootStore const& store, Player* lootOwner, bo
         return false;
 
     lootOwnerGUID = lootOwner->GetGUID();
+    lootMap = lootSource ? lootSource->GetMap() : lootOwner->GetMap();
 
     LootTemplate const* tab = store.GetLootFor(lootId);
 
@@ -691,7 +697,16 @@ QuestItemList* Loot::FillQuestLoot(Player* player)
 
     QuestItemList* ql = new QuestItemList();
 
-    Player* lootOwner = (roundRobinPlayer) ? ObjectAccessor::FindPlayer(roundRobinPlayer) : player;
+    Player* lootOwner = player;
+    if (roundRobinPlayer)
+    {
+        if (lootMap)
+            lootOwner = ObjectAccessor::GetPlayer(lootMap, roundRobinPlayer);
+        else if (WorldSession* session = sWorld->FindSession(roundRobinPlayer.GetCounter()))
+            lootOwner = session->GetPlayer();
+        else
+            lootOwner = nullptr;
+    }
 
     for (uint8 i = 0; i < quest_items.size(); ++i)
     {
@@ -779,7 +794,12 @@ void Loot::NotifyItemRemoved(uint8 lootIndex)
     {
         i_next = i;
         ++i_next;
-        if (Player* player = ObjectAccessor::FindPlayer(*i))
+        Player* player = nullptr;
+        if (lootMap)
+            player = ObjectAccessor::GetPlayer(lootMap, *i);
+        else if (WorldSession* session = sWorld->FindSession(i->GetCounter()))
+            player = session->GetPlayer();
+        if (player)
             player->SendNotifyLootItemRemoved(lootIndex);
         else
             PlayersLooting.erase(i);
@@ -794,7 +814,12 @@ void Loot::NotifyMoneyRemoved()
     {
         i_next = i;
         ++i_next;
-        if (Player* player = ObjectAccessor::FindPlayer(*i))
+        Player* player = nullptr;
+        if (lootMap)
+            player = ObjectAccessor::GetPlayer(lootMap, *i);
+        else if (WorldSession* session = sWorld->FindSession(i->GetCounter()))
+            player = session->GetPlayer();
+        if (player)
             player->SendNotifyLootMoneyRemoved();
         else
             PlayersLooting.erase(i);
@@ -813,7 +838,12 @@ void Loot::NotifyQuestItemRemoved(uint8 questIndex)
     {
         i_next = i;
         ++i_next;
-        if (Player* player = ObjectAccessor::FindPlayer(*i))
+        Player* player = nullptr;
+        if (lootMap)
+            player = ObjectAccessor::GetPlayer(lootMap, *i);
+        else if (WorldSession* session = sWorld->FindSession(i->GetCounter()))
+            player = session->GetPlayer();
+        if (player)
         {
             QuestItemMap::const_iterator pq = PlayerQuestItems.find(player->GetGUID());
             if (pq != PlayerQuestItems.end() && pq->second)

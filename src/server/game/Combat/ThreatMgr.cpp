@@ -481,9 +481,37 @@ ThreatMgr::ThreatMgr(Unit* owner) : iCurrentVictim(nullptr), iOwner(owner), iUpd
 
 void ThreatMgr::ClearAllThreat()
 {
+    if (Map* map = iOwner ? iOwner->GetMap() : nullptr; map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(iOwner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionThreatClearAll(ownerPartition, iOwner->GetGUID());
+            return;
+        }
+    }
+
     if (iOwner->CanHaveThreatList(true) && !isThreatListEmpty())
         iOwner->SendClearThreatListOpcode();
     clearReferences();
+}
+
+void ThreatMgr::ClearThreat(Unit const* who)
+{
+    if (Map* map = iOwner ? iOwner->GetMap() : nullptr; map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(iOwner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition && who)
+        {
+            map->QueuePartitionThreatTargetClear(ownerPartition, iOwner->GetGUID(), who->GetGUID());
+            return;
+        }
+    }
+
+    if (auto* ref = FindReference(who, true))
+        ref->removeReference();
 }
 
 //============================================================
@@ -715,6 +743,17 @@ bool ThreatMgr::isNeedUpdateToClient(uint32 time)
 // Reset all aggro without modifying the threatlist.
 void ThreatMgr::ResetAllThreat()
 {
+    if (Map* map = iOwner ? iOwner->GetMap() : nullptr; map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(iOwner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionThreatResetAll(ownerPartition, iOwner->GetGUID());
+            return;
+        }
+    }
+
     ThreatContainer::StorageType& threatList = iThreatContainer.iThreatList;
     if (threatList.empty())
         return;
@@ -727,4 +766,21 @@ void ThreatMgr::ResetAllThreat()
     }
 
     setDirty(true);
+}
+
+void ThreatMgr::ResetThreat(Unit const* who)
+{
+    if (Map* map = iOwner ? iOwner->GetMap() : nullptr; map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(iOwner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition && who)
+        {
+            map->QueuePartitionThreatTargetReset(ownerPartition, iOwner->GetGUID(), who->GetGUID());
+            return;
+        }
+    }
+
+    if (auto* ref = FindReference(who, true))
+        ref->SetThreat(0.0f);
 }

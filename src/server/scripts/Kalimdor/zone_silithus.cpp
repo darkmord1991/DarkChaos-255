@@ -989,7 +989,8 @@ public:
 
     bool Execute(uint64 /*eventTime*/, uint32 /*updateTime*/) override
     {
-        if (Player* player = ObjectAccessor::FindPlayer(_playerGUID))
+        Map* map = _summon->GetMap();
+        if (Player* player = map ? ObjectAccessor::GetPlayer(map, _playerGUID) : ObjectAccessor::FindPlayer(_playerGUID))
         {
             _summon->AI()->AttackStart(player);
         }

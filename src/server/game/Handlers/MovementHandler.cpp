@@ -861,8 +861,13 @@ void WorldSession::HandleSummonResponseOpcode(WorldPacket& recvData)
     if (agree && _player->IsSummonAsSpectator())
     {
         ChatHandler chc(this);
-        if (Player* summoner = ObjectAccessor::FindPlayer(summoner_guid))
-            ArenaSpectator::HandleSpectatorSpectateCommand(&chc, summoner->GetName().c_str());
+        if (WorldSession* session = sWorld->FindSession(summoner_guid.GetCounter()))
+        {
+            if (Player* summoner = session->GetPlayer())
+                ArenaSpectator::HandleSpectatorSpectateCommand(&chc, summoner->GetName().c_str());
+            else
+                chc.PSendSysMessage("Requested player not found.");
+        }
         else
             chc.PSendSysMessage("Requested player not found.");
 

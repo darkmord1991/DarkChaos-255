@@ -926,7 +926,12 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
         GraveyardStruct const* ClosestGrave = nullptr;
         for (ObjectGuid const& guid : ghost_list)
         {
-            Player* player = ObjectAccessor::FindPlayer(guid);
+            Player* player = nullptr;
+            Map* map = GetBgMap();
+            if (map)
+                player = ObjectAccessor::GetPlayer(map, guid);
+            else if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+                player = session->GetPlayer();
             if (!player)
                 continue;
 

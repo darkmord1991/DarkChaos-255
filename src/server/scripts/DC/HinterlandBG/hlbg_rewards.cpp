@@ -120,7 +120,7 @@ void OutdoorPvPHL::HandleRewards(TeamId winner)
         // OutdoorPvP base tracks participating players by team.
         for (auto const& guid : _players[team])
         {
-            if (Player* plr = ObjectAccessor::FindPlayer(guid))
+            if (Player* plr = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), guid) : nullptr)
             {
                 plr->RewardHonor(nullptr, 0, float(honor));
                 // Optional: token reward for match participation/victory

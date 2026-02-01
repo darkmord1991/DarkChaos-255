@@ -32,6 +32,7 @@
 #include "Map.h"
 #include "Group.h"
 #include "DC/MythicPlus/dc_mythicplus_difficulty_scaling.h"
+#include "Maps/Partitioning/PartitionManager.h"
 
 // forward declaration of helpers implemented in DC_AddonHelpers.cpp
 void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
@@ -59,7 +60,7 @@ public:
     {
         if (args.empty())
         {
-            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | difficulty <normal|heroic|mythic|info> | reload mythic");
+            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | difficulty <normal|heroic|mythic|info> | reload mythic | partition status");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -99,6 +100,50 @@ public:
             SendXPAddonToPlayer(target, xp, xpMax, level);
             handler->PSendSysMessage("Sent DCRXP addon message to {} (xp={} xpMax={} level={})", playerName, xp, xpMax, level);
             return true;
+        }
+
+        if (subNorm == "partition")
+        {
+            ++it;
+            if (it == args.end())
+            {
+                handler->PSendSysMessage("Usage: .dc partition status");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            std::string_view sub2 = *it;
+            std::string sub2Norm;
+            sub2Norm.reserve(sub2.size());
+            for (char c : sub2)
+            {
+                if (c == '-' || c == '_' || c == ' ') continue;
+                sub2Norm.push_back(std::tolower(static_cast<unsigned char>(c)));
+            }
+
+            if (sub2Norm == "status")
+            {
+                handler->PSendSysMessage("MapPartitions.Enabled = {}", sPartitionMgr->IsEnabled() ? "1" : "0");
+                handler->PSendSysMessage("MapPartitions.BorderOverlap = {:.1f}", sPartitionMgr->GetBorderOverlap());
+
+                if (handler->GetSession() && handler->GetSession()->GetPlayer())
+                {
+                    Player* player = handler->GetSession()->GetPlayer();
+                    uint32 mapId = player->GetMapId();
+                    uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(mapId, player->GetPositionX(), player->GetPositionY());
+                    uint32 boundaryCount = sPartitionMgr->GetBoundaryCount(mapId, partitionId);
+                    handler->PSendSysMessage("Current map: {} | Partitioned: {} | Partitions: {}",
+                        player->GetMapId(),
+                        sPartitionMgr->IsMapPartitioned(player->GetMapId()) ? "Yes" : "No",
+                        sPartitionMgr->GetPartitionCount(player->GetMapId()));
+                    handler->PSendSysMessage("Current partition: {} | Boundary players (cache): {}", partitionId, boundaryCount);
+                }
+                return true;
+            }
+
+            handler->PSendSysMessage("Usage: .dc partition status");
+            handler->SetSentErrorMessage(true);
+            return false;
         }
 
         if (subNorm == "info")

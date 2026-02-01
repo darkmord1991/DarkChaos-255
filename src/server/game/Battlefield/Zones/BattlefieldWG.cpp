@@ -29,10 +29,25 @@
 #include "SpellAuras.h"
 #include "TemporarySummon.h"
 #include "Vehicle.h"
+#include "World.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "WorldStateDefines.h"
 #include "WorldStatePackets.h"
+
+namespace
+{
+    Player* FindBattlefieldPlayer(Map* map, ObjectGuid guid)
+    {
+        if (map)
+            return ObjectAccessor::GetPlayer(map, guid);
+
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            return session->GetPlayer();
+
+        return nullptr;
+    }
+}
 
 BattlefieldWG::~BattlefieldWG()
 {
@@ -276,7 +291,7 @@ void BattlefieldWG::OnBattleStart()
         for (GuidUnorderedSet::const_iterator itr = m_players[team].begin(); itr != m_players[team].end(); ++itr)
         {
             // Kick player in orb room, TODO: offline player ?
-            if (Player* player = ObjectAccessor::FindPlayer(*itr))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
             {
                 float x, y, z;
                 player->GetPosition(x, y, z);
@@ -327,7 +342,7 @@ void BattlefieldWG::UpdateVehicleCountWG()
 {
     for (uint8 i = 0; i < PVP_TEAMS_COUNT; ++i)
         for (GuidUnorderedSet::iterator itr = m_players[i].begin(); itr != m_players[i].end(); ++itr)
-            if (Player* player = ObjectAccessor::FindPlayer(*itr))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
             {
                 player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_VEHICLE_H,     GetData(BATTLEFIELD_WG_DATA_VEHICLE_H));
                 player->SendUpdateWorldState(WORLD_STATE_BATTLEFIELD_WG_MAX_VEHICLE_H, GetData(BATTLEFIELD_WG_DATA_MAX_VEHICLE_H));
@@ -340,7 +355,7 @@ void BattlefieldWG::CapturePointTaken(uint32 areaId)
 {
     for (uint8 i = 0; i < PVP_TEAMS_COUNT; ++i)
         for (GuidUnorderedSet::iterator itr = m_players[i].begin(); itr != m_players[i].end(); ++itr)
-            if (Player* player = ObjectAccessor::FindPlayer(*itr))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
                 if (player->GetAreaId() == areaId)
                     player->UpdateAreaDependentAuras(areaId);
 }
@@ -441,7 +456,7 @@ void BattlefieldWG::OnBattleEnd(bool endByTimer)
 
     for (GuidUnorderedSet::const_iterator itr = m_PlayersInWar[GetDefenderTeam()].begin(); itr != m_PlayersInWar[GetDefenderTeam()].end(); ++itr)
     {
-        if (Player* player = ObjectAccessor::FindPlayer(*itr))
+        if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
         {
             // Victory in Wintergrasp
             player->AreaExploredOrEventHappens(GetDefenderTeam() ? 13183 : 13181); // HORDE / ALLY win wg quest id
@@ -458,7 +473,7 @@ void BattlefieldWG::OnBattleEnd(bool endByTimer)
     }
 
     for (GuidUnorderedSet::const_iterator itr = m_PlayersInWar[GetAttackerTeam()].begin(); itr != m_PlayersInWar[GetAttackerTeam()].end(); ++itr)
-        if (Player* player = ObjectAccessor::FindPlayer(*itr))
+        if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
         {
             player->CastSpell(player, SPELL_DEFEAT_REWARD, true);
             RemoveAurasFromPlayer(player);
@@ -475,7 +490,7 @@ void BattlefieldWG::OnBattleEnd(bool endByTimer)
         {
             for (GuidUnorderedSet::const_iterator itr = m_players[team].begin(); itr != m_players[team].end(); ++itr)
             {
-                if (Player* player = ObjectAccessor::FindPlayer(*itr))
+                if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
                 {
                     player->RemoveAurasDueToSpell(m_DefenderTeam == TEAM_ALLIANCE ? SPELL_HORDE_CONTROL_PHASE_SHIFT : SPELL_ALLIANCE_CONTROL_PHASE_SHIFT, player->GetGUID());
                     player->AddAura(m_DefenderTeam == TEAM_HORDE ? SPELL_HORDE_CONTROL_PHASE_SHIFT : SPELL_ALLIANCE_CONTROL_PHASE_SHIFT, player);
@@ -590,7 +605,7 @@ void BattlefieldWG::OnCreatureCreate(Creature* creature)
                     if (!creature->IsSummon() || !creature->ToTempSummon()->GetSummonerGUID())
                         return;
 
-                    Player* creator = ObjectAccessor::FindPlayer(creature->ToTempSummon()->GetSummonerGUID());
+                    Player* creator = FindBattlefieldPlayer(GetMap(), creature->ToTempSummon()->GetSummonerGUID());
                     if (!creator)
                         return;
                     TeamId team = creator->GetTeamId();
@@ -731,7 +746,7 @@ void BattlefieldWG::HandleKill(Player* killer, Unit* victim)
             // Quest - Wintergrasp - PvP Kill - Horde/Alliance
             for (auto& playerGuid : m_PlayersInWar[killerTeam])
             {
-                if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+                if (Player* player = FindBattlefieldPlayer(GetMap(), playerGuid))
                 {
                     if (player->GetDistance2d(killer) < 40)
                     {
@@ -743,7 +758,7 @@ void BattlefieldWG::HandleKill(Player* killer, Unit* victim)
 
         for (auto& playerGuid : m_PlayersInWar[killerTeam])
         {
-            if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), playerGuid))
             {
                 if (player->GetDistance2d(killer) < 40)
                 {
@@ -763,7 +778,7 @@ void BattlefieldWG::HandleKill(Player* killer, Unit* victim)
         // Quest - Wintergrasp - PvP Kill - Vehicle
         for (auto& playerGuid : m_PlayersInWar[killerTeam])
         {
-            if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), playerGuid))
             {
                 if (player->GetDistance2d(killer) < 40)
                 {
@@ -988,7 +1003,7 @@ void BattlefieldWG::SendInitWorldStatesToAll()
 {
     for (uint8 team = 0; team < 2; team++)
         for (GuidUnorderedSet::iterator itr = m_players[team].begin(); itr != m_players[team].end(); ++itr)
-            if (Player* player = ObjectAccessor::FindPlayer(*itr))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
                 SendInitWorldStatesTo(player);
 }
 
@@ -1027,7 +1042,7 @@ void BattlefieldWG::BrokenWallOrTower(TeamId  /*team*/)
         {
             for (GuidUnorderedSet::const_iterator itr = m_PlayersInWar[GetAttackerTeam()].begin(); itr != m_PlayersInWar[GetAttackerTeam()].end(); ++itr)
             {
-                if (Player* player = ObjectAccessor::FindPlayer(*itr))
+                if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
                     IncrementQuest(player, WGQuest[player->GetTeamId()][2], true);
             }
         }*/
@@ -1045,12 +1060,12 @@ void BattlefieldWG::UpdatedDestroyedTowerCount(TeamId team, GameObject* go)
 
         // Remove buff stack on attackers
         for (GuidUnorderedSet::const_iterator itr = m_PlayersInWar[GetAttackerTeam()].begin(); itr != m_PlayersInWar[GetAttackerTeam()].end(); ++itr)
-            if (Player* player = ObjectAccessor::FindPlayer(*itr))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
                 player->RemoveAuraFromStack(SPELL_TOWER_CONTROL);
 
         // Add buff stack to defenders
         for (GuidUnorderedSet::const_iterator itr = m_PlayersInWar[GetDefenderTeam()].begin(); itr != m_PlayersInWar[GetDefenderTeam()].end(); ++itr)
-            if (Player* player = ObjectAccessor::FindPlayer(*itr))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
             {
                 // Quest - Wintergrasp - Southern Tower Kill
                 if (go && player->GetDistance2d(go) < 200.0f)
@@ -1074,7 +1089,7 @@ void BattlefieldWG::UpdatedDestroyedTowerCount(TeamId team, GameObject* go)
     {
         // Xinef: rest of structures, quest credit
         for (GuidUnorderedSet::const_iterator itr = m_PlayersInWar[GetAttackerTeam()].begin(); itr != m_PlayersInWar[GetAttackerTeam()].end(); ++itr)
-            if (Player* player = ObjectAccessor::FindPlayer(*itr))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
             {
                 // Quest - Wintergrasp - Vehicle Protected
                 if (go && player->GetDistance2d(go) < 100.0f)
@@ -1176,7 +1191,7 @@ void BattlefieldWG::UpdateTenacity()
     if (newStack == m_tenacityStack)
     {
         for (GuidUnorderedSet::const_iterator itr = m_updateTenacityList.begin(); itr != m_updateTenacityList.end(); ++itr)
-            if (Player* newPlayer = ObjectAccessor::FindPlayer(*itr))
+            if (Player* newPlayer = FindBattlefieldPlayer(GetMap(), *itr))
                 if ((newPlayer->GetTeamId() == TEAM_ALLIANCE && m_tenacityStack > 0) || (newPlayer->GetTeamId() == TEAM_HORDE && m_tenacityStack < 0))
                 {
                     newStack = std::min(std::abs(newStack), 20);
@@ -1201,7 +1216,7 @@ void BattlefieldWG::UpdateTenacity()
     if (team != TEAM_NEUTRAL)
     {
         for (GuidUnorderedSet::const_iterator itr = m_PlayersInWar[team].begin(); itr != m_PlayersInWar[team].end(); ++itr)
-            if (Player* player = ObjectAccessor::FindPlayer(*itr))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
                 player->RemoveAurasDueToSpell(SPELL_TENACITY);
 
         for (GuidUnorderedSet::const_iterator itr = m_vehicles[team].begin(); itr != m_vehicles[team].end(); ++itr)
@@ -1217,7 +1232,7 @@ void BattlefieldWG::UpdateTenacity()
         uint32 buff_honor = GetHonorBuff(newStack);
 
         for (GuidUnorderedSet::const_iterator itr = m_PlayersInWar[team].begin(); itr != m_PlayersInWar[team].end(); ++itr)
-            if (Player* player = ObjectAccessor::FindPlayer(*itr))
+            if (Player* player = FindBattlefieldPlayer(GetMap(), *itr))
             {
                 player->SetAuraStack(SPELL_TENACITY, player, newStack);
                 if (buff_honor)

@@ -27,6 +27,7 @@
 #include "ObjectMgr.h"
 #include "Pet.h"
 #include "Player.h"
+#include "Log.h"
 #include "Transport.h"
 
 template<class T>
@@ -114,28 +115,38 @@ namespace PlayerNameMapHolder
 
 WorldObject* ObjectAccessor::GetWorldObject(WorldObject const& p, ObjectGuid const& guid)
 {
+    WorldObject* result = nullptr;
     switch (guid.GetHigh())
     {
         case HighGuid::Player:
-            return GetPlayer(p, guid);
+            result = GetPlayer(p, guid);
+            break;
         case HighGuid::Transport:
         case HighGuid::Mo_Transport:
         case HighGuid::GameObject:
-            return GetGameObject(p, guid);
+            result = GetGameObject(p, guid);
+            break;
         case HighGuid::Vehicle:
         case HighGuid::Unit:
-            return GetCreature(p, guid);
+            result = GetCreature(p, guid);
+            break;
         case HighGuid::Pet:
-            return GetPet(p, guid);
+            result = GetPet(p, guid);
+            break;
         case HighGuid::DynamicObject:
-            return GetDynamicObject(p, guid);
+            result = GetDynamicObject(p, guid);
+            break;
         case HighGuid::Corpse:
-            return GetCorpse(p, guid);
+            result = GetCorpse(p, guid);
+            break;
         default:
-            return nullptr;
+            break;
     }
 
-    return nullptr;
+    if (!result && p.GetMap() && p.GetMap()->IsPartitioned())
+        LOG_DEBUG("map.partition", "GUID lookup miss in partitioned map {} guid {}", p.GetMap()->GetId(), guid.ToString());
+
+    return result;
 }
 
 Object* ObjectAccessor::GetObjectByTypeMask(WorldObject const& p, ObjectGuid const& guid, uint32 typemask)

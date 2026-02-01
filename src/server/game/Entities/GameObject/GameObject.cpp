@@ -145,7 +145,9 @@ void GameObject::AddToWorld()
         if (m_zoneScript)
             m_zoneScript->OnGameObjectCreate(this);
 
-        GetMap()->GetObjectsStore().Insert<GameObject>(GetGUID(), this);
+        if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
+            GetMap()->GetObjectsStore().Insert<GameObject>(GetGUID(), this);
+        GetMap()->RegisterPartitionedObject(this);
         if (m_spawnId)
             GetMap()->GetGameObjectBySpawnIdStore().insert(std::make_pair(m_spawnId, this));
 
@@ -194,7 +196,9 @@ void GameObject::RemoveFromWorld()
 
         if (m_spawnId)
             Acore::Containers::MultimapErasePair(GetMap()->GetGameObjectBySpawnIdStore(), m_spawnId, this);
-        GetMap()->GetObjectsStore().Remove<GameObject>(GetGUID());
+        if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
+            GetMap()->GetObjectsStore().Remove<GameObject>(GetGUID());
+        GetMap()->UnregisterPartitionedObject(this);
     }
 }
 
@@ -1902,7 +1906,7 @@ void GameObject::Use(Unit* user)
 
                 Player* player = user->ToPlayer();
 
-                Player* targetPlayer = ObjectAccessor::FindPlayer(player->GetTarget());
+                Player* targetPlayer = ObjectAccessor::GetPlayer(player->GetMap(), player->GetTarget());
 
                 // accept only use by player from same raid as caster
                 if (!targetPlayer || !targetPlayer->IsInSameRaidWith(player))

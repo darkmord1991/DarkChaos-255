@@ -543,6 +543,11 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<bool>(CONFIG_SHOW_MUTE_IN_WORLD, "ShowMuteInWorld", false);
     SetConfigValue<bool>(CONFIG_SHOW_BAN_IN_WORLD, "ShowBanInWorld", false);
     SetConfigValue<uint32>(CONFIG_NUMTHREADS, "MapUpdate.Threads", 1);
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_ENABLED, "MapPartitions.Enabled", false);
+    SetConfigValue<float>(CONFIG_MAP_PARTITIONS_BORDER_OVERLAP, "MapPartitions.BorderOverlap", 100.0f);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_DEFAULT_COUNT, "MapPartitions.DefaultCount", 4);
+    SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_MAPS, "MapPartitions.Maps", "");
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_STORE_ONLY, "MapPartitions.UsePartitionStoreOnly", false);
     SetConfigValue<uint32>(CONFIG_MAX_RESULTS_LOOKUP_COMMANDS, "Command.LookupMaxResults", 0);
 
     // Warden

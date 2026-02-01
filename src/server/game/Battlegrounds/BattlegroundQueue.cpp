@@ -267,9 +267,10 @@ void BattlegroundQueue::RemovePlayer(ObjectGuid guid, bool decreaseInvitedCount)
         //This happens if a player logs out while in a bg because WorldSession::LogoutPlayer() notifies the bg twice
         std::string playerName = "Unknown";
 
-        if (Player* player = ObjectAccessor::FindPlayer(guid))
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
         {
-            playerName = player->GetName();
+            if (Player* player = session->GetPlayer())
+                playerName = player->GetName();
         }
 
         LOG_ERROR("bg.battleground", "BattlegroundQueue: couldn't find player {} ({})", playerName, guid.ToString());

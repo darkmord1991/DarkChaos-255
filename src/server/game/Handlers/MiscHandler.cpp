@@ -21,6 +21,7 @@
 #include "BattlegroundMgr.h"
 #include "CharacterPackets.h"
 #include "Chat.h"
+#include "CharacterCache.h"
 #include "Common.h"
 #include "DBCEnums.h"
 #include "DatabaseEnv.h"
@@ -1097,7 +1098,10 @@ void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
         return;
     }
 
-    Player* player = ObjectAccessor::FindPlayerByName(charname, false);
+    Player* player = nullptr;
+    if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(charname))
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            player = session->GetPlayer();
 
     if (!player)
     {

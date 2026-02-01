@@ -19,6 +19,7 @@
 #include "GameObject.h"
 #include "GameObjectAI.h"
 #include "Log.h"
+#include "Maps/Partitioning/PartitionManager.h"
 #include "ObjectAccessor.h"
 #include "Pet.h"
 #include "Player.h"
@@ -254,6 +255,13 @@ void TempSummon::InitSummon()
     WorldObject* owner = GetSummoner();
     if (owner)
     {
+        if (Map* map = GetMap(); map && map->IsPartitioned())
+        {
+            uint32 ownerPartition = sPartitionMgr->GetPartitionIdForPosition(map->GetId(), owner->GetPositionX(), owner->GetPositionY(), owner->GetGUID());
+            if (ownerPartition)
+                sPartitionMgr->SetPartitionOverride(GetGUID(), ownerPartition, m_lifetime ? m_lifetime : 2000);
+        }
+
         if (owner->IsCreature())
         {
             if (owner->ToCreature()->IsAIEnabled)

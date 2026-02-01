@@ -239,8 +239,11 @@ void ArenaTeamMgr::DistributeArenaPoints()
     for (std::map<ObjectGuid, uint32>::iterator playerItr = PlayerPoints.begin(); playerItr != PlayerPoints.end(); ++playerItr)
     {
         // Add points to player if online
-        if (Player* player = ObjectAccessor::FindPlayer(playerItr->first))
-            player->ModifyArenaPoints(playerItr->second, trans);
+        if (WorldSession* session = sWorld->FindSession(playerItr->first.GetCounter()))
+        {
+            if (Player* player = session->GetPlayer())
+                player->ModifyArenaPoints(playerItr->second, trans);
+        }
         else    // Update database
         {
             stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_ARENA_POINTS);

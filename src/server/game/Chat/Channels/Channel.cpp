@@ -337,7 +337,10 @@ void Channel::KickOrBan(Player const* player, std::string const& badname, bool b
 
     ObjectGuid victim;
     uint32 badAccId = 0;
-    Player* bad = ObjectAccessor::FindPlayerByName(badname, false);
+    Player* bad = nullptr;
+    if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(badname))
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            bad = session->GetPlayer();
     if (bad)
     {
         victim = bad->GetGUID();
@@ -592,7 +595,10 @@ void Channel::SetMode(Player const* player, std::string const& p2n, bool mod, bo
     if (guid == _ownerGUID && std::string(p2n) == player->GetName() && mod)
         return;
 
-    Player* newp = ObjectAccessor::FindPlayerByName(p2n, false);
+    Player* newp = nullptr;
+    if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(p2n))
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            newp = session->GetPlayer();
     ObjectGuid victim = newp ? newp->GetGUID() : ObjectGuid::Empty;
 
     if (!victim || !IsOn(victim) ||
@@ -660,7 +666,10 @@ void Channel::SetOwner(Player const* player, std::string const& newname)
         return;
     }
 
-    Player* newp = ObjectAccessor::FindPlayerByName(newname, false);
+    Player* newp = nullptr;
+    if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(newname))
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            newp = session->GetPlayer();
     ObjectGuid victim = newp ? newp->GetGUID() : ObjectGuid::Empty;
 
     if (!victim || !IsOn(victim) || (newp->GetTeamId() != player->GetTeamId() &&
@@ -814,7 +823,10 @@ void Channel::Invite(Player const* player, std::string const& newname)
         return;
     }
 
-    Player* newp = ObjectAccessor::FindPlayerByName(newname, false);
+    Player* newp = nullptr;
+    if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(newname))
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            newp = session->GetPlayer();
     if (!newp || !newp->isGMVisible())
     {
         WorldPacket data;
@@ -883,7 +895,9 @@ void Channel::SetOwner(ObjectGuid guid, bool exclaim)
         pinfo.SetOwner(true);
         FlagsNotify(pinfo.plrPtr);
 
-        Player* player = ObjectAccessor::FindPlayer(_ownerGUID);
+        Player* player = nullptr;
+        if (WorldSession* session = sWorld->FindSession(_ownerGUID.GetCounter()))
+            player = session->GetPlayer();
         if (player)
         {
             if (ShouldAnnouncePlayer(player))

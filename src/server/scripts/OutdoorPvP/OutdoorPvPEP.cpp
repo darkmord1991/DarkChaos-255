@@ -701,7 +701,7 @@ void OutdoorPvPEP::BuffTeams()
 {
     for (PlayerSet::iterator itr = _players[0].begin(); itr != _players[0].end(); ++itr)
     {
-        if (Player* player = ObjectAccessor::FindPlayer(*itr))
+        if (Player* player = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), *itr) : ObjectAccessor::FindPlayer(*itr))
         {
             for (int i = 0; i < 4; ++i)
                 player->RemoveAurasDueToSpell(EP_AllianceBuffs[i]);
@@ -711,7 +711,7 @@ void OutdoorPvPEP::BuffTeams()
     }
     for (PlayerSet::iterator itr = _players[1].begin(); itr != _players[1].end(); ++itr)
     {
-        if (Player* player = ObjectAccessor::FindPlayer(*itr))
+        if (Player* player = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), *itr) : ObjectAccessor::FindPlayer(*itr))
         {
             for (int i = 0; i < 4; ++i)
                 player->RemoveAurasDueToSpell(EP_HordeBuffs[i]);

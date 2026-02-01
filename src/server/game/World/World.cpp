@@ -38,6 +38,7 @@
 #include "Common.h"
 #include "ConditionMgr.h"
 #include "Config.h"
+#include "Maps/Partitioning/PartitionManager.h"
 #include "CreatureAIRegistry.h"
 #include "CreatureGroups.h"
 #include "CreatureTextMgr.h"
@@ -318,6 +319,9 @@ void World::SetInitialWorldSettings()
 
     ///- Initialize config settings
     LoadConfigSettings();
+
+    ///- Initialize map partition scaffolding (if enabled)
+    sPartitionMgr->Initialize();
 
     ///- Initialize Allowed Security Level
     LoadDBAllowedSecurityLevel();

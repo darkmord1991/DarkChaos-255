@@ -20,6 +20,7 @@
 #include "CharacterDatabase.h"
 #include "Mail.h"
 #include "Player.h"
+#include "World.h"
 #include <algorithm>
 
 constexpr float minPctTeamGamesForMemberToGetReward = 30;
@@ -49,7 +50,9 @@ void ArenaSeasonTeamRewarderImpl::RewardWithMail(ArenaTeam* arenaTeam, ArenaSeas
         if (memberParticipationPercentage < minPctTeamGamesForMemberToGetReward)
             continue;
 
-        Player* player = ObjectAccessor::FindPlayer(member.Guid);
+        Player* player = nullptr;
+        if (WorldSession* session = sWorld->FindSession(member.Guid.GetCounter()))
+            player = session->GetPlayer();
 
         auto draft = rewardGroup.rewardMailTemplateID > 0 ?
             MailDraft(rewardGroup.rewardMailTemplateID, false) :
@@ -86,7 +89,9 @@ void ArenaSeasonTeamRewarderImpl::RewardWithAchievements(ArenaTeam* arenaTeam, A
         if (memberParticipationPercentage < minPctTeamGamesForMemberToGetReward)
             continue;
 
-        Player* player = ObjectAccessor::FindPlayer(member.Guid);
+        Player* player = nullptr;
+        if (WorldSession* session = sWorld->FindSession(member.Guid.GetCounter()))
+            player = session->GetPlayer();
         for (auto const& reward : rewardGroup.achievementRewards)
         {
             AchievementEntry const* achievement = sAchievementStore.LookupEntry(reward.entry);

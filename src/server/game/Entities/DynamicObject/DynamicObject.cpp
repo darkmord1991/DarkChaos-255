@@ -60,7 +60,9 @@ void DynamicObject::AddToWorld()
     ///- Register the dynamicObject for guid lookup and for caster
     if (!IsInWorld())
     {
-        GetMap()->GetObjectsStore().Insert<DynamicObject>(GetGUID(), this);
+        if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
+            GetMap()->GetObjectsStore().Insert<DynamicObject>(GetGUID(), this);
+        GetMap()->RegisterPartitionedObject(this);
 
         WorldObject::AddToWorld();
 
@@ -90,7 +92,9 @@ void DynamicObject::RemoveFromWorld()
 
         WorldObject::RemoveFromWorld();
 
-        GetMap()->GetObjectsStore().Remove<DynamicObject>(GetGUID());
+        if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
+            GetMap()->GetObjectsStore().Remove<DynamicObject>(GetGUID());
+        GetMap()->UnregisterPartitionedObject(this);
     }
 }
 

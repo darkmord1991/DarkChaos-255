@@ -361,6 +361,8 @@ public:
 
     void InitStalker(uint32 entry, float x, float y, float z, float o);
 
+    Map* GetMap() const { return m_Map; }
+
 protected:
     ObjectGuid StalkerGuid;
     uint32 m_Timer;                                         // Global timer for event

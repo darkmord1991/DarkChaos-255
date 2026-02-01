@@ -306,7 +306,9 @@ void SocialMgr::BroadcastToFriendListers(Player* player, WorldPacket* packet)
         auto const& itr2 = itr.second.m_playerSocialMap.find(player->GetGUID());
         if (itr2 != itr.second.m_playerSocialMap.end() && (itr2->second.Flags & SOCIAL_FLAG_FRIEND))
         {
-            Player* pFriend = ObjectAccessor::FindPlayer(itr.first);
+            Player* pFriend = nullptr;
+            if (WorldSession* session = sWorld->FindSession(itr.first.GetCounter()))
+                pFriend = session->GetPlayer();
 
             // PLAYER see his team only and PLAYER can't see MODERATOR, GAME MASTER, ADMINISTRATOR characters
             // MODERATOR, GAME MASTER, ADMINISTRATOR can see all

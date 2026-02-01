@@ -10,6 +10,8 @@
 #include "Chat.h"
 #include "CommandScript.h"
 #include "ChatCommand.h"
+#include "Maps/Partitioning/PartitionManager.h"
+#include "MapMgr.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
 #include "World.h"
@@ -18,6 +20,8 @@
 #include "PathGenerator.h"
 #include "Random.h"
 #include "SpellMgr.h"
+#include "DBCStores.h"
+#include "GridDefines.h"
 #include <chrono>
 #include <vector>
 #include <algorithm>
@@ -52,6 +56,7 @@ namespace DCPerfTest
     };
 
     TimingResult TestGreatVaultSimulation(uint32 playerCount);
+    TimingResult TestRandomMapSampling(Player* player, uint32 mapSamples, uint32 pointsPerMap);
 
     // Calculate percentile from sorted vector
     uint64 GetPercentile(const std::vector<uint64>& sortedTimes, float percentile)
@@ -1196,6 +1201,122 @@ namespace DCPerfTest
             result.success = false;
             result.error = e.what();
         }
+
+        return result;
+    }
+
+    TimingResult TestRandomMapSampling(Player* player, uint32 mapSamples, uint32 pointsPerMap)
+    {
+        TimingResult result;
+        result.testName = "RandomMapSampling (" + std::to_string(mapSamples) + " maps x " + std::to_string(pointsPerMap) + " points)";
+        result.iterations = mapSamples * pointsPerMap;
+        result.success = true;
+
+        if (!player)
+        {
+            result.success = false;
+            result.error = "Player context required (in-game only)";
+            return result;
+        }
+
+        if (mapSamples == 0 || pointsPerMap == 0)
+        {
+            result.success = false;
+            result.error = "mapSamples and pointsPerMap must be > 0";
+            return result;
+        }
+
+        std::vector<uint32> mapIds;
+        mapIds.reserve(sMapStore.GetNumRows());
+
+        for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
+        {
+            MapEntry const* entry = sMapStore.LookupEntry(i);
+            if (!entry)
+                continue;
+
+            uint32 mapId = entry->MapID;
+            if (!MapMgr::IsValidMAP(mapId, false))
+                continue;
+
+            mapIds.push_back(mapId);
+        }
+
+        if (mapIds.empty())
+        {
+            result.success = false;
+            result.error = "No valid map IDs found";
+            return result;
+        }
+
+        std::mt19937 rng(urand(1, 1000000));
+        std::shuffle(mapIds.begin(), mapIds.end(), rng);
+
+        if (mapSamples > mapIds.size())
+            mapSamples = static_cast<uint32>(mapIds.size());
+
+        std::vector<uint64> times;
+        times.reserve(mapSamples * pointsPerMap);
+
+        uint32 usedPoints = 0;
+        uint32 phaseMask = player->GetPhaseMask();
+
+        for (uint32 idx = 0; idx < mapSamples; ++idx)
+        {
+            uint32 mapId = mapIds[idx];
+            Map* map = sMapMgr->CreateBaseMap(mapId);
+            if (!map)
+                continue;
+
+            for (uint32 i = 0; i < pointsPerMap; ++i)
+            {
+                bool found = false;
+                float x = 0.0f;
+                float y = 0.0f;
+                for (uint32 attempt = 0; attempt < 20; ++attempt)
+                {
+                    x = frand(-(MAP_HALFSIZE - 5.0f), (MAP_HALFSIZE - 5.0f));
+                    y = frand(-(MAP_HALFSIZE - 5.0f), (MAP_HALFSIZE - 5.0f));
+                    if (!MapMgr::IsValidMapCoord(mapId, x, y))
+                        continue;
+                    found = true;
+                    break;
+                }
+
+                if (!found)
+                    continue;
+
+                float z = map->GetHeight(x, y, 0.0f);
+                auto start = Clock::now();
+
+                (void)map->GetZoneId(phaseMask, x, y, z);
+                (void)map->GetAreaId(phaseMask, x, y, z);
+                (void)map->GetWaterLevel(x, y);
+                (void)map->IsInWater(phaseMask, x, y, z, player->GetCollisionHeight());
+                (void)sPartitionMgr->GetPartitionIdForPosition(mapId, x, y);
+                (void)sPartitionMgr->IsNearPartitionBoundary(mapId, x, y);
+
+                auto end = Clock::now();
+                times.push_back(std::chrono::duration_cast<Microseconds>(end - start).count());
+                ++usedPoints;
+            }
+        }
+
+        if (usedPoints == 0)
+        {
+            result.success = false;
+            result.error = "No valid sampling points found";
+            return result;
+        }
+
+        std::sort(times.begin(), times.end());
+        result.totalUs = std::accumulate(times.begin(), times.end(), 0ULL);
+        result.avgUs = result.totalUs / usedPoints;
+        result.minUs = times.front();
+        result.maxUs = times.back();
+        result.p95Us = GetPercentile(times, 95.0f);
+        result.p99Us = GetPercentile(times, 99.0f);
+        result.iterations = usedPoints;
 
         return result;
     }
@@ -2800,6 +2921,43 @@ public:
         return true;
     }
 
+    static bool HandlePerfTestMapRandom(ChatHandler* handler, const char* args)
+    {
+        handler->SendSysMessage("|cff00ff00=== DC Performance Test: Random Map Sampling ===|r");
+
+        Player* player = handler->GetPlayer();
+        if (!player)
+        {
+            handler->SendSysMessage("|cffff0000This test must be run in-game (no CLI).|r");
+            return true;
+        }
+
+        uint32 mapSamples = 5;
+        uint32 pointsPerMap = 100;
+
+        if (args && *args)
+        {
+            std::istringstream iss(args);
+            uint32 val1 = 0;
+            uint32 val2 = 0;
+            iss >> val1 >> val2;
+            if (val1 > 0)
+                mapSamples = val1;
+            if (val2 > 0)
+                pointsPerMap = val2;
+        }
+
+        if (mapSamples > 30)
+            mapSamples = 30;
+        if (pointsPerMap > 1000)
+            pointsPerMap = 1000;
+
+        auto r = TestRandomMapSampling(player, mapSamples, pointsPerMap);
+        PrintResult(handler, r);
+        handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");
+        return true;
+    }
+
     Acore::ChatCommands::ChatCommandTable GetCommands() const override
     {
         using namespace Acore::ChatCommands;
@@ -2816,10 +2974,12 @@ public:
             ChatCommandBuilder("dbasync", HandlePerfTestDBAsync, SEC_GAMEMASTER, Console::Yes),
             // path requires an in-game Player context.
             ChatCommandBuilder("path",    HandlePerfTestPath,    SEC_GAMEMASTER, Console::No),
+            ChatCommandBuilder("maprandom", HandlePerfTestMapRandom, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("cpu",     HandlePerfTestCPU,     SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("loop",    HandlePerfTestLoop,    SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("loopreport", HandlePerfTestLoopReport, SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("mysql",   PrintMySQLStatus,      SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("partition", HandlePerfTestPartition, SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("full",    HandlePerfTestFull,    SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("report",  HandlePerfTestReport,  SEC_GAMEMASTER, Console::Yes),
         };
@@ -2846,6 +3006,31 @@ public:
         PrintResult(handler, r3);
 
         handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");
+        return true;
+    }
+
+    static bool HandlePerfTestPartition(ChatHandler* handler, const char* /*args*/)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("Partition test requires in-game player context.");
+            return false;
+        }
+
+        uint32 mapId = player->GetMapId();
+        uint32 partitionCount = sPartitionMgr->GetPartitionCount(mapId);
+        if (partitionCount == 0)
+            partitionCount = 1;
+
+        handler->SendSysMessage("|cff00ff00=== DC Performance Test: Partition Stats (Map {}) ===|r", mapId);
+        for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
+        {
+            PartitionManager::PartitionStats stats;
+            if (sPartitionMgr->GetPartitionStats(mapId, partitionId, stats))
+                handler->SendSysMessage("Partition {}: players={}, creatures={}, boundaryObjects={}", partitionId, stats.players, stats.creatures, stats.boundaryObjects);
+        }
+
         return true;
     }
 

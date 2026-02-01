@@ -18,6 +18,8 @@
 #include "ChatCommandTags.h"
 #include "AccountMgr.h"
 #include "Chat.h"
+#include "CharacterCache.h"
+#include "World.h"
 #include "ChatCommandArgs.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -119,11 +121,12 @@ ChatCommandResult Acore::ChatCommands::PlayerIdentifier::TryConsume(ChatHandler 
         if (!normalizePlayerName(_name))
             return FormatAcoreString(handler, LANG_CMDPARSER_CHAR_NAME_INVALID, _name);
 
-        if ((_player = ObjectAccessor::FindPlayerByName(_name)))
+        if ((_guid = sCharacterCache->GetCharacterGuidByName(_name)))
         {
-            _guid = _player->GetGUID();
+            if (WorldSession* session = sWorld->FindSession(_guid.GetCounter()))
+                _player = session->GetPlayer();
         }
-        else if (!(_guid = sCharacterCache->GetCharacterGuidByName(_name)))
+        else
         {
             return FormatAcoreString(handler, LANG_CMDPARSER_CHAR_NAME_NO_EXIST, _name);
         }

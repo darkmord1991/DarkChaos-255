@@ -12527,7 +12527,11 @@ void Player::SummonIfPossible(bool agree, ObjectGuid summoner_guid)
 
     UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_ACCEPTED_SUMMONINGS, 1);
 
-    TeleportTo(m_summon_mapid, m_summon_x, m_summon_y, m_summon_z, GetOrientation(), 0, ObjectAccessor::FindPlayer(summoner_guid));
+    Player* summoner = nullptr;
+    if (WorldSession* session = sWorld->FindSession(summoner_guid.GetCounter()))
+        summoner = session->GetPlayer();
+
+    TeleportTo(m_summon_mapid, m_summon_x, m_summon_y, m_summon_z, GetOrientation(), 0, summoner);
 }
 
 void Player::RemoveItemDurations(Item* item)

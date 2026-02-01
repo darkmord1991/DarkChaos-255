@@ -48,6 +48,20 @@
 #include "WorldPacket.h"
 #include "WorldStatePackets.h"
 
+namespace
+{
+    Player* FindBgPlayer(Map* map, ObjectGuid guid)
+    {
+        if (map)
+            return ObjectAccessor::GetPlayer(map, guid);
+
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            return session->GetPlayer();
+
+        return nullptr;
+    }
+}
+
 namespace Acore
 {
     class BattlegroundChatBuilder
@@ -370,7 +384,7 @@ inline void Battleground::_ProcessResurrect(uint32 diff)
                 Creature* sh = nullptr;
                 for (ObjectGuid const& guid : itr->second)
                 {
-                    Player* player = ObjectAccessor::FindPlayer(guid);
+                    Player* player = FindBgPlayer(GetBgMap(), guid);
                     if (!player)
                         continue;
 
@@ -402,7 +416,7 @@ inline void Battleground::_ProcessResurrect(uint32 diff)
     {
         for (ObjectGuid const& guid : m_ResurrectQueue)
         {
-            Player* player = ObjectAccessor::FindPlayer(guid);
+            Player* player = FindBgPlayer(GetBgMap(), guid);
             if (!player)
                 continue;
             player->ResurrectPlayer(1.0f);
@@ -644,7 +658,7 @@ inline void Battleground::_ProcessJoin(uint32 diff)
             {
                 for (ToBeTeleportedMap::const_iterator itr = m_ToBeTeleported.begin(); itr != m_ToBeTeleported.end(); ++itr)
                     if (Player* p = ObjectAccessor::FindConnectedPlayer(itr->first))
-                        if (Player* t = ObjectAccessor::FindPlayer(itr->second))
+                        if (Player* t = FindBgPlayer(GetBgMap(), itr->second))
                         {
                             if (!t->FindMap() || t->FindMap() != GetBgMap())
                                 continue;
@@ -1438,7 +1452,7 @@ void Battleground::AddPlayerToResurrectQueue(ObjectGuid npc_guid, ObjectGuid pla
 {
     m_ReviveQueue[npc_guid].push_back(player_guid);
 
-    Player* player = ObjectAccessor::FindPlayer(player_guid);
+    Player* player = FindBgPlayer(GetBgMap(), player_guid);
     if (!player)
         return;
 
@@ -1466,7 +1480,7 @@ void Battleground::RelocateDeadPlayers(ObjectGuid queueIndex)
         GraveyardStruct const* closestGrave = nullptr;
         for (ObjectGuid const& guid : ghostList)
         {
-            Player* player = ObjectAccessor::FindPlayer(guid);
+            Player* player = FindBgPlayer(GetBgMap(), guid);
             if (!player)
                 continue;
 

@@ -1229,7 +1229,7 @@ class spell_dru_rejuvenation_moonglade_2_set : public AuraScript
 
     void OnApply(AuraEffect const*  /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
-        if (Player* caster = ObjectAccessor::FindPlayer(GetCasterGUID()))
+        if (Player* caster = GetCaster() ? GetCaster()->ToPlayer() : nullptr)
             if (caster->HasAura(SPELL_DRUID_MOONGLADE_2P_BONUS))
                 {
                     Player* target = GetTarget()->ToPlayer();

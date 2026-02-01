@@ -694,6 +694,10 @@ void CharacterDatabaseConnection::DoPrepareStatements()
 
     // HLBG Scoreboard
     PrepareStatement(CHAR_SEL_HLBG_HISTORY_PAGE, "SELECT occurred_at, winner_tid, score_alliance, score_horde, win_reason, affix FROM dc_hlbg_winner_history ORDER BY id DESC LIMIT ? OFFSET ?", CONNECTION_SYNCH);
+
+    PrepareStatement(CHAR_REP_PARTITION_OWNERSHIP,
+        "REPLACE INTO dc_character_partition_ownership (guid, map_id, partition_id) VALUES (?, ?, ?)",
+        CONNECTION_ASYNC);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

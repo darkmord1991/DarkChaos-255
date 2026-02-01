@@ -958,7 +958,7 @@ public:
                         if (me->GetDistance(totem) <= 1.5f)
                         {
                             // Notify the player and apply a small penalty.
-                            if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+                            if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), playerGuid))
                             {
                                 ChatHandler(player->GetSession()).PSendSysMessage("Training failed: add reached the totem!");
                                 me->CastSpell(player, SPELL_SHADOW_BOLT, true);
@@ -1035,7 +1035,7 @@ public:
             else
                 summonerGuid = me->GetOwnerGUID();
 
-            if (Player* owner = ObjectAccessor::FindPlayer(summonerGuid))
+            if (Player* owner = ObjectAccessor::GetPlayer(me->GetMap(), summonerGuid))
             {
                 TrainingConfig cfg = GetConfigSafe(owner);
                 if (ApplyBossDummyConfig(me, owner, cfg, !visualApplied))
@@ -1105,7 +1105,7 @@ public:
             else
                 summonerGuid = me->GetOwnerGUID();
 
-            Player* owner = ObjectAccessor::FindPlayer(summonerGuid);
+            Player* owner = ObjectAccessor::GetPlayer(me->GetMap(), summonerGuid);
             if (!owner)
                 return;
 
@@ -1458,10 +1458,11 @@ public:
                 ObjectGuid playerGuid = player->GetGUID();
                 ObjectGuid masterGuid = creature ? creature->GetGUID() : ObjectGuid::Empty;
                 uint32 requestId = ++s_spawnRequestByPlayer[playerGuid];
+                Map* map = player->GetMap();
 
-                player->m_Events.AddEventAtOffset([playerGuid, masterGuid, requestId]
+                player->m_Events.AddEventAtOffset([playerGuid, masterGuid, requestId, map]
                 {
-                    Player* owner = ObjectAccessor::FindPlayer(playerGuid);
+                    Player* owner = map ? ObjectAccessor::GetPlayer(map, playerGuid) : nullptr;
                     if (!owner)
                         return;
 

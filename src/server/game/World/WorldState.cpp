@@ -24,6 +24,7 @@
 #include "SharedDefines.h"
 #include "UnitAI.h"
 #include "Weather.h"
+#include "World.h"
 #include "WorldState.h"
 #include "WorldConfig.h"
 #include "WorldStateDefines.h"
@@ -544,8 +545,9 @@ void WorldState::SendWorldstateUpdate(std::mutex& mutex, GuidVector const& guids
 {
     std::lock_guard<std::mutex> guard(mutex);
     for (ObjectGuid const& guid : guids)
-        if (Player* player = ObjectAccessor::FindPlayer(guid))
-            player->SendUpdateWorldState(worldStateId, value);
+        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            if (Player* player = session->GetPlayer())
+                player->SendUpdateWorldState(worldStateId, value);
 }
 
 enum WorldStateSunsReachQuests
@@ -853,13 +855,14 @@ void WorldState::HandleSunsReachSubPhaseTransition(int32 subPhaseMask, bool init
         {
             std::lock_guard<std::mutex> guard(m_sunsReachData.m_sunsReachReclamationMutex);
             for (ObjectGuid const& guid : m_sunsReachData.m_sunsReachReclamationPlayers)
-                if (Player* player = ObjectAccessor::FindPlayer(guid))
-                {
-                    if (start)
-                        player->CastSpell(player, SPELL_KIRU_SONG_OF_VICTORY, true);
-                    else
-                        player->RemoveAurasDueToSpell(SPELL_KIRU_SONG_OF_VICTORY);
-                }
+                if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+                    if (Player* player = session->GetPlayer())
+                    {
+                        if (start)
+                            player->CastSpell(player, SPELL_KIRU_SONG_OF_VICTORY, true);
+                        else
+                            player->RemoveAurasDueToSpell(SPELL_KIRU_SONG_OF_VICTORY);
+                    }
         }
     }
     if (!initial)

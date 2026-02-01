@@ -1432,7 +1432,11 @@ void Guild::HandleBuyBankTab(WorldSession* session, uint8 tabId)
 
 void Guild::HandleInviteMember(WorldSession* session, std::string const& name)
 {
-    Player* pInvitee = ObjectAccessor::FindPlayerByName(name, false);
+    Player* pInvitee = nullptr;
+    ObjectGuid inviteeGuid = sCharacterCache->GetCharacterGuidByName(name);
+    if (inviteeGuid)
+        if (WorldSession* inviteeSession = sWorld->FindSession(inviteeGuid.GetCounter()))
+            pInvitee = inviteeSession->GetPlayer();
     if (!pInvitee)
     {
         SendCommandResult(session, GUILD_COMMAND_INVITE, ERR_GUILD_PLAYER_NOT_FOUND_S, name);

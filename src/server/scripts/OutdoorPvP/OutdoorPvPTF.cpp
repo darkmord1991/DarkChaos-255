@@ -425,7 +425,7 @@ void OPvPCapturePointTF::ChangeState()
                 _pvp->GetMap()->SendZoneText(OutdoorPvPTFBuffZones[0], sObjectMgr->GetAcoreStringForDBCLocale(LANG_OPVP_TF_CAPTURE_A).c_str());
 
                 for (PlayerSet::iterator itr = _activePlayers[0].begin(); itr != _activePlayers[0].end(); ++itr)
-                    if (Player* player = ObjectAccessor::FindPlayer(*itr))
+                    if (Player* player = _pvp->GetMap() ? ObjectAccessor::GetPlayer(_pvp->GetMap(), *itr) : ObjectAccessor::FindPlayer(*itr))
                         player->AreaExploredOrEventHappens(TF_ALLY_QUEST);
                 break;
             }
@@ -440,7 +440,7 @@ void OPvPCapturePointTF::ChangeState()
                 _pvp->GetMap()->SendZoneText(OutdoorPvPTFBuffZones[0], sObjectMgr->GetAcoreStringForDBCLocale(LANG_OPVP_TF_CAPTURE_H).c_str());
 
                 for (PlayerSet::iterator itr = _activePlayers[1].begin(); itr != _activePlayers[1].end(); ++itr)
-                    if (Player* player = ObjectAccessor::FindPlayer(*itr))
+                    if (Player* player = _pvp->GetMap() ? ObjectAccessor::GetPlayer(_pvp->GetMap(), *itr) : ObjectAccessor::FindPlayer(*itr))
                         player->AreaExploredOrEventHappens(TF_HORDE_QUEST);
                 break;
             }
