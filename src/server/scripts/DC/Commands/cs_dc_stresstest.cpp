@@ -28,6 +28,7 @@
 #include <numeric>
 #include <sstream>
 #include <cmath>
+#include <random>
 #include <thread>
 #include <iomanip>
 #include <fstream>
@@ -127,6 +128,102 @@ namespace DCPerfTest
             }
         }
         return out;
+    }
+
+    static bool HandlePartitionStressTest(ChatHandler* handler, const char* args)
+    {
+        uint32 iterations = 1000000;
+        if (args && *args)
+        {
+            uint32 val = atoi(args);
+            if (val > 0)
+                iterations = val;
+        }
+        handler->PSendSysMessage("Running Partition Stress Test ({} iterations)...", iterations);
+
+        // Test 1: Partition ID Calculation
+        auto start = Clock::now();
+        uint32 checkSum = 0;
+        // float mapSize = 10000.0f; // Unused
+        for (uint32 i = 0; i < iterations; ++i)
+        {
+            float x = (float)(rand() % 10000) - 5000.0f;
+            float y = (float)(rand() % 10000) - 5000.0f;
+            checkSum += sPartitionMgr->GetPartitionIdForPosition(0, x, y);
+        }
+        auto end = Clock::now();
+        auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        handler->PSendSysMessage("Partition ID Calc: {} us (Checksum: {})", dur, checkSum);
+        handler->PSendSysMessage("Avg time per calc: {} ns", (double)dur * 1000.0 / iterations);
+
+        // Test 2: Boundary Detection Logic (Placeholder / Mixed Calc)
+        start = Clock::now();
+        checkSum = 0;
+        for (uint32 i = 0; i < iterations; ++i)
+        {
+             // Simulate positions near boundaries
+             float x = (float)(rand() % 8000); 
+             float y = (float)(rand() % 8000);
+             checkSum += sPartitionMgr->GetPartitionIdForPosition(i % 2, x, y);
+        }
+        end = Clock::now();
+        dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        handler->PSendSysMessage("Mixed Map Partition Calc: {} us", dur);
+
+        // Test 3: Relocation Transactions
+        // Benchmark overhead of Begin/Commit relocation (map locking simulation)
+        uint32 relocationIters = iterations / 10; // Relocation is heavier, do fewer
+        if (relocationIters < 1000) relocationIters = 1000;
+        handler->PSendSysMessage("Running Relocation Stress ({} iterations)...", relocationIters);
+        
+        start = Clock::now();
+        for (uint32 i = 0; i < relocationIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 1); // Fake GUID
+            // Simulate moving from partition 1 to 2
+            if (sPartitionMgr->BeginRelocation(guid, 0, 1, 2))
+            {
+                sPartitionMgr->CommitRelocation(guid);
+            }
+        }
+        end = Clock::now();
+        dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        handler->PSendSysMessage("Relocation (Lock/Unlock): {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / relocationIters);
+
+        // Test 4: Layering Assignment
+        // Simulate mass player influx
+        uint32 layeringIters = iterations / 5;
+        if (layeringIters < 1000) layeringIters = 1000;
+        handler->PSendSysMessage("Running Layering Stress ({} iterations)...", layeringIters);
+
+        start = Clock::now();
+        for (uint32 i = 0; i < layeringIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 10000);
+            // Assign to Map 0, Zone 15, simulate typical player flow
+            sPartitionMgr->AutoAssignPlayerToLayer(0, 15, guid);
+        }
+        end = Clock::now();
+        dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        handler->PSendSysMessage("Layer Assignment: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / layeringIters);
+
+        // Test 5: Boundary Flux (Registration Churn)
+        uint32 boundaryIters = iterations / 5;
+        handler->PSendSysMessage("Running Boundary Flux Stress ({} iterations)...", boundaryIters);
+        
+        start = Clock::now();
+        for (uint32 i = 0; i < boundaryIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(i + 50000);
+            // Toggle registration
+            sPartitionMgr->RegisterBoundaryObject(0, 1, guid);
+            sPartitionMgr->UnregisterBoundaryObject(0, 1, guid);
+        }
+        end = Clock::now();
+        dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        handler->PSendSysMessage("Boundary Flux: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / boundaryIters);
+
+        return true;
     }
 
     static std::string CsvEscape(std::string const& in)
@@ -2979,7 +3076,7 @@ public:
             ChatCommandBuilder("loop",    HandlePerfTestLoop,    SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("loopreport", HandlePerfTestLoopReport, SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("mysql",   PrintMySQLStatus,      SEC_GAMEMASTER, Console::Yes),
-            ChatCommandBuilder("partition", HandlePerfTestPartition, SEC_GAMEMASTER, Console::No),
+            ChatCommandBuilder("partition", DCPerfTest::HandlePartitionStressTest, SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("full",    HandlePerfTestFull,    SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("report",  HandlePerfTestReport,  SEC_GAMEMASTER, Console::Yes),
         };
@@ -3023,12 +3120,12 @@ public:
         if (partitionCount == 0)
             partitionCount = 1;
 
-        handler->SendSysMessage("|cff00ff00=== DC Performance Test: Partition Stats (Map {}) ===|r", mapId);
+        handler->PSendSysMessage("|cff00ff00=== DC Performance Test: Partition Stats (Map {}) ===|r", mapId);
         for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
         {
             PartitionManager::PartitionStats stats;
             if (sPartitionMgr->GetPartitionStats(mapId, partitionId, stats))
-                handler->SendSysMessage("Partition {}: players={}, creatures={}, boundaryObjects={}", partitionId, stats.players, stats.creatures, stats.boundaryObjects);
+                handler->PSendSysMessage("Partition {}: players={}, creatures={}, boundaryObjects={}", partitionId, stats.players, stats.creatures, stats.boundaryObjects);
         }
 
         return true;

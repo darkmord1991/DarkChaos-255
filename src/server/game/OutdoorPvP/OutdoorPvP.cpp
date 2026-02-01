@@ -26,6 +26,7 @@
 #include "OutdoorPvPMgr.h"
 #include "WorldPacket.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 
 OPvPCapturePoint::OPvPCapturePoint(OutdoorPvP* pvp) :
     _pvp(pvp)
@@ -332,7 +333,7 @@ bool OPvPCapturePoint::Update(uint32 diff)
             Map* map = _pvp ? _pvp->GetMap() : nullptr;
             if (map)
                 player = ObjectAccessor::GetPlayer(map, playerGuid);
-            else if (WorldSession* session = sWorld->FindSession(playerGuid.GetCounter()))
+            else if (WorldSession* session = sWorldSessionMgr->FindSession(playerGuid.GetCounter()))
                 player = session->GetPlayer();
             if (player)
                 if (!_capturePoint->IsWithinDistInMap(player, radius) || !player->IsOutdoorPvPActive())
@@ -465,7 +466,7 @@ void OutdoorPvP::SendUpdateWorldState(uint32 field, uint32 value)
     if (_sendUpdate)
         for (auto const& _player : _players)
             for (auto itr : _player)
-                if (Player* const player = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), itr) : (sWorld->FindSession(itr.GetCounter()) ? sWorld->FindSession(itr.GetCounter())->GetPlayer() : nullptr))
+                if (Player* const player = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), itr) : (sWorldSessionMgr->FindSession(itr.GetCounter()) ? sWorldSessionMgr->FindSession(itr.GetCounter())->GetPlayer() : nullptr))
                     player->SendUpdateWorldState(field, value);
 }
 
@@ -475,7 +476,7 @@ void OPvPCapturePoint::SendUpdateWorldState(uint32 field, uint32 value)
     {
         // send to all players present in the area
         for (auto itr : activePlayer)
-            if (Player* const player = (_pvp && _pvp->GetMap()) ? ObjectAccessor::GetPlayer(_pvp->GetMap(), itr) : (sWorld->FindSession(itr.GetCounter()) ? sWorld->FindSession(itr.GetCounter())->GetPlayer() : nullptr))
+            if (Player* const player = (_pvp && _pvp->GetMap()) ? ObjectAccessor::GetPlayer(_pvp->GetMap(), itr) : (sWorldSessionMgr->FindSession(itr.GetCounter()) ? sWorldSessionMgr->FindSession(itr.GetCounter())->GetPlayer() : nullptr))
                 player->SendUpdateWorldState(field, value);
     }
 }
@@ -497,7 +498,7 @@ void OPvPCapturePoint::SendObjectiveComplete(uint32 id, ObjectGuid guid)
 
     // send to all players present in the area
     for (auto itr : _activePlayers[team])
-        if (Player* const player = (_pvp && _pvp->GetMap()) ? ObjectAccessor::GetPlayer(_pvp->GetMap(), itr) : (sWorld->FindSession(itr.GetCounter()) ? sWorld->FindSession(itr.GetCounter())->GetPlayer() : nullptr))
+        if (Player* const player = (_pvp && _pvp->GetMap()) ? ObjectAccessor::GetPlayer(_pvp->GetMap(), itr) : (sWorldSessionMgr->FindSession(itr.GetCounter()) ? sWorldSessionMgr->FindSession(itr.GetCounter())->GetPlayer() : nullptr))
             player->KilledMonsterCredit(id, guid);
 }
 
@@ -646,7 +647,7 @@ void OutdoorPvP::BroadcastPacket(WorldPacket& data) const
             Map* map = GetMap();
             if (map)
                 player = ObjectAccessor::GetPlayer(map, itr);
-            else if (WorldSession* session = sWorld->FindSession(itr.GetCounter()))
+            else if (WorldSession* session = sWorldSessionMgr->FindSession(itr.GetCounter()))
                 player = session->GetPlayer();
 
             if (player)
@@ -675,7 +676,7 @@ void OutdoorPvP::TeamCastSpell(TeamId team, int32 spellId, Player* sameMapPlr)
             Map* map = GetMap();
             if (map)
                 player = ObjectAccessor::GetPlayer(map, itr);
-            else if (WorldSession* session = sWorld->FindSession(itr.GetCounter()))
+            else if (WorldSession* session = sWorldSessionMgr->FindSession(itr.GetCounter()))
                 player = session->GetPlayer();
 
             if (player && (!sameMapPlr || sameMapPlr->FindMap() == player->FindMap()))
@@ -690,7 +691,7 @@ void OutdoorPvP::TeamCastSpell(TeamId team, int32 spellId, Player* sameMapPlr)
             Map* map = GetMap();
             if (map)
                 player = ObjectAccessor::GetPlayer(map, itr);
-            else if (WorldSession* session = sWorld->FindSession(itr.GetCounter()))
+            else if (WorldSession* session = sWorldSessionMgr->FindSession(itr.GetCounter()))
                 player = session->GetPlayer();
 
             if (player && (!sameMapPlr || sameMapPlr->FindMap() == player->FindMap()))

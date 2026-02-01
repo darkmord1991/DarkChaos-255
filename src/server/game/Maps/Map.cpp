@@ -448,7 +448,7 @@ uint32 Map::GetPartitionIdForUnit(Unit const* unit) const
     if (!unit)
         return 0;
 
-    return sPartitionMgr->GetPartitionIdForPosition(GetId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetGUID());
+    return sPartitionMgr->GetPartitionIdForPosition(GetId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetZoneId(), unit->GetGUID());
 }
 
 void Map::QueuePartitionThreatRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& victimGuid, float threat, SpellSchoolMask schoolMask, uint32 spellId)
@@ -1347,10 +1347,49 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 continue;
 
             auto& bucket = listIt->second;
-            for (WorldObject* obj : bucket)
+            for (size_t i = 0; i < bucket.size();)
             {
-                if (!obj->IsInWorld())
+                WorldObject* obj = bucket[i];
+                auto idxIt = _partitionedUpdatableIndex.find(obj);
+                if (idxIt == _partitionedUpdatableIndex.end() || idxIt->second.first != partitionId)
+                {
+                    WorldObject* swapped = bucket.back();
+                    bucket[i] = swapped;
+                    bucket.pop_back();
+                    auto swappedIt = _partitionedUpdatableIndex.find(swapped);
+                    if (swappedIt != _partitionedUpdatableIndex.end() && swappedIt->second.first == partitionId)
+                        swappedIt->second.second = i;
                     continue;
+                }
+                if (!obj || !obj->IsInWorld())
+                {
+                    // Remove stale entry without touching obj
+                    WorldObject* swapped = bucket.back();
+                    bucket[i] = swapped;
+                    bucket.pop_back();
+                    auto swappedIt = _partitionedUpdatableIndex.find(swapped);
+                    if (swappedIt != _partitionedUpdatableIndex.end() && swappedIt->second.first == partitionId)
+                        swappedIt->second.second = i;
+                    _partitionedUpdatableIndex.erase(obj);
+
+                    // Remove from global update list without dereferencing obj
+                    for (size_t j = 0; j < _updatableObjectList.size(); ++j)
+                    {
+                        if (_updatableObjectList[j] == obj)
+                        {
+                            if (j != _updatableObjectList.size() - 1)
+                            {
+                                WorldObject* swappedGlobal = _updatableObjectList.back();
+                                _updatableObjectList[j] = swappedGlobal;
+                                if (auto* swappedUpdatable = dynamic_cast<UpdatableMapObject*>(swappedGlobal))
+                                    swappedUpdatable->SetMapUpdateListOffset(j);
+                            }
+                            _updatableObjectList.pop_back();
+                            break;
+                        }
+                    }
+                    continue;
+                }
 
                 if (obj->ToCreature())
                     ++partitionCreatureCounts[partitionId];
@@ -1363,6 +1402,16 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 }
 
                 obj->Update(diff);
+
+                if (!obj->IsUpdateNeeded())
+                {
+                    RemoveObjectFromMapUpdateList(obj);
+                    if (i < bucket.size() && bucket[i] == obj)
+                        ++i;
+                    continue;
+                }
+
+                ++i;
             }
 
             sPartitionMgr->UpdatePartitionCreatureCount(GetId(), partitionId, partitionCreatureCounts[partitionId]);
@@ -1378,13 +1427,13 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 WorldObject* obj = _updatableObjectList[i];
                 if (!obj->IsInWorld())
                 {
-                    ++i;
+                    RemoveObjectFromMapUpdateList(obj);
                     continue;
                 }
 
                 if (!obj->IsUpdateNeeded())
                 {
-                    _RemoveObjectFromUpdateList(obj);
+                    RemoveObjectFromMapUpdateList(obj);
                 }
                 else
                 {
@@ -1407,52 +1456,11 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 ++i;
                 continue;
             }
-
-
-            if (auto threatTargetIt = _partitionThreatTargetActionRelays.find(partitionId); threatTargetIt != _partitionThreatTargetActionRelays.end())
-            {
-                std::vector<PartitionThreatTargetActionRelay> relays;
-                relays.swap(threatTargetIt->second);
-                uint64 nowMs = GameTime::GetGameTimeMS().count();
-                uint64 totalLatency = 0;
-                uint64 maxLatency = 0;
-                for (PartitionThreatTargetActionRelay const& relay : relays)
-                {
-                    Unit* owner = GetUnitByGuid(relay.ownerGuid);
-                    Unit* target = GetUnitByGuid(relay.targetGuid);
-                    if (!owner || !target)
-                        continue;
-
-                    if (relay.action == 1)
-                        owner->GetThreatMgr().ClearThreat(target);
-                    else if (relay.action == 2)
-                        owner->GetThreatMgr().ResetThreat(target);
-
-                    if (relay.queuedMs)
-                    {
-                        uint64 latency = nowMs - relay.queuedMs;
-                        totalLatency += latency;
-                        maxLatency = std::max(maxLatency, latency);
-                    }
-                }
-                if (!relays.empty())
-                {
-                    uint64 avgLatency = totalLatency / relays.size();
-                    METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                        METRIC_TAG("map_id", std::to_string(GetId())),
-                        METRIC_TAG("partition_id", std::to_string(partitionId)),
-                        METRIC_TAG("type", "threat_target"));
-                    METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                        METRIC_TAG("map_id", std::to_string(GetId())),
-                        METRIC_TAG("partition_id", std::to_string(partitionId)),
-                        METRIC_TAG("type", "threat_target"));
-                }
-            }
             obj->Update(diff);
 
             if (!obj->IsUpdateNeeded())
             {
-                _RemoveObjectFromUpdateList(obj);
+                    RemoveObjectFromMapUpdateList(obj);
                 // Intentional no iteration here, obj is swapped with last element in
                 // _updatableObjectList so next loop will update that object at the same index
             }
@@ -1473,43 +1481,53 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
         }
     }
 
-    if (auto tauntIt = _partitionTauntRelays.find(partitionId); tauntIt != _partitionTauntRelays.end())
+    if (_isPartitioned)
     {
-        std::vector<PartitionTauntRelay> relays;
-        relays.swap(tauntIt->second);
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
-        uint64 totalLatency = 0;
-        uint64 maxLatency = 0;
-        for (PartitionTauntRelay const& relay : relays)
+        uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+        if (partitionCount == 0)
+            partitionCount = 1;
+
+        for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
         {
-            Unit* owner = GetUnitByGuid(relay.ownerGuid);
-            Unit* taunter = GetUnitByGuid(relay.taunterGuid);
-            if (!owner || !taunter)
-                continue;
-
-            if (relay.action == 1)
-                owner->GetThreatMgr().tauntApply(taunter);
-            else if (relay.action == 2)
-                owner->GetThreatMgr().tauntFadeOut(taunter);
-
-            if (relay.queuedMs)
+            if (auto tauntIt = _partitionTauntRelays.find(partitionId); tauntIt != _partitionTauntRelays.end())
             {
-                uint64 latency = nowMs - relay.queuedMs;
-                totalLatency += latency;
-                maxLatency = std::max(maxLatency, latency);
+                std::vector<PartitionTauntRelay> relays;
+                relays.swap(tauntIt->second);
+                uint64 nowMs = GameTime::GetGameTimeMS().count();
+                uint64 totalLatency = 0;
+                uint64 maxLatency = 0;
+                for (PartitionTauntRelay const& relay : relays)
+                {
+                    Unit* owner = GetUnitByGuid(relay.ownerGuid);
+                    Unit* taunter = GetUnitByGuid(relay.taunterGuid);
+                    if (!owner || !taunter)
+                        continue;
+
+                    if (relay.action == 1)
+                        owner->GetThreatMgr().tauntApply(taunter);
+                    else if (relay.action == 2)
+                        owner->GetThreatMgr().tauntFadeOut(taunter);
+
+                    if (relay.queuedMs)
+                    {
+                        uint64 latency = nowMs - relay.queuedMs;
+                        totalLatency += latency;
+                        maxLatency = std::max(maxLatency, latency);
+                    }
+                }
+                if (!relays.empty())
+                {
+                    uint64 avgLatency = totalLatency / relays.size();
+                    METRIC_VALUE("partition_relay_latency_ms", avgLatency,
+                        METRIC_TAG("map_id", std::to_string(GetId())),
+                        METRIC_TAG("partition_id", std::to_string(partitionId)),
+                        METRIC_TAG("type", "taunt"));
+                    METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
+                        METRIC_TAG("map_id", std::to_string(GetId())),
+                        METRIC_TAG("partition_id", std::to_string(partitionId)),
+                        METRIC_TAG("type", "taunt"));
+                }
             }
-        }
-        if (!relays.empty())
-        {
-            uint64 avgLatency = totalLatency / relays.size();
-            METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
-                METRIC_TAG("type", "taunt"));
-            METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
-                METRIC_TAG("type", "taunt"));
         }
     }
 }
@@ -1642,7 +1660,7 @@ void Map::RegisterPartitionedObject(WorldObject* obj)
         store.Insert<Creature>(guid, creature);
     else if (GameObject* go = obj->ToGameObject())
         store.Insert<GameObject>(guid, go);
-    else if (DynamicObject* dynObj = obj->ToDynamicObject())
+    else if (DynamicObject* dynObj = obj->ToDynObject())
         store.Insert<DynamicObject>(guid, dynObj);
     else if (Corpse* corpse = obj->ToCorpse())
         store.Insert<Corpse>(guid, corpse);
@@ -1667,7 +1685,7 @@ void Map::UnregisterPartitionedObject(WorldObject* obj)
             store.Remove<Creature>(guid);
         else if (obj->ToGameObject())
             store.Remove<GameObject>(guid);
-        else if (obj->ToDynamicObject())
+        else if (obj->ToDynObject())
             store.Remove<DynamicObject>(guid);
         else if (obj->ToCorpse())
             store.Remove<Corpse>(guid);
@@ -1723,6 +1741,8 @@ void Map::RemoveObjectFromMapUpdateList(WorldObject* obj)
         return;
 
     UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+    if (!mapUpdatableObject)
+        return;
     if (mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::PendingAdd)
         _pendingAddUpdatableObjectList.erase(obj);
     else if (mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::Updating)
@@ -1843,13 +1863,14 @@ void Map::RemoveFromMap(T* obj, bool remove)
 {
     obj->RemoveFromWorld();
 
+    RemoveObjectFromMapUpdateList(obj);
+
     obj->RemoveFromGrid();
 
     obj->ResetMap();
 
     if (remove)
     {
-        RemoveObjectFromMapUpdateList(obj);
         DeleteFromWorld(obj);
     }
 }
@@ -3620,6 +3641,11 @@ Creature* Map::GetCreature(ObjectGuid const& guid)
     return _objectsStore.Find<Creature>(guid);
 }
 
+Creature* Map::GetCreature(ObjectGuid const& guid) const
+{
+    return const_cast<Map*>(this)->GetCreature(guid);
+}
+
 GameObject* Map::GetGameObject(ObjectGuid const& guid)
 {
     if (_isPartitioned)
@@ -3631,6 +3657,11 @@ GameObject* Map::GetGameObject(ObjectGuid const& guid)
 Pet* Map::GetPet(ObjectGuid const& guid)
 {
     return dynamic_cast<Pet*>(_objectsStore.Find<Creature>(guid));
+}
+
+Pet* Map::GetPet(ObjectGuid const& guid) const
+{
+    return const_cast<Map*>(this)->GetPet(guid);
 }
 
 Transport* Map::GetTransport(ObjectGuid const& guid)

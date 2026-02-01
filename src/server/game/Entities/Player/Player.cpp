@@ -1707,6 +1707,9 @@ void Player::AddToWorld()
     ///- The player should only be added when logging in
     Unit::AddToWorld();
 
+    if (Map* map = GetMap())
+        map->RegisterPartitionedObject(this);
+
     for (uint8 i = PLAYER_SLOT_START; i < PLAYER_SLOT_END; ++i)
         if (m_items[i])
             m_items[i]->AddToWorld();
@@ -1755,6 +1758,8 @@ void Player::RemoveFromWorld()
     ///- Do not add/remove the player from the object storage
     ///- It will crash when updating the ObjectAccessor
     ///- The player should only be removed when logging out
+    if (Map* map = GetMap())
+        map->UnregisterPartitionedObject(this);
     Unit::RemoveFromWorld();
 
     if (m_uint32Values)
@@ -12528,7 +12533,7 @@ void Player::SummonIfPossible(bool agree, ObjectGuid summoner_guid)
     UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_ACCEPTED_SUMMONINGS, 1);
 
     Player* summoner = nullptr;
-    if (WorldSession* session = sWorld->FindSession(summoner_guid.GetCounter()))
+    if (WorldSession* session = sWorldSessionMgr->FindSession(summoner_guid.GetCounter()))
         summoner = session->GetPlayer();
 
     TeleportTo(m_summon_mapid, m_summon_x, m_summon_y, m_summon_z, GetOrientation(), 0, summoner);

@@ -112,19 +112,21 @@ namespace Upgrade
             .Send(player);
     }
 
-        CacheContext(player);
-
     // Handler: Get item upgrade info
     static void HandleGetItemInfo(Player* player, const ParsedMessage& msg)
     {
+        CacheContext(player);
         uint32 extBag = 0;
         uint32 extSlot = 0;
 
         if (!TryGetJsonUInt(msg, "bag", extBag))
-            CacheContext(player);
+        {
             extBag = msg.GetUInt32(0);
+        }
         if (!TryGetJsonUInt(msg, "slot", extSlot))
+        {
             extSlot = msg.GetUInt32(1);
+        }
 
         uint8 bag = 0, slot = 0;
         if (!DarkChaos::ItemUpgrade::UI::TranslateAddonBagSlot(extBag, extSlot, bag, slot))
@@ -189,8 +191,6 @@ namespace Upgrade
                 .Set("cloneMap", cloneMap)
                 .Set("baseIlvl", baseItemLevel)
                 .Set("upgradedIlvl", baseItemLevel)
-
-            CacheContext(player);
                 .Set("statMultiplier", statMultiplier)
                 .Send(player);
             return;

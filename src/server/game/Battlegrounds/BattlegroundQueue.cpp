@@ -28,6 +28,7 @@
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "WorldSessionMgr.h"
 #include "ScriptMgr.h"
 #include <unordered_map>
 
@@ -267,7 +268,7 @@ void BattlegroundQueue::RemovePlayer(ObjectGuid guid, bool decreaseInvitedCount)
         //This happens if a player logs out while in a bg because WorldSession::LogoutPlayer() notifies the bg twice
         std::string playerName = "Unknown";
 
-        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
         {
             if (Player* player = session->GetPlayer())
                 playerName = player->GetName();

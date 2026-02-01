@@ -16,6 +16,7 @@
  */
 
 #include "PartitionUpdateWorker.h"
+#include "DynamicObject.h"
 #include "Map.h"
 #include "PartitionManager.h"
 #include "Player.h"

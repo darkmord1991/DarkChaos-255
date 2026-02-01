@@ -698,6 +698,10 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_REP_PARTITION_OWNERSHIP,
         "REPLACE INTO dc_character_partition_ownership (guid, map_id, partition_id) VALUES (?, ?, ?)",
         CONNECTION_ASYNC);
+
+    PrepareStatement(CHAR_DEL_PARTITION_OWNERSHIP_OTHER_MAPS,
+        "DELETE FROM dc_character_partition_ownership WHERE guid = ? AND map_id <> ?",
+        CONNECTION_ASYNC);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

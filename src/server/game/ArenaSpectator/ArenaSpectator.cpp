@@ -26,13 +26,14 @@
 #include "SpellAuraEffects.h"
 #include "SpellAuras.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 
 namespace
 {
     Player* FindOnlinePlayerByName(std::string const& name)
     {
         if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
-            if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
                 return session->GetPlayer();
 
         return nullptr;

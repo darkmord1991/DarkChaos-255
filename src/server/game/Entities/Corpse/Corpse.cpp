@@ -22,6 +22,7 @@
 #include "GameTime.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
+#include "Maps/Partitioning/PartitionManager.h"
 #include "Player.h"
 #include "UpdateMask.h"
 #include "World.h"

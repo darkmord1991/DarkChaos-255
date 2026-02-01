@@ -24,6 +24,7 @@
 #include "HolidayDateCalculator.h"
 #include "Language.h"
 #include "Log.h"
+#include "Map.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -40,8 +41,7 @@
 GameEventMgr* GameEventMgr::instance()
 {
     static GameEventMgr instance;
-#include "Map.h"
-#include "MapStoredObjectTypesContainer.h"
+    return &instance;
 }
 
 bool GameEventMgr::CheckOneGameEvent(uint16 entry) const

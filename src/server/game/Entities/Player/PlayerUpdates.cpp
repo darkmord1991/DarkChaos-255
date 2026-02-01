@@ -39,7 +39,9 @@
 #include "Weather.h"
 #include "WeatherMgr.h"
 #include "WorldState.h"
+#include "WorldState.h"
 #include "WorldStatePackets.h"
+#include "PartitionManager.h"
 
 /// @todo: this import is not necessary for compilation and marked as unused by the IDE
 //  however, for some reasons removing it would cause a damn linking issue
@@ -1298,6 +1300,9 @@ void Player::UpdateZone(uint32 newZone, uint32 newArea, bool force)
         GetMap()->GetOrGenerateZoneDefaultWeather(newZone);
 
     GetMap()->SendZoneDynamicInfo(newZone, this);
+
+    // Update layer assignment (if layering is enabled)
+    sPartitionMgr->AutoAssignPlayerToLayer(GetMapId(), newZone, GetGUID());
 
     sScriptMgr->OnPlayerUpdateZone(this, newZone, newArea);
 

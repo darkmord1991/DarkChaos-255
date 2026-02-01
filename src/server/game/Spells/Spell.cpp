@@ -50,6 +50,7 @@
 #include "VMapFactory.h"
 #include "Vehicle.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include "WorldPacket.h"
 #include <cmath>
 
@@ -2537,7 +2538,7 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
             return;
         // find unit in world
         // Xinef: FindUnit Access without Map check!!! Intended
-        if (WorldSession* session = sWorld->FindSession(target->targetGUID.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(target->targetGUID.GetCounter()))
             effectUnit = session->GetPlayer();
         if (!effectUnit)
             return;

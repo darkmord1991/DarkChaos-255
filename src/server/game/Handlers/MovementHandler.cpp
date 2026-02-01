@@ -39,6 +39,7 @@
 #include "WaypointMovementGenerator.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+#include "WorldSessionMgr.h"
 
 #define MOVEMENT_PACKET_TIME_DELAY 0
 
@@ -861,7 +862,7 @@ void WorldSession::HandleSummonResponseOpcode(WorldPacket& recvData)
     if (agree && _player->IsSummonAsSpectator())
     {
         ChatHandler chc(this);
-        if (WorldSession* session = sWorld->FindSession(summoner_guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(summoner_guid.GetCounter()))
         {
             if (Player* summoner = session->GetPlayer())
                 ArenaSpectator::HandleSpectatorSpectateCommand(&chc, summoner->GetName().c_str());

@@ -16,6 +16,7 @@
 #include "Log.h"
 #include "Player.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include <sstream>
 
 namespace DarkChaos
@@ -182,13 +183,13 @@ namespace DarkChaos
                         player_guid, old_season_id, new_season_id);
 
                 // Send notification to player if online
-                if (WorldSession* session = sWorld->FindSession(player_guid))
+                if (WorldSession* session = sWorldSessionMgr->FindSession(player_guid))
                 {
-                    Player* player = session->GetPlayer();
-                    if (!player)
-                        break;
-                    std::string message = "You have been transitioned to HLBG Season " + std::to_string(new_season_id);
-                    ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
+                    if (Player* player = session->GetPlayer())
+                    {
+                        std::string message = "You have been transitioned to HLBG Season " + std::to_string(new_season_id);
+                        ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
+                    }
                 }
 
                 // Update any cached data

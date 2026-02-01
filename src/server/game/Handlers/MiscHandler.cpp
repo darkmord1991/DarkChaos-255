@@ -49,6 +49,7 @@
 #include "Vehicle.h"
 #include "WhoListCacheMgr.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include <zlib.h>
@@ -1100,7 +1101,7 @@ void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
 
     Player* player = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(charname))
-        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
             player = session->GetPlayer();
 
     if (!player)

@@ -26,6 +26,7 @@
 #include "Player.h"
 #include "StringFormat.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include "../AddonExtension/dc_addon_groupfinder_mgr.h"
 #include "DC/GreatVault/GreatVault.h"
 #ifdef HAS_AIO
@@ -1527,7 +1528,7 @@ void MythicPlusRunManager::GenerateNewKeystone(ObjectGuid::LowType playerGuid, u
         return;
 
     // Get player from guid
-    if (WorldSession* session = sWorld->FindSession(playerGuid))
+    if (WorldSession* session = sWorldSessionMgr->FindSession(playerGuid))
     {
         Player* player = session->GetPlayer();
         if (!player)

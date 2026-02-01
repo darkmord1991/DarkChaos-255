@@ -52,6 +52,7 @@
 #include "Pet.h"
 #include "PetAI.h"
 #include "PetPackets.h"
+#include "PartitionManager.h"
 #include "Player.h"
 #include "ReputationMgr.h"
 #include "ScriptMgr.h"
@@ -14883,8 +14884,21 @@ void Unit::TauntFadeOut(Unit* taunter)
     if (!taunter || (taunter->IsPlayer() && taunter->ToPlayer()->IsGameMaster()))
         return;
 
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionTauntFade(ownerPartition, GetGUID(), taunter->GetGUID());
+            return;
+        }
+    }
+
     if (!CanHaveThreatList())
         return;
+
+    m_ThreatMgr.tauntFadeOut(taunter);
 
     Creature* creature = ToCreature();
 
@@ -14936,19 +14950,9 @@ Unit* Creature::SelectVictim()
 
     if (CanHaveThreatList())
     {
-    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
-    {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
-        {
-            map->QueuePartitionTauntFade(ownerPartition, GetGUID(), taunter->GetGUID());
-            return;
-        }
-    }
         if (!target && !m_ThreatMgr.isThreatListEmpty())
             target = m_ThreatMgr.getHostileTarget();
-    m_ThreatMgr.tauntFadeOut(taunter);
+    }
     else if (!HasReactState(REACT_PASSIVE))
     {
         // we have player pet probably

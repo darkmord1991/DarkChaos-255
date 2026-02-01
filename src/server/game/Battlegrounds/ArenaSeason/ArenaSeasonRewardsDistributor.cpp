@@ -21,6 +21,7 @@
 #include "Mail.h"
 #include "Player.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include <algorithm>
 
 constexpr float minPctTeamGamesForMemberToGetReward = 30;
@@ -51,7 +52,7 @@ void ArenaSeasonTeamRewarderImpl::RewardWithMail(ArenaTeam* arenaTeam, ArenaSeas
             continue;
 
         Player* player = nullptr;
-        if (WorldSession* session = sWorld->FindSession(member.Guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(member.Guid.GetCounter()))
             player = session->GetPlayer();
 
         auto draft = rewardGroup.rewardMailTemplateID > 0 ?
@@ -90,7 +91,7 @@ void ArenaSeasonTeamRewarderImpl::RewardWithAchievements(ArenaTeam* arenaTeam, A
             continue;
 
         Player* player = nullptr;
-        if (WorldSession* session = sWorld->FindSession(member.Guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(member.Guid.GetCounter()))
             player = session->GetPlayer();
         for (auto const& reward : rewardGroup.achievementRewards)
         {

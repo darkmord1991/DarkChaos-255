@@ -35,6 +35,7 @@
 #include "SocialMgr.h"
 #include "World.h"
 #include "WorldSession.h"
+#include "WorldSessionMgr.h"
 #include <boost/iterator/counting_iterator.hpp>
 
 #define MAX_GUILD_BANK_TAB_TEXT_LEN 500
@@ -1435,7 +1436,7 @@ void Guild::HandleInviteMember(WorldSession* session, std::string const& name)
     Player* pInvitee = nullptr;
     ObjectGuid inviteeGuid = sCharacterCache->GetCharacterGuidByName(name);
     if (inviteeGuid)
-        if (WorldSession* inviteeSession = sWorld->FindSession(inviteeGuid.GetCounter()))
+        if (WorldSession* inviteeSession = sWorldSessionMgr->FindSession(inviteeGuid.GetCounter()))
             pInvitee = inviteeSession->GetPlayer();
     if (!pInvitee)
     {

@@ -20,6 +20,7 @@
 #include "Chat.h"
 #include "CharacterCache.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include "ChatCommandArgs.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -123,7 +124,7 @@ ChatCommandResult Acore::ChatCommands::PlayerIdentifier::TryConsume(ChatHandler 
 
         if ((_guid = sCharacterCache->GetCharacterGuidByName(_name)))
         {
-            if (WorldSession* session = sWorld->FindSession(_guid.GetCounter()))
+            if (WorldSession* session = sWorldSessionMgr->FindSession(_guid.GetCounter()))
                 _player = session->GetPlayer();
         }
         else

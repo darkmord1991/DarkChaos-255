@@ -66,8 +66,8 @@ class PathGenerator;
 class WorldSession;
 enum AuraRemoveMode : uint8;
 enum WeaponAttackType : uint8;
-enum MovementSlot;
-enum ForcedMovement;
+enum MovementSlot : uint8;
+enum ForcedMovement : uint8;
 enum class AnimTier : uint8;
 
 enum WeatherState : uint32;
@@ -370,10 +370,12 @@ public:
 
     Corpse* GetCorpse(ObjectGuid const& guid);
     Creature* GetCreature(ObjectGuid const& guid);
+    Creature* GetCreature(ObjectGuid const& guid) const;
     GameObject* GetGameObject(ObjectGuid const& guid);
     Transport* GetTransport(ObjectGuid const& guid);
     DynamicObject* GetDynamicObject(ObjectGuid const& guid);
     Pet* GetPet(ObjectGuid const& guid);
+    Pet* GetPet(ObjectGuid const& guid) const;
 
     MapStoredObjectTypesContainer& GetObjectsStore() { return _objectsStore; }
 

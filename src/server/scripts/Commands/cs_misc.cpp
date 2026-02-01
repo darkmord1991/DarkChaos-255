@@ -41,6 +41,7 @@
 #include "ObjectAccessor.h"
 #include "Pet.h"
 #include "Player.h"
+#include "PartitionManager.h"
 #include "Realm.h"
 #include "ScriptMgr.h"
 #include "SpellAuras.h"
@@ -655,6 +656,18 @@ public:
                                  object->GetPositionX(), object->GetPositionY(), object->GetPositionZ(), object->GetOrientation(),
                                  cell.GridX(), cell.GridY(), cell.CellX(), cell.CellY(), object->GetInstanceId(),
                                  zoneX, zoneY, groundZ, floorZ, haveMap, haveVMap, haveMMAP);
+        
+        if (sPartitionMgr->IsEnabled())
+        {
+            uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(object->GetMapId(), object->GetPositionX(), object->GetPositionY());
+            handler->PSendSysMessage("Map Partition: {}", partitionId);
+            
+            if (sPartitionMgr->IsLayeringEnabled() && object->IsPlayer())
+            {
+                uint32 layerId = sPartitionMgr->GetLayerForPlayer(object->GetMapId(), zoneId, object->GetGUID());
+                handler->PSendSysMessage("Layer: {}", layerId);
+            }
+        }
 
         LiquidData const& liquidData = object->GetLiquidData();
 

@@ -29,6 +29,7 @@
 #include "Opcodes.h"
 #include "Pet.h"
 #include "Player.h"
+#include "WorldSessionMgr.h"
 #include "ScriptMgr.h"
 #include "SocialMgr.h"
 #include "SpellAuras.h"
@@ -80,7 +81,7 @@ void WorldSession::HandleGroupInviteOpcode(WorldPacket& recvData)
     Player* invitingPlayer = GetPlayer();
     Player* invitedPlayer = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(membername))
-        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
             invitedPlayer = session->GetPlayer();
 
     // no player or cheat self-invite
@@ -639,7 +640,7 @@ void WorldSession::HandleGroupChangeSubGroupOpcode(WorldPacket& recvData)
 
     Player* movedPlayer = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
-        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
             movedPlayer = session->GetPlayer();
     ObjectGuid guid;
     if (movedPlayer)
@@ -1141,7 +1142,7 @@ void WorldSession::HandleGroupSwapSubGroupOpcode(WorldPacket& recv_data)
 
         if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(playerName))
         {
-            if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
                 if (Player* player = session->GetPlayer())
                     return player->GetGUID();
 

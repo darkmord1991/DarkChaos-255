@@ -26,6 +26,7 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
@@ -1000,7 +1001,7 @@ bool ArenaTeam::FinishWeek()
 bool ArenaTeam::IsFighting() const
 {
     for (MemberList::const_iterator itr = Members.begin(); itr != Members.end(); ++itr)
-        if (WorldSession* session = sWorld->FindSession(itr->Guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(itr->Guid.GetCounter()))
             if (Player* player = session->GetPlayer())
                 if (player->GetMap()->IsBattleArena())
                     return true;

@@ -18,15 +18,16 @@
 #ifndef AC_PARTITION_MANAGER_H
 #define AC_PARTITION_MANAGER_H
 
-#include "Define.h"
+#include "SharedDefines.h"
 #include "MapPartition.h"
 #include "PartitionRelocationTxn.h"
 #include "ObjectGuid.h"
+#include <map>
 #include <unordered_map>
-#include <unordered_set>
+#include <mutex>
+#include <set>
 #include <vector>
 #include <memory>
-#include <mutex>
 
 class PartitionManager
 {
@@ -46,6 +47,7 @@ public:
     bool UsePartitionStoreOnly() const;
     uint32 GetPartitionIdForPosition(uint32 mapId, float x, float y) const;
     uint32 GetPartitionIdForPosition(uint32 mapId, float x, float y, ObjectGuid const& guid) const;
+    uint32 GetPartitionIdForPosition(uint32 mapId, float x, float y, uint32 zoneId, ObjectGuid const& guid) const;
     bool IsNearPartitionBoundary(uint32 mapId, float x, float y) const;
 
     uint32 GetPartitionCount(uint32 mapId) const;
@@ -85,12 +87,25 @@ public:
     bool CommitRelocation(ObjectGuid const& guid);
     void RollbackRelocation(ObjectGuid const& guid);
 
+    // Zone exclusion - zones where partitioning is disabled (e.g., cities)
+    bool IsZoneExcluded(uint32_t zoneId) const;
+
+    // Layering support (for high-population areas) - DISABLED by default
+    bool IsLayeringEnabled() const;
+    uint32_t GetLayerCapacity() const;
+    uint32_t GetLayerForPlayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid) const;
+    uint32_t GetLayerCount(uint32_t mapId, uint32_t zoneId) const;
+    void AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid, uint32_t layerId);
+    void RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid);
+    void AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid);
+
 private:
     PartitionManager() = default;
 
     mutable std::mutex _lock;
-    std::unordered_map<uint32, std::vector<std::unique_ptr<MapPartition>>> _partitionsByMap;
-    std::unordered_set<uint32> _partitionedMaps;
+    std::unordered_map<uint32_t, std::vector<std::unique_ptr<MapPartition>>> _partitionsByMap;
+    std::unordered_set<uint32_t> _partitionedMaps;
+    std::unordered_set<uint32_t> _excludedZones;
     std::unordered_map<ObjectGuid::LowType, PartitionRelocationTxn> _relocations;
     std::unordered_map<uint32, uint32> _combatHandoffCounts;
     std::unordered_map<uint32, uint32> _pathHandoffCounts;
@@ -105,10 +120,21 @@ private:
         uint32 mapId = 0;
         uint32 partitionId = 0;
     };
-    std::unordered_map<ObjectGuid::LowType, PartitionOverride> _partitionOverrides;
+    mutable std::unordered_map<ObjectGuid::LowType, PartitionOverride> _partitionOverrides;
     std::unordered_map<ObjectGuid::LowType, PartitionOwnership> _partitionOwnership;
     // Map -> PartitionId -> Set of boundary object GUIDs
     std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_set<ObjectGuid>>> _boundaryObjects;
+    
+    // Layering data: Map -> Zone -> Layer -> Set of player GUIDs
+    std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_set<ObjectGuid::LowType>>>> _layers;
+    // Player -> Layer assignment: PlayerGUID -> {mapId, zoneId, layerId}
+    struct LayerAssignment
+    {
+        uint32 mapId = 0;
+        uint32 zoneId = 0;
+        uint32 layerId = 0;
+    };
+    std::unordered_map<ObjectGuid::LowType, LayerAssignment> _playerLayers;
 };
 
 #define sPartitionMgr PartitionManager::instance()

@@ -39,6 +39,7 @@
 #include "Util.h"
 #include "Warden.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
 // forward-declare the canonical helper implemented in DC_AddonHelpers.cpp
@@ -408,8 +409,7 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recvData)
 
                 Player* receiver = nullptr;
                 if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(to))
-                    if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
-                        receiver = session->GetPlayer();
+                    receiver = ObjectAccessor::FindConnectedPlayer(guid);
                 bool senderIsPlayer = AccountMgr::IsPlayerAccount(GetSecurity());
                 bool receiverIsPlayer = AccountMgr::IsPlayerAccount(receiver ? receiver->GetSession()->GetSecurity() : SEC_PLAYER);
 

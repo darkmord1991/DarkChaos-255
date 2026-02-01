@@ -26,6 +26,9 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
+// New include for WorldSessionMgr
+#include "WorldSessionMgr.h"
+
 constexpr Milliseconds BG_SA_BOAT_START    = 1min;
 constexpr Milliseconds BG_SA_WARMUPLENGTH  = 2min;
 constexpr Milliseconds BG_SA_ROUNDLENGTH   = 10min;
@@ -930,7 +933,7 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
             Map* map = GetBgMap();
             if (map)
                 player = ObjectAccessor::GetPlayer(map, guid);
-            else if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+            else if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
                 player = session->GetPlayer();
             if (!player)
                 continue;

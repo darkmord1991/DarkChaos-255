@@ -17,10 +17,12 @@
 
 #include "PartitionManager.h"
 #include "World.h"
+#include "WorldConfig.h"
 #include "Log.h"
 #include "Grids/GridDefines.h"
 #include "GameTime.h"
 #include "DatabaseEnv.h"
+#include "QueryResult.h"
 #include <cmath>
 #include <sstream>
 
@@ -44,6 +46,150 @@ bool PartitionManager::UsePartitionStoreOnly() const
 {
     return sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_STORE_ONLY);
 }
+
+bool PartitionManager::IsZoneExcluded(uint32_t zoneId) const
+{
+    std::lock_guard<std::mutex> guard(_lock);
+    return _excludedZones.count(zoneId) > 0;
+}
+
+bool PartitionManager::IsLayeringEnabled() const
+{
+    return sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_LAYERS_ENABLED);
+}
+
+uint32_t PartitionManager::GetLayerCapacity() const
+{
+    return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY);
+}
+
+uint32_t PartitionManager::GetLayerForPlayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid) const
+{
+    std::lock_guard<std::mutex> guard(_lock);
+    auto it = _playerLayers.find(playerGuid.GetCounter());
+    if (it != _playerLayers.end())
+    {
+        // Optional: Verify map/zone match?
+        if (it->second.mapId == mapId && it->second.zoneId == zoneId)
+            return it->second.layerId;
+    }
+    return 0; // Default layer
+}
+
+uint32_t PartitionManager::GetLayerCount(uint32_t mapId, uint32_t zoneId) const
+{
+    std::lock_guard<std::mutex> guard(_lock);
+    auto mapIt = _layers.find(mapId);
+    if (mapIt != _layers.end())
+    {
+        auto zoneIt = mapIt->second.find(zoneId);
+        if (zoneIt != mapIt->second.end())
+            return zoneIt->second.size();
+    }
+    return 1; // Always at least default layer
+}
+
+void PartitionManager::AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid, uint32_t layerId)
+{
+    std::lock_guard<std::mutex> guard(_lock);
+    
+    // Remove from old layer if exists
+    auto it = _playerLayers.find(playerGuid.GetCounter());
+    if (it != _playerLayers.end())
+    {
+        auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
+        oldLayer.erase(playerGuid.GetCounter());
+    }
+
+    // Assign to new
+    _layers[mapId][zoneId][layerId].insert(playerGuid.GetCounter());
+    _playerLayers[playerGuid.GetCounter()] = { mapId, zoneId, layerId };
+}
+
+void PartitionManager::RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid)
+{
+    std::lock_guard<std::mutex> guard(_lock);
+    auto it = _playerLayers.find(playerGuid.GetCounter());
+    if (it == _playerLayers.end())
+        return;
+
+    if (it->second.mapId != mapId || it->second.zoneId != zoneId)
+        return;
+
+    auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
+    oldLayer.erase(playerGuid.GetCounter());
+    _playerLayers.erase(it);
+}
+
+void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid)
+{
+    if (!IsLayeringEnabled())
+        return;
+
+    std::lock_guard<std::mutex> guard(_lock);
+
+    // If player is already assigned to a layer in this zone, keep them there (stickiness)
+    auto it = _playerLayers.find(playerGuid.GetCounter());
+    if (it != _playerLayers.end() && it->second.mapId == mapId && it->second.zoneId == zoneId)
+        return;
+
+    // If they were in a different zone/map, remove old assignment first
+    if (it != _playerLayers.end())
+    {
+        auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
+        oldLayer.erase(playerGuid.GetCounter());
+        _playerLayers.erase(it);
+    }
+
+    uint32_t capacity = GetLayerCapacity();
+    uint32_t bestLayerId = 0;
+    bool foundLayer = false;
+
+    // Find first layer with capacity
+    auto& zoneLayers = _layers[mapId][zoneId];
+    
+    // Check existing layers first (prioritize filling gaps)
+    for (auto& [layerId, players] : zoneLayers)
+    {
+        if (players.size() < capacity)
+        {
+            bestLayerId = layerId;
+            foundLayer = true;
+            break;
+        }
+    }
+
+    if (!foundLayer)
+    {
+        // No existing layer has space. Create new one.
+        // If no layers yet, use 0.
+        if (zoneLayers.empty())
+        {
+            bestLayerId = 0;
+        }
+        else
+        {
+            uint32_t maxId = 0;
+            for (auto const& [layerId, _] : zoneLayers)
+            {
+                if (layerId > maxId) maxId = layerId;
+            }
+            bestLayerId = maxId + 1;
+        }
+    }
+
+    // Assign
+    zoneLayers[bestLayerId].insert(playerGuid.GetCounter());
+    _playerLayers[playerGuid.GetCounter()] = { mapId, zoneId, bestLayerId };
+
+    // Log new layer assignment if it's not the default layer 0
+    if (bestLayerId > 0)
+    {
+        LOG_DEBUG("map.partition", "Player {} assigned to Layer {} in Map {} Zone {}", 
+            playerGuid.ToString(), bestLayerId, mapId, zoneId);
+    }
+}
+
 
 bool PartitionManager::IsMapPartitioned(uint32 mapId) const
 {
@@ -101,6 +247,15 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
     }
 
     return GetPartitionIdForPosition(mapId, x, y);
+}
+
+uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float y, uint32 zoneId, ObjectGuid const& guid) const
+{
+    // If this zone is excluded from partitioning (e.g., cities), use partition 1
+    if (IsZoneExcluded(zoneId))
+        return 1;
+
+    return GetPartitionIdForPosition(mapId, x, y, guid);
 }
 
 bool PartitionManager::IsNearPartitionBoundary(uint32 mapId, float x, float y) const
@@ -186,6 +341,40 @@ void PartitionManager::Initialize()
         _partitionedMaps.clear();
         _partitionsByMap.clear();
         _partitionOwnership.clear();
+        _excludedZones.clear();
+    }
+
+    // Load excluded zones (cities, hubs) - these zones use a single partition
+    std::string_view excludeView = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_EXCLUDE_ZONES);
+    std::string excludeString(excludeView.begin(), excludeView.end());
+    if (!excludeString.empty())
+    {
+        std::istringstream excludeStream(excludeString);
+        std::string zoneToken;
+        while (std::getline(excludeStream, zoneToken, ','))
+        {
+            std::string trimmed;
+            trimmed.reserve(zoneToken.size());
+            for (char c : zoneToken)
+            {
+                if (c != ' ' && c != '\t' && c != '\n' && c != '\r')
+                    trimmed.push_back(c);
+            }
+            if (trimmed.empty())
+                continue;
+
+            try
+            {
+                uint32 zoneId = static_cast<uint32>(std::stoul(trimmed));
+                std::lock_guard<std::mutex> guard(_lock);
+                _excludedZones.insert(zoneId);
+            }
+            catch (std::exception const&)
+            {
+                LOG_WARN("map.partition", "Invalid zone id '{}' in MapPartitions.ExcludeZones", trimmed);
+            }
+        }
+        LOG_INFO("map.partition", "Loaded {} excluded zones for partitioning", _excludedZones.size());
     }
 
     if (mapsString.empty())
@@ -281,9 +470,16 @@ void PartitionManager::PersistPartitionOwnership(ObjectGuid const& guid, uint32 
         return;
 
     bool changed = false;
+    uint32 previousMapId = 0;
+    bool hadOwnership = false;
     {
         std::lock_guard<std::mutex> guard(_lock);
         auto& ownership = _partitionOwnership[guid.GetCounter()];
+        if (ownership.mapId != 0 || ownership.partitionId != 0)
+        {
+            hadOwnership = true;
+            previousMapId = ownership.mapId;
+        }
         if (ownership.mapId != mapId || ownership.partitionId != partitionId)
         {
             ownership.mapId = mapId;
@@ -300,6 +496,14 @@ void PartitionManager::PersistPartitionOwnership(ObjectGuid const& guid, uint32 
     stmt->SetData(1, mapId);
     stmt->SetData(2, partitionId);
     CharacterDatabase.Execute(stmt);
+
+    if (hadOwnership && previousMapId != mapId)
+    {
+        CharacterDatabasePreparedStatement* delStmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_PARTITION_OWNERSHIP_OTHER_MAPS);
+        delStmt->SetData(0, guid.GetCounter());
+        delStmt->SetData(1, mapId);
+        CharacterDatabase.Execute(delStmt);
+    }
 }
 
 void PartitionManager::UpdatePartitionsForMap(uint32 mapId, uint32 diff)

@@ -548,6 +548,9 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_DEFAULT_COUNT, "MapPartitions.DefaultCount", 4);
     SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_MAPS, "MapPartitions.Maps", "");
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_STORE_ONLY, "MapPartitions.UsePartitionStoreOnly", false);
+    SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_EXCLUDE_ZONES, "MapPartitions.ExcludeZones", "");
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_LAYERS_ENABLED, "MapPartitions.Layers.Enabled", false);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY, "MapPartitions.Layers.Capacity", 100);
     SetConfigValue<uint32>(CONFIG_MAX_RESULTS_LOOKUP_COMMANDS, "Command.LookupMaxResults", 0);
 
     // Warden

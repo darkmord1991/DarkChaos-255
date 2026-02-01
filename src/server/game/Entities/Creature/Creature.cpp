@@ -28,6 +28,7 @@
 #include "GameTime.h"
 #include "GridNotifiers.h"
 #include "Group.h"
+#include "Maps/Partitioning/PartitionManager.h"
 #include "GroupMgr.h"
 #include "Log.h"
 #include "LootMgr.h"

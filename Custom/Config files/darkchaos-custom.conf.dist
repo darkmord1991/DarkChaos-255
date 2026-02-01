@@ -47,6 +47,7 @@
 # PART VIII - TESTING & DEVELOPMENT
 #   Section 20: Fake Players System
 #   Section 21: DC System Logging
+#   Section 22: Map Partitioning System
 #
 # =============================================================================
 # Copyright (C) 2016+ AzerothCore <www.azerothcore.org>
@@ -3341,6 +3342,96 @@ Logger.hlbg.aio=5,Console DC
 # Seasonal System
 Logger.seasonal=5,Console DC
 
+
+###############################################################################
+#
+#  SECTION 22: MAP PARTITIONING SYSTEM
+#
+#  Advanced grid partitioning system for splitting large maps into sub-grids
+#  to improve performance and handle higher player counts.
+#
+###############################################################################
+
+#
+#    MapPartitions.Enabled
+#        Description: Enable map partitioning system
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+MapPartitions.Enabled = 1
+
+#
+#    MapPartitions.ExcludeZones
+#        Description: Comma-separated list of zone IDs to exclude from partitioning.
+#                     Excluded zones will be treated as single monolithic partitions.
+#                     Useful for high-density areas (cities) to avoid boundary issues.
+#        Recommended: "1519,1637,4395" (Stormwind, Orgrimmar, Dalaran)
+#        Default:     "1519,1637,4395"
+#
+MapPartitions.ExcludeZones = "1519,1637,4395"
+
+#
+#    MapPartitions.Layers.Enabled
+#        Description: Enable zone layering for high-population areas.
+#                     When enabled, zones can be split into multiple "layers"
+#                     that share the same world space but isolate players.
+#                     EXPERIMENTAL: This feature is disabled by default.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+MapPartitions.Layers.Enabled = 0
+
+#
+#    MapPartitions.Layers.Capacity
+#        Description: Maximum players per layer before creating a new layer.
+#                     Only used when layering is enabled.
+#        Default:     100
+#
+MapPartitions.Layers.Capacity = 100
+
+#
+#    MapPartitions.Enabled
+#        Description: Experimental map partitioning framework.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+MapPartitions.Enabled = 1
+
+#
+#    MapPartitions.BorderOverlap
+#        Description: Overlap distance (yards) shared between adjacent partitions.
+#        Default:     100.0
+
+MapPartitions.BorderOverlap = 100.0
+
+#
+#    MapPartitions.DefaultCount
+#        Description: Default number of partitions per map when enabled.
+#        Default:     4
+
+MapPartitions.DefaultCount = 4
+
+#
+#    MapPartitions.Maps
+#        Description: Comma-separated list of map IDs to partition.
+#                     Recommended maps for partitioning:
+#                       0   - Eastern Kingdoms (Stormwind, Ironforge, etc.)
+#                       1   - Kalimdor (Orgrimmar, Thunder Bluff, etc.)
+#                       530 - Outland (Shattrath, etc.)
+#                       571 - Northrend (Dalaran, etc.)
+#                     Note: Instanced maps (dungeons/raids) should NOT be partitioned.
+#        Default:     "" (none - disabled)
+#        Recommended: "0,1,530,571,745,1405"
+
+MapPartitions.Maps = "0,1,530,571,745,1405,37"
+
+#
+#    MapPartitions.UsePartitionStoreOnly
+#        Description: Store partitioned objects only in per-partition stores (advanced).
+#        Default:     0 - (Disabled, keep global store)
+#                     1 - (Enabled)
+
+MapPartitions.UsePartitionStoreOnly = 0
 
 ###############################################################################
 # END OF CONFIGURATION FILE

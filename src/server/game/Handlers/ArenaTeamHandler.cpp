@@ -26,6 +26,7 @@
 #include "World.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
+#include "WorldSessionMgr.h"
 
 void WorldSession::HandleInspectArenaTeamsOpcode(WorldPacket& recvData)
 {
@@ -100,7 +101,7 @@ void WorldSession::HandleArenaTeamInviteOpcode(WorldPacket& recvData)
 
         ObjectGuid inviteeGuid = sCharacterCache->GetCharacterGuidByName(invitedName);
         if (inviteeGuid)
-            if (WorldSession* inviteeSession = sWorld->FindSession(inviteeGuid.GetCounter()))
+            if (WorldSession* inviteeSession = sWorldSessionMgr->FindSession(inviteeGuid.GetCounter()))
                 player = inviteeSession->GetPlayer();
     }
 

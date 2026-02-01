@@ -28,6 +28,7 @@
 #include "StringConvert.h"
 #include "Tokenize.h"
 #include "WorldPacket.h"
+#include "WorldSessionMgr.h"
 
 void AddItemsSetItem(Player* player, Item* item)
 {
@@ -548,7 +549,7 @@ ItemTemplate const* Item::GetTemplate() const
 
 Player* Item::GetOwner()const
 {
-    if (WorldSession* session = sWorld->FindSession(GetOwnerGUID().GetCounter()))
+    if (WorldSession* session = sWorldSessionMgr->FindSession(GetOwnerGUID().GetCounter()))
         return session->GetPlayer();
 
     return nullptr;

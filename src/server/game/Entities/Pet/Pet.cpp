@@ -26,6 +26,7 @@
 #include "InstanceScript.h"
 #include "Log.h"
 #include "ObjectMgr.h"
+#include "PartitionManager.h"
 #include "PetPackets.h"
 #include "Player.h"
 #include "QueryHolder.h"

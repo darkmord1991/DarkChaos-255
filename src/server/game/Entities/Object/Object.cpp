@@ -15,6 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "PartitionManager.h"
 #include "Object.h"
 #include "Battlefield.h"
 #include "BattlefieldMgr.h"
@@ -325,7 +326,15 @@ void Object::DestroyForPlayer(Player* target, bool onDeath) const
 
 [[nodiscard]] ObjectGuid Object::GetGuidValue(uint16 index) const
 {
-    ASSERT(index + 1 < m_valuesCount || PrintIndexError(index, false));
+    if (!m_uint32Values)
+        return ObjectGuid::Empty;
+
+    if (index + 1 >= m_valuesCount)
+    {
+        (void)PrintIndexError(index, false);
+        return ObjectGuid::Empty;
+    }
+
     return *((ObjectGuid*) &(m_uint32Values[index]));
 }
 
@@ -1862,6 +1871,29 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
     if (!CanDetect(obj, ignoreStealth, !distanceCheck, checkAlert))
     {
         return false;
+    }
+
+    // Map Partitioning - Layering visibility check
+    if (sPartitionMgr->IsLayeringEnabled())
+    {
+        if (IsPlayer() && obj->IsPlayer())
+        {
+            // Only check if players are in the same map and zone
+            if (((Player const*)this)->GetMapId() == ((Player const*)obj)->GetMapId() &&
+                ((Player const*)this)->GetZoneId() == ((Player const*)obj)->GetZoneId())
+            {
+                uint32 mapId = ((Player const*)this)->GetMapId();
+                uint32 zoneId = ((Player const*)this)->GetZoneId();
+                uint32 layer1 = sPartitionMgr->GetLayerForPlayer(mapId, zoneId, GetGUID());
+                uint32 layer2 = sPartitionMgr->GetLayerForPlayer(mapId, zoneId, obj->GetGUID());
+                
+                // If layers are different, they cannot see each other
+                // Exception: Layer 0 (default) might be visible to others?
+                // Logic: STRICT separation. Layer X only sees Layer X.
+                if (layer1 != layer2)
+                    return false;
+            }
+        }
     }
 
     return true;

@@ -48,7 +48,9 @@ Copied events should probably have a new owner
 #include "Opcodes.h"
 #include "Player.h"
 #include "SocialMgr.h"
+#include "WorldPacket.h"
 #include "WorldSession.h"
+#include "WorldSessionMgr.h"
 #include <utf8.h>
 
 void WorldSession::HandleCalendarGetCalendar(WorldPacket& /*recvData*/)
@@ -528,7 +530,7 @@ void WorldSession::HandleCalendarEventInvite(WorldPacket& recvData)
 
     Player* player = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
-        if (WorldSession* session = sWorld->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
             player = session->GetPlayer();
     if (player)
     {

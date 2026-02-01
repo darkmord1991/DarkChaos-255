@@ -29,6 +29,7 @@
 #include "SpellMgr.h"
 #include "Util.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 
 ServerConfigs const qualityToRate[] =
 {
@@ -534,7 +535,7 @@ void Loot::AddItem(LootStoreItem const& item)
         Player* player = nullptr;
         if (lootMap)
             player = ObjectAccessor::GetPlayer(lootMap, lootOwnerGUID);
-        else if (WorldSession* session = sWorld->FindSession(lootOwnerGUID.GetCounter()))
+        else if (WorldSession* session = sWorldSessionMgr->FindSession(lootOwnerGUID.GetCounter()))
             player = session->GetPlayer();
         if (player)
         {
@@ -702,7 +703,7 @@ QuestItemList* Loot::FillQuestLoot(Player* player)
     {
         if (lootMap)
             lootOwner = ObjectAccessor::GetPlayer(lootMap, roundRobinPlayer);
-        else if (WorldSession* session = sWorld->FindSession(roundRobinPlayer.GetCounter()))
+        else if (WorldSession* session = sWorldSessionMgr->FindSession(roundRobinPlayer.GetCounter()))
             lootOwner = session->GetPlayer();
         else
             lootOwner = nullptr;
@@ -797,7 +798,7 @@ void Loot::NotifyItemRemoved(uint8 lootIndex)
         Player* player = nullptr;
         if (lootMap)
             player = ObjectAccessor::GetPlayer(lootMap, *i);
-        else if (WorldSession* session = sWorld->FindSession(i->GetCounter()))
+        else if (WorldSession* session = sWorldSessionMgr->FindSession(i->GetCounter()))
             player = session->GetPlayer();
         if (player)
             player->SendNotifyLootItemRemoved(lootIndex);
@@ -817,7 +818,7 @@ void Loot::NotifyMoneyRemoved()
         Player* player = nullptr;
         if (lootMap)
             player = ObjectAccessor::GetPlayer(lootMap, *i);
-        else if (WorldSession* session = sWorld->FindSession(i->GetCounter()))
+        else if (WorldSession* session = sWorldSessionMgr->FindSession(i->GetCounter()))
             player = session->GetPlayer();
         if (player)
             player->SendNotifyLootMoneyRemoved();
@@ -841,7 +842,7 @@ void Loot::NotifyQuestItemRemoved(uint8 questIndex)
         Player* player = nullptr;
         if (lootMap)
             player = ObjectAccessor::GetPlayer(lootMap, *i);
-        else if (WorldSession* session = sWorld->FindSession(i->GetCounter()))
+        else if (WorldSession* session = sWorldSessionMgr->FindSession(i->GetCounter()))
             player = session->GetPlayer();
         if (player)
         {

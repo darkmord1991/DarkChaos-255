@@ -58,7 +58,7 @@ enum MovementGeneratorType
     NULL_MOTION_TYPE      = 18
 };
 
-enum MovementSlot
+enum MovementSlot : uint8
 {
     MOTION_SLOT_IDLE,
     MOTION_SLOT_ACTIVE,
@@ -80,7 +80,7 @@ enum RotateDirection
     ROTATE_DIRECTION_RIGHT
 };
 
-enum ForcedMovement
+enum ForcedMovement : uint8
 {
     FORCED_MOVEMENT_NONE    = 0,
     FORCED_MOVEMENT_WALK    = 1,

@@ -45,6 +45,7 @@
 #include "ObjectMgr.h"
 #include "Opcodes.h"
 #include "OutdoorPvP.h"
+#include "PartitionManager.h"
 #include "Pet.h"
 #include "Player.h"
 #include "QueryHolder.h"
@@ -7087,6 +7088,9 @@ void Player::SaveToDB(CharacterDatabaseTransaction trans, bool create, bool logo
         sScriptMgr->OnPlayerSave(this);
 
     _SaveCharacter(create, trans);
+
+    if (Map* map = FindMap(); map && map->IsPartitioned())
+        sPartitionMgr->PersistPartitionOwnership(GetGUID(), GetMapId(), map->GetPartitionIdForUnit(this));
 
     if (m_mailsUpdated)                                     //save mails only when needed
         _SaveMail(trans);

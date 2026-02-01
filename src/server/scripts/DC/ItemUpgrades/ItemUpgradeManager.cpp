@@ -23,6 +23,7 @@
 #include "StringFormat.h"
 #include "Config.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 #include <mutex>
 #include <unordered_map>
 #include <sstream>
@@ -94,7 +95,7 @@ namespace DarkChaos
                     return player;
             }
 
-            if (WorldSession* session = sWorld->FindSession(player_guid))
+            if (WorldSession* session = sWorldSessionMgr->FindSession(player_guid))
                 return session->GetPlayer();
 
             return nullptr;

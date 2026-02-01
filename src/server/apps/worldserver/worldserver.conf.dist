@@ -1373,44 +1373,7 @@ MapUpdateInterval = 10
 #        Description: Number of threads to update maps.
 #        Default:     1
 
-MapUpdate.Threads = 1
-
-#
-#    MapPartitions.Enabled
-#        Description: Experimental map partitioning framework.
-#        Default:     0 - (Disabled)
-#                     1 - (Enabled)
-
-MapPartitions.Enabled = 0
-
-#
-#    MapPartitions.BorderOverlap
-#        Description: Overlap distance (yards) shared between adjacent partitions.
-#        Default:     100.0
-
-MapPartitions.BorderOverlap = 100.0
-
-#
-#    MapPartitions.DefaultCount
-#        Description: Default number of partitions per map when enabled.
-#        Default:     4
-
-MapPartitions.DefaultCount = 4
-
-#
-#    MapPartitions.Maps
-#        Description: Comma-separated list of map IDs to partition (e.g. "0,1,530").
-#        Default:     "" (none)
-
-MapPartitions.Maps = ""
-
-#
-#    MapPartitions.UsePartitionStoreOnly
-#        Description: Store partitioned objects only in per-partition stores (advanced).
-#        Default:     0 - (Disabled, keep global store)
-#                     1 - (Enabled)
-
-MapPartitions.UsePartitionStoreOnly = 0
+MapUpdate.Threads = 4
 
 #
 #    MoveMaps.Enable
