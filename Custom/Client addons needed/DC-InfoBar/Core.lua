@@ -136,6 +136,16 @@ DCInfoBar.serverData = {
     events = {
         -- { name = "Zandalari Invasion", zone = "Giant Isles", type = "invasion", wave = 2, maxWaves = 4, timeRemaining = 300 }
     },
+
+    -- Server restart/shutdown countdown
+    restartStatus = {
+        active = false,
+        mode = nil,       -- "restart" or "shutdown"
+        remaining = 0,    -- seconds remaining
+        total = 0,        -- seconds at start
+        reason = nil,
+        lastUpdateAt = 0,
+    },
 }
 
 -- ============================================================================
@@ -1310,6 +1320,251 @@ function DCInfoBar:GenerateDungeonAbbrev(name)
     return string.upper(abbrev)
 end
 
+-- =========================================================================
+-- Server Restart/Shutdown Tracking
+-- =========================================================================
+
+local function _EscapePattern(s)
+    return (s or ""):gsub("([%(%)%.%+%-%*%?%[%]%^%$])", "%%%1")
+end
+
+local function _BuildMessagePattern(template)
+    if not template or template == "" then
+        return nil
+    end
+    local tokenS = "__DCINFOBAR_TOKEN_S__"
+    local tokenD = "__DCINFOBAR_TOKEN_D__"
+
+    local pattern = template
+    pattern = pattern:gsub("%%s", tokenS)
+    pattern = pattern:gsub("%%d", tokenD)
+    pattern = _EscapePattern(pattern)
+    pattern = pattern:gsub(tokenS, "(.+)")
+    pattern = pattern:gsub(tokenD, "(%%d+)")
+    return "^" .. pattern .. "$"
+end
+
+function DCInfoBar:BuildServerMessagePatterns()
+    if self._serverMsgPatterns then return end
+
+    local shutdownTemplate = SERVER_SHUTDOWN_TIMELEFT or "Server shutdown in %s"
+    local restartTemplate = SERVER_RESTART_TIMELEFT or "Server restart in %s"
+    local shutdownCancel = SERVER_SHUTDOWN_CANCELLED or "Server shutdown cancelled."
+    local restartCancel = SERVER_RESTART_CANCELLED or "Server restart cancelled."
+
+    self._serverMsgPatterns = {
+        shutdown = _BuildMessagePattern(shutdownTemplate),
+        restart = _BuildMessagePattern(restartTemplate),
+        shutdownCancel = _BuildMessagePattern(shutdownCancel),
+        restartCancel = _BuildMessagePattern(restartCancel),
+    }
+end
+
+function DCInfoBar:ParseTimeStringToSeconds(timeStr)
+    if not timeStr or timeStr == "" then return nil end
+    timeStr = tostring(timeStr)
+
+    local h, m, s = timeStr:match("^(%d+):(%d%d):(%d%d)$")
+    if h and m and s then
+        return tonumber(h) * 3600 + tonumber(m) * 60 + tonumber(s)
+    end
+
+    local m2, s2 = timeStr:match("^(%d+):(%d%d)$")
+    if m2 and s2 then
+        return tonumber(m2) * 60 + tonumber(s2)
+    end
+
+    local total = 0
+    local found = false
+    for num, unit in timeStr:gmatch("(%d+)%s*([%a]+)") do
+        found = true
+        local n = tonumber(num) or 0
+        unit = string.lower(unit or "")
+        if unit:find("day") then
+            total = total + n * 86400
+        elseif unit:find("hour") then
+            total = total + n * 3600
+        elseif unit:find("min") then
+            total = total + n * 60
+        elseif unit:find("sec") then
+            total = total + n
+        end
+    end
+
+    if found then
+        return total
+    end
+    return nil
+end
+
+function DCInfoBar:HandleSystemMessage(msg)
+    if not msg or msg == "" then return end
+
+    self:BuildServerMessagePatterns()
+    local patterns = self._serverMsgPatterns or {}
+
+    if patterns.shutdownCancel and msg:match(patterns.shutdownCancel) then
+        self:CancelServerCountdown("shutdown")
+        return
+    end
+    if patterns.restartCancel and msg:match(patterns.restartCancel) then
+        self:CancelServerCountdown("restart")
+        return
+    end
+
+    local lowerMsg = string.lower(msg)
+    if lowerMsg:find("cancel") then
+        if lowerMsg:find("restart") then
+            self:CancelServerCountdown("restart")
+            return
+        elseif lowerMsg:find("shutdown") then
+            self:CancelServerCountdown("shutdown")
+            return
+        end
+    end
+
+    local baseMsg = msg
+    local reason = nil
+    local left, right = msg:match("^(.-)%s%-%s(.+)$")
+    if left and right then
+        baseMsg = left
+        reason = right
+    end
+
+    local timeStr = nil
+    local mode = nil
+
+    if patterns.restart then
+        timeStr = baseMsg:match(patterns.restart)
+        if timeStr then
+            mode = "restart"
+        end
+    end
+
+    if not timeStr and patterns.shutdown then
+        timeStr = baseMsg:match(patterns.shutdown)
+        if timeStr then
+            mode = "shutdown"
+        end
+    end
+
+    if not timeStr then
+        local lower = string.lower(baseMsg)
+        if lower:find("restart") then
+            mode = "restart"
+        elseif lower:find("shutdown") then
+            mode = "shutdown"
+        end
+        if mode then
+            timeStr = baseMsg:match("in%s+(.+)")
+        end
+    end
+
+    if not timeStr or not mode then
+        return
+    end
+
+    local seconds = self:ParseTimeStringToSeconds(timeStr)
+    if not seconds then
+        return
+    end
+
+    self:UpdateServerCountdown(mode, seconds, reason)
+end
+
+function DCInfoBar:UpdateServerCountdown(mode, seconds, reason)
+    if not self.serverData or not self.serverData.restartStatus then return end
+
+    local status = self.serverData.restartStatus
+    local now = GetTime and GetTime() or 0
+    local prevMode = status.mode
+
+    status.active = true
+    status.mode = mode
+    status.remaining = seconds
+    status.reason = reason
+    status.lastUpdateAt = now
+
+    if not status.total or status.total <= 0 or seconds > status.total or prevMode ~= mode then
+        status.total = seconds
+    end
+end
+
+function DCInfoBar:CancelServerCountdown(mode)
+    if not self.serverData or not self.serverData.restartStatus then return end
+
+    local status = self.serverData.restartStatus
+    status.active = false
+    status.mode = mode or status.mode
+    status.remaining = 0
+    status.total = 0
+    status.reason = nil
+    status.lastUpdateAt = 0
+
+    if self.bar and self.bar.restartGauge then
+        self.bar.restartGauge:Hide()
+    end
+end
+
+function DCInfoBar:UpdateRestartGauge(elapsed)
+    if not self.bar or not self.bar.restartGauge or not self.serverData or not self.serverData.restartStatus then
+        return
+    end
+
+    local status = self.serverData.restartStatus
+    if not status.active or not status.remaining or status.remaining <= 0 then
+        self.bar.restartGauge:Hide()
+        return
+    end
+
+    status.remaining = math.max(0, (status.remaining or 0) - (elapsed or 0))
+    if status.remaining <= 0 then
+        status.active = false
+        self.bar.restartGauge:Hide()
+        return
+    end
+
+    local total = tonumber(status.total) or 0
+    if total <= 0 then total = status.remaining end
+
+    local perc = 0
+    if total > 0 then
+        perc = status.remaining / total
+    end
+
+    local r, g, b = self:ColorGradient(perc, 1, 0.2, 0.2, 1, 0.8, 0.2, 0.2, 1, 0.2)
+
+    local gauge = self.bar.restartGauge
+    gauge:SetMinMaxValues(0, total)
+    gauge:SetValue(status.remaining)
+    gauge:SetStatusBarColor(r, g, b, 0.9)
+
+    local label = (status.mode == "restart") and "Server Restart" or "Server Shutdown"
+    gauge.text:SetText(label .. " - " .. self:FormatTime(status.remaining))
+    gauge:Show()
+end
+
+function DCInfoBar:ShowRestartGaugeTooltip(frame)
+    if not frame or not self.serverData or not self.serverData.restartStatus then return end
+    local status = self.serverData.restartStatus
+    if not status.active then return end
+
+    GameTooltip:SetOwner(frame, "ANCHOR_BOTTOM")
+    local title = (status.mode == "restart") and "Server Restart" or "Server Shutdown"
+    GameTooltip:AddLine(title, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Time Remaining", self:FormatTime(status.remaining), 0.8, 0.8, 0.8, 1, 1, 1)
+    if time and date then
+        local now = time()
+        local rebootAt = date("%H:%M:%S", now + math.floor(status.remaining or 0))
+        GameTooltip:AddDoubleLine("Reboot At (Local)", rebootAt, 0.8, 0.8, 0.8, 1, 1, 1)
+    end
+    if status.reason and status.reason ~= "" then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Reason: " .. status.reason, 1, 0.82, 0)
+    end
+    GameTooltip:Show()
+end
+
 -- ============================================================================
 -- Update System
 -- ============================================================================
@@ -1324,6 +1579,7 @@ function DCInfoBar:OnUpdate(elapsed)
         if self.bar and self.bar:IsShown() then
             self.bar:Hide()
         end
+        self:UpdateRestartGauge(elapsed)
         return
     elseif self.bar and not self.bar:IsShown() and self.db.global.enabled then
         self.bar:Show()
@@ -1348,6 +1604,8 @@ function DCInfoBar:OnUpdate(elapsed)
             end
         end
     end
+
+    self:UpdateRestartGauge(elapsed)
 end
 
 function DCInfoBar:ForceUpdateAllPlugins()
@@ -1636,6 +1894,7 @@ local eventFrame = CreateFrame("Frame")
 DCInfoBar._eventFrame = eventFrame
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
         DCInfoBar:Print("PLAYER_LOGIN")
@@ -1655,5 +1914,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if DCInfoBar.plugins["DCInfoBar_Location"] then
             DCInfoBar.plugins["DCInfoBar_Location"]._elapsed = 999  -- Force update
         end
+    elseif event == "CHAT_MSG_SYSTEM" then
+        local msg = ...
+        DCInfoBar:HandleSystemMessage(msg)
     end
 end)

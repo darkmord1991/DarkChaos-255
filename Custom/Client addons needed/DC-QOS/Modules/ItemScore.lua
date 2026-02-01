@@ -274,20 +274,32 @@ local function GetUpgradeStatus(itemLink)
     local newStats = GetItemStats(itemLink)
     local newScore = CalculateScore(newStats)
     
-    if newScore == 0 then return nil end  -- No meaningful stats
-    
     -- Compare with equipped items
     local bestEquippedScore = 0
     local worstEquippedScore = 999999
+    local hasEmptySlot = false
     
     for _, s in ipairs(slots) do
-        local equippedScore = GetEquippedScore(s)
+        local equippedLink = GetInventoryItemLink("player", s)
+        local equippedScore = 0
+        if equippedLink then
+            equippedScore = GetEquippedScore(s)
+        else
+            hasEmptySlot = true
+        end
         if equippedScore > bestEquippedScore then
             bestEquippedScore = equippedScore
         end
         if equippedScore < worstEquippedScore then
             worstEquippedScore = equippedScore
         end
+    end
+
+    if newScore == 0 then
+        if hasEmptySlot then
+            return "upgrade", nil, nil, nil
+        end
+        return nil  -- No meaningful stats and no empty slot
     end
     
     -- Compare

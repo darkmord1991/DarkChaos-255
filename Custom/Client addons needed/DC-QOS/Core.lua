@@ -110,6 +110,7 @@ addon.defaults = {
         showItemLevel = true,
         showUpgradeInfo = true,  -- Show upgrade tier/level on items
         showNpcId = true,
+        showNpcKillCount = true,
         showSpellId = true,
         showGuildRank = true,
         showTarget = true,
@@ -247,6 +248,10 @@ local function GetCharacterKey()
     local name = UnitName("player") or "Unknown"
     local realm = GetRealmName() or "Unknown"
     return name .. "-" .. realm
+end
+
+function addon:GetCharacterKey()
+    return GetCharacterKey()
 end
 
 local function EnsureProfileTables(db, defaults)
@@ -713,6 +718,21 @@ function addon:LoadSettings()
         -- Merge any new defaults into active profile
         self:MergeDefaults(self.settings, self.defaults)
 
+        -- Ensure persistent NPC kill stats storage
+        if type(self.db.npcKillStats) ~= "table" then
+            self.db.npcKillStats = {}
+        end
+        if type(self.db.npcKillStats.account) ~= "table" then
+            self.db.npcKillStats.account = { byEntry = {}, byName = {}, nameByEntry = {} }
+        end
+        if type(self.db.npcKillStats.characters) ~= "table" then
+            self.db.npcKillStats.characters = {}
+        end
+        local charKey = GetCharacterKey()
+        if not self.db.npcKillStats.characters[charKey] then
+            self.db.npcKillStats.characters[charKey] = { byEntry = {}, byName = {}, nameByEntry = {} }
+        end
+
         -- One-time migration: enable DC debug routing for existing users
         if self.settings.communication then
             if self.settings.communication._dcDebugRouteMigrated ~= true then
@@ -739,6 +759,20 @@ function addon:LoadSettings()
         EnsureProfileTables(self.db, self.defaults)
         self.activeProfile = self.db.globalProfile
         self.settings = self.db.profiles[self.activeProfile]
+
+        if type(self.db.npcKillStats) ~= "table" then
+            self.db.npcKillStats = {}
+        end
+        if type(self.db.npcKillStats.account) ~= "table" then
+            self.db.npcKillStats.account = { byEntry = {}, byName = {}, nameByEntry = {} }
+        end
+        if type(self.db.npcKillStats.characters) ~= "table" then
+            self.db.npcKillStats.characters = {}
+        end
+        local charKey = GetCharacterKey()
+        if not self.db.npcKillStats.characters[charKey] then
+            self.db.npcKillStats.characters[charKey] = { byEntry = {}, byName = {}, nameByEntry = {} }
+        end
     end
 end
 

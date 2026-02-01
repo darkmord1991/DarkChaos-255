@@ -478,6 +478,9 @@ end
 -- ============================================================
 local npcInfoCache = {}       -- Cache server-provided NPC info
 local pendingNpcRequests = {} -- Track pending requests
+local npcKillCountsByEntry = nil
+local npcKillCountsByName = nil
+local killTrackerFrame = nil
 
 -- Parse NPC IDs from GUID (3.3.5a format)
 local function ParseNpcFromGuid(guid)
@@ -521,6 +524,146 @@ local function ParseNpcFromGuid(guid)
     local spawnId = tonumber(spawnHex, 16) or tonumber(spawnHex)
     
     return entry, spawnId
+end
+
+local function NormalizeNpcName(name)
+    name = tostring(name or "")
+    name = name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    name = name:gsub("|T.-|t", "")
+    return string.lower(name)
+end
+
+local function GetKillStores()
+    if addon and addon.db and addon.db.npcKillStats then
+        local stats = addon.db.npcKillStats
+        local account = stats.account
+        local charKey = addon.GetCharacterKey and addon:GetCharacterKey() or (UnitName("player") or "Unknown") .. "-" .. (GetRealmName() or "Unknown")
+        local character = stats.characters and stats.characters[charKey]
+        if not account then
+            account = { byEntry = {}, byName = {}, nameByEntry = {} }
+            stats.account = account
+        end
+        if not stats.characters then
+            stats.characters = {}
+        end
+        if not character then
+            character = { byEntry = {}, byName = {}, nameByEntry = {} }
+            stats.characters[charKey] = character
+        end
+        return account, character
+    end
+    return nil, nil
+end
+
+local function CacheNpcNameByEntry(entry, name)
+    if not entry or not name or name == "" then return end
+    local account, character = GetKillStores()
+    if not account or not character then return end
+    account.nameByEntry[entry] = name
+    character.nameByEntry[entry] = name
+end
+
+local function IncrementNpcKill(entry, name)
+    local account, character = GetKillStores()
+    if not account or not character then
+        return
+    end
+
+    if entry then
+        account.byEntry[entry] = (account.byEntry[entry] or 0) + 1
+        character.byEntry[entry] = (character.byEntry[entry] or 0) + 1
+        if name and name ~= "" then
+            account.nameByEntry[entry] = name
+            character.nameByEntry[entry] = name
+        end
+    end
+
+    if name and name ~= "" then
+        local key = NormalizeNpcName(name)
+        if key ~= "" then
+            account.byName[key] = (account.byName[key] or 0) + 1
+            character.byName[key] = (character.byName[key] or 0) + 1
+        end
+    end
+end
+
+local function GetNpcKillCounts(entry, name)
+    local account, character = GetKillStores()
+    if not account or not character then
+        return 0, 0
+    end
+
+    local key = (name and name ~= "") and NormalizeNpcName(name) or nil
+
+    local charCount = 0
+    local acctCount = 0
+
+    if entry then
+        charCount = character.byEntry[entry] or 0
+        acctCount = account.byEntry[entry] or 0
+    elseif key and key ~= "" then
+        charCount = character.byName[key] or 0
+        acctCount = account.byName[key] or 0
+    end
+
+    return charCount, acctCount
+end
+
+local function HandleCombatLogEvent(...)
+    if not addon.settings.tooltips.showNpcKillCount then
+        return
+    end
+
+    local subevent = select(2, ...)
+    if subevent ~= "PARTY_KILL" then
+        return
+    end
+
+    local sourceGUID, sourceName, sourceFlags
+    local destGUID, destName, destFlags
+
+    -- 3.3.5a layout: timestamp, subevent, srcGUID, srcName, srcFlags, dstGUID, dstName, dstFlags
+    -- Modern layout: timestamp, subevent, hideCaster, srcGUID, srcName, srcFlags, srcRaidFlags, dstGUID, dstName, dstFlags, dstRaidFlags
+    if type(select(3, ...)) == "boolean" then
+        sourceGUID = select(4, ...)
+        sourceName = select(5, ...)
+        sourceFlags = select(6, ...)
+        destGUID = select(8, ...)
+        destName = select(9, ...)
+        destFlags = select(10, ...)
+    else
+        sourceGUID = select(3, ...)
+        sourceName = select(4, ...)
+        sourceFlags = select(5, ...)
+        destGUID = select(6, ...)
+        destName = select(7, ...)
+        destFlags = select(8, ...)
+    end
+
+    if not destGUID then return end
+
+    local playerGUID = UnitGUID("player")
+    local petGUID = UnitGUID("pet")
+    local vehicleGUID = UnitGUID("vehicle")
+
+    local isMine = (sourceGUID and (sourceGUID == playerGUID or sourceGUID == petGUID or sourceGUID == vehicleGUID))
+    if not isMine and sourceFlags and COMBATLOG_OBJECT_AFFILIATION_MINE and bit and bit.band then
+        isMine = (bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) ~= 0)
+    end
+    if not isMine and sourceName then
+        local playerName = UnitName("player")
+        local petName = UnitName("pet")
+        local vehicleName = UnitName("vehicle")
+        if (playerName and sourceName == playerName)
+            or (petName and sourceName == petName)
+            or (vehicleName and sourceName == vehicleName) then
+            isMine = true
+        end
+    end
+    if not isMine then return end
+
+    local entry = ParseNpcFromGuid(destGUID)
+    IncrementNpcKill(entry, destName)
 end
 
 -- Request NPC info from server
@@ -575,6 +718,10 @@ local function AddNpcId(tooltip, unit)
     
     -- Parse local NPC info
     local entry, localSpawnId = ParseNpcFromGuid(guid)
+    local unitName = UnitName(unit)
+    if entry and unitName then
+        CacheNpcNameByEntry(entry, unitName)
+    end
     
     -- Check server cache for more accurate info
     local cachedInfo = npcInfoCache[guid]
@@ -612,6 +759,32 @@ local function AddNpcId(tooltip, unit)
     end
 end
 
+local function AddNpcKillCount(tooltip, unit)
+    if not addon.settings.tooltips.showNpcKillCount then return end
+    if not unit then return end
+    if UnitIsPlayer(unit) then return end
+
+    local canAttack = UnitCanAttack("player", unit)
+    local reaction = UnitReaction(unit, "player")
+    if not canAttack and (reaction == nil or reaction >= 5) then
+        return
+    end
+
+    local guid = UnitGUID(unit)
+    if not guid then return end
+
+    local entry = ParseNpcFromGuid(guid)
+    local name = UnitName(unit)
+    local charCount, acctCount = GetNpcKillCounts(entry, name)
+
+    local key = entry or name or guid
+    if tooltip._dcqosNpcKillShown == key then return end
+    tooltip._dcqosNpcKillShown = key
+
+    tooltip:AddDoubleLine("Kills (Char):", "|cffffffff" .. tostring(charCount or 0) .. "|r", 0.5, 0.5, 0.5)
+    tooltip:AddDoubleLine("Kills (Account):", "|cffffffff" .. tostring(acctCount or 0) .. "|r", 0.5, 0.5, 0.5)
+end
+
 -- ============================================================
 -- Unit Tooltip Enhancement
 -- ============================================================
@@ -635,6 +808,7 @@ local function EnhanceUnitTooltip(tooltip, unit)
     -- Show NPC ID for non-players
     if not isPlayer then
         AddNpcId(tooltip, unit)
+        AddNpcKillCount(tooltip, unit)
     end
     
     -- Show target if enabled
@@ -864,6 +1038,7 @@ local function HookUnitTooltips()
         self._dcqosNpcGuid = nil
         self._dcqosUpgradeShown = nil
         self._dcqosSpellIdShown = nil
+        self._dcqosNpcKillShown = nil
     end)
     
     addon:Debug("Unit tooltip hooks installed")
@@ -990,6 +1165,17 @@ function Tooltips.OnEnable()
     
     -- Setup health bar hiding
     SetupHealthBarHiding()
+
+    -- Kill tracker (NPC tooltips)
+    if not killTrackerFrame then
+        killTrackerFrame = CreateFrame("Frame")
+        killTrackerFrame:SetScript("OnEvent", function(_, event, ...)
+            if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+                HandleCombatLogEvent(...)
+            end
+        end)
+    end
+    killTrackerFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     
     -- Listen for scale changes
     addon:RegisterEvent("SETTING_CHANGED", function(path, value)
@@ -1002,6 +1188,9 @@ end
 function Tooltips.OnDisable()
     addon:Debug("Tooltips module disabling")
     -- Note: Hooks cannot be removed, but we check enabled state in each hook
+    if killTrackerFrame then
+        killTrackerFrame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    end
 end
 
 -- ============================================================
@@ -1092,6 +1281,18 @@ function Tooltips.CreateSettings(parent)
     end)
     AddSettingTooltip(npcIdCb, "Show NPC ID",
         "Shows the Entry ID and Spawn for NPCs in tooltips. Entry ID identifies the NPC type, while Spawn identifies the specific creature spawn. Useful for reporting bugs or referencing specific creatures.")
+    yOffset = yOffset - 25
+
+    -- Show NPC Kill Count
+    local npcKillCb = addon:CreateCheckbox(parent)
+    npcKillCb:SetPoint("TOPLEFT", 16, yOffset)
+    npcKillCb.Text:SetText("Show NPC Kill Count")
+    npcKillCb:SetChecked(settings.showNpcKillCount)
+    npcKillCb:SetScript("OnClick", function(self)
+        addon:SetSetting("tooltips.showNpcKillCount", self:GetChecked())
+    end)
+    AddSettingTooltip(npcKillCb, "Show NPC Kill Count",
+        "Displays how many of the same NPC you have killed (per-character and per-account). Counts only kills credited to you (including your pet/vehicle). Tracked by entry ID when available and caches names per entry.")
     yOffset = yOffset - 25
     
     -- Show Spell ID

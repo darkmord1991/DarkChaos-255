@@ -14,6 +14,9 @@ local BAR_HEIGHT = 22
 local PLUGIN_PADDING = 6
 local SEPARATOR_WIDTH = 1
 local ICON_SIZE = 16
+local RESTART_GAUGE_LEFT_INSET = 60
+local RESTART_GAUGE_RIGHT_INSET = 40
+local RESTART_GAUGE_MAX_WIDTH = 320
 
 local function ApplyIconStyle(icon)
     if not icon then return end
@@ -80,6 +83,42 @@ function DCInfoBar:CreateBar()
     bar.rightContainer:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
     bar.rightContainer:SetHeight(height)
     bar.rightContainer:SetWidth(1)  -- Will grow as plugins added
+
+    -- Restart/Shutdown gauge (overlay)
+    local gaugeHeight = height
+    bar.restartGauge = CreateFrame("StatusBar", nil, bar)
+    bar.restartGauge:SetHeight(gaugeHeight)
+    bar.restartGauge:SetPoint("LEFT", bar.leftContainer, "RIGHT", RESTART_GAUGE_LEFT_INSET, 0)
+    bar.restartGauge:SetWidth(220)
+    bar.restartGauge:SetMinMaxValues(0, 1)
+    bar.restartGauge:SetValue(0)
+    bar.restartGauge:SetStatusBarTexture("Interface\\TARGETINGFRAME\\UI-StatusBar")
+    bar.restartGauge:SetFrameLevel(bar:GetFrameLevel() + 2)
+
+    bar.restartGauge.bg = bar.restartGauge:CreateTexture(nil, "BACKGROUND")
+    bar.restartGauge.bg:SetAllPoints()
+    bar.restartGauge.bg:SetColorTexture(0, 0, 0, 0.35)
+
+    bar.restartGauge.text = bar.restartGauge:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    bar.restartGauge.text:SetPoint("CENTER", 0, 0)
+    bar.restartGauge.text:SetText("")
+
+    bar.restartGauge:EnableMouse(true)
+    bar.restartGauge:SetScript("OnEnter", function(self)
+        if DCInfoBar.ShowRestartGaugeTooltip then
+            DCInfoBar:ShowRestartGaugeTooltip(self)
+        end
+    end)
+    bar.restartGauge:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    bar.restartGauge:SetScript("OnMouseUp", function(_, button)
+        if button == "RightButton" and DCInfoBar.CancelServerCountdown then
+            DCInfoBar:CancelServerCountdown()
+        end
+    end)
+
+    bar.restartGauge:Hide()
     
     -- Store reference
     bar.pluginButtons = {}
@@ -259,6 +298,22 @@ function DCInfoBar:RefreshBarLayout(bar)
         end
     end
     bar.rightContainer:SetWidth(rightOffset)
+
+    -- Fit restart gauge to the center free space
+    if bar.restartGauge then
+        local totalWidth = bar:GetWidth() or 0
+        local leftWidth = bar.leftContainer:GetWidth() or 0
+        local rightWidth = bar.rightContainer:GetWidth() or 0
+
+        if totalWidth > 0 then
+            local available = totalWidth - leftWidth - rightWidth - RESTART_GAUGE_LEFT_INSET - RESTART_GAUGE_RIGHT_INSET
+            local gaugeWidth = math.min(RESTART_GAUGE_MAX_WIDTH, math.max(0, math.floor(available)))
+
+            bar.restartGauge:ClearAllPoints()
+            bar.restartGauge:SetPoint("LEFT", bar.leftContainer, "RIGHT", RESTART_GAUGE_LEFT_INSET, 0)
+            bar.restartGauge:SetWidth(gaugeWidth)
+        end
+    end
 end
 
 -- ============================================================================
@@ -306,6 +361,24 @@ function DCInfoBar:RefreshBarSettings(bar)
         bar:Show()
     else
         bar:Hide()
+    end
+
+    -- Resize restart gauge to match bar height changes
+    if bar.restartGauge then
+        local baseHeight = barSettings.height or BAR_HEIGHT
+        bar.restartGauge:SetHeight(baseHeight)
+
+        local totalWidth = bar:GetWidth() or 0
+        if totalWidth <= 0 then totalWidth = UIParent and UIParent:GetWidth() or 0 end
+        if totalWidth > 0 then
+            local leftWidth = bar.leftContainer and bar.leftContainer:GetWidth() or 0
+            local rightWidth = bar.rightContainer and bar.rightContainer:GetWidth() or 0
+            local available = totalWidth - leftWidth - rightWidth - RESTART_GAUGE_LEFT_INSET - RESTART_GAUGE_RIGHT_INSET
+            local gaugeWidth = math.min(RESTART_GAUGE_MAX_WIDTH, math.max(0, math.floor(available)))
+            bar.restartGauge:ClearAllPoints()
+            bar.restartGauge:SetPoint("LEFT", bar.leftContainer, "RIGHT", RESTART_GAUGE_LEFT_INSET, 0)
+            bar.restartGauge:SetWidth(gaugeWidth)
+        end
     end
     
     -- Refresh layout
