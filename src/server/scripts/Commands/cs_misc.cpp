@@ -41,7 +41,7 @@
 #include "ObjectAccessor.h"
 #include "Pet.h"
 #include "Player.h"
-#include "PartitionManager.h"
+#include "Maps/Partitioning/PartitionManager.h"
 #include "Realm.h"
 #include "ScriptMgr.h"
 #include "SpellAuras.h"
@@ -664,7 +664,7 @@ public:
             
             if (sPartitionMgr->IsLayeringEnabled() && object->IsPlayer())
             {
-                uint32 layerId = sPartitionMgr->GetLayerForPlayer(object->GetMapId(), zoneId, object->GetGUID());
+                uint32 layerId = sPartitionMgr->GetPlayerLayer(object->GetMapId(), zoneId, object->GetGUID());
                 handler->PSendSysMessage("Layer: {}", layerId);
             }
         }

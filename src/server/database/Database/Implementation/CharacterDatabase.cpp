@@ -702,6 +702,15 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_DEL_PARTITION_OWNERSHIP_OTHER_MAPS,
         "DELETE FROM dc_character_partition_ownership WHERE guid = ? AND map_id <> ?",
         CONNECTION_ASYNC);
+
+    // Map Partitioning Layer Assignment
+    PrepareStatement(CHAR_SEL_DC_LAYER_ASSIGNMENT,
+        "SELECT map_id, zone_id, layer_id FROM dc_character_layer_assignment WHERE guid = ?",
+        CONNECTION_SYNCH);
+
+    PrepareStatement(CHAR_REP_DC_LAYER_ASSIGNMENT,
+        "REPLACE INTO dc_character_layer_assignment (guid, map_id, zone_id, layer_id, timestamp) VALUES (?, ?, ?, ?, ?)",
+        CONNECTION_ASYNC);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

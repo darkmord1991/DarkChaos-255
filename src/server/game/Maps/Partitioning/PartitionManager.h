@@ -25,6 +25,7 @@
 #include <map>
 #include <unordered_map>
 #include <mutex>
+#include <shared_mutex>
 #include <set>
 #include <vector>
 #include <memory>
@@ -37,6 +38,16 @@ public:
         uint32 players = 0;
         uint32 creatures = 0;
         uint32 boundaryObjects = 0;
+    };
+
+    // Cached partition grid layout for fast lookups
+    struct PartitionGridLayout
+    {
+        uint32 count = 0;
+        uint32 cols = 0;
+        uint32 rows = 0;
+        uint32 cellWidth = 0;
+        uint32 cellHeight = 0;
     };
 
     static PartitionManager* instance();
@@ -94,15 +105,66 @@ public:
     bool IsLayeringEnabled() const;
     uint32_t GetLayerCapacity() const;
     uint32_t GetLayerForPlayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid) const;
+    uint32 GetPlayerLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid) const; // Back-compat alias
     uint32_t GetLayerCount(uint32_t mapId, uint32_t zoneId) const;
     void AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid, uint32_t layerId);
     void RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid);
     void AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid);
+    // Thread-safe: Force remove player from all layers (for logout)
+    void ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGuid);
+    // Thread-safe: Get layers for two players in one call (for visibility check)
+    std::pair<uint32_t, uint32_t> GetLayersForTwoPlayers(uint32_t mapId, uint32_t zoneId, 
+        ObjectGuid const& player1, ObjectGuid const& player2) const;
+
+    // Cleanup methods
+    void CleanupStaleRelocations();    // Thread-safe: Remove timed-out relocations
+    void CleanupExpiredOverrides();    // Thread-safe: Remove expired partition overrides
+    void CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, std::unordered_set<ObjectGuid> const& validGuids);
+
+    // Persistent layer assignment (Feature 1)
+    void LoadPersistentLayerAssignment(ObjectGuid const& playerGuid);
+    void SavePersistentLayerAssignment(ObjectGuid const& playerGuid, uint32 mapId, uint32 zoneId, uint32 layerId);
+
+    // Cross-layer party communication (Feature 2)
+    uint32 GetPartyTargetLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid);
+
+    // NPC Layering (Feature 3)
+    bool IsNPCLayeringEnabled() const;
+    void AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& npcGuid, uint32 layerId);
+    void RemoveNPCFromLayer(ObjectGuid const& npcGuid);
+    uint32 GetLayerForNPC(uint32 mapId, uint32 zoneId, ObjectGuid const& npcGuid) const;
+    uint32 GetLayerForNPC(ObjectGuid const& npcGuid) const; // Back-compat overload
+
+    // Dynamic Partition Resizing (Feature 4)
+    // Returns density metric for a partition (players + creatures normalized by cell size)
+    float GetPartitionDensity(uint32 mapId, uint32 partitionId) const;
+    // Evaluates if any partitions need splitting/merging based on density thresholds
+    void EvaluatePartitionDensity(uint32 mapId);
+    // Configuration thresholds for split/merge
+    float GetDensitySplitThreshold() const;
+    float GetDensityMergeThreshold() const;
+
+    // Adjacent Partition Pre-caching (Feature 5)
+    // Checks if player is approaching a partition boundary and queues precache
+    void CheckBoundaryApproach(ObjectGuid const& playerGuid, uint32 mapId, float x, float y, float dx, float dy);
+    // Process pending precache requests (called from worker thread)
+    void ProcessPrecacheQueue();
 
 private:
     PartitionManager() = default;
 
-    mutable std::mutex _lock;
+    // Fine-grained locks for different data structures
+    mutable std::shared_mutex _partitionLock;     // Protects _partitionsByMap, _partitionedMaps, _gridLayouts
+    mutable std::mutex _boundaryLock;             // Protects _boundaryObjects
+    mutable std::mutex _layerLock;                // Protects _layers, _playerLayers
+    mutable std::mutex _relocationLock;           // Protects _relocations
+    mutable std::mutex _overrideLock;             // Protects _partitionOverrides, _partitionOwnership
+    mutable std::mutex _visibilityLock;           // Protects _visibilitySets
+    mutable std::mutex _handoffLock;              // Protects handoff counts
+
+    // Cached grid layouts for each map (computed once at Initialize)
+    std::unordered_map<uint32, PartitionGridLayout> _gridLayouts;
+
     std::unordered_map<uint32_t, std::vector<std::unique_ptr<MapPartition>>> _partitionsByMap;
     std::unordered_set<uint32_t> _partitionedMaps;
     std::unordered_set<uint32_t> _excludedZones;
@@ -135,6 +197,16 @@ private:
         uint32 layerId = 0;
     };
     std::unordered_map<ObjectGuid::LowType, LayerAssignment> _playerLayers;
+
+    // NPC Layering data (Feature 3)
+    std::unordered_map<ObjectGuid::LowType, LayerAssignment> _npcLayers;
+
+    // Helper to get cached grid layout (lock must be held)
+    PartitionGridLayout const* GetGridLayout(uint32 mapId) const;
+
+public:
+    // Back-compat helper for scripts
+    PartitionGridLayout const* GetCachedLayout(uint32 mapId) const;
 };
 
 #define sPartitionMgr PartitionManager::instance()

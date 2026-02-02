@@ -78,8 +78,15 @@ void PartitionUpdateWorker::UpdatePlayers()
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY()))
         {
             ++_boundaryPlayerCount;
-            sPartitionMgr->RegisterBoundaryObject(_map.GetId(), _partitionId, player->GetGUID());
+            // Only register if not already in boundary set (avoids duplicate registration spam)
+            if (!sPartitionMgr->IsObjectInBoundarySet(_map.GetId(), _partitionId, player->GetGUID()))
+                sPartitionMgr->RegisterBoundaryObject(_map.GetId(), _partitionId, player->GetGUID());
             sPartitionMgr->SetPartitionOverride(player->GetGUID(), _partitionId, 500);
+        }
+        else
+        {
+            // Player left boundary zone - unregister to prevent memory leak
+            sPartitionMgr->UnregisterBoundaryObject(_map.GetId(), _partitionId, player->GetGUID());
         }
 
         player->Update(_sDiff);
@@ -92,6 +99,21 @@ void PartitionUpdateWorker::UpdatePlayers()
                 _map.MarkNearbyCellsOf(viewCreature);
             else if (DynamicObject* viewObject = viewPoint->ToDynObject())
                 _map.MarkNearbyCellsOf(viewObject);
+        }
+
+        // Feature 5: Adjacent Partition Pre-caching
+        // Check if player is moving toward a boundary
+        if (player->isMoving())
+        {
+            float dx = 0.0f, dy = 0.0f;
+            // Get approximate velocity vector (not exact, but good enough for prediction)
+            // We can imply direction from orientation
+            float orientation = player->GetOrientation();
+            dx = std::cos(orientation) * player->GetSpeed(MOVE_RUN);
+            dy = std::sin(orientation) * player->GetSpeed(MOVE_RUN);
+            
+            sPartitionMgr->CheckBoundaryApproach(player->GetGUID(), _map.GetId(), 
+                player->GetPositionX(), player->GetPositionY(), dx, dy);
         }
     }
 
@@ -119,8 +141,15 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), obj->GetPositionX(), obj->GetPositionY()))
         {
             ++_boundaryObjectCount;
-            sPartitionMgr->RegisterBoundaryObject(_map.GetId(), _partitionId, obj->GetGUID());
+            // Only register if not already in boundary set (avoids duplicate registration spam)
+            if (!sPartitionMgr->IsObjectInBoundarySet(_map.GetId(), _partitionId, obj->GetGUID()))
+                sPartitionMgr->RegisterBoundaryObject(_map.GetId(), _partitionId, obj->GetGUID());
             sPartitionMgr->SetPartitionOverride(obj->GetGUID(), _partitionId, 500);
+        }
+        else
+        {
+            // Object left boundary zone - unregister to prevent memory leak
+            sPartitionMgr->UnregisterBoundaryObject(_map.GetId(), _partitionId, obj->GetGUID());
         }
 
         obj->Update(_diff);

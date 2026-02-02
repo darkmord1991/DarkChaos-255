@@ -1758,6 +1758,20 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
             {
                 return false;
             }
+
+            // NPC layering: Hide NPCs that are on a different layer than the player
+            if (sPartitionMgr->IsNPCLayeringEnabled())
+            {
+                uint32 playerLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
+                uint32 npcLayer = sPartitionMgr->GetLayerForNPC(cObj->GetGUID());
+                
+                // If NPC is assigned to a specific layer, check if player is on that layer
+                // NPCs with layer 0 are visible to everyone (default/unassigned)
+                if (npcLayer > 0 && playerLayer != npcLayer)
+                {
+                    return false;
+                }
+            }
         }
     }
 
@@ -1884,11 +1898,11 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
             {
                 uint32 mapId = ((Player const*)this)->GetMapId();
                 uint32 zoneId = ((Player const*)this)->GetZoneId();
-                uint32 layer1 = sPartitionMgr->GetLayerForPlayer(mapId, zoneId, GetGUID());
-                uint32 layer2 = sPartitionMgr->GetLayerForPlayer(mapId, zoneId, obj->GetGUID());
+                
+                // Use combined lookup to acquire lock only once (performance optimization)
+                auto [layer1, layer2] = sPartitionMgr->GetLayersForTwoPlayers(mapId, zoneId, GetGUID(), obj->GetGUID());
                 
                 // If layers are different, they cannot see each other
-                // Exception: Layer 0 (default) might be visible to others?
                 // Logic: STRICT separation. Layer X only sees Layer X.
                 if (layer1 != layer2)
                     return false;

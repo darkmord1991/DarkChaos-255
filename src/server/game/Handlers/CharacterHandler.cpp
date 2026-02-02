@@ -59,6 +59,7 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
+#include "PartitionManager.h"
 
 class LoginQueryHolder : public CharacterDatabaseQueryHolder
 {
@@ -1112,6 +1113,9 @@ void WorldSession::HandlePlayerLoginFromDB(LoginQueryHolder const& holder)
             }
         }
     }
+
+    // Load persistent layer assignment for map partitioning (if layering is enabled)
+    sPartitionMgr->LoadPersistentLayerAssignment(pCurrChar->GetGUID());
 
     sScriptMgr->OnPlayerLogin(pCurrChar);
 

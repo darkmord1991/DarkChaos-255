@@ -121,7 +121,7 @@ namespace AccountMgr
                 // Kick if player is online
                 if (WorldSession* s = sWorldSessionMgr->FindSession(guid.GetCounter()))
                 {
-                    if (Player* p = s->GetPlayer())
+                    if (s->GetPlayer())
                     {
                         s->KickPlayer("Delete account");            // mark session to remove at next session list update
                         s->LogoutPlayer(false);                     // logout player without waiting next session list update

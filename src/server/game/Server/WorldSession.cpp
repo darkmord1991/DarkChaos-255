@@ -53,6 +53,7 @@
 #include "WorldPacket.h"
 #include "WorldSocket.h"
 #include "WorldState.h"
+#include "PartitionManager.h"
 #include <zlib.h>
 
 namespace
@@ -657,6 +658,10 @@ void WorldSession::LogoutPlayer(bool save)
 
         sOutdoorPvPMgr->HandlePlayerLeaveZone(_player, _player->GetZoneId());
         sWorldState->HandlePlayerLeaveZone(_player, static_cast<AreaTableIDs>(_player->GetZoneId()));
+
+        // Map Partitioning: Remove player from all layers to prevent phantom layer entries
+        if (sPartitionMgr->IsLayeringEnabled())
+            sPartitionMgr->ForceRemovePlayerFromAllLayers(_player->GetGUID());
 
         // pussywizard: remove from battleground queues on logout
         for (int i = 0; i < PLAYER_MAX_BATTLEGROUND_QUEUES; ++i)

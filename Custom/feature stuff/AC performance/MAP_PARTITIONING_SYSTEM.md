@@ -15,7 +15,24 @@ Comprehensive testing steps to validate the system.
   - Player/Creature counts match reality.
 - **GPS Check**: Target yourself and run `.gps`. Verify "Map Partition: X" and "Layer: Y" are displayed.
 
-### 2. Boundary Testing
+### 2. Performance Benchmark
+Run `.stresstest partition 100000` to verify calculation speed.
+
+**Latest Benchmark Results (2026-02-02):**
+| Operation | Time | Per-Op Average |
+|-----------|------|----------------|
+| Partition ID Calc | 44,922 µs | **44.92 ns** |
+| Mixed Map Calc | 42,856 µs | **42.86 ns** |
+| Relocation Lock/Unlock | 13,407 µs | **134.07 ns** |
+| Layer Assignment | 1,235 µs | **6.17 ns** |
+| Boundary Flux | 32,110 µs | **160.55 ns** |
+| Clustered Assignment | 620 µs | **6.2 ns** |
+| Migration (Move) | 6,646 µs | **132.92 ns** |
+| Layer Lookup | 7,057 µs | **14.11 ns** |
+
+> *Note: Partition lookups are extremely cheap (simple arithmetic), meaning the spatial partitioning overhead is negligible. Layer assignments are among the fastest operations.*
+
+### 3. Boundary Testing
 - **Setup**: Find a partition boundary using `.gps` (coordinate where partition ID changes).
 - **Test**: Two players stand on opposite sides of the line (e.g., 20 yards apart).
 - **Verify**:
@@ -24,16 +41,18 @@ Comprehensive testing steps to validate the system.
   - Spells can cast across the line.
   - Duel can start across the line.
 
-### 3. Layering Stress Test
+### 4. Layering Stress Test
 - **Setup**: Set `MapPartitions.Layer.Capacity = 2` (low limit for testing).
 - **Test**:
   - Teleport 3 players to the same zone.
   - **Result**: Players 1 & 2 should be in Layer 0. Player 3 should be in Layer 1.
   - **verify**: Players 1 & 2 see each other. Player 3 sees NO ONE.
 
-### 4. Relocation Safety
+### 5. Relocation Safety
 - **Test**: Player mounts and runs *quickly* across multiple partition boundaries.
 - **Verify**: No disconnects, no "desyncs" (teleporting back), and position saves correctly on logout.
+
+---
 
 ## Technical Implementation
 
@@ -52,6 +71,27 @@ Instead of a single monothreaded loop iterating over all map objects:
 
 ---
 
+## Thread Safety Architecture
+
+The `PartitionManager` uses **fine-grained locking** to maximize parallelism:
+
+| Mutex | Type | Purpose |
+|-------|------|---------|
+| `_partitionLock` | `shared_mutex` | Protects partition maps (allows concurrent reads) |
+| `_layerLock` | `mutex` | Protects layer assignments |
+| `_boundaryLock` | `mutex` | Protects boundary object sets |
+| `_relocationLock` | `mutex` | Protects relocation transactions |
+| `_overrideLock` | `mutex` | Protects partition overrides and ownership |
+| `_visibilityLock` | `mutex` | Protects visibility sets |
+| `_handoffLock` | `mutex` | Protects handoff counters |
+
+### Automatic Cleanup
+- **Relocation Cleanup**: Timed-out relocations are auto-rolled back via `CleanupStaleRelocations()`
+- **Boundary Cleanup**: Objects leaving boundary zones are unregistered to prevent memory leaks
+- **Override Cleanup**: Expired partition overrides are cleaned via `CleanupExpiredOverrides()`
+
+---
+
 ## Dynamic Visibility
 
 One of the complex challenges of partitioning is handling visibility across boundaries. If Player A is in Partition 1 and Player B is in Partition 2, but they are standing 5 yards apart (across the line), they must see each other.
@@ -60,6 +100,7 @@ One of the complex challenges of partitioning is handling visibility across boun
 The system defines a `BorderOverlap` zone (configurable, e.g., 20 yards) along the edges of every partition.
 - **Boundary Objects**: When an entity enters this overlap zone, it is flagged as a "Boundary Object".
 - **Dual Registration**: The entity remains owned by its home partition but is **temporarily registered** as a "Ghost" in the adjacent partition's visibility system.
+- **Duplicate Prevention**: `IsObjectInBoundarySet()` checks prevent redundant registrations per tick.
 
 ### Visibility Updates
 - **Primary Update**: The home partition updates the entity normally.
@@ -82,6 +123,10 @@ The layering system functions as a sub-system of the partition manager. It solve
    - `WorldObject::CanSeeOrDetect` checks layer compatibility.
    - **Rule**: Players can only see other players in the **same layer**.
    - **Exception**: NPCs/GameObjects are currently visible across layers unless specifically phased.
+4. **Logout Cleanup**: `ForceRemovePlayerFromAllLayers()` ensures proper cleanup on disconnect.
+
+### Performance Optimization
+The visibility check uses `GetLayersForTwoPlayers()` for **single-lock layer comparison** instead of two separate lookups.
 
 ### GPS Integration
 The `.gps` command shows detailed debug info:
@@ -92,7 +137,7 @@ The `.gps` command shows detailed debug info:
 
 ## Configuration
 
-Control the system via `worldserver.conf`:
+Control the system via `darkchaos-custom.conf`:
 
 ```ini
 # Enable or disable the entire partitioning system
@@ -101,15 +146,26 @@ MapPartitions.Enabled = 1
 # Comma-separated list of Map IDs to partition (e.g., 0,1,530)
 MapPartitions.Maps = "0,1"
 
-# Number of grid cells per partition side (default 8 = 64x64 grids)
-MapPartitions.GridSize = 8
+# Number of partitions per map (default 4 = 2x2 grid)
+MapPartitions.DefaultCount = 4
 
 # Overlap distance for boundary detection (yards)
 MapPartitions.BorderOverlap = 20.0
 
-# Layering Configuration
+# Zones excluded from partitioning (cities, hubs)
+MapPartitions.ExcludeZones = "1519,1637,4395,3703"
+
+# Layering Configuration (Enabled by Default)
 MapPartitions.Layers.Enabled = 1
-MapPartitions.Layer.Capacity = 200  # Players per layer before creating a new one
+MapPartitions.Layer.Capacity = 200     # Players per layer before creating a new one
+MapPartitions.Layers.IncludeNPCs = 0   # Assign NPCs to layers (0=Disabled)
+
+# Dynamic Resizing Configuration
+MapPartitions.DensitySplitThreshold = 50.0
+MapPartitions.DensityMergeThreshold = 5.0
+
+# Store-only mode (for testing - partitions tracked but not utilized for updates)
+MapPartitions.StoreOnly = 0
 ```
 
 ---
@@ -120,6 +176,7 @@ MapPartitions.Layer.Capacity = 200  # Players per layer before creating a new on
 - **Registry**: Tracks all partitioned maps and their grid configurations.
 - **Layering Store**: Maintains `MapId -> ZoneId -> LayerId` mappings for player distribution.
 - **Boundary Management**: Handles the registration/unregistration of boundary "ghost" objects.
+- **Relocation Transactions**: Thread-safe state machine for cross-partition relocations.
 
 ### 2. Map & MapUpdater
 - `Map::Update` detects if partitioning is enabled.
@@ -131,6 +188,7 @@ MapPartitions.Layer.Capacity = 200  # Players per layer before creating a new on
 - Handles:
   - Object/Grid updates.
   - Visibility processing.
+  - Boundary detection and cleanup.
   - Relocation queue processing (moving objects between partitions).
 
 ---
@@ -139,6 +197,45 @@ MapPartitions.Layer.Capacity = 200  # Players per layer before creating a new on
 
 | Command | Description |
 |---------|-------------|
-| `.dc partition status` | Shows active partitions, player counts, and memory usage. |
+| `.dc partition status` | Shows active partitions, player counts, system health, and grid layout. |
+| `.dc partition layer [id]` | Manually switch your character to a specific layer ID (requires Layering). |
 | `.gps` | Displays detailed position info including Partition ID and Layer ID. |
-| `.stresstest partition` | Runs performance benchmarks on partition logic. |
+| `.stresstest partition [iterations]` | Runs performance benchmarks on partition logic. |
+
+---
+
+## Phase 10: Advanced Features (Implemented)
+
+### 1. Dynamic Partition Resizing
+- **Purpose**: Automatically balance load by splitting dense partitions and merging empty ones.
+- **Config**:
+  - `MapPartitions.DensitySplitThreshold` (Default: 50.0)
+  - `MapPartitions.DensityMergeThreshold` (Default: 5.0)
+- **Logic**: Evaluates `(Players + Creatures/10)` density metric. *Note: Currently in log-only mode for safety.*
+
+### 2. Adjacent Partition Pre-caching
+- **Purpose**: Eliminate spikes when crossing boundaries by pre-loading data.
+- **Mechanism**:
+  - `CheckBoundaryApproach()` detects players moving towards a boundary (5s lookahead).
+  - Triggers async load of the adjacent partition's high-priority assets.
+
+### 3. Persistent Layering
+- **Purpose**: Keep players in their assigned layer (e.g., "Layer 2") even after logout/login.
+- **Storage**: `dc_character_layer_assignment` table.
+
+### 4. Cross-Layer Party Sync
+- **Purpose**: Prevent "I can't see you" issues in parties.
+- **Logic**: When joining a party or entering a zone, players automatically switch to the leader's layer if possible.
+
+### 5. NPC Layering
+- **Purpose**: Allow different NPCs to exist in different layers (e.g., for phased events).
+- **Toggle**: `MapPartitions.Layers.IncludeNPCs`.
+
+---
+
+## Future Improvements
+
+### Potential Enhancements
+1. **Partition Load Balancing**: Migrate objects to less-loaded partitions dynamically.
+2. **Metrics Dashboard**: Real-time visualization of partition loads and handoff rates.
+3. **Smart Grid Sizing**: Auto-calculate grid size based on map topology (e.g., simpler grid for oceans).

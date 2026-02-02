@@ -3379,7 +3379,7 @@ MapPartitions.ExcludeZones = "1519,1637,4395"
 #        Default:     0 - (Disabled)
 #                     1 - (Enabled)
 #
-MapPartitions.Layers.Enabled = 0
+MapPartitions.Layers.Enabled = 1
 
 #
 #    MapPartitions.Layers.Capacity
@@ -3388,6 +3388,15 @@ MapPartitions.Layers.Enabled = 0
 #        Default:     100
 #
 MapPartitions.Layers.Capacity = 100
+
+#
+#    MapPartitions.Layers.IncludeNPCs
+#        Description: If enabled, NPCs are also assigned to layers (Feature 3).
+#                     This allows different NPC phases per layer.
+#        Default:     0 - (Disabled, NPCs visible on all layers)
+#                     1 - (Enabled)
+#
+MapPartitions.Layers.IncludeNPCs = 0
 
 #
 #    MapPartitions.Enabled
@@ -3424,6 +3433,30 @@ MapPartitions.DefaultCount = 4
 #        Recommended: "0,1,530,571,745,1405"
 
 MapPartitions.Maps = "0,1,530,571,745,1405,37"
+
+#
+#    MapPartitions.ExcludeZones
+#        Description: Comma-separated list of zone IDs where partitioning logic is disabled.
+#                     (e.g., Stormwind=1519, Orgrimmar=1637, Dalaran=4395, Shattrath=3703)
+#        Default:     "" (none)
+#        Recommended: "1519,1637,4395,3703"
+#
+MapPartitions.ExcludeZones = "1519,1637,4395,3703"
+
+#
+#    MapPartitions.DensitySplitThreshold
+#        Description: Density score (players/creatures) to trigger partition splitting.
+#        Default:     50.0
+#
+MapPartitions.DensitySplitThreshold = 50.0
+
+#
+#    MapPartitions.DensityMergeThreshold
+#        Description: Density score below which partitions may merge.
+#        Default:     5.0
+#
+MapPartitions.DensityMergeThreshold = 5.0
+
 
 #
 #    MapPartitions.UsePartitionStoreOnly

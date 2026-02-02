@@ -551,6 +551,9 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_EXCLUDE_ZONES, "MapPartitions.ExcludeZones", "");
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_LAYERS_ENABLED, "MapPartitions.Layers.Enabled", false);
     SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY, "MapPartitions.Layers.Capacity", 100);
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_NPC_LAYERS, "MapPartitions.Layers.IncludeNPCs", false);
+    SetConfigValue<float>(CONFIG_MAP_PARTITIONS_DENSITY_SPLIT_THRESHOLD, "MapPartitions.DensitySplitThreshold", 50.0f);
+    SetConfigValue<float>(CONFIG_MAP_PARTITIONS_DENSITY_MERGE_THRESHOLD, "MapPartitions.DensityMergeThreshold", 5.0f);
     SetConfigValue<uint32>(CONFIG_MAX_RESULTS_LOOKUP_COMMANDS, "Command.LookupMaxResults", 0);
 
     // Warden

@@ -133,18 +133,27 @@ namespace DCPerfTest
     static bool HandlePartitionStressTest(ChatHandler* handler, const char* args)
     {
         uint32 iterations = 1000000;
+        bool detailed = false;
         if (args && *args)
         {
-            uint32 val = atoi(args);
-            if (val > 0)
-                iterations = val;
+            std::string argStr(args);
+            if (argStr == "detailed" || argStr == "d")
+            {
+                detailed = true;
+                iterations = 100000; // Fewer iterations for detailed mode
+            }
+            else
+            {
+                uint32 val = atoi(args);
+                if (val > 0)
+                    iterations = val;
+            }
         }
-        handler->PSendSysMessage("Running Partition Stress Test ({} iterations)...", iterations);
+        handler->PSendSysMessage("|cff00ff00=== Partition Stress Test ({} iterations, detailed={}) ===|r", iterations, detailed ? "yes" : "no");
 
         // Test 1: Partition ID Calculation
         auto start = Clock::now();
         uint32 checkSum = 0;
-        // float mapSize = 10000.0f; // Unused
         for (uint32 i = 0; i < iterations; ++i)
         {
             float x = (float)(rand() % 10000) - 5000.0f;
@@ -153,34 +162,31 @@ namespace DCPerfTest
         }
         auto end = Clock::now();
         auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        handler->PSendSysMessage("Partition ID Calc: {} us (Checksum: {})", dur, checkSum);
-        handler->PSendSysMessage("Avg time per calc: {} ns", (double)dur * 1000.0 / iterations);
+        handler->PSendSysMessage("1. Partition ID Calc: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / iterations);
 
-        // Test 2: Boundary Detection Logic (Placeholder / Mixed Calc)
+        // Test 2: Mixed Map Partition Calc
         start = Clock::now();
         checkSum = 0;
         for (uint32 i = 0; i < iterations; ++i)
         {
-             // Simulate positions near boundaries
              float x = (float)(rand() % 8000); 
              float y = (float)(rand() % 8000);
              checkSum += sPartitionMgr->GetPartitionIdForPosition(i % 2, x, y);
         }
         end = Clock::now();
         dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        handler->PSendSysMessage("Mixed Map Partition Calc: {} us", dur);
+        handler->PSendSysMessage("2. Mixed Map Partition: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / iterations);
+        if (detailed)
+            handler->PSendSysMessage("Partition checksum: {}", checkSum);
 
         // Test 3: Relocation Transactions
-        // Benchmark overhead of Begin/Commit relocation (map locking simulation)
-        uint32 relocationIters = iterations / 10; // Relocation is heavier, do fewer
+        uint32 relocationIters = iterations / 10;
         if (relocationIters < 1000) relocationIters = 1000;
-        handler->PSendSysMessage("Running Relocation Stress ({} iterations)...", relocationIters);
         
         start = Clock::now();
         for (uint32 i = 0; i < relocationIters; ++i)
         {
-            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 1); // Fake GUID
-            // Simulate moving from partition 1 to 2
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 1);
             if (sPartitionMgr->BeginRelocation(guid, 0, 1, 2))
             {
                 sPartitionMgr->CommitRelocation(guid);
@@ -188,43 +194,133 @@ namespace DCPerfTest
         }
         end = Clock::now();
         dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        handler->PSendSysMessage("Relocation (Lock/Unlock): {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / relocationIters);
+        handler->PSendSysMessage("3. Relocation Lock/Unlock: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / relocationIters);
 
-        // Test 4: Layering Assignment
-        // Simulate mass player influx
+        // Test 4: Layering Assignment - Standard
         uint32 layeringIters = iterations / 5;
         if (layeringIters < 1000) layeringIters = 1000;
-        handler->PSendSysMessage("Running Layering Stress ({} iterations)...", layeringIters);
 
         start = Clock::now();
         for (uint32 i = 0; i < layeringIters; ++i)
         {
             ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 10000);
-            // Assign to Map 0, Zone 15, simulate typical player flow
             sPartitionMgr->AutoAssignPlayerToLayer(0, 15, guid);
         }
         end = Clock::now();
         dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        handler->PSendSysMessage("Layer Assignment: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / layeringIters);
+        handler->PSendSysMessage("4. Layer Assignment: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / layeringIters);
 
         // Test 5: Boundary Flux (Registration Churn)
         uint32 boundaryIters = iterations / 5;
-        handler->PSendSysMessage("Running Boundary Flux Stress ({} iterations)...", boundaryIters);
         
         start = Clock::now();
         for (uint32 i = 0; i < boundaryIters; ++i)
         {
-            ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(i + 50000);
-            // Toggle registration
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(1, i + 50000);
             sPartitionMgr->RegisterBoundaryObject(0, 1, guid);
             sPartitionMgr->UnregisterBoundaryObject(0, 1, guid);
         }
         end = Clock::now();
         dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        handler->PSendSysMessage("Boundary Flux: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / boundaryIters);
+        handler->PSendSysMessage("5. Boundary Flux: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / boundaryIters);
 
+        // Test 6: Density Clustering Simulation
+        // Simulates players clustering in one zone (high density scenario)
+        uint32 densityIters = iterations / 10;
+        if (densityIters < 1000) densityIters = 1000;
+        handler->PSendSysMessage("6. Density Cluster Test ({} players in one zone)...", densityIters);
+        
+        start = Clock::now();
+        // Assign large number of players to single zone
+        for (uint32 i = 0; i < densityIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 100000);
+            sPartitionMgr->AutoAssignPlayerToLayer(1, 1, guid); // All to Durotar (1,1)
+        }
+        end = Clock::now();
+        dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        handler->PSendSysMessage("   Clustered Assignment: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / densityIters);
+
+        // Test 7: Cross-Partition Movement Simulation
+        uint32 moveIters = iterations / 20;
+        if (moveIters < 500) moveIters = 500;
+        handler->PSendSysMessage("7. Cross-Partition Movement ({} migrations)...", moveIters);
+        
+        start = Clock::now();
+        for (uint32 i = 0; i < moveIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 200000);
+            uint32 fromPart = (i % 4) + 1;
+            uint32 toPart = ((i + 1) % 4) + 1;
+            
+            // Simulate moving from one partition to another
+            if (sPartitionMgr->BeginRelocation(guid, 0, fromPart, toPart))
+            {
+                sPartitionMgr->CommitRelocation(guid);
+            }
+        }
+        end = Clock::now();
+        dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        handler->PSendSysMessage("   Migration: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / moveIters);
+
+        // Test 8: Layer Overflow Stress
+        // Fill layers beyond capacity to test overflow handling
+        uint32 layerCapacity = sPartitionMgr->GetLayerCapacity();
+        uint32 overflowIters = layerCapacity * 5; // 5 layers worth
+        handler->PSendSysMessage("8. Layer Overflow Stress ({} players, capacity={} per layer)...", overflowIters, layerCapacity);
+        
+        start = Clock::now();
+        for (uint32 i = 0; i < overflowIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 300000);
+            sPartitionMgr->AutoAssignPlayerToLayer(0, 100, guid); // Fill layers in zone 100
+        }
+        end = Clock::now();
+        dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        handler->PSendSysMessage("   Overflow Assignment: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / overflowIters);
+
+        // Test 9: NPC Layer Assignment (if enabled)
+        if (sPartitionMgr->IsNPCLayeringEnabled())
+        {
+            uint32 npcIters = iterations / 10;
+            if (npcIters < 1000) npcIters = 1000;
+            handler->PSendSysMessage("9. NPC Layer Assignment ({} NPCs)...", npcIters);
+            
+            start = Clock::now();
+            for (uint32 i = 0; i < npcIters; ++i)
+            {
+                ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(1, i + 400000);
+                sPartitionMgr->AssignNPCToLayer(0, 15, guid, (i % 3) + 1); // Distribute to layers 1-3
+            }
+            end = Clock::now();
+            dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+            handler->PSendSysMessage("   NPC Layer: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / npcIters);
+        }
+        else
+        {
+            handler->PSendSysMessage("9. NPC Layer Assignment: |cffff0000SKIPPED (NPC layering disabled)|r");
+        }
+
+        // Test 10: Layer Lookup Performance
+        uint32 lookupIters = iterations / 2;
+        handler->PSendSysMessage("10. Layer Lookup Performance ({} lookups)...", lookupIters);
+        
+        start = Clock::now();
+        uint32 lookupSum = 0;
+        for (uint32 i = 0; i < lookupIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>((i % 10000) + 100000);
+            lookupSum += sPartitionMgr->GetPlayerLayer(0, 15, guid);
+        }
+        end = Clock::now();
+        dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        handler->PSendSysMessage("   Lookup: {} us (Avg: {} ns, sum={})", dur, (double)dur * 1000.0 / lookupIters, lookupSum);
+
+        handler->SendSysMessage("|cff00ff00=== Partition Stress Test Complete ===|r");
         return true;
     }
+
+    // NOTE: Partition info is available via .dc partition status in cs_dc_addons.cpp
 
     static std::string CsvEscape(std::string const& in)
     {
