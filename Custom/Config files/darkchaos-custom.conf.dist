@@ -3354,21 +3354,57 @@ Logger.seasonal=5,Console DC
 
 #
 #    MapPartitions.Enabled
-#        Description: Enable map partitioning system
+#        Description: Enable map partitioning system.
 #        Default:     0 - (Disabled)
 #                     1 - (Enabled)
 #
 MapPartitions.Enabled = 1
 
 #
+#    MapPartitions.Maps
+#        Description: Comma-separated list of map IDs to partition.
+#                     Recommended maps for partitioning:
+#                       0   - Eastern Kingdoms (Stormwind, Ironforge, etc.)
+#                       1   - Kalimdor (Orgrimmar, Thunder Bluff, etc.)
+#                       530 - Outland (Shattrath, etc.)
+#                       571 - Northrend (Dalaran, etc.)
+#                     Note: Instanced maps (dungeons/raids) should NOT be partitioned.
+#        Default:     "" (none - disabled)
+#        Recommended: "0,1,530,571,745,1405"
+#
+MapPartitions.Maps = "0,1,530,571,745,1405,37"
+
+#
+#    MapPartitions.DefaultCount
+#        Description: Default number of partitions per map when enabled.
+#        Default:     4
+#
+MapPartitions.DefaultCount = 4
+
+#
+#    MapPartitions.BorderOverlap
+#        Description: Overlap distance (yards) shared between adjacent partitions.
+#        Default:     100.0
+#
+MapPartitions.BorderOverlap = 100.0
+
+#
 #    MapPartitions.ExcludeZones
 #        Description: Comma-separated list of zone IDs to exclude from partitioning.
 #                     Excluded zones will be treated as single monolithic partitions.
 #                     Useful for high-density areas (cities) to avoid boundary issues.
-#        Recommended: "1519,1637,4395" (Stormwind, Orgrimmar, Dalaran)
-#        Default:     "1519,1637,4395"
+#        Recommended: "1519,1637,4395,3703" (Stormwind, Orgrimmar, Dalaran, Shattrath)
+#        Default:     "1519,1637,4395,3703"
 #
-MapPartitions.ExcludeZones = "1519,1637,4395"
+MapPartitions.ExcludeZones = "1519,1637,4395,3703"
+
+#
+#    MapPartitions.UsePartitionStoreOnly
+#        Description: Store partitioned objects only in per-partition stores (advanced).
+#        Default:     0 - (Disabled, keep global store)
+#                     1 - (Enabled)
+#
+MapPartitions.UsePartitionStoreOnly = 0
 
 #
 #    MapPartitions.Layers.Enabled
@@ -3391,61 +3427,15 @@ MapPartitions.Layers.Capacity = 100
 
 #
 #    MapPartitions.Layers.IncludeNPCs
-#        Description: If enabled, NPCs are also assigned to layers (Feature 3).
-#                     This allows different NPC phases per layer.
+#        Description: If enabled, NPCs are also assigned to layers.
 #        Default:     0 - (Disabled, NPCs visible on all layers)
 #                     1 - (Enabled)
 #
 MapPartitions.Layers.IncludeNPCs = 0
 
 #
-#    MapPartitions.Enabled
-#        Description: Experimental map partitioning framework.
-#        Default:     0 - (Disabled)
-#                     1 - (Enabled)
-
-MapPartitions.Enabled = 1
-
-#
-#    MapPartitions.BorderOverlap
-#        Description: Overlap distance (yards) shared between adjacent partitions.
-#        Default:     100.0
-
-MapPartitions.BorderOverlap = 100.0
-
-#
-#    MapPartitions.DefaultCount
-#        Description: Default number of partitions per map when enabled.
-#        Default:     4
-
-MapPartitions.DefaultCount = 4
-
-#
-#    MapPartitions.Maps
-#        Description: Comma-separated list of map IDs to partition.
-#                     Recommended maps for partitioning:
-#                       0   - Eastern Kingdoms (Stormwind, Ironforge, etc.)
-#                       1   - Kalimdor (Orgrimmar, Thunder Bluff, etc.)
-#                       530 - Outland (Shattrath, etc.)
-#                       571 - Northrend (Dalaran, etc.)
-#                     Note: Instanced maps (dungeons/raids) should NOT be partitioned.
-#        Default:     "" (none - disabled)
-#        Recommended: "0,1,530,571,745,1405"
-
-MapPartitions.Maps = "0,1,530,571,745,1405,37"
-
-#
-#    MapPartitions.ExcludeZones
-#        Description: Comma-separated list of zone IDs where partitioning logic is disabled.
-#                     (e.g., Stormwind=1519, Orgrimmar=1637, Dalaran=4395, Shattrath=3703)
-#        Default:     "" (none)
-#        Recommended: "1519,1637,4395,3703"
-#
-MapPartitions.ExcludeZones = "1519,1637,4395,3703"
-
-#
 #    MapPartitions.DensitySplitThreshold
-#        Description: Density score (players/creatures) to trigger partition splitting.
+#        Description: Density score (players + creatures/10) to trigger partition splitting.
 #        Default:     50.0
 #
 MapPartitions.DensitySplitThreshold = 50.0
@@ -3456,15 +3446,6 @@ MapPartitions.DensitySplitThreshold = 50.0
 #        Default:     5.0
 #
 MapPartitions.DensityMergeThreshold = 5.0
-
-
-#
-#    MapPartitions.UsePartitionStoreOnly
-#        Description: Store partitioned objects only in per-partition stores (advanced).
-#        Default:     0 - (Disabled, keep global store)
-#                     1 - (Enabled)
-
-MapPartitions.UsePartitionStoreOnly = 0
 
 ###############################################################################
 # END OF CONFIGURATION FILE

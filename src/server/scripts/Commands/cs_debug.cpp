@@ -96,6 +96,7 @@ public:
             { "los",            HandleDebugLoSCommand,                 SEC_ADMINISTRATOR, Console::No },
             { "moveflags",      HandleDebugMoveflagsCommand,           SEC_ADMINISTRATOR, Console::No },
             { "unitstate",      HandleDebugUnitStateCommand,           SEC_ADMINISTRATOR, Console::No },
+            { "playerstate",    HandleDebugPlayerStateCommand,         SEC_PLAYER,        Console::No },
             { "objectcount",    HandleDebugObjectCountCommand,         SEC_ADMINISTRATOR, Console::Yes},
             { "dummy",          HandleDebugDummyCommand,               SEC_ADMINISTRATOR, Console::No },
             { "mapdata",        HandleDebugMapDataCommand,             SEC_ADMINISTRATOR, Console::No },
@@ -1263,6 +1264,45 @@ public:
 
         target->ClearUnitState(target->GetUnitState());
         target->AddUnitState(unitState);
+
+        return true;
+    }
+
+    static bool HandleDebugPlayerStateCommand(ChatHandler* handler)
+    {
+        Player* target = handler->getSelectedPlayer();
+        if (!target)
+            target = handler->GetSession()->GetPlayer();
+
+        if (!target)
+        {
+            handler->SendSysMessage("No player selected.");
+            return false;
+        }
+
+        handler->PSendSysMessage("=== Player State Debug Info for {} ({}) ===", 
+            target->GetName(), target->GetGUID().ToString());
+        handler->PSendSysMessage("IsInWorld: {}", target->IsInWorld() ? "YES" : "NO");
+        handler->PSendSysMessage("IsAlive: {}", target->IsAlive() ? "YES" : "NO");
+        handler->PSendSysMessage("Map ID: {}", target->GetMapId());
+        handler->PSendSysMessage("Position: ({:.2f}, {:.2f}, {:.2f})", 
+            target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+        handler->PSendSysMessage("Health: {} / {}", target->GetHealth(), target->GetMaxHealth());
+        handler->PSendSysMessage("Mana: {} / {}", target->GetPower(POWER_MANA), target->GetMaxPower(POWER_MANA));
+        handler->PSendSysMessage("m_deathTimer: {}", target->GetDeathTimer());
+        handler->PSendSysMessage("Death State: {}", static_cast<uint32>(target->getDeathState()));
+        handler->PSendSysMessage("In Combat: {}", target->IsInCombat() ? "YES" : "NO");
+        handler->PSendSysMessage("Is Being Teleported: {}", target->IsBeingTeleported() ? "YES" : "NO");
+        
+        if (target->FindMap())
+        {
+            handler->PSendSysMessage("Map Exists: YES (ID: {})", target->FindMap()->GetId());
+            handler->PSendSysMessage("Map IsPartitioned: {}", target->FindMap()->IsPartitioned() ? "YES" : "NO");
+        }
+        else
+        {
+            handler->PSendSysMessage("Map Exists: NO");
+        }
 
         return true;
     }

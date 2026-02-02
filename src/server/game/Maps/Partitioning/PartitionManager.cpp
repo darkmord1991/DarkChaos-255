@@ -243,18 +243,30 @@ bool PartitionManager::IsMapPartitioned(uint32 mapId) const
 
 uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float y) const
 {
-    uint32 count = GetPartitionCount(mapId);
+    PartitionGridLayout layout;
+    bool hasLayout = false;
+    {
+        std::shared_lock<std::shared_mutex> guard(_partitionLock);
+        auto it = _gridLayouts.find(mapId);
+        if (it != _gridLayouts.end())
+        {
+            layout = it->second;
+            hasLayout = true;
+        }
+    }
+
+    uint32 count = hasLayout ? layout.count : GetPartitionCount(mapId);
     if (count <= 1)
         return 1;
 
-    uint32 cols = static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(count))));
+    uint32 cols = hasLayout ? layout.cols : static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(count))));
     if (cols == 0)
         cols = 1;
-    uint32 rows = (count + cols - 1) / cols;
+    uint32 rows = hasLayout ? layout.rows : (count + cols - 1) / cols;
 
     uint32 gridMax = MAX_NUMBER_OF_GRIDS;
-    uint32 cellWidth = (gridMax + cols - 1) / cols;
-    uint32 cellHeight = (gridMax + rows - 1) / rows;
+    uint32 cellWidth = hasLayout ? layout.cellWidth : (gridMax + cols - 1) / cols;
+    uint32 cellHeight = hasLayout ? layout.cellHeight : (gridMax + rows - 1) / rows;
 
     GridCoord coord = Acore::ComputeGridCoord(x, y);
     uint32 col = std::min(coord.x_coord / cellWidth, cols - 1);
@@ -304,7 +316,19 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
 
 bool PartitionManager::IsNearPartitionBoundary(uint32 mapId, float x, float y) const
 {
-    uint32 count = GetPartitionCount(mapId);
+    PartitionGridLayout layout;
+    bool hasLayout = false;
+    {
+        std::shared_lock<std::shared_mutex> guard(_partitionLock);
+        auto it = _gridLayouts.find(mapId);
+        if (it != _gridLayouts.end())
+        {
+            layout = it->second;
+            hasLayout = true;
+        }
+    }
+
+    uint32 count = hasLayout ? layout.count : GetPartitionCount(mapId);
     if (count <= 1)
         return false;
 
@@ -313,14 +337,14 @@ bool PartitionManager::IsNearPartitionBoundary(uint32 mapId, float x, float y) c
     if (overlapGrids == 0)
         overlapGrids = 1;
 
-    uint32 cols = static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(count))));
+    uint32 cols = hasLayout ? layout.cols : static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(count))));
     if (cols == 0)
         cols = 1;
-    uint32 rows = (count + cols - 1) / cols;
+    uint32 rows = hasLayout ? layout.rows : (count + cols - 1) / cols;
 
     uint32 gridMax = MAX_NUMBER_OF_GRIDS;
-    uint32 cellWidth = (gridMax + cols - 1) / cols;
-    uint32 cellHeight = (gridMax + rows - 1) / rows;
+    uint32 cellWidth = hasLayout ? layout.cellWidth : (gridMax + cols - 1) / cols;
+    uint32 cellHeight = hasLayout ? layout.cellHeight : (gridMax + rows - 1) / rows;
 
     GridCoord coord = Acore::ComputeGridCoord(x, y);
     uint32 col = std::min(coord.x_coord / cellWidth, cols - 1);
@@ -363,6 +387,7 @@ void PartitionManager::ClearPartitions(uint32 mapId)
 {
     std::unique_lock<std::shared_mutex> guard(_partitionLock);
     _partitionsByMap.erase(mapId);
+    _gridLayouts.erase(mapId);
     
     std::lock_guard<std::mutex> bGuard(_boundaryLock);
     _boundaryObjects.erase(mapId);
@@ -469,6 +494,21 @@ void PartitionManager::Initialize()
         {
             auto name = "Partition " + std::to_string(i + 1);
             RegisterPartition(std::make_unique<MapPartition>(mapId, i + 1, name));
+        }
+
+        // Cache grid layout for this map
+        {
+            std::unique_lock<std::shared_mutex> guard(_partitionLock);
+            PartitionGridLayout layout;
+            layout.count = defaultCount;
+            layout.cols = static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(layout.count))));
+            if (layout.cols == 0)
+                layout.cols = 1;
+            layout.rows = (layout.count + layout.cols - 1) / layout.cols;
+            uint32 gridMax = MAX_NUMBER_OF_GRIDS;
+            layout.cellWidth = (gridMax + layout.cols - 1) / layout.cols;
+            layout.cellHeight = (gridMax + layout.rows - 1) / layout.rows;
+            _gridLayouts[mapId] = layout;
         }
 
         LOG_INFO("map.partition", "Initialized {} partitions for map {}", defaultCount, mapId);

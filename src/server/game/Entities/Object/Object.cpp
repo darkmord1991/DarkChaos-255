@@ -148,6 +148,14 @@ void Object::AddToWorld()
 
     m_inWorld = true;
 
+    // Debug: Log when player is added to world
+    if (GetTypeId() == TYPEID_PLAYER)
+    {
+        Player* player = ToPlayer();
+        LOG_INFO("entities.player", "Object::AddToWorld - Player {} ({}) added to world on map {}",
+            player->GetName(), player->GetGUID().ToString(), player->GetMapId());
+    }
+
     // synchronize values mirror with values array (changes will send in updatecreate opcode any way
     ASSERT(!m_objectUpdated);
     ClearUpdateMask(false);
@@ -157,6 +165,14 @@ void Object::RemoveFromWorld()
 {
     if (!m_inWorld)
         return;
+
+    // Debug: Log when player is removed from world
+    if (GetTypeId() == TYPEID_PLAYER)
+    {
+        Player* player = ToPlayer();
+        LOG_INFO("entities.player", "Object::RemoveFromWorld - Player {} ({}) removed from world on map {}",
+            player->GetName(), player->GetGUID().ToString(), player->GetMapId());
+    }
 
     m_inWorld = false;
 

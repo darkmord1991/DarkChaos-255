@@ -1777,6 +1777,14 @@ void Player::RegenerateAll()
     //if (m_regenTimer <= 500)
     //    return;
 
+    // Debug: Log when RegenerateAll is called if health or mana is low
+    if (GetHealth() < GetMaxHealth() / 2 || GetPower(POWER_MANA) < GetMaxPower(POWER_MANA) / 2)
+    {
+        LOG_ERROR("entities.player", "Player::RegenerateAll - {} ({}): m_regenTimer={}, m_regenTimerCount={}, Health={}/{}, Mana={}/{}",
+            GetName(), GetGUID().ToString(), m_regenTimer, m_regenTimerCount,
+            GetHealth(), GetMaxHealth(), GetPower(POWER_MANA), GetMaxPower(POWER_MANA));
+    }
+
     m_regenTimerCount += m_regenTimer;
     m_foodEmoteTimerCount += m_regenTimer;
 
@@ -1860,6 +1868,14 @@ void Player::Regenerate(Powers power)
     uint32 maxValue = GetMaxPower(power);
     if (!maxValue)
         return;
+
+    // Debug: Log when power regen is called for mana with low values
+    uint32 curPower = GetPower(power);
+    if (power == POWER_MANA && curPower < maxValue / 2)
+    {
+        LOG_ERROR("entities.player", "Player::Regenerate - {} ({}) MANA: {}/{}, m_regenTimer: {}, m_regenTimerCount: {}",
+            GetName(), GetGUID().ToString(), curPower, maxValue, m_regenTimer, m_regenTimerCount);
+    }
 
     //If .cheat power is on always have the max power
     if (GetCommandStatus(CHEAT_POWER))
@@ -1991,6 +2007,14 @@ void Player::Regenerate(Powers power)
             m_powerFraction[power] = addvalue - integerValue;
     }
 
+    // Debug: Log when power is about to be updated
+    if (power == POWER_MANA && GetPower(power) < maxValue / 2)
+    {
+        LOG_ERROR("entities.player", "Player::Regenerate - {} ({}) Setting MANA to: {} (was: {}), addvalue: {}, will update: {}",
+            GetName(), GetGUID().ToString(), curValue, GetPower(power), addvalue, 
+            (m_regenTimerCount >= 2000 || curValue == 0 || curValue == maxValue) ? "YES" : "NO");
+    }
+
     if (m_regenTimerCount >= 2000 || curValue == 0 || curValue == maxValue)
         SetPower(power, curValue, true, true);
     else
@@ -2004,6 +2028,13 @@ void Player::RegenerateHealth()
 
     if (curValue >= maxValue)
         return;
+
+    // Debug: Log when health regen is called and health is low
+    if (curValue < maxValue / 2)
+    {
+        LOG_ERROR("entities.player", "Player::RegenerateHealth - {} ({}) Health: {}/{}, InCombat: {}, m_regenTimerCount: {}",
+            GetName(), GetGUID().ToString(), curValue, maxValue, IsInCombat() ? 1 : 0, m_regenTimerCount);
+    }
 
     float HealthIncreaseRate = sWorld->getRate(RATE_HEALTH);
 
@@ -2043,6 +2074,13 @@ void Player::RegenerateHealth()
 
     if (addvalue < 0)
         addvalue = 0;
+
+    // Debug: Log the calculated health regen value if health is low
+    if (curValue < maxValue / 2)
+    {
+        LOG_ERROR("entities.player", "Player::RegenerateHealth - {} ({}) addvalue: {}, m_baseHealthRegen: {}, will call ModifyHealth",
+            GetName(), GetGUID().ToString(), addvalue, m_baseHealthRegen);
+    }
 
     ModifyHealth(int32(addvalue));
 }

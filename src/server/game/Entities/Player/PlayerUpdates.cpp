@@ -55,7 +55,11 @@ constexpr auto ZONE_UPDATE_INTERVAL = 1000;
 void Player::Update(uint32 p_time)
 {
     if (!IsInWorld())
+    {
+        LOG_ERROR("entities.player", "Player::Update - Player {} ({}) marked as not in world! Map: {}, Position: ({}, {}, {})",
+            GetName(), GetGUID().ToString(), GetMapId(), GetPositionX(), GetPositionY(), GetPositionZ());
         return;
+    }
 
     sScriptMgr->OnPlayerBeforeUpdate(this, p_time);
 
@@ -320,6 +324,15 @@ void Player::Update(uint32 p_time)
     if (IsAlive())
     {
         m_regenTimer += p_time;
+        
+        // Debug: Log regeneration if health or mana is low
+        if (GetHealth() < GetMaxHealth() / 2 || GetPower(POWER_MANA) < GetMaxPower(POWER_MANA) / 2)
+        {
+            LOG_ERROR("entities.player", "Player::Update - {} ({}): m_regenTimer={}, Health={}/{}, Mana={}/{}",
+                GetName(), GetGUID().ToString(), m_regenTimer, GetHealth(), GetMaxHealth(), 
+                GetPower(POWER_MANA), GetMaxPower(POWER_MANA));
+        }
+        
         RegenerateAll();
     }
 

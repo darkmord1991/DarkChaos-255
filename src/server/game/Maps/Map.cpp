@@ -1099,92 +1099,130 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     _updatableObjectListRecheckTimer.Update(t_diff);
     resetMarkedCells();
 
+    bool useParallelPartitions = _isPartitioned && _useParallelPartitions;
+
     if (_isPartitioned)
     {
         std::unordered_map<uint32, std::vector<Player*>> partitionBuckets;
         uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+        uint32 totalPlayersChecked = 0;
+        uint32 totalPlayersSkipped = 0;
 
         for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
         {
             Player* player = m_mapRefIter->GetSource();
+            ++totalPlayersChecked;
             if (!player || !player->IsInWorld())
+            {
+                ++totalPlayersSkipped;
+                if (player)
+                {
+                    LOG_ERROR("maps.partition", "Map::Update (Partitioned) - Skipping player {} ({}) because IsInWorld() = false, map: {}",
+                        player->GetName(), player->GetGUID().ToString(), GetId());
+                }
                 continue;
+            }
 
             uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), player->GetGUID());
             partitionBuckets[partitionId].push_back(player);
         }
 
-        if (partitionCount == 0)
-            partitionCount = 1;
-
-        for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
+        if (totalPlayersSkipped > 0)
         {
-            METRIC_VALUE("partition_relay_queue_threat", uint64(_partitionThreatRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            METRIC_VALUE("partition_relay_queue_threat_action", uint64(_partitionThreatActionRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            METRIC_VALUE("partition_relay_queue_threat_target", uint64(_partitionThreatTargetActionRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            METRIC_VALUE("partition_relay_queue_taunt", uint64(_partitionTauntRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            METRIC_VALUE("partition_relay_queue_proc", uint64(_partitionProcRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            METRIC_VALUE("partition_relay_queue_aura", uint64(_partitionAuraRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            METRIC_VALUE("partition_relay_queue_path", uint64(_partitionPathRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            METRIC_VALUE("partition_relay_queue_point", uint64(_partitionPointRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            METRIC_VALUE("partition_relay_queue_assist", uint64(_partitionAssistRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            METRIC_VALUE("partition_relay_queue_assist_distract", uint64(_partitionAssistDistractRelays[partitionId].size()),
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)));
-            SetActivePartitionContext(partitionId);
-            ProcessPartitionRelays(partitionId);
-            auto& bucket = partitionBuckets[partitionId];
-            uint32 boundaryPlayers = 0;
-            for (Player* player : bucket)
+            LOG_ERROR("maps.partition", "Map::Update (Partitioned) - Map {} skipped {} out of {} players due to IsInWorld() check",
+                GetId(), totalPlayersSkipped, totalPlayersChecked);
+        }
+
+        if (!useParallelPartitions)
+        {
+            if (partitionCount == 0)
+                partitionCount = 1;
+
+            for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
             {
-                if (sPartitionMgr->IsNearPartitionBoundary(GetId(), player->GetPositionX(), player->GetPositionY()))
+                METRIC_VALUE("partition_relay_queue_threat", uint64(_partitionThreatRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_relay_queue_threat_action", uint64(_partitionThreatActionRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_relay_queue_threat_target", uint64(_partitionThreatTargetActionRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_relay_queue_taunt", uint64(_partitionTauntRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_relay_queue_proc", uint64(_partitionProcRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_relay_queue_aura", uint64(_partitionAuraRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_relay_queue_path", uint64(_partitionPathRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_relay_queue_point", uint64(_partitionPointRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_relay_queue_assist", uint64(_partitionAssistRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                METRIC_VALUE("partition_relay_queue_assist_distract", uint64(_partitionAssistDistractRelays[partitionId].size()),
+                    METRIC_TAG("map_id", std::to_string(GetId())),
+                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                SetActivePartitionContext(partitionId);
+                ProcessPartitionRelays(partitionId);
+                auto& bucket = partitionBuckets[partitionId];
+                uint32 boundaryPlayers = 0;
+                for (Player* player : bucket)
                 {
-                    ++boundaryPlayers;
-                    sPartitionMgr->RegisterBoundaryObject(GetId(), partitionId, player->GetGUID());
-                    sPartitionMgr->SetPartitionOverride(player->GetGUID(), partitionId, 500);
-                }
-            }
-            sPartitionMgr->UpdatePartitionPlayerCount(GetId(), partitionId, static_cast<uint32>(bucket.size()));
-            sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, boundaryPlayers);
-
-            for (Player* player : bucket)
-            {
-                player->Update(s_diff);
-
-                if (_updatableObjectListRecheckTimer.Passed())
-                {
-                    MarkNearbyCellsOf(player);
-
-                    // If player is using far sight, update viewpoint
-                    if (WorldObject* viewPoint = player->GetViewpoint())
+                    if (sPartitionMgr->IsNearPartitionBoundary(GetId(), player->GetPositionX(), player->GetPositionY()))
                     {
-                        if (Creature* viewCreature = viewPoint->ToCreature())
-                            MarkNearbyCellsOf(viewCreature);
-                        else if (DynamicObject* viewObject = viewPoint->ToDynObject())
-                            MarkNearbyCellsOf(viewObject);
+                        ++boundaryPlayers;
+                        if (!sPartitionMgr->IsObjectInBoundarySet(GetId(), partitionId, player->GetGUID()))
+                            sPartitionMgr->RegisterBoundaryObject(GetId(), partitionId, player->GetGUID());
+                        sPartitionMgr->SetPartitionOverride(player->GetGUID(), partitionId, 500);
+                    }
+                    else
+                    {
+                        sPartitionMgr->UnregisterBoundaryObject(GetId(), partitionId, player->GetGUID());
+                    }
+                }
+                sPartitionMgr->UpdatePartitionPlayerCount(GetId(), partitionId, static_cast<uint32>(bucket.size()));
+                sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, boundaryPlayers);
+
+                for (Player* player : bucket)
+                {
+                    // Debug: Log the actual t_diff being passed to player updates
+                    if (player && (player->GetHealth() < player->GetMaxHealth() / 2 || player->GetPower(POWER_MANA) < player->GetMaxPower(POWER_MANA) / 2))
+                    {
+                        LOG_ERROR("maps.partition", "Map::Update - Calling player->Update({}) for {} ({}), Map t_diff: {}, s_diff: {}",
+                            t_diff, player->GetName(), player->GetGUID().ToString(), t_diff, s_diff);
+                    }
+                    
+                    player->Update(t_diff);
+
+                    if (_updatableObjectListRecheckTimer.Passed())
+                    {
+                        MarkNearbyCellsOf(player);
+
+                        // If player is using far sight, update viewpoint
+                        if (WorldObject* viewPoint = player->GetViewpoint())
+                        {
+                            if (Creature* viewCreature = viewPoint->ToCreature())
+                                MarkNearbyCellsOf(viewCreature);
+                            else if (DynamicObject* viewObject = viewPoint->ToDynObject())
+                                MarkNearbyCellsOf(viewObject);
+                        }
                     }
                 }
             }
+            SetActivePartitionContext(0);
         }
-        SetActivePartitionContext(0);
+        else
+        {
+            SchedulePartitionUpdates(t_diff, s_diff);
+        }
     }
     else
     {
@@ -1197,7 +1235,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
             if (!player || !player->IsInWorld())
                 continue;
 
-            player->Update(s_diff);
+            player->Update(t_diff);
 
             if (_updatableObjectListRecheckTimer.Passed())
             {
@@ -1215,7 +1253,8 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         }
     }
 
-    UpdateNonPlayerObjects(t_diff);
+    if (!useParallelPartitions)
+        UpdateNonPlayerObjects(t_diff);
 
     SendObjectUpdates();
 

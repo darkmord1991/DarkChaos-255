@@ -170,6 +170,34 @@ MapPartitions.StoreOnly = 0
 
 ---
 
+## Map Type Handling
+
+The system handles different map types according to specific rules to ensure stability and performance:
+
+### 1. Continents & World Maps (0, 1, 530, 571)
+*   **Handling**: Fully partitioned.
+*   **Reason**: These maps are massive and host the majority of the population. Partitioning is essential here.
+*   **Note**: Exceptions apply to major cities (see "Exclusion Zones").
+
+### 2. Dungeons & Raids
+*   **Handling**: **NOT partitioned** (Standard Handling).
+*   **Reason**: Dungeons are already instanced (per group). The player count is low (5-40 max), so partitioning adds overhead without benefit.
+*   **Config**: Do NOT add instance IDs to `MapPartitions.Maps`.
+
+### 3. Battlegrounds & Arenas
+*   **Handling**: **NOT partitioned**.
+*   **Reason**: High-intensity, small-scale combat requires atomic updates. Splitting a BG into partitions could introduce latency/race conditions for critical combat events.
+
+### 4. Exclusion Zones (Cities)
+*   **Handling**: Special "Excluded" status.
+*   **Logic**: While the map (e.g., Eastern Kingdoms) is partitioned, specific zones (e.g., Stormwind) are marked as excluded.
+*   **Effect**:
+    *   Partitioning logic is disabled for players in these zones.
+    *   Layering **remains active** (critical for city population management).
+*   **Config**: `MapPartitions.ExcludeZones` (IDs: 1519=Stormwind, 1637=Orgrimmar, etc.).
+
+---
+
 ## Architecture
 
 ### 1. PartitionManager (Singleton)
