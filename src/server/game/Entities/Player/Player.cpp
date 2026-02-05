@@ -1762,6 +1762,15 @@ void Player::RemoveFromWorld()
     ///- The player should only be removed when logging out
     if (Map* map = GetMap())
         map->UnregisterPartitionedObject(this);
+    
+    // Clean up partition boundary object tracking to prevent memory leak
+    if (sPartitionMgr->IsEnabled() && IsInWorld())
+    {
+        sPartitionMgr->UnregisterBoundaryObject(GetMapId(), 
+            sPartitionMgr->GetPartitionIdForPosition(GetMapId(), GetPositionX(), GetPositionY(), GetGUID()),
+            GetGUID());
+    }
+    
     Unit::RemoveFromWorld();
 
     if (m_uint32Values)

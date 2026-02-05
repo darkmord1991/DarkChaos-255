@@ -3426,16 +3426,28 @@ MapPartitions.Layers.Enabled = 1
 MapPartitions.Layers.Capacity = 100
 
 #
-#    MapPartitions.Layers.IncludeNPCs
-#        Description: If enabled, NPCs are also assigned to layers.
-#        Default:     0 - (Disabled, NPCs visible on all layers)
-#                     1 - (Enabled)
+#    MapPartitions.Layers.Max
+#        Description: Maximum number of layers allowed per zone.
+#                     New layers are created only when a player joins and existing layers are full.
+#                     Set to 0 to disable layer creation (forces single layer).
+#        Default:     4
 #
-MapPartitions.Layers.IncludeNPCs = 0
+MapPartitions.Layers.Max = 4
+
+#
+#    MapPartitions.Layers.IncludeNPCs
+#        Description: If enabled, NPCs are distributed across layers for complete isolation.
+#                     Each layer becomes an independent world copy (like retail WoW layering).
+#                     World spawns are duplicated per layer, pets/guardians sync to owner's layer.
+#        Default:     1 - (Enabled, true layer isolation)
+#                     0 - (Disabled, NPCs visible across all layers)
+#
+MapPartitions.Layers.IncludeNPCs = 1
 
 #
 #    MapPartitions.DensitySplitThreshold
 #        Description: Density score (players + creatures/10) to trigger partition splitting.
+#                     Resizing is throttled to avoid churn.
 #        Default:     50.0
 #
 MapPartitions.DensitySplitThreshold = 50.0
@@ -3443,9 +3455,75 @@ MapPartitions.DensitySplitThreshold = 50.0
 #
 #    MapPartitions.DensityMergeThreshold
 #        Description: Density score below which partitions may merge.
+#                     Merge occurs only if all partitions are below the threshold.
 #        Default:     5.0
 #
 MapPartitions.DensityMergeThreshold = 5.0
+
+# -----------------------------------------------------------------------------
+# Phase 2: Spatial Hashing for Boundaries
+# -----------------------------------------------------------------------------
+
+#
+#    MapPartitions.SpatialHash.Enabled
+#        Description: Enable spatial hash grid for O(1) boundary object lookups.
+#                     Replaces O(N) iteration with cell-based spatial hashing.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled, use legacy iteration)
+#
+MapPartitions.SpatialHash.Enabled = 1
+
+#
+#    MapPartitions.SpatialHash.CellSize
+#        Description: Size in yards of each spatial hash grid cell.
+#                     Smaller cells = more granular, but more memory overhead.
+#        Default:     100 (yards)
+#
+MapPartitions.SpatialHash.CellSize = 100
+
+# -----------------------------------------------------------------------------
+# Phase 6: Layer Rebalancing
+# -----------------------------------------------------------------------------
+
+#
+#    MapPartitions.Layers.Rebalancing.Enabled
+#        Description: Enable automatic layer rebalancing to consolidate sparse layers.
+#                     When enabled, layers with too few players are merged periodically.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+#
+MapPartitions.Layers.Rebalancing.Enabled = 1
+
+#
+#    MapPartitions.Layers.Rebalancing.CheckIntervalMs
+#        Description: Interval (milliseconds) between rebalancing checks per zone.
+#        Default:     300000 (5 minutes)
+#
+MapPartitions.Layers.Rebalancing.CheckIntervalMs = 300000
+
+#
+#    MapPartitions.Layers.Rebalancing.MinPlayersPerLayer
+#        Description: Minimum players required to keep a layer alive.
+#                     Layers below this threshold are candidates for consolidation.
+#        Default:     5
+#
+MapPartitions.Layers.Rebalancing.MinPlayersPerLayer = 5
+
+#
+#    MapPartitions.Layers.Rebalancing.ImbalanceThreshold
+#        Description: Coefficient of variation threshold (0.0-1.0) to trigger rebalancing.
+#                     Higher values = more tolerance for imbalanced layers.
+#        Default:     0.3 (30% coefficient of variation)
+#
+MapPartitions.Layers.Rebalancing.ImbalanceThreshold = 0.3
+
+#
+#    MapPartitions.Layers.Rebalancing.MigrationBatchSize
+#        Description: Maximum players to migrate per rebalancing cycle.
+#                     Lower values = smoother migration, higher values = faster consolidation.
+#        Default:     10
+#
+MapPartitions.Layers.Rebalancing.MigrationBatchSize = 10
 
 ###############################################################################
 # END OF CONFIGURATION FILE

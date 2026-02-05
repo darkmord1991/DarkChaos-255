@@ -96,13 +96,14 @@ void PartitionUpdateWorker::UpdatePlayers()
             ++_boundaryPlayerCount;
             // Only register if not already in boundary set (avoids duplicate registration spam)
             if (!sPartitionMgr->IsObjectInBoundarySet(_map.GetId(), _partitionId, player->GetGUID()))
-                sPartitionMgr->RegisterBoundaryObject(_map.GetId(), _partitionId, player->GetGUID());
+                sPartitionMgr->RegisterBoundaryObjectWithPosition(_map.GetId(), _partitionId, player->GetGUID(),
+                    player->GetPositionX(), player->GetPositionY());
             sPartitionMgr->SetPartitionOverride(player->GetGUID(), _partitionId, 500);
         }
         else
         {
             // Player left boundary zone - unregister to prevent memory leak
-            sPartitionMgr->UnregisterBoundaryObject(_map.GetId(), _partitionId, player->GetGUID());
+            sPartitionMgr->UnregisterBoundaryObjectFromGrid(_map.GetId(), _partitionId, player->GetGUID());
         }
 
         player->Update(playerUpdateDiff);
@@ -112,9 +113,15 @@ void PartitionUpdateWorker::UpdatePlayers()
         if (WorldObject* viewPoint = player->GetViewpoint())
         {
             if (Creature* viewCreature = viewPoint->ToCreature())
-                _map.MarkNearbyCellsOf(viewCreature);
+            {
+                if (viewCreature->IsInWorld())
+                    _map.MarkNearbyCellsOf(viewCreature);
+            }
             else if (DynamicObject* viewObject = viewPoint->ToDynObject())
-                _map.MarkNearbyCellsOf(viewObject);
+            {
+                if (viewObject->IsInWorld())
+                    _map.MarkNearbyCellsOf(viewObject);
+            }
         }
 
         // Feature 5: Adjacent Partition Pre-caching
@@ -161,13 +168,14 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
             ++_boundaryObjectCount;
             // Only register if not already in boundary set (avoids duplicate registration spam)
             if (!sPartitionMgr->IsObjectInBoundarySet(_map.GetId(), _partitionId, obj->GetGUID()))
-                sPartitionMgr->RegisterBoundaryObject(_map.GetId(), _partitionId, obj->GetGUID());
+                sPartitionMgr->RegisterBoundaryObjectWithPosition(_map.GetId(), _partitionId, obj->GetGUID(),
+                    obj->GetPositionX(), obj->GetPositionY());
             sPartitionMgr->SetPartitionOverride(obj->GetGUID(), _partitionId, 500);
         }
         else
         {
             // Object left boundary zone - unregister to prevent memory leak
-            sPartitionMgr->UnregisterBoundaryObject(_map.GetId(), _partitionId, obj->GetGUID());
+            sPartitionMgr->UnregisterBoundaryObjectFromGrid(_map.GetId(), _partitionId, obj->GetGUID());
         }
 
         obj->Update(_diff);

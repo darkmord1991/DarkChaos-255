@@ -144,13 +144,26 @@ uint64 PartitionManager::GetRuntimeDiagnosticsRemainingMs() const
 
 uint32_t PartitionManager::GetLayerForPlayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid) const
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
-    auto it = _playerLayers.find(playerGuid.GetCounter());
-    if (it != _playerLayers.end())
+    // Fast path: try lock-free atomic read under shared_lock (protects the map container
+    // while the atomic values inside are read without additional synchronization)
     {
-        // Optional: Verify map/zone match?
-        if (it->second.mapId == mapId && it->second.zoneId == zoneId)
-            return it->second.layerId;
+        std::shared_lock<std::shared_mutex> guard(_layerLock);
+        auto atomicIt = _atomicPlayerLayers.find(playerGuid.GetCounter());
+        if (atomicIt != _atomicPlayerLayers.end())
+        {
+            uint32 storedMapId, storedZoneId, storedLayerId;
+            atomicIt->second.Load(storedMapId, storedZoneId, storedLayerId);
+            if (storedMapId == mapId && storedZoneId == zoneId)
+                return storedLayerId;
+        }
+
+        // Fallback to regular lookup (different map/zone or not in atomic map)
+        auto it = _playerLayers.find(playerGuid.GetCounter());
+        if (it != _playerLayers.end())
+        {
+            if (it->second.mapId == mapId && it->second.zoneId == zoneId)
+                return it->second.layerId;
+        }
     }
     return 0; // Default layer
 }
@@ -162,7 +175,7 @@ uint32 PartitionManager::GetPlayerLayer(uint32 mapId, uint32 zoneId, ObjectGuid 
 
 uint32_t PartitionManager::GetLayerCount(uint32_t mapId, uint32_t zoneId) const
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::shared_lock<std::shared_mutex> guard(_layerLock);
     auto mapIt = _layers.find(mapId);
     if (mapIt != _layers.end())
     {
@@ -175,7 +188,7 @@ uint32_t PartitionManager::GetLayerCount(uint32_t mapId, uint32_t zoneId) const
 
 void PartitionManager::AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid, uint32_t layerId)
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::unique_lock<std::shared_mutex> guard(_layerLock);
     
     // Remove from old layer if exists
     auto it = _playerLayers.find(playerGuid.GetCounter());
@@ -183,23 +196,15 @@ void PartitionManager::AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, Obje
     {
         auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
         oldLayer.erase(playerGuid.GetCounter());
-
-        if (oldLayer.empty())
-        {
-            auto& zoneLayers = _layers[it->second.mapId][it->second.zoneId];
-            zoneLayers.erase(it->second.layerId);
-            if (zoneLayers.empty())
-            {
-                _layers[it->second.mapId].erase(it->second.zoneId);
-                if (_layers[it->second.mapId].empty())
-                    _layers.erase(it->second.mapId);
-            }
-        }
+        CleanupEmptyLayers(it->second.mapId, it->second.zoneId, it->second.layerId);
     }
 
     // Assign to new
     _layers[mapId][zoneId][layerId].insert(playerGuid.GetCounter());
     _playerLayers[playerGuid.GetCounter()] = { mapId, zoneId, layerId };
+    
+    // Sync atomic for lock-free reads (Phase 1 optimization)
+    _atomicPlayerLayers[playerGuid.GetCounter()].Store(mapId, zoneId, layerId);
 
     if (IsRuntimeDiagnosticsEnabled())
     {
@@ -212,30 +217,26 @@ void PartitionManager::AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, Obje
 
 void PartitionManager::RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid)
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::unique_lock<std::shared_mutex> guard(_layerLock);
+    
     auto it = _playerLayers.find(playerGuid.GetCounter());
     if (it == _playerLayers.end())
         return;
 
+    // Verify map/zone match
     if (it->second.mapId != mapId || it->second.zoneId != zoneId)
         return;
 
-    auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
-    oldLayer.erase(playerGuid.GetCounter());
-
-    if (oldLayer.empty())
-    {
-        auto& zoneLayers = _layers[it->second.mapId][it->second.zoneId];
-        zoneLayers.erase(it->second.layerId);
-        if (zoneLayers.empty())
-        {
-            _layers[it->second.mapId].erase(it->second.zoneId);
-            if (_layers[it->second.mapId].empty())
-                _layers.erase(it->second.mapId);
-        }
-    }
+    auto& layer = _layers[mapId][zoneId][it->second.layerId];
+    layer.erase(playerGuid.GetCounter());
+    CleanupEmptyLayers(mapId, zoneId, it->second.layerId);
 
     _playerLayers.erase(it);
+    
+    // Clear atomic for lock-free reads (Phase 1 optimization)
+    auto atomicIt = _atomicPlayerLayers.find(playerGuid.GetCounter());
+    if (atomicIt != _atomicPlayerLayers.end())
+        atomicIt->second.Clear();
 
     if (IsRuntimeDiagnosticsEnabled())
     {
@@ -252,41 +253,47 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
     // First check if party member should sync to leader's layer (outside of lock to avoid deadlock)
     uint32 partyTargetLayer = GetPartyTargetLayer(mapId, zoneId, playerGuid);
 
-    std::lock_guard<std::mutex> guard(_layerLock);
+    uint32 assignedLayerId = 0;
+    bool shouldSync = false;
 
-    // If player is already assigned to a layer in this zone, keep them there (stickiness)
-    auto it = _playerLayers.find(playerGuid.GetCounter());
-    if (it != _playerLayers.end() && it->second.mapId == mapId && it->second.zoneId == zoneId)
     {
-        // If party leader is on a different layer, move to match them
-        if (partyTargetLayer > 0 && it->second.layerId != partyTargetLayer)
+        std::unique_lock<std::shared_mutex> guard(_layerLock);
+
+        // If player is already assigned to a layer in this zone, keep them there (stickiness)
+        auto it = _playerLayers.find(playerGuid.GetCounter());
+        if (it != _playerLayers.end() && it->second.mapId == mapId && it->second.zoneId == zoneId)
         {
-            // Remove from old layer
-            auto& oldLayerPlayers = _layers[mapId][zoneId][it->second.layerId];
-            oldLayerPlayers.erase(playerGuid.GetCounter());
-
-            if (oldLayerPlayers.empty())
-                _layers[mapId][zoneId].erase(it->second.layerId);
-            
-            // Assign to party leader's layer
-            _layers[mapId][zoneId][partyTargetLayer].insert(playerGuid.GetCounter());
-            _playerLayers[playerGuid.GetCounter()] = { mapId, zoneId, partyTargetLayer };
-            
-            LOG_DEBUG("map.partition", "Player {} moved to party leader's Layer {} in Map {} Zone {}", 
-                playerGuid.ToString(), partyTargetLayer, mapId, zoneId);
-
-            if (IsRuntimeDiagnosticsEnabled())
+            // If party leader is on a different layer, move to match them
+            if (partyTargetLayer > 0 && it->second.layerId != partyTargetLayer)
             {
-                LOG_INFO("map.partition", "Diag: AutoAssignPlayerToLayer player={} map={} zone={} layer={} reason=party",
-                    playerGuid.ToString(), mapId, zoneId, partyTargetLayer);
+                // Remove from old layer
+                auto& oldLayerPlayers = _layers[mapId][zoneId][it->second.layerId];
+                oldLayerPlayers.erase(playerGuid.GetCounter());
+
+                if (oldLayerPlayers.empty())
+                    _layers[mapId][zoneId].erase(it->second.layerId);
+                
+                // Assign to party leader's layer
+                _layers[mapId][zoneId][partyTargetLayer].insert(playerGuid.GetCounter());
+                _playerLayers[playerGuid.GetCounter()] = { mapId, zoneId, partyTargetLayer };
+                
+                LOG_DEBUG("map.partition", "Player {} moved to party leader's Layer {} in Map {} Zone {}", 
+                    playerGuid.ToString(), partyTargetLayer, mapId, zoneId);
+
+                if (IsRuntimeDiagnosticsEnabled())
+                {
+                    LOG_INFO("map.partition", "Diag: AutoAssignPlayerToLayer player={} map={} zone={} layer={} reason=party",
+                        playerGuid.ToString(), mapId, zoneId, partyTargetLayer);
+                }
+                
+                assignedLayerId = partyTargetLayer;
+                shouldSync = true;
             }
-            
-            // Save persistent assignment (async)
-            SavePersistentLayerAssignment(playerGuid, mapId, zoneId, partyTargetLayer);
-            SyncControlledToLayer(mapId, zoneId, playerGuid, partyTargetLayer);
+            else
+            {
+                return;  // Already on correct layer
+            }
         }
-        return;
-    }
 
     // If they were in a different zone/map, remove old assignment first
     if (it != _playerLayers.end())
@@ -396,9 +403,17 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
             playerGuid.ToString(), mapId, zoneId, bestLayerId);
     }
 
-    // Save persistent assignment (async) - always save so we can restore on login
-    SavePersistentLayerAssignment(playerGuid, mapId, zoneId, bestLayerId);
-    SyncControlledToLayer(mapId, zoneId, playerGuid, bestLayerId);
+        assignedLayerId = bestLayerId;
+        shouldSync = true;
+    }  // Release lock here
+
+    // Perform DB I/O outside the lock to prevent deadlocks
+    if (shouldSync)
+    {
+        // Save persistent assignment (async) - always save so we can restore on login
+        SavePersistentLayerAssignment(playerGuid, mapId, zoneId, assignedLayerId);
+        SyncControlledToLayer(mapId, zoneId, playerGuid, assignedLayerId);
+    }
 }
 
 
@@ -411,37 +426,33 @@ bool PartitionManager::IsMapPartitioned(uint32 mapId) const
 uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float y) const
 {
     PartitionGridLayout layout;
-    bool hasLayout = false;
     {
         std::shared_lock<std::shared_mutex> guard(_partitionLock);
         auto it = _gridLayouts.find(mapId);
         if (it != _gridLayouts.end())
         {
             layout = it->second;
-            hasLayout = true;
+        }
+        else
+        {
+            // Compute on-the-fly if not cached
+            uint32 count = GetPartitionCount(mapId);
+            if (count <= 1)
+                return 1;
+            layout = ComputeGridLayout(count);
         }
     }
 
-    uint32 count = hasLayout ? layout.count : GetPartitionCount(mapId);
-    if (count <= 1)
+    if (layout.count <= 1)
         return 1;
 
-    uint32 cols = hasLayout ? layout.cols : static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(count))));
-    if (cols == 0)
-        cols = 1;
-    uint32 rows = hasLayout ? layout.rows : (count + cols - 1) / cols;
-
-    uint32 gridMax = MAX_NUMBER_OF_GRIDS;
-    uint32 cellWidth = hasLayout ? layout.cellWidth : (gridMax + cols - 1) / cols;
-    uint32 cellHeight = hasLayout ? layout.cellHeight : (gridMax + rows - 1) / rows;
-
     GridCoord coord = Acore::ComputeGridCoord(x, y);
-    uint32 col = std::min(coord.x_coord / cellWidth, cols - 1);
-    uint32 row = std::min(coord.y_coord / cellHeight, rows - 1);
+    uint32 col = std::min(coord.x_coord / layout.cellWidth, layout.cols - 1);
+    uint32 row = std::min(coord.y_coord / layout.cellHeight, layout.rows - 1);
 
-    uint32 index = row * cols + col;
-    if (index >= count)
-        index = count - 1;
+    uint32 index = row * layout.cols + col;
+    if (index >= layout.count)
+        index = layout.count - 1;
 
     return index + 1;
 }
@@ -450,21 +461,22 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
 {
     if (guid)
     {
-        {
-            std::lock_guard<std::mutex> guard(_overrideLock);
-            auto ownership = _partitionOwnership.find(guid.GetCounter());
-            if (ownership != _partitionOwnership.end() && ownership->second.mapId == mapId)
-                return ownership->second.partitionId;
-        }
-
         uint64 nowMs = GameTime::GetGameTimeMS().count();
         std::lock_guard<std::mutex> guard(_overrideLock);
+        
+        // Check persistent ownership first
+        auto ownership = _partitionOwnership.find(guid.GetCounter());
+        if (ownership != _partitionOwnership.end() && ownership->second.mapId == mapId)
+            return ownership->second.partitionId;
+        
+        // Check temporary overrides
         auto it = _partitionOverrides.find(guid.GetCounter());
         if (it != _partitionOverrides.end())
         {
             if (it->second.expiresMs >= nowMs)
                 return it->second.partitionId;
-
+            
+            // Remove expired override while we have the lock
             _partitionOverrides.erase(it);
         }
     }
@@ -484,19 +496,23 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
 bool PartitionManager::IsNearPartitionBoundary(uint32 mapId, float x, float y) const
 {
     PartitionGridLayout layout;
-    bool hasLayout = false;
     {
         std::shared_lock<std::shared_mutex> guard(_partitionLock);
         auto it = _gridLayouts.find(mapId);
         if (it != _gridLayouts.end())
         {
             layout = it->second;
-            hasLayout = true;
+        }
+        else
+        {
+            uint32 count = GetPartitionCount(mapId);
+            if (count <= 1)
+                return false;
+            layout = ComputeGridLayout(count);
         }
     }
 
-    uint32 count = hasLayout ? layout.count : GetPartitionCount(mapId);
-    if (count <= 1)
+    if (layout.count <= 1)
         return false;
 
     float overlap = GetBorderOverlap();
@@ -504,23 +520,15 @@ bool PartitionManager::IsNearPartitionBoundary(uint32 mapId, float x, float y) c
     if (overlapGrids == 0)
         overlapGrids = 1;
 
-    uint32 cols = hasLayout ? layout.cols : static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(count))));
-    if (cols == 0)
-        cols = 1;
-    uint32 rows = hasLayout ? layout.rows : (count + cols - 1) / cols;
+    GridCoord coord = Acore::ComputeGridCoord(x, y);
+    uint32 col = std::min(coord.x_coord / layout.cellWidth, layout.cols - 1);
+    uint32 row = std::min(coord.y_coord / layout.cellHeight, layout.rows - 1);
 
     uint32 gridMax = MAX_NUMBER_OF_GRIDS;
-    uint32 cellWidth = hasLayout ? layout.cellWidth : (gridMax + cols - 1) / cols;
-    uint32 cellHeight = hasLayout ? layout.cellHeight : (gridMax + rows - 1) / rows;
-
-    GridCoord coord = Acore::ComputeGridCoord(x, y);
-    uint32 col = std::min(coord.x_coord / cellWidth, cols - 1);
-    uint32 row = std::min(coord.y_coord / cellHeight, rows - 1);
-
-    uint32 startX = col * cellWidth;
-    uint32 endX = std::min(startX + cellWidth - 1, gridMax - 1);
-    uint32 startY = row * cellHeight;
-    uint32 endY = std::min(startY + cellHeight - 1, gridMax - 1);
+    uint32 startX = col * layout.cellWidth;
+    uint32 endX = std::min(startX + layout.cellWidth - 1, gridMax - 1);
+    uint32 startY = row * layout.cellHeight;
+    uint32 endY = std::min(startY + layout.cellHeight - 1, gridMax - 1);
 
     if (coord.x_coord - startX < overlapGrids || endX - coord.x_coord < overlapGrids)
         return true;
@@ -547,13 +555,17 @@ void PartitionManager::RegisterPartition(std::unique_ptr<MapPartition> partition
         return;
 
     std::unique_lock<std::shared_mutex> guard(_partitionLock);
-    _partitionsByMap[partition->GetMapId()].push_back(std::move(partition));
+    uint32 mapId = partition->GetMapId();
+    uint32 partId = partition->GetPartitionId();
+    _partitionIndex[mapId][partId] = partition.get();
+    _partitionsByMap[mapId].push_back(std::move(partition));
 }
 
 void PartitionManager::ClearPartitions(uint32 mapId)
 {
     std::unique_lock<std::shared_mutex> guard(_partitionLock);
     _partitionsByMap.erase(mapId);
+    _partitionIndex.erase(mapId);
     _gridLayouts.erase(mapId);
     
     std::lock_guard<std::mutex> bGuard(_boundaryLock);
@@ -578,6 +590,7 @@ void PartitionManager::Initialize()
         std::unique_lock<std::shared_mutex> guard(_partitionLock);
         _partitionedMaps.clear();
         _partitionsByMap.clear();
+        _partitionIndex.clear();
         _gridLayouts.clear();
         _excludedZones.clear();
     }
@@ -666,16 +679,7 @@ void PartitionManager::Initialize()
         // Cache grid layout for this map
         {
             std::unique_lock<std::shared_mutex> guard(_partitionLock);
-            PartitionGridLayout layout;
-            layout.count = defaultCount;
-            layout.cols = static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(layout.count))));
-            if (layout.cols == 0)
-                layout.cols = 1;
-            layout.rows = (layout.count + layout.cols - 1) / layout.cols;
-            uint32 gridMax = MAX_NUMBER_OF_GRIDS;
-            layout.cellWidth = (gridMax + layout.cols - 1) / layout.cols;
-            layout.cellHeight = (gridMax + layout.rows - 1) / layout.rows;
-            _gridLayouts[mapId] = layout;
+            _gridLayouts[mapId] = ComputeGridLayout(defaultCount);
         }
 
         LOG_INFO("map.partition", "Initialized {} partitions for map {}", defaultCount, mapId);
@@ -800,18 +804,13 @@ void PartitionManager::UpdatePartitionsForMap(uint32 mapId, uint32 diff)
 void PartitionManager::UpdatePartitionStats(uint32 mapId, uint32 partitionId, uint32 players, uint32 creatures, uint32 boundaryObjects)
 {
     std::shared_lock<std::shared_mutex> guard(_partitionLock);
-    auto it = _partitionsByMap.find(mapId);
-    if (it == _partitionsByMap.end())
+    auto mapIt = _partitionIndex.find(mapId);
+    if (mapIt == _partitionIndex.end())
         return;
-
-    for (auto const& partition : it->second)
-    {
-        if (partition && partition->GetPartitionId() == partitionId)
-        {
-            partition->SetCounts(players, creatures, boundaryObjects);
-            return;
-        }
-    }
+    auto partIt = mapIt->second.find(partitionId);
+    if (partIt == mapIt->second.end() || !partIt->second)
+        return;
+    partIt->second->SetCounts(players, creatures, boundaryObjects);
 }
 
 
@@ -819,78 +818,58 @@ void PartitionManager::UpdatePartitionStats(uint32 mapId, uint32 partitionId, ui
 void PartitionManager::UpdatePartitionPlayerCount(uint32 mapId, uint32 partitionId, uint32 players)
 {
     std::shared_lock<std::shared_mutex> guard(_partitionLock);
-    auto it = _partitionsByMap.find(mapId);
-    if (it == _partitionsByMap.end())
+    auto mapIt = _partitionIndex.find(mapId);
+    if (mapIt == _partitionIndex.end())
         return;
-
-    for (auto const& partition : it->second)
-    {
-        if (partition && partition->GetPartitionId() == partitionId)
-        {
-            partition->SetPlayersCount(players);
-            return;
-        }
-    }
+    auto partIt = mapIt->second.find(partitionId);
+    if (partIt == mapIt->second.end() || !partIt->second)
+        return;
+    partIt->second->SetPlayersCount(players);
 }
 
 void PartitionManager::UpdatePartitionCreatureCount(uint32 mapId, uint32 partitionId, uint32 creatures)
 {
     std::shared_lock<std::shared_mutex> guard(_partitionLock);
-    auto it = _partitionsByMap.find(mapId);
-    if (it == _partitionsByMap.end())
+    auto mapIt = _partitionIndex.find(mapId);
+    if (mapIt == _partitionIndex.end())
         return;
-
-    for (auto const& partition : it->second)
-    {
-        if (partition && partition->GetPartitionId() == partitionId)
-        {
-            partition->SetCreaturesCount(creatures);
-            return;
-        }
-    }
+    auto partIt = mapIt->second.find(partitionId);
+    if (partIt == mapIt->second.end() || !partIt->second)
+        return;
+    partIt->second->SetCreaturesCount(creatures);
 }
 
 void PartitionManager::UpdatePartitionBoundaryCount(uint32 mapId, uint32 partitionId, uint32 boundaryObjects)
 {
     std::shared_lock<std::shared_mutex> guard(_partitionLock);
-    auto it = _partitionsByMap.find(mapId);
-    if (it == _partitionsByMap.end())
+    auto mapIt = _partitionIndex.find(mapId);
+    if (mapIt == _partitionIndex.end())
         return;
-
-    for (auto const& partition : it->second)
-    {
-        if (partition && partition->GetPartitionId() == partitionId)
-        {
-            partition->SetBoundaryObjectCount(boundaryObjects);
-            return;
-        }
-    }
+    auto partIt = mapIt->second.find(partitionId);
+    if (partIt == mapIt->second.end() || !partIt->second)
+        return;
+    partIt->second->SetBoundaryObjectCount(boundaryObjects);
 }
 
 bool PartitionManager::GetPartitionStats(uint32 mapId, uint32 partitionId, PartitionStats& out) const
 {
     std::shared_lock<std::shared_mutex> guard(_partitionLock);
-    auto it = _partitionsByMap.find(mapId);
-    if (it == _partitionsByMap.end())
+    auto mapIt = _partitionIndex.find(mapId);
+    if (mapIt == _partitionIndex.end())
         return false;
-
-    for (auto const& partition : it->second)
-    {
-        if (partition && partition->GetPartitionId() == partitionId)
-        {
-            out.players = partition->GetPlayersCount();
-            out.creatures = partition->GetCreaturesCount();
-            out.boundaryObjects = partition->GetBoundaryObjectCount();
-            return true;
-        }
-    }
-    return false;
+    auto partIt = mapIt->second.find(partitionId);
+    if (partIt == mapIt->second.end() || !partIt->second)
+        return false;
+    out.players = partIt->second->GetPlayersCount();
+    out.creatures = partIt->second->GetCreaturesCount();
+    out.boundaryObjects = partIt->second->GetBoundaryObjectCount();
+    return true;
 }
 
 void PartitionManager::NotifyVisibilityAttach(ObjectGuid const& guid, uint32 mapId, uint32 partitionId)
 {
     {
-        std::lock_guard<std::mutex> guard(_visibilityLock);
+        std::unique_lock<std::shared_mutex> guard(_visibilityLock);
         _visibilitySets[mapId][partitionId].insert(guid.GetCounter());
     }
     LOG_DEBUG("visibility.partition", "Attach visibility guid {} map {} partition {}", guid.GetCounter(), mapId, partitionId);
@@ -899,7 +878,7 @@ void PartitionManager::NotifyVisibilityAttach(ObjectGuid const& guid, uint32 map
 void PartitionManager::NotifyVisibilityDetach(ObjectGuid const& guid, uint32 mapId, uint32 partitionId)
 {
     {
-        std::lock_guard<std::mutex> guard(_visibilityLock);
+        std::unique_lock<std::shared_mutex> guard(_visibilityLock);
         auto mapIt = _visibilitySets.find(mapId);
         if (mapIt != _visibilitySets.end())
         {
@@ -913,7 +892,7 @@ void PartitionManager::NotifyVisibilityDetach(ObjectGuid const& guid, uint32 map
 
 uint32 PartitionManager::GetVisibilityCount(uint32 mapId, uint32 partitionId) const
 {
-    std::lock_guard<std::mutex> guard(_visibilityLock);
+    std::shared_lock<std::shared_mutex> guard(_visibilityLock);
     auto mapIt = _visibilitySets.find(mapId);
     if (mapIt == _visibilitySets.end())
         return 0;
@@ -1114,6 +1093,64 @@ bool PartitionManager::IsObjectInBoundarySet(uint32 mapId, uint32 partitionId, O
     return partitionIt->second.find(guid) != partitionIt->second.end();
 }
 
+// ======================== SPATIAL HASH GRID BOUNDARY METHODS (Phase 2) ========================
+
+void PartitionManager::RegisterBoundaryObjectWithPosition(uint32 mapId, uint32 partitionId, ObjectGuid const& guid, float x, float y)
+{
+    if (!guid)
+        return;
+
+    std::lock_guard<std::mutex> guard(_boundaryLock);
+    _boundarySpatialGrids[mapId][partitionId].Insert(guid, x, y);
+    // Also keep in legacy set for compatibility
+    _boundaryObjects[mapId][partitionId].insert(guid);
+
+    LOG_DEBUG("map.partition", "Registered boundary object {} with position ({:.1f}, {:.1f}) in map {} partition {}", 
+        guid.ToString(), x, y, mapId, partitionId);
+}
+
+void PartitionManager::UnregisterBoundaryObjectFromGrid(uint32 mapId, uint32 partitionId, ObjectGuid const& guid)
+{
+    if (!guid)
+        return;
+
+    std::lock_guard<std::mutex> guard(_boundaryLock);
+    auto mapIt = _boundarySpatialGrids.find(mapId);
+    if (mapIt != _boundarySpatialGrids.end())
+    {
+        auto partIt = mapIt->second.find(partitionId);
+        if (partIt != mapIt->second.end())
+            partIt->second.Remove(guid);
+    }
+    
+    // Also remove from legacy set
+    auto legacyMapIt = _boundaryObjects.find(mapId);
+    if (legacyMapIt != _boundaryObjects.end())
+    {
+        auto legacyPartIt = legacyMapIt->second.find(partitionId);
+        if (legacyPartIt != legacyMapIt->second.end())
+            legacyPartIt->second.erase(guid);
+    }
+
+    LOG_DEBUG("map.partition", "Unregistered boundary object {} from spatial grid in map {} partition {}", 
+        guid.ToString(), mapId, partitionId);
+}
+
+std::vector<ObjectGuid> PartitionManager::GetNearbyBoundaryObjects(uint32 mapId, uint32 partitionId, float x, float y, float radius) const
+{
+    std::lock_guard<std::mutex> guard(_boundaryLock);
+    
+    auto mapIt = _boundarySpatialGrids.find(mapId);
+    if (mapIt == _boundarySpatialGrids.end())
+        return {};
+    
+    auto partIt = mapIt->second.find(partitionId);
+    if (partIt == mapIt->second.end())
+        return {};
+    
+    return partIt->second.QueryNearby(x, y, radius);
+}
+
 // ======================== NEW CLEANUP METHODS ========================
 
 void PartitionManager::CleanupStaleRelocations()
@@ -1170,13 +1207,19 @@ void PartitionManager::CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, 
 
 void PartitionManager::ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGuid)
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::unique_lock<std::shared_mutex> guard(_layerLock);
     auto it = _playerLayers.find(playerGuid.GetCounter());
     if (it != _playerLayers.end())
     {
         auto& layer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
         layer.erase(playerGuid.GetCounter());
         _playerLayers.erase(it);
+        
+        // Clear atomic for lock-free reads (Phase 1 optimization)
+        auto atomicIt = _atomicPlayerLayers.find(playerGuid.GetCounter());
+        if (atomicIt != _atomicPlayerLayers.end())
+            atomicIt->second.Clear();
+        
         LOG_DEBUG("map.partition", "Force removed player {} from all layers", playerGuid.ToString());
 
         if (IsRuntimeDiagnosticsEnabled())
@@ -1184,13 +1227,19 @@ void PartitionManager::ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGu
             LOG_INFO("map.partition", "Diag: ForceRemovePlayerFromAllLayers player={}", playerGuid.ToString());
         }
     }
+
+    // Clean up layer switch cooldown to prevent unbounded growth
+    {
+        std::lock_guard<std::mutex> cooldownGuard(_cooldownLock);
+        _layerSwitchCooldowns.erase(playerGuid.GetCounter());
+    }
 }
 
 std::pair<uint32_t, uint32_t> PartitionManager::GetLayersForTwoPlayers(
     uint32_t mapId, uint32_t zoneId, 
     ObjectGuid const& player1, ObjectGuid const& player2) const
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::shared_lock<std::shared_mutex> guard(_layerLock);
     
     uint32_t layer1 = 0;
     uint32_t layer2 = 0;
@@ -1221,6 +1270,40 @@ PartitionManager::PartitionGridLayout const* PartitionManager::GetCachedLayout(u
     return GetGridLayout(mapId);
 }
 
+PartitionManager::PartitionGridLayout PartitionManager::ComputeGridLayout(uint32 count) const
+{
+    PartitionGridLayout layout;
+    layout.count = count;
+    layout.cols = static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(count))));
+    if (layout.cols == 0)
+        layout.cols = 1;
+    layout.rows = (count + layout.cols - 1) / layout.cols;
+    uint32 gridMax = MAX_NUMBER_OF_GRIDS;
+    layout.cellWidth = (gridMax + layout.cols - 1) / layout.cols;
+    layout.cellHeight = (gridMax + layout.rows - 1) / layout.rows;
+    return layout;
+}
+
+void PartitionManager::CleanupEmptyLayers(uint32 mapId, uint32 zoneId, uint32 layerId)
+{
+    // Note: _layerLock must already be held by caller
+    auto& zoneLayers = _layers[mapId][zoneId];
+    auto layerIt = zoneLayers.find(layerId);
+    if (layerIt == zoneLayers.end())
+        return;
+    
+    if (layerIt->second.empty())
+    {
+        zoneLayers.erase(layerId);
+        if (zoneLayers.empty())
+        {
+            _layers[mapId].erase(zoneId);
+            if (_layers[mapId].empty())
+                 _layers.erase(mapId);
+        }
+    }
+}
+
 // ======================== FEATURE 1: Persistent Layer Assignment ========================
 
 void PartitionManager::LoadPersistentLayerAssignment(ObjectGuid const& playerGuid)
@@ -1240,7 +1323,7 @@ void PartitionManager::LoadPersistentLayerAssignment(ObjectGuid const& playerGui
     uint32 layerId = (*result)[2].Get<uint16>();
     
     // Verify that this layer still exists
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::unique_lock<std::shared_mutex> guard(_layerLock);
     auto mapIt = _layers.find(mapId);
     if (mapIt == _layers.end())
         return;
@@ -1269,7 +1352,6 @@ void PartitionManager::SavePersistentLayerAssignment(ObjectGuid const& playerGui
     stmt->SetData(1, static_cast<uint16>(mapId));
     stmt->SetData(2, zoneId);
     stmt->SetData(3, static_cast<uint16>(layerId));
-    stmt->SetData(4, static_cast<uint32>(GameTime::GetGameTime().count()));
     CharacterDatabase.Execute(stmt);
     
     LOG_DEBUG("map.partition", "Saved persistent layer {} for player {} in map {} zone {}",
@@ -1295,7 +1377,7 @@ uint32 PartitionManager::GetPartyTargetLayer(uint32 mapId, uint32 zoneId, Object
     if (leaderGuid == playerGuid)
         return 0; // Player is leader, no target layer
 
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::shared_lock<std::shared_mutex> guard(_layerLock);
     auto it = _playerLayers.find(leaderGuid.GetCounter());
     if (it == _playerLayers.end())
         return 0;
@@ -1323,7 +1405,7 @@ void PartitionManager::AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid 
     if (!IsNPCLayeringEnabled())
         return;
 
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::unique_lock<std::shared_mutex> guard(_layerLock);
     _npcLayers[npcGuid.GetCounter()] = { mapId, zoneId, layerId };
     
     LOG_DEBUG("map.partition", "Assigned NPC {} to layer {} in map {} zone {}",
@@ -1332,13 +1414,13 @@ void PartitionManager::AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid 
 
 void PartitionManager::RemoveNPCFromLayer(ObjectGuid const& npcGuid)
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::unique_lock<std::shared_mutex> guard(_layerLock);
     _npcLayers.erase(npcGuid.GetCounter());
 }
 
 uint32 PartitionManager::GetLayerForNPC(uint32 mapId, uint32 zoneId, ObjectGuid const& npcGuid) const
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::shared_lock<std::shared_mutex> guard(_layerLock);
     auto it = _npcLayers.find(npcGuid.GetCounter());
     if (it == _npcLayers.end())
         return 0;
@@ -1351,7 +1433,7 @@ uint32 PartitionManager::GetLayerForNPC(uint32 mapId, uint32 zoneId, ObjectGuid 
 
 uint32 PartitionManager::GetLayerForNPC(ObjectGuid const& npcGuid) const
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::shared_lock<std::shared_mutex> guard(_layerLock);
     auto it = _npcLayers.find(npcGuid.GetCounter());
     if (it == _npcLayers.end())
         return 0;
@@ -1361,7 +1443,7 @@ uint32 PartitionManager::GetLayerForNPC(ObjectGuid const& npcGuid) const
 
 uint32 PartitionManager::GetDefaultLayerForZone(uint32 mapId, uint32 zoneId, uint64 seed) const
 {
-    std::lock_guard<std::mutex> guard(_layerLock);
+    std::shared_lock<std::shared_mutex> guard(_layerLock);
     auto mapIt = _layers.find(mapId);
     if (mapIt == _layers.end())
         return 0;
@@ -1447,16 +1529,16 @@ void PartitionManager::ResizeMapPartitions(uint32 mapId, uint32 newCount, char c
                 }), it->second.end());
         }
 
-        PartitionGridLayout layout;
-        layout.count = newCount;
-        layout.cols = static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(layout.count))));
-        if (layout.cols == 0)
-            layout.cols = 1;
-        layout.rows = (layout.count + layout.cols - 1) / layout.cols;
-        uint32 gridMax = MAX_NUMBER_OF_GRIDS;
-        layout.cellWidth = (gridMax + layout.cols - 1) / layout.cols;
-        layout.cellHeight = (gridMax + layout.rows - 1) / layout.rows;
+        PartitionGridLayout layout = ComputeGridLayout(newCount);
         _gridLayouts[mapId] = layout;
+
+        // Rebuild O(1) partition index for this map
+        _partitionIndex.erase(mapId);
+        for (auto const& partition : it->second)
+        {
+            if (partition)
+                _partitionIndex[mapId][partition->GetPartitionId()] = partition.get();
+        }
     }
 
     {
@@ -1478,7 +1560,7 @@ void PartitionManager::ResizeMapPartitions(uint32 mapId, uint32 newCount, char c
     }
 
     {
-        std::lock_guard<std::mutex> guard(_visibilityLock);
+        std::unique_lock<std::shared_mutex> guard(_visibilityLock);
         auto mapIt = _visibilitySets.find(mapId);
         if (mapIt != _visibilitySets.end())
         {
@@ -1670,11 +1752,326 @@ void PartitionManager::ProcessPrecacheQueue(uint32 mapId)
             toProcess.push_back(req);
             ++processed;
         }
+
+        // Prune stale entries from _precacheRecent to prevent unbounded growth
+        if (_precacheRecent.size() > 512)
+        {
+            for (auto it = _precacheRecent.begin(); it != _precacheRecent.end();)
+            {
+                if (nowMs - it->second > 30000)
+                    it = _precacheRecent.erase(it);
+                else
+                    ++it;
+            }
+        }
     }
 
     for (auto const& req : toProcess)
     {
         Position center(req.x, req.y, 0.0f, 0.0f);
         map->LoadGridsInRange(center, SIZE_OF_GRIDS * 1.5f);
+    }
+}
+
+// Phase 5: Player-Initiated Layer Switching (WoW-style)
+bool PartitionManager::CanSwitchLayer(ObjectGuid const& playerGuid) const
+{
+    if (!IsLayeringEnabled())
+        return false;
+
+    // Get player object to check combat and death status
+    Player* player = ObjectAccessor::FindPlayer(playerGuid);
+    if (!player)
+        return false;
+    
+    // Combat check
+    if (player->IsInCombat())
+        return false;
+    
+    // Death check
+    if (player->isDead())
+        return false;
+    
+    // Cooldown check
+    std::lock_guard<std::mutex> guard(_cooldownLock);
+    auto it = _layerSwitchCooldowns.find(playerGuid.GetCounter());
+    if (it != _layerSwitchCooldowns.end())
+    {
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        if (!it->second.CanSwitch(nowMs))
+            return false;
+    }
+    
+    return true;
+}
+
+uint32 PartitionManager::GetLayerSwitchCooldownMs(ObjectGuid const& playerGuid) const
+{
+    std::lock_guard<std::mutex> guard(_cooldownLock);
+    auto it = _layerSwitchCooldowns.find(playerGuid.GetCounter());
+    if (it == _layerSwitchCooldowns.end())
+        return 0;
+    
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
+    return it->second.GetRemainingCooldownMs(nowMs);
+}
+
+bool PartitionManager::SwitchPlayerToLayer(ObjectGuid const& playerGuid, uint32 targetLayer, std::string const& reason)
+{
+    if (!IsLayeringEnabled())
+        return false;
+
+    Player* player = ObjectAccessor::FindPlayer(playerGuid);
+    if (!player)
+        return false;
+    
+    // Enforce restrictions
+    if (!CanSwitchLayer(playerGuid))
+        return false;
+    
+    uint32 mapId = player->GetMapId();
+    uint32 zoneId = player->GetZoneId();
+    
+    // Check if target layer actually exists (layers have arbitrary IDs, not 0-indexed)
+    {
+        std::shared_lock<std::shared_mutex> guard(_layerLock);
+        auto mapIt = _layers.find(mapId);
+        if (mapIt == _layers.end())
+            return false;
+        auto zoneIt = mapIt->second.find(zoneId);
+        if (zoneIt == mapIt->second.end())
+            return false;
+        if (zoneIt->second.find(targetLayer) == zoneIt->second.end())
+            return false;
+    }
+    
+    // Get current layer
+    uint32 currentLayer = GetLayerForPlayer(mapId, zoneId, playerGuid);
+    if (currentLayer == targetLayer)
+        return false; // Already on target layer
+    
+    // Perform the switch
+    AssignPlayerToLayer(mapId, zoneId, playerGuid, targetLayer);
+    
+    // Record the switch for cooldown tracking
+    {
+        std::lock_guard<std::mutex> guard(_cooldownLock);
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        _layerSwitchCooldowns[playerGuid.GetCounter()].RecordSwitch(nowMs);
+    }
+    
+    // Log the switch
+    LOG_DEBUG("map.partition", "Player {} switched from layer {} to layer {} (reason: {})",
+        playerGuid.ToString(), currentLayer, targetLayer, reason);
+    
+    if (IsRuntimeDiagnosticsEnabled())
+    {
+        LOG_INFO("map.partition", "Diag: SwitchPlayerToLayer player={} from={} to={} reason={}",
+            playerGuid.ToString(), currentLayer, targetLayer, reason);
+    }
+    
+    return true;
+}
+
+// ======================== PHASE 6: LAYER REBALANCING ========================
+
+void PartitionManager::EvaluateLayerRebalancing(uint32 mapId, uint32 zoneId)
+{
+    if (!_rebalancingConfig.enabled || !IsLayeringEnabled())
+        return;
+    
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
+    uint64 key = (static_cast<uint64>(mapId) << 32) | zoneId;
+    
+    // Throttle checks per zone
+    auto it = _lastRebalanceCheck.find(key);
+    if (it != _lastRebalanceCheck.end() && (nowMs - it->second) < _rebalancingConfig.checkIntervalMs)
+        return;
+    
+    _lastRebalanceCheck[key] = nowMs;
+    
+    auto playerCounts = GetLayerPlayerCounts(mapId, zoneId);
+    if (playerCounts.empty() || playerCounts.size() <= 1)
+        return;  // Nothing to rebalance
+    
+    if (!ShouldRebalanceLayers(playerCounts))
+        return;
+    
+    LOG_INFO("map.partition", "Layer rebalancing triggered for map {} zone {} - {} layers", 
+        mapId, zoneId, playerCounts.size());
+    
+    // Calculate target distribution
+    uint32 totalPlayers = 0;
+    for (uint32 count : playerCounts)
+        totalPlayers += count;
+    
+    uint32 targetLayers = std::max(1u, (totalPlayers + GetLayerCapacity() - 1) / GetLayerCapacity());
+    if (targetLayers >= playerCounts.size())
+        return; // No consolidation needed
+    
+    uint32 playersPerLayer = totalPlayers / targetLayers;
+    std::vector<uint32> targetDistribution(targetLayers, playersPerLayer);
+    
+    // Distribute remainder
+    for (uint32 i = 0; i < (totalPlayers % targetLayers); ++i)
+        targetDistribution[i]++;
+    
+    ConsolidateLayers(mapId, zoneId, targetDistribution);
+    
+    _rebalancingMetrics.totalRebalances.fetch_add(1, std::memory_order_relaxed);
+}
+
+std::vector<uint32> PartitionManager::GetLayerPlayerCounts(uint32 mapId, uint32 zoneId) const
+{
+    std::shared_lock lock(_layerLock);
+    
+    auto mapIt = _layers.find(mapId);
+    if (mapIt == _layers.end())
+        return {};
+    
+    auto zoneIt = mapIt->second.find(zoneId);
+    if (zoneIt == mapIt->second.end())
+        return {};
+    
+    std::vector<uint32> counts;
+    counts.reserve(zoneIt->second.size());
+    
+    for (auto const& [layerId, players] : zoneIt->second)
+    {
+        counts.push_back(static_cast<uint32>(players.size()));
+    }
+    
+    return counts;
+}
+
+bool PartitionManager::ShouldRebalanceLayers(std::vector<uint32> const& playerCounts) const
+{
+    if (playerCounts.size() <= 1)
+        return false;
+    
+    // Check for empty or very sparse layers
+    uint32 sparseCount = 0;
+    for (uint32 count : playerCounts)
+    {
+        if (count < _rebalancingConfig.minPlayersPerLayer)
+            sparseCount++;
+    }
+    
+    // If we have sparse layers, rebalance
+    if (sparseCount > 0)
+        return true;
+    
+    // Check for imbalance using coefficient of variation
+    float total = 0.0f;
+    for (uint32 count : playerCounts)
+        total += static_cast<float>(count);
+    
+    float mean = total / playerCounts.size();
+    if (mean < 1.0f)
+        return false;  // Too few players to care
+    
+    float variance = 0.0f;
+    for (uint32 count : playerCounts)
+    {
+        float diff = static_cast<float>(count) - mean;
+        variance += diff * diff;
+    }
+    variance /= playerCounts.size();
+    float stdDev = std::sqrt(variance);
+    float coefficientOfVariation = stdDev / mean;
+    
+    return coefficientOfVariation > _rebalancingConfig.imbalanceThreshold;
+}
+
+void PartitionManager::ConsolidateLayers(uint32 mapId, uint32 zoneId, std::vector<uint32> const& targetDistribution)
+{
+    // Collect players to notify outside lock to avoid deadlock with ObjectAccessor
+    std::vector<std::pair<ObjectGuid, uint32>> playersToNotify;
+
+    {
+    std::unique_lock lock(_layerLock);
+    
+    auto mapIt = _layers.find(mapId);
+    if (mapIt == _layers.end())
+        return;
+    
+    auto zoneIt = mapIt->second.find(zoneId);
+    if (zoneIt == mapIt->second.end())
+        return;
+    
+    // Collect all players from all layers
+    std::vector<ObjectGuid::LowType> allPlayers;
+    size_t originalLayerCount = zoneIt->second.size();
+    
+    for (auto const& [layerId, players] : zoneIt->second)
+    {
+        allPlayers.insert(allPlayers.end(), players.begin(), players.end());
+    }
+    
+    if (allPlayers.empty())
+        return;
+    
+    // Clear existing layer assignments
+    zoneIt->second.clear();
+    
+    // Redistribute players according to target distribution
+    size_t playerIdx = 0;
+    uint32 migratedCount = 0;
+    
+    for (uint32 layerId = 0; layerId < targetDistribution.size() && playerIdx < allPlayers.size(); ++layerId)
+    {
+        auto& layer = zoneIt->second[layerId];
+        
+        for (uint32 i = 0; i < targetDistribution[layerId] && playerIdx < allPlayers.size(); ++i)
+        {
+            ObjectGuid::LowType playerLow = allPlayers[playerIdx];
+            layer.insert(playerLow);
+            
+            // Update layer assignment tracking
+            auto assignIt = _playerLayers.find(playerLow);
+            if (assignIt != _playerLayers.end())
+            {
+                uint32 oldLayer = assignIt->second.layerId;
+                if (oldLayer != layerId)
+                {
+                    assignIt->second.layerId = layerId;
+                    migratedCount++;
+                    
+                    // Update atomic assignment
+                    auto atomicIt = _atomicPlayerLayers.find(playerLow);
+                    if (atomicIt != _atomicPlayerLayers.end())
+                        atomicIt->second.Store(mapId, zoneId, layerId);
+                    
+                    // Queue notification for after lock release (avoids deadlock)
+                    ObjectGuid playerGuid = ObjectGuid::Create<HighGuid::Player>(playerLow);
+                    playersToNotify.emplace_back(playerGuid, layerId);
+                }
+            }
+            
+            playerIdx++;
+        }
+    }
+    
+    _rebalancingMetrics.playersMigrated.fetch_add(migratedCount, std::memory_order_relaxed);
+    
+    if (originalLayerCount > targetDistribution.size())
+    {
+        _rebalancingMetrics.layersConsolidated.fetch_add(
+            static_cast<uint32>(originalLayerCount - targetDistribution.size()), 
+            std::memory_order_relaxed);
+    }
+    
+    LOG_INFO("map.partition", "Layer consolidation complete for map {} zone {} - {} layers -> {} layers, {} players migrated",
+        mapId, zoneId, originalLayerCount, targetDistribution.size(), migratedCount);
+    }  // Release _layerLock here
+
+    // Send notifications outside the lock to avoid deadlock with ObjectAccessor
+    for (auto const& [guid, layerId] : playersToNotify)
+    {
+        if (Player* player = ObjectAccessor::FindPlayer(guid))
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "You have been moved to Layer %u for better population balance.", layerId);
+        }
     }
 }

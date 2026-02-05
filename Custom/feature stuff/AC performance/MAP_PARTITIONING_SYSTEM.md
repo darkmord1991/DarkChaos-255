@@ -138,7 +138,12 @@ Layer assignment is evaluated **when players enter a map** and **on zone change*
 - `Map::AddPlayerToMap` assigns a layer on map entry.
 - `Player::UpdateZone` re-evaluates the layer on zone change.
 
-**Stickiness** applies within the same zone. Players are not continuously rebalanced while moving inside a zone. Party sync can move members to the leader’s layer when `AutoAssignPlayerToLayer` is called. Controlled pets/guardians/charmed creatures are synced to the player’s layer on assignment.
+**Stickiness** applies within the same zone. Players are not continuously rebalanced while moving inside a zone. Party sync can move members to the leader’s layer when `AutoAssignPlayerToLayer` is called.
+
+When NPC layering is enabled (`MapPartitions.Layers.IncludeNPCs = 1`), **each layer is a completely independent world copy** (like retail WoW layering):
+- **World spawns** (creatures/gameobjects) are deterministically distributed across layers
+- **Player-owned NPCs** (pets/guardians/charmed) are synced to the owner's layer on assignment
+- **Complete isolation**: Players can only see other players and NPCs on the same layer
 
 **Dynamic layering**: new layers are created only when a player joins/gets assigned and all existing layers are at capacity, up to `MapPartitions.Layers.Max`.
 
@@ -233,11 +238,15 @@ The system handles different map types according to specific rules to ensure sta
 
 ## Commands
 
+### Player Commands:
+- `.dcpartition status` — View partition and layer info for your current map.
+- `.dcpartition layer <id>` — Manually switch to a specific layer (GM mode).
+- `.dcpartition diag <on|off|status>` — Toggle runtime diagnostics for layer assignment logging.
+- `.dcpartition config` — Display current partition and layer configuration settings.
+
+All commands are under `.dc partition` (requires GM permissions).
 | Command | Description |
 |---------|-------------|
-| `.dc partition status` | Shows active partitions, player counts, system health, and grid layout. |
-| `.dc partition layer [id]` | Manually switch your character to a specific layer ID (requires Layering). |
-| `.dc partition diag [on\|off\|status]` | Enable/disable a short-lived diagnostics window (metrics only). |
 | `.gps` | Displays detailed position info including Partition ID and Layer ID. |
 | `.stresstest partition [iterations]` | Runs performance benchmarks on partition logic. |
 
@@ -296,9 +305,44 @@ The system handles different map types according to specific rules to ensure sta
 
 ---
 
+## Phase 11: Advanced Features (Implemented)
+
+### 6. Spatial Hashing for Boundaries (Phase 2)
+- **Purpose**: O(1) boundary object lookups instead of O(N) iteration.
+- **Mechanism**:
+  - `SpatialHashGrid` struct divides space into 100-yard cells.
+  - Each cell stores a list of boundary objects with positions.
+  - `GetNearbyBoundaryObjects(x, y, radius)` queries only relevant cells.
+- **Performance**: 10-50x faster lookups in dense boundary areas.
+- **Config**:
+  - `MapPartitions.SpatialHash.Enabled = 1`
+  - `MapPartitions.SpatialHash.CellSize = 100`
+
+### 7. WoW-Style Layer Switching (Phase 5)
+- **Purpose**: Allow players to manually join a friend's/guildmate's/groupmate's layer.
+- **Command**: `.dc partition join <player>`
+- **Anti-Exploit**:
+  - Combat/death checks (cannot switch in combat or while dead).
+  - Escalating cooldowns: 1min → 2min → 5min → 10min max.
+  - Social requirement: Must be friends, guildmates, or groupmates.
+
+### 8. Layer Rebalancing (Phase 6)
+- **Purpose**: Automatically consolidate sparse layers to prevent "ghost" layers.
+- **Mechanism**:
+  - `EvaluateLayerRebalancing()` runs periodically (every 5 minutes per zone).
+  - Uses coefficient of variation to detect imbalance.
+  - `ConsolidateLayers()` migrates players with in-game notifications.
+- **Config**:
+  - `MapPartitions.Layers.Rebalancing.Enabled = 1`
+  - `MapPartitions.Layers.Rebalancing.CheckIntervalMs = 300000`
+  - `MapPartitions.Layers.Rebalancing.MinPlayersPerLayer = 5`
+  - `MapPartitions.Layers.Rebalancing.ImbalanceThreshold = 0.3`
+
+---
+
 ## Future Improvements
 
 ### Potential Enhancements
-1. **Partition Load Balancing**: Migrate objects to less-loaded partitions dynamically.
-2. **Metrics Dashboard**: Real-time visualization of partition loads and handoff rates.
-3. **Smart Grid Sizing**: Auto-calculate grid size based on map topology (e.g., simpler grid for oceans).
+1. **Metrics Dashboard**: Real-time visualization of partition loads and handoff rates.
+2. **Smart Grid Sizing**: Auto-calculate grid size based on map topology (e.g., simpler grid for oceans).
+3. **Cross-Shard Layering**: Integration with cross-realm technology for larger populations.

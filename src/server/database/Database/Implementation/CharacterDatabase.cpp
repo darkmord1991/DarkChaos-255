@@ -709,7 +709,7 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         CONNECTION_SYNCH);
 
     PrepareStatement(CHAR_REP_DC_LAYER_ASSIGNMENT,
-        "REPLACE INTO dc_character_layer_assignment (guid, map_id, zone_id, layer_id, timestamp) VALUES (?, ?, ?, ?, ?)",
+        "REPLACE INTO dc_character_layer_assignment (guid, map_id, zone_id, layer_id) VALUES (?, ?, ?, ?)",
         CONNECTION_ASYNC);
 }
 

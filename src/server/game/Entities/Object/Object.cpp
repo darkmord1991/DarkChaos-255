@@ -1776,12 +1776,13 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
             }
 
             // NPC layering: Hide NPCs that are on a different layer than the player
+            // Each layer is a completely independent world (like retail WoW layering)
             if (sPartitionMgr->IsNPCLayeringEnabled())
             {
                 uint32 playerLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
                 uint32 npcLayer = sPartitionMgr->GetLayerForNPC(player->GetMapId(), player->GetZoneId(), cObj->GetGUID());
                 
-                // Keep NPC visibility strictly within the same layer.
+                // Strict layer isolation: players can only see NPCs on the same layer
                 if (playerLayer != npcLayer)
                 {
                     return false;

@@ -261,10 +261,13 @@ These commands require GM or Administrator access levels.
 | `clearflag` | `[player]` | Clear the `PLAYER_FLAGS_NO_XP_GAIN` flag. |
 | `partition status` | | Show partition system status and per-partition stats for your current map. |
 | `partition layer` | `<layerId>` | Move yourself to a specific layer ID (requires layering enabled). |
+| `partition join` | `<player>` | Join a friend's, guildmate's, or groupmate's layer (WoW-style, with cooldown). |
 | `partition diag` | `[on\|off\|status]` | Toggle or query runtime diagnostics for layer/partition assignment logging. |
+| `partition config` | | Display current partition and layer configuration settings. |
 
-*Notes:* Layer assignment happens on map entry and zone change. When NPC layering is enabled, pets/guardians/charmed creatures follow the owner’s layer on assignment.
+*Notes:* Layer assignment happens on map entry and zone change. When NPC layering is enabled (`MapPartitions.Layers.IncludeNPCs = 1`), each layer is a completely independent world copy. NPCs are distributed across layers, and pets/guardians/charmed creatures follow the owner's layer.
 *Dynamic layering:* New layers are only created when a player is assigned and all existing layers are at capacity, up to `MapPartitions.Layers.Max`.
+*Layer switching:* The `.dc partition join` command has escalating cooldowns (1min → 2min → 5min → 10min) to prevent exploit abuse.
 
 ### System: Dungeon Quests (`.dcquests`)
 *Command:* `.dcquests`
