@@ -60,6 +60,7 @@ namespace DCPerfTest
 
     TimingResult TestGreatVaultSimulation(uint32 playerCount);
     TimingResult TestRandomMapSampling(Player* player, uint32 mapSamples, uint32 pointsPerMap);
+    TimingResult TestPartitionSuite(uint32 iterations);
 
     // Calculate percentile from sorted vector
     uint64 GetPercentile(const std::vector<uint64>& sortedTimes, float percentile)
@@ -136,6 +137,7 @@ namespace DCPerfTest
     {
         uint32 iterations = 1000000;
         bool detailed = false;
+        bool allowPersistence = false;
         std::unordered_set<std::string> filters;
         if (args && *args)
         {
@@ -149,6 +151,15 @@ namespace DCPerfTest
                     continue;
                 }
 
+                for (char& c : token)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+                if (token == "persist" || token == "db")
+                {
+                    allowPersistence = true;
+                    continue;
+                }
+
                 bool isNumber = !token.empty() && std::all_of(token.begin(), token.end(), ::isdigit);
                 if (isNumber)
                 {
@@ -158,8 +169,6 @@ namespace DCPerfTest
                     continue;
                 }
 
-                for (char& c : token)
-                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 filters.insert(token);
             }
         }
@@ -180,6 +189,7 @@ namespace DCPerfTest
         };
 
         handler->PSendSysMessage("|cff00ff00=== Partition Stress Test ({} iterations, detailed={}) ===|r", iterations, detailed ? "yes" : "no");
+        handler->PSendSysMessage("Layer persistence: {}", allowPersistence ? "enabled" : "disabled");
         if (!filters.empty())
         {
             std::string filterList;
@@ -194,6 +204,10 @@ namespace DCPerfTest
         else
             handler->PSendSysMessage("Filters: all");
         handler->PSendSysMessage("Available: partition, mixed, relocation, layering, boundary, density, migration, overflow, npc, lookup");
+
+        bool previousPersistence = sPartitionMgr->IsLayerPersistenceEnabled();
+        if (!allowPersistence)
+            sPartitionMgr->SetLayerPersistenceEnabled(false);
 
         // Test 1: Partition ID Calculation
         if (wants("partition", { "part" }))
@@ -380,7 +394,122 @@ namespace DCPerfTest
         }
 
         handler->SendSysMessage("|cff00ff00=== Partition Stress Test Complete ===|r");
+        sPartitionMgr->SetLayerPersistenceEnabled(previousPersistence);
         return true;
+    }
+
+    TimingResult TestPartitionSuite(uint32 iterations)
+    {
+        TimingResult result;
+        result.testName = "Partition/Layer Stress (suite)";
+        result.iterations = 1;
+        result.success = true;
+
+        uint32 baseIters = iterations;
+        if (baseIters < 1000)
+            baseIters = 1000;
+
+        uint32 relocationIters = std::max<uint32>(baseIters / 10, 1000);
+        uint32 layeringIters = std::max<uint32>(baseIters / 5, 1000);
+        uint32 boundaryIters = std::max<uint32>(baseIters / 5, 1000);
+        uint32 densityIters = std::max<uint32>(baseIters / 10, 1000);
+        uint32 moveIters = std::max<uint32>(baseIters / 20, 500);
+        uint32 npcIters = std::max<uint32>(baseIters / 10, 1000);
+        uint32 lookupIters = std::max<uint32>(baseIters / 2, 1000);
+
+        bool previousPersistence = sPartitionMgr->IsLayerPersistenceEnabled();
+        sPartitionMgr->SetLayerPersistenceEnabled(false);
+
+        uint32 checkSum = 0;
+        auto start = Clock::now();
+
+        for (uint32 i = 0; i < baseIters; ++i)
+        {
+            float x = (float)(rand() % 10000) - 5000.0f;
+            float y = (float)(rand() % 10000) - 5000.0f;
+            checkSum += sPartitionMgr->GetPartitionIdForPosition(0, x, y);
+        }
+
+        for (uint32 i = 0; i < baseIters; ++i)
+        {
+            float x = (float)(rand() % 8000);
+            float y = (float)(rand() % 8000);
+            checkSum += sPartitionMgr->GetPartitionIdForPosition(i % 2, x, y);
+        }
+
+        for (uint32 i = 0; i < relocationIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 1);
+            if (sPartitionMgr->BeginRelocation(guid, 0, 1, 2))
+                sPartitionMgr->CommitRelocation(guid);
+        }
+
+        for (uint32 i = 0; i < layeringIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 10000);
+            sPartitionMgr->AutoAssignPlayerToLayer(0, 15, guid);
+        }
+
+        for (uint32 i = 0; i < boundaryIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(1, i + 50000);
+            sPartitionMgr->RegisterBoundaryObject(0, 1, guid);
+            sPartitionMgr->UnregisterBoundaryObject(0, 1, guid);
+        }
+
+        for (uint32 i = 0; i < densityIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 100000);
+            sPartitionMgr->AutoAssignPlayerToLayer(1, 1, guid);
+        }
+
+        for (uint32 i = 0; i < moveIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 200000);
+            uint32 fromPart = (i % 4) + 1;
+            uint32 toPart = ((i + 1) % 4) + 1;
+            if (sPartitionMgr->BeginRelocation(guid, 0, fromPart, toPart))
+                sPartitionMgr->CommitRelocation(guid);
+        }
+
+        uint32 layerCapacity = sPartitionMgr->GetLayerCapacity();
+        uint32 overflowIters = layerCapacity * 5;
+        if (overflowIters < 100)
+            overflowIters = 100;
+        for (uint32 i = 0; i < overflowIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 300000);
+            sPartitionMgr->AutoAssignPlayerToLayer(0, 100, guid);
+        }
+
+        if (sPartitionMgr->IsNPCLayeringEnabled())
+        {
+            for (uint32 i = 0; i < npcIters; ++i)
+            {
+                ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(1, i + 400000);
+                sPartitionMgr->AssignNPCToLayer(0, 15, guid, (i % 3) + 1);
+            }
+        }
+
+        for (uint32 i = 0; i < lookupIters; ++i)
+        {
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>((i % 10000) + 100000);
+            checkSum += sPartitionMgr->GetPlayerLayer(0, 15, guid);
+        }
+
+        auto end = Clock::now();
+        sPartitionMgr->SetLayerPersistenceEnabled(previousPersistence);
+
+        if (checkSum == 0xFFFFFFFFu)
+            result.error = "checksum sentinel";
+
+        result.totalUs = std::chrono::duration_cast<Microseconds>(end - start).count();
+        result.avgUs = result.totalUs;
+        result.minUs = result.totalUs;
+        result.maxUs = result.totalUs;
+        result.p95Us = result.totalUs;
+        result.p99Us = result.totalUs;
+        return result;
     }
 
     // NOTE: Partition info is available via .dc partition status in cs_dc_addons.cpp
@@ -2721,6 +2850,7 @@ public:
                 RunSuite(handler, "sql", "", printDetails, out);
                 RunSuite(handler, "cache", "", printDetails, out);
                 RunSuite(handler, "systems", "", printDetails, out);
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestPartitionSuite(100000));
                 RunSuite(handler, "coredb", "", printDetails, out);
                 RunSuite(handler, "stress", "", printDetails, out);
                 if (printDetails)
@@ -3432,6 +3562,7 @@ public:
         HandlePerfTestSQL(handler, "");
         HandlePerfTestCache(handler, "");
         HandlePerfTestSystems(handler, "");
+        HandlePartitionStressTest(handler, "");
         HandlePerfTestCoreDB(handler, "");
         HandlePerfTestPlayerSim(handler, "");
         HandlePerfTestStress(handler, "");

@@ -417,7 +417,7 @@ Performance and stress testing tools for diagnosing server performance issues. M
 | `playersim` | `[playerCount] [includeCore=1|0] [includeVault=1|0]` | Simulate player counts with optional core/vault queries. |
 | `stress` | `[baseCount]` | Run heavy load simulations. |
 | `dbasync` | `[queries] [concurrency]` | Test async DB burst throughput. |
-| `partition` | `[iterations] [detailed] [filters...]` | Layer/partition microbenchmarks. Filters: partition, mixed, relocation, layering, boundary, density, migration, overflow, npc, lookup. |
+| `partition` | `[iterations] [detailed] [persist|db] [filters...]` | Layer/partition microbenchmarks. Filters: partition, mixed, relocation, layering, boundary, density, migration, overflow, npc, lookup. `persist` enables DB-backed layer persistence during the test (off by default). |
 | `path` | `[iterations]` | Test pathfinding performance (requires in-game player). |
 | `cpu` | `[iterations]` | Run CPU hot-path benchmark. |
 | `mysql` | | Print MySQL connection and performance status. |
@@ -427,4 +427,4 @@ Performance and stress testing tools for diagnosing server performance issues. M
 | `loopreport` | `<suite> [loops=0] [sleepMs=1000] [topN=10] [details=0|1] [format=json|csv] [suiteArgs...]` | Run repeated suite and write a JSON/CSV loop report (loops=0 means infinite). |
 
 *Suite aliases:* `stress` also accepts `big` in loop/report suites.
-*Partition examples:* `.stresstest partition 200000 layer lookup`, `.stresstest partition detailed relocation`.
+*Partition examples:* `.stresstest partition 200000 layer lookup`, `.stresstest partition detailed relocation`, `.stresstest partition 50000 persist`.

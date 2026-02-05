@@ -193,7 +193,8 @@ void PartitionManager::AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, Obje
         std::unique_lock<std::shared_mutex> guard(_layerLock);
         
         // Remove from old layer if exists
-        auto it = _playerLayers.find(playerGuid.GetCounter());
+            if (IsLayerPersistenceEnabled())
+                SavePersistentLayerAssignment(playerGuid, mapId, zoneId, assignedLayerId);
         if (it != _playerLayers.end())
         {
             auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];

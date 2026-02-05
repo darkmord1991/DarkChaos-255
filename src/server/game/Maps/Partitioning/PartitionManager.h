@@ -436,8 +436,12 @@ private:
     // Helper to cleanup empty layer containers (lock must be held)
     void CleanupEmptyLayers(uint32 mapId, uint32 zoneId, uint32 layerId);
 
+    std::atomic<bool> _layerPersistenceEnabled{true};
+
 public:
     // Back-compat helper for scripts
+    void SetLayerPersistenceEnabled(bool enabled) { _layerPersistenceEnabled.store(enabled, std::memory_order_relaxed); }
+    bool IsLayerPersistenceEnabled() const { return _layerPersistenceEnabled.load(std::memory_order_relaxed); }
     PartitionGridLayout const* GetCachedLayout(uint32 mapId) const;
 
 private:

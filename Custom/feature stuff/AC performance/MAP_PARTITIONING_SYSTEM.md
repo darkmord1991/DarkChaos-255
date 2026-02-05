@@ -17,6 +17,7 @@ Comprehensive testing steps to validate the system.
 
 ### 2. Performance Benchmark
 Run `.stresstest partition 100000` to verify calculation speed.
+Use `.stresstest partition 50000 persist` only if you want to include DB-backed layer persistence during the test.
 
 **Latest Benchmark Results (2026-02-02):**
 | Operation | Time | Per-Op Average |
@@ -46,7 +47,7 @@ Run `.stresstest partition 100000` to verify calculation speed.
 - **Test**:
   - Teleport 3 players to the same zone.
   - **Result**: Players 1 & 2 should be in Layer 0. Player 3 should be in Layer 1.
-  - **verify**: Players 1 & 2 see each other. Player 3 sees NO ONE.
+  - **verify**: Players 1 & 2 see each other. Player 3 sees NO ONE (except service NPCs).
 
 ### 5. Relocation Safety
 - **Test**: Player mounts and runs *quickly* across multiple partition boundaries.
@@ -144,6 +145,10 @@ When NPC layering is enabled (`MapPartitions.Layers.IncludeNPCs = 1`), **each la
 - **World spawns** (creatures/gameobjects) are deterministically distributed across layers
 - **Player-owned NPCs** (pets/guardians/charmed) are synced to the owner's layer on assignment
 - **Complete isolation**: Players can only see other players and NPCs on the same layer
+
+**Service NPCs** (questgivers, guards, vendors, trainers, bankers, flight masters) are treated as cross-layer to prevent critical interaction loss during switches.
+
+**Layer creation rebalancing**: when a new layer is created for a zone, NPCs previously assigned to layer 0 are redistributed across active layers for that zone.
 
 **Dynamic layering**: new layers are created only when a player joins/gets assigned and all existing layers are at capacity, up to `MapPartitions.Layers.Max`.
 
