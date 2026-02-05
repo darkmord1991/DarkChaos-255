@@ -209,7 +209,7 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
         handler->PSendSysMessage("MapPartitions.StoreOnly: {}", sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_STORE_ONLY) ? "|cff00ff00TRUE|r" : "|cffff0000FALSE|r");
         
         // Zone Exclusions  
-        std::string excludedZones = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_EXCLUDE_ZONES);
+        std::string_view excludedZones = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_EXCLUDE_ZONES);
         if (!excludedZones.empty())
             handler->PSendSysMessage("MapPartitions.ExcludeZones: |cff00ffff{}|r", excludedZones);
         else

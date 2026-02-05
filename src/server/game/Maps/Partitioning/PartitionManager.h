@@ -207,13 +207,14 @@ private:
     PartitionManager() = default;
 
     void SyncControlledToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid, uint32 layerId);
+    void ReassignNPCsForNewLayer(uint32 mapId, uint32 zoneId);
 
     // Fine-grained locks for different data structures
     mutable std::shared_mutex _partitionLock;     // Protects _partitionsByMap, _partitionedMaps, _gridLayouts
     mutable std::mutex _boundaryLock;             // Protects _boundaryObjects
     mutable std::shared_mutex _layerLock;         // Protects _layers, _playerLayers (read/write optimized)
     mutable std::mutex _relocationLock;           // Protects _relocations
-    mutable std::mutex _overrideLock;             // Protects _partitionOverrides, _partitionOwnership
+    mutable std::shared_mutex _overrideLock;       // Protects _partitionOverrides, _partitionOwnership
     mutable std::shared_mutex _visibilityLock;      // Protects _visibilitySets (read/write optimized)
     mutable std::mutex _handoffLock;              // Protects handoff counts
     mutable std::mutex _precacheLock;             // Protects precache queue

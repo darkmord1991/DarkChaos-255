@@ -1779,13 +1779,32 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
             // Each layer is a completely independent world (like retail WoW layering)
             if (sPartitionMgr->IsNPCLayeringEnabled())
             {
-                uint32 playerLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
-                uint32 npcLayer = sPartitionMgr->GetLayerForNPC(player->GetMapId(), player->GetZoneId(), cObj->GetGUID());
-                
-                // Strict layer isolation: players can only see NPCs on the same layer
-                if (playerLayer != npcLayer)
+                bool isServiceNpc = cObj->IsQuestGiver() || cObj->IsGuard()
+                    || cObj->HasNpcFlag(UNIT_NPC_FLAG_BANKER | UNIT_NPC_FLAG_FLIGHTMASTER
+                        | UNIT_NPC_FLAG_TRAINER | UNIT_NPC_FLAG_TRAINER_CLASS | UNIT_NPC_FLAG_TRAINER_PROFESSION
+                        | UNIT_NPC_FLAG_VENDOR_MASK | UNIT_NPC_FLAG_VENDOR_FOOD);
+
+                if (!isServiceNpc)
                 {
-                    return false;
+                    uint32 playerLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
+                    uint32 npcLayer = sPartitionMgr->GetLayerForNPC(player->GetMapId(), player->GetZoneId(), cObj->GetGUID());
+
+                    if (npcLayer == 0 && sPartitionMgr->GetLayerCount(player->GetMapId(), player->GetZoneId()) > 1)
+                    {
+                        uint64 seed = cObj->GetSpawnId() ? uint64(cObj->GetSpawnId()) : cObj->GetGUID().GetCounter();
+                        uint32 fallbackLayer = sPartitionMgr->GetDefaultLayerForZone(player->GetMapId(), player->GetZoneId(), seed);
+                        if (fallbackLayer != 0)
+                        {
+                            sPartitionMgr->AssignNPCToLayer(player->GetMapId(), player->GetZoneId(), cObj->GetGUID(), fallbackLayer);
+                            npcLayer = fallbackLayer;
+                        }
+                    }
+                    
+                    // Strict layer isolation: players can only see NPCs on the same layer
+                    if (playerLayer != npcLayer)
+                    {
+                        return false;
+                    }
                 }
             }
         }
