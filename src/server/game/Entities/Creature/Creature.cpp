@@ -316,12 +316,20 @@ void Creature::AddToWorld()
         GetMap()->RegisterPartitionedObject(this);
         if (sPartitionMgr->IsNPCLayeringEnabled())
         {
+            uint32 zoneId = GetMap()->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
+            uint32 layerId = 0;
+
             if (Player* ownerPlayer = GetCharmerOrOwnerPlayerOrPlayerItself())
             {
-                uint32 zoneId = GetMap()->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
-                uint32 layerId = sPartitionMgr->GetPlayerLayer(GetMapId(), zoneId, ownerPlayer->GetGUID());
-                sPartitionMgr->AssignNPCToLayer(GetMapId(), zoneId, GetGUID(), layerId);
+                layerId = sPartitionMgr->GetPlayerLayer(GetMapId(), zoneId, ownerPlayer->GetGUID());
             }
+            else
+            {
+                uint64 seed = m_spawnId ? uint64(m_spawnId) : GetGUID().GetCounter();
+                layerId = sPartitionMgr->GetDefaultLayerForZone(GetMapId(), zoneId, seed);
+            }
+
+            sPartitionMgr->AssignNPCToLayer(GetMapId(), zoneId, GetGUID(), layerId);
         }
         if (m_spawnId)
         {

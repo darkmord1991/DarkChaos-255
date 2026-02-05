@@ -648,6 +648,7 @@ public:
     void RegisterPartitionedObject(WorldObject* obj);
     void UnregisterPartitionedObject(WorldObject* obj);
     void UpdatePartitionedObjectStore(WorldObject* obj);
+    void RebuildPartitionedObjectAssignments();
     template<class T> T* FindPartitionedObject(ObjectGuid const& guid);
     void BuildPartitionPlayerBuckets();
     void ClearPartitionPlayerBuckets();

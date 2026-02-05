@@ -14104,6 +14104,24 @@ bool Unit::_IsValidAttackTarget(Unit const* target, SpellInfo const* bySpell, Wo
             || (target->IsPlayer() && target->ToPlayer()->IsGameMaster()))
         return false;
 
+    if (sPartitionMgr->IsLayeringEnabled())
+    {
+        Player const* attackerPlayer = GetCharmerOrOwnerPlayerOrPlayerItself();
+        Player const* targetPlayer = target->GetCharmerOrOwnerPlayerOrPlayerItself();
+
+        if (attackerPlayer && targetPlayer && attackerPlayer->GetMap() && targetPlayer->GetMap())
+        {
+            if (attackerPlayer->GetMapId() == targetPlayer->GetMapId() && attackerPlayer->GetMap()->IsPartitioned())
+            {
+                uint32 zoneId = attackerPlayer->GetZoneId();
+                uint32 attackerLayer = sPartitionMgr->GetPlayerLayer(attackerPlayer->GetMapId(), zoneId, attackerPlayer->GetGUID());
+                uint32 targetLayer = sPartitionMgr->GetPlayerLayer(targetPlayer->GetMapId(), zoneId, targetPlayer->GetGUID());
+                if (attackerLayer != targetLayer)
+                    return false;
+            }
+        }
+    }
+
     // can't attack own vehicle or passenger
     if (m_vehicle)
         if (IsOnVehicle(target) || m_vehicle->GetBase()->IsOnVehicle(target))

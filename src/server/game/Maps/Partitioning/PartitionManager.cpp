@@ -25,11 +25,16 @@
 #include "QueryResult.h"
 #include "Group.h"
 #include "GroupMgr.h"
+#include "Pet.h"
 #include "Player.h"
+#include "GridDefines.h"
+#include "Map.h"
+#include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "Position.h"
-#include "MapMgr.h"
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <sstream>
 
 PartitionManager* PartitionManager::instance()
@@ -69,6 +74,11 @@ uint32_t PartitionManager::GetLayerCapacity() const
     return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY);
 }
 
+uint32_t PartitionManager::GetLayerMax() const
+{
+    return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_MAX);
+}
+
 bool PartitionManager::IsRuntimeDiagnosticsEnabled() const
 {
     return _runtimeDiagnostics.load(std::memory_order_relaxed);
@@ -82,6 +92,29 @@ void PartitionManager::SetRuntimeDiagnosticsEnabled(bool enabled)
     else
         _runtimeDiagnosticsUntilMs.store(0, std::memory_order_relaxed);
     LOG_INFO("map.partition", "Runtime diagnostics {}", enabled ? "enabled" : "disabled");
+}
+
+void PartitionManager::SyncControlledToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid, uint32 layerId)
+{
+    if (!IsNPCLayeringEnabled())
+        return;
+
+    Player* player = ObjectAccessor::FindPlayer(playerGuid);
+    if (!player || !player->IsInWorld())
+        return;
+
+    if (Pet* pet = player->GetPet())
+        if (pet->IsInWorld())
+            AssignNPCToLayer(mapId, zoneId, pet->GetGUID(), layerId);
+
+    if (Guardian* guardian = player->GetGuardianPet())
+        if (guardian->IsInWorld())
+            AssignNPCToLayer(mapId, zoneId, guardian->GetGUID(), layerId);
+
+    if (Unit* charmed = player->GetCharm())
+        if (Creature* charmedCreature = charmed->ToCreature())
+            if (charmedCreature->IsInWorld())
+                AssignNPCToLayer(mapId, zoneId, charmedCreature->GetGUID(), layerId);
 }
 
 bool PartitionManager::ShouldEmitRegenMetrics() const
@@ -150,6 +183,18 @@ void PartitionManager::AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, Obje
     {
         auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
         oldLayer.erase(playerGuid.GetCounter());
+
+        if (oldLayer.empty())
+        {
+            auto& zoneLayers = _layers[it->second.mapId][it->second.zoneId];
+            zoneLayers.erase(it->second.layerId);
+            if (zoneLayers.empty())
+            {
+                _layers[it->second.mapId].erase(it->second.zoneId);
+                if (_layers[it->second.mapId].empty())
+                    _layers.erase(it->second.mapId);
+            }
+        }
     }
 
     // Assign to new
@@ -161,6 +206,8 @@ void PartitionManager::AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, Obje
         LOG_INFO("map.partition", "Diag: AssignPlayerToLayer player={} map={} zone={} layer={}",
             playerGuid.ToString(), mapId, zoneId, layerId);
     }
+
+    SyncControlledToLayer(mapId, zoneId, playerGuid, layerId);
 }
 
 void PartitionManager::RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid)
@@ -175,6 +222,19 @@ void PartitionManager::RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, Ob
 
     auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
     oldLayer.erase(playerGuid.GetCounter());
+
+    if (oldLayer.empty())
+    {
+        auto& zoneLayers = _layers[it->second.mapId][it->second.zoneId];
+        zoneLayers.erase(it->second.layerId);
+        if (zoneLayers.empty())
+        {
+            _layers[it->second.mapId].erase(it->second.zoneId);
+            if (_layers[it->second.mapId].empty())
+                _layers.erase(it->second.mapId);
+        }
+    }
+
     _playerLayers.erase(it);
 
     if (IsRuntimeDiagnosticsEnabled())
@@ -204,6 +264,9 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
             // Remove from old layer
             auto& oldLayerPlayers = _layers[mapId][zoneId][it->second.layerId];
             oldLayerPlayers.erase(playerGuid.GetCounter());
+
+            if (oldLayerPlayers.empty())
+                _layers[mapId][zoneId].erase(it->second.layerId);
             
             // Assign to party leader's layer
             _layers[mapId][zoneId][partyTargetLayer].insert(playerGuid.GetCounter());
@@ -220,6 +283,7 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
             
             // Save persistent assignment (async)
             SavePersistentLayerAssignment(playerGuid, mapId, zoneId, partyTargetLayer);
+            SyncControlledToLayer(mapId, zoneId, playerGuid, partyTargetLayer);
         }
         return;
     }
@@ -229,6 +293,19 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
     {
         auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
         oldLayer.erase(playerGuid.GetCounter());
+
+        if (oldLayer.empty())
+        {
+            auto& zoneLayers = _layers[it->second.mapId][it->second.zoneId];
+            zoneLayers.erase(it->second.layerId);
+            if (zoneLayers.empty())
+            {
+                _layers[it->second.mapId].erase(it->second.zoneId);
+                if (_layers[it->second.mapId].empty())
+                    _layers.erase(it->second.mapId);
+            }
+        }
+
         _playerLayers.erase(it);
     }
 
@@ -249,13 +326,15 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
         auto& zoneLayers = _layers[mapId][zoneId];
         
         // Check existing layers first (prioritize filling gaps)
-        for (auto& [layerId, players] : zoneLayers)
+        for (auto const& [layerId, players] : zoneLayers)
         {
             if (players.size() < GetLayerCapacity())
             {
-                bestLayerId = layerId;
-                foundLayer = true;
-                break;
+                if (!foundLayer || layerId < bestLayerId)
+                {
+                    bestLayerId = layerId;
+                    foundLayer = true;
+                }
             }
         }
 
@@ -274,7 +353,28 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
                 {
                     if (layerId > maxId) maxId = layerId;
                 }
-                bestLayerId = maxId + 1;
+
+                uint32_t layerMax = GetLayerMax();
+                if (layerMax == 0)
+                    layerMax = 1;
+
+                if (zoneLayers.size() >= layerMax)
+                {
+                    // All layers full; stick to the least populated existing layer.
+                    uint32_t bestCount = std::numeric_limits<uint32_t>::max();
+                    for (auto const& [layerId, players] : zoneLayers)
+                    {
+                        if (players.size() < bestCount)
+                        {
+                            bestCount = static_cast<uint32_t>(players.size());
+                            bestLayerId = layerId;
+                        }
+                    }
+                }
+                else
+                {
+                    bestLayerId = maxId + 1;
+                }
             }
         }
     }
@@ -298,6 +398,7 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
 
     // Save persistent assignment (async) - always save so we can restore on login
     SavePersistentLayerAssignment(playerGuid, mapId, zoneId, bestLayerId);
+    SyncControlledToLayer(mapId, zoneId, playerGuid, bestLayerId);
 }
 
 
@@ -671,17 +772,19 @@ void PartitionManager::UpdatePartitionsForMap(uint32 mapId, uint32 diff)
     CleanupStaleRelocations();
     CleanupExpiredOverrides();
 
-    std::shared_lock<std::shared_mutex> guard(_partitionLock);
-    auto it = _partitionsByMap.find(mapId);
-    if (it == _partitionsByMap.end())
-        return;
-
-    for (auto const& partition : it->second)
     {
-        if (partition)
-            partition->Update(diff);
+        std::shared_lock<std::shared_mutex> guard(_partitionLock);
+        auto it = _partitionsByMap.find(mapId);
+        if (it == _partitionsByMap.end())
+            return;
+
+        for (auto const& partition : it->second)
+        {
+            if (partition)
+                partition->Update(diff);
+        }
     }
-    
+
     // Feature 4: Dynamic Resizing Evaluation (Periodically)
     // Check roughly once per second using global time to avoid per-map state
     // Use mapId as offset to spread load across frames
@@ -1256,6 +1359,34 @@ uint32 PartitionManager::GetLayerForNPC(ObjectGuid const& npcGuid) const
     return it->second.layerId;
 }
 
+uint32 PartitionManager::GetDefaultLayerForZone(uint32 mapId, uint32 zoneId, uint64 seed) const
+{
+    std::lock_guard<std::mutex> guard(_layerLock);
+    auto mapIt = _layers.find(mapId);
+    if (mapIt == _layers.end())
+        return 0;
+
+    auto zoneIt = mapIt->second.find(zoneId);
+    if (zoneIt == mapIt->second.end() || zoneIt->second.empty())
+        return 0;
+
+    std::vector<uint32> layerIds;
+    layerIds.reserve(zoneIt->second.size());
+    for (auto const& [layerId, _] : zoneIt->second)
+        if (layerId != 0)
+            layerIds.push_back(layerId);
+
+    if (layerIds.empty())
+    {
+        for (auto const& [layerId, _] : zoneIt->second)
+            layerIds.push_back(layerId);
+    }
+
+    std::sort(layerIds.begin(), layerIds.end());
+    uint32 index = static_cast<uint32>(seed % layerIds.size());
+    return layerIds[index];
+}
+
 // ======================== FEATURE 4: Dynamic Partition Resizing ========================
 
 float PartitionManager::GetPartitionDensity(uint32 mapId, uint32 partitionId) const
@@ -1273,6 +1404,104 @@ float PartitionManager::GetPartitionDensity(uint32 mapId, uint32 partitionId) co
     return density;
 }
 
+void PartitionManager::ResizeMapPartitions(uint32 mapId, uint32 newCount, char const* reason)
+{
+    if (!IsEnabled())
+        return;
+
+    if (newCount < 1)
+        newCount = 1;
+
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
+    uint32 oldCount = 0;
+
+    {
+        std::unique_lock<std::shared_mutex> guard(_partitionLock);
+        auto it = _partitionsByMap.find(mapId);
+        if (it == _partitionsByMap.end())
+            return;
+
+        oldCount = static_cast<uint32>(it->second.size());
+        if (oldCount == 0 || newCount == oldCount)
+            return;
+
+        uint64& lastResize = _lastResizeMs[mapId];
+        if (nowMs < lastResize + 10000)
+            return;
+        lastResize = nowMs;
+
+        if (newCount > oldCount)
+        {
+            for (uint32 i = oldCount + 1; i <= newCount; ++i)
+            {
+                auto name = "Partition " + std::to_string(i);
+                it->second.push_back(std::make_unique<MapPartition>(mapId, i, name));
+            }
+        }
+        else
+        {
+            it->second.erase(std::remove_if(it->second.begin(), it->second.end(),
+                [newCount](std::unique_ptr<MapPartition> const& partition)
+                {
+                    return partition && partition->GetPartitionId() > newCount;
+                }), it->second.end());
+        }
+
+        PartitionGridLayout layout;
+        layout.count = newCount;
+        layout.cols = static_cast<uint32>(std::floor(std::sqrt(static_cast<float>(layout.count))));
+        if (layout.cols == 0)
+            layout.cols = 1;
+        layout.rows = (layout.count + layout.cols - 1) / layout.cols;
+        uint32 gridMax = MAX_NUMBER_OF_GRIDS;
+        layout.cellWidth = (gridMax + layout.cols - 1) / layout.cols;
+        layout.cellHeight = (gridMax + layout.rows - 1) / layout.rows;
+        _gridLayouts[mapId] = layout;
+    }
+
+    {
+        std::lock_guard<std::mutex> guard(_boundaryLock);
+        auto mapIt = _boundaryObjects.find(mapId);
+        if (mapIt != _boundaryObjects.end())
+        {
+            for (auto it = mapIt->second.begin(); it != mapIt->second.end();)
+            {
+                if (it->first > newCount)
+                    it = mapIt->second.erase(it);
+                else
+                {
+                    it->second.clear();
+                    ++it;
+                }
+            }
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> guard(_visibilityLock);
+        auto mapIt = _visibilitySets.find(mapId);
+        if (mapIt != _visibilitySets.end())
+        {
+            for (auto it = mapIt->second.begin(); it != mapIt->second.end();)
+            {
+                if (it->first > newCount)
+                    it = mapIt->second.erase(it);
+                else
+                {
+                    it->second.clear();
+                    ++it;
+                }
+            }
+        }
+    }
+
+    if (Map* map = sMapMgr->FindBaseMap(mapId))
+        map->RebuildPartitionedObjectAssignments();
+
+    LOG_INFO("map.partition", "Resized partitions on map {}: {} -> {} ({})",
+        mapId, oldCount, newCount, reason ? reason : "auto");
+}
+
 void PartitionManager::EvaluatePartitionDensity(uint32 mapId)
 {
     // NOTE: This is a placeholder for future dynamic resizing.
@@ -1286,25 +1515,40 @@ void PartitionManager::EvaluatePartitionDensity(uint32 mapId)
         return;
         
     uint32 partitionCount = GetPartitionCount(mapId);
+    if (partitionCount == 0)
+        return;
+
     float splitThreshold = GetDensitySplitThreshold();
     float mergeThreshold = GetDensityMergeThreshold();
-    
+
+    float maxDensity = 0.0f;
+    float minDensity = std::numeric_limits<float>::max();
+
     for (uint32 pid = 1; pid <= partitionCount; ++pid)
     {
         float density = GetPartitionDensity(mapId, pid);
-        
-        if (density > splitThreshold)
-        {
-            LOG_DEBUG("map.partition", "Partition {} on map {} density {} exceeds split threshold {}", 
-                pid, mapId, density, splitThreshold);
-            // TODO: Implement split logic
-        }
-        else if (density < mergeThreshold)
-        {
-            LOG_DEBUG("map.partition", "Partition {} on map {} density {} below merge threshold {}", 
-                pid, mapId, density, mergeThreshold);
-            // TODO: Implement merge logic with adjacent low-density partitions
-        }
+        if (density > maxDensity)
+            maxDensity = density;
+        if (density < minDensity)
+            minDensity = density;
+    }
+
+    uint32 maxPartitions = MAX_NUMBER_OF_GRIDS;
+
+    if (maxDensity > splitThreshold && partitionCount < maxPartitions)
+    {
+        LOG_INFO("map.partition", "Partition density split: map {} maxDensity {} > {} (count {} -> {})",
+            mapId, maxDensity, splitThreshold, partitionCount, partitionCount + 1);
+        ResizeMapPartitions(mapId, partitionCount + 1, "split");
+        return;
+    }
+
+    if (minDensity < mergeThreshold && partitionCount > 1 && maxDensity < mergeThreshold)
+    {
+        LOG_INFO("map.partition", "Partition density merge: map {} maxDensity {} < {} (count {} -> {})",
+            mapId, maxDensity, mergeThreshold, partitionCount, partitionCount - 1);
+        ResizeMapPartitions(mapId, partitionCount - 1, "merge");
+        return;
     }
 }
 

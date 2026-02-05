@@ -5343,13 +5343,31 @@ float Player::OCTRegenHPPerSpirit()
     if (level > GT_MAX_LEVEL)
         level = GT_MAX_LEVEL;
 
-    GtOCTRegenHPEntry     const* baseRatio = sGtOCTRegenHPStore.LookupEntry((pclass - 1) * GT_MAX_LEVEL + level - 1);
-    GtRegenHPPerSptEntry  const* moreRatio = sGtRegenHPPerSptStore.LookupEntry((pclass - 1) * GT_MAX_LEVEL + level - 1);
+    // Smart index calculation for GtOCTRegenHPEntry
+    uint32 rowsHP = sGtOCTRegenHPStore.GetNumRows();
+    uint32 entriesHP = rowsHP / MAX_CLASSES;
+    uint32 clampedLevelHP = level;
+    if (entriesHP > 0 && clampedLevelHP > entriesHP)
+        clampedLevelHP = entriesHP;
+    uint32 indexHP = (entriesHP > 0) ? ((pclass - 1) * entriesHP + clampedLevelHP - 1) : ((pclass - 1) * GT_MAX_LEVEL + level - 1);
+    
+    // Smart index calculation for GtRegenHPPerSptEntry
+    uint32 rowsSpt = sGtRegenHPPerSptStore.GetNumRows();
+    uint32 entriesSpt = rowsSpt / MAX_CLASSES;
+    uint32 clampedLevelSpt = level;
+    if (entriesSpt > 0 && clampedLevelSpt > entriesSpt)
+        clampedLevelSpt = entriesSpt;
+    uint32 indexSpt = (entriesSpt > 0) ? ((pclass - 1) * entriesSpt + clampedLevelSpt - 1) : ((pclass - 1) * GT_MAX_LEVEL + level - 1);
+
+    GtOCTRegenHPEntry     const* baseRatio = sGtOCTRegenHPStore.LookupEntry(indexHP);
+    GtRegenHPPerSptEntry  const* moreRatio = sGtRegenHPPerSptStore.LookupEntry(indexSpt);
+
+    float spirit = GetStat(STAT_SPIRIT);
+
     if (!baseRatio || !moreRatio)
-        return 0.0f;
+        return spirit * 0.10f; // Fallback to decent 0.1 ratio if table missing
 
     // Formula from PaperDollFrame script
-    float spirit = GetStat(STAT_SPIRIT);
     float baseSpirit = spirit;
     if (baseSpirit > 50)
         baseSpirit = 50;
@@ -5367,9 +5385,20 @@ float Player::OCTRegenMPPerSpirit()
         level = GT_MAX_LEVEL;
 
     //    GtOCTRegenMPEntry     const* baseRatio = sGtOCTRegenMPStore.LookupEntry((pclass-1)*GT_MAX_LEVEL + level-1);
-    GtRegenMPPerSptEntry  const* moreRatio = sGtRegenMPPerSptStore.LookupEntry((pclass - 1) * GT_MAX_LEVEL + level - 1);
-    if (!moreRatio)
-        return 0.0f;
+    uint32 rows = sGtRegenMPPerSptStore.GetNumRows();
+    uint32 entriesPerClass = rows / MAX_CLASSES;
+    uint32 clampedLevel = level;
+    if (entriesPerClass > 0 && clampedLevel > entriesPerClass)
+        clampedLevel = entriesPerClass;
+
+    uint32 index = (entriesPerClass > 0) ? ((pclass - 1) * entriesPerClass + clampedLevel - 1) : ((pclass - 1) * GT_MAX_LEVEL + level - 1);
+    if (entriesPerClass > 0 && index >= rows)
+        index = (pclass - 1) * GT_MAX_LEVEL + level - 1;
+
+    GtRegenMPPerSptEntry const* moreRatio = sGtRegenMPPerSptStore.LookupEntry(index);
+    // If DBC data is missing (custom levels/classes), fall back to a sane WotLK coefficient.
+    if (!moreRatio || moreRatio->ratio <= 0.0f)
+        return GetStat(STAT_SPIRIT) * 0.005575f;
 
     // Formula get from PaperDollFrame script
     float spirit    = GetStat(STAT_SPIRIT);

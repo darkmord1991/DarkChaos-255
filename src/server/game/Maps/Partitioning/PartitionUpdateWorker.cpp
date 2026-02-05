@@ -87,7 +87,7 @@ void PartitionUpdateWorker::UpdatePlayers()
     _playerCount = static_cast<uint32>(bucket->size());
 
     // Update each player in this partition
-    uint32 playerUpdateDiff = _diff ? _diff : _sDiff;
+    uint32 playerUpdateDiff = _sDiff ? _sDiff : _diff;
     for (Player* player : *bucket)
     {
         _boundaryValidGuids.push_back(player->GetGUID());

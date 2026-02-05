@@ -45,6 +45,7 @@
 #include "Pet.h"
 #include "ScriptMgr.h"
 #include "SpellMgr.h"
+#include "TypeContainerVisitor.h"
 #include "Transport.h"
 #include "VMapFactory.h"
 #include "Vehicle.h"
@@ -1218,9 +1219,10 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                 sPartitionMgr->UpdatePartitionPlayerCount(GetId(), partitionId, static_cast<uint32>(bucket.size()));
                 sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, boundaryPlayers);
 
+                uint32 playerUpdateDiff = s_diff ? s_diff : t_diff;
                 for (Player* player : bucket)
                 {
-                    player->Update(t_diff);
+                    player->Update(playerUpdateDiff);
 
                     if (_updatableObjectListRecheckTimer.Passed())
                     {
@@ -1794,6 +1796,60 @@ void Map::UpdatePartitionedObjectStore(WorldObject* obj)
             LOG_INFO("map.partition", "Diag: UpdatePartitionedObjectStore guid={} type={} map={} zone={} partition={}",
                 guid.ToString(), obj->GetTypeId(), GetId(), zoneId, newPartitionId);
         }
+    }
+}
+
+void Map::RebuildPartitionedObjectAssignments()
+{
+    if (!_isPartitioned)
+        return;
+
+    struct PartitionRebuildWorker
+    {
+        Map& map;
+        explicit PartitionRebuildWorker(Map& mapRef) : map(mapRef) { }
+
+        void Visit(std::unordered_map<ObjectGuid, Creature*>& container)
+        {
+            for (auto& pair : container)
+                if (pair.second && pair.second->IsInWorld())
+                    map.UpdatePartitionedOwnership(pair.second);
+        }
+
+        void Visit(std::unordered_map<ObjectGuid, GameObject*>& container)
+        {
+            for (auto& pair : container)
+                if (pair.second && pair.second->IsInWorld())
+                    map.UpdatePartitionedOwnership(pair.second);
+        }
+
+        void Visit(std::unordered_map<ObjectGuid, DynamicObject*>& container)
+        {
+            for (auto& pair : container)
+                if (pair.second && pair.second->IsInWorld())
+                    map.UpdatePartitionedOwnership(pair.second);
+        }
+
+        void Visit(std::unordered_map<ObjectGuid, Corpse*>& container)
+        {
+            for (auto& pair : container)
+                if (pair.second && pair.second->IsInWorld())
+                    map.UpdatePartitionedOwnership(pair.second);
+        }
+    };
+
+    PartitionRebuildWorker worker(*this);
+    TypeContainerVisitor<PartitionRebuildWorker, MapStoredObjectTypesContainer> visitor(worker);
+    VisitAllObjectStores([&visitor](MapStoredObjectTypesContainer& store)
+    {
+        visitor.Visit(store);
+    });
+
+    for (MapRefMgr::iterator iter = m_mapRefMgr.begin(); iter != m_mapRefMgr.end(); ++iter)
+    {
+        Player* player = iter->GetSource();
+        if (player && player->IsInWorld())
+            UpdatePartitionedObjectStore(player);
     }
 }
 

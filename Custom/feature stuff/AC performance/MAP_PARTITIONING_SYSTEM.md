@@ -42,7 +42,7 @@ Run `.stresstest partition 100000` to verify calculation speed.
   - Duel can start across the line.
 
 ### 4. Layering Stress Test
-- **Setup**: Set `MapPartitions.Layer.Capacity = 2` (low limit for testing).
+- **Setup**: Set `MapPartitions.Layers.Capacity = 2` (low limit for testing).
 - **Test**:
   - Teleport 3 players to the same zone.
   - **Result**: Players 1 & 2 should be in Layer 0. Player 3 should be in Layer 1.
@@ -120,9 +120,9 @@ The layering system functions as a sub-system of the partition manager. It solve
    - Preference is given to filling existing layers (0, 1, 2...).
 2. **Stickiness**: Players prefer to stay in their assigned layer when moving between sub-zones to prevent "phasing" flicker.
 3. **Visibility Filtering**:
-   - `WorldObject::CanSeeOrDetect` checks layer compatibility.
-   - **Rule**: Players can only see other players in the **same layer**.
-   - **Exception**: NPCs/GameObjects are currently visible across layers unless specifically phased.
+  - `WorldObject::CanSeeOrDetect` checks layer compatibility.
+  - **Rule**: Players can only see other players in the **same layer**.
+  - **NPCs**: If NPC layering is enabled and multiple layers exist in the zone, NPCs are only visible to players on the same layer.
 4. **Logout Cleanup**: `ForceRemovePlayerFromAllLayers()` ensures proper cleanup on disconnect.
 
 ### Performance Optimization
@@ -132,6 +132,15 @@ The visibility check uses `GetLayersForTwoPlayers()` for **single-lock layer com
 The `.gps` command shows detailed debug info:
 - **Map Partition**: Current spatial partition ID.
 - **Layer**: Current population layer ID.
+
+### Dynamic Layer Switching
+Layer assignment is evaluated **when players enter a map** and **on zone change**:
+- `Map::AddPlayerToMap` assigns a layer on map entry.
+- `Player::UpdateZone` re-evaluates the layer on zone change.
+
+**Stickiness** applies within the same zone. Players are not continuously rebalanced while moving inside a zone. Party sync can move members to the leader’s layer when `AutoAssignPlayerToLayer` is called. Controlled pets/guardians/charmed creatures are synced to the player’s layer on assignment.
+
+**Dynamic layering**: new layers are created only when a player joins/gets assigned and all existing layers are at capacity, up to `MapPartitions.Layers.Max`.
 
 ---
 
@@ -157,7 +166,8 @@ MapPartitions.ExcludeZones = "1519,1637,4395,3703"
 
 # Layering Configuration (Enabled by Default)
 MapPartitions.Layers.Enabled = 1
-MapPartitions.Layer.Capacity = 200     # Players per layer before creating a new one
+MapPartitions.Layers.Capacity = 200   # Players per layer before creating a new one
+MapPartitions.Layers.Max = 4          # Maximum number of layers per zone
 MapPartitions.Layers.IncludeNPCs = 0   # Assign NPCs to layers (0=Disabled)
 
 # Dynamic Resizing Configuration
@@ -165,7 +175,7 @@ MapPartitions.DensitySplitThreshold = 50.0
 MapPartitions.DensityMergeThreshold = 5.0
 
 # Store-only mode (for testing - partitions tracked but not utilized for updates)
-MapPartitions.StoreOnly = 0
+MapPartitions.UsePartitionStoreOnly = 0
 ```
 
 ---
@@ -240,7 +250,10 @@ The system handles different map types according to specific rules to ensure sta
 - **Config**:
   - `MapPartitions.DensitySplitThreshold` (Default: 50.0)
   - `MapPartitions.DensityMergeThreshold` (Default: 5.0)
-- **Logic**: Evaluates `(Players + Creatures/10)` density metric. *Note: Currently in log-only mode for safety.*
+- **Logic**: Evaluates `(Players + Creatures/10)` density metric. Resizing is throttled (about once per 10s per map).
+  - **Split**: If the highest-density partition exceeds the split threshold, partition count increases.
+  - **Merge**: If **all** partitions fall below the merge threshold, partition count decreases.
+  - **Rebuild**: When resizing, the grid layout and partitioned object assignments are rebuilt.
 
 ### 2. Adjacent Partition Pre-caching
 - **Purpose**: Eliminate spikes when crossing boundaries by pre-loading data.
@@ -259,6 +272,17 @@ The system handles different map types according to specific rules to ensure sta
 ### 5. NPC Layering
 - **Purpose**: Allow different NPCs to exist in different layers (e.g., for phased events).
 - **Toggle**: `MapPartitions.Layers.IncludeNPCs`.
+- **Default distribution**: Static world spawns without an owner are deterministically distributed across existing, non-empty layers (prefers non-zero layers when available).
+
+---
+
+## Notes & Performance Considerations
+- **Layer choice is not continuous**: players only change layers on map entry or zone change (plus party sync), not on every movement tick.
+- **Static NPC distribution** is deterministic per spawn, avoiding cross-layer duplication while keeping load balanced.
+- **Dynamic resizing cost**: resizing triggers a rebuild of partitioned assignments; throttling prevents frequent churn.
+- **Empty layer cleanup**: empty layers are pruned when the last player leaves, preventing stale layer ids.
+- **Persistent layer restore**: layer restore only succeeds if the target layer still exists; otherwise normal auto-assign applies.
+- **NPC visibility**: when multiple layers exist in a zone, NPCs are layer-isolated; layer `0` is not global in multi-layer zones.
 
 ---
 

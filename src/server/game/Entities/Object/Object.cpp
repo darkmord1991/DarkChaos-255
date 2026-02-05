@@ -1781,9 +1781,8 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
                 uint32 playerLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
                 uint32 npcLayer = sPartitionMgr->GetLayerForNPC(player->GetMapId(), player->GetZoneId(), cObj->GetGUID());
                 
-                // If NPC is assigned to a specific layer, check if player is on that layer
-                // NPCs with layer 0 are visible to everyone (default/unassigned)
-                if (npcLayer > 0 && playerLayer != npcLayer)
+                // Keep NPC visibility strictly within the same layer.
+                if (playerLayer != npcLayer)
                 {
                     return false;
                 }
@@ -1814,6 +1813,21 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
         {
             viewpoint = thisPlayer->GetSeer();
 
+            if (sPartitionMgr->IsNPCLayeringEnabled())
+            {
+                if (Corpse const* corpseObj = obj->ToCorpse())
+                {
+                    ObjectGuid ownerGuid = corpseObj->GetOwnerGUID();
+                    if (ownerGuid && ownerGuid.IsPlayer())
+                    {
+                        uint32 playerLayer = sPartitionMgr->GetPlayerLayer(thisPlayer->GetMapId(), thisPlayer->GetZoneId(), thisPlayer->GetGUID());
+                        uint32 ownerLayer = sPartitionMgr->GetPlayerLayer(thisPlayer->GetMapId(), thisPlayer->GetZoneId(), ownerGuid);
+                        if (playerLayer != ownerLayer)
+                            return false;
+                    }
+                }
+            }
+
             if (Creature const* creature = obj->ToCreature())
             {
                 if (TempSummon const* tempSummon = creature->ToTempSummon())
@@ -1840,6 +1854,18 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
             // our additional checks
             if (Unit const* target = obj->ToUnit())
             {
+                if (sPartitionMgr->IsNPCLayeringEnabled())
+                {
+                    ObjectGuid ownerGuid = target->GetOwnerGUID();
+                    if (ownerGuid && ownerGuid.IsPlayer() && ownerGuid != thisPlayer->GetGUID())
+                    {
+                        uint32 playerLayer = sPartitionMgr->GetPlayerLayer(thisPlayer->GetMapId(), thisPlayer->GetZoneId(), thisPlayer->GetGUID());
+                        uint32 ownerLayer = sPartitionMgr->GetPlayerLayer(thisPlayer->GetMapId(), thisPlayer->GetZoneId(), ownerGuid);
+                        if (playerLayer != ownerLayer)
+                            return false;
+                    }
+                }
+
                 // xinef: don't allow to detect vehicle accessory if you can't see vehicle base!
                 if (Unit const* vehicle = target->GetVehicleBase())
                     if (!thisPlayer->HaveAtClient(vehicle))

@@ -105,6 +105,7 @@ public:
     // Layering support (for high-population areas) - DISABLED by default
     bool IsLayeringEnabled() const;
     uint32_t GetLayerCapacity() const;
+    uint32_t GetLayerMax() const;
     bool IsRuntimeDiagnosticsEnabled() const;
     void SetRuntimeDiagnosticsEnabled(bool enabled);
     bool ShouldEmitRegenMetrics() const;
@@ -139,12 +140,15 @@ public:
     void RemoveNPCFromLayer(ObjectGuid const& npcGuid);
     uint32 GetLayerForNPC(uint32 mapId, uint32 zoneId, ObjectGuid const& npcGuid) const;
     uint32 GetLayerForNPC(ObjectGuid const& npcGuid) const; // Back-compat overload
+    uint32 GetDefaultLayerForZone(uint32 mapId, uint32 zoneId, uint64 seed) const;
 
     // Dynamic Partition Resizing (Feature 4)
     // Returns density metric for a partition (players + creatures normalized by cell size)
     float GetPartitionDensity(uint32 mapId, uint32 partitionId) const;
     // Evaluates if any partitions need splitting/merging based on density thresholds
     void EvaluatePartitionDensity(uint32 mapId);
+    // Apply a new partition count and rebuild layout/object assignments
+    void ResizeMapPartitions(uint32 mapId, uint32 newCount, char const* reason);
     // Configuration thresholds for split/merge
     float GetDensitySplitThreshold() const;
     float GetDensityMergeThreshold() const;
@@ -157,6 +161,8 @@ public:
 
 private:
     PartitionManager() = default;
+
+    void SyncControlledToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid, uint32 layerId);
 
     // Fine-grained locks for different data structures
     mutable std::shared_mutex _partitionLock;     // Protects _partitionsByMap, _partitionedMaps, _gridLayouts
@@ -206,6 +212,9 @@ private:
 
     // NPC Layering data (Feature 3)
     std::unordered_map<ObjectGuid::LowType, LayerAssignment> _npcLayers;
+
+    // Dynamic resize throttling
+    std::unordered_map<uint32, uint64> _lastResizeMs;
 
     struct PrecacheRequest
     {

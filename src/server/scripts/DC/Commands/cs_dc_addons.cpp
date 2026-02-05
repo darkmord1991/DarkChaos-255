@@ -135,6 +135,42 @@ public:
 
             handler->PSendSysMessage("Health: {}/{} | BaseHealthRegen: {}", target->GetHealth(), target->GetMaxHealth(), target->GetBaseHealthRegen());
             handler->PSendSysMessage("Mana: {}/{} | BaseManaRegen: {}", target->GetPower(POWER_MANA), target->GetMaxPower(POWER_MANA), target->GetBaseManaRegen());
+            handler->PSendSysMessage("Stats: Spirit={} | Intellect={}", target->GetStat(STAT_SPIRIT), target->GetStat(STAT_INTELLECT));
+
+            // Check lookup
+            uint8 level = target->GetLevel();
+            uint32 pclass = target->getClass();
+            uint32 rows = sGtRegenMPPerSptStore.GetNumRows();
+            uint32 entriesPerClass = rows / MAX_CLASSES;
+            uint32 clampedLevel = level;
+            if (entriesPerClass > 0 && clampedLevel > entriesPerClass)
+                clampedLevel = entriesPerClass;
+
+            uint32 index = (entriesPerClass > 0) ? ((pclass - 1) * entriesPerClass + clampedLevel - 1) : ((pclass - 1) * GT_MAX_LEVEL + level - 1);
+            if (entriesPerClass > 0 && index >= rows)
+                index = (pclass - 1) * GT_MAX_LEVEL + level - 1;
+
+            GtRegenMPPerSptEntry const* moreRatio = sGtRegenMPPerSptStore.LookupEntry(index);
+            if (moreRatio)
+                handler->PSendSysMessage("RegenMPPerSpt Lookup: Found (ratio: {:.5f})", moreRatio->ratio);
+            else
+                handler->PSendSysMessage("RegenMPPerSpt Lookup: NOT FOUND");
+            
+            // Check HP lookup
+            uint32 rowsHP = sGtOCTRegenHPStore.GetNumRows();
+            uint32 entriesHP = rowsHP / MAX_CLASSES;
+            uint32 clampedLevelHP = level;
+            if (entriesHP > 0 && clampedLevelHP > entriesHP) clampedLevelHP = entriesHP;
+            uint32 indexHP = (entriesHP > 0) ? ((pclass - 1) * entriesHP + clampedLevelHP - 1) : ((pclass - 1) * GT_MAX_LEVEL + level - 1);
+            
+            GtOCTRegenHPEntry const* baseRatioHP = sGtOCTRegenHPStore.LookupEntry(indexHP);
+            if (baseRatioHP)
+                handler->PSendSysMessage("OCTRegenHP Lookup: Found (ratio: {:.5f})", baseRatioHP->ratio);
+            else
+                handler->PSendSysMessage("OCTRegenHP Lookup: NOT FOUND");
+
+            handler->PSendSysMessage("IsUnderLastManaUseEffect: {}", target->IsUnderLastManaUseEffect() ? "YES" : "NO");
+            handler->PSendSysMessage("modManaRegenInterrupt: {}", target->GetTotalAuraModifier(SPELL_AURA_MOD_MANA_REGEN_INTERRUPT));
 
             handler->PSendSysMessage("Prevent Mana Regen Aura: {}", target->HasAuraTypeWithMiscvalue(SPELL_AURA_PREVENT_REGENERATE_POWER, POWER_MANA + 1) ? "YES" : "NO");
             handler->PSendSysMessage("Prevent Health Regen Aura: {}", target->HasInterruptRegenAura() ? "YES" : "NO");
@@ -143,6 +179,9 @@ public:
 
             handler->PSendSysMessage("Mana Regen Flat: {:.3f}", target->GetFloatValue(static_cast<uint16>(UNIT_FIELD_POWER_REGEN_FLAT_MODIFIER) + AsUnderlyingType(POWER_MANA)));
             handler->PSendSysMessage("Mana Regen Interrupted: {:.3f}", target->GetFloatValue(static_cast<uint16>(UNIT_FIELD_POWER_REGEN_INTERRUPTED_FLAT_MODIFIER) + AsUnderlyingType(POWER_MANA)));
+            float manaRegenFlat = target->GetFloatValue(static_cast<uint16>(UNIT_FIELD_POWER_REGEN_FLAT_MODIFIER) + AsUnderlyingType(POWER_MANA));
+            float manaRegenInterrupted = target->GetFloatValue(static_cast<uint16>(UNIT_FIELD_POWER_REGEN_INTERRUPTED_FLAT_MODIFIER) + AsUnderlyingType(POWER_MANA));
+            handler->PSendSysMessage("MP5 (casting): {:.2f} | MP5 (not casting): {:.2f}", manaRegenInterrupted * 5.0f, manaRegenFlat * 5.0f);
             handler->PSendSysMessage("Energy Regen Flat: {:.3f}", target->GetFloatValue(static_cast<uint16>(UNIT_FIELD_POWER_REGEN_FLAT_MODIFIER) + AsUnderlyingType(POWER_ENERGY)));
             handler->PSendSysMessage("Energy Regen Interrupted: {:.3f}", target->GetFloatValue(static_cast<uint16>(UNIT_FIELD_POWER_REGEN_INTERRUPTED_FLAT_MODIFIER) + AsUnderlyingType(POWER_ENERGY)));
 

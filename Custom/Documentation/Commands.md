@@ -263,6 +263,9 @@ These commands require GM or Administrator access levels.
 | `partition layer` | `<layerId>` | Move yourself to a specific layer ID (requires layering enabled). |
 | `partition diag` | `[on\|off\|status]` | Toggle or query runtime diagnostics for layer/partition assignment logging. |
 
+*Notes:* Layer assignment happens on map entry and zone change. When NPC layering is enabled, pets/guardians/charmed creatures follow the owner’s layer on assignment.
+*Dynamic layering:* New layers are only created when a player is assigned and all existing layers are at capacity, up to `MapPartitions.Layers.Max`.
+
 ### System: Dungeon Quests (`.dcquests`)
 *Command:* `.dcquests`
 
