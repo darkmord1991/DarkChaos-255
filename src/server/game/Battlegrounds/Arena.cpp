@@ -111,7 +111,7 @@ void Arena::AddPlayer(Player* player)
             Map* map = GetBgMap();
             if (map)
                 member = ObjectAccessor::GetPlayer(map, mitr->guid);
-            else if (WorldSession* session = sWorldSessionMgr->FindSession(mitr->guid.GetCounter()))
+            else if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(mitr->guid))
                 member = session->GetPlayer();
             if (!member || member->GetGUID() == player->GetGUID())
             {

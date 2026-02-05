@@ -1619,6 +1619,10 @@ public:
     void Regenerate(Powers power);
     void RegenerateHealth();
     void setRegenTimerCount(uint32 time) {m_regenTimerCount = time;}
+    [[nodiscard]] uint32 GetRegenTimerCount() const { return m_regenTimerCount; }
+    [[nodiscard]] int32 GetRegenTimer() const { return m_regenTimer; }
+    [[nodiscard]] uint32 GetBaseManaRegen() const { return m_baseManaRegen; }
+    [[nodiscard]] uint32 GetBaseHealthRegen() const { return m_baseHealthRegen; }
     void setWeaponChangeTimer(uint32 time) {m_weaponChangeTimer = time;}
 
     [[nodiscard]] uint32 GetMoney() const { return GetUInt32Value(PLAYER_FIELD_COINAGE); }

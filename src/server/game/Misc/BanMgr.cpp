@@ -226,7 +226,7 @@ BanReturn BanMgr::BanCharacter(std::string const& CharacterName, std::string con
     Player* target = nullptr;
     ObjectGuid targetGuid = sCharacterCache->GetCharacterGuidByName(CharacterName);
     if (targetGuid)
-        if (WorldSession* session = sWorldSessionMgr->FindSession(targetGuid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(targetGuid))
             target = session->GetPlayer();
     uint32 DurationSecs = TimeStringToSecs(Duration);
     ObjectGuid TargetGUID;
@@ -318,7 +318,7 @@ bool BanMgr::RemoveBanCharacter(std::string const& CharacterName)
     Player* pBanned = nullptr;
     ObjectGuid targetGuid = sCharacterCache->GetCharacterGuidByName(CharacterName);
     if (targetGuid)
-        if (WorldSession* session = sWorldSessionMgr->FindSession(targetGuid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(targetGuid))
             pBanned = session->GetPlayer();
     ObjectGuid guid;
 

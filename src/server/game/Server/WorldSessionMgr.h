@@ -42,6 +42,8 @@ public:
     ~WorldSessionMgr();
 
     WorldSession* FindSession(uint32 id) const;
+    WorldSession* FindSessionByPlayerGuid(ObjectGuid guid) const;
+    WorldSession* FindSessionByPlayerName(std::string const& name) const;
     WorldSession* FindOfflineSession(uint32 id) const;
     WorldSession* FindOfflineSessionForCharacterGUID(ObjectGuid::LowType guidLow) const;
 

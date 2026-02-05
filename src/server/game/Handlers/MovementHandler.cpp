@@ -862,7 +862,7 @@ void WorldSession::HandleSummonResponseOpcode(WorldPacket& recvData)
     if (agree && _player->IsSummonAsSpectator())
     {
         ChatHandler chc(this);
-        if (WorldSession* session = sWorldSessionMgr->FindSession(summoner_guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(summoner_guid))
         {
             if (Player* summoner = session->GetPlayer())
                 ArenaSpectator::HandleSpectatorSpectateCommand(&chc, summoner->GetName().c_str());

@@ -933,7 +933,7 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
             Map* map = GetBgMap();
             if (map)
                 player = ObjectAccessor::GetPlayer(map, guid);
-            else if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+            else if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
                 player = session->GetPlayer();
             if (!player)
                 continue;

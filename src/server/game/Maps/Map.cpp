@@ -57,6 +57,7 @@
 namespace
 {
     constexpr size_t kPartitionRelayLimit = 1024;
+    thread_local std::unordered_map<Map const*, uint32> sActivePartitionContext;
 }
 
 #define MAP_INVALID_ZONE        0xFFFFFFFF
@@ -290,6 +291,12 @@ bool Map::AddPlayerToMap(Player* player)
     SendInitSelf(player);
 
     player->UpdateObjectVisibility(false);
+
+    if (sPartitionMgr->IsLayeringEnabled())
+    {
+        uint32 zoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+        sPartitionMgr->AutoAssignPlayerToLayer(GetId(), zoneId, player->GetGUID());
+    }
 
     if (player->IsAlive())
         ConvertCorpseToBones(player->GetGUID());
@@ -692,6 +699,25 @@ void Map::QueuePartitionAssistDistractRelay(uint32 partitionId, ObjectGuid const
     relay.timeMs = timeMs;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
     queue.push_back(relay);
+}
+
+uint32 Map::GetActivePartitionContext() const
+{
+    auto it = sActivePartitionContext.find(this);
+    if (it == sActivePartitionContext.end())
+        return 0;
+    return it->second;
+}
+
+void Map::SetActivePartitionContext(uint32 partitionId)
+{
+    if (partitionId == 0)
+    {
+        sActivePartitionContext.erase(this);
+        return;
+    }
+
+    sActivePartitionContext[this] = partitionId;
 }
 
 void Map::VisitAllObjectStores(std::function<void(MapStoredObjectTypesContainer&)> const& visitor)
@@ -1123,7 +1149,8 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                 continue;
             }
 
-            uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), player->GetGUID());
+            uint32 zoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+            uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), zoneId, player->GetGUID());
             partitionBuckets[partitionId].push_back(player);
         }
 
@@ -1193,13 +1220,6 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
                 for (Player* player : bucket)
                 {
-                    // Debug: Log the actual t_diff being passed to player updates
-                    if (player && (player->GetHealth() < player->GetMaxHealth() / 2 || player->GetPower(POWER_MANA) < player->GetMaxPower(POWER_MANA) / 2))
-                    {
-                        LOG_ERROR("maps.partition", "Map::Update - Calling player->Update({}) for {} ({}), Map t_diff: {}, s_diff: {}",
-                            t_diff, player->GetName(), player->GetGUID().ToString(), t_diff, s_diff);
-                    }
-                    
                     player->Update(t_diff);
 
                     if (_updatableObjectListRecheckTimer.Passed())
@@ -1350,6 +1370,8 @@ void Map::SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff)
     if (partitionCount == 0)
         partitionCount = 1;
 
+    BuildPartitionPlayerBuckets();
+
     LOG_DEBUG("map.partition", "Map {}: Scheduling {} partition updates in parallel", GetId(), partitionCount);
 
     for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
@@ -1359,6 +1381,8 @@ void Map::SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff)
 
     // Wait for all partition updates to complete before proceeding
     updater->wait();
+
+    ClearPartitionPlayerBuckets();
 }
 
 void Map::UpdateNonPlayerObjects(uint32 const diff)
@@ -1618,7 +1642,8 @@ void Map::AddToPartitionedUpdateList(WorldObject* obj)
     if (!_isPartitioned || !obj)
         return;
 
-                uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), obj->GetGUID());
+                uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
+                uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
     auto& list = _partitionedUpdatableObjectLists[partitionId];
     list.push_back(obj);
     _partitionedUpdatableIndex[obj] = { partitionId, list.size() - 1 };
@@ -1658,7 +1683,8 @@ void Map::UpdatePartitionedOwnership(WorldObject* obj)
     if (!_isPartitioned || !obj)
         return;
 
-    uint32 newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY());
+    uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
+    uint32 newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
     auto it = _partitionedUpdatableIndex.find(obj);
     if (it == _partitionedUpdatableIndex.end())
     {
@@ -1681,15 +1707,22 @@ void Map::RegisterPartitionedObject(WorldObject* obj)
         return;
 
     ObjectGuid guid = obj->GetGUID();
-    uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), obj->GetGUID());
+    uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
+    uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
     if (obj->IsPlayer())
     {
         uint32 persistedPartition = 0;
-        if (sPartitionMgr->GetPersistentPartition(guid, GetId(), persistedPartition) && persistedPartition != 0)
+        if (!sPartitionMgr->IsZoneExcluded(zoneId) && sPartitionMgr->GetPersistentPartition(guid, GetId(), persistedPartition) && persistedPartition != 0)
             partitionId = persistedPartition;
     }
     _partitionedObjectIndex[guid] = partitionId;
     sPartitionMgr->NotifyVisibilityAttach(guid, GetId(), partitionId);
+
+    if (sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+    {
+        LOG_INFO("map.partition", "Diag: RegisterPartitionedObject guid={} type={} map={} zone={} partition={}",
+            guid.ToString(), obj->GetTypeId(), GetId(), zoneId, partitionId);
+    }
 
     if (obj->IsPlayer())
         sPartitionMgr->PersistPartitionOwnership(guid, GetId(), partitionId);
@@ -1740,7 +1773,8 @@ void Map::UpdatePartitionedObjectStore(WorldObject* obj)
         return;
 
     ObjectGuid guid = obj->GetGUID();
-    uint32 newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), obj->GetGUID());
+    uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
+    uint32 newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
     auto it = _partitionedObjectIndex.find(guid);
     if (it == _partitionedObjectIndex.end())
     {
@@ -1754,7 +1788,63 @@ void Map::UpdatePartitionedObjectStore(WorldObject* obj)
         RegisterPartitionedObject(obj);
         if (obj->IsPlayer())
             sPartitionMgr->PersistPartitionOwnership(guid, GetId(), newPartitionId);
+
+        if (sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+        {
+            LOG_INFO("map.partition", "Diag: UpdatePartitionedObjectStore guid={} type={} map={} zone={} partition={}",
+                guid.ToString(), obj->GetTypeId(), GetId(), zoneId, newPartitionId);
+        }
     }
+}
+
+void Map::BuildPartitionPlayerBuckets()
+{
+    uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+    if (partitionCount == 0)
+        partitionCount = 1;
+
+    std::vector<std::vector<Player*>> buckets;
+    buckets.resize(partitionCount);
+
+    for (MapRefMgr::iterator iter = m_mapRefMgr.begin(); iter != m_mapRefMgr.end(); ++iter)
+    {
+        Player* player = iter->GetSource();
+        if (!player || !player->IsInWorld())
+            continue;
+
+        uint32 zoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+        uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), zoneId, player->GetGUID());
+        uint32 index = partitionId > 0 ? partitionId - 1 : 0;
+        if (index >= buckets.size())
+            index = buckets.size() - 1;
+        buckets[index].push_back(player);
+    }
+
+    {
+        std::unique_lock<std::shared_mutex> guard(_partitionPlayerBucketsLock);
+        _partitionPlayerBuckets.swap(buckets);
+    }
+}
+
+void Map::ClearPartitionPlayerBuckets()
+{
+    std::unique_lock<std::shared_mutex> guard(_partitionPlayerBucketsLock);
+    _partitionPlayerBuckets.clear();
+}
+
+std::vector<Player*> const* Map::GetPartitionPlayerBucket(uint32 partitionId) const
+{
+    if (partitionId == 0)
+        return nullptr;
+
+    std::shared_lock<std::shared_mutex> guard(_partitionPlayerBucketsLock);
+    if (_partitionPlayerBuckets.empty())
+        return nullptr;
+
+    uint32 index = partitionId - 1;
+    if (index >= _partitionPlayerBuckets.size())
+        return nullptr;
+    return &_partitionPlayerBuckets[index];
 }
 
 template<class T>
@@ -1964,8 +2054,10 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
 
     if (_isPartitioned)
     {
-        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), player->GetGUID());
-        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, player->GetGUID());
+        uint32 oldZoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+        uint32 newZoneId = GetZoneId(player->GetPhaseMask(), x, y, z);
+        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), oldZoneId, player->GetGUID());
+        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, newZoneId, player->GetGUID());
         partitionChanged = (oldPartitionId != newPartitionId);
 
         if (partitionChanged)
@@ -2023,8 +2115,10 @@ void Map::CreatureRelocation(Creature* creature, float x, float y, float z, floa
 
     if (_isPartitioned)
     {
-        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), creature->GetPositionX(), creature->GetPositionY(), creature->GetGUID());
-        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, creature->GetGUID());
+        uint32 oldZoneId = GetZoneId(creature->GetPhaseMask(), creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ());
+        uint32 newZoneId = GetZoneId(creature->GetPhaseMask(), x, y, z);
+        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), creature->GetPositionX(), creature->GetPositionY(), oldZoneId, creature->GetGUID());
+        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, newZoneId, creature->GetGUID());
         partitionChanged = (oldPartitionId != newPartitionId);
 
         if (partitionChanged)
@@ -2091,8 +2185,10 @@ void Map::GameObjectRelocation(GameObject* go, float x, float y, float z, float 
 
     if (_isPartitioned)
     {
-        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), go->GetPositionX(), go->GetPositionY(), go->GetGUID());
-        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, go->GetGUID());
+        uint32 oldZoneId = GetZoneId(go->GetPhaseMask(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
+        uint32 newZoneId = GetZoneId(go->GetPhaseMask(), x, y, z);
+        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), go->GetPositionX(), go->GetPositionY(), oldZoneId, go->GetGUID());
+        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, newZoneId, go->GetGUID());
         partitionChanged = (oldPartitionId != newPartitionId);
 
         if (partitionChanged)
@@ -2142,8 +2238,10 @@ void Map::DynamicObjectRelocation(DynamicObject* dynObj, float x, float y, float
 
     if (_isPartitioned)
     {
-        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetGUID());
-        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, dynObj->GetGUID());
+        uint32 oldZoneId = GetZoneId(dynObj->GetPhaseMask(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ());
+        uint32 newZoneId = GetZoneId(dynObj->GetPhaseMask(), x, y, z);
+        oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), oldZoneId, dynObj->GetGUID());
+        newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, newZoneId, dynObj->GetGUID());
         partitionChanged = (oldPartitionId != newPartitionId);
 
         if (partitionChanged)
@@ -3669,6 +3767,9 @@ void BattlegroundMap::RemoveAllPlayers()
 
 Corpse* Map::GetCorpse(ObjectGuid const& guid)
 {
+    if (_isPartitioned)
+        if (Corpse* corpse = FindPartitionedObject<Corpse>(guid))
+            return corpse;
     return _objectsStore.Find<Corpse>(guid);
 }
 
@@ -3695,6 +3796,9 @@ GameObject* Map::GetGameObject(ObjectGuid const& guid)
 
 Pet* Map::GetPet(ObjectGuid const& guid)
 {
+    if (_isPartitioned)
+        if (Creature* creature = FindPartitionedObject<Creature>(guid))
+            return dynamic_cast<Pet*>(creature);
     return dynamic_cast<Pet*>(_objectsStore.Find<Creature>(guid));
 }
 

@@ -19,6 +19,7 @@
 #define AC_PARTITION_UPDATE_WORKER_H
 
 #include "Define.h"
+#include "ObjectGuid.h"
 #include <vector>
 
 class Map;
@@ -65,6 +66,8 @@ private:
     uint32 _boundaryObjectCount = 0;
     uint32 _playerCount = 0;
     uint32 _creatureCount = 0;
+
+    std::vector<ObjectGuid> _boundaryValidGuids;
 };
 
 #endif // AC_PARTITION_UPDATE_WORKER_H

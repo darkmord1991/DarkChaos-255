@@ -1436,7 +1436,7 @@ void Guild::HandleInviteMember(WorldSession* session, std::string const& name)
     Player* pInvitee = nullptr;
     ObjectGuid inviteeGuid = sCharacterCache->GetCharacterGuidByName(name);
     if (inviteeGuid)
-        if (WorldSession* inviteeSession = sWorldSessionMgr->FindSession(inviteeGuid.GetCounter()))
+        if (WorldSession* inviteeSession = sWorldSessionMgr->FindSessionByPlayerGuid(inviteeGuid))
             pInvitee = inviteeSession->GetPlayer();
     if (!pInvitee)
     {

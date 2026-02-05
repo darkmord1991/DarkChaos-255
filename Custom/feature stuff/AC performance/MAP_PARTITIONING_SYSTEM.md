@@ -227,6 +227,7 @@ The system handles different map types according to specific rules to ensure sta
 |---------|-------------|
 | `.dc partition status` | Shows active partitions, player counts, system health, and grid layout. |
 | `.dc partition layer [id]` | Manually switch your character to a specific layer ID (requires Layering). |
+| `.dc partition diag [on\|off\|status]` | Enable/disable a short-lived diagnostics window (metrics only). |
 | `.gps` | Displays detailed position info including Partition ID and Layer ID. |
 | `.stresstest partition [iterations]` | Runs performance benchmarks on partition logic. |
 
@@ -258,6 +259,16 @@ The system handles different map types according to specific rules to ensure sta
 ### 5. NPC Layering
 - **Purpose**: Allow different NPCs to exist in different layers (e.g., for phased events).
 - **Toggle**: `MapPartitions.Layers.IncludeNPCs`.
+
+---
+
+## Diagnostics
+
+- **Runtime diagnostics window**: `.dc partition diag on` enables metrics emission for ~60 seconds.
+- **Metrics** (when enabled):
+  - `player_regen_tick_ms`
+  - `player_regen_timer_count_ms`
+  - `player_regen_health_tick`
 
 ---
 

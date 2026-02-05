@@ -17,6 +17,7 @@
 
 #include "Chat.h"
 #include "ChatPackets.h"
+#include "CharacterCache.h"
 #include "GameTime.h"
 #include "Metric.h"
 #include "Player.h"
@@ -84,6 +85,30 @@ WorldSession* WorldSessionMgr::FindSession(uint32 id) const
         return itr->second;                                 // also can return nullptr for kicked session
     else
         return nullptr;
+}
+
+WorldSession* WorldSessionMgr::FindSessionByPlayerGuid(ObjectGuid guid) const
+{
+    if (!guid)
+        return nullptr;
+
+    uint32 accountId = sCharacterCache->GetCharacterAccountIdByGuid(guid);
+    if (!accountId)
+        return nullptr;
+
+    return FindSession(accountId);
+}
+
+WorldSession* WorldSessionMgr::FindSessionByPlayerName(std::string const& name) const
+{
+    if (name.empty())
+        return nullptr;
+
+    uint32 accountId = sCharacterCache->GetCharacterAccountIdByName(name);
+    if (!accountId)
+        return nullptr;
+
+    return FindSession(accountId);
 }
 
 WorldSession* WorldSessionMgr::FindOfflineSession(uint32 id) const

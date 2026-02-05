@@ -33,7 +33,7 @@ namespace
     Player* FindOnlinePlayerByName(std::string const& name)
     {
         if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
-            if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+            if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
                 return session->GetPlayer();
 
         return nullptr;

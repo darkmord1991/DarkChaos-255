@@ -240,7 +240,7 @@ void ArenaTeamMgr::DistributeArenaPoints()
     for (std::map<ObjectGuid, uint32>::iterator playerItr = PlayerPoints.begin(); playerItr != PlayerPoints.end(); ++playerItr)
     {
         // Add points to player if online
-        if (WorldSession* session = sWorldSessionMgr->FindSession(playerItr->first.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(playerItr->first))
         {
             if (Player* player = session->GetPlayer())
                 player->ModifyArenaPoints(playerItr->second, trans);

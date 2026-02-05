@@ -340,7 +340,7 @@ void Channel::KickOrBan(Player const* player, std::string const& badname, bool b
     uint32 badAccId = 0;
     Player* bad = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(badname))
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             bad = session->GetPlayer();
     if (bad)
     {
@@ -598,7 +598,7 @@ void Channel::SetMode(Player const* player, std::string const& p2n, bool mod, bo
 
     Player* newp = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(p2n))
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             newp = session->GetPlayer();
     ObjectGuid victim = newp ? newp->GetGUID() : ObjectGuid::Empty;
 
@@ -669,7 +669,7 @@ void Channel::SetOwner(Player const* player, std::string const& newname)
 
     Player* newp = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(newname))
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             newp = session->GetPlayer();
     ObjectGuid victim = newp ? newp->GetGUID() : ObjectGuid::Empty;
 
@@ -826,7 +826,7 @@ void Channel::Invite(Player const* player, std::string const& newname)
 
     Player* newp = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(newname))
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             newp = session->GetPlayer();
     if (!newp || !newp->isGMVisible())
     {
@@ -897,7 +897,7 @@ void Channel::SetOwner(ObjectGuid guid, bool exclaim)
         FlagsNotify(pinfo.plrPtr);
 
         Player* player = nullptr;
-        if (WorldSession* session = sWorldSessionMgr->FindSession(_ownerGUID.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(_ownerGUID))
             player = session->GetPlayer();
         if (player)
         {

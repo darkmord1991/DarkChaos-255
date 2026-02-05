@@ -530,7 +530,7 @@ void WorldSession::HandleCalendarEventInvite(WorldPacket& recvData)
 
     Player* player = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             player = session->GetPlayer();
     if (player)
     {

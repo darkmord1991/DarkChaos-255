@@ -1779,7 +1779,7 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
             if (sPartitionMgr->IsNPCLayeringEnabled())
             {
                 uint32 playerLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
-                uint32 npcLayer = sPartitionMgr->GetLayerForNPC(cObj->GetGUID());
+                uint32 npcLayer = sPartitionMgr->GetLayerForNPC(player->GetMapId(), player->GetZoneId(), cObj->GetGUID());
                 
                 // If NPC is assigned to a specific layer, check if player is on that layer
                 // NPCs with layer 0 are visible to everyone (default/unassigned)

@@ -546,7 +546,7 @@ void WorldState::SendWorldstateUpdate(std::mutex& mutex, GuidVector const& guids
 {
     std::lock_guard<std::mutex> guard(mutex);
     for (ObjectGuid const& guid : guids)
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             if (Player* player = session->GetPlayer())
                 player->SendUpdateWorldState(worldStateId, value);
 }
@@ -856,7 +856,7 @@ void WorldState::HandleSunsReachSubPhaseTransition(int32 subPhaseMask, bool init
         {
             std::lock_guard<std::mutex> guard(m_sunsReachData.m_sunsReachReclamationMutex);
             for (ObjectGuid const& guid : m_sunsReachData.m_sunsReachReclamationPlayers)
-                if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+                if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
                     if (Player* player = session->GetPlayer())
                     {
                         if (start)

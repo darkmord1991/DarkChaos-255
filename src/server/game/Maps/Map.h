@@ -214,8 +214,8 @@ public:
     void DynamicObjectRelocation(DynamicObject* go, float x, float y, float z, float o);
 
     uint32 GetPartitionIdForUnit(Unit const* unit) const;
-    uint32 GetActivePartitionContext() const { return _activePartitionId; }
-    void SetActivePartitionContext(uint32 partitionId) { _activePartitionId = partitionId; }
+    uint32 GetActivePartitionContext() const;
+    void SetActivePartitionContext(uint32 partitionId);
     bool IsProcessingPartitionRelays() const { return _processingPartitionRelays; }
     void QueuePartitionThreatRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& victimGuid, float threat, SpellSchoolMask schoolMask, uint32 spellId);
     void QueuePartitionThreatClearAll(uint32 partitionId, ObjectGuid const& ownerGuid);
@@ -649,6 +649,9 @@ public:
     void UnregisterPartitionedObject(WorldObject* obj);
     void UpdatePartitionedObjectStore(WorldObject* obj);
     template<class T> T* FindPartitionedObject(ObjectGuid const& guid);
+    void BuildPartitionPlayerBuckets();
+    void ClearPartitionPlayerBuckets();
+    std::vector<Player*> const* GetPartitionPlayerBucket(uint32 partitionId) const;
     void ProcessPartitionRelays(uint32 partitionId);
     PartitionedUpdatableObjectLists& GetPartitionedUpdatableObjectLists() { return _partitionedUpdatableObjectLists; }
     Unit* GetUnitByGuid(ObjectGuid const& guid) const;
@@ -704,7 +707,6 @@ protected:
     float m_VisibleDistance;
     bool _isPartitioned = false;
     bool _partitionLogShown = false;
-    uint32 _activePartitionId = 0;
     bool _processingPartitionRelays = false;
     bool _useParallelPartitions = false;
     DynamicMapTree _dynamicTree;
@@ -738,6 +740,8 @@ private:
     PartitionedUpdatableObjectLists _partitionedUpdatableObjectLists;
     std::unordered_map<WorldObject*, std::pair<uint32, size_t>> _partitionedUpdatableIndex;
     std::unordered_map<uint32, MapStoredObjectTypesContainer> _partitionedObjectsStore;
+    mutable std::shared_mutex _partitionPlayerBucketsLock;
+    std::vector<std::vector<Player*>> _partitionPlayerBuckets;
     std::unordered_map<ObjectGuid, uint32> _partitionedObjectIndex;
     std::unordered_map<uint32, std::vector<PartitionThreatRelay>> _partitionThreatRelays;
     std::unordered_map<uint32, std::vector<PartitionThreatActionRelay>> _partitionThreatActionRelays;

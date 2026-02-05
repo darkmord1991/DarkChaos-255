@@ -119,7 +119,7 @@ namespace AccountMgr
                 ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>((*result)[0].Get<uint32>());
 
                 // Kick if player is online
-                if (WorldSession* s = sWorldSessionMgr->FindSession(guid.GetCounter()))
+                if (WorldSession* s = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
                 {
                     if (s->GetPlayer())
                     {

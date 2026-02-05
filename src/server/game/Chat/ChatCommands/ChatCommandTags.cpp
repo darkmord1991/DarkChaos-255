@@ -124,7 +124,7 @@ ChatCommandResult Acore::ChatCommands::PlayerIdentifier::TryConsume(ChatHandler 
 
         if ((_guid = sCharacterCache->GetCharacterGuidByName(_name)))
         {
-            if (WorldSession* session = sWorldSessionMgr->FindSession(_guid.GetCounter()))
+            if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(_guid))
                 _player = session->GetPlayer();
         }
         else

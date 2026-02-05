@@ -325,14 +325,6 @@ void Player::Update(uint32 p_time)
     {
         m_regenTimer += p_time;
         
-        // Debug: Log regeneration if health or mana is low
-        if (GetHealth() < GetMaxHealth() / 2 || GetPower(POWER_MANA) < GetMaxPower(POWER_MANA) / 2)
-        {
-            LOG_ERROR("entities.player", "Player::Update - {} ({}): m_regenTimer={}, Health={}/{}, Mana={}/{}",
-                GetName(), GetGUID().ToString(), m_regenTimer, GetHealth(), GetMaxHealth(), 
-                GetPower(POWER_MANA), GetMaxPower(POWER_MANA));
-        }
-        
         RegenerateAll();
     }
 

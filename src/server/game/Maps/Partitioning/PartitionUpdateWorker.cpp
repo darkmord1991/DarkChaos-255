@@ -22,6 +22,7 @@
 #include "Player.h"
 #include "WorldSession.h"
 #include "Metric.h"
+#include <unordered_set>
 
 PartitionUpdateWorker::PartitionUpdateWorker(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff)
     : _map(map), _partitionId(partitionId), _diff(diff), _sDiff(s_diff)
@@ -39,6 +40,14 @@ void PartitionUpdateWorker::Execute()
     ProcessRelays();
     UpdatePlayers();
     UpdateNonPlayerObjects();
+    if (!_boundaryValidGuids.empty())
+    {
+        std::unordered_set<ObjectGuid> validSet;
+        validSet.reserve(_boundaryValidGuids.size());
+        for (auto const& guid : _boundaryValidGuids)
+            validSet.insert(guid);
+        sPartitionMgr->CleanupBoundaryObjects(_map.GetId(), _partitionId, validSet);
+    }
     RecordStats();
 
     _map.SetActivePartitionContext(0);
@@ -53,28 +62,35 @@ void PartitionUpdateWorker::UpdatePlayers()
 {
     // Collect players in this partition
     std::vector<Player*> players;
-    auto const& playerList = _map.GetPlayers();
-    
-    for (auto itr = playerList.begin(); itr != playerList.end(); ++itr)
+    std::vector<Player*> const* bucket = _map.GetPartitionPlayerBucket(_partitionId);
+    if (!bucket)
     {
-        Player* player = itr->GetSource();
-        if (!player || !player->IsInWorld())
-            continue;
+        auto const& playerList = _map.GetPlayers();
 
-        uint32 playerPartition = sPartitionMgr->GetPartitionIdForPosition(
-            _map.GetId(), player->GetPositionX(), player->GetPositionY(), player->GetGUID());
-        
-        if (playerPartition == _partitionId)
+        for (auto itr = playerList.begin(); itr != playerList.end(); ++itr)
         {
-            players.push_back(player);
+            Player* player = itr->GetSource();
+            if (!player || !player->IsInWorld())
+                continue;
+
+            uint32 zoneId = _map.GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+            uint32 playerPartition = sPartitionMgr->GetPartitionIdForPosition(
+                _map.GetId(), player->GetPositionX(), player->GetPositionY(), zoneId, player->GetGUID());
+
+            if (playerPartition == _partitionId)
+                players.push_back(player);
         }
+
+        bucket = &players;
     }
 
-    _playerCount = static_cast<uint32>(players.size());
+    _playerCount = static_cast<uint32>(bucket->size());
 
     // Update each player in this partition
-    for (Player* player : players)
+    uint32 playerUpdateDiff = _diff ? _diff : _sDiff;
+    for (Player* player : *bucket)
     {
+        _boundaryValidGuids.push_back(player->GetGUID());
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY()))
         {
             ++_boundaryPlayerCount;
@@ -89,7 +105,7 @@ void PartitionUpdateWorker::UpdatePlayers()
             sPartitionMgr->UnregisterBoundaryObject(_map.GetId(), _partitionId, player->GetGUID());
         }
 
-        player->Update(_sDiff);
+        player->Update(playerUpdateDiff);
         _map.MarkNearbyCellsOf(player);
 
         // If player is using far sight, update viewpoint
@@ -134,6 +150,8 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
     {
         if (!obj || !obj->IsInWorld())
             continue;
+
+        _boundaryValidGuids.push_back(obj->GetGUID());
 
         if (obj->ToCreature())
             ++_creatureCount;

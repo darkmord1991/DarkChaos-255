@@ -1101,7 +1101,7 @@ void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
 
     Player* player = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(charname))
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             player = session->GetPlayer();
 
     if (!player)

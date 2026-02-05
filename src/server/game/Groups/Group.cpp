@@ -50,7 +50,7 @@ namespace
         if (!guid)
             return nullptr;
 
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             return session->GetPlayer();
 
         return nullptr;

@@ -26,6 +26,7 @@ class MapPartition
 {
 public:
     MapPartition(uint32 mapId, uint32 partitionId, std::string name);
+    virtual ~MapPartition() = default;
 
     uint32 GetMapId() const { return _mapId; }
     uint32 GetPartitionId() const { return _partitionId; }

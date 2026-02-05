@@ -81,7 +81,7 @@ void WorldSession::HandleGroupInviteOpcode(WorldPacket& recvData)
     Player* invitingPlayer = GetPlayer();
     Player* invitedPlayer = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(membername))
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             invitedPlayer = session->GetPlayer();
 
     // no player or cheat self-invite
@@ -640,7 +640,7 @@ void WorldSession::HandleGroupChangeSubGroupOpcode(WorldPacket& recvData)
 
     Player* movedPlayer = nullptr;
     if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name))
-        if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
             movedPlayer = session->GetPlayer();
     ObjectGuid guid;
     if (movedPlayer)
@@ -1142,7 +1142,7 @@ void WorldSession::HandleGroupSwapSubGroupOpcode(WorldPacket& recv_data)
 
         if (ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(playerName))
         {
-            if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+            if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
                 if (Player* player = session->GetPlayer())
                     return player->GetGUID();
 

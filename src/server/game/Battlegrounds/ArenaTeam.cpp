@@ -1001,7 +1001,7 @@ bool ArenaTeam::FinishWeek()
 bool ArenaTeam::IsFighting() const
 {
     for (MemberList::const_iterator itr = Members.begin(); itr != Members.end(); ++itr)
-        if (WorldSession* session = sWorldSessionMgr->FindSession(itr->Guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(itr->Guid))
             if (Player* player = session->GetPlayer())
                 if (player->GetMap()->IsBattleArena())
                     return true;

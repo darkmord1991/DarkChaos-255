@@ -259,6 +259,9 @@ These commands require GM or Administrator access levels.
 | `info` | `[player]` | Show detailed XP/Addon info for a player. |
 | `dedupe` | `[player]` | Show DCRXP deduplication state. |
 | `clearflag` | `[player]` | Clear the `PLAYER_FLAGS_NO_XP_GAIN` flag. |
+| `partition status` | | Show partition system status and per-partition stats for your current map. |
+| `partition layer` | `<layerId>` | Move yourself to a specific layer ID (requires layering enabled). |
+| `partition diag` | `[on\|off\|status]` | Toggle or query runtime diagnostics for layer/partition assignment logging. |
 
 ### System: Dungeon Quests (`.dcquests`)
 *Command:* `.dcquests`

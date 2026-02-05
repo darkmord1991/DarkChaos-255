@@ -57,6 +57,8 @@
 #include "LFGMgr.h"
 #include "Log.h"
 #include "LootItemStorage.h"
+#include "Maps/Partitioning/PartitionManager.h"
+#include "Metric.h"
 #include "MapMgr.h"
 #include "MiscPackets.h"
 #include "ObjectAccessor.h"
@@ -1777,16 +1779,20 @@ void Player::RegenerateAll()
     //if (m_regenTimer <= 500)
     //    return;
 
-    // Debug: Log when RegenerateAll is called if health or mana is low
-    if (GetHealth() < GetMaxHealth() / 2 || GetPower(POWER_MANA) < GetMaxPower(POWER_MANA) / 2)
-    {
-        LOG_ERROR("entities.player", "Player::RegenerateAll - {} ({}): m_regenTimer={}, m_regenTimerCount={}, Health={}/{}, Mana={}/{}",
-            GetName(), GetGUID().ToString(), m_regenTimer, m_regenTimerCount,
-            GetHealth(), GetMaxHealth(), GetPower(POWER_MANA), GetMaxPower(POWER_MANA));
-    }
-
     m_regenTimerCount += m_regenTimer;
     m_foodEmoteTimerCount += m_regenTimer;
+
+    if (sPartitionMgr->ShouldEmitRegenMetrics())
+    {
+        std::string mapIdTag = std::to_string(GetMapId());
+        std::string partitionedTag = (GetMap() && GetMap()->IsPartitioned()) ? "1" : "0";
+        METRIC_VALUE("player_regen_tick_ms", m_regenTimer,
+            METRIC_TAG("map_id", mapIdTag),
+            METRIC_TAG("partitioned", partitionedTag));
+        METRIC_VALUE("player_regen_timer_count_ms", m_regenTimerCount,
+            METRIC_TAG("map_id", mapIdTag),
+            METRIC_TAG("partitioned", partitionedTag));
+    }
 
     Regenerate(POWER_ENERGY);
 
@@ -1869,13 +1875,6 @@ void Player::Regenerate(Powers power)
     if (!maxValue)
         return;
 
-    // Debug: Log when power regen is called for mana with low values
-    uint32 curPower = GetPower(power);
-    if (power == POWER_MANA && curPower < maxValue / 2)
-    {
-        LOG_ERROR("entities.player", "Player::Regenerate - {} ({}) MANA: {}/{}, m_regenTimer: {}, m_regenTimerCount: {}",
-            GetName(), GetGUID().ToString(), curPower, maxValue, m_regenTimer, m_regenTimerCount);
-    }
 
     //If .cheat power is on always have the max power
     if (GetCommandStatus(CHEAT_POWER))
@@ -2007,14 +2006,6 @@ void Player::Regenerate(Powers power)
             m_powerFraction[power] = addvalue - integerValue;
     }
 
-    // Debug: Log when power is about to be updated
-    if (power == POWER_MANA && GetPower(power) < maxValue / 2)
-    {
-        LOG_ERROR("entities.player", "Player::Regenerate - {} ({}) Setting MANA to: {} (was: {}), addvalue: {}, will update: {}",
-            GetName(), GetGUID().ToString(), curValue, GetPower(power), addvalue, 
-            (m_regenTimerCount >= 2000 || curValue == 0 || curValue == maxValue) ? "YES" : "NO");
-    }
-
     if (m_regenTimerCount >= 2000 || curValue == 0 || curValue == maxValue)
         SetPower(power, curValue, true, true);
     else
@@ -2029,11 +2020,13 @@ void Player::RegenerateHealth()
     if (curValue >= maxValue)
         return;
 
-    // Debug: Log when health regen is called and health is low
-    if (curValue < maxValue / 2)
+    if (sPartitionMgr->ShouldEmitRegenMetrics())
     {
-        LOG_ERROR("entities.player", "Player::RegenerateHealth - {} ({}) Health: {}/{}, InCombat: {}, m_regenTimerCount: {}",
-            GetName(), GetGUID().ToString(), curValue, maxValue, IsInCombat() ? 1 : 0, m_regenTimerCount);
+        std::string mapIdTag = std::to_string(GetMapId());
+        std::string partitionedTag = (GetMap() && GetMap()->IsPartitioned()) ? "1" : "0";
+        METRIC_VALUE("player_regen_health_tick", 1,
+            METRIC_TAG("map_id", mapIdTag),
+            METRIC_TAG("partitioned", partitionedTag));
     }
 
     float HealthIncreaseRate = sWorld->getRate(RATE_HEALTH);
@@ -2074,13 +2067,6 @@ void Player::RegenerateHealth()
 
     if (addvalue < 0)
         addvalue = 0;
-
-    // Debug: Log the calculated health regen value if health is low
-    if (curValue < maxValue / 2)
-    {
-        LOG_ERROR("entities.player", "Player::RegenerateHealth - {} ({}) addvalue: {}, m_baseHealthRegen: {}, will call ModifyHealth",
-            GetName(), GetGUID().ToString(), addvalue, m_baseHealthRegen);
-    }
 
     ModifyHealth(int32(addvalue));
 }
@@ -10474,9 +10460,10 @@ bool Player::ActivateTaxiPathTo(std::vector<uint32> const& nodes, Creature* npc 
     // change but I couldn't find a suitable alternative. OK to use class because only DK
     // can use this taxi.
     uint32 mount_display_id = sObjectMgr->GetTaxiMountDisplayId(sourcenode, GetTeamId(true), npc == nullptr || (sourcenode == 315 && IsClass(CLASS_DEATH_KNIGHT, CLASS_CONTEXT_TAXI)));
+    if (!mount_display_id)
+        mount_display_id = sObjectMgr->GetTaxiMountDisplayId(sourcenode, GetTeamId(true), true);
 
-    // in spell case allow 0 model
-    if ((mount_display_id == 0 && spellid == 0) || sourcepath == 0)
+    if (mount_display_id == 0 || sourcepath == 0)
     {
         GetSession()->SendActivateTaxiReply(ERR_TAXIUNSPECIFIEDSERVERERROR);
         m_taxi.ClearTaxiDestinations();
@@ -12571,7 +12558,7 @@ void Player::SummonIfPossible(bool agree, ObjectGuid summoner_guid)
     UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_ACCEPTED_SUMMONINGS, 1);
 
     Player* summoner = nullptr;
-    if (WorldSession* session = sWorldSessionMgr->FindSession(summoner_guid.GetCounter()))
+    if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(summoner_guid))
         summoner = session->GetPlayer();
 
     TeleportTo(m_summon_mapid, m_summon_x, m_summon_y, m_summon_z, GetOrientation(), 0, summoner);

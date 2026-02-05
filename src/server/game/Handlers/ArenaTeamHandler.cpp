@@ -101,7 +101,7 @@ void WorldSession::HandleArenaTeamInviteOpcode(WorldPacket& recvData)
 
         ObjectGuid inviteeGuid = sCharacterCache->GetCharacterGuidByName(invitedName);
         if (inviteeGuid)
-            if (WorldSession* inviteeSession = sWorldSessionMgr->FindSession(inviteeGuid.GetCounter()))
+            if (WorldSession* inviteeSession = sWorldSessionMgr->FindSessionByPlayerGuid(inviteeGuid))
                 player = inviteeSession->GetPlayer();
     }
 

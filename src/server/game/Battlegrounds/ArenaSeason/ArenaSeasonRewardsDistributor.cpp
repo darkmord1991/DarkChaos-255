@@ -52,7 +52,7 @@ void ArenaSeasonTeamRewarderImpl::RewardWithMail(ArenaTeam* arenaTeam, ArenaSeas
             continue;
 
         Player* player = nullptr;
-        if (WorldSession* session = sWorldSessionMgr->FindSession(member.Guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(member.Guid))
             player = session->GetPlayer();
 
         auto draft = rewardGroup.rewardMailTemplateID > 0 ?
@@ -91,7 +91,7 @@ void ArenaSeasonTeamRewarderImpl::RewardWithAchievements(ArenaTeam* arenaTeam, A
             continue;
 
         Player* player = nullptr;
-        if (WorldSession* session = sWorldSessionMgr->FindSession(member.Guid.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(member.Guid))
             player = session->GetPlayer();
         for (auto const& reward : rewardGroup.achievementRewards)
         {

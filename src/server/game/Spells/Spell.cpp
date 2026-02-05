@@ -2538,7 +2538,7 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
             return;
         // find unit in world
         // Xinef: FindUnit Access without Map check!!! Intended
-        if (WorldSession* session = sWorldSessionMgr->FindSession(target->targetGUID.GetCounter()))
+        if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(target->targetGUID))
             effectUnit = session->GetPlayer();
         if (!effectUnit)
             return;

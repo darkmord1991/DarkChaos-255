@@ -27,6 +27,8 @@
 #include "GroupMgr.h"
 #include "Player.h"
 #include "ObjectAccessor.h"
+#include "Position.h"
+#include "MapMgr.h"
 #include <cmath>
 #include <sstream>
 
@@ -65,6 +67,46 @@ bool PartitionManager::IsLayeringEnabled() const
 uint32_t PartitionManager::GetLayerCapacity() const
 {
     return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY);
+}
+
+bool PartitionManager::IsRuntimeDiagnosticsEnabled() const
+{
+    return _runtimeDiagnostics.load(std::memory_order_relaxed);
+}
+
+void PartitionManager::SetRuntimeDiagnosticsEnabled(bool enabled)
+{
+    _runtimeDiagnostics.store(enabled, std::memory_order_relaxed);
+    if (enabled)
+        _runtimeDiagnosticsUntilMs.store(GameTime::GetGameTimeMS().count() + 60000, std::memory_order_relaxed);
+    else
+        _runtimeDiagnosticsUntilMs.store(0, std::memory_order_relaxed);
+    LOG_INFO("map.partition", "Runtime diagnostics {}", enabled ? "enabled" : "disabled");
+}
+
+bool PartitionManager::ShouldEmitRegenMetrics() const
+{
+    if (!IsRuntimeDiagnosticsEnabled())
+        return false;
+
+    uint64 until = _runtimeDiagnosticsUntilMs.load(std::memory_order_relaxed);
+    if (!until)
+        return false;
+
+    return static_cast<uint64>(GameTime::GetGameTimeMS().count()) <= until;
+}
+
+uint64 PartitionManager::GetRuntimeDiagnosticsRemainingMs() const
+{
+    if (!IsRuntimeDiagnosticsEnabled())
+        return 0;
+
+    uint64 until = _runtimeDiagnosticsUntilMs.load(std::memory_order_relaxed);
+    if (!until)
+        return 0;
+
+    uint64 now = static_cast<uint64>(GameTime::GetGameTimeMS().count());
+    return now >= until ? 0 : (until - now);
 }
 
 uint32_t PartitionManager::GetLayerForPlayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid) const
@@ -113,6 +155,12 @@ void PartitionManager::AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, Obje
     // Assign to new
     _layers[mapId][zoneId][layerId].insert(playerGuid.GetCounter());
     _playerLayers[playerGuid.GetCounter()] = { mapId, zoneId, layerId };
+
+    if (IsRuntimeDiagnosticsEnabled())
+    {
+        LOG_INFO("map.partition", "Diag: AssignPlayerToLayer player={} map={} zone={} layer={}",
+            playerGuid.ToString(), mapId, zoneId, layerId);
+    }
 }
 
 void PartitionManager::RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid)
@@ -128,6 +176,12 @@ void PartitionManager::RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, Ob
     auto& oldLayer = _layers[it->second.mapId][it->second.zoneId][it->second.layerId];
     oldLayer.erase(playerGuid.GetCounter());
     _playerLayers.erase(it);
+
+    if (IsRuntimeDiagnosticsEnabled())
+    {
+        LOG_INFO("map.partition", "Diag: RemovePlayerFromLayer player={} map={} zone={}",
+            playerGuid.ToString(), mapId, zoneId);
+    }
 }
 
 void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid)
@@ -157,6 +211,12 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
             
             LOG_DEBUG("map.partition", "Player {} moved to party leader's Layer {} in Map {} Zone {}", 
                 playerGuid.ToString(), partyTargetLayer, mapId, zoneId);
+
+            if (IsRuntimeDiagnosticsEnabled())
+            {
+                LOG_INFO("map.partition", "Diag: AutoAssignPlayerToLayer player={} map={} zone={} layer={} reason=party",
+                    playerGuid.ToString(), mapId, zoneId, partyTargetLayer);
+            }
             
             // Save persistent assignment (async)
             SavePersistentLayerAssignment(playerGuid, mapId, zoneId, partyTargetLayer);
@@ -228,6 +288,12 @@ void PartitionManager::AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, 
     {
         LOG_DEBUG("map.partition", "Player {} assigned to Layer {} in Map {} Zone {}", 
             playerGuid.ToString(), bestLayerId, mapId, zoneId);
+    }
+
+    if (IsRuntimeDiagnosticsEnabled())
+    {
+        LOG_INFO("map.partition", "Diag: AutoAssignPlayerToLayer player={} map={} zone={} layer={} reason=capacity",
+            playerGuid.ToString(), mapId, zoneId, bestLayerId);
     }
 
     // Save persistent assignment (async) - always save so we can restore on login
@@ -624,6 +690,8 @@ void PartitionManager::UpdatePartitionsForMap(uint32 mapId, uint32 diff)
     {
         EvaluatePartitionDensity(mapId);
     }
+
+    ProcessPrecacheQueue(mapId);
 }
 
 void PartitionManager::UpdatePartitionStats(uint32 mapId, uint32 partitionId, uint32 players, uint32 creatures, uint32 boundaryObjects)
@@ -1007,6 +1075,11 @@ void PartitionManager::ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGu
         layer.erase(playerGuid.GetCounter());
         _playerLayers.erase(it);
         LOG_DEBUG("map.partition", "Force removed player {} from all layers", playerGuid.ToString());
+
+        if (IsRuntimeDiagnosticsEnabled())
+        {
+            LOG_INFO("map.partition", "Diag: ForceRemovePlayerFromAllLayers player={}", playerGuid.ToString());
+        }
     }
 }
 
@@ -1297,21 +1370,67 @@ void PartitionManager::CheckBoundaryApproach(ObjectGuid const& playerGuid, uint3
         // Player is approaching boundary
         LOG_DEBUG("map.partition", "Player {} approaching partition boundary: {} -> {}", 
             playerGuid.ToString(), currentPartition, predictedPartition);
-        
-        // TODO: Queue precache request for predictedPartition
-        // This would involve loading creature/GO data for that partition
-        // into a ready cache so the transition is seamless
+
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 key = (static_cast<uint64>(mapId) << 32) | predictedPartition;
+
+        std::lock_guard<std::mutex> guard(_precacheLock);
+        if (auto it = _precacheRecent.find(key); it != _precacheRecent.end())
+        {
+            if (nowMs - it->second < 5000)
+                return; // throttle per map+partition
+        }
+
+        constexpr size_t kPrecacheQueueLimit = 256;
+        if (_precacheQueue.size() >= kPrecacheQueueLimit)
+            return;
+
+        _precacheQueue.push_back({ mapId, predictedPartition, predictX, predictY, nowMs });
+        _precacheRecent[key] = nowMs;
     }
 }
 
-void PartitionManager::ProcessPrecacheQueue()
+void PartitionManager::ProcessPrecacheQueue(uint32 mapId)
 {
-    // NOTE: Placeholder for processing precache queue
-    // Full implementation would:
-    // 1. Process queue of partition precache requests
-    // 2. Load creature/GO templates for target partition
-    // 3. Warm visibility caches
-    // 4. Limit work per frame to avoid spikes
-    
-    // Currently no-op - precaching not yet implemented
+    if (!IsEnabled())
+        return;
+
+    Map* map = sMapMgr->FindBaseMap(mapId);
+    if (!map)
+        return;
+
+    constexpr uint32 kMaxRequestsPerTick = 2;
+    constexpr uint64 kMaxAgeMs = 15000;
+
+    uint32 processed = 0;
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
+
+    std::vector<PrecacheRequest> toProcess;
+    {
+        std::lock_guard<std::mutex> guard(_precacheLock);
+        size_t queueSize = _precacheQueue.size();
+        for (size_t i = 0; i < queueSize && processed < kMaxRequestsPerTick; ++i)
+        {
+            PrecacheRequest req = _precacheQueue.front();
+            _precacheQueue.pop_front();
+
+            if (req.mapId != mapId)
+            {
+                _precacheQueue.push_back(req);
+                continue;
+            }
+
+            if (nowMs - req.queuedMs > kMaxAgeMs)
+                continue;
+
+            toProcess.push_back(req);
+            ++processed;
+        }
+    }
+
+    for (auto const& req : toProcess)
+    {
+        Position center(req.x, req.y, 0.0f, 0.0f);
+        map->LoadGridsInRange(center, SIZE_OF_GRIDS * 1.5f);
+    }
 }

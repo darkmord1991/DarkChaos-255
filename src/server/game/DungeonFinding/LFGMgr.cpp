@@ -1741,7 +1741,7 @@ namespace lfg
         // Teleport Player
         for (GuidUnorderedSet::const_iterator it = playersToTeleport.begin(); it != playersToTeleport.end(); ++it)
         {
-            if (WorldSession* session = sWorldSessionMgr->FindSession(it->GetCounter()))
+            if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(*it))
             if (Player* player = session->GetPlayer())
             {
                 if (player->GetGroup() != grp) // pussywizard: could not add because group was full
@@ -1934,7 +1934,7 @@ namespace lfg
         // pussywizard: add cooldown for not accepting (after 40 secs) or declining
         for (LfgProposalPlayerContainer::iterator it = proposal.players.begin(); it != proposal.players.end(); ++it)
             if (it->second.accept == LFG_ANSWER_DENY)
-                if (WorldSession* session = sWorldSessionMgr->FindSession(it->first.GetCounter()))
+                if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(it->first))
                     if (Player* plr = session->GetPlayer())
                         if (Aura* aura = plr->AddAura(LFG_SPELL_DUNGEON_COOLDOWN, plr))
                             aura->SetDuration(150 * IN_MILLISECONDS);
@@ -2259,7 +2259,7 @@ namespace lfg
             }
 
             Player* player = nullptr;
-            if (WorldSession* session = sWorldSessionMgr->FindSession(guid.GetCounter()))
+            if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
                 player = session->GetPlayer();
             if (!player || player->FindMap() != currMap) // pussywizard: currMap - multithreading crash if on other map (map id check is not enough, binding system is not reliable)
             {

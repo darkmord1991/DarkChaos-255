@@ -24,6 +24,7 @@
 #include "ObjectGuid.h"
 #include <map>
 #include <unordered_map>
+#include <deque>
 #include <mutex>
 #include <shared_mutex>
 #include <set>
@@ -104,6 +105,10 @@ public:
     // Layering support (for high-population areas) - DISABLED by default
     bool IsLayeringEnabled() const;
     uint32_t GetLayerCapacity() const;
+    bool IsRuntimeDiagnosticsEnabled() const;
+    void SetRuntimeDiagnosticsEnabled(bool enabled);
+    bool ShouldEmitRegenMetrics() const;
+    uint64 GetRuntimeDiagnosticsRemainingMs() const;
     uint32_t GetLayerForPlayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid) const;
     uint32 GetPlayerLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid) const; // Back-compat alias
     uint32_t GetLayerCount(uint32_t mapId, uint32_t zoneId) const;
@@ -148,7 +153,7 @@ public:
     // Checks if player is approaching a partition boundary and queues precache
     void CheckBoundaryApproach(ObjectGuid const& playerGuid, uint32 mapId, float x, float y, float dx, float dy);
     // Process pending precache requests (called from worker thread)
-    void ProcessPrecacheQueue();
+    void ProcessPrecacheQueue(uint32 mapId);
 
 private:
     PartitionManager() = default;
@@ -161,6 +166,7 @@ private:
     mutable std::mutex _overrideLock;             // Protects _partitionOverrides, _partitionOwnership
     mutable std::mutex _visibilityLock;           // Protects _visibilitySets
     mutable std::mutex _handoffLock;              // Protects handoff counts
+    mutable std::mutex _precacheLock;             // Protects precache queue
 
     // Cached grid layouts for each map (computed once at Initialize)
     std::unordered_map<uint32, PartitionGridLayout> _gridLayouts;
@@ -201,12 +207,28 @@ private:
     // NPC Layering data (Feature 3)
     std::unordered_map<ObjectGuid::LowType, LayerAssignment> _npcLayers;
 
+    struct PrecacheRequest
+    {
+        uint32 mapId = 0;
+        uint32 partitionId = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        uint64 queuedMs = 0;
+    };
+
+    std::deque<PrecacheRequest> _precacheQueue;
+    std::unordered_map<uint64, uint64> _precacheRecent;
+
     // Helper to get cached grid layout (lock must be held)
     PartitionGridLayout const* GetGridLayout(uint32 mapId) const;
 
 public:
     // Back-compat helper for scripts
     PartitionGridLayout const* GetCachedLayout(uint32 mapId) const;
+
+private:
+    std::atomic<bool> _runtimeDiagnostics{false};
+    std::atomic<uint64> _runtimeDiagnosticsUntilMs{0};
 };
 
 #define sPartitionMgr PartitionManager::instance()
