@@ -146,9 +146,21 @@ When NPC layering is enabled (`MapPartitions.Layers.IncludeNPCs = 1`), **each la
 - **Player-owned NPCs** (pets/guardians/charmed) are synced to the owner's layer on assignment
 - **Complete isolation**: Players can only see other players and NPCs on the same layer
 
+When GO layering is enabled (`MapPartitions.Layers.IncludeGameObjects = 1`), GameObjects follow the same isolation rules:
+- **Static world GOs** (resource nodes, chests, quest objects) are deterministically distributed across layers via spawn-ID hashing
+- **Player-spawned GOs** (totems, traps, summoned objects) follow the owner's layer
+- **Transports** (ships, zeppelins, elevators, MO_TRANSPORT) are always visible on all layers
+- **Orphan recovery**: When a layer is cleaned up, orphaned GOs are redistributed to surviving layers
+
 **Service NPCs** (questgivers, guards, vendors, trainers, bankers, flight masters) are treated as cross-layer to prevent critical interaction loss during switches.
 
-**Layer creation rebalancing**: when a new layer is created for a zone, NPCs previously assigned to layer 0 are redistributed across active layers for that zone.
+**Layer cleanup & orphan recovery**: When the last player leaves a layer and it is cleaned up, any NPCs and GOs still assigned to it are automatically redistributed across surviving layers using deterministic seed-based assignment. This prevents creatures and objects from becoming permanently invisible after layer consolidation.
+
+**Zone boundary tolerance**: Creatures and GameObjects near zone boundaries may have their layer stored under a different zone ID than the observing player. The visibility system detects this (zone-agnostic fallback lookup) and treats such objects as visible rather than hiding them.
+
+**Stale layer recovery**: If an NPC/GO has a layer ID that no longer exists (e.g., layer was removed) and only 0-1 layers remain active, the visibility filter automatically reassigns the object to a valid layer on next visibility check.
+
+**Layer creation rebalancing**: when a new layer is created for a zone, NPCs and GOs previously assigned to layer 0 are redistributed across active layers for that zone.
 
 **Dynamic layering**: new layers are created only when a player joins/gets assigned and all existing layers are at capacity, up to `MapPartitions.Layers.Max`.
 
@@ -179,6 +191,7 @@ MapPartitions.Layers.Enabled = 1
 MapPartitions.Layers.Capacity = 200   # Players per layer before creating a new one
 MapPartitions.Layers.Max = 4          # Maximum number of layers per zone
 MapPartitions.Layers.IncludeNPCs = 0   # Assign NPCs to layers (0=Disabled)
+MapPartitions.Layers.IncludeGameObjects = 0 # Assign GOs to layers (0=Disabled)
 
 # Dynamic Resizing Configuration
 MapPartitions.DensitySplitThreshold = 50.0
@@ -287,6 +300,19 @@ All commands are under `.dc partition` (requires GM permissions).
 - **Purpose**: Allow different NPCs to exist in different layers (e.g., for phased events).
 - **Toggle**: `MapPartitions.Layers.IncludeNPCs`.
 - **Default distribution**: Static world spawns without an owner are deterministically distributed across existing, non-empty layers (prefers non-zero layers when available).
+- **Orphan recovery**: When a layer is removed (last player leaves), orphaned NPCs are automatically redistributed to surviving layers.
+- **Zone boundary tolerance**: NPCs near zone boundaries remain visible even when the player's zone differs from the NPC's stored zone.
+- **Stale layer recovery**: NPCs with defunct layer IDs are automatically reassigned during the next visibility check.
+
+### 5b. GameObject Layering
+- **Purpose**: Full layer isolation for world GameObjects (resource nodes, chests, quest objects).
+- **Toggle**: `MapPartitions.Layers.IncludeGameObjects`.
+- **Lifecycle**: GOs are assigned to a layer in `AddToWorld()` and removed in `RemoveFromWorld()`.
+- **Player-owned GOs**: Follow the owner's layer (totems, traps, summoned objects).
+- **Static world GOs**: Deterministically distributed via spawn-ID hashing.
+- **Always-visible**: Transports (ships, zeppelins, elevators) bypass layer filtering.
+- **Orphan recovery**: Same as NPC layering — orphaned GOs redistributed on layer cleanup.
+- **Zone boundary & stale layer recovery**: Same tolerance as NPC layering.
 
 ---
 
@@ -294,9 +320,12 @@ All commands are under `.dc partition` (requires GM permissions).
 - **Layer choice is not continuous**: players only change layers on map entry or zone change (plus party sync), not on every movement tick.
 - **Static NPC distribution** is deterministic per spawn, avoiding cross-layer duplication while keeping load balanced.
 - **Dynamic resizing cost**: resizing triggers a rebuild of partitioned assignments; throttling prevents frequent churn.
-- **Empty layer cleanup**: empty layers are pruned when the last player leaves, preventing stale layer ids.
+- **Empty layer cleanup**: empty layers are pruned when the last player leaves; orphaned NPCs and GOs are redistributed to surviving layers, preventing stale layer IDs from causing permanent invisibility.
 - **Persistent layer restore**: layer restore only succeeds if the target layer still exists; otherwise normal auto-assign applies.
 - **NPC visibility**: when multiple layers exist in a zone, NPCs are layer-isolated; layer `0` is not global in multi-layer zones.
+- **GO visibility**: when GO layering is enabled, GameObjects follow the same isolation rules as NPCs; transports are always visible.
+- **Zone boundary tolerance**: NPCs and GOs near zone boundaries use a zone-agnostic fallback lookup to avoid false invisibility at zone edges.
+- **Stale layer recovery**: NPCs/GOs with layer IDs pointing to defunct layers are automatically reassigned during visibility checks.
 
 ---
 

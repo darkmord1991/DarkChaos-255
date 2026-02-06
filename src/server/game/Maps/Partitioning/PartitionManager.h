@@ -24,6 +24,7 @@
 #include "ObjectGuid.h"
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <deque>
 #include <mutex>
 #include <shared_mutex>
@@ -87,6 +88,7 @@ public:
     
     // Spatial Hash Grid boundary methods (Phase 2 optimization)
     void RegisterBoundaryObjectWithPosition(uint32 mapId, uint32 partitionId, ObjectGuid const& guid, float x, float y);
+    void UpdateBoundaryObjectPosition(uint32 mapId, uint32 partitionId, ObjectGuid const& guid, float x, float y);
     void UnregisterBoundaryObjectFromGrid(uint32 mapId, uint32 partitionId, ObjectGuid const& guid);
     std::vector<ObjectGuid> GetNearbyBoundaryObjects(uint32 mapId, uint32 partitionId, float x, float y, float radius) const;
 
@@ -155,6 +157,13 @@ public:
     uint32 GetLayerForNPC(ObjectGuid const& npcGuid) const; // Back-compat overload
     uint32 GetDefaultLayerForZone(uint32 mapId, uint32 zoneId, uint64 seed) const;
 
+    // GameObject Layering (Feature 3b)
+    bool IsGOLayeringEnabled() const;
+    void AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& goGuid, uint32 layerId);
+    void RemoveGOFromLayer(ObjectGuid const& goGuid);
+    uint32 GetLayerForGO(uint32 mapId, uint32 zoneId, ObjectGuid const& goGuid) const;
+    uint32 GetLayerForGO(ObjectGuid const& goGuid) const;
+
     // Dynamic Partition Resizing (Feature 4)
     // Returns density metric for a partition (players + creatures normalized by cell size)
     float GetPartitionDensity(uint32 mapId, uint32 partitionId) const;
@@ -208,11 +217,15 @@ private:
 
     void SyncControlledToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid, uint32 layerId);
     void ReassignNPCsForNewLayer(uint32 mapId, uint32 zoneId);
+    void ReassignGOsForNewLayer(uint32 mapId, uint32 zoneId);
 
     // Fine-grained locks for different data structures
     mutable std::shared_mutex _partitionLock;     // Protects _partitionsByMap, _partitionedMaps, _gridLayouts
     mutable std::mutex _boundaryLock;             // Protects _boundaryObjects
     mutable std::shared_mutex _layerLock;         // Protects _layers, _playerLayers (read/write optimized)
+    mutable std::mutex _partyLayerCacheLock;      // Protects party target layer cache
+    mutable std::mutex _layerPairCacheLock;       // Protects layer pair cache
+    mutable std::mutex _excludedCacheLock;        // Protects zone exclusion cache
     mutable std::mutex _relocationLock;           // Protects _relocations
     mutable std::shared_mutex _overrideLock;       // Protects _partitionOverrides, _partitionOwnership
     mutable std::shared_mutex _visibilityLock;      // Protects _visibilitySets (read/write optimized)
@@ -227,6 +240,7 @@ private:
     std::unordered_map<uint32, std::unordered_map<uint32, MapPartition*>> _partitionIndex;
     std::unordered_set<uint32_t> _partitionedMaps;
     std::unordered_set<uint32_t> _excludedZones;
+    mutable std::unordered_map<uint32, bool> _zoneExcludedCache;
     std::unordered_map<ObjectGuid::LowType, PartitionRelocationTxn> _relocations;
     std::unordered_map<uint32, uint32> _combatHandoffCounts;
     std::unordered_map<uint32, uint32> _pathHandoffCounts;
@@ -273,6 +287,34 @@ private:
             uint64 key = GetCellKey(x, y);
             cells[key].push_back({guid, x, y});
             objectCellMap[guid.GetCounter()] = key;
+        }
+
+        void Update(ObjectGuid const& guid, float x, float y) {
+            auto cellIt = objectCellMap.find(guid.GetCounter());
+            if (cellIt == objectCellMap.end())
+            {
+                Insert(guid, x, y);
+                return;
+            }
+
+            uint64 newKey = GetCellKey(x, y);
+            if (newKey != cellIt->second)
+            {
+                Remove(guid);
+                Insert(guid, x, y);
+                return;
+            }
+
+            auto& cell = cells[cellIt->second];
+            for (auto& entry : cell)
+            {
+                if (entry.guid == guid)
+                {
+                    entry.x = x;
+                    entry.y = y;
+                    break;
+                }
+            }
         }
         
         void Remove(ObjectGuid const& guid) {
@@ -368,8 +410,53 @@ private:
     };
     std::unordered_map<ObjectGuid::LowType, AtomicLayerAssignment> _atomicPlayerLayers;
 
+    struct PartyTargetLayerCacheEntry
+    {
+        uint32 mapId = 0;
+        uint32 zoneId = 0;
+        uint32 layerId = 0;
+        uint64 expiresMs = 0;
+    };
+    std::unordered_map<ObjectGuid::LowType, PartyTargetLayerCacheEntry> _partyTargetLayerCache;
+
+    struct LayerPairCacheKey
+    {
+        uint32 mapId = 0;
+        uint32 zoneId = 0;
+        ObjectGuid::LowType a = 0;
+        ObjectGuid::LowType b = 0;
+
+        bool operator==(LayerPairCacheKey const& other) const
+        {
+            return mapId == other.mapId && zoneId == other.zoneId && a == other.a && b == other.b;
+        }
+    };
+
+    struct LayerPairCacheKeyHash
+    {
+        size_t operator()(LayerPairCacheKey const& key) const
+        {
+            size_t h1 = std::hash<uint32>{}(key.mapId);
+            size_t h2 = std::hash<uint32>{}(key.zoneId);
+            size_t h3 = std::hash<ObjectGuid::LowType>{}(key.a);
+            size_t h4 = std::hash<ObjectGuid::LowType>{}(key.b);
+            return (((h1 * 1315423911u) ^ h2) * 2654435761u) ^ (h3 + (h4 << 1));
+        }
+    };
+
+    struct LayerPairCacheEntry
+    {
+        uint32 layer1 = 0;
+        uint32 layer2 = 0;
+        uint64 expiresMs = 0;
+    };
+    mutable std::unordered_map<LayerPairCacheKey, LayerPairCacheEntry, LayerPairCacheKeyHash> _layerPairCache;
+
     // NPC Layering data (Feature 3)
     std::unordered_map<ObjectGuid::LowType, LayerAssignment> _npcLayers;
+
+    // GameObject Layering data (Feature 3b)
+    std::unordered_map<ObjectGuid::LowType, LayerAssignment> _goLayers;
 
     // Dynamic resize throttling
     std::unordered_map<uint32, uint64> _lastResizeMs;
@@ -426,6 +513,10 @@ private:
 
     std::deque<PrecacheRequest> _precacheQueue;
     std::unordered_map<uint64, uint64> _precacheRecent;
+    std::unordered_map<ObjectGuid::LowType, uint64> _boundaryApproachLastCheck;
+
+    // Layout epoch tracking for fast per-thread layout caching
+    std::unordered_map<uint32, uint64> _layoutEpochByMap;
 
     // Helper to get cached grid layout (lock must be held)
     PartitionGridLayout const* GetGridLayout(uint32 mapId) const;

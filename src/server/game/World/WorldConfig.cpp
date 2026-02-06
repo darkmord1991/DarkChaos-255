@@ -553,6 +553,7 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY, "MapPartitions.Layers.Capacity", 100);
     SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_MAX, "MapPartitions.Layers.Max", 4);
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_NPC_LAYERS, "MapPartitions.Layers.IncludeNPCs", true);
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_GO_LAYERS, "MapPartitions.Layers.IncludeGameObjects", true);
     SetConfigValue<float>(CONFIG_MAP_PARTITIONS_DENSITY_SPLIT_THRESHOLD, "MapPartitions.DensitySplitThreshold", 50.0f);
     SetConfigValue<float>(CONFIG_MAP_PARTITIONS_DENSITY_MERGE_THRESHOLD, "MapPartitions.DensityMergeThreshold", 5.0f);
     SetConfigValue<uint32>(CONFIG_MAX_RESULTS_LOOKUP_COMMANDS, "Command.LookupMaxResults", 0);

@@ -31,6 +31,7 @@
 #include "Log.h"
 #include "Maps/Partitioning/PartitionManager.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <algorithm>
 #include <optional>
@@ -1130,41 +1131,52 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
     if (_isPartitioned)
     {
-        std::unordered_map<uint32, std::vector<Player*>> partitionBuckets;
         uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+        if (partitionCount == 0)
+            partitionCount = 1;
+
+        std::vector<std::vector<Player*>> partitionBuckets;
         uint32 totalPlayersChecked = 0;
         uint32 totalPlayersSkipped = 0;
 
-        for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
+        if (!useParallelPartitions)
         {
-            Player* player = m_mapRefIter->GetSource();
-            ++totalPlayersChecked;
-            if (!player || !player->IsInWorld())
+            partitionBuckets.resize(partitionCount);
+
+            for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
             {
-                ++totalPlayersSkipped;
-                if (player)
+                Player* player = m_mapRefIter->GetSource();
+                ++totalPlayersChecked;
+                if (!player || !player->IsInWorld())
                 {
-                    LOG_ERROR("maps.partition", "Map::Update (Partitioned) - Skipping player {} ({}) because IsInWorld() = false, map: {}",
-                        player->GetName(), player->GetGUID().ToString(), GetId());
+                    ++totalPlayersSkipped;
+                    if (player)
+                    {
+                        LOG_ERROR("maps.partition", "Map::Update (Partitioned) - Skipping player {} ({}) because IsInWorld() = false, map: {}",
+                            player->GetName(), player->GetGUID().ToString(), GetId());
+                    }
+                    continue;
                 }
-                continue;
+
+                uint32 zoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+                uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), zoneId, player->GetGUID());
+                uint32 index = partitionId > 0 ? partitionId - 1 : 0;
+                if (index >= partitionCount)
+                    index = partitionCount - 1;
+                partitionBuckets[index].push_back(player);
             }
 
-            uint32 zoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
-            uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), zoneId, player->GetGUID());
-            partitionBuckets[partitionId].push_back(player);
-        }
+            if (totalPlayersSkipped > 0)
+            {
+                LOG_ERROR("maps.partition", "Map::Update (Partitioned) - Map {} skipped {} out of {} players due to IsInWorld() check",
+                    GetId(), totalPlayersSkipped, totalPlayersChecked);
+            }
 
-        if (totalPlayersSkipped > 0)
-        {
-            LOG_ERROR("maps.partition", "Map::Update (Partitioned) - Map {} skipped {} out of {} players due to IsInWorld() check",
-                GetId(), totalPlayersSkipped, totalPlayersChecked);
+            SetPartitionPlayerBuckets(partitionBuckets);
         }
 
         if (!useParallelPartitions)
         {
-            if (partitionCount == 0)
-                partitionCount = 1;
 
             for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
             {
@@ -1200,20 +1212,20 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                     METRIC_TAG("partition_id", std::to_string(partitionId)));
                 SetActivePartitionContext(partitionId);
                 ProcessPartitionRelays(partitionId);
-                auto& bucket = partitionBuckets[partitionId];
+                auto& bucket = partitionBuckets[partitionId - 1];
                 uint32 boundaryPlayers = 0;
                 for (Player* player : bucket)
                 {
                     if (sPartitionMgr->IsNearPartitionBoundary(GetId(), player->GetPositionX(), player->GetPositionY()))
                     {
                         ++boundaryPlayers;
-                        if (!sPartitionMgr->IsObjectInBoundarySet(GetId(), partitionId, player->GetGUID()))
-                            sPartitionMgr->RegisterBoundaryObject(GetId(), partitionId, player->GetGUID());
+                        sPartitionMgr->UpdateBoundaryObjectPosition(GetId(), partitionId, player->GetGUID(),
+                            player->GetPositionX(), player->GetPositionY());
                         sPartitionMgr->SetPartitionOverride(player->GetGUID(), partitionId, 500);
                     }
                     else
                     {
-                        sPartitionMgr->UnregisterBoundaryObject(GetId(), partitionId, player->GetGUID());
+                        sPartitionMgr->UnregisterBoundaryObjectFromGrid(GetId(), partitionId, player->GetGUID());
                     }
                 }
                 sPartitionMgr->UpdatePartitionPlayerCount(GetId(), partitionId, static_cast<uint32>(bucket.size()));
@@ -1277,6 +1289,9 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
     if (!useParallelPartitions)
         UpdateNonPlayerObjects(t_diff);
+
+    if (_isPartitioned && !useParallelPartitions)
+        ClearPartitionPlayerBuckets();
 
     SendObjectUpdates();
 
@@ -1397,44 +1412,95 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
 
     if (_isPartitioned)
     {
-        std::unordered_map<uint32, uint32> partitionCreatureCounts;
-        std::unordered_map<uint32, uint32> partitionBoundaryObjectCounts;
-
         uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
         if (partitionCount == 0)
             partitionCount = 1;
+
+        std::vector<uint32> partitionCreatureCounts(partitionCount, 0);
+        std::vector<uint32> partitionBoundaryObjectCounts(partitionCount, 0);
 
         for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
         {
             SetActivePartitionContext(partitionId);
             auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
-            if (listIt == _partitionedUpdatableObjectLists.end())
-                continue;
+            std::vector<WorldObject*> emptyBucket;
+            auto& bucket = (listIt != _partitionedUpdatableObjectLists.end()) ? listIt->second : emptyBucket;
+            uint32 index = partitionId - 1;
+            std::unordered_set<ObjectGuid> validGuids;
+            auto const* playerBucket = GetPartitionPlayerBucket(partitionId);
+            if (playerBucket)
+                validGuids.reserve(bucket.size() + playerBucket->size());
+            else
+                validGuids.reserve(bucket.size());
 
-            auto& bucket = listIt->second;
+            if (auto storeIt = _partitionedObjectsStore.find(partitionId); storeIt != _partitionedObjectsStore.end())
+            {
+                struct GuidCollector
+                {
+                    std::unordered_set<ObjectGuid>& output;
+                    void Visit(std::unordered_map<ObjectGuid, Creature*>& container)
+                    {
+                        for (auto const& pair : container)
+                            output.insert(pair.first);
+                    }
+                    void Visit(std::unordered_map<ObjectGuid, GameObject*>& container)
+                    {
+                        for (auto const& pair : container)
+                            output.insert(pair.first);
+                    }
+                    void Visit(std::unordered_map<ObjectGuid, DynamicObject*>& container)
+                    {
+                        for (auto const& pair : container)
+                            output.insert(pair.first);
+                    }
+                    void Visit(std::unordered_map<ObjectGuid, Corpse*>& container)
+                    {
+                        for (auto const& pair : container)
+                            output.insert(pair.first);
+                    }
+                } collector{ validGuids };
+
+                TypeContainerVisitor<GuidCollector, MapStoredObjectTypesContainer> visitor(collector);
+                visitor.Visit(storeIt->second);
+            }
+
             for (size_t i = 0; i < bucket.size();)
             {
                 WorldObject* obj = bucket[i];
                 auto idxIt = _partitionedUpdatableIndex.find(obj);
-                if (idxIt == _partitionedUpdatableIndex.end() || idxIt->second.first != partitionId)
+                if (idxIt == _partitionedUpdatableIndex.end() || idxIt->second.partitionId != partitionId)
                 {
                     WorldObject* swapped = bucket.back();
                     bucket[i] = swapped;
                     bucket.pop_back();
                     auto swappedIt = _partitionedUpdatableIndex.find(swapped);
-                    if (swappedIt != _partitionedUpdatableIndex.end() && swappedIt->second.first == partitionId)
-                        swappedIt->second.second = i;
+                    if (swappedIt != _partitionedUpdatableIndex.end() && swappedIt->second.partitionId == partitionId)
+                        swappedIt->second.index = i;
                     continue;
                 }
-                if (!obj || !obj->IsInWorld())
+                ObjectGuid guid = idxIt->second.guid;
+                WorldObject* resolved = nullptr;
+                if (auto storeIt = _partitionedObjectsStore.find(partitionId); storeIt != _partitionedObjectsStore.end())
+                {
+                    if (Creature* creature = storeIt->second.Find<Creature>(guid))
+                        resolved = creature;
+                    else if (GameObject* go = storeIt->second.Find<GameObject>(guid))
+                        resolved = go;
+                    else if (DynamicObject* dynObj = storeIt->second.Find<DynamicObject>(guid))
+                        resolved = dynObj;
+                    else if (Corpse* corpse = storeIt->second.Find<Corpse>(guid))
+                        resolved = corpse;
+                }
+
+                if (!resolved || !resolved->IsInWorld())
                 {
                     // Remove stale entry without touching obj
                     WorldObject* swapped = bucket.back();
                     bucket[i] = swapped;
                     bucket.pop_back();
                     auto swappedIt = _partitionedUpdatableIndex.find(swapped);
-                    if (swappedIt != _partitionedUpdatableIndex.end() && swappedIt->second.first == partitionId)
-                        swappedIt->second.second = i;
+                    if (swappedIt != _partitionedUpdatableIndex.end() && swappedIt->second.partitionId == partitionId)
+                        swappedIt->second.index = i;
                     _partitionedUpdatableIndex.erase(obj);
 
                     // Remove from global update list without dereferencing obj
@@ -1456,14 +1522,28 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                     continue;
                 }
 
+                if (resolved != obj)
+                {
+                    PartitionedUpdatableEntry entry = idxIt->second;
+                    _partitionedUpdatableIndex.erase(idxIt);
+                    _partitionedUpdatableIndex[resolved] = entry;
+                    bucket[i] = resolved;
+                    obj = resolved;
+                }
+
                 if (obj->ToCreature())
-                    ++partitionCreatureCounts[partitionId];
+                    ++partitionCreatureCounts[index];
 
                 if (sPartitionMgr->IsNearPartitionBoundary(GetId(), obj->GetPositionX(), obj->GetPositionY()))
                 {
-                    ++partitionBoundaryObjectCounts[partitionId];
-                    sPartitionMgr->RegisterBoundaryObject(GetId(), partitionId, obj->GetGUID());
+                    ++partitionBoundaryObjectCounts[index];
+                    sPartitionMgr->UpdateBoundaryObjectPosition(GetId(), partitionId, obj->GetGUID(),
+                        obj->GetPositionX(), obj->GetPositionY());
                     sPartitionMgr->SetPartitionOverride(obj->GetGUID(), partitionId, 500);
+                }
+                else
+                {
+                    sPartitionMgr->UnregisterBoundaryObjectFromGrid(GetId(), partitionId, obj->GetGUID());
                 }
 
                 obj->Update(diff);
@@ -1479,8 +1559,19 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 ++i;
             }
 
-            sPartitionMgr->UpdatePartitionCreatureCount(GetId(), partitionId, partitionCreatureCounts[partitionId]);
-            sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, partitionBoundaryObjectCounts[partitionId]);
+            if (playerBucket)
+            {
+                for (Player* player : *playerBucket)
+                {
+                    if (player && player->IsInWorld())
+                        validGuids.insert(player->GetGUID());
+                }
+            }
+
+            sPartitionMgr->CleanupBoundaryObjects(GetId(), partitionId, validGuids);
+
+            sPartitionMgr->UpdatePartitionCreatureCount(GetId(), partitionId, partitionCreatureCounts[index]);
+            sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, partitionBoundaryObjectCounts[index]);
         }
 
         SetActivePartitionContext(0);
@@ -1648,7 +1739,7 @@ void Map::AddToPartitionedUpdateList(WorldObject* obj)
                 uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
     auto& list = _partitionedUpdatableObjectLists[partitionId];
     list.push_back(obj);
-    _partitionedUpdatableIndex[obj] = { partitionId, list.size() - 1 };
+    _partitionedUpdatableIndex[obj] = { partitionId, list.size() - 1, obj->GetGUID() };
 }
 
 void Map::RemoveFromPartitionedUpdateList(WorldObject* obj)
@@ -1660,8 +1751,8 @@ void Map::RemoveFromPartitionedUpdateList(WorldObject* obj)
     if (it == _partitionedUpdatableIndex.end())
         return;
 
-    uint32 partitionId = it->second.first;
-    size_t index = it->second.second;
+    uint32 partitionId = it->second.partitionId;
+    size_t index = it->second.index;
     auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
     if (listIt == _partitionedUpdatableObjectLists.end())
     {
@@ -1674,7 +1765,9 @@ void Map::RemoveFromPartitionedUpdateList(WorldObject* obj)
     {
         WorldObject* swapped = list.back();
         list[index] = swapped;
-        _partitionedUpdatableIndex[swapped] = { partitionId, index };
+        auto swappedIt = _partitionedUpdatableIndex.find(swapped);
+        if (swappedIt != _partitionedUpdatableIndex.end())
+            swappedIt->second.index = index;
     }
     list.pop_back();
     _partitionedUpdatableIndex.erase(it);
@@ -1694,7 +1787,7 @@ void Map::UpdatePartitionedOwnership(WorldObject* obj)
         return;
     }
 
-    if (it->second.first != newPartitionId)
+    if (it->second.partitionId != newPartitionId)
     {
         RemoveFromPartitionedUpdateList(obj);
         AddToPartitionedUpdateList(obj);
@@ -1859,8 +1952,11 @@ void Map::BuildPartitionPlayerBuckets()
     if (partitionCount == 0)
         partitionCount = 1;
 
-    std::vector<std::vector<Player*>> buckets;
-    buckets.resize(partitionCount);
+    std::unique_lock<std::shared_mutex> guard(_partitionPlayerBucketsLock);
+    if (_partitionPlayerBuckets.size() != partitionCount)
+        _partitionPlayerBuckets.resize(partitionCount);
+    for (auto& bucket : _partitionPlayerBuckets)
+        bucket.clear();
 
     for (MapRefMgr::iterator iter = m_mapRefMgr.begin(); iter != m_mapRefMgr.end(); ++iter)
     {
@@ -1871,21 +1967,32 @@ void Map::BuildPartitionPlayerBuckets()
         uint32 zoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
         uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), zoneId, player->GetGUID());
         uint32 index = partitionId > 0 ? partitionId - 1 : 0;
-        if (index >= buckets.size())
-            index = buckets.size() - 1;
-        buckets[index].push_back(player);
+        if (index >= _partitionPlayerBuckets.size())
+            index = _partitionPlayerBuckets.size() - 1;
+        _partitionPlayerBuckets[index].push_back(player);
     }
 
-    {
-        std::unique_lock<std::shared_mutex> guard(_partitionPlayerBucketsLock);
-        _partitionPlayerBuckets.swap(buckets);
-    }
+    _partitionPlayerBucketsReady = true;
+}
+
+void Map::SetPartitionPlayerBuckets(std::vector<std::vector<Player*>> const& buckets)
+{
+    std::unique_lock<std::shared_mutex> guard(_partitionPlayerBucketsLock);
+    if (_partitionPlayerBuckets.size() != buckets.size())
+        _partitionPlayerBuckets.resize(buckets.size());
+
+    for (size_t i = 0; i < buckets.size(); ++i)
+        _partitionPlayerBuckets[i] = buckets[i];
+
+    _partitionPlayerBucketsReady = true;
 }
 
 void Map::ClearPartitionPlayerBuckets()
 {
     std::unique_lock<std::shared_mutex> guard(_partitionPlayerBucketsLock);
-    _partitionPlayerBuckets.clear();
+    for (auto& bucket : _partitionPlayerBuckets)
+        bucket.clear();
+    _partitionPlayerBucketsReady = false;
 }
 
 std::vector<Player*> const* Map::GetPartitionPlayerBucket(uint32 partitionId) const
@@ -1894,7 +2001,7 @@ std::vector<Player*> const* Map::GetPartitionPlayerBucket(uint32 partitionId) co
         return nullptr;
 
     std::shared_lock<std::shared_mutex> guard(_partitionPlayerBucketsLock);
-    if (_partitionPlayerBuckets.empty())
+    if (!_partitionPlayerBucketsReady || _partitionPlayerBuckets.empty())
         return nullptr;
 
     uint32 index = partitionId - 1;

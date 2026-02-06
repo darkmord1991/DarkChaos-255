@@ -3445,6 +3445,18 @@ MapPartitions.Layers.Max = 4
 MapPartitions.Layers.IncludeNPCs = 1
 
 #
+#    MapPartitions.Layers.IncludeGameObjects
+#        Description: If enabled, GameObjects (resource nodes, chests, quest objects, etc.) are
+#                     distributed across layers for complete isolation, mirroring NPC layering.
+#                     Player-spawned GOs follow the owner's layer. Static world GOs are
+#                     deterministically distributed via spawn-ID hashing.
+#                     Transports (ships, zeppelins, elevators) are always visible on all layers.
+#        Default:     1 - (Enabled, true layer isolation)
+#                     0 - (Disabled, GameObjects visible across all layers)
+#
+MapPartitions.Layers.IncludeGameObjects = 1
+
+#
 #    MapPartitions.DensitySplitThreshold
 #        Description: Density score (players + creatures/10) to trigger partition splitting.
 #                     Resizing is throttled to avoid churn.

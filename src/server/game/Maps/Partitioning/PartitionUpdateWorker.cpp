@@ -94,10 +94,8 @@ void PartitionUpdateWorker::UpdatePlayers()
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY()))
         {
             ++_boundaryPlayerCount;
-            // Only register if not already in boundary set (avoids duplicate registration spam)
-            if (!sPartitionMgr->IsObjectInBoundarySet(_map.GetId(), _partitionId, player->GetGUID()))
-                sPartitionMgr->RegisterBoundaryObjectWithPosition(_map.GetId(), _partitionId, player->GetGUID(),
-                    player->GetPositionX(), player->GetPositionY());
+            sPartitionMgr->UpdateBoundaryObjectPosition(_map.GetId(), _partitionId, player->GetGUID(),
+                player->GetPositionX(), player->GetPositionY());
             sPartitionMgr->SetPartitionOverride(player->GetGUID(), _partitionId, 500);
         }
         else
@@ -166,10 +164,8 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), obj->GetPositionX(), obj->GetPositionY()))
         {
             ++_boundaryObjectCount;
-            // Only register if not already in boundary set (avoids duplicate registration spam)
-            if (!sPartitionMgr->IsObjectInBoundarySet(_map.GetId(), _partitionId, obj->GetGUID()))
-                sPartitionMgr->RegisterBoundaryObjectWithPosition(_map.GetId(), _partitionId, obj->GetGUID(),
-                    obj->GetPositionX(), obj->GetPositionY());
+            sPartitionMgr->UpdateBoundaryObjectPosition(_map.GetId(), _partitionId, obj->GetGUID(),
+                obj->GetPositionX(), obj->GetPositionY());
             sPartitionMgr->SetPartitionOverride(obj->GetGUID(), _partitionId, 500);
         }
         else

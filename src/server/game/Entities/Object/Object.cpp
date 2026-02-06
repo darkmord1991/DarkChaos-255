@@ -1787,9 +1787,39 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
                 if (!isServiceNpc)
                 {
                     uint32 playerLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
+
+                    // Try lookup with player's zone first
                     uint32 npcLayer = sPartitionMgr->GetLayerForNPC(player->GetMapId(), player->GetZoneId(), cObj->GetGUID());
 
-                    if (npcLayer == 0 && sPartitionMgr->GetLayerCount(player->GetMapId(), player->GetZoneId()) > 1)
+                    // If NPC's stored zone differs from the player's zone (zone boundary),
+                    // use the NPC's own zone-agnostic layer and treat as same-layer (visible)
+                    // since zone-based layering is meaningless across zone boundaries.
+                    if (npcLayer == 0)
+                    {
+                        uint32 npcZoneLayer = sPartitionMgr->GetLayerForNPC(cObj->GetGUID());
+                        if (npcZoneLayer != 0)
+                        {
+                            // NPC has a valid layer assignment in a different zone — it's at a zone boundary.
+                            // Allow visibility; zone-based layering doesn't apply across zone boundaries.
+                            npcLayer = playerLayer; // treat as same layer
+                        }
+                    }
+
+                    // Fallback: NPC truly unassigned OR on a defunct layer that was cleaned up
+                    bool needsReassignment = (npcLayer == 0);
+                    if (!needsReassignment && npcLayer != playerLayer)
+                    {
+                        // Check if the NPC's layer still actually exists — if the layer was
+                        // cleaned up (all players left), the NPC is orphaned and needs reassignment
+                        uint32 layerCount = sPartitionMgr->GetLayerCount(player->GetMapId(), player->GetZoneId());
+                        if (layerCount <= 1)
+                        {
+                            // Only 0-1 layers active: NPC's layer is stale, reassign
+                            needsReassignment = true;
+                        }
+                    }
+
+                    if (needsReassignment && sPartitionMgr->GetLayerCount(player->GetMapId(), player->GetZoneId()) >= 1)
                     {
                         uint64 seed = cObj->GetSpawnId() ? uint64(cObj->GetSpawnId()) : cObj->GetGUID().GetCounter();
                         uint32 fallbackLayer = sPartitionMgr->GetDefaultLayerForZone(player->GetMapId(), player->GetZoneId(), seed);
@@ -1797,6 +1827,11 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
                         {
                             sPartitionMgr->AssignNPCToLayer(player->GetMapId(), player->GetZoneId(), cObj->GetGUID(), fallbackLayer);
                             npcLayer = fallbackLayer;
+                        }
+                        else
+                        {
+                            // No layers exist for this zone — treat NPC as universally visible
+                            npcLayer = playerLayer;
                         }
                     }
                     
@@ -1816,6 +1851,59 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
         if (ToPlayer() && !goObj->AI()->CanBeSeen(ToPlayer()))
         {
             return false;
+        }
+
+        // GO layering: Hide GameObjects on a different layer than the player
+        if (Player const* player = ToPlayer())
+        {
+            if (sPartitionMgr->IsGOLayeringEnabled())
+            {
+                // Transports are always visible (ships, zeppelins, elevators)
+                bool isAlwaysVisible = goObj->IsTransport() || goObj->GetGoType() == GAMEOBJECT_TYPE_TRANSPORT
+                    || goObj->GetGoType() == GAMEOBJECT_TYPE_MO_TRANSPORT;
+
+                if (!isAlwaysVisible)
+                {
+                    uint32 playerLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
+
+                    uint32 goLayer = sPartitionMgr->GetLayerForGO(player->GetMapId(), player->GetZoneId(), goObj->GetGUID());
+
+                    // Zone boundary: GO stored in different zone
+                    if (goLayer == 0)
+                    {
+                        uint32 goZoneLayer = sPartitionMgr->GetLayerForGO(goObj->GetGUID());
+                        if (goZoneLayer != 0)
+                            goLayer = playerLayer; // zone boundary, treat as same layer
+                    }
+
+                    // Fallback: unassigned or on a defunct layer
+                    bool needsReassignment = (goLayer == 0);
+                    if (!needsReassignment && goLayer != playerLayer)
+                    {
+                        uint32 layerCount = sPartitionMgr->GetLayerCount(player->GetMapId(), player->GetZoneId());
+                        if (layerCount <= 1)
+                            needsReassignment = true;
+                    }
+
+                    if (needsReassignment && sPartitionMgr->GetLayerCount(player->GetMapId(), player->GetZoneId()) >= 1)
+                    {
+                        uint64 seed = goObj->GetSpawnId() ? uint64(goObj->GetSpawnId()) : goObj->GetGUID().GetCounter();
+                        uint32 fallbackLayer = sPartitionMgr->GetDefaultLayerForZone(player->GetMapId(), player->GetZoneId(), seed);
+                        if (fallbackLayer != 0)
+                        {
+                            sPartitionMgr->AssignGOToLayer(player->GetMapId(), player->GetZoneId(), goObj->GetGUID(), fallbackLayer);
+                            goLayer = fallbackLayer;
+                        }
+                        else
+                        {
+                            goLayer = playerLayer; // no layers, universally visible
+                        }
+                    }
+
+                    if (playerLayer != goLayer)
+                        return false;
+                }
+            }
         }
     }
 

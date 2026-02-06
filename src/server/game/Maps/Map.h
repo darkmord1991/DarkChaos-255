@@ -651,6 +651,7 @@ public:
     void RebuildPartitionedObjectAssignments();
     template<class T> T* FindPartitionedObject(ObjectGuid const& guid);
     void BuildPartitionPlayerBuckets();
+    void SetPartitionPlayerBuckets(std::vector<std::vector<Player*>> const& buckets);
     void ClearPartitionPlayerBuckets();
     std::vector<Player*> const* GetPartitionPlayerBucket(uint32 partitionId) const;
     void ProcessPartitionRelays(uint32 partitionId);
@@ -739,10 +740,17 @@ private:
     std::unordered_set<WorldObject*> i_objectsToRemove;
 
     PartitionedUpdatableObjectLists _partitionedUpdatableObjectLists;
-    std::unordered_map<WorldObject*, std::pair<uint32, size_t>> _partitionedUpdatableIndex;
+    struct PartitionedUpdatableEntry
+    {
+        uint32 partitionId = 0;
+        size_t index = 0;
+        ObjectGuid guid = ObjectGuid::Empty;
+    };
+    std::unordered_map<WorldObject*, PartitionedUpdatableEntry> _partitionedUpdatableIndex;
     std::unordered_map<uint32, MapStoredObjectTypesContainer> _partitionedObjectsStore;
     mutable std::shared_mutex _partitionPlayerBucketsLock;
     std::vector<std::vector<Player*>> _partitionPlayerBuckets;
+    bool _partitionPlayerBucketsReady = false;
     std::unordered_map<ObjectGuid, uint32> _partitionedObjectIndex;
     std::unordered_map<uint32, std::vector<PartitionThreatRelay>> _partitionThreatRelays;
     std::unordered_map<uint32, std::vector<PartitionThreatActionRelay>> _partitionThreatActionRelays;
