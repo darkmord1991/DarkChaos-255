@@ -302,6 +302,13 @@ Creature::~Creature()
     i_AI = nullptr;
 }
 
+void Creature::SetLayerClone(uint32 layerId)
+{
+    _isLayerClone = layerId != 0;
+    _layerCloneId = layerId;
+    _forcedLayerId = layerId;
+}
+
 void Creature::AddToWorld()
 {
     ///- Register the creature for guid lookup
@@ -319,14 +326,13 @@ void Creature::AddToWorld()
             uint32 zoneId = GetMap()->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
             uint32 layerId = 0;
 
-            if (Player* ownerPlayer = GetCharmerOrOwnerPlayerOrPlayerItself())
+            if (_forcedLayerId != 0)
+            {
+                layerId = _forcedLayerId;
+            }
+            else if (Player* ownerPlayer = GetCharmerOrOwnerPlayerOrPlayerItself())
             {
                 layerId = sPartitionMgr->GetPlayerLayer(GetMapId(), zoneId, ownerPlayer->GetGUID());
-            }
-            else
-            {
-                uint64 seed = m_spawnId ? uint64(m_spawnId) : GetGUID().GetCounter();
-                layerId = sPartitionMgr->GetDefaultLayerForZone(GetMapId(), zoneId, seed);
             }
 
             sPartitionMgr->AssignNPCToLayer(GetMapId(), zoneId, GetGUID(), layerId);
@@ -1675,9 +1681,14 @@ bool Creature::isVendorWithIconSpeak() const
     return m_creatureInfo->IconName == "Speak" && m_creatureData->npcflag & UNIT_NPC_FLAG_VENDOR;
 }
 
-bool Creature::LoadCreatureFromDB(ObjectGuid::LowType spawnId, Map* map, bool addToMap, bool allowDuplicate /*= false*/)
+bool Creature::LoadCreatureFromDB(ObjectGuid::LowType spawnId, Map* map, bool addToMap, bool allowDuplicate /*= false*/, bool isLayerClone /*= false*/, uint32 forcedLayerId /*= 0*/)
 {
-    if (!allowDuplicate)
+    if (isLayerClone)
+        SetLayerClone(forcedLayerId);
+    else
+        SetLayerClone(0);
+
+    if (!allowDuplicate && !isLayerClone)
     {
         // If an alive instance of this spawnId is already found, skip creation
         // If only dead instance(s) exist, despawn them and spawn a new (maybe also dead) version
@@ -1732,18 +1743,26 @@ bool Creature::LoadCreatureFromDB(ObjectGuid::LowType spawnId, Map* map, bool ad
     m_respawnDelay = data->spawntimesecs;
     m_deathState = DeathState::Alive;
 
-    m_respawnTime  = GetMap()->GetCreatureRespawnTime(m_spawnId);
-    if (m_respawnTime)                          // respawn on Update
+    if (!isLayerClone)
     {
-        m_deathState = DeathState::Dead;
-        if (CanFly())
+        m_respawnTime  = GetMap()->GetCreatureRespawnTime(m_spawnId);
+        if (m_respawnTime)                          // respawn on Update
         {
-            float tz = map->GetHeight(GetPhaseMask(), data->posX, data->posY, data->posZ, true, MAX_FALL_DISTANCE);
-            if (data->posZ - tz > 0.1f && Acore::IsValidMapCoord(tz))
+            m_deathState = DeathState::Dead;
+            if (CanFly())
             {
-                Relocate(data->posX, data->posY, tz);
+                float tz = map->GetHeight(GetPhaseMask(), data->posX, data->posY, data->posZ, true, MAX_FALL_DISTANCE);
+                if (data->posZ - tz > 0.1f && Acore::IsValidMapCoord(tz))
+                {
+                    Relocate(data->posX, data->posY, tz);
+                }
             }
         }
+    }
+    else
+    {
+        m_respawnTime = 0;
+        m_deathState = DeathState::Alive;
     }
 
     uint32 curhealth;
@@ -2051,7 +2070,7 @@ void Creature::Respawn(bool force)
 
         if (getDeathState() == DeathState::Dead)
         {
-            if (m_spawnId)
+            if (m_spawnId && !IsLayerClone())
             {
                 GetMap()->RemoveCreatureRespawnTime(m_spawnId);
                 CreatureData const* data = sObjectMgr->GetCreatureData(m_spawnId);
@@ -2102,7 +2121,7 @@ void Creature::Respawn(bool force)
                 TriggerJustRespawned = true;  //delay event to next tick so all creatures are created on the map before processing
             }
 
-            uint32 poolid = m_spawnId ? sPoolMgr->IsPartOfAPool<Creature>(m_spawnId) : 0;
+            uint32 poolid = (!IsLayerClone() && m_spawnId) ? sPoolMgr->IsPartOfAPool<Creature>(m_spawnId) : 0;
             if (poolid)
                 sPoolMgr->UpdatePool<Creature>(poolid, m_spawnId);
 
@@ -2128,7 +2147,8 @@ void Creature::Respawn(bool force)
             time_t now = GameTime::GetGameTime().count();
             m_respawnTime = (now > linkedRespawntime ? now : linkedRespawntime) + urand(5, MINUTE); // else copy time from master and add a little
         }
-        SaveRespawnTime(); // also save to DB immediately
+        if (!IsLayerClone())
+            SaveRespawnTime(); // also save to DB immediately
     }
 }
 
@@ -2599,7 +2619,10 @@ void Creature::UpdateMoveInLineOfSightState()
 
 void Creature::SaveRespawnTime()
 {
-    if (IsSummon() || !m_spawnId || (m_creatureData && !m_creatureData->dbData))
+    if (IsLayerClone() || IsSummon() || !m_spawnId || (m_creatureData && !m_creatureData->dbData))
+        return;
+
+    if (IsLayerClone())
         return;
 
     GetMap()->SaveCreatureRespawnTime(m_spawnId, m_respawnTime);

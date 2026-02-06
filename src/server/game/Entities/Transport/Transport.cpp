@@ -690,8 +690,12 @@ StaticTransport::~StaticTransport()
     ASSERT(_passengers.empty());
 }
 
-bool StaticTransport::LoadGameObjectFromDB(ObjectGuid::LowType spawnId, Map* map, bool addToMap)
+bool StaticTransport::LoadGameObjectFromDB(ObjectGuid::LowType spawnId, Map* map, bool addToMap, bool allowDuplicate /*= false*/, bool isLayerClone /*= false*/, uint32 forcedLayerId /*= 0*/)
 {
+    (void)allowDuplicate;
+    (void)isLayerClone;
+    (void)forcedLayerId;
+
     GameObjectData const* data = sObjectMgr->GetGameObjectData(spawnId);
 
     if (!data)

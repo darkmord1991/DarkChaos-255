@@ -135,9 +135,9 @@ void MapUpdater::deactivate()
 {
     _cancelationToken = true;
 
-    wait();  // This is where we wait for tasks to complete
+    _queue.Cancel();  // Cancel queue first so workers can wake up and exit
 
-    _queue.Cancel();  // Cancel the queue to prevent further task processing
+    wait();  // Now wait for any in-progress tasks to complete
 
     // Join all worker threads
     for (auto& thread : _workerThreads)
@@ -193,8 +193,8 @@ bool MapUpdater::activated()
 
 void MapUpdater::update_finished()
 {
-    // Atomic decrement for pending_requests
-    if (pending_requests.fetch_sub(1, std::memory_order_acquire) == 1)
+    // Atomic decrement for pending_requests — use acq_rel for proper visibility of completed work
+    if (pending_requests.fetch_sub(1, std::memory_order_acq_rel) == 1)
     {
         // Only notify when pending_requests becomes 0 (i.e., all tasks are finished)
         std::lock_guard<std::mutex> lock(_lock);  // Lock only for condition variable notification
@@ -214,10 +214,13 @@ void MapUpdater::WorkerThread()
 
         _queue.WaitAndPop(request);  // Wait for and pop a request from the queue
 
-        if (!_cancelationToken && request)
+        if (request)
         {
-            request->call();  // Execute the request
-            delete request;  // Clean up after processing
+            if (!_cancelationToken)
+            {
+                request->call();  // Execute the request
+            }
+            delete request;  // Always clean up to prevent memory leak
         }
     }
 }

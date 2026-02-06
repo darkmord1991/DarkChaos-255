@@ -31,7 +31,6 @@
 #include "Unit.h"
 #include "UpdateData.h"
 #include "WorldSession.h"
-#include <iostream>
 
 #include "SpellMgr.h"
 
@@ -1454,7 +1453,7 @@ namespace Acore
     class AllGameObjectsMatchingOneEntryInRange
     {
     public:
-        AllGameObjectsMatchingOneEntryInRange(WorldObject const* object, std::vector<uint32> entries, float maxRange) : m_pObject(object), m_uiEntries(entries), m_fRange(maxRange) {}
+        AllGameObjectsMatchingOneEntryInRange(WorldObject const* object, std::vector<uint32> entries, float maxRange) : m_pObject(object), m_uiEntries(std::move(entries)), m_fRange(maxRange) {}
         bool operator()(GameObject *go)
         {
             if (std::ranges::any_of( m_uiEntries, [go](uint32 entry) { return go->GetEntry() == entry; }) && m_pObject->IsWithinDist(go, m_fRange, false))
@@ -1490,7 +1489,7 @@ namespace Acore
     class AllCreaturesMatchingOneEntryInRange
     {
     public:
-        AllCreaturesMatchingOneEntryInRange(WorldObject const* object, std::vector<uint32> entries, float maxRange) : m_pObject(object), m_uiEntries(entries), m_fRange(maxRange) {}
+        AllCreaturesMatchingOneEntryInRange(WorldObject const* object, std::vector<uint32> entries, float maxRange) : m_pObject(object), m_uiEntries(std::move(entries)), m_fRange(maxRange) {}
         bool operator()(Unit* unit)
         {
             if (std::ranges::any_of(m_uiEntries, [unit](uint32 entry) { return unit->GetEntry() == entry; }) && m_pObject->IsWithinDist(unit, m_fRange, false))

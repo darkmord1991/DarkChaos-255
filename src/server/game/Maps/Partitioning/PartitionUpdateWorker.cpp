@@ -40,6 +40,10 @@ void PartitionUpdateWorker::Execute()
     ProcessRelays();
     UpdatePlayers();
     UpdateNonPlayerObjects();
+
+    // Flush batched boundary operations (1 lock per batch instead of per-entity)
+    FlushBoundaryBatches();
+
     if (!_boundaryValidGuids.empty())
     {
         std::unordered_set<ObjectGuid> validSet;
@@ -94,14 +98,12 @@ void PartitionUpdateWorker::UpdatePlayers()
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY()))
         {
             ++_boundaryPlayerCount;
-            sPartitionMgr->UpdateBoundaryObjectPosition(_map.GetId(), _partitionId, player->GetGUID(),
-                player->GetPositionX(), player->GetPositionY());
-            sPartitionMgr->SetPartitionOverride(player->GetGUID(), _partitionId, 500);
+            _batchPosUpdates.push_back({player->GetGUID(), player->GetPositionX(), player->GetPositionY()});
         }
         else
         {
             // Player left boundary zone - unregister to prevent memory leak
-            sPartitionMgr->UnregisterBoundaryObjectFromGrid(_map.GetId(), _partitionId, player->GetGUID());
+            _batchUnregisters.push_back(player->GetGUID());
         }
 
         player->Update(playerUpdateDiff);
@@ -164,20 +166,45 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), obj->GetPositionX(), obj->GetPositionY()))
         {
             ++_boundaryObjectCount;
-            sPartitionMgr->UpdateBoundaryObjectPosition(_map.GetId(), _partitionId, obj->GetGUID(),
-                obj->GetPositionX(), obj->GetPositionY());
-            sPartitionMgr->SetPartitionOverride(obj->GetGUID(), _partitionId, 500);
+            _batchPosUpdates.push_back({obj->GetGUID(), obj->GetPositionX(), obj->GetPositionY()});
         }
         else
         {
             // Object left boundary zone - unregister to prevent memory leak
-            sPartitionMgr->UnregisterBoundaryObjectFromGrid(_map.GetId(), _partitionId, obj->GetGUID());
+            _batchUnregisters.push_back(obj->GetGUID());
         }
 
         obj->Update(_diff);
     }
 
     sPartitionMgr->UpdatePartitionCreatureCount(_map.GetId(), _partitionId, _creatureCount);
+}
+
+void PartitionUpdateWorker::FlushBoundaryBatches()
+{
+    uint32 mapId = _map.GetId();
+
+    // Batch position updates → single _boundaryLock acquisition
+    if (!_batchPosUpdates.empty())
+    {
+        std::vector<PartitionManager::BoundaryPositionUpdate> updates;
+        updates.reserve(_batchPosUpdates.size());
+        std::vector<ObjectGuid> overrideGuids;
+        overrideGuids.reserve(_batchPosUpdates.size());
+
+        for (auto const& entry : _batchPosUpdates)
+        {
+            updates.push_back({entry.guid, entry.x, entry.y});
+            overrideGuids.push_back(entry.guid);
+        }
+
+        sPartitionMgr->BatchUpdateBoundaryPositions(mapId, _partitionId, updates);
+        sPartitionMgr->BatchSetPartitionOverrides(overrideGuids, _partitionId, 500);
+    }
+
+    // Batch unregistrations → single _boundaryLock acquisition
+    if (!_batchUnregisters.empty())
+        sPartitionMgr->BatchUnregisterBoundaryObjects(mapId, _partitionId, _batchUnregisters);
 }
 
 void PartitionUpdateWorker::RecordStats()

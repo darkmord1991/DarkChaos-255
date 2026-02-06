@@ -143,6 +143,10 @@ public:
 
     [[nodiscard]] ObjectGuid::LowType GetSpawnId() const { return m_spawnId; }
 
+    void SetLayerClone(uint32 layerId);
+    [[nodiscard]] bool IsLayerClone() const { return _isLayerClone; }
+    [[nodiscard]] uint32 GetLayerCloneId() const { return _layerCloneId; }
+
     // z_rot, y_rot, x_rot - rotation angles around z, y and x axes
     void SetLocalRotationAngles(float z_rot, float y_rot, float x_rot);
     void SetLocalRotation(G3D::Quat const& rot);
@@ -157,7 +161,7 @@ public:
     void SaveToDB(bool saveAddon = false);
     void SaveToDB(uint32 mapid, uint8 spawnMask, uint32 phaseMask, bool saveAddon = false);
     virtual bool LoadFromDB(ObjectGuid::LowType guid, Map* map) { return LoadGameObjectFromDB(guid, map, false); }
-    virtual bool LoadGameObjectFromDB(ObjectGuid::LowType guid, Map* map, bool addToMap = true);
+    virtual bool LoadGameObjectFromDB(ObjectGuid::LowType guid, Map* map, bool addToMap = true, bool allowDuplicate = false, bool isLayerClone = false, uint32 forcedLayerId = 0);
     void DeleteFromDB();
 
     void SetOwnerGUID(ObjectGuid owner)
@@ -388,6 +392,9 @@ protected:
     ChairSlotAndUser ChairListSlots;
 
     ObjectGuid::LowType m_spawnId;                            ///< For new or temporary gameobjects is 0 for saved it is lowguid
+    bool _isLayerClone = false;
+    uint32 _layerCloneId = 0;
+    uint32 _forcedLayerId = 0;
     GameObjectTemplate const* m_goInfo;
     GameObjectData const* m_goData;
     GameObjectValue m_goValue;

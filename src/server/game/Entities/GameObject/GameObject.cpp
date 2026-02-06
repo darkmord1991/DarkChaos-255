@@ -83,6 +83,13 @@ GameObject::~GameObject()
     //    CleanupsBeforeDelete();
 }
 
+void GameObject::SetLayerClone(uint32 layerId)
+{
+    _isLayerClone = layerId != 0;
+    _layerCloneId = layerId;
+    _forcedLayerId = layerId;
+}
+
 bool GameObject::AIM_Initialize()
 {
     if (m_AI)
@@ -165,9 +172,15 @@ void GameObject::AddToWorld()
             uint32 zoneId = GetMap()->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
             uint32 layerId = 0;
 
+            if (_forcedLayerId != 0)
+            {
+                layerId = _forcedLayerId;
+            }
             // Player-owned GOs follow the owner's layer
-            if (Player* ownerPlayer = ObjectAccessor::FindPlayer(GetOwnerGUID()))
+            else if (Player* ownerPlayer = ObjectAccessor::FindPlayer(GetOwnerGUID()))
+            {
                 layerId = sPartitionMgr->GetPlayerLayer(GetMapId(), zoneId, ownerPlayer->GetGUID());
+            }
             else
             {
                 uint64 seed = m_spawnId ? uint64(m_spawnId) : GetGUID().GetCounter();
@@ -1125,8 +1138,15 @@ void GameObject::SaveToDB(uint32 mapid, uint8 spawnMask, uint32 phaseMask, bool 
     sScriptMgr->OnGameObjectSaveToDB(this);
 }
 
-bool GameObject::LoadGameObjectFromDB(ObjectGuid::LowType spawnId, Map* map, bool addToMap)
+bool GameObject::LoadGameObjectFromDB(ObjectGuid::LowType spawnId, Map* map, bool addToMap, bool allowDuplicate /*= false*/, bool isLayerClone /*= false*/, uint32 forcedLayerId /*= 0*/)
 {
+    if (isLayerClone)
+        SetLayerClone(forcedLayerId);
+    else
+        SetLayerClone(0);
+
+    (void)allowDuplicate;
+
     GameObjectData const* data = sObjectMgr->GetGameObjectData(spawnId);
 
     if (!data)
@@ -1166,13 +1186,20 @@ bool GameObject::LoadGameObjectFromDB(ObjectGuid::LowType spawnId, Map* map, boo
         else
         {
             m_respawnDelayTime = data->spawntimesecs;
-            m_respawnTime = GetMap()->GetGORespawnTime(m_spawnId);
+            if (!isLayerClone)
+            {
+                m_respawnTime = GetMap()->GetGORespawnTime(m_spawnId);
 
-            // ready to respawn
-            if (m_respawnTime && m_respawnTime <= GameTime::GetGameTime().count())
+                // ready to respawn
+                if (m_respawnTime && m_respawnTime <= GameTime::GetGameTime().count())
+                {
+                    m_respawnTime = 0;
+                    GetMap()->RemoveGORespawnTime(m_spawnId);
+                }
+            }
+            else
             {
                 m_respawnTime = 0;
-                GetMap()->RemoveGORespawnTime(m_spawnId);
             }
         }
     }
@@ -1247,6 +1274,9 @@ Unit* GameObject::GetOwner() const
 
 void GameObject::SaveRespawnTime(uint32 forceDelay)
 {
+    if (IsLayerClone())
+        return;
+
     if (m_goData && m_goData->dbData && (forceDelay || m_respawnTime > GameTime::GetGameTime().count()) && m_spawnedByDefault)
     {
         time_t respawnTime = forceDelay ? GameTime::GetGameTime().count() + forceDelay : m_respawnTime;
@@ -1325,7 +1355,8 @@ void GameObject::Respawn()
     if (m_spawnedByDefault && m_respawnTime > 0)
     {
         m_respawnTime = GameTime::GetGameTime().count();
-        GetMap()->RemoveGORespawnTime(m_spawnId);
+        if (!IsLayerClone())
+            GetMap()->RemoveGORespawnTime(m_spawnId);
     }
 }
 

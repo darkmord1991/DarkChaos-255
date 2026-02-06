@@ -259,15 +259,19 @@ These commands require GM or Administrator access levels.
 | `info` | `[player]` | Show detailed XP/Addon info for a player. |
 | `dedupe` | `[player]` | Show DCRXP deduplication state. |
 | `clearflag` | `[player]` | Clear the `PLAYER_FLAGS_NO_XP_GAIN` flag. |
-| `partition status` | | Show partition system status and per-partition stats for your current map. |
-| `partition layer` | `<layerId>` | Move yourself to a specific layer ID (requires layering enabled). |
-| `partition join` | `<player>` | Join a friend's, guildmate's, or groupmate's layer (WoW-style, with cooldown). |
+| `partition status` | | Show partition system status and per-partition stats for your current map. Includes per-layer NPC counts by zone. |
 | `partition diag` | `[on\|off\|status]` | Toggle or query runtime diagnostics for layer/partition assignment logging. |
 | `partition config` | | Display current partition and layer configuration settings. |
+| `layer status` | | Show layer info for your current map/zone (player counts per layer, NPC counts if enabled). |
+| `layer` | `<layerId>` | Move yourself to a specific layer ID (requires layering enabled). |
+| `layer join` | `<player>` | Join a friend's, guildmate's, or groupmate's layer (WoW-style, with cooldown). |
 
 *Notes:* Layer assignment happens on map entry and zone change. When NPC layering is enabled (`MapPartitions.Layers.IncludeNPCs = 1`), each layer is a completely independent world copy. NPCs are distributed across layers, and pets/guardians/charmed creatures follow the owner's layer.
 *Dynamic layering:* New layers are only created when a player is assigned and all existing layers are at capacity, up to `MapPartitions.Layers.Max`.
-*Layer switching:* The `.dc partition join` command has escalating cooldowns (1min → 2min → 5min → 10min) to prevent exploit abuse.
+*Layer switching:* The `.dc layer join` command has escalating cooldowns (1min → 2min → 5min → 10min) to prevent exploit abuse.
+*Diagnostics:* When `.dc partition diag` is enabled, per-grid clone spawn summaries are logged. Per-layer clone metrics are controlled by `MapPartitions.Layers.EmitPerLayerCloneMetrics`.
+*Relay overflow logging:* All cross-partition relay queues (threat, taunt, proc, aura, path, point, assist, etc.) now emit `LOG_WARN("maps.partition")` when a relay is dropped due to queue capacity (1024). Check server logs for `"relay queue full"` messages to diagnose lost cross-partition events.
+*Performance:* Clone spawns for layers > 0 can be skipped in empty zones with `MapPartitions.Layers.SkipClonesIfNoPlayers`.
 
 ### System: Dungeon Quests (`.dcquests`)
 *Command:* `.dcquests`

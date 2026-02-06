@@ -118,7 +118,7 @@ public:
     ~StaticTransport() override;
 
     bool LoadFromDB(ObjectGuid::LowType guid, Map* map) override { return LoadGameObjectFromDB(guid, map, false); }
-    bool LoadGameObjectFromDB(ObjectGuid::LowType guid, Map* map, bool addToMap = true) override;
+    bool LoadGameObjectFromDB(ObjectGuid::LowType guid, Map* map, bool addToMap = true, bool allowDuplicate = false, bool isLayerClone = false, uint32 forcedLayerId = 0) override;
     bool Create(ObjectGuid::LowType guidlow, uint32 name_id, Map* map, uint32 phaseMask, float x, float y, float z, float ang, G3D::Quat const& rotation, uint32 animprogress, GOState go_state, uint32 artKit = 0) override;
     void CleanupsBeforeDelete(bool finalCleanup = true) override;
     void BuildUpdate(UpdateDataMapType& data_map) override;

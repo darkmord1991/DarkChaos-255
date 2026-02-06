@@ -4,8 +4,6 @@
  * Subcommands:
  *  .dc partition status
  *  .dc partition config
- *  .dc partition layer <layerId>
- *  .dc partition join <player>
  *  .dc partition diag [on|off|status]
  */
 #include "Chat.h"
@@ -15,6 +13,8 @@
 #include "Player.h"
 #include "SocialMgr.h"
 #include "Maps/Partitioning/PartitionManager.h"
+#include <map>
+#include <string>
 
 using namespace Acore::ChatCommands;
 
@@ -23,7 +23,7 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
     ++it;
     if (it == args.end())
     {
-        handler->PSendSysMessage("Usage: .dc partition status | config | layer <id> | join <player> | diag [on|off]");
+        handler->PSendSysMessage("Usage: .dc partition status | config | diag [on|off]");
         handler->SetSentErrorMessage(true);
         return false;
     }
@@ -35,135 +35,6 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
     {
         if (c == '-' || c == '_' || c == ' ') continue;
         sub2Norm.push_back(std::tolower(static_cast<unsigned char>(c)));
-    }
-
-    if (sub2Norm == "join")
-    {
-        ++it;
-        if (it == args.end())
-        {
-            handler->PSendSysMessage("Usage: .dc partition join <playername>");
-            handler->SetSentErrorMessage(true);
-            return false;
-        }
-
-        if (!sPartitionMgr->IsLayeringEnabled())
-        {
-            handler->PSendSysMessage("|cffff0000Layering is not enabled. Check config.|r");
-            return false;
-        }
-
-        Player* player = handler->GetSession()->GetPlayer();
-        std::string targetName((*it).data(), (*it).size());
-        
-        // Find target player
-        Player* target = ObjectAccessor::FindPlayerByName(targetName);
-        if (!target)
-        {
-            handler->PSendSysMessage("|cffff0000Player '{}' not found or not online.|r", targetName);
-            return false;
-        }
-        
-        // Check if same player
-        if (target->GetGUID() == player->GetGUID())
-        {
-            handler->PSendSysMessage("|cffff0000You cannot join yourself.|r");
-            return false;
-        }
-        
-        // Check if same map/zone
-        if (target->GetMapId() != player->GetMapId() || target->GetZoneId() != player->GetZoneId())
-        {
-            handler->PSendSysMessage("|cffff0000Player '{}' is not in the same zone.|r", targetName);
-            return false;
-        }
-        
-        // Check friend or guild relationship
-        bool isFriend = player->GetSocial() && player->GetSocial()->HasFriend(target->GetGUID());
-        bool isGuildMate = player->GetGuildId() != 0 && player->GetGuildId() == target->GetGuildId();
-        bool isGroupMate = player->GetGroup() && player->GetGroup() == target->GetGroup();
-        
-        if (!isFriend && !isGuildMate && !isGroupMate)
-        {
-            handler->PSendSysMessage("|cffff0000You can only join friends, guildmates, or group members.|r");
-            return false;
-        }
-        
-        // Check if can switch (combat, death, cooldown)
-        if (!sPartitionMgr->CanSwitchLayer(player->GetGUID()))
-        {
-            uint32 cooldownMs = sPartitionMgr->GetLayerSwitchCooldownMs(player->GetGUID());
-            if (cooldownMs > 0)
-            {
-                uint32 cooldownSec = (cooldownMs + 999) / 1000;  // Round up
-                handler->PSendSysMessage("|cffff0000Layer switch on cooldown. {} seconds remaining.|r", cooldownSec);
-            }
-            else if (player->IsInCombat())
-            {
-                handler->PSendSysMessage("|cffff0000Cannot switch layers while in combat.|r");
-            }
-            else if (player->isDead())
-            {
-                handler->PSendSysMessage("|cffff0000Cannot switch layers while dead.|r");
-            }
-            else
-            {
-                handler->PSendSysMessage("|cffff0000Cannot switch layers at this time.|r");
-            }
-            return false;
-        }
-        
-        // Get target's layer
-        uint32 targetLayer = sPartitionMgr->GetPlayerLayer(target->GetMapId(), target->GetZoneId(), target->GetGUID());
-        uint32 currentLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
-        
-        if (targetLayer == currentLayer)
-        {
-            handler->PSendSysMessage("|cff00ff00You are already on the same layer as {}.|r", target->GetName());
-            return true;
-        }
-        
-        // Perform the switch
-        std::string reason = "join command: " + std::string(target->GetName());
-        if (sPartitionMgr->SwitchPlayerToLayer(player->GetGUID(), targetLayer, reason))
-        {
-            handler->PSendSysMessage("|cff00ff00Joined {}'s layer (Layer {}).|r", target->GetName(), targetLayer);
-            return true;
-        }
-        else
-        {
-            handler->PSendSysMessage("|cffff0000Failed to switch layers.|r");
-            return false;
-        }
-    }
-
-    if (sub2Norm == "layer")
-    {
-        ++it;
-        if (it == args.end())
-        {
-            handler->PSendSysMessage("Usage: .dc partition layer <layerId>");
-            handler->SetSentErrorMessage(true);
-            return false;
-        }
-
-        if (!sPartitionMgr->IsLayeringEnabled())
-        {
-            handler->PSendSysMessage("|cffff0000Layering is not enabled. check config.|r");
-            return false;
-        }
-
-        std::string layerArg((*it).data(), (*it).size());
-        uint32 layerId = 0;
-        try { layerId = std::stoul(layerArg); } catch(...) { layerId = 0; }
-
-        Player* player = handler->GetSession()->GetPlayer();
-        uint32 mapId = player->GetMapId();
-        uint32 zoneId = player->GetZoneId();
-
-        sPartitionMgr->AssignPlayerToLayer(mapId, zoneId, player->GetGUID(), layerId);
-        handler->PSendSysMessage("Moved to Layer |cff00ff00{}|r.", layerId);
-        return true;
     }
 
     if (sub2Norm == "diag")
@@ -293,6 +164,28 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
                     totalPlayers, totalCreatures, totalBoundary);
             }
 
+            // NPC layer counts by zone
+            if (sPartitionMgr->IsNPCLayeringEnabled())
+            {
+                PartitionManager::LayerCountByZone npcCounts;
+                sPartitionMgr->GetNPCLayerCountsByZone(mapId, npcCounts);
+                if (!npcCounts.empty())
+                {
+                    handler->SendSysMessage("\n|cff00ffffNPC Layer Counts by Zone:|r");
+                    for (auto const& [zone, layerCounts] : npcCounts)
+                    {
+                        std::string line;
+                        for (auto const& [layerId, count] : layerCounts)
+                        {
+                            if (!line.empty())
+                                line += " ";
+                            line += "L" + std::to_string(layerId) + "=" + std::to_string(count);
+                        }
+                        handler->PSendSysMessage("  Zone {}: {}", zone, line.empty() ? "(none)" : line);
+                    }
+                }
+            }
+
             // Grid Layout
             PartitionManager::PartitionGridLayout const* layout = sPartitionMgr->GetCachedLayout(mapId);
             if (layout && layout->count > 1)
@@ -317,7 +210,195 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
         return true;
     }
 
-    handler->PSendSysMessage("Usage: .dc partition status | config | layer <id> | join <player> | diag [on|off]");
+    handler->PSendSysMessage("Usage: .dc partition status | config | diag [on|off]");
     handler->SetSentErrorMessage(true);
     return false;
+}
+
+bool HandleDcLayerSubcommand(ChatHandler* handler, std::vector<std::string_view> const& args, std::vector<std::string_view>::iterator& it)
+{
+    ++it;
+    if (it == args.end())
+    {
+        handler->PSendSysMessage("Usage: .dc layer status | join <player> | <layerId>");
+        handler->SetSentErrorMessage(true);
+        return false;
+    }
+
+    std::string_view sub2 = *it;
+    std::string sub2Norm;
+    sub2Norm.reserve(sub2.size());
+    for (char c : sub2)
+    {
+        if (c == '-' || c == '_' || c == ' ') continue;
+        sub2Norm.push_back(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    if (sub2Norm == "status")
+    {
+        handler->SendSysMessage("|cff00ff00=== Layer Status ===|r");
+        handler->PSendSysMessage("Layering: {}", sPartitionMgr->IsLayeringEnabled() ? "|cff00ff00YES|r" : "|cffff0000NO|r");
+        handler->PSendSysMessage("NPC Layering: {}", sPartitionMgr->IsNPCLayeringEnabled() ? "|cff00ff00YES|r" : "|cffff0000NO|r");
+        handler->PSendSysMessage("GO Layering: {}", sPartitionMgr->IsGOLayeringEnabled() ? "|cff00ff00YES|r" : "|cffff0000NO|r");
+
+        if (!sPartitionMgr->IsLayeringEnabled())
+            return true;
+
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+            return true;
+
+        uint32 mapId = player->GetMapId();
+        uint32 zoneId = player->GetZoneId();
+        uint32 layerId = sPartitionMgr->GetPlayerLayer(mapId, zoneId, player->GetGUID());
+        uint32 layerCount = sPartitionMgr->GetLayerCount(mapId, zoneId);
+
+        handler->PSendSysMessage("Map: {} | Zone: {}", mapId, zoneId);
+        handler->PSendSysMessage("Your Layer: |cff00ff00{}|r | Layer Count: {}", layerId, layerCount);
+
+        std::map<uint32, uint32> playerCounts;
+        sPartitionMgr->GetLayerPlayerCountsByLayer(mapId, zoneId, playerCounts);
+        if (!playerCounts.empty())
+        {
+            handler->SendSysMessage("\n|cff00ffffPlayer Counts by Layer:|r");
+            for (auto const& [layer, count] : playerCounts)
+                handler->PSendSysMessage("  L{}: {} players", layer, count);
+        }
+
+        if (sPartitionMgr->IsNPCLayeringEnabled())
+        {
+            PartitionManager::LayerCountByZone npcCounts;
+            sPartitionMgr->GetNPCLayerCountsByZone(mapId, npcCounts);
+            auto zoneIt = npcCounts.find(zoneId);
+            if (zoneIt != npcCounts.end())
+            {
+                handler->SendSysMessage("\n|cff00ffffNPC Counts by Layer (Zone):|r");
+                for (auto const& [layer, count] : zoneIt->second)
+                    handler->PSendSysMessage("  L{}: {} NPCs", layer, count);
+            }
+        }
+
+        if (sPartitionMgr->IsGOLayeringEnabled())
+        {
+            PartitionManager::LayerCountByZone goCounts;
+            sPartitionMgr->GetGOLayerCountsByZone(mapId, goCounts);
+            auto zoneIt = goCounts.find(zoneId);
+            if (zoneIt != goCounts.end())
+            {
+                handler->SendSysMessage("\n|cff00ffffGO Counts by Layer (Zone):|r");
+                for (auto const& [layer, count] : zoneIt->second)
+                    handler->PSendSysMessage("  L{}: {} GOs", layer, count);
+            }
+        }
+        return true;
+    }
+
+    if (sub2Norm == "join")
+    {
+        ++it;
+        if (it == args.end())
+        {
+            handler->PSendSysMessage("Usage: .dc layer join <playername>");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        if (!sPartitionMgr->IsLayeringEnabled())
+        {
+            handler->PSendSysMessage("|cffff0000Layering is not enabled. Check config.|r");
+            return false;
+        }
+
+        Player* player = handler->GetSession()->GetPlayer();
+        std::string targetName((*it).data(), (*it).size());
+
+        Player* target = ObjectAccessor::FindPlayerByName(targetName);
+        if (!target)
+        {
+            handler->PSendSysMessage("|cffff0000Player '{}' not found or not online.|r", targetName);
+            return false;
+        }
+
+        if (target->GetGUID() == player->GetGUID())
+        {
+            handler->PSendSysMessage("|cffff0000You cannot join yourself.|r");
+            return false;
+        }
+
+        if (target->GetMapId() != player->GetMapId() || target->GetZoneId() != player->GetZoneId())
+        {
+            handler->PSendSysMessage("|cffff0000Player '{}' is not in the same zone.|r", targetName);
+            return false;
+        }
+
+        bool isFriend = player->GetSocial() && player->GetSocial()->HasFriend(target->GetGUID());
+        bool isGuildMate = player->GetGuildId() != 0 && player->GetGuildId() == target->GetGuildId();
+        bool isGroupMate = player->GetGroup() && player->GetGroup() == target->GetGroup();
+
+        if (!isFriend && !isGuildMate && !isGroupMate)
+        {
+            handler->PSendSysMessage("|cffff0000You can only join friends, guildmates, or group members.|r");
+            return false;
+        }
+
+        if (!sPartitionMgr->CanSwitchLayer(player->GetGUID()))
+        {
+            uint32 cooldownMs = sPartitionMgr->GetLayerSwitchCooldownMs(player->GetGUID());
+            if (cooldownMs > 0)
+            {
+                uint32 cooldownSec = (cooldownMs + 999) / 1000;
+                handler->PSendSysMessage("|cffff0000Layer switch on cooldown. {} seconds remaining.|r", cooldownSec);
+            }
+            else if (player->IsInCombat())
+            {
+                handler->PSendSysMessage("|cffff0000Cannot switch layers while in combat.|r");
+            }
+            else if (player->isDead())
+            {
+                handler->PSendSysMessage("|cffff0000Cannot switch layers while dead.|r");
+            }
+            else
+            {
+                handler->PSendSysMessage("|cffff0000Cannot switch layers at this time.|r");
+            }
+            return false;
+        }
+
+        uint32 targetLayer = sPartitionMgr->GetPlayerLayer(target->GetMapId(), target->GetZoneId(), target->GetGUID());
+        uint32 currentLayer = sPartitionMgr->GetPlayerLayer(player->GetMapId(), player->GetZoneId(), player->GetGUID());
+
+        if (targetLayer == currentLayer)
+        {
+            handler->PSendSysMessage("|cff00ff00You are already on the same layer as {}.|r", target->GetName());
+            return true;
+        }
+
+        std::string reason = "join command: " + std::string(target->GetName());
+        if (sPartitionMgr->SwitchPlayerToLayer(player->GetGUID(), targetLayer, reason))
+        {
+            handler->PSendSysMessage("|cff00ff00Joined {}'s layer (Layer {}).|r", target->GetName(), targetLayer);
+            return true;
+        }
+
+        handler->PSendSysMessage("|cffff0000Failed to switch layers.|r");
+        return false;
+    }
+
+    if (!sPartitionMgr->IsLayeringEnabled())
+    {
+        handler->PSendSysMessage("|cffff0000Layering is not enabled. check config.|r");
+        return false;
+    }
+
+    std::string layerArg(sub2.data(), sub2.size());
+    uint32 layerId = 0;
+    try { layerId = std::stoul(layerArg); } catch(...) { layerId = 0; }
+
+    Player* player = handler->GetSession()->GetPlayer();
+    uint32 mapId = player->GetMapId();
+    uint32 zoneId = player->GetZoneId();
+
+    sPartitionMgr->AssignPlayerToLayer(mapId, zoneId, player->GetGUID(), layerId);
+    handler->PSendSysMessage("Moved to Layer |cff00ff00{}|r.", layerId);
+    return true;
 }

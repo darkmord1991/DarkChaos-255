@@ -705,7 +705,7 @@ void CharacterDatabaseConnection::DoPrepareStatements()
 
     // Map Partitioning Layer Assignment
     PrepareStatement(CHAR_SEL_DC_LAYER_ASSIGNMENT,
-        "SELECT map_id, zone_id, layer_id FROM dc_character_layer_assignment WHERE guid = ?",
+        "SELECT map_id, zone_id, layer_id FROM dc_character_layer_assignment WHERE guid = ? ORDER BY updated_at DESC LIMIT 1",
         CONNECTION_SYNCH);
 
     PrepareStatement(CHAR_REP_DC_LAYER_ASSIGNMENT,

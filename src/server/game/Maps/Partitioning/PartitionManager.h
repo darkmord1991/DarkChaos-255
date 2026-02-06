@@ -92,6 +92,12 @@ public:
     void UnregisterBoundaryObjectFromGrid(uint32 mapId, uint32 partitionId, ObjectGuid const& guid);
     std::vector<ObjectGuid> GetNearbyBoundaryObjects(uint32 mapId, uint32 partitionId, float x, float y, float radius) const;
 
+    // Batched boundary operations (reduces per-entity lock overhead)
+    struct BoundaryPositionUpdate { ObjectGuid guid; float x; float y; };
+    void BatchUpdateBoundaryPositions(uint32 mapId, uint32 partitionId, std::vector<BoundaryPositionUpdate> const& updates);
+    void BatchUnregisterBoundaryObjects(uint32 mapId, uint32 partitionId, std::vector<ObjectGuid> const& guids);
+    void BatchSetPartitionOverrides(std::vector<ObjectGuid> const& guids, uint32 partitionId, uint32 durationMs);
+
     bool GetPersistentPartition(ObjectGuid const& guid, uint32 mapId, uint32& outPartitionId) const;
     void PersistPartitionOwnership(ObjectGuid const& guid, uint32 mapId, uint32 partitionId);
 
@@ -120,6 +126,15 @@ public:
     uint32_t GetLayerForPlayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid) const;
     uint32 GetPlayerLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid) const; // Back-compat alias
     uint32_t GetLayerCount(uint32_t mapId, uint32_t zoneId) const;
+    std::vector<uint32> GetLayerIds(uint32 mapId, uint32 zoneId) const;
+    void GetActiveLayerIds(uint32 mapId, uint32 zoneId, std::vector<uint32>& out) const;
+    using LayerCountByZone = std::map<uint32, std::map<uint32, uint32>>;
+    void GetNPCLayerCountsByZone(uint32 mapId, LayerCountByZone& out) const;
+    void GetGOLayerCountsByZone(uint32 mapId, LayerCountByZone& out) const;
+    void GetLayerPlayerCountsByLayer(uint32 mapId, uint32 zoneId, std::map<uint32, uint32>& out) const;
+    bool HasPlayersInZone(uint32 mapId, uint32 zoneId) const;
+    bool SkipCloneSpawnsIfNoPlayers() const;
+    bool EmitPerLayerCloneMetrics() const;
     void AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid, uint32_t layerId);
     void RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid);
     void AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid);
@@ -128,11 +143,18 @@ public:
     // Thread-safe: Get layers for two players in one call (for visibility check)
     std::pair<uint32_t, uint32_t> GetLayersForTwoPlayers(uint32_t mapId, uint32_t zoneId, 
         ObjectGuid const& player1, ObjectGuid const& player2) const;
+    // Thread-safe: Get player + NPC layer with a single lock
+    void GetPlayerAndNPCLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid,
+        ObjectGuid const& npcGuid, uint32& outPlayerLayer, uint32& outNpcLayer) const;
+    // Thread-safe: Get player + GO layer with a single lock
+    void GetPlayerAndGOLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid,
+        ObjectGuid const& goGuid, uint32& outPlayerLayer, uint32& outGoLayer) const;
 
     // Cleanup methods
     void CleanupStaleRelocations();    // Thread-safe: Remove timed-out relocations
     void CleanupExpiredOverrides();    // Thread-safe: Remove expired partition overrides
     void CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, std::unordered_set<ObjectGuid> const& validGuids);
+    void PeriodicCacheSweep();         // Thread-safe: Sweep all accumulated caches (called ~1/sec)
 
     // Persistent layer assignment (Feature 1)
     void LoadPersistentLayerAssignment(ObjectGuid const& playerGuid);
@@ -216,12 +238,12 @@ private:
     PartitionManager() = default;
 
     void SyncControlledToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid, uint32 layerId);
-    void ReassignNPCsForNewLayer(uint32 mapId, uint32 zoneId);
-    void ReassignGOsForNewLayer(uint32 mapId, uint32 zoneId);
+    void ReassignNPCsForNewLayer(uint32 mapId, uint32 zoneId, uint32 layerId);
+    void ReassignGOsForNewLayer(uint32 mapId, uint32 zoneId, uint32 layerId);
 
     // Fine-grained locks for different data structures
     mutable std::shared_mutex _partitionLock;     // Protects _partitionsByMap, _partitionedMaps, _gridLayouts
-    mutable std::mutex _boundaryLock;             // Protects _boundaryObjects
+    mutable std::shared_mutex _boundaryLock;      // Protects _boundaryObjects (read/write optimized)
     mutable std::shared_mutex _layerLock;         // Protects _layers, _playerLayers (read/write optimized)
     mutable std::mutex _partyLayerCacheLock;      // Protects party target layer cache
     mutable std::mutex _layerPairCacheLock;       // Protects layer pair cache
@@ -322,9 +344,14 @@ private:
             if (cellIt == objectCellMap.end())
                 return;
             
-            auto& cell = cells[cellIt->second];
+            uint64 cellKey = cellIt->second;
+            auto& cell = cells[cellKey];
             cell.erase(std::remove_if(cell.begin(), cell.end(),
                 [&guid](BoundaryEntry const& e) { return e.guid == guid; }), cell.end());
+            
+            // Clean up empty cell vector to prevent unbounded map growth
+            if (cell.empty())
+                cells.erase(cellKey);
             
             objectCellMap.erase(cellIt);
         }
@@ -376,6 +403,7 @@ private:
         uint32 mapId = 0;
         uint32 zoneId = 0;
         uint32 layerId = 0;
+        uint32 entry = 0;
     };
     std::unordered_map<ObjectGuid::LowType, LayerAssignment> _playerLayers;
 
@@ -517,6 +545,9 @@ private:
 
     // Layout epoch tracking for fast per-thread layout caching
     std::unordered_map<uint32, uint64> _layoutEpochByMap;
+
+    // Throttle for periodic cleanup (atomic for thread safety across map threads)
+    std::atomic<uint64> _lastCleanupMs{0};
 
     // Helper to get cached grid layout (lock must be held)
     PartitionGridLayout const* GetGridLayout(uint32 mapId) const;

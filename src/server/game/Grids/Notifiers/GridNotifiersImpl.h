@@ -249,8 +249,9 @@ void Acore::WorldObjectListSearcher<Check>::Visit(PlayerMapType& m)
         return;
 
     for (PlayerMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
-        if (i_check(itr->GetSource()))
-            Insert(itr->GetSource());
+        if (itr->GetSource()->InSamePhase(i_phaseMask))
+            if (i_check(itr->GetSource()))
+                Insert(itr->GetSource());
 }
 
 template<class Check>
@@ -260,8 +261,9 @@ void Acore::WorldObjectListSearcher<Check>::Visit(CreatureMapType& m)
         return;
 
     for (CreatureMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
-        if (i_check(itr->GetSource()))
-            Insert(itr->GetSource());
+        if (itr->GetSource()->InSamePhase(i_phaseMask))
+            if (i_check(itr->GetSource()))
+                Insert(itr->GetSource());
 }
 
 template<class Check>
@@ -271,8 +273,9 @@ void Acore::WorldObjectListSearcher<Check>::Visit(CorpseMapType& m)
         return;
 
     for (CorpseMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
-        if (i_check(itr->GetSource()))
-            Insert(itr->GetSource());
+        if (itr->GetSource()->InSamePhase(i_phaseMask))
+            if (i_check(itr->GetSource()))
+                Insert(itr->GetSource());
 }
 
 template<class Check>
@@ -282,8 +285,9 @@ void Acore::WorldObjectListSearcher<Check>::Visit(GameObjectMapType& m)
         return;
 
     for (GameObjectMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
-        if (i_check(itr->GetSource()))
-            Insert(itr->GetSource());
+        if (itr->GetSource()->InSamePhase(i_phaseMask))
+            if (i_check(itr->GetSource()))
+                Insert(itr->GetSource());
 }
 
 template<class Check>
@@ -293,8 +297,9 @@ void Acore::WorldObjectListSearcher<Check>::Visit(DynamicObjectMapType& m)
         return;
 
     for (DynamicObjectMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
-        if (i_check(itr->GetSource()))
-            Insert(itr->GetSource());
+        if (itr->GetSource()->InSamePhase(i_phaseMask))
+            if (i_check(itr->GetSource()))
+                Insert(itr->GetSource());
 }
 
 // Gameobject searchers

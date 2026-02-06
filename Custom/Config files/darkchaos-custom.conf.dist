@@ -3457,6 +3457,24 @@ MapPartitions.Layers.IncludeNPCs = 1
 MapPartitions.Layers.IncludeGameObjects = 1
 
 #
+#    MapPartitions.Layers.SkipClonesIfNoPlayers
+#        Description: If enabled, clone spawns for layers > 0 are skipped when a zone has no players.
+#                     Base layer (0) spawns still load as normal.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+#
+MapPartitions.Layers.SkipClonesIfNoPlayers = 1
+
+#
+#    MapPartitions.Layers.EmitPerLayerCloneMetrics
+#        Description: Emit per-layer clone spawn metrics (ms + count) for NPCs/GOs.
+#                     Summary logs still emit when diagnostics are enabled.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+MapPartitions.Layers.EmitPerLayerCloneMetrics = 0
+
+#
 #    MapPartitions.DensitySplitThreshold
 #        Description: Density score (players + creatures/10) to trigger partition splitting.
 #                     Resizing is throttled to avoid churn.

@@ -1,0 +1,3 @@
+-- Superseded by 2026_02_06_01_layer_assignment_fix_bloat.sql which recreates the table
+-- with INT UNSIGNED columns and guid-only PK.
+-- This file is kept for migration ordering but performs no action.

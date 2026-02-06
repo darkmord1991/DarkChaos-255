@@ -67,6 +67,9 @@ public:
     void LoadEquipment(int8 id = 1, bool force = false);
 
     [[nodiscard]] ObjectGuid::LowType GetSpawnId() const { return m_spawnId; }
+    void SetLayerClone(uint32 layerId);
+    [[nodiscard]] bool IsLayerClone() const { return _isLayerClone; }
+    [[nodiscard]] uint32 GetLayerCloneId() const { return _layerCloneId; }
 
     void Update(uint32 time) override;  // overwrited Unit::Update
     void GetRespawnPosition(float& x, float& y, float& z, float* ori = nullptr, float* dist = nullptr) const;
@@ -219,7 +222,7 @@ public:
     void setDeathState(DeathState s, bool despawn = false) override;    // override virtual Unit::setDeathState
 
     bool LoadFromDB(ObjectGuid::LowType guid, Map* map, bool allowDuplicate = false) { return LoadCreatureFromDB(guid, map, false, allowDuplicate); }
-    bool LoadCreatureFromDB(ObjectGuid::LowType guid, Map* map, bool addToMap = true, bool allowDuplicate = false);
+    bool LoadCreatureFromDB(ObjectGuid::LowType guid, Map* map, bool addToMap = true, bool allowDuplicate = false, bool isLayerClone = false, uint32 forcedLayerId = 0);
     void SaveToDB();
 
     virtual void SaveToDB(uint32 mapid, uint8 spawnMask, uint32 phaseMask);   // overriden in Pet
@@ -468,6 +471,9 @@ protected:
     void Regenerate(Powers power);
     MovementGeneratorType m_defaultMovementType;
     ObjectGuid::LowType m_spawnId;                      ///< For new or temporary creatures is 0 for saved it is lowguid
+    bool _isLayerClone = false;
+    uint32 _layerCloneId = 0;
+    uint32 _forcedLayerId = 0;
     uint8 m_equipmentId;
     int8 m_originalEquipmentId; // can be -1
 

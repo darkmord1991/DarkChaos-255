@@ -47,7 +47,7 @@ Use `.stresstest partition 50000 persist` only if you want to include DB-backed 
 - **Test**:
   - Teleport 3 players to the same zone.
   - **Result**: Players 1 & 2 should be in Layer 0. Player 3 should be in Layer 1.
-  - **verify**: Players 1 & 2 see each other. Player 3 sees NO ONE (except service NPCs).
+  - **verify**: Players 1 & 2 see each other. Player 3 sees NO ONE.
 
 ### 5. Relocation Safety
 - **Test**: Player mounts and runs *quickly* across multiple partition boundaries.
@@ -142,25 +142,16 @@ Layer assignment is evaluated **when players enter a map** and **on zone change*
 **Stickiness** applies within the same zone. Players are not continuously rebalanced while moving inside a zone. Party sync can move members to the leader’s layer when `AutoAssignPlayerToLayer` is called.
 
 When NPC layering is enabled (`MapPartitions.Layers.IncludeNPCs = 1`), **each layer is a completely independent world copy** (like retail WoW layering):
-- **World spawns** (creatures/gameobjects) are deterministically distributed across layers
+- **World spawns** are cloned per layer during grid load and on new layer creation
 - **Player-owned NPCs** (pets/guardians/charmed) are synced to the owner's layer on assignment
 - **Complete isolation**: Players can only see other players and NPCs on the same layer
 
 When GO layering is enabled (`MapPartitions.Layers.IncludeGameObjects = 1`), GameObjects follow the same isolation rules:
-- **Static world GOs** (resource nodes, chests, quest objects) are deterministically distributed across layers via spawn-ID hashing
+- **Static world GOs** (resource nodes, chests, quest objects) are cloned per layer during grid load and on new layer creation
 - **Player-spawned GOs** (totems, traps, summoned objects) follow the owner's layer
 - **Transports** (ships, zeppelins, elevators, MO_TRANSPORT) are always visible on all layers
-- **Orphan recovery**: When a layer is cleaned up, orphaned GOs are redistributed to surviving layers
 
-**Service NPCs** (questgivers, guards, vendors, trainers, bankers, flight masters) are treated as cross-layer to prevent critical interaction loss during switches.
-
-**Layer cleanup & orphan recovery**: When the last player leaves a layer and it is cleaned up, any NPCs and GOs still assigned to it are automatically redistributed across surviving layers using deterministic seed-based assignment. This prevents creatures and objects from becoming permanently invisible after layer consolidation.
-
-**Zone boundary tolerance**: Creatures and GameObjects near zone boundaries may have their layer stored under a different zone ID than the observing player. The visibility system detects this (zone-agnostic fallback lookup) and treats such objects as visible rather than hiding them.
-
-**Stale layer recovery**: If an NPC/GO has a layer ID that no longer exists (e.g., layer was removed) and only 0-1 layers remain active, the visibility filter automatically reassigns the object to a valid layer on next visibility check.
-
-**Layer creation rebalancing**: when a new layer is created for a zone, NPCs and GOs previously assigned to layer 0 are redistributed across active layers for that zone.
+**Layer creation cloning**: when a new layer is created for a zone, NPC and GO clones are spawned for that layer so the world stays complete and isolated.
 
 **Dynamic layering**: new layers are created only when a player joins/gets assigned and all existing layers are at capacity, up to `MapPartitions.Layers.Max`.
 
@@ -290,7 +281,8 @@ All commands are under `.dc partition` (requires GM permissions).
 
 ### 3. Persistent Layering
 - **Purpose**: Keep players in their assigned layer (e.g., "Layer 2") even after logout/login.
-- **Storage**: `dc_character_layer_assignment` table.
+- **Storage**: `dc_character_layer_assignment` table (PK: `guid` — one row per player, stores the latest map/zone/layer).
+- **Cleanup**: A MySQL EVENT runs hourly to purge assignments older than 24 hours and remove orphaned GUIDs not in the `characters` table.
 
 ### 4. Cross-Layer Party Sync
 - **Purpose**: Prevent "I can't see you" issues in parties.
@@ -374,9 +366,77 @@ All commands are under `.dc partition` (requires GM permissions).
 
 ---
 
+## Bug Fixes & Improvements (2026-02-06)
+
+### Critical Fixes
+
+#### BUG-1: Threat-Target-Action Relays Never Processed
+`ProcessPartitionRelays()` handled threat relays and taunt relays but **silently dropped** threat-target-action relays. These relays are produced by `QueuePartitionThreatTargetAction()` and are essential for cross-partition aggro resolution when a target or action is involved. The relay processing loop now correctly handles threat-target-action relays alongside standard threat relays.
+
+#### BUG-2: Taunt Relay Dead Code Path
+`ProcessPartitionRelays()` called `GetVictim()` to check the taunt target but then **discarded the result**, re-calling `GetVictim()` a second time inside the taunt application block. This was likely a copy-paste artifact. The fix consolidates both calls into a single `GetVictim()` usage and adds the missing relay processing for `TauntFade`-type taunt relays.
+
+### High-Severity Fixes
+
+#### ConsolidateLayers() Did Not Persist to DB
+When `ConsolidateLayers()` migrated players between layers during rebalancing, it updated the in-memory layer assignment but **never called `SavePersistentLayerAssignment()`**. This meant players who logged out shortly after rebalancing would be restored to their old layer on next login. The fix adds `SavePersistentLayerAssignment(guid, mapId, zoneId, layerId)` after each successful migration.
+
+#### Identical If/Else Branches in Layer Lookups
+`GetPlayerAndNPCLayer()` and `GetPlayerAndGOLayer()` had identical if/else branches: both the map-mismatch and zone-mismatch paths set `outNpcLayer = 0` (or `outGoLayer = 0`) and returned `true`. The else-branch (zone mismatch) should return the layer as `0` without pretending the lookup matched. Both functions now correctly return `outNpcLayer = 0` / `outGoLayer = 0` for the mismatch path, making the fallback behavior explicit.
+
+#### uint16 Truncation in SavePersistentLayerAssignment()
+`SavePersistentLayerAssignment()` cast `mapId` and `layerId` to `uint16` via `static_cast<uint16>()` before writing to the DB. While current values fit, this was a latent data-loss bug. The casts have been removed, and a DB migration widens the `map_id` and `layer_id` columns from `SMALLINT UNSIGNED` to `INT UNSIGNED` (see `2026_02_06_00_layer_assignment_widen_columns.sql`).
+
+#### MapUpdater Shutdown Race & Memory Leak
+- `MapUpdater::deactivate()` called `wait()` before `_queue.Cancel()`, meaning worker threads could block forever waiting for new work that never arrives. The fix calls `_queue.Cancel()` first.
+- `MapUpdater::update_finished()` used `memory_order_relaxed` on a counter read by multiple threads; changed to `memory_order_acq_rel`.
+- `WorkerThread()` did not `delete request` on cancellation, leaking the `PartitionUpdateRequest`. It now always frees the request.
+
+### Medium-Severity Fixes
+
+#### Phase Check Missing on WorldObjectListSearcher
+All 5 `WorldObjectListSearcher::Visit()` overloads (Player, Creature, Corpse, GameObject, DynamicObject) were missing `InSamePhase(i_phaseMask)` checks, allowing objects from incompatible phases to appear in search results. Phase filtering is now enforced on all overloads.
+
+#### Relay Queue Drop Logging
+All 13 `QueuePartition*()` functions now emit `LOG_WARN("maps.partition", ...)` when a relay is dropped due to the queue being full (capacity = 1024). Previously, drops were completely silent, making it impossible to diagnose lost cross-partition events.
+
+#### METRIC Operator[] on Unordered Map
+`ProcessPartitionRelays()` used `operator[]` on a metrics map, which inserts a default entry for missing keys. Changed to `.find()` + iterator check to avoid map pollution.
+
+#### Unsigned Underflow Guard
+A subtraction on an unsigned counter in relay processing could underflow to `UINT_MAX` if the counter was already zero. Added a `> 0` guard before decrement.
+
+#### Null Grid Safety
+Grid pointer dereference in partition update path now checks for `nullptr` before access to prevent crashes on partially-loaded maps.
+
+#### Debug iostream Removal
+Removed `#include <iostream>` from `GridNotifiers.h` — this was a debug leftover that pulled in unnecessary headers.
+
+#### Vector Parameter Move Semantics
+`AllGameObjectsMatchingOneEntryInRange` and `AllCreaturesMatchingOneEntryInRange` in `GridNotifiers.h` now use `std::move()` for vector parameters to avoid unnecessary copies.
+
+### Database Migration Required
+Run `2026_02_06_01_layer_assignment_fix_bloat.sql` on the **characters** database after applying these code changes. This migration:
+- Restructures the table from `PK(guid, map_id, zone_id)` to `PK(guid)` — one row per player instead of one per zone visited
+- Widens `map_id` and `layer_id` from `SMALLINT UNSIGNED` to `INT UNSIGNED`
+- Keeps only the latest assignment per player, dropping all stale rows
+- Purges orphaned stresstest GUIDs not in the `characters` table
+- Replaces the cleanup event: now runs hourly with 24h retention + orphan cleanup
+
+#### Layer Persistence Table Bloat (38M+ rows)
+Three issues combined to cause massive row accumulation in `dc_character_layer_assignment`:
+1. **Missing `IsLayerPersistenceEnabled()` check**: `SavePersistentLayerAssignment()` only checked `IsLayeringEnabled()`, not `IsLayerPersistenceEnabled()`. Stresstests set persistence to `false` but the flag was never checked during save — every stresstest run with 200K+ layer assignments wrote fake rows to the DB.
+2. **One row per zone visited**: The PK was `(guid, map_id, zone_id)`, so each zone change created a new row. A player visiting 50 zones generated 50 rows, but only the latest one matters on login. Rows refreshed their `updated_at` on every zone re-entry, defeating the 7-day cleanup.
+3. **SELECT returned arbitrary row**: `LoadPersistentLayerAssignment()` used `SELECT ... WHERE guid = ?` without `ORDER BY` or `LIMIT`, getting an unpredictable row when multiple existed.
+
+Fix: `SavePersistentLayerAssignment()` now checks `IsLayerPersistenceEnabled()`; table PK changed to `guid` only; SELECT uses `ORDER BY updated_at DESC LIMIT 1`; cleanup event runs hourly with 24h retention.
+
+---
+
 ## Future Improvements
 
 ### Potential Enhancements
 1. **Metrics Dashboard**: Real-time visualization of partition loads and handoff rates.
 2. **Smart Grid Sizing**: Auto-calculate grid size based on map topology (e.g., simpler grid for oceans).
 3. **Cross-Shard Layering**: Integration with cross-realm technology for larger populations.
+4. **Configurable Relay Queue Limit**: Expose `kPartitionRelayLimit` (currently compile-time 1024) as a config option for tuning on high-pop servers.

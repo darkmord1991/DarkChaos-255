@@ -38,6 +38,7 @@
 void SendXPAddonToPlayer(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
 void SendXPAddonToPlayerForce(Player* player, uint32 xp, uint32 xpMax, uint32 level, const char* context = "XP");
 bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_view> const& args, std::vector<std::string_view>::iterator& it);
+bool HandleDcLayerSubcommand(ChatHandler* handler, std::vector<std::string_view> const& args, std::vector<std::string_view>::iterator& it);
 
 using namespace Acore::ChatCommands;
 
@@ -61,7 +62,7 @@ public:
     {
         if (args.empty())
         {
-            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | difficulty <normal|heroic|mythic|info> | reload mythic | partition status");
+            handler->PSendSysMessage("Usage: .dc send <playername> | sendforce <playername>|sendforce-self | grant <player> <amt> | grantself <amt> | givexp <player|self> <amt> | difficulty <normal|heroic|mythic|info> | reload mythic | partition status | layer status|join|<id>");
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -107,6 +108,11 @@ public:
         if (subNorm == "partition")
         {
             return HandleDcPartitionSubcommand(handler, args, it);
+        }
+
+        if (subNorm == "layer")
+        {
+            return HandleDcLayerSubcommand(handler, args, it);
         }
 
         if (subNorm == "regen")
