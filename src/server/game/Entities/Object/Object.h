@@ -34,6 +34,7 @@
 #include "UpdateData.h"
 #include "UpdateMask.h"
 #include "ObjectVisibilityContainer.h"
+#include <atomic>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -647,6 +648,9 @@ public:
     void BuildUpdate(UpdateDataMapType& data_map) override;
     void GetCreaturesWithEntryInRange(std::list<Creature*>& creatureList, float radius, uint32 entry);
 
+    bool IsBoundaryTracked() const { return _boundaryTracked.load(std::memory_order_relaxed); }
+    void SetBoundaryTracked(bool value) { _boundaryTracked.store(value, std::memory_order_relaxed); }
+
     void SetPositionDataUpdate();
     void UpdatePositionData();
 
@@ -768,6 +772,8 @@ private:
 
     uint16 m_notifyflags;
     uint16 m_executed_notifies;
+
+    std::atomic<bool> _boundaryTracked;
 
     virtual bool _IsWithinDist(WorldObject const* obj, float dist2compare, bool is3D, bool incOwnRadius = true, bool incTargetRadius = true) const;
 

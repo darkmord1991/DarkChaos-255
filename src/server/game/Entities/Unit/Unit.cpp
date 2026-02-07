@@ -53,6 +53,7 @@
 #include "PetAI.h"
 #include "PetPackets.h"
 #include "PartitionManager.h"
+#include "LayerManager.h"
 #include "Player.h"
 #include "ReputationMgr.h"
 #include "ScriptMgr.h"
@@ -14104,18 +14105,17 @@ bool Unit::_IsValidAttackTarget(Unit const* target, SpellInfo const* bySpell, Wo
             || (target->IsPlayer() && target->ToPlayer()->IsGameMaster()))
         return false;
 
-    if (sPartitionMgr->IsLayeringEnabled())
+    if (sLayerMgr->IsLayeringEnabled())
     {
         Player const* attackerPlayer = GetCharmerOrOwnerPlayerOrPlayerItself();
         Player const* targetPlayer = target->GetCharmerOrOwnerPlayerOrPlayerItself();
 
         if (attackerPlayer && targetPlayer && attackerPlayer->GetMap() && targetPlayer->GetMap())
         {
-            if (attackerPlayer->GetMapId() == targetPlayer->GetMapId() && attackerPlayer->GetMap()->IsPartitioned())
+            if (attackerPlayer->GetMapId() == targetPlayer->GetMapId())
             {
-                uint32 zoneId = attackerPlayer->GetZoneId();
-                uint32 attackerLayer = sPartitionMgr->GetPlayerLayer(attackerPlayer->GetMapId(), zoneId, attackerPlayer->GetGUID());
-                uint32 targetLayer = sPartitionMgr->GetPlayerLayer(targetPlayer->GetMapId(), zoneId, targetPlayer->GetGUID());
+                uint32 attackerLayer = sLayerMgr->GetPlayerLayer(attackerPlayer->GetMapId(), attackerPlayer->GetGUID());
+                uint32 targetLayer = sLayerMgr->GetPlayerLayer(targetPlayer->GetMapId(), targetPlayer->GetGUID());
                 if (attackerLayer != targetLayer)
                     return false;
             }

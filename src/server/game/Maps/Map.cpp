@@ -24,12 +24,14 @@
 #include "GameTime.h"
 #include "Geometry.h"
 #include "GridNotifiers.h"
+#include "GridObjectLoader.h"
 #include "Group.h"
 #include "InstanceScript.h"
 #include "IVMapMgr.h"
 #include "LFGMgr.h"
 #include "Log.h"
 #include "Maps/Partitioning/PartitionManager.h"
+#include "Maps/Partitioning/LayerManager.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -207,10 +209,50 @@ bool Map::EnsureGridLoaded(Cell const& cell)
     if (_mapGridManager.LoadGrid(cell.GridX(), cell.GridY()))
     {
         Balance();
+        uint32 gridId = GridCoord(cell.GridX(), cell.GridY()).GetId();
+        {
+            std::lock_guard<std::mutex> guard(_gridLayerLock);
+            _gridLoadedLayers[gridId].insert(0);
+        }
         return true;
     }
 
     return false;
+}
+
+void Map::EnsureGridLayerLoaded(Cell const& cell, uint32 layerId)
+{
+    if (!layerId)
+        return;
+
+    if (!_mapGridManager.IsGridLoaded(cell.GridX(), cell.GridY()))
+        return;
+
+    uint32 gridId = GridCoord(cell.GridX(), cell.GridY()).GetId();
+    {
+        std::lock_guard<std::mutex> guard(_gridLayerLock);
+        auto& loadedLayers = _gridLoadedLayers[gridId];
+        if (loadedLayers.find(layerId) != loadedLayers.end())
+            return;
+        loadedLayers.insert(layerId);
+    }
+
+    MapGridType* grid = _mapGridManager.GetGrid(cell.GridX(), cell.GridY());
+    if (!grid)
+        return;
+
+    GridObjectLoader loader(*grid, this);
+    loader.LoadLayerClones(layerId);
+}
+
+void Map::ClearLoadedLayer(uint32 layerId)
+{
+    if (!layerId)
+        return;
+
+    std::lock_guard<std::mutex> guard(_gridLayerLock);
+    for (auto& [_, loadedLayers] : _gridLoadedLayers)
+        loadedLayers.erase(layerId);
 }
 
 MapGridType* Map::GetMapGrid(uint16 const x, uint16 const y)
@@ -245,6 +287,8 @@ void Map::LoadGridsInRange(Position const& center, float radius)
     if (_mapGridManager.IsGridsFullyLoaded())
         return;
 
+    QueueGridPreloadInRange(center, radius);
+
     float const x = center.GetPositionX();
     float const y = center.GetPositionY();
 
@@ -266,6 +310,106 @@ void Map::LoadGridsInRange(Position const& center, float radius)
             CellCoord cellCoord(x, y);
             Cell cell(cellCoord);
             EnsureGridLoaded(cell);
+        }
+    }
+}
+
+void Map::QueueGridPreloadInRange(Position const& center, float radius)
+{
+    if (_mapGridManager.IsGridsFullyLoaded())
+        return;
+
+    float const x = center.GetPositionX();
+    float const y = center.GetPositionY();
+
+    CellCoord cellCoord(Acore::ComputeCellCoord(x, y));
+    if (!cellCoord.IsCoordValid())
+        return;
+
+    if (radius > SIZE_OF_GRIDS)
+        radius = SIZE_OF_GRIDS;
+
+    CellArea area = Cell::CalculateCellArea(x, y, radius);
+    if (!area)
+        return;
+
+    std::unordered_set<uint32> gridIds;
+    for (uint32 cellX = area.low_bound.x_coord; cellX <= area.high_bound.x_coord; ++cellX)
+    {
+        for (uint32 cellY = area.low_bound.y_coord; cellY <= area.high_bound.y_coord; ++cellY)
+        {
+            CellCoord coord(cellX, cellY);
+            Cell cell(coord);
+            gridIds.insert(GridCoord(cell.GridX(), cell.GridY()).GetId());
+        }
+    }
+
+    std::vector<uint32> gridIdList;
+    gridIdList.reserve(gridIds.size());
+    for (uint32 gridId : gridIds)
+        gridIdList.push_back(gridId);
+
+    if (MapUpdater* updater = sMapMgr->GetMapUpdater(); updater && updater->activated())
+        updater->schedule_grid_object_preload(*this, gridIdList);
+    else
+        for (uint32 gridId : gridIdList)
+            PreloadGridObjectGuids(gridId);
+}
+
+void Map::PreloadGridObjectGuids(uint32 gridId)
+{
+    std::lock_guard<std::mutex> guard(_preloadedGridGuidsLock);
+    if (_preloadedGridGuids.find(gridId) != _preloadedGridGuids.end())
+        return;
+
+    CellObjectGuids const& cellGuids = sObjectMgr->GetGridObjectGuids(GetId(), GetSpawnMode(), gridId);
+    _preloadedGridGuids.emplace(gridId, std::make_shared<CellObjectGuids>(cellGuids));
+}
+
+std::shared_ptr<CellObjectGuids> Map::GetPreloadedGridObjectGuids(uint32 gridId) const
+{
+    std::lock_guard<std::mutex> guard(_preloadedGridGuidsLock);
+    auto it = _preloadedGridGuids.find(gridId);
+    if (it != _preloadedGridGuids.end())
+        return it->second;
+    return {};
+}
+
+void Map::ClearPreloadedGridObjectGuids(uint32 gridId)
+{
+    std::lock_guard<std::mutex> guard(_preloadedGridGuidsLock);
+    _preloadedGridGuids.erase(gridId);
+}
+
+void Map::LoadLayerClonesInRange(Player* player, float radius)
+{
+    if (!player || !sLayerMgr->IsLayeringEnabled())
+        return;
+
+    uint32 layerId = sLayerMgr->GetPlayerLayer(GetId(), player->GetGUID());
+    if (!layerId)
+        return;
+
+    float const x = player->GetPositionX();
+    float const y = player->GetPositionY();
+    CellCoord cellCoord(Acore::ComputeCellCoord(x, y));
+    if (!cellCoord.IsCoordValid())
+        return;
+
+    if (radius > SIZE_OF_GRIDS)
+        radius = SIZE_OF_GRIDS;
+
+    CellArea area = Cell::CalculateCellArea(x, y, radius);
+    if (!area)
+        return;
+
+    for (uint32 cellX = area.low_bound.x_coord; cellX <= area.high_bound.x_coord; ++cellX)
+    {
+        for (uint32 cellY = area.low_bound.y_coord; cellY <= area.high_bound.y_coord; ++cellY)
+        {
+            CellCoord coord(cellX, cellY);
+            Cell cell(coord);
+            EnsureGridLayerLoaded(cell, layerId);
         }
     }
 }
@@ -294,10 +438,15 @@ bool Map::AddPlayerToMap(Player* player)
 
     player->UpdateObjectVisibility(false);
 
-    if (sPartitionMgr->IsLayeringEnabled())
+    if (sLayerMgr->IsLayeringEnabled() && GetInstanceId() == 0)
     {
-        uint32 zoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
-        sPartitionMgr->AutoAssignPlayerToLayer(GetId(), zoneId, player->GetGUID());
+        // Process any pending soft transfer before auto-assignment
+        // (this fires on loading screen transitions — teleport, map change)
+        if (sLayerMgr->HasPendingSoftTransfer(player->GetGUID()))
+            sLayerMgr->ProcessSoftTransferForPlayer(player->GetGUID());
+
+        sLayerMgr->AutoAssignPlayerToLayer(GetId(), player->GetGUID());
+        LoadLayerClonesInRange(player, MAX_VISIBILITY_DISTANCE);
     }
 
     if (player->IsAlive())
@@ -1213,6 +1362,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
 
 void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 {
+    ++_updateCounter;
     if (_isPartitioned && !_useParallelPartitions && !_partitionLogShown)
     {
         _partitionLogShown = true;
@@ -1220,7 +1370,14 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     }
 
     if (_isPartitioned && t_diff)
-        sPartitionMgr->UpdatePartitionsForMap(GetId(), t_diff);
+    {
+        // Instances share MapID but not partition state. Only base map (Id 0) should drive partition updates.
+        if (GetInstanceId() == 0)
+        {
+            sPartitionMgr->UpdatePartitionsForMap(GetId(), t_diff);
+            sLayerMgr->Update(GetId(), t_diff);
+        }
+    }
 
     if (t_diff)
         _dynamicTree.update(t_diff);
@@ -1254,6 +1411,17 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     resetMarkedCells();
 
     bool useParallelPartitions = _isPartitioned && _useParallelPartitions;
+    bool markNearbyCells = _updatableObjectListRecheckTimer.Passed();
+    if (useParallelPartitions)
+    {
+        _markNearbyCellsThisTick.store(markNearbyCells, std::memory_order_relaxed);
+        if (markNearbyCells)
+            _updatableObjectListRecheckTimer.Reset();
+    }
+    else
+    {
+        _markNearbyCellsThisTick.store(false, std::memory_order_relaxed);
+    }
 
     if (_isPartitioned)
     {
@@ -1345,20 +1513,36 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                 ProcessPartitionRelays(partitionId);
                 auto& bucket = partitionBuckets[partitionId - 1];
                 uint32 boundaryPlayers = 0;
+                std::vector<PartitionManager::BoundaryPositionUpdate> boundaryUpdates;
+                std::vector<ObjectGuid> boundaryUnregisters;
+                std::vector<ObjectGuid> boundaryOverrides;
+                boundaryUpdates.reserve(bucket.size());
+                boundaryOverrides.reserve(bucket.size());
                 for (Player* player : bucket)
                 {
                     if (sPartitionMgr->IsNearPartitionBoundary(GetId(), player->GetPositionX(), player->GetPositionY()))
                     {
                         ++boundaryPlayers;
-                        sPartitionMgr->UpdateBoundaryObjectPosition(GetId(), partitionId, player->GetGUID(),
-                            player->GetPositionX(), player->GetPositionY());
-                        sPartitionMgr->SetPartitionOverride(player->GetGUID(), partitionId, 500);
+                        boundaryUpdates.push_back({player->GetGUID(), player->GetPositionX(), player->GetPositionY()});
+                        boundaryOverrides.push_back(player->GetGUID());
+                        if (!player->IsBoundaryTracked())
+                            player->SetBoundaryTracked(true);
                     }
                     else
                     {
-                        sPartitionMgr->UnregisterBoundaryObjectFromGrid(GetId(), partitionId, player->GetGUID());
+                        if (player->IsBoundaryTracked())
+                        {
+                            boundaryUnregisters.push_back(player->GetGUID());
+                            player->SetBoundaryTracked(false);
+                        }
                     }
                 }
+                if (!boundaryUpdates.empty())
+                    sPartitionMgr->BatchUpdateBoundaryPositions(GetId(), partitionId, boundaryUpdates);
+                if (!boundaryUnregisters.empty())
+                    sPartitionMgr->BatchUnregisterBoundaryObjects(GetId(), partitionId, boundaryUnregisters);
+                if (!boundaryOverrides.empty())
+                    sPartitionMgr->BatchSetPartitionOverrides(boundaryOverrides, partitionId, 500);
                 sPartitionMgr->UpdatePartitionPlayerCount(GetId(), partitionId, static_cast<uint32>(bucket.size()));
                 sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, boundaryPlayers);
 
@@ -1387,6 +1571,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         else
         {
             SchedulePartitionUpdates(t_diff, s_diff);
+            _markNearbyCellsThisTick.store(false, std::memory_order_relaxed);
         }
     }
     else
@@ -1557,43 +1742,11 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
             std::vector<WorldObject*> emptyBucket;
             auto& bucket = (listIt != _partitionedUpdatableObjectLists.end()) ? listIt->second : emptyBucket;
             uint32 index = partitionId - 1;
-            std::unordered_set<ObjectGuid> validGuids;
-            auto const* playerBucket = GetPartitionPlayerBucket(partitionId);
-            if (playerBucket)
-                validGuids.reserve(bucket.size() + playerBucket->size());
-            else
-                validGuids.reserve(bucket.size());
-
-            if (auto storeIt = _partitionedObjectsStore.find(partitionId); storeIt != _partitionedObjectsStore.end())
-            {
-                struct GuidCollector
-                {
-                    std::unordered_set<ObjectGuid>& output;
-                    void Visit(std::unordered_map<ObjectGuid, Creature*>& container)
-                    {
-                        for (auto const& pair : container)
-                            output.insert(pair.first);
-                    }
-                    void Visit(std::unordered_map<ObjectGuid, GameObject*>& container)
-                    {
-                        for (auto const& pair : container)
-                            output.insert(pair.first);
-                    }
-                    void Visit(std::unordered_map<ObjectGuid, DynamicObject*>& container)
-                    {
-                        for (auto const& pair : container)
-                            output.insert(pair.first);
-                    }
-                    void Visit(std::unordered_map<ObjectGuid, Corpse*>& container)
-                    {
-                        for (auto const& pair : container)
-                            output.insert(pair.first);
-                    }
-                } collector{ validGuids };
-
-                TypeContainerVisitor<GuidCollector, MapStoredObjectTypesContainer> visitor(collector);
-                visitor.Visit(storeIt->second);
-            }
+            std::vector<PartitionManager::BoundaryPositionUpdate> boundaryUpdates;
+            std::vector<ObjectGuid> boundaryUnregisters;
+            std::vector<ObjectGuid> boundaryOverrides;
+            boundaryUpdates.reserve(bucket.size());
+            boundaryOverrides.reserve(bucket.size());
 
             for (size_t i = 0; i < bucket.size();)
             {
@@ -1613,18 +1766,41 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 WorldObject* resolved = nullptr;
                 if (auto storeIt = _partitionedObjectsStore.find(partitionId); storeIt != _partitionedObjectsStore.end())
                 {
-                    if (Creature* creature = storeIt->second.Find<Creature>(guid))
-                        resolved = creature;
-                    else if (GameObject* go = storeIt->second.Find<GameObject>(guid))
-                        resolved = go;
-                    else if (DynamicObject* dynObj = storeIt->second.Find<DynamicObject>(guid))
-                        resolved = dynObj;
-                    else if (Corpse* corpse = storeIt->second.Find<Corpse>(guid))
-                        resolved = corpse;
+                    switch (idxIt->second.typeId)
+                    {
+                        case TYPEID_UNIT:
+                            resolved = storeIt->second.Find<Creature>(guid);
+                            break;
+                        case TYPEID_GAMEOBJECT:
+                            resolved = storeIt->second.Find<GameObject>(guid);
+                            break;
+                        case TYPEID_DYNAMICOBJECT:
+                            resolved = storeIt->second.Find<DynamicObject>(guid);
+                            break;
+                        case TYPEID_CORPSE:
+                            resolved = storeIt->second.Find<Corpse>(guid);
+                            break;
+                        default:
+                            break;
+                    }
+                    if (!resolved)
+                    {
+                        if (Creature* creature = storeIt->second.Find<Creature>(guid))
+                            resolved = creature;
+                        else if (GameObject* go = storeIt->second.Find<GameObject>(guid))
+                            resolved = go;
+                        else if (DynamicObject* dynObj = storeIt->second.Find<DynamicObject>(guid))
+                            resolved = dynObj;
+                        else if (Corpse* corpse = storeIt->second.Find<Corpse>(guid))
+                            resolved = corpse;
+                    }
                 }
 
                 if (!resolved || !resolved->IsInWorld())
                 {
+                    if (guid)
+                        boundaryUnregisters.push_back(guid);
+
                     // Remove stale entry without touching obj
                     WorldObject* swapped = bucket.back();
                     bucket[i] = swapped;
@@ -1656,25 +1832,31 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 if (resolved != obj)
                 {
                     PartitionedUpdatableEntry entry = idxIt->second;
+                    entry.typeId = resolved->GetTypeId();
                     _partitionedUpdatableIndex.erase(idxIt);
                     _partitionedUpdatableIndex[resolved] = entry;
                     bucket[i] = resolved;
                     obj = resolved;
                 }
 
-                if (obj->ToCreature())
+                if (resolved->ToCreature())
                     ++partitionCreatureCounts[index];
 
                 if (sPartitionMgr->IsNearPartitionBoundary(GetId(), obj->GetPositionX(), obj->GetPositionY()))
                 {
                     ++partitionBoundaryObjectCounts[index];
-                    sPartitionMgr->UpdateBoundaryObjectPosition(GetId(), partitionId, obj->GetGUID(),
-                        obj->GetPositionX(), obj->GetPositionY());
-                    sPartitionMgr->SetPartitionOverride(obj->GetGUID(), partitionId, 500);
+                    boundaryUpdates.push_back({obj->GetGUID(), obj->GetPositionX(), obj->GetPositionY()});
+                    boundaryOverrides.push_back(obj->GetGUID());
+                    if (!obj->IsBoundaryTracked())
+                        obj->SetBoundaryTracked(true);
                 }
                 else
                 {
-                    sPartitionMgr->UnregisterBoundaryObjectFromGrid(GetId(), partitionId, obj->GetGUID());
+                    if (obj->IsBoundaryTracked())
+                    {
+                        boundaryUnregisters.push_back(obj->GetGUID());
+                        obj->SetBoundaryTracked(false);
+                    }
                 }
 
                 obj->Update(diff);
@@ -1690,16 +1872,12 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 ++i;
             }
 
-            if (playerBucket)
-            {
-                for (Player* player : *playerBucket)
-                {
-                    if (player && player->IsInWorld())
-                        validGuids.insert(player->GetGUID());
-                }
-            }
-
-            sPartitionMgr->CleanupBoundaryObjects(GetId(), partitionId, validGuids);
+            if (!boundaryUpdates.empty())
+                sPartitionMgr->BatchUpdateBoundaryPositions(GetId(), partitionId, boundaryUpdates);
+            if (!boundaryUnregisters.empty())
+                sPartitionMgr->BatchUnregisterBoundaryObjects(GetId(), partitionId, boundaryUnregisters);
+            if (!boundaryOverrides.empty())
+                sPartitionMgr->BatchSetPartitionOverrides(boundaryOverrides, partitionId, 500);
 
             sPartitionMgr->UpdatePartitionCreatureCount(GetId(), partitionId, partitionCreatureCounts[index]);
             sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, partitionBoundaryObjectCounts[index]);
@@ -1819,11 +1997,17 @@ void Map::AddToPartitionedUpdateList(WorldObject* obj)
     if (!_isPartitioned || !obj)
         return;
 
-                uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
-                uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
+    auto lock = AcquirePartitionedUpdateListWriteLock();
+    uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
+    uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
     auto& list = _partitionedUpdatableObjectLists[partitionId];
     list.push_back(obj);
-    _partitionedUpdatableIndex[obj] = { partitionId, list.size() - 1, obj->GetGUID() };
+    PartitionedUpdatableEntry entry;
+    entry.partitionId = partitionId;
+    entry.index = list.size() - 1;
+    entry.guid = obj->GetGUID();
+    entry.typeId = obj->GetTypeId();
+    _partitionedUpdatableIndex[obj] = entry;
 }
 
 void Map::RemoveFromPartitionedUpdateList(WorldObject* obj)
@@ -1831,6 +2015,7 @@ void Map::RemoveFromPartitionedUpdateList(WorldObject* obj)
     if (!_isPartitioned || !obj)
         return;
 
+    auto lock = AcquirePartitionedUpdateListWriteLock();
     auto it = _partitionedUpdatableIndex.find(obj);
     if (it == _partitionedUpdatableIndex.end())
         return;
@@ -1867,19 +2052,49 @@ void Map::UpdatePartitionedOwnership(WorldObject* obj)
     if (!_isPartitioned || !obj)
         return;
 
+    auto lock = AcquirePartitionedUpdateListWriteLock();
     uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
     uint32 newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
     auto it = _partitionedUpdatableIndex.find(obj);
     if (it == _partitionedUpdatableIndex.end())
     {
-        AddToPartitionedUpdateList(obj);
+        auto& list = _partitionedUpdatableObjectLists[newPartitionId];
+        list.push_back(obj);
+        PartitionedUpdatableEntry entry;
+        entry.partitionId = newPartitionId;
+        entry.index = list.size() - 1;
+        entry.guid = obj->GetGUID();
+        entry.typeId = obj->GetTypeId();
+        _partitionedUpdatableIndex[obj] = entry;
         return;
     }
 
     if (it->second.partitionId != newPartitionId)
     {
-        RemoveFromPartitionedUpdateList(obj);
-        AddToPartitionedUpdateList(obj);
+        uint32 oldPartitionId = it->second.partitionId;
+        size_t index = it->second.index;
+        auto listIt = _partitionedUpdatableObjectLists.find(oldPartitionId);
+        if (listIt != _partitionedUpdatableObjectLists.end())
+        {
+            auto& list = listIt->second;
+            if (!list.empty() && index < list.size())
+            {
+                if (index < list.size() - 1)
+                {
+                    WorldObject* swapped = list.back();
+                    list[index] = swapped;
+                    auto swappedIt = _partitionedUpdatableIndex.find(swapped);
+                    if (swappedIt != _partitionedUpdatableIndex.end())
+                        swappedIt->second.index = index;
+                }
+                list.pop_back();
+            }
+        }
+
+        auto& list = _partitionedUpdatableObjectLists[newPartitionId];
+        list.push_back(obj);
+        it->second.partitionId = newPartitionId;
+        it->second.index = list.size() - 1;
     }
 
     UpdatePartitionedObjectStore(obj);
@@ -1902,7 +2117,7 @@ void Map::RegisterPartitionedObject(WorldObject* obj)
     _partitionedObjectIndex[guid] = partitionId;
     sPartitionMgr->NotifyVisibilityAttach(guid, GetId(), partitionId);
 
-    if (sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+    if (sLayerMgr->IsRuntimeDiagnosticsEnabled())
     {
         LOG_INFO("map.partition", "Diag: RegisterPartitionedObject guid={} type={} map={} zone={} partition={}",
             guid.ToString(), obj->GetTypeId(), GetId(), zoneId, partitionId);
@@ -1933,6 +2148,8 @@ void Map::UnregisterPartitionedObject(WorldObject* obj)
         return;
 
     uint32 partitionId = it->second;
+    sPartitionMgr->UnregisterBoundaryObjectFromGrid(GetId(), partitionId, guid);
+    obj->SetBoundaryTracked(false);
     auto storeIt = _partitionedObjectsStore.find(partitionId);
     if (storeIt != _partitionedObjectsStore.end())
     {
@@ -1973,7 +2190,7 @@ void Map::UpdatePartitionedObjectStore(WorldObject* obj)
         if (obj->IsPlayer())
             sPartitionMgr->PersistPartitionOwnership(guid, GetId(), newPartitionId);
 
-        if (sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+        if (sLayerMgr->IsRuntimeDiagnosticsEnabled())
         {
             LOG_INFO("map.partition", "Diag: UpdatePartitionedObjectStore guid={} type={} map={} zone={} partition={}",
                 guid.ToString(), obj->GetTypeId(), GetId(), zoneId, newPartitionId);
@@ -2097,6 +2314,16 @@ std::vector<Player*> const* Map::GetPartitionPlayerBucket(uint32 partitionId) co
     if (index >= _partitionPlayerBuckets.size())
         return nullptr;
     return &_partitionPlayerBuckets[index];
+}
+
+bool Map::ShouldMarkNearbyCells() const
+{
+    return _markNearbyCellsThisTick.load(std::memory_order_relaxed);
+}
+
+uint32 Map::GetUpdateCounter() const
+{
+    return _updateCounter.load(std::memory_order_relaxed);
 }
 
 template<class T>
@@ -2226,6 +2453,9 @@ void Map::RemovePlayerFromMap(Player* player, bool remove)
 {
     UpdatePlayerZoneStats(player->GetZoneId(), MAP_INVALID_ZONE);
 
+    if (sLayerMgr->IsLayeringEnabled() && GetInstanceId() == 0)
+        sLayerMgr->ForceRemovePlayerFromAllLayers(player->GetGUID());
+
     player->getHostileRefMgr().deleteReferences(true); // pussywizard: multithreading crashfix
 
     player->RemoveFromWorld();
@@ -2327,12 +2557,16 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
     Cell old_cell(player->GetPositionX(), player->GetPositionY());
     Cell new_cell(x, y);
 
+    bool gridChanged = false;
     if (old_cell.DiffGrid(new_cell) || old_cell.DiffCell(new_cell))
     {
         player->RemoveFromGrid();
 
         if (old_cell.DiffGrid(new_cell))
+        {
             EnsureGridLoaded(new_cell);
+            gridChanged = true;
+        }
 
         AddToGrid(player, new_cell);
     }
@@ -2342,6 +2576,9 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
         player->GetVehicleKit()->RelocatePassengers();
     player->UpdatePositionData();
     player->UpdateObjectVisibility(false);
+
+    if (gridChanged)
+        LoadLayerClonesInRange(player, MAX_VISIBILITY_DISTANCE);
 
     if (_isPartitioned && partitionChanged)
     {
@@ -2354,6 +2591,7 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
             sPartitionMgr->CommitRelocation(player->GetGUID());
             sPartitionMgr->NotifyVisibilityDetach(player->GetGUID(), GetId(), oldPartitionId);
             sPartitionMgr->NotifyVisibilityAttach(player->GetGUID(), GetId(), newPartitionId);
+            UpdatePartitionedOwnership(player);
             LOG_DEBUG("visibility.partition", "Player {} crossed partition {} -> {} on map {}", player->GetGUID().GetCounter(), oldPartitionId, newPartitionId, GetId());
             if (player->IsInCombat())
             {
@@ -2683,6 +2921,13 @@ void Map::MoveAllDynamicObjectsInMoveList()
 bool Map::UnloadGrid(MapGridType& grid)
 {
     _mapGridManager.UnloadGrid(grid.GetX(), grid.GetY());
+
+    ClearPreloadedGridObjectGuids(GridCoord(grid.GetX(), grid.GetY()).GetId());
+
+    {
+        std::lock_guard<std::mutex> guard(_gridLayerLock);
+        _gridLoadedLayers.erase(GridCoord(grid.GetX(), grid.GetY()).GetId());
+    }
 
     ASSERT(i_objectsToRemove.empty());
     LOG_DEBUG("maps", "Unloading grid[{}, {}] for map {} finished", grid.GetX(), grid.GetY(), GetId());

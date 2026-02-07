@@ -68,8 +68,6 @@ private:
     uint32 _playerCount = 0;
     uint32 _creatureCount = 0;
 
-    std::vector<ObjectGuid> _boundaryValidGuids;
-
     // Batched boundary operations — collected during Update methods,
     // flushed once per tick per partition to reduce lock acquisitions.
     struct PosUpdate { ObjectGuid guid; float x; float y; };

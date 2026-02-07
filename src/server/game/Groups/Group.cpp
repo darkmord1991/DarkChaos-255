@@ -20,7 +20,7 @@
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
 #include "Config.h"
-#include "PartitionManager.h"
+#include "LayerManager.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "GroupMgr.h"
@@ -479,12 +479,12 @@ bool Group::AddMember(Player* player)
         sScriptMgr->OnGroupAddMember(this, player->GetGUID());
 
         // Sync joining player to group leader's layer (if layering is active)
-        if (sPartitionMgr->IsLayeringEnabled() && player->IsInWorld() && !isBGGroup() && !isBFGroup())
+        if (sLayerMgr->IsLayeringEnabled() && player->IsInWorld() && !isBGGroup() && !isBFGroup())
         {
-            sPartitionMgr->AutoAssignPlayerToLayer(
-                player->GetMapId(), player->GetZoneId(), player->GetGUID());
+            sLayerMgr->AutoAssignPlayerToLayer(
+                player->GetMapId(), player->GetGUID());
 
-            // Also re-evaluate existing members in the same zone so the whole
+            // Also re-evaluate existing members on the same map so the whole
             // group converges onto the leader's layer immediately
             ObjectGuid leaderGuid = GetLeaderGUID();
             for (GroupReference* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
@@ -498,11 +498,9 @@ bool Group::AddMember(Player* player)
                     continue;  // Leader stays on their own layer
                 if (member->GetMapId() != player->GetMapId())
                     continue;
-                if (member->GetZoneId() != player->GetZoneId())
-                    continue;
 
-                sPartitionMgr->AutoAssignPlayerToLayer(
-                    member->GetMapId(), member->GetZoneId(), member->GetGUID());
+                sLayerMgr->AutoAssignPlayerToLayer(
+                    member->GetMapId(), member->GetGUID());
             }
         }
 

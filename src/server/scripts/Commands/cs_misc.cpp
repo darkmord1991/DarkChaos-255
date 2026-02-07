@@ -42,6 +42,7 @@
 #include "Pet.h"
 #include "Player.h"
 #include "Maps/Partitioning/PartitionManager.h"
+#include "Maps/Partitioning/LayerManager.h"
 #include "Realm.h"
 #include "ScriptMgr.h"
 #include "SpellAuras.h"
@@ -145,7 +146,7 @@ public:
         {
             { "commentator",       HandleCommentatorCommand,       SEC_MODERATOR,          Console::No  },
             { "dev",               HandleDevCommand,               SEC_ADMINISTRATOR,      Console::No  },
-            { "gps",               HandleGPSCommand,               SEC_MODERATOR,          Console::No  },
+            { "gps",               HandleGPSCommand,               SEC_PLAYER,             Console::No  },
             { "aura",              auraCommandTable                                                     },
             { "unaura",            HandleUnAuraCommand,            SEC_GAMEMASTER,         Console::No  },
             { "appear",            HandleAppearCommand,            SEC_MODERATOR,          Console::No  },
@@ -659,12 +660,12 @@ public:
         
         if (sPartitionMgr->IsEnabled())
         {
-            uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(object->GetMapId(), object->GetPositionX(), object->GetPositionY());
+            uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(object->GetMapId(), object->GetPositionX(), object->GetPositionY(), zoneId, object->GetGUID());
             handler->PSendSysMessage("Map Partition: {}", partitionId);
             
-            if (sPartitionMgr->IsLayeringEnabled() && object->IsPlayer())
+            if (sLayerMgr->IsLayeringEnabled() && object->IsPlayer())
             {
-                uint32 layerId = sPartitionMgr->GetPlayerLayer(object->GetMapId(), zoneId, object->GetGUID());
+                uint32 layerId = sLayerMgr->GetPlayerLayer(object->GetMapId(), object->GetGUID());
                 handler->PSendSysMessage("Layer: {}", layerId);
             }
         }

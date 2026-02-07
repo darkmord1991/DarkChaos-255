@@ -1121,6 +1121,8 @@ public:
     bool Create(ObjectGuid::LowType guidlow, CharacterCreateInfo* createInfo);
 
     void Update(uint32 time) override;
+    uint32 GetLayerIdCached(Map const* map) const;
+    void InvalidateLayerCache() { m_layerCacheUpdateCounter = 0; m_layerCacheMapId = 0; m_layerCacheLayerId = 0; }
 
     PlayerFlags GetPlayerFlags() const { return PlayerFlags(GetUInt32Value(PLAYER_FLAGS)); }
     bool HasPlayerFlag(PlayerFlags flags) const { return HasFlag(PLAYER_FLAGS, flags) != 0; }
@@ -2918,6 +2920,10 @@ protected:
     std::string m_lastDCRXPPayload;
     uint32 m_lastDCRXPPayloadTime;
     uint32 m_areaUpdateId;
+
+    mutable uint32 m_layerCacheMapId{0};
+    mutable uint32 m_layerCacheLayerId{0};
+    mutable uint32 m_layerCacheUpdateCounter{0};
 
     uint32 m_deathTimer;
     time_t m_deathExpireTime;

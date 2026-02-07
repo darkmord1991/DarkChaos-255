@@ -37,6 +37,7 @@
 #include "Timer.h"
 #include "GridTerrainData.h"
 #include <bitset>
+#include <atomic>
 #include <list>
 #include <memory>
 #include <shared_mutex>
@@ -64,6 +65,7 @@ class StaticTransport;
 class MotionTransport;
 class PathGenerator;
 class WorldSession;
+struct CellObjectGuids;
 enum AuraRemoveMode : uint8;
 enum WeaponAttackType : uint8;
 enum MovementSlot : uint8;
@@ -249,6 +251,10 @@ public:
     void LoadGrid(float x, float y);
     void LoadAllGrids();
     void LoadGridsInRange(Position const& center, float radius);
+    void QueueGridPreloadInRange(Position const& center, float radius);
+    void PreloadGridObjectGuids(uint32 gridId);
+    std::shared_ptr<CellObjectGuids> GetPreloadedGridObjectGuids(uint32 gridId) const;
+    void ClearPreloadedGridObjectGuids(uint32 gridId);
     bool UnloadGrid(MapGridType& grid);
     virtual void UnloadAll();
 
@@ -654,8 +660,12 @@ public:
     void SetPartitionPlayerBuckets(std::vector<std::vector<Player*>> const& buckets);
     void ClearPartitionPlayerBuckets();
     std::vector<Player*> const* GetPartitionPlayerBucket(uint32 partitionId) const;
+    bool ShouldMarkNearbyCells() const;
+    uint32 GetUpdateCounter() const;
     void ProcessPartitionRelays(uint32 partitionId);
     PartitionedUpdatableObjectLists& GetPartitionedUpdatableObjectLists() { return _partitionedUpdatableObjectLists; }
+    std::shared_lock<std::shared_mutex> AcquirePartitionedUpdateListReadLock() const { return std::shared_lock<std::shared_mutex>(_partitionedUpdateListLock); }
+    std::unique_lock<std::shared_mutex> AcquirePartitionedUpdateListWriteLock() { return std::unique_lock<std::shared_mutex>(_partitionedUpdateListLock); }
     Unit* GetUnitByGuid(ObjectGuid const& guid) const;
 
     void AddWorldObjectToFarVisibleMap(WorldObject* obj);
@@ -663,6 +673,8 @@ public:
     void AddWorldObjectToZoneWideVisibleMap(uint32 zoneId, WorldObject* obj);
     void RemoveWorldObjectFromZoneWideVisibleMap(uint32 zoneId, WorldObject* obj);
     ZoneWideVisibleWorldObjectsSet const* GetZoneWideVisibleWorldObjectsForZone(uint32 zoneId) const;
+
+    void LoadLayerClonesInRange(Player* player, float radius);
 
     [[nodiscard]] uint32 GetPlayerCountInZone(uint32 zoneId) const
     {
@@ -687,6 +699,8 @@ private:
     std::vector<DynamicObject*> _dynamicObjectsToMove;
 
     bool EnsureGridLoaded(Cell const& cell);
+    void EnsureGridLayerLoaded(Cell const& cell, uint32 layerId);
+    void ClearLoadedLayer(uint32 layerId);
     MapGridType* GetMapGrid(uint16 const x, uint16 const y);
 
     void ScriptsProcess();
@@ -702,6 +716,8 @@ protected:
     std::shared_mutex MMapLock;
 
     MapGridManager _mapGridManager;
+    mutable std::mutex _preloadedGridGuidsLock;
+    std::unordered_map<uint32, std::shared_ptr<CellObjectGuids>> _preloadedGridGuids;
     MapEntry const* i_mapEntry;
     uint8 i_spawnMode;
     uint32 i_InstanceId;
@@ -740,11 +756,13 @@ private:
     std::unordered_set<WorldObject*> i_objectsToRemove;
 
     PartitionedUpdatableObjectLists _partitionedUpdatableObjectLists;
+    mutable std::shared_mutex _partitionedUpdateListLock;
     struct PartitionedUpdatableEntry
     {
         uint32 partitionId = 0;
         size_t index = 0;
         ObjectGuid guid = ObjectGuid::Empty;
+            uint8 typeId = 0;
     };
     std::unordered_map<WorldObject*, PartitionedUpdatableEntry> _partitionedUpdatableIndex;
     std::unordered_map<uint32, MapStoredObjectTypesContainer> _partitionedObjectsStore;
@@ -763,6 +781,8 @@ private:
     std::unordered_map<uint32, std::vector<PartitionAssistRelay>> _partitionAssistRelays;
     std::unordered_map<uint32, std::vector<PartitionAssistDistractRelay>> _partitionAssistDistractRelays;
 
+        std::atomic<bool> _markNearbyCellsThisTick{false};
+
     typedef std::multimap<time_t, ScriptAction> ScriptScheduleMap;
     ScriptScheduleMap m_scriptSchedule;
 
@@ -778,6 +798,10 @@ private:
     std::unordered_map<ObjectGuid::LowType /*dbGUID*/, time_t> _goRespawnTimes;
 
     std::unordered_map<uint32, uint32> _zonePlayerCountMap;
+
+    std::atomic<uint32> _updateCounter{0};
+    std::mutex _gridLayerLock;
+    std::unordered_map<uint32, std::unordered_set<uint32>> _gridLoadedLayers;
 
     ZoneDynamicInfoMap _zoneDynamicInfo;
     IntervalTimer _weatherUpdateTimer;

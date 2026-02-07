@@ -3350,6 +3350,10 @@ Logger.seasonal=5,Console DC
 #  Advanced grid partitioning system for splitting large maps into sub-grids
 #  to improve performance and handle higher player counts.
 #
+#  Layering is Blizzard-style: map-wide (continent-wide), not per-zone.
+#  Players stay on the same layer across all zones of a map.
+#  Zone changes do NOT trigger layer reassignment.
+#
 ###############################################################################
 
 #
@@ -3408,10 +3412,11 @@ MapPartitions.UsePartitionStoreOnly = 0
 
 #
 #    MapPartitions.Layers.Enabled
-#        Description: Enable zone layering for high-population areas.
-#                     When enabled, zones can be split into multiple "layers"
-#                     that share the same world space but isolate players.
-#                     EXPERIMENTAL: This feature is disabled by default.
+#        Description: Enable Blizzard-style map-wide layering for high-population maps.
+#                     When enabled, entire maps (continents) can be split into
+#                     multiple "layers" that share the same world space but
+#                     isolate players. Layers are continent-wide: a player on
+#                     Layer 2 stays on Layer 2 across all zones of that map.
 #        Default:     0 - (Disabled)
 #                     1 - (Enabled)
 #
@@ -3426,9 +3431,23 @@ MapPartitions.Layers.Enabled = 1
 MapPartitions.Layers.Capacity = 100
 
 #
+#    MapPartitions.Layers.CapacityOverrides
+#        Description: Per-map (continent) capacity overrides.
+#                     Comma-separated list of mapId:capacity pairs.
+#                     Maps not listed here use the global Layers.Capacity value.
+#                     Useful for setting different thresholds per continent:
+#                       0 = Eastern Kingdoms, 1 = Kalimdor,
+#                       530 = Outland, 571 = Northrend
+#        Example:     "0:150,1:200,530:100,571:250"
+#        Default:     "" (empty — all maps use global capacity)
+#
+MapPartitions.Layers.CapacityOverrides = ""
+
+#
 #    MapPartitions.Layers.Max
-#        Description: Maximum number of layers allowed per zone.
-#                     New layers are created only when a player joins and existing layers are full.
+#        Description: Maximum number of layers allowed per map (continent).
+#                     New layers are created only when a player joins a map
+#                     and all existing layers are at capacity.
 #                     Set to 0 to disable layer creation (forces single layer).
 #        Default:     4
 #
@@ -3458,7 +3477,7 @@ MapPartitions.Layers.IncludeGameObjects = 1
 
 #
 #    MapPartitions.Layers.SkipClonesIfNoPlayers
-#        Description: If enabled, clone spawns for layers > 0 are skipped when a zone has no players.
+#        Description: If enabled, clone spawns for layers > 0 are skipped when a map has no players.
 #                     Base layer (0) spawns still load as normal.
 #        Default:     1 - (Enabled)
 #                     0 - (Disabled)
@@ -3473,6 +3492,16 @@ MapPartitions.Layers.SkipClonesIfNoPlayers = 1
 #                     1 - (Enabled)
 #
 MapPartitions.Layers.EmitPerLayerCloneMetrics = 0
+
+#
+#    MapPartitions.Layers.LazyCloneLoading
+#        Description: Load layer clones only when a player of that layer enters a grid.
+#                     Reduces initial clone fan-out for high layer counts.
+#                     Base layer (0) still loads normally.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled, load all layer clones on grid load)
+#
+MapPartitions.Layers.LazyCloneLoading = 1
 
 #
 #    MapPartitions.DensitySplitThreshold
@@ -3526,7 +3555,8 @@ MapPartitions.Layers.Rebalancing.Enabled = 1
 
 #
 #    MapPartitions.Layers.Rebalancing.CheckIntervalMs
-#        Description: Interval (milliseconds) between rebalancing checks per zone.
+#        Description: Interval (milliseconds) between rebalancing checks per map.
+#                     Each map is checked independently via LayerManager::Update().
 #        Default:     300000 (5 minutes)
 #
 MapPartitions.Layers.Rebalancing.CheckIntervalMs = 300000
@@ -3554,6 +3584,61 @@ MapPartitions.Layers.Rebalancing.ImbalanceThreshold = 0.3
 #        Default:     10
 #
 MapPartitions.Layers.Rebalancing.MigrationBatchSize = 10
+
+# -----------------------------------------------------------------------------
+# Phase 7: Hysteresis (Layer Creation / Destruction Delays)
+# -----------------------------------------------------------------------------
+
+#
+#    MapPartitions.Layers.Hysteresis.CreationWarmupMs
+#        Description: Warm-up delay (milliseconds) before creating a new layer.
+#                     When all layers are at capacity the system starts a timer.
+#                     A new layer is created only if the condition persists for
+#                     this entire duration, preventing brief population spikes
+#                     from spawning unnecessary layers.
+#                     Set to 0 to disable (create layers instantly).
+#        Default:     60000 (1 minute)
+#
+MapPartitions.Layers.Hysteresis.CreationWarmupMs = 60000
+
+#
+#    MapPartitions.Layers.Hysteresis.DestructionCooldownMs
+#        Description: Cooldown delay (milliseconds) before destroying (merging) layers.
+#                     When the total population on a map drops below a single layer's
+#                     capacity, the system waits this long before consolidating.
+#                     This prevents rapid create/destroy oscillation on population
+#                     boundaries (e.g., players logging off and on around capacity).
+#                     Set to 0 to disable (merge layers instantly).
+#        Default:     120000 (2 minutes)
+#
+MapPartitions.Layers.Hysteresis.DestructionCooldownMs = 120000
+
+# -----------------------------------------------------------------------------
+# Phase 8: Soft Transfers
+# -----------------------------------------------------------------------------
+
+#
+#    MapPartitions.Layers.SoftTransfers.Enabled
+#        Description: Queue rebalancing layer moves for the next loading screen
+#                     (teleport, map change) instead of instant hard-switches.
+#                     When enabled, players receive a chat notification and are
+#                     moved only during their next natural loading screen.
+#                     If the player doesn't trigger a loading screen within the
+#                     timeout, the transfer is forced.
+#                     When disabled, rebalancing moves players instantly (legacy).
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled, instant transfers)
+#
+MapPartitions.Layers.SoftTransfers.Enabled = 1
+
+#
+#    MapPartitions.Layers.SoftTransfers.TimeoutMs
+#        Description: Maximum time (milliseconds) a soft transfer can remain pending
+#                     before being forced. If a player doesn't hit a loading screen
+#                     within this window, the transfer is applied instantly.
+#        Default:     600000 (10 minutes)
+#
+MapPartitions.Layers.SoftTransfers.TimeoutMs = 600000
 
 ###############################################################################
 # END OF CONFIGURATION FILE

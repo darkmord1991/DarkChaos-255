@@ -220,6 +220,8 @@ public:
     void ProcessCliCommands() override;
     void QueueCliCommand(CliCommandHolder* commandHolder) override { _cliCmdQueue.add(commandHolder); }
 
+    QueryCallbackProcessor& GetQueryProcessor() override { return _queryProcessor; }
+
     void ForceGameEventUpdate() override;
 
     void UpdateRealmCharCount(uint32 accid) override;

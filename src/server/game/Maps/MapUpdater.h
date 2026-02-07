@@ -23,6 +23,7 @@
 #include <condition_variable>
 #include <thread>
 #include <atomic>
+#include <vector>
 
 class Map;
 class UpdateRequest;
@@ -36,6 +37,7 @@ public:
     void schedule_task(UpdateRequest* request);
     void schedule_update(Map& map, uint32 diff, uint32 s_diff);
     void schedule_map_preload(uint32 mapid);
+    void schedule_grid_object_preload(Map& map, std::vector<uint32> const& gridIds);
     void schedule_lfg_update(uint32 diff);
     void schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff);
     void wait();

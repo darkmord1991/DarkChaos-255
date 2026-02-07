@@ -29,6 +29,7 @@
 #include "ObjectMgr.h"
 #include "OutdoorPvPMgr.h"
 #include "PartitionManager.h"
+#include "LayerManager.h"
 #include "PoolMgr.h"
 #include "ScriptMgr.h"
 #include "SpellMgr.h"
@@ -167,7 +168,7 @@ void GameObject::AddToWorld()
 
         EnableCollision(GetGoState() == GO_STATE_READY || IsTransport()); // pussywizard: this startOpen is unneeded here, collision depends entirely on GOState
 
-        if (sPartitionMgr->IsGOLayeringEnabled())
+        if (sLayerMgr->IsGOLayeringEnabled())
         {
             uint32 zoneId = GetMap()->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
             uint32 layerId = 0;
@@ -179,14 +180,14 @@ void GameObject::AddToWorld()
             // Player-owned GOs follow the owner's layer
             else if (Player* ownerPlayer = ObjectAccessor::FindPlayer(GetOwnerGUID()))
             {
-                layerId = sPartitionMgr->GetPlayerLayer(GetMapId(), zoneId, ownerPlayer->GetGUID());
+                layerId = sLayerMgr->GetPlayerLayer(GetMapId(), ownerPlayer->GetGUID());
             }
             else
             {
                 uint64 seed = m_spawnId ? uint64(m_spawnId) : GetGUID().GetCounter();
-                layerId = sPartitionMgr->GetDefaultLayerForZone(GetMapId(), zoneId, seed);
+                layerId = sLayerMgr->GetDefaultLayerForMap(GetMapId(), seed);
             }
-            sPartitionMgr->AssignGOToLayer(GetMapId(), zoneId, GetGUID(), layerId);
+            sLayerMgr->AssignGOToLayer(GetMapId(), zoneId, GetGUID(), layerId);
         }
 
         WorldObject::AddToWorld();
@@ -204,8 +205,8 @@ void GameObject::RemoveFromWorld()
     {
         sScriptMgr->OnGameObjectRemoveWorld(this);
 
-        if (sPartitionMgr->IsGOLayeringEnabled())
-            sPartitionMgr->RemoveGOFromLayer(GetGUID());
+        if (sLayerMgr->IsGOLayeringEnabled())
+            sLayerMgr->RemoveGOFromLayer(GetGUID());
 
         if (m_zoneScript)
             m_zoneScript->OnGameObjectRemove(this);

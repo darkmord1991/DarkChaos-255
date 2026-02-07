@@ -82,7 +82,7 @@ namespace Movement
     public:
         [[nodiscard]] int32 timeElapsed() const { return Duration() - time_passed; }  // xinef: moved to public for waypoint movegen
         [[nodiscard]] int32 timePassed() const { return time_passed; }                // xinef: moved to public for waypoint movegen
-        [[nodiscard]] int32 Duration() const { return spline.length(); }
+        [[nodiscard]] int32 Duration() const { return Initialized() ? spline.length() : 0; }
         [[nodiscard]] MySpline const& _Spline() const { return spline; }
         [[nodiscard]] int32 _currentSplineIdx() const { return point_Idx; }
         void _Finalize();

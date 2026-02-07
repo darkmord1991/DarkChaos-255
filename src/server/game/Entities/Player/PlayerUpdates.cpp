@@ -41,7 +41,7 @@
 #include "WorldState.h"
 #include "WorldState.h"
 #include "WorldStatePackets.h"
-#include "PartitionManager.h"
+#include "LayerManager.h"
 
 /// @todo: this import is not necessary for compilation and marked as unused by the IDE
 //  however, for some reasons removing it would cause a damn linking issue
@@ -437,6 +437,25 @@ void Player::Update(uint32 p_time)
         m_delayed_unit_relocation_timer = 0;
         RemoveFromNotify(NOTIFY_VISIBILITY_CHANGED);
     }
+}
+
+uint32 Player::GetLayerIdCached(Map const* map) const
+{
+    if (!map)
+        return 0;
+
+    uint32 updateCounter = map->GetUpdateCounter();
+    if (m_layerCacheUpdateCounter == updateCounter &&
+        m_layerCacheMapId == map->GetId())
+    {
+        return m_layerCacheLayerId;
+    }
+
+    uint32 layerId = sLayerMgr->GetPlayerLayer(map->GetId(), GetGUID());
+    m_layerCacheUpdateCounter = updateCounter;
+    m_layerCacheMapId = map->GetId();
+    m_layerCacheLayerId = layerId;
+    return layerId;
 }
 
 void Player::UpdateMirrorTimers()
@@ -1306,8 +1325,9 @@ void Player::UpdateZone(uint32 newZone, uint32 newArea, bool force)
 
     GetMap()->SendZoneDynamicInfo(newZone, this);
 
-    // Update layer assignment (if layering is enabled)
-    sPartitionMgr->AutoAssignPlayerToLayer(GetMapId(), newZone, GetGUID());
+    // Layering is map-wide (Blizzard-style). Zone changes do NOT trigger layer reassignment.
+    // Layer assignment happens on map entry (AddPlayerToMap) and party join.
+    // sLayerMgr->AutoAssignPlayerToLayer(GetMapId(), GetGUID()); // Removed: map-wide layering
 
     sScriptMgr->OnPlayerUpdateZone(this, newZone, newArea);
 

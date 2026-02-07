@@ -11,6 +11,7 @@
 #include "CommandScript.h"
 #include "ChatCommand.h"
 #include "Maps/Partitioning/PartitionManager.h"
+#include "Maps/Partitioning/LayerManager.h"
 #include "MapMgr.h"
 #include "Player.h"
 #include "DatabaseEnv.h"
@@ -203,11 +204,11 @@ namespace DCPerfTest
         }
         else
             handler->PSendSysMessage("Filters: all");
-        handler->PSendSysMessage("Available: partition, mixed, relocation, layering, boundary, density, migration, overflow, npc, lookup");
+        handler->PSendSysMessage("Available: partition, mixed, relocation, layering, boundary, density, migration, overflow, npc, lookup, layercache, boundarygrid, preload");
 
-        bool previousPersistence = sPartitionMgr->IsLayerPersistenceEnabled();
+        bool previousPersistence = sLayerMgr->IsLayerPersistenceEnabled();
         if (!allowPersistence)
-            sPartitionMgr->SetLayerPersistenceEnabled(false);
+            sLayerMgr->SetLayerPersistenceEnabled(false);
 
         // Test 1: Partition ID Calculation
         if (wants("partition", { "part" }))
@@ -273,7 +274,7 @@ namespace DCPerfTest
             for (uint32 i = 0; i < layeringIters; ++i)
             {
                 ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 10000);
-                sPartitionMgr->AutoAssignPlayerToLayer(0, 15, guid);
+                sLayerMgr->AutoAssignPlayerToLayer(0, guid);
             }
             auto end = Clock::now();
             auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
@@ -306,7 +307,7 @@ namespace DCPerfTest
             for (uint32 i = 0; i < densityIters; ++i)
             {
                 ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 100000);
-                sPartitionMgr->AutoAssignPlayerToLayer(1, 1, guid); // All to Durotar (1,1)
+                sLayerMgr->AutoAssignPlayerToLayer(1, guid); // All to Kalimdor (map 1)
             }
             auto end = Clock::now();
             auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
@@ -338,14 +339,14 @@ namespace DCPerfTest
         // Test 8: Layer Overflow Stress
         if (wants("overflow", { "over" }))
         {
-            uint32 layerCapacity = sPartitionMgr->GetLayerCapacity();
+            uint32 layerCapacity = sLayerMgr->GetLayerCapacity();
             uint32 overflowIters = layerCapacity * 5;
             handler->PSendSysMessage("8. Layer Overflow Stress ({} players, capacity={} per layer)...", overflowIters, layerCapacity);
             auto start = Clock::now();
             for (uint32 i = 0; i < overflowIters; ++i)
             {
                 ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 300000);
-                sPartitionMgr->AutoAssignPlayerToLayer(0, 100, guid);
+                sLayerMgr->AutoAssignPlayerToLayer(0, guid);
             }
             auto end = Clock::now();
             auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
@@ -355,7 +356,7 @@ namespace DCPerfTest
         // Test 9: NPC Layer Assignment (if enabled)
         if (wants("npc", { "npclayer" }))
         {
-            if (sPartitionMgr->IsNPCLayeringEnabled())
+            if (sLayerMgr->IsNPCLayeringEnabled())
             {
                 uint32 npcIters = iterations / 10;
                 if (npcIters < 1000) npcIters = 1000;
@@ -364,7 +365,7 @@ namespace DCPerfTest
                 for (uint32 i = 0; i < npcIters; ++i)
                 {
                     ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(1, i + 400000);
-                    sPartitionMgr->AssignNPCToLayer(0, 15, guid, (i % 3) + 1);
+                    sLayerMgr->AssignNPCToLayer(0, 0, guid, (i % 3) + 1);
                 }
                 auto end = Clock::now();
                 auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
@@ -386,15 +387,101 @@ namespace DCPerfTest
             for (uint32 i = 0; i < lookupIters; ++i)
             {
                 ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>((i % 10000) + 100000);
-                lookupSum += sPartitionMgr->GetPlayerLayer(0, 15, guid);
+                lookupSum += sLayerMgr->GetPlayerLayer(0, guid);
             }
             auto end = Clock::now();
             auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
             handler->PSendSysMessage("   Lookup: {} us (Avg: {} ns, sum={})", dur, (double)dur * 1000.0 / lookupIters, lookupSum);
         }
 
+        // Test 11: Layer Cache (NPC/GO) Lookup Performance
+        if (wants("layercache", { "layercache", "npcgo" }))
+        {
+            uint32 cacheIters = iterations / 2;
+            if (cacheIters < 1000) cacheIters = 1000;
+            handler->PSendSysMessage("11. Layer Cache Lookup ({} lookups)...", cacheIters);
+
+            for (uint32 i = 0; i < 1024; ++i)
+            {
+                ObjectGuid npcGuid = ObjectGuid::Create<HighGuid::Unit>(1, i + 600000);
+                ObjectGuid goGuid = ObjectGuid::Create<HighGuid::GameObject>(1, i + 700000);
+                sLayerMgr->AssignNPCToLayer(0, 0, npcGuid, (i % 3) + 1);
+                sLayerMgr->AssignGOToLayer(0, 0, goGuid, (i % 3) + 1);
+            }
+
+            auto start = Clock::now();
+            uint32 cacheSum = 0;
+            for (uint32 i = 0; i < cacheIters; ++i)
+            {
+                ObjectGuid npcGuid = ObjectGuid::Create<HighGuid::Unit>(1, (i % 1024) + 600000);
+                ObjectGuid goGuid = ObjectGuid::Create<HighGuid::GameObject>(1, (i % 1024) + 700000);
+                cacheSum += sLayerMgr->GetLayerForNPC(0, npcGuid);
+                cacheSum += sLayerMgr->GetLayerForGO(0, goGuid);
+            }
+            auto end = Clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+            handler->PSendSysMessage("   Layer Cache: {} us (Avg: {} ns, sum={})", dur, (double)dur * 1000.0 / (cacheIters * 2), cacheSum);
+        }
+
+        // Test 12: Boundary Grid Batch Performance
+        if (wants("boundarygrid", { "boundarygrid", "bgrid" }))
+        {
+            uint32 batchSize = 256;
+            uint32 batches = std::max<uint32>(iterations / batchSize, 1);
+            handler->PSendSysMessage("12. Boundary Grid Batch ({} batches, size={})...", batches, batchSize);
+
+            std::vector<PartitionManager::BoundaryPositionUpdate> updates;
+            updates.reserve(batchSize);
+            std::vector<ObjectGuid> unregisters;
+            unregisters.reserve(batchSize);
+
+            auto start = Clock::now();
+            for (uint32 b = 0; b < batches; ++b)
+            {
+                updates.clear();
+                unregisters.clear();
+                for (uint32 i = 0; i < batchSize; ++i)
+                {
+                    ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(1, b * batchSize + i + 800000);
+                    updates.push_back({ guid, float(i), float(i) });
+                    unregisters.push_back(guid);
+                }
+                sPartitionMgr->BatchUpdateBoundaryPositions(0, 1, updates);
+                sPartitionMgr->BatchUnregisterBoundaryObjects(0, 1, unregisters);
+            }
+            auto end = Clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+            uint64 ops = static_cast<uint64>(batches) * batchSize;
+            handler->PSendSysMessage("   Boundary Grid: {} us (Avg: {} ns per op)", dur, (double)dur * 1000.0 / ops);
+        }
+
+        // Test 13: Grid Preload Cache
+        if (wants("preload", { "preload", "grid" }))
+        {
+            Player* player = handler->GetPlayer();
+            if (!player)
+            {
+                handler->PSendSysMessage("13. Grid Preload: |cffff0000SKIPPED (no player)|r");
+            }
+            else
+            {
+                Map* map = player->GetMap();
+                uint32 gridId = GridCoord(Acore::ComputeGridCoord(player->GetPositionX(), player->GetPositionY())).GetId();
+                handler->PSendSysMessage("13. Grid Preload Cache (grid={})...", gridId);
+
+                auto start = Clock::now();
+                for (uint32 i = 0; i < 100; ++i)
+                    map->PreloadGridObjectGuids(gridId);
+                auto end = Clock::now();
+                auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+                handler->PSendSysMessage("   Preload: {} us (Avg: {} ns)", dur, (double)dur * 1000.0 / 100.0);
+
+                map->ClearPreloadedGridObjectGuids(gridId);
+            }
+        }
+
         handler->SendSysMessage("|cff00ff00=== Partition Stress Test Complete ===|r");
-        sPartitionMgr->SetLayerPersistenceEnabled(previousPersistence);
+        sLayerMgr->SetLayerPersistenceEnabled(previousPersistence);
         return true;
     }
 
@@ -417,8 +504,8 @@ namespace DCPerfTest
         uint32 npcIters = std::max<uint32>(baseIters / 10, 1000);
         uint32 lookupIters = std::max<uint32>(baseIters / 2, 1000);
 
-        bool previousPersistence = sPartitionMgr->IsLayerPersistenceEnabled();
-        sPartitionMgr->SetLayerPersistenceEnabled(false);
+        bool previousPersistence = sLayerMgr->IsLayerPersistenceEnabled();
+        sLayerMgr->SetLayerPersistenceEnabled(false);
 
         uint32 checkSum = 0;
         auto start = Clock::now();
@@ -447,7 +534,7 @@ namespace DCPerfTest
         for (uint32 i = 0; i < layeringIters; ++i)
         {
             ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 10000);
-            sPartitionMgr->AutoAssignPlayerToLayer(0, 15, guid);
+            sLayerMgr->AutoAssignPlayerToLayer(0, guid);
         }
 
         for (uint32 i = 0; i < boundaryIters; ++i)
@@ -460,7 +547,7 @@ namespace DCPerfTest
         for (uint32 i = 0; i < densityIters; ++i)
         {
             ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 100000);
-            sPartitionMgr->AutoAssignPlayerToLayer(1, 1, guid);
+            sLayerMgr->AutoAssignPlayerToLayer(1, guid);
         }
 
         for (uint32 i = 0; i < moveIters; ++i)
@@ -472,33 +559,33 @@ namespace DCPerfTest
                 sPartitionMgr->CommitRelocation(guid);
         }
 
-        uint32 layerCapacity = sPartitionMgr->GetLayerCapacity();
+        uint32 layerCapacity = sLayerMgr->GetLayerCapacity();
         uint32 overflowIters = layerCapacity * 5;
         if (overflowIters < 100)
             overflowIters = 100;
         for (uint32 i = 0; i < overflowIters; ++i)
         {
             ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>(i + 300000);
-            sPartitionMgr->AutoAssignPlayerToLayer(0, 100, guid);
+            sLayerMgr->AutoAssignPlayerToLayer(0, guid);
         }
 
-        if (sPartitionMgr->IsNPCLayeringEnabled())
+        if (sLayerMgr->IsNPCLayeringEnabled())
         {
             for (uint32 i = 0; i < npcIters; ++i)
             {
                 ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(1, i + 400000);
-                sPartitionMgr->AssignNPCToLayer(0, 15, guid, (i % 3) + 1);
+                sLayerMgr->AssignNPCToLayer(0, 0, guid, (i % 3) + 1);
             }
         }
 
         for (uint32 i = 0; i < lookupIters; ++i)
         {
             ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>((i % 10000) + 100000);
-            checkSum += sPartitionMgr->GetPlayerLayer(0, 15, guid);
+            checkSum += sLayerMgr->GetPlayerLayer(0, guid);
         }
 
         auto end = Clock::now();
-        sPartitionMgr->SetLayerPersistenceEnabled(previousPersistence);
+        sLayerMgr->SetLayerPersistenceEnabled(previousPersistence);
 
         if (checkSum == 0xFFFFFFFFu)
             result.error = "checksum sentinel";

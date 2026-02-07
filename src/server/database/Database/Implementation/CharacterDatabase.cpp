@@ -699,6 +699,10 @@ void CharacterDatabaseConnection::DoPrepareStatements()
         "REPLACE INTO dc_character_partition_ownership (guid, map_id, partition_id) VALUES (?, ?, ?)",
         CONNECTION_ASYNC);
 
+    PrepareStatement(CHAR_SEL_PARTITION_OWNERSHIP,
+        "SELECT guid, map_id, partition_id FROM dc_character_partition_ownership",
+        CONNECTION_ASYNC);
+
     PrepareStatement(CHAR_DEL_PARTITION_OWNERSHIP_OTHER_MAPS,
         "DELETE FROM dc_character_partition_ownership WHERE guid = ? AND map_id <> ?",
         CONNECTION_ASYNC);
@@ -706,7 +710,7 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     // Map Partitioning Layer Assignment
     PrepareStatement(CHAR_SEL_DC_LAYER_ASSIGNMENT,
         "SELECT map_id, zone_id, layer_id FROM dc_character_layer_assignment WHERE guid = ? ORDER BY updated_at DESC LIMIT 1",
-        CONNECTION_SYNCH);
+        CONNECTION_ASYNC);
 
     PrepareStatement(CHAR_REP_DC_LAYER_ASSIGNMENT,
         "REPLACE INTO dc_character_layer_assignment (guid, map_id, zone_id, layer_id) VALUES (?, ?, ?, ?)",

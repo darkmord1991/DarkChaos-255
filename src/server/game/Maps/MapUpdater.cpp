@@ -23,6 +23,7 @@
 #include "MapMgr.h"
 #include "Metric.h"
 #include "PartitionUpdateWorker.h"
+#include <vector>
 
 class UpdateRequest
 {
@@ -74,6 +75,27 @@ public:
 private:
     uint32 _mapId;
     MapUpdater& _updater;
+};
+
+class GridObjectPreloadRequest : public UpdateRequest
+{
+public:
+    GridObjectPreloadRequest(Map& map, MapUpdater& updater, std::vector<uint32> gridIds)
+        : _map(map), _updater(updater), _gridIds(std::move(gridIds))
+    {
+    }
+
+    void call() override
+    {
+        for (uint32 gridId : _gridIds)
+            _map.PreloadGridObjectGuids(gridId);
+        _updater.update_finished();
+    }
+
+private:
+    Map& _map;
+    MapUpdater& _updater;
+    std::vector<uint32> _gridIds;
 };
 
 class LFGUpdateRequest : public UpdateRequest
@@ -174,6 +196,14 @@ void MapUpdater::schedule_update(Map& map, uint32 diff, uint32 s_diff)
 void MapUpdater::schedule_map_preload(uint32 mapid)
 {
     schedule_task(new MapPreloadRequest(mapid, *this));
+}
+
+void MapUpdater::schedule_grid_object_preload(Map& map, std::vector<uint32> const& gridIds)
+{
+    if (gridIds.empty())
+        return;
+
+    schedule_task(new GridObjectPreloadRequest(map, *this, gridIds));
 }
 
 void MapUpdater::schedule_lfg_update(uint32 diff)

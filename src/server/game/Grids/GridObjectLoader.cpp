@@ -23,10 +23,11 @@
 #include "GameObject.h"
 #include "GridNotifiers.h"
 #include "Metric.h"
-#include "PartitionManager.h"
+#include "LayerManager.h"
 #include "Transport.h"
 #include "GameTime.h"
 #include <unordered_map>
+#include <memory>
 
 namespace
 {
@@ -62,45 +63,36 @@ void GridObjectLoader::AddObjectHelper(Map* map, T* obj)
 
 void GridObjectLoader::LoadCreatures(CellGuidSet const& guid_set, Map* map)
 {
-    bool layerCloning = sPartitionMgr->IsNPCLayeringEnabled();
-    std::unordered_map<uint32, std::vector<uint32>> layerIdsByZone;
-    std::unordered_map<uint32, bool> zoneHasPlayers;
+    bool layerCloning = sLayerMgr->IsNPCLayeringEnabled();
+
+    // Layers are map-wide, so we cache once per map rather than per-zone.
+    std::vector<uint32> cachedLayerIds;
+    bool layerIdsCached = false;
 
     for (ObjectGuid::LowType const& guid : guid_set)
     {
         std::vector<uint32> layerIds;
         if (layerCloning)
         {
-            if (CreatureData const* data = sObjectMgr->GetCreatureData(guid))
+            if (!layerIdsCached)
             {
-                uint32 zoneId = map->GetZoneId(data->phaseMask, data->posX, data->posY, data->posZ);
-                if (sPartitionMgr->SkipCloneSpawnsIfNoPlayers())
+                if (sLayerMgr->SkipCloneSpawnsIfNoPlayers())
                 {
-                    auto hasPlayersIt = zoneHasPlayers.find(zoneId);
-                    if (hasPlayersIt == zoneHasPlayers.end())
+                    bool hasPlayers = sLayerMgr->HasPlayersOnMap(map->GetId());
+                    if (!hasPlayers)
                     {
-                        bool hasPlayers = sPartitionMgr->HasPlayersInZone(map->GetId(), zoneId);
-                        hasPlayersIt = zoneHasPlayers.emplace(zoneId, hasPlayers).first;
-                    }
-
-                    if (!hasPlayersIt->second)
-                    {
-                        layerIds.push_back(0);
+                        cachedLayerIds.push_back(0);
+                        layerIdsCached = true;
                     }
                 }
 
-                if (layerIds.empty())
+                if (!layerIdsCached)
                 {
-                    auto it = layerIdsByZone.find(zoneId);
-                    if (it == layerIdsByZone.end())
-                    {
-                        std::vector<uint32> ids;
-                        sPartitionMgr->GetActiveLayerIds(map->GetId(), zoneId, ids);
-                        it = layerIdsByZone.emplace(zoneId, std::move(ids)).first;
-                    }
-                    layerIds = it->second;
+                    sLayerMgr->GetActiveLayerIds(map->GetId(), cachedLayerIds);
+                    layerIdsCached = true;
                 }
             }
+            layerIds = cachedLayerIds;
         }
 
         if (layerIds.empty())
@@ -114,7 +106,7 @@ void GridObjectLoader::LoadCreatures(CellGuidSet const& guid_set, Map* map)
             uint32 spawned = 0;
             uint32 zoneId = 0;
 
-            if (isClone && sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+            if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
                 startMs = GameTime::GetGameTimeMS().count();
 
             Creature* obj = new Creature();
@@ -142,7 +134,7 @@ void GridObjectLoader::LoadCreatures(CellGuidSet const& guid_set, Map* map)
                 }
             }
 
-            if (isClone && sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+            if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
             {
                 uint64 elapsedMs = GameTime::GetGameTimeMS().count() - startMs;
                 if (g_collectCloneSummary)
@@ -150,7 +142,7 @@ void GridObjectLoader::LoadCreatures(CellGuidSet const& guid_set, Map* map)
                     g_cloneSpawnSummary.npcMs += elapsedMs;
                     g_cloneSpawnSummary.npcCount += spawned;
                 }
-                if (sPartitionMgr->EmitPerLayerCloneMetrics())
+                if (sLayerMgr->EmitPerLayerCloneMetrics())
                 {
                     METRIC_VALUE("layer_clone_spawn_ms", elapsedMs,
                         METRIC_TAG("map_id", std::to_string(map->GetId())),
@@ -170,9 +162,11 @@ void GridObjectLoader::LoadCreatures(CellGuidSet const& guid_set, Map* map)
 
 void GridObjectLoader::LoadGameObjects(CellGuidSet const& guid_set, Map* map)
 {
-    bool layerCloning = sPartitionMgr->IsGOLayeringEnabled();
-    std::unordered_map<uint32, std::vector<uint32>> layerIdsByZone;
-    std::unordered_map<uint32, bool> zoneHasPlayers;
+    bool layerCloning = sLayerMgr->IsGOLayeringEnabled();
+
+    // Layers are map-wide, so we cache once per map rather than per-zone.
+    std::vector<uint32> cachedLayerIds;
+    bool layerIdsCached = false;
 
     for (ObjectGuid::LowType const& guid : guid_set)
     {
@@ -192,33 +186,25 @@ void GridObjectLoader::LoadGameObjects(CellGuidSet const& guid_set, Map* map)
             std::vector<uint32> layerIds;
             if (layerCloning && data)
             {
-                uint32 zoneId = map->GetZoneId(data->phaseMask, data->posX, data->posY, data->posZ);
-                if (sPartitionMgr->SkipCloneSpawnsIfNoPlayers())
+                if (!layerIdsCached)
                 {
-                    auto hasPlayersIt = zoneHasPlayers.find(zoneId);
-                    if (hasPlayersIt == zoneHasPlayers.end())
+                    if (sLayerMgr->SkipCloneSpawnsIfNoPlayers())
                     {
-                        bool hasPlayers = sPartitionMgr->HasPlayersInZone(map->GetId(), zoneId);
-                        hasPlayersIt = zoneHasPlayers.emplace(zoneId, hasPlayers).first;
+                        bool hasPlayers = sLayerMgr->HasPlayersOnMap(map->GetId());
+                        if (!hasPlayers)
+                        {
+                            cachedLayerIds.push_back(0);
+                            layerIdsCached = true;
+                        }
                     }
 
-                    if (!hasPlayersIt->second)
+                    if (!layerIdsCached)
                     {
-                        layerIds.push_back(0);
+                        sLayerMgr->GetActiveLayerIds(map->GetId(), cachedLayerIds);
+                        layerIdsCached = true;
                     }
                 }
-
-                if (layerIds.empty())
-                {
-                    auto it = layerIdsByZone.find(zoneId);
-                    if (it == layerIdsByZone.end())
-                    {
-                        std::vector<uint32> ids;
-                        sPartitionMgr->GetActiveLayerIds(map->GetId(), zoneId, ids);
-                        it = layerIdsByZone.emplace(zoneId, std::move(ids)).first;
-                    }
-                    layerIds = it->second;
-                }
+                layerIds = cachedLayerIds;
             }
 
             if (layerIds.empty())
@@ -231,7 +217,7 @@ void GridObjectLoader::LoadGameObjects(CellGuidSet const& guid_set, Map* map)
                 uint64 startMs = 0;
                 uint32 spawned = 0;
                 uint32 zoneId = 0;
-                if (isClone && sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+                if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
                     startMs = GameTime::GetGameTimeMS().count();
 
                 GameObject* obj = new GameObject();
@@ -250,7 +236,7 @@ void GridObjectLoader::LoadGameObjects(CellGuidSet const& guid_set, Map* map)
                         zoneId = map->GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
                 }
 
-                if (isClone && sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+                if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
                 {
                     uint64 elapsedMs = GameTime::GetGameTimeMS().count() - startMs;
                     if (g_collectCloneSummary)
@@ -258,7 +244,7 @@ void GridObjectLoader::LoadGameObjects(CellGuidSet const& guid_set, Map* map)
                         g_cloneSpawnSummary.goMs += elapsedMs;
                         g_cloneSpawnSummary.goCount += spawned;
                     }
-                    if (sPartitionMgr->EmitPerLayerCloneMetrics())
+                    if (sLayerMgr->EmitPerLayerCloneMetrics())
                     {
                         METRIC_VALUE("layer_clone_spawn_ms", elapsedMs,
                             METRIC_TAG("map_id", std::to_string(map->GetId())),
@@ -277,16 +263,195 @@ void GridObjectLoader::LoadGameObjects(CellGuidSet const& guid_set, Map* map)
     }
 }
 
-void GridObjectLoader::LoadAllCellsInGrid()
+void GridObjectLoader::LoadLayerClones(uint32 layerId)
 {
-    bool collectSummary = sPartitionMgr->IsRuntimeDiagnosticsEnabled();
+    if (!layerId)
+        return;
+
+    bool collectSummary = sLayerMgr->IsRuntimeDiagnosticsEnabled();
     if (collectSummary)
         g_cloneSpawnSummary.Reset();
     g_collectCloneSummary = collectSummary;
 
-    CellObjectGuids const& cell_guids = sObjectMgr->GetGridObjectGuids(_map->GetId(), _map->GetSpawnMode(), _grid.GetId());
-    LoadGameObjects(cell_guids.gameobjects, _map);
-    LoadCreatures(cell_guids.creatures, _map);
+    std::shared_ptr<CellObjectGuids> cached = _map->GetPreloadedGridObjectGuids(_grid.GetId());
+    CellObjectGuids const& cell_guids = cached ? *cached :
+        sObjectMgr->GetGridObjectGuids(_map->GetId(), _map->GetSpawnMode(), _grid.GetId());
+
+    if (sLayerMgr->IsGOLayeringEnabled())
+        LoadGameObjectsForLayer(cell_guids.gameobjects, _map, layerId, true);
+    if (sLayerMgr->IsNPCLayeringEnabled())
+        LoadCreaturesForLayer(cell_guids.creatures, _map, layerId, true);
+
+    if (collectSummary && (g_cloneSpawnSummary.npcCount || g_cloneSpawnSummary.goCount))
+    {
+        LOG_INFO("map.partition", "Diag: Grid {} map {} layer {} clone spawn summary npc_count={} npc_ms={} go_count={} go_ms={}",
+            _grid.GetId(), _map->GetId(), layerId, g_cloneSpawnSummary.npcCount, g_cloneSpawnSummary.npcMs,
+            g_cloneSpawnSummary.goCount, g_cloneSpawnSummary.goMs);
+    }
+
+    g_collectCloneSummary = false;
+}
+
+void GridObjectLoader::LoadCreaturesForLayer(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone)
+{
+    if (!sLayerMgr->IsNPCLayeringEnabled())
+        return;
+
+    for (ObjectGuid::LowType const& guid : guid_set)
+    {
+        bool allowDuplicate = isClone;
+        uint64 startMs = 0;
+        uint32 spawned = 0;
+        uint32 zoneId = 0;
+
+        if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
+            startMs = GameTime::GetGameTimeMS().count();
+
+        Creature* obj = new Creature();
+        if (!obj->LoadCreatureFromDB(guid, map, false, allowDuplicate, isClone, layerId))
+        {
+            delete obj;
+            continue;
+        }
+
+        AddObjectHelper<Creature>(map, obj);
+        if (isClone)
+        {
+            ++spawned;
+            if (zoneId == 0)
+                zoneId = map->GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
+        }
+
+        if (!obj->IsMoveInLineOfSightDisabled() && obj->GetDefaultMovementType() == IDLE_MOTION_TYPE && !obj->isNeedNotify(NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION))
+        {
+            if (obj->IsAlive() && !obj->HasUnitState(UNIT_STATE_SIGHTLESS) && obj->HasReactState(REACT_AGGRESSIVE) && !obj->IsImmuneToNPC())
+            {
+                Acore::AIRelocationNotifier notifier(*obj);
+                Cell::VisitObjects(obj, notifier, 60.f);
+            }
+        }
+
+        if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
+        {
+            uint64 elapsedMs = GameTime::GetGameTimeMS().count() - startMs;
+            if (g_collectCloneSummary)
+            {
+                g_cloneSpawnSummary.npcMs += elapsedMs;
+                g_cloneSpawnSummary.npcCount += spawned;
+            }
+            if (sLayerMgr->EmitPerLayerCloneMetrics())
+            {
+                METRIC_VALUE("layer_clone_spawn_ms", elapsedMs,
+                    METRIC_TAG("map_id", std::to_string(map->GetId())),
+                    METRIC_TAG("zone_id", std::to_string(zoneId)),
+                    METRIC_TAG("layer_id", std::to_string(layerId)),
+                    METRIC_TAG("type", "npc"));
+                METRIC_VALUE("layer_clone_spawn_count", uint64(spawned),
+                    METRIC_TAG("map_id", std::to_string(map->GetId())),
+                    METRIC_TAG("zone_id", std::to_string(zoneId)),
+                    METRIC_TAG("layer_id", std::to_string(layerId)),
+                    METRIC_TAG("type", "npc"));
+            }
+        }
+    }
+}
+
+void GridObjectLoader::LoadGameObjectsForLayer(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone)
+{
+    if (!sLayerMgr->IsGOLayeringEnabled())
+        return;
+
+    for (ObjectGuid::LowType const& guid : guid_set)
+    {
+        GameObjectData const* data = sObjectMgr->GetGameObjectData(guid);
+
+        if (data && sObjectMgr->IsGameObjectStaticTransport(data->id))
+        {
+            if (isClone)
+                continue;
+
+            StaticTransport* transport = new StaticTransport();
+            if (!transport->LoadGameObjectFromDB(guid, map, true))
+                delete transport;
+            continue;
+        }
+
+        bool allowDuplicate = isClone;
+        uint64 startMs = 0;
+        uint32 spawned = 0;
+        uint32 zoneId = 0;
+        if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
+            startMs = GameTime::GetGameTimeMS().count();
+
+        GameObject* obj = new GameObject();
+        if (!obj->LoadGameObjectFromDB(guid, map, false, allowDuplicate, isClone, layerId))
+        {
+            delete obj;
+            continue;
+        }
+
+        AddObjectHelper<GameObject>(map, obj);
+        if (isClone)
+        {
+            ++spawned;
+            if (zoneId == 0)
+                zoneId = map->GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
+        }
+
+        if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
+        {
+            uint64 elapsedMs = GameTime::GetGameTimeMS().count() - startMs;
+            if (g_collectCloneSummary)
+            {
+                g_cloneSpawnSummary.goMs += elapsedMs;
+                g_cloneSpawnSummary.goCount += spawned;
+            }
+            if (sLayerMgr->EmitPerLayerCloneMetrics())
+            {
+                METRIC_VALUE("layer_clone_spawn_ms", elapsedMs,
+                    METRIC_TAG("map_id", std::to_string(map->GetId())),
+                    METRIC_TAG("zone_id", std::to_string(zoneId)),
+                    METRIC_TAG("layer_id", std::to_string(layerId)),
+                    METRIC_TAG("type", "go"));
+                METRIC_VALUE("layer_clone_spawn_count", uint64(spawned),
+                    METRIC_TAG("map_id", std::to_string(map->GetId())),
+                    METRIC_TAG("zone_id", std::to_string(zoneId)),
+                    METRIC_TAG("layer_id", std::to_string(layerId)),
+                    METRIC_TAG("type", "go"));
+            }
+        }
+    }
+}
+
+void GridObjectLoader::LoadAllCellsInGrid()
+{
+    bool collectSummary = sLayerMgr->IsRuntimeDiagnosticsEnabled();
+    if (collectSummary)
+        g_cloneSpawnSummary.Reset();
+    g_collectCloneSummary = collectSummary;
+
+    std::shared_ptr<CellObjectGuids> cached = _map->GetPreloadedGridObjectGuids(_grid.GetId());
+    CellObjectGuids const& cell_guids = cached ? *cached :
+        sObjectMgr->GetGridObjectGuids(_map->GetId(), _map->GetSpawnMode(), _grid.GetId());
+
+    bool lazyCloneLoading = sLayerMgr->IsLayeringEnabled() && sLayerMgr->LazyCloneLoadingEnabled();
+    if (lazyCloneLoading)
+    {
+        if (sLayerMgr->IsGOLayeringEnabled())
+            LoadGameObjectsForLayer(cell_guids.gameobjects, _map, 0, false);
+        else
+            LoadGameObjects(cell_guids.gameobjects, _map);
+
+        if (sLayerMgr->IsNPCLayeringEnabled())
+            LoadCreaturesForLayer(cell_guids.creatures, _map, 0, false);
+        else
+            LoadCreatures(cell_guids.creatures, _map);
+    }
+    else
+    {
+        LoadGameObjects(cell_guids.gameobjects, _map);
+        LoadCreatures(cell_guids.creatures, _map);
+    }
 
     if (collectSummary && (g_cloneSpawnSummary.npcCount || g_cloneSpawnSummary.goCount))
     {

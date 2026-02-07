@@ -17,6 +17,7 @@
 
 #include "Player.h"
 #include "WorldConfig.h"
+#include "Maps/Partitioning/LayerManager.h"
 
 void WorldConfig::BuildConfigCache()
 {
@@ -556,8 +557,24 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_GO_LAYERS, "MapPartitions.Layers.IncludeGameObjects", true);
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_SKIP_CLONES_NO_PLAYERS, "MapPartitions.Layers.SkipClonesIfNoPlayers", true);
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_LAYER_CLONE_METRICS, "MapPartitions.Layers.EmitPerLayerCloneMetrics", false);
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_LAYER_LAZY_CLONE_LOADING, "MapPartitions.Layers.LazyCloneLoading", true);
+    SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY_OVERRIDES, "MapPartitions.Layers.CapacityOverrides", "");
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_HYSTERESIS_CREATION_MS, "MapPartitions.Layers.Hysteresis.CreationWarmupMs", 60000);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_HYSTERESIS_DESTRUCTION_MS, "MapPartitions.Layers.Hysteresis.DestructionCooldownMs", 120000);
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_LAYER_SOFT_TRANSFERS, "MapPartitions.Layers.SoftTransfers.Enabled", true);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_SOFT_TRANSFER_TIMEOUT_MS, "MapPartitions.Layers.SoftTransfers.TimeoutMs", 600000);
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_LAYER_REBALANCING_ENABLED, "MapPartitions.Layers.Rebalancing.Enabled", true);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_REBALANCING_INTERVAL_MS, "MapPartitions.Layers.Rebalancing.CheckIntervalMs", 300000);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_REBALANCING_MIN_PLAYERS, "MapPartitions.Layers.Rebalancing.MinPlayersPerLayer", 5);
+    SetConfigValue<float>(CONFIG_MAP_PARTITIONS_LAYER_REBALANCING_IMBALANCE_THRESHOLD, "MapPartitions.Layers.Rebalancing.ImbalanceThreshold", 0.3f);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_REBALANCING_MIGRATION_BATCH, "MapPartitions.Layers.Rebalancing.MigrationBatchSize", 10);
     SetConfigValue<float>(CONFIG_MAP_PARTITIONS_DENSITY_SPLIT_THRESHOLD, "MapPartitions.DensitySplitThreshold", 50.0f);
     SetConfigValue<float>(CONFIG_MAP_PARTITIONS_DENSITY_MERGE_THRESHOLD, "MapPartitions.DensityMergeThreshold", 5.0f);
+
+    // Parse per-map capacity overrides and rebalancing config after config values are loaded
+    sLayerMgr->ParsePerMapCapacityOverrides();
+    sLayerMgr->LoadRebalancingConfig();
+
     SetConfigValue<uint32>(CONFIG_MAX_RESULTS_LOOKUP_COMMANDS, "Command.LookupMaxResults", 0);
 
     // Warden

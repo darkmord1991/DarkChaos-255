@@ -30,6 +30,7 @@ public:
         : _grid(grid), _map(map) { }
 
     void LoadAllCellsInGrid();
+    void LoadLayerClones(uint32 layerId);
 
 private:
     template<class T>
@@ -37,6 +38,8 @@ private:
 
     void LoadCreatures(CellGuidSet const& guid_set, Map* map);
     void LoadGameObjects(CellGuidSet const& guid_set, Map* map);
+    void LoadCreaturesForLayer(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone);
+    void LoadGameObjectsForLayer(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone);
 
     MapGridType& _grid;
     Map* _map;

@@ -592,8 +592,36 @@ public:
     }
 };
 
+class dc_layer_commandscript : public CommandScript
+{
+public:
+    dc_layer_commandscript() : CommandScript("dc_layer_commandscript") { }
+
+    ChatCommandTable GetCommands() const override
+    {
+        static ChatCommandTable commandTable =
+        {
+            { "layer", HandleLayerCommand, SEC_PLAYER, Console::No }
+        };
+        return commandTable;
+    }
+
+    static bool HandleLayerCommand(ChatHandler* handler, std::vector<std::string_view> args)
+    {
+        std::vector<std::string_view> fullArgs;
+        fullArgs.reserve(args.size() + 1);
+        fullArgs.push_back("layer");
+        for (auto const& arg : args)
+            fullArgs.push_back(arg);
+
+        auto it = fullArgs.begin();
+        return HandleDcLayerSubcommand(handler, fullArgs, it);
+    }
+};
+
 void AddSC_dc_addons_commandscript()
 {
     new dc_addons_commandscript();
+    new dc_layer_commandscript();
     LOG_INFO("scripts.dc_addons", "dc_addons command script registered");
 }

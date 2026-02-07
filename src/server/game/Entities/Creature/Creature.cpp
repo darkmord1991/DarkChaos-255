@@ -29,6 +29,7 @@
 #include "GridNotifiers.h"
 #include "Group.h"
 #include "Maps/Partitioning/PartitionManager.h"
+#include "Maps/Partitioning/LayerManager.h"
 #include "GroupMgr.h"
 #include "Log.h"
 #include "LootMgr.h"
@@ -321,7 +322,7 @@ void Creature::AddToWorld()
         if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
             GetMap()->GetObjectsStore().Insert<Creature>(GetGUID(), this);
         GetMap()->RegisterPartitionedObject(this);
-        if (sPartitionMgr->IsNPCLayeringEnabled())
+        if (sLayerMgr->IsNPCLayeringEnabled())
         {
             uint32 zoneId = GetMap()->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
             uint32 layerId = 0;
@@ -332,10 +333,10 @@ void Creature::AddToWorld()
             }
             else if (Player* ownerPlayer = GetCharmerOrOwnerPlayerOrPlayerItself())
             {
-                layerId = sPartitionMgr->GetPlayerLayer(GetMapId(), zoneId, ownerPlayer->GetGUID());
+                layerId = sLayerMgr->GetPlayerLayer(GetMapId(), ownerPlayer->GetGUID());
             }
 
-            sPartitionMgr->AssignNPCToLayer(GetMapId(), zoneId, GetGUID(), layerId);
+            sLayerMgr->AssignNPCToLayer(GetMapId(), zoneId, GetGUID(), layerId);
         }
         if (m_spawnId)
         {
@@ -369,8 +370,8 @@ void Creature::RemoveFromWorld()
     {
         sScriptMgr->OnCreatureRemoveWorld(this);
 
-        if (sPartitionMgr->IsNPCLayeringEnabled())
-            sPartitionMgr->RemoveNPCFromLayer(GetGUID());
+        if (sLayerMgr->IsNPCLayeringEnabled())
+            sLayerMgr->RemoveNPCFromLayer(GetGUID());
 
         if (GetZoneScript())
             GetZoneScript()->OnCreatureRemove(this);

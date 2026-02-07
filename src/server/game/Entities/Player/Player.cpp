@@ -58,6 +58,7 @@
 #include "Log.h"
 #include "LootItemStorage.h"
 #include "Maps/Partitioning/PartitionManager.h"
+#include "Maps/Partitioning/LayerManager.h"
 #include "Metric.h"
 #include "MapMgr.h"
 #include "MiscPackets.h"
@@ -1791,7 +1792,7 @@ void Player::RegenerateAll()
     m_regenTimerCount += m_regenTimer;
     m_foodEmoteTimerCount += m_regenTimer;
 
-    if (sPartitionMgr->ShouldEmitRegenMetrics())
+    if (sLayerMgr->ShouldEmitRegenMetrics())
     {
         std::string mapIdTag = std::to_string(GetMapId());
         std::string partitionedTag = (GetMap() && GetMap()->IsPartitioned()) ? "1" : "0";
@@ -2029,7 +2030,7 @@ void Player::RegenerateHealth()
     if (curValue >= maxValue)
         return;
 
-    if (sPartitionMgr->ShouldEmitRegenMetrics())
+    if (sLayerMgr->ShouldEmitRegenMetrics())
     {
         std::string mapIdTag = std::to_string(GetMapId());
         std::string partitionedTag = (GetMap() && GetMap()->IsPartitioned()) ? "1" : "0";

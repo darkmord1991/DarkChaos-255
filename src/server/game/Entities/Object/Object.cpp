@@ -15,7 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "PartitionManager.h"
+#include "LayerManager.h"
 #include "Object.h"
 #include "Battlefield.h"
 #include "BattlefieldMgr.h"
@@ -1058,7 +1058,7 @@ WorldObject::WorldObject() : WorldLocation(),
     LastUsedScriptID(0), m_name(""), m_isActive(false), _visibilityDistanceOverrideType(VisibilityDistanceType::Normal), m_zoneScript(nullptr),
     _zoneId(0), _areaId(0), _floorZ(INVALID_HEIGHT), _outdoors(false), _liquidData(), _updatePositionData(false), m_transport(nullptr),
     m_currMap(nullptr), _heartbeatTimer(HEARTBEAT_INTERVAL), m_InstanceId(0), m_phaseMask(PHASEMASK_NORMAL), m_useCombinedPhases(true),
-    m_notifyflags(0), m_executed_notifies(0), _objectVisibilityContainer(this)
+    m_notifyflags(0), m_executed_notifies(0), _boundaryTracked(false), _objectVisibilityContainer(this)
 {
     m_serverSideVisibility.SetValue(SERVERSIDE_VISIBILITY_GHOST, GHOST_VISIBILITY_ALIVE | GHOST_VISIBILITY_GHOST);
     m_serverSideVisibilityDetect.SetValue(SERVERSIDE_VISIBILITY_GHOST, GHOST_VISIBILITY_ALIVE);
@@ -1777,12 +1777,10 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
 
             // NPC layering: Hide NPCs that are on a different layer than the player
             // Each layer is a completely independent world (like retail WoW layering)
-            if (sPartitionMgr->IsNPCLayeringEnabled())
+            if (sLayerMgr->IsNPCLayeringEnabled())
             {
-                uint32 playerLayer = 0;
-                uint32 npcLayer = 0;
-                sPartitionMgr->GetPlayerAndNPCLayer(player->GetMapId(), player->GetZoneId(),
-                    player->GetGUID(), cObj->GetGUID(), playerLayer, npcLayer);
+                uint32 playerLayer = player->GetLayerIdCached(player->GetMap());
+                uint32 npcLayer = sLayerMgr->GetLayerForNPC(player->GetMapId(), cObj->GetGUID());
                 if (playerLayer != npcLayer)
                     return false;
             }
@@ -1800,7 +1798,7 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
         // GO layering: Hide GameObjects on a different layer than the player
         if (Player const* player = ToPlayer())
         {
-            if (sPartitionMgr->IsGOLayeringEnabled())
+            if (sLayerMgr->IsGOLayeringEnabled())
             {
                 // Transports are always visible (ships, zeppelins, elevators)
                 bool isAlwaysVisible = goObj->IsTransport() || goObj->GetGoType() == GAMEOBJECT_TYPE_TRANSPORT
@@ -1808,10 +1806,8 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
 
                 if (!isAlwaysVisible)
                 {
-                    uint32 playerLayer = 0;
-                    uint32 goLayer = 0;
-                    sPartitionMgr->GetPlayerAndGOLayer(player->GetMapId(), player->GetZoneId(),
-                        player->GetGUID(), goObj->GetGUID(), playerLayer, goLayer);
+                    uint32 playerLayer = player->GetLayerIdCached(player->GetMap());
+                    uint32 goLayer = sLayerMgr->GetLayerForGO(player->GetMapId(), goObj->GetGUID());
                     if (playerLayer != goLayer)
                         return false;
                 }
@@ -1833,7 +1829,7 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
         {
             viewpoint = thisPlayer->GetSeer();
 
-            if (sPartitionMgr->IsNPCLayeringEnabled())
+            if (sLayerMgr->IsNPCLayeringEnabled())
             {
                 if (Corpse const* corpseObj = obj->ToCorpse())
                 {
@@ -1841,9 +1837,8 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
                     if (ownerGuid && ownerGuid.IsPlayer())
                     {
                         uint32 mapId = thisPlayer->GetMapId();
-                        uint32 zoneId = thisPlayer->GetZoneId();
-                        auto [playerLayer, ownerLayer] = sPartitionMgr->GetLayersForTwoPlayers(
-                            mapId, zoneId, thisPlayer->GetGUID(), ownerGuid);
+                        auto [playerLayer, ownerLayer] = sLayerMgr->GetLayersForTwoPlayers(
+                            mapId, thisPlayer->GetGUID(), ownerGuid);
                         if (playerLayer != ownerLayer)
                             return false;
                     }
@@ -1876,15 +1871,14 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
             // our additional checks
             if (Unit const* target = obj->ToUnit())
             {
-                if (sPartitionMgr->IsNPCLayeringEnabled())
+                if (sLayerMgr->IsNPCLayeringEnabled())
                 {
                     ObjectGuid ownerGuid = target->GetOwnerGUID();
                     if (ownerGuid && ownerGuid.IsPlayer() && ownerGuid != thisPlayer->GetGUID())
                     {
                         uint32 mapId = thisPlayer->GetMapId();
-                        uint32 zoneId = thisPlayer->GetZoneId();
-                        auto [playerLayer, ownerLayer] = sPartitionMgr->GetLayersForTwoPlayers(
-                            mapId, zoneId, thisPlayer->GetGUID(), ownerGuid);
+                        auto [playerLayer, ownerLayer] = sLayerMgr->GetLayersForTwoPlayers(
+                            mapId, thisPlayer->GetGUID(), ownerGuid);
                         if (playerLayer != ownerLayer)
                             return false;
                     }
@@ -1954,19 +1948,18 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
     }
 
     // Map Partitioning - Layering visibility check
-    if (sPartitionMgr->IsLayeringEnabled())
+    if (sLayerMgr->IsLayeringEnabled())
     {
         if (IsPlayer() && obj->IsPlayer())
         {
-            // Only check if players are in the same map and zone
-            if (((Player const*)this)->GetMapId() == ((Player const*)obj)->GetMapId() &&
-                ((Player const*)this)->GetZoneId() == ((Player const*)obj)->GetZoneId())
+            // Only check if players are in the same map
+            Player const* thisPlayer = ToPlayer();
+            Player const* otherPlayer = obj->ToPlayer();
+            if (thisPlayer && otherPlayer &&
+                thisPlayer->GetMapId() == otherPlayer->GetMapId())
             {
-                uint32 mapId = ((Player const*)this)->GetMapId();
-                uint32 zoneId = ((Player const*)this)->GetZoneId();
-                
-                // Use combined lookup to acquire lock only once (performance optimization)
-                auto [layer1, layer2] = sPartitionMgr->GetLayersForTwoPlayers(mapId, zoneId, GetGUID(), obj->GetGUID());
+                uint32 layer1 = thisPlayer->GetLayerIdCached(thisPlayer->GetMap());
+                uint32 layer2 = otherPlayer->GetLayerIdCached(otherPlayer->GetMap());
                 
                 // If layers are different, they cannot see each other
                 // Logic: STRICT separation. Layer X only sees Layer X.

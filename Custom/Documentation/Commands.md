@@ -141,6 +141,31 @@ Displays all active challenge modes on your character. To start challenges, visi
 | `queue status` | | Check your current queue status. |
 | `queue qstatus` | | Alias for queue status. |
 
+### System: GPS Position Info
+*Command:* `.gps`
+
+Shows detailed position information including:
+- Map ID, Zone ID, Area ID
+- X/Y/Z coordinates and orientation
+- Grid and cell coordinates
+- Phase mask and instance ID
+- **Partition ID** (when map partitioning is enabled)
+- **Layer ID** (when layering is enabled)
+
+*Note: This command is available to all players for debugging their position.*
+
+### System: Map Partitioning & Layering
+*Command:* `.dcpartition` (Alias: `.dc partition`)
+
+| Subcommand | Arguments | Description |
+| :--- | :--- | :--- |
+| `status` | | View partition and layer info for your current map. |
+| `layer` | `<id>` | Switch to a specific layer (bypasses cooldown if GM). |
+| `diag` | `<on\|off\|status>` | Toggle runtime diagnostics for debugging. |
+| `config` | | Display partition and layer configuration settings. |
+
+*Note: Layer switching has a cooldown that escalates with frequent use (1-10 minutes).*
+
 ### System: Guild Housing
 *Command:* `.guildhouse` (Alias: `.gh`)
 
@@ -421,7 +446,7 @@ Performance and stress testing tools for diagnosing server performance issues. M
 | `playersim` | `[playerCount] [includeCore=1|0] [includeVault=1|0]` | Simulate player counts with optional core/vault queries. |
 | `stress` | `[baseCount]` | Run heavy load simulations. |
 | `dbasync` | `[queries] [concurrency]` | Test async DB burst throughput. |
-| `partition` | `[iterations] [detailed] [persist|db] [filters...]` | Layer/partition microbenchmarks. Filters: partition, mixed, relocation, layering, boundary, density, migration, overflow, npc, lookup. `persist` enables DB-backed layer persistence during the test (off by default). |
+| `partition` | `[iterations] [detailed] [persist|db] [filters...]` | Layer/partition microbenchmarks. Filters: partition, mixed, relocation, layering, boundary, density, migration, overflow, npc, lookup, layercache, boundarygrid, preload. `persist` enables DB-backed layer persistence during the test (off by default). |
 | `path` | `[iterations]` | Test pathfinding performance (requires in-game player). |
 | `cpu` | `[iterations]` | Run CPU hot-path benchmark. |
 | `mysql` | | Print MySQL connection and performance status. |

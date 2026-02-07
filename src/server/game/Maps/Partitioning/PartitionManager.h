@@ -18,10 +18,13 @@
 #ifndef AC_PARTITION_MANAGER_H
 #define AC_PARTITION_MANAGER_H
 
+#include "DatabaseEnvFwd.h"
 #include "SharedDefines.h"
 #include "MapPartition.h"
 #include "PartitionRelocationTxn.h"
+#include "PartitionConstants.h"
 #include "ObjectGuid.h"
+#include <array>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -115,144 +118,54 @@ public:
     // Zone exclusion - zones where partitioning is disabled (e.g., cities)
     bool IsZoneExcluded(uint32_t zoneId) const;
 
-    // Layering support (for high-population areas) - DISABLED by default
-    bool IsLayeringEnabled() const;
-    uint32_t GetLayerCapacity() const;
-    uint32_t GetLayerMax() const;
+    // Runtime diagnostics
     bool IsRuntimeDiagnosticsEnabled() const;
-    void SetRuntimeDiagnosticsEnabled(bool enabled);
-    bool ShouldEmitRegenMetrics() const;
-    uint64 GetRuntimeDiagnosticsRemainingMs() const;
-    uint32_t GetLayerForPlayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid) const;
-    uint32 GetPlayerLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid) const; // Back-compat alias
-    uint32_t GetLayerCount(uint32_t mapId, uint32_t zoneId) const;
-    std::vector<uint32> GetLayerIds(uint32 mapId, uint32 zoneId) const;
-    void GetActiveLayerIds(uint32 mapId, uint32 zoneId, std::vector<uint32>& out) const;
-    using LayerCountByZone = std::map<uint32, std::map<uint32, uint32>>;
-    void GetNPCLayerCountsByZone(uint32 mapId, LayerCountByZone& out) const;
-    void GetGOLayerCountsByZone(uint32 mapId, LayerCountByZone& out) const;
-    void GetLayerPlayerCountsByLayer(uint32 mapId, uint32 zoneId, std::map<uint32, uint32>& out) const;
-    bool HasPlayersInZone(uint32 mapId, uint32 zoneId) const;
-    bool SkipCloneSpawnsIfNoPlayers() const;
-    bool EmitPerLayerCloneMetrics() const;
-    void AssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid, uint32_t layerId);
-    void RemovePlayerFromLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid);
-    void AutoAssignPlayerToLayer(uint32_t mapId, uint32_t zoneId, ObjectGuid const& playerGuid);
-    // Thread-safe: Force remove player from all layers (for logout)
-    void ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGuid);
-    // Thread-safe: Get layers for two players in one call (for visibility check)
-    std::pair<uint32_t, uint32_t> GetLayersForTwoPlayers(uint32_t mapId, uint32_t zoneId, 
-        ObjectGuid const& player1, ObjectGuid const& player2) const;
-    // Thread-safe: Get player + NPC layer with a single lock
-    void GetPlayerAndNPCLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid,
-        ObjectGuid const& npcGuid, uint32& outPlayerLayer, uint32& outNpcLayer) const;
-    // Thread-safe: Get player + GO layer with a single lock
-    void GetPlayerAndGOLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid,
-        ObjectGuid const& goGuid, uint32& outPlayerLayer, uint32& outGoLayer) const;
 
-    // Cleanup methods
-    void CleanupStaleRelocations();    // Thread-safe: Remove timed-out relocations
-    void CleanupExpiredOverrides();    // Thread-safe: Remove expired partition overrides
-    void CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, std::unordered_set<ObjectGuid> const& validGuids);
-    void PeriodicCacheSweep();         // Thread-safe: Sweep all accumulated caches (called ~1/sec)
-
-    // Persistent layer assignment (Feature 1)
-    void LoadPersistentLayerAssignment(ObjectGuid const& playerGuid);
-    void SavePersistentLayerAssignment(ObjectGuid const& playerGuid, uint32 mapId, uint32 zoneId, uint32 layerId);
-
-    // Cross-layer party communication (Feature 2)
-    uint32 GetPartyTargetLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid);
-    
-    // Player-Initiated Layer Switching (Phase 5 - WoW-style)
-    // Check if player can switch layers (combat check, cooldown, death check)
-    bool CanSwitchLayer(ObjectGuid const& playerGuid) const;
-    // Get remaining cooldown in milliseconds
-    uint32 GetLayerSwitchCooldownMs(ObjectGuid const& playerGuid) const;
-    // Switch player to target layer (for .dc partition join command)
-    bool SwitchPlayerToLayer(ObjectGuid const& playerGuid, uint32 targetLayer, std::string const& reason);
-
-    // NPC Layering (Feature 3)
-    bool IsNPCLayeringEnabled() const;
-    void AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& npcGuid, uint32 layerId);
-    void RemoveNPCFromLayer(ObjectGuid const& npcGuid);
-    uint32 GetLayerForNPC(uint32 mapId, uint32 zoneId, ObjectGuid const& npcGuid) const;
-    uint32 GetLayerForNPC(ObjectGuid const& npcGuid) const; // Back-compat overload
-    uint32 GetDefaultLayerForZone(uint32 mapId, uint32 zoneId, uint64 seed) const;
-
-    // GameObject Layering (Feature 3b)
-    bool IsGOLayeringEnabled() const;
-    void AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& goGuid, uint32 layerId);
-    void RemoveGOFromLayer(ObjectGuid const& goGuid);
-    uint32 GetLayerForGO(uint32 mapId, uint32 zoneId, ObjectGuid const& goGuid) const;
-    uint32 GetLayerForGO(ObjectGuid const& goGuid) const;
-
-    // Dynamic Partition Resizing (Feature 4)
-    // Returns density metric for a partition (players + creatures normalized by cell size)
-    float GetPartitionDensity(uint32 mapId, uint32 partitionId) const;
-    // Evaluates if any partitions need splitting/merging based on density thresholds
-    void EvaluatePartitionDensity(uint32 mapId);
-    // Apply a new partition count and rebuild layout/object assignments
-    void ResizeMapPartitions(uint32 mapId, uint32 newCount, char const* reason);
-    // Configuration thresholds for split/merge
-    float GetDensitySplitThreshold() const;
-    float GetDensityMergeThreshold() const;
-
-    // Adjacent Partition Pre-caching (Feature 5)
-    // Checks if player is approaching a partition boundary and queues precache
+    // Adjacent partition pre-caching
     void CheckBoundaryApproach(ObjectGuid const& playerGuid, uint32 mapId, float x, float y, float dx, float dy);
-    // Process pending precache requests (called from worker thread)
-    void ProcessPrecacheQueue(uint32 mapId);
-    
-    // Phase 6: Layer Rebalancing
-    // Evaluate and perform layer rebalancing if needed
-    void EvaluateLayerRebalancing(uint32 mapId, uint32 zoneId);
-    // Get player distribution across layers for a zone
-    std::vector<uint32> GetLayerPlayerCounts(uint32 mapId, uint32 zoneId) const;
-    // Check if rebalancing is needed based on configured thresholds
-    bool ShouldRebalanceLayers(std::vector<uint32> const& playerCounts) const;
-    // Migrate players from sparse layers to denser ones
-    void ConsolidateLayers(uint32 mapId, uint32 zoneId, std::vector<uint32> const& targetDistribution);
-    
-    // Rebalancing configuration
-    struct LayerRebalancingConfig
-    {
-        bool enabled{true};
-        uint32 checkIntervalMs{300000};  // Check every 5 minutes
-        uint32 minPlayersPerLayer{5};    // Minimum players to keep a layer alive
-        float imbalanceThreshold{0.3f};  // Trigger if coefficient of variation > 30%
-        uint32 migrationBatchSize{10};   // Max players to move per cycle
-    };
-    
-    // Rebalancing metrics for monitoring
-    struct RebalancingMetrics
-    {
-        std::atomic<uint32> totalRebalances{0};
-        std::atomic<uint32> playersMigrated{0};
-        std::atomic<uint32> layersConsolidated{0};
-    };
-    
-    LayerRebalancingConfig const& GetRebalancingConfig() const { return _rebalancingConfig; }
-    RebalancingMetrics const& GetRebalancingMetrics() const { return _rebalancingMetrics; }
+
+    // Layering support moved to LayerManager.h
 
 private:
     PartitionManager() = default;
 
-    void SyncControlledToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& playerGuid, uint32 layerId);
-    void ReassignNPCsForNewLayer(uint32 mapId, uint32 zoneId, uint32 layerId);
-    void ReassignGOsForNewLayer(uint32 mapId, uint32 zoneId, uint32 layerId);
+    void HandlePartitionOwnershipLoad(PreparedQueryResult result);
+    std::shared_mutex& GetBoundaryLock(uint32 mapId) const;
+    std::shared_mutex& GetVisibilityLock(uint32 mapId) const;
+    std::vector<std::unique_lock<std::shared_mutex>> LockAllBoundaryStripes() const;
+    std::vector<std::unique_lock<std::shared_mutex>> LockAllVisibilityStripes() const;
+
+    // Periodic maintenance
+    void CleanupStaleRelocations();
+    void CleanupExpiredOverrides();
+    void CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, std::unordered_set<ObjectGuid> const& validGuids);
+    void PeriodicCacheSweep();
+
+    // Dynamic partition resizing
+    float GetPartitionDensity(uint32 mapId, uint32 partitionId) const;
+    void ResizeMapPartitions(uint32 mapId, uint32 newCount, char const* reason);
+    void EvaluatePartitionDensity(uint32 mapId);
+    float GetDensitySplitThreshold() const;
+    float GetDensityMergeThreshold() const;
+
+    // Adjacent partition pre-caching
+    void ProcessPrecacheQueue(uint32 mapId);
 
     // Fine-grained locks for different data structures
     mutable std::shared_mutex _partitionLock;     // Protects _partitionsByMap, _partitionedMaps, _gridLayouts
-    mutable std::shared_mutex _boundaryLock;      // Protects _boundaryObjects (read/write optimized)
-    mutable std::shared_mutex _layerLock;         // Protects _layers, _playerLayers (read/write optimized)
-    mutable std::mutex _partyLayerCacheLock;      // Protects party target layer cache
-    mutable std::mutex _layerPairCacheLock;       // Protects layer pair cache
+    static constexpr size_t kBoundaryLockStripes = 16;
+    mutable std::array<std::shared_mutex, kBoundaryLockStripes> _boundaryLocks; // Protects _boundaryObjects (striped)
+    // _layerLock moved to LayerManager
+    // _partyLayerCacheLock moved to LayerManager
+    // _layerPairCacheLock moved to LayerManager
     mutable std::mutex _excludedCacheLock;        // Protects zone exclusion cache
     mutable std::mutex _relocationLock;           // Protects _relocations
     mutable std::shared_mutex _overrideLock;       // Protects _partitionOverrides, _partitionOwnership
-    mutable std::shared_mutex _visibilityLock;      // Protects _visibilitySets (read/write optimized)
+    static constexpr size_t kVisibilityLockStripes = 16;
+    mutable std::array<std::shared_mutex, kVisibilityLockStripes> _visibilityLocks; // Protects _visibilitySets (striped)
     mutable std::mutex _handoffLock;              // Protects handoff counts
     mutable std::mutex _precacheLock;             // Protects precache queue
+    // _pendingLayerAssignmentLock moved to LayerManager
 
     // Cached grid layouts for each map (computed once at Initialize)
     std::unordered_map<uint32, PartitionGridLayout> _gridLayouts;
@@ -279,6 +192,8 @@ private:
     };
     mutable std::unordered_map<ObjectGuid::LowType, PartitionOverride> _partitionOverrides;
     std::unordered_map<ObjectGuid::LowType, PartitionOwnership> _partitionOwnership;
+
+    // _pendingLayerAssignments moved to LayerManager
     // Map -> PartitionId -> Set of boundary object GUIDs (legacy)
     std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_set<ObjectGuid>>> _boundaryObjects;
     
@@ -300,8 +215,11 @@ private:
         std::unordered_map<ObjectGuid::LowType, uint64> objectCellMap;
         
         static uint64 GetCellKey(float x, float y) {
-            uint32 cx = static_cast<uint32>(std::max(0.0f, x) / CELL_SIZE);
-            uint32 cy = static_cast<uint32>(std::max(0.0f, y) / CELL_SIZE);
+            // Offset by MAP_HALFSIZE (~17066) to ensure all world coordinates hash to positive cells.
+            // Without offset, all negative coords collapse to cell 0, degrading spatial queries to O(N).
+            static constexpr float COORD_OFFSET = 17066.6656f; // MAP_HALFSIZE
+            uint32 cx = static_cast<uint32>((x + COORD_OFFSET) / CELL_SIZE);
+            uint32 cy = static_cast<uint32>((y + COORD_OFFSET) / CELL_SIZE);
             return (static_cast<uint64>(cx) << 32) | cy;
         }
         
@@ -395,140 +313,14 @@ private:
     // Map -> Partition -> Spatial Grid for boundary objects
     std::unordered_map<uint32, std::unordered_map<uint32, SpatialHashGrid>> _boundarySpatialGrids;
     
-    // Layering data: Map -> Zone -> Layer -> Set of player GUIDs
-    std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_set<ObjectGuid::LowType>>>> _layers;
-    // Player -> Layer assignment: PlayerGUID -> {mapId, zoneId, layerId}
-    struct LayerAssignment
-    {
-        uint32 mapId = 0;
-        uint32 zoneId = 0;
-        uint32 layerId = 0;
-        uint32 entry = 0;
-    };
-    std::unordered_map<ObjectGuid::LowType, LayerAssignment> _playerLayers;
+    // Layering data moved to LayerManager.h
 
-    // Lock-free layer assignments for hot read path (Phase 1 optimization)
-    // Uses atomic uint64 to pack mapId (16 bits), zoneId (16 bits), layerId (32 bits)
-    // Read operations can use atomic load without acquiring _layerLock
-    struct AtomicLayerAssignment
-    {
-        std::atomic<uint64> packed{0};  // [mapId:16][zoneId:16][layerId:32]
-        
-        void Store(uint32 mapId, uint32 zoneId, uint32 layerId) {
-            uint64 value = (static_cast<uint64>(mapId & 0xFFFF) << 48) |
-                          (static_cast<uint64>(zoneId & 0xFFFF) << 32) |
-                          static_cast<uint64>(layerId);
-            packed.store(value, std::memory_order_release);
-        }
-        
-        void Load(uint32& mapId, uint32& zoneId, uint32& layerId) const {
-            uint64 value = packed.load(std::memory_order_acquire);
-            mapId = static_cast<uint32>((value >> 48) & 0xFFFF);
-            zoneId = static_cast<uint32>((value >> 32) & 0xFFFF);
-            layerId = static_cast<uint32>(value & 0xFFFFFFFF);
-        }
-        
-        void Clear() {
-            packed.store(0, std::memory_order_release);
-        }
-        
-        bool IsValid() const {
-            return packed.load(std::memory_order_relaxed) != 0;
-        }
-    };
-    std::unordered_map<ObjectGuid::LowType, AtomicLayerAssignment> _atomicPlayerLayers;
-
-    struct PartyTargetLayerCacheEntry
-    {
-        uint32 mapId = 0;
-        uint32 zoneId = 0;
-        uint32 layerId = 0;
-        uint64 expiresMs = 0;
-    };
-    std::unordered_map<ObjectGuid::LowType, PartyTargetLayerCacheEntry> _partyTargetLayerCache;
-
-    struct LayerPairCacheKey
-    {
-        uint32 mapId = 0;
-        uint32 zoneId = 0;
-        ObjectGuid::LowType a = 0;
-        ObjectGuid::LowType b = 0;
-
-        bool operator==(LayerPairCacheKey const& other) const
-        {
-            return mapId == other.mapId && zoneId == other.zoneId && a == other.a && b == other.b;
-        }
-    };
-
-    struct LayerPairCacheKeyHash
-    {
-        size_t operator()(LayerPairCacheKey const& key) const
-        {
-            size_t h1 = std::hash<uint32>{}(key.mapId);
-            size_t h2 = std::hash<uint32>{}(key.zoneId);
-            size_t h3 = std::hash<ObjectGuid::LowType>{}(key.a);
-            size_t h4 = std::hash<ObjectGuid::LowType>{}(key.b);
-            return (((h1 * 1315423911u) ^ h2) * 2654435761u) ^ (h3 + (h4 << 1));
-        }
-    };
-
-    struct LayerPairCacheEntry
-    {
-        uint32 layer1 = 0;
-        uint32 layer2 = 0;
-        uint64 expiresMs = 0;
-    };
-    mutable std::unordered_map<LayerPairCacheKey, LayerPairCacheEntry, LayerPairCacheKeyHash> _layerPairCache;
-
-    // NPC Layering data (Feature 3)
-    std::unordered_map<ObjectGuid::LowType, LayerAssignment> _npcLayers;
-
-    // GameObject Layering data (Feature 3b)
-    std::unordered_map<ObjectGuid::LowType, LayerAssignment> _goLayers;
-
+    // NPC Layering data moved to LayerManager
+    // GameObject Layering data moved to LayerManager
     // Dynamic resize throttling
     std::unordered_map<uint32, uint64> _lastResizeMs;
 
-    // Layer switch cooldown tracking (Phase 5 - WoW-style)
-    // Escalating cooldowns: 1min -> 2min -> 5min -> 10min
-    struct LayerSwitchCooldown
-    {
-        uint64 lastSwitchMs = 0;       // Timestamp of last switch
-        uint32 switchCount = 0;        // Number of switches in cooldown window
-        static constexpr uint64 COOLDOWN_WINDOW_MS = 3600000;  // 1 hour window
-        static constexpr uint32 BASE_COOLDOWN_MS = 60000;      // 1 minute base
-        
-        uint32 GetCurrentCooldownMs() const {
-            if (switchCount == 0) return 0;
-            if (switchCount == 1) return BASE_COOLDOWN_MS;          // 1 min
-            if (switchCount == 2) return BASE_COOLDOWN_MS * 2;      // 2 min
-            if (switchCount <= 5) return BASE_COOLDOWN_MS * 5;      // 5 min
-            return BASE_COOLDOWN_MS * 10;                           // 10 min max
-        }
-        
-        bool CanSwitch(uint64 nowMs) const {
-            if (switchCount == 0) return true;
-            return (nowMs - lastSwitchMs) >= GetCurrentCooldownMs();
-        }
-        
-        uint32 GetRemainingCooldownMs(uint64 nowMs) const {
-            if (switchCount == 0) return 0;
-            uint64 elapsed = nowMs - lastSwitchMs;
-            uint32 cooldown = GetCurrentCooldownMs();
-            return elapsed >= cooldown ? 0 : static_cast<uint32>(cooldown - elapsed);
-        }
-        
-        void RecordSwitch(uint64 nowMs) {
-            // Reset counter if outside cooldown window
-            if (switchCount > 0 && (nowMs - lastSwitchMs) > COOLDOWN_WINDOW_MS)
-                switchCount = 0;
-            
-            lastSwitchMs = nowMs;
-            ++switchCount;
-        }
-    };
-    mutable std::mutex _cooldownLock;
-    std::unordered_map<ObjectGuid::LowType, LayerSwitchCooldown> _layerSwitchCooldowns;
+    // Layer switch cooldown tracking moved to LayerManager
 
     struct PrecacheRequest
     {
@@ -546,34 +338,19 @@ private:
     // Layout epoch tracking for fast per-thread layout caching
     std::unordered_map<uint32, uint64> _layoutEpochByMap;
 
-    // Throttle for periodic cleanup (atomic for thread safety across map threads)
-    std::atomic<uint64> _lastCleanupMs{0};
-
     // Helper to get cached grid layout (lock must be held)
     PartitionGridLayout const* GetGridLayout(uint32 mapId) const;
     
     // Helper to compute grid layout from partition count
     PartitionGridLayout ComputeGridLayout(uint32 count) const;
     
-    // Helper to cleanup empty layer containers (lock must be held)
-    void CleanupEmptyLayers(uint32 mapId, uint32 zoneId, uint32 layerId);
-
-    std::atomic<bool> _layerPersistenceEnabled{true};
-
 public:
-    // Back-compat helper for scripts
-    void SetLayerPersistenceEnabled(bool enabled) { _layerPersistenceEnabled.store(enabled, std::memory_order_relaxed); }
-    bool IsLayerPersistenceEnabled() const { return _layerPersistenceEnabled.load(std::memory_order_relaxed); }
     PartitionGridLayout const* GetCachedLayout(uint32 mapId) const;
 
 private:
-    // Phase 6: Layer Rebalancing private members
-    LayerRebalancingConfig _rebalancingConfig;
-    mutable RebalancingMetrics _rebalancingMetrics;
-    std::unordered_map<uint64, uint64> _lastRebalanceCheck;  // (mapId<<32|zoneId) -> timestampMs
-    
     std::atomic<bool> _runtimeDiagnostics{false};
     std::atomic<uint64> _runtimeDiagnosticsUntilMs{0};
+    std::atomic<uint64> _lastCleanupMs{0};
 };
 
 #define sPartitionMgr PartitionManager::instance()

@@ -22,7 +22,6 @@
 #include "Player.h"
 #include "WorldSession.h"
 #include "Metric.h"
-#include <unordered_set>
 
 PartitionUpdateWorker::PartitionUpdateWorker(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff)
     : _map(map), _partitionId(partitionId), _diff(diff), _sDiff(s_diff)
@@ -43,15 +42,6 @@ void PartitionUpdateWorker::Execute()
 
     // Flush batched boundary operations (1 lock per batch instead of per-entity)
     FlushBoundaryBatches();
-
-    if (!_boundaryValidGuids.empty())
-    {
-        std::unordered_set<ObjectGuid> validSet;
-        validSet.reserve(_boundaryValidGuids.size());
-        for (auto const& guid : _boundaryValidGuids)
-            validSet.insert(guid);
-        sPartitionMgr->CleanupBoundaryObjects(_map.GetId(), _partitionId, validSet);
-    }
     RecordStats();
 
     _map.SetActivePartitionContext(0);
@@ -92,22 +82,29 @@ void PartitionUpdateWorker::UpdatePlayers()
 
     // Update each player in this partition
     uint32 playerUpdateDiff = _sDiff ? _sDiff : _diff;
+    bool markNearbyCells = _map.ShouldMarkNearbyCells();
     for (Player* player : *bucket)
     {
-        _boundaryValidGuids.push_back(player->GetGUID());
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY()))
         {
             ++_boundaryPlayerCount;
             _batchPosUpdates.push_back({player->GetGUID(), player->GetPositionX(), player->GetPositionY()});
+            if (!player->IsBoundaryTracked())
+                player->SetBoundaryTracked(true);
         }
         else
         {
-            // Player left boundary zone - unregister to prevent memory leak
-            _batchUnregisters.push_back(player->GetGUID());
+            if (player->IsBoundaryTracked())
+            {
+                // Player left boundary zone - unregister to prevent memory leak
+                _batchUnregisters.push_back(player->GetGUID());
+                player->SetBoundaryTracked(false);
+            }
         }
 
         player->Update(playerUpdateDiff);
-        _map.MarkNearbyCellsOf(player);
+        if (markNearbyCells)
+            _map.MarkNearbyCellsOf(player);
 
         // If player is using far sight, update viewpoint
         if (WorldObject* viewPoint = player->GetViewpoint())
@@ -115,12 +112,18 @@ void PartitionUpdateWorker::UpdatePlayers()
             if (Creature* viewCreature = viewPoint->ToCreature())
             {
                 if (viewCreature->IsInWorld())
-                    _map.MarkNearbyCellsOf(viewCreature);
+                {
+                    if (markNearbyCells)
+                        _map.MarkNearbyCellsOf(viewCreature);
+                }
             }
             else if (DynamicObject* viewObject = viewPoint->ToDynObject())
             {
                 if (viewObject->IsInWorld())
-                    _map.MarkNearbyCellsOf(viewObject);
+                {
+                    if (markNearbyCells)
+                        _map.MarkNearbyCellsOf(viewObject);
+                }
             }
         }
 
@@ -146,6 +149,7 @@ void PartitionUpdateWorker::UpdatePlayers()
 
 void PartitionUpdateWorker::UpdateNonPlayerObjects()
 {
+    auto listLock = _map.AcquirePartitionedUpdateListReadLock();
     auto& partitionedLists = _map.GetPartitionedUpdatableObjectLists();
     auto listIt = partitionedLists.find(_partitionId);
     if (listIt == partitionedLists.end())
@@ -155,10 +159,14 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
     
     for (WorldObject* obj : objectList)
     {
-        if (!obj || !obj->IsInWorld())
+        if (!obj)
             continue;
 
-        _boundaryValidGuids.push_back(obj->GetGUID());
+        if (!obj->IsInWorld())
+        {
+            _batchUnregisters.push_back(obj->GetGUID());
+            continue;
+        }
 
         if (obj->ToCreature())
             ++_creatureCount;
@@ -167,11 +175,17 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         {
             ++_boundaryObjectCount;
             _batchPosUpdates.push_back({obj->GetGUID(), obj->GetPositionX(), obj->GetPositionY()});
+            if (!obj->IsBoundaryTracked())
+                obj->SetBoundaryTracked(true);
         }
         else
         {
-            // Object left boundary zone - unregister to prevent memory leak
-            _batchUnregisters.push_back(obj->GetGUID());
+            if (obj->IsBoundaryTracked())
+            {
+                // Object left boundary zone - unregister to prevent memory leak
+                _batchUnregisters.push_back(obj->GetGUID());
+                obj->SetBoundaryTracked(false);
+            }
         }
 
         obj->Update(_diff);
