@@ -45,6 +45,7 @@ enum PlayerHook
     PLAYERHOOK_ON_AFTER_SPEC_SLOT_CHANGED,
     PLAYERHOOK_ON_BEFORE_UPDATE,
     PLAYERHOOK_ON_UPDATE,
+    PLAYERHOOK_ON_AFTER_UPDATE,
     PLAYERHOOK_ON_MONEY_CHANGED,
     PLAYERHOOK_ON_BEFORE_LOOT_MONEY,
     PLAYERHOOK_ON_GIVE_EXP,
@@ -55,7 +56,12 @@ enum PlayerHook
     PLAYERHOOK_ON_DUEL_REQUEST,
     PLAYERHOOK_ON_DUEL_START,
     PLAYERHOOK_ON_DUEL_END,
+    PLAYERHOOK_ON_CHAT,
     PLAYERHOOK_ON_BEFORE_SEND_CHAT_MESSAGE,
+    PLAYERHOOK_ON_CHAT_WITH_RECEIVER,
+    PLAYERHOOK_ON_CHAT_WITH_GROUP,
+    PLAYERHOOK_ON_CHAT_WITH_GUILD,
+    PLAYERHOOK_ON_CHAT_WITH_CHANNEL,
     PLAYERHOOK_ON_EMOTE,
     PLAYERHOOK_ON_TEXT_EMOTE,
     PLAYERHOOK_ON_SPELL_CAST,
@@ -263,6 +269,7 @@ public:
 
     // Called for player::update
     virtual void OnPlayerBeforeUpdate(Player* /*player*/, uint32 /*p_time*/) { }
+    virtual void OnPlayerAfterUpdate(Player* /*player*/, uint32 /*p_time*/) { }
     virtual void OnPlayerUpdate(Player* /*player*/, uint32 /*p_time*/) { }
 
     // Called when a player's money is modified (before the modification is done)

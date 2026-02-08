@@ -58,6 +58,8 @@ CMakeLists.txt.user
 #
 /.settings/
 /.externalToolBuilders/*
+/.vs
+/out
 # exclude in all levels
 nbproject/
 .sync.ffs_db
@@ -117,3 +119,5 @@ Custom/Custom feature SQLs/acore_chars.sql
 Custom/Retail_Reference/*
 Custom/Client patches needed/patch-5.MPQ
 Custom/CSV DBC/Shadowlands_Imports/COMPLETE_ANALYSIS.md
+.cache
+compile_commands.json

@@ -678,6 +678,7 @@ Allow.IP.Based.Action.Logging = 0
 
 Appender.Console=1,4,0,"1 9 3 6 5 8"
 Appender.Server=2,5,0,Server.log,w
+Appender.Playerbots=2,5,0,Playerbots.log,w
 # Appender.GM=2,5,15,gm_%s.log
 Appender.Errors=2,2,0,Errors.log,w
 # DarkChaos custom systems (DC scripts/modules)
@@ -728,6 +729,7 @@ Logger.mythic=4,DCConsole Server DC
 Logger.hlbg=4,DCConsole Server DC
 Logger.seasonal=4,DCConsole Server DC
 Logger.spells.scripts=2,Console Errors
+Logger.playerbots=5,Console Playerbots
 #Logger.achievement=4,Console Server
 #Logger.addon=4,Console Server
 #Logger.auctionHouse=4,Console Server
