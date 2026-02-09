@@ -58,24 +58,28 @@ void VisibleNotifier::SendToSelf()
         }
     }
 
-    VisibleWorldObjectsMap* visibleWorldObjects = i_player.GetObjectVisibilityContainer().GetVisibleWorldObjectsMap();
-    for (VisibleWorldObjectsMap::iterator itr = visibleWorldObjects->begin(); itr != visibleWorldObjects->end();)
+    std::vector<ObjectGuid> visibleGuids;
+    i_player.GetObjectVisibilityContainer().GetVisibleWorldObjectGuids(visibleGuids);
+    for (ObjectGuid const& guid : visibleGuids)
     {
-        WorldObject* obj = itr->second;
-        if (!i_player.IsWorldObjectOutOfSightRange(obj)
-            || i_player.CanSeeOrDetect(obj, false, true))
+        WorldObject* obj = ObjectAccessor::GetWorldObject(i_player, guid);
+        if (!obj)
         {
-            ++itr;
+            i_player.GetObjectVisibilityContainer().EraseVisibleWorldObjectByGuid(guid);
             continue;
         }
 
-        i_data.AddOutOfRangeGUID(obj->GetGUID());
+        if (!i_player.IsWorldObjectOutOfSightRange(obj)
+            || i_player.CanSeeOrDetect(obj, false, true))
+            continue;
+
+        i_data.AddOutOfRangeGUID(guid);
 
         if (Player* objPlayer = obj->ToPlayer())
             objPlayer->UpdateVisibilityOf(&i_player);
 
         // Clean up references
-        itr = i_player.GetObjectVisibilityContainer().UnlinkVisibilityFromPlayer(obj, itr);
+        i_player.GetObjectVisibilityContainer().UnlinkWorldObjectVisibility(obj);
     }
 
     if (!i_data.HasData())
@@ -196,6 +200,23 @@ void MessageDistDeliverer::Visit(VisiblePlayersMap const& m)
             continue;
 
         // @todo: Might not need this check anymore
+        if (skipped_receiver == target)
+            continue;
+
+        target->SendDirectMessage(i_message);
+    }
+}
+
+void MessageDistDeliverer::Visit(std::vector<Player*> const& players)
+{
+    for (Player const* target : players)
+    {
+        if (!target)
+            continue;
+
+        if (i_distSq != 0.0f && target->m_seer->GetExactDist2dSq(i_source) > i_distSq)
+            continue;
+
         if (skipped_receiver == target)
             continue;
 

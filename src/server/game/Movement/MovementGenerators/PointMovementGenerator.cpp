@@ -129,7 +129,7 @@ bool PointMovementGenerator<T>::DoUpdate(T* unit, uint32 /*diff*/)
 
     unit->AddUnitState(UNIT_STATE_ROAMING_MOVE);
 
-    if (id != EVENT_CHARGE_PREPATH && i_recalculateSpeed && !unit->movespline->Finalized())
+    if (id != EVENT_CHARGE_PREPATH && i_recalculateSpeed && !unit->IsMoveSplineFinalizedSnapshot())
     {
         i_recalculateSpeed = false;
         Movement::MoveSplineInit init(unit);
@@ -171,7 +171,7 @@ bool PointMovementGenerator<T>::DoUpdate(T* unit, uint32 /*diff*/)
         init.Launch();
     }
 
-    return !unit->movespline->Finalized();
+    return !unit->IsMoveSplineFinalizedSnapshot();
 }
 
 template<class T>
@@ -191,7 +191,7 @@ void PointMovementGenerator<T>::DoFinalize(T* unit)
         }
     }
 
-    if (unit->movespline->Finalized())
+    if (unit->IsMoveSplineFinalizedSnapshot())
         MovementInform(unit);
 }
 
@@ -251,7 +251,7 @@ void AssistanceMovementGenerator::Finalize(Unit* unit)
 
 bool EffectMovementGenerator::Update(Unit* unit, uint32)
 {
-    return !unit->movespline->Finalized();
+    return !unit->IsMoveSplineFinalizedSnapshot();
 }
 
 void EffectMovementGenerator::Initialize(Unit*)

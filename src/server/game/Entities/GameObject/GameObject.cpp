@@ -3149,7 +3149,7 @@ bool GameObject::IsUpdateNeeded()
     if (GetMap()->isCellMarked(GetCurrentCell().GetCellCoord().GetId()))
         return true;
 
-    if (!GetObjectVisibilityContainer().GetVisiblePlayersMap().empty())
+    if (!GetObjectVisibilityContainer().VisiblePlayersEmpty())
         return true;
 
     if (IsTransport())

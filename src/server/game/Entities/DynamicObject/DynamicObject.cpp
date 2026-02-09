@@ -138,9 +138,16 @@ bool DynamicObject::CreateDynamicObject(ObjectGuid::LowType guidlow, Unit* caste
 
 void DynamicObject::Update(uint32 p_time)
 {
-    // caster has to be always available and in the same map
-    ASSERT(_caster);
-    ASSERT(_caster->GetMap() == GetMap());
+    // Caster can disappear while the dynobject is still queued for updates.
+    Unit* caster = _caster;
+    if (!caster)
+        caster = ObjectAccessor::GetUnit(*this, GetCasterGUID());
+
+    if (!caster || caster->GetMap() != GetMap())
+    {
+        Remove();
+        return;
+    }
 
     bool expired = false;
 
@@ -171,7 +178,7 @@ void DynamicObject::Update(uint32 p_time)
             {
                 _updateViewerVisibilityTimer = 0;
 
-                if (Player* playerCaster = _caster->ToPlayer())
+                if (Player* playerCaster = caster->ToPlayer())
                     playerCaster->UpdateVisibilityForPlayer();
             }
             else
@@ -248,6 +255,13 @@ void DynamicObject::SetCasterViewpoint(bool updateViewerVisibility)
 
 void DynamicObject::RemoveCasterViewpoint()
 {
+    if (!_caster)
+    {
+        _isViewpoint = false;
+        _oldFarsightGUID.Clear();
+        return;
+    }
+
     if (Player* caster = _caster->ToPlayer())
     {
         caster->SetViewpoint(this, false);
@@ -273,7 +287,9 @@ void DynamicObject::BindToCaster()
 
 void DynamicObject::UnbindFromCaster()
 {
-    ASSERT(_caster);
+    if (!_caster)
+        return;
+
     _caster->_UnregisterDynObject(this);
     _caster = nullptr;
 }

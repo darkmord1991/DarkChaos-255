@@ -304,7 +304,7 @@ bool RandomMovementGenerator<Creature>::DoUpdate(Creature* creature, const uint3
         return true;
     }
 
-    if (creature->movespline->Finalized())
+    if (creature->IsMoveSplineFinalizedSnapshot())
     {
         _nextMoveTime.Update(diff);
         if (_nextMoveTime.Passed())

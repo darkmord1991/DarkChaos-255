@@ -32,6 +32,12 @@ class UpdateRequest;
 class MapUpdater
 {
 public:
+    enum class UpdateRequestType
+    {
+        General,
+        Partition
+    };
+
     MapUpdater();
     ~MapUpdater() = default;
 
@@ -43,16 +49,19 @@ public:
     void schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff,
         std::function<void()> onDone = {});
     void run_tasks_until(std::function<bool()> done);
+    void run_partition_tasks_until(std::function<bool()> done);
     void wait();
     void activate(std::size_t num_threads);
     void deactivate();
     bool activated();
-    void update_finished();
+    void update_finished(UpdateRequestType type);
 
 private:
     void WorkerThread();
     ProducerConsumerQueue<UpdateRequest*> _queue;
+    ProducerConsumerQueue<UpdateRequest*> _partitionQueue;
     std::atomic<int> pending_requests;  // Use std::atomic for pending_requests to avoid lock contention
+    std::atomic<int> pending_partition_requests;
     std::atomic<bool> _cancelationToken;  // Atomic flag for cancellation to avoid race conditions
     std::vector<std::thread> _workerThreads;
     std::mutex _lock; // Mutex and condition variable for synchronization

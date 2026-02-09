@@ -259,7 +259,7 @@ bool WaypointMovementGenerator<Creature>::DoUpdate(Creature* creature, uint32 di
     }
     else
     {
-        if (creature->movespline->Finalized())
+            if (creature->IsMoveSplineFinalizedSnapshot())
         {
             OnArrived(creature);
             return StartMove(creature);

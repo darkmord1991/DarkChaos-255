@@ -528,9 +528,9 @@ bool WorldSession::VerifyMovementInfo(MovementInfo const& movementInfo, Player* 
         return false;
     }
 
-    if (!mover->movespline->Finalized())
+    if (!mover->IsMoveSplineFinalizedSnapshot())
     {
-        if (!mover->movespline->isBoarding() || (opcode != CMSG_FORCE_MOVE_UNROOT_ACK && opcode != CMSG_FORCE_MOVE_ROOT_ACK))
+        if (!mover->IsMoveSplineBoardingSnapshot() || (opcode != CMSG_FORCE_MOVE_UNROOT_ACK && opcode != CMSG_FORCE_MOVE_ROOT_ACK))
             return false;
     }
 

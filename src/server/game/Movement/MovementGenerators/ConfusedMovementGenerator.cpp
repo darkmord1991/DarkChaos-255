@@ -125,7 +125,7 @@ bool ConfusedMovementGenerator<T>::DoUpdate(T* unit, uint32 diff)
         // currently moving, update location
         unit->AddUnitState(UNIT_STATE_CONFUSED_MOVE);
 
-        if (unit->movespline->Finalized())
+        if (unit->IsMoveSplineFinalizedSnapshot())
         {
             i_nextMove = urand(1, MAX_CONF_WAYPOINTS);
             i_nextMoveTime.Reset(urand(600, 1200)); // Guessed

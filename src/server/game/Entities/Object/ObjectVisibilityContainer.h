@@ -21,7 +21,9 @@
 #include "Common.h"
 #include "ObjectGuid.h"
 #include <memory>
+#include <mutex>
 #include <unordered_map>
+#include <vector>
 
 class Player;
 class WorldObject;
@@ -49,10 +51,17 @@ public:
     // These helpers aren't ideal, but needed in a few spots for cleaning up references
     VisibleWorldObjectsMap::iterator UnlinkVisibilityFromPlayer(WorldObject* worldObject, VisibleWorldObjectsMap::iterator itr);
     VisiblePlayersMap::iterator UnlinkVisibilityFromWorldObject(Player* player, VisiblePlayersMap::iterator itr);
+    void UnlinkVisibilityFromWorldObject(Player* player);
 
     // Returns a list of all players who can see us
     VisiblePlayersMap& GetVisiblePlayersMap() { return _visiblePlayersMap; }
     VisiblePlayersMap const& GetVisiblePlayersMap() const { return _visiblePlayersMap; }
+
+    bool VisiblePlayersEmpty() const;
+    size_t VisiblePlayersCount() const;
+    void GetVisiblePlayersSnapshot(std::vector<Player*>& out) const;
+    void GetVisiblePlayerGuids(std::vector<ObjectGuid>& out) const;
+    void EraseVisiblePlayerByGuid(ObjectGuid const& guid) const;
 
     // Returns a list of all worldobjects who we can see
     // Warning: This is for player objects only, all other objects will return a nullptr
@@ -72,6 +81,11 @@ public:
         return _visibleWorldObjectsMap.get();
     }
 
+    bool VisibleWorldObjectsEmpty() const;
+    bool HasVisibleWorldObject(ObjectGuid const& guid) const;
+    void GetVisibleWorldObjectGuids(std::vector<ObjectGuid>& out) const;
+    void EraseVisibleWorldObjectByGuid(ObjectGuid const& guid) const;
+
 private:
 
     // Directly removes visibility reference. This is to be ONLY used as
@@ -88,6 +102,7 @@ private:
     void DirectRemoveVisiblePlayerReference(ObjectGuid guid);
 
     WorldObject* _selfObject;
+    mutable std::mutex _lock;
 
     // List of all worldobjects that are visible to us (including other players)
     // Only players contain this map, thus we will only allocate it as needed.
@@ -95,7 +110,7 @@ private:
 
     // List of players who are currently able to see this worldobject.
     // All worldobjects will contain this map
-    VisiblePlayersMap _visiblePlayersMap;
+    mutable VisiblePlayersMap _visiblePlayersMap;
 };
 
 #endif

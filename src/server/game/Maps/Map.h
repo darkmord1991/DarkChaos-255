@@ -700,6 +700,22 @@ public:
     bool ShouldMarkNearbyCells() const;
     uint32 GetUpdateCounter() const;
     void ProcessPartitionRelays(uint32 partitionId);
+    void QueueDeferredVisibilityUpdate(ObjectGuid const& guid);
+    void ProcessDeferredVisibilityUpdates();
+    bool ShouldDeferNonPlayerVisibility(WorldObject const* obj) const;
+    void PushDeferNonPlayerVisibility();
+    void PopDeferNonPlayerVisibility();
+
+    class VisibilityDeferGuard
+    {
+    public:
+        explicit VisibilityDeferGuard(Map& map);
+        ~VisibilityDeferGuard();
+
+    private:
+        Map& _map;
+        bool _active;
+    };
     PartitionedUpdatableObjectLists& GetPartitionedUpdatableObjectLists() { return _partitionedUpdatableObjectLists; }
     std::shared_lock<std::shared_mutex> AcquirePartitionedUpdateListReadLock() const { return std::shared_lock<std::shared_mutex>(_partitionedUpdateListLock); }
     std::unique_lock<std::shared_mutex> AcquirePartitionedUpdateListWriteLock() { return std::unique_lock<std::shared_mutex>(_partitionedUpdateListLock); }
@@ -861,6 +877,10 @@ private:
     std::unordered_map<ObjectGuid::LowType /*dbGUID*/, time_t> _goRespawnTimes;
 
     std::unordered_map<uint32, uint32> _zonePlayerCountMap;
+
+    std::mutex _deferredVisibilityLock;
+    std::unordered_set<ObjectGuid> _deferredVisibilitySet;
+    std::vector<ObjectGuid> _deferredVisibilityUpdates;
 
     std::atomic<uint32> _updateCounter{0};
     std::mutex _gridLayerLock;

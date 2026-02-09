@@ -23,6 +23,7 @@
 #include "TransportMgr.h"
 #include "VehicleDefines.h"
 #include "ZoneScript.h"
+#include <atomic>
 
 struct CreatureData;
 
@@ -71,8 +72,8 @@ public:
     PassengerSet const& GetStaticPassengers() const { return _staticPassengers; }
     void UnloadStaticPassengers();
     void UnloadNonStaticPassengers();
-    void SetPassengersLoaded(bool loaded) { _passengersLoaded = loaded; }
-    bool PassengersLoaded() const { return _passengersLoaded; }
+    void SetPassengersLoaded(bool loaded) { _passengersLoaded.store(loaded, std::memory_order_release); }
+    bool PassengersLoaded() const { return _passengersLoaded.load(std::memory_order_acquire); }
 
     KeyFrameVec const& GetKeyFrames() const { return _transportInfo->keyFrames; }
     void EnableMovement(bool enabled);
@@ -107,7 +108,8 @@ private:
 
     PassengerSet _staticPassengers;
     mutable std::mutex Lock;
-    bool _passengersLoaded;
+    std::atomic<bool> _passengersLoaded;
+    std::atomic<bool> _passengersLoading;
     bool _delayedTeleport;
 };
 

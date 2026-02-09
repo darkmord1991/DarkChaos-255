@@ -34,6 +34,8 @@
 
 #include "SpellMgr.h"
 
+#include <vector>
+
 class Player;
 //class Map;
 
@@ -111,6 +113,7 @@ namespace Acore
         {
         }
         void Visit(VisiblePlayersMap const& m);
+        void Visit(std::vector<Player*> const& players);
         void Visit(PlayerMapType& m);
         void Visit(CreatureMapType& m);
         void Visit(DynamicObjectMapType& m);

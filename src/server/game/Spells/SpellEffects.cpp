@@ -410,8 +410,12 @@ void Spell::EffectSchoolDMG(SpellEffIndex effIndex)
                         // found Immolate or Shadowflame
                         if (aura)
                         {
+                            Unit* target = unitTarget;
+                            if (!target || !target->IsAlive())
+                                return;
+
                             uint32 pdamage = uint32(std::max(aura->GetAmount(), 0));
-                            pdamage = unitTarget->SpellDamageBonusTaken(m_caster, aura->GetSpellInfo(), pdamage, DOT, aura->GetBase()->GetStackAmount());
+                            pdamage = target->SpellDamageBonusTaken(m_caster, aura->GetSpellInfo(), pdamage, DOT, aura->GetBase()->GetStackAmount());
                             uint32 pct_dir = m_caster->CalculateSpellDamage(unitTarget, m_spellInfo, (effIndex + 1));
                             uint8 baseTotalTicks = uint8(m_caster->CalcSpellDuration(aura->GetSpellInfo()) / aura->GetSpellInfo()->Effects[EFFECT_0].Amplitude);
 
@@ -651,8 +655,12 @@ void Spell::EffectSchoolDMG(SpellEffIndex effIndex)
             if (damage < 0)
                 damage = 0;
 
-            damage = m_originalCaster->SpellDamageBonusDone(unitTarget, m_spellInfo, (uint32)damage, SPELL_DIRECT_DAMAGE, effIndex);
-            damage = unitTarget->SpellDamageBonusTaken(m_originalCaster, m_spellInfo, (uint32)damage, SPELL_DIRECT_DAMAGE);
+            Unit* target = unitTarget;
+            if (!target || !target->IsAlive())
+                return;
+
+            damage = m_originalCaster->SpellDamageBonusDone(target, m_spellInfo, (uint32)damage, SPELL_DIRECT_DAMAGE, effIndex);
+            damage = target->SpellDamageBonusTaken(m_originalCaster, m_spellInfo, (uint32)damage, SPELL_DIRECT_DAMAGE);
         }
 
         m_damage += damage;
@@ -1361,9 +1369,13 @@ void Spell::EffectPowerDrain(SpellEffIndex effIndex)
     if (!unitTarget || !unitTarget->IsAlive() || !unitTarget->HasActivePowerType(PowerType) || damage < 0)
         return;
 
+    Unit* target = unitTarget;
+    if (!target || !target->IsAlive())
+        return;
+
     // add spell damage bonus
-    damage = m_caster->SpellDamageBonusDone(unitTarget, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE, effIndex);
-    damage = unitTarget->SpellDamageBonusTaken(m_caster, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE);
+    damage = m_caster->SpellDamageBonusDone(target, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE, effIndex);
+    damage = target->SpellDamageBonusTaken(m_caster, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE);
 
     // resilience reduce mana draining effect at spell crit damage reduction (added in 2.4)
     int32 power = damage;
@@ -1623,8 +1635,12 @@ void Spell::EffectHealthLeech(SpellEffIndex  effIndex)
     if (!unitTarget || !unitTarget->IsAlive() || damage < 0)
         return;
 
-    damage = m_caster->SpellDamageBonusDone(unitTarget, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE, effIndex);
-    damage = unitTarget->SpellDamageBonusTaken(m_caster, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE);
+    Unit* target = unitTarget;
+    if (!target || !target->IsAlive())
+        return;
+
+    damage = m_caster->SpellDamageBonusDone(target, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE, effIndex);
+    damage = target->SpellDamageBonusTaken(m_caster, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE);
 
     LOG_DEBUG("spells.aura", "HealthLeech :{}", damage);
 

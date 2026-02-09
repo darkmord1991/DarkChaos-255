@@ -92,7 +92,7 @@ bool FleeingMovementGenerator<T>::DoUpdate(T* owner, uint32 diff)
         _interrupt = false;
 
     _timer.Update(diff);
-    if (!_interrupt && _timer.Passed() && owner->movespline->Finalized())
+    if (!_interrupt && _timer.Passed() && owner->IsMoveSplineFinalizedSnapshot())
     {
         SetTargetLocation(owner);
     }

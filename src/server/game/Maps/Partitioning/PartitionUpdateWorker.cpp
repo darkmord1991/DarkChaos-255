@@ -91,6 +91,16 @@ void PartitionUpdateWorker::UpdatePlayers()
     bool markNearbyCells = _map.ShouldMarkNearbyCells();
     for (Player* player : *bucket)
     {
+        if (!player || !player->IsInWorld())
+            continue;
+
+        WorldSession* session = player->GetSession();
+        if (session)
+        {
+            MapSessionFilter updater(session);
+            session->Update(_sDiff, updater);
+        }
+
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY()))
         {
             ++_boundaryPlayerCount;
@@ -154,12 +164,32 @@ void PartitionUpdateWorker::UpdatePlayers()
 
 void PartitionUpdateWorker::UpdateNonPlayerObjects()
 {
-    // Collect direct pointers — avoids double GUID→object lookup
-    std::vector<WorldObject*> objects;
-    _map.CollectPartitionedUpdatableObjects(_partitionId, objects);
+    // Collect GUIDs to avoid dangling pointer use when objects despawn mid-tick.
+    std::vector<std::pair<ObjectGuid, uint8>> objects;
+    Map::VisibilityDeferGuard deferVisibility(_map);
+    _map.CollectPartitionedUpdatableGuids(_partitionId, objects);
 
-    for (WorldObject* obj : objects)
+    for (auto const& entry : objects)
     {
+        WorldObject* obj = nullptr;
+        switch (entry.second)
+        {
+            case TYPEID_UNIT:
+                obj = _map.GetCreature(entry.first);
+                break;
+            case TYPEID_GAMEOBJECT:
+                obj = _map.GetGameObject(entry.first);
+                break;
+            case TYPEID_DYNAMICOBJECT:
+                obj = _map.GetDynamicObject(entry.first);
+                break;
+            case TYPEID_CORPSE:
+                obj = _map.GetCorpse(entry.first);
+                break;
+            default:
+                break;
+        }
+
         if (!obj || !obj->IsInWorld())
             continue;
 

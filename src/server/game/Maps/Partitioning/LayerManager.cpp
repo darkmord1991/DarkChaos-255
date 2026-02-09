@@ -2349,12 +2349,12 @@ std::pair<uint32, uint32> LayerManager::GetLayersForTwoPlayers(
         std::swap(a, b);
 
     LayerPairCacheKey key{ mapId, a, b };
-    {
-        std::lock_guard<std::mutex> guard(_layerPairCacheLock);
-        auto it = _layerPairCache.find(key);
-        if (it != _layerPairCache.end() && nowMs <= it->second.expiresMs)
-            return { it->second.layer1, it->second.layer2 };
-    }
+    // Thread-local cache avoids cross-thread contention and map corruption.
+    thread_local LayerPairCacheKey tlKey{};
+    thread_local LayerPairCacheEntry tlEntry{};
+    thread_local bool tlValid = false;
+    if (tlValid && key == tlKey && nowMs <= tlEntry.expiresMs)
+        return { tlEntry.layer1, tlEntry.layer2 };
 
     std::shared_lock<std::shared_mutex> guard(_layerLock);
 
@@ -2369,30 +2369,9 @@ std::pair<uint32, uint32> LayerManager::GetLayersForTwoPlayers(
     if (it2 != _playerLayers.end() && it2->second.mapId == mapId)
         layer2 = it2->second.layerId;
 
-    {
-        std::lock_guard<std::mutex> cacheGuard(_layerPairCacheLock);
-        _layerPairCache[key] = { layer1, layer2, nowMs + PartitionConst::LAYER_PAIR_CACHE_TTL_MS };
-        if (_layerPairCache.size() > PartitionConst::LAYER_PAIR_CACHE_LIMIT)
-        {
-            for (auto it = _layerPairCache.begin(); it != _layerPairCache.end();)
-            {
-                if (nowMs > it->second.expiresMs)
-                    it = _layerPairCache.erase(it);
-                else
-                    ++it;
-            }
-            if (_layerPairCache.size() > PartitionConst::LAYER_PAIR_CACHE_LIMIT)
-            {
-                uint32 toRemove = static_cast<uint32>(_layerPairCache.size()) / 2;
-                auto it = _layerPairCache.begin();
-                while (toRemove > 0 && it != _layerPairCache.end())
-                {
-                    it = _layerPairCache.erase(it);
-                    --toRemove;
-                }
-            }
-        }
-    }
+    tlKey = key;
+    tlEntry = { layer1, layer2, nowMs + PartitionConst::LAYER_PAIR_CACHE_TTL_MS };
+    tlValid = true;
 
     return { layer1, layer2 };
 }

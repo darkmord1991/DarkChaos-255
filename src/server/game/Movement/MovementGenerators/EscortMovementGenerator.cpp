@@ -60,7 +60,7 @@ bool EscortMovementGenerator<T>::DoUpdate(T* unit, uint32  /*diff*/)
 
     unit->AddUnitState(UNIT_STATE_ROAMING_MOVE);
 
-    bool arrived = unit->movespline->Finalized();
+    bool arrived = unit->IsMoveSplineFinalizedSnapshot();
 
     if (i_recalculateSpeed && !arrived)
     {

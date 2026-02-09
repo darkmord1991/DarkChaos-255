@@ -3447,7 +3447,7 @@ void Creature::FocusTarget(Spell const* focusSpell, WorldObject const* target)
         AddUnitState(UNIT_STATE_ROTATING);
 
     // Set serverside orientation if needed (needs to be after attribute check)
-    if (this == target && (movespline->Finalized() || GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE))
+    if (this == target && (IsMoveSplineFinalizedSnapshot() || GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE))
         SetFacingTo(GetOrientation());
     else
         SetInFront(target);
@@ -3801,7 +3801,7 @@ bool Creature::IsUpdateNeeded()
     if (IsInCombat())
         return true;
 
-    if (!GetObjectVisibilityContainer().GetVisiblePlayersMap().empty())
+    if (!GetObjectVisibilityContainer().VisiblePlayersEmpty())
         return true;
 
     if (ToTempSummon())

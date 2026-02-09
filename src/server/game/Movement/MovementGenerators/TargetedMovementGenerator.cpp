@@ -250,7 +250,7 @@ bool ChaseMovementGenerator<T>::DoUpdate(T* owner, uint32 time_diff)
     }
 
     // if we're done moving, we want to clean up
-    if (owner->HasUnitState(UNIT_STATE_CHASE_MOVE) && owner->movespline->Finalized())
+    if (owner->HasUnitState(UNIT_STATE_CHASE_MOVE) && owner->IsMoveSplineFinalizedSnapshot())
     {
         i_recalculateTravel = false;
         i_path = nullptr;
@@ -263,7 +263,7 @@ bool ChaseMovementGenerator<T>::DoUpdate(T* owner, uint32 time_diff)
 
     if (cOwner)
     {
-        if (owner->movespline->Finalized() && cOwner->IsWithinMeleeRange(target))
+        if (owner->IsMoveSplineFinalizedSnapshot() && cOwner->IsWithinMeleeRange(target))
         { // Mobs should chase you infinitely if you stop and wait every few seconds.
             i_leashExtensionTimer.Update(time_diff);
             if (i_leashExtensionTimer.Passed())
@@ -572,7 +572,7 @@ bool FollowMovementGenerator<T>::DoUpdate(T* owner, uint32 time_diff)
     bool targetIsMoving = false;
     if (PositionOkay(target, owner->IsGuardian() && target->IsPlayer(), targetIsMoving, time_diff))
     {
-        if (owner->HasUnitState(UNIT_STATE_FOLLOW_MOVE) && owner->movespline->Finalized())
+        if (owner->HasUnitState(UNIT_STATE_FOLLOW_MOVE) && owner->IsMoveSplineFinalizedSnapshot())
         {
             owner->ClearUnitState(UNIT_STATE_FOLLOW_MOVE);
             i_path = nullptr;

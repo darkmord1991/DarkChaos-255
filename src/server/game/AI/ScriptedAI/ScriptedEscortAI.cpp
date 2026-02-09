@@ -265,7 +265,7 @@ void npc_escortAI::UpdateAI(uint32 diff)
             if (!HasEscortState(STATE_ESCORT_PAUSED))
             {
                 // xinef, start escort if there is no spline active
-                if (me->movespline->Finalized())
+                if (me->IsMoveSplineFinalizedSnapshot())
                 {
                     Movement::PointsArray pathPoints;
                     GenerateWaypointArray(&pathPoints);
@@ -593,7 +593,7 @@ void npc_escortAI::GenerateWaypointArray(Movement::PointsArray* points)
                     continue;
             }
             // everything ok
-            *points = pVector;
+                                    if (me->IsMoveSplineFinalizedSnapshot())
             break;
         }
     }

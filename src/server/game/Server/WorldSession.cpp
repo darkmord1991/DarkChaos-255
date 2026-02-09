@@ -1142,7 +1142,7 @@ void WorldSession::ReadMovementInfo(WorldPacket& data, MovementInfo* mi)
         MOVEMENTFLAG_FALLING);
 
     REMOVE_VIOLATING_FLAGS(mi->HasMovementFlag(MOVEMENTFLAG_SPLINE_ENABLED) &&
-        (!GetPlayer()->movespline->Initialized() || GetPlayer()->movespline->Finalized()), MOVEMENTFLAG_SPLINE_ENABLED);
+        (!GetPlayer()->movespline->Initialized() || GetPlayer()->IsMoveSplineFinalizedSnapshot()), MOVEMENTFLAG_SPLINE_ENABLED);
 
 #undef REMOVE_VIOLATING_FLAGS
 }

@@ -37,6 +37,10 @@
 #include <vector>
 #include <algorithm>
 #include <optional>
+#include <condition_variable>
+#include <functional>
+#include <queue>
+#include <thread>
 #include "MapGrid.h"
 #include "MapInstanced.h"
 #include "Metric.h"
@@ -63,6 +67,127 @@ namespace
     constexpr size_t kPartitionRelayLimit = 1024;
     thread_local std::unordered_map<Map const*, uint32> sActivePartitionContext;
     thread_local bool sProcessingPartitionRelays = false;
+    thread_local uint32 sNonPlayerVisibilityDeferDepth = 0;
+
+    class SendUpdateWorkerPool
+    {
+    public:
+        SendUpdateWorkerPool() = default;
+        ~SendUpdateWorkerPool()
+        {
+            Stop();
+        }
+
+        void EnsureThreads(size_t threadCount)
+        {
+            if (threadCount == 0 || !_threads.empty())
+                return;
+
+            _threads.reserve(threadCount);
+            for (size_t i = 0; i < threadCount; ++i)
+                _threads.emplace_back([this]() { ThreadMain(); });
+        }
+
+        template <typename TaskFn>
+        void RunTasks(size_t taskCount, TaskFn&& taskFn)
+        {
+            if (taskCount == 0)
+                return;
+
+            struct WorkGroup
+            {
+                explicit WorkGroup(size_t count) : pending(count) {}
+
+                void Done()
+                {
+                    if (pending.fetch_sub(1, std::memory_order_acq_rel) == 1)
+                    {
+                        std::lock_guard<std::mutex> lock(mutex);
+                        cv.notify_all();
+                    }
+                }
+
+                void Wait()
+                {
+                    std::unique_lock<std::mutex> lock(mutex);
+                    cv.wait(lock, [this]() { return pending.load(std::memory_order_acquire) == 0; });
+                }
+
+                std::atomic<size_t> pending;
+                std::mutex mutex;
+                std::condition_variable cv;
+            };
+
+            auto group = std::make_shared<WorkGroup>(taskCount);
+            for (size_t index = 0; index < taskCount; ++index)
+            {
+                Enqueue([group, &taskFn, index]()
+                {
+                    taskFn(index);
+                    group->Done();
+                });
+            }
+
+            group->Wait();
+        }
+
+    private:
+        void Enqueue(std::function<void()> task)
+        {
+            {
+                std::lock_guard<std::mutex> lock(_mutex);
+                _tasks.push(std::move(task));
+            }
+            _cv.notify_one();
+        }
+
+        void Stop()
+        {
+            {
+                std::lock_guard<std::mutex> lock(_mutex);
+                _stop = true;
+            }
+            _cv.notify_all();
+
+            for (std::thread& thread : _threads)
+            {
+                if (thread.joinable())
+                    thread.join();
+            }
+        }
+
+        void ThreadMain()
+        {
+            while (true)
+            {
+                std::function<void()> task;
+                {
+                    std::unique_lock<std::mutex> lock(_mutex);
+                    _cv.wait(lock, [this]() { return _stop || !_tasks.empty(); });
+                    if (_stop && _tasks.empty())
+                        return;
+
+                    task = std::move(_tasks.front());
+                    _tasks.pop();
+                }
+
+                if (task)
+                    task();
+            }
+        }
+
+        std::vector<std::thread> _threads;
+        std::queue<std::function<void()>> _tasks;
+        std::mutex _mutex;
+        std::condition_variable _cv;
+        bool _stop = false;
+    };
+
+    SendUpdateWorkerPool& GetSendUpdateWorkerPool()
+    {
+        static SendUpdateWorkerPool pool;
+        return pool;
+    }
 }
 
 #define MAP_INVALID_ZONE        0xFFFFFFFF
@@ -89,8 +214,8 @@ Map::~Map()
 Map::Map(uint32 id, uint32 InstanceId, uint8 SpawnMode, Map* _parent) :
     _mapGridManager(this), i_mapEntry(sMapStore.LookupEntry(id)), i_spawnMode(SpawnMode), i_InstanceId(InstanceId),
     m_unloadTimer(0), m_VisibleDistance(DEFAULT_VISIBILITY_DISTANCE), _instanceResetPeriod(0),
-    _transportsUpdateIter(_transports.end()), i_scriptLock(false), _defaultLight(GetDefaultMapLight(id)),
-    _markedCells(kMarkedCellWordCount)
+    _transportsUpdateIter(_transports.end()), _markedCells(kMarkedCellWordCount), i_scriptLock(false),
+    _defaultLight(GetDefaultMapLight(id))
 {
     m_parentMap = (_parent ? _parent : this);
 
@@ -1218,8 +1343,15 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             Unit* mover = GetUnitByGuid(relay.moverGuid);
             Unit* target = GetUnitByGuid(relay.targetGuid);
-            if (!mover || !target || !mover->GetMotionMaster())
+            if (!mover || !target || !mover->IsInWorld() || !mover->GetMotionMaster())
                 continue;
+
+            uint32 moverPartition = GetPartitionIdForUnit(mover);
+            if (moverPartition && moverPartition != partitionId)
+            {
+                QueuePartitionPathRelay(moverPartition, relay.moverGuid, relay.targetGuid);
+                continue;
+            }
 
             mover->GetMotionMaster()->MoveChase(target);
             if (relay.queuedMs)
@@ -1261,8 +1393,17 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         for (PartitionPointRelay const& relay : pointRelays)
         {
             Unit* mover = GetUnitByGuid(relay.moverGuid);
-            if (!mover || !mover->GetMotionMaster())
+            if (!mover || !mover->IsInWorld() || !mover->GetMotionMaster())
                 continue;
+
+            uint32 moverPartition = GetPartitionIdForUnit(mover);
+            if (moverPartition && moverPartition != partitionId)
+            {
+                QueuePartitionPointRelay(moverPartition, relay.moverGuid, relay.pointId, relay.x, relay.y, relay.z,
+                    relay.forcedMovement, relay.speed, relay.orientation, relay.generatePath, relay.forceDestination,
+                    relay.slot, relay.hasAnimTier, relay.animTier);
+                continue;
+            }
 
             std::optional<AnimTier> animTier;
             if (relay.hasAnimTier)
@@ -1308,8 +1449,15 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         for (PartitionAssistRelay const& relay : assistRelays)
         {
             Unit* mover = GetUnitByGuid(relay.moverGuid);
-            if (!mover || !mover->GetMotionMaster())
+            if (!mover || !mover->IsInWorld() || !mover->GetMotionMaster())
                 continue;
+
+            uint32 moverPartition = GetPartitionIdForUnit(mover);
+            if (moverPartition && moverPartition != partitionId)
+            {
+                QueuePartitionAssistRelay(moverPartition, relay.moverGuid, relay.x, relay.y, relay.z);
+                continue;
+            }
 
             mover->GetMotionMaster()->MoveSeekAssistance(relay.x, relay.y, relay.z);
             if (relay.queuedMs)
@@ -1351,8 +1499,15 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         for (PartitionAssistDistractRelay const& relay : distractRelays)
         {
             Unit* mover = GetUnitByGuid(relay.moverGuid);
-            if (!mover || !mover->GetMotionMaster())
+            if (!mover || !mover->IsInWorld() || !mover->GetMotionMaster())
                 continue;
+
+            uint32 moverPartition = GetPartitionIdForUnit(mover);
+            if (moverPartition && moverPartition != partitionId)
+            {
+                QueuePartitionAssistDistractRelay(moverPartition, relay.moverGuid, relay.timeMs);
+                continue;
+            }
 
             mover->GetMotionMaster()->MoveSeekAssistanceDistract(relay.timeMs);
             if (relay.queuedMs)
@@ -1500,16 +1655,21 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         _dynamicTree.update(t_diff);
     }
 
+    bool runSessionUpdatesInWorkers = _isPartitioned && _useParallelPartitions && t_diff;
+
     // Update world sessions and players
     for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
     {
         Player* player = m_mapRefIter->GetSource();
         if (player && player->IsInWorld())
         {
-            // Update session
-            WorldSession* session = player->GetSession();
-            MapSessionFilter updater(session);
-            session->Update(s_diff, updater);
+            // Update session on the main thread unless partition workers handle it.
+            if (!runSessionUpdatesInWorkers)
+            {
+                WorldSession* session = player->GetSession();
+                MapSessionFilter updater(session);
+                session->Update(s_diff, updater);
+            }
 
             // update players at tick
             if (!t_diff)
@@ -1731,6 +1891,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         UpdateNonPlayerObjects(t_diff);
     }
 
+    ProcessDeferredVisibilityUpdates();
     SendObjectUpdates();
 
     ///- Process necessary scripts
@@ -1845,7 +2006,7 @@ void Map::SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff)
     }
 
     // Cooperative wait: run queued tasks to avoid worker thread starvation.
-    updater->run_tasks_until([&remaining]()
+    updater->run_partition_tasks_until([&remaining]()
     {
         return remaining.load(std::memory_order_acquire) == 0;
     });
@@ -2159,13 +2320,21 @@ void Map::_AddObjectToUpdateList(WorldObject* obj)
 void Map::_RemoveObjectFromUpdateList(WorldObject* obj)
 {
     UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
-    ASSERT(mapUpdatableObject && mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::Updating);
+    if (!mapUpdatableObject)
+        return;
 
     {
         std::lock_guard<std::mutex> lock(_updatableObjectListLock);
+
+        // Re-check state under lock — another partition worker may have already removed this object.
+        if (mapUpdatableObject->GetUpdateState() != UpdatableMapObject::UpdateState::Updating)
+            return;
+
         if (obj != _updatableObjectList.back())
         {
-            dynamic_cast<UpdatableMapObject*>(_updatableObjectList.back())->SetMapUpdateListOffset(mapUpdatableObject->GetMapUpdateListOffset());
+            UpdatableMapObject* backObj = dynamic_cast<UpdatableMapObject*>(_updatableObjectList.back());
+            if (backObj && backObj->GetUpdateState() == UpdatableMapObject::UpdateState::Updating)
+                backObj->SetMapUpdateListOffset(mapUpdatableObject->GetMapUpdateListOffset());
             std::swap(_updatableObjectList[mapUpdatableObject->GetMapUpdateListOffset()], _updatableObjectList.back());
         }
 
@@ -2360,10 +2529,13 @@ void Map::CollectPartitionedUpdatableGuids(uint32 partitionId, std::vector<std::
 
     auto& objectList = listIt->second;
     out.reserve(out.size() + objectList.size());
-    for (WorldObject* obj : objectList)
+    for (size_t i = 0; i < objectList.size(); ++i)
     {
+        WorldObject* obj = objectList[i];
         auto idxIt = _partitionedUpdatableIndex.find(obj);
         if (idxIt == _partitionedUpdatableIndex.end())
+            continue;
+        if (idxIt->second.partitionId != partitionId || idxIt->second.index != i)
             continue;
 
         out.emplace_back(idxIt->second.guid, idxIt->second.typeId);
@@ -2382,8 +2554,15 @@ void Map::CollectPartitionedUpdatableObjects(uint32 partitionId, std::vector<Wor
 
     auto& objectList = listIt->second;
     out.reserve(out.size() + objectList.size());
-    for (WorldObject* obj : objectList)
+    for (size_t i = 0; i < objectList.size(); ++i)
     {
+        WorldObject* obj = objectList[i];
+        auto idxIt = _partitionedUpdatableIndex.find(obj);
+        if (idxIt == _partitionedUpdatableIndex.end())
+            continue;
+        if (idxIt->second.partitionId != partitionId || idxIt->second.index != i)
+            continue;
+
         if (obj && obj->IsInWorld())
             out.push_back(obj);
     }
@@ -2592,6 +2771,83 @@ void Map::SetPartitionPlayerBuckets(std::vector<std::vector<Player*>> const& buc
     _partitionPlayerBucketsReady = true;
 }
 
+void Map::QueueDeferredVisibilityUpdate(ObjectGuid const& guid)
+{
+    if (!guid || guid.IsPlayer())
+        return;
+
+    std::lock_guard<std::mutex> guard(_deferredVisibilityLock);
+    if (_deferredVisibilitySet.insert(guid).second)
+        _deferredVisibilityUpdates.push_back(guid);
+}
+
+void Map::ProcessDeferredVisibilityUpdates()
+{
+    std::vector<ObjectGuid> pending;
+    {
+        std::lock_guard<std::mutex> guard(_deferredVisibilityLock);
+        if (_deferredVisibilityUpdates.empty())
+            return;
+        pending.swap(_deferredVisibilityUpdates);
+        _deferredVisibilitySet.clear();
+    }
+
+    for (ObjectGuid const& guid : pending)
+    {
+        WorldObject* obj = nullptr;
+        switch (guid.GetHigh())
+        {
+            case HighGuid::Unit:
+                obj = GetCreature(guid);
+                break;
+            case HighGuid::GameObject:
+                obj = GetGameObject(guid);
+                break;
+            case HighGuid::DynamicObject:
+                obj = GetDynamicObject(guid);
+                break;
+            case HighGuid::Corpse:
+                obj = GetCorpse(guid);
+                break;
+            default:
+                break;
+        }
+
+        if (!obj || !obj->IsInWorld())
+            continue;
+
+        obj->UpdateObjectVisibility(true, true);
+    }
+}
+
+bool Map::ShouldDeferNonPlayerVisibility(WorldObject const* obj) const
+{
+    return obj && !obj->IsPlayer() && sNonPlayerVisibilityDeferDepth > 0;
+}
+
+void Map::PushDeferNonPlayerVisibility()
+{
+    ++sNonPlayerVisibilityDeferDepth;
+}
+
+void Map::PopDeferNonPlayerVisibility()
+{
+    if (sNonPlayerVisibilityDeferDepth > 0)
+        --sNonPlayerVisibilityDeferDepth;
+}
+
+Map::VisibilityDeferGuard::VisibilityDeferGuard(Map& map)
+    : _map(map), _active(true)
+{
+    _map.PushDeferNonPlayerVisibility();
+}
+
+Map::VisibilityDeferGuard::~VisibilityDeferGuard()
+{
+    if (_active)
+        _map.PopDeferNonPlayerVisibility();
+}
+
 void Map::ClearPartitionPlayerBuckets()
 {
     std::unique_lock<std::shared_mutex> guard(_partitionPlayerBucketsLock);
@@ -2651,13 +2907,19 @@ void Map::RemoveObjectFromMapUpdateList(WorldObject* obj)
     UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
     if (!mapUpdatableObject)
         return;
-    if (mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::PendingAdd)
+
+    // Check state under the appropriate lock to avoid TOCTOU races between partition workers.
+    UpdatableMapObject::UpdateState state = mapUpdatableObject->GetUpdateState();
+    if (state == UpdatableMapObject::UpdateState::PendingAdd)
     {
         std::lock_guard<std::mutex> lock(_pendingUpdateListLock);
+        // Re-check under lock
+        if (mapUpdatableObject->GetUpdateState() != UpdatableMapObject::UpdateState::PendingAdd)
+            return;
         _pendingAddUpdatableObjectList.erase(obj);
         mapUpdatableObject->SetUpdateState(UpdatableMapObject::UpdateState::NotUpdating);
     }
-    else if (mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::Updating)
+    else if (state == UpdatableMapObject::UpdateState::Updating)
         _RemoveObjectFromUpdateList(obj);
 }
 
@@ -4000,25 +4262,133 @@ void Map::SendObjectUpdates()
         _updateObjects.clear();
     }
 
-    for (Object* obj : objectsToUpdate)
+    if (!objectsToUpdate.empty())
     {
-        ASSERT(obj->IsInWorld());
-        obj->BuildUpdate(update_players);
+        constexpr size_t kMinObjectsPerWorker = 64;
+        uint32 maxWorkers = 1;
+        if (MapUpdater* updater = sMapMgr->GetMapUpdater(); updater && updater->activated())
+            maxWorkers = std::max<uint32>(1, sWorld->getIntConfig(CONFIG_NUMTHREADS));
+
+        size_t desiredWorkers = objectsToUpdate.size() / kMinObjectsPerWorker;
+        size_t workerCount = std::min<size_t>(maxWorkers, std::max<size_t>(1, desiredWorkers));
+
+        if (workerCount <= 1)
+        {
+            for (Object* obj : objectsToUpdate)
+            {
+                ASSERT(obj->IsInWorld());
+                obj->BuildUpdate(update_players);
+            }
+        }
+        else
+        {
+            SendUpdateWorkerPool& pool = GetSendUpdateWorkerPool();
+            pool.EnsureThreads(workerCount);
+
+            std::vector<UpdateDataMapType> workerUpdates(workerCount);
+            size_t blockSize = (objectsToUpdate.size() + workerCount - 1) / workerCount;
+
+            pool.RunTasks(workerCount, [&objectsToUpdate, &workerUpdates, blockSize](size_t workerIndex)
+            {
+                size_t beginIndex = workerIndex * blockSize;
+                size_t endIndex = std::min(objectsToUpdate.size(), beginIndex + blockSize);
+                if (beginIndex >= endIndex)
+                    return;
+
+                UpdateDataMapType& localUpdates = workerUpdates[workerIndex];
+                for (size_t i = beginIndex; i < endIndex; ++i)
+                {
+                    Object* obj = objectsToUpdate[i];
+                    if (!obj || !obj->IsInWorld())
+                        continue;
+                    obj->BuildUpdate(localUpdates);
+                }
+            });
+
+            for (UpdateDataMapType& localUpdates : workerUpdates)
+            {
+                for (auto& pair : localUpdates)
+                {
+                    UpdateData& dest = update_players[pair.first];
+                    dest.AddUpdateBlock(pair.second);
+                }
+            }
+        }
     }
 
-    WorldPacket packet;                                     // here we allocate a std::vector with a size of 0x10000
-    for (UpdateDataMapType::iterator iter = update_players.begin(); iter != update_players.end(); ++iter)
+    struct UpdateSendJob
     {
-        if (!sScriptMgr->OnPlayerbotCheckUpdatesToSend(iter->first))
+        Player* player = nullptr;
+        UpdateData data;
+        bool send = false;
+    };
+
+    std::vector<UpdateSendJob> sendJobs;
+    sendJobs.reserve(update_players.size());
+    for (auto& pair : update_players)
+    {
+        bool send = sScriptMgr->OnPlayerbotCheckUpdatesToSend(pair.first);
+        if (!send)
         {
-            iter->second.Clear();
+            pair.second.Clear();
             continue;
         }
 
+        sendJobs.push_back({pair.first, std::move(pair.second), true});
+    }
 
-        iter->second.BuildPacket(packet);
-        iter->first->SendDirectMessage(&packet);
-        packet.clear();                                     // clean the string
+    if (!sendJobs.empty())
+    {
+        constexpr size_t kMinPlayersPerWorker = 32;
+        uint32 maxWorkers = 1;
+        if (MapUpdater* updater = sMapMgr->GetMapUpdater(); updater && updater->activated())
+            maxWorkers = std::max<uint32>(1, sWorld->getIntConfig(CONFIG_NUMTHREADS));
+
+        size_t desiredWorkers = sendJobs.size() / kMinPlayersPerWorker;
+        size_t workerCount = std::min<size_t>(maxWorkers, std::max<size_t>(1, desiredWorkers));
+
+        std::vector<std::unique_ptr<WorldPacket>> packets(sendJobs.size());
+
+        if (workerCount <= 1)
+        {
+            for (size_t i = 0; i < sendJobs.size(); ++i)
+            {
+                if (!sendJobs[i].send)
+                    continue;
+                packets[i] = std::make_unique<WorldPacket>();
+                sendJobs[i].data.BuildPacket(*packets[i]);
+            }
+        }
+        else
+        {
+            SendUpdateWorkerPool& pool = GetSendUpdateWorkerPool();
+            pool.EnsureThreads(workerCount);
+
+            size_t blockSize = (sendJobs.size() + workerCount - 1) / workerCount;
+            pool.RunTasks(workerCount, [&sendJobs, &packets, blockSize](size_t workerIndex)
+            {
+                size_t beginIndex = workerIndex * blockSize;
+                size_t endIndex = std::min(sendJobs.size(), beginIndex + blockSize);
+                if (beginIndex >= endIndex)
+                    return;
+
+                for (size_t i = beginIndex; i < endIndex; ++i)
+                {
+                    if (!sendJobs[i].send)
+                        continue;
+                    auto packet = std::make_unique<WorldPacket>();
+                    sendJobs[i].data.BuildPacket(*packet);
+                    packets[i] = std::move(packet);
+                }
+            });
+        }
+
+        for (size_t i = 0; i < sendJobs.size(); ++i)
+        {
+            if (!sendJobs[i].send || !packets[i])
+                continue;
+            sendJobs[i].player->SendDirectMessage(packets[i].get());
+        }
     }
 }
 

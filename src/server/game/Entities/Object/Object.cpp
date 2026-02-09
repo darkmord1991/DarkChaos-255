@@ -2194,13 +2194,35 @@ void WorldObject::SendMessageToSet(WorldPacket const* data, bool self) const
 void WorldObject::SendMessageToSetInRange(WorldPacket const* data, float dist, bool /*self*/) const
 {
     Acore::MessageDistDeliverer notifier(this, data, dist);
-    notifier.Visit(GetObjectVisibilityContainer().GetVisiblePlayersMap());
+    std::vector<Player*> players;
+    std::vector<ObjectGuid> guids;
+    GetObjectVisibilityContainer().GetVisiblePlayerGuids(guids);
+    players.reserve(guids.size());
+    for (ObjectGuid const& guid : guids)
+    {
+        if (Player* player = ObjectAccessor::GetPlayer(*this, guid))
+            players.push_back(player);
+        else
+            GetObjectVisibilityContainer().EraseVisiblePlayerByGuid(guid);
+    }
+    notifier.Visit(players);
 }
 
 void WorldObject::SendMessageToSet(WorldPacket const* data, Player const* skipped_rcvr) const
 {
     Acore::MessageDistDeliverer notifier(this, data, 0.0f, false, skipped_rcvr);
-    notifier.Visit(GetObjectVisibilityContainer().GetVisiblePlayersMap());
+    std::vector<Player*> players;
+    std::vector<ObjectGuid> guids;
+    GetObjectVisibilityContainer().GetVisiblePlayerGuids(guids);
+    players.reserve(guids.size());
+    for (ObjectGuid const& guid : guids)
+    {
+        if (Player* player = ObjectAccessor::GetPlayer(*this, guid))
+            players.push_back(player);
+        else
+            GetObjectVisibilityContainer().EraseVisiblePlayerByGuid(guid);
+    }
+    notifier.Visit(players);
 }
 
 void WorldObject::SendObjectDeSpawnAnim(ObjectGuid guid)
@@ -3047,20 +3069,30 @@ void WorldObject::DestroyForVisiblePlayers()
     if (!IsInWorld())
         return;
 
-    VisiblePlayersMap& visiblePlayerMap = GetObjectVisibilityContainer().GetVisiblePlayersMap();
-    for (VisiblePlayersMap::iterator itr = visiblePlayerMap.begin(); itr != visiblePlayerMap.end();)
+    std::vector<ObjectGuid> guids;
+    GetObjectVisibilityContainer().GetVisiblePlayerGuids(guids);
+    for (ObjectGuid const& guid : guids)
     {
-        Player* player = itr->second;
-
-        DestroyForPlayer(player);
-
-        // Clean up visibility references now
-        itr = GetObjectVisibilityContainer().UnlinkVisibilityFromWorldObject(player, itr);
+        if (Player* player = ObjectAccessor::GetPlayer(*this, guid))
+        {
+            DestroyForPlayer(player);
+            GetObjectVisibilityContainer().UnlinkVisibilityFromWorldObject(player);
+        }
+        else
+        {
+            GetObjectVisibilityContainer().EraseVisiblePlayerByGuid(guid);
+        }
     }
 }
 
 void WorldObject::UpdateObjectVisibility(bool /*forced*/, bool /*fromUpdate*/)
 {
+    if (Map* map = FindMap(); map && map->ShouldDeferNonPlayerVisibility(this))
+    {
+        map->QueueDeferredVisibilityUpdate(GetGUID());
+        return;
+    }
+
     //updates object's visibility for nearby players
     Acore::VisibleChangesNotifier notifier(*this);
     Cell::VisitObjects(this, notifier, GetVisibilityRange());

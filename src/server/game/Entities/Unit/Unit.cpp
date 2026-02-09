@@ -335,6 +335,8 @@ Unit::Unit() : WorldObject(),
     _isWalkingBeforeCharm = false;
 
     _lastExtraAttackSpell = 0;
+
+    UpdateMoveSplineSnapshot();
 }
 
 ////////////////////////////////////////////////////////////
@@ -532,6 +534,7 @@ bool Unit::haveOffhandWeapon() const
 
 void Unit::MonsterMoveWithSpeed(float x, float y, float z, float speed)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
     Movement::MoveSplineInit init(this);
     init.MoveTo(x, y, z);
     init.SetVelocity(speed);
@@ -578,8 +581,12 @@ private:
 
 void Unit::UpdateSplineMovement(uint32 t_diff)
 {
+    std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
     if (movespline->Finalized())
+    {
+        UpdateMoveSplineSnapshot();
         return;
+    }
 
     // xinef: process movementinform
     // this code cant be placed inside EscortMovementGenerator, because we cant delete active MoveGen while it is updated
@@ -606,10 +613,12 @@ void Unit::UpdateSplineMovement(uint32 t_diff)
     //m_movesplineTimer.Update(t_diff);
     //if (m_movesplineTimer.Passed() || arrived)
     UpdateSplinePosition();
+    UpdateMoveSplineSnapshot();
 }
 
 void Unit::UpdateSplinePosition()
 {
+    std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
     //static uint32 const positionUpdateDelay = 400;
 
     //m_movesplineTimer.Reset(positionUpdateDelay);
@@ -639,8 +648,81 @@ void Unit::UpdateSplinePosition()
 
 void Unit::DisableSpline()
 {
+    std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
     m_movementInfo.RemoveMovementFlag(MovementFlags(MOVEMENTFLAG_SPLINE_ENABLED | MOVEMENTFLAG_FORWARD | MOVEMENTFLAG_BACKWARD));
     movespline->_Interrupt();
+    UpdateMoveSplineSnapshot();
+}
+
+void Unit::UpdateMoveSplineSnapshot()
+{
+    std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
+    bool finalized = true;
+    bool boarding = false;
+    bool initialized = false;
+    bool falling = false;
+    uint32 id = 0;
+    float x = GetPositionX();
+    float y = GetPositionY();
+    float z = GetPositionZ();
+
+    if (movespline)
+    {
+        initialized = movespline->Initialized();
+        finalized = movespline->Finalized();
+        boarding = movespline->isBoarding();
+        falling = movespline->isFalling();
+        id = movespline->GetId();
+
+        if (initialized)
+        {
+            auto dest = movespline->FinalDestination();
+            x = dest.x;
+            y = dest.y;
+            z = dest.z;
+        }
+    }
+
+    _moveSplineSnapshot.id.store(id, std::memory_order_release);
+    _moveSplineSnapshot.finalized.store(finalized, std::memory_order_release);
+    _moveSplineSnapshot.boarding.store(boarding, std::memory_order_release);
+    _moveSplineSnapshot.initialized.store(initialized, std::memory_order_release);
+    _moveSplineSnapshot.falling.store(falling, std::memory_order_release);
+    _moveSplineSnapshot.destX.store(x, std::memory_order_release);
+    _moveSplineSnapshot.destY.store(y, std::memory_order_release);
+    _moveSplineSnapshot.destZ.store(z, std::memory_order_release);
+}
+
+bool Unit::IsMoveSplineFinalizedSnapshot() const
+{
+    return _moveSplineSnapshot.finalized.load(std::memory_order_acquire);
+}
+
+bool Unit::IsMoveSplineBoardingSnapshot() const
+{
+    return _moveSplineSnapshot.boarding.load(std::memory_order_acquire);
+}
+
+bool Unit::IsMoveSplineInitializedSnapshot() const
+{
+    return _moveSplineSnapshot.initialized.load(std::memory_order_acquire);
+}
+
+bool Unit::IsMoveSplineFallingSnapshot() const
+{
+    return _moveSplineSnapshot.falling.load(std::memory_order_acquire);
+}
+
+uint32 Unit::GetMoveSplineIdSnapshot() const
+{
+    return _moveSplineSnapshot.id.load(std::memory_order_acquire);
+}
+
+void Unit::GetMoveSplineFinalDestinationSnapshot(float& x, float& y, float& z) const
+{
+    x = _moveSplineSnapshot.destX.load(std::memory_order_acquire);
+    y = _moveSplineSnapshot.destY.load(std::memory_order_acquire);
+    z = _moveSplineSnapshot.destZ.load(std::memory_order_acquire);
 }
 
 void Unit::resetAttackTimer(WeaponAttackType type)
@@ -3862,6 +3944,7 @@ uint32 Unit::GetWeaponSkillValue (WeaponAttackType attType, Unit const* target) 
 
 void Unit::_DeleteRemovedAuras()
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     while (!m_removedAuras.empty())
     {
         delete m_removedAuras.front();
@@ -3871,6 +3954,7 @@ void Unit::_DeleteRemovedAuras()
 
 void Unit::_UpdateSpells(uint32 time)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     if (m_currentSpells[CURRENT_AUTOREPEAT_SPELL])
         _UpdateAutoRepeatSpell();
 
@@ -4549,6 +4633,7 @@ Aura* Unit::_TryStackingOrRefreshingExistingAura(SpellInfo const* newAura, uint8
 
 void Unit::_AddAura(UnitAura* aura, Unit* caster)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     ASSERT(!m_cleanupDone);
     m_ownedAuras.insert(AuraMap::value_type(aura->GetId(), aura));
 
@@ -4588,6 +4673,7 @@ void Unit::_AddAura(UnitAura* aura, Unit* caster)
 // aura application effects are handled separately to prevent aura list corruption
 AuraApplication* Unit::_CreateAuraApplication(Aura* aura, uint8 effMask)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     // can't apply aura on unit which is going to be deleted - to not create a memory leak
     ASSERT(!m_cleanupDone);
     // aura musn't be removed
@@ -4640,6 +4726,7 @@ void Unit::_ApplyAuraEffect(Aura* aura, uint8 effIndex)
 // should be done after registering aura in lists
 void Unit::_ApplyAura(AuraApplication* aurApp, uint8 effMask)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     Aura* aura = aurApp->GetBase();
 
     _RemoveNoStackAurasDueToAura(aura, false);
@@ -4686,6 +4773,7 @@ void Unit::_ApplyAura(AuraApplication* aurApp, uint8 effMask)
 // removes aura application from lists and unapplies effects
 void Unit::_UnapplyAura(AuraApplicationMap::iterator& i, AuraRemoveMode removeMode)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     AuraApplication* aurApp = i->second;
     ASSERT(aurApp);
     if (aurApp->GetRemoveMode())
@@ -4840,8 +4928,17 @@ void Unit::_RegisterAuraEffect(AuraEffect* aurEff, bool apply)
 // All aura base removes should go threw this function!
 void Unit::RemoveOwnedAura(AuraMap::iterator& i, AuraRemoveMode removeMode)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     Aura* aura = i->second;
-    ASSERT(!aura->IsRemoved());
+    if (!aura || aura->IsRemoved())
+    {
+        if (m_auraUpdateIterator == i && m_auraUpdateIterator != m_ownedAuras.end())
+            ++m_auraUpdateIterator;
+
+        m_ownedAuras.erase(i);
+        i = m_ownedAuras.begin();
+        return;
+    }
 
     // if unit currently update aura list then make safe update iterator shift to next
     if (m_auraUpdateIterator == i && m_auraUpdateIterator != m_ownedAuras.end())
@@ -4861,6 +4958,7 @@ void Unit::RemoveOwnedAura(AuraMap::iterator& i, AuraRemoveMode removeMode)
 
 void Unit::RemoveOwnedAura(uint32 spellId, ObjectGuid casterGUID, uint8 reqEffMask, AuraRemoveMode removeMode)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     for (AuraMap::iterator itr = m_ownedAuras.lower_bound(spellId); itr != m_ownedAuras.upper_bound(spellId);)
         if (((itr->second->GetEffectMask() & reqEffMask) == reqEffMask) && (!casterGUID || itr->second->GetCasterGUID() == casterGUID))
         {
@@ -4873,6 +4971,7 @@ void Unit::RemoveOwnedAura(uint32 spellId, ObjectGuid casterGUID, uint8 reqEffMa
 
 void Unit::RemoveOwnedAura(Aura* aura, AuraRemoveMode removeMode)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     if (aura->IsRemoved())
         return;
 
@@ -4911,6 +5010,7 @@ Aura* Unit::GetOwnedAura(uint32 spellId, ObjectGuid casterGUID, ObjectGuid itemC
 
 void Unit::RemoveAura(AuraApplicationMap::iterator& i, AuraRemoveMode mode)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     AuraApplication* aurApp = i->second;
     // Do not remove aura which is already being removed
     if (aurApp->GetRemoveMode())
@@ -4934,6 +5034,7 @@ void Unit::RemoveAura(AuraApplicationMap::iterator& i, AuraRemoveMode mode)
 
 void Unit::RemoveAura(uint32 spellId, ObjectGuid caster, uint8 reqEffMask, AuraRemoveMode removeMode)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
     {
         uint32 targetPartition = map->GetPartitionIdForUnit(this);
@@ -4959,6 +5060,7 @@ void Unit::RemoveAura(uint32 spellId, ObjectGuid caster, uint8 reqEffMask, AuraR
 
 void Unit::RemoveAura(AuraApplication* aurApp, AuraRemoveMode mode)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     // we've special situation here, RemoveAura called while during aura removal
     // this kind of call is needed only when aura effect removal handler
     // or event triggered by it expects to remove
@@ -5002,6 +5104,7 @@ void Unit::RemoveAura(AuraApplication* aurApp, AuraRemoveMode mode)
 
 void Unit::RemoveAura(Aura* aura, AuraRemoveMode mode)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     if (aura->IsRemoved())
         return;
     if (AuraApplication* aurApp = aura->GetApplicationOfTarget(GetGUID()))
@@ -5010,6 +5113,7 @@ void Unit::RemoveAura(Aura* aura, AuraRemoveMode mode)
 
 void Unit::RemoveOwnedAuras(std::function<bool(Aura const*)> const& check)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     for (AuraMap::iterator iter = m_ownedAuras.begin(); iter != m_ownedAuras.end();)
     {
         if (check(iter->second))
@@ -5023,6 +5127,7 @@ void Unit::RemoveOwnedAuras(std::function<bool(Aura const*)> const& check)
 
 void Unit::RemoveAppliedAuras(std::function<bool(AuraApplication const*)> const& check)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
     {
         if (check(iter->second))
@@ -5036,6 +5141,7 @@ void Unit::RemoveAppliedAuras(std::function<bool(AuraApplication const*)> const&
 
 void Unit::RemoveOwnedAuras(uint32 spellId, std::function<bool(Aura const*)> const& check)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     for (AuraMap::iterator iter = m_ownedAuras.lower_bound(spellId); iter != m_ownedAuras.upper_bound(spellId);)
     {
         if (check(iter->second))
@@ -5049,6 +5155,7 @@ void Unit::RemoveOwnedAuras(uint32 spellId, std::function<bool(Aura const*)> con
 
 void Unit::RemoveAppliedAuras(uint32 spellId, std::function<bool(AuraApplication const*)> const& check)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     for (AuraApplicationMap::iterator iter = m_appliedAuras.lower_bound(spellId); iter != m_appliedAuras.upper_bound(spellId);)
     {
         if (check(iter->second))
@@ -17023,6 +17130,7 @@ MovementGeneratorType Unit::GetDefaultMovementType() const
 
 void Unit::StopMoving()
 {
+    std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
     ClearUnitState(UNIT_STATE_MOVING);
 
     // not need send any packets if not in world or not moving
@@ -17030,7 +17138,10 @@ void Unit::StopMoving()
         return;
 
     if (movespline->Finalized())
+    {
+        UpdateMoveSplineSnapshot();
         return;
+    }
 
     // Update position now since Stop does not start a new movement that can be updated later
     if (movespline->HasStarted())
@@ -17062,6 +17173,7 @@ void Unit::ResumeMovement(uint32 timer /* = 0*/, uint8 slot /* = 0*/)
 
 void Unit::StopMovingOnCurrentPos()
 {
+    std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
     ClearUnitState(UNIT_STATE_MOVING);
 
     // not need send any packets if not in world
@@ -19271,6 +19383,7 @@ void Unit::GetPartyMembers(std::list<Unit*>& TagUnitMap)
 
 Aura* Unit::AddAura(uint32 spellId, Unit* target)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     if (!target)
         return nullptr;
 
@@ -19286,6 +19399,7 @@ Aura* Unit::AddAura(uint32 spellId, Unit* target)
 
 Aura* Unit::AddAura(SpellInfo const* spellInfo, uint8 effMask, Unit* target)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
     if (!spellInfo)
         return nullptr;
 
@@ -19507,17 +19621,13 @@ void Unit::SetPhaseMask(uint32 newPhaseMask, bool update)
             // modify threat lists for new phasemask
             if (!IsPlayer())
             {
-                ThreatContainer::StorageType threatList = GetThreatMgr().GetThreatList();
-                ThreatContainer::StorageType offlineThreatList = GetThreatMgr().GetOfflineThreatList();
-
-                // merge expects sorted lists
-                threatList.sort();
-                offlineThreatList.sort();
-                threatList.merge(offlineThreatList);
-
-                for (ThreatContainer::StorageType::const_iterator itr = threatList.begin(); itr != threatList.end(); ++itr)
-                    if (Unit* unit = (*itr)->getTarget())
+                std::vector<std::pair<ObjectGuid, float>> threatEntries;
+                GetThreatMgr().GetThreatListSnapshot(threatEntries, true);
+                for (auto const& entry : threatEntries)
+                {
+                    if (Unit* unit = ObjectAccessor::GetUnit(*this, entry.first))
                         unit->getHostileRefMgr().setOnlineOfflineState(ToCreature(), unit->InSamePhase(newPhaseMask));
+                }
             }
         }
     }
@@ -19562,6 +19672,15 @@ void Unit::UpdateObjectVisibility(bool forced, bool /*fromUpdate*/)
         AddToNotify(NOTIFY_VISIBILITY_CHANGED);
     else
     {
+        if (!IsPlayer())
+        {
+            if (Map* map = FindMap(); map && map->ShouldDeferNonPlayerVisibility(this))
+            {
+                map->QueueDeferredVisibilityUpdate(GetGUID());
+                return;
+            }
+        }
+
         WorldObject::UpdateObjectVisibility(true);
         Acore::AIRelocationNotifier notifier(*this);
         float radius = 60.0f;
@@ -20109,7 +20228,7 @@ void Unit::BuildMovementPacket(ByteBuffer* data) const
 bool Unit::IsFalling() const
 {
     return m_movementInfo.HasMovementFlag(MOVEMENTFLAG_FALLING | MOVEMENTFLAG_FALLING_FAR) ||
-        (!movespline->Finalized() && movespline->Initialized() && movespline->isFalling());
+    (!IsMoveSplineFinalizedSnapshot() && IsMoveSplineInitializedSnapshot() && IsMoveSplineFallingSnapshot());
 }
 
 /**
@@ -20234,43 +20353,42 @@ void Unit::UpdateHeight(float newZ)
 
 void Unit::SendThreatListUpdate()
 {
-    if (!GetThreatMgr().isThreatListEmpty())
-    {
-        uint32 count = GetThreatMgr().GetThreatList().size();
+    std::vector<std::pair<ObjectGuid, float>> threatEntries;
+    GetThreatMgr().GetThreatListSnapshot(threatEntries);
+    if (threatEntries.empty())
+        return;
 
-        //LOG_DEBUG("entities.unit", "WORLD: Send SMSG_THREAT_UPDATE Message");
-        WorldPacket data(SMSG_THREAT_UPDATE, 8 + count * 8);
-        data << GetPackGUID();
-        data << uint32(count);
-        ThreatContainer::StorageType const& tlist = GetThreatMgr().GetThreatList();
-        for (ThreatContainer::StorageType::const_iterator itr = tlist.begin(); itr != tlist.end(); ++itr)
-        {
-            data << (*itr)->getUnitGuid().WriteAsPacked();
-            data << uint32((*itr)->GetThreat() * 100);
-        }
-        SendMessageToSet(&data, false);
+    uint32 count = static_cast<uint32>(threatEntries.size());
+    WorldPacket data(SMSG_THREAT_UPDATE, 8 + count * 8);
+    data << GetPackGUID();
+    data << count;
+    for (auto const& entry : threatEntries)
+    {
+        data << entry.first.WriteAsPacked();
+        data << uint32(entry.second * 100);
     }
+    SendMessageToSet(&data, false);
 }
 
 void Unit::SendChangeCurrentVictimOpcode(HostileReference* pHostileReference)
 {
-    if (!GetThreatMgr().isThreatListEmpty())
-    {
-        uint32 count = GetThreatMgr().GetThreatList().size();
+    std::vector<std::pair<ObjectGuid, float>> threatEntries;
+    GetThreatMgr().GetThreatListSnapshot(threatEntries);
+    if (threatEntries.empty())
+        return;
 
-        LOG_DEBUG("entities.unit", "WORLD: Send SMSG_HIGHEST_THREAT_UPDATE Message");
-        WorldPacket data(SMSG_HIGHEST_THREAT_UPDATE, 8 + 8 + count * 8);
-        data << GetPackGUID();
-        data << pHostileReference->getUnitGuid().WriteAsPacked();
-        data << uint32(count);
-        ThreatContainer::StorageType const& tlist = GetThreatMgr().GetThreatList();
-        for (ThreatContainer::StorageType::const_iterator itr = tlist.begin(); itr != tlist.end(); ++itr)
-        {
-            data << (*itr)->getUnitGuid().WriteAsPacked();
-            data << uint32((*itr)->GetThreat() * 100);
-        }
-        SendMessageToSet(&data, false);
+    uint32 count = static_cast<uint32>(threatEntries.size());
+    LOG_DEBUG("entities.unit", "WORLD: Send SMSG_HIGHEST_THREAT_UPDATE Message");
+    WorldPacket data(SMSG_HIGHEST_THREAT_UPDATE, 8 + 8 + count * 8);
+    data << GetPackGUID();
+    data << pHostileReference->getUnitGuid().WriteAsPacked();
+    data << count;
+    for (auto const& entry : threatEntries)
+    {
+        data << entry.first.WriteAsPacked();
+        data << uint32(entry.second * 100);
     }
+    SendMessageToSet(&data, false);
 }
 
 void Unit::SendClearThreatListOpcode()
@@ -21314,17 +21432,7 @@ bool Unit::IsInCombatWith(Unit const* who) const
     // Check target exists
     if (!who)
         return false;
-    // Search in threat list
-    ObjectGuid guid = who->GetGUID();
-    for (ThreatContainer::StorageType::const_iterator i = m_ThreatMgr.GetThreatList().begin(); i != m_ThreatMgr.GetThreatList().end(); ++i)
-    {
-        HostileReference* ref = (*i);
-        // Return true if the unit matches
-        if (ref && ref->getUnitGuid() == guid)
-            return true;
-    }
-    // Nothing found, false.
-    return false;
+    return m_ThreatMgr.HasThreatFor(who->GetGUID());
 }
 
 /**

@@ -31,7 +31,7 @@
 #include "Vehicle.h"
 #include "WorldModel.h"
 
-MotionTransport::MotionTransport() : Transport(), _transportInfo(nullptr), _isMoving(true), _pendingStop(false), _triggeredArrivalEvent(false), _triggeredDepartureEvent(false), _passengersLoaded(false), _delayedTeleport(false)
+MotionTransport::MotionTransport() : Transport(), _transportInfo(nullptr), _isMoving(true), _pendingStop(false), _triggeredArrivalEvent(false), _triggeredDepartureEvent(false), _passengersLoaded(false), _passengersLoading(false), _delayedTeleport(false)
 {
     m_updateFlag = UPDATEFLAG_TRANSPORT | UPDATEFLAG_LOWGUID | UPDATEFLAG_STATIONARY_POSITION | UPDATEFLAG_ROTATION;
 }
@@ -318,6 +318,16 @@ void MotionTransport::RemovePassenger(WorldObject* passenger, bool withAll)
 Creature* MotionTransport::CreateNPCPassenger(ObjectGuid::LowType guid, CreatureData const* data)
 {
     Map* map = GetMap();
+    if (map)
+    {
+        ObjectGuid creatureGuid = ObjectGuid::Create<HighGuid::Unit>(data->id1, guid);
+        if (Creature* existing = map->GetCreature(creatureGuid))
+        {
+            std::lock_guard<std::mutex> guard(Lock);
+            _staticPassengers.insert(existing);
+            return existing;
+        }
+    }
     Creature* creature = new Creature();
 
     if (!creature->LoadCreatureFromDB(guid, map, false))
@@ -358,7 +368,10 @@ Creature* MotionTransport::CreateNPCPassenger(ObjectGuid::LowType guid, Creature
         return nullptr;
     }
 
-    _staticPassengers.insert(creature);
+    {
+        std::lock_guard<std::mutex> guard(Lock);
+        _staticPassengers.insert(creature);
+    }
     sScriptMgr->OnAddCreaturePassenger(this, creature);
     return creature;
 }
@@ -366,6 +379,16 @@ Creature* MotionTransport::CreateNPCPassenger(ObjectGuid::LowType guid, Creature
 GameObject* MotionTransport::CreateGOPassenger(ObjectGuid::LowType guid, GameObjectData const* data)
 {
     Map* map = GetMap();
+    if (map)
+    {
+        ObjectGuid goGuid = ObjectGuid::Create<HighGuid::GameObject>(data->id, guid);
+        if (GameObject* existing = map->GetGameObject(goGuid))
+        {
+            std::lock_guard<std::mutex> guard(Lock);
+            _staticPassengers.insert(existing);
+            return existing;
+        }
+    }
     GameObject* go = new GameObject();
     ASSERT(!sObjectMgr->IsGameObjectStaticTransport(data->id));
 
@@ -400,7 +423,10 @@ GameObject* MotionTransport::CreateGOPassenger(ObjectGuid::LowType guid, GameObj
         return nullptr;
     }
 
-    _staticPassengers.insert(go);
+    {
+        std::lock_guard<std::mutex> guard(Lock);
+        _staticPassengers.insert(go);
+    }
     return go;
 }
 
@@ -408,7 +434,11 @@ void MotionTransport::LoadStaticPassengers()
 {
     if (PassengersLoaded())
         return;
-    SetPassengersLoaded(true);
+
+    bool expected = false;
+    if (!_passengersLoading.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+        return;
+
     if (uint32 mapId = GetGOInfo()->moTransport.mapID)
     {
         CellObjectGuidsMap const& cells = sObjectMgr->GetMapObjectGuids(mapId, GetMap()->GetSpawnMode());
@@ -426,11 +456,15 @@ void MotionTransport::LoadStaticPassengers()
                 CreateGOPassenger(*guidItr, sObjectMgr->GetGameObjectData(*guidItr));
         }
     }
+
+    SetPassengersLoaded(true);
+    _passengersLoading.store(false, std::memory_order_release);
 }
 
 void MotionTransport::UnloadStaticPassengers()
 {
     SetPassengersLoaded(false);
+    _passengersLoading.store(false, std::memory_order_release);
     while (!_staticPassengers.empty())
     {
         WorldObject* obj = *_staticPassengers.begin();

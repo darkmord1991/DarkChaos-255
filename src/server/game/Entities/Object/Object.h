@@ -94,6 +94,13 @@ class Unit;
 class Transport;
 class StaticTransport;
 class MotionTransport;
+class WorldObject;
+
+namespace ObjectAccessor
+{
+    WorldObject* GetWorldObject(WorldObject const& u, ObjectGuid const& guid);
+    Player* GetPlayer(WorldObject const& u, ObjectGuid const& guid);
+}
 
 struct PositionFullTerrainStatus;
 
@@ -574,21 +581,36 @@ public:
     template<typename Worker>
     void DoForAllVisiblePlayers(Worker&& worker)
     {
-        for (auto const& kvPair : GetObjectVisibilityContainer().GetVisiblePlayersMap())
-            worker(kvPair.second);
+        std::vector<ObjectGuid> guids;
+        GetObjectVisibilityContainer().GetVisiblePlayerGuids(guids);
+        if (guids.empty())
+            return;
+
+        for (ObjectGuid const& guid : guids)
+        {
+            if (Player* player = ObjectAccessor::GetPlayer(*this, guid))
+                worker(player);
+            else
+                GetObjectVisibilityContainer().EraseVisiblePlayerByGuid(guid);
+        }
     }
 
     // Warning: Possible iterator invalidation in uses that may modify visibility map
     template<typename Worker>
     void DoForAllVisibleWorldObjects(Worker&& worker)
     {
-        // Not a player, no access to this map
-        VisibleWorldObjectsMap const* visibleWorldObjectsMap = GetObjectVisibilityContainer().GetVisibleWorldObjectsMap();
-        if (!visibleWorldObjectsMap)
+        std::vector<ObjectGuid> guids;
+        GetObjectVisibilityContainer().GetVisibleWorldObjectGuids(guids);
+        if (guids.empty())
             return;
 
-        for (auto const& kvPair : *visibleWorldObjectsMap)
-            worker(kvPair.second);
+        for (ObjectGuid const& guid : guids)
+        {
+            if (WorldObject* obj = ObjectAccessor::GetWorldObject(*this, guid))
+                worker(obj);
+            else
+                GetObjectVisibilityContainer().EraseVisibleWorldObjectByGuid(guid);
+        }
     }
 
     void DestroyForVisiblePlayers();

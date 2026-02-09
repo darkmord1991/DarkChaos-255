@@ -58,6 +58,7 @@ namespace Movement
 
     int32 MoveSplineInit::Launch()
     {
+        std::lock_guard<std::recursive_mutex> lock(unit->GetMoveSplineLock());
         MoveSpline& move_spline = *unit->movespline;
 
         bool transport = unit->HasUnitMovementFlag(MOVEMENTFLAG_ONTRANSPORT) && unit->GetTransGUID();
@@ -134,6 +135,7 @@ namespace Movement
 
         unit->m_movementInfo.SetMovementFlags(moveFlags);
         move_spline.Initialize(args);
+        unit->UpdateMoveSplineSnapshot();
 
         WorldPacket data(SMSG_MONSTER_MOVE, 64);
         data << unit->GetPackGUID();
@@ -152,6 +154,7 @@ namespace Movement
 
     void MoveSplineInit::Stop()
     {
+        std::lock_guard<std::recursive_mutex> lock(unit->GetMoveSplineLock());
         MoveSpline& move_spline = *unit->movespline;
 
         // No need to stop if we are not moving
@@ -180,6 +183,7 @@ namespace Movement
         unit->m_movementInfo.RemoveMovementFlag(MOVEMENTFLAG_FORWARD | MOVEMENTFLAG_BACKWARD | MOVEMENTFLAG_SPLINE_ENABLED);
         move_spline.onTransport = transport;
         move_spline.Initialize(args);
+        unit->UpdateMoveSplineSnapshot();
 
         WorldPacket data(SMSG_MONSTER_MOVE, 64);
         data << unit->GetPackGUID();

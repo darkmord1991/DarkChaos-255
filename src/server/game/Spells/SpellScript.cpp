@@ -977,7 +977,7 @@ bool AuraScript::_IsDefaultActionPrevented()
         case AURA_SCRIPT_HOOK_EFFECT_PROC:
             return m_defaultActionPrevented;
         default:
-            ASSERT(false && "AuraScript::_IsDefaultActionPrevented is called in a wrong place");
+            LOG_ERROR("spells.scripts", "Script: `{}` Spell: `{}` AuraScript::_IsDefaultActionPrevented called in a hook in which the call won't have effect!", m_scriptName->c_str(), m_scriptSpellId);
             return false;
     }
 }

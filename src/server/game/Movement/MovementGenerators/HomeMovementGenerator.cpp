@@ -72,7 +72,7 @@ void HomeMovementGenerator<Creature>::_setTargetLocation(Creature* owner)
 
 bool HomeMovementGenerator<Creature>::DoUpdate(Creature* owner, const uint32 /*time_diff*/)
 {
-    arrived = owner->movespline->Finalized();
+    arrived = owner->IsMoveSplineFinalizedSnapshot();
     if (arrived)
         return false;
 

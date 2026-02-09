@@ -46,7 +46,7 @@ public:
     {
         METRIC_TIMER("map_update_time_diff", METRIC_TAG("map_id", std::to_string(m_map.GetId())));
         m_map.Update(m_diff, s_diff);
-        m_updater.update_finished();
+        m_updater.update_finished(MapUpdater::UpdateRequestType::General);
     }
 
 private:
@@ -69,7 +69,7 @@ public:
         Map* map = sMapMgr->CreateBaseMap(_mapId);
         LOG_INFO("server.loading", ">> Loading All Grids For Map {} ({})", map->GetId(), map->GetMapName());
         map->LoadAllGrids();
-        _updater.update_finished();
+        _updater.update_finished(MapUpdater::UpdateRequestType::General);
     }
 
 private:
@@ -89,7 +89,7 @@ public:
     {
         for (uint32 gridId : _gridIds)
             _map.PreloadGridObjectGuids(gridId);
-        _updater.update_finished();
+        _updater.update_finished(MapUpdater::UpdateRequestType::General);
     }
 
 private:
@@ -106,7 +106,7 @@ public:
     void call() override
     {
         sLFGMgr->Update(m_diff, 1);
-        m_updater.update_finished();
+        m_updater.update_finished(MapUpdater::UpdateRequestType::General);
     }
 private:
     MapUpdater& m_updater;
@@ -146,7 +146,7 @@ public:
         }
         if (_onDone)
             _onDone();
-        _updater.update_finished();
+        _updater.update_finished(MapUpdater::UpdateRequestType::Partition);
     }
 
 private:
@@ -158,7 +158,7 @@ private:
     std::function<void()> _onDone;
 };
 
-MapUpdater::MapUpdater() : pending_requests(0), _cancelationToken(false)
+MapUpdater::MapUpdater() : pending_requests(0), pending_partition_requests(0), _cancelationToken(false)
 {
 }
 
@@ -175,7 +175,8 @@ void MapUpdater::deactivate()
 {
     _cancelationToken = true;
 
-    _queue.Cancel();  // Cancel queue first so workers can wake up and exit
+    _queue.Cancel();  // Cancel queues first so workers can wake up and exit
+    _partitionQueue.Cancel();
 
     wait();  // Now wait for any in-progress tasks to complete
 
@@ -241,7 +242,9 @@ void MapUpdater::schedule_lfg_update(uint32 diff)
 void MapUpdater::schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff,
     std::function<void()> onDone)
 {
-    schedule_task(new PartitionUpdateRequest(map, *this, partitionId, diff, s_diff, std::move(onDone)));
+    pending_requests.fetch_add(1, std::memory_order_release);
+    pending_partition_requests.fetch_add(1, std::memory_order_release);
+    _partitionQueue.Push(new PartitionUpdateRequest(map, *this, partitionId, diff, s_diff, std::move(onDone)));
 }
 
 void MapUpdater::run_tasks_until(std::function<bool()> done)
@@ -277,14 +280,50 @@ void MapUpdater::run_tasks_until(std::function<bool()> done)
     }
 }
 
+void MapUpdater::run_partition_tasks_until(std::function<bool()> done)
+{
+    auto start = std::chrono::steady_clock::now();
+    auto lastWarn = start;
+    constexpr auto kWarnInterval = std::chrono::seconds(30);
+
+    while (!done())
+    {
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastWarn >= kWarnInterval)
+        {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
+            LOG_FATAL("map.partition",
+                "run_partition_tasks_until: STALLED for {} seconds! pending_partition_requests={} "
+                "— possible deadlock or hung partition worker. Use 'thread apply all bt' in GDB.",
+                elapsed, pending_partition_requests.load(std::memory_order_acquire));
+            lastWarn = now;
+        }
+
+        UpdateRequest* request = nullptr;
+        if (_partitionQueue.WaitAndPopFor(request, std::chrono::milliseconds(2)))
+        {
+            if (request)
+            {
+                if (!_cancelationToken)
+                    request->call();
+                delete request;
+            }
+            continue;
+        }
+    }
+}
+
 bool MapUpdater::activated()
 {
     return !_workerThreads.empty();
 }
 
-void MapUpdater::update_finished()
+void MapUpdater::update_finished(UpdateRequestType type)
 {
     // Atomic decrement for pending_requests — use acq_rel for proper visibility of completed work
+    if (type == UpdateRequestType::Partition)
+        pending_partition_requests.fetch_sub(1, std::memory_order_acq_rel);
+
     if (pending_requests.fetch_sub(1, std::memory_order_acq_rel) == 1)
     {
         // Only notify when pending_requests becomes 0 (i.e., all tasks are finished)
@@ -303,7 +342,17 @@ void MapUpdater::WorkerThread()
     {
         UpdateRequest* request = nullptr;
 
-        _queue.WaitAndPop(request);  // Wait for and pop a request from the queue
+        if (!_partitionQueue.Pop(request))
+        {
+            if (_queue.WaitAndPopFor(request, std::chrono::milliseconds(2)))
+            {
+                // request already set
+            }
+            else if (_partitionQueue.WaitAndPopFor(request, std::chrono::milliseconds(2)))
+            {
+                // request already set
+            }
+        }
 
         if (request)
         {

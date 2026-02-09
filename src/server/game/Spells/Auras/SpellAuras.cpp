@@ -388,6 +388,7 @@ void Aura::_InitEffects(uint8 effMask, Unit* caster, int32* baseAmount)
 
 Aura::~Aura()
 {
+    std::lock_guard<std::recursive_mutex> lock(_applicationLock);
     // unload scripts
     while (!m_loadedScripts.empty())
     {
@@ -433,6 +434,7 @@ AuraObjectType Aura::GetType() const
 
 void Aura::_ApplyForTarget(Unit* target, Unit* caster, AuraApplication* auraApp)
 {
+    std::lock_guard<std::recursive_mutex> lock(_applicationLock);
     ASSERT(target);
     ASSERT(auraApp);
     // aura mustn't be already applied on target
@@ -456,6 +458,7 @@ void Aura::_ApplyForTarget(Unit* target, Unit* caster, AuraApplication* auraApp)
 
 void Aura::_UnapplyForTarget(Unit* target, Unit* caster, AuraApplication* auraApp)
 {
+    std::lock_guard<std::recursive_mutex> lock(_applicationLock);
     ASSERT(target);
     ASSERT(auraApp->GetRemoveMode());
     ASSERT(auraApp);
@@ -515,15 +518,20 @@ void Aura::_UnapplyForTarget(Unit* target, Unit* caster, AuraApplication* auraAp
 // and marks aura as removed
 void Aura::_Remove(AuraRemoveMode removeMode)
 {
-    ASSERT (!m_isRemoved);
-    m_isRemoved = true;
-    ApplicationMap::iterator appItr = m_applications.begin();
-    for (appItr = m_applications.begin(); appItr != m_applications.end();)
+    std::vector<AuraApplication*> applications;
     {
-        AuraApplication* aurApp = appItr->second;
+        std::lock_guard<std::recursive_mutex> lock(_applicationLock);
+        ASSERT (!m_isRemoved);
+        m_isRemoved = true;
+        applications.reserve(m_applications.size());
+        for (ApplicationMap::const_iterator appItr = m_applications.begin(); appItr != m_applications.end(); ++appItr)
+            applications.push_back(appItr->second);
+    }
+
+    for (AuraApplication* aurApp : applications)
+    {
         Unit* target = aurApp->GetTarget();
         target->_UnapplyAura(aurApp, removeMode);
-        appItr = m_applications.begin();
     }
 }
 
@@ -542,13 +550,21 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
 
     UnitList targetsToRemove;
 
-    // mark all auras as ready to remove
-    for (ApplicationMap::iterator appIter = m_applications.begin(); appIter != m_applications.end(); ++appIter)
+    std::vector<std::pair<Unit*, uint8>> currentApplications;
     {
-        std::map<Unit*, uint8>::iterator existing = targets.find(appIter->second->GetTarget());
+        std::lock_guard<std::recursive_mutex> lock(_applicationLock);
+        currentApplications.reserve(m_applications.size());
+        for (ApplicationMap::const_iterator appIter = m_applications.begin(); appIter != m_applications.end(); ++appIter)
+            currentApplications.emplace_back(appIter->second->GetTarget(), appIter->second->GetEffectMask());
+    }
+
+    // mark all auras as ready to remove
+    for (auto const& currentApplication : currentApplications)
+    {
+        std::map<Unit*, uint8>::iterator existing = targets.find(currentApplication.first);
         // not found in current area - remove the aura
         if (existing == targets.end())
-            targetsToRemove.push_back(appIter->second->GetTarget());
+            targetsToRemove.push_back(currentApplication.first);
         else
         {
             // xinef: check immunities here, so aura wont get removed on every tick and then reapplied
@@ -561,8 +577,8 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
 
             // needs readding - remove now, will be applied in next update cycle
             // (dbcs do not have auras which apply on same type of targets but have different radius, so this is not really needed)
-            if (appIter->second->GetEffectMask() != existing->second || !CanBeAppliedOn(existing->first))
-                targetsToRemove.push_back(appIter->second->GetTarget());
+            if (currentApplication.second != existing->second || !CanBeAppliedOn(existing->first))
+                targetsToRemove.push_back(currentApplication.first);
             // nothing todo - aura already applied
             // remove from auras to register list
             targets.erase(existing);
@@ -681,10 +697,13 @@ void Aura::_ApplyEffectForTargets(uint8 effIndex)
 {
     // prepare list of aura targets
     UnitList targetList;
-    for (ApplicationMap::iterator appIter = m_applications.begin(); appIter != m_applications.end(); ++appIter)
     {
-        if ((appIter->second->GetEffectsToApply() & (1 << effIndex)) && !appIter->second->HasEffect(effIndex))
-            targetList.push_back(appIter->second->GetTarget());
+        std::lock_guard<std::recursive_mutex> lock(_applicationLock);
+        for (ApplicationMap::iterator appIter = m_applications.begin(); appIter != m_applications.end(); ++appIter)
+        {
+            if ((appIter->second->GetEffectsToApply() & (1 << effIndex)) && !appIter->second->HasEffect(effIndex))
+                targetList.push_back(appIter->second->GetTarget());
+        }
     }
 
     // apply effect to targets
@@ -1009,9 +1028,17 @@ bool Aura::ModStackAmount(int32 num, AuraRemoveMode removeMode, bool periodicRes
 
 void Aura::RefreshSpellMods()
 {
-    for (Aura::ApplicationMap::const_iterator appIter = m_applications.begin(); appIter != m_applications.end(); ++appIter)
-        if (Player* player = appIter->second->GetTarget()->ToPlayer())
-            player->RestoreAllSpellMods(0, this);
+    std::vector<Player*> players;
+    {
+        std::lock_guard<std::recursive_mutex> lock(_applicationLock);
+        players.reserve(m_applications.size());
+        for (Aura::ApplicationMap::const_iterator appIter = m_applications.begin(); appIter != m_applications.end(); ++appIter)
+            if (Player* player = appIter->second->GetTarget()->ToPlayer())
+                players.push_back(player);
+    }
+
+    for (Player* player : players)
+        player->RestoreAllSpellMods(0, this);
 }
 
 bool Aura::HasMoreThanOneEffectForType(AuraType auraType) const
@@ -1203,6 +1230,7 @@ void Aura::HandleAllEffects(AuraApplication* aurApp, uint8 mode, bool apply)
 
 void Aura::GetApplicationList(std::list<AuraApplication*>& applicationList) const
 {
+    std::lock_guard<std::recursive_mutex> lock(_applicationLock);
     for (Aura::ApplicationMap::const_iterator appIter = m_applications.begin(); appIter != m_applications.end(); ++appIter)
     {
         if (appIter->second->GetEffectMask())
@@ -1212,6 +1240,7 @@ void Aura::GetApplicationList(std::list<AuraApplication*>& applicationList) cons
 
 void Aura::SetNeedClientUpdateForTargets() const
 {
+    std::lock_guard<std::recursive_mutex> lock(_applicationLock);
     for (ApplicationMap::const_iterator appIter = m_applications.begin(); appIter != m_applications.end(); ++appIter)
         appIter->second->SetNeedClientUpdate();
 }
@@ -2273,6 +2302,7 @@ void Aura::TriggerProcOnEvent(AuraApplication* aurApp, ProcEventInfo& eventInfo)
 
 void Aura::_DeleteRemovedApplications()
 {
+    std::lock_guard<std::recursive_mutex> lock(_applicationLock);
     while (!m_removedApplications.empty())
     {
         delete m_removedApplications.front();

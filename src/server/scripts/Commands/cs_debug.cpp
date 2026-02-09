@@ -28,6 +28,7 @@
 #include "M2Stores.h"
 #include "MapMgr.h"
 #include "ObjectMgr.h"
+#include "ObjectAccessor.h"
 #include "PoolMgr.h"
 #include "ScriptMgr.h"
 #include "Transport.h"
@@ -1455,11 +1456,11 @@ public:
         std::array<uint32, NUM_CLIENT_OBJECT_TYPES> objectByTypeCount = {};
 
         ObjectVisibilityContainer const& objectVisibilityContainer = player->GetObjectVisibilityContainer();
-        for (auto const& kvPair : *objectVisibilityContainer.GetVisibleWorldObjectsMap())
-        {
-            WorldObject const* obj = kvPair.second;
-            ++objectByTypeCount[obj->GetTypeId()];
-        }
+        std::vector<ObjectGuid> visibleGuids;
+        objectVisibilityContainer.GetVisibleWorldObjectGuids(visibleGuids);
+        for (ObjectGuid const& guid : visibleGuids)
+            if (WorldObject const* obj = ObjectAccessor::GetWorldObject(*player, guid))
+                ++objectByTypeCount[obj->GetTypeId()];
 
         uint32 zoneWideVisibleObjectsInZone = 0;
         if (ZoneWideVisibleWorldObjectsSet const* farVisibleSet = player->GetMap()->GetZoneWideVisibleWorldObjectsForZone(player->GetZoneId()))
@@ -1471,7 +1472,7 @@ public:
         handler->PSendSysMessage("Visible GameObjects: {}", objectByTypeCount[TYPEID_GAMEOBJECT]);
         handler->PSendSysMessage("Visible DynamicObjects: {}", objectByTypeCount[TYPEID_DYNAMICOBJECT]);
         handler->PSendSysMessage("Visible Corpses: {}", objectByTypeCount[TYPEID_CORPSE]);
-        handler->PSendSysMessage("Players we are visible to: {}", objectVisibilityContainer.GetVisiblePlayersMap().size());
+        handler->PSendSysMessage("Players we are visible to: {}", objectVisibilityContainer.VisiblePlayersCount());
         handler->PSendSysMessage("Zone wide visible objects in zone: {}", zoneWideVisibleObjectsInZone);
         return true;
     }

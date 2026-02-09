@@ -24,6 +24,8 @@
 #include "SharedDefines.h"
 #include "UnitEvents.h"
 #include <list>
+#include <mutex>
+#include <vector>
 
 //==============================================================
 
@@ -213,8 +215,22 @@ public:
     ~ThreatMgr() { clearReferences(); }
 
     Unit* SelectVictim() { return getHostileTarget(); }
-    Unit* GetCurrentVictim() const { if (ThreatReference* ref = getCurrentVictim()) return ref->GetVictim(); else return nullptr; }
-    Unit* GetAnyTarget() const { auto const& list = GetThreatList(); if (!list.empty()) return list.front()->getTarget(); return nullptr; }
+    Unit* GetCurrentVictim() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(_threatLock);
+        if (ThreatReference* ref = getCurrentVictim())
+            return ref->GetVictim();
+        return nullptr;
+    }
+
+    Unit* GetAnyTarget() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(_threatLock);
+        auto const& list = GetThreatList();
+        if (!list.empty())
+            return list.front()->getTarget();
+        return nullptr;
+    }
 
     void clearReferences();
 
@@ -222,11 +238,25 @@ public:
     void DoAddThreat(Unit* victim, float threat);
     void ModifyThreatByPercent(Unit* victim, int32 percent);
     float GetThreat(Unit* victim, bool alsoSearchOfflineList = false);
-    float GetThreatListSize() const { return GetThreatList().size(); }
+    float GetThreatListSize() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(_threatLock);
+        return GetThreatList().size();
+    }
+
     float getThreatWithoutTemp(Unit* victim, bool alsoSearchOfflineList = false);
 
-    [[nodiscard]] bool isThreatListEmpty() const { return iThreatContainer.empty(); }
-    [[nodiscard]] bool areThreatListsEmpty() const { return iThreatContainer.empty() && iThreatOfflineContainer.empty(); }
+    [[nodiscard]] bool isThreatListEmpty() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(_threatLock);
+        return iThreatContainer.empty();
+    }
+
+    [[nodiscard]] bool areThreatListsEmpty() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(_threatLock);
+        return iThreatContainer.empty() && iThreatOfflineContainer.empty();
+    }
 
     Acore::IteratorPair<std::list<ThreatReference*>::const_iterator> GetSortedThreatList() const { auto& list = iThreatContainer.GetThreatList(); return { list.cbegin(), list.cend() }; }
     Acore::IteratorPair<std::list<ThreatReference*>::const_iterator> GetUnsortedThreatList() const { return GetSortedThreatList(); }
@@ -235,7 +265,11 @@ public:
 
     bool isNeedUpdateToClient(uint32 time);
 
-    [[nodiscard]] HostileReference* getCurrentVictim() const { return iCurrentVictim; }
+    [[nodiscard]] HostileReference* getCurrentVictim() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(_threatLock);
+        return iCurrentVictim;
+    }
 
     [[nodiscard]] Unit* GetOwner() const { return iOwner; }
 
@@ -255,9 +289,13 @@ public:
     void ClearThreat(Unit const* who);
     void ClearAllThreat();
 
+    void GetThreatListSnapshot(std::vector<std::pair<ObjectGuid, float>>& out, bool includeOffline = false) const;
+    bool HasThreatFor(ObjectGuid const& guid, bool includeOffline = false) const;
+
     // Reset all aggro of unit in threadlist satisfying the predicate.
     template<class PREDICATE> void resetAggro(PREDICATE predicate)
     {
+        std::lock_guard<std::recursive_mutex> lock(_threatLock);
         ThreatContainer::StorageType& threatList = iThreatContainer.iThreatList;
         if (threatList.empty())
             return;
@@ -289,6 +327,7 @@ private:
     uint32 iUpdateTimer;
     ThreatContainer iThreatContainer;
     ThreatContainer iThreatOfflineContainer;
+    mutable std::recursive_mutex _threatLock;
 };
 
 //=================================================

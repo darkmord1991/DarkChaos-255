@@ -332,7 +332,13 @@ void CharmInfo::SaveStayPosition(bool atCurrentPos)
         stayPos = G3D::Vector3(_unit->GetPositionX(), _unit->GetPositionY(), z != INVALID_HEIGHT ? z : _unit->GetPositionZ());
     }
     else
-        stayPos = _unit->movespline->FinalDestination();
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        _unit->GetMoveSplineFinalDestinationSnapshot(x, y, z);
+        stayPos = G3D::Vector3(x, y, z);
+    }
 
     if (_unit->movespline->onTransport)
         if (TransportBase* transport = _unit->GetDirectTransport())

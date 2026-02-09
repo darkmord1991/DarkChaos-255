@@ -33,6 +33,7 @@
 #include "ThreatMgr.h"
 #include "UnitDefines.h"
 #include "UnitUtils.h"
+#include <atomic>
 #include <functional>
 #include <utility>
 
@@ -2116,6 +2117,14 @@ public:
 
     // Movement info
     Movement::MoveSpline* movespline;
+    std::recursive_mutex& GetMoveSplineLock() { return _moveSplineLock; }
+    void UpdateMoveSplineSnapshot();
+    [[nodiscard]] bool IsMoveSplineFinalizedSnapshot() const;
+    [[nodiscard]] bool IsMoveSplineBoardingSnapshot() const;
+    [[nodiscard]] bool IsMoveSplineInitializedSnapshot() const;
+    [[nodiscard]] bool IsMoveSplineFallingSnapshot() const;
+    [[nodiscard]] uint32 GetMoveSplineIdSnapshot() const;
+    void GetMoveSplineFinalDestinationSnapshot(float& x, float& y, float& z) const;
 
 protected:
     explicit Unit();
@@ -2167,6 +2176,7 @@ protected:
 
     Spell* m_currentSpells[CURRENT_MAX_SPELL];
 
+    mutable std::recursive_mutex _auraLock;
     AuraMap m_ownedAuras;
     AuraApplicationMap m_appliedAuras;
     AuraList m_removedAuras;
@@ -2183,6 +2193,18 @@ protected:
     float m_auraPctModifiersGroup[UNIT_MOD_END][MODIFIER_TYPE_PCT_END];
     float m_weaponDamage[MAX_ATTACK][MAX_WEAPON_DAMAGE_RANGE][MAX_ITEM_PROTO_DAMAGES];
     bool m_canModifyStats;
+    mutable std::recursive_mutex _moveSplineLock;
+    struct MoveSplineSnapshot
+    {
+        std::atomic<uint32> id{0};
+        std::atomic<bool> finalized{true};
+        std::atomic<bool> boarding{false};
+        std::atomic<bool> initialized{false};
+        std::atomic<bool> falling{false};
+        std::atomic<float> destX{0.0f};
+        std::atomic<float> destY{0.0f};
+        std::atomic<float> destZ{0.0f};
+    } _moveSplineSnapshot;
     mutable std::recursive_mutex _visibleAurasLock;
     VisibleAuraMap m_visibleAuras;
 
