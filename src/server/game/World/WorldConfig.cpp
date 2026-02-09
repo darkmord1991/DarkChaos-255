@@ -550,6 +550,12 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_MAPS, "MapPartitions.Maps", "");
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_STORE_ONLY, "MapPartitions.UsePartitionStoreOnly", false);
     SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_EXCLUDE_ZONES, "MapPartitions.ExcludeZones", "");
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_TILE_BASED_ENABLED, "MapPartitions.TileBased.Enabled", false);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_TILE_BASED_TILES_PER_PARTITION, "MapPartitions.TileBased.TilesPerPartition", 64);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_TILE_BASED_MIN_PARTITIONS, "MapPartitions.TileBased.MinPartitions", 1);
+    SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_TILE_BASED_MAX_PARTITIONS, "MapPartitions.TileBased.MaxPartitions", 16);
+    SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_TILE_BASED_TILES_PER_PARTITION_OVERRIDES, "MapPartitions.TileBased.TilesPerPartitionOverrides", "");
+    SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_TILE_BASED_PARTITION_OVERRIDES, "MapPartitions.TileBased.PartitionOverrides", "");
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_LAYERS_ENABLED, "MapPartitions.Layers.Enabled", false);
     SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY, "MapPartitions.Layers.Capacity", 100);
     SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_LAYER_MAX, "MapPartitions.Layers.Max", 4);

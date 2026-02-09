@@ -16,18 +16,146 @@
 #include "DBCStores.h"
 #include "Maps/Partitioning/PartitionManager.h"
 #include "Maps/Partitioning/LayerManager.h"
+#include <cctype>
+#include <filesystem>
 #include <map>
+#include <sstream>
+#include <unordered_map>
 
 #include <string>
 
 using namespace Acore::ChatCommands;
+
+namespace
+{
+    std::unordered_map<uint32, uint32> ParseUintOverrides(std::string_view overrides)
+    {
+        std::unordered_map<uint32, uint32> result;
+        if (overrides.empty())
+            return result;
+
+        std::string copy(overrides.begin(), overrides.end());
+        std::istringstream stream(copy);
+        std::string token;
+        while (std::getline(stream, token, ','))
+        {
+            auto start = token.find_first_not_of(" \t");
+            auto end = token.find_last_not_of(" \t");
+            if (start == std::string::npos)
+                continue;
+            token = token.substr(start, end - start + 1);
+
+            auto colonPos = token.find(':');
+            if (colonPos == std::string::npos || colonPos == 0 || colonPos == token.size() - 1)
+                continue;
+
+            try
+            {
+                uint32 mapId = static_cast<uint32>(std::stoul(token.substr(0, colonPos)));
+                uint32 value = static_cast<uint32>(std::stoul(token.substr(colonPos + 1)));
+                if (value == 0)
+                    continue;
+                result[mapId] = value;
+            }
+            catch (std::exception const&)
+            {
+                continue;
+            }
+        }
+
+        return result;
+    }
+
+    std::vector<uint32> ParseMapIdList(std::string_view mapList)
+    {
+        std::vector<uint32> mapIds;
+        if (mapList.empty())
+            return mapIds;
+
+        std::string copy(mapList.begin(), mapList.end());
+        std::istringstream stream(copy);
+        std::string token;
+        while (std::getline(stream, token, ','))
+        {
+            std::string trimmed;
+            trimmed.reserve(token.size());
+            for (char c : token)
+            {
+                if (c != ' ' && c != '\t' && c != '\n' && c != '\r')
+                    trimmed.push_back(c);
+            }
+            if (trimmed.empty())
+                continue;
+
+            try
+            {
+                mapIds.push_back(static_cast<uint32>(std::stoul(trimmed)));
+            }
+            catch (std::exception const&)
+            {
+                continue;
+            }
+        }
+
+        std::sort(mapIds.begin(), mapIds.end());
+        mapIds.erase(std::unique(mapIds.begin(), mapIds.end()), mapIds.end());
+        return mapIds;
+    }
+
+    std::unordered_map<uint32, uint32> CollectMapTileCounts(std::filesystem::path const& mapsPath)
+    {
+        std::unordered_map<uint32, uint32> counts;
+        if (!std::filesystem::exists(mapsPath))
+            return counts;
+
+        for (auto const& entry : std::filesystem::directory_iterator(mapsPath))
+        {
+            if (!entry.is_regular_file())
+                continue;
+
+            auto name = entry.path().filename().string();
+            if (name.size() < 5 || name.compare(name.size() - 4, 4, ".map") != 0)
+                continue;
+
+            size_t mapIdDigits = name.size() - 4;
+            if (mapIdDigits == 0)
+                continue;
+
+            bool allDigits = true;
+            for (char c : name)
+            {
+                if (!std::isdigit(static_cast<unsigned char>(c)))
+                {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (!allDigits)
+                continue;
+
+            uint32 mapId = 0;
+            try
+            {
+                mapId = static_cast<uint32>(std::stoul(name.substr(0, mapIdDigits)));
+            }
+            catch (std::exception const&)
+            {
+                continue;
+            }
+
+            ++counts[mapId];
+        }
+
+        return counts;
+    }
+}
 
 bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_view> const& args, std::vector<std::string_view>::iterator& it)
 {
     ++it;
     if (it == args.end())
     {
-        handler->PSendSysMessage("Usage: .dc partition status | config | diag [on|off]");
+        handler->PSendSysMessage("Usage: .dc partition status | config | diag [on|off] | tiles");
         handler->SetSentErrorMessage(true);
         return false;
     }
@@ -72,6 +200,79 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
         return true;
     }
 
+    if (sub2Norm == "tiles")
+    {
+        std::string_view mapsConfig = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_MAPS);
+        if (mapsConfig.empty())
+        {
+            handler->SendSysMessage("MapPartitions.Maps is empty. No maps configured for partitioning.");
+            return true;
+        }
+
+        std::filesystem::path mapsPath = std::filesystem::path(sWorld->GetDataPath()) / "maps";
+        auto tileCounts = CollectMapTileCounts(mapsPath);
+
+        bool tileBased = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_ENABLED);
+        uint32 defaultCount = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_DEFAULT_COUNT);
+        uint32 tilesPerPartitionDefault = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_TILES_PER_PARTITION);
+        uint32 minPartitions = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_MIN_PARTITIONS);
+        uint32 maxPartitions = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_MAX_PARTITIONS);
+        if (minPartitions == 0)
+            minPartitions = 1;
+        if (maxPartitions == 0)
+            maxPartitions = 1;
+
+        auto tilesPerPartitionOverrides = ParseUintOverrides(
+            sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_TILES_PER_PARTITION_OVERRIDES));
+        auto partitionOverrides = ParseUintOverrides(
+            sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_PARTITION_OVERRIDES));
+
+        handler->SendSysMessage("|cff00ff00=== Map Tile Counts ===|r");
+        handler->PSendSysMessage("Data path: {}", mapsPath.string());
+
+        uint8 locale = handler->GetSessionDbLocaleIndex();
+        auto mapIds = ParseMapIdList(mapsConfig);
+        for (uint32 mapId : mapIds)
+        {
+            auto it = tileCounts.find(mapId);
+            uint32 tileCount = (it != tileCounts.end()) ? it->second : 0;
+
+            std::string mode = "default";
+            uint32 partitionCount = defaultCount;
+            uint32 tilesPerPartition = tilesPerPartitionDefault;
+
+            if (auto pit = partitionOverrides.find(mapId); pit != partitionOverrides.end())
+            {
+                partitionCount = pit->second;
+                mode = "override";
+            }
+            else if (tileBased && tilesPerPartitionDefault > 0 && tileCount > 0)
+            {
+                if (auto tit = tilesPerPartitionOverrides.find(mapId); tit != tilesPerPartitionOverrides.end())
+                    tilesPerPartition = tit->second;
+                if (tilesPerPartition > 0)
+                {
+                    partitionCount = (tileCount + tilesPerPartition - 1) / tilesPerPartition;
+                    mode = "tile-based";
+                }
+            }
+
+            if (partitionCount < minPartitions)
+                partitionCount = minPartitions;
+            if (partitionCount > maxPartitions)
+                partitionCount = maxPartitions;
+
+            MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
+            char const* mapName = mapEntry ? mapEntry->name[locale] : "(unknown)";
+
+            handler->PSendSysMessage("Map {} ({}) | tiles={} | partitions={} | mode={}",
+                mapId, mapName, tileCount, partitionCount, mode);
+        }
+
+        handler->SendSysMessage("|cff888888Note: tile counts are derived from data/maps/*.map files.|r");
+        return true;
+    }
+
     if (sub2Norm == "config")
     {
         handler->SendSysMessage("|cff00ff00=== Partition System Configuration ===|r");
@@ -82,6 +283,27 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
         handler->PSendSysMessage("MapPartitions.DefaultCount: |cff00ffff{}|r", sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_DEFAULT_COUNT));
         handler->PSendSysMessage("MapPartitions.BorderOverlap: |cff00ffff{:.1f}|r yards", sPartitionMgr->GetBorderOverlap());
         handler->PSendSysMessage("MapPartitions.StoreOnly: {}", sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_STORE_ONLY) ? "|cff00ff00TRUE|r" : "|cffff0000FALSE|r");
+
+        handler->PSendSysMessage("MapPartitions.TileBased.Enabled: {}",
+            sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_ENABLED) ? "|cff00ff00TRUE|r" : "|cffff0000FALSE|r");
+        handler->PSendSysMessage("MapPartitions.TileBased.TilesPerPartition: |cff00ffff{}|r",
+            sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_TILES_PER_PARTITION));
+        handler->PSendSysMessage("MapPartitions.TileBased.MinPartitions: |cff00ffff{}|r",
+            sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_MIN_PARTITIONS));
+        handler->PSendSysMessage("MapPartitions.TileBased.MaxPartitions: |cff00ffff{}|r",
+            sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_MAX_PARTITIONS));
+
+        std::string_view tilesOverrides = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_TILES_PER_PARTITION_OVERRIDES);
+        if (!tilesOverrides.empty())
+            handler->PSendSysMessage("MapPartitions.TileBased.TilesPerPartitionOverrides: |cff00ffff{}|r", tilesOverrides);
+        else
+            handler->PSendSysMessage("MapPartitions.TileBased.TilesPerPartitionOverrides: |cff888888(none)|r");
+
+        std::string_view countOverrides = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_PARTITION_OVERRIDES);
+        if (!countOverrides.empty())
+            handler->PSendSysMessage("MapPartitions.TileBased.PartitionOverrides: |cff00ffff{}|r", countOverrides);
+        else
+            handler->PSendSysMessage("MapPartitions.TileBased.PartitionOverrides: |cff888888(none)|r");
         
         // Zone Exclusions  
         std::string_view excludedZones = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_EXCLUDE_ZONES);
@@ -232,7 +454,7 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
         return true;
     }
 
-    handler->PSendSysMessage("Usage: .dc partition status | config | diag [on|off]");
+    handler->PSendSysMessage("Usage: .dc partition status | config | diag [on|off] | tiles");
     handler->SetSentErrorMessage(true);
     return false;
 }

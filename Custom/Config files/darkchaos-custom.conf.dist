@@ -3386,6 +3386,57 @@ MapPartitions.Maps = "0,1,530,571,745,1405,37"
 MapPartitions.DefaultCount = 4
 
 #
+#    MapPartitions.TileBased.Enabled
+#        Description: Enable tile-based partition sizing using extracted .map tiles.
+#                     When enabled, partition count is derived from tile count
+#                     (unless a PartitionOverrides entry exists for the map).
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+MapPartitions.TileBased.Enabled = 1
+
+#
+#    MapPartitions.TileBased.TilesPerPartition
+#        Description: Target number of tiles per partition (ADT-based sizing).
+#                     Partition count = ceil(tileCount / tilesPerPartition).
+#        Default:     64  (8x8 ADTs per partition)
+#
+MapPartitions.TileBased.TilesPerPartition = 16
+
+#
+#    MapPartitions.TileBased.MinPartitions
+#        Description: Minimum number of partitions per map when tile-based sizing is enabled.
+#        Default:     1
+#
+MapPartitions.TileBased.MinPartitions = 1
+
+#
+#    MapPartitions.TileBased.MaxPartitions
+#        Description: Maximum number of partitions per map when tile-based sizing is enabled.
+#        Default:     16
+#
+MapPartitions.TileBased.MaxPartitions = 8
+
+#
+#    MapPartitions.TileBased.TilesPerPartitionOverrides
+#        Description: Per-map overrides for tiles-per-partition.
+#                     Format: "mapId:tilesPerPartition,mapId:tilesPerPartition"
+#        Example:     "0:32,1:32,530:64,571:32"
+#        Default:     ""
+#
+MapPartitions.TileBased.TilesPerPartitionOverrides = ""
+
+#
+#    MapPartitions.TileBased.PartitionOverrides
+#        Description: Explicit per-map partition count overrides.
+#                     Format: "mapId:count,mapId:count". Takes priority over
+#                     tile-based sizing and DefaultCount.
+#        Example:     "0:9,1:9,530:4,571:9"
+#        Default:     ""
+#
+MapPartitions.TileBased.PartitionOverrides = "745:2,1405:2"
+
+#
 #    MapPartitions.BorderOverlap
 #        Description: Overlap distance (yards) shared between adjacent partitions.
 #        Default:     100.0

@@ -675,6 +675,7 @@ public:
     ZoneWideVisibleWorldObjectsSet const* GetZoneWideVisibleWorldObjectsForZone(uint32 zoneId) const;
 
     void LoadLayerClonesInRange(Player* player, float radius);
+    void ClearLoadedLayer(uint32 layerId);
 
     [[nodiscard]] uint32 GetPlayerCountInZone(uint32 zoneId) const
     {
@@ -700,7 +701,6 @@ private:
 
     bool EnsureGridLoaded(Cell const& cell);
     void EnsureGridLayerLoaded(Cell const& cell, uint32 layerId);
-    void ClearLoadedLayer(uint32 layerId);
     MapGridType* GetMapGrid(uint16 const x, uint16 const y);
 
     void ScriptsProcess();

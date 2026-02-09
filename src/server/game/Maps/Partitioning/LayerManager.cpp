@@ -131,7 +131,7 @@ void LayerManager::ParsePerMapCapacityOverrides()
 
     // Format: "mapId:capacity,mapId:capacity,..."
     // Example: "0:150,1:200,530:100,571:250"
-    std::istringstream ss(std::string(overrides));
+    std::istringstream ss{std::string(overrides)};
     std::string token;
     while (std::getline(ss, token, ','))
     {
@@ -1346,11 +1346,12 @@ void LayerManager::LoadPersistentLayerAssignment(ObjectGuid const& playerGuid)
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_DC_LAYER_ASSIGNMENT);
     stmt->SetData(0, playerGuid.GetCounter());
     
-    CharacterDatabase.AsyncQuery(stmt, [this, playerGuid](PreparedQueryResult result)
-    {
-        if (result)
-            HandlePersistentLayerAssignmentLoad(playerGuid, result);
-    });
+    sWorld->GetQueryProcessor().AddCallback(CharacterDatabase.AsyncQuery(stmt).WithPreparedCallback(
+        [this, playerGuid](PreparedQueryResult result)
+        {
+            if (result)
+                HandlePersistentLayerAssignmentLoad(playerGuid, result);
+        }));
 }
 
 void LayerManager::HandlePersistentLayerAssignmentLoad(ObjectGuid const& playerGuid, PreparedQueryResult result)
@@ -1757,6 +1758,8 @@ uint32 LayerManager::GetPendingSoftTransferCount() const
 
 void LayerManager::Update(uint32 mapId, uint32 diff)
 {
+    (void)diff;
+
     if (!IsLayeringEnabled())
         return;
 

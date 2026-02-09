@@ -65,7 +65,9 @@ New filters: `layercache`, `boundarygrid`, `preload`.
 ## Technical Implementation
 
 ### Grid Partitioning Logic
-The map is spatially divided into a generic grid of **N x N** partitions based on the `MapPartitions.GridSize` configuration.
+The map is spatially divided into a grid of partitions based on either:
+- `MapPartitions.DefaultCount` (static count), or
+- tile-based sizing (`MapPartitions.TileBased.*`) derived from extracted .map tiles.
 - **Spatial Hashing**: Entities are assigned to partitions based on their X/Y coordinates.
 - **Independence**: Each partition maintains its own object list (Players, Creatures, DynamicObjects), allowing them to update completely independently of other partitions.
 
@@ -216,6 +218,14 @@ MapPartitions.Maps = "0,1"
 # Number of partitions per map (default 4 = 2x2 grid)
 MapPartitions.DefaultCount = 4
 
+# Tile-based partition sizing (optional)
+MapPartitions.TileBased.Enabled = 1
+MapPartitions.TileBased.TilesPerPartition = 64
+MapPartitions.TileBased.MinPartitions = 1
+MapPartitions.TileBased.MaxPartitions = 16
+MapPartitions.TileBased.TilesPerPartitionOverrides = "0:32,1:32,530:64,571:32"
+MapPartitions.TileBased.PartitionOverrides = "0:9,1:9,530:4,571:9"
+
 # Overlap distance for boundary detection (yards)
 MapPartitions.BorderOverlap = 20.0
 
@@ -333,6 +343,7 @@ The system handles different map types according to specific rules to ensure sta
 | `.dc partition status` | Show partition stats for your current map |
 | `.dc partition config` | Display partition and layer configuration settings |
 | `.dc partition diag [on\|off\|status]` | Toggle runtime diagnostics |
+| `.dc partition tiles` | Print ADT tile counts per map and computed partition totals |
 
 ### Other:
 | Command | Description |

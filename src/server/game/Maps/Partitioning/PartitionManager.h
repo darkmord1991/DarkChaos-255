@@ -99,7 +99,7 @@ public:
     struct BoundaryPositionUpdate { ObjectGuid guid; float x; float y; };
     void BatchUpdateBoundaryPositions(uint32 mapId, uint32 partitionId, std::vector<BoundaryPositionUpdate> const& updates);
     void BatchUnregisterBoundaryObjects(uint32 mapId, uint32 partitionId, std::vector<ObjectGuid> const& guids);
-    void BatchSetPartitionOverrides(std::vector<ObjectGuid> const& guids, uint32 partitionId, uint32 durationMs);
+    void BatchSetPartitionOverrides(std::vector<ObjectGuid> const& guids, uint32 mapId, uint32 partitionId, uint32 durationMs);
 
     bool GetPersistentPartition(ObjectGuid const& guid, uint32 mapId, uint32& outPartitionId) const;
     void PersistPartitionOwnership(ObjectGuid const& guid, uint32 mapId, uint32 partitionId);
@@ -109,7 +109,7 @@ public:
     uint32 ConsumeCombatHandoffCount(uint32 mapId);
     uint32 ConsumePathHandoffCount(uint32 mapId);
 
-    void SetPartitionOverride(ObjectGuid const& guid, uint32 partitionId, uint32 durationMs);
+    void SetPartitionOverride(ObjectGuid const& guid, uint32 mapId, uint32 partitionId, uint32 durationMs);
 
     bool BeginRelocation(ObjectGuid const& guid, uint32 mapId, uint32 fromPartition, uint32 toPartition);
     bool CommitRelocation(ObjectGuid const& guid);
@@ -182,6 +182,7 @@ private:
     std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_set<ObjectGuid::LowType>>> _visibilitySets;
     struct PartitionOverride
     {
+        uint32 mapId = 0;
         uint32 partitionId = 0;
         uint64 expiresMs = 0;
     };

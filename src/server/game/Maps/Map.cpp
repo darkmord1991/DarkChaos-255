@@ -1542,7 +1542,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                 if (!boundaryUnregisters.empty())
                     sPartitionMgr->BatchUnregisterBoundaryObjects(GetId(), partitionId, boundaryUnregisters);
                 if (!boundaryOverrides.empty())
-                    sPartitionMgr->BatchSetPartitionOverrides(boundaryOverrides, partitionId, 500);
+                    sPartitionMgr->BatchSetPartitionOverrides(boundaryOverrides, GetId(), partitionId, 500);
                 sPartitionMgr->UpdatePartitionPlayerCount(GetId(), partitionId, static_cast<uint32>(bucket.size()));
                 sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, boundaryPlayers);
 
@@ -1877,10 +1877,14 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
             if (!boundaryUnregisters.empty())
                 sPartitionMgr->BatchUnregisterBoundaryObjects(GetId(), partitionId, boundaryUnregisters);
             if (!boundaryOverrides.empty())
-                sPartitionMgr->BatchSetPartitionOverrides(boundaryOverrides, partitionId, 500);
+                sPartitionMgr->BatchSetPartitionOverrides(boundaryOverrides, GetId(), partitionId, 500);
 
             sPartitionMgr->UpdatePartitionCreatureCount(GetId(), partitionId, partitionCreatureCounts[index]);
-            sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, partitionBoundaryObjectCounts[index]);
+            PartitionManager::PartitionStats stats;
+            uint32 boundaryTotal = partitionBoundaryObjectCounts[index];
+            if (sPartitionMgr->GetPartitionStats(GetId(), partitionId, stats))
+                boundaryTotal += stats.boundaryObjects;
+            sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, boundaryTotal);
         }
 
         SetActivePartitionContext(0);
@@ -2597,9 +2601,9 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
             {
                 LOG_WARN("combat.partition", "Player {} crossed partition while in combat (handoff pending)", player->GetGUID().GetCounter());
                 sPartitionMgr->RecordCombatHandoff(GetId());
-                sPartitionMgr->SetPartitionOverride(player->GetGUID(), newPartitionId, 2000);
+                sPartitionMgr->SetPartitionOverride(player->GetGUID(), GetId(), newPartitionId, 2000);
                 if (Unit* victim = player->GetVictim())
-                    sPartitionMgr->SetPartitionOverride(victim->GetGUID(), newPartitionId, 2000);
+                    sPartitionMgr->SetPartitionOverride(victim->GetGUID(), GetId(), newPartitionId, 2000);
             }
         }
     }
@@ -2659,10 +2663,10 @@ void Map::CreatureRelocation(Creature* creature, float x, float y, float z, floa
             {
                 LOG_WARN("combat.partition", "Creature {} crossed partition while in combat (handoff pending)", creature->GetGUID().GetCounter());
                 sPartitionMgr->RecordCombatHandoff(GetId());
-                sPartitionMgr->SetPartitionOverride(creature->GetGUID(), newPartitionId, 2000);
+                sPartitionMgr->SetPartitionOverride(creature->GetGUID(), GetId(), newPartitionId, 2000);
                 if (Unit* victim = creature->GetVictim())
                 {
-                    sPartitionMgr->SetPartitionOverride(victim->GetGUID(), newPartitionId, 2000);
+                    sPartitionMgr->SetPartitionOverride(victim->GetGUID(), GetId(), newPartitionId, 2000);
                     QueuePartitionPathRelay(newPartitionId, creature->GetGUID(), victim->GetGUID());
                 }
             }
@@ -2670,7 +2674,7 @@ void Map::CreatureRelocation(Creature* creature, float x, float y, float z, floa
             {
                 LOG_DEBUG("path.partition", "Creature {} crossed partition; path handoff pending", creature->GetGUID().GetCounter());
                 sPartitionMgr->RecordPathHandoff(GetId());
-                sPartitionMgr->SetPartitionOverride(creature->GetGUID(), newPartitionId, 1000);
+                sPartitionMgr->SetPartitionOverride(creature->GetGUID(), GetId(), newPartitionId, 1000);
             }
         }
     }

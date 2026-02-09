@@ -14872,8 +14872,8 @@ void Unit::TauntApply(Unit* taunter)
         if (ownerPartition && ownerPartition != activePartition)
         {
             map->QueuePartitionTauntApply(ownerPartition, GetGUID(), taunter->GetGUID());
-            sPartitionMgr->SetPartitionOverride(GetGUID(), ownerPartition, 2000);
-            sPartitionMgr->SetPartitionOverride(taunter->GetGUID(), ownerPartition, 2000);
+            sPartitionMgr->SetPartitionOverride(GetGUID(), map->GetId(), ownerPartition, 2000);
+            sPartitionMgr->SetPartitionOverride(taunter->GetGUID(), map->GetId(), ownerPartition, 2000);
             return;
         }
     }

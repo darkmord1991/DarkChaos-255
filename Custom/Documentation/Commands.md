@@ -163,6 +163,7 @@ Shows detailed position information including:
 | `layer` | `<id>` | Switch to a specific layer (bypasses cooldown if GM). |
 | `diag` | `<on\|off\|status>` | Toggle runtime diagnostics for debugging. |
 | `config` | | Display partition and layer configuration settings. |
+| `tiles` | | Print ADT tile counts per map and computed partition totals. |
 
 *Note: Layer switching has a cooldown that escalates with frequent use (1-10 minutes).*
 
@@ -287,6 +288,7 @@ These commands require GM or Administrator access levels.
 | `partition status` | | Show partition system status and per-partition stats for your current map. Includes per-layer NPC counts by zone. |
 | `partition diag` | `[on\|off\|status]` | Toggle or query runtime diagnostics for layer/partition assignment logging. |
 | `partition config` | | Display current partition and layer configuration settings. |
+| `partition tiles` | | Print ADT tile counts per map and computed partition totals. |
 | `layer status` | | Show layer info for your current map/zone (player counts per layer, NPC counts if enabled). |
 | `layer` | `<layerId>` | Move yourself to a specific layer ID (requires layering enabled). |
 | `layer join` | `<player>` | Join a friend's, guildmate's, or groupmate's layer (WoW-style, with cooldown). |

@@ -30,9 +30,139 @@
 #include "Position.h"
 #include <algorithm>
 #include <cmath>
+#include <cctype>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <sstream>
+#include <string>
+#include <unordered_map>
+namespace
+{
+    std::unordered_map<uint32, uint32> ParseTileOverrides(std::string_view overrides)
+    {
+        std::unordered_map<uint32, uint32> result;
+        if (overrides.empty())
+            return result;
+
+        std::string copy(overrides.begin(), overrides.end());
+        std::istringstream stream(copy);
+        std::string token;
+        while (std::getline(stream, token, ','))
+        {
+            auto start = token.find_first_not_of(" \t");
+            auto end = token.find_last_not_of(" \t");
+            if (start == std::string::npos)
+                continue;
+            token = token.substr(start, end - start + 1);
+
+            auto colonPos = token.find(':');
+            if (colonPos == std::string::npos || colonPos == 0 || colonPos == token.size() - 1)
+                continue;
+
+            try
+            {
+                uint32 mapId = static_cast<uint32>(std::stoul(token.substr(0, colonPos)));
+                uint32 tilesPerPartition = static_cast<uint32>(std::stoul(token.substr(colonPos + 1)));
+                if (tilesPerPartition == 0)
+                    continue;
+                result[mapId] = tilesPerPartition;
+            }
+            catch (std::exception const&)
+            {
+                continue;
+            }
+        }
+
+        return result;
+    }
+
+    std::unordered_map<uint32, uint32> ParsePartitionCountOverrides(std::string_view overrides)
+    {
+        std::unordered_map<uint32, uint32> result;
+        if (overrides.empty())
+            return result;
+
+        std::string copy(overrides.begin(), overrides.end());
+        std::istringstream stream(copy);
+        std::string token;
+        while (std::getline(stream, token, ','))
+        {
+            auto start = token.find_first_not_of(" \t");
+            auto end = token.find_last_not_of(" \t");
+            if (start == std::string::npos)
+                continue;
+            token = token.substr(start, end - start + 1);
+
+            auto colonPos = token.find(':');
+            if (colonPos == std::string::npos || colonPos == 0 || colonPos == token.size() - 1)
+                continue;
+
+            try
+            {
+                uint32 mapId = static_cast<uint32>(std::stoul(token.substr(0, colonPos)));
+                uint32 count = static_cast<uint32>(std::stoul(token.substr(colonPos + 1)));
+                if (count == 0)
+                    continue;
+                result[mapId] = count;
+            }
+            catch (std::exception const&)
+            {
+                continue;
+            }
+        }
+
+        return result;
+    }
+
+    std::unordered_map<uint32, uint32> BuildMapTileCounts(std::filesystem::path const& mapsPath)
+    {
+        std::unordered_map<uint32, uint32> counts;
+        if (!std::filesystem::exists(mapsPath))
+            return counts;
+
+        for (auto const& entry : std::filesystem::directory_iterator(mapsPath))
+        {
+            if (!entry.is_regular_file())
+                continue;
+
+            auto name = entry.path().filename().string();
+            if (name.size() < 5 || name.compare(name.size() - 4, 4, ".map") != 0)
+                continue;
+
+            size_t mapIdDigits = name.size() - 4;
+            if (mapIdDigits == 0)
+                continue;
+
+            bool allDigits = true;
+            for (char c : name)
+            {
+                if (!std::isdigit(static_cast<unsigned char>(c)))
+                {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (!allDigits)
+                continue;
+
+            uint32 mapId = 0;
+            try
+            {
+                mapId = static_cast<uint32>(std::stoul(name.substr(0, mapIdDigits)));
+            }
+            catch (std::exception const&)
+            {
+                continue;
+            }
+
+            ++counts[mapId];
+        }
+
+        return counts;
+    }
+}
+
 
 
 std::shared_mutex& PartitionManager::GetBoundaryLock(uint32 mapId) const
@@ -157,7 +287,7 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
             
             // Check temporary overrides
             auto it = _partitionOverrides.find(guid.GetCounter());
-            if (it != _partitionOverrides.end())
+            if (it != _partitionOverrides.end() && it->second.mapId == mapId)
             {
                 if (it->second.expiresMs >= nowMs)
                     return it->second.partitionId;
@@ -261,6 +391,37 @@ void PartitionManager::Initialize()
     if (defaultCount == 0)
         defaultCount = 1;
 
+    bool tileBased = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_ENABLED);
+    uint32 tilesPerPartitionDefault = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_TILES_PER_PARTITION);
+    uint32 minPartitions = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_MIN_PARTITIONS);
+    uint32 maxPartitions = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_MAX_PARTITIONS);
+    if (minPartitions == 0)
+        minPartitions = 1;
+    if (maxPartitions == 0)
+        maxPartitions = 1;
+
+    std::unordered_map<uint32, uint32> tilesPerPartitionOverrides;
+    std::unordered_map<uint32, uint32> mapTileCounts;
+    std::unordered_map<uint32, uint32> partitionCountOverrides;
+    {
+        std::string_view countOverrides = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_PARTITION_OVERRIDES);
+        partitionCountOverrides = ParsePartitionCountOverrides(countOverrides);
+    }
+    if (tileBased && tilesPerPartitionDefault > 0)
+    {
+        tilesPerPartitionOverrides = ParseTileOverrides(
+            sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_TILES_PER_PARTITION_OVERRIDES));
+
+        std::filesystem::path mapsPath = std::filesystem::path(sWorld->GetDataPath()) / "maps";
+        mapTileCounts = BuildMapTileCounts(mapsPath);
+
+        if (mapTileCounts.empty())
+        {
+            LOG_WARN("map.partition", "Tile-based partition sizing enabled, but no map tiles found in '{}'. Falling back to DefaultCount.",
+                mapsPath.string());
+        }
+    }
+
     std::string_view mapsView = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_MAPS);
     std::string mapsString(mapsView.begin(), mapsView.end());
 
@@ -277,6 +438,7 @@ void PartitionManager::Initialize()
     {
         std::unique_lock<std::shared_mutex> guard(_overrideLock);
         _partitionOwnership.clear();
+        _partitionOverrides.clear();
     }
 
     // Load excluded zones (cities, hubs) - these zones use a single partition
@@ -355,8 +517,32 @@ void PartitionManager::Initialize()
             _partitionedMaps.insert(mapId);
         }
 
+        uint32 partitionCount = defaultCount;
+        if (auto it = partitionCountOverrides.find(mapId); it != partitionCountOverrides.end())
+        {
+            partitionCount = it->second;
+        }
+        else if (tileBased && tilesPerPartitionDefault > 0)
+        {
+            uint32 tilesPerPartition = tilesPerPartitionDefault;
+            if (auto it = tilesPerPartitionOverrides.find(mapId); it != tilesPerPartitionOverrides.end())
+                tilesPerPartition = it->second;
+
+            auto countIt = mapTileCounts.find(mapId);
+            if (countIt != mapTileCounts.end() && tilesPerPartition > 0)
+            {
+                uint32 tileCount = countIt->second;
+                partitionCount = (tileCount + tilesPerPartition - 1) / tilesPerPartition;
+            }
+        }
+
+        if (partitionCount < minPartitions)
+            partitionCount = minPartitions;
+        if (partitionCount > maxPartitions)
+            partitionCount = maxPartitions;
+
         ClearPartitions(mapId);
-        for (uint32 i = 0; i < defaultCount; ++i)
+        for (uint32 i = 0; i < partitionCount; ++i)
         {
             auto name = "Partition " + std::to_string(i + 1);
             RegisterPartition(std::make_unique<MapPartition>(mapId, i + 1, name));
@@ -365,11 +551,11 @@ void PartitionManager::Initialize()
         // Cache grid layout for this map
         {
             std::unique_lock<std::shared_mutex> guard(_partitionLock);
-            _gridLayouts[mapId] = ComputeGridLayout(defaultCount);
+            _gridLayouts[mapId] = ComputeGridLayout(partitionCount);
             _layoutEpochByMap[mapId] = 1;
         }
 
-        LOG_INFO("map.partition", "Initialized {} partitions for map {}", defaultCount, mapId);
+        LOG_INFO("map.partition", "Initialized {} partitions for map {}", partitionCount, mapId);
     }
 
     if (IsEnabled())
@@ -651,7 +837,7 @@ uint32 PartitionManager::ConsumePathHandoffCount(uint32 mapId)
     return count;
 }
 
-void PartitionManager::SetPartitionOverride(ObjectGuid const& guid, uint32 partitionId, uint32 durationMs)
+void PartitionManager::SetPartitionOverride(ObjectGuid const& guid, uint32 mapId, uint32 partitionId, uint32 durationMs)
 {
     if (!guid)
         return;
@@ -666,6 +852,7 @@ void PartitionManager::SetPartitionOverride(ObjectGuid const& guid, uint32 parti
         std::shared_lock<std::shared_mutex> readGuard(_overrideLock);
         auto it = _partitionOverrides.find(guid.GetCounter());
         if (it != _partitionOverrides.end() &&
+            it->second.mapId == mapId &&
             it->second.partitionId == partitionId &&
             it->second.expiresMs > nowMs + durationMs / 2)
         {
@@ -674,6 +861,7 @@ void PartitionManager::SetPartitionOverride(ObjectGuid const& guid, uint32 parti
     }
 
     PartitionOverride entry;
+    entry.mapId = mapId;
     entry.partitionId = partitionId;
     entry.expiresMs = expiresMs;
 
@@ -1023,7 +1211,7 @@ void PartitionManager::BatchUnregisterBoundaryObjects(uint32 mapId, uint32 parti
 }
 
 void PartitionManager::BatchSetPartitionOverrides(
-    std::vector<ObjectGuid> const& guids, uint32 partitionId, uint32 durationMs)
+    std::vector<ObjectGuid> const& guids, uint32 mapId, uint32 partitionId, uint32 durationMs)
 {
     if (guids.empty())
         return;
@@ -1042,6 +1230,7 @@ void PartitionManager::BatchSetPartitionOverrides(
         {
             auto it = _partitionOverrides.find(guid.GetCounter());
             if (it == _partitionOverrides.end() ||
+                it->second.mapId != mapId ||
                 it->second.partitionId != partitionId ||
                 it->second.expiresMs <= skipThreshold)
             {
@@ -1055,6 +1244,7 @@ void PartitionManager::BatchSetPartitionOverrides(
 
     // Second pass: exclusive write only for entries that truly need updating
     PartitionOverride entry;
+    entry.mapId = mapId;
     entry.partitionId = partitionId;
     entry.expiresMs = expiresMs;
 
@@ -1138,10 +1328,20 @@ PartitionManager::PartitionGridLayout const* PartitionManager::GetCachedLayout(u
     thread_local LayoutCache cache;
 
     uint64 epoch = 0;
+    bool hasEpoch = false;
     {
         std::shared_lock<std::shared_mutex> guard(_partitionLock);
         if (auto it = _layoutEpochByMap.find(mapId); it != _layoutEpochByMap.end())
+        {
             epoch = it->second;
+            hasEpoch = true;
+        }
+    }
+
+    if (!hasEpoch)
+    {
+        cache.valid = false;
+        return nullptr;
     }
 
     if (cache.valid && cache.mapId == mapId && cache.epoch == epoch)

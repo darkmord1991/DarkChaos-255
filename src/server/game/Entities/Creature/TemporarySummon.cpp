@@ -259,7 +259,7 @@ void TempSummon::InitSummon()
         {
             uint32 ownerPartition = sPartitionMgr->GetPartitionIdForPosition(map->GetId(), owner->GetPositionX(), owner->GetPositionY(), owner->GetGUID());
             if (ownerPartition)
-                sPartitionMgr->SetPartitionOverride(GetGUID(), ownerPartition, m_lifetime ? m_lifetime : 2000);
+                sPartitionMgr->SetPartitionOverride(GetGUID(), map->GetId(), ownerPartition, m_lifetime ? m_lifetime : 2000);
         }
 
         if (owner->IsCreature())

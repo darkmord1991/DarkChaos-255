@@ -144,7 +144,6 @@ void PartitionUpdateWorker::UpdatePlayers()
     }
 
     sPartitionMgr->UpdatePartitionPlayerCount(_map.GetId(), _partitionId, _playerCount);
-    sPartitionMgr->UpdatePartitionBoundaryCount(_map.GetId(), _partitionId, _boundaryPlayerCount);
 }
 
 void PartitionUpdateWorker::UpdateNonPlayerObjects()
@@ -192,6 +191,7 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
     }
 
     sPartitionMgr->UpdatePartitionCreatureCount(_map.GetId(), _partitionId, _creatureCount);
+    sPartitionMgr->UpdatePartitionBoundaryCount(_map.GetId(), _partitionId, _boundaryPlayerCount + _boundaryObjectCount);
 }
 
 void PartitionUpdateWorker::FlushBoundaryBatches()
@@ -213,7 +213,7 @@ void PartitionUpdateWorker::FlushBoundaryBatches()
         }
 
         sPartitionMgr->BatchUpdateBoundaryPositions(mapId, _partitionId, updates);
-        sPartitionMgr->BatchSetPartitionOverrides(overrideGuids, _partitionId, 500);
+        sPartitionMgr->BatchSetPartitionOverrides(overrideGuids, mapId, _partitionId, 500);
     }
 
     // Batch unregistrations → single _boundaryLock acquisition
