@@ -116,8 +116,10 @@ private:
 class PartitionUpdateRequest : public UpdateRequest
 {
 public:
-    PartitionUpdateRequest(Map& map, MapUpdater& updater, uint32 partitionId, uint32 diff, uint32 s_diff)
-        : _map(map), _updater(updater), _partitionId(partitionId), _diff(diff), _sDiff(s_diff)
+    PartitionUpdateRequest(Map& map, MapUpdater& updater, uint32 partitionId, uint32 diff, uint32 s_diff,
+        std::function<void()> onDone)
+        : _map(map), _updater(updater), _partitionId(partitionId), _diff(diff), _sDiff(s_diff),
+          _onDone(std::move(onDone))
     {
     }
 
@@ -127,8 +129,23 @@ public:
             METRIC_TAG("map_id", std::to_string(_map.GetId())),
             METRIC_TAG("partition_id", std::to_string(_partitionId)));
 
-        PartitionUpdateWorker worker(_map, _partitionId, _diff, _sDiff);
-        worker.Execute();
+        try
+        {
+            PartitionUpdateWorker worker(_map, _partitionId, _diff, _sDiff);
+            worker.Execute();
+        }
+        catch (std::exception const& e)
+        {
+            LOG_FATAL("map.partition", "PartitionUpdateWorker EXCEPTION map {} partition {}: {}",
+                _map.GetId(), _partitionId, e.what());
+        }
+        catch (...)
+        {
+            LOG_FATAL("map.partition", "PartitionUpdateWorker UNKNOWN EXCEPTION map {} partition {}",
+                _map.GetId(), _partitionId);
+        }
+        if (_onDone)
+            _onDone();
         _updater.update_finished();
     }
 
@@ -138,6 +155,7 @@ private:
     uint32 _partitionId;
     uint32 _diff;
     uint32 _sDiff;
+    std::function<void()> _onDone;
 };
 
 MapUpdater::MapUpdater() : pending_requests(0), _cancelationToken(false)
@@ -175,10 +193,19 @@ void MapUpdater::wait()
 {
     std::unique_lock<std::mutex> guard(_lock);  // Guard lock for safe waiting
 
-    // Wait until there are no pending requests
-    _condition.wait(guard, [this] {
+    // Wait until there are no pending requests, with periodic diagnostic logging
+    auto start = std::chrono::steady_clock::now();
+    while (!_condition.wait_for(guard, std::chrono::seconds(30), [this] {
         return pending_requests.load(std::memory_order_acquire) == 0;
-    });
+    }))
+    {
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - start).count();
+        LOG_FATAL("maps.update",
+            "MapUpdater::wait() stalled for {} seconds! pending_requests={} "
+            "— possible deadlock. Attach GDB and run 'thread apply all bt'.",
+            elapsed, pending_requests.load(std::memory_order_acquire));
+    }
 }
 
 void MapUpdater::schedule_task(UpdateRequest* request)
@@ -211,9 +238,43 @@ void MapUpdater::schedule_lfg_update(uint32 diff)
     schedule_task(new LFGUpdateRequest(*this, diff));
 }
 
-void MapUpdater::schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff)
+void MapUpdater::schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff,
+    std::function<void()> onDone)
 {
-    schedule_task(new PartitionUpdateRequest(map, *this, partitionId, diff, s_diff));
+    schedule_task(new PartitionUpdateRequest(map, *this, partitionId, diff, s_diff, std::move(onDone)));
+}
+
+void MapUpdater::run_tasks_until(std::function<bool()> done)
+{
+    auto start = std::chrono::steady_clock::now();
+    auto lastWarn = start;
+    constexpr auto kWarnInterval = std::chrono::seconds(30);
+
+    while (!done())
+    {
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastWarn >= kWarnInterval)
+        {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
+            LOG_FATAL("map.partition",
+                "run_tasks_until: STALLED for {} seconds! pending_requests={} "
+                "— possible deadlock or hung partition worker. Use 'thread apply all bt' in GDB.",
+                elapsed, pending_requests.load(std::memory_order_acquire));
+            lastWarn = now;
+        }
+
+        UpdateRequest* request = nullptr;
+        if (_queue.WaitAndPopFor(request, std::chrono::milliseconds(2)))
+        {
+            if (request)
+            {
+                if (!_cancelationToken)
+                    request->call();
+                delete request;
+            }
+            continue;
+        }
+    }
 }
 
 bool MapUpdater::activated()

@@ -404,7 +404,7 @@ void Unit::Update(uint32 p_time)
             {
                 m_delayed_unit_relocation_timer = 0;
                 //ExecuteDelayedUnitRelocationEvent();
-                FindMap()->i_objectsForDelayedVisibility.insert(this);
+                FindMap()->AddToDelayedVisibility(this);
             }
             else
                 m_delayed_unit_relocation_timer -= p_time;
@@ -3903,9 +3903,13 @@ void Unit::_UpdateSpells(uint32 time)
             ++i;
     }
 
-    for (VisibleAuraMap::iterator itr = m_visibleAuras.begin(); itr != m_visibleAuras.end(); ++itr)
-        if (itr->second->IsNeedClientUpdate())
-            itr->second->ClientUpdate();
+    {
+        std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
+        auto visibleAurasSnapshot = GetVisibleAurasSnapshot();
+        for (auto& auraPair : visibleAurasSnapshot)
+            if (auraPair.second->IsNeedClientUpdate())
+                auraPair.second->ClientUpdate();
+    }
 
     _DeleteRemovedAuras();
 
@@ -4684,7 +4688,11 @@ void Unit::_UnapplyAura(AuraApplicationMap::iterator& i, AuraRemoveMode removeMo
 {
     AuraApplication* aurApp = i->second;
     ASSERT(aurApp);
-    ASSERT(!aurApp->GetRemoveMode());
+    if (aurApp->GetRemoveMode())
+    {
+        i = m_appliedAuras.begin();
+        return;
+    }
     ASSERT(aurApp->GetTarget() == this);
 
     aurApp->SetRemoveMode(removeMode);
@@ -4777,6 +4785,8 @@ void Unit::_UnapplyAura(AuraApplicationMap::iterator& i, AuraRemoveMode removeMo
 
 void Unit::_UnapplyAura(AuraApplication* aurApp, AuraRemoveMode removeMode)
 {
+    if (!aurApp || aurApp->GetRemoveMode())
+        return;
     // aura can be removed from unit only if it's applied on it, shouldn't happen
     ASSERT(aurApp->GetBase()->GetApplicationOfTarget(GetGUID()) == aurApp);
 
@@ -5780,10 +5790,10 @@ void Unit::GetDispellableAuraList(Unit* caster, uint32 dispelMask, DispelCharges
         }
     }
 
-    Unit::VisibleAuraMap const* visibleAuras = GetVisibleAuras();
-    for (Unit::VisibleAuraMap::const_iterator itr = visibleAuras->begin(); itr != visibleAuras->end(); ++itr)
+    auto visibleAurasSnapshot = GetVisibleAurasSnapshot();
+    for (auto& auraPair : visibleAurasSnapshot)
     {
-        Aura* aura = itr->second->GetBase();
+        Aura* aura = auraPair.second->GetBase();
 
         // don't try to remove passive auras
         if (aura->IsPassive())
@@ -5795,7 +5805,7 @@ void Unit::GetDispellableAuraList(Unit* caster, uint32 dispelMask, DispelCharges
             {
                 // do not remove positive auras if friendly target
                 //               negative auras if non-friendly target
-                if (itr->second->IsPositive() == positive)
+                if (auraPair.second->IsPositive() == positive)
                     continue;
             }
 
@@ -14123,6 +14133,31 @@ bool Unit::_IsValidAttackTarget(Unit const* target, SpellInfo const* bySpell, Wo
                 uint32 attackerLayer = sLayerMgr->GetPlayerLayer(attackerPlayer->GetMapId(), attackerPlayer->GetGUID());
                 uint32 targetLayer = sLayerMgr->GetPlayerLayer(targetPlayer->GetMapId(), targetPlayer->GetGUID());
                 if (attackerLayer != targetLayer)
+                    return false;
+            }
+        }
+
+        if (sLayerMgr->IsNPCLayeringEnabled())
+        {
+            Creature const* npc = nullptr;
+            Player const* player = nullptr;
+
+            if (!attackerPlayer && IsCreature() && targetPlayer)
+            {
+                npc = ToCreature();
+                player = targetPlayer;
+            }
+            else if (!targetPlayer && target->IsCreature() && attackerPlayer)
+            {
+                npc = target->ToCreature();
+                player = attackerPlayer;
+            }
+
+            if (npc && player && npc->GetMapId() == player->GetMapId())
+            {
+                uint32 playerLayer = sLayerMgr->GetPlayerLayer(player->GetMapId(), player->GetGUID());
+                uint32 npcLayer = sLayerMgr->GetLayerForNPC(player->GetMapId(), npc->GetGUID());
+                if (playerLayer != npcLayer)
                     return false;
             }
         }

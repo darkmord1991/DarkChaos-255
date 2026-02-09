@@ -549,6 +549,7 @@ void WorldConfig::BuildConfigCache()
     SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_DEFAULT_COUNT, "MapPartitions.DefaultCount", 4);
     SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_MAPS, "MapPartitions.Maps", "");
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_STORE_ONLY, "MapPartitions.UsePartitionStoreOnly", false);
+    SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_USE_PARALLEL_UPDATES, "MapPartitions.UseParallelUpdates", false);
     SetConfigValue<std::string>(CONFIG_MAP_PARTITIONS_EXCLUDE_ZONES, "MapPartitions.ExcludeZones", "");
     SetConfigValue<bool>(CONFIG_MAP_PARTITIONS_TILE_BASED_ENABLED, "MapPartitions.TileBased.Enabled", false);
     SetConfigValue<uint32>(CONFIG_MAP_PARTITIONS_TILE_BASED_TILES_PER_PARTITION, "MapPartitions.TileBased.TilesPerPartition", 64);

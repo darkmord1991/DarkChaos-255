@@ -6507,13 +6507,13 @@ SpellCastResult Spell::CheckCast(bool strict)
                         return SPELL_FAILED_BAD_TARGETS;
 
                     bool found = false;
-                    Unit::VisibleAuraMap const* visibleAuras = m_targets.GetUnitTarget()->GetVisibleAuras();
-                    for(Unit::VisibleAuraMap::const_iterator itr = visibleAuras->begin(); itr != visibleAuras->end(); ++itr)
+                    auto visibleAurasSnapshot = m_targets.GetUnitTarget()->GetVisibleAurasSnapshot();
+                    for (auto& auraPair : visibleAurasSnapshot)
                     {
-                        if (itr->second->GetBase()->IsPassive())
+                        if (auraPair.second->GetBase()->IsPassive())
                             continue;
 
-                        if (!itr->second->IsPositive())
+                        if (!auraPair.second->IsPositive())
                             continue;
 
                         found = true;

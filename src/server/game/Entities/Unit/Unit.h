@@ -1521,16 +1521,36 @@ public:
     int32 GetMaxPositiveAuraModifierByAffectMask(AuraType auratype, SpellInfo const* affectedSpell) const;
     int32 GetMaxNegativeAuraModifierByAffectMask(AuraType auratype, SpellInfo const* affectedSpell) const;
 
-    VisibleAuraMap const* GetVisibleAuras() { return &m_visibleAuras; }
+    // Thread-safe visible aura access - used during parallel map updates
+    std::vector<std::pair<uint8, AuraApplication*>> GetVisibleAurasSnapshot()
+    {
+        std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
+        return std::vector<std::pair<uint8, AuraApplication*>>(m_visibleAuras.begin(), m_visibleAuras.end());
+    }
     AuraApplication* GetVisibleAura(uint8 slot)
     {
+        std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
         VisibleAuraMap::iterator itr = m_visibleAuras.find(slot);
         if (itr != m_visibleAuras.end())
             return itr->second;
         return nullptr;
     }
-    void SetVisibleAura(uint8 slot, AuraApplication* aur) { m_visibleAuras[slot] = aur; UpdateAuraForGroup(slot);}
-    void RemoveVisibleAura(uint8 slot) { m_visibleAuras.erase(slot); UpdateAuraForGroup(slot);}
+    void SetVisibleAura(uint8 slot, AuraApplication* aur)
+    {
+        {
+            std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
+            m_visibleAuras[slot] = aur;
+        }
+        UpdateAuraForGroup(slot);
+    }
+    void RemoveVisibleAura(uint8 slot)
+    {
+        {
+            std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
+            m_visibleAuras.erase(slot);
+        }
+        UpdateAuraForGroup(slot);
+    }
 
     void ModifyAuraState(AuraStateType flag, bool apply);
     uint32 BuildAuraStateUpdateForTarget(Unit* target) const;
@@ -2163,6 +2183,7 @@ protected:
     float m_auraPctModifiersGroup[UNIT_MOD_END][MODIFIER_TYPE_PCT_END];
     float m_weaponDamage[MAX_ATTACK][MAX_WEAPON_DAMAGE_RANGE][MAX_ITEM_PROTO_DAMAGES];
     bool m_canModifyStats;
+    mutable std::recursive_mutex _visibleAurasLock;
     VisibleAuraMap m_visibleAuras;
 
     float m_speed_rate[MAX_MOVE_TYPE];

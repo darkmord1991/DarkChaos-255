@@ -17,6 +17,7 @@
 
 #include "PartitionUpdateWorker.h"
 #include "DynamicObject.h"
+#include "Corpse.h"
 #include "Map.h"
 #include "PartitionManager.h"
 #include "Player.h"
@@ -39,6 +40,11 @@ void PartitionUpdateWorker::Execute()
     ProcessRelays();
     UpdatePlayers();
     UpdateNonPlayerObjects();
+
+    // NOTE: ApplyQueuedPartitionedOwnershipUpdates is intentionally NOT called
+    // here. Multiple workers would race on _partitionedUpdatableObjectLists and
+    // _partitionedUpdatableIndex. The main thread applies deferred ownership
+    // updates after all workers complete (see Map::Update parallel path).
 
     // Flush batched boundary operations (1 lock per batch instead of per-entity)
     FlushBoundaryBatches();
@@ -67,7 +73,7 @@ void PartitionUpdateWorker::UpdatePlayers()
             if (!player || !player->IsInWorld())
                 continue;
 
-            uint32 zoneId = _map.GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+            uint32 zoneId = player->GetZoneId();
             uint32 playerPartition = sPartitionMgr->GetPartitionIdForPosition(
                 _map.GetId(), player->GetPositionX(), player->GetPositionY(), zoneId, player->GetGUID());
 
@@ -148,24 +154,14 @@ void PartitionUpdateWorker::UpdatePlayers()
 
 void PartitionUpdateWorker::UpdateNonPlayerObjects()
 {
-    auto listLock = _map.AcquirePartitionedUpdateListReadLock();
-    auto& partitionedLists = _map.GetPartitionedUpdatableObjectLists();
-    auto listIt = partitionedLists.find(_partitionId);
-    if (listIt == partitionedLists.end())
-        return;
+    // Collect direct pointers — avoids double GUID→object lookup
+    std::vector<WorldObject*> objects;
+    _map.CollectPartitionedUpdatableObjects(_partitionId, objects);
 
-    auto& objectList = listIt->second;
-    
-    for (WorldObject* obj : objectList)
+    for (WorldObject* obj : objects)
     {
-        if (!obj)
+        if (!obj || !obj->IsInWorld())
             continue;
-
-        if (!obj->IsInWorld())
-        {
-            _batchUnregisters.push_back(obj->GetGUID());
-            continue;
-        }
 
         if (obj->ToCreature())
             ++_creatureCount;
@@ -188,6 +184,11 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         }
 
         obj->Update(_diff);
+
+        // After updating, check if this object still needs further ticks.
+        // If not, queue it for removal so we don't keep waking idle creatures.
+        if (!obj->IsUpdateNeeded())
+            _map.RemoveObjectFromMapUpdateList(obj);
     }
 
     sPartitionMgr->UpdatePartitionCreatureCount(_map.GetId(), _partitionId, _creatureCount);

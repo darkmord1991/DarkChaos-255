@@ -184,8 +184,8 @@ void GameObject::AddToWorld()
             }
             else
             {
-                uint64 seed = m_spawnId ? uint64(m_spawnId) : GetGUID().GetCounter();
-                layerId = sLayerMgr->GetDefaultLayerForMap(GetMapId(), seed);
+                // Keep base spawns on layer 0; clones handle other layers.
+                layerId = 0;
             }
             sLayerMgr->AssignGOToLayer(GetMapId(), zoneId, GetGUID(), layerId);
         }
@@ -206,7 +206,7 @@ void GameObject::RemoveFromWorld()
         sScriptMgr->OnGameObjectRemoveWorld(this);
 
         if (sLayerMgr->IsGOLayeringEnabled())
-            sLayerMgr->RemoveGOFromLayer(GetGUID());
+            sLayerMgr->RemoveGOFromLayer(GetMapId(), GetGUID());
 
         if (m_zoneScript)
             m_zoneScript->OnGameObjectRemove(this);

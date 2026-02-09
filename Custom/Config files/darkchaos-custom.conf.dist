@@ -3434,7 +3434,7 @@ MapPartitions.TileBased.TilesPerPartitionOverrides = ""
 #        Example:     "0:9,1:9,530:4,571:9"
 #        Default:     ""
 #
-MapPartitions.TileBased.PartitionOverrides = "745:2,1405:2"
+MapPartitions.TileBased.PartitionOverrides = "745:2,1405:2,37:4"
 
 #
 #    MapPartitions.BorderOverlap
@@ -3460,6 +3460,15 @@ MapPartitions.ExcludeZones = "1519,1637,4395,3703"
 #                     1 - (Enabled)
 #
 MapPartitions.UsePartitionStoreOnly = 0
+
+#
+#    MapPartitions.UseParallelUpdates
+#        Description: Run partition updates in parallel worker threads (per partition) for
+#                     maps that are configured as partitioned.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
+MapPartitions.UseParallelUpdates = 1
 
 #
 #    MapPartitions.Layers.Enabled

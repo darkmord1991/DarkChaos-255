@@ -62,12 +62,15 @@ AuraApplication::AuraApplication(Unit* target, Unit* caster, Aura* aura, uint8 e
         }
         else
         {
-            Unit::VisibleAuraMap const* visibleAuras = GetTarget()->GetVisibleAuras();
-            // lookup for free slots in units visibleAuras
-            Unit::VisibleAuraMap::const_iterator itr = visibleAuras->find(0);
-            for (uint32 freeSlot = 0; freeSlot < MAX_AURAS; ++itr, ++freeSlot)
+            // Thread-safe lookup for free slots in units visibleAuras
+            auto visibleAurasSnapshot = GetTarget()->GetVisibleAurasSnapshot();
+            std::set<uint8> usedSlots;
+            for (auto& auraPair : visibleAurasSnapshot)
+                usedSlots.insert(auraPair.first);
+            
+            for (uint32 freeSlot = 0; freeSlot < MAX_AURAS; ++freeSlot)
             {
-                if (itr == visibleAuras->end() || itr->first != freeSlot)
+                if (usedSlots.find(freeSlot) == usedSlots.end())
                 {
                     slot = freeSlot;
                     break;

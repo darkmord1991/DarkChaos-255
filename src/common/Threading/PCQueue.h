@@ -19,6 +19,7 @@
 #define _PCQ_H
 
 #include <condition_variable>
+#include <chrono>
 #include <queue>
 #include <atomic>
 #include <mutex>
@@ -80,6 +81,21 @@ public:
 
         value = std::move(_queue.front());
         _queue.pop();
+    }
+
+    bool WaitAndPopFor(T& value, std::chrono::milliseconds timeout)
+    {
+        std::unique_lock<std::mutex> lock(_queueLock);
+
+        if (!_condition.wait_for(lock, timeout, [this] { return !_queue.empty() || _cancel || _shutdown; }))
+            return false;
+
+        if (_queue.empty() || _cancel)
+            return false;
+
+        value = std::move(_queue.front());
+        _queue.pop();
+        return true;
     }
 
     // Clears the queue and immediately stops any consumers.

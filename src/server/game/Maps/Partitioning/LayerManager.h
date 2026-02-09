@@ -88,14 +88,14 @@ public:
 
     // ======================== NPC LAYERING ========================
     void AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& npcGuid, uint32 layerId);
-    void RemoveNPCFromLayer(ObjectGuid const& npcGuid);
+    void RemoveNPCFromLayer(uint32 mapId, ObjectGuid const& npcGuid);
     uint32 GetLayerForNPC(uint32 mapId, ObjectGuid const& npcGuid) const;
     uint32 GetLayerForNPC(ObjectGuid const& npcGuid) const; // Back-compat
     uint32 GetDefaultLayerForMap(uint32 mapId, uint64 seed) const;
 
     // ======================== GAMEOBJECT LAYERING ========================
     void AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& goGuid, uint32 layerId);
-    void RemoveGOFromLayer(ObjectGuid const& goGuid);
+    void RemoveGOFromLayer(uint32 mapId, ObjectGuid const& goGuid);
     uint32 GetLayerForGO(uint32 mapId, ObjectGuid const& goGuid) const;
     uint32 GetLayerForGO(ObjectGuid const& goGuid) const;
 
@@ -155,12 +155,23 @@ private:
     void ReassignGOsForNewLayer(uint32 mapId, uint32 layerId);
     void HandlePersistentLayerAssignmentLoad(ObjectGuid const& playerGuid, PreparedQueryResult result);
     void CleanupEmptyLayers(uint32 mapId, uint32 layerId);
+    void BalanceLayersAtMax(uint32 mapId);
+    void RebalanceBotLayers(uint32 mapId);
+    void ProcessPendingLayerAssignments();
 
     // Persistence toggle (used inline, so kept here)
     std::atomic<bool> _layerPersistenceEnabled{true};
 
     // ======================== DATA STRUCTURES (Moved from PartitionManager) ========================
 private:
+    using LayerKey = uint64;
+
+    static LayerKey MakeLayerKey(uint32 mapId, ObjectGuid const& guid)
+    {
+        return (static_cast<LayerKey>(mapId) << 32) |
+               static_cast<LayerKey>(guid.GetCounter());
+    }
+
     struct LayerAssignment
     {
         uint32 mapId = 0;
@@ -279,7 +290,7 @@ private:
     {
         uint32 mapId = 0;
         uint32 layerId = 0;
-        uint64 lastUpdateMs = 0;
+        uint64 readyMs = 0;
     };
 
     // Soft transfer: queued layer move applied on next loading screen (teleport / map change)
@@ -306,8 +317,8 @@ private:
     std::unordered_map<ObjectGuid::LowType, AtomicLayerAssignment> _atomicPlayerLayers;
     std::unordered_map<ObjectGuid::LowType, PartyTargetLayerCacheEntry> _partyTargetLayerCache;
     mutable std::unordered_map<LayerPairCacheKey, LayerPairCacheEntry, LayerPairCacheKeyHash> _layerPairCache;
-    std::unordered_map<ObjectGuid::LowType, LayerAssignment> _npcLayers;
-    std::unordered_map<ObjectGuid::LowType, LayerAssignment> _goLayers;
+    std::unordered_map<LayerKey, LayerAssignment> _npcLayers;
+    std::unordered_map<LayerKey, LayerAssignment> _goLayers;
     std::unordered_map<ObjectGuid::LowType, PendingLayerAssignment> _pendingLayerAssignments;
     std::unordered_map<ObjectGuid::LowType, LayerSwitchCooldown> _layerSwitchCooldowns;
     std::unordered_map<ObjectGuid::LowType, SoftTransferEntry> _pendingSoftTransfers;

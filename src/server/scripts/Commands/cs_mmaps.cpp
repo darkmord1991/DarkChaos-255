@@ -174,9 +174,11 @@ public:
         handler->PSendSysMessage("gridloc [{}, {}]", gridCoord.x_coord, gridCoord.y_coord);
 
         // calculate navmesh tile location
-        dtNavMesh const* navmesh = MMAP::MMapFactory::createOrGetMMapMgr()->GetNavMesh(handler->GetSession()->GetPlayer()->GetMapId());
-        dtNavMeshQuery const* navmeshquery = MMAP::MMapFactory::createOrGetMMapMgr()->GetNavMeshQuery(handler->GetSession()->GetPlayer()->GetMapId(), player->GetInstanceId());
-        if (!navmesh || !navmeshquery)
+        MMAP::MMapMgr* mmapMgr = MMAP::MMapFactory::createOrGetMMapMgr();
+        dtNavMesh const* navmesh = mmapMgr->GetNavMesh(handler->GetSession()->GetPlayer()->GetMapId());
+        dtNavMeshQuery const* navmeshquery = mmapMgr->GetNavMeshQuery(handler->GetSession()->GetPlayer()->GetMapId(), player->GetInstanceId());
+        auto navmeshQueryLock = mmapMgr->AcquireNavMeshQueryLock(handler->GetSession()->GetPlayer()->GetMapId(), player->GetInstanceId());
+        if (!navmesh || !navmeshquery || !navmeshQueryLock.owns_lock())
         {
             handler->PSendSysMessage("NavMesh not loaded for current map.");
             return true;
@@ -226,9 +228,11 @@ public:
     static bool HandleMmapLoadedTilesCommand(ChatHandler* handler)
     {
         uint32 mapid = handler->GetSession()->GetPlayer()->GetMapId();
-        dtNavMesh const* navmesh = MMAP::MMapFactory::createOrGetMMapMgr()->GetNavMesh(mapid);
-        dtNavMeshQuery const* navmeshquery = MMAP::MMapFactory::createOrGetMMapMgr()->GetNavMeshQuery(mapid, handler->GetSession()->GetPlayer()->GetInstanceId());
-        if (!navmesh || !navmeshquery)
+        MMAP::MMapMgr* mmapMgr = MMAP::MMapFactory::createOrGetMMapMgr();
+        dtNavMesh const* navmesh = mmapMgr->GetNavMesh(mapid);
+        dtNavMeshQuery const* navmeshquery = mmapMgr->GetNavMeshQuery(mapid, handler->GetSession()->GetPlayer()->GetInstanceId());
+        auto navmeshQueryLock = mmapMgr->AcquireNavMeshQueryLock(mapid, handler->GetSession()->GetPlayer()->GetInstanceId());
+        if (!navmesh || !navmeshquery || !navmeshQueryLock.owns_lock())
         {
             handler->PSendSysMessage("NavMesh not loaded for current map.");
             return true;

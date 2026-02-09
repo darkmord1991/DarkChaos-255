@@ -2886,6 +2886,7 @@ protected:
     uint32 m_baseHealthRegen;
     int32 m_spellPenetrationItemMod;
 
+    mutable std::recursive_mutex m_spellModsLock;
     SpellModList m_spellMods[MAX_SPELLMOD];
     //uint32 m_pad;
     //        Spell* m_spellModTakingSpell;  // Spell for which charges are dropped in spell::finish

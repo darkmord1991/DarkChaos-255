@@ -3,6 +3,7 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "GameTime.h"
+#include <mutex>
 
 class HotspotsWorldScript : public WorldScript
 {
@@ -73,10 +74,12 @@ public:
         if (player->GetSession() && (GameTime::GetGameTime().count() % 2 == 0))
         {
              // Simple throttling: valid every second, checks count.
-             // Better: static maps.
-             static std::unordered_map<ObjectGuid, time_t> _lastCheck;
+            // Better: static maps.
+            static std::unordered_map<ObjectGuid, time_t> _lastCheck;
+            static std::mutex _lastCheckLock;
              time_t now = GameTime::GetGameTime().count();
-             if (now - _lastCheck[player->GetGUID()] >= 2)
+            std::lock_guard<std::mutex> lock(_lastCheckLock);
+            if (now - _lastCheck[player->GetGUID()] >= 2)
              {
                  _lastCheck[player->GetGUID()] = now;
                  sHotspotMgr->CheckPlayerHotspotStatus(player);

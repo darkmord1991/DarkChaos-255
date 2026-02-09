@@ -22,6 +22,7 @@
 #include "Player.h"
 #include "ObjectAccessor.h"
 #include "ScriptedGossip.h"
+#include "WorldSession.h"
 
 // Jadeforest teleport points
 enum JadeforestTeleports
@@ -71,6 +72,9 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
+        if (WorldSession* session = player->GetSession(); session && session->IsBot())
+            return true;
+
         // Prepare quest menu if available
         if (creature->IsQuestGiver())
             player->PrepareQuestMenu(creature->GetGUID());
@@ -89,6 +93,12 @@ public:
 
     bool OnGossipSelect(Player* player, Creature* /*creature*/, uint32 /*sender*/, uint32 action) override
     {
+        if (WorldSession* session = player->GetSession(); session && session->IsBot())
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
         ClearGossipMenuFor(player);
         CloseGossipMenuFor(player);
 

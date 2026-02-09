@@ -371,7 +371,7 @@ void Creature::RemoveFromWorld()
         sScriptMgr->OnCreatureRemoveWorld(this);
 
         if (sLayerMgr->IsNPCLayeringEnabled())
-            sLayerMgr->RemoveNPCFromLayer(GetGUID());
+            sLayerMgr->RemoveNPCFromLayer(GetMapId(), GetGUID());
 
         if (GetZoneScript())
             GetZoneScript()->OnCreatureRemove(this);

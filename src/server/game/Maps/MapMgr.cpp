@@ -88,6 +88,8 @@ Map* MapMgr::CreateBaseMap(uint32 id)
                 map = new Map(id, 0, REGULAR_DIFFICULTY);
 
             map->SetPartitioned(sPartitionMgr->IsEnabled() && sPartitionMgr->IsMapPartitioned(id));
+            if (map->IsPartitioned())
+                map->SetUseParallelPartitions(sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_USE_PARALLEL_UPDATES));
 
             i_maps[id] = map;
 

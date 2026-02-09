@@ -230,7 +230,7 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
         handler->SendSysMessage("|cff00ff00=== Map Tile Counts ===|r");
         handler->PSendSysMessage("Data path: {}", mapsPath.string());
 
-        uint8 locale = handler->GetSessionDbLocaleIndex();
+        uint8 locale = handler->GetSession() ? handler->GetSessionDbLocaleIndex() : LOCALE_enUS;
         auto mapIds = ParseMapIdList(mapsConfig);
         for (uint32 mapId : mapIds)
         {
@@ -489,16 +489,49 @@ bool HandleDcLayerSubcommand(ChatHandler* handler, std::vector<std::string_view>
             return true;
 
         Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
-        if (!player)
-            return true;
-
-        uint32 mapId = player->GetMapId();
+        uint32 mapId = 0;
         uint32 zoneId = 0;
-        if (Map* map = player->GetMap())
-            zoneId = map->GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+        uint32 layerId = 0;
+        bool hasPlayerContext = player != nullptr;
+
+        if (hasPlayerContext)
+        {
+            mapId = player->GetMapId();
+            if (Map* map = player->GetMap())
+                zoneId = map->GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+            else
+                zoneId = player->GetZoneId();
+            layerId = sLayerMgr->GetPlayerLayer(mapId, player->GetGUID());
+        }
         else
-            zoneId = player->GetZoneId();
-        uint32 layerId = sLayerMgr->GetPlayerLayer(mapId, player->GetGUID());
+        {
+            auto next = it;
+            ++next;
+            if (next == args.end())
+            {
+                handler->PSendSysMessage("Usage (console): .dc layer status <mapId> [zoneId]");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            try { mapId = static_cast<uint32>(std::stoul(std::string((*next).data(), (*next).size()))); }
+            catch (...) { mapId = 0; }
+
+            ++next;
+            if (next != args.end())
+            {
+                try { zoneId = static_cast<uint32>(std::stoul(std::string((*next).data(), (*next).size()))); }
+                catch (...) { zoneId = 0; }
+            }
+
+            if (mapId == 0)
+            {
+                handler->PSendSysMessage("|cffff0000Invalid mapId. Usage (console): .dc layer status <mapId> [zoneId]|r");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+        }
+
         uint32 layerCount = sLayerMgr->GetLayerCount(mapId);
 
         uint8 locale = handler->GetSessionDbLocaleIndex();
@@ -507,7 +540,10 @@ bool HandleDcLayerSubcommand(ChatHandler* handler, std::vector<std::string_view>
         char const* mapName = mapEntry ? mapEntry->name[locale] : "(unknown)";
         char const* zoneName = areaEntry ? areaEntry->area_name[locale] : "(unknown)";
         handler->PSendSysMessage("Map: {} ({}) | Zone: {} ({})", mapId, mapName, zoneId, zoneName);
-        handler->PSendSysMessage("Your Layer: |cff00ff00{}|r | Layer Count: {}", layerId, layerCount);
+        if (hasPlayerContext)
+            handler->PSendSysMessage("Your Layer: |cff00ff00{}|r | Layer Count: {}", layerId, layerCount);
+        else
+            handler->PSendSysMessage("Layer Count: {}", layerCount);
 
         // Show capacity info so the user understands why there are N layers
         uint32 capacity = sLayerMgr->GetLayerCapacity(mapId);
@@ -519,14 +555,32 @@ bool HandleDcLayerSubcommand(ChatHandler* handler, std::vector<std::string_view>
 
         std::map<uint32, uint32> playerCounts;
         sLayerMgr->GetLayerPlayerCountsByLayer(mapId, playerCounts);
+
+        std::vector<uint32> layerIds = sLayerMgr->GetLayerIds(mapId);
+        if (layerIds.empty() && !playerCounts.empty())
+        {
+            layerIds.reserve(playerCounts.size());
+            for (auto const& [layerId, _] : playerCounts)
+                layerIds.push_back(layerId);
+        }
+        if (layerIds.empty() && layerCount > 0)
+        {
+            layerIds.reserve(layerCount);
+            for (uint32 i = 0; i < layerCount; ++i)
+                layerIds.push_back(i);
+        }
         uint32 totalMapPlayers = 0;
         for (auto const& [_, count] : playerCounts)
             totalMapPlayers += count;
-        if (!playerCounts.empty())
+        handler->SendSysMessage("\n|cff00ffffPlayer Counts by Layer:|r");
+        for (uint32 layer : layerIds)
         {
-            handler->SendSysMessage("\n|cff00ffffPlayer Counts by Layer:|r");
-            for (auto const& [layer, count] : playerCounts)
-                handler->PSendSysMessage("  L{}: {} players{}", layer, count, (layer == layerId ? " |cff00ff00<-- YOU|r" : ""));
+            uint32 count = 0;
+            auto itCount = playerCounts.find(layer);
+            if (itCount != playerCounts.end())
+                count = itCount->second;
+            handler->PSendSysMessage("  L{}: {} players{}", layer, count,
+                (hasPlayerContext && layer == layerId ? " |cff00ff00<-- YOU|r" : ""));
         }
 
         // Explain threshold for next layer
@@ -542,7 +596,7 @@ bool HandleDcLayerSubcommand(ChatHandler* handler, std::vector<std::string_view>
         }
 
         // Pending soft transfer
-        if (sLayerMgr->HasPendingSoftTransfer(player->GetGUID()))
+        if (hasPlayerContext && sLayerMgr->HasPendingSoftTransfer(player->GetGUID()))
         {
             handler->SendSysMessage("\n|cffff8800You have a pending soft transfer! It will apply on your next loading screen.|r");
         }
@@ -551,12 +605,34 @@ bool HandleDcLayerSubcommand(ChatHandler* handler, std::vector<std::string_view>
         {
             LayerManager::LayerCountByZone npcCounts;
             sLayerMgr->GetNPCLayerCountsByZone(mapId, npcCounts);
+
+            std::map<uint32, uint32> mapWideNpcCounts;
+            for (uint32 layer : layerIds)
+                mapWideNpcCounts[layer] = 0;
+            for (auto const& [_, layerCounts] : npcCounts)
+                for (auto const& [layer, count] : layerCounts)
+                    mapWideNpcCounts[layer] += count;
+
+            handler->SendSysMessage("\n|cff00ffffNPC Counts by Layer (map-wide, loaded):|r");
+            for (uint32 layer : layerIds)
+                handler->PSendSysMessage("  L{}: {} NPCs", layer, mapWideNpcCounts[layer]);
+            handler->SendSysMessage("|cff888888Note: counts reflect loaded objects only.|r");
+
             auto zoneIt = npcCounts.find(zoneId);
-            if (zoneIt != npcCounts.end())
+            if (zoneId != 0)
             {
                 handler->SendSysMessage("\n|cff00ffffNPC Counts by Layer (your zone):|r");
-                for (auto const& [layer, count] : zoneIt->second)
+                for (uint32 layer : layerIds)
+                {
+                    uint32 count = 0;
+                    if (zoneIt != npcCounts.end())
+                    {
+                        auto itLayer = zoneIt->second.find(layer);
+                        if (itLayer != zoneIt->second.end())
+                            count = itLayer->second;
+                    }
                     handler->PSendSysMessage("  L{}: {} NPCs", layer, count);
+                }
                 handler->SendSysMessage("|cff888888Note: counts reflect loaded objects only.|r");
             }
         }
@@ -565,12 +641,34 @@ bool HandleDcLayerSubcommand(ChatHandler* handler, std::vector<std::string_view>
         {
             LayerManager::LayerCountByZone goCounts;
             sLayerMgr->GetGOLayerCountsByZone(mapId, goCounts);
+
+            std::map<uint32, uint32> mapWideGoCounts;
+            for (uint32 layer : layerIds)
+                mapWideGoCounts[layer] = 0;
+            for (auto const& [_, layerCounts] : goCounts)
+                for (auto const& [layer, count] : layerCounts)
+                    mapWideGoCounts[layer] += count;
+
+            handler->SendSysMessage("\n|cff00ffffGO Counts by Layer (map-wide, loaded):|r");
+            for (uint32 layer : layerIds)
+                handler->PSendSysMessage("  L{}: {} GOs", layer, mapWideGoCounts[layer]);
+            handler->SendSysMessage("|cff888888Note: counts reflect loaded objects only.|r");
+
             auto zoneIt = goCounts.find(zoneId);
-            if (zoneIt != goCounts.end())
+            if (zoneId != 0)
             {
                 handler->SendSysMessage("\n|cff00ffffGO Counts by Layer (your zone):|r");
-                for (auto const& [layer, count] : zoneIt->second)
+                for (uint32 layer : layerIds)
+                {
+                    uint32 count = 0;
+                    if (zoneIt != goCounts.end())
+                    {
+                        auto itLayer = zoneIt->second.find(layer);
+                        if (itLayer != zoneIt->second.end())
+                            count = itLayer->second;
+                    }
                     handler->PSendSysMessage("  L{}: {} GOs", layer, count);
+                }
                 handler->SendSysMessage("|cff888888Note: counts reflect loaded objects only.|r");
             }
         }

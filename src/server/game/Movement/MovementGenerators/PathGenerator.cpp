@@ -83,6 +83,16 @@ bool PathGenerator::CalculatePath(float x, float y, float z, float destX, float 
         return true;
     }
 
+    // dtNavMeshQuery is not thread-safe per instance; lock it for the whole build.
+    MMAP::MMapMgr* mmap = MMAP::MMapFactory::createOrGetMMapMgr();
+    auto navMeshQueryLock = mmap->AcquireNavMeshQueryLock(_source->GetMapId(), _source->GetInstanceId());
+    if (!navMeshQueryLock.owns_lock())
+    {
+        BuildShortcut();
+        _type = PathType(PATHFIND_NORMAL | PATHFIND_NOT_USING_PATH);
+        return true;
+    }
+
     UpdateFilter();
 
     BuildPolyPath(start, dest);

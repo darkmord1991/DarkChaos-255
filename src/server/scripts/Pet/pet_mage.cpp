@@ -117,9 +117,9 @@ struct npc_pet_mage_mirror_image : CasterAI
         _ebonGargoyleGUID.Clear();
 
         // Xinef: copy caster auras
-        Unit::VisibleAuraMap const* visibleAuraMap = owner->GetVisibleAuras();
-        for (Unit::VisibleAuraMap::const_iterator itr = visibleAuraMap->begin(); itr != visibleAuraMap->end(); ++itr)
-            if (Aura* visAura = itr->second->GetBase())
+        auto visibleAurasSnapshot = owner->GetVisibleAurasSnapshot();
+        for (auto& auraPair : visibleAurasSnapshot)
+            if (Aura* visAura = auraPair.second->GetBase())
             {
                 // Ebon Gargoyle
                 if (visAura->GetId() == 49206 && me->GetUInt32Value(UNIT_CREATED_BY_SPELL) == SPELL_SUMMON_MIRROR_IMAGE1)

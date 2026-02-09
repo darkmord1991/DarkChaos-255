@@ -55,7 +55,7 @@ private:
     uint32 _createdGridsCount;
     uint32 _loadedGridsCount;
 
-    std::mutex _gridLock;
+    std::recursive_mutex _gridLock;
     std::unique_ptr<MapGridType> _mapGrid[MAX_NUMBER_OF_GRIDS][MAX_NUMBER_OF_GRIDS];
 };
 

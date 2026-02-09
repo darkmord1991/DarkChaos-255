@@ -36,11 +36,13 @@
 #include "SharedDefines.h"
 #include "Timer.h"
 #include "GridTerrainData.h"
-#include <bitset>
 #include <atomic>
+#include <array>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
+#include <vector>
 
 class Unit;
 class WorldPacket;
@@ -218,7 +220,7 @@ public:
     uint32 GetPartitionIdForUnit(Unit const* unit) const;
     uint32 GetActivePartitionContext() const;
     void SetActivePartitionContext(uint32 partitionId);
-    bool IsProcessingPartitionRelays() const { return _processingPartitionRelays; }
+    bool IsProcessingPartitionRelays() const;
     void QueuePartitionThreatRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& victimGuid, float threat, SpellSchoolMask schoolMask, uint32 spellId);
     void QueuePartitionThreatClearAll(uint32 partitionId, ObjectGuid const& ownerGuid);
     void QueuePartitionThreatResetAll(uint32 partitionId, ObjectGuid const& ownerGuid);
@@ -268,8 +270,12 @@ public:
 
     // pussywizard: movemaps, mmaps
     [[nodiscard]] std::shared_mutex& GetMMapLock() const { return *(const_cast<std::shared_mutex*>(&MMapLock)); }
-    // pussywizard:
-    std::unordered_set<Unit*> i_objectsForDelayedVisibility;
+    // pussywizard: delayed visibility - thread-safe access
+    void AddToDelayedVisibility(Unit* unit)
+    {
+        std::lock_guard<std::mutex> lock(_delayedVisibilityLock);
+        _objectsForDelayedVisibility.insert(unit);
+    }
     void HandleDelayedVisibility();
 
     // some calls like isInWater should not use vmaps due to processor power
@@ -349,9 +355,33 @@ public:
     void AddObjectToRemoveList(WorldObject* obj);
     virtual void DelayedUpdate(const uint32 diff);
 
-    void resetMarkedCells() { marked_cells.reset(); }
-    bool isCellMarked(uint32 pCellId) { return marked_cells.test(pCellId); }
-    void markCell(uint32 pCellId) { marked_cells.set(pCellId); }
+    void FlushPendingUpdateListAdds();
+
+    void resetMarkedCells()
+    {
+        for (auto& word : _markedCells)
+            word.store(0, std::memory_order_relaxed);
+    }
+
+    bool isCellMarked(uint32 pCellId)
+    {
+        size_t wordIndex = pCellId / kMarkedCellWordBits;
+        size_t bitIndex = pCellId % kMarkedCellWordBits;
+        if (wordIndex >= _markedCells.size())
+            return false;
+        uint64 mask = uint64(1) << bitIndex;
+        return (_markedCells[wordIndex].load(std::memory_order_relaxed) & mask) != 0;
+    }
+
+    void markCell(uint32 pCellId)
+    {
+        size_t wordIndex = pCellId / kMarkedCellWordBits;
+        size_t bitIndex = pCellId % kMarkedCellWordBits;
+        if (wordIndex >= _markedCells.size())
+            return;
+        uint64 mask = uint64(1) << bitIndex;
+        _markedCells[wordIndex].fetch_or(mask, std::memory_order_relaxed);
+    }
 
     [[nodiscard]] bool HavePlayers() const { return !m_mapRefMgr.IsEmpty(); }
     [[nodiscard]] uint32 GetPlayersCountExceptGMs() const;
@@ -425,14 +455,15 @@ public:
     bool CanReachPositionAndGetValidCoords(WorldObject const* source, float &destX, float &destY, float &destZ, bool failOnCollision = true, bool failOnSlopes = true) const;
     bool CanReachPositionAndGetValidCoords(WorldObject const* source, float startX, float startY, float startZ, float &destX, float &destY, float &destZ, bool failOnCollision = true, bool failOnSlopes = true) const;
     bool CheckCollisionAndGetValidCoords(WorldObject const* source, float startX, float startY, float startZ, float &destX, float &destY, float &destZ, bool failOnCollision = true) const;
-    void Balance() { _dynamicTree.balance(); }
-    void RemoveGameObjectModel(const GameObjectModel& model) { _dynamicTree.remove(model); }
-    void InsertGameObjectModel(const GameObjectModel& model) { _dynamicTree.insert(model); }
-    [[nodiscard]] bool ContainsGameObjectModel(const GameObjectModel& model) const { return _dynamicTree.contains(model);}
+    void Balance() { std::unique_lock<std::shared_mutex> lock(_dynamicTreeLock); _dynamicTree.balance(); }
+    void RemoveGameObjectModel(const GameObjectModel& model) { std::unique_lock<std::shared_mutex> lock(_dynamicTreeLock); _dynamicTree.remove(model); }
+    void InsertGameObjectModel(const GameObjectModel& model) { std::unique_lock<std::shared_mutex> lock(_dynamicTreeLock); _dynamicTree.insert(model); }
+    [[nodiscard]] bool ContainsGameObjectModel(const GameObjectModel& model) const { std::shared_lock<std::shared_mutex> lock(_dynamicTreeLock); return _dynamicTree.contains(model);}
     [[nodiscard]] DynamicMapTree const& GetDynamicMapTree() const { return _dynamicTree; }
     bool GetObjectHitPos(uint32 phasemask, float x1, float y1, float z1, float x2, float y2, float z2, float& rx, float& ry, float& rz, float modifyDist);
     [[nodiscard]] float GetGameObjectFloor(uint32 phasemask, float x, float y, float z, float maxSearchDist = DEFAULT_HEIGHT_SEARCH) const
     {
+        std::shared_lock<std::shared_mutex> lock(_dynamicTreeLock);
         return _dynamicTree.getHeight(x, y, z, maxSearchDist, phasemask);
     }
     /*
@@ -523,11 +554,13 @@ public:
 
     void AddUpdateObject(Object* obj)
     {
+        std::lock_guard<std::mutex> lock(_updateObjectsLock);
         _updateObjects.insert(obj);
     }
 
     void RemoveUpdateObject(Object* obj)
     {
+        std::lock_guard<std::mutex> lock(_updateObjectsLock);
         _updateObjects.erase(obj);
     }
 
@@ -651,6 +684,9 @@ public:
     void AddToPartitionedUpdateList(WorldObject* obj);
     void RemoveFromPartitionedUpdateList(WorldObject* obj);
     void UpdatePartitionedOwnership(WorldObject* obj);
+    void ApplyQueuedPartitionedOwnershipUpdates();
+    void CollectPartitionedUpdatableGuids(uint32 partitionId, std::vector<std::pair<ObjectGuid, uint8>>& out);
+    void CollectPartitionedUpdatableObjects(uint32 partitionId, std::vector<WorldObject*>& out);
     void RegisterPartitionedObject(WorldObject* obj);
     void UnregisterPartitionedObject(WorldObject* obj);
     void UpdatePartitionedObjectStore(WorldObject* obj);
@@ -659,6 +695,7 @@ public:
     void BuildPartitionPlayerBuckets();
     void SetPartitionPlayerBuckets(std::vector<std::vector<Player*>> const& buckets);
     void ClearPartitionPlayerBuckets();
+    // Valid until ClearPartitionPlayerBuckets() is called after partition workers complete.
     std::vector<Player*> const* GetPartitionPlayerBucket(uint32 partitionId) const;
     bool ShouldMarkNearbyCells() const;
     uint32 GetUpdateCounter() const;
@@ -673,9 +710,11 @@ public:
     void AddWorldObjectToZoneWideVisibleMap(uint32 zoneId, WorldObject* obj);
     void RemoveWorldObjectFromZoneWideVisibleMap(uint32 zoneId, WorldObject* obj);
     ZoneWideVisibleWorldObjectsSet const* GetZoneWideVisibleWorldObjectsForZone(uint32 zoneId) const;
+    ZoneWideVisibleWorldObjectsSet GetZoneWideVisibleWorldObjectsForZoneCopy(uint32 zoneId) const;
 
     void LoadLayerClonesInRange(Player* player, float radius);
     void ClearLoadedLayer(uint32 layerId);
+    void MarkGridLayerLoaded(uint16 gridX, uint16 gridY, uint32 layerId);
 
     [[nodiscard]] uint32 GetPlayerCountInZone(uint32 zoneId) const
     {
@@ -695,9 +734,23 @@ private:
     void AddDynamicObjectToMoveList(DynamicObject* go);
     void RemoveDynamicObjectFromMoveList(DynamicObject* go);
 
+    std::mutex _moveListLock;
     std::vector<Creature*> _creaturesToMove;
     std::vector<GameObject*> _gameObjectsToMove;
     std::vector<DynamicObject*> _dynamicObjectsToMove;
+
+    std::mutex _pendingUpdateListLock;
+
+    struct PendingPartitionOwnershipUpdate
+    {
+        ObjectGuid guid;
+        TypeID typeId = TYPEID_OBJECT;
+    };
+
+    void QueuePartitionedOwnershipUpdate(ObjectGuid const& guid, TypeID typeId);
+    void UpdatePartitionedOwnershipNoLock(WorldObject* obj);
+    std::mutex _pendingPartitionOwnershipLock;
+    std::vector<PendingPartitionOwnershipUpdate> _pendingPartitionOwnershipUpdates;
 
     bool EnsureGridLoaded(Cell const& cell);
     void EnsureGridLayerLoaded(Cell const& cell, uint32 layerId);
@@ -725,9 +778,9 @@ protected:
     float m_VisibleDistance;
     bool _isPartitioned = false;
     bool _partitionLogShown = false;
-    bool _processingPartitionRelays = false;
     bool _useParallelPartitions = false;
     DynamicMapTree _dynamicTree;
+    mutable std::shared_mutex _dynamicTreeLock;
     time_t _instanceResetPeriod; // pussywizard
 
     MapRefMgr m_mapRefMgr;
@@ -745,15 +798,22 @@ private:
     WorldObject* _GetScriptWorldObject(Object* obj, bool isSource, const ScriptInfo* scriptInfo) const;
     void _ScriptProcessDoor(Object* source, Object* target, const ScriptInfo* scriptInfo) const;
     GameObject* _FindGameObject(WorldObject* pWorldObject, ObjectGuid::LowType guid) const;
+    std::mutex& GetRelayLock(uint32 partitionId);
 
     //used for fast base_map (e.g. MapInstanced class object) search for
     //InstanceMaps and BattlegroundMaps...
     Map* m_parentMap;
 
-    std::bitset<TOTAL_NUMBER_OF_CELLS_PER_MAP * TOTAL_NUMBER_OF_CELLS_PER_MAP> marked_cells;
+    static constexpr size_t kMarkedCellWordBits = 64;
+    static constexpr size_t kMarkedCellCount = TOTAL_NUMBER_OF_CELLS_PER_MAP * TOTAL_NUMBER_OF_CELLS_PER_MAP;
+    static constexpr size_t kMarkedCellWordCount = (kMarkedCellCount + kMarkedCellWordBits - 1) / kMarkedCellWordBits;
+    std::vector<std::atomic<uint64_t>> _markedCells;
 
     bool i_scriptLock;
     std::unordered_set<WorldObject*> i_objectsToRemove;
+
+    mutable std::mutex _delayedVisibilityLock;
+    std::unordered_set<Unit*> _objectsForDelayedVisibility;
 
     PartitionedUpdatableObjectLists _partitionedUpdatableObjectLists;
     mutable std::shared_mutex _partitionedUpdateListLock;
@@ -766,10 +826,13 @@ private:
     };
     std::unordered_map<WorldObject*, PartitionedUpdatableEntry> _partitionedUpdatableIndex;
     std::unordered_map<uint32, MapStoredObjectTypesContainer> _partitionedObjectsStore;
+    mutable std::shared_mutex _partitionedObjectStoreLock; // Protects _partitionedObjectsStore and _partitionedObjectIndex
     mutable std::shared_mutex _partitionPlayerBucketsLock;
     std::vector<std::vector<Player*>> _partitionPlayerBuckets;
     bool _partitionPlayerBucketsReady = false;
     std::unordered_map<ObjectGuid, uint32> _partitionedObjectIndex;
+    static constexpr size_t kRelayLockStripes = 16;
+    std::array<std::mutex, kRelayLockStripes> _relayLocks;
     std::unordered_map<uint32, std::vector<PartitionThreatRelay>> _partitionThreatRelays;
     std::unordered_map<uint32, std::vector<PartitionThreatActionRelay>> _partitionThreatActionRelays;
     std::unordered_map<uint32, std::vector<PartitionThreatTargetActionRelay>> _partitionThreatTargetActionRelays;
@@ -827,12 +890,15 @@ private:
     std::unordered_map<ObjectGuid, Corpse*> _corpsesByPlayer;
     std::unordered_set<Corpse*> _corpseBones;
 
+    mutable std::mutex _updateObjectsLock;
     std::unordered_set<Object*> _updateObjects;
 
+    mutable std::mutex _updatableObjectListLock;
     UpdatableObjectList _updatableObjectList;
     PendingAddUpdatableObjectList _pendingAddUpdatableObjectList;
     IntervalTimer _updatableObjectListRecheckTimer;
     ZoneWideVisibleWorldObjectsMap _zoneWideVisibleWorldObjectsMap;
+    mutable std::shared_mutex _zoneWideVisibleLock;
 };
 
 enum InstanceResetMethod

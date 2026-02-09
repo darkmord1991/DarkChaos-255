@@ -4,7 +4,7 @@
 
 void MapGridManager::CreateGrid(uint16 const x, uint16 const y)
 {
-    std::lock_guard<std::mutex> guard(_gridLock);
+    std::lock_guard<std::recursive_mutex> guard(_gridLock);
     if (IsGridCreated(x, y))
         return;
 
@@ -21,17 +21,26 @@ void MapGridManager::CreateGrid(uint16 const x, uint16 const y)
 
 bool MapGridManager::LoadGrid(uint16 const x, uint16 const y)
 {
-    MapGridType* grid = GetGrid(x, y);
-    if (!grid || grid->IsObjectDataLoaded())
-        return false;
+    MapGridType* grid = nullptr;
+    {
+        std::lock_guard<std::recursive_mutex> guard(_gridLock);
 
-    // Must mark as loaded first, as GridObjectLoader spawning objects can attempt to recursively load the grid
-    grid->SetObjectDataLoaded();
+        grid = GetGrid(x, y);
+        if (!grid || grid->IsObjectDataLoaded())
+            return false;
 
+        // Must mark as loaded first, as GridObjectLoader spawning objects can attempt to recursively load the grid
+        grid->SetObjectDataLoaded();
+
+        ++_loadedGridsCount;
+    }
+
+    // Load cells OUTSIDE the lock to prevent AB-BA deadlock:
+    //   Thread A: _gridLock (LoadGrid) → navmesh lock (Creature spawn → PathGenerator)
+    //   Thread B: navmesh lock (PathGenerator) → _gridLock (NormalizePath → EnsureGridCreated)
     GridObjectLoader loader(*grid, _map);
     loader.LoadAllCellsInGrid();
 
-    ++_loadedGridsCount;
     return true;
 }
 

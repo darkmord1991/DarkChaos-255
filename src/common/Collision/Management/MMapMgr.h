@@ -22,7 +22,10 @@
 #include "DetourAlloc.h"
 #include "DetourExtended.h"
 #include "DetourNavMesh.h"
+#include "DetourNavMeshQuery.h"
 #include <unordered_map>
+#include <memory>
+#include <mutex>
 #include <vector>
 
 //  memory management
@@ -43,7 +46,23 @@ namespace MMAP
     static char const* const TILE_FILE_NAME_FORMAT = "{}/mmaps/{:03}{:02}{:02}.mmtile";
 
     typedef std::unordered_map<uint32, dtTileRef> MMapTileSet;
-    typedef std::unordered_map<uint32, dtNavMeshQuery*> NavMeshQuerySet;
+    struct NavMeshQueryData
+    {
+        explicit NavMeshQueryData(dtNavMeshQuery* queryIn) : query(queryIn) { }
+
+        ~NavMeshQueryData()
+        {
+            if (query)
+            {
+                dtFreeNavMeshQuery(query);
+            }
+        }
+
+        dtNavMeshQuery* query;
+        std::mutex mutex;
+    };
+
+    typedef std::unordered_map<uint32, std::unique_ptr<NavMeshQueryData>> NavMeshQuerySet;
 
     // dummy struct to hold map's mmap data
     struct MMapData
@@ -52,10 +71,7 @@ namespace MMAP
 
         ~MMapData()
         {
-            for (auto& navMeshQuerie : navMeshQueries)
-            {
-                dtFreeNavMeshQuery(navMeshQuerie.second);
-            }
+            navMeshQueries.clear();
 
             if (navMesh)
             {
@@ -65,6 +81,7 @@ namespace MMAP
 
         // we have to use single dtNavMeshQuery for every instance, since those are not thread safe
         NavMeshQuerySet navMeshQueries; // instanceId to query
+        std::mutex navMeshQueriesMutex;
         dtNavMesh* navMesh;
         MMapTileSet loadedTileRefs; // maps [map grid coords] to [dtTile]
     };
@@ -87,6 +104,7 @@ namespace MMAP
 
         // the returned [dtNavMeshQuery const*] is NOT threadsafe
         dtNavMeshQuery const* GetNavMeshQuery(uint32 mapId, uint32 instanceId);
+        std::unique_lock<std::mutex> AcquireNavMeshQueryLock(uint32 mapId, uint32 instanceId);
         dtNavMesh const* GetNavMesh(uint32 mapId);
 
         [[nodiscard]] uint32 getLoadedTilesCount() const { return loadedTiles; }

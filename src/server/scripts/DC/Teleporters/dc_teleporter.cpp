@@ -96,12 +96,21 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
+        if (WorldSession* session = player->GetSession(); session && session->IsBot())
+            return true;
+
         ShowMenu(player, creature, 0);
         return true;
     }
 
     bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
     {
+        if (WorldSession* session = player->GetSession(); session && session->IsBot())
+        {
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
         if (action == 0) // Back to main menu (if parent was 0, though usually 0 is not a valid action for options unless specifically handled)
         {
              ShowMenu(player, creature, 0);

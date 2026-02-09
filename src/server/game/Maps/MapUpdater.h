@@ -21,6 +21,7 @@
 #include "Define.h"
 #include "PCQueue.h"
 #include <condition_variable>
+#include <functional>
 #include <thread>
 #include <atomic>
 #include <vector>
@@ -39,7 +40,9 @@ public:
     void schedule_map_preload(uint32 mapid);
     void schedule_grid_object_preload(Map& map, std::vector<uint32> const& gridIds);
     void schedule_lfg_update(uint32 diff);
-    void schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff);
+    void schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff,
+        std::function<void()> onDone = {});
+    void run_tasks_until(std::function<bool()> done);
     void wait();
     void activate(std::size_t num_threads);
     void deactivate();

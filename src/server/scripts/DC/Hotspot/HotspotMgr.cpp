@@ -407,10 +407,13 @@ void HotspotMgr::CleanupExpiredHotspots()
     }
 
     // Clean player expiry
-    for (auto it = _playerExpiry.begin(); it != _playerExpiry.end(); )
     {
-        if (it->second <= now) it = _playerExpiry.erase(it);
-        else ++it;
+        std::lock_guard<std::mutex> lock(_playerDataLock);
+        for (auto it = _playerExpiry.begin(); it != _playerExpiry.end(); )
+        {
+            if (it->second <= now) it = _playerExpiry.erase(it);
+            else ++it;
+        }
     }
 
     // Respawn min active
@@ -441,23 +444,26 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
         player->CastSpell(player, sHotspotsConfig.auraSpell, true);
         player->CastSpell(player, sHotspotsConfig.buffSpell, true);
 
-        if (hotspot)
-             _playerExpiry[player->GetGUID()] = hotspot->expireTime;
-        else if (isDungeonHotspot)
-             _playerExpiry[player->GetGUID()] = GameTime::GetGameTime().count() + 3600; // Arbitrary 1h expiry extension for dungeons, refreshed often
-
-        // Init objectives
-        if (sHotspotsConfig.objectivesEnabled)
         {
-            auto& obj = _playerObjectives[player->GetGUID()];
-            uint32 targetId = hotspot ? hotspot->id : 0; // 0 for generic dungeon hotspot ID for now? Or MapID?
-            if (isDungeonHotspot) targetId = player->GetMapId() + 100000; // Fake ID for dungeon maps
+            std::lock_guard<std::mutex> lock(_playerDataLock);
+            if (hotspot)
+                _playerExpiry[player->GetGUID()] = hotspot->expireTime;
+            else if (isDungeonHotspot)
+                _playerExpiry[player->GetGUID()] = GameTime::GetGameTime().count() + 3600; // Arbitrary 1h expiry extension for dungeons, refreshed often
 
-            if (obj.hotspotId != targetId)
+            // Init objectives
+            if (sHotspotsConfig.objectivesEnabled)
             {
-                obj = HotspotObjectives();
-                obj.hotspotId = targetId;
-                obj.entryTime = GameTime::GetGameTime().count();
+                auto& obj = _playerObjectives[player->GetGUID()];
+                uint32 targetId = hotspot ? hotspot->id : 0; // 0 for generic dungeon hotspot ID for now? Or MapID?
+                if (isDungeonHotspot) targetId = player->GetMapId() + 100000; // Fake ID for dungeon maps
+
+                if (obj.hotspotId != targetId)
+                {
+                    obj = HotspotObjectives();
+                    obj.hotspotId = targetId;
+                    obj.entryTime = GameTime::GetGameTime().count();
+                }
             }
         }
     }
@@ -467,20 +473,28 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
         player->RemoveAura(sHotspotsConfig.buffSpell);
         player->RemoveAura(sHotspotsConfig.auraSpell); // Also remove visuals
         ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF6347[Hotspot Notice]|r You left the XP Hotspot.");
-        _playerExpiry.erase(player->GetGUID());
-
-        // Results
-        if (sHotspotsConfig.objectivesEnabled)
+        uint32 kills = 0;
+        uint32 mins = 0;
+        bool hasResults = false;
         {
-            auto it = _playerObjectives.find(player->GetGUID());
-            if (it != _playerObjectives.end())
+            std::lock_guard<std::mutex> lock(_playerDataLock);
+            _playerExpiry.erase(player->GetGUID());
+
+            // Results
+            if (sHotspotsConfig.objectivesEnabled)
             {
-                uint32 kills = it->second.killCount;
-                uint32 mins = it->second.GetSurvivalSeconds() / 60;
-                ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF6347[Hotspot Results]|r Session ended. Kills: {} | Survival: {} min", kills, mins);
-                _playerObjectives.erase(it);
+                auto it = _playerObjectives.find(player->GetGUID());
+                if (it != _playerObjectives.end())
+                {
+                    kills = it->second.killCount;
+                    mins = it->second.GetSurvivalSeconds() / 60;
+                    _playerObjectives.erase(it);
+                    hasResults = true;
+                }
             }
         }
+        if (hasResults)
+            ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF6347[Hotspot Results]|r Session ended. Kills: {} | Survival: {} min", kills, mins);
     }
 }
 
@@ -493,11 +507,14 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
     // Check server expiry fallback
     if (!isBuffed)
     {
-        auto it = _playerExpiry.find(player->GetGUID());
-        if (it != _playerExpiry.end())
         {
-            if (it->second > GameTime::GetGameTime().count()) isBuffed = true;
-            else _playerExpiry.erase(it);
+            std::lock_guard<std::mutex> lock(_playerDataLock);
+            auto it = _playerExpiry.find(player->GetGUID());
+            if (it != _playerExpiry.end())
+            {
+                if (it->second > GameTime::GetGameTime().count()) isBuffed = true;
+                else _playerExpiry.erase(it);
+            }
         }
     }
 
@@ -524,17 +541,25 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
              {
                  uint32 targetId = cur ? cur->id : (player->GetMapId() + 100000); // Same fake ID logic
 
-                 auto& obj = _playerObjectives[player->GetGUID()];
-                 if (obj.hotspotId == targetId)
+                 uint32 killCount = 0;
+                 bool reportProgress = false;
                  {
-                     obj.killCount++;
-                     if (sHotspotsConfig.showObjectivesProgress)
+                     std::lock_guard<std::mutex> lock(_playerDataLock);
+                     auto& obj = _playerObjectives[player->GetGUID()];
+                     if (obj.hotspotId == targetId)
                      {
-                         if (obj.killCount == sHotspotsConfig.objectiveKillGoal)
-                             ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Objective] Killed {}/{} creatures!|r", obj.killCount, sHotspotsConfig.objectiveKillGoal);
-                         else if (obj.killCount < sHotspotsConfig.objectiveKillGoal && (obj.killCount % 10 == 0 || obj.killCount == 1))
-                             ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00[Objective] Hotspot Kills: {}/{}|r", obj.killCount, sHotspotsConfig.objectiveKillGoal);
+                         obj.killCount++;
+                         killCount = obj.killCount;
+                         reportProgress = sHotspotsConfig.showObjectivesProgress;
                      }
+                 }
+
+                 if (reportProgress)
+                 {
+                     if (killCount == sHotspotsConfig.objectiveKillGoal)
+                         ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Objective] Killed {}/{} creatures!|r", killCount, sHotspotsConfig.objectiveKillGoal);
+                     else if (killCount < sHotspotsConfig.objectiveKillGoal && (killCount % 10 == 0 || killCount == 1))
+                         ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00[Objective] Hotspot Kills: {}/{}|r", killCount, sHotspotsConfig.objectiveKillGoal);
                  }
              }
         }

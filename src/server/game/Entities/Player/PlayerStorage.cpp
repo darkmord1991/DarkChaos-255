@@ -79,7 +79,8 @@
 
 void Player::SetVirtualItemSlot(uint8 i, Item* item)
 {
-    ASSERT(i < 3);
+#include <algorithm>
+#include <unordered_set>
     if (i < 2 && item)
     {
         if (!item->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT))
@@ -7337,12 +7338,70 @@ void Player::_SaveInventory(CharacterDatabaseTransaction trans)
     if (m_itemUpdateQueue.empty())
         return;
 
+    std::unordered_set<Item*> validItems;
+    if (WorldSession* session = GetSession(); session && session->IsBot())
+    {
+        validItems.reserve(PLAYER_SLOTS_COUNT * 2);
+        for (Item* item : m_items)
+        {
+            if (!item)
+                continue;
+
+            validItems.insert(item);
+            if (Bag* bag = item->ToBag())
+            {
+                for (uint32 j = 0; j < bag->GetBagSize(); ++j)
+                {
+                    if (Item* bagItem = bag->GetItemByPos(j))
+                        validItems.insert(bagItem);
+                }
+            }
+        }
+    }
+
     ObjectGuid::LowType lowGuid = GetGUID().GetCounter();
+    bool useValidItems = !validItems.empty();
     for (std::size_t i = 0; i < m_itemUpdateQueue.size(); ++i)
     {
         Item* item = m_itemUpdateQueue[i];
         if (!item)
             continue;
+
+        if (useValidItems && validItems.find(item) == validItems.end())
+        {
+            if (item->GetOwnerGUID() == GetGUID() && item->GetState() == ITEM_REMOVED)
+            {
+                // Item was removed from inventory but is still pending DB deletion.
+            }
+            else
+            {
+                LOG_ERROR("entities.player", "Player(GUID: {} Name: {})::_SaveInventory - stale update queue item pointer, skipping.",
+                          GetGUID().GetCounter(), GetName());
+                if (item->GetOwnerGUID() == GetGUID())
+                    item->RemoveFromUpdateQueueOf(this);
+                m_itemUpdateQueue[i] = nullptr;
+                continue;
+            }
+        }
+
+        if (!useValidItems)
+        {
+            bool ownedItem = false;
+            for (Item* owned : m_items)
+            {
+                if (owned == item)
+                {
+                    ownedItem = true;
+                    break;
+                }
+            }
+            if (!ownedItem)
+            {
+                LOG_ERROR("entities.player", "Player(GUID: {} Name: {})::_SaveInventory - stale item pointer in update queue, skipping.",
+                          GetGUID().GetCounter(), GetName());
+                continue;
+            }
+        }
 
         Bag* container = item->GetContainer();
         ObjectGuid::LowType bag_guid = container ? container->GetGUID().GetCounter() : 0;

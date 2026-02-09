@@ -17,9 +17,11 @@
 #include "SpellAuras.h"
 #include "Chat.h"
 #include "StringFormat.h"
+#include "WorldSession.h"
 #include "dc_challenge_mode_database.h"
 #include "../Prestige/dc_prestige_api.h"
 
+#include <algorithm>
 #include <array>
 
 using namespace Acore::ChatCommands;
@@ -581,6 +583,15 @@ class gobject_challenge_modes : public GameObjectScript
 {
 public:
     gobject_challenge_modes() : GameObjectScript("gobject_challenge_modes") { }
+
+    static bool IsBotPlayer(Player* player)
+    {
+        if (!player)
+            return false;
+
+        WorldSession* session = player->GetSession();
+        return session && session->IsBot();
+    }
 
     static bool IsIronManOrPlusActive(Player* player)
     {
@@ -1326,6 +1337,51 @@ public:
     }
 };
 
+class ChallengeMode_BotAutoAssign : public PlayerScript
+{
+public:
+    ChallengeMode_BotAutoAssign() : PlayerScript("ChallengeMode_BotAutoAssign") { }
+
+    void OnPlayerLogin(Player* player) override
+    {
+        if (!gobject_challenge_modes::IsBotPlayer(player))
+            return;
+
+        if (!sChallengeModes->enabled())
+            return;
+
+        if (gobject_challenge_modes::PlayerHasAnyActiveChallengeMode(player))
+            return;
+
+        static constexpr uint8 kBotChallengeOptInChance = 30;
+        if (urand(1, 100) > kBotChallengeOptInChance)
+            return;
+
+        std::vector<ChallengeModeSettings> eligible = gobject_challenge_modes::GetEligibleRandomChallengeModes(player);
+        if (eligible.empty())
+            return;
+
+        eligible.erase(std::remove_if(eligible.begin(), eligible.end(), [](ChallengeModeSettings setting)
+        {
+            return setting == SETTING_IRON_MAN || setting == SETTING_IRON_MAN_PLUS;
+        }), eligible.end());
+
+        if (eligible.empty())
+            return;
+
+        ChallengeModeSettings picked = eligible[urand(0, eligible.size() - 1)];
+
+        player->UpdatePlayerSetting("mod-challenge-modes", picked, 1);
+        sChallengeModes->RefreshChallengeAuras(player);
+
+        if (picked == SETTING_IRON_MAN || picked == SETTING_IRON_MAN_PLUS)
+            gobject_challenge_modes::ApplyIronManOrPlusImmediateRestrictions(player);
+
+        ChallengeModeDatabase::InitializeTracking(player->GetGUID());
+        ChallengeModeDatabase::SyncActiveModesFromSettings(player);
+    }
+};
+
 // ==============================================
 // DarkChaos-255: SCRIPT REGISTRATION
 // ==============================================
@@ -1337,6 +1393,7 @@ void AddSC_dc_challenge_modes()
 {
     new ChallengeModes_WorldScript();
     new gobject_challenge_modes();
+    new ChallengeMode_BotAutoAssign();
 
     // Register scripts from ChallengeModeScripts.cpp
     AddSC_challenge_mode_scripts();

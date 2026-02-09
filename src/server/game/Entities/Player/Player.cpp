@@ -5945,7 +5945,12 @@ void Player::CheckAreaExploreAndOutdoor()
 
     if (offset >= PLAYER_EXPLORED_ZONES_SIZE)
     {
-        LOG_ERROR("entities.player", "Wrong area flag {} in map data for (X: {} Y: {}) point to field PLAYER_EXPLORED_ZONES_1 + {} ( {} must be < {} ).", areaEntry->flags, GetPositionX(), GetPositionY(), offset, offset, PLAYER_EXPLORED_ZONES_SIZE);
+        static uint32 lastErrorTime = 0;
+        if (GetMSTimeDiffToNow(lastErrorTime) > 10000)
+        {
+            LOG_ERROR("entities.player", "Wrong area flag {} in map data for Map: {} Area: {} (X: {} Y: {}) point to field PLAYER_EXPLORED_ZONES_1 + {} ( {} must be < {} ).", areaEntry->flags, GetMapId(), areaId, GetPositionX(), GetPositionY(), offset, offset, PLAYER_EXPLORED_ZONES_SIZE);
+            lastErrorTime = getMSTime();
+        }
         return;
     }
 
@@ -9939,6 +9944,8 @@ void Player::ApplySpellMod(uint32 spellId, SpellModOp op, T& basevalue, Spell* s
     if (!spellInfo)
         return;
 
+    std::lock_guard<std::recursive_mutex> lock(m_spellModsLock);
+
     float totalmul = 1.0f;
     int32 totalflat = 0;
 
@@ -10033,6 +10040,7 @@ struct SpellModPredicate
 void Player::AddSpellMod(SpellModifier* mod, bool apply)
 {
     LOG_DEBUG("spells.aura", "Player::AddSpellMod {}", mod->spellId);
+    std::lock_guard<std::recursive_mutex> lock(m_spellModsLock);
     uint16 Opcode = (mod->type == SPELLMOD_FLAT) ? SMSG_SET_FLAT_SPELL_MODIFIER : SMSG_SET_PCT_SPELL_MODIFIER;
 
     int i = 0;
@@ -10079,6 +10087,8 @@ void Player::RestoreSpellMods(Spell* spell, uint32 ownerAuraId, Aura* aura)
 {
     if (!spell || spell->m_appliedMods.empty())
         return;
+
+    std::lock_guard<std::recursive_mutex> lock(m_spellModsLock);
 
     std::list<Aura*> aurasQueue;
 
@@ -10158,6 +10168,8 @@ void Player::RemoveSpellMods(Spell* spell)
         return;
 
     SpellInfo const* const spellInfo = spell->m_spellInfo;
+
+    std::lock_guard<std::recursive_mutex> lock(m_spellModsLock);
 
     for (uint8 i = 0; i < MAX_SPELLMOD; ++i)
     {
@@ -12236,16 +12248,16 @@ void Player::learnSkillRewardedSpells(uint32 skill_id, uint32 skill_value)
 
 void Player::GetAurasForTarget(Unit* target, bool force /*= false*/)
 {
-    if (!target || (!force && target->GetVisibleAuras()->empty()))    // speedup things
+    auto visibleAurasSnapshot = target ? target->GetVisibleAurasSnapshot() : std::vector<std::pair<uint8, AuraApplication*>>();
+    if (!target || (!force && visibleAurasSnapshot.empty()))    // speedup things
         return;
 
     WorldPacket data(SMSG_AURA_UPDATE_ALL);
     data<< target->GetPackGUID();
 
-    Unit::VisibleAuraMap const* visibleAuras = target->GetVisibleAuras();
-    for (Unit::VisibleAuraMap::const_iterator itr = visibleAuras->begin(); itr != visibleAuras->end(); ++itr)
+    for (auto& auraPair : visibleAurasSnapshot)
     {
-        AuraApplication* auraApp = itr->second;
+        AuraApplication* auraApp = auraPair.second;
         auraApp->BuildUpdatePacket(data, false);
     }
 

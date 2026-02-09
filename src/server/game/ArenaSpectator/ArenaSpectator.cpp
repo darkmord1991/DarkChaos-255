@@ -127,10 +127,10 @@ bool ArenaSpectator::HandleSpectatorSpectateCommand(ChatHandler* handler, std::s
     if (!player->m_Controlled.empty())
         errors.push_back("Can't be controlling creatures.");
 
-    const Unit::VisibleAuraMap* va = player->GetVisibleAuras();
-    for (auto itr = va->begin(); itr != va->end(); ++itr)
-        if (Aura* aura = itr->second->GetBase())
-            if (!itr->second->IsPositive() && !aura->IsPermanent() && aura->GetDuration() < HOUR * IN_MILLISECONDS)
+    auto visibleAuras = player->GetVisibleAurasSnapshot();
+    for (auto& auraPair : visibleAuras)
+        if (Aura* aura = auraPair.second->GetBase())
+            if (!auraPair.second->IsPositive() && !aura->IsPermanent() && aura->GetDuration() < HOUR * IN_MILLISECONDS)
             {
                 switch (aura->GetSpellInfo()->Id)
                 {
@@ -284,11 +284,11 @@ void ArenaSpectator::HandleResetCommand(Player* player)
                     SendCommand_Cooldown(player, itr->first, "ACD", itrc->first, cd, itrc->second.maxduration / 1000);
 
         // send all visible "AUR"
-        Unit::VisibleAuraMap const* visibleAuras = plr->GetVisibleAuras();
-        for (Unit::VisibleAuraMap::const_iterator aitr = visibleAuras->begin(); aitr != visibleAuras->end(); ++aitr)
+        auto visibleAuras = plr->GetVisibleAurasSnapshot();
+        for (auto& auraPair : visibleAuras)
         {
-            Aura* aura = aitr->second->GetBase();
-            if (ShouldSendAura(aura, aitr->second->GetEffectMask(), plr->GetGUID(), false))
+            Aura* aura = auraPair.second->GetBase();
+            if (ShouldSendAura(aura, auraPair.second->GetEffectMask(), plr->GetGUID(), false))
                 SendCommand_Aura(player, itr->first, "AUR", aura->GetCasterGUID(), aura->GetSpellInfo()->Id, aura->GetSpellInfo()->IsPositive(), aura->GetSpellInfo()->Dispel, aura->GetDuration(), aura->GetMaxDuration(), (aura->GetCharges() > 1 ? aura->GetCharges() : aura->GetStackAmount()), false);
         }
     }

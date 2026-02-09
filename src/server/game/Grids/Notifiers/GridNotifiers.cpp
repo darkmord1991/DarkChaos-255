@@ -35,11 +35,11 @@ void VisibleNotifier::Visit(GameObjectMapType& m)
 
 void VisibleNotifier::SendToSelf()
 {
-    // Update far visible objects
-    ZoneWideVisibleWorldObjectsSet const* zoneWideVisibleObjects = i_player.GetMap()->GetZoneWideVisibleWorldObjectsForZone(i_player.GetZoneId());
-    if (zoneWideVisibleObjects)
+    // Update far visible objects — use snapshot copy so we don't hold the shared_mutex across visibility updates
+    ZoneWideVisibleWorldObjectsSet zoneWideVisibleObjects = i_player.GetMap()->GetZoneWideVisibleWorldObjectsForZoneCopy(i_player.GetZoneId());
+    if (!zoneWideVisibleObjects.empty())
     {
-        for (WorldObject* obj : *zoneWideVisibleObjects)
+        for (WorldObject* obj : zoneWideVisibleObjects)
         {
             switch (obj->GetTypeId())
             {

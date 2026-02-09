@@ -89,6 +89,17 @@ void GridObjectLoader::LoadCreatures(CellGuidSet const& guid_set, Map* map)
                 if (!layerIdsCached)
                 {
                     sLayerMgr->GetActiveLayerIds(map->GetId(), cachedLayerIds);
+                    bool hasBaseLayer = false;
+                    for (uint32 layerId : cachedLayerIds)
+                    {
+                        if (layerId == 0)
+                        {
+                            hasBaseLayer = true;
+                            break;
+                        }
+                    }
+                    if (!hasBaseLayer)
+                        cachedLayerIds.push_back(0);
                     layerIdsCached = true;
                 }
             }
@@ -201,6 +212,17 @@ void GridObjectLoader::LoadGameObjects(CellGuidSet const& guid_set, Map* map)
                     if (!layerIdsCached)
                     {
                         sLayerMgr->GetActiveLayerIds(map->GetId(), cachedLayerIds);
+                        bool hasBaseLayer = false;
+                        for (uint32 layerId : cachedLayerIds)
+                        {
+                            if (layerId == 0)
+                            {
+                                hasBaseLayer = true;
+                                break;
+                            }
+                        }
+                        if (!hasBaseLayer)
+                            cachedLayerIds.push_back(0);
                         layerIdsCached = true;
                     }
                 }

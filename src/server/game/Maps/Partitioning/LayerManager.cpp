@@ -296,16 +296,35 @@ uint32_t LayerManager::GetLayerCount(uint32_t mapId) const
 
 std::vector<uint32> LayerManager::GetLayerIds(uint32 mapId) const
 {
-    std::vector<uint32> layerIds;
+    std::unordered_set<uint32> idSet;
     std::shared_lock<std::shared_mutex> guard(_layerLock);
+
+    // Collect from player layer tracking
     auto mapIt = _layers.find(mapId);
-    if (mapIt == _layers.end())
-        return layerIds;
+    if (mapIt != _layers.end())
+    {
+        for (auto const& [layerId, _] : mapIt->second)
+            idSet.insert(layerId);
+    }
 
-    layerIds.reserve(mapIt->second.size());
-    for (auto const& [layerId, _] : mapIt->second)
-        layerIds.push_back(layerId);
+    // Also collect from NPC tracking (layers may have NPCs but no players)
+    for (auto const& [_, assignment] : _npcLayers)
+    {
+        if (assignment.mapId == mapId)
+            idSet.insert(assignment.layerId);
+    }
 
+    // Also collect from GO tracking
+    for (auto const& [_, assignment] : _goLayers)
+    {
+        if (assignment.mapId == mapId)
+            idSet.insert(assignment.layerId);
+    }
+
+    // Always include layer 0
+    idSet.insert(0);
+
+    std::vector<uint32> layerIds(idSet.begin(), idSet.end());
     std::sort(layerIds.begin(), layerIds.end());
     return layerIds;
 }
@@ -478,83 +497,58 @@ void LayerManager::CleanupEmptyLayers(uint32 mapId, uint32 layerId)
     if (mapIt == _layers.end())
         return;
     auto& mapLayers = mapIt->second;
+    // Never destroy the base layer (layer 0) — it holds original spawns.
+    if (layerId == 0)
+        return;
+
     auto layerIt = mapLayers.find(layerId);
     if (layerIt == mapLayers.end())
         return;
-    
     if (layerIt->second.empty())
     {
         mapLayers.erase(layerId);
 
         sMapMgr->DoForAllMapsWithMapId(mapId, [&](Map* map)
         {
-            if (map)
-                map->ClearLoadedLayer(layerId);
+            if (!map)
+                return;
+
+            map->ClearLoadedLayer(layerId);
+
+            std::vector<Creature*> creaturesToRemove;
+            for (auto const& [_, creature] : map->GetCreatureBySpawnIdStore())
+            {
+                if (creature && creature->IsLayerClone() && creature->GetLayerCloneId() == layerId && creature->IsInWorld())
+                    creaturesToRemove.push_back(creature);
+            }
+
+            std::vector<GameObject*> gosToRemove;
+            for (auto const& [_, go] : map->GetGameObjectBySpawnIdStore())
+            {
+                if (go && go->IsLayerClone() && go->GetLayerCloneId() == layerId && go->IsInWorld())
+                    gosToRemove.push_back(go);
+            }
+
+            for (Creature* creature : creaturesToRemove)
+                creature->AddObjectToRemoveList();
+            for (GameObject* go : gosToRemove)
+                go->AddObjectToRemoveList();
         });
 
-        // Reassign orphaned NPCs and GOs from the removed layer to a surviving layer
-        if (!mapLayers.empty())
+        for (auto it = _npcLayers.begin(); it != _npcLayers.end();)
         {
-            // Collect surviving layer IDs for deterministic distribution
-            std::vector<uint32> survivingLayers;
-            survivingLayers.reserve(mapLayers.size());
-            for (auto const& [lid, _] : mapLayers)
-                survivingLayers.push_back(lid);
-            std::sort(survivingLayers.begin(), survivingLayers.end());
+            if (it->second.mapId == mapId && it->second.layerId == layerId)
+                it = _npcLayers.erase(it);
+            else
+                ++it;
+        }
 
-            std::vector<std::pair<ObjectGuid::LowType, uint32>> npcReassignments;
-            std::vector<std::pair<ObjectGuid::LowType, uint32>> goReassignments;
-            npcReassignments.reserve(_npcLayers.size());
-            goReassignments.reserve(_goLayers.size());
-
-            for (auto& [npcLow, assignment] : _npcLayers)
-            {
-                if (assignment.mapId == mapId && assignment.layerId == layerId)
-                {
-                    uint32 newLayer = survivingLayers[static_cast<uint32>(npcLow % survivingLayers.size())];
-                    assignment.layerId = newLayer;
-                    npcReassignments.emplace_back(npcLow, newLayer);
-                }
-            }
-
-            for (auto& [goLow, assignment] : _goLayers)
-            {
-                if (assignment.mapId == mapId && assignment.layerId == layerId)
-                {
-                    uint32 newLayer = survivingLayers[static_cast<uint32>(goLow % survivingLayers.size())];
-                    assignment.layerId = newLayer;
-                    goReassignments.emplace_back(goLow, newLayer);
-                }
-            }
-
-            if (!npcReassignments.empty() || !goReassignments.empty())
-            {
-                sMapMgr->DoForAllMapsWithMapId(mapId, [&](Map* map)
-                {
-                    if (!map)
-                        return;
-
-                    for (auto const& [npcLow, newLayer] : npcReassignments)
-                    {
-                        auto assignmentIt = _npcLayers.find(npcLow);
-                        if (assignmentIt == _npcLayers.end())
-                            continue;
-                        ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(assignmentIt->second.entry, npcLow);
-                        if (Creature* creature = map->GetCreature(guid))
-                            creature->SetLayerClone(newLayer);
-                    }
-
-                    for (auto const& [goLow, newLayer] : goReassignments)
-                    {
-                        auto assignmentIt = _goLayers.find(goLow);
-                        if (assignmentIt == _goLayers.end())
-                            continue;
-                        ObjectGuid guid = ObjectGuid::Create<HighGuid::GameObject>(assignmentIt->second.entry, goLow);
-                        if (GameObject* go = map->GetGameObject(guid))
-                            go->SetLayerClone(newLayer);
-                    }
-                });
-            }
+        for (auto it = _goLayers.begin(); it != _goLayers.end();)
+        {
+            if (it->second.mapId == mapId && it->second.layerId == layerId)
+                it = _goLayers.erase(it);
+            else
+                ++it;
         }
 
         if (mapLayers.empty())
@@ -563,7 +557,6 @@ void LayerManager::CleanupEmptyLayers(uint32 mapId, uint32 layerId)
         }
     }
 }
-
 
 void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerGuid)
 {
@@ -619,7 +612,50 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
             }
             else
             {
-                return;  // Already on correct layer for this map
+                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                bool isBot = player && player->GetSession() && player->GetSession()->IsBot();
+
+                if (!isBot)
+                    return;  // Already on correct layer for this map
+
+                auto& mapLayers = _layers[mapId];
+                uint32 mapCapacity = GetLayerCapacity(mapId);
+
+                uint32 currentLayer = it->second.layerId;
+                uint32 currentCount = static_cast<uint32>(mapLayers[currentLayer].size());
+
+                uint32 bestLayerId = currentLayer;
+                bool foundLayer = false;
+                for (auto const& [layerId, players] : mapLayers)
+                {
+                    if (layerId == currentLayer)
+                        continue;
+
+                    if (players.size() < mapCapacity)
+                    {
+                        bestLayerId = layerId;
+                        foundLayer = true;
+                        break;
+                    }
+                }
+
+                if (!foundLayer || currentCount <= mapCapacity)
+                    return;
+
+                previousLayerId = currentLayer;
+                auto& oldLayerPlayers = mapLayers[currentLayer];
+                oldLayerPlayers.erase(playerGuid.GetCounter());
+
+                if (oldLayerPlayers.empty())
+                    CleanupEmptyLayers(mapId, currentLayer);
+
+                mapLayers[bestLayerId].insert(playerGuid.GetCounter());
+                _playerLayers[playerGuid.GetCounter()] = { mapId, 0, bestLayerId };
+                _atomicPlayerLayers[playerGuid.GetCounter()].Store(mapId, bestLayerId);
+
+                assignedLayerId = bestLayerId;
+                shouldSync = true;
+                reason = "bot rebalance";
             }
         }
         else
@@ -773,7 +809,7 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
                 }
             }
 
-            // Assign
+            // Assign directly to the chosen layer.
             _layers[mapId][bestLayerId].insert(playerGuid.GetCounter());
             _playerLayers[playerGuid.GetCounter()] = { mapId, 0, bestLayerId };
             _atomicPlayerLayers[playerGuid.GetCounter()].Store(mapId, bestLayerId);
@@ -818,9 +854,6 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
         {
             NotifyLayerChange(player, previousLayerId, assignedLayerId, reason);
 
-            // If the layer actually changed, ensure clone NPCs/GOs for the new
-            // layer are loaded on nearby grids and rebuild visibility so the
-            // player sees the correct set of objects.
             if (assignedLayerId != previousLayerId && player->IsInWorld())
             {
                 if (Map* map = player->GetMap())
@@ -851,6 +884,10 @@ void LayerManager::ReassignNPCsForNewLayer(uint32 mapId, uint32 layerId)
                 if (!map->IsGridLoaded(GridCoord(gridX, gridY)))
                     continue;
 
+                // Mark this grid+layer as loaded so EnsureGridLayerLoaded won't
+                // double-spawn clones later.
+                map->MarkGridLayerLoaded(gridX, gridY, layerId);
+
                 uint32 gridId = gridY * MAX_NUMBER_OF_GRIDS + gridX;
                 CellObjectGuids const& cellGuids = sObjectMgr->GetGridObjectGuids(mapId, spawnMode, gridId);
                 for (ObjectGuid::LowType const& spawnId : cellGuids.creatures)
@@ -859,7 +896,6 @@ void LayerManager::ReassignNPCsForNewLayer(uint32 mapId, uint32 layerId)
                     if (!data)
                         continue;
 
-                    // Map-wide layering: spawn clones for ALL zones on this map
                     bool existsInLayer = false;
                     auto bounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
                     for (auto itr = bounds.first; itr != bounds.second; ++itr)
@@ -958,16 +994,16 @@ void LayerManager::AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid cons
         return;
 
     std::unique_lock<std::shared_mutex> guard(_layerLock);
-    _npcLayers[npcGuid.GetCounter()] = { mapId, zoneId, layerId, npcGuid.GetEntry() };
+    _npcLayers[MakeLayerKey(mapId, npcGuid)] = { mapId, zoneId, layerId, npcGuid.GetEntry() };
     
     LOG_DEBUG("map.partition", "Assigned NPC {} to layer {} in map {} zone {}",
         npcGuid.ToString(), layerId, mapId, zoneId);
 }
 
-void LayerManager::RemoveNPCFromLayer(ObjectGuid const& npcGuid)
+void LayerManager::RemoveNPCFromLayer(uint32 mapId, ObjectGuid const& npcGuid)
 {
     std::unique_lock<std::shared_mutex> guard(_layerLock);
-    _npcLayers.erase(npcGuid.GetCounter());
+    _npcLayers.erase(MakeLayerKey(mapId, npcGuid));
 }
 
 uint32 LayerManager::GetLayerForNPC(uint32 mapId, ObjectGuid const& npcGuid) const
@@ -986,7 +1022,7 @@ uint32 LayerManager::GetLayerForNPC(uint32 mapId, ObjectGuid const& npcGuid) con
         return cache.layerId;
 
     std::shared_lock<std::shared_mutex> guard(_layerLock);
-    auto it = _npcLayers.find(npcGuid.GetCounter());
+    auto it = _npcLayers.find(MakeLayerKey(mapId, npcGuid));
     if (it == _npcLayers.end())
     {
         cache = { npcGuid.GetCounter(), mapId, 0, nowMs + 250 };
@@ -1018,15 +1054,18 @@ uint32 LayerManager::GetLayerForNPC(ObjectGuid const& npcGuid) const
         return cache.layerId;
 
     std::shared_lock<std::shared_mutex> guard(_layerLock);
-    auto it = _npcLayers.find(npcGuid.GetCounter());
-    if (it == _npcLayers.end())
+    ObjectGuid::LowType guidLow = npcGuid.GetCounter();
+    for (auto const& [key, assignment] : _npcLayers)
     {
-        cache = { npcGuid.GetCounter(), 0, nowMs + 250 };
-        return 0;
+        if (static_cast<ObjectGuid::LowType>(key) == guidLow)
+        {
+            cache = { guidLow, assignment.layerId, nowMs + 250 };
+            return assignment.layerId;
+        }
     }
 
-    cache = { npcGuid.GetCounter(), it->second.layerId, nowMs + 250 };
-    return it->second.layerId;
+    cache = { guidLow, 0, nowMs + 250 };
+    return 0;
 }
 
 uint32 LayerManager::GetDefaultLayerForMap(uint32 mapId, uint64 seed) const
@@ -1057,16 +1096,16 @@ void LayerManager::AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const
         return;
 
     std::unique_lock<std::shared_mutex> guard(_layerLock);
-    _goLayers[goGuid.GetCounter()] = { mapId, zoneId, layerId, goGuid.GetEntry() };
+    _goLayers[MakeLayerKey(mapId, goGuid)] = { mapId, zoneId, layerId, goGuid.GetEntry() };
 
     LOG_DEBUG("map.partition", "Assigned GO {} to layer {} in map {} zone {}",
         goGuid.ToString(), layerId, mapId, zoneId);
 }
 
-void LayerManager::RemoveGOFromLayer(ObjectGuid const& goGuid)
+void LayerManager::RemoveGOFromLayer(uint32 mapId, ObjectGuid const& goGuid)
 {
     std::unique_lock<std::shared_mutex> guard(_layerLock);
-    _goLayers.erase(goGuid.GetCounter());
+    _goLayers.erase(MakeLayerKey(mapId, goGuid));
 }
 
 uint32 LayerManager::GetLayerForGO(uint32 mapId, ObjectGuid const& goGuid) const
@@ -1085,7 +1124,7 @@ uint32 LayerManager::GetLayerForGO(uint32 mapId, ObjectGuid const& goGuid) const
         return cache.layerId;
 
     std::shared_lock<std::shared_mutex> guard(_layerLock);
-    auto it = _goLayers.find(goGuid.GetCounter());
+    auto it = _goLayers.find(MakeLayerKey(mapId, goGuid));
     if (it == _goLayers.end())
     {
         cache = { goGuid.GetCounter(), mapId, 0, nowMs + 250 };
@@ -1117,15 +1156,18 @@ uint32 LayerManager::GetLayerForGO(ObjectGuid const& goGuid) const
         return cache.layerId;
 
     std::shared_lock<std::shared_mutex> guard(_layerLock);
-    auto it = _goLayers.find(goGuid.GetCounter());
-    if (it == _goLayers.end())
+    ObjectGuid::LowType guidLow = goGuid.GetCounter();
+    for (auto const& [key, assignment] : _goLayers)
     {
-        cache = { goGuid.GetCounter(), 0, nowMs + 250 };
-        return 0;
+        if (static_cast<ObjectGuid::LowType>(key) == guidLow)
+        {
+            cache = { guidLow, assignment.layerId, nowMs + 250 };
+            return assignment.layerId;
+        }
     }
 
-    cache = { goGuid.GetCounter(), it->second.layerId, nowMs + 250 };
-    return it->second.layerId;
+    cache = { guidLow, 0, nowMs + 250 };
+    return 0;
 }
 
 void LayerManager::ReassignGOsForNewLayer(uint32 mapId, uint32 layerId)
@@ -1146,6 +1188,11 @@ void LayerManager::ReassignGOsForNewLayer(uint32 mapId, uint32 layerId)
             {
                 if (!map->IsGridLoaded(GridCoord(gridX, gridY)))
                     continue;
+
+                // Mark this grid+layer as loaded so EnsureGridLayerLoaded won't
+                // double-spawn clones later.  (NPC pass already marks it, but GO-only
+                // layers need the mark too.)
+                map->MarkGridLayerLoaded(gridX, gridY, layerId);
 
                 uint32 gridId = gridY * MAX_NUMBER_OF_GRIDS + gridX;
                 CellObjectGuids const& cellGuids = sObjectMgr->GetGridObjectGuids(mapId, spawnMode, gridId);
@@ -1608,7 +1655,255 @@ void LayerManager::ConsolidateLayers(uint32 mapId, uint32 sourceLayerId, uint32 
     }
 
     if (migrated > 0)
+        LOG_INFO("map.partition", "Layer balance: map={} moved={} (max layers reached)", mapId, migrated);
+    if (migrated > 0)
         _rebalancingMetrics.playersMigrated.fetch_add(migrated, std::memory_order_relaxed);
+}
+
+void LayerManager::BalanceLayersAtMax(uint32 mapId)
+{
+    if (!IsLayeringEnabled())
+        return;
+
+    uint32 layerMax = GetLayerMax();
+    if (layerMax == 0)
+        layerMax = 1;
+
+    uint32 capacity = GetLayerCapacity(mapId);
+    if (capacity == 0)
+        capacity = 50;
+
+    struct MovePlan
+    {
+        ObjectGuid::LowType guidLow = 0;
+        uint32 sourceLayer = 0;
+        uint32 targetLayer = 0;
+    };
+
+    std::vector<MovePlan> moves;
+    {
+        std::shared_lock<std::shared_mutex> guard(_layerLock);
+        auto mapIt = _layers.find(mapId);
+        if (mapIt == _layers.end())
+            return;
+
+        auto const& mapLayers = mapIt->second;
+        uint32 layerCount = static_cast<uint32>(mapLayers.size());
+        if (layerCount < layerMax || layerCount <= 1)
+            return;
+
+        uint32 totalPlayers = 0;
+        std::vector<std::pair<uint32, uint32>> counts; // layerId -> count
+        counts.reserve(mapLayers.size());
+        for (auto const& [layerId, players] : mapLayers)
+        {
+            uint32 count = static_cast<uint32>(players.size());
+            totalPlayers += count;
+            counts.emplace_back(layerId, count);
+        }
+
+        if (totalPlayers <= capacity * layerCount)
+            return;
+
+        uint32 maxMoves = _rebalancingConfig.migrationBatchSize;
+        if (maxMoves == 0)
+            maxMoves = 10;
+
+        auto sortCounts = [&]()
+        {
+            std::sort(counts.begin(), counts.end(), [](auto const& a, auto const& b)
+            {
+                if (a.second == b.second)
+                    return a.first < b.first;
+                return a.second < b.second;
+            });
+        };
+
+        sortCounts();
+
+        while (moves.size() < maxMoves && counts.size() >= 2)
+        {
+            auto& lowest = counts.front();
+            auto& highest = counts.back();
+            if (highest.second <= lowest.second + 1)
+                break;
+
+            uint32 sourceLayer = highest.first;
+            uint32 targetLayer = lowest.first;
+
+            auto layerIt = mapLayers.find(sourceLayer);
+            if (layerIt == mapLayers.end() || layerIt->second.empty())
+                break;
+
+            ObjectGuid::LowType guidLow = 0;
+            for (auto const& candidateLow : layerIt->second)
+            {
+                ObjectGuid candidateGuid = ObjectGuid::Create<HighGuid::Player>(candidateLow);
+                Player* candidate = ObjectAccessor::FindPlayer(candidateGuid);
+                if (!candidate)
+                    continue;
+                if (candidate->GetGroup())
+                    continue;
+                guidLow = candidateLow;
+                break;
+            }
+
+            if (guidLow == 0)
+                break;
+
+            moves.push_back({ guidLow, sourceLayer, targetLayer });
+
+            --highest.second;
+            ++lowest.second;
+            sortCounts();
+        }
+    }
+
+    if (moves.empty())
+        return;
+
+    uint32 migrated = 0;
+    bool allowImmediate = true;
+    if (Map* map = sMapMgr->FindBaseMap(mapId))
+        allowImmediate = !(map->IsPartitioned() && map->UseParallelPartitions());
+    bool useSoftTransfers = IsSoftTransfersEnabled() || !allowImmediate;
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
+
+    for (auto const& move : moves)
+    {
+        ObjectGuid playerGuid = ObjectGuid::Create<HighGuid::Player>(move.guidLow);
+
+        if (useSoftTransfers)
+        {
+            std::lock_guard<std::mutex> stg(_softTransferLock);
+            if (_pendingSoftTransfers.find(move.guidLow) != _pendingSoftTransfers.end())
+                continue;
+            auto& entry = _pendingSoftTransfers[move.guidLow];
+            entry.mapId = mapId;
+            entry.sourceLayerId = move.sourceLayer;
+            entry.targetLayerId = move.targetLayer;
+            entry.queuedMs = nowMs;
+            entry.reason = "balance";
+        }
+        else
+        {
+            AssignPlayerToLayer(mapId, playerGuid, move.targetLayer);
+            if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            {
+                NotifyLayerChange(player, move.sourceLayer, move.targetLayer, "balance");
+                if (player->IsInWorld())
+                    player->UpdateObjectVisibility(true, true);
+            }
+        }
+
+        ++migrated;
+    }
+
+    if (migrated > 0)
+        _rebalancingMetrics.playersMigrated.fetch_add(migrated, std::memory_order_relaxed);
+}
+
+void LayerManager::RebalanceBotLayers(uint32 mapId)
+{
+    if (!IsLayeringEnabled())
+        return;
+
+    uint32 capacity = GetLayerCapacity(mapId);
+    if (capacity == 0)
+        capacity = 50;
+
+    uint32 sourceLayer = 0;
+    uint32 targetLayer = 0;
+    uint32 sourceCount = 0;
+    uint32 targetCount = 0;
+
+    std::vector<ObjectGuid::LowType> sourcePlayers;
+    {
+        std::shared_lock<std::shared_mutex> guard(_layerLock);
+        auto mapIt = _layers.find(mapId);
+        if (mapIt == _layers.end() || mapIt->second.size() <= 1)
+            return;
+
+        std::vector<std::pair<uint32, uint32>> counts;
+        counts.reserve(mapIt->second.size());
+        for (auto const& [layerId, players] : mapIt->second)
+            counts.emplace_back(layerId, static_cast<uint32>(players.size()));
+
+        std::sort(counts.begin(), counts.end(), [](auto const& a, auto const& b)
+        {
+            if (a.second == b.second)
+                return a.first < b.first;
+            return a.second < b.second;
+        });
+
+        sourceLayer = counts.back().first;
+        sourceCount = counts.back().second;
+
+        for (auto const& [layerId, count] : counts)
+        {
+            if (layerId != sourceLayer && count < capacity)
+            {
+                targetLayer = layerId;
+                targetCount = count;
+                break;
+            }
+        }
+
+        if (!targetLayer || sourceCount <= capacity)
+            return;
+
+        auto sourceIt = mapIt->second.find(sourceLayer);
+        if (sourceIt == mapIt->second.end())
+            return;
+
+        sourcePlayers.reserve(sourceIt->second.size());
+        for (auto const& guidLow : sourceIt->second)
+            sourcePlayers.push_back(guidLow);
+    }
+
+    uint32 maxMoves = _rebalancingConfig.migrationBatchSize;
+    if (maxMoves == 0)
+        maxMoves = 10;
+
+    uint32 moved = 0;
+    for (auto const& guidLow : sourcePlayers)
+    {
+        if (moved >= maxMoves || targetCount >= capacity)
+            break;
+
+        ObjectGuid playerGuid = ObjectGuid::Create<HighGuid::Player>(guidLow);
+        Player* player = ObjectAccessor::FindPlayer(playerGuid);
+        if (!player || !player->IsInWorld())
+            continue;
+
+        WorldSession* session = player->GetSession();
+        if (!session || !session->IsBot())
+            continue;
+
+        if (player->GetGroup())
+            continue;
+
+        AssignPlayerToLayer(mapId, playerGuid, targetLayer);
+        NotifyLayerChange(player, sourceLayer, targetLayer, "bot balance");
+        player->UpdateObjectVisibility(true, true);
+
+        ++moved;
+        ++targetCount;
+    }
+
+    if (moved > 0)
+        _rebalancingMetrics.playersMigrated.fetch_add(moved, std::memory_order_relaxed);
+
+    if (IsRuntimeDiagnosticsEnabled())
+    {
+        LOG_INFO("map.partition", "Diag: Bot rebalance map={} L{}->L{} moved={} (sourceCount={} targetCount={})",
+            mapId, sourceLayer, targetLayer, moved, sourceCount, targetCount);
+    }
+    else if (moved > 0)
+    {
+        LOG_INFO("map.partition", "Bot rebalance: map={} L{}->L{} moved={}",
+            mapId, sourceLayer, targetLayer, moved);
+    }
 }
 
 void LayerManager::PeriodicCacheSweep()
@@ -1690,6 +1985,49 @@ void LayerManager::ProcessPendingSoftTransfers()
 
         LOG_DEBUG("map.partition", "Soft transfer timeout: player {} Map {} L{} -> L{} (forced after {}ms)",
             guidLow, entry.mapId, entry.sourceLayerId, entry.targetLayerId, timeoutMs);
+    }
+}
+
+void LayerManager::ProcessPendingLayerAssignments()
+{
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
+    std::vector<std::pair<ObjectGuid::LowType, PendingLayerAssignment>> ready;
+
+    {
+        std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
+        for (auto const& [guidLow, entry] : _pendingLayerAssignments)
+        {
+            if (nowMs >= entry.readyMs)
+                ready.emplace_back(guidLow, entry);
+        }
+    }
+
+    if (ready.empty())
+        return;
+
+    for (auto const& [guidLow, entry] : ready)
+    {
+        ObjectGuid playerGuid = ObjectGuid::Create<HighGuid::Player>(guidLow);
+        Player* player = ObjectAccessor::FindPlayer(playerGuid);
+        if (!player || player->GetMapId() != entry.mapId)
+        {
+            std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
+            _pendingLayerAssignments.erase(guidLow);
+            continue;
+        }
+
+        if (SwitchPlayerToLayer(playerGuid, entry.layerId, "post-join"))
+        {
+            std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
+            _pendingLayerAssignments.erase(guidLow);
+        }
+        else
+        {
+            std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
+            auto it = _pendingLayerAssignments.find(guidLow);
+            if (it != _pendingLayerAssignments.end())
+                it->second.readyMs = nowMs + 1000;
+        }
     }
 }
 
@@ -1783,7 +2121,81 @@ void LayerManager::Update(uint32 mapId, uint32 diff)
         }
     }
 
-    // 3. Rebalancing trigger (Blizzard-style: periodic per-map check)
+    // 3. Layer creation on sustained pressure (map-wide, not tied to map entry)
+    uint32 createLayerId = 0;
+    {
+        std::unique_lock<std::shared_mutex> guard(_layerLock);
+        auto mapIt = _layers.find(mapId);
+        if (mapIt != _layers.end() && !mapIt->second.empty())
+        {
+            uint32 capacity = GetLayerCapacity(mapId);
+            if (capacity == 0)
+                capacity = 50;
+
+            uint32 layerMax = GetLayerMax();
+            if (layerMax == 0)
+                layerMax = 1;
+
+            uint32 layerCount = static_cast<uint32>(mapIt->second.size());
+            uint32 totalPlayers = 0;
+            for (auto const& [_, players] : mapIt->second)
+                totalPlayers += static_cast<uint32>(players.size());
+
+            bool pressure = totalPlayers > capacity * layerCount;
+            if (!pressure || layerCount >= layerMax)
+            {
+                std::lock_guard<std::mutex> hg(_hysteresisLock);
+                auto hit = _hysteresisState.find(mapId);
+                if (hit != _hysteresisState.end() && hit->second.creationRequestMs != 0)
+                    hit->second.creationRequestMs = 0;
+            }
+            else
+            {
+                uint32 warmupMs = GetHysteresisCreationWarmupMs();
+                bool hysteresisReady = true;
+                if (warmupMs > 0)
+                {
+                    std::lock_guard<std::mutex> hg(_hysteresisLock);
+                    auto& hs = _hysteresisState[mapId];
+                    if (hs.creationRequestMs == 0)
+                    {
+                        hs.creationRequestMs = now;
+                        hysteresisReady = false;
+                    }
+                    else if (now < hs.creationRequestMs + warmupMs)
+                    {
+                        hysteresisReady = false;
+                    }
+                    else
+                    {
+                        hs.creationRequestMs = 0;
+                    }
+                }
+
+                if (hysteresisReady)
+                {
+                    uint32 maxId = 0;
+                    for (auto const& [layerId, _] : mapIt->second)
+                    {
+                        if (layerId > maxId)
+                            maxId = layerId;
+                    }
+                    createLayerId = maxId + 1;
+                }
+            }
+        }
+    }
+
+    if (createLayerId != 0)
+        CreateLayer(mapId, createLayerId, "auto-pressure");
+
+    // 4. Balance bots across layers (helps fill new layers without relogs)
+    RebalanceBotLayers(mapId);
+
+    // 5. Balance load when max layers reached
+    BalanceLayersAtMax(mapId);
+
+    // 6. Rebalancing trigger (Blizzard-style: periodic per-map check)
     if (GetRebalancingConfig().enabled)
     {
         uint64 intervalMs = GetRebalancingConfig().checkIntervalMs;
@@ -1852,6 +2264,12 @@ void LayerManager::ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGuid)
     {
         std::lock_guard<std::mutex> stg(_softTransferLock);
         _pendingSoftTransfers.erase(playerGuid.GetCounter());
+    }
+
+    // Clean up any stale pending layer assignments
+    {
+        std::lock_guard<std::mutex> plg(_pendingLayerAssignmentLock);
+        _pendingLayerAssignments.erase(playerGuid.GetCounter());
     }
 }
 
