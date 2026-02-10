@@ -201,17 +201,17 @@ PartitionManager* PartitionManager::instance()
 
 bool PartitionManager::IsEnabled() const
 {
-    return sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_ENABLED);
+    return _config.enabled;
 }
 
 float PartitionManager::GetBorderOverlap() const
 {
-    return sWorld->getFloatConfig(CONFIG_MAP_PARTITIONS_BORDER_OVERLAP);
+    return _config.borderOverlap;
 }
 
 bool PartitionManager::UsePartitionStoreOnly() const
 {
-    return sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_STORE_ONLY);
+    return _config.storeOnly;
 }
 
 bool PartitionManager::IsZoneExcluded(uint32_t zoneId) const
@@ -377,11 +377,13 @@ void PartitionManager::ClearPartitions(uint32 mapId)
     _layoutEpochByMap.erase(mapId);
 
     std::unique_lock<std::shared_mutex> bGuard(GetBoundaryLock(mapId));
-    _boundaryObjects.erase(mapId);
+    _boundarySpatialGrids.erase(mapId);
 }
 
 void PartitionManager::Initialize()
 {
+    LoadConfig();
+
     if (!IsEnabled())
         return;
 
@@ -874,13 +876,13 @@ void PartitionManager::SetPartitionOverride(ObjectGuid const& guid, uint32 mapId
 uint32 PartitionManager::GetBoundaryCount(uint32 mapId, uint32 partitionId) const
 {
     std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
-    auto mapIt = _boundaryObjects.find(mapId);
-    if (mapIt == _boundaryObjects.end())
+    auto mapIt = _boundarySpatialGrids.find(mapId);
+    if (mapIt == _boundarySpatialGrids.end())
         return 0;
-    auto partIt = mapIt->second.find(partitionId);
-    if (partIt == mapIt->second.end())
+    auto partitionIt = mapIt->second.find(partitionId);
+    if (partitionIt == mapIt->second.end())
         return 0;
-    return static_cast<uint32>(partIt->second.size());
+    return static_cast<uint32>(partitionIt->second.Size());
 }
 
 bool PartitionManager::BeginRelocation(ObjectGuid const& guid, uint32 mapId, uint32 fromPartition, uint32 toPartition)
@@ -942,12 +944,15 @@ void PartitionManager::RollbackRelocation(ObjectGuid const& guid)
     uint64 nowMs = GameTime::GetGameTimeMS().count();
     uint64 duration = nowMs - it->second.startTimeMs;
 
-    it->second.state = RelocationState::ROLLED_BACK;
+    // Capture all values before erasing the iterator to avoid UB
+    uint32 txnMapId = it->second.mapId;
+    uint32 fromPart = it->second.fromPartition;
+    uint32 toPart = it->second.toPartition;
 
-    LOG_WARN("map.partition", "Rollback relocation guid {} map {} {} -> {} (after {}ms, state was {})", 
-        low, it->second.mapId, it->second.fromPartition, it->second.toPartition, 
-        duration, static_cast<uint8>(it->second.state));
     _relocations.erase(it);
+
+    LOG_WARN("map.partition", "Rollback relocation guid {} map {} {} -> {} (after {}ms)", 
+        low, txnMapId, fromPart, toPart, duration);
 }
 
 std::vector<ObjectGuid> PartitionManager::GetBoundaryObjectGuids(uint32 mapId, uint32 partitionId) const
@@ -955,32 +960,25 @@ std::vector<ObjectGuid> PartitionManager::GetBoundaryObjectGuids(uint32 mapId, u
     std::vector<ObjectGuid> result;
     std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
 
-    auto mapIt = _boundaryObjects.find(mapId);
-    if (mapIt == _boundaryObjects.end())
+    auto mapIt = _boundarySpatialGrids.find(mapId);
+    if (mapIt == _boundarySpatialGrids.end())
         return result;
 
     auto partitionIt = mapIt->second.find(partitionId);
     if (partitionIt == mapIt->second.end())
         return result;
 
-    for (auto const& guid : partitionIt->second)
+    result.reserve(partitionIt->second.objectCellMap.size());
+    for (auto const& [cellKey, entries] : partitionIt->second.cells)
     {
-        result.push_back(guid);
+        for (auto const& entry : entries)
+            result.push_back(entry.guid);
     }
 
     return result;
 }
 
-void PartitionManager::RegisterBoundaryObject(uint32 mapId, uint32 partitionId, ObjectGuid const& guid)
-{
-    if (!guid)
-        return;
 
-    std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
-    _boundaryObjects[mapId][partitionId].insert(guid);
-
-    LOG_DEBUG("map.partition", "Registered boundary object {} in map {} partition {}", guid.ToString(), mapId, partitionId);
-}
 
 void PartitionManager::UnregisterBoundaryObject(uint32 mapId, uint32 partitionId, ObjectGuid const& guid)
 {
@@ -988,15 +986,15 @@ void PartitionManager::UnregisterBoundaryObject(uint32 mapId, uint32 partitionId
         return;
 
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
-    auto mapIt = _boundaryObjects.find(mapId);
-    if (mapIt == _boundaryObjects.end())
+    auto mapIt = _boundarySpatialGrids.find(mapId);
+    if (mapIt == _boundarySpatialGrids.end())
         return;
 
     auto partitionIt = mapIt->second.find(partitionId);
     if (partitionIt == mapIt->second.end())
         return;
 
-    partitionIt->second.erase(guid);
+    partitionIt->second.Remove(guid);
 
     LOG_DEBUG("map.partition", "Unregistered boundary object {} from map {} partition {}", guid.ToString(), mapId, partitionId);
 }
@@ -1007,15 +1005,15 @@ bool PartitionManager::IsObjectInBoundarySet(uint32 mapId, uint32 partitionId, O
         return false;
 
     std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
-    auto mapIt = _boundaryObjects.find(mapId);
-    if (mapIt == _boundaryObjects.end())
+    auto mapIt = _boundarySpatialGrids.find(mapId);
+    if (mapIt == _boundarySpatialGrids.end())
         return false;
 
     auto partitionIt = mapIt->second.find(partitionId);
     if (partitionIt == mapIt->second.end())
         return false;
 
-    return partitionIt->second.find(guid) != partitionIt->second.end();
+    return partitionIt->second.objectCellMap.count(guid.GetCounter()) > 0;
 }
 
 // ======================== SPATIAL HASH GRID BOUNDARY METHODS (Phase 2) ========================
@@ -1027,8 +1025,6 @@ void PartitionManager::RegisterBoundaryObjectWithPosition(uint32 mapId, uint32 p
 
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     _boundarySpatialGrids[mapId][partitionId].Insert(guid, x, y);
-    // Also keep in legacy set for compatibility
-    _boundaryObjects[mapId][partitionId].insert(guid);
 
     LOG_DEBUG("map.partition", "Registered boundary object {} with position ({:.1f}, {:.1f}) in map {} partition {}", 
         guid.ToString(), x, y, mapId, partitionId);
@@ -1041,7 +1037,6 @@ void PartitionManager::UpdateBoundaryObjectPosition(uint32 mapId, uint32 partiti
 
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     _boundarySpatialGrids[mapId][partitionId].Update(guid, x, y);
-    _boundaryObjects[mapId][partitionId].insert(guid);
 }
 
 void PartitionManager::UnregisterBoundaryObjectFromGrid(uint32 mapId, uint32 partitionId, ObjectGuid const& guid)
@@ -1058,14 +1053,7 @@ void PartitionManager::UnregisterBoundaryObjectFromGrid(uint32 mapId, uint32 par
             partIt->second.Remove(guid);
     }
     
-    // Also remove from legacy set
-    auto legacyMapIt = _boundaryObjects.find(mapId);
-    if (legacyMapIt != _boundaryObjects.end())
-    {
-        auto legacyPartIt = legacyMapIt->second.find(partitionId);
-        if (legacyPartIt != legacyMapIt->second.end())
-            legacyPartIt->second.erase(guid);
-    }
+
 
     LOG_DEBUG("map.partition", "Unregistered boundary object {} from spatial grid in map {} partition {}", 
         guid.ToString(), mapId, partitionId);
@@ -1123,34 +1111,26 @@ void PartitionManager::CleanupExpiredOverrides()
 void PartitionManager::CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, std::unordered_set<ObjectGuid> const& validGuids)
 {
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
-    auto mapIt = _boundaryObjects.find(mapId);
-    if (mapIt == _boundaryObjects.end())
+    auto mapIt = _boundarySpatialGrids.find(mapId);
+    if (mapIt == _boundarySpatialGrids.end())
         return;
 
     auto partitionIt = mapIt->second.find(partitionId);
     if (partitionIt == mapIt->second.end())
         return;
 
-    SpatialHashGrid* spatialGrid = nullptr;
-    auto spatialMapIt = _boundarySpatialGrids.find(mapId);
-    if (spatialMapIt != _boundarySpatialGrids.end())
+    std::vector<ObjectGuid> toRemove;
+    for (auto const& [cellKey, entries] : partitionIt->second.cells)
     {
-        auto spatialPartIt = spatialMapIt->second.find(partitionId);
-        if (spatialPartIt != spatialMapIt->second.end())
-            spatialGrid = &spatialPartIt->second;
+        for (auto const& entry : entries)
+        {
+            if (validGuids.find(entry.guid) == validGuids.end())
+                toRemove.push_back(entry.guid);
+        }
     }
 
-    for (auto it = partitionIt->second.begin(); it != partitionIt->second.end();)
-    {
-        if (validGuids.find(*it) == validGuids.end())
-        {
-            if (spatialGrid)
-                spatialGrid->Remove(*it);
-            it = partitionIt->second.erase(it);
-        }
-        else
-            ++it;
-    }
+    for (auto const& guid : toRemove)
+        partitionIt->second.Remove(guid);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1166,12 +1146,9 @@ void PartitionManager::BatchUpdateBoundaryPositions(uint32 mapId, uint32 partiti
 
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     auto& grid = _boundarySpatialGrids[mapId][partitionId];
-    auto& legacySet = _boundaryObjects[mapId][partitionId];
-
     for (auto const& upd : updates)
     {
         grid.Update(upd.guid, upd.x, upd.y);
-        legacySet.insert(upd.guid);
     }
 }
 
@@ -1192,21 +1169,10 @@ void PartitionManager::BatchUnregisterBoundaryObjects(uint32 mapId, uint32 parti
             spatialGrid = &spatialPartIt->second;
     }
 
-    auto mapIt = _boundaryObjects.find(mapId);
-    std::unordered_set<ObjectGuid>* legacySet = nullptr;
-    if (mapIt != _boundaryObjects.end())
-    {
-        auto partIt = mapIt->second.find(partitionId);
-        if (partIt != mapIt->second.end())
-            legacySet = &partIt->second;
-    }
-
     for (auto const& guid : guids)
     {
         if (spatialGrid)
             spatialGrid->Remove(guid);
-        if (legacySet)
-            legacySet->erase(guid);
     }
 }
 
@@ -1317,47 +1283,35 @@ PartitionManager::PartitionGridLayout const* PartitionManager::GetGridLayout(uin
 
 PartitionManager::PartitionGridLayout const* PartitionManager::GetCachedLayout(uint32 mapId) const
 {
-    struct LayoutCache
+    struct LayoutCacheEntry
     {
-        uint32 mapId = 0;
         uint64 epoch = 0;
         PartitionGridLayout layout{};
-        bool valid = false;
     };
 
-    thread_local LayoutCache cache;
+    // Support multiple maps without thrashing — keyed by mapId
+    thread_local std::unordered_map<uint32, LayoutCacheEntry> cache;
 
-    uint64 epoch = 0;
-    bool hasEpoch = false;
-    {
-        std::shared_lock<std::shared_mutex> guard(_partitionLock);
-        if (auto it = _layoutEpochByMap.find(mapId); it != _layoutEpochByMap.end())
-        {
-            epoch = it->second;
-            hasEpoch = true;
-        }
-    }
-
-    if (!hasEpoch)
-    {
-        cache.valid = false;
-        return nullptr;
-    }
-
-    if (cache.valid && cache.mapId == mapId && cache.epoch == epoch)
-        return &cache.layout;
-
+    // Single lock acquisition: read both epoch and layout together
     std::shared_lock<std::shared_mutex> guard(_partitionLock);
+    auto epochIt = _layoutEpochByMap.find(mapId);
+    if (epochIt == _layoutEpochByMap.end())
+        return nullptr;
+
+    uint64 epoch = epochIt->second;
+
+    auto cacheIt = cache.find(mapId);
+    if (cacheIt != cache.end() && cacheIt->second.epoch == epoch)
+        return &cacheIt->second.layout;
+
     if (PartitionGridLayout const* layout = GetGridLayout(mapId))
     {
-        cache.mapId = mapId;
-        cache.epoch = epoch;
-        cache.layout = *layout;
-        cache.valid = true;
-        return &cache.layout;
+        auto& entry = cache[mapId];
+        entry.epoch = epoch;
+        entry.layout = *layout;
+        return &entry.layout;
     }
 
-    cache.valid = false;
     return nullptr;
 }
 
@@ -1450,22 +1404,8 @@ void PartitionManager::ResizeMapPartitions(uint32 mapId, uint32 newCount, char c
 
     {
         std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
-        auto mapIt = _boundaryObjects.find(mapId);
-        if (mapIt != _boundaryObjects.end())
-        {
-            for (auto it = mapIt->second.begin(); it != mapIt->second.end();)
-            {
-                if (it->first > newCount)
-                    it = mapIt->second.erase(it);
-                else
-                {
-                    it->second.clear();
-                    ++it;
-                }
-            }
-        }
 
-        // Also clean up spatial hash grids for removed partitions
+        // Clean up spatial hash grids for removed partitions
         auto spatialMapIt = _boundarySpatialGrids.find(mapId);
         if (spatialMapIt != _boundarySpatialGrids.end())
         {
@@ -1563,13 +1503,25 @@ void PartitionManager::EvaluatePartitionDensity(uint32 mapId)
 float PartitionManager::GetDensitySplitThreshold() const
 {
     // Default: Split when more than 50 players equivalents per partition
-    return sWorld->getFloatConfig(CONFIG_MAP_PARTITIONS_DENSITY_SPLIT_THRESHOLD);
+    return _config.densitySplitThreshold;
 }
 
 float PartitionManager::GetDensityMergeThreshold() const
 {
     // Default: Merge when fewer than 5 player equivalents per partition
-    return sWorld->getFloatConfig(CONFIG_MAP_PARTITIONS_DENSITY_MERGE_THRESHOLD);
+    return _config.densityMergeThreshold;
+}
+
+void PartitionManager::LoadConfig()
+{
+    _config.enabled = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_ENABLED);
+    _config.storeOnly = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_STORE_ONLY);
+    _config.borderOverlap = sWorld->getFloatConfig(CONFIG_MAP_PARTITIONS_BORDER_OVERLAP);
+    _config.densitySplitThreshold = sWorld->getFloatConfig(CONFIG_MAP_PARTITIONS_DENSITY_SPLIT_THRESHOLD);
+    _config.densityMergeThreshold = sWorld->getFloatConfig(CONFIG_MAP_PARTITIONS_DENSITY_MERGE_THRESHOLD);
+
+    LOG_INFO("map.partition", "PartitionManager config loaded: enabled={} storeOnly={} overlap={:.2f}",
+        _config.enabled, _config.storeOnly, _config.borderOverlap);
 }
 
 // ======================== FEATURE 5: Adjacent Partition Pre-caching ========================

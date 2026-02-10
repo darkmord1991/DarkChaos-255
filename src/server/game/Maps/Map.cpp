@@ -30,6 +30,7 @@
 #include "IVMapMgr.h"
 #include "LFGMgr.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "Maps/Partitioning/PartitionManager.h"
 #include "Maps/Partitioning/LayerManager.h"
 #include <unordered_map>
@@ -260,6 +261,7 @@ void Map::InitVisibilityDistance()
 template<class T>
 void Map::AddToGrid(T* obj, Cell const& cell)
 {
+    auto gridLock = AcquireGridObjectWriteLock();
     MapGridType* grid = GetMapGrid(cell.GridX(), cell.GridY());
     grid->AddGridObject<T>(cell.CellX(), cell.CellY(), obj);
 
@@ -269,6 +271,7 @@ void Map::AddToGrid(T* obj, Cell const& cell)
 template<>
 void Map::AddToGrid(Creature* obj, Cell const& cell)
 {
+    auto gridLock = AcquireGridObjectWriteLock();
     MapGridType* grid = GetMapGrid(cell.GridX(), cell.GridY());
     grid->AddGridObject(cell.CellX(), cell.CellY(), obj);
     if (obj->IsFarVisible())
@@ -280,6 +283,7 @@ void Map::AddToGrid(Creature* obj, Cell const& cell)
 template<>
 void Map::AddToGrid(GameObject* obj, Cell const& cell)
 {
+    auto gridLock = AcquireGridObjectWriteLock();
     MapGridType* grid = GetMapGrid(cell.GridX(), cell.GridY());
     grid->AddGridObject(cell.CellX(), cell.CellY(), obj);
     if (obj->IsFarVisible())
@@ -291,6 +295,7 @@ void Map::AddToGrid(GameObject* obj, Cell const& cell)
 template<>
 void Map::AddToGrid(Player* obj, Cell const& cell)
 {
+    auto gridLock = AcquireGridObjectWriteLock();
     MapGridType* grid = GetMapGrid(cell.GridX(), cell.GridY());
     grid->AddGridObject(cell.CellX(), cell.CellY(), obj);
 }
@@ -298,6 +303,7 @@ void Map::AddToGrid(Player* obj, Cell const& cell)
 template<>
 void Map::AddToGrid(Corpse* obj, Cell const& cell)
 {
+    auto gridLock = AcquireGridObjectWriteLock();
     MapGridType* grid = GetMapGrid(cell.GridX(), cell.GridY());
     // Corpses are a special object type - they can be added to grid via a call to AddToMap
     // or loaded through ObjectGridLoader.
@@ -727,6 +733,8 @@ void Map::UpdatePlayerZoneStats(uint32 oldZone, uint32 newZone)
     // Nothing to do if no change
     if (oldZone == newZone)
         return;
+
+    std::lock_guard<std::mutex> lock(_zonePlayerCountLock);
 
     if (oldZone != MAP_INVALID_ZONE)
     {
@@ -2032,111 +2040,40 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
         for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
         {
             SetActivePartitionContext(partitionId);
-            auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
-            std::vector<WorldObject*> emptyBucket;
-            auto& bucket = (listIt != _partitionedUpdatableObjectLists.end()) ? listIt->second : emptyBucket;
             uint32 index = partitionId - 1;
             std::vector<PartitionManager::BoundaryPositionUpdate> boundaryUpdates;
             std::vector<ObjectGuid> boundaryUnregisters;
             std::vector<ObjectGuid> boundaryOverrides;
-            boundaryUpdates.reserve(bucket.size());
-            boundaryOverrides.reserve(bucket.size());
+            std::vector<std::pair<ObjectGuid, uint8>> objects;
+            CollectPartitionedUpdatableGuids(partitionId, objects);
+            boundaryUpdates.reserve(objects.size());
+            boundaryOverrides.reserve(objects.size());
 
-            for (size_t i = 0; i < bucket.size();)
+            for (auto const& entry : objects)
             {
-                WorldObject* obj = bucket[i];
-                auto idxIt = _partitionedUpdatableIndex.find(obj);
-                if (idxIt == _partitionedUpdatableIndex.end() || idxIt->second.partitionId != partitionId)
+                WorldObject* obj = nullptr;
+                switch (entry.second)
                 {
-                    WorldObject* swapped = bucket.back();
-                    bucket[i] = swapped;
-                    bucket.pop_back();
-                    auto swappedIt = _partitionedUpdatableIndex.find(swapped);
-                    if (swappedIt != _partitionedUpdatableIndex.end() && swappedIt->second.partitionId == partitionId)
-                        swappedIt->second.index = i;
+                    case TYPEID_UNIT:
+                        obj = GetCreature(entry.first);
+                        break;
+                    case TYPEID_GAMEOBJECT:
+                        obj = GetGameObject(entry.first);
+                        break;
+                    case TYPEID_DYNAMICOBJECT:
+                        obj = GetDynamicObject(entry.first);
+                        break;
+                    case TYPEID_CORPSE:
+                        obj = GetCorpse(entry.first);
+                        break;
+                    default:
+                        break;
+                }
+
+                if (!obj || !obj->IsInWorld())
                     continue;
-                }
-                ObjectGuid guid = idxIt->second.guid;
-                WorldObject* resolved = nullptr;
-                if (auto storeIt = _partitionedObjectsStore.find(partitionId); storeIt != _partitionedObjectsStore.end())
-                {
-                    switch (idxIt->second.typeId)
-                    {
-                        case TYPEID_UNIT:
-                            resolved = storeIt->second.Find<Creature>(guid);
-                            break;
-                        case TYPEID_GAMEOBJECT:
-                            resolved = storeIt->second.Find<GameObject>(guid);
-                            break;
-                        case TYPEID_DYNAMICOBJECT:
-                            resolved = storeIt->second.Find<DynamicObject>(guid);
-                            break;
-                        case TYPEID_CORPSE:
-                            resolved = storeIt->second.Find<Corpse>(guid);
-                            break;
-                        default:
-                            break;
-                    }
-                    if (!resolved)
-                    {
-                        if (Creature* creature = storeIt->second.Find<Creature>(guid))
-                            resolved = creature;
-                        else if (GameObject* go = storeIt->second.Find<GameObject>(guid))
-                            resolved = go;
-                        else if (DynamicObject* dynObj = storeIt->second.Find<DynamicObject>(guid))
-                            resolved = dynObj;
-                        else if (Corpse* corpse = storeIt->second.Find<Corpse>(guid))
-                            resolved = corpse;
-                    }
-                }
 
-                if (!resolved || !resolved->IsInWorld())
-                {
-                    if (guid)
-                        boundaryUnregisters.push_back(guid);
-
-                    // Remove stale entry without touching obj
-                    WorldObject* swapped = bucket.back();
-                    bucket[i] = swapped;
-                    bucket.pop_back();
-                    auto swappedIt = _partitionedUpdatableIndex.find(swapped);
-                    if (swappedIt != _partitionedUpdatableIndex.end() && swappedIt->second.partitionId == partitionId)
-                        swappedIt->second.index = i;
-                    _partitionedUpdatableIndex.erase(obj);
-
-                    // Remove from global update list without dereferencing obj
-                    {
-                        std::lock_guard<std::mutex> lock(_updatableObjectListLock);
-                        for (size_t j = 0; j < _updatableObjectList.size(); ++j)
-                        {
-                            if (_updatableObjectList[j] == obj)
-                            {
-                                if (j != _updatableObjectList.size() - 1)
-                                {
-                                    WorldObject* swappedGlobal = _updatableObjectList.back();
-                                    _updatableObjectList[j] = swappedGlobal;
-                                    if (auto* swappedUpdatable = dynamic_cast<UpdatableMapObject*>(swappedGlobal))
-                                        swappedUpdatable->SetMapUpdateListOffset(j);
-                                }
-                                _updatableObjectList.pop_back();
-                                break;
-                            }
-                        }
-                    }
-                    continue;
-                }
-
-                if (resolved != obj)
-                {
-                    PartitionedUpdatableEntry entry = idxIt->second;
-                    entry.typeId = resolved->GetTypeId();
-                    _partitionedUpdatableIndex.erase(idxIt);
-                    _partitionedUpdatableIndex[resolved] = entry;
-                    bucket[i] = resolved;
-                    obj = resolved;
-                }
-
-                if (resolved->ToCreature())
+                if (obj->ToCreature())
                     ++partitionCreatureCounts[index];
 
                 if (sPartitionMgr->IsNearPartitionBoundary(GetId(), obj->GetPositionX(), obj->GetPositionY()))
@@ -2159,14 +2096,7 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 obj->Update(diff);
 
                 if (!obj->IsUpdateNeeded())
-                {
                     RemoveObjectFromMapUpdateList(obj);
-                    if (i < bucket.size() && bucket[i] == obj)
-                        ++i;
-                    continue;
-                }
-
-                ++i;
             }
 
             if (!boundaryUpdates.empty())
@@ -3010,19 +2940,30 @@ ZoneWideVisibleWorldObjectsSet Map::GetZoneWideVisibleWorldObjectsForZoneCopy(ui
 void Map::HandleDelayedVisibility()
 {
     // Extract objects under lock, then process outside lock
-    std::vector<Unit*> unitsToProcess;
+    std::vector<ObjectGuid> unitsToProcess;
     {
         std::lock_guard<std::mutex> lock(_delayedVisibilityLock);
         if (_objectsForDelayedVisibility.empty())
             return;
-        unitsToProcess.reserve(_objectsForDelayedVisibility.size());
-        for (Unit* unit : _objectsForDelayedVisibility)
-            unitsToProcess.push_back(unit);
-        _objectsForDelayedVisibility.clear();
+        unitsToProcess.swap(_objectsForDelayedVisibility);
     }
 
-    for (Unit* unit : unitsToProcess)
-        unit->ExecuteDelayedUnitRelocationEvent();
+    std::sort(unitsToProcess.begin(), unitsToProcess.end());
+    unitsToProcess.erase(std::unique(unitsToProcess.begin(), unitsToProcess.end()), unitsToProcess.end());
+
+    for (ObjectGuid const& guid : unitsToProcess)
+    {
+        Unit* unit = nullptr;
+        if (guid.IsPlayer())
+            unit = ObjectAccessor::GetPlayer(this, guid);
+        else if (guid.IsPet())
+            unit = GetPet(guid);
+        else
+            unit = GetCreature(guid);
+
+        if (unit)
+            unit->ExecuteDelayedUnitRelocationEvent();
+    }
 }
 
 struct ResetNotifier
@@ -3050,7 +2991,10 @@ void Map::RemovePlayerFromMap(Player* player, bool remove)
     SendRemoveTransports(player);
 
     if (player->IsInGrid())
+    {
+        auto gridLock = AcquireGridObjectWriteLock();
         player->RemoveFromGrid();
+    }
     else
         ASSERT(remove); //maybe deleted in logoutplayer when player is not in a map
 
@@ -3072,7 +3016,10 @@ void Map::RemoveFromMap(T* obj, bool remove)
 
     RemoveObjectFromMapUpdateList(obj);
 
-    obj->RemoveFromGrid();
+    {
+        auto gridLock = AcquireGridObjectWriteLock();
+        obj->RemoveFromGrid();
+    }
 
     obj->ResetMap();
 
@@ -3148,7 +3095,10 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
     bool gridChanged = false;
     if (old_cell.DiffGrid(new_cell) || old_cell.DiffCell(new_cell))
     {
-        player->RemoveFromGrid();
+        {
+            auto gridLock = AcquireGridObjectWriteLock();
+            player->RemoveFromGrid();
+        }
 
         if (old_cell.DiffGrid(new_cell))
         {
@@ -3446,7 +3396,10 @@ void Map::MoveAllCreaturesInMoveList()
             RemoveWorldObjectFromFarVisibleMap(c);
         }
 
-        c->RemoveFromGrid();
+        {
+            auto gridLock = AcquireGridObjectWriteLock();
+            c->RemoveFromGrid();
+        }
         if (old_cell.DiffGrid(new_cell))
             EnsureGridLoaded(new_cell);
         AddToGrid(c, new_cell);
@@ -3486,7 +3439,10 @@ void Map::MoveAllGameObjectsInMoveList()
             RemoveWorldObjectFromFarVisibleMap(go);
         }
 
-        go->RemoveFromGrid();
+        {
+            auto gridLock = AcquireGridObjectWriteLock();
+            go->RemoveFromGrid();
+        }
         if (old_cell.DiffGrid(new_cell))
             EnsureGridLoaded(new_cell);
         AddToGrid(go, new_cell);
@@ -3520,7 +3476,10 @@ void Map::MoveAllDynamicObjectsInMoveList()
         Cell const& old_cell = dynObj->GetCurrentCell();
         Cell new_cell(dynObj->GetPositionX(), dynObj->GetPositionY());
 
-        dynObj->RemoveFromGrid();
+        {
+            auto gridLock = AcquireGridObjectWriteLock();
+            dynObj->RemoveFromGrid();
+        }
         if (old_cell.DiffGrid(new_cell))
             EnsureGridLoaded(new_cell);
         AddToGrid(dynObj, new_cell);
@@ -3529,7 +3488,10 @@ void Map::MoveAllDynamicObjectsInMoveList()
 
 bool Map::UnloadGrid(MapGridType& grid)
 {
-    _mapGridManager.UnloadGrid(grid.GetX(), grid.GetY());
+    {
+        auto gridLock = AcquireGridObjectWriteLock();
+        _mapGridManager.UnloadGrid(grid.GetX(), grid.GetY());
+    }
 
     ClearPreloadedGridObjectGuids(GridCoord(grid.GetX(), grid.GetY()).GetId());
 
@@ -4412,10 +4374,14 @@ uint32 Map::ApplyDynamicModeRespawnScaling(WorldObject const* obj, uint32 respaw
             || (creature->GetCreatureTemplate()->rank == CREATURE_ELITE_RAREELITE))
             return respawnDelay;
 
-    auto it = _zonePlayerCountMap.find(obj->GetZoneId());
-    if (it == _zonePlayerCountMap.end())
-        return respawnDelay;
-    uint32 const playerCount = it->second;
+    uint32 playerCount = 0;
+    {
+        std::lock_guard<std::mutex> lock(_zonePlayerCountLock);
+        auto it = _zonePlayerCountMap.find(obj->GetZoneId());
+        if (it == _zonePlayerCountMap.end())
+            return respawnDelay;
+        playerCount = it->second;
+    }
     if (!playerCount)
         return respawnDelay;
     double const adjustFactor =  rate / playerCount;
@@ -5091,7 +5057,10 @@ void Map::SaveCreatureRespawnTime(ObjectGuid::LowType spawnId, time_t& respawnTi
     if (GetInstanceResetPeriod() > 0 && respawnTime - now + 5 >= GetInstanceResetPeriod())
         respawnTime = now + YEAR;
 
-    _creatureRespawnTimes[spawnId] = respawnTime;
+    {
+        std::lock_guard<std::mutex> lock(_respawnTimesLock);
+        _creatureRespawnTimes[spawnId] = respawnTime;
+    }
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_CREATURE_RESPAWN);
     stmt->SetData(0, spawnId);
@@ -5103,7 +5072,10 @@ void Map::SaveCreatureRespawnTime(ObjectGuid::LowType spawnId, time_t& respawnTi
 
 void Map::RemoveCreatureRespawnTime(ObjectGuid::LowType spawnId)
 {
-    _creatureRespawnTimes.erase(spawnId);
+    {
+        std::lock_guard<std::mutex> lock(_respawnTimesLock);
+        _creatureRespawnTimes.erase(spawnId);
+    }
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CREATURE_RESPAWN);
     stmt->SetData(0, spawnId);
@@ -5125,7 +5097,10 @@ void Map::SaveGORespawnTime(ObjectGuid::LowType spawnId, time_t& respawnTime)
     if (GetInstanceResetPeriod() > 0 && respawnTime - now + 5 >= GetInstanceResetPeriod())
         respawnTime = now + YEAR;
 
-    _goRespawnTimes[spawnId] = respawnTime;
+    {
+        std::lock_guard<std::mutex> lock(_respawnTimesLock);
+        _goRespawnTimes[spawnId] = respawnTime;
+    }
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_GO_RESPAWN);
     stmt->SetData(0, spawnId);
@@ -5137,7 +5112,10 @@ void Map::SaveGORespawnTime(ObjectGuid::LowType spawnId, time_t& respawnTime)
 
 void Map::RemoveGORespawnTime(ObjectGuid::LowType spawnId)
 {
-    _goRespawnTimes.erase(spawnId);
+    {
+        std::lock_guard<std::mutex> lock(_respawnTimesLock);
+        _goRespawnTimes.erase(spawnId);
+    }
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_GO_RESPAWN);
     stmt->SetData(0, spawnId);
@@ -5181,6 +5159,7 @@ void Map::LoadRespawnTimes()
 
 void Map::DeleteRespawnTimes()
 {
+    std::lock_guard<std::mutex> lock(_respawnTimesLock);
     _creatureRespawnTimes.clear();
     _goRespawnTimes.clear();
 

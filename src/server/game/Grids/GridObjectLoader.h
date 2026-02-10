@@ -41,6 +41,9 @@ private:
     void LoadCreaturesForLayer(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone);
     void LoadGameObjectsForLayer(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone);
 
+    void LoadCreaturesImpl(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone);
+    void LoadGameObjectsImpl(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone);
+
     MapGridType& _grid;
     Map* _map;
 };

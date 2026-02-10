@@ -25,6 +25,7 @@
 #include "SharedDefines.h"
 #include "SpellInfo.h"
 #include "Unit.h"
+#include <mutex>
 
 class Unit;
 class Player;
@@ -553,6 +554,7 @@ public:
     Unit* m_comboTarget;
     int8 m_comboPointGain;
 
+    mutable std::mutex m_appliedModsLock;
     UsedSpellMods m_appliedMods;
 
     int32 GetCastTime() const { return m_casttime; }
@@ -694,6 +696,7 @@ public:
     // *****************************************
     // Spell target subsystem
     // *****************************************
+    mutable std::recursive_mutex m_targetInfoLock;
     std::list<TargetInfo> m_UniqueTargetInfo;
     uint8 m_channelTargetEffectMask;                        // Mask req. alive targets
 

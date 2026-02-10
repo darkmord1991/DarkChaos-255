@@ -18,7 +18,8 @@
 #ifndef AC_PARTITION_MANAGER_H
 #define AC_PARTITION_MANAGER_H
 
-#include "DatabaseEnvFwd.h"
+#include "Define.h"
+#include "DatabaseEnv.h"
 #include "SharedDefines.h"
 #include "MapPartition.h"
 #include "PartitionRelocationTxn.h"
@@ -70,6 +71,7 @@ public:
     void RegisterPartition(std::unique_ptr<MapPartition> partition);
     void ClearPartitions(uint32 mapId);
     void Initialize();
+    void LoadConfig();
     void UpdatePartitionsForMap(uint32 mapId, uint32 diff);
     void UpdatePartitionStats(uint32 mapId, uint32 partitionId, uint32 players, uint32 creatures, uint32 boundaryObjects);
     uint32 GetBoundaryCount(uint32 mapId, uint32 partitionId) const;
@@ -85,7 +87,6 @@ public:
     // Cross-partition visibility helpers
     std::vector<uint32> GetAdjacentPartitions(uint32 mapId, uint32 partitionId) const;
     std::vector<ObjectGuid> GetBoundaryObjectGuids(uint32 mapId, uint32 partitionId) const;
-    void RegisterBoundaryObject(uint32 mapId, uint32 partitionId, ObjectGuid const& guid);
     void UnregisterBoundaryObject(uint32 mapId, uint32 partitionId, ObjectGuid const& guid);
     bool IsObjectInBoundarySet(uint32 mapId, uint32 partitionId, ObjectGuid const& guid) const;
     
@@ -154,7 +155,7 @@ private:
     // Fine-grained locks for different data structures
     mutable std::shared_mutex _partitionLock;     // Protects _partitionsByMap, _partitionedMaps, _gridLayouts
     static constexpr size_t kBoundaryLockStripes = 16;
-    mutable std::array<std::shared_mutex, kBoundaryLockStripes> _boundaryLocks; // Protects _boundaryObjects (striped)
+    mutable std::array<std::shared_mutex, kBoundaryLockStripes> _boundaryLocks; // Protects _boundarySpatialGrids (striped)
     // _layerLock moved to LayerManager
     // _partyLayerCacheLock moved to LayerManager
     // _layerPairCacheLock moved to LayerManager
@@ -195,8 +196,6 @@ private:
     std::unordered_map<ObjectGuid::LowType, PartitionOwnership> _partitionOwnership;
 
     // _pendingLayerAssignments moved to LayerManager
-    // Map -> PartitionId -> Set of boundary object GUIDs (legacy)
-    std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_set<ObjectGuid>>> _boundaryObjects;
     
     // Phase 2: Spatial Hash Grid for O(1) boundary lookups
     struct SpatialHashGrid
@@ -352,6 +351,15 @@ private:
     std::atomic<bool> _runtimeDiagnostics{false};
     std::atomic<uint64> _runtimeDiagnosticsUntilMs{0};
     std::atomic<uint64> _lastCleanupMs{0};
+
+    struct Config
+    {
+        bool enabled = false;
+        bool storeOnly = false;
+        float borderOverlap = 0.0f;
+        float densitySplitThreshold = 0.0f;
+        float densityMergeThreshold = 0.0f;
+    } _config;
 };
 
 #define sPartitionMgr PartitionManager::instance()

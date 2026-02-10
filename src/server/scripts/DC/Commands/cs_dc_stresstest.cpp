@@ -289,7 +289,7 @@ namespace DCPerfTest
             for (uint32 i = 0; i < boundaryIters; ++i)
             {
                 ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(1, i + 50000);
-                sPartitionMgr->RegisterBoundaryObject(0, 1, guid);
+                sPartitionMgr->RegisterBoundaryObjectWithPosition(0, 1, guid, 0.0f, 0.0f);
                 sPartitionMgr->UnregisterBoundaryObject(0, 1, guid);
             }
             auto end = Clock::now();
@@ -540,7 +540,7 @@ namespace DCPerfTest
         for (uint32 i = 0; i < boundaryIters; ++i)
         {
             ObjectGuid guid = ObjectGuid::Create<HighGuid::Unit>(1, i + 50000);
-            sPartitionMgr->RegisterBoundaryObject(0, 1, guid);
+            sPartitionMgr->RegisterBoundaryObjectWithPosition(0, 1, guid, 0.0f, 0.0f);
             sPartitionMgr->UnregisterBoundaryObject(0, 1, guid);
         }
 

@@ -29,6 +29,11 @@ class TargetedMovementGeneratorBase
 {
 public:
     TargetedMovementGeneratorBase(Unit* target) { i_target.link(target, this); }
+    ~TargetedMovementGeneratorBase()
+    {
+        if (i_target.isValid())
+            i_target.unlink();
+    }
     void stopFollowing() { }
 protected:
     FollowerReference i_target;

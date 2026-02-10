@@ -46,7 +46,7 @@ static constexpr int32 UPDATE_TARGET_MAP_INTERVAL = 500;
 
 AuraApplication::AuraApplication(Unit* target, Unit* caster, Aura* aura, uint8 effMask):
     _target(target), _base(aura), _removeMode(AURA_REMOVE_NONE), _slot(MAX_AURAS),
-    _flags(AFLAG_NONE), _effectsToApply(effMask), _needClientUpdate(false), _disableMask(0)
+    _flags(AFLAG_NONE), _effectsToApply(effMask), _needClientUpdate(false), _inUnapply(false), _disableMask(0)
 {
     ASSERT(GetTarget() && GetBase());
 
@@ -604,8 +604,9 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
             }
             else
             {
-                // ok, we have one unit twice in target map (impossible, but...)
-                ABORT();
+                // already applied on this target (possible with concurrent updates)
+                targets.erase(itr++);
+                continue;
             }
         }
 
@@ -667,7 +668,8 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
                                itr->first->GetName(), itr->first->IsInWorld() ? itr->first->GetMap()->GetId() : uint32(-1));
                 ABORT();
             }
-            itr->first->_CreateAuraApplication(this, itr->second);
+            if (!IsRemoved())
+                itr->first->_CreateAuraApplication(this, itr->second);
             ++itr;
         }
     }
@@ -687,7 +689,9 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
         {
             // owner has to be in world, or effect has to be applied to self
             ASSERT((!GetOwner()->IsInWorld() && GetOwner() == itr->first) || GetOwner()->IsInMap(itr->first));
-            itr->first->_ApplyAura(aurApp, itr->second);
+            uint8 missingMask = itr->second & ~aurApp->GetEffectMask();
+            if (missingMask)
+                itr->first->_ApplyAura(aurApp, missingMask);
         }
     }
 }
@@ -2303,10 +2307,16 @@ void Aura::TriggerProcOnEvent(AuraApplication* aurApp, ProcEventInfo& eventInfo)
 void Aura::_DeleteRemovedApplications()
 {
     std::lock_guard<std::recursive_mutex> lock(_applicationLock);
-    while (!m_removedApplications.empty())
+    for (auto itr = m_removedApplications.begin(); itr != m_removedApplications.end();)
     {
-        delete m_removedApplications.front();
-        m_removedApplications.pop_front();
+        AuraApplication* aurApp = *itr;
+        if (aurApp->IsInUnapply())
+        {
+            ++itr;
+            continue;
+        }
+        delete aurApp;
+        itr = m_removedApplications.erase(itr);
     }
 }
 

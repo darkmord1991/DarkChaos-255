@@ -64,224 +64,84 @@ void GridObjectLoader::AddObjectHelper(Map* map, T* obj)
 void GridObjectLoader::LoadCreatures(CellGuidSet const& guid_set, Map* map)
 {
     bool layerCloning = sLayerMgr->IsNPCLayeringEnabled();
+    std::vector<uint32> layerIds;
 
-    // Layers are map-wide, so we cache once per map rather than per-zone.
-    std::vector<uint32> cachedLayerIds;
-    bool layerIdsCached = false;
-
-    for (ObjectGuid::LowType const& guid : guid_set)
+    // Use cached active layer IDs if layering is enabled
+    if (layerCloning)
     {
-        std::vector<uint32> layerIds;
-        if (layerCloning)
+        if (sLayerMgr->SkipCloneSpawnsIfNoPlayers() && !sLayerMgr->HasPlayersOnMap(map->GetId()))
         {
-            if (!layerIdsCached)
-            {
-                if (sLayerMgr->SkipCloneSpawnsIfNoPlayers())
-                {
-                    bool hasPlayers = sLayerMgr->HasPlayersOnMap(map->GetId());
-                    if (!hasPlayers)
-                    {
-                        cachedLayerIds.push_back(0);
-                        layerIdsCached = true;
-                    }
-                }
-
-                if (!layerIdsCached)
-                {
-                    sLayerMgr->GetActiveLayerIds(map->GetId(), cachedLayerIds);
-                    bool hasBaseLayer = false;
-                    for (uint32 layerId : cachedLayerIds)
-                    {
-                        if (layerId == 0)
-                        {
-                            hasBaseLayer = true;
-                            break;
-                        }
-                    }
-                    if (!hasBaseLayer)
-                        cachedLayerIds.push_back(0);
-                    layerIdsCached = true;
-                }
-            }
-            layerIds = cachedLayerIds;
-        }
-
-        if (layerIds.empty())
             layerIds.push_back(0);
-
-        for (uint32 layerId : layerIds)
-        {
-            bool isClone = layerCloning && layerId != 0;
-            bool allowDuplicate = isClone;
-            uint64 startMs = 0;
-            uint32 spawned = 0;
-            uint32 zoneId = 0;
-
-            if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
-                startMs = GameTime::GetGameTimeMS().count();
-
-            Creature* obj = new Creature();
-            if (!obj->LoadCreatureFromDB(guid, map, false, allowDuplicate, isClone, layerId))
-            {
-                delete obj;
-                continue;
-            }
-
-            AddObjectHelper<Creature>(map, obj);
-            if (isClone)
-            {
-                ++spawned;
-                if (zoneId == 0)
-                    zoneId = map->GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
-            }
-
-            if (!obj->IsMoveInLineOfSightDisabled() && obj->GetDefaultMovementType() == IDLE_MOTION_TYPE && !obj->isNeedNotify(NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION))
-            {
-                if (obj->IsAlive() && !obj->HasUnitState(UNIT_STATE_SIGHTLESS) && obj->HasReactState(REACT_AGGRESSIVE) && !obj->IsImmuneToNPC())
-                {
-                    // call MoveInLineOfSight for nearby grid creatures
-                    Acore::AIRelocationNotifier notifier(*obj);
-                    Cell::VisitObjects(obj, notifier, 60.f);
-                }
-            }
-
-            if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
-            {
-                uint64 elapsedMs = GameTime::GetGameTimeMS().count() - startMs;
-                if (g_collectCloneSummary)
-                {
-                    g_cloneSpawnSummary.npcMs += elapsedMs;
-                    g_cloneSpawnSummary.npcCount += spawned;
-                }
-                if (sLayerMgr->EmitPerLayerCloneMetrics())
-                {
-                    METRIC_VALUE("layer_clone_spawn_ms", elapsedMs,
-                        METRIC_TAG("map_id", std::to_string(map->GetId())),
-                        METRIC_TAG("zone_id", std::to_string(zoneId)),
-                        METRIC_TAG("layer_id", std::to_string(layerId)),
-                        METRIC_TAG("type", "npc"));
-                    METRIC_VALUE("layer_clone_spawn_count", uint64(spawned),
-                        METRIC_TAG("map_id", std::to_string(map->GetId())),
-                        METRIC_TAG("zone_id", std::to_string(zoneId)),
-                        METRIC_TAG("layer_id", std::to_string(layerId)),
-                        METRIC_TAG("type", "npc"));
-                }
-            }
         }
+        else
+        {
+            sLayerMgr->GetActiveLayerIds(map->GetId(), layerIds);
+            
+            // Ensure layer 0 is included even if GetActiveLayerIds returns empty or only clones
+            bool hasBaseLayer = false;
+            for (uint32 layerId : layerIds)
+            {
+                if (layerId == 0)
+                {
+                    hasBaseLayer = true;
+                    break;
+                }
+            }
+            if (!hasBaseLayer)
+                layerIds.push_back(0);
+        }
+    }
+    else
+    {
+        layerIds.push_back(0);
+    }
+
+    for (uint32 layerId : layerIds)
+    {
+        bool isClone = layerCloning && layerId != 0;
+        LoadCreaturesImpl(guid_set, map, layerId, isClone);
     }
 }
 
 void GridObjectLoader::LoadGameObjects(CellGuidSet const& guid_set, Map* map)
 {
     bool layerCloning = sLayerMgr->IsGOLayeringEnabled();
+    std::vector<uint32> layerIds;
 
-    // Layers are map-wide, so we cache once per map rather than per-zone.
-    std::vector<uint32> cachedLayerIds;
-    bool layerIdsCached = false;
-
-    for (ObjectGuid::LowType const& guid : guid_set)
+    // Use cached active layer IDs if layering is enabled
+    if (layerCloning)
     {
-        GameObjectData const* data = sObjectMgr->GetGameObjectData(guid);
-
-        if (data && sObjectMgr->IsGameObjectStaticTransport(data->id))
+        if (sLayerMgr->SkipCloneSpawnsIfNoPlayers() && !sLayerMgr->HasPlayersOnMap(map->GetId()))
         {
-            StaticTransport* transport = new StaticTransport();
-
-            // Special case for static transports - we are loaded via grids
-            // but we do not want to actually be stored in the grid
-            if (!transport->LoadGameObjectFromDB(guid, map, true))
-                delete transport;
+            layerIds.push_back(0);
         }
         else
         {
-            std::vector<uint32> layerIds;
-            if (layerCloning && data)
-            {
-                if (!layerIdsCached)
-                {
-                    if (sLayerMgr->SkipCloneSpawnsIfNoPlayers())
-                    {
-                        bool hasPlayers = sLayerMgr->HasPlayersOnMap(map->GetId());
-                        if (!hasPlayers)
-                        {
-                            cachedLayerIds.push_back(0);
-                            layerIdsCached = true;
-                        }
-                    }
+            sLayerMgr->GetActiveLayerIds(map->GetId(), layerIds);
 
-                    if (!layerIdsCached)
-                    {
-                        sLayerMgr->GetActiveLayerIds(map->GetId(), cachedLayerIds);
-                        bool hasBaseLayer = false;
-                        for (uint32 layerId : cachedLayerIds)
-                        {
-                            if (layerId == 0)
-                            {
-                                hasBaseLayer = true;
-                                break;
-                            }
-                        }
-                        if (!hasBaseLayer)
-                            cachedLayerIds.push_back(0);
-                        layerIdsCached = true;
-                    }
-                }
-                layerIds = cachedLayerIds;
-            }
-
-            if (layerIds.empty())
-                layerIds.push_back(0);
-
+            // Ensure layer 0 is included even if GetActiveLayerIds returns empty or only clones
+            bool hasBaseLayer = false;
             for (uint32 layerId : layerIds)
             {
-                bool isClone = layerCloning && layerId != 0;
-                bool allowDuplicate = isClone;
-                uint64 startMs = 0;
-                uint32 spawned = 0;
-                uint32 zoneId = 0;
-                if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
-                    startMs = GameTime::GetGameTimeMS().count();
-
-                GameObject* obj = new GameObject();
-
-                if (!obj->LoadGameObjectFromDB(guid, map, false, allowDuplicate, isClone, layerId))
+                if (layerId == 0)
                 {
-                    delete obj;
-                    continue;
-                }
-
-                AddObjectHelper<GameObject>(map, obj);
-                if (isClone)
-                {
-                    ++spawned;
-                    if (zoneId == 0)
-                        zoneId = map->GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
-                }
-
-                if (isClone && sLayerMgr->IsRuntimeDiagnosticsEnabled())
-                {
-                    uint64 elapsedMs = GameTime::GetGameTimeMS().count() - startMs;
-                    if (g_collectCloneSummary)
-                    {
-                        g_cloneSpawnSummary.goMs += elapsedMs;
-                        g_cloneSpawnSummary.goCount += spawned;
-                    }
-                    if (sLayerMgr->EmitPerLayerCloneMetrics())
-                    {
-                        METRIC_VALUE("layer_clone_spawn_ms", elapsedMs,
-                            METRIC_TAG("map_id", std::to_string(map->GetId())),
-                            METRIC_TAG("zone_id", std::to_string(zoneId)),
-                            METRIC_TAG("layer_id", std::to_string(layerId)),
-                            METRIC_TAG("type", "go"));
-                        METRIC_VALUE("layer_clone_spawn_count", uint64(spawned),
-                            METRIC_TAG("map_id", std::to_string(map->GetId())),
-                            METRIC_TAG("zone_id", std::to_string(zoneId)),
-                            METRIC_TAG("layer_id", std::to_string(layerId)),
-                            METRIC_TAG("type", "go"));
-                    }
+                    hasBaseLayer = true;
+                    break;
                 }
             }
+            if (!hasBaseLayer)
+                layerIds.push_back(0);
         }
+    }
+    else
+    {
+        layerIds.push_back(0);
+    }
+
+    for (uint32 layerId : layerIds)
+    {
+        bool isClone = layerCloning && layerId != 0;
+        LoadGameObjectsImpl(guid_set, map, layerId, isClone);
     }
 }
 
@@ -319,6 +179,11 @@ void GridObjectLoader::LoadCreaturesForLayer(CellGuidSet const& guid_set, Map* m
     if (!sLayerMgr->IsNPCLayeringEnabled())
         return;
 
+    LoadCreaturesImpl(guid_set, map, layerId, isClone);
+}
+
+void GridObjectLoader::LoadCreaturesImpl(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone)
+{
     for (ObjectGuid::LowType const& guid : guid_set)
     {
         bool allowDuplicate = isClone;
@@ -383,6 +248,11 @@ void GridObjectLoader::LoadGameObjectsForLayer(CellGuidSet const& guid_set, Map*
     if (!sLayerMgr->IsGOLayeringEnabled())
         return;
 
+    LoadGameObjectsImpl(guid_set, map, layerId, isClone);
+}
+
+void GridObjectLoader::LoadGameObjectsImpl(CellGuidSet const& guid_set, Map* map, uint32 layerId, bool isClone)
+{
     for (ObjectGuid::LowType const& guid : guid_set)
     {
         GameObjectData const* data = sObjectMgr->GetGameObjectData(guid);
@@ -393,6 +263,9 @@ void GridObjectLoader::LoadGameObjectsForLayer(CellGuidSet const& guid_set, Map*
                 continue;
 
             StaticTransport* transport = new StaticTransport();
+
+            // Special case for static transports - we are loaded via grids
+            // but we do not want to actually be stored in the grid
             if (!transport->LoadGameObjectFromDB(guid, map, true))
                 delete transport;
             continue;
@@ -406,6 +279,7 @@ void GridObjectLoader::LoadGameObjectsForLayer(CellGuidSet const& guid_set, Map*
             startMs = GameTime::GetGameTimeMS().count();
 
         GameObject* obj = new GameObject();
+
         if (!obj->LoadGameObjectFromDB(guid, map, false, allowDuplicate, isClone, layerId))
         {
             delete obj;

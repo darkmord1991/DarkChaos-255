@@ -63,7 +63,6 @@
 #include "VMapMgr2.h"
 
 extern pEffect SpellEffects[TOTAL_SPELL_EFFECTS];
-
 SpellDestination::SpellDestination()
 {
     _position.Relocate(0, 0, 0, 0);
@@ -821,6 +820,7 @@ void Spell::SelectExplicitTargets()
 void Spell::SelectSpellTargets()
 {
     // select targets for cast phase
+    std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
     SelectExplicitTargets();
 
     uint32 processedAreaEffectsMask = 0;
@@ -2275,6 +2275,7 @@ void Spell::prepareDataForTriggerSystem(AuraEffect const* /*triggeredByAura*/)
 
 void Spell::CleanupTargetList()
 {
+    std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
     m_UniqueTargetInfo.clear();
     m_UniqueGOTargetInfo.clear();
     m_UniqueItemInfo.clear();
@@ -2284,6 +2285,7 @@ void Spell::CleanupTargetList()
 
 void Spell::AddUnitTarget(Unit* target, uint32 effectMask, bool checkIfValid /*= true*/, bool implicit /*= true*/)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
     for (uint32 effIndex = 0; effIndex < MAX_SPELL_EFFECTS; ++effIndex)
         if (!m_spellInfo->Effects[effIndex].IsEffect() || !CheckEffectTarget(target, effIndex))
             effectMask &= ~(1 << effIndex);
@@ -2417,6 +2419,7 @@ void Spell::AddUnitTarget(Unit* target, uint32 effectMask, bool checkIfValid /*=
 
 void Spell::AddGOTarget(GameObject* go, uint32 effectMask)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
     for (uint32 effIndex = 0; effIndex < MAX_SPELL_EFFECTS; ++effIndex)
     {
         if (!m_spellInfo->Effects[effIndex].IsEffect())
@@ -2479,6 +2482,7 @@ void Spell::AddGOTarget(GameObject* go, uint32 effectMask)
 
 void Spell::AddItemTarget(Item* item, uint32 effectMask)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
     for (uint32 effIndex = 0; effIndex < MAX_SPELL_EFFECTS; ++effIndex)
         if (!m_spellInfo->Effects[effIndex].IsEffect())
             effectMask &= ~(1 << effIndex);
@@ -3316,6 +3320,7 @@ void Spell::DoAllEffectOnTarget(ItemTargetInfo* target)
 
 bool Spell::UpdateChanneledTargetList()
 {
+    std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
     // Not need check return true
     if (m_channelTargetEffectMask == 0)
         return true;
@@ -3674,7 +3679,12 @@ void Spell::cancel(bool bySelf)
         case SPELL_STATE_CASTING:
             if (!bySelf)
             {
-                for (std::list<TargetInfo>::const_iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
+                std::list<TargetInfo> targetsCopy;
+                {
+                    std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+                    targetsCopy = m_UniqueTargetInfo;
+                }
+                for (std::list<TargetInfo>::const_iterator ihit = targetsCopy.begin(); ihit != targetsCopy.end(); ++ihit)
                     if ((*ihit).missCondition == SPELL_MISS_NONE)
                         if (Unit* unit = m_caster->GetGUID() == ihit->targetGUID ? m_caster : ObjectAccessor::GetUnit(*m_caster, ihit->targetGUID))
                             unit->RemoveOwnedAura(m_spellInfo->Id, m_originalCasterGUID, 0, AURA_REMOVE_BY_CANCEL);
@@ -3693,7 +3703,10 @@ void Spell::cancel(bool bySelf)
             if (Player* player = m_caster->GetSpellModOwner())
                 player->RemoveSpellMods(this);
 
-            m_appliedMods.clear();
+            {
+                std::lock_guard<std::mutex> modsLock(m_appliedModsLock);
+                m_appliedMods.clear();
+            }
             break;
         default:
             break;
@@ -3726,7 +3739,7 @@ void Spell::cast(bool skipCheck)
     Spell* lastMod = nullptr;
     if (modOwner)
     {
-        lastMod = modOwner->m_spellModTakingSpell;
+        lastMod = modOwner->GetSpellModTakingSpell();
         if (lastMod)
             modOwner->SetSpellModTakingSpell(lastMod, false);
     }
@@ -3921,20 +3934,23 @@ void Spell::_cast(bool skipCheck)
 
         uint32 procEx = PROC_EX_NORMAL_HIT;
 
-        for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
         {
-            if (ihit->missCondition != SPELL_MISS_NONE)
+            std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+            for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
             {
-                continue;
-            }
+                if (ihit->missCondition != SPELL_MISS_NONE)
+                {
+                    continue;
+                }
 
-            if (!ihit->crit)
-            {
-                continue;
-            }
+                if (!ihit->crit)
+                {
+                    continue;
+                }
 
-            procEx |= PROC_EX_CRITICAL_HIT;
-            break;
+                procEx |= PROC_EX_CRITICAL_HIT;
+                break;
+            }
         }
 
         Unit::ProcDamageAndSpell(m_originalCaster, m_originalCaster, procAttacker, PROC_FLAG_NONE, procEx, 1, BASE_ATTACK, m_spellInfo, m_triggeredByAuraSpell.spellInfo,
@@ -4092,11 +4108,14 @@ void Spell::handle_immediate()
     // process immediate effects (items, ground, etc.) also initialize some variables
     _handle_immediate_phase();
 
-    for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
-        DoAllEffectOnTarget(&(*ihit));
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+        for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
+            DoAllEffectOnTarget(&(*ihit));
 
-    for (std::list<GOTargetInfo>::iterator ihit = m_UniqueGOTargetInfo.begin(); ihit != m_UniqueGOTargetInfo.end(); ++ihit)
-        DoAllEffectOnTarget(&(*ihit));
+        for (std::list<GOTargetInfo>::iterator ihit = m_UniqueGOTargetInfo.begin(); ihit != m_UniqueGOTargetInfo.end(); ++ihit)
+            DoAllEffectOnTarget(&(*ihit));
+    }
 
     FinishTargetProcessing();
 
@@ -4142,29 +4161,32 @@ uint64 Spell::handle_delayed(uint64 t_offset)
     bool single_missile = (m_targets.HasDst());
 
     // now recheck units targeting correctness (need before any effects apply to prevent adding immunity at first effect not allow apply second spell effect and similar cases)
-    for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
     {
-        if (ihit->processed == false)
+        std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+        for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
         {
-            if (single_missile || ihit->timeDelay <= t_offset)
+            if (ihit->processed == false)
             {
-                ihit->timeDelay = t_offset;
-                DoAllEffectOnTarget(&(*ihit));
+                if (single_missile || ihit->timeDelay <= t_offset)
+                {
+                    ihit->timeDelay = t_offset;
+                    DoAllEffectOnTarget(&(*ihit));
+                }
+                else if (next_time == 0 || ihit->timeDelay < next_time)
+                    next_time = ihit->timeDelay;
             }
-            else if (next_time == 0 || ihit->timeDelay < next_time)
-                next_time = ihit->timeDelay;
         }
-    }
 
-    // now recheck gameobject targeting correctness
-    for (std::list<GOTargetInfo>::iterator ighit = m_UniqueGOTargetInfo.begin(); ighit != m_UniqueGOTargetInfo.end(); ++ighit)
-    {
-        if (ighit->processed == false)
+        // now recheck gameobject targeting correctness
+        for (std::list<GOTargetInfo>::iterator ighit = m_UniqueGOTargetInfo.begin(); ighit != m_UniqueGOTargetInfo.end(); ++ighit)
         {
-            if (single_missile || ighit->timeDelay <= t_offset)
-                DoAllEffectOnTarget(&(*ighit));
-            else if (next_time == 0 || ighit->timeDelay < next_time)
-                next_time = ighit->timeDelay;
+            if (ighit->processed == false)
+            {
+                if (single_missile || ighit->timeDelay <= t_offset)
+                    DoAllEffectOnTarget(&(*ighit));
+                else if (next_time == 0 || ighit->timeDelay < next_time)
+                    next_time = ighit->timeDelay;
+            }
         }
     }
 
@@ -4215,8 +4237,11 @@ void Spell::_handle_immediate_phase()
     }
 
     // process items
-    for (std::list<ItemTargetInfo>::iterator ihit = m_UniqueItemInfo.begin(); ihit != m_UniqueItemInfo.end(); ++ihit)
-        DoAllEffectOnTarget(&(*ihit));
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+        for (std::list<ItemTargetInfo>::iterator ihit = m_UniqueItemInfo.begin(); ihit != m_UniqueItemInfo.end(); ++ihit)
+            DoAllEffectOnTarget(&(*ihit));
+    }
 }
 
 void Spell::_handle_finish_phase()
@@ -4247,6 +4272,8 @@ void Spell::_handle_finish_phase()
 
     if (!IsAutoRepeat() && !IsNextMeleeSwingSpell())
         if (m_caster->GetCharmerOrOwnerPlayerOrPlayerItself())
+        {
+            std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
             for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
             {
                 // Xinef: Properly clear infinite cooldowns in some cases
@@ -4254,6 +4281,7 @@ void Spell::_handle_finish_phase()
                     if (m_caster->IsPlayer() && m_spellInfo->IsCooldownStartedOnEvent())
                         m_caster->ToPlayer()->SendCooldownEvent(m_spellInfo);
             }
+        }
 
     // Handle procs on finish
     if (m_originalCaster)
@@ -4273,20 +4301,23 @@ void Spell::_handle_finish_phase()
         }
 
         uint32 procEx = PROC_EX_NORMAL_HIT;
-        for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
         {
-            if (ihit->missCondition != SPELL_MISS_NONE)
+            std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+            for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
             {
-                continue;
-            }
+                if (ihit->missCondition != SPELL_MISS_NONE)
+                {
+                    continue;
+                }
 
-            if (!ihit->crit)
-            {
-                continue;
-            }
+                if (!ihit->crit)
+                {
+                    continue;
+                }
 
-            procEx |= PROC_EX_CRITICAL_HIT;
-            break;
+                procEx |= PROC_EX_CRITICAL_HIT;
+                break;
+            }
         }
 
         Unit::ProcDamageAndSpell(m_originalCaster, m_originalCaster, procAttacker, PROC_FLAG_NONE, procEx, 1, BASE_ATTACK, m_spellInfo, m_triggeredByAuraSpell.spellInfo,
@@ -4964,6 +4995,8 @@ void Spell::WriteAmmoToPacket(WorldPacket* data)
 /// Writes miss and hit targets for a SMSG_SPELL_GO packet
 void Spell::WriteSpellGoTargets(WorldPacket* data)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+
     // This function also fill data for channeled spells:
     // m_needAliveTargetMask req for stop channelig if one target die
     for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
@@ -5159,8 +5192,11 @@ void Spell::SendChannelStart(uint32 duration)
 {
     ObjectGuid channelTarget = m_targets.GetObjectTargetGUID();
     if (!channelTarget && !m_spellInfo->NeedsExplicitUnitTarget())
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
         if (m_UniqueTargetInfo.size() + m_UniqueGOTargetInfo.size() == 1)   // this is for TARGET_SELECT_CATEGORY_NEARBY
             channelTarget = !m_UniqueTargetInfo.empty() ? m_UniqueTargetInfo.front().targetGUID : m_UniqueGOTargetInfo.front().targetGUID;
+    }
 
     WorldPacket data(MSG_CHANNEL_START, (8 + 4 + 4));
     data << m_caster->GetPackGUID();
@@ -5280,6 +5316,8 @@ void Spell::TakePower()
     {
         if (PowerType == POWER_RAGE || PowerType == POWER_ENERGY || PowerType == POWER_RUNE || PowerType == POWER_RUNIC_POWER)
             if (ObjectGuid targetGUID = m_targets.GetUnitTargetGUID())
+            {
+                std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
                 for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
                     if (ihit->targetGUID == targetGUID)
                     {
@@ -5292,6 +5330,7 @@ void Spell::TakePower()
                         }
                         break;
                     }
+            }
     }
 
     if (PowerType == POWER_RUNE)
@@ -5532,8 +5571,13 @@ void Spell::TakeReagents()
 
 void Spell::HandleThreatSpells()
 {
-    if (m_UniqueTargetInfo.empty())
-        return;
+    std::list<TargetInfo> targetsCopy;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+        if (m_UniqueTargetInfo.empty())
+            return;
+        targetsCopy = m_UniqueTargetInfo;
+    }
 
     if (m_spellInfo->HasAttribute(SPELL_ATTR1_NO_THREAT) || m_spellInfo->HasAttribute(SPELL_ATTR3_SUPPRESS_TARGET_PROCS))
         return;
@@ -5554,9 +5598,9 @@ void Spell::HandleThreatSpells()
         return;
 
     // since 2.0.1 threat from positive effects also is distributed among all targets, so the overall caused threat is at most the defined bonus
-    threat /= m_UniqueTargetInfo.size();
+    threat /= targetsCopy.size();
 
-    for (std::list<TargetInfo>::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
+    for (std::list<TargetInfo>::iterator ihit = targetsCopy.begin(); ihit != targetsCopy.end(); ++ihit)
     {
         float threatToAdd = threat;
         if (ihit->missCondition != SPELL_MISS_NONE)
@@ -5574,7 +5618,7 @@ void Spell::HandleThreatSpells()
         else if (!m_spellInfo->_IsPositiveSpell() && !IsFriendly && target->CanHaveThreatList())
             target->AddThreat(m_caster, threatToAdd, m_spellInfo->GetSchoolMask(), m_spellInfo);
     }
-    LOG_DEBUG("spells.aura", "Spell {}, added an additional {} threat for {} {} target(s)", m_spellInfo->Id, threat, m_spellInfo->_IsPositiveSpell() ? "assisting" : "harming", uint32(m_UniqueTargetInfo.size()));
+    LOG_DEBUG("spells.aura", "Spell {}, added an additional {} threat for {} {} target(s)", m_spellInfo->Id, threat, m_spellInfo->_IsPositiveSpell() ? "assisting" : "harming", uint32(targetsCopy.size()));
 }
 
 void Spell::HandleEffects(Unit* pUnitTarget, Item* pItemTarget, GameObject* pGOTarget, uint32 i, SpellEffectHandleMode mode)
@@ -6475,14 +6519,12 @@ SpellCastResult Spell::CheckCast(bool strict)
                         return SPELL_FAILED_BAD_TARGETS;
 
                     Player* playerCaster = m_caster->ToPlayer();
-                    //
                     if (!(playerCaster->GetTarget()))
                         return SPELL_FAILED_BAD_TARGETS;
 
                     Player* target = ObjectAccessor::GetPlayer(m_caster->GetMap(), m_caster->ToPlayer()->GetTarget());
 
-                    if (!target ||
-                            !(target->GetSession()->GetRecruiterId() == playerCaster->GetSession()->GetAccountId() || target->GetSession()->GetAccountId() == playerCaster->GetSession()->GetRecruiterId()))
+                    if (!target || !(target->GetSession()->GetRecruiterId() == playerCaster->GetSession()->GetAccountId() || target->GetSession()->GetAccountId() == playerCaster->GetSession()->GetRecruiterId()))
                         return SPELL_FAILED_BAD_TARGETS;
 
                     // Xinef: Implement summon pending error
@@ -6515,7 +6557,6 @@ SpellCastResult Spell::CheckCast(bool strict)
 
                         if (!auraPair.second->IsPositive())
                             continue;
-
                         found = true;
                         break;
                     }
@@ -7842,10 +7883,13 @@ void Spell::DelayedChannel()
 
     LOG_DEBUG("spells.aura", "Spell {} partially interrupted for {} ms, new duration: {} ms", m_spellInfo->Id, delaytime, m_timer);
 
-    for (std::list<TargetInfo>::const_iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
-        if ((*ihit).missCondition == SPELL_MISS_NONE)
-            if (Unit* unit = (m_caster->GetGUID() == ihit->targetGUID) ? m_caster : ObjectAccessor::GetUnit(*m_caster, ihit->targetGUID))
-                unit->DelayOwnedAuras(m_spellInfo->Id, m_originalCasterGUID, delaytime);
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+        for (std::list<TargetInfo>::const_iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
+            if ((*ihit).missCondition == SPELL_MISS_NONE)
+                if (Unit* unit = (m_caster->GetGUID() == ihit->targetGUID) ? m_caster : ObjectAccessor::GetUnit(*m_caster, ihit->targetGUID))
+                    unit->DelayOwnedAuras(m_spellInfo->Id, m_originalCasterGUID, delaytime);
+    }
 
     // partially interrupt persistent area auras
     if (DynamicObject* dynObj = m_caster->GetDynObject(m_spellInfo->Id))
@@ -8096,6 +8140,7 @@ bool Spell::IsNeedSendToClient(bool go) const
 
 bool Spell::HaveTargetsForEffect(uint8 effect) const
 {
+    std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
     for (std::list<TargetInfo>::const_iterator itr = m_UniqueTargetInfo.begin(); itr != m_UniqueTargetInfo.end(); ++itr)
         if (itr->effectMask & (1 << effect))
             return true;

@@ -258,8 +258,12 @@ public:
         return iThreatContainer.empty() && iThreatOfflineContainer.empty();
     }
 
-    Acore::IteratorPair<std::list<ThreatReference*>::const_iterator> GetSortedThreatList() const { auto& list = iThreatContainer.GetThreatList(); return { list.cbegin(), list.cend() }; }
-    Acore::IteratorPair<std::list<ThreatReference*>::const_iterator> GetUnsortedThreatList() const { return GetSortedThreatList(); }
+    std::list<ThreatReference*> GetSortedThreatList() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(_threatLock);
+        return iThreatContainer.GetThreatList();
+    }
+    std::list<ThreatReference*> GetUnsortedThreatList() const { return GetSortedThreatList(); }
 
     void processThreatEvent(ThreatRefStatusChangeEvent* threatRefStatusChangeEvent);
 

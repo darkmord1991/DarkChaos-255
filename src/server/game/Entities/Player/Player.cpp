@@ -2858,7 +2858,8 @@ void Player::SendInitialSpells()
 
     uint16 spellCount = 0;
 
-    WorldPacket data(SMSG_INITIAL_SPELLS, (1 + 2 + 4 * m_spells.size() + 2 + m_spellCooldowns.size() * (4 + 2 + 2 + 4 + 4)));
+    SpellCooldowns cooldowns = GetSpellCooldownMap();
+    WorldPacket data(SMSG_INITIAL_SPELLS, (1 + 2 + 4 * m_spells.size() + 2 + cooldowns.size() * (4 + 2 + 2 + 4 + 4)));
     data << uint8(0);
 
     std::size_t countPos = data.wpos();
@@ -2915,9 +2916,9 @@ void Player::SendInitialSpells()
 
     data.put<uint16>(countPos, spellCount);                  // write real count value
 
-    uint16 spellCooldowns = m_spellCooldowns.size();
+    uint16 spellCooldowns = cooldowns.size();
     data << uint16(spellCooldowns);
-    for (SpellCooldowns::const_iterator itr = m_spellCooldowns.begin(); itr != m_spellCooldowns.end(); ++itr)
+    for (SpellCooldowns::const_iterator itr = cooldowns.begin(); itr != cooldowns.end(); ++itr)
     {
         if (!itr->second.needSendToClient)
             continue;
@@ -3637,9 +3638,13 @@ bool Player::Has310Flyer(bool checkAllSpells, uint32 excludeSpellId)
 
 void Player::RemoveSpellCooldown(uint32 spell_id, bool update /* = false */)
 {
-    m_spellCooldowns.erase(spell_id);
+    bool erased = false;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
+        erased = m_spellCooldowns.erase(spell_id) > 0;
+    }
 
-    if (update)
+    if (update && erased)
         SendClearCooldown(spell_id, this);
 }
 
@@ -3655,8 +3660,9 @@ void Player::RemoveArenaSpellCooldowns(bool removeActivePetCooldowns)
 {
     // remove cooldowns on spells that have < 10 min CD
     uint32 infTime = GameTime::GetGameTimeMS().count() + infinityCooldownDelayCheck;
-    SpellCooldowns::iterator itr, next;
-    for (itr = m_spellCooldowns.begin(); itr != m_spellCooldowns.end(); itr = next)
+    SpellCooldowns cooldowns = GetSpellCooldownMap();
+    SpellCooldowns::const_iterator itr, next;
+    for (itr = cooldowns.begin(); itr != cooldowns.end(); itr = next)
     {
         next = itr;
         ++next;
@@ -3689,14 +3695,18 @@ void Player::RemoveArenaSpellCooldowns(bool removeActivePetCooldowns)
 void Player::RemoveAllSpellCooldown()
 {
     uint32 infTime = GameTime::GetGameTimeMS().count() + infinityCooldownDelayCheck;
-    if (!m_spellCooldowns.empty())
+    SpellCooldowns cooldowns;
     {
-        for (SpellCooldowns::const_iterator itr = m_spellCooldowns.begin(); itr != m_spellCooldowns.end(); ++itr)
-            if (itr->second.end < infTime)
-                SendClearCooldown(itr->first, this);
-
+        std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
+        if (m_spellCooldowns.empty())
+            return;
+        cooldowns = m_spellCooldowns;
         m_spellCooldowns.clear();
     }
+
+    for (SpellCooldowns::const_iterator itr = cooldowns.begin(); itr != cooldowns.end(); ++itr)
+        if (itr->second.end < infTime)
+            SendClearCooldown(itr->first, this);
 }
 
 void Player::_LoadSpellCooldowns(PreparedQueryResult result)
@@ -3749,6 +3759,7 @@ void Player::_SaveSpellCooldowns(CharacterDatabaseTransaction trans, bool logout
     std::ostringstream ss;
 
     // remove outdated and save active
+    std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
     for (SpellCooldowns::iterator itr = m_spellCooldowns.begin(); itr != m_spellCooldowns.end();)
     {
         // Xinef: dummy cooldown for procs
@@ -9940,6 +9951,7 @@ bool Player::HasSpellMod(SpellModifier* mod, Spell* spell)
     if (!mod || !spell)
         return false;
 
+    std::lock_guard<std::mutex> modsLock(spell->m_appliedModsLock);
     return spell->m_appliedMods.find(mod->ownerAura) != spell->m_appliedMods.end();
 }
 
@@ -9949,8 +9961,12 @@ bool Player::IsAffectedBySpellmod(SpellInfo const* spellInfo, SpellModifier* mod
         return false;
 
     // Mod out of charges
-    if (spell && mod->charges == -1 && spell->m_appliedMods.find(mod->ownerAura) == spell->m_appliedMods.end())
-        return false;
+    if (spell && mod->charges == -1)
+    {
+        std::lock_guard<std::mutex> modsLock(spell->m_appliedModsLock);
+        if (spell->m_appliedMods.find(mod->ownerAura) == spell->m_appliedMods.end())
+            return false;
+    }
 
     // +duration to infinite duration spells making them limited
     if (mod->op == SPELLMOD_DURATION && spellInfo->GetDuration() == -1)
@@ -10107,10 +10123,13 @@ void Player::AddSpellMod(SpellModifier* mod, bool apply)
 // Restore spellmods in case of failed cast
 void Player::RestoreSpellMods(Spell* spell, uint32 ownerAuraId, Aura* aura)
 {
-    if (!spell || spell->m_appliedMods.empty())
+    if (!spell)
         return;
 
     std::lock_guard<std::recursive_mutex> lock(m_spellModsLock);
+    std::lock_guard<std::mutex> modsLock(spell->m_appliedModsLock);
+    if (spell->m_appliedMods.empty())
+        return;
 
     std::list<Aura*> aurasQueue;
 
@@ -10186,12 +10205,12 @@ void Player::RemoveSpellMods(Spell* spell)
     if (!spell)
         return;
 
-    if (spell->m_appliedMods.empty())
-        return;
-
     SpellInfo const* const spellInfo = spell->m_spellInfo;
 
     std::lock_guard<std::recursive_mutex> lock(m_spellModsLock);
+    std::lock_guard<std::mutex> modsLock(spell->m_appliedModsLock);
+    if (spell->m_appliedMods.empty())
+        return;
 
     for (uint8 i = 0; i < MAX_SPELLMOD; ++i)
     {
@@ -10257,12 +10276,14 @@ void Player::DropModCharge(SpellModifier* mod, Spell* spell)
         if (--mod->charges == 0)
             mod->charges = -1;
 
+        std::lock_guard<std::mutex> modsLock(spell->m_appliedModsLock);
         spell->m_appliedMods.insert(mod->ownerAura);
     }
 }
 
 void Player::SetSpellModTakingSpell(Spell* spell, bool apply)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_spellModsLock);
     if (apply && m_spellModTakingSpell)
     {
         LOG_INFO("misc", "Player::SetSpellModTakingSpell (A1) - {}, {}", spell->m_spellInfo->Id, m_spellModTakingSpell->m_spellInfo->Id);
@@ -11259,7 +11280,10 @@ void Player::_AddSpellCooldown(uint32 spellid, uint16 categoryId, uint32 itemid,
         }
     }
 
-    m_spellCooldowns[spellid] = std::move(sc);
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
+        m_spellCooldowns[spellid] = std::move(sc);
+    }
 }
 
 void Player::AddSpellCooldown(uint32 spellid, uint32 itemid, uint32 end_time, bool needSendToClient, bool forceSendToSpectator)
@@ -11269,11 +11293,14 @@ void Player::AddSpellCooldown(uint32 spellid, uint32 itemid, uint32 end_time, bo
 
 void Player::ModifySpellCooldown(uint32 spellId, int32 cooldown)
 {
-    SpellCooldowns::iterator itr = m_spellCooldowns.find(spellId);
-    if (itr == m_spellCooldowns.end())
-        return;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
+        SpellCooldowns::iterator itr = m_spellCooldowns.find(spellId);
+        if (itr == m_spellCooldowns.end())
+            return;
 
-    itr->second.end += cooldown;
+        itr->second.end += cooldown;
+    }
 
     WorldPacket data(SMSG_MODIFY_COOLDOWN, 4 + 8 + 4);
     data << uint32(spellId);            // Spell ID
@@ -12007,9 +12034,13 @@ void Player::ApplyEquipCooldown(Item* pItem)
             continue;
 
         // Don't replace longer cooldowns by equip cooldown if we have any.
-        SpellCooldowns::iterator itr = m_spellCooldowns.find(spellData.SpellId);
-        if (itr != m_spellCooldowns.end() && itr->second.itemid == pItem->GetEntry() && itr->second.end > GameTime::GetGameTimeMS().count() + 30 * IN_MILLISECONDS)
+        SpellCooldown cooldown;
+        if (GetSpellCooldown(spellData.SpellId, cooldown)
+            && cooldown.itemid == pItem->GetEntry()
+            && cooldown.end > GameTime::GetGameTimeMS().count() + 30 * IN_MILLISECONDS)
+        {
             continue;
+        }
 
         // xinef: dont apply eqiup cooldown for spells with this attribute
         if (spellInfo && spellInfo->HasAttribute(SPELL_ATTR0_NOT_IN_COMBAT_ONLY_PEACEFUL))
@@ -16540,20 +16571,40 @@ bool Player::IsSummonAsSpectator() const
 
 bool Player::HasSpellCooldown(uint32 spell_id) const
 {
+    std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
     SpellCooldowns::const_iterator itr = m_spellCooldowns.find(spell_id);
     return itr != m_spellCooldowns.end() && itr->second.end > getMSTime();
 }
 
 bool Player::HasSpellItemCooldown(uint32 spell_id, uint32 itemid) const
 {
+    std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
     SpellCooldowns::const_iterator itr = m_spellCooldowns.find(spell_id);
     return itr != m_spellCooldowns.end() && itr->second.end > getMSTime() && itr->second.itemid == itemid;
 }
 
 uint32 Player::GetSpellCooldownDelay(uint32 spell_id) const
 {
+    std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
     SpellCooldowns::const_iterator itr = m_spellCooldowns.find(spell_id);
     return uint32(itr != m_spellCooldowns.end() && itr->second.end > getMSTime() ? itr->second.end - getMSTime() : 0);
+}
+
+SpellCooldowns Player::GetSpellCooldownMap() const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
+    return m_spellCooldowns;
+}
+
+bool Player::GetSpellCooldown(uint32 spellId, SpellCooldown& out) const
+{
+    std::lock_guard<std::recursive_mutex> lock(m_spellCooldownsLock);
+    SpellCooldowns::const_iterator itr = m_spellCooldowns.find(spellId);
+    if (itr == m_spellCooldowns.end())
+        return false;
+
+    out = itr->second;
+    return true;
 }
 
 std::string Player::GetDebugInfo() const

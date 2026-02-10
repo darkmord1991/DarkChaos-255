@@ -39,6 +39,10 @@ public:
 
     Unit* GetOwner() { return iOwner; }
 
+    void AddReference(HostileReference* reference);
+    void RemoveReference(HostileReference* reference);
+    void UpdateOnlineStateForPhase(uint32 newPhaseMask);
+
     // send threat to all my hateres for the victim
     // The victim is hated than by them as well
     // use for buffs and healing threat functionality

@@ -277,7 +277,7 @@ void ArenaSpectator::HandleResetCommand(Player* player)
         // "SPE" not here (only possible to send starting a new cast)
 
         // send all "CD"
-        SpellCooldowns const& sc = plr->GetSpellCooldownMap();
+        SpellCooldowns sc = plr->GetSpellCooldownMap();
         for (SpellCooldowns::const_iterator itrc = sc.begin(); itrc != sc.end(); ++itrc)
             if (itrc->second.sendToSpectator && itrc->second.maxduration >= SPECTATOR_COOLDOWN_MIN * IN_MILLISECONDS && itrc->second.maxduration <= SPECTATOR_COOLDOWN_MAX * IN_MILLISECONDS)
                 if (uint32 cd = (getMSTimeDiff(getMSTime(), itrc->second.end) / 1000))

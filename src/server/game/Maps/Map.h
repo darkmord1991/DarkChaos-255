@@ -270,11 +270,15 @@ public:
 
     // pussywizard: movemaps, mmaps
     [[nodiscard]] std::shared_mutex& GetMMapLock() const { return *(const_cast<std::shared_mutex*>(&MMapLock)); }
+    std::lock_guard<std::recursive_mutex> AcquireGridObjectReadLock() const { return std::lock_guard<std::recursive_mutex>(_gridObjectLock); }
+    std::lock_guard<std::recursive_mutex> AcquireGridObjectWriteLock() { return std::lock_guard<std::recursive_mutex>(_gridObjectLock); }
     // pussywizard: delayed visibility - thread-safe access
-    void AddToDelayedVisibility(Unit* unit)
+    void AddToDelayedVisibility(ObjectGuid guid)
     {
+        if (!guid)
+            return;
         std::lock_guard<std::mutex> lock(_delayedVisibilityLock);
-        _objectsForDelayedVisibility.insert(unit);
+        _objectsForDelayedVisibility.push_back(guid);
     }
     void HandleDelayedVisibility();
 
@@ -472,6 +476,7 @@ public:
     [[nodiscard]] time_t GetLinkedRespawnTime(ObjectGuid guid) const;
     [[nodiscard]] time_t GetCreatureRespawnTime(ObjectGuid::LowType dbGuid) const
     {
+        std::lock_guard<std::mutex> lock(_respawnTimesLock);
         std::unordered_map<ObjectGuid::LowType /*dbGUID*/, time_t>::const_iterator itr = _creatureRespawnTimes.find(dbGuid);
         if (itr != _creatureRespawnTimes.end())
             return itr->second;
@@ -481,6 +486,7 @@ public:
 
     [[nodiscard]] time_t GetGORespawnTime(ObjectGuid::LowType dbGuid) const
     {
+        std::lock_guard<std::mutex> lock(_respawnTimesLock);
         std::unordered_map<ObjectGuid::LowType /*dbGUID*/, time_t>::const_iterator itr = _goRespawnTimes.find(dbGuid);
         if (itr != _goRespawnTimes.end())
             return itr->second;
@@ -734,6 +740,7 @@ public:
 
     [[nodiscard]] uint32 GetPlayerCountInZone(uint32 zoneId) const
     {
+        std::lock_guard<std::mutex> lock(_zonePlayerCountLock);
         if (auto const& it = _zonePlayerCountMap.find(zoneId); it != _zonePlayerCountMap.end())
             return it->second;
 
@@ -783,6 +790,7 @@ protected:
 
     std::mutex Lock;
     std::shared_mutex MMapLock;
+    mutable std::recursive_mutex _gridObjectLock;
 
     MapGridManager _mapGridManager;
     mutable std::mutex _preloadedGridGuidsLock;
@@ -829,7 +837,7 @@ private:
     std::unordered_set<WorldObject*> i_objectsToRemove;
 
     mutable std::mutex _delayedVisibilityLock;
-    std::unordered_set<Unit*> _objectsForDelayedVisibility;
+    std::vector<ObjectGuid> _objectsForDelayedVisibility;
 
     PartitionedUpdatableObjectLists _partitionedUpdatableObjectLists;
     mutable std::shared_mutex _partitionedUpdateListLock;
@@ -864,6 +872,7 @@ private:
 
     typedef std::multimap<time_t, ScriptAction> ScriptScheduleMap;
     ScriptScheduleMap m_scriptSchedule;
+        mutable std::mutex _scriptScheduleLock;
 
     template<class T>
     void DeleteFromWorld(T*);
@@ -875,8 +884,10 @@ private:
 
     std::unordered_map<ObjectGuid::LowType /*dbGUID*/, time_t> _creatureRespawnTimes;
     std::unordered_map<ObjectGuid::LowType /*dbGUID*/, time_t> _goRespawnTimes;
+    mutable std::mutex _respawnTimesLock;
 
     std::unordered_map<uint32, uint32> _zonePlayerCountMap;
+    mutable std::mutex _zonePlayerCountLock;
 
     std::mutex _deferredVisibilityLock;
     std::unordered_set<ObjectGuid> _deferredVisibilitySet;
@@ -987,6 +998,7 @@ private:
 template<class T, class CONTAINER>
 inline void Map::Visit(Cell const& cell, TypeContainerVisitor<T, CONTAINER>& visitor)
 {
+    auto gridLock = AcquireGridObjectReadLock();
     uint32 const grid_x = cell.GridX();
     uint32 const grid_y = cell.GridY();
 

@@ -43,19 +43,22 @@ void Map::ScriptsStart(ScriptMapMap const& scripts, uint32 id, Object* source, O
     ///- Schedule script execution for all scripts in the script map
     ScriptMap const* s2 = &(s->second);
     bool immedScript = false;
-    for (ScriptMap::const_iterator iter = s2->begin(); iter != s2->end(); ++iter)
     {
-        ScriptAction sa;
-        sa.sourceGUID = sourceGUID;
-        sa.targetGUID = targetGUID;
-        sa.ownerGUID  = ownerGUID;
+        std::lock_guard<std::mutex> lock(_scriptScheduleLock);
+        for (ScriptMap::const_iterator iter = s2->begin(); iter != s2->end(); ++iter)
+        {
+            ScriptAction sa;
+            sa.sourceGUID = sourceGUID;
+            sa.targetGUID = targetGUID;
+            sa.ownerGUID  = ownerGUID;
 
-        sa.script = &iter->second;
-        m_scriptSchedule.insert(ScriptScheduleMap::value_type(time_t(GameTime::GetGameTime().count() + iter->first), sa));
-        if (iter->first == 0)
-            immedScript = true;
+            sa.script = &iter->second;
+            m_scriptSchedule.insert(ScriptScheduleMap::value_type(time_t(GameTime::GetGameTime().count() + iter->first), sa));
+            if (iter->first == 0)
+                immedScript = true;
 
-        sScriptMgr->IncreaseScheduledScriptsCount();
+            sScriptMgr->IncreaseScheduledScriptsCount();
+        }
     }
     ///- If one of the effects should be immediate, launch the script execution
     if (/*start &&*/ immedScript && !i_scriptLock)
@@ -81,7 +84,10 @@ void Map::ScriptCommandStart(ScriptInfo const& script, uint32 delay, Object* sou
     sa.ownerGUID  = ownerGUID;
 
     sa.script = &script;
-    m_scriptSchedule.insert(ScriptScheduleMap::value_type(time_t(GameTime::GetGameTime().count() + delay), sa));
+    {
+        std::lock_guard<std::mutex> lock(_scriptScheduleLock);
+        m_scriptSchedule.insert(ScriptScheduleMap::value_type(time_t(GameTime::GetGameTime().count() + delay), sa));
+    }
 
     sScriptMgr->IncreaseScheduledScriptsCount();
 
@@ -276,16 +282,27 @@ inline GameObject* Map::_FindGameObject(WorldObject* searchObject, ObjectGuid::L
 /// Process queued scripts
 void Map::ScriptsProcess()
 {
-    if (m_scriptSchedule.empty())
+    std::vector<ScriptAction> readyScripts;
+    {
+        std::lock_guard<std::mutex> lock(_scriptScheduleLock);
+        if (m_scriptSchedule.empty())
+            return;
+
+        time_t now = time_t(GameTime::GetGameTime().count());
+        ScriptScheduleMap::iterator iter = m_scriptSchedule.begin();
+        while (iter != m_scriptSchedule.end() && iter->first <= now)
+        {
+            readyScripts.push_back(iter->second);
+            iter = m_scriptSchedule.erase(iter);
+        }
+    }
+
+    if (readyScripts.empty())
         return;
 
     ///- Process overdue queued scripts
-    ScriptScheduleMap::iterator iter = m_scriptSchedule.begin();
-    // ok as multimap is a *sorted* associative container
-    while (!m_scriptSchedule.empty() && (iter->first <= GameTime::GetGameTime().count()))
+    for (ScriptAction const& step : readyScripts)
     {
-        ScriptAction const& step = iter->second;
-
         Object* source = nullptr;
         if (step.sourceGUID)
         {
@@ -898,9 +915,6 @@ void Map::ScriptsProcess()
                 LOG_ERROR("maps.script", "Unknown script command {}.", step.script->GetDebugInfo());
                 break;
         }
-
-        m_scriptSchedule.erase(iter);
-        iter = m_scriptSchedule.begin();
         sScriptMgr->DecreaseScheduledScriptCount();
     }
 }

@@ -342,16 +342,23 @@ void MapUpdater::WorkerThread()
     {
         UpdateRequest* request = nullptr;
 
-        if (!_partitionQueue.Pop(request))
+        // Priority: partition tasks first (they're latency-sensitive for the
+        // cooperative main-thread spin in run_partition_tasks_until).
+        if (_partitionQueue.Pop(request))
         {
-            if (_queue.WaitAndPopFor(request, std::chrono::milliseconds(2)))
-            {
-                // request already set
-            }
-            else if (_partitionQueue.WaitAndPopFor(request, std::chrono::milliseconds(2)))
-            {
-                // request already set
-            }
+            // got partition task
+        }
+        else if (_queue.Pop(request))
+        {
+            // got general task
+        }
+        else
+        {
+            // Neither queue has work — wait on general queue with a short timeout
+            // then recheck partition queue. Using a single 2ms wait keeps latency
+            // low while avoiding two consecutive timed waits (was 4ms worst case).
+            if (!_queue.WaitAndPopFor(request, std::chrono::milliseconds(1)))
+                _partitionQueue.WaitAndPopFor(request, std::chrono::milliseconds(1));
         }
 
         if (request)

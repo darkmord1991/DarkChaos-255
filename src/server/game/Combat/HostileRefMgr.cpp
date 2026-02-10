@@ -27,6 +27,36 @@ HostileRefMgr::~HostileRefMgr()
     deleteReferences();
 }
 
+void HostileRefMgr::AddReference(HostileReference* reference)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    insertFirst(reference);
+}
+
+void HostileRefMgr::RemoveReference(HostileReference* reference)
+{
+    if (!reference)
+        return;
+
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    reference->delink();
+}
+
+void HostileRefMgr::UpdateOnlineStateForPhase(uint32 newPhaseMask)
+{
+    std::lock_guard<std::recursive_mutex> guard(_lock);
+    HostileReference* ref = getFirst();
+    while (ref)
+    {
+        HostileReference* nextRef = ref->next();
+        if (Unit* unit = ref->GetSource()->GetOwner())
+            if (Creature* creature = unit->ToCreature())
+                ref->setOnlineOfflineState(creature->InSamePhase(newPhaseMask));
+
+        ref = nextRef;
+    }
+}
+
 //=================================================
 // send threat to all my hateres for the victim
 // The victim is hated than by them as well

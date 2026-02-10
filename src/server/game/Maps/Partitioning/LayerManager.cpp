@@ -60,17 +60,41 @@ namespace
 LayerManager* LayerManager::instance()
 {
     static LayerManager instance;
+    static std::once_flag initFlag;
+    std::call_once(initFlag, [&] { instance.LoadConfig(); });
     return &instance;
+}
+
+void LayerManager::LoadConfig()
+{
+    _config.enabled = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_LAYERS_ENABLED);
+    _config.capacity = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY);
+    _config.maxLayers = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_MAX);
+    _config.npcLayering = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_NPC_LAYERS);
+    _config.goLayering = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_GO_LAYERS);
+    _config.skipCloneSpawnsIfNoPlayers = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_SKIP_CLONES_NO_PLAYERS);
+    _config.emitPerLayerCloneMetrics = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_LAYER_CLONE_METRICS);
+    _config.lazyCloneLoading = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_LAYER_LAZY_CLONE_LOADING);
+    _config.softTransfersEnabled = sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_LAYER_SOFT_TRANSFERS);
+    _config.softTransferTimeoutMs = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_SOFT_TRANSFER_TIMEOUT_MS);
+    _config.hysteresisCreationWarmupMs = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_HYSTERESIS_CREATION_MS);
+    _config.hysteresisDestructionCooldownMs = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_HYSTERESIS_DESTRUCTION_MS);
+
+    ParsePerMapCapacityOverrides();
+    LoadRebalancingConfig();
+
+    LOG_INFO("map.partition", "LayerManager config loaded: enabled={} capacity={} max={} npc={} go={}",
+        _config.enabled, _config.capacity, _config.maxLayers, _config.npcLayering, _config.goLayering);
 }
 
 bool LayerManager::IsLayeringEnabled() const
 {
-    return sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_LAYERS_ENABLED);
+    return _config.enabled;
 }
 
 uint32_t LayerManager::GetLayerCapacity() const
 {
-    return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY);
+    return _config.capacity;
 }
 
 uint32_t LayerManager::GetLayerCapacity(uint32 mapId) const
@@ -79,12 +103,12 @@ uint32_t LayerManager::GetLayerCapacity(uint32 mapId) const
     auto it = _perMapCapacity.find(mapId);
     if (it != _perMapCapacity.end())
         return it->second;
-    return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_CAPACITY);
+    return _config.capacity;
 }
 
 uint32_t LayerManager::GetLayerMax() const
 {
-    return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_MAX);
+    return _config.maxLayers;
 }
 
 bool LayerManager::IsRuntimeDiagnosticsEnabled() const
@@ -104,22 +128,22 @@ void LayerManager::SetRuntimeDiagnosticsEnabled(bool enabled)
 
 bool LayerManager::IsSoftTransfersEnabled() const
 {
-    return sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_LAYER_SOFT_TRANSFERS);
+    return _config.softTransfersEnabled;
 }
 
 uint32 LayerManager::GetSoftTransferTimeoutMs() const
 {
-    return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_SOFT_TRANSFER_TIMEOUT_MS);
+    return _config.softTransferTimeoutMs;
 }
 
 uint32 LayerManager::GetHysteresisCreationWarmupMs() const
 {
-    return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_HYSTERESIS_CREATION_MS);
+    return _config.hysteresisCreationWarmupMs;
 }
 
 uint32 LayerManager::GetHysteresisDestructionCooldownMs() const
 {
-    return sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_LAYER_HYSTERESIS_DESTRUCTION_MS);
+    return _config.hysteresisDestructionCooldownMs;
 }
 
 void LayerManager::ParsePerMapCapacityOverrides()
@@ -296,35 +320,29 @@ uint32_t LayerManager::GetLayerCount(uint32_t mapId) const
 
 std::vector<uint32> LayerManager::GetLayerIds(uint32 mapId) const
 {
-    std::unordered_set<uint32> idSet;
     std::shared_lock<std::shared_mutex> guard(_layerLock);
 
-    // Collect from player layer tracking
+    // _layers[mapId] is the canonical source of all active layers.
+    // Layers are created via CreateLayer() which always registers them in _layers,
+    // so NPC/GO-only layers without player entries are not a real case.
     auto mapIt = _layers.find(mapId);
-    if (mapIt != _layers.end())
-    {
-        for (auto const& [layerId, _] : mapIt->second)
-            idSet.insert(layerId);
-    }
+    if (mapIt == _layers.end())
+        return { 0 }; // Always include default layer
 
-    // Also collect from NPC tracking (layers may have NPCs but no players)
-    for (auto const& [_, assignment] : _npcLayers)
+    std::vector<uint32> layerIds;
+    layerIds.reserve(mapIt->second.size() + 1);
+    bool hasZero = false;
+    for (auto const& [layerId, _] : mapIt->second)
     {
-        if (assignment.mapId == mapId)
-            idSet.insert(assignment.layerId);
-    }
-
-    // Also collect from GO tracking
-    for (auto const& [_, assignment] : _goLayers)
-    {
-        if (assignment.mapId == mapId)
-            idSet.insert(assignment.layerId);
+        layerIds.push_back(layerId);
+        if (layerId == 0)
+            hasZero = true;
     }
 
     // Always include layer 0
-    idSet.insert(0);
+    if (!hasZero)
+        layerIds.push_back(0);
 
-    std::vector<uint32> layerIds(idSet.begin(), idSet.end());
     std::sort(layerIds.begin(), layerIds.end());
     return layerIds;
 }
@@ -407,22 +425,24 @@ bool LayerManager::HasPlayersOnMap(uint32 mapId) const
 
 bool LayerManager::SkipCloneSpawnsIfNoPlayers() const
 {
-    return sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_SKIP_CLONES_NO_PLAYERS);
+    return _config.skipCloneSpawnsIfNoPlayers;
 }
 
 bool LayerManager::EmitPerLayerCloneMetrics() const
 {
-    return sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_LAYER_CLONE_METRICS);
+    return _config.emitPerLayerCloneMetrics;
 }
 
 bool LayerManager::LazyCloneLoadingEnabled() const
 {
-    return sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_LAYER_LAZY_CLONE_LOADING);
+    return _config.lazyCloneLoading;
 }
 
 void LayerManager::AssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerGuid, uint32_t layerId)
 {
     bool layerWasEmpty = false;
+    bool needsDespawn = false;
+    uint32 despawnMapId = 0, despawnLayerId = 0;
     {
         std::unique_lock<std::shared_mutex> guard(_layerLock);
 
@@ -432,7 +452,12 @@ void LayerManager::AssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerG
         {
             auto& oldLayer = _layers[it->second.mapId][it->second.layerId];
             oldLayer.erase(playerGuid.GetCounter());
-            CleanupEmptyLayers(it->second.mapId, it->second.layerId);
+            if (CleanupEmptyLayers(it->second.mapId, it->second.layerId))
+            {
+                needsDespawn = true;
+                despawnMapId = it->second.mapId;
+                despawnLayerId = it->second.layerId;
+            }
         }
 
         // Assign to new
@@ -451,6 +476,10 @@ void LayerManager::AssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerG
         }
     }
 
+    // Phase 2: expensive despawn outside lock
+    if (needsDespawn)
+        DespawnLayerClones(despawnMapId, despawnLayerId);
+
     SyncControlledToLayer(mapId, playerGuid, layerId);
 
     if (layerWasEmpty && layerId != 0)
@@ -462,100 +491,120 @@ void LayerManager::AssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerG
 
 void LayerManager::RemovePlayerFromLayer(uint32_t mapId, ObjectGuid const& playerGuid)
 {
-    std::unique_lock<std::shared_mutex> guard(_layerLock);
-    
-    auto it = _playerLayers.find(playerGuid.GetCounter());
-    if (it == _playerLayers.end())
-        return;
-
-    // Verify map match
-    if (it->second.mapId != mapId)
-        return;
-
-    auto& layer = _layers[mapId][it->second.layerId];
-    layer.erase(playerGuid.GetCounter());
-    CleanupEmptyLayers(mapId, it->second.layerId);
-
-    _playerLayers.erase(it);
-    
-    // Erase atomic entry entirely to prevent unbounded map growth
-    _atomicPlayerLayers.erase(playerGuid.GetCounter());
-
-    if (IsRuntimeDiagnosticsEnabled())
+    bool needsDespawn = false;
+    uint32 despawnLayerId = 0;
     {
-        LOG_INFO("map.partition", "Diag: RemovePlayerFromLayer player={} map={}",
-            playerGuid.ToString(), mapId);
+        std::unique_lock<std::shared_mutex> guard(_layerLock);
+        
+        auto it = _playerLayers.find(playerGuid.GetCounter());
+        if (it == _playerLayers.end())
+            return;
+
+        // Verify map match
+        if (it->second.mapId != mapId)
+            return;
+
+        auto& layer = _layers[mapId][it->second.layerId];
+        layer.erase(playerGuid.GetCounter());
+        if (CleanupEmptyLayers(mapId, it->second.layerId))
+        {
+            needsDespawn = true;
+            despawnLayerId = it->second.layerId;
+        }
+
+        _playerLayers.erase(it);
+        
+        // Erase atomic entry entirely to prevent unbounded map growth
+        _atomicPlayerLayers.erase(playerGuid.GetCounter());
+
+        if (IsRuntimeDiagnosticsEnabled())
+        {
+            LOG_INFO("map.partition", "Diag: RemovePlayerFromLayer player={} map={}",
+                playerGuid.ToString(), mapId);
+        }
     }
+
+    // Phase 2: expensive despawn outside lock
+    if (needsDespawn)
+        DespawnLayerClones(mapId, despawnLayerId);
 }
 
-void LayerManager::CleanupEmptyLayers(uint32 mapId, uint32 layerId)
+bool LayerManager::CleanupEmptyLayers(uint32 mapId, uint32 layerId)
 {
-    // LOCK ORDER: _layerLock (held by caller) -> MapMgr internal lock (via DoForAllMapsWithMapId)
-    // Never acquire _layerLock while holding a Map lock or MapMgr lock — this would invert the order.
-    // Note: _layerLock must already be held (exclusive) by caller
+    // Phase 1: In-memory bookkeeping only (called while _layerLock is held by caller).
+    // Returns true if the layer was removed and DespawnLayerClones should be called
+    // AFTER releasing _layerLock.
     auto mapIt = _layers.find(mapId);
     if (mapIt == _layers.end())
-        return;
+        return false;
     auto& mapLayers = mapIt->second;
     // Never destroy the base layer (layer 0) — it holds original spawns.
     if (layerId == 0)
-        return;
+        return false;
 
     auto layerIt = mapLayers.find(layerId);
     if (layerIt == mapLayers.end())
-        return;
-    if (layerIt->second.empty())
+        return false;
+    if (!layerIt->second.empty())
+        return false;
+
+    // Layer is empty — remove from tracking
+    mapLayers.erase(layerId);
+
+    // Use reverse index for O(1) NPC/GO cleanup instead of full table scan
+    uint64 indexKey = (static_cast<uint64>(mapId) << 32) | layerId;
+
+    auto npcIndexIt = _npcLayerIndex.find(indexKey);
+    if (npcIndexIt != _npcLayerIndex.end())
     {
-        mapLayers.erase(layerId);
-
-        sMapMgr->DoForAllMapsWithMapId(mapId, [&](Map* map)
-        {
-            if (!map)
-                return;
-
-            map->ClearLoadedLayer(layerId);
-
-            std::vector<Creature*> creaturesToRemove;
-            for (auto const& [_, creature] : map->GetCreatureBySpawnIdStore())
-            {
-                if (creature && creature->IsLayerClone() && creature->GetLayerCloneId() == layerId && creature->IsInWorld())
-                    creaturesToRemove.push_back(creature);
-            }
-
-            std::vector<GameObject*> gosToRemove;
-            for (auto const& [_, go] : map->GetGameObjectBySpawnIdStore())
-            {
-                if (go && go->IsLayerClone() && go->GetLayerCloneId() == layerId && go->IsInWorld())
-                    gosToRemove.push_back(go);
-            }
-
-            for (Creature* creature : creaturesToRemove)
-                creature->AddObjectToRemoveList();
-            for (GameObject* go : gosToRemove)
-                go->AddObjectToRemoveList();
-        });
-
-        for (auto it = _npcLayers.begin(); it != _npcLayers.end();)
-        {
-            if (it->second.mapId == mapId && it->second.layerId == layerId)
-                it = _npcLayers.erase(it);
-            else
-                ++it;
-        }
-
-        for (auto it = _goLayers.begin(); it != _goLayers.end();)
-        {
-            if (it->second.mapId == mapId && it->second.layerId == layerId)
-                it = _goLayers.erase(it);
-            else
-                ++it;
-        }
-
-        if (mapLayers.empty())
-        {
-            _layers.erase(mapId);
-        }
+        for (LayerKey key : npcIndexIt->second)
+            _npcLayers.erase(key);
+        _npcLayerIndex.erase(npcIndexIt);
     }
+
+    auto goIndexIt = _goLayerIndex.find(indexKey);
+    if (goIndexIt != _goLayerIndex.end())
+    {
+        for (LayerKey key : goIndexIt->second)
+            _goLayers.erase(key);
+        _goLayerIndex.erase(goIndexIt);
+    }
+
+    if (mapLayers.empty())
+        _layers.erase(mapId);
+
+    return true; // Caller must call DespawnLayerClones(mapId, layerId) outside the lock
+}
+
+void LayerManager::DespawnLayerClones(uint32 mapId, uint32 layerId)
+{
+    // Phase 2: Expensive map iteration — must be called OUTSIDE _layerLock.
+    sMapMgr->DoForAllMapsWithMapId(mapId, [&](Map* map)
+    {
+        if (!map)
+            return;
+
+        map->ClearLoadedLayer(layerId);
+
+        std::vector<Creature*> creaturesToRemove;
+        for (auto const& [_, creature] : map->GetCreatureBySpawnIdStore())
+        {
+            if (creature && creature->IsLayerClone() && creature->GetLayerCloneId() == layerId && creature->IsInWorld())
+                creaturesToRemove.push_back(creature);
+        }
+
+        std::vector<GameObject*> gosToRemove;
+        for (auto const& [_, go] : map->GetGameObjectBySpawnIdStore())
+        {
+            if (go && go->IsLayerClone() && go->GetLayerCloneId() == layerId && go->IsInWorld())
+                gosToRemove.push_back(go);
+        }
+
+        for (Creature* creature : creaturesToRemove)
+            creature->AddObjectToRemoveList();
+        for (GameObject* go : gosToRemove)
+            go->AddObjectToRemoveList();
+    });
 }
 
 void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerGuid)
@@ -571,6 +620,8 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
     std::string_view reason = "auto";
     bool shouldSync = false;
     bool createdNewLayer = false;
+    bool needsDespawn = false;
+    uint32 despawnMapId = 0, despawnLayerId = 0;
 
     {
         std::unique_lock<std::shared_mutex> guard(_layerLock);
@@ -589,8 +640,12 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
                 auto& oldLayerPlayers = _layers[mapId][it->second.layerId];
                 oldLayerPlayers.erase(playerGuid.GetCounter());
 
-                if (oldLayerPlayers.empty())
-                    CleanupEmptyLayers(mapId, it->second.layerId);
+                if (oldLayerPlayers.empty() && CleanupEmptyLayers(mapId, it->second.layerId))
+                {
+                    needsDespawn = true;
+                    despawnMapId = mapId;
+                    despawnLayerId = it->second.layerId;
+                }
 
                 // Assign to party leader's layer
                 _layers[mapId][partyTargetLayer].insert(playerGuid.GetCounter());
@@ -646,8 +701,12 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
                 auto& oldLayerPlayers = mapLayers[currentLayer];
                 oldLayerPlayers.erase(playerGuid.GetCounter());
 
-                if (oldLayerPlayers.empty())
-                    CleanupEmptyLayers(mapId, currentLayer);
+                if (oldLayerPlayers.empty() && CleanupEmptyLayers(mapId, currentLayer))
+                {
+                    needsDespawn = true;
+                    despawnMapId = mapId;
+                    despawnLayerId = currentLayer;
+                }
 
                 mapLayers[bestLayerId].insert(playerGuid.GetCounter());
                 _playerLayers[playerGuid.GetCounter()] = { mapId, 0, bestLayerId };
@@ -671,8 +730,12 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
                 auto& oldLayer = _layers[oldMapId][oldLayerId];
                 oldLayer.erase(playerGuid.GetCounter());
 
-                if (oldLayer.empty())
-                    CleanupEmptyLayers(oldMapId, oldLayerId);
+                if (oldLayer.empty() && CleanupEmptyLayers(oldMapId, oldLayerId))
+                {
+                    needsDespawn = true;
+                    despawnMapId = oldMapId;
+                    despawnLayerId = oldLayerId;
+                }
 
                 _playerLayers.erase(it);
             }
@@ -833,6 +896,10 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
         }
     }  // Release lock here
 
+    // Phase 2: expensive despawn outside lock
+    if (needsDespawn)
+        DespawnLayerClones(despawnMapId, despawnLayerId);
+
     // Perform DB I/O outside the lock to prevent deadlocks
     if (shouldSync)
     {
@@ -942,13 +1009,19 @@ uint32 LayerManager::GetPartyTargetLayer(uint32 mapId, ObjectGuid const& playerG
     if (!IsLayeringEnabled())
         return 0;
 
-    uint64 nowMs = GameTime::GetGameTimeMS().count();
+    // Fast path: thread-local cache avoids any lock on the hot path
+    struct PartyLayerTLCache
     {
-        std::lock_guard<std::mutex> guard(_partyLayerCacheLock);
-        auto it = _partyTargetLayerCache.find(playerGuid.GetCounter());
-        if (it != _partyTargetLayerCache.end() && nowMs <= it->second.expiresMs && it->second.mapId == mapId)
-            return it->second.layerId;
-    }
+        ObjectGuid::LowType guid = 0;
+        uint32 mapId = 0;
+        uint32 layerId = 0;
+        uint64 expiresMs = 0;
+    };
+    thread_local PartyLayerTLCache tlCache;
+
+    uint64 nowMs = GameTime::GetGameTimeMS().count();
+    if (tlCache.guid == playerGuid.GetCounter() && tlCache.mapId == mapId && nowMs <= tlCache.expiresMs)
+        return tlCache.layerId;
 
     Player* player = ObjectAccessor::FindPlayer(playerGuid);
     if (!player)
@@ -962,30 +1035,39 @@ uint32 LayerManager::GetPartyTargetLayer(uint32 mapId, ObjectGuid const& playerG
     if (leaderGuid == playerGuid)
         return 0; // Player is leader, no target layer
 
-    std::shared_lock<std::shared_mutex> guard(_layerLock);
-    auto it = _playerLayers.find(leaderGuid.GetCounter());
-    if (it == _playerLayers.end())
-        return 0;
+    // LOCK ORDER: _layerLock -> _partyLayerCacheLock (matches documented invariant)
+    uint32 layerId = 0;
+    {
+        std::shared_lock<std::shared_mutex> layerGuard(_layerLock);
+        auto it = _playerLayers.find(leaderGuid.GetCounter());
+        if (it == _playerLayers.end())
+            return 0;
 
-    // Blizzard-style: sync to leader's layer if on the same MAP (not zone)
-    if (it->second.mapId != mapId)
-        return 0;
+        // Blizzard-style: sync to leader's layer if on the same MAP (not zone)
+        if (it->second.mapId != mapId)
+            return 0;
+
+        layerId = it->second.layerId;
+    }
 
     LOG_DEBUG("map.partition", "Party sync: Player {} targeting leader {} layer {} on map {}",
-        playerGuid.ToString(), leaderGuid.ToString(), it->second.layerId, mapId);
-    
-    uint32 layerId = it->second.layerId;
+        playerGuid.ToString(), leaderGuid.ToString(), layerId, mapId);
+
+    // Update shared cache (lock order safe: _layerLock already released)
     {
-        std::lock_guard<std::mutex> guard(_partyLayerCacheLock);
+        std::lock_guard<std::mutex> cacheGuard(_partyLayerCacheLock);
         _partyTargetLayerCache[playerGuid.GetCounter()] = { mapId, layerId, nowMs + 1000 };
     }
+
+    // Update thread-local cache
+    tlCache = { playerGuid.GetCounter(), mapId, layerId, nowMs + 1000 };
 
     return layerId;
 }
 
 bool LayerManager::IsNPCLayeringEnabled() const
 {
-    return IsLayeringEnabled() && sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_NPC_LAYERS);
+    return _config.npcLayering;
 }
 
 void LayerManager::AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& npcGuid, uint32 layerId)
@@ -994,7 +1076,10 @@ void LayerManager::AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid cons
         return;
 
     std::unique_lock<std::shared_mutex> guard(_layerLock);
-    _npcLayers[MakeLayerKey(mapId, npcGuid)] = { mapId, zoneId, layerId, npcGuid.GetEntry() };
+    LayerKey layerKey = MakeLayerKey(mapId, npcGuid);
+    _npcLayers[layerKey] = { mapId, zoneId, layerId, npcGuid.GetEntry() };
+    uint64 indexKey = (static_cast<uint64>(mapId) << 32) | layerId;
+    _npcLayerIndex[indexKey].insert(layerKey);
     
     LOG_DEBUG("map.partition", "Assigned NPC {} to layer {} in map {} zone {}",
         npcGuid.ToString(), layerId, mapId, zoneId);
@@ -1003,7 +1088,20 @@ void LayerManager::AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid cons
 void LayerManager::RemoveNPCFromLayer(uint32 mapId, ObjectGuid const& npcGuid)
 {
     std::unique_lock<std::shared_mutex> guard(_layerLock);
-    _npcLayers.erase(MakeLayerKey(mapId, npcGuid));
+    LayerKey layerKey = MakeLayerKey(mapId, npcGuid);
+    auto it = _npcLayers.find(layerKey);
+    if (it != _npcLayers.end())
+    {
+        uint64 indexKey = (static_cast<uint64>(it->second.mapId) << 32) | it->second.layerId;
+        auto indexIt = _npcLayerIndex.find(indexKey);
+        if (indexIt != _npcLayerIndex.end())
+        {
+            indexIt->second.erase(layerKey);
+            if (indexIt->second.empty())
+                _npcLayerIndex.erase(indexIt);
+        }
+        _npcLayers.erase(it);
+    }
 }
 
 uint32 LayerManager::GetLayerForNPC(uint32 mapId, ObjectGuid const& npcGuid) const
@@ -1087,7 +1185,7 @@ uint32 LayerManager::GetDefaultLayerForMap(uint32 mapId, uint64 seed) const
 
 bool LayerManager::IsGOLayeringEnabled() const
 {
-    return IsLayeringEnabled() && sWorld->getBoolConfig(CONFIG_MAP_PARTITIONS_GO_LAYERS);
+    return _config.goLayering;
 }
 
 void LayerManager::AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& goGuid, uint32 layerId)
@@ -1096,7 +1194,10 @@ void LayerManager::AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const
         return;
 
     std::unique_lock<std::shared_mutex> guard(_layerLock);
-    _goLayers[MakeLayerKey(mapId, goGuid)] = { mapId, zoneId, layerId, goGuid.GetEntry() };
+    LayerKey layerKey = MakeLayerKey(mapId, goGuid);
+    _goLayers[layerKey] = { mapId, zoneId, layerId, goGuid.GetEntry() };
+    uint64 indexKey = (static_cast<uint64>(mapId) << 32) | layerId;
+    _goLayerIndex[indexKey].insert(layerKey);
 
     LOG_DEBUG("map.partition", "Assigned GO {} to layer {} in map {} zone {}",
         goGuid.ToString(), layerId, mapId, zoneId);
@@ -1105,7 +1206,20 @@ void LayerManager::AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const
 void LayerManager::RemoveGOFromLayer(uint32 mapId, ObjectGuid const& goGuid)
 {
     std::unique_lock<std::shared_mutex> guard(_layerLock);
-    _goLayers.erase(MakeLayerKey(mapId, goGuid));
+    LayerKey layerKey = MakeLayerKey(mapId, goGuid);
+    auto it = _goLayers.find(layerKey);
+    if (it != _goLayers.end())
+    {
+        uint64 indexKey = (static_cast<uint64>(it->second.mapId) << 32) | it->second.layerId;
+        auto indexIt = _goLayerIndex.find(indexKey);
+        if (indexIt != _goLayerIndex.end())
+        {
+            indexIt->second.erase(layerKey);
+            if (indexIt->second.empty())
+                _goLayerIndex.erase(indexIt);
+        }
+        _goLayers.erase(it);
+    }
 }
 
 uint32 LayerManager::GetLayerForGO(uint32 mapId, ObjectGuid const& goGuid) const
@@ -1416,6 +1530,8 @@ void LayerManager::HandlePersistentLayerAssignmentLoad(ObjectGuid const& playerG
         return;
 
     bool needsReassign = false;
+    bool needsDespawn = false;
+    uint32 despawnMapId = 0, despawnLayerId = 0;
     {
         std::unique_lock<std::shared_mutex> guard(_layerLock);
 
@@ -1444,7 +1560,12 @@ void LayerManager::HandlePersistentLayerAssignmentLoad(ObjectGuid const& playerG
             // Remove from current layer.
             auto& oldLayer = _layers[it->second.mapId][it->second.layerId];
             oldLayer.erase(playerGuid.GetCounter());
-            CleanupEmptyLayers(it->second.mapId, it->second.layerId);
+            if (CleanupEmptyLayers(it->second.mapId, it->second.layerId))
+            {
+                needsDespawn = true;
+                despawnMapId = it->second.mapId;
+                despawnLayerId = it->second.layerId;
+            }
 
             // Assign to persisted layer
             _layers[mapId][layerId].insert(playerGuid.GetCounter());
@@ -1458,6 +1579,10 @@ void LayerManager::HandlePersistentLayerAssignmentLoad(ObjectGuid const& playerG
         }
         // else: already on the correct persisted layer, or different map — no action
     }
+
+    // Phase 2: expensive despawn outside lock
+    if (needsDespawn)
+        DespawnLayerClones(despawnMapId, despawnLayerId);
 
     // If we moved the player, rebuild visibility outside the lock
     if (needsReassign)
@@ -1498,7 +1623,8 @@ void LayerManager::EvaluateLayerRebalancing(uint32 mapId)
     std::vector<uint32> layersToMerge;
     
     {
-        std::unique_lock<std::shared_mutex> guard(_layerLock);
+        // Use shared lock for read-only evaluation — no mutation happens here
+        std::shared_lock<std::shared_mutex> guard(_layerLock);
         auto mapIt = _layers.find(mapId);
         if (mapIt == _layers.end())
             return;
@@ -1655,9 +1781,10 @@ void LayerManager::ConsolidateLayers(uint32 mapId, uint32 sourceLayerId, uint32 
     }
 
     if (migrated > 0)
+    {
         LOG_INFO("map.partition", "Layer balance: map={} moved={} (max layers reached)", mapId, migrated);
-    if (migrated > 0)
         _rebalancingMetrics.playersMigrated.fetch_add(migrated, std::memory_order_relaxed);
+    }
 }
 
 void LayerManager::BalanceLayersAtMax(uint32 mapId)
@@ -2026,7 +2153,19 @@ void LayerManager::ProcessPendingLayerAssignments()
             std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
             auto it = _pendingLayerAssignments.find(guidLow);
             if (it != _pendingLayerAssignments.end())
-                it->second.readyMs = nowMs + 1000;
+            {
+                ++it->second.retryCount;
+                if (it->second.retryCount >= PendingLayerAssignment::MAX_RETRIES)
+                {
+                    LOG_WARN("map.partition", "PendingLayerAssignment for guid {} exceeded max retries ({}), removing",
+                        guidLow, PendingLayerAssignment::MAX_RETRIES);
+                    _pendingLayerAssignments.erase(it);
+                }
+                else
+                {
+                    it->second.readyMs = nowMs + 1000;
+                }
+            }
         }
     }
 }
@@ -2122,9 +2261,10 @@ void LayerManager::Update(uint32 mapId, uint32 diff)
     }
 
     // 3. Layer creation on sustained pressure (map-wide, not tied to map entry)
+    // Use shared lock for the read-only evaluation, only escalate if creation is needed.
     uint32 createLayerId = 0;
     {
-        std::unique_lock<std::shared_mutex> guard(_layerLock);
+        std::shared_lock<std::shared_mutex> guard(_layerLock);
         auto mapIt = _layers.find(mapId);
         if (mapIt != _layers.end() && !mapIt->second.empty())
         {
@@ -2220,6 +2360,8 @@ void LayerManager::Update(uint32 mapId, uint32 diff)
 
 void LayerManager::ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGuid)
 {
+    bool needsDespawn = false;
+    uint32 despawnMapId = 0, despawnLayerId = 0;
     {
         std::unique_lock<std::shared_mutex> guard(_layerLock);
         auto it = _playerLayers.find(playerGuid.GetCounter());
@@ -2231,8 +2373,13 @@ void LayerManager::ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGuid)
             auto& layer = _layers[oldMapId][oldLayerId];
             layer.erase(playerGuid.GetCounter());
 
-            // Clean up the empty layer and reassign orphaned NPCs
-            CleanupEmptyLayers(oldMapId, oldLayerId);
+            // Clean up the empty layer — defer despawn to outside lock
+            if (CleanupEmptyLayers(oldMapId, oldLayerId))
+            {
+                needsDespawn = true;
+                despawnMapId = oldMapId;
+                despawnLayerId = oldLayerId;
+            }
 
             _playerLayers.erase(it);
 
@@ -2247,6 +2394,10 @@ void LayerManager::ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGuid)
             }
         }
     }
+
+    // Phase 2: expensive despawn outside lock
+    if (needsDespawn)
+        DespawnLayerClones(despawnMapId, despawnLayerId);
 
     // Clean up layer switch cooldown to prevent unbounded growth
     {
@@ -2285,7 +2436,7 @@ void LayerManager::GetPlayerAndNPCLayer(uint32 mapId, ObjectGuid const& playerGu
     if (playerIt != _playerLayers.end() && playerIt->second.mapId == mapId)
         outPlayerLayer = playerIt->second.layerId;
 
-    auto npcIt = _npcLayers.find(npcGuid.GetCounter());
+    auto npcIt = _npcLayers.find(MakeLayerKey(mapId, npcGuid));
     if (npcIt != _npcLayers.end() && npcIt->second.mapId == mapId)
         outNpcLayer = npcIt->second.layerId;
 }
@@ -2302,7 +2453,7 @@ void LayerManager::GetPlayerAndGOLayer(uint32 mapId, ObjectGuid const& playerGui
     if (playerIt != _playerLayers.end() && playerIt->second.mapId == mapId)
         outPlayerLayer = playerIt->second.layerId;
 
-    auto goIt = _goLayers.find(goGuid.GetCounter());
+    auto goIt = _goLayers.find(MakeLayerKey(mapId, goGuid));
     if (goIt != _goLayers.end() && goIt->second.mapId == mapId)
         outGoLayer = goIt->second.layerId;
 }

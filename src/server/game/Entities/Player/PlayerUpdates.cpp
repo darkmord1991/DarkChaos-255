@@ -1530,8 +1530,8 @@ void Player::UpdateFFAPvPState(bool reset /*= true*/)
                                        UNIT_BYTE2_FLAG_FFA_PVP);
 
             // xinef: iterate attackers
-            AttackerSet        toRemove;
-            AttackerSet const& attackers = getAttackers();
+            AttackerSet toRemove;
+            AttackerSet attackers = getAttackers();
             for (AttackerSet::const_iterator itr = attackers.begin();
                  itr != attackers.end(); ++itr)
                 if (!(*itr)->IsValidAttackTarget(this))

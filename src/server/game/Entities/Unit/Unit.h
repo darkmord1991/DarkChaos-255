@@ -35,6 +35,7 @@
 #include "UnitUtils.h"
 #include <atomic>
 #include <functional>
+#include <mutex>
 #include <utility>
 
 #define WORLD_TRIGGER   12999
@@ -888,7 +889,7 @@ public:
     void CastStop(uint32 except_spellid = 0, bool withInstant = true);
     bool AttackStop();
     void RemoveAllAttackers();
-    [[nodiscard]] AttackerSet const& getAttackers() const { return m_attackers; }
+    [[nodiscard]] AttackerSet getAttackers() const { std::lock_guard<std::recursive_mutex> lock(_attackersLock); return m_attackers; }
     [[nodiscard]] bool GetMeleeAttackPoint(Unit* attacker, Position& pos);
     [[nodiscard]] bool isAttackingPlayer() const;
     [[nodiscard]] Unit* GetVictim() const { return m_attacking; }
@@ -943,8 +944,8 @@ public:
     void TauntFadeOut(Unit* taunter);
     ThreatMgr& GetThreatMgr() { return m_ThreatMgr; }
     ThreatMgr const& GetThreatMgr() const { return m_ThreatMgr; }
-    void addHatedBy(HostileReference* pHostileReference) { m_HostileRefMgr.insertFirst(pHostileReference); };
-    void removeHatedBy(HostileReference* /*pHostileReference*/) { /* nothing to do yet */ }
+    void addHatedBy(HostileReference* pHostileReference) { m_HostileRefMgr.AddReference(pHostileReference); }
+    void removeHatedBy(HostileReference* pHostileReference) { m_HostileRefMgr.RemoveReference(pHostileReference); }
     HostileRefMgr& getHostileRefMgr() { return m_HostileRefMgr; }
 
     // Redirect Threat
@@ -1525,12 +1526,18 @@ public:
     // Thread-safe visible aura access - used during parallel map updates
     std::vector<std::pair<uint8, AuraApplication*>> GetVisibleAurasSnapshot()
     {
-        std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
-        return std::vector<std::pair<uint8, AuraApplication*>>(m_visibleAuras.begin(), m_visibleAuras.end());
+        std::lock_guard<std::recursive_mutex> auraLock(_auraLock);
+        std::lock_guard<std::recursive_mutex> visibleLock(_visibleAurasLock);
+        std::vector<std::pair<uint8, AuraApplication*>> snapshot;
+        snapshot.reserve(m_visibleAuras.size());
+        for (auto const& entry : m_visibleAuras)
+            snapshot.push_back(entry);
+        return snapshot;
     }
     AuraApplication* GetVisibleAura(uint8 slot)
     {
-        std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
+        std::lock_guard<std::recursive_mutex> auraLock(_auraLock);
+        std::lock_guard<std::recursive_mutex> visibleLock(_visibleAurasLock);
         VisibleAuraMap::iterator itr = m_visibleAuras.find(slot);
         if (itr != m_visibleAuras.end())
             return itr->second;
@@ -1539,7 +1546,8 @@ public:
     void SetVisibleAura(uint8 slot, AuraApplication* aur)
     {
         {
-            std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
+            std::lock_guard<std::recursive_mutex> auraLock(_auraLock);
+            std::lock_guard<std::recursive_mutex> visibleLock(_visibleAurasLock);
             m_visibleAuras[slot] = aur;
         }
         UpdateAuraForGroup(slot);
@@ -1547,7 +1555,8 @@ public:
     void RemoveVisibleAura(uint8 slot)
     {
         {
-            std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
+            std::lock_guard<std::recursive_mutex> auraLock(_auraLock);
+            std::lock_guard<std::recursive_mutex> visibleLock(_visibleAurasLock);
             m_visibleAuras.erase(slot);
         }
         UpdateAuraForGroup(slot);
@@ -2160,6 +2169,7 @@ protected:
 
     float m_createStats[MAX_STATS];
 
+    mutable std::recursive_mutex _attackersLock;
     AttackerSet m_attackers;
     Unit* m_attacking;
 
@@ -2175,6 +2185,7 @@ protected:
     uint32 m_transform;
 
     Spell* m_currentSpells[CURRENT_MAX_SPELL];
+    mutable std::recursive_mutex _currentSpellsLock;
 
     mutable std::recursive_mutex _auraLock;
     AuraMap m_ownedAuras;
@@ -2253,8 +2264,8 @@ private:
 
     [[nodiscard]] float processDummyAuras(float TakenTotalMod) const;
 
-    void _addAttacker(Unit* pAttacker) { m_attackers.insert(pAttacker); }   ///@note: Call only in Unit::Attack()
-    void _removeAttacker(Unit* pAttacker) { m_attackers.erase(pAttacker); } ///@note: Call only in Unit::AttackStop()
+    void _addAttacker(Unit* pAttacker) { std::lock_guard<std::recursive_mutex> lock(_attackersLock); m_attackers.insert(pAttacker); }   ///@note: Call only in Unit::Attack()
+    void _removeAttacker(Unit* pAttacker) { std::lock_guard<std::recursive_mutex> lock(_attackersLock); m_attackers.erase(pAttacker); } ///@note: Call only in Unit::AttackStop()
 
     //----------- Private variables ----------//
     uint32 m_state;                                     // Even derived shouldn't modify

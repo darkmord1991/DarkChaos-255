@@ -61,6 +61,7 @@ public:
     uint32 GetHysteresisCreationWarmupMs() const;
     uint32 GetHysteresisDestructionCooldownMs() const;
     void ParsePerMapCapacityOverrides();
+    void LoadConfig();
     
     // ======================== PLAYER LAYER QUERIES ========================
     // Blizzard-style: layers are map-wide (continent-wide), not per-zone.
@@ -154,7 +155,8 @@ private:
     void ReassignNPCsForNewLayer(uint32 mapId, uint32 layerId);
     void ReassignGOsForNewLayer(uint32 mapId, uint32 layerId);
     void HandlePersistentLayerAssignmentLoad(ObjectGuid const& playerGuid, PreparedQueryResult result);
-    void CleanupEmptyLayers(uint32 mapId, uint32 layerId);
+    bool CleanupEmptyLayers(uint32 mapId, uint32 layerId);
+    void DespawnLayerClones(uint32 mapId, uint32 layerId);
     void BalanceLayersAtMax(uint32 mapId);
     void RebalanceBotLayers(uint32 mapId);
     void ProcessPendingLayerAssignments();
@@ -291,6 +293,8 @@ private:
         uint32 mapId = 0;
         uint32 layerId = 0;
         uint64 readyMs = 0;
+        uint32 retryCount = 0;
+        static constexpr uint32 MAX_RETRIES = 30; // ~30 seconds at 1s retry interval
     };
 
     // Soft transfer: queued layer move applied on next loading screen (teleport / map change)
@@ -316,9 +320,11 @@ private:
     std::unordered_map<ObjectGuid::LowType, LayerAssignment> _playerLayers;
     std::unordered_map<ObjectGuid::LowType, AtomicLayerAssignment> _atomicPlayerLayers;
     std::unordered_map<ObjectGuid::LowType, PartyTargetLayerCacheEntry> _partyTargetLayerCache;
-    mutable std::unordered_map<LayerPairCacheKey, LayerPairCacheEntry, LayerPairCacheKeyHash> _layerPairCache;
     std::unordered_map<LayerKey, LayerAssignment> _npcLayers;
     std::unordered_map<LayerKey, LayerAssignment> _goLayers;
+    // Reverse index: (mapId, layerId) -> set of LayerKeys for O(1) cleanup in CleanupEmptyLayers
+    std::unordered_map<uint64, std::unordered_set<LayerKey>> _npcLayerIndex; // key = (mapId<<32)|layerId
+    std::unordered_map<uint64, std::unordered_set<LayerKey>> _goLayerIndex;  // key = (mapId<<32)|layerId
     std::unordered_map<ObjectGuid::LowType, PendingLayerAssignment> _pendingLayerAssignments;
     std::unordered_map<ObjectGuid::LowType, LayerSwitchCooldown> _layerSwitchCooldowns;
     std::unordered_map<ObjectGuid::LowType, SoftTransferEntry> _pendingSoftTransfers;
@@ -327,7 +333,6 @@ private:
 
     // Locks
     // LOCK ORDER INVARIANT (always acquire in this order to prevent deadlock):
-    //   _layerLock  ->  MapMgr/Map internal locks  (via DoForAllMapsWithMapId in CleanupEmptyLayers)
     //   _layerLock  ->  _cooldownLock  (via ForceRemovePlayerFromAllLayers)
     //   _layerLock  ->  _partyLayerCacheLock  (via ForceRemovePlayerFromAllLayers)
     //   _layerLock  ->  _hysteresisLock  (via AutoAssignPlayerToLayer, EvaluateLayerRebalancing)
@@ -336,7 +341,6 @@ private:
     // NEVER acquire _layerLock while already holding a Map/MapMgr lock.
     mutable std::shared_mutex _layerLock;
     mutable std::mutex _partyLayerCacheLock;
-    mutable std::mutex _layerPairCacheLock;
     mutable std::mutex _pendingLayerAssignmentLock;
     mutable std::mutex _cooldownLock;
     mutable std::mutex _softTransferLock;
@@ -353,6 +357,22 @@ private:
     std::atomic<uint64> _runtimeDiagnosticsUntilMs{0};
     std::atomic<uint64> _lastCleanupMs{0};
     std::atomic<uint64> _lastSoftTransferCheckMs{0};
+
+    struct Config
+    {
+        bool enabled = false;
+        uint32 capacity = 0;
+        uint32 maxLayers = 0;
+        bool npcLayering = false;
+        bool goLayering = false;
+        bool skipCloneSpawnsIfNoPlayers = false;
+        bool emitPerLayerCloneMetrics = false;
+        bool lazyCloneLoading = false;
+        bool softTransfersEnabled = false;
+        uint32 softTransferTimeoutMs = 0;
+        uint32 hysteresisCreationWarmupMs = 0;
+        uint32 hysteresisDestructionCooldownMs = 0;
+    } _config;
 
     void PeriodicCacheSweep();
 };

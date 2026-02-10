@@ -41,6 +41,15 @@ public:
     {
         {
             std::lock_guard<std::mutex> lock(_queueLock);
+            _queue.push(value);
+        }
+        _condition.notify_one();
+    }
+
+    void Push(T&& value)
+    {
+        {
+            std::lock_guard<std::mutex> lock(_queueLock);
             _queue.push(std::move(value));
         }
         _condition.notify_one();

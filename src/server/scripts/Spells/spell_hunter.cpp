@@ -663,7 +663,7 @@ class spell_hun_readiness : public SpellScript
         // force removal of the disarm cooldown
         caster->RemoveSpellCooldown(SPELL_HUNTER_CHIMERA_SHOT_SCORPID);
 
-        SpellCooldowns& cooldowns = caster->GetSpellCooldownMap();
+        SpellCooldowns cooldowns = caster->GetSpellCooldownMap();
 
         std::set<std::pair<uint32, bool>> spellsToRemove;
         std::set<uint32> categoriesToRemove;

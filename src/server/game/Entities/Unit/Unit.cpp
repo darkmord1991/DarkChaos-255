@@ -359,7 +359,10 @@ Unit::~Unit()
 
     ASSERT(!m_duringRemoveFromWorld);
     ASSERT(!m_attacking);
-    ASSERT(m_attackers.empty());
+    {
+        std::lock_guard<std::recursive_mutex> lock(_attackersLock);
+        ASSERT(m_attackers.empty());
+    }
 
     // pussywizard: clear m_sharedVision along with back references
     if (!m_sharedVision.empty())
@@ -406,7 +409,7 @@ void Unit::Update(uint32 p_time)
             {
                 m_delayed_unit_relocation_timer = 0;
                 //ExecuteDelayedUnitRelocationEvent();
-                FindMap()->AddToDelayedVisibility(this);
+                FindMap()->AddToDelayedVisibility(GetGUID());
             }
             else
                 m_delayed_unit_relocation_timer -= p_time;
@@ -844,8 +847,11 @@ Unit* Unit::getAttackerForHelper() const
     if (!IsEngaged())
         return nullptr;
 
-    if (!m_attackers.empty())
-        return *(m_attackers.begin());
+    {
+        std::lock_guard<std::recursive_mutex> lock(_attackersLock);
+        if (!m_attackers.empty())
+            return *(m_attackers.begin());
+    }
 
     return nullptr;
 }
@@ -966,6 +972,7 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
         {
             if (victim != attacker && victim->IsPlayer())
             {
+                std::lock_guard<std::recursive_mutex> spellLock(victim->_currentSpellsLock);
                 if (Spell* spell = victim->m_currentSpells[CURRENT_GENERIC_SPELL])
                 {
                     if (spell->getState() == SPELL_STATE_PREPARING)
@@ -1213,6 +1220,7 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
             {
                 if (damagetype != DOT && !(damageSpell && damageSpell->m_targets.HasDstChannel()))
                 {
+                    std::lock_guard<std::recursive_mutex> spellLock(victim->_currentSpellsLock);
                     if (Spell* spell = victim->m_currentSpells[CURRENT_GENERIC_SPELL])
                     {
                         if (spell->getState() == SPELL_STATE_PREPARING)
@@ -3959,12 +3967,15 @@ void Unit::_UpdateSpells(uint32 time)
         _UpdateAutoRepeatSpell();
 
     // remove finished spells from current pointers
-    for (uint32 i = 0; i < CURRENT_MAX_SPELL; ++i)
     {
-        if (m_currentSpells[i] && m_currentSpells[i]->getState() == SPELL_STATE_FINISHED)
+        std::lock_guard<std::recursive_mutex> spellLock(_currentSpellsLock);
+        for (uint32 i = 0; i < CURRENT_MAX_SPELL; ++i)
         {
-            m_currentSpells[i]->SetReferencedFromCurrent(false);
-            m_currentSpells[i] = nullptr;                      // remove pointer
+            if (m_currentSpells[i] && m_currentSpells[i]->getState() == SPELL_STATE_FINISHED)
+            {
+                m_currentSpells[i]->SetReferencedFromCurrent(false);
+                m_currentSpells[i] = nullptr;                      // remove pointer
+            }
         }
     }
 
@@ -4096,6 +4107,7 @@ bool Unit::CanSparringWith(Unit const* attacker) const
 void Unit::SetCurrentCastedSpell(Spell* pSpell)
 {
     ASSERT(pSpell);                                         // nullptr may be never passed here, use InterruptSpell or InterruptNonMeleeSpells
+    std::lock_guard<std::recursive_mutex> spellLock(_currentSpellsLock);
 
     CurrentSpellTypes CSpellType = pSpell->GetCurrentContainer();
 
@@ -4198,6 +4210,7 @@ void Unit::SetCurrentCastedSpell(Spell* pSpell)
 
 void Unit::InterruptSpell(CurrentSpellTypes spellType, bool withDelayed, bool withInstant, bool bySelf)
 {
+    std::lock_guard<std::recursive_mutex> spellLock(_currentSpellsLock);
     //LOG_DEBUG("entities.unit", "Interrupt spell for unit {}.", GetEntry());
     Spell* spell = m_currentSpells[spellType];
     if (spell
@@ -4228,6 +4241,7 @@ void Unit::InterruptSpell(CurrentSpellTypes spellType, bool withDelayed, bool wi
 
 void Unit::FinishSpell(CurrentSpellTypes spellType, bool ok /*= true*/)
 {
+    std::lock_guard<std::recursive_mutex> spellLock(_currentSpellsLock);
     Spell* spell = m_currentSpells[spellType];
     if (!spell)
         return;
@@ -4676,11 +4690,13 @@ AuraApplication* Unit::_CreateAuraApplication(Aura* aura, uint8 effMask)
     std::lock_guard<std::recursive_mutex> lock(_auraLock);
     // can't apply aura on unit which is going to be deleted - to not create a memory leak
     ASSERT(!m_cleanupDone);
-    // aura musn't be removed
-    ASSERT(!aura->IsRemoved());
+    // Aura can be removed concurrently by another thread.
+    if (aura->IsRemoved())
+        return nullptr;
 
-    // aura mustn't be already applied on target
-    ASSERT (!aura->IsAppliedOnTarget(GetGUID()) && "Unit::_CreateAuraApplication: aura musn't be applied on target");
+    // Aura can be applied concurrently by another thread.
+    if (AuraApplication* existing = aura->GetApplicationOfTarget(GetGUID()))
+        return existing;
 
     SpellInfo const* aurSpellInfo = aura->GetSpellInfo();
     uint32 aurId = aurSpellInfo->Id;
@@ -4783,6 +4799,7 @@ void Unit::_UnapplyAura(AuraApplicationMap::iterator& i, AuraRemoveMode removeMo
     }
     ASSERT(aurApp->GetTarget() == this);
 
+    aurApp->SetInUnapply(true);
     aurApp->SetRemoveMode(removeMode);
     Aura* aura = aurApp->GetBase();
     LOG_DEBUG("spells.aura", "Aura {} now is remove mode {}", aura->GetId(), removeMode);
@@ -4869,6 +4886,8 @@ void Unit::_UnapplyAura(AuraApplicationMap::iterator& i, AuraRemoveMode removeMo
 
     if (this->ToCreature() && this->ToCreature()->IsAIEnabled)
         this->ToCreature()->AI()->OnAuraRemove(aurApp, removeMode);
+
+    aurApp->SetInUnapply(false);
 }
 
 void Unit::_UnapplyAura(AuraApplication* aurApp, AuraRemoveMode removeMode)
@@ -5452,28 +5471,34 @@ void Unit::RemoveAurasWithInterruptFlags(uint32 flag, uint32 except, bool isAuto
         return;
 
     // interrupt auras
-    for (AuraApplicationList::iterator iter = m_interruptableAuras.begin(); iter != m_interruptableAuras.end();)
     {
-        Aura* aura = (*iter)->GetBase();
-        ++iter;
-        if ((aura->GetSpellInfo()->AuraInterruptFlags & flag) && (!except || aura->GetId() != except))
+        std::lock_guard<std::recursive_mutex> auraLock(_auraLock);
+        for (AuraApplicationList::iterator iter = m_interruptableAuras.begin(); iter != m_interruptableAuras.end();)
         {
-            uint32 removedAuras = m_removedAurasCount;
-            RemoveAura(aura);
-            if (m_removedAurasCount > removedAuras + 1)
-                iter = m_interruptableAuras.begin();
+            Aura* aura = (*iter)->GetBase();
+            ++iter;
+            if ((aura->GetSpellInfo()->AuraInterruptFlags & flag) && (!except || aura->GetId() != except))
+            {
+                uint32 removedAuras = m_removedAurasCount;
+                RemoveAura(aura);
+                if (m_removedAurasCount > removedAuras + 1)
+                    iter = m_interruptableAuras.begin();
+            }
         }
     }
 
     // interrupt channeled spell
-    if (Spell* spell = m_currentSpells[CURRENT_CHANNELED_SPELL])
     {
-        if (spell->getState() == SPELL_STATE_CASTING && (spell->m_spellInfo->ChannelInterruptFlags & flag) && spell->m_spellInfo->Id != except)
+        std::lock_guard<std::recursive_mutex> spellLock(_currentSpellsLock);
+        if (Spell* spell = m_currentSpells[CURRENT_CHANNELED_SPELL])
         {
-            // Do not interrupt if auto shot
-            if (!(isAutoshot && spell->m_spellInfo->HasAttribute(SPELL_ATTR2_DO_NOT_RESET_COMBAT_TIMERS)))
+            if (spell->getState() == SPELL_STATE_CASTING && (spell->m_spellInfo->ChannelInterruptFlags & flag) && spell->m_spellInfo->Id != except)
             {
-                InterruptNonMeleeSpells(false, spell->m_spellInfo->Id);
+                // Do not interrupt if auto shot
+                if (!(isAutoshot && spell->m_spellInfo->HasAttribute(SPELL_ATTR2_DO_NOT_RESET_COMBAT_TIMERS)))
+                {
+                    InterruptNonMeleeSpells(false, spell->m_spellInfo->Id);
+                }
             }
         }
     }
@@ -8036,7 +8061,7 @@ bool Unit::HandleDummyAuraProc(Unit* victim, uint32 damage, AuraEffect* triggere
                             if (!procSpell)
                                 return false;
 
-                            Spell* spell = ToPlayer()->m_spellModTakingSpell;
+                            Spell* spell = ToPlayer()->GetSpellModTakingSpell();
 
                             // Disable charge drop because of Lock and Load
                             if (spell)
@@ -10868,14 +10893,30 @@ bool Unit::isAttackingPlayer() const
  */
 void Unit::RemoveAllAttackers()
 {
-    while (!m_attackers.empty())
+    while (true)
     {
-        AttackerSet::iterator iter = m_attackers.begin();
-        if (!(*iter)->AttackStop())
+        AttackerSet attackers = getAttackers();
+        if (attackers.empty())
+            break;
+
+        bool removed = false;
+        for (Unit* attacker : attackers)
         {
-            LOG_ERROR("entities.unit", "WORLD: Unit has an attacker that isn't attacking it!");
-            m_attackers.erase(iter);
+            if (!attacker)
+                continue;
+
+            if (!attacker->AttackStop())
+            {
+                LOG_ERROR("entities.unit", "WORLD: Unit has an attacker that isn't attacking it!");
+                std::lock_guard<std::recursive_mutex> lock(_attackersLock);
+                m_attackers.erase(attacker);
+            }
+            removed = true;
+            break;
         }
+
+        if (!removed)
+            break;
     }
 }
 
@@ -15150,7 +15191,8 @@ Unit* Creature::SelectVictim()
     // last case when creature must not go to evade mode:
     // it in combat but attacker not make any damage and not enter to aggro radius to have record in threat list
     // Note: creature does not have targeted movement generator but has attacker in this case
-    for (AttackerSet::const_iterator itr = m_attackers.begin(); itr != m_attackers.end(); ++itr)
+    AttackerSet attackers = getAttackers();
+    for (AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end(); ++itr)
         if ((*itr) && CanCreatureAttack(*itr) && !(*itr)->IsPlayer() && !(*itr)->ToCreature()->HasUnitTypeMask(UNIT_MASK_CONTROLLABLE_GUARDIAN))
             return nullptr;
 
@@ -16962,9 +17004,15 @@ void Unit::ProcDamageAndSpellFor(bool isVictim, Unit* target, uint32 procFlag, u
                         if (triggeredByAura->GetSpellModifier())
                         {
                             // Do proc if mod is consumed by spell
-                            if (!procSpell || procSpell->m_appliedMods.find(i->aura) != procSpell->m_appliedMods.end())
+                            if (!procSpell)
                             {
                                 takeCharges = true;
+                            }
+                            else
+                            {
+                                std::lock_guard<std::mutex> modsLock(procSpell->m_appliedModsLock);
+                                if (procSpell->m_appliedMods.find(i->aura) != procSpell->m_appliedMods.end())
+                                    takeCharges = true;
                             }
                         }
                         break;
@@ -19607,16 +19655,7 @@ void Unit::SetPhaseMask(uint32 newPhaseMask, bool update)
         if (IsCreature() || (!ToPlayer()->IsGameMaster() && !ToPlayer()->GetSession()->PlayerLogout()))
         {
             HostileRefMgr& refMgr = getHostileRefMgr();
-            HostileReference* ref = refMgr.getFirst();
-
-            while (ref)
-            {
-                if (Unit* unit = ref->GetSource()->GetOwner())
-                    if (Creature* creature = unit->ToCreature())
-                        refMgr.setOnlineOfflineState(creature, creature->InSamePhase(newPhaseMask));
-
-                ref = ref->next();
-            }
+            refMgr.UpdateOnlineStateForPhase(newPhaseMask);
 
             // modify threat lists for new phasemask
             if (!IsPlayer())
@@ -20457,17 +20496,21 @@ void Unit::StopAttackFaction(uint32 faction_id)
         }
     }
 
-    AttackerSet const& attackers = getAttackers();
-    for (AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end();)
+    bool removed = false;
+    do
     {
-        if ((*itr)->GetFactionTemplateEntry()->faction == faction_id)
+        removed = false;
+        AttackerSet attackers = getAttackers();
+        for (AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end(); ++itr)
         {
-            (*itr)->AttackStop();
-            itr = attackers.begin();
+            if ((*itr)->GetFactionTemplateEntry()->faction == faction_id)
+            {
+                (*itr)->AttackStop();
+                removed = true;
+                break;
+            }
         }
-        else
-            ++itr;
-    }
+    } while (removed);
 
     getHostileRefMgr().deleteReferencesForFaction(faction_id);
 
@@ -20477,33 +20520,35 @@ void Unit::StopAttackFaction(uint32 faction_id)
 
 void Unit::StopAttackingInvalidTarget()
 {
-    AttackerSet const& attackers = getAttackers();
-    for (AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end();)
+    bool removed = false;
+    do
     {
-        Unit* attacker = (*itr);
-        if (!attacker->IsValidAttackTarget(this))
+        removed = false;
+        AttackerSet attackers = getAttackers();
+        for (AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end(); ++itr)
         {
-            attacker->AttackStop();
-            if (attacker->IsPlayer())
+            Unit* attacker = (*itr);
+            if (!attacker->IsValidAttackTarget(this))
             {
-                attacker->ToPlayer()->SendAttackSwingCancelAttack();
-            }
-
-            for (Unit* controlled : attacker->m_Controlled)
-            {
-                if (controlled->GetVictim() == this && !controlled->IsValidAttackTarget(this))
+                attacker->AttackStop();
+                if (attacker->IsPlayer())
                 {
-                    controlled->AttackStop();
+                    attacker->ToPlayer()->SendAttackSwingCancelAttack();
                 }
-            }
 
-            itr = attackers.begin();
+                for (Unit* controlled : attacker->m_Controlled)
+                {
+                    if (controlled->GetVictim() == this && !controlled->IsValidAttackTarget(this))
+                    {
+                        controlled->AttackStop();
+                    }
+                }
+
+                removed = true;
+                break;
+            }
         }
-        else
-        {
-            ++itr;
-        }
-    }
+    } while (removed);
 }
 
 void Unit::OutDebugInfo() const

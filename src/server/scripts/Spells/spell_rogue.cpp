@@ -462,8 +462,8 @@ class spell_rog_preparation : public SpellScript
                 if (spellInfo->SpellFamilyFlags[1] & SPELLFAMILYFLAG1_ROGUE_COLDB_SHADOWSTEP ||      // Cold Blood, Shadowstep
                         spellInfo->SpellFamilyFlags[0] & SPELLFAMILYFLAG_ROGUE_VAN_EVAS_SPRINT)           // Vanish, Evasion, Sprint
                 {
-                    SpellCooldowns::iterator citr = caster->GetSpellCooldownMap().find(spellInfo->Id);
-                    if (citr != caster->GetSpellCooldownMap().end() && citr->second.needSendToClient)
+                    SpellCooldown cooldown;
+                    if (caster->GetSpellCooldown(spellInfo->Id, cooldown) && cooldown.needSendToClient)
                         caster->RemoveSpellCooldown(spellInfo->Id, true);
                     else
                         caster->RemoveSpellCooldown(spellInfo->Id, false);
@@ -475,8 +475,8 @@ class spell_rog_preparation : public SpellScript
                             (spellInfo->SpellFamilyFlags[0] & SPELLFAMILYFLAG_ROGUE_BLADE_FLURRY &&     // Blade Flurry
                                 spellInfo->SpellFamilyFlags[1] & SPELLFAMILYFLAG1_ROGUE_BLADE_FLURRY))
                     {
-                        SpellCooldowns::iterator citr = caster->GetSpellCooldownMap().find(spellInfo->Id);
-                        if (citr != caster->GetSpellCooldownMap().end() && citr->second.needSendToClient)
+                        SpellCooldown cooldown;
+                        if (caster->GetSpellCooldown(spellInfo->Id, cooldown) && cooldown.needSendToClient)
                             caster->RemoveSpellCooldown(spellInfo->Id, true);
                         else
                             caster->RemoveSpellCooldown(spellInfo->Id, false);

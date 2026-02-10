@@ -406,7 +406,7 @@ void Player::UpdateFFAPvPFlag(time_t currTime)
 
     // xinef: iterate attackers
     AttackerSet toRemove;
-    AttackerSet const& attackers = getAttackers();
+    AttackerSet attackers = getAttackers();
     for (AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end(); ++itr)
         if (!(*itr)->IsValidAttackTarget(this))
             toRemove.insert(*itr);

@@ -24,10 +24,12 @@
 
 AuctionHouseWorkerThread::AuctionHouseWorkerThread(ProducerConsumerQueue<AuctionSearcherRequest*>* requestQueue, MPSCQueue<AuctionSearcherResponse>* responseQueue)
 {
-    _workerThread = std::thread(&AuctionHouseWorkerThread::Run, this);
+    // Initialize members BEFORE starting the thread to avoid data races.
+    // The thread reads _stopped, _requestQueue, _responseQueue immediately.
     _requestQueue = requestQueue;
     _responseQueue = responseQueue;
     _stopped = false;
+    _workerThread = std::thread(&AuctionHouseWorkerThread::Run, this);
 }
 
 void AuctionHouseWorkerThread::Stop()

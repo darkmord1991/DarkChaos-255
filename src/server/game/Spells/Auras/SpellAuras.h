@@ -21,6 +21,8 @@
 #include "SpellAuraDefines.h"
 #include "Unit.h"
 
+#include <atomic>
+
 class Unit;
 class SpellInfo;
 struct SpellModifier;
@@ -48,6 +50,7 @@ private:
     uint8 _flags;                                  // Aura info flag
     uint8 _effectsToApply;                         // Used only at spell hit to determine which effect should be applied
     bool _needClientUpdate: 1;
+    std::atomic<bool> _inUnapply;
 
     // xinef: stacking
     uint8 _disableMask;
@@ -74,6 +77,8 @@ public:
 
     void SetNeedClientUpdate() { _needClientUpdate = true;}
     bool IsNeedClientUpdate() const { return _needClientUpdate;}
+    void SetInUnapply(bool val) { _inUnapply.store(val, std::memory_order_release); }
+    bool IsInUnapply() const { return _inUnapply.load(std::memory_order_acquire); }
     void BuildUpdatePacket(ByteBuffer& data, bool remove) const;
     void ClientUpdate(bool remove = false);
 

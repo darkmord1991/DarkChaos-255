@@ -1795,8 +1795,8 @@ public:
     [[nodiscard]] PlayerSpellMap const& GetSpellMap() const { return m_spells; }
     PlayerSpellMap&       GetSpellMap()       { return m_spells; }
 
-    [[nodiscard]] SpellCooldowns const& GetSpellCooldownMap() const { return m_spellCooldowns; }
-    SpellCooldowns&       GetSpellCooldownMap()       { return m_spellCooldowns; }
+    [[nodiscard]] SpellCooldowns GetSpellCooldownMap() const;
+    [[nodiscard]] bool GetSpellCooldown(uint32 spellId, SpellCooldown& out) const;
 
     SkillStatusMap const& GetSkillStatusMap() const { return mSkillStatus; }
     SkillStatusMap& GetSkillStatusMap() { return mSkillStatus; }
@@ -2193,7 +2193,7 @@ public:
 
     //End of PvP System
 
-    [[nodiscard]] inline SpellCooldowns GetSpellCooldowns() const { return m_spellCooldowns; }
+    [[nodiscard]] inline SpellCooldowns GetSpellCooldowns() const { return GetSpellCooldownMap(); }
 
     void SetDrunkValue(uint8 newDrunkValue, uint32 itemId = 0);
     [[nodiscard]] uint8 GetDrunkValue() const { return GetByteValue(PLAYER_BYTES_3, 1); }
@@ -2598,6 +2598,11 @@ public:
     [[nodiscard]] uint32 GetChampioningFaction() const { return m_ChampioningFaction; }
     void SetChampioningFaction(uint32 faction) { m_ChampioningFaction = faction; }
     Spell* m_spellModTakingSpell;
+    Spell* GetSpellModTakingSpell() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_spellModsLock);
+        return m_spellModTakingSpell;
+    }
 
     float GetAverageItemLevel();
     float GetAverageItemLevelForDF();
@@ -3050,6 +3055,7 @@ private:
     AchievementMgr* m_achievementMgr;
     ReputationMgr*  m_reputationMgr;
 
+    mutable std::recursive_mutex m_spellCooldownsLock;
     SpellCooldowns m_spellCooldowns;
 
     uint32 m_ChampioningFaction;
