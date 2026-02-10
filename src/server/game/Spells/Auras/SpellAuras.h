@@ -265,11 +265,12 @@ protected:
     int32 m_updateTargetMapInterval;                    // Timer for UpdateTargetMapOfEffect
 
     uint8 const m_casterLevel;                          // Aura level (store caster level for correct show level dep amount)
-    uint8 m_procCharges;                                // Aura charges (0 for infinite)
-    uint8 m_stackAmount;                                // Aura stack amount
+    std::atomic<uint8> m_procCharges;                   // Aura charges (0 for infinite)
+    std::atomic<uint8> m_stackAmount;                    // Aura stack amount
 
     AuraEffect* m_effects[3];
     mutable std::recursive_mutex _applicationLock;
+    mutable std::recursive_mutex _scriptLock;
     ApplicationMap m_applications;
 
     bool m_isRemoved: 1;

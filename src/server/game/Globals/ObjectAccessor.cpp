@@ -298,17 +298,9 @@ Creature* ObjectAccessor::GetSpawnedCreatureByDBGUID(uint32 mapId, uint64 guid)
 {
     if (Map* map = sMapMgr->FindBaseMap(mapId))
     {
-        auto bounds = map->GetCreatureBySpawnIdStore().equal_range(guid);
-
-        if (bounds.first == bounds.second)
-        {
-            return nullptr;
-        }
-
-        if (Creature* creature = bounds.first->second)
-        {
-            return creature;
-        }
+        auto creatures = map->GetCreaturesBySpawnId(guid);
+        if (!creatures.empty())
+            return creatures.front();
     }
 
     return nullptr;
@@ -324,17 +316,9 @@ GameObject* ObjectAccessor::GetSpawnedGameObjectByDBGUID(uint32 mapId, uint64 gu
 {
     if (Map* map = sMapMgr->FindBaseMap(mapId))
     {
-        auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(guid);
-
-        if (bounds.first == bounds.second)
-        {
-            return nullptr;
-        }
-
-        if (GameObject* go = bounds.first->second)
-        {
-            return go;
-        }
+        auto gameObjects = map->GetGameObjectsBySpawnId(guid);
+        if (!gameObjects.empty())
+            return gameObjects.front();
     }
 
     return nullptr;

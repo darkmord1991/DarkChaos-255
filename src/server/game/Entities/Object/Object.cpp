@@ -852,6 +852,7 @@ void Object::ApplyModPositiveFloatValue(uint16 index, float  val, bool apply)
 void Object::SetFlag(uint16 index, uint32 newFlag)
 {
     ASSERT(index < m_valuesCount || PrintIndexError(index, true));
+    std::lock_guard<std::mutex> guard(_flagLock);
     uint32 oldval = m_uint32Values[index];
     uint32 newval = oldval | newFlag;
 
@@ -868,6 +869,7 @@ void Object::RemoveFlag(uint16 index, uint32 oldFlag)
 {
     ASSERT(index < m_valuesCount || PrintIndexError(index, true));
     ASSERT(m_uint32Values);
+    std::lock_guard<std::mutex> guard(_flagLock);
 
     uint32 oldval = m_uint32Values[index];
     uint32 newval = oldval & ~oldFlag;
@@ -925,6 +927,7 @@ void Object::SetByteFlag(uint16 index, uint8 offset, uint8 newFlag)
         return;
     }
 
+    std::lock_guard<std::mutex> guard(_flagLock);
     if (!(uint8(m_uint32Values[index] >> (offset * 8)) & newFlag))
     {
         m_uint32Values[index] |= uint32(uint32(newFlag) << (offset * 8));
@@ -944,6 +947,7 @@ void Object::RemoveByteFlag(uint16 index, uint8 offset, uint8 oldFlag)
         return;
     }
 
+    std::lock_guard<std::mutex> guard(_flagLock);
     if (uint8(m_uint32Values[index] >> (offset * 8)) & oldFlag)
     {
         m_uint32Values[index] &= ~uint32(uint32(oldFlag) << (offset * 8));
@@ -3087,6 +3091,12 @@ void WorldObject::DestroyForVisiblePlayers()
 
 void WorldObject::UpdateObjectVisibility(bool /*forced*/, bool /*fromUpdate*/)
 {
+    if (Map* map = FindMap(); map && !IsPlayer() && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        map->QueueDeferredVisibilityUpdate(GetGUID());
+        return;
+    }
+
     if (Map* map = FindMap(); map && map->ShouldDeferNonPlayerVisibility(this))
     {
         map->QueueDeferredVisibilityUpdate(GetGUID());

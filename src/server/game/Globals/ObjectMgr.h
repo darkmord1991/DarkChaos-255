@@ -38,6 +38,8 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <shared_mutex>
+#include <mutex>
 #include <string>
 
 class Item;
@@ -1171,24 +1173,18 @@ public:
         return nullptr;
     }
 
-    CellObjectGuids const& GetGridObjectGuids(uint16 mapid, uint8 spawnMode, uint32 gridId)
+    CellObjectGuids GetGridObjectGuids(uint16 mapid, uint8 spawnMode, uint32 gridId);
+    
+    // Visitor pattern to safely access the map without returning references or copies of the whole map
+    template<typename Visitor>
+    void VisitMapObjectGuids(uint16 mapid, uint8 spawnMode, Visitor&& visitor)
     {
+        std::shared_lock<std::shared_mutex> lock(_mapObjectGuidsLock);
         MapObjectGuids::const_iterator itr1 = _mapObjectGuidsStore.find(MAKE_PAIR32(mapid, spawnMode));
         if (itr1 != _mapObjectGuidsStore.end())
         {
-            CellObjectGuidsMap::const_iterator itr2 = itr1->second.find(gridId);
-            if (itr2 != itr1->second.end())
-                return itr2->second;
+            visitor(itr1->second);
         }
-        return _emptyCellObjectGuids;
-    }
-
-    CellObjectGuidsMap const& GetMapObjectGuids(uint16 mapid, uint8 spawnMode)
-    {
-        MapObjectGuids::const_iterator itr1 = _mapObjectGuidsStore.find(MAKE_PAIR32(mapid, spawnMode));
-        if (itr1 != _mapObjectGuidsStore.end())
-            return itr1->second;
-        return _emptyCellObjectGuidsMap;
     }
 
     /**
@@ -1584,6 +1580,7 @@ private:
     ItemSetNameContainer _itemSetNameStore;
 
     MapObjectGuids _mapObjectGuidsStore;
+    mutable std::shared_mutex _mapObjectGuidsLock;
     CellObjectGuidsMap _emptyCellObjectGuidsMap;
     CellObjectGuids _emptyCellObjectGuids;
     CreatureDataContainer _creatureDataStore;

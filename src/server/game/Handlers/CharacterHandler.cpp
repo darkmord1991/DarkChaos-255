@@ -60,6 +60,7 @@
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "LayerManager.h"
+#include "Log.h"
 
 LoginQueryHolder::LoginQueryHolder(uint32 accountId, ObjectGuid guid) : m_accountId(accountId), m_guid(guid)
 {
@@ -71,6 +72,8 @@ bool LoginQueryHolder::Initialize()
 
     bool res = true;
     ObjectGuid::LowType lowGuid = m_guid.GetCounter();
+
+    LOG_INFO("server.loading", "LoginQueryHolder::Initialize: Guid={} MaxQuery={}", lowGuid, MAX_PLAYER_LOGIN_QUERY);
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER);
     stmt->SetData(0, lowGuid);
@@ -104,11 +107,15 @@ bool LoginQueryHolder::Initialize()
     stmt->SetData(0, lowGuid);
     res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_SEASONAL_QUEST_STATUS, stmt);
 
+    LOG_INFO("server.loading", "LoginQueryHolder: Loading Reputation...");
     stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_REPUTATION);
+    if (stmt) LOG_INFO("server.loading", "LoginQueryHolder: Reputation Params: {}", stmt->GetParameters().size());
     stmt->SetData(0, lowGuid);
     res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_REPUTATION, stmt);
 
+    LOG_INFO("server.loading", "LoginQueryHolder: Loading Inventory...");
     stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_INVENTORY);
+    if (stmt) LOG_INFO("server.loading", "LoginQueryHolder: Inventory Params: {}", stmt->GetParameters().size());
     stmt->SetData(0, lowGuid);
     res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_INVENTORY, stmt);
 

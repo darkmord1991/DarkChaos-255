@@ -892,7 +892,7 @@ public:
     [[nodiscard]] AttackerSet getAttackers() const { std::lock_guard<std::recursive_mutex> lock(_attackersLock); return m_attackers; }
     [[nodiscard]] bool GetMeleeAttackPoint(Unit* attacker, Position& pos);
     [[nodiscard]] bool isAttackingPlayer() const;
-    [[nodiscard]] Unit* GetVictim() const { return m_attacking; }
+    [[nodiscard]] Unit* GetVictim() const { return m_attacking.load(); }
 
     void CombatStop(bool includingCast = false);
     void CombatStopWithPets(bool includingCast = false);
@@ -1007,8 +1007,8 @@ public:
     void AddComboPoints(int8 count) { AddComboPoints(nullptr, count); }
     void ClearComboPoints();
 
-    void AddComboPointHolder(Unit* unit) { m_ComboPointHolders.insert(unit); }
-    void RemoveComboPointHolder(Unit* unit) { m_ComboPointHolders.erase(unit); }
+    void AddComboPointHolder(Unit* unit) { std::lock_guard<std::recursive_mutex> lock(_comboPointHoldersLock); m_ComboPointHolders.insert(unit); }
+    void RemoveComboPointHolder(Unit* unit) { std::lock_guard<std::recursive_mutex> lock(_comboPointHoldersLock); m_ComboPointHolders.erase(unit); }
     void ClearComboPointHolders();
 
     // PvP
@@ -1413,6 +1413,11 @@ public:
     void _ApplyAllAuraStatMods();
 
     [[nodiscard]] AuraEffectList const& GetAuraEffectsByType(AuraType type) const { return m_modAuras[type]; }
+    [[nodiscard]] AuraEffectList GetAuraEffectsByTypeCopy(AuraType type) const
+    {
+        std::lock_guard<std::recursive_mutex> lock(_auraLock);
+        return m_modAuras[type];
+    }
     AuraList&       GetSingleCastAuras()       { return m_scAuras; }
     [[nodiscard]] AuraList const& GetSingleCastAuras() const { return m_scAuras; }
 
@@ -1534,6 +1539,7 @@ public:
             snapshot.push_back(entry);
         return snapshot;
     }
+    void BuildVisibleAurasUpdateAllPacket(WorldPacket& data) const;
     AuraApplication* GetVisibleAura(uint8 slot)
     {
         std::lock_guard<std::recursive_mutex> auraLock(_auraLock);
@@ -1885,9 +1891,18 @@ public:
 
     // Shared vision
     SharedVisionList const& GetSharedVisionList() { return m_sharedVision; }
+    SharedVisionList GetSharedVisionListCopy() const
+    {
+        std::lock_guard<std::mutex> lock(_sharedVisionLock);
+        return m_sharedVision;
+    }
     void AddPlayerToVision(Player* player);
     void RemovePlayerFromVision(Player* player);
-    [[nodiscard]] bool HasSharedVision() const { return !m_sharedVision.empty(); }
+    [[nodiscard]] bool HasSharedVision() const
+    {
+        std::lock_guard<std::mutex> lock(_sharedVisionLock);
+        return !m_sharedVision.empty();
+    }
 
     // Virtual items
     uint32 GetVirtualItemId(uint32 slot) const;
@@ -1901,8 +1916,16 @@ public:
     [[nodiscard]] bool IsInDisallowedMountForm() const;
 
     // Followers
-    void addFollower(FollowerReference* pRef) { m_FollowingRefMgr.insertFirst(pRef); }
-    void removeFollower(FollowerReference* /*pRef*/) { /* nothing to do yet */ }
+    void addFollower(FollowerReference* pRef)
+    {
+        std::lock_guard<std::mutex> lock(_followerRefMgrLock);
+        m_FollowingRefMgr.insertFirst(pRef);
+    }
+    void removeFollower(FollowerReference* /*pRef*/)
+    {
+        std::lock_guard<std::mutex> lock(_followerRefMgrLock);
+        // removal is handled by Reference::delink()
+    }
     [[nodiscard]] virtual float GetFollowAngle() const { return static_cast<float>(M_PI / 2); }
 
     // Pets, guardians, minions...
@@ -2087,6 +2110,7 @@ public:
     DualWieldMode _dualWieldMode;
 
     ControlSet m_Controlled;
+    mutable std::recursive_mutex _controlledLock; // protects m_Controlled
 
     SafeUnitPointer m_movedByPlayer;
 
@@ -2171,17 +2195,19 @@ protected:
 
     mutable std::recursive_mutex _attackersLock;
     AttackerSet m_attackers;
-    Unit* m_attacking;
+    std::atomic<Unit*> m_attacking;
 
-    DeathState m_deathState;
+    std::atomic<DeathState> m_deathState;
 
     int32 m_procDeep;
 
     typedef std::list<DynamicObject*> DynObjectList;
     DynObjectList m_dynObj;
+    GuidUnorderedSet _pendingDynObjectRemovals;
 
     typedef GuidList GameObjectList;
     GameObjectList m_gameObj;
+    mutable std::mutex _dynObjGameObjLock; // protects m_dynObj and m_gameObj
     uint32 m_transform;
 
     Spell* m_currentSpells[CURRENT_MAX_SPELL];
@@ -2192,13 +2218,13 @@ protected:
     AuraApplicationMap m_appliedAuras;
     AuraList m_removedAuras;
     AuraMap::iterator m_auraUpdateIterator;
-    uint32 m_removedAurasCount;
+    std::atomic<uint32> m_removedAurasCount;
 
     AuraEffectList m_modAuras[TOTAL_AURAS];
     AuraList m_scAuras;                        // casted singlecast auras
     AuraApplicationList m_interruptableAuras;  // auras which have interrupt mask applied on unit
     AuraStateAurasMap m_auraStateAuras;        // Used for improve performance of aura state checks on aura apply/remove
-    uint32 m_interruptMask;
+    std::atomic<uint32> m_interruptMask;
 
     float m_auraFlatModifiersGroup[UNIT_MOD_END][MODIFIER_TYPE_FLAT_END];
     float m_auraPctModifiersGroup[UNIT_MOD_END][MODIFIER_TYPE_PCT_END];
@@ -2223,6 +2249,8 @@ protected:
 
     CharmInfo* m_charmInfo;
     SharedVisionList m_sharedVision;
+    mutable std::mutex _sharedVisionLock;
+    mutable std::mutex _followerRefMgrLock;
 
     MotionMaster* i_motionMaster;
 
@@ -2268,8 +2296,8 @@ private:
     void _removeAttacker(Unit* pAttacker) { std::lock_guard<std::recursive_mutex> lock(_attackersLock); m_attackers.erase(pAttacker); } ///@note: Call only in Unit::AttackStop()
 
     //----------- Private variables ----------//
-    uint32 m_state;                                     // Even derived shouldn't modify
-    uint32 m_CombatTimer;
+    std::atomic<uint32> m_state;                         // Even derived shouldn't modify
+    std::atomic<uint32> m_CombatTimer;
     uint32 m_lastManaUse;                               // msecs
     //TimeTrackerSmall m_movesplineTimer;
 
@@ -2282,6 +2310,7 @@ private:
     Unit* m_comboTarget;
     int8 m_comboPoints;
     std::unordered_set<Unit*> m_ComboPointHolders;
+    mutable std::recursive_mutex _comboPointHoldersLock;
 
     RedirectThreatInfo _redirectThreatInfo;
 

@@ -669,11 +669,11 @@ Creature* ChatHandler::GetCreatureFromPlayerMapByDbGuid(ObjectGuid::LowType lowg
     // Select the first alive creature or a dead one if not found
     Creature* creature = nullptr;
 
-    auto bounds = m_session->GetPlayer()->GetMap()->GetCreatureBySpawnIdStore().equal_range(lowguid);
-    for (auto it = bounds.first; it != bounds.second; ++it)
+    auto creatures = m_session->GetPlayer()->GetMap()->GetCreaturesBySpawnId(lowguid);
+    for (Creature* current : creatures)
     {
-        creature = it->second;
-        if (it->second->IsAlive())
+        creature = current;
+        if (current && current->IsAlive())
             break;
     }
 
@@ -685,9 +685,9 @@ GameObject* ChatHandler::GetObjectFromPlayerMapByDbGuid(ObjectGuid::LowType lowg
     if (!m_session)
         return nullptr;
 
-    auto bounds = m_session->GetPlayer()->GetMap()->GetGameObjectBySpawnIdStore().equal_range(lowguid);
-    if (bounds.first != bounds.second)
-        return bounds.first->second;
+    auto gameObjects = m_session->GetPlayer()->GetMap()->GetGameObjectsBySpawnId(lowguid);
+    if (!gameObjects.empty())
+        return gameObjects.front();
 
     return nullptr;
 }

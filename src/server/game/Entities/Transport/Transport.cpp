@@ -441,20 +441,22 @@ void MotionTransport::LoadStaticPassengers()
 
     if (uint32 mapId = GetGOInfo()->moTransport.mapID)
     {
-        CellObjectGuidsMap const& cells = sObjectMgr->GetMapObjectGuids(mapId, GetMap()->GetSpawnMode());
-        CellGuidSet::const_iterator guidEnd;
-        for (CellObjectGuidsMap::const_iterator cellItr = cells.begin(); cellItr != cells.end(); ++cellItr)
+        sObjectMgr->VisitMapObjectGuids(mapId, GetMap()->GetSpawnMode(), [this](CellObjectGuidsMap const& cells)
         {
-            // Creatures on transport
-            guidEnd = cellItr->second.creatures.end();
-            for (CellGuidSet::const_iterator guidItr = cellItr->second.creatures.begin(); guidItr != guidEnd; ++guidItr)
-                CreateNPCPassenger(*guidItr, sObjectMgr->GetCreatureData(*guidItr));
+            CellGuidSet::const_iterator guidEnd;
+            for (CellObjectGuidsMap::const_iterator cellItr = cells.begin(); cellItr != cells.end(); ++cellItr)
+            {
+                // Creatures on transport
+                guidEnd = cellItr->second.creatures.end();
+                for (CellGuidSet::const_iterator guidItr = cellItr->second.creatures.begin(); guidItr != guidEnd; ++guidItr)
+                    CreateNPCPassenger(*guidItr, sObjectMgr->GetCreatureData(*guidItr));
 
-            // GameObjects on transport
-            guidEnd = cellItr->second.gameobjects.end();
-            for (CellGuidSet::const_iterator guidItr = cellItr->second.gameobjects.begin(); guidItr != guidEnd; ++guidItr)
-                CreateGOPassenger(*guidItr, sObjectMgr->GetGameObjectData(*guidItr));
-        }
+                // GameObjects on transport
+                guidEnd = cellItr->second.gameobjects.end();
+                for (CellGuidSet::const_iterator guidItr = cellItr->second.gameobjects.begin(); guidItr != guidEnd; ++guidItr)
+                    CreateGOPassenger(*guidItr, sObjectMgr->GetGameObjectData(*guidItr));
+            }
+        });
     }
 
     SetPassengersLoaded(true);
@@ -1008,9 +1010,10 @@ void StaticTransport::UpdatePosition(float x, float y, float z, float o)
 
 void StaticTransport::UpdatePassengerPositions()
 {
-    for (PassengerSet::iterator itr = _passengers.begin(); itr != _passengers.end(); ++itr)
+    std::lock_guard<std::recursive_mutex> guard(_passengerLock);
+    for (PassengerSet::iterator itr = _passengers.begin(); itr != _passengers.end(); )
     {
-        WorldObject* passenger = *itr;
+        WorldObject* passenger = *itr++;
 
         // if passenger is on vehicle we have to assume the vehicle is also on transport and its the vehicle that will be updating its passengers
         if (Unit* unit = passenger->ToUnit())
@@ -1052,6 +1055,7 @@ void StaticTransport::UpdatePassengerPositions()
 
 void StaticTransport::AddPassenger(WorldObject* passenger, bool withAll)
 {
+    std::lock_guard<std::recursive_mutex> guard(_passengerLock);
     if (_passengers.insert(passenger).second)
     {
         if (Player* plr = passenger->ToPlayer())
@@ -1076,6 +1080,7 @@ void StaticTransport::AddPassenger(WorldObject* passenger, bool withAll)
 
 void StaticTransport::RemovePassenger(WorldObject* passenger, bool withAll)
 {
+    std::lock_guard<std::recursive_mutex> guard(_passengerLock);
     if (_passengers.erase(passenger))
     {
         if (Player* plr = passenger->ToPlayer())

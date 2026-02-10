@@ -197,13 +197,9 @@ void PoolGroup<Creature>::Despawn1Object(ObjectGuid::LowType guid)
         Map* map = sMapMgr->CreateBaseMap(data->mapid);
         if (!map->Instanceable())
         {
-            auto creatureBounds = map->GetCreatureBySpawnIdStore().equal_range(guid);
-            for (auto itr = creatureBounds.first; itr != creatureBounds.second;)
-            {
-                Creature* creature = itr->second;
-                ++itr;
+            auto creatures = map->GetCreaturesBySpawnId(guid);
+            for (Creature* creature : creatures)
                 creature->AddObjectToRemoveList();
-            }
         }
     }
 }
@@ -219,13 +215,9 @@ void PoolGroup<GameObject>::Despawn1Object(ObjectGuid::LowType guid)
         Map* map = sMapMgr->CreateBaseMap(data->mapid);
         if (!map->Instanceable())
         {
-            auto gameobjectBounds = map->GetGameObjectBySpawnIdStore().equal_range(guid);
-            for (auto itr = gameobjectBounds.first; itr != gameobjectBounds.second;)
-            {
-                GameObject* go = itr->second;
-                ++itr;
+            auto gameObjects = map->GetGameObjectsBySpawnId(guid);
+            for (GameObject* go : gameObjects)
                 go->AddObjectToRemoveList();
-            }
         }
     }
 }

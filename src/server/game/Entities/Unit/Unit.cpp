@@ -291,7 +291,7 @@ Unit::Unit() : WorldObject(),
     for (uint8 i = 0; i < MAX_STATS; ++i)
         m_createStats[i] = 0.0f;
 
-    m_attacking = nullptr;
+    m_attacking.store(nullptr);
     m_modMeleeHitChance = 0.0f;
     m_modRangedHitChance = 0.0f;
     m_modSpellHitChance = 0.0f;
@@ -308,7 +308,7 @@ Unit::Unit() : WorldObject(),
 
     m_charmInfo = nullptr;
 
-    _redirectThreatInfo = RedirectThreatInfo();
+    _redirectThreatInfo.Set(ObjectGuid::Empty, 0);
 
     // remove aurastates allowing special moves
     for (uint8 i = 0; i < MAX_REACTIVE; ++i)
@@ -358,21 +358,29 @@ Unit::~Unit()
     delete movespline;
 
     ASSERT(!m_duringRemoveFromWorld);
-    ASSERT(!m_attacking);
+    ASSERT(!m_attacking.load());
     {
         std::lock_guard<std::recursive_mutex> lock(_attackersLock);
         ASSERT(m_attackers.empty());
     }
 
     // pussywizard: clear m_sharedVision along with back references
-    if (!m_sharedVision.empty())
     {
-        do
+        std::lock_guard<std::mutex> lock(_sharedVisionLock);
+        if (!m_sharedVision.empty())
         {
-            Player* p = *(m_sharedVision.begin());
-            p->m_isInSharedVisionOf.erase(this);
-            m_sharedVision.remove(p);
-        } while (!m_sharedVision.empty());
+            do
+            {
+                Player* p = *(m_sharedVision.begin());
+                p->m_isInSharedVisionOf.erase(this);
+                m_sharedVision.remove(p);
+            } while (!m_sharedVision.empty());
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(_followerRefMgrLock);
+        m_FollowingRefMgr.clearReferences();
     }
 
     ASSERT(m_Controlled.empty());
@@ -537,6 +545,25 @@ bool Unit::haveOffhandWeapon() const
 
 void Unit::MonsterMoveWithSpeed(float x, float y, float z, float speed)
 {
+    if (Map* map = FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = GetGUID();
+            relay.action = Map::MOTION_RELAY_MONSTER_MOVE;
+            relay.x = x;
+            relay.y = y;
+            relay.z = z;
+            relay.speed = speed;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
     Movement::MoveSplineInit init(this);
     init.MoveTo(x, y, z);
@@ -989,7 +1016,7 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
 
         // We're going to call functions which can modify content of the list during iteration over it's elements
         // Let's copy the list so we can prevent iterator invalidation
-        AuraEffectList vCopyDamageCopy(victim->GetAuraEffectsByType(SPELL_AURA_SHARE_DAMAGE_PCT));
+        AuraEffectList vCopyDamageCopy(victim->GetAuraEffectsByTypeCopy(SPELL_AURA_SHARE_DAMAGE_PCT));
         // copy damage to casters of this aura
         for (AuraEffectList::iterator i = vCopyDamageCopy.begin(); i != vCopyDamageCopy.end(); ++i)
         {
@@ -2076,7 +2103,7 @@ void Unit::DealDamageShieldDamage(Unit* victim)
 {
     // We're going to call functions which can modify content of the list during iteration over it's elements
     // Let's copy the list so we can prevent iterator invalidation
-    AuraEffectList vDamageShieldsCopy(victim->GetAuraEffectsByType(SPELL_AURA_DAMAGE_SHIELD));
+    AuraEffectList vDamageShieldsCopy(victim->GetAuraEffectsByTypeCopy(SPELL_AURA_DAMAGE_SHIELD));
     for (AuraEffectList::const_iterator dmgShieldItr = vDamageShieldsCopy.begin(); dmgShieldItr != vDamageShieldsCopy.end(); ++dmgShieldItr)
     {
         SpellInfo const* i_spellProto = (*dmgShieldItr)->GetSpellInfo();
@@ -2371,7 +2398,7 @@ void Unit::CalcAbsorbResist(DamageInfo& dmgInfo, bool Splited)
 
     // We're going to call functions which can modify content of the list during iteration over it's elements
     // Let's copy the list so we can prevent iterator invalidation
-    AuraEffectList vSchoolAbsorbCopy(victim->GetAuraEffectsByType(SPELL_AURA_SCHOOL_ABSORB));
+    AuraEffectList vSchoolAbsorbCopy(victim->GetAuraEffectsByTypeCopy(SPELL_AURA_SCHOOL_ABSORB));
     std::sort(vSchoolAbsorbCopy.begin(), vSchoolAbsorbCopy.end(), Acore::AbsorbAuraOrderPred());
 
     // absorb without mana cost
@@ -2424,7 +2451,7 @@ void Unit::CalcAbsorbResist(DamageInfo& dmgInfo, bool Splited)
     }
 
     // absorb by mana cost
-    AuraEffectList vManaShieldCopy(victim->GetAuraEffectsByType(SPELL_AURA_MANA_SHIELD));
+    AuraEffectList vManaShieldCopy(victim->GetAuraEffectsByTypeCopy(SPELL_AURA_MANA_SHIELD));
     for (AuraEffectList::const_iterator itr = vManaShieldCopy.begin(); (itr != vManaShieldCopy.end()) && (dmgInfo.GetDamage() > 0); ++itr)
     {
         AuraEffect* absorbAurEff = *itr;
@@ -2489,7 +2516,7 @@ void Unit::CalcAbsorbResist(DamageInfo& dmgInfo, bool Splited)
     {
         // We're going to call functions which can modify content of the list during iteration over it's elements
         // Let's copy the list so we can prevent iterator invalidation
-        AuraEffectList vSplitDamageFlatCopy(victim->GetAuraEffectsByType(SPELL_AURA_SPLIT_DAMAGE_FLAT)); // Not used by any spell
+        AuraEffectList vSplitDamageFlatCopy(victim->GetAuraEffectsByTypeCopy(SPELL_AURA_SPLIT_DAMAGE_FLAT)); // Not used by any spell
         for (AuraEffectList::iterator itr = vSplitDamageFlatCopy.begin(); (itr != vSplitDamageFlatCopy.end()) && (dmgInfo.GetDamage() > 0); ++itr)
         {
             // Check if aura was removed during iteration - we don't need to work on such auras
@@ -2554,7 +2581,7 @@ void Unit::CalcAbsorbResist(DamageInfo& dmgInfo, bool Splited)
 
         // We're going to call functions which can modify content of the list during iteration over it's elements
         // Let's copy the list so we can prevent iterator invalidation
-        AuraEffectList vSplitDamagePctCopy(victim->GetAuraEffectsByType(SPELL_AURA_SPLIT_DAMAGE_PCT));
+        AuraEffectList vSplitDamagePctCopy(victim->GetAuraEffectsByTypeCopy(SPELL_AURA_SPLIT_DAMAGE_PCT));
         for (AuraEffectList::iterator itr = vSplitDamagePctCopy.begin(); (itr != vSplitDamagePctCopy.end()) && (dmgInfo.GetDamage() > 0); ++itr)
         {
             // Check if aura was removed during iteration - we don't need to work on such auras
@@ -2790,10 +2817,14 @@ void Unit::AttackerStateUpdate(Unit* victim, WeaponAttackType attType /*= BASE_A
         // Let the pet know we've started attacking someting. Handles melee attacks only
         // Spells such as auto-shot and others handled in WorldSession::HandleCastSpellOpcode
         if (IsPlayer() && !m_Controlled.empty())
+        {
+            std::lock_guard<std::recursive_mutex> lock(_controlledLock);
             for (Unit::ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
                 if (Unit* pet = *itr)
-                    if (pet->IsAlive() && pet->IsCreature())
-                        pet->ToCreature()->AI()->OwnerAttacked(victim);
+                    if (pet->IsAlive() && pet->IsCreature() && pet->IsInWorld() && pet->FindMap())
+                        if (Creature* creature = pet->ToCreature(); creature->IsAIEnabled)
+                            creature->AI()->OwnerAttacked(victim);
+        }
     }
 }
 
@@ -3962,44 +3993,56 @@ void Unit::_DeleteRemovedAuras()
 
 void Unit::_UpdateSpells(uint32 time)
 {
-    std::lock_guard<std::recursive_mutex> lock(_auraLock);
-    if (m_currentSpells[CURRENT_AUTOREPEAT_SPELL])
-        _UpdateAutoRepeatSpell();
-
-    // remove finished spells from current pointers
+    std::vector<Aura*> auraSnapshot;
     {
-        std::lock_guard<std::recursive_mutex> spellLock(_currentSpellsLock);
-        for (uint32 i = 0; i < CURRENT_MAX_SPELL; ++i)
+        std::lock_guard<std::recursive_mutex> lock(_auraLock);
+        if (m_currentSpells[CURRENT_AUTOREPEAT_SPELL])
+            _UpdateAutoRepeatSpell();
+
+        // remove finished spells from current pointers
         {
-            if (m_currentSpells[i] && m_currentSpells[i]->getState() == SPELL_STATE_FINISHED)
+            std::lock_guard<std::recursive_mutex> spellLock(_currentSpellsLock);
+            for (uint32 i = 0; i < CURRENT_MAX_SPELL; ++i)
             {
-                m_currentSpells[i]->SetReferencedFromCurrent(false);
-                m_currentSpells[i] = nullptr;                      // remove pointer
+                if (m_currentSpells[i] && m_currentSpells[i]->getState() == SPELL_STATE_FINISHED)
+                {
+                    m_currentSpells[i]->SetReferencedFromCurrent(false);
+                    m_currentSpells[i] = nullptr;                      // remove pointer
+                }
             }
         }
+
+        // Snapshot owned auras so UpdateOwner doesn't hold _auraLock while
+        // performing grid visits, which can deadlock with other map locks.
+        auraSnapshot.reserve(m_ownedAuras.size());
+        for (auto const& auraPair : m_ownedAuras)
+            auraSnapshot.push_back(auraPair.second);
+
+        m_auraUpdateIterator = m_ownedAuras.end();
     }
 
-    // m_auraUpdateIterator can be updated in indirect called code at aura remove to skip next planned to update but removed auras
-    for (m_auraUpdateIterator = m_ownedAuras.begin(); m_auraUpdateIterator != m_ownedAuras.end();)
+    for (Aura* aura : auraSnapshot)
     {
-        Aura* i_aura = m_auraUpdateIterator->second;
-        ++m_auraUpdateIterator;                            // need shift to next for allow update if need into aura update
-        i_aura->UpdateOwner(time, this);
+        if (!aura || aura->IsRemoved())
+            continue;
+        aura->UpdateOwner(time, this);
     }
 
     // remove expired auras - do that after updates(used in scripts?)
-    for (AuraMap::iterator i = m_ownedAuras.begin(); i != m_ownedAuras.end();)
     {
-        if (i->second->IsExpired())
-            RemoveOwnedAura(i, AURA_REMOVE_BY_EXPIRE);
-        else if (i->second->GetSpellInfo()->IsChanneled() && i->second->GetCasterGUID() != GetGUID() && !ObjectAccessor::GetWorldObject(*this, i->second->GetCasterGUID()))
-            RemoveOwnedAura(i, AURA_REMOVE_BY_CANCEL); // remove channeled auras when caster is not on the same map
-        else
-            ++i;
+        std::lock_guard<std::recursive_mutex> lock(_auraLock);
+        for (AuraMap::iterator i = m_ownedAuras.begin(); i != m_ownedAuras.end();)
+        {
+            if (i->second->IsExpired())
+                RemoveOwnedAura(i, AURA_REMOVE_BY_EXPIRE);
+            else if (i->second->GetSpellInfo()->IsChanneled() && i->second->GetCasterGUID() != GetGUID() && !ObjectAccessor::GetWorldObject(*this, i->second->GetCasterGUID()))
+                RemoveOwnedAura(i, AURA_REMOVE_BY_CANCEL); // remove channeled auras when caster is not on the same map
+            else
+                ++i;
+        }
     }
 
     {
-        std::lock_guard<std::recursive_mutex> lock(_visibleAurasLock);
         auto visibleAurasSnapshot = GetVisibleAurasSnapshot();
         for (auto& auraPair : visibleAurasSnapshot)
             if (auraPair.second->IsNeedClientUpdate())
@@ -4008,20 +4051,23 @@ void Unit::_UpdateSpells(uint32 time)
 
     _DeleteRemovedAuras();
 
-    if (!m_gameObj.empty())
     {
-        for (GameObjectList::iterator itr = m_gameObj.begin(); itr != m_gameObj.end();)
+        std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+        if (!m_gameObj.empty())
         {
-            if (GameObject* go = ObjectAccessor::GetGameObject(*this, *itr))
-                if (!go->isSpawned())
-                {
-                    go->SetOwnerGUID(ObjectGuid::Empty);
-                    go->SetRespawnTime(0);
-                    go->Delete();
-                    m_gameObj.erase(itr++);
-                    continue;
-                }
-            ++itr;
+            for (GameObjectList::iterator itr = m_gameObj.begin(); itr != m_gameObj.end();)
+            {
+                if (GameObject* go = ObjectAccessor::GetGameObject(*this, *itr))
+                    if (!go->isSpawned())
+                    {
+                        go->SetOwnerGUID(ObjectGuid::Empty);
+                        go->SetRespawnTime(0);
+                        go->Delete();
+                        m_gameObj.erase(itr++);
+                        continue;
+                    }
+                ++itr;
+            }
         }
     }
 }
@@ -5578,34 +5624,57 @@ void Unit::RemoveAurasByShapeShift()
 
 void Unit::RemoveAreaAurasDueToLeaveWorld()
 {
-    // make sure that all area auras not applied on self are removed - prevent access to deleted pointer later
-    for (AuraMap::iterator iter = m_ownedAuras.begin(); iter != m_ownedAuras.end();)
-    {
-        Aura* aura = iter->second;
-        ++iter;
-        Aura::ApplicationMap const& appMap = aura->GetApplicationMap();
-        for (Aura::ApplicationMap::const_iterator itr = appMap.begin(); itr != appMap.end();)
-        {
-            AuraApplication* aurApp = itr->second;
-            ++itr;
-            Unit* target = aurApp->GetTarget();
-            if (target == this)
-                continue;
-            target->RemoveAura(aurApp);
-            // things linked on aura remove may apply new area aura - so start from the beginning
-            iter = m_ownedAuras.begin();
-        }
-    }
+    // Collect targets first to avoid holding _auraLock while removing auras from other units.
+    // This prevents lock inversion with grid/object locks during multithreaded updates.
+    std::vector<AuraApplication*> toRemove;
 
-    // remove area auras owned by others
-    for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
+    while (true)
     {
-        if (iter->second->GetBase()->GetOwner() != this)
+        toRemove.clear();
+
         {
-            RemoveAura(iter);
+            std::lock_guard<std::recursive_mutex> lock(_auraLock);
+
+            // remove area auras owned by this unit but applied to other units
+            for (auto const& ownedPair : m_ownedAuras)
+            {
+                Aura* aura = ownedPair.second;
+                if (!aura || aura->IsRemoved())
+                    continue;
+
+                std::list<AuraApplication*> applications;
+                aura->GetApplicationList(applications);
+                for (AuraApplication* aurApp : applications)
+                {
+                    if (!aurApp)
+                        continue;
+                    Unit* target = aurApp->GetTarget();
+                    if (target && target != this)
+                        toRemove.push_back(aurApp);
+                }
+            }
+
+            // remove area auras owned by others
+            for (auto const& appliedPair : m_appliedAuras)
+            {
+                AuraApplication* aurApp = appliedPair.second;
+                if (!aurApp)
+                    continue;
+                if (aurApp->GetBase()->GetOwner() != this)
+                    toRemove.push_back(aurApp);
+            }
         }
-        else
-            ++iter;
+
+        if (toRemove.empty())
+            break;
+
+        for (AuraApplication* aurApp : toRemove)
+        {
+            if (!aurApp)
+                continue;
+            if (Unit* target = aurApp->GetTarget())
+                target->RemoveAura(aurApp);
+        }
     }
 }
 
@@ -5958,6 +6027,17 @@ void Unit::GetDispellableAuraList(Unit* caster, uint32 dispelMask, DispelCharges
     }
 }
 
+void Unit::BuildVisibleAurasUpdateAllPacket(WorldPacket& data) const
+{
+    std::lock_guard<std::recursive_mutex> auraLock(_auraLock);
+    std::lock_guard<std::recursive_mutex> visibleLock(_visibleAurasLock);
+    for (auto const& auraPair : m_visibleAuras)
+    {
+        if (AuraApplication* auraApp = auraPair.second)
+            auraApp->BuildUpdatePacket(data, false);
+    }
+}
+
 bool Unit::HasAuraEffect(uint32 spellId, uint8 effIndex, ObjectGuid caster) const
 {
     AuraApplicationMapBounds range = m_appliedAuras.equal_range(spellId);
@@ -6213,7 +6293,8 @@ uint32 Unit::GetDoTsByCaster(ObjectGuid casterGUID) const
 
 int32 Unit::GetTotalAuraModifier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
 {
-    AuraEffectList const& mTotalAuraList = GetAuraEffectsByType(auraType);
+    // Use copy to avoid cross-thread iteration race on m_modAuras[]
+    AuraEffectList mTotalAuraList = GetAuraEffectsByTypeCopy(auraType);
     if (mTotalAuraList.empty())
         return 0;
 
@@ -6240,7 +6321,8 @@ int32 Unit::GetTotalAuraModifier(AuraType auraType, std::function<bool(AuraEffec
 
 float Unit::GetTotalAuraMultiplier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
 {
-    AuraEffectList const& mTotalAuraList = GetAuraEffectsByType(auraType);
+    // Use copy to avoid cross-thread iteration race on m_modAuras[]
+    AuraEffectList mTotalAuraList = GetAuraEffectsByTypeCopy(auraType);
     if (mTotalAuraList.empty())
         return 1.0f;
 
@@ -6267,7 +6349,8 @@ float Unit::GetTotalAuraMultiplier(AuraType auraType, std::function<bool(AuraEff
 
 int32 Unit::GetMaxPositiveAuraModifier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
 {
-    AuraEffectList const& mTotalAuraList = GetAuraEffectsByType(auraType);
+    // Use copy to avoid cross-thread iteration race on m_modAuras[]
+    AuraEffectList mTotalAuraList = GetAuraEffectsByTypeCopy(auraType);
     if (mTotalAuraList.empty())
         return 0;
 
@@ -6283,7 +6366,8 @@ int32 Unit::GetMaxPositiveAuraModifier(AuraType auraType, std::function<bool(Aur
 
 int32 Unit::GetMaxNegativeAuraModifier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
 {
-    AuraEffectList const& mTotalAuraList = GetAuraEffectsByType(auraType);
+    // Use copy to avoid cross-thread iteration race on m_modAuras[]
+    AuraEffectList mTotalAuraList = GetAuraEffectsByTypeCopy(auraType);
     if (mTotalAuraList.empty())
         return 0;
 
@@ -6518,16 +6602,21 @@ void Unit::UpdateStatBuffMod(Stats stat)
 
 void Unit::_RegisterDynObject(DynamicObject* dynObj)
 {
+    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
     m_dynObj.push_back(dynObj);
 }
 
 void Unit::_UnregisterDynObject(DynamicObject* dynObj)
 {
+    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
     m_dynObj.remove(dynObj);
+    if (dynObj)
+        _pendingDynObjectRemovals.erase(dynObj->GetGUID());
 }
 
 DynamicObject* Unit::GetDynObject(uint32 spellId)
 {
+    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
     if (m_dynObj.empty())
         return nullptr;
     for (DynObjectList::const_iterator i = m_dynObj.begin(); i != m_dynObj.end(); ++i)
@@ -6541,34 +6630,91 @@ DynamicObject* Unit::GetDynObject(uint32 spellId)
 
 bool Unit::RemoveDynObject(uint32 spellId)
 {
-    if (m_dynObj.empty())
-        return false;
-
-    bool result = false;
-    for (DynObjectList::iterator i = m_dynObj.begin(); i != m_dynObj.end();)
+    std::vector<DynamicObject*> toRemove;
     {
-        DynamicObject* dynObj = *i;
-        if (dynObj->GetSpellId() == spellId)
+        std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+        if (m_dynObj.empty())
+            return false;
+
+        for (DynamicObject* dynObj : m_dynObj)
         {
-            dynObj->Remove();
-            i = m_dynObj.begin();
-            result = true;
+            if (dynObj && dynObj->GetSpellId() == spellId)
+            {
+                if (_pendingDynObjectRemovals.count(dynObj->GetGUID()) > 0)
+                    continue;
+                toRemove.push_back(dynObj);
+            }
         }
-        else
-            ++i;
     }
 
-    return result;
+    for (DynamicObject* dynObj : toRemove)
+    {
+        if (!dynObj)
+            continue;
+
+        if (Map* map = dynObj->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        {
+            uint32 zoneId = map->GetZoneId(dynObj->GetPhaseMask(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ());
+            uint32 dynPartition = sPartitionMgr->GetPartitionIdForPosition(map->GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), zoneId, dynObj->GetGUID());
+            uint32 activePartition = map->GetActivePartitionContext();
+            if (dynPartition && dynPartition != activePartition)
+            {
+                bool queued = false;
+                {
+                    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+                    queued = _pendingDynObjectRemovals.insert(dynObj->GetGUID()).second;
+                }
+                if (queued)
+                    map->QueuePartitionDynObjectRelay(dynPartition, dynObj->GetGUID(), 1);
+                continue;
+            }
+        }
+
+        dynObj->Remove();
+    }
+
+    return !toRemove.empty();
 }
 
 void Unit::RemoveAllDynObjects()
 {
-    while (!m_dynObj.empty())
-        m_dynObj.front()->Remove();
+    DynObjectList objects;
+    {
+        std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+        objects.swap(m_dynObj);
+    }
+
+    for (DynamicObject* dynObj : objects)
+    {
+        if (!dynObj)
+            continue;
+
+        if (Map* map = dynObj->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        {
+            uint32 zoneId = map->GetZoneId(dynObj->GetPhaseMask(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ());
+            uint32 dynPartition = sPartitionMgr->GetPartitionIdForPosition(map->GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), zoneId, dynObj->GetGUID());
+            uint32 activePartition = map->GetActivePartitionContext();
+            if (dynPartition && dynPartition != activePartition)
+            {
+                bool queued = false;
+                {
+                    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+                    if (_pendingDynObjectRemovals.count(dynObj->GetGUID()) == 0)
+                        queued = _pendingDynObjectRemovals.insert(dynObj->GetGUID()).second;
+                }
+                if (queued)
+                    map->QueuePartitionDynObjectRelay(dynPartition, dynObj->GetGUID(), 1);
+                continue;
+            }
+        }
+
+        dynObj->Remove();
+    }
 }
 
 GameObject* Unit::GetGameObject(uint32 spellId) const
 {
+    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
     for (GameObjectList::const_iterator itr = m_gameObj.begin(); itr != m_gameObj.end(); ++itr)
         if (GameObject* go = ObjectAccessor::GetGameObject(*this, *itr))
             if (go->GetSpellId() == spellId)
@@ -6582,7 +6728,10 @@ void Unit::AddGameObject(GameObject* gameObj)
     if (!gameObj || gameObj->GetOwnerGUID())
         return;
 
-    m_gameObj.push_back(gameObj->GetGUID());
+    {
+        std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+        m_gameObj.push_back(gameObj->GetGUID());
+    }
     gameObj->SetOwnerGUID(GetGUID());
 
     if (IsPlayer() && gameObj->GetSpellId())
@@ -6599,6 +6748,17 @@ void Unit::RemoveGameObject(GameObject* gameObj, bool del)
 {
     if (!gameObj || gameObj->GetOwnerGUID() != GetGUID())
         return;
+
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionGameObjectRelay(ownerPartition, GetGUID(), gameObj->GetGUID(), 0, del, 1);
+            return;
+        }
+    }
 
     gameObj->SetOwnerGUID(ObjectGuid::Empty);
 
@@ -6626,7 +6786,10 @@ void Unit::RemoveGameObject(GameObject* gameObj, bool del)
         }
     }
 
-    m_gameObj.remove(gameObj->GetGUID());
+    {
+        std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+        m_gameObj.remove(gameObj->GetGUID());
+    }
 
     if (del)
     {
@@ -6637,6 +6800,18 @@ void Unit::RemoveGameObject(GameObject* gameObj, bool del)
 
 void Unit::RemoveGameObject(uint32 spellid, bool del)
 {
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionGameObjectRelay(ownerPartition, GetGUID(), ObjectGuid::Empty, spellid, del, 2);
+            return;
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
     if (m_gameObj.empty())
         return;
 
@@ -6663,6 +6838,18 @@ void Unit::RemoveGameObject(uint32 spellid, bool del)
 
 void Unit::RemoveAllGameObjects()
 {
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionGameObjectRelay(ownerPartition, GetGUID(), ObjectGuid::Empty, 0, true, 3);
+            return;
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
     while(!m_gameObj.empty())
     {
         GameObject* go = ObjectAccessor::GetGameObject(*this, *m_gameObj.begin());
@@ -10703,13 +10890,25 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
     if (HasSpiritOfRedemptionAura())
         return false;
 
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionAttackRelay(ownerPartition, GetGUID(), victim->GetGUID(), meleeAttack);
+            return true;
+        }
+    }
+
     // remove SPELL_AURA_MOD_UNATTACKABLE at attack (in case non-interruptible spells stun aura applied also that not let attack)
     if (HasUnattackableAura())
         RemoveAurasByType(SPELL_AURA_MOD_UNATTACKABLE);
 
-    if (m_attacking)
+    Unit* attacking = m_attacking.load();
+    if (attacking)
     {
-        if (m_attacking == victim)
+        if (attacking == victim)
         {
             // switch to melee attack from ranged/magic
             if (meleeAttack)
@@ -10736,11 +10935,11 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
             ClearUnitState(UNIT_STATE_MELEE_ATTACKING);
     }
 
-    if (m_attacking)
-        m_attacking->_removeAttacker(this);
+    if (attacking)
+        attacking->_removeAttacker(this);
 
-    m_attacking = victim;
-    m_attacking->_addAttacker(this);
+    m_attacking.store(victim);
+    victim->_addAttacker(this);
 
     // Set our target
     SetTarget(victim->GetGUID());
@@ -10753,6 +10952,7 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
     Creature* controlledCreatureWithSameVictim = nullptr;
     if (creature && !m_Controlled.empty())
     {
+        std::lock_guard<std::recursive_mutex> lock(_controlledLock);
         for (ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
         {
             if ((*itr)->ToCreature() && (*itr)->GetVictim() == victim)
@@ -10812,13 +11012,13 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
  */
 bool Unit::AttackStop()
 {
-    if (!m_attacking)
+    if (!m_attacking.load())
         return false;
 
-    Unit* victim = m_attacking;
+    Unit* victim = m_attacking.load();
 
-    m_attacking->_removeAttacker(this);
-    m_attacking = nullptr;
+    victim->_removeAttacker(this);
+    m_attacking.store(nullptr);
 
     // Clear our target
     SetTarget(ObjectGuid::Empty);
@@ -10865,6 +11065,7 @@ void Unit::CombatStopWithPets(bool includingCast)
 {
     CombatStop(includingCast);
 
+    std::lock_guard<std::recursive_mutex> lock(_controlledLock);
     for (ControlSet::const_iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
         (*itr)->CombatStop(includingCast);
 }
@@ -10874,10 +11075,13 @@ bool Unit::isAttackingPlayer() const
     if (HasUnitState(UNIT_STATE_ATTACK_PLAYER))
         return true;
 
-    if (!m_Controlled.empty())
-        for (ControlSet::const_iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
-            if ((*itr)->isAttackingPlayer())
-                return true;
+    {
+        std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+        if (!m_Controlled.empty())
+            for (ControlSet::const_iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
+                if ((*itr)->isAttackingPlayer())
+                    return true;
+    }
 
     for (uint8 i = 0; i < MAX_SUMMON_SLOT; ++i)
         if (m_SummonSlot[i])
@@ -11112,6 +11316,28 @@ void Unit::SetMinion(Minion* minion, bool apply)
 {
     LOG_DEBUG("entities.unit", "SetMinion {} for {}, apply {}", minion->GetEntry(), GetEntry(), apply);
 
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionMinionRelay(ownerPartition, GetGUID(), minion->GetGUID(), apply);
+            return;
+        }
+    }
+
+    if (apply)
+    {
+        if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        {
+            uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+            uint32 minionPartition = map->GetPartitionIdForUnit(minion);
+            if (ownerPartition && minionPartition && ownerPartition != minionPartition)
+                sPartitionMgr->SetPartitionOverride(minion->GetGUID(), map->GetId(), ownerPartition, 2000);
+        }
+    }
+
     if (apply)
     {
         if (minion->GetOwnerGUID())
@@ -11122,7 +11348,10 @@ void Unit::SetMinion(Minion* minion, bool apply)
 
         minion->SetOwnerGUID(GetGUID());
 
-        m_Controlled.insert(minion);
+        {
+            std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+            m_Controlled.insert(minion);
+        }
 
         if (IsPlayer())
         {
@@ -11192,7 +11421,10 @@ void Unit::SetMinion(Minion* minion, bool apply)
             return;
         }
 
-        m_Controlled.erase(minion);
+        {
+            std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+            m_Controlled.erase(minion);
+        }
 
         if (minion->m_Properties && minion->m_Properties->Type == SUMMON_TYPE_MINIPET)
         {
@@ -11236,6 +11468,7 @@ void Unit::SetMinion(Minion* minion, bool apply)
         {
             if (RemoveGuidValue(UNIT_FIELD_SUMMON, minion->GetGUID()))
             {
+                std::lock_guard<std::recursive_mutex> lock(_controlledLock);
                 // Check if there is another minion
                 for (ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
                 {
@@ -11276,6 +11509,7 @@ void Unit::SetMinion(Minion* minion, bool apply)
 
 void Unit::GetAllMinionsByEntry(std::list<Creature*>& Minions, uint32 entry)
 {
+    std::lock_guard<std::recursive_mutex> lock(_controlledLock);
     for (Unit::ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end();)
     {
         Unit* unit = *itr;
@@ -11288,6 +11522,7 @@ void Unit::GetAllMinionsByEntry(std::list<Creature*>& Minions, uint32 entry)
 
 void Unit::RemoveAllMinionsByEntry(uint32 entry)
 {
+    std::lock_guard<std::recursive_mutex> lock(_controlledLock);
     for (Unit::ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end();)
     {
         Unit* unit = *itr;
@@ -11332,7 +11567,10 @@ void Unit::SetCharm(Unit* charm, bool apply)
             charm->SendMovementFlagUpdate();
         }
 
-        m_Controlled.insert(charm);
+        {
+            std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+            m_Controlled.insert(charm);
+        }
     }
     else
     {
@@ -11376,7 +11614,10 @@ void Unit::SetCharm(Unit* charm, bool apply)
             charm->SendMovementFlagUpdate(true); // send packet to self, to update movement state on player.
         }
 
-        m_Controlled.erase(charm);
+        {
+            std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+            m_Controlled.erase(charm);
+        }
     }
 }
 
@@ -11454,7 +11695,7 @@ Unit* Unit::GetMagicHitRedirectTarget(Unit* victim, SpellInfo const* spellInfo)
     if (spellInfo->HasAttribute(SPELL_ATTR0_IS_ABILITY) || spellInfo->HasAttribute(SPELL_ATTR1_NO_REDIRECTION) || spellInfo->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES))
         return victim;
 
-    Unit::AuraEffectList const& magnetAuras = victim->GetAuraEffectsByType(SPELL_AURA_SPELL_MAGNET);
+    Unit::AuraEffectList magnetAuras = victim->GetAuraEffectsByTypeCopy(SPELL_AURA_SPELL_MAGNET);
     for (Unit::AuraEffectList::const_iterator itr = magnetAuras.begin(); itr != magnetAuras.end(); ++itr)
     {
         if (Unit* magnet = (*itr)->GetBase()->GetUnitOwner())
@@ -11488,7 +11729,7 @@ Unit* Unit::GetMagicHitRedirectTarget(Unit* victim, SpellInfo const* spellInfo)
 
 Unit* Unit::GetMeleeHitRedirectTarget(Unit* victim, SpellInfo const* spellInfo)
 {
-    AuraEffectList const& hitTriggerAuras = victim->GetAuraEffectsByType(SPELL_AURA_ADD_CASTER_HIT_TRIGGER);
+    AuraEffectList hitTriggerAuras = victim->GetAuraEffectsByTypeCopy(SPELL_AURA_ADD_CASTER_HIT_TRIGGER);
     for (AuraEffectList::const_iterator i = hitTriggerAuras.begin(); i != hitTriggerAuras.end(); ++i)
     {
         if (Unit* magnet = (*i)->GetBase()->GetCaster())
@@ -11521,6 +11762,7 @@ void Unit::RemoveAllControlled(bool onDeath /*= false*/)
     if (IsPlayer())
         ToPlayer()->StopCastingCharm();
 
+    std::lock_guard<std::recursive_mutex> lock(_controlledLock);
     while (!m_Controlled.empty())
     {
         Unit* target = *m_Controlled.begin();
@@ -11538,7 +11780,7 @@ void Unit::RemoveAllControlled(bool onDeath /*= false*/)
         }
         else
         {
-            LOG_ERROR("entities.unit", "Unit {} is trying to release unit {} which is neither charmed nor owned by it", GetEntry(), target->GetEntry());
+            LOG_ERROR("entities.unit", "Unit {} is trying to release unit {} which is neither charmed nor owned by it", GetGUID().ToString(), Object::GetGUID(target).ToString());
         }
     }
 }
@@ -11600,6 +11842,7 @@ Unit* Unit::GetNextRandomRaidMemberOrPet(float radius)
 // so move it to Player?
 void Unit::AddPlayerToVision(Player* player)
 {
+    std::lock_guard<std::mutex> lock(_sharedVisionLock);
     if (m_sharedVision.empty())
         setActive(true);
 
@@ -11610,6 +11853,7 @@ void Unit::AddPlayerToVision(Player* player)
 // only called in Player::SetSeer
 void Unit::RemovePlayerFromVision(Player* player)
 {
+    std::lock_guard<std::mutex> lock(_sharedVisionLock);
     m_sharedVision.remove(player);
     player->m_isInSharedVisionOf.erase(this);
 
@@ -11971,7 +12215,7 @@ float Unit::SpellPctDamageModsDone(Unit* victim, SpellInfo const* spellProto, Da
             {
                 // Get stack of Holy Vengeance/Blood Corruption on the target added by caster
                 uint32 stacks = 0;
-                Unit::AuraEffectList const& auras = victim->GetAuraEffectsByType(SPELL_AURA_PERIODIC_DAMAGE);
+                Unit::AuraEffectList auras = victim->GetAuraEffectsByTypeCopy(SPELL_AURA_PERIODIC_DAMAGE);
                 for (Unit::AuraEffectList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
                     if (((*itr)->GetId() == 31803 || (*itr)->GetId() == 53742) && (*itr)->GetCasterGUID() == GetGUID())
                     {
@@ -14004,6 +14248,17 @@ void Unit::CombatStart(Unit* victim, bool initialAggro)
     if (victim->IsCreature() && victim->ToCreature()->IsTrigger())
         return;
 
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionCombatRelay(ownerPartition, GetGUID(), victim->GetGUID(), initialAggro);
+            return;
+        }
+    }
+
     if (initialAggro)
     {
         // Make player victim stand up automatically
@@ -14117,6 +14372,17 @@ void Unit::SetInCombatState(bool PvP, Unit* enemy, uint32 duration)
     if (!IsAlive())
         return;
 
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionCombatStateRelay(ownerPartition, GetGUID(), enemy ? enemy->GetGUID() : ObjectGuid::Empty, PvP, duration);
+            return;
+        }
+    }
+
     if (PvP)
         m_CombatTimer = std::max<uint32>(GetCombatTimer(), std::max<uint32>(5500, duration));
     else if (duration)
@@ -14170,16 +14436,22 @@ void Unit::SetInCombatState(bool PvP, Unit* enemy, uint32 duration)
             SetStandState(UNIT_STAND_STATE_STAND);
     }
 
-    for (Unit::ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end();)
     {
-        Unit* controlled = *itr;
-        ++itr;
+        std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+        for (Unit::ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end();)
+        {
+            Unit* controlled = *itr;
+            ++itr;
 
-        // Xinef: Dont set combat for passive units, they will evade in next update...
-        if (controlled->IsCreature() && controlled->ToCreature()->HasReactState(REACT_PASSIVE))
-            continue;
+            if (!controlled || !controlled->IsInWorld() || !controlled->FindMap())
+                continue;
 
-        controlled->SetInCombatState(PvP, enemy, duration);
+            // Xinef: Dont set combat for passive units, they will evade in next update...
+            if (controlled->IsCreature() && controlled->ToCreature()->HasReactState(REACT_PASSIVE))
+                continue;
+
+            controlled->SetInCombatState(PvP, enemy, duration);
+        }
     }
 
     if (Player* player = this->ToPlayer())
@@ -15170,6 +15442,8 @@ Unit* Creature::SelectVictim()
                 if (owner->IsInCombat())
                     target = owner->getAttackerForHelper();
                 if (!target)
+                {
+                    std::lock_guard<std::recursive_mutex> lock(owner->_controlledLock);
                     for (ControlSet::const_iterator itr = owner->m_Controlled.begin(); itr != owner->m_Controlled.end(); ++itr)
                         if ((*itr)->IsInCombat())
                         {
@@ -15177,6 +15451,7 @@ Unit* Creature::SelectVictim()
                             if (target)
                                 break;
                         }
+                }
             }
     }
     else
@@ -17178,6 +17453,21 @@ MovementGeneratorType Unit::GetDefaultMovementType() const
 
 void Unit::StopMoving()
 {
+    if (Map* map = FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = GetGUID();
+            relay.action = Map::MOTION_RELAY_STOP;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
     ClearUnitState(UNIT_STATE_MOVING);
 
@@ -17221,6 +17511,21 @@ void Unit::ResumeMovement(uint32 timer /* = 0*/, uint8 slot /* = 0*/)
 
 void Unit::StopMovingOnCurrentPos()
 {
+    if (Map* map = FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = GetGUID();
+            relay.action = Map::MOTION_RELAY_STOP_ON_POS;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     std::lock_guard<std::recursive_mutex> lock(GetMoveSplineLock());
     ClearUnitState(UNIT_STATE_MOVING);
 
@@ -17468,6 +17773,7 @@ void Unit::SendComboPoints()
 
 void Unit::ClearComboPointHolders()
 {
+    std::lock_guard<std::recursive_mutex> lock(_comboPointHoldersLock);
     while (!m_ComboPointHolders.empty())
     {
         (*m_ComboPointHolders.begin())->ClearComboPoints(); // this also removes it from m_comboPointHolders
@@ -18919,6 +19225,29 @@ bool Unit::SetCharmedBy(Unit* charmer, CharmType type, AuraApplication const* au
     if (!charmer)
         return false;
 
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            uint32 auraSpellId = aurApp ? aurApp->GetBase()->GetId() : 0;
+            map->QueuePartitionCharmRelay(ownerPartition, charmer->GetGUID(), GetGUID(), static_cast<uint8>(type), auraSpellId, true);
+            return true;
+        }
+    }
+
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 activePartition = map->GetActivePartitionContext();
+        uint32 charmerPartition = map->GetPartitionIdForUnit(charmer);
+        if (activePartition && charmerPartition && activePartition != charmerPartition)
+        {
+            sPartitionMgr->SetPartitionOverride(charmer->GetGUID(), map->GetId(), activePartition, 2000);
+            sPartitionMgr->SetPartitionOverride(GetGUID(), map->GetId(), activePartition, 2000);
+        }
+    }
+
     if (!charmer->IsInWorld() || charmer->IsDuringRemoveFromWorld())
     {
         return false;
@@ -19131,6 +19460,28 @@ void Unit::RemoveCharmedBy(Unit* charmer)
         //            GetGUID().ToString(), GetCharmerGUID().ToString(), charmer->GetGUID().ToString());
         //        ABORT();
         return;
+    }
+
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionCharmRelay(ownerPartition, charmer->GetGUID(), GetGUID(), 0, 0, false);
+            return;
+        }
+    }
+
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 activePartition = map->GetActivePartitionContext();
+        uint32 charmerPartition = map->GetPartitionIdForUnit(charmer);
+        if (activePartition && charmerPartition && activePartition != charmerPartition)
+        {
+            sPartitionMgr->SetPartitionOverride(charmer->GetGUID(), map->GetId(), activePartition, 2000);
+            sPartitionMgr->SetPartitionOverride(GetGUID(), map->GetId(), activePartition, 2000);
+        }
     }
 
     CharmType type;
@@ -19713,6 +20064,12 @@ void Unit::UpdateObjectVisibility(bool forced, bool /*fromUpdate*/)
     {
         if (!IsPlayer())
         {
+            if (Map* map = FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+            {
+                map->QueueDeferredVisibilityUpdate(GetGUID());
+                return;
+            }
+
             if (Map* map = FindMap(); map && map->ShouldDeferNonPlayerVisibility(this))
             {
                 map->QueueDeferredVisibilityUpdate(GetGUID());
@@ -20145,25 +20502,70 @@ void Unit::_ExitVehicle(Position const* exitPosition)
 
     // xinef: hack for flameleviathan seat vehicle
     VehicleEntry const* vehicleInfo = vehicle->GetVehicleInfo();
+    Map* map = FindMap();
+    bool relayTransportExit = false;
+    if (map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        relayTransportExit = ownerPartition && ownerPartition != activePartition;
+    }
+
     if (!vehicleInfo || vehicleInfo->m_ID != 341)
     {
-        Movement::MoveSplineInit init(this);
-        init.MoveTo(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ());
-        init.SetFacing(vehicleBase->GetOrientation());
-        init.SetTransportExit();
-        init.Launch();
+        if (relayTransportExit)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = GetGUID();
+            relay.action = Map::MOTION_RELAY_TRANSPORT_EXIT;
+            relay.x = pos.GetPositionX();
+            relay.y = pos.GetPositionY();
+            relay.z = pos.GetPositionZ();
+            relay.orientation = vehicleBase->GetOrientation();
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(map->GetPartitionIdForUnit(this), relay);
+        }
+        else
+        {
+            Movement::MoveSplineInit init(this);
+            init.MoveTo(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ());
+            init.SetFacing(vehicleBase->GetOrientation());
+            init.SetTransportExit();
+            init.Launch();
+        }
     }
     else
     {
         float o = pos.GetAngle(this);
-        Movement::MoveSplineInit init(this);
-        init.MoveTo(pos.GetPositionX() + 8 * cos(o), pos.GetPositionY() + 8 * std::sin(o), pos.GetPositionZ() + 16.0f);
-        init.SetFacing(GetOrientation());
-        init.SetTransportExit();
-        init.Launch();
-        DisableSpline();
-        KnockbackFrom(pos.GetPositionX(), pos.GetPositionY(), 10.0f, 20.0f);
-        CastSpell(this, VEHICLE_SPELL_PARACHUTE, true);
+        if (relayTransportExit)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = GetGUID();
+            relay.action = Map::MOTION_RELAY_TRANSPORT_EXIT;
+            relay.x = pos.GetPositionX() + 8 * cos(o);
+            relay.y = pos.GetPositionY() + 8 * std::sin(o);
+            relay.z = pos.GetPositionZ() + 16.0f;
+            relay.orientation = GetOrientation();
+            relay.srcX = pos.GetPositionX();
+            relay.srcY = pos.GetPositionY();
+            relay.speedXY = 10.0f;
+            relay.speedZ = 20.0f;
+            relay.spellId = VEHICLE_SPELL_PARACHUTE;
+            relay.disableSpline = true;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(map->GetPartitionIdForUnit(this), relay);
+        }
+        else
+        {
+            Movement::MoveSplineInit init(this);
+            init.MoveTo(pos.GetPositionX() + 8 * cos(o), pos.GetPositionY() + 8 * std::sin(o), pos.GetPositionZ() + 16.0f);
+            init.SetFacing(GetOrientation());
+            init.SetTransportExit();
+            init.Launch();
+            DisableSpline();
+            KnockbackFrom(pos.GetPositionX(), pos.GetPositionY(), 10.0f, 20.0f);
+            CastSpell(this, VEHICLE_SPELL_PARACHUTE, true);
+        }
     }
 
     // xinef: move fall, should we support all creatures that exited vehicle in air? Currently Quest Drag and Drop only, Air Assault quest
@@ -20727,7 +21129,9 @@ void Unit::ExecuteDelayedUnitRelocationEvent()
         return;
 
     if (this->HasSharedVision())
-        for (SharedVisionList::const_iterator itr = this->GetSharedVisionList().begin(); itr != this->GetSharedVisionList().end(); ++itr)
+    {
+        SharedVisionList sharedCopy = this->GetSharedVisionListCopy();
+        for (SharedVisionList::const_iterator itr = sharedCopy.begin(); itr != sharedCopy.end(); ++itr)
             if (Player* player = (*itr))
             {
                 if (player->IsOnVehicle(this) || !player->IsInWorld() || player->IsDuringRemoveFromWorld()) // players on vehicles have their own event executed (due to passenger relocation)
@@ -20760,6 +21164,7 @@ void Unit::ExecuteDelayedUnitRelocationEvent()
                 Cell::VisitFarVisibleObjects(viewPoint, notifier, VISIBILITY_DISTANCE_GIGANTIC);
                 notifier.SendToSelf();
             }
+    }
 
     if (Player* player = this->ToPlayer())
     {
@@ -20840,6 +21245,22 @@ void Unit::SetInFront(WorldObject const* target)
 
 void Unit::SetFacingTo(float ori)
 {
+    if (Map* map = FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = GetGUID();
+            relay.action = Map::MOTION_RELAY_FACE_ORIENTATION;
+            relay.orientation = ori;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     Movement::MoveSplineInit init(this);
     init.MoveTo(GetPositionX(), GetPositionY(), GetPositionZ(), false);
     if (HasUnitMovementFlag(MOVEMENTFLAG_ONTRANSPORT) && GetTransGUID())
@@ -20853,6 +21274,26 @@ void Unit::SetFacingToObject(WorldObject* object, Milliseconds timed /*= 0ms*/)
     // never face when already moving
     if (!IsStopped())
         return;
+
+    if (object)
+    {
+        if (Map* map = FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        {
+            uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+            uint32 activePartition = map->GetActivePartitionContext();
+            if (ownerPartition && ownerPartition != activePartition)
+            {
+                Map::PartitionMotionRelay relay;
+                relay.moverGuid = GetGUID();
+                relay.targetGuid = object->GetGUID();
+                relay.action = Map::MOTION_RELAY_FACE_OBJECT;
+                relay.timeMs = uint32(timed.count());
+                relay.queuedMs = GameTime::GetGameTimeMS().count();
+                map->QueuePartitionMotionRelay(ownerPartition, relay);
+                return;
+            }
+        }
+    }
 
     /// @todo figure out under what conditions creature will move towards object instead of facing it where it currently is.
     Movement::MoveSplineInit init(this);

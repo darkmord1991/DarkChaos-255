@@ -24,6 +24,7 @@
 #include "Define.h"
 #include "DynamicTree.h"
 #include "EventProcessor.h"
+#include "G3D/Vector3.h"
 #include "GameObjectModel.h"
 #include "GridDefines.h"
 #include "GridRefMgr.h"
@@ -72,6 +73,7 @@ enum AuraRemoveMode : uint8;
 enum WeaponAttackType : uint8;
 enum MovementSlot : uint8;
 enum ForcedMovement : uint8;
+enum class PathSource;
 enum class AnimTier : uint8;
 
 enum WeatherState : uint32;
@@ -173,6 +175,7 @@ class Map : public GridRefMgr<MapGridType>
     friend class MapReference;
     friend class GridObjectLoader;
 public:
+    struct PartitionMotionRelay;
     Map(uint32 id, uint32 InstanceId, uint8 SpawnMode, Map* _parent = nullptr);
     ~Map() override;
 
@@ -226,8 +229,18 @@ public:
     void QueuePartitionThreatResetAll(uint32 partitionId, ObjectGuid const& ownerGuid);
     void QueuePartitionThreatTargetClear(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& targetGuid);
     void QueuePartitionThreatTargetReset(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& targetGuid);
+    void QueuePartitionCombatRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& victimGuid, bool initialAggro);
+    void QueuePartitionLootRelay(uint32 partitionId, ObjectGuid const& creatureGuid, ObjectGuid const& unitGuid, bool withGroup);
+    void QueuePartitionDynObjectRelay(uint32 partitionId, ObjectGuid const& dynObjGuid, uint8 action);
+    void QueuePartitionMinionRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& minionGuid, bool apply);
+    void QueuePartitionCharmRelay(uint32 partitionId, ObjectGuid const& charmerGuid, ObjectGuid const& targetGuid, uint8 charmType, uint32 auraSpellId, bool apply);
+    void QueuePartitionGameObjectRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& gameObjGuid, uint32 spellId, bool del, uint8 action);
+    void QueuePartitionCombatStateRelay(uint32 partitionId, ObjectGuid const& unitGuid, ObjectGuid const& enemyGuid, bool pvp, uint32 duration);
+    void QueuePartitionAttackRelay(uint32 partitionId, ObjectGuid const& attackerGuid, ObjectGuid const& victimGuid, bool meleeAttack);
+    void QueuePartitionEvadeRelay(uint32 partitionId, ObjectGuid const& unitGuid, uint8 reason);
     void QueuePartitionTauntApply(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid);
     void QueuePartitionTauntFade(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid);
+    void QueuePartitionMotionRelay(uint32 partitionId, PartitionMotionRelay const& relay);
     void QueuePartitionProcRelay(uint32 partitionId, ObjectGuid const& actorGuid, ObjectGuid const& targetGuid, bool isVictim, uint32 procFlag, uint32 procExtra, uint32 amount, WeaponAttackType attackType, uint32 procSpellId, uint32 procAuraId, int8 procAuraEffectIndex, uint32 procPhase);
     void QueuePartitionAuraRelay(uint32 partitionId, ObjectGuid const& casterGuid, ObjectGuid const& targetGuid, uint32 spellId, uint8 effMask, bool apply, AuraRemoveMode removeMode);
     void QueuePartitionPathRelay(uint32 partitionId, ObjectGuid const& moverGuid, ObjectGuid const& targetGuid);
@@ -261,8 +274,8 @@ public:
     virtual void UnloadAll();
 
     std::shared_ptr<GridTerrainData> GetGridTerrainDataSharedPtr(GridCoord const& gridCoord);
-    GridTerrainData* GetGridTerrainData(GridCoord const& gridCoord);
-    GridTerrainData* GetGridTerrainData(float x, float y);
+    std::shared_ptr<GridTerrainData> GetGridTerrainData(GridCoord const& gridCoord);
+    std::shared_ptr<GridTerrainData> GetGridTerrainData(float x, float y);
 
     [[nodiscard]] uint32 GetId() const { return i_mapEntry->MapID; }
 
@@ -419,11 +432,40 @@ public:
 
     MapStoredObjectTypesContainer& GetObjectsStore() { return _objectsStore; }
 
+    template<class T>
+    void InsertObjectStore(ObjectGuid const& guid, T* obj)
+    {
+        std::unique_lock<std::shared_mutex> lock(_objectsStoreLock);
+        _objectsStore.Insert<T>(guid, obj);
+    }
+
+    template<class T>
+    void RemoveObjectStore(ObjectGuid const& guid)
+    {
+        std::unique_lock<std::shared_mutex> lock(_objectsStoreLock);
+        _objectsStore.Remove<T>(guid);
+    }
+
+    template<class T>
+    T* FindObjectStore(ObjectGuid const& guid) const
+    {
+        std::shared_lock<std::shared_mutex> lock(_objectsStoreLock);
+        return _objectsStore.Find<T>(guid);
+    }
+
     typedef std::unordered_multimap<ObjectGuid::LowType, Creature*> CreatureBySpawnIdContainer;
     CreatureBySpawnIdContainer& GetCreatureBySpawnIdStore() { return _creatureBySpawnIdStore; }
+    std::vector<Creature*> GetCreaturesBySpawnId(ObjectGuid::LowType spawnId) const;
+    std::vector<std::pair<ObjectGuid::LowType, Creature*>> GetCreatureBySpawnIdStoreSnapshot() const;
+    void AddCreatureToSpawnIdStore(ObjectGuid::LowType spawnId, Creature* creature);
+    void RemoveCreatureFromSpawnIdStore(ObjectGuid::LowType spawnId, Creature* creature);
 
     typedef std::unordered_multimap<ObjectGuid::LowType, GameObject*> GameObjectBySpawnIdContainer;
     GameObjectBySpawnIdContainer& GetGameObjectBySpawnIdStore() { return _gameobjectBySpawnIdStore; }
+    std::vector<GameObject*> GetGameObjectsBySpawnId(ObjectGuid::LowType spawnId) const;
+    std::vector<std::pair<ObjectGuid::LowType, GameObject*>> GetGameObjectBySpawnIdStoreSnapshot() const;
+    void AddGameObjectToSpawnIdStore(ObjectGuid::LowType spawnId, GameObject* gameObject);
+    void RemoveGameObjectFromSpawnIdStore(ObjectGuid::LowType spawnId, GameObject* gameObject);
 
     [[nodiscard]] std::unordered_set<Corpse*> const* GetCorpsesInGrid(uint32 gridId) const
     {
@@ -616,6 +658,136 @@ public:
         ObjectGuid ownerGuid;
         ObjectGuid taunterGuid;
         uint8 action = 0; // 1 = Apply, 2 = Fade
+        uint64 queuedMs = 0;
+    };
+
+    enum PartitionMotionRelayAction : uint8
+    {
+        MOTION_RELAY_JUMP = 1,
+        MOTION_RELAY_FALL = 2,
+        MOTION_RELAY_CHARGE = 3,
+        MOTION_RELAY_CHARGE_PATH = 4,
+        MOTION_RELAY_FLEE = 5,
+        MOTION_RELAY_DISTRACT = 6,
+        MOTION_RELAY_BACKWARDS = 7,
+        MOTION_RELAY_FORWARDS = 8,
+        MOTION_RELAY_CIRCLE = 9,
+        MOTION_RELAY_SPLINE_PATH = 10,
+        MOTION_RELAY_PATH = 11,
+        MOTION_RELAY_LAND = 12,
+        MOTION_RELAY_TAKEOFF = 13,
+        MOTION_RELAY_KNOCKBACK = 14,
+        MOTION_RELAY_STOP = 15,
+        MOTION_RELAY_STOP_ON_POS = 16,
+        MOTION_RELAY_FACE_ORIENTATION = 17,
+        MOTION_RELAY_FACE_OBJECT = 18,
+        MOTION_RELAY_MONSTER_MOVE = 19,
+        MOTION_RELAY_TRANSPORT_ENTER = 20,
+        MOTION_RELAY_TRANSPORT_EXIT = 21,
+        MOTION_RELAY_PASSENGER_RELOCATE = 22
+    };
+
+    struct PartitionMotionRelay
+    {
+        ObjectGuid moverGuid;
+        ObjectGuid targetGuid;
+        uint8 action = 0;
+        uint32 id = 0;
+        uint32 timeMs = 0;
+        uint32 pathId = 0;
+        uint8 pathSource = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float srcX = 0.0f;
+        float srcY = 0.0f;
+        float speedXY = 0.0f;
+        float speedZ = 0.0f;
+        float speed = 0.0f;
+        float orientation = 0.0f;
+        float dist = 0.0f;
+        ForcedMovement forcedMovement = static_cast<ForcedMovement>(0);
+        bool skipAnimation = false;
+        bool addFlagForNPC = false;
+        bool generatePath = false;
+        std::vector<G3D::Vector3> pathPoints;
+        uint32 spellId = 0;
+        bool disableSpline = false;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionCombatRelay
+    {
+        ObjectGuid ownerGuid;
+        ObjectGuid victimGuid;
+        bool initialAggro = false;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionLootRelay
+    {
+        ObjectGuid creatureGuid;
+        ObjectGuid unitGuid;
+        bool withGroup = false;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionDynObjectRelay
+    {
+        ObjectGuid dynObjGuid;
+        uint8 action = 0; // 1 = Remove
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionMinionRelay
+    {
+        ObjectGuid ownerGuid;
+        ObjectGuid minionGuid;
+        bool apply = false;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionCharmRelay
+    {
+        ObjectGuid charmerGuid;
+        ObjectGuid targetGuid;
+        uint8 charmType = 0;
+        uint32 auraSpellId = 0;
+        bool apply = false;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionGameObjectRelay
+    {
+        ObjectGuid ownerGuid;
+        ObjectGuid gameObjGuid;
+        uint32 spellId = 0;
+        bool del = false;
+        uint8 action = 0; // 1 = Remove, 2 = RemoveBySpell, 3 = RemoveAll
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionCombatStateRelay
+    {
+        ObjectGuid unitGuid;
+        ObjectGuid enemyGuid;
+        bool pvp = false;
+        uint32 duration = 0;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionAttackRelay
+    {
+        ObjectGuid attackerGuid;
+        ObjectGuid victimGuid;
+        bool meleeAttack = false;
+        uint64 queuedMs = 0;
+    };
+
+    struct PartitionEvadeRelay
+    {
+        ObjectGuid unitGuid;
+        uint8 reason = 0;
         uint64 queuedMs = 0;
     };
 
@@ -833,8 +1005,9 @@ private:
     static constexpr size_t kMarkedCellWordCount = (kMarkedCellCount + kMarkedCellWordBits - 1) / kMarkedCellWordBits;
     std::vector<std::atomic<uint64_t>> _markedCells;
 
-    bool i_scriptLock;
+    std::atomic<bool> i_scriptLock;
     std::unordered_set<WorldObject*> i_objectsToRemove;
+    mutable std::mutex _objectsToRemoveLock;
 
     mutable std::mutex _delayedVisibilityLock;
     std::vector<ObjectGuid> _objectsForDelayedVisibility;
@@ -861,6 +1034,16 @@ private:
     std::unordered_map<uint32, std::vector<PartitionThreatActionRelay>> _partitionThreatActionRelays;
     std::unordered_map<uint32, std::vector<PartitionThreatTargetActionRelay>> _partitionThreatTargetActionRelays;
     std::unordered_map<uint32, std::vector<PartitionTauntRelay>> _partitionTauntRelays;
+    std::unordered_map<uint32, std::vector<PartitionCombatRelay>> _partitionCombatRelays;
+    std::unordered_map<uint32, std::vector<PartitionLootRelay>> _partitionLootRelays;
+    std::unordered_map<uint32, std::vector<PartitionDynObjectRelay>> _partitionDynObjectRelays;
+    std::unordered_map<uint32, std::vector<PartitionMinionRelay>> _partitionMinionRelays;
+    std::unordered_map<uint32, std::vector<PartitionCharmRelay>> _partitionCharmRelays;
+    std::unordered_map<uint32, std::vector<PartitionGameObjectRelay>> _partitionGameObjectRelays;
+    std::unordered_map<uint32, std::vector<PartitionCombatStateRelay>> _partitionCombatStateRelays;
+    std::unordered_map<uint32, std::vector<PartitionAttackRelay>> _partitionAttackRelays;
+    std::unordered_map<uint32, std::vector<PartitionEvadeRelay>> _partitionEvadeRelays;
+    std::unordered_map<uint32, std::vector<PartitionMotionRelay>> _partitionMotionRelays;
     std::unordered_map<uint32, std::vector<PartitionProcRelay>> _partitionProcRelays;
     std::unordered_map<uint32, std::vector<PartitionAuraRelay>> _partitionAuraRelays;
     std::unordered_map<uint32, std::vector<PartitionPathRelay>> _partitionPathRelays;
@@ -915,8 +1098,10 @@ private:
 
     std::map<HighGuid, std::unique_ptr<ObjectGuidGeneratorBase>> _guidGenerators;
     MapStoredObjectTypesContainer _objectsStore;
+    mutable std::shared_mutex _objectsStoreLock;
     CreatureBySpawnIdContainer _creatureBySpawnIdStore;
     GameObjectBySpawnIdContainer _gameobjectBySpawnIdStore;
+    mutable std::shared_mutex _spawnIdStoreLock;
     std::unordered_map<uint32/*gridId*/, std::unordered_set<Corpse*>> _corpsesByGrid;
     std::unordered_map<ObjectGuid, Corpse*> _corpsesByPlayer;
     std::unordered_set<Corpse*> _corpseBones;

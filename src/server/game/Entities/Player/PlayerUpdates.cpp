@@ -1629,6 +1629,12 @@ void Player::UpdateVisibilityForPlayer(bool mapChange)
 {
     // After added to map seer must be a player - there is no possibility to
     // still have different seer (all charm auras must be already removed)
+    if (Map* map = FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        bRequestForcedVisibilityUpdate = true;
+        return;
+    }
+
     if (mapChange && m_seer != this)
         m_seer = this;
 
@@ -1646,6 +1652,12 @@ void Player::UpdateObjectVisibility(bool forced, bool fromUpdate)
     // Prevent updating visibility if player is not in world (example: LoadFromDB sets drunkstate which updates invisibility while player is not in map)
     if (!IsInWorld())
         return;
+
+    if (Map* map = FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        bRequestForcedVisibilityUpdate = true;
+        return;
+    }
 
     if (!forced)
         AddToNotify(NOTIFY_VISIBILITY_CHANGED);

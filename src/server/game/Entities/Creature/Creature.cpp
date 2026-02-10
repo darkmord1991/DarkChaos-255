@@ -320,7 +320,7 @@ void Creature::AddToWorld()
         Motion_Initialize();
 
         if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
-            GetMap()->GetObjectsStore().Insert<Creature>(GetGUID(), this);
+            GetMap()->InsertObjectStore<Creature>(GetGUID(), this);
         GetMap()->RegisterPartitionedObject(this);
         if (sLayerMgr->IsNPCLayeringEnabled())
         {
@@ -340,7 +340,7 @@ void Creature::AddToWorld()
         }
         if (m_spawnId)
         {
-            GetMap()->GetCreatureBySpawnIdStore().insert(std::make_pair(m_spawnId, this));
+            GetMap()->AddCreatureToSpawnIdStore(m_spawnId, this);
         }
         Unit::AddToWorld();
 
@@ -385,10 +385,10 @@ void Creature::RemoveFromWorld()
         Unit::RemoveFromWorld();
 
         if (m_spawnId)
-            Acore::Containers::MultimapErasePair(GetMap()->GetCreatureBySpawnIdStore(), m_spawnId, this);
+            GetMap()->RemoveCreatureFromSpawnIdStore(m_spawnId, this);
 
         if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
-            GetMap()->GetObjectsStore().Remove<Creature>(GetGUID());
+            GetMap()->RemoveObjectStore<Creature>(GetGUID());
         GetMap()->UnregisterPartitionedObject(this);
     }
 }
@@ -1316,6 +1316,17 @@ void Creature::SetLootRecipient(Unit* unit, bool withGroup)
     // to loot the creature after it dies
     // should be set to nullptr after the loot disappears
 
+    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionLootRelay(ownerPartition, GetGUID(), unit ? unit->GetGUID() : ObjectGuid::Empty, withGroup);
+            return;
+        }
+    }
+
     if (!unit)
     {
         m_lootRecipient.Clear();
@@ -1693,30 +1704,22 @@ bool Creature::LoadCreatureFromDB(ObjectGuid::LowType spawnId, Map* map, bool ad
     {
         // If an alive instance of this spawnId is already found, skip creation
         // If only dead instance(s) exist, despawn them and spawn a new (maybe also dead) version
-        const auto creatureBounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
-        std::vector <Creature*> despawnList;
-
-        if (creatureBounds.first != creatureBounds.second)
+        std::vector<Creature*> despawnList;
+        auto creatures = map->GetCreaturesBySpawnId(spawnId);
+        for (Creature* creature : creatures)
         {
-            for (auto itr = creatureBounds.first; itr != creatureBounds.second; ++itr)
+            if (creature->IsAlive())
             {
-                if (itr->second->IsAlive())
-                {
-                    LOG_DEBUG("maps", "Would have spawned {} but {} already exists", spawnId, creatureBounds.first->second->GetGUID().ToString());
-                    return false;
-                }
-                else
-                {
-                    despawnList.push_back(itr->second);
-                    LOG_DEBUG("maps", "Despawned dead instance of spawn {} ({})", spawnId, itr->second->GetGUID().ToString());
-                }
+                LOG_DEBUG("maps", "Would have spawned {} but {} already exists", spawnId, creature->GetGUID().ToString());
+                return false;
             }
 
-            for (Creature* despawnCreature : despawnList)
-            {
-                despawnCreature->AddObjectToRemoveList();
-            }
+            despawnList.push_back(creature);
+            LOG_DEBUG("maps", "Despawned dead instance of spawn {} ({})", spawnId, creature->GetGUID().ToString());
         }
+
+        for (Creature* despawnCreature : despawnList)
+            despawnCreature->AddObjectToRemoveList();
     }
 
     CreatureData const* data = sObjectMgr->GetCreatureData(spawnId);

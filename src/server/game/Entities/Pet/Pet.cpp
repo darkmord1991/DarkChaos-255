@@ -77,7 +77,7 @@ void Pet::AddToWorld()
     {
         ///- Register the pet for guid lookup
         if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
-            GetMap()->GetObjectsStore().Insert<Creature>(GetGUID(), this);
+            GetMap()->InsertObjectStore<Creature>(GetGUID(), this);
         GetMap()->RegisterPartitionedObject(this);
         Unit::AddToWorld();
         Motion_Initialize();
@@ -130,7 +130,7 @@ void Pet::RemoveFromWorld()
         ///- Don't call the function for Creature, normal mobs + totems go in a different storage
         Unit::RemoveFromWorld();
         if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
-            GetMap()->GetObjectsStore().Remove<Creature>(GetGUID());
+            GetMap()->RemoveObjectStore<Creature>(GetGUID());
         GetMap()->UnregisterPartitionedObject(this);
     }
 }

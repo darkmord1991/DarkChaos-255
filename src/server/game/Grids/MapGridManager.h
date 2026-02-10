@@ -29,6 +29,7 @@ class Map;
 
 class MapGridManager
 {
+    friend class Map;
 public:
     MapGridManager(Map* map) : _map(map), _createdGridsCount(0), _loadedGridsCount(0) { }
 
@@ -38,6 +39,7 @@ public:
     bool IsGridCreated(uint16 const x, uint16 const y) const;
     bool IsGridLoaded(uint16 const x, uint16 const y) const;
     MapGridType* GetGrid(uint16 const x, uint16 const y);
+    std::shared_ptr<GridTerrainData> GetGridTerrainData(uint16 const x, uint16 const y);
 
     static bool IsValidGridCoordinates(uint16 const x, uint16 const y) { return (x < MAX_NUMBER_OF_GRIDS && y < MAX_NUMBER_OF_GRIDS); }
 
@@ -55,7 +57,7 @@ private:
     uint32 _createdGridsCount;
     uint32 _loadedGridsCount;
 
-    std::recursive_mutex _gridLock;
+    mutable std::recursive_mutex _gridLock;
     std::unique_ptr<MapGridType> _mapGrid[MAX_NUMBER_OF_GRIDS][MAX_NUMBER_OF_GRIDS];
 };
 

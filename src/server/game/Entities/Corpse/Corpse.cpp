@@ -47,7 +47,7 @@ void Corpse::AddToWorld()
     if (!IsInWorld())
     {
         if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
-            GetMap()->GetObjectsStore().Insert<Corpse>(GetGUID(), this);
+            GetMap()->InsertObjectStore<Corpse>(GetGUID(), this);
         GetMap()->RegisterPartitionedObject(this);
     }
 
@@ -60,7 +60,7 @@ void Corpse::RemoveFromWorld()
     if (IsInWorld())
     {
         if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
-            GetMap()->GetObjectsStore().Remove<Corpse>(GetGUID());
+            GetMap()->RemoveObjectStore<Corpse>(GetGUID());
         GetMap()->UnregisterPartitionedObject(this);
     }
 

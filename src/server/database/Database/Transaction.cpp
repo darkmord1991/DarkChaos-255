@@ -21,9 +21,42 @@
 #include "MySQLConnection.h"
 #include "PreparedStatement.h"
 #include "Timer.h"
+#include <cstdint>
+#ifdef __linux__
+#include <pthread.h>
+#endif
 #include <mysqld_error.h>
 #include <sstream>
 #include <thread>
+
+namespace
+{
+    bool IsPointerInCurrentStack(void const* ptr)
+    {
+#ifdef __linux__
+        pthread_attr_t attr;
+        if (pthread_getattr_np(pthread_self(), &attr) != 0)
+            return false;
+
+        void* stackBase = nullptr;
+        size_t stackSize = 0;
+        if (pthread_attr_getstack(&attr, &stackBase, &stackSize) != 0)
+        {
+            pthread_attr_destroy(&attr);
+            return false;
+        }
+
+        pthread_attr_destroy(&attr);
+
+        uintptr_t const addr = reinterpret_cast<uintptr_t>(ptr);
+        uintptr_t const base = reinterpret_cast<uintptr_t>(stackBase);
+        return addr >= base && addr < (base + stackSize);
+#else
+        (void)ptr;
+        return false;
+#endif
+    }
+}
 
 std::mutex TransactionTask::_deadlockLock;
 
@@ -50,7 +83,14 @@ void TransactionBase::AppendPreparedStatement(PreparedStatementBase* stmt)
 void TransactionBase::Cleanup()
 {
     // This might be called by explicit calls to Cleanup or by the auto-destructor
-    if (_cleanedUp)
+    // Use atomic check first for performance
+    if (_cleanedUp.load(std::memory_order_acquire))
+        return;
+
+    std::lock_guard<std::mutex> lock(_cleanupMutex);
+    
+    // Double-check after acquiring lock
+    if (_cleanedUp.load(std::memory_order_relaxed))
         return;
 
     for (SQLElementData& data : m_queries)
@@ -59,38 +99,50 @@ void TransactionBase::Cleanup()
         {
             case SQL_ELEMENT_PREPARED:
             {
-                try
+                if (!std::holds_alternative<PreparedStatementBase*>(data.element))
                 {
-                    PreparedStatementBase* stmt = std::get<PreparedStatementBase*>(data.element);
-                    ASSERT(stmt);
+                    LOG_ERROR("sql.sql", "> PreparedStatementBase not found in SQLElementData during cleanup.");
+                    break;
+                }
 
-                    delete stmt;
-                }
-                catch (const std::bad_variant_access& ex)
+                PreparedStatementBase* stmt = std::get<PreparedStatementBase*>(data.element);
+                if (!stmt)
+                    break;
+
+                if (IsPointerInCurrentStack(stmt))
                 {
-                    LOG_FATAL("sql.sql", "> PreparedStatementBase not found in SQLElementData. {}", ex.what());
-                    ABORT();
+                    LOG_ERROR("sql.sql", "> PreparedStatement pointer {} looks like stack memory. Skipping delete.",
+                        static_cast<void*>(stmt));
+                    data.element = static_cast<PreparedStatementBase*>(nullptr);
+                    break;
                 }
+                ASSERT(stmt);
+
+                delete stmt;
+                data.element = static_cast<PreparedStatementBase*>(nullptr);
             }
             break;
             case SQL_ELEMENT_RAW:
             {
-                try
+                if (!std::holds_alternative<std::string>(data.element))
                 {
-                    std::get<std::string>(data.element).clear();
+                    LOG_ERROR("sql.sql", "> std::string not found in SQLElementData during cleanup.");
+                    break;
                 }
-                catch (const std::bad_variant_access& ex)
-                {
-                    LOG_FATAL("sql.sql", "> std::string not found in SQLElementData. {}", ex.what());
-                    ABORT();
-                }
+
+                std::get<std::string>(data.element).clear();
             }
             break;
         }
     }
 
     m_queries.clear();
-    _cleanedUp = true;
+    _cleanedUp.store(true, std::memory_order_release);
+}
+
+bool TransactionBase::IsCleanedUp() const
+{
+    return _cleanedUp.load(std::memory_order_acquire);
 }
 
 bool TransactionTask::Execute()
@@ -98,7 +150,11 @@ bool TransactionTask::Execute()
     int errorCode = TryExecute();
 
     if (!errorCode)
+    {
+        // Clean up PreparedStatements after successful execution
+        CleanupOnFailure();
         return true;
+    }
 
     if (errorCode == ER_LOCK_DEADLOCK)
     {
@@ -113,7 +169,11 @@ bool TransactionTask::Execute()
             for (Milliseconds loopDuration{}, startMSTime = GetTimeMS(); loopDuration <= DEADLOCK_MAX_RETRY_TIME_MS; loopDuration = GetMSTimeDiffToNow(startMSTime))
             {
                 if (!TryExecute())
+                {
+                    // Clean up PreparedStatements after successful retry
+                    CleanupOnFailure();
                     return true;
+                }
 
                 LOG_WARN("sql.sql", "Deadlocked SQL Transaction, retrying. Loop timer: {} ms, Thread Id: {}", loopDuration.count(), threadId);
             }
@@ -143,6 +203,8 @@ bool TransactionWithResultTask::Execute()
     int errorCode = TryExecute();
     if (!errorCode)
     {
+        // Clean up PreparedStatements after successful execution
+        CleanupOnFailure();
         m_result.set_value(true);
         return true;
     }
@@ -161,6 +223,8 @@ bool TransactionWithResultTask::Execute()
             {
                 if (!TryExecute())
                 {
+                    // Clean up PreparedStatements after successful retry
+                    CleanupOnFailure();
                     m_result.set_value(true);
                     return true;
                 }

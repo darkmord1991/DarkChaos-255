@@ -457,7 +457,11 @@ namespace DarkChaos
             // Archive previous week
             std::string sql = Acore::StringFormat("INSERT INTO dc_player_weekly_cap_snapshot "
                 "(player_guid, season_id, week_timestamp, tokens_earned, essence_earned, dungeons_completed) "
-                "VALUES ({}, {}, {}, {}, {}, {})",
+                "VALUES ({}, {}, {}, {}, {}, {}) "
+                "ON DUPLICATE KEY UPDATE "
+                "tokens_earned = VALUES(tokens_earned), "
+                "essence_earned = VALUES(essence_earned), "
+                "dungeons_completed = VALUES(dungeons_completed)",
                 stats->playerGuid, stats->seasonId, stats->lastWeeklyReset,
                 stats->weeklyTokensEarned, stats->weeklyEssenceEarned, stats->dungeonBossesKilled);
             CharacterDatabase.Execute(sql.c_str());

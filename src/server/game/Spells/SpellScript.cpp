@@ -956,6 +956,11 @@ void AuraScript::_PrepareScriptCall(AuraScriptHookType hookType, AuraApplication
 
 void AuraScript::_FinishScriptCall()
 {
+    if (m_scriptStates.empty())
+    {
+        LOG_ERROR("spells.scripts", "Script: `{}` Spell: `{}` AuraScript::_FinishScriptCall called with empty state stack", m_scriptName ? m_scriptName->c_str() : "unknown", m_scriptSpellId);
+        return;
+    }
     ScriptStateStore stateStore = m_scriptStates.top();
     m_currentScriptState = stateStore._currentScriptState;
     m_auraApplication = stateStore._auraApplication;

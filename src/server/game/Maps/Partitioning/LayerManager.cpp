@@ -587,15 +587,17 @@ void LayerManager::DespawnLayerClones(uint32 mapId, uint32 layerId)
         map->ClearLoadedLayer(layerId);
 
         std::vector<Creature*> creaturesToRemove;
-        for (auto const& [_, creature] : map->GetCreatureBySpawnIdStore())
+        for (auto const& entry : map->GetCreatureBySpawnIdStoreSnapshot())
         {
+            Creature* creature = entry.second;
             if (creature && creature->IsLayerClone() && creature->GetLayerCloneId() == layerId && creature->IsInWorld())
                 creaturesToRemove.push_back(creature);
         }
 
         std::vector<GameObject*> gosToRemove;
-        for (auto const& [_, go] : map->GetGameObjectBySpawnIdStore())
+        for (auto const& entry : map->GetGameObjectBySpawnIdStoreSnapshot())
         {
+            GameObject* go = entry.second;
             if (go && go->IsLayerClone() && go->GetLayerCloneId() == layerId && go->IsInWorld())
                 gosToRemove.push_back(go);
         }
@@ -964,10 +966,9 @@ void LayerManager::ReassignNPCsForNewLayer(uint32 mapId, uint32 layerId)
                         continue;
 
                     bool existsInLayer = false;
-                    auto bounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
-                    for (auto itr = bounds.first; itr != bounds.second; ++itr)
+                    auto creatures = map->GetCreaturesBySpawnId(spawnId);
+                    for (Creature* existing : creatures)
                     {
-                        Creature* existing = itr->second;
                         if (existing && existing->IsLayerClone() && existing->GetLayerCloneId() == layerId)
                         {
                             existsInLayer = true;
@@ -1320,10 +1321,9 @@ void LayerManager::ReassignGOsForNewLayer(uint32 mapId, uint32 layerId)
                         continue;
 
                     bool existsInLayer = false;
-                    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(spawnId);
-                    for (auto itr = bounds.first; itr != bounds.second; ++itr)
+                    auto gameObjects = map->GetGameObjectsBySpawnId(spawnId);
+                    for (GameObject* existing : gameObjects)
                     {
-                        GameObject* existing = itr->second;
                         if (existing && existing->IsLayerClone() && existing->GetLayerCloneId() == layerId)
                         {
                             existsInLayer = true;

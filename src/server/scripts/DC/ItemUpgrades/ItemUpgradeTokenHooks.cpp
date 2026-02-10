@@ -157,10 +157,17 @@ namespace DarkChaos
                 if (!killer || !victim)
                     return;
 
+                if (killer == victim || killer->GetGUID() == victim->GetGUID())
+                    return;
+
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
 
-                // Calculate reward based on victim level
-                uint32 reward = (uint32)(PVP_KILL_REWARD * (1.0f + (victim->GetLevel() - 60) * 0.05f));
+                // Calculate reward based on victim level (clamp to avoid unsigned underflow)
+                int32 levelDelta = std::max<int32>(0, int32(victim->GetLevel()) - 60);
+                uint32 reward = static_cast<uint32>(PVP_KILL_REWARD * (1.0f + levelDelta * 0.05f));
+
+                if (reward == 0)
+                    return;
 
                 // Check weekly cap
                     if (IsAtWeeklyTokenCap(killer->GetGUID().GetCounter(), season))

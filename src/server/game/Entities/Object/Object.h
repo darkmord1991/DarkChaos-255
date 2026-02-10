@@ -36,6 +36,7 @@
 #include "ObjectVisibilityContainer.h"
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -270,6 +271,10 @@ protected:
 
     UpdateMask _changesMask;
 
+    // Protects read-modify-write flag operations (SetFlag/RemoveFlag/SetByteFlag/RemoveByteFlag)
+    // to prevent cross-thread bit-loss when two threads modify the same uint32 slot concurrently.
+    mutable std::mutex _flagLock;
+
     uint16 m_valuesCount;
 
     uint16 _fieldNotifyFlags;
@@ -450,29 +455,29 @@ protected:
 private:
     void SetMapUpdateListOffset(std::size_t const offset)
     {
-        ASSERT(_mapUpdateState == Updating, "Attempted to set update list offset when object is not in map update list");
+        ASSERT(_mapUpdateState.load(std::memory_order_relaxed) == Updating, "Attempted to set update list offset when object is not in map update list");
         _mapUpdateListOffset = offset;
     }
 
     size_t GetMapUpdateListOffset() const
     {
-        ASSERT(_mapUpdateState == Updating, "Attempted to get update list offset when object is not in map update list");
+        ASSERT(_mapUpdateState.load(std::memory_order_relaxed) == Updating, "Attempted to get update list offset when object is not in map update list");
         return _mapUpdateListOffset;
     }
 
     void SetUpdateState(UpdateState state)
     {
-        _mapUpdateState = state;
+        _mapUpdateState.store(state, std::memory_order_relaxed);
     }
 
     UpdateState GetUpdateState() const
     {
-        return _mapUpdateState;
+        return _mapUpdateState.load(std::memory_order_relaxed);
     }
 
 private:
     std::size_t _mapUpdateListOffset;
-    UpdateState _mapUpdateState;
+    std::atomic<UpdateState> _mapUpdateState;
 };
 
 class WorldObject : public Object, public WorldLocation

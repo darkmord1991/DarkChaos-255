@@ -22,6 +22,7 @@
 #include "Duration.h"
 #include "Random.h"
 #include <map>
+#include <mutex>
 
 class EventProcessor;
 
@@ -128,12 +129,17 @@ class EventProcessor
         [[nodiscard]] uint64 CalculateQueueTime(uint64 delay) const;
 
         void CancelEventGroup(uint8 group);
-        bool HasEvents() const { return !m_events.empty(); }
+        bool HasEvents() const
+        {
+            std::lock_guard<std::recursive_mutex> lock(_lock);
+            return !m_events.empty();
+        }
 
     protected:
         uint64 m_time{0};
         EventList m_events;
         bool m_aborting;
+        mutable std::recursive_mutex _lock;
 };
 
 #endif

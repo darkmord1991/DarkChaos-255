@@ -39,6 +39,8 @@ EventProcessor::~EventProcessor()
 
 void EventProcessor::Update(uint32 p_time)
 {
+    std::unique_lock<std::recursive_mutex> lock(_lock);
+
     // update time
     m_time += p_time;
 
@@ -50,24 +52,31 @@ void EventProcessor::Update(uint32 p_time)
         BasicEvent* event = i->second;
         m_events.erase(i);
 
+        uint64 currentTime = m_time;
+        lock.unlock();
+
+        bool deleteEvent = false;
+
         if (event->IsRunning())
         {
-            if (event->Execute(m_time, p_time))
-            {
-                // completely destroy event if it is not re-added
-                delete event;
-            }
-            continue;
+            deleteEvent = event->Execute(currentTime, p_time);
         }
-
-        if (event->IsAbortScheduled())
+        else
         {
-            event->Abort(m_time);
-            // Mark the event as aborted
-            event->SetAborted();
+            if (event->IsAbortScheduled())
+            {
+                event->Abort(currentTime);
+                // Mark the event as aborted
+                event->SetAborted();
+            }
+
+            if (event->IsDeletable())
+                deleteEvent = true;
         }
 
-        if (event->IsDeletable())
+        lock.lock();
+
+        if (deleteEvent)
         {
             delete event;
             continue;
@@ -81,6 +90,8 @@ void EventProcessor::Update(uint32 p_time)
 
 void EventProcessor::KillAllEvents(bool force)
 {
+    std::lock_guard<std::recursive_mutex> lock(_lock);
+
     // first, abort all existing events
     for (auto itr = m_events.begin(); itr != m_events.end();)
     {
@@ -113,6 +124,8 @@ void EventProcessor::KillAllEvents(bool force)
 
 void EventProcessor::CancelEventGroup(uint8 group)
 {
+    std::lock_guard<std::recursive_mutex> lock(_lock);
+
     for (auto itr = m_events.begin(); itr != m_events.end();)
     {
         if (itr->second->m_eventGroup != group)
@@ -135,6 +148,8 @@ void EventProcessor::CancelEventGroup(uint8 group)
 
 void EventProcessor::AddEvent(BasicEvent* Event, uint64 e_time, bool set_addtime /*= true*/, uint8 eventGroup /*= 0*/)
 {
+    std::lock_guard<std::recursive_mutex> lock(_lock);
+
     if (set_addtime)
         Event->m_addTime = m_time;
     Event->m_execTime = e_time;
@@ -144,6 +159,8 @@ void EventProcessor::AddEvent(BasicEvent* Event, uint64 e_time, bool set_addtime
 
 void EventProcessor::ModifyEventTime(BasicEvent* event, Milliseconds newTime)
 {
+    std::lock_guard<std::recursive_mutex> lock(_lock);
+
     for (auto itr = m_events.begin(); itr != m_events.end(); ++itr)
     {
         if (itr->second != event)
@@ -158,10 +175,12 @@ void EventProcessor::ModifyEventTime(BasicEvent* event, Milliseconds newTime)
 
 uint64 EventProcessor::CalculateTime(uint64 t_offset) const
 {
+    std::lock_guard<std::recursive_mutex> lock(_lock);
     return (m_time + t_offset);
 }
 
 uint64 EventProcessor::CalculateQueueTime(uint64 delay) const
 {
+    std::lock_guard<std::recursive_mutex> lock(_lock);
     return CalculateTime(delay - (m_time % delay));
 }

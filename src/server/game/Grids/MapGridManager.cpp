@@ -1,5 +1,6 @@
 #include "MapGridManager.h"
 #include "GridObjectLoader.h"
+#include "GridTerrainData.h"
 #include "GridTerrainLoader.h"
 
 void MapGridManager::CreateGrid(uint16 const x, uint16 const y)
@@ -67,27 +68,33 @@ void MapGridManager::UnloadGrid(uint16 const x, uint16 const y)
     GridTerrainUnloader terrainUnloader(*grid, _map);
     terrainUnloader.UnloadTerrain();
 
-    _mapGrid[x][y] = nullptr;
+    {
+        std::lock_guard<std::recursive_mutex> guard(_gridLock);
+        _mapGrid[x][y] = nullptr;
+    }
 }
 
 bool MapGridManager::IsGridCreated(uint16 const x, uint16 const y) const
 {
+    std::lock_guard<std::recursive_mutex> guard(_gridLock);
     if (!MapGridManager::IsValidGridCoordinates(x, y))
         return false;
 
-    return _mapGrid[x][y].get();
+    return _mapGrid[x][y] != nullptr;
 }
 
 bool MapGridManager::IsGridLoaded(uint16 const x, uint16 const y) const
 {
+    std::lock_guard<std::recursive_mutex> guard(_gridLock);
     if (!MapGridManager::IsValidGridCoordinates(x, y))
         return false;
 
-    return _mapGrid[x][y].get() && _mapGrid[x][y]->IsObjectDataLoaded();
+    return _mapGrid[x][y] && _mapGrid[x][y]->IsObjectDataLoaded();
 }
 
 MapGridType* MapGridManager::GetGrid(uint16 const x, uint16 const y)
 {
+    std::lock_guard<std::recursive_mutex> guard(_gridLock);
     if (!MapGridManager::IsValidGridCoordinates(x, y))
         return nullptr;
 
@@ -97,6 +104,18 @@ MapGridType* MapGridManager::GetGrid(uint16 const x, uint16 const y)
 uint32 MapGridManager::GetCreatedGridsCount()
 {
     return _createdGridsCount;
+}
+
+std::shared_ptr<GridTerrainData> MapGridManager::GetGridTerrainData(uint16 const x, uint16 const y)
+{
+    std::lock_guard<std::recursive_mutex> guard(_gridLock);
+    if (!MapGridManager::IsValidGridCoordinates(x, y))
+        return nullptr;
+
+    if (MapGridType* grid = _mapGrid[x][y].get())
+        return grid->GetTerrainDataSharedPtr();
+
+    return nullptr;
 }
 
 uint32 MapGridManager::GetLoadedGridsCount()

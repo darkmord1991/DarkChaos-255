@@ -386,6 +386,23 @@ void MotionMaster::MoveBackwards(Unit* target, float dist)
         return;
     }
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.targetGuid = target->GetGUID();
+            relay.action = Map::MOTION_RELAY_BACKWARDS;
+            relay.dist = dist;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     Position const& pos = target->GetPosition();
     float angle = target->GetAngle(_owner);
     G3D::Vector3 point;
@@ -414,6 +431,23 @@ void MotionMaster::MoveForwards(Unit* target, float dist)
         return;
     }
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.targetGuid = target->GetGUID();
+            relay.action = Map::MOTION_RELAY_FORWARDS;
+            relay.dist = dist;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     Position const& pos = target->GetPosition();
     float angle = target->GetAngle(_owner);
     G3D::Vector3 point;
@@ -437,6 +471,22 @@ void MotionMaster::MoveCircleTarget(Unit* target)
     if (!target)
     {
         return;
+    }
+
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.targetGuid = target->GetGUID();
+            relay.action = Map::MOTION_RELAY_CIRCLE;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
     }
 
     Position pos;
@@ -528,6 +578,24 @@ void MotionMaster::MoveSplinePath(Movement::PointsArray* path, ForcedMovement fo
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    Map* map = _owner->GetMap();
+    if (path && map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.action = Map::MOTION_RELAY_SPLINE_PATH;
+            relay.forcedMovement = forcedMovement;
+            relay.pathPoints.assign(path->begin(), path->end());
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     if (_owner->IsPlayer())
     {
         Mutate(new EscortMovementGenerator<Player>(forcedMovement, path), MOTION_SLOT_ACTIVE);
@@ -540,6 +608,24 @@ void MotionMaster::MoveSplinePath(Movement::PointsArray* path, ForcedMovement fo
 
 void MotionMaster::MovePath(uint32 path_id, ForcedMovement forcedMovement, PathSource pathSource)
 {
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.action = Map::MOTION_RELAY_PATH;
+            relay.pathId = path_id;
+            relay.pathSource = static_cast<uint8>(pathSource);
+            relay.forcedMovement = forcedMovement;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     WaypointPath const* path;
     switch (pathSource)
     {
@@ -582,6 +668,26 @@ void MotionMaster::MoveLand(uint32 id, Position const& pos, float speed /* = 0.0
 
     LOG_DEBUG("movement.motionmaster", "Creature (Entry: {}) landing point (ID: {} X: {} Y: {} Z: {})", _owner->GetEntry(), id, x, y, z);
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.action = Map::MOTION_RELAY_LAND;
+            relay.id = id;
+            relay.x = x;
+            relay.y = y;
+            relay.z = z;
+            relay.speed = speed;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     Movement::MoveSplineInit init(_owner);
     init.MoveTo(x, y, z);
 
@@ -617,6 +723,27 @@ void MotionMaster::MoveTakeoff(uint32 id, Position const& pos, float speed /* = 
 
     LOG_DEBUG("movement.motionmaster", "Creature (Entry: {}) landing point (ID: {} X: {} Y: {} Z: {})", _owner->GetEntry(), id, x, y, z);
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.action = Map::MOTION_RELAY_TAKEOFF;
+            relay.id = id;
+            relay.x = x;
+            relay.y = y;
+            relay.z = z;
+            relay.speed = speed;
+            relay.skipAnimation = skipAnimation;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     Movement::MoveSplineInit init(_owner);
     init.MoveTo(x, y, z);
 
@@ -646,6 +773,25 @@ void MotionMaster::MoveKnockbackFrom(float srcX, float srcY, float speedXY, floa
 
     if (speedXY <= 0.1f)
         return;
+
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.action = Map::MOTION_RELAY_KNOCKBACK;
+            relay.x = srcX;
+            relay.y = srcY;
+            relay.speedXY = speedXY;
+            relay.speedZ = speedZ;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
 
      Position dest = _owner->GetPosition();
     float moveTimeHalf = speedZ / Movement::gravity;
@@ -691,6 +837,28 @@ void MotionMaster::MoveJump(float x, float y, float z, float speedXY, float spee
     if (speedXY <= 0.1f)
         return;
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.targetGuid = target ? target->GetGUID() : ObjectGuid::Empty;
+            relay.action = Map::MOTION_RELAY_JUMP;
+            relay.id = id;
+            relay.x = x;
+            relay.y = y;
+            relay.z = z;
+            relay.speedXY = speedXY;
+            relay.speedZ = speedZ;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     float moveTimeHalf = speedZ / Movement::gravity;
     float max_height = -Movement::computeFallElevation(moveTimeHalf, false, -speedZ);
 
@@ -711,6 +879,23 @@ void MotionMaster::MoveFall(uint32 id /*=0*/, bool addFlagForNPC)
 {
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.action = Map::MOTION_RELAY_FALL;
+            relay.id = id;
+            relay.addFlagForNPC = addFlagForNPC;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
 
     // use larger distance for vmap height search than in most other cases
     float tz = _owner->GetMapHeight(_owner->GetPositionX(), _owner->GetPositionY(), _owner->GetPositionZ(), true, MAX_FALL_DISTANCE);
@@ -755,6 +940,31 @@ void MotionMaster::MoveCharge(float x, float y, float z, float speed, uint32 id,
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.targetGuid = targetGUID;
+            relay.action = Map::MOTION_RELAY_CHARGE;
+            relay.id = id;
+            relay.x = x;
+            relay.y = y;
+            relay.z = z;
+            relay.speed = speed;
+            relay.orientation = orientation;
+            relay.generatePath = generatePath;
+            if (path)
+                relay.pathPoints.assign(path->begin(), path->end());
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     if (Impl[MOTION_SLOT_CONTROLLED] && Impl[MOTION_SLOT_CONTROLLED]->GetMovementGeneratorType() != DISTRACT_MOTION_TYPE)
         return;
 
@@ -776,6 +986,28 @@ void MotionMaster::MoveCharge(float x, float y, float z, float speed, uint32 id,
 void MotionMaster::MoveCharge(PathGenerator const& path, float speed /*= SPEED_CHARGE*/, ObjectGuid targetGUID /*= ObjectGuid::Empty*/)
 {
     G3D::Vector3 dest = path.GetActualEndPosition();
+
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.targetGuid = targetGUID;
+            relay.action = Map::MOTION_RELAY_CHARGE_PATH;
+            relay.id = EVENT_CHARGE_PREPATH;
+            relay.x = dest.x;
+            relay.y = dest.y;
+            relay.z = dest.z;
+            relay.speed = speed;
+            relay.pathPoints.assign(path.GetPath().begin(), path.GetPath().end());
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
 
     MoveCharge(dest.x, dest.y, dest.z, speed, EVENT_CHARGE_PREPATH, nullptr, false, 0.0f, targetGUID);
 
@@ -856,6 +1088,23 @@ void MotionMaster::MoveFleeing(Unit* enemy, uint32 time)
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.targetGuid = enemy->GetGUID();
+            relay.action = Map::MOTION_RELAY_FLEE;
+            relay.timeMs = time;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
+
     if (_owner->IsPlayer())
     {
         LOG_DEBUG("movement.motionmaster", "Player ({}) flee from {} ({})",
@@ -907,6 +1156,22 @@ void MotionMaster::MoveDistract(uint32 timer)
 
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            Map::PartitionMotionRelay relay;
+            relay.moverGuid = _owner->GetGUID();
+            relay.action = Map::MOTION_RELAY_DISTRACT;
+            relay.timeMs = timer;
+            relay.queuedMs = GameTime::GetGameTimeMS().count();
+            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            return;
+        }
+    }
 
     /*if (_owner->IsPlayer())
     {

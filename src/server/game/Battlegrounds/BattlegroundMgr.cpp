@@ -1034,22 +1034,22 @@ std::unordered_map<int, Battleground*> BattlegroundMgr::bgtypeToBattleground =
 
 std::unordered_map<int, bgRef> BattlegroundMgr::bgTypeToTemplate =
 {
-    { BATTLEGROUND_AV, [](Battleground * bg_t) -> Battleground* { return new BattlegroundAV(*(BattlegroundAV*)bg_t); } },
-    { BATTLEGROUND_WS, [](Battleground * bg_t) -> Battleground* { return new BattlegroundWS(*(BattlegroundWS*)bg_t); } },
-    { BATTLEGROUND_AB, [](Battleground * bg_t) -> Battleground* { return new BattlegroundAB(*(BattlegroundAB*)bg_t); } },
-    { BATTLEGROUND_NA, [](Battleground * bg_t) -> Battleground* { return new BattlegroundNA(*(BattlegroundNA*)bg_t); } },
-    { BATTLEGROUND_BE, [](Battleground * bg_t) -> Battleground* { return new BattlegroundBE(*(BattlegroundBE*)bg_t); } },
-    { BATTLEGROUND_EY, [](Battleground * bg_t) -> Battleground* { return new BattlegroundEY(*(BattlegroundEY*)bg_t); } },
-    { BATTLEGROUND_RL, [](Battleground * bg_t) -> Battleground* { return new BattlegroundRL(*(BattlegroundRL*)bg_t); } },
-    { BATTLEGROUND_SA, [](Battleground * bg_t) -> Battleground* { return new BattlegroundSA(*(BattlegroundSA*)bg_t); } },
-    { BATTLEGROUND_DS, [](Battleground * bg_t) -> Battleground* { return new BattlegroundDS(*(BattlegroundDS*)bg_t); } },
-    { BATTLEGROUND_RV, [](Battleground * bg_t) -> Battleground* { return new BattlegroundRV(*(BattlegroundRV*)bg_t); } },
-    { BATTLEGROUND_IC, [](Battleground * bg_t) -> Battleground* { return new BattlegroundIC(*(BattlegroundIC*)bg_t); } },
+    { BATTLEGROUND_AV, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundAV(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_WS, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundWS(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_AB, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundAB(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_NA, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundNA(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_BE, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundBE(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_EY, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundEY(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_RL, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundRL(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_SA, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundSA(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_DS, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundDS(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_RV, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundRV(); bg->CopyFromTemplate(bg_t); return bg; } },
+    { BATTLEGROUND_IC, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundIC(); bg->CopyFromTemplate(bg_t); return bg; } },
 
-    { BATTLEGROUND_BFG, [](Battleground * bg_t) -> Battleground* { return new BattlegroundBFG(*(BattlegroundBFG*)bg_t); } },
+    { BATTLEGROUND_BFG, [](Battleground* bg_t) -> Battleground* { auto* bg = new BattlegroundBFG(); bg->CopyFromTemplate(bg_t); return bg; } },
 
-    { BATTLEGROUND_RB, [](Battleground * bg_t) -> Battleground* { return new Battleground(*bg_t); }, },
-    { BATTLEGROUND_AA, [](Battleground * bg_t) -> Battleground* { return new Battleground(*bg_t); }, },
+    { BATTLEGROUND_RB, [](Battleground* bg_t) -> Battleground* { auto* bg = new Battleground(); bg->CopyFromTemplate(bg_t); return bg; }, },
+    { BATTLEGROUND_AA, [](Battleground* bg_t) -> Battleground* { auto* bg = new Battleground(); bg->CopyFromTemplate(bg_t); return bg; }, },
 };
 
 std::unordered_map<int, bgMapRef> BattlegroundMgr::getBgFromMap = {};

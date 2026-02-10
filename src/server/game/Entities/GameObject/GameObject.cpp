@@ -136,6 +136,16 @@ void GameObject::RemoveFromOwner()
     if (Unit* owner = ObjectAccessor::GetUnit(*this, ownerGUID))
     {
         owner->RemoveGameObject(this, false);
+        if (GetOwnerGUID())
+        {
+            if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext())
+            {
+                uint32 ownerPartition = map->GetPartitionIdForUnit(owner);
+                uint32 activePartition = map->GetActivePartitionContext();
+                if (ownerPartition && ownerPartition != activePartition)
+                    return;
+            }
+        }
         ASSERT(!GetOwnerGUID());
         return;
     }
@@ -155,10 +165,10 @@ void GameObject::AddToWorld()
             m_zoneScript->OnGameObjectCreate(this);
 
         if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
-            GetMap()->GetObjectsStore().Insert<GameObject>(GetGUID(), this);
+            GetMap()->InsertObjectStore<GameObject>(GetGUID(), this);
         GetMap()->RegisterPartitionedObject(this);
         if (m_spawnId)
-            GetMap()->GetGameObjectBySpawnIdStore().insert(std::make_pair(m_spawnId, this));
+            GetMap()->AddGameObjectToSpawnIdStore(m_spawnId, this);
 
         if (m_model)
         {
@@ -229,9 +239,9 @@ void GameObject::RemoveFromWorld()
         WorldObject::RemoveFromWorld();
 
         if (m_spawnId)
-            Acore::Containers::MultimapErasePair(GetMap()->GetGameObjectBySpawnIdStore(), m_spawnId, this);
+            GetMap()->RemoveGameObjectFromSpawnIdStore(m_spawnId, this);
         if (!(GetMap()->IsPartitioned() && sPartitionMgr->UsePartitionStoreOnly()))
-            GetMap()->GetObjectsStore().Remove<GameObject>(GetGUID());
+            GetMap()->RemoveObjectStore<GameObject>(GetGUID());
         GetMap()->UnregisterPartitionedObject(this);
     }
 }

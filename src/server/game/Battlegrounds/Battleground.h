@@ -309,6 +309,9 @@ public:
     virtual void StartingEventOpenDoors() { }
     virtual void ResetBGSubclass() { }                  // must be implemented in BG subclass
 
+    // Copy template-only configuration into a new instance.
+    virtual void CopyFromTemplate(Battleground const* bgTemplate);
+
     virtual void DestroyGate(Player* /*player*/, GameObject* /*go*/) {}
 
     /* achievement req. */

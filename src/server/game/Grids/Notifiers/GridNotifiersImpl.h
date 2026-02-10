@@ -499,9 +499,12 @@ void Acore::PlayerListSearcherWithSharedVision<Check>::Visit(CreatureMapType& m)
 {
     for (CreatureMapType::iterator itr = m.begin(); itr != m.end(); ++itr)
         if (itr->GetSource()->InSamePhase(i_phaseMask) && itr->GetSource()->HasSharedVision())
-            for (SharedVisionList::const_iterator i = itr->GetSource()->GetSharedVisionList().begin(); i != itr->GetSource()->GetSharedVisionList().end(); ++i)
+        {
+            SharedVisionList sharedCopy = itr->GetSource()->GetSharedVisionListCopy();
+            for (SharedVisionList::const_iterator i = sharedCopy.begin(); i != sharedCopy.end(); ++i)
                 if (i_check(*i, false))
                     i_objects.push_back(*i);
+        }
 }
 
 template<class Check>

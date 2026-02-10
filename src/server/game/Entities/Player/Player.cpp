@@ -12308,11 +12308,7 @@ void Player::GetAurasForTarget(Unit* target, bool force /*= false*/)
     WorldPacket data(SMSG_AURA_UPDATE_ALL);
     data<< target->GetPackGUID();
 
-    for (auto& auraPair : visibleAurasSnapshot)
-    {
-        AuraApplication* auraApp = auraPair.second;
-        auraApp->BuildUpdatePacket(data, false);
-    }
+    target->BuildVisibleAurasUpdateAllPacket(data);
 
     SendDirectMessage(&data);
 }

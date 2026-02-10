@@ -5200,9 +5200,9 @@ bool Player::LoadFromDB(ObjectGuid playerGuid, CharacterDatabaseQueryHolder cons
             map = sMapMgr->CreateMap(mapId, this);
             if (map)
             {
-                auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(std::abs(transLowGUID));
-                if (bounds.first != bounds.second)
-                    transGO = bounds.first->second->ToTransport();
+                auto gameObjects = map->GetGameObjectsBySpawnId(std::abs(transLowGUID));
+                if (!gameObjects.empty())
+                    transGO = gameObjects.front()->ToTransport();
             }
         }
 

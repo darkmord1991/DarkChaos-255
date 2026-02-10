@@ -5,6 +5,7 @@
 #include "ScriptMgr.h"
 #include "VMapFactory.h"
 #include "VMapMgr2.h"
+#include <cstdio>
 
 void GridTerrainLoader::LoadTerrain()
 {
@@ -95,27 +96,30 @@ void GridTerrainLoader::LoadMMap()
 bool GridTerrainLoader::ExistMap(uint32 mapid, int gx, int gy)
 {
     std::string const mapFileName = Acore::StringFormat("{}maps/{:03}{:02}{:02}.map", sWorld->GetDataPath(), mapid, gx, gy);
-    std::ifstream fileStream(mapFileName, std::ios::binary);
-    if (fileStream.fail())
+    FILE* fileStream = fopen(mapFileName.c_str(), "rb");
+    if (!fileStream)
     {
         LOG_DEBUG("maps", "Map file '{}': error opening file", mapFileName);
         return false;
     }
 
     map_fileheader header;
-    if (!fileStream.read(reinterpret_cast<char*>(&header), sizeof(header)))
+    if (fread(&header, sizeof(header), 1, fileStream) != 1)
     {
+        fclose(fileStream);
         LOG_DEBUG("maps", "Map file '{}': unable to read header", mapFileName);
         return false;
     }
 
     if (header.mapMagic != MapMagic.asUInt || header.versionMagic != MapVersionMagic)
     {
+        fclose(fileStream);
         LOG_ERROR("maps", "Map file '{}' is from an incompatible map version ({:.4u} v{}), {:.4s} v{} is expected. Please pull your source, recompile tools and recreate maps using the updated mapextractor, then replace your old map files with new files.",
             mapFileName, 4, header.mapMagic, header.versionMagic, 4, MapMagic.asChar, MapVersionMagic);
         return false;
     }
 
+    fclose(fileStream);
     return true;
 }
 

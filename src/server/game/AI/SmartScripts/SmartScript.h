@@ -141,25 +141,25 @@ public:
 
     GameObject* FindGameObjectNear(WorldObject* searchObject, ObjectGuid::LowType guid) const
     {
-        auto bounds = searchObject->GetMap()->GetGameObjectBySpawnIdStore().equal_range(guid);
-        if (bounds.first == bounds.second)
+        auto gameObjects = searchObject->GetMap()->GetGameObjectsBySpawnId(guid);
+        if (gameObjects.empty())
             return nullptr;
 
-        return bounds.first->second;
+        return gameObjects.front();
     }
 
     Creature* FindCreatureNear(WorldObject* searchObject, ObjectGuid::LowType guid) const
     {
-        auto bounds = searchObject->GetMap()->GetCreatureBySpawnIdStore().equal_range(guid);
-        if (bounds.first == bounds.second)
+        auto creatures = searchObject->GetMap()->GetCreaturesBySpawnId(guid);
+        if (creatures.empty())
             return nullptr;
 
-        auto creatureItr = std::find_if(bounds.first, bounds.second, [](Map::CreatureBySpawnIdContainer::value_type const& pair)
+        auto creatureItr = std::find_if(creatures.begin(), creatures.end(), [](Creature* creature)
         {
-            return pair.second->IsAlive();
+            return creature && creature->IsAlive();
         });
 
-        return creatureItr != bounds.second ? creatureItr->second : bounds.first->second;
+        return creatureItr != creatures.end() ? *creatureItr : creatures.front();
     }
 
     void OnReset();

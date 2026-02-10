@@ -125,6 +125,53 @@ public:
 
     void call() override
     {
+        auto startTime = std::chrono::steady_clock::now();
+
+        struct FinishGuard
+        {
+            FinishGuard(MapUpdater& updater, std::function<void()>& onDone, uint32 mapId, uint32 partitionId,
+                std::chrono::steady_clock::time_point start)
+                : _updater(updater), _onDone(onDone), _mapId(mapId), _partitionId(partitionId), _start(start) {}
+
+            ~FinishGuard()
+            {
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - _start);
+                if (elapsed.count() >= 5)
+                {
+                    LOG_WARN("map.partition",
+                        "PartitionUpdateWorker slow map {} partition {}: {}s",
+                        _mapId, _partitionId, elapsed.count());
+                }
+
+                try
+                {
+                    if (_onDone)
+                        _onDone();
+                }
+                catch (std::exception const& e)
+                {
+                    LOG_ERROR("map.partition",
+                        "PartitionUpdateWorker onDone exception map {} partition {}: {}",
+                        _mapId, _partitionId, e.what());
+                }
+                catch (...)
+                {
+                    LOG_ERROR("map.partition",
+                        "PartitionUpdateWorker onDone unknown exception map {} partition {}",
+                        _mapId, _partitionId);
+                }
+
+                _updater.update_finished(MapUpdater::UpdateRequestType::Partition);
+            }
+
+            MapUpdater& _updater;
+            std::function<void()>& _onDone;
+            uint32 _mapId;
+            uint32 _partitionId;
+            std::chrono::steady_clock::time_point _start;
+        } finishGuard(_updater, _onDone, _map.GetId(), _partitionId, startTime);
+
         METRIC_TIMER("partition_update_time_diff",
             METRIC_TAG("map_id", std::to_string(_map.GetId())),
             METRIC_TAG("partition_id", std::to_string(_partitionId)));
@@ -144,9 +191,7 @@ public:
             LOG_FATAL("map.partition", "PartitionUpdateWorker UNKNOWN EXCEPTION map {} partition {}",
                 _map.GetId(), _partitionId);
         }
-        if (_onDone)
-            _onDone();
-        _updater.update_finished(MapUpdater::UpdateRequestType::Partition);
+        return;
     }
 
 private:

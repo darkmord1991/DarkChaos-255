@@ -103,9 +103,12 @@ void VisibleChangesNotifier::Visit(PlayerMapType& m)
         iter->GetSource()->UpdateVisibilityOf(&i_object);
 
         if (iter->GetSource()->HasSharedVision())
-            for (SharedVisionList::const_iterator i = iter->GetSource()->GetSharedVisionList().begin(); i != iter->GetSource()->GetSharedVisionList().end(); ++i)
+        {
+            SharedVisionList sharedCopy = iter->GetSource()->GetSharedVisionListCopy();
+            for (SharedVisionList::const_iterator i = sharedCopy.begin(); i != sharedCopy.end(); ++i)
                 if ((*i)->m_seer == iter->GetSource())
                     (*i)->UpdateVisibilityOf(&i_object);
+        }
     }
 }
 
@@ -113,9 +116,12 @@ void VisibleChangesNotifier::Visit(CreatureMapType& m)
 {
     for (CreatureMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
         if (iter->GetSource()->HasSharedVision())
-            for (SharedVisionList::const_iterator i = iter->GetSource()->GetSharedVisionList().begin(); i != iter->GetSource()->GetSharedVisionList().end(); ++i)
+        {
+            SharedVisionList sharedCopy = iter->GetSource()->GetSharedVisionListCopy();
+            for (SharedVisionList::const_iterator i = sharedCopy.begin(); i != sharedCopy.end(); ++i)
                 if ((*i)->m_seer == iter->GetSource())
                     (*i)->UpdateVisibilityOf(&i_object);
+        }
 }
 
 void VisibleChangesNotifier::Visit(DynamicObjectMapType& m)
@@ -244,8 +250,9 @@ void MessageDistDeliverer::Visit(PlayerMapType& m)
         // Send packet to all who are sharing the player's vision
         if (target->HasSharedVision())
         {
-            SharedVisionList::const_iterator i = target->GetSharedVisionList().begin();
-            for (; i != target->GetSharedVisionList().end(); ++i)
+            SharedVisionList sharedCopy = target->GetSharedVisionListCopy();
+            SharedVisionList::const_iterator i = sharedCopy.begin();
+            for (; i != sharedCopy.end(); ++i)
                 if ((*i)->m_seer == target)
                     SendPacket(*i);
         }
@@ -273,8 +280,9 @@ void MessageDistDeliverer::Visit(CreatureMapType& m)
                 continue;
 
         // Send packet to all who are sharing the creature's vision
-        SharedVisionList::const_iterator i = target->GetSharedVisionList().begin();
-        for (; i != target->GetSharedVisionList().end(); ++i)
+        SharedVisionList sharedCopy = target->GetSharedVisionListCopy();
+        SharedVisionList::const_iterator i = sharedCopy.begin();
+        for (; i != sharedCopy.end(); ++i)
             if ((*i)->m_seer == target)
                 SendPacket(*i);
     }
@@ -322,8 +330,9 @@ void MessageDistDelivererToHostile::Visit(PlayerMapType& m)
         // Send packet to all who are sharing the player's vision
         if (target->HasSharedVision())
         {
-            SharedVisionList::const_iterator i = target->GetSharedVisionList().begin();
-            for (; i != target->GetSharedVisionList().end(); ++i)
+            SharedVisionList sharedCopy = target->GetSharedVisionListCopy();
+            SharedVisionList::const_iterator i = sharedCopy.begin();
+            for (; i != sharedCopy.end(); ++i)
                 if ((*i)->m_seer == target)
                     SendPacket(*i);
         }
@@ -345,8 +354,9 @@ void MessageDistDelivererToHostile::Visit(CreatureMapType& m)
             continue;
 
         // Send packet to all who are sharing the creature's vision
-        SharedVisionList::const_iterator i = target->GetSharedVisionList().begin();
-        for (; i != target->GetSharedVisionList().end(); ++i)
+        SharedVisionList sharedCopy = target->GetSharedVisionListCopy();
+        SharedVisionList::const_iterator i = sharedCopy.begin();
+        for (; i != sharedCopy.end(); ++i)
             if ((*i)->m_seer == target)
                 SendPacket(*i);
     }

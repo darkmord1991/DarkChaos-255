@@ -2451,8 +2451,22 @@ void ObjectMgr::LoadCreatureSparring()
     LOG_INFO("server.loading", " ");
 }
 
+CellObjectGuids ObjectMgr::GetGridObjectGuids(uint16 mapid, uint8 spawnMode, uint32 gridId)
+{
+    std::shared_lock<std::shared_mutex> lock(_mapObjectGuidsLock);
+    MapObjectGuids::const_iterator itr1 = _mapObjectGuidsStore.find(MAKE_PAIR32(mapid, spawnMode));
+    if (itr1 != _mapObjectGuidsStore.end())
+    {
+        CellObjectGuidsMap::const_iterator itr2 = itr1->second.find(gridId);
+        if (itr2 != itr1->second.end())
+            return itr2->second;
+    }
+    return _emptyCellObjectGuids;
+}
+
 void ObjectMgr::AddCreatureToGrid(ObjectGuid::LowType guid, CreatureData const* data)
 {
+    std::unique_lock<std::shared_mutex> lock(_mapObjectGuidsLock);
     uint8 mask = data->spawnMask;
     for (uint8 i = 0; mask != 0; i++, mask >>= 1)
     {
@@ -2467,6 +2481,7 @@ void ObjectMgr::AddCreatureToGrid(ObjectGuid::LowType guid, CreatureData const* 
 
 void ObjectMgr::RemoveCreatureFromGrid(ObjectGuid::LowType guid, CreatureData const* data)
 {
+    std::unique_lock<std::shared_mutex> lock(_mapObjectGuidsLock);
     uint8 mask = data->spawnMask;
     for (uint8 i = 0; mask != 0; i++, mask >>= 1)
     {
@@ -2759,6 +2774,7 @@ void ObjectMgr::LoadGameobjects()
 
 void ObjectMgr::AddGameobjectToGrid(ObjectGuid::LowType guid, GameObjectData const* data)
 {
+    std::unique_lock<std::shared_mutex> lock(_mapObjectGuidsLock);
     uint8 mask = data->spawnMask;
     for (uint8 i = 0; mask != 0; i++, mask >>= 1)
     {
@@ -2773,6 +2789,7 @@ void ObjectMgr::AddGameobjectToGrid(ObjectGuid::LowType guid, GameObjectData con
 
 void ObjectMgr::RemoveGameobjectFromGrid(ObjectGuid::LowType guid, GameObjectData const* data)
 {
+    std::unique_lock<std::shared_mutex> lock(_mapObjectGuidsLock);
     uint8 mask = data->spawnMask;
     for (uint8 i = 0; mask != 0; i++, mask >>= 1)
     {

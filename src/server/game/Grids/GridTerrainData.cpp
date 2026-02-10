@@ -22,14 +22,21 @@ TerrainMapDataReadResult GridTerrainData::Load(std::string const& mapFileName)
         return TerrainMapDataReadResult::NotFound;
 
     // Start the input stream and check for any errors
-    std::ifstream fileStream(mapFileName, std::ios::binary);
-    if (fileStream.fail())
+    // Start the input stream and check for any errors
+    FILE* fileStream = fopen(mapFileName.c_str(), "rb");
+    if (!fileStream)
+    {
+        LOG_ERROR("maps", "GridTerrainData::Load: Could not open map file '{}'", mapFileName);
         return TerrainMapDataReadResult::ReadError;
+    }
 
     // Read the map header
     map_fileheader header;
-    if (!fileStream.read(reinterpret_cast<char*>(&header), sizeof(header)))
+    if (fread(&header, sizeof(header), 1, fileStream) != 1)
+    {
+        fclose(fileStream);
         return TerrainMapDataReadResult::ReadError;
+    }
 
     // Check for valid map and version magics
     if (header.mapMagic != MapMagic.asUInt || header.versionMagic != MapVersionMagic)
@@ -37,29 +44,46 @@ TerrainMapDataReadResult GridTerrainData::Load(std::string const& mapFileName)
 
     // Load area data
     if (header.areaMapOffset && !LoadAreaData(fileStream, header.areaMapOffset))
+    {
+        LOG_ERROR("maps", "GridTerrainData::Load: Failed to load area data for map '{}'", mapFileName);
+        fclose(fileStream);
         return TerrainMapDataReadResult::InvalidAreaData;
+    }
 
     // Load height data
     if (header.heightMapOffset && !LoadHeightData(fileStream, header.heightMapOffset))
+    {
+        fclose(fileStream);
         return TerrainMapDataReadResult::InvalidHeightData;
+    }
 
     // Load liquid data
     if (header.liquidMapOffset && !LoadLiquidData(fileStream, header.liquidMapOffset))
+    {
+        fclose(fileStream);
         return TerrainMapDataReadResult::InvalidLiquidData;
+    }
 
     // Load hole data
     if (header.holesSize && !LoadHolesData(fileStream, header.holesOffset))
+    {
+        LOG_ERROR("maps", "GridTerrainData::Load: Failed to load hole data for map '{}'", mapFileName);
+        fclose(fileStream);
         return TerrainMapDataReadResult::InvalidHoleData;
+    }
 
+    fclose(fileStream);
+    LOG_DEBUG("maps", "GridTerrainData::Load: Successfully loaded map '{}'", mapFileName);
     return TerrainMapDataReadResult::Success;
 }
 
-bool GridTerrainData::LoadAreaData(std::ifstream& fileStream, uint32 const offset)
+bool GridTerrainData::LoadAreaData(FILE* fileStream, uint32 const offset)
 {
-    fileStream.seekg(offset);
+    if (fseek(fileStream, offset, SEEK_SET) != 0)
+        return false;
 
     map_areaHeader header;
-    if (!fileStream.read(reinterpret_cast<char*>(&header), sizeof(header)) || header.fourcc != MapAreaMagic.asUInt)
+    if (fread(&header, sizeof(header), 1, fileStream) != 1 || header.fourcc != MapAreaMagic.asUInt)
         return false;
 
     _loadedAreaData = std::make_unique<LoadedAreaData>();
@@ -67,18 +91,19 @@ bool GridTerrainData::LoadAreaData(std::ifstream& fileStream, uint32 const offse
     if (!(header.flags & MAP_AREA_NO_AREA))
     {
         _loadedAreaData->areaMap = std::make_unique<LoadedAreaData::AreaMapType>();
-        if (!fileStream.read(reinterpret_cast<char*>(_loadedAreaData->areaMap.get()), sizeof(LoadedAreaData::AreaMapType)))
+        if (fread(_loadedAreaData->areaMap.get(), sizeof(LoadedAreaData::AreaMapType), 1, fileStream) != 1)
             return false;
     }
     return true;
 }
 
-bool GridTerrainData::LoadHeightData(std::ifstream& fileStream, uint32 const offset)
+bool GridTerrainData::LoadHeightData(FILE* fileStream, uint32 const offset)
 {
-    fileStream.seekg(offset);
+    if (fseek(fileStream, offset, SEEK_SET) != 0)
+        return false;
 
     map_heightHeader header;
-    if (!fileStream.read(reinterpret_cast<char*>(&header), sizeof(header)) || header.fourcc != MapHeightMagic.asUInt)
+    if (fread(&header, sizeof(header), 1, fileStream) != 1 || header.fourcc != MapHeightMagic.asUInt)
         return false;
 
     _loadedHeightData = std::make_unique<LoadedHeightData>();
@@ -88,8 +113,8 @@ bool GridTerrainData::LoadHeightData(std::ifstream& fileStream, uint32 const off
         if ((header.flags & MAP_HEIGHT_AS_INT16))
         {
             _loadedHeightData->uint16HeightData = std::make_unique<LoadedHeightData::Uint16HeightData>();
-            if (!fileStream.read(reinterpret_cast<char*>(&_loadedHeightData->uint16HeightData->v9), sizeof(_loadedHeightData->uint16HeightData->v9))
-                || !fileStream.read(reinterpret_cast<char*>(&_loadedHeightData->uint16HeightData->v8), sizeof(_loadedHeightData->uint16HeightData->v8)))
+            if (fread(&_loadedHeightData->uint16HeightData->v9, sizeof(_loadedHeightData->uint16HeightData->v9), 1, fileStream) != 1
+                || fread(&_loadedHeightData->uint16HeightData->v8, sizeof(_loadedHeightData->uint16HeightData->v8), 1, fileStream) != 1)
                 return false;
 
             _loadedHeightData->uint16HeightData->gridIntHeightMultiplier = (header.gridMaxHeight - header.gridHeight) / 65535;
@@ -98,8 +123,8 @@ bool GridTerrainData::LoadHeightData(std::ifstream& fileStream, uint32 const off
         else if ((header.flags & MAP_HEIGHT_AS_INT8))
         {
             _loadedHeightData->uint8HeightData = std::make_unique<LoadedHeightData::Uint8HeightData>();
-            if (!fileStream.read(reinterpret_cast<char*>(&_loadedHeightData->uint8HeightData->v9), sizeof(_loadedHeightData->uint8HeightData->v9))
-                || !fileStream.read(reinterpret_cast<char*>(&_loadedHeightData->uint8HeightData->v8), sizeof(_loadedHeightData->uint8HeightData->v8)))
+            if (fread(&_loadedHeightData->uint8HeightData->v9, sizeof(_loadedHeightData->uint8HeightData->v9), 1, fileStream) != 1
+                || fread(&_loadedHeightData->uint8HeightData->v8, sizeof(_loadedHeightData->uint8HeightData->v8), 1, fileStream) != 1)
                 return false;
 
             _loadedHeightData->uint8HeightData->gridIntHeightMultiplier = (header.gridMaxHeight - header.gridHeight) / 255;
@@ -108,8 +133,8 @@ bool GridTerrainData::LoadHeightData(std::ifstream& fileStream, uint32 const off
         else
         {
             _loadedHeightData->floatHeightData = std::make_unique<LoadedHeightData::FloatHeightData>();
-            if (!fileStream.read(reinterpret_cast<char*>(&_loadedHeightData->floatHeightData->v9), sizeof(_loadedHeightData->floatHeightData->v9))
-                || !fileStream.read(reinterpret_cast<char*>(&_loadedHeightData->floatHeightData->v8), sizeof(_loadedHeightData->floatHeightData->v8)))
+            if (fread(&_loadedHeightData->floatHeightData->v9, sizeof(_loadedHeightData->floatHeightData->v9), 1, fileStream) != 1
+                || fread(&_loadedHeightData->floatHeightData->v8, sizeof(_loadedHeightData->floatHeightData->v8), 1, fileStream) != 1)
                 return false;
 
             _gridGetHeight = &GridTerrainData::getHeightFromFloat;
@@ -122,8 +147,8 @@ bool GridTerrainData::LoadHeightData(std::ifstream& fileStream, uint32 const off
     {
         std::array<int16, 9> maxHeights;
         std::array<int16, 9> minHeights;
-        if (!fileStream.read(reinterpret_cast<char*>(maxHeights.data()), sizeof(maxHeights)) ||
-            !fileStream.read(reinterpret_cast<char*>(minHeights.data()), sizeof(minHeights)))
+        if (fread(maxHeights.data(), sizeof(maxHeights), 1, fileStream) != 1 ||
+            fread(minHeights.data(), sizeof(minHeights), 1, fileStream) != 1)
             return false;
 
         static uint32 constexpr indices[8][3] =
@@ -163,12 +188,13 @@ bool GridTerrainData::LoadHeightData(std::ifstream& fileStream, uint32 const off
     return true;
 }
 
-bool GridTerrainData::LoadLiquidData(std::ifstream& fileStream, uint32 const offset)
+bool GridTerrainData::LoadLiquidData(FILE* fileStream, uint32 const offset)
 {
-    fileStream.seekg(offset);
+    if (fseek(fileStream, offset, SEEK_SET) != 0)
+        return false;
 
     map_liquidHeader header;
-    if (!fileStream.read(reinterpret_cast<char*>(&header), sizeof(header)) || header.fourcc != MapLiquidMagic.asUInt)
+    if (fread(&header, sizeof(header), 1, fileStream) != 1 || header.fourcc != MapLiquidMagic.asUInt)
         return false;
 
     _loadedLiquidData = std::make_unique<LoadedLiquidData>();
@@ -183,29 +209,30 @@ bool GridTerrainData::LoadLiquidData(std::ifstream& fileStream, uint32 const off
     if (!(header.flags & MAP_LIQUID_NO_TYPE))
     {
         _loadedLiquidData->liquidEntry = std::make_unique<LoadedLiquidData::LiquidEntryType>();
-        if (!fileStream.read(reinterpret_cast<char*>(_loadedLiquidData->liquidEntry.get()), sizeof(LoadedLiquidData::LiquidEntryType)))
+        if (fread(_loadedLiquidData->liquidEntry.get(), sizeof(LoadedLiquidData::LiquidEntryType), 1, fileStream) != 1)
             return false;
 
         _loadedLiquidData->liquidFlags = std::make_unique<LoadedLiquidData::LiquidFlagsType>();
-        if (!fileStream.read(reinterpret_cast<char*>(_loadedLiquidData->liquidFlags.get()), sizeof(LoadedLiquidData::LiquidFlagsType)))
+        if (fread(_loadedLiquidData->liquidFlags.get(), sizeof(LoadedLiquidData::LiquidFlagsType), 1, fileStream) != 1)
             return false;
     }
     if (!(header.flags & MAP_LIQUID_NO_HEIGHT))
     {
         _loadedLiquidData->liquidMap = std::make_unique<LoadedLiquidData::LiquidMapType>();
         _loadedLiquidData->liquidMap->resize(_loadedLiquidData->liquidWidth * _loadedLiquidData->liquidHeight);
-        if (!fileStream.read(reinterpret_cast<char*>(_loadedLiquidData->liquidMap->data()), _loadedLiquidData->liquidMap->size() * sizeof(float)))
+        if (fread(_loadedLiquidData->liquidMap->data(), _loadedLiquidData->liquidMap->size() * sizeof(float), 1, fileStream) != 1)
             return false;
     }
     return true;
 }
 
-bool GridTerrainData::LoadHolesData(std::ifstream& fileStream, uint32 const offset)
+bool GridTerrainData::LoadHolesData(FILE* fileStream, uint32 const offset)
 {
-    fileStream.seekg(offset);
+    if (fseek(fileStream, offset, SEEK_SET) != 0)
+        return false;
 
     _loadedHoleData = std::make_unique<LoadedHoleData>();
-    if (!fileStream.read(reinterpret_cast<char*>(&_loadedHoleData->holes), sizeof(_loadedHoleData->holes)))
+    if (fread(&_loadedHoleData->holes, sizeof(_loadedHoleData->holes), 1, fileStream) != 1)
         return false;
 
     return true;

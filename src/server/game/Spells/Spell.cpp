@@ -3790,10 +3790,11 @@ void Spell::_cast(bool skipCheck)
         // xinef: take into account SPELL_ATTR3_SUPPRESS_TARGET_PROCS
         if ((m_targets.GetTargetMask() & TARGET_FLAG_UNIT) && GetSpellInfo()->DmgClass != SPELL_DAMAGE_CLASS_NONE && !GetSpellInfo()->HasAttribute(SPELL_ATTR3_SUPPRESS_TARGET_PROCS))
             if (!playerCaster->m_Controlled.empty())
-                for (Unit::ControlSet::iterator itr = playerCaster->m_Controlled.begin(); itr != playerCaster->m_Controlled.end(); ++itr)
-                    if (Unit* pet = *itr)
-                        if (pet->IsAlive() && pet->IsCreature())
-                            pet->ToCreature()->AI()->OwnerAttacked(m_targets.GetUnitTarget());
+                if (Unit* target = m_targets.GetUnitTarget())
+                    for (Unit::ControlSet::iterator itr = playerCaster->m_Controlled.begin(); itr != playerCaster->m_Controlled.end(); ++itr)
+                        if (Unit* pet = *itr)
+                            if (pet->IsAlive() && pet->IsCreature() && pet->IsInWorld() && pet->FindMap() && pet->IsAIEnabled)
+                                pet->ToCreature()->AI()->OwnerAttacked(target);
     }
 
     SetExecutedCurrently(true);

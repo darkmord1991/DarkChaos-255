@@ -341,18 +341,21 @@ struct RedirectThreatInfo
     RedirectThreatInfo() = default;
     ObjectGuid _targetGUID;
     uint32 _threatPct{ 0 };
+    mutable std::mutex _lock;
 
-    [[nodiscard]] ObjectGuid GetTargetGUID() const { return _targetGUID; }
-    [[nodiscard]] uint32 GetThreatPct() const { return _threatPct; }
+    [[nodiscard]] ObjectGuid GetTargetGUID() const { std::lock_guard<std::mutex> g(_lock); return _targetGUID; }
+    [[nodiscard]] uint32 GetThreatPct() const { std::lock_guard<std::mutex> g(_lock); return _threatPct; }
 
     void Set(ObjectGuid guid, uint32 pct)
     {
+        std::lock_guard<std::mutex> g(_lock);
         _targetGUID = guid;
         _threatPct = pct;
     }
 
     void ModifyThreatPct(int32 amount)
     {
+        std::lock_guard<std::mutex> g(_lock);
         amount += _threatPct;
         _threatPct = uint32(std::max(0, amount));
     }

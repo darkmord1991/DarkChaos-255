@@ -159,13 +159,9 @@ bool OPvPCapturePoint::DelCreature(uint32 type)
         return false;
     }
 
-    auto bounds = _pvp->GetMap()->GetCreatureBySpawnIdStore().equal_range(spawnId);
-    for (auto itr = bounds.first; itr != bounds.second;)
+    auto creatures = _pvp->GetMap()->GetCreaturesBySpawnId(spawnId);
+    for (Creature* c : creatures)
     {
-        // can happen when closing the core
-        Creature* c = itr->second;
-        ++itr;
-
         // Don't save respawn time
         c->SetRespawnTime(0);
         c->RemoveCorpse();
@@ -198,11 +194,9 @@ bool OPvPCapturePoint::DelObject(uint32 type)
     if (!spawnId)
         return false;
 
-    auto bounds = _pvp->GetMap()->GetGameObjectBySpawnIdStore().equal_range(spawnId);
-    for (auto itr = bounds.first; itr != bounds.second;)
+    auto gameObjects = _pvp->GetMap()->GetGameObjectsBySpawnId(spawnId);
+    for (GameObject* go : gameObjects)
     {
-        GameObject* go = itr->second;
-        ++itr;
         // Don't save respawn time
         go->SetRespawnTime(0);
         go->Delete();

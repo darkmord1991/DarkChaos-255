@@ -32,6 +32,12 @@ PreparedStatementBase::~PreparedStatementBase() { }
 template<typename T>
 Acore::Types::is_non_string_view_v<T> PreparedStatementBase::SetValidData(const uint8 index, T const& value)
 {
+    if (index >= statement_data.size())
+    {
+        LOG_ERROR("sql.driver", "Attempted to bind parameter {} on a PreparedStatement {} (statement has only {} parameters)",
+            uint32(index) + 1, m_index, statement_data.size());
+        return;
+    }
     ASSERT(index < statement_data.size());
     statement_data[index].data.emplace<T>(value);
 }
@@ -39,12 +45,24 @@ Acore::Types::is_non_string_view_v<T> PreparedStatementBase::SetValidData(const 
 // Non template functions
 void PreparedStatementBase::SetValidData(const uint8 index)
 {
+    if (index >= statement_data.size())
+    {
+        LOG_ERROR("sql.driver", "Attempted to bind parameter {} on a PreparedStatement {} (statement has only {} parameters)",
+            uint32(index) + 1, m_index, statement_data.size());
+        return;
+    }
     ASSERT(index < statement_data.size());
     statement_data[index].data.emplace<std::nullptr_t>(nullptr);
 }
 
 void PreparedStatementBase::SetValidData(const uint8 index, std::string_view value)
 {
+    if (index >= statement_data.size())
+    {
+        LOG_ERROR("sql.driver", "Attempted to bind parameter {} on a PreparedStatement {} (statement has only {} parameters)",
+            uint32(index) + 1, m_index, statement_data.size());
+        return;
+    }
     ASSERT(index < statement_data.size());
     statement_data[index].data.emplace<std::string>(value);
 }

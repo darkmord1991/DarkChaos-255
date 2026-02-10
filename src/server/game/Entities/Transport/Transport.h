@@ -24,6 +24,7 @@
 #include "VehicleDefines.h"
 #include "ZoneScript.h"
 #include <atomic>
+#include <mutex>
 
 struct CreatureData;
 
@@ -138,6 +139,7 @@ public:
     uint32 GetPeriod() const { return m_goValue.Transport.AnimationInfo ? m_goValue.Transport.AnimationInfo->TotalTime : GetPauseTime() + 2; }
 private:
     bool _needDoInitialRelocation;
+    mutable std::recursive_mutex _passengerLock;
 };
 
 #endif

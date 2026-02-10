@@ -221,9 +221,33 @@ Battleground::Battleground()
     StartMessageIds[BG_STARTING_EVENT_SECOND] = BG_TEXT_START_ONE_MINUTE;
     StartMessageIds[BG_STARTING_EVENT_THIRD] = BG_TEXT_START_HALF_MINUTE;
     StartMessageIds[BG_STARTING_EVENT_FOURTH] = BG_TEXT_BATTLE_HAS_BEGUN;
-
     // pussywizard:
     m_UpdateTimer = 0;
+}
+
+void Battleground::CopyFromTemplate(Battleground const* bgTemplate)
+{
+    if (!bgTemplate)
+        return;
+
+    SetMapId(bgTemplate->GetMapId());
+    SetName(bgTemplate->GetName());
+    SetArenaorBGType(bgTemplate->isArena());
+    SetMinPlayersPerTeam(bgTemplate->GetMinPlayersPerTeam());
+    SetMaxPlayersPerTeam(bgTemplate->GetMaxPlayersPerTeam());
+    SetStartMaxDist(bgTemplate->GetStartMaxDist());
+    SetLevelRange(bgTemplate->GetMinLevel(), bgTemplate->GetMaxLevel());
+    SetScriptId(bgTemplate->GetScriptId());
+
+    for (uint8 i = 0; i < BG_STARTING_EVENT_COUNT; ++i)
+    {
+        StartDelayTimes[i] = bgTemplate->StartDelayTimes[i];
+        StartMessageIds[i] = bgTemplate->StartMessageIds[i];
+    }
+
+    SetTeamStartPosition(TEAM_ALLIANCE, *bgTemplate->GetTeamStartPosition(TEAM_ALLIANCE));
+    SetTeamStartPosition(TEAM_HORDE, *bgTemplate->GetTeamStartPosition(TEAM_HORDE));
+    m_HonorMode = bgTemplate->m_HonorMode;
 }
 
 Battleground::~Battleground()

@@ -22,6 +22,7 @@
 #include "MoveSplineInit.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "GameTime.h"
 #include "ScriptMgr.h"
 #include "TemporarySummon.h"
 #include "Unit.h"
@@ -428,22 +429,48 @@ bool Vehicle::AddPassenger(Unit* unit, int8 seatId)
         if (unit->IsPlayer())
             unit->ToPlayer()->SetExpectingChangeTransport(true);
         // also adds MOVEMENTFLAG_ROOT
-        Movement::MoveSplineInit init(unit);
-        init.DisableTransportPathTransformations();
-        init.MoveTo(x, y, z, false, true);
         // Xinef: did not found anything unique in dbc, maybe missed something
         if (veSeat->m_ID == 3566 || veSeat->m_ID == 3567 || veSeat->m_ID == 3568 || veSeat->m_ID == 3570)
         {
             CalculatePassengerPosition(x, y, z, &o);
-            init.SetFacing(_me->GetAngle(x, y));
+            o = _me->GetAngle(x, y);
+        }
+
+        if (Map* map = unit->FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        {
+            uint32 ownerPartition = map->GetPartitionIdForUnit(unit);
+            uint32 activePartition = map->GetActivePartitionContext();
+            if (ownerPartition && ownerPartition != activePartition)
+            {
+                Map::PartitionMotionRelay relay;
+                relay.moverGuid = unit->GetGUID();
+                relay.action = Map::MOTION_RELAY_TRANSPORT_ENTER;
+                relay.x = x;
+                relay.y = y;
+                relay.z = z;
+                relay.orientation = o;
+                relay.queuedMs = GameTime::GetGameTimeMS().count();
+                map->QueuePartitionMotionRelay(ownerPartition, relay);
+            }
+            else
+            {
+                Movement::MoveSplineInit init(unit);
+                init.DisableTransportPathTransformations();
+                init.MoveTo(x, y, z, false, true);
+                init.SetFacing(o);
+                init.SetTransportEnter();
+                init.Launch();
+            }
         }
         else
         {
+            Movement::MoveSplineInit init(unit);
+            init.DisableTransportPathTransformations();
+            init.MoveTo(x, y, z, false, true);
             init.SetFacing(o);
+            init.SetTransportEnter();
+            init.Launch();
         }
-
-        init.SetTransportEnter();
-        init.Launch();
 
         if (_me->IsCreature())
         {
@@ -518,6 +545,9 @@ void Vehicle::RelocatePassengers()
 {
     ASSERT(_me->GetMap());
 
+    Map* map = _me->GetMap();
+    bool partitioned = map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays();
+
     std::vector<std::pair<Unit*, Position>> seatRelocation;
     seatRelocation.reserve(Seats.size());
 
@@ -536,7 +566,29 @@ void Vehicle::RelocatePassengers()
     }
 
     for (auto const& pair : seatRelocation)
-        pair.first->UpdatePosition(pair.second);
+    {
+        Unit* passenger = pair.first;
+        if (partitioned)
+        {
+            uint32 ownerPartition = map->GetPartitionIdForUnit(passenger);
+            uint32 activePartition = map->GetActivePartitionContext();
+            if (ownerPartition && ownerPartition != activePartition)
+            {
+                Map::PartitionMotionRelay relay;
+                relay.moverGuid = passenger->GetGUID();
+                relay.action = Map::MOTION_RELAY_PASSENGER_RELOCATE;
+                relay.x = pair.second.GetPositionX();
+                relay.y = pair.second.GetPositionY();
+                relay.z = pair.second.GetPositionZ();
+                relay.orientation = pair.second.GetOrientation();
+                relay.queuedMs = GameTime::GetGameTimeMS().count();
+                map->QueuePartitionMotionRelay(ownerPartition, relay);
+                continue;
+            }
+        }
+
+        passenger->UpdatePosition(pair.second);
+    }
 }
 
 void Vehicle::Dismiss()
@@ -570,20 +622,62 @@ bool Vehicle::IsControllableVehicle() const
 
 void Vehicle::TeleportVehicle(float x, float y, float z, float ang)
 {
-    _me->GetMap()->LoadGrid(x, y);
+    Map* map = _me->GetMap();
+    map->LoadGrid(x, y);
     _me->NearTeleportTo(x, y, z, ang, true);
+
+    bool partitioned = map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays();
+    uint32 activePartition = partitioned ? map->GetActivePartitionContext() : 0;
 
     for (SeatMap::const_iterator itr = Seats.begin(); itr != Seats.end(); ++itr)
         if (Unit* passenger = ObjectAccessor::GetUnit(*GetBase(), itr->second.Passenger.Guid))
         {
             if (passenger->IsPlayer())
             {
+                if (partitioned)
+                {
+                    uint32 ownerPartition = map->GetPartitionIdForUnit(passenger);
+                    if (ownerPartition && ownerPartition != activePartition)
+                    {
+                        Map::PartitionMotionRelay relay;
+                        relay.moverGuid = passenger->GetGUID();
+                        relay.action = Map::MOTION_RELAY_PASSENGER_RELOCATE;
+                        relay.x = x;
+                        relay.y = y;
+                        relay.z = z;
+                        relay.orientation = ang;
+                        relay.queuedMs = GameTime::GetGameTimeMS().count();
+                        map->QueuePartitionMotionRelay(ownerPartition, relay);
+                        continue;
+                    }
+                }
+
                 passenger->ToPlayer()->SetMover(passenger);
                 passenger->NearTeleportTo(x, y, z, ang, false, true);
                 passenger->ToPlayer()->ScheduleDelayedOperation(DELAYED_VEHICLE_TELEPORT);
             }
             else if (passenger->IsCreature() && passenger->GetVehicleKit())
+            {
+                if (partitioned)
+                {
+                    uint32 ownerPartition = map->GetPartitionIdForUnit(passenger);
+                    if (ownerPartition && ownerPartition != activePartition)
+                    {
+                        Map::PartitionMotionRelay relay;
+                        relay.moverGuid = passenger->GetGUID();
+                        relay.action = Map::MOTION_RELAY_PASSENGER_RELOCATE;
+                        relay.x = x;
+                        relay.y = y;
+                        relay.z = z;
+                        relay.orientation = ang;
+                        relay.queuedMs = GameTime::GetGameTimeMS().count();
+                        map->QueuePartitionMotionRelay(ownerPartition, relay);
+                        continue;
+                    }
+                }
+
                 passenger->GetVehicleKit()->TeleportVehicle(x, y, z, ang);
+            }
         }
 }
 

@@ -204,6 +204,17 @@ void CreatureAI::TriggerAlert(Unit const* who) const
 
 void CreatureAI::EnterEvadeMode(EvadeReason why)
 {
+    if (Map* map = me->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        uint32 ownerPartition = map->GetPartitionIdForUnit(me);
+        uint32 activePartition = map->GetActivePartitionContext();
+        if (ownerPartition && ownerPartition != activePartition)
+        {
+            map->QueuePartitionEvadeRelay(ownerPartition, me->GetGUID(), static_cast<uint8>(why));
+            return;
+        }
+    }
+
     if (!_EnterEvadeMode(why))
         return;
 

@@ -19,7 +19,7 @@
 #define GRID_TERRAIN_DATA_H
 
 #include "Common.h"
-#include <fstream>
+#include <cstdio>
 #include <G3D/Plane.h>
 #include <memory>
 
@@ -220,10 +220,10 @@ enum class TerrainMapDataReadResult
 
 class GridTerrainData
 {
-    bool LoadAreaData(std::ifstream& fileStream, uint32 const offset);
-    bool LoadHeightData(std::ifstream& fileStream, uint32 const offset);
-    bool LoadLiquidData(std::ifstream& fileStream, uint32 const offset);
-    bool LoadHolesData(std::ifstream& fileStream, uint32 const offset);
+    bool LoadAreaData(FILE* fileStream, uint32 const offset);
+    bool LoadHeightData(FILE* fileStream, uint32 const offset);
+    bool LoadLiquidData(FILE* fileStream, uint32 const offset);
+    bool LoadHolesData(FILE* fileStream, uint32 const offset);
 
     std::unique_ptr<LoadedAreaData> _loadedAreaData;
     std::unique_ptr<LoadedHeightData> _loadedHeightData;

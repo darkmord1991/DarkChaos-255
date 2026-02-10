@@ -22,6 +22,7 @@
 #include "Define.h"
 #include "SQLOperation.h"
 #include "StringFormat.h"
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <vector>
@@ -39,6 +40,10 @@ public:
     TransactionBase()  = default;
     virtual ~TransactionBase() { Cleanup(); }
 
+    // Prevent copying to avoid double-free issues
+    TransactionBase(TransactionBase const&) = delete;
+    TransactionBase& operator=(TransactionBase const&) = delete;
+
     void Append(std::string_view sql);
 
     template<typename... Args>
@@ -52,10 +57,12 @@ public:
 protected:
     void AppendPreparedStatement(PreparedStatementBase* statement);
     void Cleanup();
+    bool IsCleanedUp() const;
     std::vector<SQLElementData> m_queries;
 
 private:
-    bool _cleanedUp{false};
+    std::atomic<bool> _cleanedUp{false};
+    mutable std::mutex _cleanupMutex;
 };
 
 template<typename T>

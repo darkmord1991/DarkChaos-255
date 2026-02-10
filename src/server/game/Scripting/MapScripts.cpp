@@ -61,11 +61,14 @@ void Map::ScriptsStart(ScriptMapMap const& scripts, uint32 id, Object* source, O
         }
     }
     ///- If one of the effects should be immediate, launch the script execution
-    if (/*start &&*/ immedScript && !i_scriptLock)
+    if (/*start &&*/ immedScript)
     {
-        i_scriptLock = true;
-        ScriptsProcess();
-        i_scriptLock = false;
+        bool expected = false;
+        if (i_scriptLock.compare_exchange_strong(expected, true))
+        {
+            ScriptsProcess();
+            i_scriptLock.store(false);
+        }
     }
 }
 
@@ -92,11 +95,14 @@ void Map::ScriptCommandStart(ScriptInfo const& script, uint32 delay, Object* sou
     sScriptMgr->IncreaseScheduledScriptsCount();
 
     ///- If effects should be immediate, launch the script execution
-    if (delay == 0 && !i_scriptLock)
+    if (delay == 0)
     {
-        i_scriptLock = true;
-        ScriptsProcess();
-        i_scriptLock = false;
+        bool expected = false;
+        if (i_scriptLock.compare_exchange_strong(expected, true))
+        {
+            ScriptsProcess();
+            i_scriptLock.store(false);
+        }
     }
 }
 
@@ -272,11 +278,11 @@ inline void Map::_ScriptProcessDoor(Object* source, Object* target, const Script
 
 inline GameObject* Map::_FindGameObject(WorldObject* searchObject, ObjectGuid::LowType guid) const
 {
-    auto bounds = searchObject->GetMap()->GetGameObjectBySpawnIdStore().equal_range(guid);
-    if (bounds.first == bounds.second)
+    auto gameObjects = searchObject->GetMap()->GetGameObjectsBySpawnId(guid);
+    if (gameObjects.empty())
         return nullptr;
 
-    return bounds.first->second;
+    return gameObjects.front();
 }
 
 /// Process queued scripts
@@ -802,15 +808,15 @@ void Map::ScriptsProcess()
                     }
 
                     Creature* cTarget = nullptr;
-                    auto creatureBounds = _creatureBySpawnIdStore.equal_range(step.script->CallScript.CreatureEntry);
-                    if (creatureBounds.first != creatureBounds.second)
+                    auto creatures = GetCreaturesBySpawnId(step.script->CallScript.CreatureEntry);
+                    if (!creatures.empty())
                     {
                         // Prefer alive (last respawned) creature
-                        auto creatureItr = std::find_if(creatureBounds.first, creatureBounds.second, [](Map::CreatureBySpawnIdContainer::value_type const& pair)
+                        auto creatureItr = std::find_if(creatures.begin(), creatures.end(), [](Creature* creature)
                         {
-                            return pair.second->IsAlive();
+                            return creature && creature->IsAlive();
                         });
-                        cTarget = creatureItr != creatureBounds.second ? creatureItr->second : creatureBounds.first->second;
+                        cTarget = creatureItr != creatures.end() ? *creatureItr : creatures.front();
                     }
 
                     if (!cTarget)

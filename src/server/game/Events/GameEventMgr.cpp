@@ -1398,10 +1398,9 @@ void GameEventMgr::UpdateEventNPCFlags(uint16 eventId)
         {
             for (auto& spawnId : p.second)
             {
-                auto creatureBounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
-                for (auto itr = creatureBounds.first; itr != creatureBounds.second; ++itr)
+                auto creatures = map->GetCreaturesBySpawnId(spawnId);
+                for (Creature* creature : creatures)
                 {
-                    Creature* creature = itr->second;
                     uint32 npcflag = GetNPCFlag(creature);
                     if (CreatureTemplate const* creatureTemplate = creature->GetCreatureTemplate())
                         npcflag |= creatureTemplate->npcflag;
@@ -1531,13 +1530,9 @@ void GameEventMgr::GameEventUnspawn(int16 eventId)
 
             sMapMgr->DoForAllMapsWithMapId(data->mapid, [&itr](Map* map)
             {
-                auto creatureBounds = map->GetCreatureBySpawnIdStore().equal_range(*itr);
-                for (auto itr2 = creatureBounds.first; itr2 != creatureBounds.second;)
-                {
-                    Creature* creature = itr2->second;
-                    ++itr2;
+                auto creatures = map->GetCreaturesBySpawnId(*itr);
+                for (Creature* creature : creatures)
                     creature->AddObjectToRemoveList();
-                }
             });
         }
     }
@@ -1561,13 +1556,9 @@ void GameEventMgr::GameEventUnspawn(int16 eventId)
 
             sMapMgr->DoForAllMapsWithMapId(data->mapid, [&itr](Map* map)
             {
-                auto gameobjectBounds = map->GetGameObjectBySpawnIdStore().equal_range(*itr);
-                for (auto itr2 = gameobjectBounds.first; itr2 != gameobjectBounds.second;)
-                {
-                    GameObject* go = itr2->second;
-                    ++itr2;
+                auto gameObjects = map->GetGameObjectsBySpawnId(*itr);
+                for (GameObject* go : gameObjects)
                     go->AddObjectToRemoveList();
-                }
             });
         }
     }
@@ -1595,10 +1586,9 @@ void GameEventMgr::ChangeEquipOrModel(int16 eventId, bool activate)
         // Update if spawned
         sMapMgr->DoForAllMapsWithMapId(data->mapid, [&itr, activate](Map* map)
         {
-            auto creatureBounds = map->GetCreatureBySpawnIdStore().equal_range(itr->first);
-            for (auto itr2 = creatureBounds.first; itr2 != creatureBounds.second; ++itr2)
+            auto creatures = map->GetCreaturesBySpawnId(itr->first);
+            for (Creature* creature : creatures)
             {
-                Creature* creature = itr2->second;
                 if (activate)
                 {
                     itr->second.EquipementIdPrev = creature->GetCurrentEquipmentId();
