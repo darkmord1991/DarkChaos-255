@@ -148,12 +148,12 @@ public:
     [[nodiscard]] uint32 GetLayerCloneId() const { return _layerCloneId; }
 
     // z_rot, y_rot, x_rot - rotation angles around z, y and x axes
-    void SetLocalRotationAngles(float z_rot, float y_rot, float x_rot);
-    void SetLocalRotation(G3D::Quat const& rot);
+    void SetWorldRotationAngles(float z_rot, float y_rot, float x_rot);
+    void SetWorldRotation(G3D::Quat const& rot);
     void SetTransportPathRotation(float qx, float qy, float qz, float qw);
-    [[nodiscard]] G3D::Quat const& GetLocalRotation() const { return m_localRotation; }
-    [[nodiscard]] int64 GetPackedLocalRotation() const { return m_packedRotation; }
-    [[nodiscard]] G3D::Quat GetWorldRotation() const;
+    [[nodiscard]] G3D::Quat const& GetWorldRotation() const { return WorldRotation; }
+    [[nodiscard]] int64 GetPackedWorldRotation() const { return m_packedRotation; }
+    [[nodiscard]] G3D::Quat GetFinalWorldRotation() const;
 
     // overwrite WorldObject function for proper name localization
     [[nodiscard]] std::string const& GetNameForLocaleIdx(LocaleConstant locale_idx) const override;
@@ -401,7 +401,7 @@ protected:
     bool m_allowModifyDestructibleBuilding;
 
     int64 m_packedRotation;
-    G3D::Quat m_localRotation;
+    G3D::Quat WorldRotation;
     Position m_stationaryPosition;
 
     ObjectGuid m_lootRecipient;

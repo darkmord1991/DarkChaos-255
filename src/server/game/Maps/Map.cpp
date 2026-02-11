@@ -3183,7 +3183,7 @@ void Map::AddObjectToPendingUpdateList(WorldObject* obj)
     UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
     {
         std::lock_guard<std::mutex> lock(_pendingUpdateListLock);
-        if (mapUpdatableObject->GetUpdateState() != UpdatableMapObject::UpdateState::NotUpdating)
+        if (!mapUpdatableObject || mapUpdatableObject->GetUpdateState() != UpdatableMapObject::UpdateState::NotUpdating)
             return;
         mapUpdatableObject->SetUpdateState(UpdatableMapObject::UpdateState::PendingAdd);
         _pendingAddUpdatableObjectList.insert(obj);
