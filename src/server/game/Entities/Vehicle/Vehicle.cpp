@@ -623,10 +623,13 @@ bool Vehicle::IsControllableVehicle() const
 void Vehicle::TeleportVehicle(float x, float y, float z, float ang)
 {
     Map* map = _me->GetMap();
+    if (!map)
+        return;
+
     map->LoadGrid(x, y);
     _me->NearTeleportTo(x, y, z, ang, true);
 
-    bool partitioned = map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays();
+    bool partitioned = map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays();
     uint32 activePartition = partitioned ? map->GetActivePartitionContext() : 0;
 
     for (SeatMap::const_iterator itr = Seats.begin(); itr != Seats.end(); ++itr)
@@ -641,7 +644,7 @@ void Vehicle::TeleportVehicle(float x, float y, float z, float ang)
                     {
                         Map::PartitionMotionRelay relay;
                         relay.moverGuid = passenger->GetGUID();
-                        relay.action = Map::MOTION_RELAY_PASSENGER_RELOCATE;
+                        relay.action = Map::MOTION_RELAY_VEHICLE_TELEPORT_PLAYER;
                         relay.x = x;
                         relay.y = y;
                         relay.z = z;
@@ -663,6 +666,8 @@ void Vehicle::TeleportVehicle(float x, float y, float z, float ang)
                     uint32 ownerPartition = map->GetPartitionIdForUnit(passenger);
                     if (ownerPartition && ownerPartition != activePartition)
                     {
+                        // For creature passengers with nested vehicles, relay as passenger relocate
+                        // and attempt recursive TeleportVehicle when processed on the correct partition
                         Map::PartitionMotionRelay relay;
                         relay.moverGuid = passenger->GetGUID();
                         relay.action = Map::MOTION_RELAY_PASSENGER_RELOCATE;

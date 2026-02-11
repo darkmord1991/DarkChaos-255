@@ -22,7 +22,6 @@ TerrainMapDataReadResult GridTerrainData::Load(std::string const& mapFileName)
         return TerrainMapDataReadResult::NotFound;
 
     // Start the input stream and check for any errors
-    // Start the input stream and check for any errors
     FILE* fileStream = fopen(mapFileName.c_str(), "rb");
     if (!fileStream)
     {
@@ -40,7 +39,10 @@ TerrainMapDataReadResult GridTerrainData::Load(std::string const& mapFileName)
 
     // Check for valid map and version magics
     if (header.mapMagic != MapMagic.asUInt || header.versionMagic != MapVersionMagic)
+    {
+        fclose(fileStream);
         return TerrainMapDataReadResult::InvalidMagic;
+    }
 
     // Load area data
     if (header.areaMapOffset && !LoadAreaData(fileStream, header.areaMapOffset))

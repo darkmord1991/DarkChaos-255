@@ -186,7 +186,7 @@ public:
     }
 
     template<class SPECIFIC_TYPE>
-    SPECIFIC_TYPE* Find(KEY_TYPE const& handle)
+    SPECIFIC_TYPE* Find(KEY_TYPE const& handle) const
     {
         return Acore::Find(_elements, handle, (SPECIFIC_TYPE*)nullptr);
     }

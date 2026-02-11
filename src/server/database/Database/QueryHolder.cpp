@@ -89,7 +89,8 @@ bool SQLQueryHolderCallback::InvokeIfReady()
 {
     if (m_future.valid() && m_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
     {
-        m_callback(*m_holder);
+        if (m_callback)
+            m_callback(*m_holder);
         return true;
     }
 

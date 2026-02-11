@@ -1178,8 +1178,9 @@ public:                                                 // opcodes handlers
         return _isBot;
     }
 
-private:
     void ProcessQueryCallbacks();
+
+private:
 
     QueryCallbackProcessor _queryProcessor;
     AsyncCallbackProcessor<TransactionCallback> _transactionCallbacks;

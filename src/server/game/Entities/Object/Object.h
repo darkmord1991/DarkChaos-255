@@ -273,7 +273,22 @@ protected:
 
     // Protects read-modify-write flag operations (SetFlag/RemoveFlag/SetByteFlag/RemoveByteFlag)
     // to prevent cross-thread bit-loss when two threads modify the same uint32 slot concurrently.
-    mutable std::mutex _flagLock;
+    // Uses a lightweight spinlock (std::atomic_flag, 1 byte) instead of std::mutex (~40-80 bytes)
+    // to reduce per-object memory overhead across 50k+ objects.
+    mutable std::atomic_flag _flagLock = ATOMIC_FLAG_INIT;
+
+    void _lockFlags() const { while (_flagLock.test_and_set(std::memory_order_acquire)) { /* spin */ } }
+    void _unlockFlags() const { _flagLock.clear(std::memory_order_release); }
+
+    // RAII guard for the _flagLock spinlock
+    struct FlagLockGuard
+    {
+        Object const& obj;
+        explicit FlagLockGuard(Object const& o) : obj(o) { obj._lockFlags(); }
+        ~FlagLockGuard() { obj._unlockFlags(); }
+        FlagLockGuard(FlagLockGuard const&) = delete;
+        FlagLockGuard& operator=(FlagLockGuard const&) = delete;
+    };
 
     uint16 m_valuesCount;
 

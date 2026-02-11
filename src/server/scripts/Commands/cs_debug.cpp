@@ -1463,8 +1463,10 @@ public:
                 ++objectByTypeCount[obj->GetTypeId()];
 
         uint32 zoneWideVisibleObjectsInZone = 0;
-        if (ZoneWideVisibleWorldObjectsSet const* farVisibleSet = player->GetMap()->GetZoneWideVisibleWorldObjectsForZone(player->GetZoneId()))
-            zoneWideVisibleObjectsInZone = farVisibleSet->size();
+        {
+            ZoneWideVisibleWorldObjectsSet farVisibleSet = player->GetMap()->GetZoneWideVisibleWorldObjectsForZoneCopy(player->GetZoneId());
+            zoneWideVisibleObjectsInZone = farVisibleSet.size();
+        }
 
         handler->PSendSysMessage("Visibility Range: {}", player->GetVisibilityRange());
         handler->PSendSysMessage("Visible Creatures: {}", objectByTypeCount[TYPEID_UNIT]);

@@ -36,6 +36,7 @@
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Pet.h"
+#include "Player.h"
 #include "Maps/Partitioning/PartitionManager.h"
 #include "Maps/Partitioning/LayerManager.h"
 #include <unordered_map>
@@ -71,6 +72,7 @@
 namespace
 {
     constexpr size_t kPartitionRelayLimit = 1024;
+    constexpr uint8 kMaxRelayBounces = 3;
     thread_local std::unordered_map<Map const*, uint32> sActivePartitionContext;
     thread_local bool sProcessingPartitionRelays = false;
     thread_local uint32 sNonPlayerVisibilityDeferDepth = 0;
@@ -1126,6 +1128,22 @@ void Map::QueuePartitionMotionRelay(uint32 partitionId, PartitionMotionRelay con
     queue.push_back(relay);
 }
 
+void Map::QueuePartitionMotionRelay(uint32 partitionId, PartitionMotionRelay&& relay)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
+    auto& queue = _partitionMotionRelays[partitionId];
+    if (queue.size() >= kPartitionRelayLimit)
+    {
+        LOG_WARN("maps.partition", "Map {} partition {} motion relay queue full ({}), dropping relay", GetId(), partitionId, kPartitionRelayLimit);
+        return;
+    }
+
+    queue.push_back(std::move(relay));
+}
+
 void Map::QueuePartitionProcRelay(uint32 partitionId, ObjectGuid const& actorGuid, ObjectGuid const& targetGuid, bool isVictim, uint32 procFlag, uint32 procExtra, uint32 amount, WeaponAttackType attackType, uint32 procSpellId, uint32 procAuraId, int8 procAuraEffectIndex, uint32 procPhase)
 {
     if (!_isPartitioned || partitionId == 0)
@@ -1438,6 +1456,9 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         ~RelayGuard() { sProcessingPartitionRelays = false; }
     } guard;
 
+    // Capture timestamp once for all relay latency measurements in this partition tick
+    uint64 const relayNowMs = GameTime::GetGameTimeMS().count();
+
     std::vector<PartitionThreatRelay> threatRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
@@ -1450,7 +1471,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!threatRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionThreatRelay const& relay : threatRelays)
@@ -1495,7 +1516,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!threatActionRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionThreatActionRelay const& relay : threatActionRelays)
@@ -1542,7 +1563,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!procRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionProcRelay const& relay : procRelays)
@@ -1591,7 +1612,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!auraRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionAuraRelay const& relay : auraRelays)
@@ -1652,7 +1673,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!pathRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionPathRelay const& relay : pathRelays)
@@ -1703,7 +1724,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!pointRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionPointRelay const& relay : pointRelays)
@@ -1759,7 +1780,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!motionRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionMotionRelay const& relay : motionRelays)
@@ -1935,6 +1956,16 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                     mover->UpdatePosition(relay.x, relay.y, relay.z, relay.orientation);
                     break;
                 }
+                case MOTION_RELAY_VEHICLE_TELEPORT_PLAYER:
+                {
+                    if (Player* player = mover->ToPlayer())
+                    {
+                        player->SetMover(player);
+                        player->NearTeleportTo(relay.x, relay.y, relay.z, relay.orientation, false, true);
+                        player->ScheduleDelayedOperation(DELAYED_VEHICLE_TELEPORT);
+                    }
+                    break;
+                }
                 default:
                     break;
             }
@@ -1972,7 +2003,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!assistRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionAssistRelay const& relay : assistRelays)
@@ -2022,7 +2053,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!distractRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionAssistDistractRelay const& relay : distractRelays)
@@ -2073,7 +2104,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!threatTargetRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionThreatTargetActionRelay const& relay : threatTargetRelays)
@@ -2085,8 +2116,8 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
 
             if (relay.action == 1) // ClearTarget
                 owner->GetThreatMgr().ModifyThreatByPercent(target, -100);
-            else if (relay.action == 2) // ResetTarget
-                owner->GetThreatMgr().ModifyThreatByPercent(target, -100);
+            else if (relay.action == 2) // ResetTarget - set threat to 0 without removing from list
+                owner->GetThreatMgr().ResetThreat(target);
 
             if (relay.queuedMs)
             {
@@ -2121,7 +2152,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!combatRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionCombatRelay const& relay : combatRelays)
@@ -2166,7 +2197,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!lootRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionLootRelay const& relay : lootRelays)
@@ -2211,7 +2242,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!dynObjectRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionDynObjectRelay const& relay : dynObjectRelays)
@@ -2256,7 +2287,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!minionRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionMinionRelay const& relay : minionRelays)
@@ -2265,13 +2296,17 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             Unit* minionUnit = GetUnitByGuid(relay.minionGuid);
             Creature* minionCreature = minionUnit ? minionUnit->ToCreature() : nullptr;
             Minion* minion = (minionCreature && minionCreature->HasUnitTypeMask(UNIT_MASK_MINION)) ? static_cast<Minion*>(minionCreature) : nullptr;
-            if (!owner || !minion)
+            ASSERT(!minion || dynamic_cast<Minion*>(minionCreature) != nullptr, "UNIT_MASK_MINION set but type is not Minion");
+            if (!owner || !minion || !owner->IsInWorld())
                 continue;
 
             uint32 ownerPartition = GetPartitionIdForUnit(owner);
-            if (ownerPartition && ownerPartition != partitionId)
+            if (ownerPartition && ownerPartition != partitionId && relay.bounceCount < kMaxRelayBounces)
             {
-                QueuePartitionMinionRelay(ownerPartition, relay.ownerGuid, relay.minionGuid, relay.apply);
+                PartitionMinionRelay bounced = relay;
+                bounced.bounceCount++;
+                std::lock_guard<std::mutex> lock(GetRelayLock(ownerPartition));
+                _partitionMinionRelays[ownerPartition].push_back(bounced);
                 continue;
             }
 
@@ -2310,20 +2345,23 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!charmRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionCharmRelay const& relay : charmRelays)
         {
             Unit* charmer = GetUnitByGuid(relay.charmerGuid);
             Unit* target = GetUnitByGuid(relay.targetGuid);
-            if (!charmer || !target)
+            if (!charmer || !target || !charmer->IsInWorld() || !target->IsInWorld())
                 continue;
 
             uint32 targetPartition = GetPartitionIdForUnit(target);
-            if (targetPartition && targetPartition != partitionId)
+            if (targetPartition && targetPartition != partitionId && relay.bounceCount < kMaxRelayBounces)
             {
-                QueuePartitionCharmRelay(targetPartition, relay.charmerGuid, relay.targetGuid, relay.charmType, relay.auraSpellId, relay.apply);
+                PartitionCharmRelay bounced = relay;
+                bounced.bounceCount++;
+                std::lock_guard<std::mutex> lock(GetRelayLock(targetPartition));
+                _partitionCharmRelays[targetPartition].push_back(bounced);
                 continue;
             }
 
@@ -2371,19 +2409,22 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!gameObjectRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionGameObjectRelay const& relay : gameObjectRelays)
         {
             Unit* owner = GetUnitByGuid(relay.ownerGuid);
-            if (!owner)
+            if (!owner || !owner->IsInWorld())
                 continue;
 
             uint32 ownerPartition = GetPartitionIdForUnit(owner);
-            if (ownerPartition && ownerPartition != partitionId)
+            if (ownerPartition && ownerPartition != partitionId && relay.bounceCount < kMaxRelayBounces)
             {
-                QueuePartitionGameObjectRelay(ownerPartition, relay.ownerGuid, relay.gameObjGuid, relay.spellId, relay.del, relay.action);
+                PartitionGameObjectRelay bounced = relay;
+                bounced.bounceCount++;
+                std::lock_guard<std::mutex> lock(GetRelayLock(ownerPartition));
+                _partitionGameObjectRelays[ownerPartition].push_back(bounced);
                 continue;
             }
 
@@ -2437,14 +2478,25 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!combatStateRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionCombatStateRelay const& relay : combatStateRelays)
         {
             Unit* unit = GetUnitByGuid(relay.unitGuid);
-            if (!unit)
+            if (!unit || !unit->IsInWorld())
                 continue;
+
+            uint32 unitPartition = GetPartitionIdForUnit(unit);
+            if (unitPartition && unitPartition != partitionId && relay.bounceCount < kMaxRelayBounces)
+            {
+                PartitionCombatStateRelay bounced = relay;
+                bounced.bounceCount++;
+                auto& queue = _partitionCombatStateRelays[unitPartition];
+                std::lock_guard<std::mutex> lock(GetRelayLock(unitPartition));
+                queue.push_back(bounced);
+                continue;
+            }
 
             Unit* enemy = relay.enemyGuid ? GetUnitByGuid(relay.enemyGuid) : nullptr;
             unit->SetInCombatState(relay.pvp, enemy, relay.duration);
@@ -2482,15 +2534,25 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!attackRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionAttackRelay const& relay : attackRelays)
         {
             Unit* attacker = GetUnitByGuid(relay.attackerGuid);
             Unit* victim = GetUnitByGuid(relay.victimGuid);
-            if (!attacker || !victim)
+            if (!attacker || !victim || !attacker->IsInWorld() || !victim->IsInWorld())
                 continue;
+
+            uint32 attackerPartition = GetPartitionIdForUnit(attacker);
+            if (attackerPartition && attackerPartition != partitionId && relay.bounceCount < kMaxRelayBounces)
+            {
+                PartitionAttackRelay bounced = relay;
+                bounced.bounceCount++;
+                std::lock_guard<std::mutex> lock(GetRelayLock(attackerPartition));
+                _partitionAttackRelays[attackerPartition].push_back(bounced);
+                continue;
+            }
 
             attacker->Attack(victim, relay.meleeAttack);
 
@@ -2527,15 +2589,25 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!evadeRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionEvadeRelay const& relay : evadeRelays)
         {
             Unit* unit = GetUnitByGuid(relay.unitGuid);
             Creature* creature = unit ? unit->ToCreature() : nullptr;
-            if (!creature || !creature->IsAIEnabled)
+            if (!creature || !creature->IsAIEnabled || !creature->IsInWorld())
                 continue;
+
+            uint32 creaturePartition = GetPartitionIdForUnit(creature);
+            if (creaturePartition && creaturePartition != partitionId && relay.bounceCount < kMaxRelayBounces)
+            {
+                PartitionEvadeRelay bounced = relay;
+                bounced.bounceCount++;
+                std::lock_guard<std::mutex> lock(GetRelayLock(creaturePartition));
+                _partitionEvadeRelays[creaturePartition].push_back(bounced);
+                continue;
+            }
 
             creature->AI()->EnterEvadeMode(static_cast<CreatureAI::EvadeReason>(relay.reason));
 
@@ -2573,7 +2645,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
     if (!tauntRelays.empty())
     {
-        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
         for (PartitionTauntRelay const& relay : tauntRelays)
@@ -2875,12 +2947,22 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     SendObjectUpdates();
 
     ///- Process necessary scripts
+    if (!m_scriptSchedule.empty())
     {
         bool expected = false;
         if (i_scriptLock.compare_exchange_strong(expected, true))
         {
-            ScriptsProcess();
-            i_scriptLock.store(false);
+            auto scriptLockGuard = [this]() { i_scriptLock.store(false); };
+            try
+            {
+                ScriptsProcess();
+            }
+            catch (...)
+            {
+                scriptLockGuard();
+                throw;
+            }
+            scriptLockGuard();
         }
     }
 
@@ -3895,13 +3977,17 @@ void Map::RemoveWorldObjectFromZoneWideVisibleMap(uint32 zoneId, WorldObject* ob
 
 ZoneWideVisibleWorldObjectsSet const* Map::GetZoneWideVisibleWorldObjectsForZone(uint32 zoneId) const
 {
+    // NOTE: This returns a pointer to a thread-local copy. The pointer is only valid
+    // until the next call to this function on the same thread. Prefer GetZoneWideVisibleWorldObjectsForZoneCopy().
+    static thread_local ZoneWideVisibleWorldObjectsSet snapshot;
     std::shared_lock<std::shared_mutex> lock(_zoneWideVisibleLock);
     ZoneWideVisibleWorldObjectsMap::const_iterator itr = _zoneWideVisibleWorldObjectsMap.find(zoneId);
     if (itr == _zoneWideVisibleWorldObjectsMap.end())
+    {
+        snapshot.clear();
         return nullptr;
+    }
 
-    // Return a thread-local snapshot to avoid exposing the internal container without a lock.
-    thread_local ZoneWideVisibleWorldObjectsSet snapshot;
     snapshot = itr->second;
     return &snapshot;
 }
@@ -5409,19 +5495,16 @@ void Map::AddObjectToRemoveList(WorldObject* obj)
 
 void Map::RemoveAllObjectsInRemoveList()
 {
-    for (;;)
+    // Swap-and-process: take the lock once, swap the entire set out, then process without lock.
+    // Objects added during processing will go into the (now-empty) set and be handled next call.
+    std::unordered_set<WorldObject*> objectsToProcess;
     {
-        WorldObject* obj = nullptr;
-        {
-            std::lock_guard<std::mutex> guard(_objectsToRemoveLock);
-            if (i_objectsToRemove.empty())
-                break;
+        std::lock_guard<std::mutex> guard(_objectsToRemoveLock);
+        objectsToProcess.swap(i_objectsToRemove);
+    }
 
-            std::unordered_set<WorldObject*>::iterator itr = i_objectsToRemove.begin();
-            obj = *itr;
-            i_objectsToRemove.erase(itr);
-        }
-
+    for (WorldObject* obj : objectsToProcess)
+    {
         if (!obj)
             continue;
 

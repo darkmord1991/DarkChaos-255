@@ -37,16 +37,30 @@ public:
         return _callbacks.back();
     }
 
-    void ProcessReadyCallbacks()
+    /// Process ready callbacks. If maxProcessed > 0, at most that many callbacks
+    /// will be invoked per call; the rest remain queued for the next tick.
+    /// This prevents heap corruption from processing too many heavy callbacks
+    /// (e.g. 60+ bot logins) in a single pass.
+    void ProcessReadyCallbacks(std::size_t maxProcessed = 0)
     {
         if (_callbacks.empty())
             return;
 
         std::vector<T> updateCallbacks{ std::move(_callbacks) };
 
-        updateCallbacks.erase(std::remove_if(updateCallbacks.begin(), updateCallbacks.end(), [](T& callback)
+        std::size_t processed = 0;
+        updateCallbacks.erase(std::remove_if(updateCallbacks.begin(), updateCallbacks.end(), [maxProcessed, &processed](T& callback)
         {
-            return callback.InvokeIfReady();
+            if (maxProcessed > 0 && processed >= maxProcessed)
+                return false;
+
+            if (callback.InvokeIfReady())
+            {
+                ++processed;
+                return true;
+            }
+
+            return false;
         }), updateCallbacks.end());
 
         _callbacks.insert(_callbacks.end(), std::make_move_iterator(updateCallbacks.begin()), std::make_move_iterator(updateCallbacks.end()));

@@ -368,6 +368,7 @@ Aura::Aura(SpellInfo const* spellproto, WorldObject* owner, Unit* caster, Item* 
 
 AuraScript* Aura::GetScriptByName(std::string const& scriptName) const
 {
+    std::lock_guard<std::recursive_mutex> lock(_scriptLock);
     for (std::list<AuraScript*>::const_iterator itr = m_loadedScripts.begin(); itr != m_loadedScripts.end(); ++itr)
         if ((*itr)->_GetScriptName()->compare(scriptName) == 0)
             return *itr;

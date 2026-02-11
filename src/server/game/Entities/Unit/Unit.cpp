@@ -885,13 +885,15 @@ Unit* Unit::getAttackerForHelper() const
 
 void Unit::UpdateInterruptMask()
 {
-    m_interruptMask = 0;
+    uint32 newMask = 0;
     for (AuraApplicationList::const_iterator i = m_interruptableAuras.begin(); i != m_interruptableAuras.end(); ++i)
-        m_interruptMask |= (*i)->GetBase()->GetSpellInfo()->AuraInterruptFlags;
+        newMask |= (*i)->GetBase()->GetSpellInfo()->AuraInterruptFlags;
 
     if (Spell* spell = m_currentSpells[CURRENT_CHANNELED_SPELL])
         if (spell->getState() == SPELL_STATE_CASTING)
-            m_interruptMask |= spell->m_spellInfo->ChannelInterruptFlags;
+            newMask |= spell->m_spellInfo->ChannelInterruptFlags;
+
+    m_interruptMask.store(newMask);
 }
 
 bool Unit::HasAuraTypeWithFamilyFlags(AuraType auraType, uint32 familyName, uint32 familyFlags) const
@@ -5624,9 +5626,16 @@ void Unit::RemoveAurasByShapeShift()
 
 void Unit::RemoveAreaAurasDueToLeaveWorld()
 {
-    // Collect targets first to avoid holding _auraLock while removing auras from other units.
+    // Collect aura identification data (not raw pointers) to avoid use-after-free when
+    // releasing _auraLock before calling RemoveAura on other units.
     // This prevents lock inversion with grid/object locks during multithreaded updates.
-    std::vector<AuraApplication*> toRemove;
+    struct AuraRemoveInfo
+    {
+        ObjectGuid targetGuid;
+        uint32 spellId;
+        ObjectGuid casterGuid;
+    };
+    std::vector<AuraRemoveInfo> toRemove;
 
     while (true)
     {
@@ -5650,7 +5659,7 @@ void Unit::RemoveAreaAurasDueToLeaveWorld()
                         continue;
                     Unit* target = aurApp->GetTarget();
                     if (target && target != this)
-                        toRemove.push_back(aurApp);
+                        toRemove.push_back({target->GetGUID(), aura->GetId(), GetGUID()});
                 }
             }
 
@@ -5660,20 +5669,21 @@ void Unit::RemoveAreaAurasDueToLeaveWorld()
                 AuraApplication* aurApp = appliedPair.second;
                 if (!aurApp)
                     continue;
-                if (aurApp->GetBase()->GetOwner() != this)
-                    toRemove.push_back(aurApp);
+                Aura* base = aurApp->GetBase();
+                if (base && base->GetOwner() != this)
+                    toRemove.push_back({GetGUID(), base->GetId(), base->GetOwner() ? base->GetOwner()->GetGUID() : ObjectGuid::Empty});
             }
         }
 
         if (toRemove.empty())
             break;
 
-        for (AuraApplication* aurApp : toRemove)
+        for (auto const& info : toRemove)
         {
-            if (!aurApp)
+            Unit* target = ObjectAccessor::GetUnit(*this, info.targetGuid);
+            if (!target)
                 continue;
-            if (Unit* target = aurApp->GetTarget())
-                target->RemoveAura(aurApp);
+            target->RemoveAura(info.spellId, info.casterGuid, 0, AURA_REMOVE_BY_DEFAULT);
         }
     }
 }
@@ -6684,6 +6694,7 @@ void Unit::RemoveAllDynObjects()
         objects.swap(m_dynObj);
     }
 
+    DynObjectList deferred; // objects relayed to another partition, must stay registered
     for (DynamicObject* dynObj : objects)
     {
         if (!dynObj)
@@ -6704,11 +6715,20 @@ void Unit::RemoveAllDynObjects()
                 }
                 if (queued)
                     map->QueuePartitionDynObjectRelay(dynPartition, dynObj->GetGUID(), 1);
+                deferred.push_back(dynObj);
                 continue;
             }
         }
 
         dynObj->Remove();
+    }
+
+    // Re-register deferred objects so _UnregisterDynObject works when the relay completes
+    if (!deferred.empty())
+    {
+        std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+        for (DynamicObject* dynObj : deferred)
+            m_dynObj.push_back(dynObj);
     }
 }
 
@@ -10935,6 +10955,9 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
             ClearUnitState(UNIT_STATE_MELEE_ATTACKING);
     }
 
+    // Re-load m_attacking after InterruptSpell — callbacks may have called AttackStop()
+    // which already cleared m_attacking and called _removeAttacker on the old victim.
+    attacking = m_attacking.load();
     if (attacking)
         attacking->_removeAttacker(this);
 
@@ -11012,10 +11035,9 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
  */
 bool Unit::AttackStop()
 {
-    if (!m_attacking.load())
-        return false;
-
     Unit* victim = m_attacking.load();
+    if (!victim)
+        return false;
 
     victim->_removeAttacker(this);
     m_attacking.store(nullptr);
@@ -11325,13 +11347,10 @@ void Unit::SetMinion(Minion* minion, bool apply)
             map->QueuePartitionMinionRelay(ownerPartition, GetGUID(), minion->GetGUID(), apply);
             return;
         }
-    }
 
-    if (apply)
-    {
-        if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        // Same partition - if applying, ensure minion is in the same partition as owner
+        if (apply)
         {
-            uint32 ownerPartition = map->GetPartitionIdForUnit(this);
             uint32 minionPartition = map->GetPartitionIdForUnit(minion);
             if (ownerPartition && minionPartition && ownerPartition != minionPartition)
                 sPartitionMgr->SetPartitionOverride(minion->GetGUID(), map->GetId(), ownerPartition, 2000);
@@ -17697,14 +17716,15 @@ void Unit::AddComboPoints(Unit* target, int8 count)
         return;
     }
 
-    if (target && target != m_comboTarget)
+    Unit* oldTarget = m_comboTarget.load();
+    if (target && target != oldTarget)
     {
-        if (m_comboTarget)
+        if (oldTarget)
         {
-            m_comboTarget->RemoveComboPointHolder(this);
+            oldTarget->RemoveComboPointHolder(this);
         }
 
-        m_comboTarget = target;
+        m_comboTarget.store(target);
         m_comboPoints = count;
         target->AddComboPointHolder(this);
     }
@@ -17718,7 +17738,8 @@ void Unit::AddComboPoints(Unit* target, int8 count)
 
 void Unit::ClearComboPoints()
 {
-    if (!m_comboTarget)
+    Unit* ct = m_comboTarget.load();
+    if (!ct)
     {
         return;
     }
@@ -17729,8 +17750,8 @@ void Unit::ClearComboPoints()
 
     m_comboPoints = 0;
     SendComboPoints();
-    m_comboTarget->RemoveComboPointHolder(this);
-    m_comboTarget = nullptr;
+    ct->RemoveComboPointHolder(this);
+    m_comboTarget.store(nullptr);
 }
 
 void Unit::SendComboPoints()
@@ -17740,7 +17761,8 @@ void Unit::SendComboPoints()
         return;
     }
 
-    PackedGuid const packGUID = m_comboTarget ? m_comboTarget->GetPackGUID() : PackedGuid();
+    Unit* ct = m_comboTarget.load();
+    PackedGuid const packGUID = ct ? ct->GetPackGUID() : PackedGuid();
     if (Player* playerMe = ToPlayer())
     {
         WorldPacket data(SMSG_UPDATE_COMBO_POINTS, packGUID.size() + 1);
@@ -19235,11 +19257,8 @@ bool Unit::SetCharmedBy(Unit* charmer, CharmType type, AuraApplication const* au
             map->QueuePartitionCharmRelay(ownerPartition, charmer->GetGUID(), GetGUID(), static_cast<uint8>(type), auraSpellId, true);
             return true;
         }
-    }
 
-    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
-    {
-        uint32 activePartition = map->GetActivePartitionContext();
+        // Same partition - ensure charmer and target share the same partition context
         uint32 charmerPartition = map->GetPartitionIdForUnit(charmer);
         if (activePartition && charmerPartition && activePartition != charmerPartition)
         {
@@ -19471,11 +19490,8 @@ void Unit::RemoveCharmedBy(Unit* charmer)
             map->QueuePartitionCharmRelay(ownerPartition, charmer->GetGUID(), GetGUID(), 0, 0, false);
             return;
         }
-    }
 
-    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
-    {
-        uint32 activePartition = map->GetActivePartitionContext();
+        // Same partition - ensure charmer and target share the same partition context
         uint32 charmerPartition = map->GetPartitionIdForUnit(charmer);
         if (activePartition && charmerPartition && activePartition != charmerPartition)
         {

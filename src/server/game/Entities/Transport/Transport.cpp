@@ -552,6 +552,7 @@ bool MotionTransport::TeleportTransport(uint32 newMapid, float x, float y, float
     else
     {
         // Teleport players, they need to know it
+        std::lock_guard<std::mutex> guard(Lock);
         for (PassengerSet::iterator itr = _passengers.begin(); itr != _passengers.end(); ++itr)
         {
             if ((*itr)->IsPlayer())
@@ -582,27 +583,34 @@ void MotionTransport::DelayedTeleportTransport()
           z = _nextFrame->Node->z,
           o = _nextFrame->InitialOrientation;
 
-    PassengerSet _passengersCopy = _passengers;
+    PassengerSet _passengersCopy;
+    {
+        std::lock_guard<std::mutex> guard(Lock);
+        _passengersCopy = _passengers;
+    }
     for (PassengerSet::iterator itr = _passengersCopy.begin(); itr != _passengersCopy.end(); )
     {
         WorldObject* obj = (*itr++);
 
-        if (_passengers.find(obj) == _passengers.end())
-            continue;
+        {
+            std::lock_guard<std::mutex> guard(Lock);
+            if (_passengers.find(obj) == _passengers.end())
+                continue;
+        }
 
         switch (obj->GetTypeId())
         {
             case TYPEID_UNIT:
-                _passengers.erase(obj);
+                { std::lock_guard<std::mutex> guard(Lock); _passengers.erase(obj); }
                 if (!obj->ToCreature()->IsPet())
                     obj->ToCreature()->DespawnOrUnsummon();
                 break;
             case TYPEID_GAMEOBJECT:
-                _passengers.erase(obj);
+                { std::lock_guard<std::mutex> guard(Lock); _passengers.erase(obj); }
                 obj->ToGameObject()->Delete();
                 break;
             case TYPEID_DYNAMICOBJECT:
-                _passengers.erase(obj);
+                { std::lock_guard<std::mutex> guard(Lock); _passengers.erase(obj); }
                 if (Unit* caster = obj->ToDynObject()->GetCaster())
                     if (Spell* s = caster->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
                         if (obj->ToDynObject()->GetSpellId() == s->GetSpellInfo()->Id)
@@ -630,11 +638,11 @@ void MotionTransport::DelayedTeleportTransport()
                                     passenger->ExitVehicle();
                                     AddPassenger(passenger, true);
                                     if (!passenger->TeleportTo(newMapId, destX, destY, destZ, destO, TELE_TO_NOT_LEAVE_TRANSPORT))
-                                        _passengers.erase(passenger);
+                                    { std::lock_guard<std::mutex> guard(Lock); _passengers.erase(passenger); }
                                 }
 
                     if (!player->TeleportTo(newMapId, destX, destY, destZ, destO, TELE_TO_NOT_LEAVE_TRANSPORT))
-                        _passengers.erase(obj);
+                    { std::lock_guard<std::mutex> guard(Lock); _passengers.erase(obj); }
                 }
                 break;
             default:
@@ -655,6 +663,7 @@ void MotionTransport::DelayedTeleportTransport()
 
 void MotionTransport::UpdatePassengerPositions(PassengerSet& passengers)
 {
+    std::lock_guard<std::mutex> guard(Lock);
     for (PassengerSet::iterator itr = passengers.begin(); itr != passengers.end(); ++itr)
     {
         WorldObject* passenger = *itr;

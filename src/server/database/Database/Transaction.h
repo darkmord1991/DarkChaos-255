@@ -93,7 +93,7 @@ public:
 protected:
     bool Execute() override;
     int TryExecute();
-    void CleanupOnFailure();
+    void CleanupTransaction();
 
     std::shared_ptr<TransactionBase> m_trans;
     static std::mutex _deadlockLock;

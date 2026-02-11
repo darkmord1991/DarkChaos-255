@@ -591,7 +591,7 @@ void MotionMaster::MoveSplinePath(Movement::PointsArray* path, ForcedMovement fo
             relay.forcedMovement = forcedMovement;
             relay.pathPoints.assign(path->begin(), path->end());
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(ownerPartition, std::move(relay));
             return;
         }
     }
@@ -960,7 +960,7 @@ void MotionMaster::MoveCharge(float x, float y, float z, float speed, uint32 id,
             if (path)
                 relay.pathPoints.assign(path->begin(), path->end());
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(ownerPartition, std::move(relay));
             return;
         }
     }
@@ -1004,7 +1004,7 @@ void MotionMaster::MoveCharge(PathGenerator const& path, float speed /*= SPEED_C
             relay.speed = speed;
             relay.pathPoints.assign(path.GetPath().begin(), path.GetPath().end());
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(ownerPartition, std::move(relay));
             return;
         }
     }

@@ -241,6 +241,7 @@ public:
     void QueuePartitionTauntApply(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid);
     void QueuePartitionTauntFade(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid);
     void QueuePartitionMotionRelay(uint32 partitionId, PartitionMotionRelay const& relay);
+    void QueuePartitionMotionRelay(uint32 partitionId, PartitionMotionRelay&& relay);
     void QueuePartitionProcRelay(uint32 partitionId, ObjectGuid const& actorGuid, ObjectGuid const& targetGuid, bool isVictim, uint32 procFlag, uint32 procExtra, uint32 amount, WeaponAttackType attackType, uint32 procSpellId, uint32 procAuraId, int8 procAuraEffectIndex, uint32 procPhase);
     void QueuePartitionAuraRelay(uint32 partitionId, ObjectGuid const& casterGuid, ObjectGuid const& targetGuid, uint32 spellId, uint8 effMask, bool apply, AuraRemoveMode removeMode);
     void QueuePartitionPathRelay(uint32 partitionId, ObjectGuid const& moverGuid, ObjectGuid const& targetGuid);
@@ -684,7 +685,8 @@ public:
         MOTION_RELAY_MONSTER_MOVE = 19,
         MOTION_RELAY_TRANSPORT_ENTER = 20,
         MOTION_RELAY_TRANSPORT_EXIT = 21,
-        MOTION_RELAY_PASSENGER_RELOCATE = 22
+        MOTION_RELAY_PASSENGER_RELOCATE = 22,
+        MOTION_RELAY_VEHICLE_TELEPORT_PLAYER = 23
     };
 
     struct PartitionMotionRelay
@@ -745,6 +747,7 @@ public:
         ObjectGuid minionGuid;
         bool apply = false;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionCharmRelay
@@ -755,6 +758,7 @@ public:
         uint32 auraSpellId = 0;
         bool apply = false;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionGameObjectRelay
@@ -765,6 +769,7 @@ public:
         bool del = false;
         uint8 action = 0; // 1 = Remove, 2 = RemoveBySpell, 3 = RemoveAll
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionCombatStateRelay
@@ -774,6 +779,7 @@ public:
         bool pvp = false;
         uint32 duration = 0;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionAttackRelay
@@ -782,6 +788,7 @@ public:
         ObjectGuid victimGuid;
         bool meleeAttack = false;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionEvadeRelay
@@ -789,6 +796,7 @@ public:
         ObjectGuid unitGuid;
         uint8 reason = 0;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionProcRelay

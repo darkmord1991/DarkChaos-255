@@ -66,8 +66,17 @@ void Map::ScriptsStart(ScriptMapMap const& scripts, uint32 id, Object* source, O
         bool expected = false;
         if (i_scriptLock.compare_exchange_strong(expected, true))
         {
-            ScriptsProcess();
-            i_scriptLock.store(false);
+            auto scriptLockGuard = [this]() { i_scriptLock.store(false); };
+            try
+            {
+                ScriptsProcess();
+            }
+            catch (...)
+            {
+                scriptLockGuard();
+                throw;
+            }
+            scriptLockGuard();
         }
     }
 }
@@ -100,8 +109,17 @@ void Map::ScriptCommandStart(ScriptInfo const& script, uint32 delay, Object* sou
         bool expected = false;
         if (i_scriptLock.compare_exchange_strong(expected, true))
         {
-            ScriptsProcess();
-            i_scriptLock.store(false);
+            auto scriptLockGuard = [this]() { i_scriptLock.store(false); };
+            try
+            {
+                ScriptsProcess();
+            }
+            catch (...)
+            {
+                scriptLockGuard();
+                throw;
+            }
+            scriptLockGuard();
         }
     }
 }

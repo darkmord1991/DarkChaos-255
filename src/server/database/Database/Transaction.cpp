@@ -152,7 +152,7 @@ bool TransactionTask::Execute()
     if (!errorCode)
     {
         // Clean up PreparedStatements after successful execution
-        CleanupOnFailure();
+        CleanupTransaction();
         return true;
     }
 
@@ -171,7 +171,7 @@ bool TransactionTask::Execute()
                 if (!TryExecute())
                 {
                     // Clean up PreparedStatements after successful retry
-                    CleanupOnFailure();
+                    CleanupTransaction();
                     return true;
                 }
 
@@ -183,7 +183,7 @@ bool TransactionTask::Execute()
     }
 
     // Clean up now.
-    CleanupOnFailure();
+    CleanupTransaction();
 
     return false;
 }
@@ -193,7 +193,7 @@ int TransactionTask::TryExecute()
     return m_conn->ExecuteTransaction(m_trans);
 }
 
-void TransactionTask::CleanupOnFailure()
+void TransactionTask::CleanupTransaction()
 {
     m_trans->Cleanup();
 }
@@ -204,7 +204,7 @@ bool TransactionWithResultTask::Execute()
     if (!errorCode)
     {
         // Clean up PreparedStatements after successful execution
-        CleanupOnFailure();
+        CleanupTransaction();
         m_result.set_value(true);
         return true;
     }
@@ -224,7 +224,7 @@ bool TransactionWithResultTask::Execute()
                 if (!TryExecute())
                 {
                     // Clean up PreparedStatements after successful retry
-                    CleanupOnFailure();
+                    CleanupTransaction();
                     m_result.set_value(true);
                     return true;
                 }
@@ -237,7 +237,7 @@ bool TransactionWithResultTask::Execute()
     }
 
     // Clean up now.
-    CleanupOnFailure();
+    CleanupTransaction();
     m_result.set_value(false);
 
     return false;
