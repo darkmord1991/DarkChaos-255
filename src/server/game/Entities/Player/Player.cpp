@@ -10038,8 +10038,10 @@ void Player::ApplySpellMod(uint32 spellId, SpellModOp op, T& basevalue, Spell* s
         DropModCharge(mod, spell);
     };
 
-    // Drop charges for triggering spells instead of triggered ones
-    if (m_spellModTakingSpell)
+    // Drop charges for triggering spells instead of triggered ones.
+    // Do not borrow m_spellModTakingSpell when no Spell context is provided
+    // (e.g. AI pre-checks like CalcCastTime), to avoid touching stale Spell state.
+    if (spell && m_spellModTakingSpell)
         spell = m_spellModTakingSpell;
 
     for (auto mod : m_spellMods[op])

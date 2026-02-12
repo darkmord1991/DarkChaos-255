@@ -18,6 +18,7 @@
 #include "GameTime.h"
 #include "Log.h"
 
+#include <cstring>
 #include <utility>
 
 namespace
@@ -25,14 +26,30 @@ namespace
     constexpr size_t kPartitionRelayLimit = 1024;
     thread_local std::unordered_map<Map const*, uint32> sActivePartitionContext;
 
-    template <typename QueueMap, typename Relay>
-    void EnqueuePartitionRelay(Map& map, uint32 partitionId, QueueMap& relayMap, Relay&& relay, char const* relayType)
+    bool IsMovementRelayType(char const* relayType)
     {
-        std::lock_guard<std::mutex> lock(map.GetRelayLock(partitionId));
+        return relayType &&
+            (std::strcmp(relayType, "motion") == 0 ||
+             std::strcmp(relayType, "path") == 0 ||
+             std::strcmp(relayType, "point") == 0);
+    }
+
+    template <typename QueueMap, typename Relay>
+    void EnqueuePartitionRelay(uint32 mapId, uint32 partitionId, std::mutex& relayLock, QueueMap& relayMap, Relay&& relay, char const* relayType)
+    {
+        std::lock_guard<std::mutex> lock(relayLock);
         auto& queue = relayMap[partitionId];
         if (queue.size() >= kPartitionRelayLimit)
         {
-            LOG_WARN("maps.partition", "Map {} partition {} {} relay queue full ({}), dropping relay", map.GetId(), partitionId, relayType, kPartitionRelayLimit);
+            if (IsMovementRelayType(relayType) && !queue.empty())
+            {
+                queue.erase(queue.begin());
+                queue.push_back(std::forward<Relay>(relay));
+                LOG_WARN("maps.partition", "Map {} partition {} {} relay queue full ({}), replacing oldest relay", mapId, partitionId, relayType, kPartitionRelayLimit);
+                return;
+            }
+
+            LOG_WARN("maps.partition", "Map {} partition {} {} relay queue full ({}), dropping relay", mapId, partitionId, relayType, kPartitionRelayLimit);
             return;
         }
 
@@ -52,7 +69,7 @@ void Map::QueuePartitionThreatRelay(uint32 partitionId, ObjectGuid const& ownerG
     relay.schoolMask = schoolMask;
     relay.spellId = spellId;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionThreatRelays, relay, "threat");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionThreatRelays, relay, "threat");
 }
 
 void Map::QueuePartitionThreatClearAll(uint32 partitionId, ObjectGuid const& ownerGuid)
@@ -64,7 +81,7 @@ void Map::QueuePartitionThreatClearAll(uint32 partitionId, ObjectGuid const& own
     relay.ownerGuid = ownerGuid;
     relay.action = 1;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionThreatActionRelays, relay, "threat-action");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionThreatActionRelays, relay, "threat-action");
 }
 
 void Map::QueuePartitionThreatResetAll(uint32 partitionId, ObjectGuid const& ownerGuid)
@@ -76,7 +93,7 @@ void Map::QueuePartitionThreatResetAll(uint32 partitionId, ObjectGuid const& own
     relay.ownerGuid = ownerGuid;
     relay.action = 2;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionThreatActionRelays, relay, "threat-action");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionThreatActionRelays, relay, "threat-action");
 }
 
 void Map::QueuePartitionThreatTargetClear(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& targetGuid)
@@ -89,7 +106,7 @@ void Map::QueuePartitionThreatTargetClear(uint32 partitionId, ObjectGuid const& 
     relay.targetGuid = targetGuid;
     relay.action = 1;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionThreatTargetActionRelays, relay, "threat-target");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionThreatTargetActionRelays, relay, "threat-target");
 }
 
 void Map::QueuePartitionThreatTargetReset(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& targetGuid)
@@ -102,7 +119,7 @@ void Map::QueuePartitionThreatTargetReset(uint32 partitionId, ObjectGuid const& 
     relay.targetGuid = targetGuid;
     relay.action = 2;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionThreatTargetActionRelays, relay, "threat-target");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionThreatTargetActionRelays, relay, "threat-target");
 }
 
 void Map::QueuePartitionCombatRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& victimGuid, bool initialAggro)
@@ -115,7 +132,7 @@ void Map::QueuePartitionCombatRelay(uint32 partitionId, ObjectGuid const& ownerG
     relay.victimGuid = victimGuid;
     relay.initialAggro = initialAggro;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionCombatRelays, relay, "combat");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionCombatRelays, relay, "combat");
 }
 
 void Map::QueuePartitionLootRelay(uint32 partitionId, ObjectGuid const& creatureGuid, ObjectGuid const& unitGuid, bool withGroup)
@@ -128,7 +145,7 @@ void Map::QueuePartitionLootRelay(uint32 partitionId, ObjectGuid const& creature
     relay.unitGuid = unitGuid;
     relay.withGroup = withGroup;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionLootRelays, relay, "loot");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionLootRelays, relay, "loot");
 }
 
 void Map::QueuePartitionDynObjectRelay(uint32 partitionId, ObjectGuid const& dynObjGuid, uint8 action)
@@ -140,7 +157,7 @@ void Map::QueuePartitionDynObjectRelay(uint32 partitionId, ObjectGuid const& dyn
     relay.dynObjGuid = dynObjGuid;
     relay.action = action;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionDynObjectRelays, relay, "dynobject");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionDynObjectRelays, relay, "dynobject");
 }
 
 void Map::QueuePartitionMinionRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& minionGuid, bool apply)
@@ -153,7 +170,7 @@ void Map::QueuePartitionMinionRelay(uint32 partitionId, ObjectGuid const& ownerG
     relay.minionGuid = minionGuid;
     relay.apply = apply;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionMinionRelays, relay, "minion");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionMinionRelays, relay, "minion");
 }
 
 void Map::QueuePartitionCharmRelay(uint32 partitionId, ObjectGuid const& charmerGuid, ObjectGuid const& targetGuid, uint8 charmType, uint32 auraSpellId, bool apply)
@@ -168,7 +185,7 @@ void Map::QueuePartitionCharmRelay(uint32 partitionId, ObjectGuid const& charmer
     relay.auraSpellId = auraSpellId;
     relay.apply = apply;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionCharmRelays, relay, "charm");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionCharmRelays, relay, "charm");
 }
 
 void Map::QueuePartitionGameObjectRelay(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& gameObjGuid, uint32 spellId, bool del, uint8 action)
@@ -183,7 +200,7 @@ void Map::QueuePartitionGameObjectRelay(uint32 partitionId, ObjectGuid const& ow
     relay.del = del;
     relay.action = action;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionGameObjectRelays, relay, "gameobject");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionGameObjectRelays, relay, "gameobject");
 }
 
 void Map::QueuePartitionCombatStateRelay(uint32 partitionId, ObjectGuid const& unitGuid, ObjectGuid const& enemyGuid, bool pvp, uint32 duration)
@@ -197,7 +214,7 @@ void Map::QueuePartitionCombatStateRelay(uint32 partitionId, ObjectGuid const& u
     relay.pvp = pvp;
     relay.duration = duration;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionCombatStateRelays, relay, "combat-state");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionCombatStateRelays, relay, "combat-state");
 }
 
 void Map::QueuePartitionAttackRelay(uint32 partitionId, ObjectGuid const& attackerGuid, ObjectGuid const& victimGuid, bool meleeAttack)
@@ -210,7 +227,7 @@ void Map::QueuePartitionAttackRelay(uint32 partitionId, ObjectGuid const& attack
     relay.victimGuid = victimGuid;
     relay.meleeAttack = meleeAttack;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionAttackRelays, relay, "attack");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionAttackRelays, relay, "attack");
 }
 
 void Map::QueuePartitionEvadeRelay(uint32 partitionId, ObjectGuid const& unitGuid, uint8 reason)
@@ -222,7 +239,7 @@ void Map::QueuePartitionEvadeRelay(uint32 partitionId, ObjectGuid const& unitGui
     relay.unitGuid = unitGuid;
     relay.reason = reason;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionEvadeRelays, relay, "evade");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionEvadeRelays, relay, "evade");
 }
 
 void Map::QueuePartitionTauntApply(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid)
@@ -235,7 +252,7 @@ void Map::QueuePartitionTauntApply(uint32 partitionId, ObjectGuid const& ownerGu
     relay.taunterGuid = taunterGuid;
     relay.action = 1;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionTauntRelays, relay, "taunt");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionTauntRelays, relay, "taunt");
 }
 
 void Map::QueuePartitionTauntFade(uint32 partitionId, ObjectGuid const& ownerGuid, ObjectGuid const& taunterGuid)
@@ -248,7 +265,7 @@ void Map::QueuePartitionTauntFade(uint32 partitionId, ObjectGuid const& ownerGui
     relay.taunterGuid = taunterGuid;
     relay.action = 2;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionTauntRelays, relay, "taunt");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionTauntRelays, relay, "taunt");
 }
 
 void Map::QueuePartitionMotionRelay(uint32 partitionId, PartitionMotionRelay const& relay)
@@ -256,7 +273,7 @@ void Map::QueuePartitionMotionRelay(uint32 partitionId, PartitionMotionRelay con
     if (!_isPartitioned || partitionId == 0)
         return;
 
-    EnqueuePartitionRelay(*this, partitionId, _partitionMotionRelays, relay, "motion");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionMotionRelays, relay, "motion");
 }
 
 void Map::QueuePartitionMotionRelay(uint32 partitionId, PartitionMotionRelay&& relay)
@@ -264,7 +281,7 @@ void Map::QueuePartitionMotionRelay(uint32 partitionId, PartitionMotionRelay&& r
     if (!_isPartitioned || partitionId == 0)
         return;
 
-    EnqueuePartitionRelay(*this, partitionId, _partitionMotionRelays, std::move(relay), "motion");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionMotionRelays, std::move(relay), "motion");
 }
 
 void Map::QueuePartitionProcRelay(uint32 partitionId, ObjectGuid const& actorGuid, ObjectGuid const& targetGuid, bool isVictim, uint32 procFlag, uint32 procExtra, uint32 amount, WeaponAttackType attackType, uint32 procSpellId, uint32 procAuraId, int8 procAuraEffectIndex, uint32 procPhase)
@@ -288,7 +305,7 @@ void Map::QueuePartitionProcRelay(uint32 partitionId, ObjectGuid const& actorGui
     relay.procAuraEffectIndex = procAuraEffectIndex;
     relay.procPhase = procPhase;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionProcRelays, relay, "proc");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionProcRelays, relay, "proc");
 }
 
 void Map::QueuePartitionAuraRelay(uint32 partitionId, ObjectGuid const& casterGuid, ObjectGuid const& targetGuid, uint32 spellId, uint8 effMask, bool apply, AuraRemoveMode removeMode)
@@ -304,7 +321,7 @@ void Map::QueuePartitionAuraRelay(uint32 partitionId, ObjectGuid const& casterGu
     relay.apply = apply;
     relay.removeMode = removeMode;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionAuraRelays, relay, "aura");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionAuraRelays, relay, "aura");
 }
 
 void Map::QueuePartitionPathRelay(uint32 partitionId, ObjectGuid const& moverGuid, ObjectGuid const& targetGuid)
@@ -316,7 +333,7 @@ void Map::QueuePartitionPathRelay(uint32 partitionId, ObjectGuid const& moverGui
     relay.moverGuid = moverGuid;
     relay.targetGuid = targetGuid;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionPathRelays, relay, "path");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionPathRelays, relay, "path");
 }
 
 void Map::QueuePartitionPointRelay(uint32 partitionId, ObjectGuid const& moverGuid, uint32 pointId, float x, float y, float z, ForcedMovement forcedMovement, float speed, float orientation, bool generatePath, bool forceDestination, MovementSlot slot, bool hasAnimTier, AnimTier animTier)
@@ -339,7 +356,7 @@ void Map::QueuePartitionPointRelay(uint32 partitionId, ObjectGuid const& moverGu
     relay.hasAnimTier = hasAnimTier;
     relay.animTier = animTier;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionPointRelays, relay, "point");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionPointRelays, relay, "point");
 }
 
 void Map::QueuePartitionAssistRelay(uint32 partitionId, ObjectGuid const& moverGuid, float x, float y, float z)
@@ -353,7 +370,7 @@ void Map::QueuePartitionAssistRelay(uint32 partitionId, ObjectGuid const& moverG
     relay.y = y;
     relay.z = z;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionAssistRelays, relay, "assist");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionAssistRelays, relay, "assist");
 }
 
 void Map::QueuePartitionAssistDistractRelay(uint32 partitionId, ObjectGuid const& moverGuid, uint32 timeMs)
@@ -365,7 +382,7 @@ void Map::QueuePartitionAssistDistractRelay(uint32 partitionId, ObjectGuid const
     relay.moverGuid = moverGuid;
     relay.timeMs = timeMs;
     relay.queuedMs = GameTime::GetGameTimeMS().count();
-    EnqueuePartitionRelay(*this, partitionId, _partitionAssistDistractRelays, relay, "assist-distract");
+    EnqueuePartitionRelay(GetId(), partitionId, GetRelayLock(partitionId), _partitionAssistDistractRelays, relay, "assist-distract");
 }
 
 uint32 Map::GetActivePartitionContext() const

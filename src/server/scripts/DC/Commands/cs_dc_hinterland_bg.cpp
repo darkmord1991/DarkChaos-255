@@ -15,7 +15,7 @@
 /*
  * hlbg_commandscript
  * ------------------
- * Provides GM/admin commands to inspect and manage the Hinterland (zone 47)
+ * Provides GM/admin commands to inspect and manage the Hinterland battle area (6738)
  * outdoor battleground state.
  *
  * Commands (quick reference):

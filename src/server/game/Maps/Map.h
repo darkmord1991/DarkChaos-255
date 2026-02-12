@@ -1014,7 +1014,6 @@ private:
     void _ScriptProcessDoor(Object* source, Object* target, const ScriptInfo* scriptInfo) const;
     GameObject* _FindGameObject(WorldObject* pWorldObject, ObjectGuid::LowType guid) const;
     std::mutex& GetRelayLock(uint32 partitionId);
-
     //used for fast base_map (e.g. MapInstanced class object) search for
     //InstanceMaps and BattlegroundMaps...
     Map* m_parentMap;
@@ -1103,6 +1102,13 @@ private:
     uint64 _partitionUpdatesStartMs = 0;
     std::atomic<uint32> _partitionUpdatesCompleted{0};
     std::atomic<uint32> _partitionUpdateGeneration{0};
+    std::atomic<uint64> _partitionCycleQueueWaitTotalMs{0};
+    std::atomic<uint64> _partitionCycleRunTotalMs{0};
+    std::atomic<uint64> _partitionCycleMaxRunMs{0};
+    std::atomic<uint64> _partitionCycleMaxQueueWaitMs{0};
+    std::atomic<uint64> _partitionCycleFirstTaskStartMs{0};
+    std::atomic<uint64> _partitionCycleLastTaskEndMs{0};
+    uint64 _nextSlowPartitionLogAtMs = 0;
 
     std::atomic<uint32> _updateCounter{0};
     uint32 _pendingDynamicTreeDiff = 0;

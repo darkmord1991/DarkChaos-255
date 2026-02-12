@@ -18,11 +18,13 @@
 #include "../AddonExtension/dc_addon_namespace.h"
 #include "DBCStore.h"
 #include "DatabaseEnv.h"
+#include "DBCEnums.h"
 #include <sstream>
 #include <iomanip>
 #include <cmath>
 #include <algorithm>
 #include <random>
+#include <array>
 
 // Helper to get base map safely
 static Map* GetBaseMapSafe(uint32 mapId)
@@ -203,8 +205,91 @@ void HotspotMgr::DeleteHotspotFromDB(uint32 id)
 }
 
 // Private Helper: GetRandomHotspotPosition
-// Note: This function was originally huge with hardcoded coords.
-// We preserve the logic but condensed for this implementation block.
+static bool IsZoneAtCapacity(uint32 zoneId)
+{
+    if (sHotspotsConfig.maxPerZone == 0)
+        return false;
+
+    return sHotspotMgr->GetZoneHotspotCount(zoneId) >= sHotspotsConfig.maxPerZone;
+}
+
+static bool IsCityLikeArea(uint32 areaId)
+{
+    if (!areaId)
+        return false;
+
+    AreaTableEntry const* area = sAreaTableStore.LookupEntry(areaId);
+    if (!area)
+        return false;
+
+    auto isCityFlags = [](uint32 flags)
+    {
+        return (flags & (AREA_FLAG_CAPITAL | AREA_FLAG_CITY | AREA_FLAG_SLAVE_CAPITAL | AREA_FLAG_SLAVE_CAPITAL2 | AREA_FLAG_TOWN)) != 0;
+    };
+
+    if (isCityFlags(area->flags))
+        return true;
+
+    if (area->zone != 0)
+        if (AreaTableEntry const* parentZone = sAreaTableStore.LookupEntry(area->zone))
+            return isCityFlags(parentZone->flags);
+
+    return false;
+}
+
+static bool IsElevatedSpot(Map* map, float x, float y, float z)
+{
+    if (!map)
+        return false;
+
+    constexpr float PI = 3.14159265f;
+
+    constexpr std::array<float, 8> angles =
+    {
+        0.0f,
+        PI * 0.25f,
+        PI * 0.50f,
+        PI * 0.75f,
+        PI,
+        PI * 1.25f,
+        PI * 1.50f,
+        PI * 1.75f
+    };
+
+    float sampleRadius = std::max(35.0f, sHotspotsConfig.radius * 0.35f);
+    uint32 validSamples = 0;
+    uint32 lowerSamples = 0;
+    float dropSum = 0.0f;
+
+    for (float angle : angles)
+    {
+        float sx = x + std::cos(angle) * sampleRadius;
+        float sy = y + std::sin(angle) * sampleRadius;
+        if (!MapMgr::IsValidMapCoord(map->GetId(), sx, sy))
+            continue;
+
+        float sz = map->GetHeight(sx, sy, z + 20.0f, true, 80.0f);
+        if (!std::isfinite(sz) || sz <= MIN_HEIGHT)
+            continue;
+
+        ++validSamples;
+        float delta = z - sz;
+        if (delta >= 3.0f)
+        {
+            ++lowerSamples;
+            dropSum += delta;
+        }
+    }
+
+    if (validSamples < 4)
+        return false;
+
+    if (lowerSamples < 4)
+        return false;
+
+    return (dropSum / float(lowerSamples)) >= 4.0f;
+}
+
 static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float& outX, float& outY, float& outZ)
 {
     if (sHotspotsConfig.enabledMaps.empty())
@@ -218,54 +303,72 @@ static bool GetRandomHotspotPosition(uint32& outMapId, uint32& outZoneId, float&
     std::vector<uint32> maps = sHotspotsConfig.enabledMaps;
     std::shuffle(maps.begin(), maps.end(), gen);
 
-    // Hardcoded coordinate presets from original file
-    struct MapCoords { float minX, maxX, minY, maxY, z; uint32 zoneId; };
-    const int attemptsPerRect = 48;
+    constexpr uint32 ATTEMPTS_PER_MAP = 5000;
+    constexpr uint32 ELEVATION_PREFERRED_ATTEMPTS = 3000;
+    std::uniform_real_distribution<float> xDist(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
+    std::uniform_real_distribution<float> yDist(-MAP_HALFSIZE + 1.0f, MAP_HALFSIZE - 1.0f);
 
     for (uint32 candidateMapId : maps)
     {
-        if (!IsMapEnabled(candidateMapId)) continue;
-        std::vector<MapCoords> coords;
-        // Populate coords based on mapId (Simplified for brevity - in real migration, copy the full switch case)
-        switch (candidateMapId) {
-            case 0: coords = { {-9000,-8000,-1000,0,50,1}, {-5000,-4000,-3000,-2000,50,10}, {-11000,-10000,1000,2000,50,85} }; break;
-            case 1: coords = { {9000,10000,1000,2000,50,141}, {-3000,-2000,-5000,-4000,50,331}, {-7000,-6000,-4000,-3000,50,17} }; break;
-            case 530: coords = { {2200,5200,-3500,-1500,100,3524}, {600,2600,400,2600,150,3520} }; break;
-            case 571: coords = { {2000,3000,5000,6000,100,3537}, {4000,5000,1000,2000,100,495} }; break;
-            case 37: coords = { {0,300,900,1200,295,268}, {50,200,980,1060,295,268}, {-100,100,850,1050,295,268}, {100,400,1000,1300,295,268} }; break;
-        }
+        if (!IsMapEnabled(candidateMapId))
+            continue;
 
-        std::vector<MapCoords> allowedCoords;
-        for (auto const& c : coords)
-            if (IsZoneAllowed(candidateMapId, c.zoneId) && sHotspotMgr->CanSpawnInZone(c.zoneId))
-                allowedCoords.push_back(c);
-
-        if (allowedCoords.empty()) continue; // Skip fallbacks for brevity, assume presets exist
-
-        std::shuffle(allowedCoords.begin(), allowedCoords.end(), gen);
         Map* map = GetBaseMapSafe(candidateMapId);
-        if (!map) continue;
+        if (!map)
+            continue;
 
-        for (auto const& rect : allowedCoords)
+        for (uint32 attempt = 0; attempt < ATTEMPTS_PER_MAP; ++attempt)
         {
-            std::uniform_real_distribution<float> xDist(rect.minX, rect.maxX);
-            std::uniform_real_distribution<float> yDist(rect.minY, rect.maxY);
-            for (int a=0; a<attemptsPerRect; ++a)
-            {
-                float cx = xDist(gen);
-                float cy = yDist(gen);
-                float gz = map->GetHeight(cx, cy, MAX_HEIGHT);
-                if (gz > MIN_HEIGHT && std::isfinite(gz))
-                {
-                    constexpr float PH = 2.0f;
-                    if (map->IsInWater(PHASEMASK_NORMAL, cx, cy, gz, PH)) continue;
-                    if (!IsFarEnoughFromExistingHotspots(candidateMapId, cx, cy)) continue;
-                    outMapId = candidateMapId; outX = cx; outY = cy; outZ = gz; outZoneId = rect.zoneId;
-                    return true;
-                }
-            }
+            float cx = xDist(gen);
+            float cy = yDist(gen);
+            if (!MapMgr::IsValidMapCoord(candidateMapId, cx, cy))
+                continue;
+
+            float gz = map->GetHeight(cx, cy, MAX_HEIGHT);
+            if (!std::isfinite(gz) || gz <= MIN_HEIGHT)
+                continue;
+
+            if (!MapMgr::IsValidMapCoord(candidateMapId, cx, cy, gz))
+                continue;
+
+            uint32 zoneId = map->GetZoneId(PHASEMASK_NORMAL, cx, cy, gz);
+            if (!zoneId)
+                continue;
+
+            if (!IsZoneAllowed(candidateMapId, zoneId) || !sHotspotMgr->CanSpawnInZone(zoneId))
+                continue;
+
+            if (IsZoneAtCapacity(zoneId))
+                continue;
+
+            uint32 areaId = map->GetAreaId(PHASEMASK_NORMAL, cx, cy, gz);
+            if (IsCityLikeArea(areaId))
+                continue;
+
+            constexpr float collisionHeight = 2.0f;
+            if (map->IsInWater(PHASEMASK_NORMAL, cx, cy, gz, collisionHeight))
+                continue;
+
+            float waterLevel = map->GetWaterLevel(cx, cy);
+            if (std::isfinite(waterLevel) && waterLevel > gz - 1.0f)
+                continue;
+
+            if (!IsFarEnoughFromExistingHotspots(candidateMapId, cx, cy))
+                continue;
+
+            if (attempt < ELEVATION_PREFERRED_ATTEMPTS && !IsElevatedSpot(map, cx, cy, gz))
+                continue;
+
+            outMapId = candidateMapId;
+            outZoneId = zoneId;
+            outX = cx;
+            outY = cy;
+            outZ = gz;
+            return true;
         }
     }
+
+    LOG_WARN("scripts.dc", "GetRandomHotspotPosition: failed to find eligible terrain after random world sampling.");
     return false;
 }
 
@@ -626,6 +729,24 @@ Hotspot const* HotspotMgr::GetPlayerHotspot(Player* player)
 bool CanSpawnInZone(uint32 zoneId)
 {
     return sHotspotMgr->CanSpawnInZone(zoneId);
+}
+
+uint32 HotspotMgr::GetZoneHotspotCount(uint32 zoneId)
+{
+    if (!zoneId)
+        return 0;
+
+    uint32 count = 0;
+    for (Hotspot const& hotspot : _grid.GetAll())
+        if (hotspot.zoneId == zoneId)
+            ++count;
+
+    return count;
+}
+
+bool HotspotMgr::IsZoneHotspotActive(uint32 zoneId)
+{
+    return GetZoneHotspotCount(zoneId) > 0;
 }
 
 bool HotspotMgr::CanSpawnInZone(uint32 zoneId)

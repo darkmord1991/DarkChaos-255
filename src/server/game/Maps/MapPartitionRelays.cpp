@@ -17,10 +17,14 @@
 
 #include "GameTime.h"
 #include "Metric.h"
+#include "CreatureAI.h"
+#include "DynamicObject.h"
+#include "MoveSplineInit.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
+#include "Player.h"
 #include "SpellMgr.h"
-#include "ThreatManager.h"
+#include "ThreatMgr.h"
 #include "Unit.h"
 
 #include <chrono>

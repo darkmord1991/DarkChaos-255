@@ -44,6 +44,19 @@
 
 namespace
 {
+    constexpr uint32 kHinterlandBattleAreaId = 6738;
+
+    bool IsNoLayerBattleAreaPlayer(uint32 mapId, ObjectGuid const& playerGuid)
+    {
+        if (mapId != 0 || !playerGuid || !playerGuid.IsPlayer())
+            return false;
+
+        if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            return player->GetAreaId() == kHinterlandBattleAreaId;
+
+        return false;
+    }
+
     void NotifyLayerChange(Player* player, uint32 fromLayer, uint32 toLayer, std::string_view reason)
     {
         if (!player || fromLayer == toLayer)
@@ -277,6 +290,9 @@ uint64 LayerManager::GetRuntimeDiagnosticsRemainingMs() const
 
 uint32_t LayerManager::GetLayerForPlayer(uint32_t mapId, ObjectGuid const& playerGuid) const
 {
+    if (IsNoLayerBattleAreaPlayer(mapId, playerGuid))
+        return 0;
+
     struct PlayerLayerCache
     {
         ObjectGuid::LowType guid = 0;
@@ -456,6 +472,9 @@ bool LayerManager::LazyCloneLoadingEnabled() const
 
 void LayerManager::AssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerGuid, uint32_t layerId)
 {
+    if (IsNoLayerBattleAreaPlayer(mapId, playerGuid))
+        layerId = 0;
+
     bool layerWasEmpty = false;
     bool needsDespawn = false;
     uint32 despawnMapId = 0, despawnLayerId = 0;
@@ -629,6 +648,12 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
 {
     if (!IsLayeringEnabled())
         return;
+
+    if (IsNoLayerBattleAreaPlayer(mapId, playerGuid))
+    {
+        AssignPlayerToLayer(mapId, playerGuid, 0);
+        return;
+    }
 
     // First check if party member should sync to leader's layer (outside of lock to avoid deadlock)
     uint32 partyTargetLayer = GetPartyTargetLayer(mapId, playerGuid);
@@ -1494,6 +1519,9 @@ bool LayerManager::SwitchPlayerToLayer(ObjectGuid const& playerGuid, uint32 targ
     Player* player = ObjectAccessor::FindPlayer(playerGuid);
     if (!player)
         return false;
+
+    if (player->GetMapId() == 0 && player->GetAreaId() == kHinterlandBattleAreaId)
+        targetLayer = 0;
     
     // Enforce restrictions
     if (!CanSwitchLayer(playerGuid))

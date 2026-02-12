@@ -28,6 +28,7 @@
 #include "ChatPackets.h"
 #include "ChatTextBuilder.h"
 #include "Common.h"
+#include "Config.h"
 #include "ConditionMgr.h"
 #include "Creature.h"
 #include "CreatureAIImpl.h"
@@ -42,6 +43,7 @@
 #include "Log.h"
 #include "MapMgr.h"
 #include "Map.h"
+#include "Metric.h"
 #include "MoveSpline.h"
 #include "MoveSplineInit.h"
 #include "MovementGenerator.h"
@@ -441,6 +443,51 @@ Unit::~Unit()
 
 void Unit::Update(uint32 p_time)
 {
+    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+    static int64 const slowUnitThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_unit_update_time", 8);
+    static uint64 const slowUnitLogIntervalMs = static_cast<uint64>(std::max<int64>(0, sConfigMgr->GetOption<int64>("Metric.Threshold.slow_unit_update_log_interval_ms", 1000)));
+    static std::atomic<uint64> nextSlowUnitLogAtMs{0};
+
+    auto const slowLogStart = slowLogEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    char const* unitTypeTag = IsPlayer() ? "player" : "non_player";
+
+    auto emitSlowUnitLog = [&]()
+    {
+        if (!slowLogEnabled)
+            return;
+
+        int64 const elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - slowLogStart).count();
+        if (elapsedMs >= slowUnitThresholdMs)
+        {
+            uint64 const nowMs = GameTime::GetGameTimeMS().count();
+            uint64 const nextAllowed = nextSlowUnitLogAtMs.load(std::memory_order_acquire);
+            if (slowUnitLogIntervalMs > 0 && nowMs < nextAllowed)
+                return;
+
+            if (slowUnitLogIntervalMs > 0)
+                nextSlowUnitLogAtMs.store(nowMs + slowUnitLogIntervalMs, std::memory_order_release);
+
+            LOG_WARN("system.slow",
+                "Slow unit update: unit_type={} in_combat={} diff={} elapsed_ms={} threshold_ms={}",
+                unitTypeTag, IsInCombat() ? 1 : 0, p_time, elapsedMs, slowUnitThresholdMs);
+        }
+    };
+
+    struct UnitSlowLogGuard
+    {
+        decltype(emitSlowUnitLog)& Log;
+        ~UnitSlowLogGuard() { Log(); }
+    } slowUnitLogGuard{ emitSlowUnitLog };
+
+    METRIC_TIMER("game_system_update_time",
+        METRIC_TAG("system", "unit"),
+        METRIC_TAG("phase", "update"),
+        METRIC_TAG("unit_type", unitTypeTag));
+    METRIC_DETAILED_TIMER("slow_unit_update_time",
+        METRIC_TAG("phase", "update"),
+        METRIC_TAG("unit_type", unitTypeTag),
+        METRIC_TAG("in_combat", IsInCombat() ? "1" : "0"));
+
     sScriptMgr->OnUnitUpdate(this, p_time);
 
     // WARNING! Order of execution here is important, do not change.
@@ -480,11 +527,46 @@ void Unit::Update(uint32 p_time)
     _UpdateSpells( p_time );
 
     if (CanHaveThreatList() && GetThreatMgr().isNeedUpdateToClient(p_time))
+    {
+        auto const combatSlowStart = std::chrono::steady_clock::now();
+        METRIC_TIMER("game_system_update_time",
+            METRIC_TAG("system", "combat"),
+            METRIC_TAG("phase", "threat_list_update"),
+            METRIC_TAG("unit_type", unitTypeTag));
+        METRIC_DETAILED_TIMER("slow_combat_update_time",
+            METRIC_TAG("phase", "threat_list_update"),
+            METRIC_TAG("unit_type", unitTypeTag));
         SendThreatListUpdate();
+
+        static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+        static int64 const slowCombatThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_combat_update_time", 5);
+        if (slowLogEnabled)
+        {
+            int64 const elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - combatSlowStart).count();
+            if (elapsedMs >= slowCombatThresholdMs)
+            {
+                LOG_WARN("system.slow",
+                    "Slow combat threat update: unit_type={} diff={} elapsed_ms={} threshold_ms={}",
+                    unitTypeTag, p_time, elapsedMs, slowCombatThresholdMs);
+            }
+        }
+    }
 
     // update combat timer only for players and pets (only pets with PetAI)
     if (IsInCombat() && (IsPlayer() || ((IsPet() || HasUnitTypeMask(UNIT_MASK_CONTROLLABLE_GUARDIAN)) && IsControlledByPlayer())))
     {
+        auto const combatSlowStart = std::chrono::steady_clock::now();
+        char const* combatTypeTag = IsPlayer() ? "player" : "pet_or_guardian";
+
+        METRIC_TIMER("game_system_update_time",
+            METRIC_TAG("system", "combat"),
+            METRIC_TAG("phase", "combat_timer"),
+            METRIC_TAG("unit_type", combatTypeTag));
+        METRIC_DETAILED_TIMER("slow_combat_update_time",
+            METRIC_TAG("phase", "combat_timer"),
+            METRIC_TAG("unit_type", combatTypeTag),
+            METRIC_TAG("has_hostile_refs", m_HostileRefMgr.IsEmpty() ? "0" : "1"));
+
         // Check UNIT_STATE_MELEE_ATTACKING or UNIT_STATE_CHASE (without UNIT_STATE_FOLLOW in this case) so pets can reach far away
         // targets without stopping half way there and running off.
         // These flags are reset after target dies or another command is given.
@@ -495,6 +577,19 @@ void Unit::Update(uint32 p_time)
                 ClearInCombat();
             else
                 m_CombatTimer -= p_time;
+        }
+
+        static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+        static int64 const slowCombatThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_combat_update_time", 5);
+        if (slowLogEnabled)
+        {
+            int64 const elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - combatSlowStart).count();
+            if (elapsedMs >= slowCombatThresholdMs)
+            {
+                LOG_WARN("system.slow",
+                    "Slow combat timer update: unit_type={} has_hostile_refs={} diff={} elapsed_ms={} threshold_ms={}",
+                    combatTypeTag, m_HostileRefMgr.IsEmpty() ? 0 : 1, p_time, elapsedMs, slowCombatThresholdMs);
+            }
         }
     }
 
@@ -564,6 +659,7 @@ void Unit::Update(uint32 p_time)
             setAttackTimer(RANGED_ATTACK, ranged_attack > 0 ? ranged_attack - (int32)p_time : 0);
         }
     }
+
 
     // update abilities available only for fraction of time
     UpdateReactives(p_time);
@@ -11544,31 +11640,46 @@ void Unit::SetMinion(Minion* minion, bool apply)
             {
                 std::lock_guard<std::recursive_mutex> lock(_controlledLock);
                 // Check if there is another minion
-                for (ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
+                for (ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end();)
                 {
+                    Unit* controlled = *itr;
+
+                    if (!IsLiveUnitPointer(controlled))
+                    {
+                        itr = m_Controlled.erase(itr);
+                        continue;
+                    }
+
                     // do not use this check, creature do not have charm guid
                     //if (GetCharmGUID() == (*itr)->GetGUID())
-                    if (GetGUID() == (*itr)->GetCharmerGUID())
+                    if (GetGUID() == controlled->GetCharmerGUID())
+                    {
+                        ++itr;
                         continue;
+                    }
 
                     //ASSERT((*itr)->GetOwnerGUID() == GetGUID());
-                    if ((*itr)->GetOwnerGUID() != GetGUID())
+                    if (controlled->GetOwnerGUID() != GetGUID())
                     {
-                        OutDebugInfo();
-                        (*itr)->OutDebugInfo();
-                        ABORT();
-                    }
-                    ASSERT((*itr)->IsCreature());
-
-                    if (!(*itr)->HasUnitTypeMask(UNIT_MASK_CONTROLLABLE_GUARDIAN))
+                        LOG_ERROR("entities.unit", "SetMinion: removing stale controlled unit {} from owner {} (controlled owner: {})",
+                            controlled->GetGUID().ToString(), GetGUID().ToString(), controlled->GetOwnerGUID().ToString());
+                        itr = m_Controlled.erase(itr);
                         continue;
+                    }
+                    ASSERT(controlled->IsCreature());
 
-                    if (AddGuidValue(UNIT_FIELD_SUMMON, (*itr)->GetGUID()))
+                    if (!controlled->HasUnitTypeMask(UNIT_MASK_CONTROLLABLE_GUARDIAN))
+                    {
+                        ++itr;
+                        continue;
+                    }
+
+                    if (AddGuidValue(UNIT_FIELD_SUMMON, controlled->GetGUID()))
                     {
                         // show another pet bar if there is no charm bar
                         if (IsPlayer() && !GetCharmGUID())
                         {
-                            if ((*itr)->IsPet())
+                            if (controlled->IsPet())
                                 ToPlayer()->PetSpellInitialize();
                             else
                                 ToPlayer()->CharmSpellInitialize();
@@ -11599,18 +11710,23 @@ void Unit::GetAllMinionsByEntry(std::list<Creature*>& Minions, uint32 entry)
 
 void Unit::RemoveAllMinionsByEntry(uint32 entry)
 {
-    std::lock_guard<std::recursive_mutex> lock(_controlledLock);
-    for (Unit::ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end();)
+    ControlSet snapshot;
     {
-        Unit* unit = *itr;
-        ++itr;
+        std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+        if (m_Controlled.empty())
+            return;
+
+        snapshot = m_Controlled;
+    }
+
+    for (Unit* unit : snapshot)
+    {
         if (!IsLiveUnitPointer(unit))
             continue;
 
         if (unit->GetEntry() == entry && unit->IsCreature()
                 && unit->ToCreature()->IsSummon()) // minion, actually
             unit->ToTempSummon()->UnSummon();
-        // i think this is safe because i have never heard that a despawned minion will trigger a same minion
     }
 }
 

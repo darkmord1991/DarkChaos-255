@@ -686,6 +686,7 @@ Appender.DC=2,5,0,dcsystem.log,w
 # DarkChaos console colors (yellow info for DC startup logs)
 Appender.DCConsole=1,4,0,"1 9 3 8 5 8"
 Appender.PartitionSlow=2,3,0,PartitionSlow.log,w
+Appender.SlowSystems=2,3,0,SlowSystems.log,w
 # Appender.DB=3,5,0
 # Appender.Dev=2,5,0,Dev.log,a
 
@@ -732,6 +733,9 @@ Logger.seasonal=4,DCConsole Server DC
 Logger.spells.scripts=2,Console Errors
 Logger.playerbots=5,Console Playerbots
 Logger.map.partition.slow=3,Console PartitionSlow
+Logger.map.partition.summary=4,Console PartitionSlow
+Logger.map.update.slow=3,Console SlowSystems
+Logger.system.slow=3,Console SlowSystems
 #Logger.achievement=4,Console Server
 #Logger.addon=4,Console Server
 #Logger.auctionHouse=4,Console Server
@@ -915,6 +919,24 @@ Metric.OverallStatusInterval = 1
 
 #Metric.Threshold.world_update_sessions_time = 100
 #Metric.Threshold.worldsession_update_opcode_time = 50
+#
+# Suggested detailed thresholds for new subsystem spike timers (milliseconds):
+#Metric.Threshold.slow_unit_update_time = 8
+#Metric.Threshold.slow_combat_update_time = 5
+#Metric.Threshold.slow_spell_update_time = 4
+#Metric.Threshold.slow_aura_update_time = 3
+#Metric.Threshold.slow_visibility_update_time = 6
+
+#
+#    System.SlowLog.Enable
+#        Description: Enables slow-system warning logs in worldserver logs.
+#                     This works without InfluxDB setup and complements Metric thresholds.
+#                     Threshold values are taken from Metric.Threshold.slow_* settings.
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+#
+
+System.SlowLog.Enable = 1
 
 #
 ###################################################################################################

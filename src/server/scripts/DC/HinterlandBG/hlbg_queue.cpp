@@ -17,6 +17,36 @@
 
 #include <algorithm>
 
+namespace
+{
+constexpr uint32 HLBG_QUEUE_JOIN_THROTTLE_SECONDS = 3;
+}
+
+void OutdoorPvPHL::RemoveQueueEntryAtIndex(size_t index)
+{
+    if (index >= _queuedPlayers.size())
+        return;
+
+    QueueEntry removed = _queuedPlayers[index];
+    uint32 removedLow = removed.playerGuid.GetCounter();
+
+    if (removed.teamId == TEAM_ALLIANCE && _queuedAllianceCount > 0)
+        --_queuedAllianceCount;
+    else if (removed.teamId == TEAM_HORDE && _queuedHordeCount > 0)
+        --_queuedHordeCount;
+
+    size_t lastIndex = _queuedPlayers.size() - 1;
+    if (index != lastIndex)
+    {
+        QueueEntry moved = _queuedPlayers[lastIndex];
+        _queuedPlayers[index] = moved;
+        _queuedIndexByGuid[moved.playerGuid.GetCounter()] = index;
+    }
+
+    _queuedPlayers.pop_back();
+    _queuedIndexByGuid.erase(removedLow);
+}
+
 // Player queue management
 void OutdoorPvPHL::AddPlayerToQueue(Player* player)
 {
@@ -27,7 +57,7 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     // teleport immediately to the faction base and don't persist them in the queue.
     if (_bgState == BG_STATE_WARMUP)
     {
-        if (player->GetZoneId() != OutdoorPvPHLBuffZones[0])
+        if (player->GetAreaId() != OutdoorPvPHLBattleAreaId)
         {
             TeleportToTeamBase(player);
         }
@@ -37,6 +67,19 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     }
 
     ObjectGuid playerGuid = player->GetGUID();
+    uint32 playerLow = playerGuid.GetCounter();
+    uint32 nowSec = static_cast<uint32>(GameTime::GetGameTime().count());
+
+    auto joinAttemptIt = _lastQueueJoinAttemptSec.find(playerLow);
+    if (joinAttemptIt != _lastQueueJoinAttemptSec.end() && nowSec >= joinAttemptIt->second)
+    {
+        if (nowSec - joinAttemptIt->second < HLBG_QUEUE_JOIN_THROTTLE_SECONDS)
+        {
+            ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: Please wait a few seconds before trying to join again.");
+            return;
+        }
+    }
+    _lastQueueJoinAttemptSec[playerLow] = nowSec;
 
     // Check if player is already in queue
     if (IsPlayerInQueue(player))
@@ -56,12 +99,12 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     entry.playerGuid = playerGuid;
     // GameTime::GetGameTime() returns a duration (Seconds). Store the
     // integral count into the uint32 joinTime field.
-    entry.joinTime = static_cast<uint32>(GameTime::GetGameTime().count());
+    entry.joinTime = nowSec;
     entry.teamId = player->GetTeamId();
     entry.active = true;
 
     _queuedPlayers.push_back(entry);
-    _queuedIndexByGuid[playerGuid.GetCounter()] = _queuedPlayers.size() - 1;
+    _queuedIndexByGuid[playerLow] = _queuedPlayers.size() - 1;
     if (entry.teamId == TEAM_ALLIANCE)
         ++_queuedAllianceCount;
     else if (entry.teamId == TEAM_HORDE)
@@ -93,15 +136,7 @@ void OutdoorPvPHL::RemovePlayerFromQueue(Player* player)
     auto indexIt = _queuedIndexByGuid.find(playerGuid.GetCounter());
     if (indexIt != _queuedIndexByGuid.end())
     {
-        size_t index = indexIt->second;
-        QueueEntry& removed = _queuedPlayers[index];
-        removed.active = false;
-        _queuedIndexByGuid.erase(indexIt);
-
-        if (removed.teamId == TEAM_ALLIANCE && _queuedAllianceCount > 0)
-            --_queuedAllianceCount;
-        else if (removed.teamId == TEAM_HORDE && _queuedHordeCount > 0)
-            --_queuedHordeCount;
+        RemoveQueueEntryAtIndex(indexIt->second);
         ChatHandler(player->GetSession()).PSendSysMessage("You have left the Hinterland BG queue.");
         SendQueueStatusAIO(player);
         LOG_DEBUG("bg.battleground", "Player {} left HLBG queue", player->GetName());
@@ -200,21 +235,16 @@ void OutdoorPvPHL::ProcessQueueSystem()
         return;
 
     // Prune stale/offline entries so we don't start warmup for disconnected players.
-    for (QueueEntry& entry : _queuedPlayers)
+    for (size_t i = 0; i < _queuedPlayers.size();)
     {
-        if (!entry.active)
-            continue;
-
+        QueueEntry const& entry = _queuedPlayers[i];
         if (ObjectAccessor::FindConnectedPlayer(entry.playerGuid))
+        {
+            ++i;
             continue;
+        }
 
-        entry.active = false;
-        _queuedIndexByGuid.erase(entry.playerGuid.GetCounter());
-
-        if (entry.teamId == TEAM_ALLIANCE && _queuedAllianceCount > 0)
-            --_queuedAllianceCount;
-        else if (entry.teamId == TEAM_HORDE && _queuedHordeCount > 0)
-            --_queuedHordeCount;
+        RemoveQueueEntryAtIndex(i);
     }
 
     // Check if we have enough players to start warmup
@@ -240,21 +270,16 @@ void OutdoorPvPHL::StartWarmupPhase()
         return;
 
     // Re-prune offline entries right before starting, and require at least one connected player.
-    for (QueueEntry& entry : _queuedPlayers)
+    for (size_t i = 0; i < _queuedPlayers.size();)
     {
-        if (!entry.active)
-            continue;
-
+        QueueEntry const& entry = _queuedPlayers[i];
         if (ObjectAccessor::FindConnectedPlayer(entry.playerGuid))
+        {
+            ++i;
             continue;
+        }
 
-        entry.active = false;
-        _queuedIndexByGuid.erase(entry.playerGuid.GetCounter());
-
-        if (entry.teamId == TEAM_ALLIANCE && _queuedAllianceCount > 0)
-            --_queuedAllianceCount;
-        else if (entry.teamId == TEAM_HORDE && _queuedHordeCount > 0)
-            --_queuedHordeCount;
+        RemoveQueueEntryAtIndex(i);
     }
 
     if (GetQueuedPlayerCount() == 0)
@@ -290,7 +315,7 @@ void OutdoorPvPHL::TeleportQueuedPlayers()
     const HLBase* spawnLoc = (entry.teamId == TEAM_ALLIANCE) ? &_baseAlliance : &_baseHorde;
 
         // Only teleport if player is not already in the zone
-        if (player->GetZoneId() != OutdoorPvPHLBuffZones[0])
+        if (player->GetAreaId() != OutdoorPvPHLBattleAreaId)
         {
             if (player->TeleportTo(spawnLoc->map, spawnLoc->x, spawnLoc->y, spawnLoc->z, spawnLoc->o))
             {
@@ -318,6 +343,7 @@ void OutdoorPvPHL::ClearQueue()
         LOG_DEBUG("bg.battleground", "HLBG: Clearing queue with {} players", GetQueuedPlayerCount());
         _queuedPlayers.clear();
         _queuedIndexByGuid.clear();
+        _lastQueueJoinAttemptSec.clear();
         _queuedAllianceCount = 0;
         _queuedHordeCount = 0;
     }
@@ -380,8 +406,10 @@ bool OutdoorPvPHL::AddGroupToQueue(Player* leader)
     group->DoForAllMembers([this, &addedCount](Player* member) {
         if (member->IsInWorld())
         {
+            bool wasQueued = IsPlayerInQueue(member);
             AddPlayerToQueue(member);
-            addedCount++;
+            if (!wasQueued && IsPlayerInQueue(member))
+                addedCount++;
         }
     });
 

@@ -19,6 +19,7 @@
 #include "Battleground.h"
 #include "CellImpl.h"
 #include "Chat.h"
+#include "Config.h"
 #include "CreatureAI.h"
 #include "DisableMgr.h"
 #include "DynamicTree.h"
@@ -988,21 +989,21 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         _adaptiveSessionStrideTicks = 4;
         _adaptiveDeferredVisibilityBudget = 256;
         _adaptiveObjectUpdateBudget = 1024;
-        _adaptivePartitionInFlightLimit = 2;
+        _adaptivePartitionInFlightLimit = 3;
     }
     else if (t_diff >= 80)
     {
         _adaptiveSessionStrideTicks = 3;
         _adaptiveDeferredVisibilityBudget = 384;
         _adaptiveObjectUpdateBudget = 1536;
-        _adaptivePartitionInFlightLimit = 3;
+        _adaptivePartitionInFlightLimit = 4;
     }
     else if (t_diff <= 35)
     {
         _adaptiveSessionStrideTicks = 1;
         _adaptiveDeferredVisibilityBudget = 1024;
         _adaptiveObjectUpdateBudget = 3072;
-        _adaptivePartitionInFlightLimit = 4;
+        _adaptivePartitionInFlightLimit = 5;
     }
     else
     {
@@ -1405,17 +1406,29 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
 
         std::vector<uint32> partitionCreatureCounts(partitionCount, 0);
         std::vector<uint32> partitionBoundaryObjectCounts(partitionCount, 0);
+        std::vector<PartitionManager::BoundaryPositionUpdate> boundaryUpdates;
+        std::vector<ObjectGuid> boundaryUnregisters;
+        std::vector<ObjectGuid> boundaryOverrides;
+        std::vector<std::pair<ObjectGuid, uint8>> objects;
 
         for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
         {
             SetActivePartitionContext(partitionId);
             uint32 index = partitionId - 1;
-            std::vector<PartitionManager::BoundaryPositionUpdate> boundaryUpdates;
-            std::vector<ObjectGuid> boundaryUnregisters;
-            std::vector<ObjectGuid> boundaryOverrides;
-            std::vector<std::pair<ObjectGuid, uint8>> objects;
+            boundaryUpdates.clear();
+            boundaryUnregisters.clear();
+            boundaryOverrides.clear();
+            objects.clear();
             CollectPartitionedUpdatableGuids(partitionId, objects);
+            if (objects.empty())
+            {
+                sPartitionMgr->UpdatePartitionCreatureCount(GetId(), partitionId, 0);
+                sPartitionMgr->UpdatePartitionBoundaryCount(GetId(), partitionId, 0);
+                continue;
+            }
+
             boundaryUpdates.reserve(objects.size());
+            boundaryUnregisters.reserve(objects.size());
             boundaryOverrides.reserve(objects.size());
 
             for (auto const& entry : objects)
@@ -2666,6 +2679,13 @@ ZoneWideVisibleWorldObjectsSet Map::GetZoneWideVisibleWorldObjectsForZoneCopy(ui
 
 void Map::HandleDelayedVisibility()
 {
+    auto const slowLogStart = std::chrono::steady_clock::now();
+
+    METRIC_TIMER("game_system_update_time",
+        METRIC_TAG("system", "visibility"),
+        METRIC_TAG("phase", "delayed"),
+        METRIC_TAG("map_id", std::to_string(GetId())));
+
     // Extract objects under lock, then process outside lock
     std::vector<ObjectGuid> unitsToProcess;
     {
@@ -2675,8 +2695,47 @@ void Map::HandleDelayedVisibility()
         unitsToProcess.swap(_objectsForDelayedVisibility);
     }
 
-    std::sort(unitsToProcess.begin(), unitsToProcess.end());
-    unitsToProcess.erase(std::unique(unitsToProcess.begin(), unitsToProcess.end()), unitsToProcess.end());
+    if (unitsToProcess.size() > 1)
+    {
+        std::sort(unitsToProcess.begin(), unitsToProcess.end());
+        unitsToProcess.erase(std::unique(unitsToProcess.begin(), unitsToProcess.end()), unitsToProcess.end());
+    }
+
+    char const* workloadBucket = "empty";
+    if (!unitsToProcess.empty())
+    {
+        if (unitsToProcess.size() >= 512)
+            workloadBucket = "huge";
+        else if (unitsToProcess.size() >= 128)
+            workloadBucket = "large";
+        else if (unitsToProcess.size() >= 32)
+            workloadBucket = "medium";
+        else
+            workloadBucket = "small";
+    }
+
+    METRIC_DETAILED_TIMER("slow_visibility_update_time",
+        METRIC_TAG("phase", "delayed"),
+        METRIC_TAG("map_id", std::to_string(GetId())),
+        METRIC_TAG("workload", workloadBucket));
+
+    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+    static int64 const slowVisibilityThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_visibility_update_time", 6);
+    if (slowLogEnabled)
+    {
+        int64 const elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - slowLogStart).count();
+        if (elapsedMs >= slowVisibilityThresholdMs)
+        {
+            LOG_WARN("system.slow",
+                "Slow delayed visibility update: map_id={} workload={} batch={} elapsed_ms={} threshold_ms={}",
+                GetId(), workloadBucket, unitsToProcess.size(), elapsedMs, slowVisibilityThresholdMs);
+        }
+    }
+
+    METRIC_VALUE("game_system_batch_size", unitsToProcess.size(),
+        METRIC_TAG("system", "visibility"),
+        METRIC_TAG("phase", "delayed"),
+        METRIC_TAG("map_id", std::to_string(GetId())));
 
     for (ObjectGuid const& guid : unitsToProcess)
     {
@@ -3992,7 +4051,8 @@ void Map::SendObjectUpdates()
         {
             for (Object* obj : objectsToUpdate)
             {
-                ASSERT(obj->IsInWorld());
+                if (!obj || !obj->IsInWorld())
+                    continue;
                 obj->BuildUpdate(update_players);
             }
         }
@@ -4179,16 +4239,19 @@ void Map::AddObjectToRemoveList(WorldObject* obj)
 
 void Map::RemoveAllObjectsInRemoveList()
 {
-    // Swap-and-process: take the lock once, swap the entire set out, then process without lock.
-    // Objects added during processing will go into the (now-empty) set and be handled next call.
-    std::unordered_set<WorldObject*> objectsToProcess;
+    while (true)
     {
-        std::lock_guard<std::mutex> guard(_objectsToRemoveLock);
-        objectsToProcess.swap(i_objectsToRemove);
-    }
+        WorldObject* obj = nullptr;
+        {
+            std::lock_guard<std::mutex> guard(_objectsToRemoveLock);
+            if (i_objectsToRemove.empty())
+                break;
 
-    for (WorldObject* obj : objectsToProcess)
-    {
+            auto itr = i_objectsToRemove.begin();
+            obj = *itr;
+            i_objectsToRemove.erase(itr);
+        }
+
         if (!obj)
             continue;
 

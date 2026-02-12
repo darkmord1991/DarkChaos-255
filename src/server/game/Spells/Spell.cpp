@@ -19,6 +19,7 @@
 #include "ArenaSpectator.h"
 #include "BattlefieldMgr.h"
 #include "Battleground.h"
+#include "Config.h"
 #include "CharmInfo.h"
 #include "CellImpl.h"
 #include "Common.h"
@@ -32,6 +33,7 @@
 #include "InstanceScript.h"
 #include "Log.h"
 #include "LootMgr.h"
+#include "Metric.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Opcodes.h"
@@ -4374,11 +4376,49 @@ void Spell::SendSpellCooldown()
 
 void Spell::update(uint32 difftime)
 {
+    auto const slowLogStart = std::chrono::steady_clock::now();
+
+    char const* spellStateTag = "other";
+    if (m_spellState == SPELL_STATE_PREPARING)
+        spellStateTag = "preparing";
+    else if (m_spellState == SPELL_STATE_CASTING)
+        spellStateTag = "casting";
+
+    char const* casterTypeTag = (m_caster && m_caster->IsPlayer()) ? "player" : "non_player";
+
+    auto emitSlowSpellLog = [&]()
+    {
+        static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+        static int64 const slowSpellThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_spell_update_time", 4);
+        if (!slowLogEnabled)
+            return;
+
+        int64 const elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - slowLogStart).count();
+        if (elapsedMs >= slowSpellThresholdMs)
+        {
+            LOG_WARN("system.slow",
+                "Slow spell update: spell={} state={} caster_type={} channeled={} diff={} elapsed_ms={} threshold_ms={}",
+                m_spellInfo ? m_spellInfo->Id : 0, spellStateTag, casterTypeTag,
+                (m_spellInfo && m_spellInfo->IsChanneled()) ? 1 : 0, difftime, elapsedMs, slowSpellThresholdMs);
+        }
+    };
+
+    METRIC_TIMER("game_system_update_time",
+        METRIC_TAG("system", "spell"),
+        METRIC_TAG("phase", "update"),
+        METRIC_TAG("state", spellStateTag));
+    METRIC_DETAILED_TIMER("slow_spell_update_time",
+        METRIC_TAG("phase", "update"),
+        METRIC_TAG("state", spellStateTag),
+        METRIC_TAG("caster_type", casterTypeTag),
+        METRIC_TAG("channeled", (m_spellInfo && m_spellInfo->IsChanneled()) ? "1" : "0"));
+
     // update pointers based at it's GUIDs
     if (!UpdatePointers())
     {
         // cancel the spell if UpdatePointers() returned false, something wrong happened there
         cancel();
+        emitSlowSpellLog();
         return;
     }
 
@@ -4386,6 +4426,7 @@ void Spell::update(uint32 difftime)
     {
         LOG_DEBUG("spells.aura", "Spell {} is cancelled due to removal of target.", m_spellInfo->Id);
         cancel();
+        emitSlowSpellLog();
         return;
     }
 
@@ -4456,6 +4497,8 @@ void Spell::update(uint32 difftime)
         default:
             break;
     }
+
+    emitSlowSpellLog();
 }
 
 void Spell::finish(bool ok)

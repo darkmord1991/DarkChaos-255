@@ -36,6 +36,7 @@
 #include <fstream>
 #include <filesystem>
 #include <ctime>
+#include <atomic>
 #include <unordered_set>
 
 namespace DCPerfTest
@@ -62,6 +63,7 @@ namespace DCPerfTest
     TimingResult TestGreatVaultSimulation(uint32 playerCount);
     TimingResult TestRandomMapSampling(Player* player, uint32 mapSamples, uint32 pointsPerMap);
     TimingResult TestPartitionSuite(uint32 iterations);
+    TimingResult TestPartitionLayerParallelSuite(uint32 totalOps, uint32 workerCount);
 
     // Calculate percentile from sorted vector
     uint64 GetPercentile(const std::vector<uint64>& sortedTimes, float percentile)
@@ -589,6 +591,94 @@ namespace DCPerfTest
 
         if (checkSum == 0xFFFFFFFFu)
             result.error = "checksum sentinel";
+
+        result.totalUs = std::chrono::duration_cast<Microseconds>(end - start).count();
+        result.avgUs = result.totalUs;
+        result.minUs = result.totalUs;
+        result.maxUs = result.totalUs;
+        result.p95Us = result.totalUs;
+        result.p99Us = result.totalUs;
+        return result;
+    }
+
+    TimingResult TestPartitionLayerParallelSuite(uint32 totalOps, uint32 workerCount)
+    {
+        TimingResult result;
+        result.testName = "Partition/Layer Parallel Reads";
+        result.iterations = totalOps;
+        result.success = true;
+
+        if (workerCount < 2)
+            workerCount = 2;
+        if (workerCount > 64)
+            workerCount = 64;
+        if (totalOps < workerCount)
+            totalOps = workerCount;
+        if (totalOps > 5000000)
+            totalOps = 5000000;
+
+        std::atomic<uint64> globalChecksum{ 0 };
+        std::atomic<uint32> workerFailures{ 0 };
+
+        auto start = Clock::now();
+
+        std::vector<std::thread> workers;
+        workers.reserve(workerCount);
+
+        uint32 const baseOps = totalOps / workerCount;
+        uint32 const remainder = totalOps % workerCount;
+
+        for (uint32 workerIndex = 0; workerIndex < workerCount; ++workerIndex)
+        {
+            workers.emplace_back([workerIndex, baseOps, remainder, &globalChecksum, &workerFailures]()
+            {
+                try
+                {
+                    uint32 const opsForWorker = baseOps + (workerIndex < remainder ? 1u : 0u);
+                    std::minstd_rand rng(0xC0FFEEu + workerIndex * 97u);
+                    uint64 localChecksum = 0;
+
+                    for (uint32 i = 0; i < opsForWorker; ++i)
+                    {
+                        uint32 const mapId = ((i + workerIndex) & 1u) ? 0u : 1u;
+                        float const x = float(int32(rng() % 12000) - 6000);
+                        float const y = float(int32(rng() % 12000) - 6000);
+
+                        localChecksum += sPartitionMgr->GetPartitionIdForPosition(mapId, x, y);
+                        localChecksum += sPartitionMgr->IsNearPartitionBoundary(mapId, x, y) ? 1u : 0u;
+
+                        if ((i & 0x3Fu) == 0)
+                        {
+                            localChecksum += sLayerMgr->GetLayerCount(mapId);
+                            localChecksum += sLayerMgr->GetLayerCapacity(mapId);
+                            std::vector<uint32> layerIds = sLayerMgr->GetLayerIds(mapId);
+                            localChecksum += layerIds.size();
+                        }
+                    }
+
+                    globalChecksum.fetch_add(localChecksum, std::memory_order_relaxed);
+                }
+                catch (...)
+                {
+                    workerFailures.fetch_add(1, std::memory_order_relaxed);
+                }
+            });
+        }
+
+        for (std::thread& worker : workers)
+            worker.join();
+
+        auto end = Clock::now();
+
+        if (globalChecksum.load(std::memory_order_relaxed) == 0xFFFFFFFFu)
+            result.error = "checksum sentinel";
+
+        uint32 const failures = workerFailures.load(std::memory_order_relaxed);
+        if (failures > 0)
+        {
+            result.success = false;
+            result.error = Acore::StringFormat("{} worker threads failed", failures);
+        }
 
         result.totalUs = std::chrono::duration_cast<Microseconds>(end - start).count();
         result.avgUs = result.totalUs;
@@ -2983,6 +3073,102 @@ public:
                 return true;
             }
 
+            if (suite == "mapparallel")
+            {
+                if (printDetails)
+                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: MAP PARALLEL SUITE ===|r");
+
+                uint32 partitionIterations = 250000;
+                uint32 parallelOps = 400000;
+                uint32 workers = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 8;
+                uint32 pathIterations = 120;
+                uint32 mapSamples = 6;
+                uint32 pointsPerMap = 120;
+
+                if (args && *args)
+                {
+                    std::istringstream iss(args);
+                    if (!(iss >> partitionIterations))
+                        partitionIterations = 250000;
+                    if (!(iss >> parallelOps))
+                        parallelOps = 400000;
+                    if (!(iss >> workers))
+                        workers = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 8;
+                    if (!(iss >> pathIterations))
+                        pathIterations = 120;
+                    if (!(iss >> mapSamples))
+                        mapSamples = 6;
+                    if (!(iss >> pointsPerMap))
+                        pointsPerMap = 120;
+                }
+
+                if (partitionIterations < 10000)
+                    partitionIterations = 10000;
+                if (partitionIterations > 2000000)
+                    partitionIterations = 2000000;
+
+                if (parallelOps < 20000)
+                    parallelOps = 20000;
+                if (parallelOps > 5000000)
+                    parallelOps = 5000000;
+
+                if (workers < 2)
+                    workers = 2;
+                if (workers > 64)
+                    workers = 64;
+
+                if (pathIterations < 25)
+                    pathIterations = 25;
+                if (pathIterations > 2000)
+                    pathIterations = 2000;
+
+                if (mapSamples < 2)
+                    mapSamples = 2;
+                if (mapSamples > 30)
+                    mapSamples = 30;
+
+                if (pointsPerMap < 20)
+                    pointsPerMap = 20;
+                if (pointsPerMap > 1000)
+                    pointsPerMap = 1000;
+
+                if (printDetails)
+                {
+                    handler->SendSysMessage(Acore::StringFormat(
+                        "MapParallel args: partitionIters={} parallelOps={} workers={} pathIters={} mapSamples={} pointsPerMap={}",
+                        partitionIterations, parallelOps, workers, pathIterations, mapSamples, pointsPerMap));
+                }
+
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestPartitionSuite(partitionIterations));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestPartitionLayerParallelSuite(parallelOps, workers));
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestMassMapEntityLoad(std::min<uint32>(500, std::max<uint32>(80, workers * 20))));
+
+                Player* player = handler->GetPlayer();
+                if (player)
+                {
+                    AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestPathfinding(player, pathIterations));
+                    AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestRandomMapSampling(player, mapSamples, pointsPerMap));
+                }
+                else
+                {
+                    DCPerfTest::TimingResult pathSkip;
+                    pathSkip.testName = "Pathfinding (skipped)";
+                    pathSkip.iterations = pathIterations;
+                    pathSkip.success = true;
+                    pathSkip.error = "Player context required (in-game only)";
+                    AppendAndMaybePrint(handler, printDetails, out, pathSkip);
+
+                    DCPerfTest::TimingResult mapSkip;
+                    mapSkip.testName = "RandomMapSampling (skipped)";
+                    mapSkip.iterations = mapSamples * pointsPerMap;
+                    mapSkip.success = true;
+                    mapSkip.error = "Player context required (in-game only)";
+                    AppendAndMaybePrint(handler, printDetails, out, mapSkip);
+                }
+
+                return true;
+            }
+
             if (suite == "stress" || suite == "big")
             {
                 if (printDetails)
@@ -3153,7 +3339,7 @@ public:
         // Usage:
         // .stresstest loop <suite> [loops=10] [sleepMs=1000] [suiteArgs...]
         // Optional: prefix suiteArgs with "quiet" to only print the final summary.
-        // suite: sql|cache|systems|coredb|playersim|stress|dbasync|path|maprandom|partition|cpu|mysql|full
+        // suite: sql|cache|systems|coredb|playersim|stress|dbasync|path|maprandom|partition|mapparallel|cpu|mysql|full
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: LOOP ===|r");
 
         std::string suite;
@@ -3399,18 +3585,25 @@ public:
         // 2) Partition/layer lock & routing churn profile
         std::ostringstream partCmd;
         partCmd << "partition " << loops << " " << sleepMs << " 10 0 " << format << " 250000";
-        handler->SendSysMessage("|cff32c4ff[2/3]|r Running partition profile (250000 iterations)...");
+        handler->SendSysMessage("|cff32c4ff[2/4]|r Running partition profile (250000 iterations)...");
         std::string partArgs = partCmd.str();
         bool okPart = HandlePerfTestLoopReport(handler, partArgs.c_str());
 
-        // 3) CPU hot-path cache lookup profile
+        // 3) Map/partition parallel profile (threads + layer/partition/map access)
+        std::ostringstream mapParallelCmd;
+        mapParallelCmd << "mapparallel " << loops << " " << sleepMs << " 10 0 " << format << " 200000 350000 8 120 4 80";
+        handler->SendSysMessage("|cff32c4ff[3/4]|r Running mapparallel profile (partition+layers+map access)...");
+        std::string mapParallelArgs = mapParallelCmd.str();
+        bool okMapParallel = HandlePerfTestLoopReport(handler, mapParallelArgs.c_str());
+
+        // 4) CPU hot-path cache lookup profile
         std::ostringstream cpuCmd;
         cpuCmd << "cpu " << loops << " " << sleepMs << " 10 0 " << format << " 120000";
-        handler->SendSysMessage("|cff32c4ff[3/3]|r Running cpu profile (120000 iterations)...");
+        handler->SendSysMessage("|cff32c4ff[4/4]|r Running cpu profile (120000 iterations)...");
         std::string cpuArgs = cpuCmd.str();
         bool okCpu = HandlePerfTestLoopReport(handler, cpuArgs.c_str());
 
-        if (okAsync && okPart && okCpu)
+        if (okAsync && okPart && okMapParallel && okCpu)
             handler->SendSysMessage("|cff00ff00=== QUICKPARALLEL Complete ===|r");
         else
             handler->SendSysMessage("|cffffaa00=== QUICKPARALLEL finished with warnings ===|r");
@@ -3642,6 +3835,17 @@ public:
         return true;
     }
 
+    static bool HandlePerfTestMapParallel(ChatHandler* handler, const char* args)
+    {
+        handler->SendSysMessage("|cff00ff00=== DC Performance Test: MAP PARALLEL ===|r");
+        std::vector<DCPerfTest::TimingResult> results;
+        results.reserve(8);
+        bool ok = RunSuite(handler, "mapparallel", args ? args : "", true, results);
+        DCPerfTest::PrintReportSummary(handler, results, 8);
+        handler->SendSysMessage(ok ? "|cff00ff00=== Test Complete ===|r" : "|cffffaa00=== Test finished with warnings ===|r");
+        return true;
+    }
+
     Acore::ChatCommands::ChatCommandTable GetCommands() const override
     {
         using namespace Acore::ChatCommands;
@@ -3659,6 +3863,7 @@ public:
             // path requires an in-game Player context.
             ChatCommandBuilder("path",    HandlePerfTestPath,    SEC_GAMEMASTER, Console::No),
             ChatCommandBuilder("maprandom", HandlePerfTestMapRandom, SEC_GAMEMASTER, Console::No),
+            ChatCommandBuilder("mapparallel", HandlePerfTestMapParallel, SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("cpu",     HandlePerfTestCPU,     SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("loop",    HandlePerfTestLoop,    SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("loopreport", HandlePerfTestLoopReport, SEC_GAMEMASTER, Console::Yes),

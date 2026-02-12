@@ -105,6 +105,7 @@
 
     const uint8 OutdoorPvPHLBuffZonesNum = 1;
     const uint32 OutdoorPvPHLBuffZones[OutdoorPvPHLBuffZonesNum] = { 47 };
+    const uint32 OutdoorPvPHLBattleAreaId = 6738;
 
     const uint8 WinBuffsNum                 = 4;
     const uint8 LoseBuffsNum                = 2;
@@ -409,6 +410,7 @@
             void AddPlayerToQueue(Player* player);
             void RemovePlayerFromQueue(Player* player);
             bool IsPlayerInQueue(Player* player);
+            void RemoveQueueEntryAtIndex(size_t index);
 public:
             uint32 GetQueuedPlayerCount();
             uint32 GetQueuedPlayerCountByTeam(TeamId teamId);
@@ -535,6 +537,7 @@ public:
 
     std::vector<QueueEntry> _queuedPlayers;
     std::unordered_map<uint32, size_t> _queuedIndexByGuid;
+    std::unordered_map<uint32, uint32> _lastQueueJoinAttemptSec;
     uint32 _queuedAllianceCount = 0;
     uint32 _queuedHordeCount = 0;
     uint32 _minPlayersToStart;

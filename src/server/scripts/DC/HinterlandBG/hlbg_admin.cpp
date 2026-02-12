@@ -146,7 +146,7 @@ void OutdoorPvPHL::_recordWinner(TeamId winner)
 
     // Persist a row in characters DB for history
     // Note: CharacterDatabase is available globally; keep SQL minimal and safe.
-    uint32 zone = OutdoorPvPHLBuffZones[0];
+    uint32 zone = OutdoorPvPHLBattleAreaId;
     uint32 mapId = 0;
     if (Map* m = GetMap())
         mapId = m->GetId();
@@ -178,7 +178,7 @@ void OutdoorPvPHL::_recordWinner(TeamId winner)
 // Record manual reset in history table
 void OutdoorPvPHL::_recordManualReset()
 {
-    uint32 zone = OutdoorPvPHLBuffZones[0];
+    uint32 zone = OutdoorPvPHLBattleAreaId;
     uint32 mapId = 0;
     if (Map* m = GetMap())
         mapId = m->GetId();

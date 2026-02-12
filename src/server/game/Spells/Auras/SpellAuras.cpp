@@ -18,9 +18,11 @@
 #include "ArenaSpectator.h"
 #include "CellImpl.h"
 #include "Common.h"
+#include "Config.h"
 #include "GameTime.h"
 #include "GridNotifiers.h"
 #include "Log.h"
+#include "Metric.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Opcodes.h"
@@ -725,6 +727,28 @@ void Aura::_ApplyEffectForTargets(uint8 effIndex)
 }
 void Aura::UpdateOwner(uint32 diff, WorldObject* owner)
 {
+    auto const slowLogStart = std::chrono::steady_clock::now();
+
+    uint8 activeEffectCount = 0;
+    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+        activeEffectCount += (m_effects[i] != nullptr);
+
+    char const* effectBucket = "single";
+    if (activeEffectCount >= 3)
+        effectBucket = "triple_plus";
+    else if (activeEffectCount == 2)
+        effectBucket = "double";
+
+    METRIC_TIMER("game_system_update_time",
+        METRIC_TAG("system", "aura"),
+        METRIC_TAG("phase", "owner_update"),
+        METRIC_TAG("owner_type", owner && owner->IsPlayer() ? "player" : "non_player"));
+    METRIC_DETAILED_TIMER("slow_aura_update_time",
+        METRIC_TAG("phase", "owner_update"),
+        METRIC_TAG("owner_type", owner && owner->IsPlayer() ? "player" : "non_player"),
+        METRIC_TAG("effect_bucket", effectBucket),
+        METRIC_TAG("is_positive", (m_spellInfo && m_spellInfo->IsPositive()) ? "1" : "0"));
+
     if (owner != m_owner)
     {
         ABORT();
@@ -763,6 +787,20 @@ void Aura::UpdateOwner(uint32 diff, WorldObject* owner)
         modOwner->SetSpellModTakingSpell(modSpell, false);
 
     _DeleteRemovedApplications();
+
+    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+    static int64 const slowAuraThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_aura_update_time", 3);
+    if (slowLogEnabled)
+    {
+        int64 const elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - slowLogStart).count();
+        if (elapsedMs >= slowAuraThresholdMs)
+        {
+            LOG_WARN("system.slow",
+                "Slow aura update: spell={} owner_type={} positive={} effects={} diff={} elapsed_ms={} threshold_ms={}",
+                GetId(), owner && owner->IsPlayer() ? "player" : "non_player", (m_spellInfo && m_spellInfo->IsPositive()) ? 1 : 0,
+                activeEffectCount, diff, elapsedMs, slowAuraThresholdMs);
+        }
+    }
 }
 
 void Aura::Update(uint32 diff, Unit* caster)

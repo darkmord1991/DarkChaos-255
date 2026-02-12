@@ -27,6 +27,7 @@
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
+#include "Player.h"
 #include "Position.h"
 #include <algorithm>
 #include <cmath>
@@ -326,6 +327,16 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
 
 uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float y, uint32 zoneId, ObjectGuid const& guid) const
 {
+    // Force single-partition behavior in Hinterland BG battle area to avoid split battles.
+    if (mapId == 0 && guid && guid.IsPlayer())
+    {
+        if (Player* player = ObjectAccessor::FindPlayer(guid))
+        {
+            if (player->GetAreaId() == 6738)
+                return 1;
+        }
+    }
+
     // If this zone is excluded from partitioning (e.g., cities), use partition 1
     if (IsZoneExcluded(zoneId))
         return 1;

@@ -16,14 +16,152 @@
  */
 
 #include "MapUpdater.h"
+#include "Config.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
 #include "LFGMgr.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
 #include "Metric.h"
 #include "PartitionUpdateWorker.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <mutex>
+#include <unordered_map>
 #include <vector>
+
+namespace
+{
+    constexpr int64 kSlowMapUpdateMs = 40;
+    constexpr int64 kSlowPartitionWorkerMs = 200;
+    constexpr int64 kSlowLfgUpdateMs = 20;
+    constexpr uint64 kPartitionPercentileSummaryPeriodMs = 30000;
+    constexpr size_t kPartitionPercentileSampleCap = 2048;
+
+    struct PartitionLatencySummary
+    {
+        std::vector<uint32> queueWaitSamples;
+        std::vector<uint32> runSamples;
+        std::vector<uint32> totalSamples;
+        uint64 windowSamples = 0;
+        uint64 lastLogMs = 0;
+    };
+
+    std::mutex gPartitionSummaryLock;
+    std::unordered_map<uint64, PartitionLatencySummary> gPartitionSummaryByMapPartition;
+    std::mutex gSlowMapUpdateLogGateLock;
+    std::unordered_map<uint64, uint64> gSlowMapUpdateNextLogAtMs;
+
+    bool IsPartitionPercentileSamplingEnabled()
+    {
+        static bool const enabled = sConfigMgr->GetOption<bool>("System.PartitionMetrics.EnablePercentiles", false);
+        return enabled;
+    }
+
+    bool IsPartitionQueueAgeTrackingEnabled()
+    {
+        static bool const enabled = sConfigMgr->GetOption<bool>("System.SlowPartitionCycle.TrackQueueAge", false);
+        return enabled;
+    }
+
+    int64 GetSlowMapUpdateTaskThresholdMs()
+    {
+        static int64 const thresholdMs = std::max<int64>(1, sConfigMgr->GetOption<int64>("System.SlowMapUpdateTask.ThresholdMs", kSlowMapUpdateMs));
+        return thresholdMs;
+    }
+
+    uint64 GetSlowMapUpdateTaskLogIntervalMs()
+    {
+        static uint64 const intervalMs = static_cast<uint64>(std::max<int64>(0, sConfigMgr->GetOption<int64>("System.SlowMapUpdateTask.LogIntervalMs", 3000)));
+        return intervalMs;
+    }
+
+    bool ShouldEmitSlowMapUpdateLog(Map const& map, uint64 nowMs, uint64 intervalMs)
+    {
+        if (intervalMs == 0)
+            return true;
+
+        uint64 const key = (static_cast<uint64>(map.GetId()) << 32) | map.GetInstanceId();
+        std::lock_guard<std::mutex> guard(gSlowMapUpdateLogGateLock);
+        uint64& nextAllowed = gSlowMapUpdateNextLogAtMs[key];
+        if (nowMs < nextAllowed)
+            return false;
+
+        nextAllowed = nowMs + intervalMs;
+        return true;
+    }
+
+    int64 GetSlowPartitionWorkerThresholdMs()
+    {
+        static int64 const thresholdMs = std::max<int64>(1, sConfigMgr->GetOption<int64>("System.SlowPartitionWorker.ThresholdMs", kSlowPartitionWorkerMs));
+        return thresholdMs;
+    }
+
+    uint32 ComputePercentile(std::vector<uint32> samples, double percentile)
+    {
+        if (samples.empty())
+            return 0;
+
+        percentile = std::clamp(percentile, 0.0, 1.0);
+        size_t const index = static_cast<size_t>(std::ceil(percentile * static_cast<double>(samples.size() - 1)));
+        std::nth_element(samples.begin(), samples.begin() + index, samples.end());
+        return samples[index];
+    }
+
+    void AddSample(std::vector<uint32>& samples, uint32 value)
+    {
+        if (samples.size() < kPartitionPercentileSampleCap)
+        {
+            samples.push_back(value);
+            return;
+        }
+
+        std::move(samples.begin() + 1, samples.end(), samples.begin());
+        samples.back() = value;
+    }
+
+    void RecordPartitionPercentileSample(uint32 mapId, uint32 partitionId, uint32 queueWaitMs, uint32 runMs, uint64 nowMs)
+    {
+        uint32 const totalMs = queueWaitMs + runMs;
+        uint64 const key = (static_cast<uint64>(mapId) << 32) | partitionId;
+
+        std::lock_guard<std::mutex> guard(gPartitionSummaryLock);
+        PartitionLatencySummary& summary = gPartitionSummaryByMapPartition[key];
+        AddSample(summary.queueWaitSamples, queueWaitMs);
+        AddSample(summary.runSamples, runMs);
+        AddSample(summary.totalSamples, totalMs);
+        ++summary.windowSamples;
+
+        if (summary.lastLogMs == 0)
+            summary.lastLogMs = nowMs;
+
+        if ((nowMs - summary.lastLogMs) < kPartitionPercentileSummaryPeriodMs)
+            return;
+
+        LOG_INFO("map.partition.summary",
+            "Partition latency summary: map={} partition={} samples={} queue_wait_ms(p50/p95/p99)={}/{}/{} run_ms(p50/p95/p99)={}/{}/{} total_ms(p50/p95/p99)={}/{}/{}",
+            mapId,
+            partitionId,
+            summary.windowSamples,
+            ComputePercentile(summary.queueWaitSamples, 0.50),
+            ComputePercentile(summary.queueWaitSamples, 0.95),
+            ComputePercentile(summary.queueWaitSamples, 0.99),
+            ComputePercentile(summary.runSamples, 0.50),
+            ComputePercentile(summary.runSamples, 0.95),
+            ComputePercentile(summary.runSamples, 0.99),
+            ComputePercentile(summary.totalSamples, 0.50),
+            ComputePercentile(summary.totalSamples, 0.95),
+            ComputePercentile(summary.totalSamples, 0.99));
+
+        summary.queueWaitSamples.clear();
+        summary.runSamples.clear();
+        summary.totalSamples.clear();
+        summary.windowSamples = 0;
+        summary.lastLogMs = nowMs;
+    }
+}
 
 struct UpdateRequest
 {
@@ -88,6 +226,8 @@ public:
             ::operator delete(this);
     }
 
+    [[nodiscard]] MapUpdater::UpdateRequestType GetType() const { return _type; }
+
 protected:
     bool ValidateMagic(char const* name) const
     {
@@ -98,6 +238,8 @@ protected:
         }
         return true;
     }
+
+    [[nodiscard]] MapUpdater* GetOwner() const { return _owner; }
 
 private:
     uint64 _magic;
@@ -120,8 +262,20 @@ public:
     static void DoCall(UpdateRequest* base) noexcept
     {
         auto* self = static_cast<MapUpdateRequest*>(base);
+        auto const start = std::chrono::steady_clock::now();
         METRIC_TIMER("map_update_time_diff", METRIC_TAG("map_id", std::to_string(self->m_map.GetId())));
         self->m_map.Update(self->m_diff, self->s_diff);
+
+        int64 const elapsedMs = std::chrono::duration_cast<Milliseconds>(std::chrono::steady_clock::now() - start).count();
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        uint64 const logIntervalMs = GetSlowMapUpdateTaskLogIntervalMs();
+        if (elapsedMs >= GetSlowMapUpdateTaskThresholdMs() && ShouldEmitSlowMapUpdateLog(self->m_map, nowMs, logIntervalMs))
+        {
+            LOG_WARN("map.update.slow",
+                "Slow map update task: map={} diff={} s_diff={} elapsed_ms={}",
+                self->m_map.GetId(), self->m_diff, self->s_diff, elapsedMs);
+        }
+
         self->Finish();
     }
 
@@ -231,7 +385,13 @@ public:
     static void DoCall(UpdateRequest* base) noexcept
     {
         auto* self = static_cast<LFGUpdateRequest*>(base);
+        auto const start = std::chrono::steady_clock::now();
         sLFGMgr->Update(self->m_diff, 1);
+
+        int64 const elapsedMs = std::chrono::duration_cast<Milliseconds>(std::chrono::steady_clock::now() - start).count();
+        if (elapsedMs >= kSlowLfgUpdateMs)
+            LOG_WARN("system.slow", "Slow LFG update task: diff={} elapsed_ms={}", self->m_diff, elapsedMs);
+
         self->Finish();
     }
 
@@ -247,10 +407,10 @@ class PartitionUpdateRequest : public UpdateRequest
 {
 public:
     PartitionUpdateRequest(Map& map, MapUpdater& updater, uint32 partitionId, uint32 diff, uint32 s_diff,
-        std::function<void()> onDone)
+                std::function<void(MapUpdater::PartitionTaskTiming const&)> onDone, uint64 enqueueMs)
                 : UpdateRequest(updater, MapUpdater::UpdateRequestType::Partition, &PartitionUpdateRequest::DoCall, &PartitionUpdateRequest::DoDestroy),
           _map(map), _partitionId(partitionId), _diff(diff), _sDiff(s_diff),
-          _onDone(std::move(onDone))
+                    _onDone(std::move(onDone)), _enqueueMs(enqueueMs)
     {
     }
 
@@ -258,28 +418,53 @@ public:
     {
         auto* self = static_cast<PartitionUpdateRequest*>(base);
         auto startTime = std::chrono::steady_clock::now();
+        uint64 const startMs = GameTime::GetGameTimeMS().count();
+        MapUpdater* owner = self->GetOwner();
+        if (owner)
+            owner->OnPartitionWorkerStart();
 
         struct FinishGuard
         {
-            FinishGuard(PartitionUpdateRequest* request, std::function<void()>& onDone, uint32 mapId, uint32 partitionId,
-                std::chrono::steady_clock::time_point start)
-                : _request(request), _onDone(onDone), _mapId(mapId), _partitionId(partitionId), _start(start) {}
+            FinishGuard(PartitionUpdateRequest* request,
+                std::function<void(MapUpdater::PartitionTaskTiming const&)>& onDone,
+                uint32 mapId,
+                uint32 partitionId,
+                std::chrono::steady_clock::time_point start,
+                uint64 enqueueMs,
+                uint64 startMs,
+                MapUpdater* owner)
+                : _request(request), _onDone(onDone), _mapId(mapId), _partitionId(partitionId), _start(start), _enqueueMs(enqueueMs), _startMs(startMs), _owner(owner) {}
 
             ~FinishGuard()
             {
-                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::steady_clock::now() - _start);
-                if (elapsed.count() >= 5)
+                uint64 const endMs = GameTime::GetGameTimeMS().count();
+                int64 const elapsedMs = std::chrono::duration_cast<Milliseconds>(
+                    std::chrono::steady_clock::now() - _start).count();
+                uint32 const runMs = elapsedMs > 0 ? static_cast<uint32>(elapsedMs) : 0;
+                uint32 const queueWaitMs = (_startMs >= _enqueueMs) ? static_cast<uint32>(_startMs - _enqueueMs) : 0;
+
+                if (IsPartitionPercentileSamplingEnabled())
+                    RecordPartitionPercentileSample(_mapId, _partitionId, queueWaitMs, runMs, endMs);
+
+                if (elapsedMs >= GetSlowPartitionWorkerThresholdMs())
                 {
-                    LOG_WARN("map.partition",
-                        "PartitionUpdateWorker slow map {} partition {}: {}s",
-                        _mapId, _partitionId, elapsed.count());
+                    LOG_WARN("map.partition.slow",
+                        "Slow partition worker: map={} partition={} elapsed_ms={}",
+                        _mapId, _partitionId, elapsedMs);
                 }
 
                 try
                 {
                     if (_onDone)
-                        _onDone();
+                    {
+                        MapUpdater::PartitionTaskTiming timing;
+                        timing.enqueueMs = _enqueueMs;
+                        timing.startMs = _startMs;
+                        timing.endMs = endMs;
+                        timing.queueWaitMs = queueWaitMs;
+                        timing.runMs = runMs;
+                        _onDone(timing);
+                    }
                 }
                 catch (std::exception const& e)
                 {
@@ -294,16 +479,22 @@ public:
                         _mapId, _partitionId);
                 }
 
+                if (_owner)
+                    _owner->OnPartitionWorkerDone(runMs);
+
                 if (_request)
                     _request->Finish();
             }
 
             PartitionUpdateRequest* _request;
-            std::function<void()>& _onDone;
+            std::function<void(MapUpdater::PartitionTaskTiming const&)>& _onDone;
             uint32 _mapId;
             uint32 _partitionId;
             std::chrono::steady_clock::time_point _start;
-        } finishGuard(self, self->_onDone, self->_map.GetId(), self->_partitionId, startTime);
+            uint64 _enqueueMs;
+            uint64 _startMs;
+            MapUpdater* _owner;
+        } finishGuard(self, self->_onDone, self->_map.GetId(), self->_partitionId, startTime, self->_enqueueMs, startMs, owner);
 
         METRIC_TIMER("partition_update_time_diff",
             METRIC_TAG("map_id", std::to_string(self->_map.GetId())),
@@ -336,7 +527,8 @@ private:
     uint32 _partitionId;
     uint32 _diff;
     uint32 _sDiff;
-    std::function<void()> _onDone;
+    std::function<void(MapUpdater::PartitionTaskTiming const&)> _onDone;
+    uint64 _enqueueMs;
 };
 
 MapUpdater::MapUpdater() : pending_requests(0), pending_partition_requests(0), _cancelationToken(false)
@@ -421,11 +613,16 @@ void MapUpdater::schedule_lfg_update(uint32 diff)
 }
 
 void MapUpdater::schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff,
-    std::function<void()> onDone)
+    std::function<void(PartitionTaskTiming const&)> onDone)
 {
+    uint64 const enqueueMs = GameTime::GetGameTimeMS().count();
     pending_requests.fetch_add(1, std::memory_order_release);
     pending_partition_requests.fetch_add(1, std::memory_order_release);
-    _partitionQueue.Push(new PartitionUpdateRequest(map, *this, partitionId, diff, s_diff, std::move(onDone)));
+
+    auto* request = new PartitionUpdateRequest(map, *this, partitionId, diff, s_diff, std::move(onDone), enqueueMs);
+    if (IsPartitionQueueAgeTrackingEnabled())
+        OnPartitionRequestEnqueued(request, enqueueMs);
+    _partitionQueue.Push(request);
 }
 
 void MapUpdater::run_tasks_until(std::function<bool()> done)
@@ -485,6 +682,9 @@ void MapUpdater::run_partition_tasks_until(std::function<bool()> done)
         {
             if (request)
             {
+                if (request->GetType() == UpdateRequestType::Partition)
+                    OnPartitionRequestDequeued(request);
+
                 if (!_cancelationToken)
                     request->Execute("MapUpdater::run_partition_tasks_until");
                 request->Destroy();
@@ -497,6 +697,81 @@ void MapUpdater::run_partition_tasks_until(std::function<bool()> done)
 bool MapUpdater::activated()
 {
     return !_workerThreads.empty();
+}
+
+std::size_t MapUpdater::GetWorkerCount() const
+{
+    return _workerThreads.size();
+}
+
+MapUpdater::PartitionPoolHealth MapUpdater::GetPartitionPoolHealth() const
+{
+    PartitionPoolHealth health;
+    health.activeWorkers = _activePartitionWorkers.load(std::memory_order_acquire);
+    health.pendingJobs = static_cast<uint32>(std::max(0, pending_partition_requests.load(std::memory_order_acquire)));
+    health.maxPartitionRunMs = _maxPartitionRuntimeMs.load(std::memory_order_acquire);
+
+    if (!IsPartitionQueueAgeTrackingEnabled())
+        return health;
+
+    uint64 oldestEnqueueMs = 0;
+    {
+        std::lock_guard<std::mutex> guard(_partitionQueueStateLock);
+        if (!_partitionQueuedEnqueueTimes.empty())
+            oldestEnqueueMs = *_partitionQueuedEnqueueTimes.begin();
+    }
+
+    if (oldestEnqueueMs > 0)
+    {
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        if (nowMs >= oldestEnqueueMs)
+            health.oldestQueuedAgeMs = static_cast<uint32>(nowMs - oldestEnqueueMs);
+    }
+
+    return health;
+}
+
+void MapUpdater::OnPartitionRequestEnqueued(UpdateRequest* request, uint64 enqueueMs)
+{
+    if (!IsPartitionQueueAgeTrackingEnabled())
+        return;
+
+    std::lock_guard<std::mutex> guard(_partitionQueueStateLock);
+    _partitionEnqueueByRequest[request] = enqueueMs;
+    _partitionQueuedEnqueueTimes.insert(enqueueMs);
+}
+
+void MapUpdater::OnPartitionRequestDequeued(UpdateRequest* request)
+{
+    if (!IsPartitionQueueAgeTrackingEnabled())
+        return;
+
+    std::lock_guard<std::mutex> guard(_partitionQueueStateLock);
+    auto itr = _partitionEnqueueByRequest.find(request);
+    if (itr == _partitionEnqueueByRequest.end())
+        return;
+
+    auto range = _partitionQueuedEnqueueTimes.equal_range(itr->second);
+    if (range.first != range.second)
+        _partitionQueuedEnqueueTimes.erase(range.first);
+
+    _partitionEnqueueByRequest.erase(itr);
+}
+
+void MapUpdater::OnPartitionWorkerStart()
+{
+    _activePartitionWorkers.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void MapUpdater::OnPartitionWorkerDone(uint64 runMs)
+{
+    _activePartitionWorkers.fetch_sub(1, std::memory_order_acq_rel);
+
+    uint32 const runMs32 = static_cast<uint32>(std::min<uint64>(runMs, std::numeric_limits<uint32>::max()));
+    uint32 observed = _maxPartitionRuntimeMs.load(std::memory_order_acquire);
+    while (runMs32 > observed && !_maxPartitionRuntimeMs.compare_exchange_weak(observed, runMs32, std::memory_order_acq_rel))
+    {
+    }
 }
 
 void MapUpdater::update_finished(UpdateRequestType type)
@@ -544,6 +819,9 @@ void MapUpdater::WorkerThread()
 
         if (request)
         {
+            if (request->GetType() == UpdateRequestType::Partition)
+                OnPartitionRequestDequeued(request);
+
             if (!_cancelationToken)
             {
                 request->Execute("MapUpdater::WorkerThread");  // Execute the request

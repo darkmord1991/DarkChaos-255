@@ -14,6 +14,49 @@
 #include "WorldSessionMgr.h"
 #include "DC/HinterlandBG/hlbg_reset_worker.h"
 
+namespace
+{
+    struct HLZoneResetCollectWorker
+    {
+        uint32 areaId;
+        std::vector<ObjectGuid> creatureGuids;
+        std::vector<ObjectGuid> gameObjectGuids;
+
+        void Visit(std::unordered_map<ObjectGuid, Creature*>& creatureMap)
+        {
+            for (auto const& p : creatureMap)
+            {
+                Creature* c = p.second;
+                if (!c || !c->IsInWorld())
+                    continue;
+                if (c->GetAreaId() != areaId)
+                    continue;
+                if (c->IsPlayer() || c->IsPet() || c->IsTotem() || c->IsGuardian() || c->IsSummon())
+                    continue;
+
+                creatureGuids.push_back(c->GetGUID());
+            }
+        }
+
+        void Visit(std::unordered_map<ObjectGuid, GameObject*>& goMap)
+        {
+            for (auto const& p : goMap)
+            {
+                GameObject* go = p.second;
+                if (!go || !go->IsInWorld())
+                    continue;
+                if (go->GetAreaId() != areaId)
+                    continue;
+
+                gameObjectGuids.push_back(go->GetGUID());
+            }
+        }
+
+        template<class T>
+        void Visit(std::unordered_map<ObjectGuid, T*>&) { }
+    };
+}
+
 // Reset match state and respawn zone actors (creatures/GOs) within the zone.
 void OutdoorPvPHL::HandleReset()
 {
@@ -27,26 +70,53 @@ void OutdoorPvPHL::HandleReset()
     _memberOfflineSince.clear();
 
     {
-        uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+        uint32 const areaId = OutdoorPvPHLBattleAreaId;
         uint32 mapId = 0;
         if (Map* m = GetMap())
             mapId = m->GetId();
         uint32 totalCreatureCount = 0;
         uint32 totalGoCount = 0;
 
-        sMapMgr->DoForAllMapsWithMapId(mapId, [zoneId, &totalCreatureCount, &totalGoCount](Map* map)
+        sMapMgr->DoForAllMapsWithMapId(mapId, [&totalCreatureCount, &totalGoCount](Map* map)
         {
+            HLZoneResetCollectWorker collector{};
+            collector.areaId = OutdoorPvPHLBattleAreaId;
             map->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
             {
-                HLZoneResetWorker worker{ zoneId };
-                TypeContainerVisitor<HLZoneResetWorker, MapStoredObjectTypesContainer> visitor(worker);
+                TypeContainerVisitor<HLZoneResetCollectWorker, MapStoredObjectTypesContainer> visitor(collector);
                 visitor.Visit(objects);
-                totalCreatureCount += worker.creatureCount;
-                totalGoCount += worker.goCount;
             });
+
+            for (ObjectGuid const& guid : collector.creatureGuids)
+            {
+                Creature* c = map->GetCreature(guid);
+                if (!c || !c->IsInWorld() || c->GetAreaId() != collector.areaId)
+                    continue;
+
+                c->CombatStop(true);
+                c->GetThreatMgr().ClearAllThreat();
+                c->RemoveAllAuras();
+                float x, y, z, o;
+                c->GetRespawnPosition(x, y, z, &o);
+                c->NearTeleportTo(x, y, z, o, false);
+                if (!c->IsAlive())
+                    c->Respawn(true);
+                c->SetFullHealth();
+                ++totalCreatureCount;
+            }
+
+            for (ObjectGuid const& guid : collector.gameObjectGuids)
+            {
+                GameObject* go = map->GetGameObject(guid);
+                if (!go || !go->IsInWorld() || go->GetAreaId() != collector.areaId)
+                    continue;
+
+                go->Respawn();
+                ++totalGoCount;
+            }
         });
 
-    LOG_INFO("outdoorpvp.hl", "[HL] Reset: respawned {} creatures and {} gameobjects in zone {}", totalCreatureCount, totalGoCount, zoneId);
+    LOG_INFO("outdoorpvp.hl", "[HL] Reset: respawned {} creatures and {} gameobjects in area {}", totalCreatureCount, totalGoCount, areaId);
     }
 
     IS_ABLE_TO_SHOW_MESSAGE = false;

@@ -388,7 +388,7 @@
     {
         if (!plr)
             return false;
-        if (plr->GetZoneId() != OutdoorPvPHLBuffZones[0])
+        if (plr->GetAreaId() != OutdoorPvPHLBattleAreaId)
             return false;
         // If player already in a raid group, nothing to do
         if (Group* g = plr->GetGroup())
@@ -909,13 +909,13 @@
     namespace {
         struct HL_NpcAuraWorker
         {
-            uint32 zone; uint32 spell;
+            uint32 area; uint32 spell;
             void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
             {
                 for (auto const& pr : cmap)
                 {
                     Creature* c = pr.second;
-                    if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                    if (!c || !c->IsInWorld() || c->GetAreaId() != area)
                         continue;
                     if (c->IsPlayer() || c->IsPet() || c->IsGuardian() || c->IsSummon() || c->IsTotem())
                         continue;
@@ -928,13 +928,13 @@
 
         struct HL_EnrageWorker
         {
-            OutdoorPvPHL* self; uint32 zone; uint32 spell;
+            OutdoorPvPHL* self; uint32 area; uint32 spell;
             void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
             {
                 for (auto const& p : cmap)
                 {
                     Creature* c = p.second;
-                    if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                    if (!c || !c->IsInWorld() || c->GetAreaId() != area)
                         continue;
                     uint32 entry = c->GetEntry();
                     if (self->IsBossNpcEntry(entry))
@@ -947,13 +947,13 @@
 
         struct HL_ClearEnrageWorker
         {
-            OutdoorPvPHL* self; uint32 zone; uint32 spell;
+            OutdoorPvPHL* self; uint32 area; uint32 spell;
             void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
             {
                 for (auto const& p : cmap)
                 {
                     Creature* c = p.second;
-                    if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                    if (!c || !c->IsInWorld() || c->GetAreaId() != area)
                         continue;
                     uint32 entry = c->GetEntry();
                     if (self->IsBossNpcEntry(entry))
@@ -966,13 +966,13 @@
 
         struct HL_ClearNpcBuffWorker
         {
-            OutdoorPvPHL* self; uint32 zone; uint32 spell;
+            OutdoorPvPHL* self; uint32 area; uint32 spell;
             void Visit(std::unordered_map<ObjectGuid, Creature*>& cmap)
             {
                 for (auto const& p : cmap)
                 {
                     Creature* c = p.second;
-                    if (!c || !c->IsInWorld() || c->GetZoneId() != zone)
+                    if (!c || !c->IsInWorld() || c->GetAreaId() != area)
                         continue;
                     if (c->IsPlayer() || c->IsPet() || c->IsGuardian() || c->IsSummon() || c->IsTotem())
                         continue;
@@ -1003,11 +1003,11 @@
         {
             if (!spellId)
                 return;
-            uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+            uint32 const areaId = OutdoorPvPHLBattleAreaId;
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                HL_NpcAuraWorker worker{ zoneId, spellId };
+                HL_NpcAuraWorker worker{ areaId, spellId };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
                     m->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
@@ -1022,11 +1022,11 @@
         {
             if (_affixSpellBossEnrage == 0)
                 return;
-            uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+            uint32 const areaId = OutdoorPvPHLBattleAreaId;
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                HL_EnrageWorker worker{ this, zoneId, _affixSpellBossEnrage };
+                HL_EnrageWorker worker{ this, areaId, _affixSpellBossEnrage };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
                     m->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
@@ -1119,11 +1119,11 @@
         // Clear enrage from boss NPCs if any: iterate zone creatures
         if (_affixSpellBossEnrage)
         {
-            uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+            uint32 const areaId = OutdoorPvPHLBattleAreaId;
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                HL_ClearEnrageWorker worker{ this, zoneId, _affixSpellBossEnrage };
+                HL_ClearEnrageWorker worker{ this, areaId, _affixSpellBossEnrage };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
                     m->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
@@ -1137,11 +1137,11 @@
         // Clear NPC bad-weather buff
         if (_affixSpellBadWeatherNpcBuff)
         {
-            uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+            uint32 const areaId = OutdoorPvPHLBattleAreaId;
             if (Map* map = GetMap())
             {
                 uint32 mapId = map->GetId();
-                HL_ClearNpcBuffWorker worker{ this, zoneId, _affixSpellBadWeatherNpcBuff };
+                HL_ClearNpcBuffWorker worker{ this, areaId, _affixSpellBadWeatherNpcBuff };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
                     m->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
@@ -1198,14 +1198,14 @@
 
     void OutdoorPvPHL::ForEachPlayerInZone(std::function<void(Player*)> f) const
     {
-        uint32 const zoneId = OutdoorPvPHLBuffZones[0];
+        uint32 const areaId = OutdoorPvPHLBattleAreaId;
         // Optimized: Iterate locally tracked players (O(N_zone))
         for (ObjectGuid const& guid : _playersInHinterlands)
         {
             Map* map = GetMap();
             if (Player* p = map ? ObjectAccessor::GetPlayer(map, guid) : ObjectAccessor::FindPlayer(guid))
             {
-                if (p->GetZoneId() == zoneId && p->IsInWorld())
+                if (p->GetAreaId() == areaId && p->IsInWorld())
                     f(p);
             }
         }
