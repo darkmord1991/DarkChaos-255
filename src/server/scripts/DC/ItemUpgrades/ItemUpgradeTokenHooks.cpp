@@ -170,7 +170,7 @@ namespace DarkChaos
                     return;
 
                 // Check weekly cap
-                    if (IsAtWeeklyTokenCap(killer->GetGUID().GetCounter(), season))
+                if (IsAtWeeklyTokenCap(killer->GetGUID().GetCounter(), season))
                 {
                     ChatHandler(killer->GetSession()).PSendSysMessage("|cffff0000 Weekly token cap reached! No tokens awarded.|r");
                     return;

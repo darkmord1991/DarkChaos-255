@@ -46,6 +46,10 @@ public:
 
     void Append(std::string_view sql);
 
+    // Prevent further mutation once a transaction is enqueued/executing.
+    void Freeze() { _frozen.store(true, std::memory_order_release); }
+    [[nodiscard]] bool IsFrozen() const { return _frozen.load(std::memory_order_acquire); }
+
     template<typename... Args>
     void Append(std::string_view sql, Args&&... args)
     {
@@ -62,7 +66,10 @@ protected:
 
 private:
     std::atomic<bool> _cleanedUp{false};
+    std::atomic<bool> _frozen{false};
+    std::atomic<uint64> _ownerThreadHash{0};
     mutable std::mutex _cleanupMutex;
+    mutable std::mutex _queriesMutex;
 };
 
 template<typename T>
@@ -87,13 +94,18 @@ class AC_DATABASE_API TransactionTask : public SQLOperation
     friend class TransactionCallback;
 
 public:
-    TransactionTask(std::shared_ptr<TransactionBase> trans) : m_trans(std::move(trans)) { }
-    ~TransactionTask() override = default;
+    TransactionTask(std::shared_ptr<TransactionBase> trans)
+        : SQLOperation("TransactionTask", &TransactionTask::ExecuteThunk, &TransactionTask::DestroyThunk),
+          m_trans(std::move(trans)) { }
+    ~TransactionTask() = default;
 
 protected:
-    bool Execute() override;
+    bool Execute();
     int TryExecute();
     void CleanupTransaction();
+
+    static bool ExecuteThunk(SQLOperation* op) { return static_cast<TransactionTask*>(op)->Execute(); }
+    static void DestroyThunk(SQLOperation* op) { delete static_cast<TransactionTask*>(op); }
 
     std::shared_ptr<TransactionBase> m_trans;
     static std::mutex _deadlockLock;
@@ -102,12 +114,18 @@ protected:
 class AC_DATABASE_API TransactionWithResultTask : public TransactionTask
 {
 public:
-    TransactionWithResultTask(std::shared_ptr<TransactionBase> trans) : TransactionTask(trans) { }
+    TransactionWithResultTask(std::shared_ptr<TransactionBase> trans) : TransactionTask(std::move(trans))
+    {
+        ResetDispatch("TransactionWithResultTask", &TransactionWithResultTask::ExecuteThunk, &TransactionWithResultTask::DestroyThunk);
+    }
 
     TransactionFuture GetFuture() { return m_result.get_future(); }
 
 protected:
-    bool Execute() override;
+    bool Execute();
+
+    static bool ExecuteThunk(SQLOperation* op) { return static_cast<TransactionWithResultTask*>(op)->Execute(); }
+    static void DestroyThunk(SQLOperation* op) { delete static_cast<TransactionWithResultTask*>(op); }
 
     TransactionPromise m_result;
 };

@@ -250,13 +250,11 @@ void OPvPCapturePointHP::ChangeState()
     }
 
     Map* map = sMapMgr->FindMap(MAP_OUTLAND, 0);
-    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(m_capturePointSpawnId);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(m_capturePointSpawnId))
+        go->SetGoArtKit(artkit);
 
-    bounds = map->GetGameObjectBySpawnIdStore().equal_range(_objects[m_TowerType]);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit2);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(_objects[m_TowerType]))
+        go->SetGoArtKit(artkit2);
 
     // send world state update
     if (field)

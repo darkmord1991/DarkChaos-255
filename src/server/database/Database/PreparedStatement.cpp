@@ -23,10 +23,14 @@
 #include "QueryResult.h"
 
 PreparedStatementBase::PreparedStatementBase(uint32 index, uint8 capacity) :
+    _magic(MAGIC_ALIVE),
     m_index(index),
     statement_data(capacity) { }
 
-PreparedStatementBase::~PreparedStatementBase() { }
+PreparedStatementBase::~PreparedStatementBase()
+{
+    _magic = MAGIC_FREED;
+}
 
 //- Bind to buffer
 template<typename T>
@@ -81,9 +85,10 @@ template void PreparedStatementBase::SetValidData(const uint8 index, std::string
 template void PreparedStatementBase::SetValidData(const uint8 index, std::vector<uint8> const& value);
 
 //- Execution
-PreparedStatementTask::PreparedStatementTask(PreparedStatementBase* stmt, bool async) :
-    m_stmt(stmt),
-    m_result(nullptr)
+PreparedStatementTask::PreparedStatementTask(PreparedStatementBase* stmt, bool async)
+    : SQLOperation("PreparedStatementTask", &PreparedStatementTask::ExecuteThunk, &PreparedStatementTask::DestroyThunk),
+      m_stmt(stmt),
+      m_result(nullptr)
 {
     m_has_result = async; // If it's async, then there's a result
 
@@ -93,7 +98,19 @@ PreparedStatementTask::PreparedStatementTask(PreparedStatementBase* stmt, bool a
 
 PreparedStatementTask::~PreparedStatementTask()
 {
-    delete m_stmt;
+    if (m_stmt)
+    {
+        if (m_stmt->IsAlive())
+        {
+            delete m_stmt;
+        }
+        else
+        {
+            LOG_ERROR("sql.driver", "PreparedStatementTask::~PreparedStatementTask: Statement at {} is corrupted or already freed (magic=0x{:X}). Skipping delete.",
+                static_cast<void*>(m_stmt), m_stmt->_magic);
+        }
+        m_stmt = nullptr;
+    }
 
     if (m_has_result && m_result)
         delete m_result;
@@ -101,6 +118,15 @@ PreparedStatementTask::~PreparedStatementTask()
 
 bool PreparedStatementTask::Execute()
 {
+    // Validate statement before execution
+    if (!m_stmt)
+    {
+        LOG_ERROR("sql.driver", "PreparedStatementTask::Execute: NULL prepared statement in task - cannot execute");
+        if (m_has_result)
+            m_result->set_value(PreparedQueryResult(nullptr));
+        return false;
+    }
+
     if (m_has_result)
     {
         PreparedResultSet* result = m_conn->Query(m_stmt);

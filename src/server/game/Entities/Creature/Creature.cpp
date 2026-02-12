@@ -324,19 +324,29 @@ void Creature::AddToWorld()
         GetMap()->RegisterPartitionedObject(this);
         if (sLayerMgr->IsNPCLayeringEnabled())
         {
-            uint32 zoneId = GetMap()->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
-            uint32 layerId = 0;
-
-            if (_forcedLayerId != 0)
+            Map* map = GetMap();
+            if (map && GetGUID() && GetGUID().GetCounter() != 0)
             {
-                layerId = _forcedLayerId;
-            }
-            else if (Player* ownerPlayer = GetCharmerOrOwnerPlayerOrPlayerItself())
-            {
-                layerId = sLayerMgr->GetPlayerLayer(GetMapId(), ownerPlayer->GetGUID());
-            }
+                uint32 zoneId = map->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
+                uint32 layerId = 0;
 
-            sLayerMgr->AssignNPCToLayer(GetMapId(), zoneId, GetGUID(), layerId);
+                if (_forcedLayerId != 0)
+                {
+                    layerId = _forcedLayerId;
+                }
+                else if (Player* ownerPlayer = GetCharmerOrOwnerPlayerOrPlayerItself())
+                {
+                    layerId = sLayerMgr->GetPlayerLayer(GetMapId(), ownerPlayer->GetGUID());
+                }
+
+                sLayerMgr->AssignNPCToLayer(GetMapId(), zoneId, GetGUID(), layerId);
+            }
+            else
+            {
+                LOG_ERROR("maps", "Creature::AddToWorld - invalid state for NPC layer assign: map={} guid={}",
+                    (map ? "valid" : "null"),
+                    (GetGUID() ? GetGUID().ToString() : "invalid"));
+            }
         }
         if (m_spawnId)
         {

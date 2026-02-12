@@ -17,7 +17,9 @@
 
 #include "DatabaseWorker.h"
 #include "PCQueue.h"
+#include "Log.h"
 #include "SQLOperation.h"
+#include <cstdint>
 
 DatabaseWorker::DatabaseWorker(ProducerConsumerQueue<SQLOperation*>* newQueue, MySQLConnection* connection)
 {
@@ -45,9 +47,23 @@ void DatabaseWorker::WorkerThread()
         if (!operation)
             return;
 
+        std::uintptr_t const opAddr = reinterpret_cast<std::uintptr_t>(operation);
+        if (opAddr < 0x10000u)
+        {
+            LOG_FATAL("sql.driver", "DatabaseWorker::WorkerThread: popped invalid SQLOperation* 0x{:X} - exiting worker thread to avoid crash", opAddr);
+            return;
+        }
+
+        if (!operation->IsAlive())
+        {
+            LOG_ERROR("sql.driver", "DatabaseWorker::WorkerThread: SQLOperation '{}' at 0x{:X} is not alive (magic=0x{:08X}) - destroying without executing",
+                operation->GetDebugName(), opAddr, operation->GetDebugMagic());
+            operation->Destroy();
+            continue;
+        }
+
         operation->SetConnection(_connection);
         operation->call();
-
-        delete operation;
+        operation->Destroy();
     }
 }

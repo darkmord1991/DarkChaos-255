@@ -86,13 +86,11 @@ void OPvPCapturePointEP_EWT::ChangeState()
     }
 
     Map* map = sMapMgr->FindMap(0, 0);
-    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(m_capturePointSpawnId);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(m_capturePointSpawnId))
+        go->SetGoArtKit(artkit);
 
-    bounds = map->GetGameObjectBySpawnIdStore().equal_range(_objects[EP_EWT_FLAGS]);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(_objects[EP_EWT_FLAGS]))
+        go->SetGoArtKit(artkit);
 
     UpdateTowerState();
 
@@ -231,13 +229,11 @@ void OPvPCapturePointEP_NPT::ChangeState()
     }
 
     Map* map = sMapMgr->FindMap(0, 0);
-    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(m_capturePointSpawnId);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(m_capturePointSpawnId))
+        go->SetGoArtKit(artkit);
 
-    bounds = map->GetGameObjectBySpawnIdStore().equal_range(_objects[EP_NPT_FLAGS]);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(_objects[EP_NPT_FLAGS]))
+        go->SetGoArtKit(artkit);
 
     UpdateTowerState();
 
@@ -303,9 +299,8 @@ void OPvPCapturePointEP_NPT::SummonGO(TeamId teamId)
         DelObject(EP_NPT_BUFF);
         AddObject(EP_NPT_BUFF, EP_NPT_LordaeronShrine.entry, EP_NPT_LordaeronShrine.map, EP_NPT_LordaeronShrine.x, EP_NPT_LordaeronShrine.y, EP_NPT_LordaeronShrine.z, EP_NPT_LordaeronShrine.o, EP_NPT_LordaeronShrine.rot0, EP_NPT_LordaeronShrine.rot1, EP_NPT_LordaeronShrine.rot2, EP_NPT_LordaeronShrine.rot3);
         Map* map = sMapMgr->FindMap(0, 0);
-        auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(_objects[EP_NPT_BUFF]);
-        for (auto itr = bounds.first; itr != bounds.second; ++itr)
-            if (GameObject* go = itr->second)
+        for (GameObject* go : map->GetGameObjectsBySpawnId(_objects[EP_NPT_BUFF]))
+            if (go)
                 go->SetUInt32Value(GAMEOBJECT_FACTION, (teamId == TEAM_ALLIANCE ? 84 : 83));
     }
 }
@@ -366,13 +361,11 @@ void OPvPCapturePointEP_CGT::ChangeState()
     }
 
     Map* map = sMapMgr->FindMap(0, 0);
-    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(m_capturePointSpawnId);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(m_capturePointSpawnId))
+        go->SetGoArtKit(artkit);
 
-    bounds = map->GetGameObjectBySpawnIdStore().equal_range(_objects[EP_CGT_FLAGS]);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(_objects[EP_CGT_FLAGS]))
+        go->SetGoArtKit(artkit);
 
     UpdateTowerState();
 
@@ -506,13 +499,11 @@ void OPvPCapturePointEP_PWT::ChangeState()
     }
 
     Map* map = sMapMgr->FindMap(0, 0);
-    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(m_capturePointSpawnId);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(m_capturePointSpawnId))
+        go->SetGoArtKit(artkit);
 
-    bounds = map->GetGameObjectBySpawnIdStore().equal_range(_objects[EP_PWT_FLAGS]);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(_objects[EP_PWT_FLAGS]))
+        go->SetGoArtKit(artkit);
 
     UpdateTowerState();
 

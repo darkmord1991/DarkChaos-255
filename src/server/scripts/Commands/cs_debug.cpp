@@ -1390,20 +1390,23 @@ public:
 
     static void HandleDebugObjectCountMap(ChatHandler* handler, Map* map)
     {
-        handler->PSendSysMessage("Map Id: {} Name: '{}' Instance Id: {} Creatures: {} GameObjects: {} Update Objects: {}",
-                map->GetId(), map->GetMapName(), map->GetInstanceId(),
-                uint64(map->GetObjectsStore().Size<Creature>()),
-                uint64(map->GetObjectsStore().Size<GameObject>()),
-                uint64(map->GetUpdatableObjectsCount()));
+        map->VisitAllObjectStores([&](MapStoredObjectTypesContainer& store)
+        {
+            handler->PSendSysMessage("Map Id: {} Name: '{}' Instance Id: {} Creatures: {} GameObjects: {} Update Objects: {}",
+                    map->GetId(), map->GetMapName(), map->GetInstanceId(),
+                    uint64(store.Size<Creature>()),
+                    uint64(store.Size<GameObject>()),
+                    uint64(map->GetUpdatableObjectsCount()));
 
-        CreatureCountWorker worker;
-        TypeContainerVisitor<CreatureCountWorker, MapStoredObjectTypesContainer> visitor(worker);
-        visitor.Visit(map->GetObjectsStore());
+            CreatureCountWorker worker;
+            TypeContainerVisitor<CreatureCountWorker, MapStoredObjectTypesContainer> visitor(worker);
+            visitor.Visit(store);
 
-        handler->PSendSysMessage("Top Creatures count:");
+            handler->PSendSysMessage("Top Creatures count:");
 
-        for (auto&& p : worker.GetTopCreatureCount(5))
-            handler->PSendSysMessage("Entry: {} Count: {}", p.first, p.second);
+            for (auto&& p : worker.GetTopCreatureCount(5))
+                handler->PSendSysMessage("Entry: {} Count: {}", p.first, p.second);
+        });
     }
 
     static bool HandleDebugDummyCommand(ChatHandler* handler)

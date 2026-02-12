@@ -75,6 +75,46 @@
 #include "World.h"
 #include "WorldPacket.h"
 #include <cmath>
+#include <mutex>
+#include <unordered_set>
+
+namespace
+{
+std::mutex g_liveUnitPointersLock;
+std::unordered_set<Unit const*> g_liveUnitPointers;
+
+void RegisterLiveUnitPointer(Unit const* unit)
+{
+    if (!unit)
+        return;
+
+    std::lock_guard<std::mutex> lock(g_liveUnitPointersLock);
+    g_liveUnitPointers.insert(unit);
+}
+
+void UnregisterLiveUnitPointer(Unit const* unit)
+{
+    if (!unit)
+        return;
+
+    std::lock_guard<std::mutex> lock(g_liveUnitPointersLock);
+    g_liveUnitPointers.erase(unit);
+}
+
+bool IsLiveUnitPointer(Unit const* unit)
+{
+    if (!unit)
+        return false;
+
+    std::lock_guard<std::mutex> lock(g_liveUnitPointersLock);
+    return g_liveUnitPointers.find(unit) != g_liveUnitPointers.end();
+}
+}
+
+bool Unit::IsUnitPointerLive(Unit const* unit)
+{
+    return IsLiveUnitPointer(unit);
+}
 
 float baseMoveSpeed[MAX_MOVE_TYPE] =
 {
@@ -337,12 +377,15 @@ Unit::Unit() : WorldObject(),
     _lastExtraAttackSpell = 0;
 
     UpdateMoveSplineSnapshot();
+    RegisterLiveUnitPointer(this);
 }
 
 ////////////////////////////////////////////////////////////
 // Methods of class Unit
 Unit::~Unit()
 {
+    UnregisterLiveUnitPointer(this);
+
     // set current spells as deletable
     for (uint8 i = 0; i < CURRENT_MAX_SPELL; ++i)
         if (m_currentSpells[i])
@@ -877,7 +920,9 @@ Unit* Unit::getAttackerForHelper() const
     {
         std::lock_guard<std::recursive_mutex> lock(_attackersLock);
         if (!m_attackers.empty())
-            return *(m_attackers.begin());
+            for (Unit* attacker : m_attackers)
+                if (IsLiveUnitPointer(attacker))
+                    return attacker;
     }
 
     return nullptr;
@@ -5183,6 +5228,14 @@ void Unit::RemoveOwnedAuras(std::function<bool(Aura const*)> const& check)
     std::lock_guard<std::recursive_mutex> lock(_auraLock);
     for (AuraMap::iterator iter = m_ownedAuras.begin(); iter != m_ownedAuras.end();)
     {
+        // Defensive: Skip NULL aura pointers (heap corruption from data races can corrupt std::multimap nodes)
+        if (!iter->second)
+        {
+            LOG_ERROR("entities.unit", "RemoveOwnedAuras: NULL aura pointer in m_ownedAuras for spellId {}, skipping.", iter->first);
+            ++iter;
+            continue;
+        }
+
         if (check(iter->second))
         {
             RemoveOwnedAura(iter);
@@ -5197,6 +5250,14 @@ void Unit::RemoveAppliedAuras(std::function<bool(AuraApplication const*)> const&
     std::lock_guard<std::recursive_mutex> lock(_auraLock);
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
     {
+        // Defensive: Skip NULL AuraApplication pointers
+        if (!iter->second)
+        {
+            LOG_ERROR("entities.unit", "RemoveAppliedAuras: NULL AuraApplication pointer in m_appliedAuras for spellId {}, skipping.", iter->first);
+            ++iter;
+            continue;
+        }
+
         if (check(iter->second))
         {
             RemoveAura(iter);
@@ -10978,9 +11039,13 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
         std::lock_guard<std::recursive_mutex> lock(_controlledLock);
         for (ControlSet::iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
         {
-            if ((*itr)->ToCreature() && (*itr)->GetVictim() == victim)
+            Unit* controlled = *itr;
+            if (!IsLiveUnitPointer(controlled))
+                continue;
+
+            if (controlled->ToCreature() && controlled->GetVictim() == victim)
             {
-                controlledCreatureWithSameVictim = (*itr)->ToCreature();
+                controlledCreatureWithSameVictim = controlled->ToCreature();
                 break;
             }
         }
@@ -11089,7 +11154,13 @@ void Unit::CombatStopWithPets(bool includingCast)
 
     std::lock_guard<std::recursive_mutex> lock(_controlledLock);
     for (ControlSet::const_iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
-        (*itr)->CombatStop(includingCast);
+    {
+        Unit* controlled = *itr;
+        if (!IsLiveUnitPointer(controlled))
+            continue;
+
+        controlled->CombatStop(includingCast);
+    }
 }
 
 bool Unit::isAttackingPlayer() const
@@ -11101,8 +11172,14 @@ bool Unit::isAttackingPlayer() const
         std::lock_guard<std::recursive_mutex> lock(_controlledLock);
         if (!m_Controlled.empty())
             for (ControlSet::const_iterator itr = m_Controlled.begin(); itr != m_Controlled.end(); ++itr)
-                if ((*itr)->isAttackingPlayer())
+            {
+                Unit* controlled = *itr;
+                if (!IsLiveUnitPointer(controlled))
+                    continue;
+
+                if (controlled->isAttackingPlayer())
                     return true;
+            }
     }
 
     for (uint8 i = 0; i < MAX_SUMMON_SLOT; ++i)
@@ -11533,6 +11610,9 @@ void Unit::GetAllMinionsByEntry(std::list<Creature*>& Minions, uint32 entry)
     {
         Unit* unit = *itr;
         ++itr;
+        if (!IsLiveUnitPointer(unit))
+            continue;
+
         if (unit->GetEntry() == entry && unit->IsCreature()
                 && unit->ToCreature()->IsSummon()) // minion, actually
             Minions.push_back(unit->ToCreature());
@@ -11546,6 +11626,9 @@ void Unit::RemoveAllMinionsByEntry(uint32 entry)
     {
         Unit* unit = *itr;
         ++itr;
+        if (!IsLiveUnitPointer(unit))
+            continue;
+
         if (unit->GetEntry() == entry && unit->IsCreature()
                 && unit->ToCreature()->IsSummon()) // minion, actually
             unit->ToTempSummon()->UnSummon();
@@ -11786,6 +11869,13 @@ void Unit::RemoveAllControlled(bool onDeath /*= false*/)
     {
         Unit* target = *m_Controlled.begin();
         m_Controlled.erase(m_Controlled.begin());
+
+        if (!IsLiveUnitPointer(target))
+        {
+            LOG_ERROR("entities.unit", "Unit {} skipping stale controlled pointer while releasing controlled units", GetGUID().ToString());
+            continue;
+        }
+
         if (target->GetCharmerGUID() == GetGUID())
         {
             target->RemoveCharmAuras();
@@ -15464,12 +15554,18 @@ Unit* Creature::SelectVictim()
                 {
                     std::lock_guard<std::recursive_mutex> lock(owner->_controlledLock);
                     for (ControlSet::const_iterator itr = owner->m_Controlled.begin(); itr != owner->m_Controlled.end(); ++itr)
-                        if ((*itr)->IsInCombat())
+                    {
+                        Unit* controlled = *itr;
+                        if (!IsLiveUnitPointer(controlled))
+                            continue;
+
+                        if (controlled->IsInCombat())
                         {
-                            target = (*itr)->getAttackerForHelper();
+                            target = controlled->getAttackerForHelper();
                             if (target)
                                 break;
                         }
+                    }
                 }
             }
     }
@@ -15487,8 +15583,14 @@ Unit* Creature::SelectVictim()
     // Note: creature does not have targeted movement generator but has attacker in this case
     AttackerSet attackers = getAttackers();
     for (AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end(); ++itr)
-        if ((*itr) && CanCreatureAttack(*itr) && !(*itr)->IsPlayer() && !(*itr)->ToCreature()->HasUnitTypeMask(UNIT_MASK_CONTROLLABLE_GUARDIAN))
+    {
+        Unit* attacker = *itr;
+        if (!IsLiveUnitPointer(attacker))
+            continue;
+
+        if (CanCreatureAttack(attacker) && !attacker->IsPlayer() && !attacker->ToCreature()->HasUnitTypeMask(UNIT_MASK_CONTROLLABLE_GUARDIAN))
             return nullptr;
+    }
 
     if (GetVehicle())
         return nullptr;
@@ -17809,9 +17911,11 @@ void Unit::ClearAllReactives()
 
     if (HasAuraState(AURA_STATE_DEFENSE))
         ModifyAuraState(AURA_STATE_DEFENSE, false);
+
     if (IsClass(CLASS_HUNTER, CLASS_CONTEXT_ABILITY_REACTIVE) && HasAuraState(AURA_STATE_HUNTER_PARRY))
         ModifyAuraState(AURA_STATE_HUNTER_PARRY, false);
-    if (IsClass(CLASS_WARRIOR, CLASS_CONTEXT_ABILITY_REACTIVE) && IsPlayer())
+
+    if (IsClass(CLASS_WARRIOR, CLASS_CONTEXT_ABILITY_REACTIVE))
         ClearComboPoints();
 }
 

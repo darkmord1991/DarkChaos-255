@@ -29,8 +29,11 @@ public:
     BasicStatementTask(std::string_view sql, bool async = false);
     ~BasicStatementTask();
 
-    bool Execute() override;
+    bool Execute();
     QueryResultFuture GetFuture() const { return m_result->get_future(); }
+
+    static bool ExecuteThunk(SQLOperation* op) { return static_cast<BasicStatementTask*>(op)->Execute(); }
+    static void DestroyThunk(SQLOperation* op) { delete static_cast<BasicStatementTask*>(op); }
 
 private:
     std::string m_sql; //- Raw query to be executed

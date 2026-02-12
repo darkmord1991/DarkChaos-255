@@ -54,6 +54,12 @@ namespace
 template <class T>
 void GridObjectLoader::AddObjectHelper(Map* map, T* obj)
 {
+    if (!map || !obj)
+    {
+        LOG_ERROR("maps", "GridObjectLoader::AddObjectHelper called with null map or obj");
+        return;
+    }
+
     CellCoord cellCoord = Acore::ComputeCellCoord(obj->GetPositionX(), obj->GetPositionY());
     Cell cell(cellCoord);
 
@@ -211,7 +217,13 @@ void GridObjectLoader::LoadCreaturesImpl(CellGuidSet const& guid_set, Map* map, 
 
         if (!obj->IsMoveInLineOfSightDisabled() && obj->GetDefaultMovementType() == IDLE_MOTION_TYPE && !obj->isNeedNotify(NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION))
         {
-            if (obj->IsAlive() && !obj->HasUnitState(UNIT_STATE_SIGHTLESS) && obj->HasReactState(REACT_AGGRESSIVE) && !obj->IsImmuneToNPC())
+            // Avoid running grid scans while inside a partition worker update.
+            // This can iterate containers that are being mutated as the partition updates progress.
+            if (Map* m = obj->FindMap(); m && m->IsPartitioned() && m->GetActivePartitionContext() && !m->IsProcessingPartitionRelays())
+            {
+                // Defer to the normal update/visibility flow instead.
+            }
+            else if (obj->IsAlive() && !obj->HasUnitState(UNIT_STATE_SIGHTLESS) && obj->HasReactState(REACT_AGGRESSIVE) && !obj->IsImmuneToNPC())
             {
                 Acore::AIRelocationNotifier notifier(*obj);
                 Cell::VisitObjects(obj, notifier, 60.f);

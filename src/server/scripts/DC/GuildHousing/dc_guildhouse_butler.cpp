@@ -1195,9 +1195,9 @@ public:
                 // Use the per-map spawnId store, since ObjectGuid(entry, spawnId) can miss loaded objects.
                 Creature* creature = nullptr;
                 {
-                    auto bounds = map->GetCreatureBySpawnIdStore().equal_range(lowguid);
-                    if (bounds.first != bounds.second)
-                        creature = bounds.first->second;
+                    auto creatures = map->GetCreaturesBySpawnId(lowguid);
+                    if (!creatures.empty())
+                        creature = creatures.front();
                 }
 
                 if (creature)
@@ -1233,9 +1233,9 @@ public:
 
                 GameObject* gobject = nullptr;
                 {
-                    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(lowguid);
-                    if (bounds.first != bounds.second)
-                        gobject = bounds.first->second;
+                    auto gameObjects = map->GetGameObjectsBySpawnId(lowguid);
+                    if (!gameObjects.empty())
+                        gobject = gameObjects.front();
                 }
 
                 if (gobject)

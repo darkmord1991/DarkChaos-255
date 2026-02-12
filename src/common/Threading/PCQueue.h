@@ -23,6 +23,8 @@
 #include <queue>
 #include <atomic>
 #include <mutex>
+#include <cstdint>
+#include <type_traits>
 
 template <typename T>
 class ProducerConsumerQueue
@@ -131,11 +133,39 @@ private:
     template<typename E = T>
     typename std::enable_if<std::is_pointer<E>::value>::type DeleteQueuedObject(E& obj)
     {
-        delete obj;
+        DeletePointer(obj, 0);
+        obj = nullptr;
     }
 
     template<typename E = T>
     typename std::enable_if<!std::is_pointer<E>::value>::type DeleteQueuedObject(E const& /*obj*/) { }
+
+    // Prefer a custom Destroy() method if present (useful for non-virtual base pointers).
+    template <typename P>
+    static auto DeletePointer(P ptr, int) -> decltype(ptr->Destroy(), void())
+    {
+        if (!ptr)
+            return;
+
+        // Avoid crashing on obviously invalid pointers during shutdown/cancel.
+        if (reinterpret_cast<std::uintptr_t>(ptr) < 0x10000u)
+            return;
+
+        ptr->Destroy();
+    }
+
+    template <typename P>
+    static void DeletePointer(P ptr, long)
+    {
+        if (!ptr)
+            return;
+
+        // Avoid crashing on obviously invalid pointers during shutdown/cancel.
+        if (reinterpret_cast<std::uintptr_t>(ptr) < 0x10000u)
+            return;
+
+        delete ptr;
+    }
 };
 
 #endif

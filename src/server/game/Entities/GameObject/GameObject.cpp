@@ -185,24 +185,34 @@ void GameObject::AddToWorld()
 
         if (sLayerMgr->IsGOLayeringEnabled())
         {
-            uint32 zoneId = GetMap()->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
-            uint32 layerId = 0;
+            Map* map = GetMap();
+            if (map && GetGUID() && GetGUID().GetCounter() != 0)
+            {
+                uint32 zoneId = map->GetZoneId(GetPhaseMask(), GetPositionX(), GetPositionY(), GetPositionZ());
+                uint32 layerId = 0;
 
-            if (_forcedLayerId != 0)
-            {
-                layerId = _forcedLayerId;
-            }
-            // Player-owned GOs follow the owner's layer
-            else if (Player* ownerPlayer = ObjectAccessor::FindPlayer(GetOwnerGUID()))
-            {
-                layerId = sLayerMgr->GetPlayerLayer(GetMapId(), ownerPlayer->GetGUID());
+                if (_forcedLayerId != 0)
+                {
+                    layerId = _forcedLayerId;
+                }
+                // Player-owned GOs follow the owner's layer
+                else if (Player* ownerPlayer = ObjectAccessor::FindPlayer(GetOwnerGUID()))
+                {
+                    layerId = sLayerMgr->GetPlayerLayer(GetMapId(), ownerPlayer->GetGUID());
+                }
+                else
+                {
+                    // Keep base spawns on layer 0; clones handle other layers.
+                    layerId = 0;
+                }
+                sLayerMgr->AssignGOToLayer(GetMapId(), zoneId, GetGUID(), layerId);
             }
             else
             {
-                // Keep base spawns on layer 0; clones handle other layers.
-                layerId = 0;
+                LOG_ERROR("maps", "GameObject::AddToWorld - invalid state: map={} guid={}",
+                    (map ? "valid" : "null"),
+                    (GetGUID() ? GetGUID().ToString() : "invalid"));
             }
-            sLayerMgr->AssignGOToLayer(GetMapId(), zoneId, GetGUID(), layerId);
         }
 
         WorldObject::AddToWorld();
@@ -494,23 +504,26 @@ void GameObject::Update(uint32 diff)
         }
     }
 
-    for (std::unordered_map<ObjectGuid, int32>::iterator itr = m_SkillupList.begin(); itr != m_SkillupList.end();)
     {
-        if (itr->second > 0)
+        std::lock_guard<std::mutex> guard(m_SkillupListLock);
+        for (auto itr = m_SkillupList.begin(); itr != m_SkillupList.end();)
         {
-            if (itr->second > static_cast<int32>(diff))
+            if (itr->second > 0)
             {
-                itr->second -= static_cast<int32>(diff);
-                ++itr;
+                if (itr->second > static_cast<int32>(diff))
+                {
+                    itr->second -= static_cast<int32>(diff);
+                    ++itr;
+                }
+                else
+                {
+                    itr = m_SkillupList.erase(itr);
+                }
             }
             else
             {
-                itr = m_SkillupList.erase(itr);
+                ++itr;
             }
-        }
-        else
-        {
-            ++itr;
         }
     }
 
@@ -656,7 +669,10 @@ void GameObject::Update(uint32 diff)
                         }
 
                         m_respawnTime = 0;
-                        m_SkillupList.clear();
+                        {
+                            std::lock_guard<std::mutex> guard(m_SkillupListLock);
+                            m_SkillupList.clear();
+                        }
                         m_usetimes = 0;
 
                         switch (GetGoType())
@@ -1264,6 +1280,11 @@ bool GameObject::IsDestructibleBuilding() const
 
 Unit* GameObject::GetOwner() const
 {
+    // Transport or other GOs might not have a map assigned yet (e.g., during initialization)
+    // FindMap() is safe - it returns nullptr without asserting
+    if (!FindMap())
+        return nullptr;
+
     return ObjectAccessor::GetUnit(*this, GetOwnerGUID());
 }
 
@@ -3108,20 +3129,14 @@ SpellInfo const* GameObject::GetSpellForLock(Player const* player) const
 void GameObject::AddToSkillupList(ObjectGuid const& playerGuid)
 {
     int32 timer = GetMap()->IsDungeon() ? -1 : 10 * MINUTE * IN_MILLISECONDS;
+    std::lock_guard<std::mutex> guard(m_SkillupListLock);
     m_SkillupList[playerGuid] = timer;
 }
 
 bool GameObject::IsInSkillupList(ObjectGuid const& playerGuid) const
 {
-    for (auto const& itr : m_SkillupList)
-    {
-        if (itr.first == playerGuid)
-        {
-            return true;
-        }
-    }
-
-    return false;
+    std::lock_guard<std::mutex> guard(m_SkillupListLock);
+    return m_SkillupList.find(playerGuid) != m_SkillupList.end();
 }
 
 std::string GameObject::GetDebugInfo() const

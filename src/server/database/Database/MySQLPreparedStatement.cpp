@@ -21,6 +21,51 @@
 #include "MySQLHacks.h"
 #include "PreparedStatement.h"
 
+#include <cstdint>
+
+namespace {
+    /// Detect obviously-corrupted heap pointers (non-null but in the
+    /// unmapped low-address range below 64 KB).  Calling delete/delete[]
+    /// on such a pointer corrupts the jemalloc arena and cascades into
+    /// a SIGSEGV somewhere else (often in a subsequent memcpy or new).
+    inline bool IsSuspiciousPointer(const void* p)
+    {
+        if (!p) return false;  // nullptr is always safe for delete
+        return reinterpret_cast<std::uintptr_t>(p) < 0x10000;
+    }
+
+    /// Safe replacement for  delete[] static_cast<char*>(buffer)  that
+    /// detects corruption and zeros the field instead of crashing.
+    inline void SafeDeleteCharArray(void*& buffer)
+    {
+        if (IsSuspiciousPointer(buffer))
+        {
+            LOG_ERROR("sql.sql", "MySQLPreparedStatement: corrupt buffer pointer "
+                "0x{:X} - zeroing instead of freeing",
+                reinterpret_cast<std::uintptr_t>(buffer));
+            buffer = nullptr;
+            return;
+        }
+        delete[] static_cast<char*>(buffer);
+        buffer = nullptr;
+    }
+
+    /// Safe replacement for  delete length  (unsigned long*).
+    inline void SafeDeleteLength(unsigned long*& length)
+    {
+        if (IsSuspiciousPointer(length))
+        {
+            LOG_ERROR("sql.sql", "MySQLPreparedStatement: corrupt length pointer "
+                "0x{:X} - zeroing instead of freeing",
+                reinterpret_cast<std::uintptr_t>(length));
+            length = nullptr;
+            return;
+        }
+        delete length;
+        length = nullptr;
+    }
+} // anonymous namespace
+
 template<typename T>
 struct MySQLType { };
 
@@ -67,6 +112,25 @@ MySQLPreparedStatement::~MySQLPreparedStatement()
 
 void MySQLPreparedStatement::BindParameters(PreparedStatementBase* stmt)
 {
+    if (!stmt || !stmt->IsAlive())
+    {
+        LOG_ERROR("sql.driver", "MySQLPreparedStatement::BindParameters: Invalid/corrupted statement (magic=0x{:08X}) - skipping bind",
+            stmt ? stmt->GetDebugMagic() : 0);
+        return;
+    }
+
+    // Guard: if the MYSQL_BIND array is null or at an impossible address
+    // (heap corruption from data-race damage), skip binding entirely.
+    if (!m_bind || IsSuspiciousPointer(m_bind))
+    {
+        LOG_ERROR("sql.driver", "MySQLPreparedStatement::BindParameters: m_bind is {} "
+            "(0x{:X}) for statement {} - skipping bind to prevent crash",
+            m_bind ? "corrupt" : "null",
+            reinterpret_cast<std::uintptr_t>(m_bind),
+            stmt->GetIndex());
+        return;
+    }
+
     m_stmt = stmt;     // Cross reference them for debug output
 
     uint8 pos = 0;
@@ -90,10 +154,8 @@ void MySQLPreparedStatement::ClearParameters()
 {
     for (uint32 i=0; i < m_paramCount; ++i)
     {
-        delete m_bind[i].length;
-        m_bind[i].length = nullptr;
-        delete[] (char*)m_bind[i].buffer;
-        m_bind[i].buffer = nullptr;
+        SafeDeleteLength(m_bind[i].length);
+        SafeDeleteCharArray(m_bind[i].buffer);
         m_paramsSet[i] = false;
     }
 }
@@ -123,7 +185,7 @@ void MySQLPreparedStatement::SetParameter(const uint8 index, T value)
     MYSQL_BIND* param = &m_bind[index];
     uint32 len = uint32(sizeof(T));
     param->buffer_type = MySQLType<T>::value;
-    delete[] static_cast<char*>(param->buffer);
+    SafeDeleteCharArray(param->buffer);
     param->buffer = new char[len];
     param->buffer_length = 0;
     param->is_null_value = 0;
@@ -144,12 +206,10 @@ void MySQLPreparedStatement::SetParameter(const uint8 index, std::nullptr_t /*va
     m_paramsSet[index] = true;
     MYSQL_BIND* param = &m_bind[index];
     param->buffer_type = MYSQL_TYPE_NULL;
-    delete[] static_cast<char*>(param->buffer);
-    param->buffer = nullptr;
+    SafeDeleteCharArray(param->buffer);
     param->buffer_length = 0;
     param->is_null_value = 1;
-    delete param->length;
-    param->length = nullptr;
+    SafeDeleteLength(param->length);
 }
 
 void MySQLPreparedStatement::SetParameter(uint8 index, std::string const& value)
@@ -158,15 +218,40 @@ void MySQLPreparedStatement::SetParameter(uint8 index, std::string const& value)
     m_paramsSet[index] = true;
     MYSQL_BIND* param = &m_bind[index];
     uint32 len = uint32(value.size());
+
+    // Sanity-check: a single prepared-statement string parameter should
+    // never exceed 64 KB.  A larger value means the std::string (or the
+    // variant that holds it) has been heap-corrupted.
+    if (len > 0xFFFF)
+    {
+        LOG_ERROR("sql.sql", "SetParameter(string): Suspicious length {} at index {} "
+            "for statement {} - clamping to 0",
+            len, index, m_stmt ? m_stmt->GetIndex() : 0u);
+        len = 0;
+    }
+
     param->buffer_type = MYSQL_TYPE_VAR_STRING;
-    delete[] static_cast<char*>(param->buffer);
-    param->buffer = new char[len];
+    SafeDeleteCharArray(param->buffer);
+    param->buffer = new char[len + 1]; // +1 avoids 0-byte alloc edge case
     param->buffer_length = len;
     param->is_null_value = 0;
-    delete param->length;
+    SafeDeleteLength(param->length);
     param->length = new unsigned long(len);
 
-    memcpy(param->buffer, value.c_str(), len);
+    if (len > 0)
+    {
+        const char* src = value.c_str();
+        if (IsSuspiciousPointer(src))
+        {
+            LOG_ERROR("sql.sql", "SetParameter(string): Corrupt c_str() pointer "
+                "0x{:X} at index {} - skipping memcpy to prevent SIGSEGV",
+                reinterpret_cast<std::uintptr_t>(src), index);
+        }
+        else
+        {
+            memcpy(param->buffer, src, len);
+        }
+    }
 }
 
 void MySQLPreparedStatement::SetParameter(uint8 index, std::vector<uint8> const& value)
@@ -175,15 +260,37 @@ void MySQLPreparedStatement::SetParameter(uint8 index, std::vector<uint8> const&
     m_paramsSet[index] = true;
     MYSQL_BIND* param = &m_bind[index];
     uint32 len = uint32(value.size());
+
+    if (len > 0xFFFFFF) // 16 MB sanity limit for BLOB params
+    {
+        LOG_ERROR("sql.sql", "SetParameter(blob): Suspicious length {} at index {} "
+            "for statement {} - clamping to 0",
+            len, index, m_stmt ? m_stmt->GetIndex() : 0u);
+        len = 0;
+    }
+
     param->buffer_type = MYSQL_TYPE_BLOB;
-    delete[] static_cast<char*>(param->buffer);
-    param->buffer = new char[len];
+    SafeDeleteCharArray(param->buffer);
+    param->buffer = new char[len + 1]; // +1 avoids 0-byte alloc edge case
     param->buffer_length = len;
     param->is_null_value = 0;
-    delete param->length;
+    SafeDeleteLength(param->length);
     param->length = new unsigned long(len);
 
-    memcpy(param->buffer, value.data(), len);
+    if (len > 0)
+    {
+        const uint8* src = value.data();
+        if (IsSuspiciousPointer(src))
+        {
+            LOG_ERROR("sql.sql", "SetParameter(blob): Corrupt data() pointer "
+                "0x{:X} at index {} - skipping memcpy",
+                reinterpret_cast<std::uintptr_t>(src), index);
+        }
+        else
+        {
+            memcpy(param->buffer, src, len);
+        }
+    }
 }
 
 std::string MySQLPreparedStatement::getQueryString() const

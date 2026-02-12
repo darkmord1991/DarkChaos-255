@@ -35,6 +35,9 @@
 #include <mysqld_error.h>
 #include <sstream>
 #include <vector>
+#include <chrono>
+#include <cstdint>
+#include <thread>
 
 #ifdef ACORE_DEBUG
 #include <boost/stacktrace.hpp>
@@ -44,11 +47,17 @@
 class PingOperation : public SQLOperation
 {
     //! Operation for idle delaythreads
-    bool Execute() override
+public:
+    PingOperation() : SQLOperation("PingOperation", &PingOperation::ExecuteThunk, &PingOperation::DestroyThunk) { }
+
+    bool Execute()
     {
         m_conn->Ping();
         return true;
     }
+
+    static bool ExecuteThunk(SQLOperation* op) { return static_cast<PingOperation*>(op)->Execute(); }
+    static void DestroyThunk(SQLOperation* op) { delete static_cast<PingOperation*>(op); }
 };
 
 template <class T>
@@ -162,9 +171,11 @@ bool DatabaseWorkerPool<T>::PrepareStatements()
                     uint32 const paramCount = stmt->GetParameterCount();
 
                     // WH only supports uint8 indices.
-                    ASSERT(paramCount < std::numeric_limits<uint8>::max());
+                    ASSERT(paramCount < std::numeric_limits<uint8>::max() - 1);
 
-                    _preparedStatementSize[i] = static_cast<uint8>(paramCount);
+                    // Store paramCount + 1 so that 0 remains the sentinel for "not prepared".
+                    // Statements with 0 bound parameters are valid and get stored as 1.
+                    _preparedStatementSize[i] = static_cast<uint8>(paramCount + 1);
                 }
             }
         }
@@ -194,6 +205,19 @@ template <class T>
 PreparedQueryResult DatabaseWorkerPool<T>::Query(PreparedStatement<T>* stmt)
 {
     auto connection = GetFreeConnection();
+
+    // Guard: heap corruption in the connection-pool vector could yield a
+    // garbage pointer.  Bail out cleanly instead of crashing inside
+    // MySQLConnection::Query with a wild `this` pointer (crash #11).
+    if (!connection || reinterpret_cast<std::uintptr_t>(connection) < 0x10000)
+    {
+        LOG_FATAL("sql.driver", "DatabaseWorkerPool::Query(prepared): "
+            "GetFreeConnection returned invalid pointer 0x{:X} for database '{}' - aborting query",
+            reinterpret_cast<std::uintptr_t>(connection), GetDatabaseName());
+        delete stmt;
+        return PreparedQueryResult(nullptr);
+    }
+
     PreparedResultSet* ret = connection->Query(stmt);
     connection->Unlock();
 
@@ -248,6 +272,9 @@ SQLTransaction<T> DatabaseWorkerPool<T>::BeginTransaction()
 template <class T>
 void DatabaseWorkerPool<T>::CommitTransaction(SQLTransaction<T> transaction)
 {
+    if (transaction)
+        transaction->Freeze();
+
 #ifdef ACORE_DEBUG
     //! Only analyze transaction weaknesses in Debug mode.
     //! Ideally we catch the faults in Debug mode and then correct them,
@@ -271,6 +298,9 @@ void DatabaseWorkerPool<T>::CommitTransaction(SQLTransaction<T> transaction)
 template <class T>
 TransactionCallback DatabaseWorkerPool<T>::AsyncCommitTransaction(SQLTransaction<T> transaction)
 {
+    if (transaction)
+        transaction->Freeze();
+
 #ifdef ACORE_DEBUG
     //! Only analyze transaction weaknesses in Debug mode.
     //! Ideally we catch the faults in Debug mode and then correct them,
@@ -297,6 +327,9 @@ TransactionCallback DatabaseWorkerPool<T>::AsyncCommitTransaction(SQLTransaction
 template <class T>
 void DatabaseWorkerPool<T>::DirectCommitTransaction(SQLTransaction<T>& transaction)
 {
+    if (transaction)
+        transaction->Freeze();
+
     T* connection = GetFreeConnection();
     int errorCode = connection->ExecuteTransaction(transaction);
 
@@ -307,14 +340,15 @@ void DatabaseWorkerPool<T>::DirectCommitTransaction(SQLTransaction<T>& transacti
     }
 
     //! Handle MySQL Errno 1213 without extending deadlock to the core itself
-    /// @todo More elegant way
     if (errorCode == ER_LOCK_DEADLOCK)
     {
-        //todo: handle multiple sync threads deadlocking in a similar way as async threads
         uint8 loopBreaker = 5;
 
         for (uint8 i = 0; i < loopBreaker; ++i)
         {
+            // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+            std::this_thread::sleep_for(std::chrono::milliseconds(50 << i));
+            LOG_WARN("sql.sql", "Deadlock detected in DirectCommitTransaction, retry {}/{}", i + 1, loopBreaker);
             if (!connection->ExecuteTransaction(transaction))
                 break;
         }
@@ -329,7 +363,58 @@ void DatabaseWorkerPool<T>::DirectCommitTransaction(SQLTransaction<T>& transacti
 template <class T>
 PreparedStatement<T>* DatabaseWorkerPool<T>::GetPreparedStatement(PreparedStatementIndex index)
 {
-    return new PreparedStatement<T>(index, _preparedStatementSize[index]);
+    // Validate database is initialized and prepared statements are ready
+    if (_preparedStatementSize.empty())
+    {
+        LOG_ERROR("sql.driver", "GetPreparedStatement: Database not initialized - prepared statement sizes not loaded");
+        return nullptr;
+    }
+
+    if (index >= _preparedStatementSize.size())
+    {
+        LOG_ERROR("sql.driver", "GetPreparedStatement: Invalid statement index {} (max: {})",
+            static_cast<uint32>(index), _preparedStatementSize.size());
+        return nullptr;
+    }
+
+    uint8 rawCapacity = _preparedStatementSize[index];
+    if (rawCapacity == 0)
+    {
+        LOG_ERROR("sql.driver", "GetPreparedStatement: Statement index {} was never prepared (capacity marker is 0). "
+            "Check that the corresponding table exists in the database and DoPrepareStatements() includes this index.",
+            static_cast<uint32>(index));
+        return nullptr;
+    }
+
+    // _preparedStatementSize stores paramCount + 1, so subtract 1 to get actual parameter count.
+    // This allows statements with 0 bound parameters to be distinguished from "not prepared" (which is 0).
+    uint8 capacity = rawCapacity - 1;
+
+    // Add heap corruption detection - PreparedStatement creation should never throw
+    // If it does, heap is corrupted and we need to fail gracefully
+    try
+    {
+        PreparedStatement<T>* stmt = new PreparedStatement<T>(index, capacity);
+        if (!stmt)
+        {
+            LOG_FATAL("sql.driver", "GetPreparedStatement: Failed to allocate PreparedStatement for index {} capacity {} - possible heap corruption",
+                static_cast<uint32>(index), static_cast<uint32>(capacity));
+            return nullptr;
+        }
+        return stmt;
+    }
+    catch (std::exception const& ex)
+    {
+        LOG_FATAL("sql.driver", "GetPreparedStatement: Exception creating PreparedStatement for index {} capacity {}: {} - HEAP CORRUPTION DETECTED",
+            static_cast<uint32>(index), static_cast<uint32>(capacity), ex.what());
+        return nullptr;
+    }
+    catch (...)
+    {
+        LOG_FATAL("sql.driver", "GetPreparedStatement: Unknown exception creating PreparedStatement for index {} capacity {} - HEAP CORRUPTION DETECTED",
+            static_cast<uint32>(index), static_cast<uint32>(capacity));
+        return nullptr;
+    }
 }
 
 template <class T>
@@ -487,14 +572,38 @@ T* DatabaseWorkerPool<T>::GetFreeConnection()
     uint8 i = 0;
     auto const num_cons = _connections[IDX_SYNCH].size();
     T* connection = nullptr;
+    uint32 spinCount = 0;
 
-    //! Block forever until a connection is free
+    //! Block until a connection is free, but yield CPU to prevent burning
     for (;;)
     {
         connection = _connections[IDX_SYNCH][++i % num_cons].get();
         //! Must be matched with t->Unlock() or you will get deadlocks
         if (connection->LockIfReady())
             break;
+
+        ++spinCount;
+        if (spinCount < 100)
+        {
+            // Brief spin for very short waits
+            std::this_thread::yield();
+        }
+        else if (spinCount < 10000)
+        {
+            // Sleep 1ms after initial spins
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        else
+        {
+            // Longer sleep after extended waiting - something may be wrong
+            if (spinCount % 10000 == 0)
+            {
+                LOG_WARN("sql.driver", "GetFreeConnection: Long wait for sync connection ({} spins). "
+                    "Consider increasing SynchThreads for database '{}'",
+                    spinCount, GetDatabaseName());
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
     }
 
     return connection;

@@ -893,8 +893,8 @@ void MythicPlusRunManager::ApplyKeystoneScaling(Map* map, uint8 keystoneLevel) c
 
     uint32 refreshed = 0;
     uint32 forcedRespawns = 0;
-    auto& creatureStore = map->GetCreatureBySpawnIdStore();
-    for (auto const& pair : creatureStore)
+    auto creatureSnapshot = map->GetCreatureBySpawnIdStoreSnapshot();
+    for (auto const& pair : creatureSnapshot)
     {
         Creature* creature = pair.second;
         if (!creature || creature->GetMap() != map)

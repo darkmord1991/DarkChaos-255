@@ -39,6 +39,7 @@
 #include "Player.h"
 #include "Maps/Partitioning/PartitionManager.h"
 #include "Maps/Partitioning/LayerManager.h"
+#include <cstring>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -73,6 +74,64 @@ namespace
 {
     constexpr size_t kPartitionRelayLimit = 1024;
     constexpr uint8 kMaxRelayBounces = 3;
+    constexpr size_t kGuidCleanupScanIndexLimit = 4096;
+    // Maximum sane element / bucket count for any hash table.
+    // Any value beyond this indicates heap-corruption of internal fields.
+    constexpr size_t kHashMapSaneLimit = 50000000;
+
+    /// Validate that an unordered_map / unordered_set is not obviously corrupted.
+    /// Only reads size() and bucket_count() — plain field reads, no chain traversal —
+    /// so this is safe even when the internal hash chains are damaged.
+    /// Returns false (and logs) when corruption is detected.
+    template<typename Container>
+    bool IsHashContainerSane(Container const& c, char const* name, uint32 mapId)
+    {
+        size_t const bc = c.bucket_count();
+        size_t const sz = c.size();
+        if (bc == 0 || bc > kHashMapSaneLimit || sz > kHashMapSaneLimit)
+        {
+            LOG_ERROR("maps", "Map {}: {} corrupted (bucket_count={}, size={}) — "
+                "skipping operation to prevent crash", mapId, name, bc, sz);
+            return false;
+        }
+        return true;
+    }
+
+    /// Swap-and-leak: replace a corrupted hash container with a fresh empty one.
+    /// The corrupted container is intentionally leaked because its internal nodes
+    /// would crash if freed / iterated.
+    template<typename Container>
+    void SwapAndLeakCorrupted(Container& c, char const* name, uint32 mapId)
+    {
+        LOG_ERROR("maps", "Map {}: {} swap-and-leak (bucket_count={}, size={})",
+            mapId, name, c.bucket_count(), c.size());
+        auto* leaked = new Container();
+        leaked->swap(c);
+        // `leaked` is intentionally never freed.
+    }
+
+    uint64 GetThreadIdHash()
+    {
+        return static_cast<uint64>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    }
+
+    void CheckPartitionStoreWriter(std::atomic<uint64>& writerHash, uint32 mapId, char const* op)
+    {
+        uint64 current = GetThreadIdHash();
+        uint64 prev = writerHash.load(std::memory_order_relaxed);
+        if (prev == 0)
+        {
+            writerHash.store(current, std::memory_order_relaxed);
+            return;
+        }
+        if (prev != current)
+        {
+            LOG_ERROR("map.partition", "Partitioned store cross-thread mutation detected (map {}, op {}, prev=0x{:X}, now=0x{:X})",
+                mapId, op, prev, current);
+            writerHash.store(current, std::memory_order_relaxed);
+        }
+    }
+
     thread_local std::unordered_map<Map const*, uint32> sActivePartitionContext;
     thread_local bool sProcessingPartitionRelays = false;
     thread_local uint32 sNonPlayerVisibilityDeferDepth = 0;
@@ -521,12 +580,23 @@ void Map::QueueGridPreloadInRange(Position const& center, float radius)
 
 void Map::PreloadGridObjectGuids(uint32 gridId)
 {
-    std::lock_guard<std::mutex> guard(_preloadedGridGuidsLock);
-    if (_preloadedGridGuids.find(gridId) != _preloadedGridGuids.end())
-        return;
+    // Quick check under lock — if already preloaded, nothing to do
+    {
+        std::lock_guard<std::mutex> guard(_preloadedGridGuidsLock);
+        if (_preloadedGridGuids.find(gridId) != _preloadedGridGuids.end())
+            return;
+    }
 
+    // Expensive ObjectMgr query OUTSIDE the lock to avoid blocking the main thread
+    // (GetPreloadedGridObjectGuids acquires the same mutex and is called from the world update loop)
     CellObjectGuids cellGuids = sObjectMgr->GetGridObjectGuids(GetId(), GetSpawnMode(), gridId);
-    _preloadedGridGuids.emplace(gridId, std::make_shared<CellObjectGuids>(std::move(cellGuids)));
+
+    // Re-acquire lock and store — double-check in case another thread preloaded concurrently
+    {
+        std::lock_guard<std::mutex> guard(_preloadedGridGuidsLock);
+        if (_preloadedGridGuids.find(gridId) == _preloadedGridGuids.end())
+            _preloadedGridGuids.emplace(gridId, std::make_shared<CellObjectGuids>(std::move(cellGuids)));
+    }
 }
 
 std::shared_ptr<CellObjectGuids> Map::GetPreloadedGridObjectGuids(uint32 gridId) const
@@ -579,6 +649,12 @@ void Map::LoadLayerClonesInRange(Player* player, float radius)
 
 bool Map::AddPlayerToMap(Player* player)
 {
+    if (!player)
+    {
+        LOG_ERROR("maps", "Map::AddPlayerToMap called with null player!");
+        return false;
+    }
+
     CellCoord cellCoord = Acore::ComputeCellCoord(player->GetPositionX(), player->GetPositionY());
     if (!cellCoord.IsCoordValid())
     {
@@ -589,6 +665,15 @@ bool Map::AddPlayerToMap(Player* player)
 
     Cell cell(cellCoord);
     LoadGridsInRange(*player, MAX_VISIBILITY_DISTANCE);
+
+    // Defensive: verify grid loading didn't invalidate our state
+    if (!player->GetMap() || player->GetMap() != this)
+    {
+        LOG_ERROR("maps", "Map::AddPlayerToMap: player {} map changed during grid loading (expected map {})",
+            player->GetGUID().ToString(), GetId());
+        return false;
+    }
+
     AddToGrid(player, cell);
 
     // Check if we are adding to correct map
@@ -2761,9 +2846,10 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
             SchedulePartitionUpdates(t_diff, s_diff);
             _markNearbyCellsThisTick.store(false, std::memory_order_relaxed);
 
-            // Deferred ownership updates must run on the main thread after all
+            // Deferred updates must run on the main thread after all
             // workers complete so they don't race with CollectPartitionedUpdatableGuids.
             ApplyQueuedPartitionedOwnershipUpdates();
+            ApplyQueuedPartitionedRemovals();
         }
         else
         {
@@ -2909,6 +2995,12 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
             // Serial partitioned NPC update + cleanup
             UpdateNonPlayerObjects(t_diff);
             ClearPartitionPlayerBuckets();
+
+            // Flush deferred partition modifications — serial path must flush
+            // like the parallel path to prevent stale entries and dangling
+            // pointers accumulating in _partitionedUpdatableIndex.
+            ApplyQueuedPartitionedOwnershipUpdates();
+            ApplyQueuedPartitionedRemovals();
         }
     }
     else
@@ -3057,6 +3149,13 @@ void Map::SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff)
         partitionCount = 1;
 
     FlushPendingUpdateListAdds();
+
+    // Drain any stale deferred partition modifications from previous serial
+    // ticks before launching parallel workers.  This prevents dangling
+    // pointer accumulation in _partitionedUpdatableIndex.
+    ApplyQueuedPartitionedOwnershipUpdates();
+    ApplyQueuedPartitionedRemovals();
+
     BuildPartitionPlayerBuckets();
 
     LOG_DEBUG("map.partition", "Map {}: Scheduling {} partition updates in parallel", GetId(), partitionCount);
@@ -3268,7 +3367,7 @@ void Map::AddObjectToPendingUpdateList(WorldObject* obj)
         if (!mapUpdatableObject || mapUpdatableObject->GetUpdateState() != UpdatableMapObject::UpdateState::NotUpdating)
             return;
         mapUpdatableObject->SetUpdateState(UpdatableMapObject::UpdateState::PendingAdd);
-        _pendingAddUpdatableObjectList.insert(obj);
+        _pendingAddUpdatableObjectList.push_back(obj);
     }
 }
 
@@ -3338,6 +3437,30 @@ void Map::AddToPartitionedUpdateList(WorldObject* obj)
         return;
 
     auto lock = AcquirePartitionedUpdateListWriteLock();
+
+    if (!IsHashContainerSane(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (Add)", GetId()))
+    {
+        SwapAndLeakCorrupted(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (Add)", GetId());
+        return;
+    }
+
+    // Idempotent add: object may be re-added in the same tick while a
+    // deferred removal is still queued. If it's already tracked, just refresh
+    // ownership metadata instead of appending a duplicate list entry.
+    if (_partitionedUpdatableIndex.find(obj) != _partitionedUpdatableIndex.end())
+    {
+        UpdatePartitionedOwnershipNoLock(obj);
+        return;
+    }
+
+    // Defensive cleanup for stale entries with the same logical identity.
+    // This path runs on every add; avoid O(n) GUID scans when the index is
+    // large and rely on deferred removals/integrity rebuild paths instead.
+    if (_partitionedUpdatableIndex.size() <= kGuidCleanupScanIndexLimit)
+        RemoveFromPartitionedUpdateListByGuidNoLock(obj->GetGUID(), obj->GetTypeId(), 1);
+
     uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
     uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
     auto& list = _partitionedUpdatableObjectLists[partitionId];
@@ -3355,13 +3478,45 @@ void Map::RemoveFromPartitionedUpdateList(WorldObject* obj)
     if (!_isPartitioned || !obj)
         return;
 
+    // Defer removal when called from partition workers to prevent concurrent
+    // writes to _partitionedUpdatableIndex (same pattern as UpdatePartitionedOwnership).
+    if (GetActivePartitionContext() != 0)
+    {
+        QueuePartitionedUpdateListRemoval(obj);
+        return;
+    }
+
     auto lock = AcquirePartitionedUpdateListWriteLock();
+    RemoveFromPartitionedUpdateListNoLock(obj);
+}
+
+void Map::RemoveFromPartitionedUpdateListNoLock(WorldObject* obj)
+{
+    if (!IsHashContainerSane(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (RemoveNoLock)", GetId()))
+    {
+        SwapAndLeakCorrupted(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (RemoveNoLock)", GetId());
+        return;
+    }
+
     auto it = _partitionedUpdatableIndex.find(obj);
     if (it == _partitionedUpdatableIndex.end())
+    {
+        RemoveFromPartitionedUpdateListByGuidNoLock(obj->GetGUID(), obj->GetTypeId(), 1);
         return;
+    }
 
     uint32 partitionId = it->second.partitionId;
     size_t index = it->second.index;
+
+    if (!IsHashContainerSane(_partitionedUpdatableObjectLists,
+            "_partitionedUpdatableObjectLists (RemoveNoLock)", GetId()))
+    {
+        _partitionedUpdatableIndex.erase(it);
+        return;
+    }
+
     auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
     if (listIt == _partitionedUpdatableObjectLists.end())
     {
@@ -3387,6 +3542,211 @@ void Map::RemoveFromPartitionedUpdateList(WorldObject* obj)
     _partitionedUpdatableIndex.erase(it);
 }
 
+void Map::RemoveFromPartitionedUpdateListByGuidNoLock(ObjectGuid const& guid, TypeID typeId, size_t maxRemovals)
+{
+    if (!guid)
+        return;
+
+    if (!IsHashContainerSane(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (RemoveByGuidNoLock)", GetId()))
+    {
+        SwapAndLeakCorrupted(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (RemoveByGuidNoLock)", GetId());
+        return;
+    }
+
+    // Bound cleanup work per call to avoid pathological hangs when the index
+    // is partially corrupted but still passes the shallow sanity check.
+    if (maxRemovals == 0)
+        return;
+    if (maxRemovals > _partitionedUpdatableIndex.size())
+        maxRemovals = _partitionedUpdatableIndex.size();
+
+    while (maxRemovals-- > 0)
+    {
+        auto it = _partitionedUpdatableIndex.end();
+        for (auto itr = _partitionedUpdatableIndex.begin(); itr != _partitionedUpdatableIndex.end(); ++itr)
+        {
+            if (itr->second.guid != guid)
+                continue;
+
+            if (typeId != TYPEID_OBJECT && itr->second.typeId != typeId)
+                continue;
+
+            it = itr;
+            break;
+        }
+
+        if (it == _partitionedUpdatableIndex.end())
+            return;
+
+        uint32 partitionId = it->second.partitionId;
+        size_t index = it->second.index;
+
+        if (!IsHashContainerSane(_partitionedUpdatableObjectLists,
+                "_partitionedUpdatableObjectLists (RemoveByGuidNoLock)", GetId()))
+        {
+            _partitionedUpdatableIndex.erase(it);
+            continue;
+        }
+
+        auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
+        if (listIt == _partitionedUpdatableObjectLists.end())
+        {
+            _partitionedUpdatableIndex.erase(it);
+            continue;
+        }
+
+        auto& list = listIt->second;
+        if (list.empty() || index >= list.size())
+        {
+            _partitionedUpdatableIndex.erase(it);
+            continue;
+        }
+
+        if (index < list.size() - 1)
+        {
+            WorldObject* swapped = list.back();
+            list[index] = swapped;
+            auto swappedIt = _partitionedUpdatableIndex.find(swapped);
+            if (swappedIt != _partitionedUpdatableIndex.end())
+                swappedIt->second.index = index;
+        }
+
+        list.pop_back();
+        _partitionedUpdatableIndex.erase(it);
+    }
+
+    // If we hit the cap, defer the rest to subsequent ticks instead of
+    // monopolizing MapUpdater worker time.
+}
+
+void Map::QueuePartitionedUpdateListRemoval(WorldObject* obj)
+{
+    if (!obj)
+        return;
+    std::lock_guard<std::mutex> lock(_pendingPartitionRemovalLock);
+    _pendingPartitionRemovals.push_back({obj->GetGUID(), obj->GetTypeId()});
+}
+
+void Map::ApplyQueuedPartitionedRemovals()
+{
+    std::vector<PendingPartitionRemovalUpdate> removals;
+    {
+        std::lock_guard<std::mutex> lock(_pendingPartitionRemovalLock);
+        if (_pendingPartitionRemovals.empty())
+            return;
+        removals.swap(_pendingPartitionRemovals);
+    }
+
+    std::sort(removals.begin(), removals.end(), [](PendingPartitionRemovalUpdate const& lhs, PendingPartitionRemovalUpdate const& rhs)
+    {
+        if (lhs.guid.GetRawValue() != rhs.guid.GetRawValue())
+            return lhs.guid.GetRawValue() < rhs.guid.GetRawValue();
+        return static_cast<uint8>(lhs.typeId) < static_cast<uint8>(rhs.typeId);
+    });
+    removals.erase(std::unique(removals.begin(), removals.end(), [](PendingPartitionRemovalUpdate const& lhs, PendingPartitionRemovalUpdate const& rhs)
+    {
+        return lhs.guid == rhs.guid && lhs.typeId == rhs.typeId;
+    }), removals.end());
+
+    auto lock = AcquirePartitionedUpdateListWriteLock();
+
+    // Integrity check: verify the index size matches the sum of all partition
+    // lists.  A mismatch indicates stale entries or corruption; rebuild the
+    // entire index from the authoritative partition lists.
+    {
+        size_t expectedSize = 0;
+        for (auto const& p : _partitionedUpdatableObjectLists)
+            expectedSize += p.second.size();
+
+        if (_partitionedUpdatableIndex.size() != expectedSize)
+        {
+            LOG_ERROR("maps.partition", "Map {}: _partitionedUpdatableIndex corrupted "
+                "(index size {} != list total {}).  Rebuilding index.",
+                GetId(), _partitionedUpdatableIndex.size(), expectedSize);
+
+            // Do NOT call .clear() on the corrupted map — freeing corrupted
+            // hash nodes can deadlock inside jemalloc when heap metadata has
+            // been damaged by data races.  Instead, swap the corrupted map's
+            // internals into a heap-allocated map and intentionally leak it.
+            // swap() only exchanges internal pointers, it never dereferences
+            // node data, so it is safe even with corrupted nodes.
+            {
+                auto* leakedCorruptedMap = new std::decay_t<decltype(_partitionedUpdatableIndex)>();
+                leakedCorruptedMap->swap(_partitionedUpdatableIndex);
+                // _partitionedUpdatableIndex is now fresh and empty.
+                // leakedCorruptedMap holds the corrupted nodes — never freed.
+                LOG_ERROR("maps.partition", "Map {}: Leaked corrupted index ({} entries) "
+                    "to avoid allocator deadlock.", GetId(), leakedCorruptedMap->size());
+            }
+
+            _partitionedUpdatableObjectLists.clear();
+
+            struct PartitionStoreCollector
+            {
+                Map& map;
+                uint32 partitionId;
+                UpdatableObjectList& list;
+
+                void AddEntry(ObjectGuid const& guid, TypeID typeId, WorldObject* obj)
+                {
+                    if (!obj)
+                        return;
+
+                    PartitionedUpdatableEntry entry;
+                    entry.partitionId = partitionId;
+                    entry.index = list.size();
+                    entry.guid = guid;
+                    entry.typeId = static_cast<uint8>(typeId);
+
+                    list.push_back(obj);
+                    map._partitionedUpdatableIndex[obj] = entry;
+                }
+
+                void Visit(std::unordered_map<ObjectGuid, Creature*>& container)
+                {
+                    for (auto const& [guid, obj] : container)
+                        AddEntry(guid, TYPEID_UNIT, obj);
+                }
+
+                void Visit(std::unordered_map<ObjectGuid, GameObject*>& container)
+                {
+                    for (auto const& [guid, obj] : container)
+                        AddEntry(guid, TYPEID_GAMEOBJECT, obj);
+                }
+
+                void Visit(std::unordered_map<ObjectGuid, DynamicObject*>& container)
+                {
+                    for (auto const& [guid, obj] : container)
+                        AddEntry(guid, TYPEID_DYNAMICOBJECT, obj);
+                }
+
+                void Visit(std::unordered_map<ObjectGuid, Corpse*>& container)
+                {
+                    for (auto const& [guid, obj] : container)
+                        AddEntry(guid, TYPEID_CORPSE, obj);
+                }
+            };
+
+            std::shared_lock<std::shared_mutex> storeLock(_partitionedObjectStoreLock);
+            for (auto& [partitionId, store] : _partitionedObjectsStore)
+            {
+                auto& list = _partitionedUpdatableObjectLists[partitionId];
+                PartitionStoreCollector collector{*this, partitionId, list};
+                TypeContainerVisitor<PartitionStoreCollector, MapStoredObjectTypesContainer> visitor(collector);
+                visitor.Visit(store);
+            }
+            // After rebuild, skip individual removals — objects that should be
+            // removed were likely already absent from the authoritative lists.
+            return;
+        }
+    }
+
+    for (PendingPartitionRemovalUpdate const& removal : removals)
+        RemoveFromPartitionedUpdateListByGuidNoLock(removal.guid, removal.typeId);
+}
+
 void Map::UpdatePartitionedOwnership(WorldObject* obj)
 {
     if (!_isPartitioned || !obj)
@@ -3406,11 +3766,25 @@ void Map::UpdatePartitionedOwnershipNoLock(WorldObject* obj)
 {
     if (!_isPartitioned || !obj)
         return;
+
+    if (!IsHashContainerSane(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (OwnershipNoLock)", GetId()))
+    {
+        SwapAndLeakCorrupted(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (OwnershipNoLock)", GetId());
+        return;
+    }
+
     uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
     uint32 newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
     auto it = _partitionedUpdatableIndex.find(obj);
     if (it == _partitionedUpdatableIndex.end())
     {
+        // Defensive cleanup for stale entries with reused guid/type before
+        // inserting a fresh pointer mapping.
+        if (_partitionedUpdatableIndex.size() <= kGuidCleanupScanIndexLimit)
+            RemoveFromPartitionedUpdateListByGuidNoLock(obj->GetGUID(), obj->GetTypeId(), 1);
+
         auto& list = _partitionedUpdatableObjectLists[newPartitionId];
         list.push_back(obj);
         PartitionedUpdatableEntry entry;
@@ -3473,6 +3847,17 @@ void Map::ApplyQueuedPartitionedOwnershipUpdates()
         updates.swap(_pendingPartitionOwnershipUpdates);
     }
 
+    std::sort(updates.begin(), updates.end(), [](PendingPartitionOwnershipUpdate const& lhs, PendingPartitionOwnershipUpdate const& rhs)
+    {
+        if (lhs.guid.GetRawValue() != rhs.guid.GetRawValue())
+            return lhs.guid.GetRawValue() < rhs.guid.GetRawValue();
+        return static_cast<uint8>(lhs.typeId) < static_cast<uint8>(rhs.typeId);
+    });
+    updates.erase(std::unique(updates.begin(), updates.end(), [](PendingPartitionOwnershipUpdate const& lhs, PendingPartitionOwnershipUpdate const& rhs)
+    {
+        return lhs.guid == rhs.guid && lhs.typeId == rhs.typeId;
+    }), updates.end());
+
     auto lock = AcquirePartitionedUpdateListWriteLock();
     for (auto const& entry : updates)
     {
@@ -3511,8 +3896,17 @@ void Map::CollectPartitionedUpdatableGuids(uint32 partitionId, std::vector<std::
         return;
 
     std::shared_lock<std::shared_mutex> listLock(_partitionedUpdateListLock);
+
+    if (!IsHashContainerSane(_partitionedUpdatableObjectLists,
+            "_partitionedUpdatableObjectLists (CollectGuids)", GetId()))
+        return;
+
     auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
     if (listIt == _partitionedUpdatableObjectLists.end())
+        return;
+
+    if (!IsHashContainerSane(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (CollectGuids)", GetId()))
         return;
 
     auto& objectList = listIt->second;
@@ -3536,8 +3930,17 @@ void Map::CollectPartitionedUpdatableObjects(uint32 partitionId, std::vector<Wor
         return;
 
     std::shared_lock<std::shared_mutex> listLock(_partitionedUpdateListLock);
+
+    if (!IsHashContainerSane(_partitionedUpdatableObjectLists,
+            "_partitionedUpdatableObjectLists (CollectObjects)", GetId()))
+        return;
+
     auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
     if (listIt == _partitionedUpdatableObjectLists.end())
+        return;
+
+    if (!IsHashContainerSane(_partitionedUpdatableIndex,
+            "_partitionedUpdatableIndex (CollectObjects)", GetId()))
         return;
 
     auto& objectList = listIt->second;
@@ -3571,8 +3974,35 @@ void Map::RegisterPartitionedObject(WorldObject* obj)
             partitionId = persistedPartition;
     }
 
+    uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+    if (partitionId == 0 || (partitionCount > 0 && partitionId > partitionCount))
+    {
+        LOG_ERROR("map.partition", "RegisterPartitionedObject: invalid partitionId {} (count {}) for guid {} map {} zone {}",
+            partitionId, partitionCount, guid.ToString(), GetId(), zoneId);
+        return;
+    }
+
     {
         std::unique_lock<std::shared_mutex> lock(_partitionedObjectStoreLock);
+        if (sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+            CheckPartitionStoreWriter(_partitionedObjectStoreWriter, GetId(), "RegisterPartitionedObject");
+
+        if (!IsHashContainerSane(_partitionedObjectIndex,
+                "_partitionedObjectIndex (RegisterPartitionedObject)", GetId()))
+        {
+            SwapAndLeakCorrupted(_partitionedObjectIndex,
+                "_partitionedObjectIndex (RegisterPartitionedObject)", GetId());
+            return;
+        }
+
+        if (!IsHashContainerSane(_partitionedObjectsStore,
+                "_partitionedObjectsStore (RegisterPartitionedObject)", GetId()))
+        {
+            SwapAndLeakCorrupted(_partitionedObjectsStore,
+                "_partitionedObjectsStore (RegisterPartitionedObject)", GetId());
+            return;
+        }
+
         _partitionedObjectIndex[guid] = partitionId;
 
         auto& store = _partitionedObjectsStore[partitionId];
@@ -3608,11 +4038,32 @@ void Map::UnregisterPartitionedObject(WorldObject* obj)
 
     {
         std::unique_lock<std::shared_mutex> lock(_partitionedObjectStoreLock);
+        if (sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+            CheckPartitionStoreWriter(_partitionedObjectStoreWriter, GetId(), "UnregisterPartitionedObject");
+
+        if (!IsHashContainerSane(_partitionedObjectIndex,
+                "_partitionedObjectIndex", GetId()))
+        {
+            SwapAndLeakCorrupted(_partitionedObjectIndex,
+                "_partitionedObjectIndex (UnregisterPartitionedObject)", GetId());
+            return;
+        }
+
         auto it = _partitionedObjectIndex.find(guid);
         if (it == _partitionedObjectIndex.end())
             return;
 
         partitionId = it->second;
+
+        if (!IsHashContainerSane(_partitionedObjectsStore,
+                "_partitionedObjectsStore", GetId()))
+        {
+            SwapAndLeakCorrupted(_partitionedObjectsStore,
+                "_partitionedObjectsStore (UnregisterPartitionedObject)", GetId());
+            _partitionedObjectIndex.erase(it);
+            return;
+        }
+
         auto storeIt = _partitionedObjectsStore.find(partitionId);
         if (storeIt != _partitionedObjectsStore.end())
         {
@@ -3646,9 +4097,18 @@ void Map::UpdatePartitionedObjectStore(WorldObject* obj)
 
     {
         std::shared_lock<std::shared_mutex> lock(_partitionedObjectStoreLock);
-        auto it = _partitionedObjectIndex.find(guid);
-        if (it != _partitionedObjectIndex.end() && it->second == newPartitionId)
-            return; // No partition change needed
+        if (!IsHashContainerSane(_partitionedObjectIndex,
+                "_partitionedObjectIndex (UpdatePartitionedObjectStore)", GetId()))
+        {
+            // Cannot swap-and-leak under shared_lock — just bail.
+            // UnregisterPartitionedObject (unique_lock) will clean up later.
+        }
+        else
+        {
+            auto it = _partitionedObjectIndex.find(guid);
+            if (it != _partitionedObjectIndex.end() && it->second == newPartitionId)
+                return; // No partition change needed
+        }
     }
 
     // Partition changed or object not registered — re-register
@@ -3669,46 +4129,93 @@ void Map::RebuildPartitionedObjectAssignments()
     if (!_isPartitioned)
         return;
 
-    struct PartitionRebuildWorker
+    std::vector<WorldObject*> rebuildSnapshot;
+
+    struct PartitionRebuildCollector
     {
-        Map& map;
-        explicit PartitionRebuildWorker(Map& mapRef) : map(mapRef) { }
+        std::vector<WorldObject*>& snapshot;
+        explicit PartitionRebuildCollector(std::vector<WorldObject*>& snapshotRef) : snapshot(snapshotRef) { }
 
         void Visit(std::unordered_map<ObjectGuid, Creature*>& container)
         {
             for (auto& pair : container)
                 if (pair.second && pair.second->IsInWorld())
-                    map.UpdatePartitionedOwnership(pair.second);
+                    snapshot.push_back(pair.second);
         }
 
         void Visit(std::unordered_map<ObjectGuid, GameObject*>& container)
         {
             for (auto& pair : container)
                 if (pair.second && pair.second->IsInWorld())
-                    map.UpdatePartitionedOwnership(pair.second);
+                    snapshot.push_back(pair.second);
         }
 
         void Visit(std::unordered_map<ObjectGuid, DynamicObject*>& container)
         {
             for (auto& pair : container)
                 if (pair.second && pair.second->IsInWorld())
-                    map.UpdatePartitionedOwnership(pair.second);
+                    snapshot.push_back(pair.second);
         }
 
         void Visit(std::unordered_map<ObjectGuid, Corpse*>& container)
         {
             for (auto& pair : container)
                 if (pair.second && pair.second->IsInWorld())
-                    map.UpdatePartitionedOwnership(pair.second);
+                    snapshot.push_back(pair.second);
         }
     };
 
-    PartitionRebuildWorker worker(*this);
-    TypeContainerVisitor<PartitionRebuildWorker, MapStoredObjectTypesContainer> visitor(worker);
+    PartitionRebuildCollector collector(rebuildSnapshot);
+    TypeContainerVisitor<PartitionRebuildCollector, MapStoredObjectTypesContainer> visitor(collector);
     VisitAllObjectStores([&visitor](MapStoredObjectTypesContainer& store)
     {
         visitor.Visit(store);
     });
+
+    {
+        auto lock = AcquirePartitionedUpdateListWriteLock();
+
+        if (!IsHashContainerSane(_partitionedUpdatableIndex,
+                "_partitionedUpdatableIndex (RebuildPartitionedObjectAssignments)", GetId()))
+        {
+            SwapAndLeakCorrupted(_partitionedUpdatableIndex,
+                "_partitionedUpdatableIndex (RebuildPartitionedObjectAssignments)", GetId());
+        }
+
+        if (!IsHashContainerSane(_partitionedUpdatableObjectLists,
+                "_partitionedUpdatableObjectLists (RebuildPartitionedObjectAssignments)", GetId()))
+        {
+            SwapAndLeakCorrupted(_partitionedUpdatableObjectLists,
+                "_partitionedUpdatableObjectLists (RebuildPartitionedObjectAssignments)", GetId());
+        }
+
+        _partitionedUpdatableObjectLists.clear();
+        _partitionedUpdatableIndex.clear();
+        _partitionedUpdatableIndex.reserve(rebuildSnapshot.size());
+
+        for (WorldObject* obj : rebuildSnapshot)
+        {
+            if (!obj || !obj->IsInWorld())
+                continue;
+
+            uint32 zoneId = GetZoneId(obj->GetPhaseMask(), obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ());
+            uint32 partitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), obj->GetPositionX(), obj->GetPositionY(), zoneId, obj->GetGUID());
+
+            auto& list = _partitionedUpdatableObjectLists[partitionId];
+            PartitionedUpdatableEntry entry;
+            entry.partitionId = partitionId;
+            entry.index = list.size();
+            entry.guid = obj->GetGUID();
+            entry.typeId = obj->GetTypeId();
+
+            list.push_back(obj);
+            _partitionedUpdatableIndex[obj] = entry;
+        }
+    }
+
+    for (WorldObject* obj : rebuildSnapshot)
+        if (obj && obj->IsInWorld())
+            UpdatePartitionedObjectStore(obj);
 
     for (MapRefMgr::iterator iter = m_mapRefMgr.begin(); iter != m_mapRefMgr.end(); ++iter)
     {
@@ -3777,7 +4284,37 @@ void Map::ProcessDeferredVisibilityUpdates()
         if (_deferredVisibilityUpdates.empty())
             return;
         pending.swap(_deferredVisibilityUpdates);
-        _deferredVisibilitySet.clear();
+
+        // Heap corruption can damage the hash table's internal node chain.
+        // clear() walks _M_next pointers to deallocate — if any are corrupted,
+        // it will SIGSEGV in _M_deallocate_nodes (seen: _M_next = 0x44b0b6e9c60cf902).
+        // Detect corruption: extract the first bucket's node pointer and validate it.
+        // If corrupted, swap-and-leak to avoid the crash.
+        if (!_deferredVisibilitySet.empty())
+        {
+            // The begin iterator's internal _M_node points to the first hash node.
+            // If it's a garbage pointer, clear() will crash walking the chain.
+            auto it = _deferredVisibilitySet.begin();
+            void* nodePtr = nullptr;
+            static_assert(sizeof(it) >= sizeof(void*), "Iterator must contain at least a pointer");
+            std::memcpy(&nodePtr, &it, sizeof(void*));
+
+            uintptr_t addr = reinterpret_cast<uintptr_t>(nodePtr);
+            if (!nodePtr || addr < 0x10000 || (addr & 0x1))
+            {
+                // Corrupted hash table — swap internals into a leaked heap allocation
+                LOG_ERROR("maps", "Map {}: ProcessDeferredVisibilityUpdates: corrupted "
+                    "_deferredVisibilitySet (node={}, size={}), swap-and-leak",
+                    GetId(), nodePtr, _deferredVisibilitySet.size());
+                auto* leaked = new std::unordered_set<ObjectGuid>();
+                leaked->swap(_deferredVisibilitySet);
+                // leaked is intentionally never freed — corrupted nodes would crash on delete
+            }
+            else
+            {
+                _deferredVisibilitySet.clear();
+            }
+        }
     }
 
     for (ObjectGuid const& guid : pending)
@@ -3876,8 +4413,21 @@ T* Map::FindPartitionedObject(ObjectGuid const& guid)
         return nullptr;
 
     std::shared_lock<std::shared_mutex> lock(_partitionedObjectStoreLock);
+
+    // Defensive: validate hash table integrity before find().
+    // Heap corruption (e.g. transport data races) can damage internal node
+    // pointers, causing SIGSEGV in _M_find_before_node when find() traverses
+    // a corrupted hash chain (seen: __p = 0xd, bucket 388).
+    if (!IsHashContainerSane(_partitionedObjectIndex,
+            "_partitionedObjectIndex", GetId()))
+        return nullptr;
+
     auto it = _partitionedObjectIndex.find(guid);
     if (it == _partitionedObjectIndex.end())
+        return nullptr;
+
+    if (!IsHashContainerSane(_partitionedObjectsStore,
+            "_partitionedObjectsStore", GetId()))
         return nullptr;
 
     auto storeIt = _partitionedObjectsStore.find(it->second);
@@ -3904,7 +4454,15 @@ void Map::RemoveObjectFromMapUpdateList(WorldObject* obj)
         // Re-check under lock
         if (mapUpdatableObject->GetUpdateState() != UpdatableMapObject::UpdateState::PendingAdd)
             return;
-        _pendingAddUpdatableObjectList.erase(obj);
+        for (size_t i = 0; i < _pendingAddUpdatableObjectList.size(); ++i)
+        {
+            if (_pendingAddUpdatableObjectList[i] == obj)
+            {
+                _pendingAddUpdatableObjectList[i] = _pendingAddUpdatableObjectList.back();
+                _pendingAddUpdatableObjectList.pop_back();
+                break;
+            }
+        }
         mapUpdatableObject->SetUpdateState(UpdatableMapObject::UpdateState::NotUpdating);
     }
     else if (state == UpdatableMapObject::UpdateState::Updating)
@@ -4144,7 +4702,10 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
     uint32 newPartitionId = 0;
     bool partitionChanged = false;
 
-    if (_isPartitioned)
+    // Skip expensive partition detection for transport passengers — they move with
+    // the transport and don't independently cross partition boundaries.  This avoids
+    // 2× GetZoneId (BIH ray-intersection) per passenger per tick.
+    if (_isPartitioned && !player->GetTransport())
     {
         uint32 oldZoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
         uint32 newZoneId = GetZoneId(player->GetPhaseMask(), x, y, z);
@@ -4216,7 +4777,10 @@ void Map::CreatureRelocation(Creature* creature, float x, float y, float z, floa
     uint32 newPartitionId = 0;
     bool partitionChanged = false;
 
-    if (_isPartitioned)
+    // Skip expensive partition detection for transport passengers — they move with
+    // the transport and don't independently cross partition boundaries.  This avoids
+    // 2× GetZoneId (BIH ray-intersection) per passenger per tick.
+    if (_isPartitioned && !creature->GetTransport())
     {
         uint32 oldZoneId = GetZoneId(creature->GetPhaseMask(), creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ());
         uint32 newZoneId = GetZoneId(creature->GetPhaseMask(), x, y, z);
@@ -4287,7 +4851,9 @@ void Map::GameObjectRelocation(GameObject* go, float x, float y, float z, float 
     uint32 newPartitionId = 0;
     bool partitionChanged = false;
 
-    if (_isPartitioned)
+    // Skip expensive partition detection for transport passengers — they move with
+    // the transport and don't independently cross partition boundaries.
+    if (_isPartitioned && !go->GetTransport())
     {
         uint32 oldZoneId = GetZoneId(go->GetPhaseMask(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
         uint32 newZoneId = GetZoneId(go->GetPhaseMask(), x, y, z);
@@ -4340,7 +4906,8 @@ void Map::DynamicObjectRelocation(DynamicObject* dynObj, float x, float y, float
     uint32 newPartitionId = 0;
     bool partitionChanged = false;
 
-    if (_isPartitioned)
+    // Skip expensive partition detection for transport passengers.
+    if (_isPartitioned && !dynObj->GetTransport())
     {
         uint32 oldZoneId = GetZoneId(dynObj->GetPhaseMask(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ());
         uint32 newZoneId = GetZoneId(dynObj->GetPhaseMask(), x, y, z);
@@ -4765,6 +5332,10 @@ static inline bool IsInWMOInterior(uint32 mogpFlags)
 
 bool Map::GetAreaInfo(uint32 phaseMask, float x, float y, float z, uint32& flags, int32& adtId, int32& rootId, int32& groupId) const
 {
+    // Guard: non-finite coordinates cause BIH ray-intersection to hang (infinite traversal)
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+        return false;
+
     float check_z = z;
     VMAP::IVMapMgr* vmgr = VMAP::VMapFactory::createOrGetVMapMgr();
     VMAP::AreaAndLiquidData vdata;
@@ -5223,9 +5794,12 @@ void Map::SendInitSelf(Player* player)
 
     // build other passengers at transport also (they always visible and marked as visible and will not send at visibility update at add to map
     if (Transport* transport = player->GetTransport())
-        for (Transport::PassengerSet::const_iterator itr = transport->GetPassengers().begin(); itr != transport->GetPassengers().end(); ++itr)
+    {
+        Transport::PassengerSet passengers = transport->GetPassengerSnapshot();
+        for (Transport::PassengerSet::const_iterator itr = passengers.begin(); itr != passengers.end(); ++itr)
             if (player != (*itr) && player->HaveAtClient(*itr))
                 (*itr)->BuildCreateUpdateBlockForPlayer(&data, player);
+    }
 
     data.BuildPacket(packet);
     player->SendDirectMessage(&packet);
@@ -6356,7 +6930,7 @@ void Map::LogEncounterFinished(EncounterCreditType type, uint32 creditEntry)
 bool Map::AllTransportsEmpty() const
 {
     for (TransportsContainer::const_iterator itr = _transports.begin(); itr != _transports.end(); ++itr)
-        if (!(*itr)->GetPassengers().empty())
+        if (!(*itr)->GetPassengerSnapshot().empty())
             return false;
 
     return true;
@@ -6365,8 +6939,11 @@ bool Map::AllTransportsEmpty() const
 void Map::AllTransportsRemovePassengers()
 {
     for (TransportsContainer::const_iterator itr = _transports.begin(); itr != _transports.end(); ++itr)
-        while (!(*itr)->GetPassengers().empty())
-            (*itr)->RemovePassenger(*((*itr)->GetPassengers().begin()), true);
+    {
+        Transport::PassengerSet passengers = (*itr)->GetPassengerSnapshot();
+        for (WorldObject* obj : passengers)
+            (*itr)->RemovePassenger(obj, true);
+    }
 }
 
 time_t Map::GetLinkedRespawnTime(ObjectGuid guid) const

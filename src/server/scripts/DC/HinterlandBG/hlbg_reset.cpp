@@ -36,11 +36,14 @@ void OutdoorPvPHL::HandleReset()
 
         sMapMgr->DoForAllMapsWithMapId(mapId, [zoneId, &totalCreatureCount, &totalGoCount](Map* map)
         {
-            HLZoneResetWorker worker{ zoneId };
-            TypeContainerVisitor<HLZoneResetWorker, MapStoredObjectTypesContainer> visitor(worker);
-            visitor.Visit(map->GetObjectsStore());
-            totalCreatureCount += worker.creatureCount;
-            totalGoCount += worker.goCount;
+            map->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
+            {
+                HLZoneResetWorker worker{ zoneId };
+                TypeContainerVisitor<HLZoneResetWorker, MapStoredObjectTypesContainer> visitor(worker);
+                visitor.Visit(objects);
+                totalCreatureCount += worker.creatureCount;
+                totalGoCount += worker.goCount;
+            });
         });
 
     LOG_INFO("outdoorpvp.hl", "[HL] Reset: respawned {} creatures and {} gameobjects in zone {}", totalCreatureCount, totalGoCount, zoneId);

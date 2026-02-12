@@ -659,6 +659,8 @@ public:
     typedef std::unordered_set<Unit*> AttackerSet;
     typedef std::set<Unit*> ControlSet;
 
+    static bool IsUnitPointerLive(Unit const* unit);
+
     typedef std::multimap<uint32,  Aura*> AuraMap;
     typedef std::pair<AuraMap::const_iterator, AuraMap::const_iterator> AuraMapBounds;
     typedef std::pair<AuraMap::iterator, AuraMap::iterator> AuraMapBoundsNonConst;

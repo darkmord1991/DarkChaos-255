@@ -67,10 +67,17 @@ struct PreparedStatementData
 class AC_DATABASE_API PreparedStatementBase
 {
 friend class PreparedStatementTask;
+friend class TransactionBase;
 
 public:
+    static constexpr uint32 MAGIC_ALIVE = 0xC0DEC0DE;
+    static constexpr uint32 MAGIC_FREED = 0xDEADDEAD;
+
     explicit PreparedStatementBase(uint32 index, uint8 capacity);
     virtual ~PreparedStatementBase();
+
+    [[nodiscard]] bool IsAlive() const { return _magic == MAGIC_ALIVE; }
+    [[nodiscard]] uint32 GetDebugMagic() const { return _magic; }
 
     // Set numerlic and default binary
     template<typename T>
@@ -143,6 +150,7 @@ protected:
         );
     }
 
+    uint32 _magic{MAGIC_ALIVE};
     uint32 m_index;
 
     //- Buffer of parameters, not tied to MySQL in any way yet
@@ -170,10 +178,13 @@ class AC_DATABASE_API PreparedStatementTask : public SQLOperation
 {
 public:
     PreparedStatementTask(PreparedStatementBase* stmt, bool async = false);
-    ~PreparedStatementTask() override;
+    ~PreparedStatementTask();
 
-    bool Execute() override;
+    bool Execute();
     PreparedQueryResultFuture GetFuture() { return m_result->get_future(); }
+
+    static bool ExecuteThunk(SQLOperation* op) { return static_cast<PreparedStatementTask*>(op)->Execute(); }
+    static void DestroyThunk(SQLOperation* op) { delete static_cast<PreparedStatementTask*>(op); }
 
 protected:
     PreparedStatementBase* m_stmt;

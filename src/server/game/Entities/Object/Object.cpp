@@ -2390,8 +2390,16 @@ TempSummon* Map::SummonCreature(uint32 entry, Position const& pos, SummonPropert
     summon->InitSummon();
 
     // call MoveInLineOfSight for nearby creatures
-    Acore::AIRelocationNotifier notifier(*summon);
-    Cell::VisitObjects(summon, notifier, GetVisibilityRange());
+    // Avoid running grid scans while inside a partition worker update.
+    if (Map* map = summon->FindMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    {
+        // Defer to the normal update/visibility flow instead.
+    }
+    else
+    {
+        Acore::AIRelocationNotifier notifier(*summon);
+        Cell::VisitObjects(summon, notifier, GetVisibilityRange());
+    }
 
     return summon;
 }

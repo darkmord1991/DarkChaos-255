@@ -26,6 +26,8 @@
 #include "SharedDefines.h"
 #include "Unit.h"
 
+#include <mutex>
+
 class GameObjectAI;
 class Transport;
 class StaticTransport;
@@ -383,6 +385,7 @@ protected:
     uint32      m_cooldownTime;                         // used as internal reaction delay time store (not state change reaction).
     // For traps this: spell casting cooldown, for doors/buttons: reset time.
     std::unordered_map<ObjectGuid, int32> m_SkillupList;
+    mutable std::mutex m_SkillupListLock;
 
     ObjectGuid m_ritualOwnerGUID;                       // used for GAMEOBJECT_TYPE_SUMMONING_RITUAL where GO is not summoned (no owner)
     GuidSet m_unique_users;

@@ -26,11 +26,17 @@
 #include <pthread.h>
 #endif
 #include <mysqld_error.h>
+#include <functional>
 #include <sstream>
 #include <thread>
 
 namespace
 {
+    uint64 GetThreadIdHash()
+    {
+        return static_cast<uint64>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    }
+
     bool IsPointerInCurrentStack(void const* ptr)
     {
 #ifdef __linux__
@@ -65,6 +71,19 @@ constexpr Milliseconds DEADLOCK_MAX_RETRY_TIME_MS = 1min;
 //- Append a raw ad-hoc query to the transaction
 void TransactionBase::Append(std::string_view sql)
 {
+    if (IsFrozen())
+    {
+        LOG_ERROR("sql.driver", "TransactionBase::Append: Attempted to append SQL to a frozen transaction - ignoring");
+        return;
+    }
+
+    std::lock_guard<std::mutex> guard(_queriesMutex);
+    uint64 currentThread = GetThreadIdHash();
+    uint64 prevThread = _ownerThreadHash.load(std::memory_order_relaxed);
+    if (prevThread == 0)
+        _ownerThreadHash.store(currentThread, std::memory_order_relaxed);
+    else if (prevThread != currentThread)
+        LOG_ERROR("sql.driver", "TransactionBase::Append: Cross-thread mutation detected (prev=0x{:X}, now=0x{:X})", prevThread, currentThread);
     SQLElementData data = {};
     data.type = SQL_ELEMENT_RAW;
     data.element = std::string(sql);
@@ -74,6 +93,26 @@ void TransactionBase::Append(std::string_view sql)
 //- Append a prepared statement to the transaction
 void TransactionBase::AppendPreparedStatement(PreparedStatementBase* stmt)
 {
+    if (IsFrozen())
+    {
+        LOG_ERROR("sql.driver", "TransactionBase::AppendPreparedStatement: Attempted to append to a frozen transaction - ignoring");
+        return;
+    }
+
+    // Validate statement before appending to transaction
+    if (!stmt)
+    {
+        LOG_ERROR("sql.driver", "AppendPreparedStatement: Attempted to append NULL prepared statement to transaction - ignoring");
+        return;
+    }
+
+    std::lock_guard<std::mutex> guard(_queriesMutex);
+    uint64 currentThread = GetThreadIdHash();
+    uint64 prevThread = _ownerThreadHash.load(std::memory_order_relaxed);
+    if (prevThread == 0)
+        _ownerThreadHash.store(currentThread, std::memory_order_relaxed);
+    else if (prevThread != currentThread)
+        LOG_ERROR("sql.driver", "TransactionBase::AppendPreparedStatement: Cross-thread mutation detected (prev=0x{:X}, now=0x{:X})", prevThread, currentThread);
     SQLElementData data = {};
     data.type = SQL_ELEMENT_PREPARED;
     data.element = stmt;
@@ -92,6 +131,8 @@ void TransactionBase::Cleanup()
     // Double-check after acquiring lock
     if (_cleanedUp.load(std::memory_order_relaxed))
         return;
+
+    std::lock_guard<std::mutex> queriesGuard(_queriesMutex);
 
     for (SQLElementData& data : m_queries)
     {
@@ -116,7 +157,17 @@ void TransactionBase::Cleanup()
                     data.element = static_cast<PreparedStatementBase*>(nullptr);
                     break;
                 }
-                ASSERT(stmt);
+
+                // Validate the statement hasn't been corrupted or already freed
+                // After free, the allocator overwrites object memory, so _magic won't match
+                if (!stmt->IsAlive())
+                {
+                    LOG_ERROR("sql.sql", "> PreparedStatement at {} is corrupted or already freed (magic=0x{:X}). "
+                        "Possible use-after-free or heap corruption. Skipping delete.",
+                        static_cast<void*>(stmt), stmt->_magic);
+                    data.element = static_cast<PreparedStatementBase*>(nullptr);
+                    break;
+                }
 
                 delete stmt;
                 data.element = static_cast<PreparedStatementBase*>(nullptr);

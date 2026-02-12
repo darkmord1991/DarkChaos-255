@@ -603,7 +603,7 @@ public:
             uint32 explosionSpell = isVictory ? SPELL_EXPLOSION_VICTORY : SPELL_EXPLOSION_WIPE;
             if (MotionTransport* t = (me->GetTransport() ? me->GetTransport()->ToMotionTransport() : nullptr))
             {
-                Transport::PassengerSet const& passengers = t->GetStaticPassengers();
+                Transport::PassengerSet passengers = t->GetStaticPassengerSnapshot();
                 for (Transport::PassengerSet::const_iterator itr = passengers.begin(); itr != passengers.end(); ++itr)
                 {
                     if (!(*itr)->IsCreature() || (*itr)->GetEntry() != NPC_GUNSHIP_HULL)
@@ -616,7 +616,7 @@ public:
             if (GameObject* go = _instance->instance->GetGameObject(_instance->GetGuidData(DATA_ICECROWN_GUNSHIP_BATTLE)))
                 if (MotionTransport* t = go->ToMotionTransport())
                 {
-                    Transport::PassengerSet const& passengers = t->GetStaticPassengers();
+                    Transport::PassengerSet passengers = t->GetStaticPassengerSnapshot();
                     for (Transport::PassengerSet::const_iterator itr = passengers.begin(); itr != passengers.end(); ++itr)
                     {
                         if (!(*itr)->IsCreature() || (*itr)->GetEntry() != cannonEntry)
@@ -662,7 +662,7 @@ public:
                     if (GameObject* go = _instance->instance->GetGameObject(_instance->GetGuidData(i == 0 ? DATA_ICECROWN_GUNSHIP_BATTLE : DATA_ENEMY_GUNSHIP)))
                         if (MotionTransport* t = go->ToMotionTransport())
                         {
-                            Transport::PassengerSet const& passengers = t->GetPassengers();
+                            Transport::PassengerSet passengers = t->GetPassengerSnapshot();
                             for (Transport::PassengerSet::const_iterator itr = passengers.begin(); itr != passengers.end(); ++itr)
                             {
                                 if (!(*itr)->IsCreature())

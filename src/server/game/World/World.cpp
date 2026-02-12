@@ -101,6 +101,130 @@
 #include "WorldStateDefines.h"
 #include <boost/asio/ip/address.hpp>
 #include <cmath>
+#include <functional>
+#include <exception>
+#include <thread>
+#include <chrono>
+
+// ============================================================================
+// Resilient DB Loading Infrastructure
+// ============================================================================
+namespace
+{
+    struct LoadResult
+    {
+        bool success = false;
+        uint32 durationMs = 0;
+        std::string errorMsg;
+    };
+
+    uint32 s_totalTablesLoaded = 0;
+    uint32 s_totalTablesSkipped = 0;
+    uint32 s_totalLoadTimeMs = 0;
+
+    /// Execute a DB loading function with timing, error catching, and optional retry.
+    /// Returns true if the load succeeded (or was non-fatal on failure).
+    /// @param name        Human-readable name for logging (e.g. "Creature Templates")
+    /// @param loadFunc    The actual load function to call
+    /// @param critical    If true, server will abort on failure
+    /// @param maxRetries  Number of retry attempts on exception (0 = no retry)
+    LoadResult SafeLoadTable(char const* name, std::function<void()> loadFunc,
+                             bool critical = false, uint8 maxRetries = 1)
+    {
+        LoadResult result;
+        uint32 startTime = getMSTime();
+
+        for (uint8 attempt = 0; attempt <= maxRetries; ++attempt)
+        {
+            try
+            {
+                if (attempt > 0)
+                {
+                    LOG_WARN("server.loading", ">> Retrying load of '{}' (attempt {}/{})", name, attempt + 1, maxRetries + 1);
+                    // Brief sleep before retry to let MySQL recover
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                }
+
+                loadFunc();
+                result.success = true;
+                result.durationMs = GetMSTimeDiffToNow(startTime);
+                s_totalTablesLoaded++;
+                s_totalLoadTimeMs += result.durationMs;
+
+                // Log slow loads prominently for diagnostics
+                if (result.durationMs > 5000)
+                {
+                    LOG_WARN("server.loading", ">> SLOW LOAD: '{}' took {} ms ({}s)", name, result.durationMs, result.durationMs / 1000);
+                }
+                else if (result.durationMs > 1000)
+                {
+                    LOG_INFO("server.loading", ">> '{}' loaded in {} ms", name, result.durationMs);
+                }
+
+                return result;
+            }
+            catch (std::exception const& e)
+            {
+                result.errorMsg = e.what();
+                LOG_ERROR("server.loading", ">> EXCEPTION loading '{}': {} (attempt {}/{})",
+                    name, e.what(), attempt + 1, maxRetries + 1);
+            }
+            catch (...)
+            {
+                result.errorMsg = "unknown exception";
+                LOG_ERROR("server.loading", ">> UNKNOWN EXCEPTION loading '{}' (attempt {}/{})",
+                    name, attempt + 1, maxRetries + 1);
+            }
+        }
+
+        // All attempts failed
+        result.durationMs = GetMSTimeDiffToNow(startTime);
+        s_totalTablesSkipped++;
+
+        if (critical)
+        {
+            LOG_FATAL("server.loading", ">> CRITICAL load '{}' FAILED after {} attempts - cannot continue! Error: {}",
+                name, maxRetries + 1, result.errorMsg);
+        }
+        else
+        {
+            LOG_ERROR("server.loading", ">> Load '{}' FAILED after {} attempts (non-critical, continuing). Error: {}",
+                name, maxRetries + 1, result.errorMsg);
+        }
+
+        return result;
+    }
+
+    /// Validate that the World DB connection is still alive, reconnect if needed.
+    /// Call this between heavy load phases to catch connection drops early.
+    void ValidateDBConnection(char const* phase)
+    {
+        try
+        {
+            QueryResult result = WorldDatabase.Query("SELECT 1");
+            if (!result)
+            {
+                LOG_WARN("server.loading", ">> DB validation failed after '{}' - connection may be lost, attempting recovery...", phase);
+                // The Query itself will trigger _HandleMySQLErrno which reconnects
+                // Try again
+                result = WorldDatabase.Query("SELECT 1");
+                if (!result)
+                {
+                    LOG_ERROR("server.loading", ">> DB validation STILL failing after '{}' - DB connection lost!", phase);
+                }
+                else
+                {
+                    LOG_INFO("server.loading", ">> DB connection recovered after '{}'", phase);
+                }
+            }
+        }
+        catch (...)
+        {
+            LOG_ERROR("server.loading", ">> DB validation exception after '{}' - DB connection may be broken!", phase);
+        }
+    }
+}
+// End of Resilient DB Loading Infrastructure
 
 std::atomic_long World::_stopEvent = false;
 uint8 World::_exitCode = SHUTDOWN_EXIT_CODE;
@@ -356,14 +480,16 @@ void World::SetInitialWorldSettings()
 
     ///- Loading strings. Getting no records means core load has to be canceled because no error message can be output.
     LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 1: Critical Core Data");
+    LOG_INFO("server.loading", "========================================");
+
     LOG_INFO("server.loading", "Loading Acore Strings...");
     if (!sObjectMgr->LoadAcoreStrings())
         exit(1);                                            // Error message displayed in function already
 
-    LOG_INFO("server.loading", "Loading Module Strings...");
-    sObjectMgr->LoadModuleStrings();
-    LOG_INFO("server.loading", "Loading Module Strings Locale...");
-    sObjectMgr->LoadModuleStringsLocale();
+    SafeLoadTable("Module Strings", [] { sObjectMgr->LoadModuleStrings(); });
+    SafeLoadTable("Module Strings Locale", [] { sObjectMgr->LoadModuleStringsLocale(); });
 
     ///- Update the realm entry in the database with the realm type from the config file
     //No SQL injection as values are treated as integers
@@ -404,483 +530,301 @@ void World::SetInitialWorldSettings()
     MMAP::MMapMgr* mmmgr = MMAP::MMapFactory::createOrGetMMapMgr();
     mmmgr->InitializeThreadUnsafe(mapIds);
 
-    LOG_INFO("server.loading", "Loading Game Graveyard...");
-    sGraveyard->LoadGraveyardFromDB();
-
-    LOG_INFO("server.loading", "Initializing PlayerDump Tables...");
-    PlayerDump::InitializeTables();
+    SafeLoadTable("Game Graveyard", [] { sGraveyard->LoadGraveyardFromDB(); });
+    SafeLoadTable("PlayerDump Tables", [] { PlayerDump::InitializeTables(); });
 
     ///- Initilize static helper structures
     AIRegistry::Initialize();
 
-    LOG_INFO("server.loading", "Loading SpellInfo Store...");
-    sSpellMgr->LoadSpellInfoStore();
+    LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 2: Spell & Skill Data");
+    LOG_INFO("server.loading", "========================================");
 
-    LOG_INFO("server.loading", "Loading Spell Cooldown Overrides...");
-    sSpellMgr->LoadSpellCooldownOverrides();
+    SafeLoadTable("SpellInfo Store", [] { sSpellMgr->LoadSpellInfoStore(); }, /*critical=*/true);
+    SafeLoadTable("Spell Cooldown Overrides", [] { sSpellMgr->LoadSpellCooldownOverrides(); });
 
-    LOG_INFO("server.loading", "Loading SpellInfo Data Corrections...");
-    sSpellMgr->LoadSpellInfoCorrections();
+    SafeLoadTable("SpellInfo Data Corrections", [] { sSpellMgr->LoadSpellInfoCorrections(); });
+    SafeLoadTable("Spell Ranks", [] { sSpellMgr->LoadSpellRanks(); });
+    SafeLoadTable("Spell Specific And Aura State", [] { sSpellMgr->LoadSpellSpecificAndAuraState(); });
+    SafeLoadTable("SkillLineAbilityMultiMap", [] { sSpellMgr->LoadSkillLineAbilityMap(); });
+    SafeLoadTable("SpellInfo Custom Attributes", [] { sSpellMgr->LoadSpellInfoCustomAttributes(); });
 
-    LOG_INFO("server.loading", "Loading Spell Rank Data...");
-    sSpellMgr->LoadSpellRanks();
+    SafeLoadTable("Player Totem Models", [] { sObjectMgr->LoadPlayerTotemModels(); });
+    SafeLoadTable("Player Shapeshift Models", [] { sObjectMgr->LoadPlayerShapeshiftModels(); });
 
-    LOG_INFO("server.loading", "Loading Spell Specific And Aura State...");
-    sSpellMgr->LoadSpellSpecificAndAuraState();
+    ValidateDBConnection("Phase 2 - Spell Data");
 
-    LOG_INFO("server.loading", "Loading SkillLineAbilityMultiMap Data...");
-    sSpellMgr->LoadSkillLineAbilityMap();
-
-    LOG_INFO("server.loading", "Loading SpellInfo Custom Attributes...");
-    sSpellMgr->LoadSpellInfoCustomAttributes();
-
-    LOG_INFO("server.loading", "Loading Player Totem models...");
-    sObjectMgr->LoadPlayerTotemModels();
-
-    LOG_INFO("server.loading", "Loading Player Shapeshift models...");
-    sObjectMgr->LoadPlayerShapeshiftModels();
+    LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 3: Templates & Instances");
+    LOG_INFO("server.loading", "========================================");
 
     LOG_INFO("server.loading", "Loading GameObject Models...");
     LoadGameObjectModelList(_dataPath);
 
-    LOG_INFO("server.loading", "Loading Script Names...");
-    sObjectMgr->LoadScriptNames();
-
-    LOG_INFO("server.loading", "Loading Instance Template...");
-    sObjectMgr->LoadInstanceTemplate();
-
-    LOG_INFO("server.loading", "Loading Character Cache...");
-    sCharacterCache->LoadCharacterCacheStorage();
+    SafeLoadTable("Script Names", [] { sObjectMgr->LoadScriptNames(); });
+    SafeLoadTable("Instance Template", [] { sObjectMgr->LoadInstanceTemplate(); });
+    SafeLoadTable("Character Cache", [] { sCharacterCache->LoadCharacterCacheStorage(); });
 
     // Must be called before `creature_respawn`/`gameobject_respawn` tables
-    LOG_INFO("server.loading", "Loading Instances...");
-    sInstanceSaveMgr->LoadInstances();
+    SafeLoadTable("Instances", [] { sInstanceSaveMgr->LoadInstances(); });
+    SafeLoadTable("Broadcast Texts", [] {
+        sObjectMgr->LoadBroadcastTexts();
+        sObjectMgr->LoadBroadcastTextLocales();
+    });
 
-    LOG_INFO("server.loading", "Loading Broadcast Texts...");
-    sObjectMgr->LoadBroadcastTexts();
-    sObjectMgr->LoadBroadcastTextLocales();
+    SafeLoadTable("Localization Strings", [this] {
+        sObjectMgr->LoadCreatureLocales();
+        sObjectMgr->LoadGameObjectLocales();
+        sObjectMgr->LoadItemLocales();
+        sObjectMgr->LoadItemSetNameLocales();
+        sObjectMgr->LoadQuestLocales();
+        sObjectMgr->LoadQuestOfferRewardLocale();
+        sObjectMgr->LoadQuestRequestItemsLocale();
+        sObjectMgr->LoadNpcTextLocales();
+        sObjectMgr->LoadPageTextLocales();
+        sObjectMgr->LoadGossipMenuItemsLocales();
+        sObjectMgr->LoadPointOfInterestLocales();
+        sObjectMgr->LoadPetNamesLocales();
+        sObjectMgr->SetDBCLocaleIndex(GetDefaultDbcLocale());
+    });
 
-    LOG_INFO("server.loading", "Loading Localization Strings...");
-    uint32 oldMSTime = getMSTime();
-    sObjectMgr->LoadCreatureLocales();
-    sObjectMgr->LoadGameObjectLocales();
-    sObjectMgr->LoadItemLocales();
-    sObjectMgr->LoadItemSetNameLocales();
-    sObjectMgr->LoadQuestLocales();
-    sObjectMgr->LoadQuestOfferRewardLocale();
-    sObjectMgr->LoadQuestRequestItemsLocale();
-    sObjectMgr->LoadNpcTextLocales();
-    sObjectMgr->LoadPageTextLocales();
-    sObjectMgr->LoadGossipMenuItemsLocales();
-    sObjectMgr->LoadPointOfInterestLocales();
-    sObjectMgr->LoadPetNamesLocales();
+    SafeLoadTable("Page Texts", [] { sObjectMgr->LoadPageTexts(); });
 
-    sObjectMgr->SetDBCLocaleIndex(GetDefaultDbcLocale());        // Get once for all the locale index of DBC language (console/broadcasts)
-    LOG_INFO("server.loading", ">> Localization Strings loaded in {} ms", GetMSTimeDiffToNow(oldMSTime));
+    ValidateDBConnection("Phase 3 - Templates");
+
     LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 4: Heavy Data Tables (items, creatures, spells)");
+    LOG_INFO("server.loading", "========================================");
 
-    LOG_INFO("server.loading", "Loading Page Texts...");
-    sObjectMgr->LoadPageTexts();
+    SafeLoadTable("Game Object Templates", [] { sObjectMgr->LoadGameObjectTemplate(); }, /*critical=*/true);
+    SafeLoadTable("Game Object Template Addons", [] { sObjectMgr->LoadGameObjectTemplateAddons(); });
+    SafeLoadTable("Transport Templates", [] { sTransportMgr->LoadTransportTemplates(); });
+    SafeLoadTable("Spell Required Data", [] { sSpellMgr->LoadSpellRequired(); });
+    SafeLoadTable("Spell Groups", [] { sSpellMgr->LoadSpellGroups(); });
+    SafeLoadTable("Spell Learn Skills", [] { sSpellMgr->LoadSpellLearnSkills(); }); // must be after LoadSpellRanks
+    SafeLoadTable("Spell Proc Events", [] { sSpellMgr->LoadSpellProcEvents(); });
+    SafeLoadTable("Spell Procs", [] { sSpellMgr->LoadSpellProcs(); });
+    SafeLoadTable("Spell Bonuses", [] { sSpellMgr->LoadSpellBonuses(); });
+    SafeLoadTable("Spell Threats", [] { sSpellMgr->LoadSpellThreats(); });
+    SafeLoadTable("Spell Mixology", [] { sSpellMgr->LoadSpellMixology(); });
+    SafeLoadTable("Spell Group Stack Rules", [] { sSpellMgr->LoadSpellGroupStackRules(); });
+    SafeLoadTable("NPC Texts", [] { sObjectMgr->LoadGossipText(); });
+    SafeLoadTable("Enchant Spell Proc Data", [] { sSpellMgr->LoadSpellEnchantProcData(); });
+    SafeLoadTable("Random Enchantments", [] { LoadRandomEnchantmentsTable(); });
+    SafeLoadTable("Disables", [] { sDisableMgr->LoadDisables(); }); // must be before loading quests and items
 
-    LOG_INFO("server.loading", "Loading Game Object Templates...");         // must be after LoadPageTexts
-    sObjectMgr->LoadGameObjectTemplate();
+    ValidateDBConnection("Phase 4 - Before heavy item/creature loads");
 
-    LOG_INFO("server.loading", "Loading Game Object Template Addons...");
-    sObjectMgr->LoadGameObjectTemplateAddons();
+    // These are the heaviest tables - most likely to cause connection issues
+    SafeLoadTable("Item Templates", [] { sObjectMgr->LoadItemTemplates(); }, /*critical=*/true, /*maxRetries=*/2);
+    SafeLoadTable("Item Set Names", [] { sObjectMgr->LoadItemSetNames(); });
+    SafeLoadTable("Creature Model Info", [] { sObjectMgr->LoadCreatureModelInfo(); });
+    SafeLoadTable("Creature Custom IDs", [] { sObjectMgr->LoadCreatureCustomIDs(); });
 
-    LOG_INFO("server.loading", "Loading Transport Templates...");
-    sTransportMgr->LoadTransportTemplates();
+    ValidateDBConnection("Phase 4 - Before creature templates");
 
-    LOG_INFO("server.loading", "Loading Spell Required Data...");
-    sSpellMgr->LoadSpellRequired();
+    SafeLoadTable("Creature Templates", [] { sObjectMgr->LoadCreatureTemplates(); }, /*critical=*/true, /*maxRetries=*/2);
+    SafeLoadTable("Equipment Templates", [] { sObjectMgr->LoadEquipmentTemplates(); });
+    SafeLoadTable("Creature Template Addons", [] { sObjectMgr->LoadCreatureTemplateAddons(); });
+    SafeLoadTable("Reputation Reward Rates", [] { sObjectMgr->LoadReputationRewardRate(); });
+    SafeLoadTable("Reputation OnKill", [] { sObjectMgr->LoadReputationOnKill(); });
+    SafeLoadTable("Reputation Spillover", [] { sObjectMgr->LoadReputationSpilloverTemplate(); });
+    SafeLoadTable("Points Of Interest", [] { sObjectMgr->LoadPointsOfInterest(); });
+    SafeLoadTable("Creature Class Level Stats", [] { sObjectMgr->LoadCreatureClassLevelStats(); });
 
-    LOG_INFO("server.loading", "Loading Spell Group Types...");
-    sSpellMgr->LoadSpellGroups();
+    ValidateDBConnection("Phase 4 - Before creature spawn data");
 
-    LOG_INFO("server.loading", "Loading Spell Learn Skills...");
-    sSpellMgr->LoadSpellLearnSkills();                           // must be after LoadSpellRanks
-
-    LOG_INFO("server.loading", "Loading Spell Proc Event Conditions...");
-    sSpellMgr->LoadSpellProcEvents();
-
-    LOG_INFO("server.loading", "Loading Spell Proc Conditions and Data...");
-    sSpellMgr->LoadSpellProcs();
-
-    LOG_INFO("server.loading", "Loading Spell Bonus Data...");
-    sSpellMgr->LoadSpellBonuses();
-
-    LOG_INFO("server.loading", "Loading Aggro Spells Definitions...");
-    sSpellMgr->LoadSpellThreats();
-
-    LOG_INFO("server.loading", "Loading Mixology Bonuses...");
-    sSpellMgr->LoadSpellMixology();
-
-    LOG_INFO("server.loading", "Loading Spell Group Stack Rules...");
-    sSpellMgr->LoadSpellGroupStackRules();
-
-    LOG_INFO("server.loading", "Loading NPC Texts...");
-    sObjectMgr->LoadGossipText();
-
-    LOG_INFO("server.loading", "Loading Enchant Spells Proc Datas...");
-    sSpellMgr->LoadSpellEnchantProcData();
-
-    LOG_INFO("server.loading", "Loading Item Random Enchantments Table...");
-    LoadRandomEnchantmentsTable();
-
-    LOG_INFO("server.loading", "Loading Disables");
-    sDisableMgr->LoadDisables();                                  // must be before loading quests and items
-
-    LOG_INFO("server.loading", "Loading Items...");                         // must be after LoadRandomEnchantmentsTable and LoadPageTexts
-    sObjectMgr->LoadItemTemplates();
-
-    LOG_INFO("server.loading", "Loading Item Set Names...");                // must be after LoadItemPrototypes
-    sObjectMgr->LoadItemSetNames();
-
-    LOG_INFO("server.loading", "Loading Creature Model Based Info Data...");
-    sObjectMgr->LoadCreatureModelInfo();
-
-    LOG_INFO("server.loading", "Loading Creature Custom IDs Config...");
-    sObjectMgr->LoadCreatureCustomIDs();
-
-    LOG_INFO("server.loading", "Loading Creature Templates...");
-    sObjectMgr->LoadCreatureTemplates();
-
-    LOG_INFO("server.loading", "Loading Equipment Templates...");           // must be after LoadCreatureTemplates
-    sObjectMgr->LoadEquipmentTemplates();
-
-    LOG_INFO("server.loading", "Loading Creature Template Addons...");
-    sObjectMgr->LoadCreatureTemplateAddons();
-
-    LOG_INFO("server.loading", "Loading Reputation Reward Rates...");
-    sObjectMgr->LoadReputationRewardRate();
-
-    LOG_INFO("server.loading", "Loading Creature Reputation OnKill Data...");
-    sObjectMgr->LoadReputationOnKill();
-
-    LOG_INFO("server.loading", "Loading Reputation Spillover Data..." );
-    sObjectMgr->LoadReputationSpilloverTemplate();
-
-    LOG_INFO("server.loading", "Loading Points Of Interest Data...");
-    sObjectMgr->LoadPointsOfInterest();
-
-    LOG_INFO("server.loading", "Loading Creature Base Stats...");
-    sObjectMgr->LoadCreatureClassLevelStats();
-
-    LOG_INFO("server.loading", "Loading Creature Data...");
-    sObjectMgr->LoadCreatures();
-
-    LOG_INFO("server.loading", "Loading Creature sparring...");
-    sObjectMgr->LoadCreatureSparring();
-
-    LOG_INFO("server.loading", "Loading Temporary Summon Data...");
-    sObjectMgr->LoadTempSummons();                               // must be after LoadCreatureTemplates() and LoadGameObjectTemplates()
-
-    LOG_INFO("server.loading", "Loading Pet Levelup Spells...");
-    sSpellMgr->LoadPetLevelupSpellMap();
-
-    LOG_INFO("server.loading", "Loading Pet default Spells additional to Levelup Spells...");
-    sSpellMgr->LoadPetDefaultSpells();
-
-    LOG_INFO("server.loading", "Loading Creature Addon Data...");
-    sObjectMgr->LoadCreatureAddons();                            // must be after LoadCreatureTemplates() and LoadCreatures()
-
-    LOG_INFO("server.loading", "Loading Creature Movement Overrides...");
-    sObjectMgr->LoadCreatureMovementOverrides(); // must be after LoadCreatures()
+    SafeLoadTable("Creature Data", [] { sObjectMgr->LoadCreatures(); }, /*critical=*/true, /*maxRetries=*/2);
+    SafeLoadTable("Creature Sparring", [] { sObjectMgr->LoadCreatureSparring(); });
+    SafeLoadTable("Temporary Summons", [] { sObjectMgr->LoadTempSummons(); }); // must be after LoadCreatureTemplates() and LoadGameObjectTemplates()
+    SafeLoadTable("Pet Levelup Spells", [] { sSpellMgr->LoadPetLevelupSpellMap(); });
+    SafeLoadTable("Pet Default Spells", [] { sSpellMgr->LoadPetDefaultSpells(); });
+    SafeLoadTable("Creature Addons", [] { sObjectMgr->LoadCreatureAddons(); }); // must be after LoadCreatureTemplates() and LoadCreatures()
+    SafeLoadTable("Creature Movement Overrides", [] { sObjectMgr->LoadCreatureMovementOverrides(); }); // must be after LoadCreatures()
 
     LOG_INFO("server.loading", "Loading Gameobject Data...");
     sObjectMgr->LoadGameobjects();
 
-    LOG_INFO("server.loading", "Loading GameObject Addon Data...");
-    sObjectMgr->LoadGameObjectAddons();                          // must be after LoadGameObjectTemplate() and LoadGameobjects()
+    SafeLoadTable("GameObject Addons", [] { sObjectMgr->LoadGameObjectAddons(); });
+    SafeLoadTable("GameObject Quest Items", [] { sObjectMgr->LoadGameObjectQuestItems(); });
+    SafeLoadTable("Creature Quest Items", [] { sObjectMgr->LoadCreatureQuestItems(); });
+    SafeLoadTable("Linked Respawn", [] { sObjectMgr->LoadLinkedRespawn(); }); // must be after LoadCreatures(), LoadGameObjects()
+    SafeLoadTable("Weather Data", [] { WeatherMgr::LoadWeatherData(); });
 
-    LOG_INFO("server.loading", "Loading GameObject Quest Items...");
-    sObjectMgr->LoadGameObjectQuestItems();
+    ValidateDBConnection("Phase 4 - Before quest loading");
 
-    LOG_INFO("server.loading", "Loading Creature Quest Items...");
-    sObjectMgr->LoadCreatureQuestItems();
+    LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 5: Quests & Events");
+    LOG_INFO("server.loading", "========================================");
 
-    LOG_INFO("server.loading", "Loading Creature Linked Respawn...");
-    sObjectMgr->LoadLinkedRespawn();                             // must be after LoadCreatures(), LoadGameObjects()
+    SafeLoadTable("Quests", [] { sObjectMgr->LoadQuests(); }, /*critical=*/true, /*maxRetries=*/2);
+    SafeLoadTable("Quest Disables Check", [] { sDisableMgr->CheckQuestDisables(); });
+    SafeLoadTable("Quest POI", [] { sObjectMgr->LoadQuestPOI(); });
+    SafeLoadTable("Quest Starters/Enders", [] { sObjectMgr->LoadQuestStartersAndEnders(); });
+    SafeLoadTable("Quest Greetings", [] {
+        sObjectMgr->LoadQuestGreetings();
+        sObjectMgr->LoadQuestGreetingsLocales();
+    });
+    SafeLoadTable("Quest Money Rewards", [] { sObjectMgr->LoadQuestMoneyRewards(); });
+    SafeLoadTable("Object Pooling", [] { sPoolMgr->LoadFromDB(); });
+    SafeLoadTable("Game Events", [] {
+        sGameEventMgr->LoadHolidayDates();
+        sGameEventMgr->LoadFromDB();
+    });
+    SafeLoadTable("NPC SpellClick Spells", [] { sObjectMgr->LoadNPCSpellClickSpells(); });
+    SafeLoadTable("Vehicle Template Accessories", [] { sObjectMgr->LoadVehicleTemplateAccessories(); });
+    SafeLoadTable("Vehicle Accessories", [] { sObjectMgr->LoadVehicleAccessories(); });
+    SafeLoadTable("Vehicle Seat Addon", [] { sObjectMgr->LoadVehicleSeatAddon(); });
+    SafeLoadTable("Spell Areas", [] { sSpellMgr->LoadSpellAreas(); });
+    SafeLoadTable("Area Triggers", [] { sObjectMgr->LoadAreaTriggers(); });
+    SafeLoadTable("Area Trigger Teleports", [] { sObjectMgr->LoadAreaTriggerTeleports(); });
+    SafeLoadTable("Access Requirements", [] { sObjectMgr->LoadAccessRequirements(); });
+    SafeLoadTable("Quest Area Triggers", [] { sObjectMgr->LoadQuestAreaTriggers(); });
+    SafeLoadTable("Tavern Area Triggers", [] { sObjectMgr->LoadTavernAreaTriggers(); });
+    SafeLoadTable("AreaTrigger Scripts", [] { sObjectMgr->LoadAreaTriggerScripts(); });
+    SafeLoadTable("LFG Dungeons", [] { sLFGMgr->LoadLFGDungeons(); });
+    SafeLoadTable("Instance Encounters", [] { sObjectMgr->LoadInstanceEncounters(); });
+    SafeLoadTable("LFG Rewards", [] { sLFGMgr->LoadRewards(); });
+    SafeLoadTable("Graveyard Zones", [] { sGraveyard->LoadGraveyardZones(); });
 
-    LOG_INFO("server.loading", "Loading Weather Data...");
-    WeatherMgr::LoadWeatherData();
+    ValidateDBConnection("Phase 5 - After quests/events");
 
-    LOG_INFO("server.loading", "Loading Quests...");
-    sObjectMgr->LoadQuests();                                    // must be loaded after DBCs, creature_template, item_template, gameobject tables
+    LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 6: Player & Pet Data");
+    LOG_INFO("server.loading", "========================================");
 
-    LOG_INFO("server.loading", "Checking Quest Disables");
-    sDisableMgr->CheckQuestDisables();                           // must be after loading quests
-
-    LOG_INFO("server.loading", "Loading Quest POI");
-    sObjectMgr->LoadQuestPOI();
-
-    LOG_INFO("server.loading", "Loading Quests Starters and Enders...");
-    sObjectMgr->LoadQuestStartersAndEnders();                    // must be after quest load
-
-    LOG_INFO("server.loading", "Loading Quest Greetings...");
-    sObjectMgr->LoadQuestGreetings();                               // must be loaded after creature_template, gameobject_template tables
-    LOG_INFO("server.loading", "Loading Quest Greeting Locales...");
-    sObjectMgr->LoadQuestGreetingsLocales();                        // must be loaded after creature_template, gameobject_template tables, quest_greeting
-
-    LOG_INFO("server.loading", "Loading Quest Money Rewards...");
-    sObjectMgr->LoadQuestMoneyRewards();
-
-    LOG_INFO("server.loading", "Loading Objects Pooling Data...");
-    sPoolMgr->LoadFromDB();
-
-    LOG_INFO("server.loading", "Loading Game Event Data...");               // must be after loading pools fully
-    sGameEventMgr->LoadHolidayDates();                           // Must be after loading DBC
-    sGameEventMgr->LoadFromDB();                                 // Must be after loading holiday dates
-
-    LOG_INFO("server.loading", "Loading UNIT_NPC_FLAG_SPELLCLICK Data..."); // must be after LoadQuests
-    sObjectMgr->LoadNPCSpellClickSpells();
-
-    LOG_INFO("server.loading", "Loading Vehicle Template Accessories...");
-    sObjectMgr->LoadVehicleTemplateAccessories();                // must be after LoadCreatureTemplates() and LoadNPCSpellClickSpells()
-
-    LOG_INFO("server.loading", "Loading Vehicle Accessories...");
-    sObjectMgr->LoadVehicleAccessories();                       // must be after LoadCreatureTemplates() and LoadNPCSpellClickSpells()
-
-    LOG_INFO("server.loading", "Loading Vehicle Seat Addon Data...");
-    sObjectMgr->LoadVehicleSeatAddon();                         // must be after loading DBC
-
-    LOG_INFO("server.loading", "Loading SpellArea Data...");                // must be after quest load
-    sSpellMgr->LoadSpellAreas();
-
-    LOG_INFO("server.loading", "Loading Area Trigger Definitions");
-    sObjectMgr->LoadAreaTriggers();
-
-    LOG_INFO("server.loading", "Loading Area Trigger Teleport Definitions...");
-    sObjectMgr->LoadAreaTriggerTeleports();
-
-    LOG_INFO("server.loading", "Loading Access Requirements...");
-    sObjectMgr->LoadAccessRequirements();                        // must be after item template load
-
-    LOG_INFO("server.loading", "Loading Quest Area Triggers...");
-    sObjectMgr->LoadQuestAreaTriggers();                         // must be after LoadQuests
-
-    LOG_INFO("server.loading", "Loading Tavern Area Triggers...");
-    sObjectMgr->LoadTavernAreaTriggers();
-
-    LOG_INFO("server.loading", "Loading AreaTrigger Script Names...");
-    sObjectMgr->LoadAreaTriggerScripts();
-
-    LOG_INFO("server.loading", "Loading LFG Entrance Positions..."); // Must be after areatriggers
-    sLFGMgr->LoadLFGDungeons();
-
-    LOG_INFO("server.loading", "Loading Dungeon Boss Data...");
-    sObjectMgr->LoadInstanceEncounters();
-
-    LOG_INFO("server.loading", "Loading LFG Rewards...");
-    sLFGMgr->LoadRewards();
-
-    LOG_INFO("server.loading", "Loading Graveyard-Zone Links...");
-    sGraveyard->LoadGraveyardZones();
-
-    LOG_INFO("server.loading", "Loading Spell Pet Auras...");
-    sSpellMgr->LoadSpellPetAuras();
-
-    LOG_INFO("server.loading", "Loading Spell Target Coordinates...");
-    sSpellMgr->LoadSpellTargetPositions();
-
-    LOG_INFO("server.loading", "Loading Enchant Custom Attributes...");
-    sSpellMgr->LoadEnchantCustomAttr();
-
-    LOG_INFO("server.loading", "Loading linked Spells...");
-    sSpellMgr->LoadSpellLinked();
-
-    LOG_INFO("server.loading", "Loading Player Create Data...");
-    sObjectMgr->LoadPlayerInfo();
-
-    LOG_INFO("server.loading", "Loading Exploration BaseXP Data...");
-    sObjectMgr->LoadExplorationBaseXP();
-
-    LOG_INFO("server.loading", "Loading Pet Name Parts...");
-    sObjectMgr->LoadPetNames();
+    SafeLoadTable("Spell Pet Auras", [] { sSpellMgr->LoadSpellPetAuras(); });
+    SafeLoadTable("Spell Target Positions", [] { sSpellMgr->LoadSpellTargetPositions(); });
+    SafeLoadTable("Enchant Custom Attributes", [] { sSpellMgr->LoadEnchantCustomAttr(); });
+    SafeLoadTable("Linked Spells", [] { sSpellMgr->LoadSpellLinked(); });
+    SafeLoadTable("Player Create Data", [] { sObjectMgr->LoadPlayerInfo(); });
+    SafeLoadTable("Exploration BaseXP", [] { sObjectMgr->LoadExplorationBaseXP(); });
+    SafeLoadTable("Pet Name Parts", [] { sObjectMgr->LoadPetNames(); });
 
     CharacterDatabaseCleaner::CleanDatabase();
 
-    LOG_INFO("server.loading", "Loading The Max Pet Number...");
-    sObjectMgr->LoadPetNumber();
+    SafeLoadTable("Max Pet Number", [] { sObjectMgr->LoadPetNumber(); });
+    SafeLoadTable("Pet Level Stats", [] { sObjectMgr->LoadPetLevelInfo(); });
+    SafeLoadTable("Mail Level Rewards", [] { sObjectMgr->LoadMailLevelRewards(); });
+    SafeLoadTable("Mail Server Templates", [] { sServerMailMgr->LoadMailServerTemplates(); });
 
-    LOG_INFO("server.loading", "Loading Pet Level Stats...");
-    sObjectMgr->LoadPetLevelInfo();
-
-    LOG_INFO("server.loading", "Loading Player Level Dependent Mail Rewards...");
-    sObjectMgr->LoadMailLevelRewards();
-
-    LOG_INFO("server.loading", "Load Mail Server definitions...");
-    sServerMailMgr->LoadMailServerTemplates();
-
-    // Loot tables
-    LoadLootTables();
+    // Loot tables — typically large
+    SafeLoadTable("Loot Tables", [] { LoadLootTables(); }, /*critical=*/false, /*maxRetries=*/2);
 
     LOG_INFO("server.loading", "Loading Skill Discovery Table...");
     LoadSkillDiscoveryTable();
 
-    LOG_INFO("server.loading", "Loading Skill Extra Item Table...");
-    LoadSkillExtraItemTable();
+    SafeLoadTable("Skill Discovery", [] { LoadSkillDiscoveryTable(); });
+    SafeLoadTable("Skill Extra Items", [] { LoadSkillExtraItemTable(); });
+    SafeLoadTable("Skill Perfect Items", [] { LoadSkillPerfectItemTable(); });
+    SafeLoadTable("Fishing Base Skill Level", [] { sObjectMgr->LoadFishingBaseSkillLevel(); });
 
-    LOG_INFO("server.loading", "Loading Skill Perfection Data Table...");
-    LoadSkillPerfectItemTable();
+    ValidateDBConnection("Phase 6 - Before achievements");
 
-    LOG_INFO("server.loading", "Loading Skill Fishing Base Level Requirements...");
-    sObjectMgr->LoadFishingBaseSkillLevel();
+    SafeLoadTable("Achievements", [] {
+        sAchievementMgr->LoadAchievementReferenceList();
+        sAchievementMgr->LoadAchievementCriteriaList();
+        sAchievementMgr->LoadAchievementCriteriaData();
+        sAchievementMgr->LoadRewards();
+        sAchievementMgr->LoadRewardLocales();
+        sAchievementMgr->LoadCompletedAchievements();
+    }, /*critical=*/false, /*maxRetries=*/2);
 
-    LOG_INFO("server.loading", "Loading Achievements...");
-    sAchievementMgr->LoadAchievementReferenceList();
-    LOG_INFO("server.loading", "Loading Achievement Criteria Lists...");
-    sAchievementMgr->LoadAchievementCriteriaList();
-    LOG_INFO("server.loading", "Loading Achievement Criteria Data...");
-    sAchievementMgr->LoadAchievementCriteriaData();
-    LOG_INFO("server.loading", "Loading Achievement Rewards...");
-    sAchievementMgr->LoadRewards();
-    LOG_INFO("server.loading", "Loading Achievement Reward Locales...");
-    sAchievementMgr->LoadRewardLocales();
-    LOG_INFO("server.loading", "Loading Completed Achievements...");
-    sAchievementMgr->LoadCompletedAchievements();
+    LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 7: Dynamic Data (Auctions, Guilds, Groups)");
+    LOG_INFO("server.loading", "========================================");
 
-    ///- Load dynamic data tables from the database
-    LOG_INFO("server.loading", "Loading Item Auctions...");
-    sAuctionMgr->LoadAuctionItems();
-    LOG_INFO("server.loading", "Loading Auctions...");
-    sAuctionMgr->LoadAuctions();
+    SafeLoadTable("Auction Items", [] { sAuctionMgr->LoadAuctionItems(); });
+    SafeLoadTable("Auctions", [] { sAuctionMgr->LoadAuctions(); });
 
     sGuildMgr->LoadGuilds();
 
-    LOG_INFO("server.loading", "Loading ArenaTeams...");
-    sArenaTeamMgr->LoadArenaTeams();
+    SafeLoadTable("Arena Teams", [] { sArenaTeamMgr->LoadArenaTeams(); });
+    SafeLoadTable("Groups", [] { sGroupMgr->LoadGroups(); });
+    SafeLoadTable("Reserved Names", [] {
+        sObjectMgr->LoadReservedPlayerNamesDB();
+        sObjectMgr->LoadReservedPlayerNamesDBC();
+    });
+    SafeLoadTable("Profanity Names", [] {
+        sObjectMgr->LoadProfanityNamesFromDB();
+        sObjectMgr->LoadProfanityNamesFromDBC();
+    });
 
-    LOG_INFO("server.loading", "Loading Groups...");
-    sGroupMgr->LoadGroups();
+    ValidateDBConnection("Phase 7 - Before NPC/vendor data");
 
-    LOG_INFO("server.loading", "Loading Reserved Names...");
-    sObjectMgr->LoadReservedPlayerNamesDB();
-    sObjectMgr->LoadReservedPlayerNamesDBC(); // Needs to be after LoadReservedPlayerNamesDB()
+    LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 8: NPC Interactions & Scripts");
+    LOG_INFO("server.loading", "========================================");
 
-    LOG_INFO("server.loading", "Loading Profanity Names...");
-    sObjectMgr->LoadProfanityNamesFromDB();
-    sObjectMgr->LoadProfanityNamesFromDBC(); // Needs to be after LoadProfanityNamesFromDB()
+    SafeLoadTable("GameObjects for Quests", [] { sObjectMgr->LoadGameObjectForQuests(); });
+    SafeLoadTable("BattleMasters", [] { sBattlegroundMgr->LoadBattleMastersEntry(); });
+    SafeLoadTable("Game Teleports", [] { sObjectMgr->LoadGameTele(); });
+    SafeLoadTable("Trainers", [] { sObjectMgr->LoadTrainers(); });
+    SafeLoadTable("Creature Default Trainers", [] { sObjectMgr->LoadCreatureDefaultTrainers(); });
+    SafeLoadTable("Gossip Menu", [] { sObjectMgr->LoadGossipMenu(); });
+    SafeLoadTable("Gossip Menu Items", [] { sObjectMgr->LoadGossipMenuItems(); });
+    SafeLoadTable("Vendors", [] { sObjectMgr->LoadVendors(); });
+    SafeLoadTable("Waypoints", [] { sWaypointMgr->Load(); });
+    SafeLoadTable("SmartAI Waypoints", [] { sSmartWaypointMgr->LoadFromDB(); });
+    SafeLoadTable("Creature Formations", [] { sFormationMgr->LoadCreatureFormations(); });
+    SafeLoadTable("World States", [] { sWorldState->LoadWorldStates(); });
+    SafeLoadTable("Conditions", [] { sConditionMgr->LoadConditions(); });
 
-    LOG_INFO("server.loading", "Loading GameObjects for Quests...");
-    sObjectMgr->LoadGameObjectForQuests();
+    SafeLoadTable("Faction Change Data", [] {
+        sObjectMgr->LoadFactionChangeAchievements();
+        sObjectMgr->LoadFactionChangeSpells();
+        sObjectMgr->LoadFactionChangeItems();
+        sObjectMgr->LoadFactionChangeReputations();
+        sObjectMgr->LoadFactionChangeTitles();
+        sObjectMgr->LoadFactionChangeQuests();
+    });
 
-    LOG_INFO("server.loading", "Loading BattleMasters...");
-    sBattlegroundMgr->LoadBattleMastersEntry();
-
-    LOG_INFO("server.loading", "Loading GameTeleports...");
-    sObjectMgr->LoadGameTele();
-
-    LOG_INFO("server.loading", "Loading Trainers..."); // must be after LoadCreatureTemplates
-    sObjectMgr->LoadTrainers();
-
-    LOG_INFO("server.loading", "Loading Creature default trainers...");
-    sObjectMgr->LoadCreatureDefaultTrainers();
-
-    LOG_INFO("server.loading", "Loading Gossip Menu...");
-    sObjectMgr->LoadGossipMenu();
-
-    LOG_INFO("server.loading", "Loading Gossip Menu Options...");
-    sObjectMgr->LoadGossipMenuItems();
-
-    LOG_INFO("server.loading", "Loading Vendors...");
-    sObjectMgr->LoadVendors();                                   // must be after load CreatureTemplate and ItemTemplate
-
-    LOG_INFO("server.loading", "Loading Waypoints...");
-    sWaypointMgr->Load();
-
-    LOG_INFO("server.loading", "Loading SmartAI Waypoints...");
-    sSmartWaypointMgr->LoadFromDB();
-
-    LOG_INFO("server.loading", "Loading Creature Formations...");
-    sFormationMgr->LoadCreatureFormations();
-
-    LOG_INFO("server.loading", "Loading WorldStates...");              // must be loaded before battleground, outdoor PvP and conditions
-    sWorldState->LoadWorldStates();
-
-    LOG_INFO("server.loading", "Loading Conditions...");
-    sConditionMgr->LoadConditions();
-
-    LOG_INFO("server.loading", "Loading Faction Change Achievement Pairs...");
-    sObjectMgr->LoadFactionChangeAchievements();
-
-    LOG_INFO("server.loading", "Loading Faction Change Spell Pairs...");
-    sObjectMgr->LoadFactionChangeSpells();
-
-    LOG_INFO("server.loading", "Loading Faction Change Item Pairs...");
-    sObjectMgr->LoadFactionChangeItems();
-
-    LOG_INFO("server.loading", "Loading Faction Change Reputation Pairs...");
-    sObjectMgr->LoadFactionChangeReputations();
-
-    LOG_INFO("server.loading", "Loading Faction Change Title Pairs...");
-    sObjectMgr->LoadFactionChangeTitles();
-
-    LOG_INFO("server.loading", "Loading Faction Change Quest Pairs...");
-    sObjectMgr->LoadFactionChangeQuests();
-
-    LOG_INFO("server.loading", "Loading GM Tickets...");
-    sTicketMgr->LoadTickets();
-
-    LOG_INFO("server.loading", "Loading GM Surveys...");
-    sTicketMgr->LoadSurveys();
-
-    LOG_INFO("server.loading", "Loading Client Addons...");
-    AddonMgr::LoadFromDB();
+    SafeLoadTable("GM Tickets", [] { sTicketMgr->LoadTickets(); });
+    SafeLoadTable("GM Surveys", [] { sTicketMgr->LoadSurveys(); });
+    SafeLoadTable("Client Addons", [] { AddonMgr::LoadFromDB(); });
 
     // pussywizard:
     LOG_INFO("server.loading", "Deleting Invalid Mail Items...");
-    LOG_INFO("server.loading", " ");
     CharacterDatabase.Execute("DELETE mi FROM mail_items mi LEFT JOIN item_instance ii ON mi.item_guid = ii.guid WHERE ii.guid IS NULL");
     CharacterDatabase.Execute("DELETE mi FROM mail_items mi LEFT JOIN mail m ON mi.mail_id = m.id WHERE m.id IS NULL");
     CharacterDatabase.Execute("UPDATE mail m LEFT JOIN mail_items mi ON m.id = mi.mail_id SET m.has_items=0 WHERE m.has_items<>0 AND mi.mail_id IS NULL");
 
-    ///- Handle outdated emails (delete/return)
-    LOG_INFO("server.loading", "Returning Old Mails...");
+    SafeLoadTable("Return Old Mails", [] { sObjectMgr->ReturnOrDeleteOldMails(false); });
+    SafeLoadTable("Autobroadcasts", [] {
+        sAutobroadcastMgr->LoadAutobroadcasts();
+        sAutobroadcastMgr->LoadAutobroadcastsLocalized();
+    });
+    SafeLoadTable("Motd", [] { sMotdMgr->LoadMotd(); });
+
+    ValidateDBConnection("Phase 8 - Before scripts");
+
     LOG_INFO("server.loading", " ");
-    sObjectMgr->ReturnOrDeleteOldMails(false);
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 9: Scripts & AI");
+    LOG_INFO("server.loading", "========================================");
 
-    ///- Load AutoBroadCast
-    LOG_INFO("server.loading", "Loading Autobroadcasts...");
-    sAutobroadcastMgr->LoadAutobroadcasts();
-    sAutobroadcastMgr->LoadAutobroadcastsLocalized();
+    SafeLoadTable("Spell Scripts", [] {
+        sObjectMgr->LoadSpellScripts();
+        sObjectMgr->LoadEventScripts();
+        sObjectMgr->LoadWaypointScripts();
+    });
+    SafeLoadTable("Spell Script Names", [] { sObjectMgr->LoadSpellScriptNames(); });
+    SafeLoadTable("Creature Texts", [] { sCreatureTextMgr->LoadCreatureTexts(); });
+    SafeLoadTable("Creature Text Locales", [] { sCreatureTextMgr->LoadCreatureTextLocales(); });
+    SafeLoadTable("Scripts Database", [] { sScriptMgr->LoadDatabase(); });
+    SafeLoadTable("Validate Spell Scripts", [] { sObjectMgr->ValidateSpellScripts(); });
+    SafeLoadTable("SmartAI Scripts", [] { sSmartScriptMgr->LoadSmartAIFromDB(); }, /*critical=*/false, /*maxRetries=*/2);
+    SafeLoadTable("Calendar Data", [] { sCalendarMgr->LoadFromDB(); });
 
-    ///- Load Motd
-    LOG_INFO("server.loading", "Loading Motd...");
-    sMotdMgr->LoadMotd();
-
-    ///- Load and initialize scripts
-    sObjectMgr->LoadSpellScripts();                              // must be after load Creature/Gameobject(Template/Data)
-    sObjectMgr->LoadEventScripts();                              // must be after load Creature/Gameobject(Template/Data)
-    sObjectMgr->LoadWaypointScripts();
-
-    LOG_INFO("server.loading", "Loading Spell Script Names...");
-    sObjectMgr->LoadSpellScriptNames();
-
-    LOG_INFO("server.loading", "Loading Creature Texts...");
-    sCreatureTextMgr->LoadCreatureTexts();
-
-    LOG_INFO("server.loading", "Loading Creature Text Locales...");
-    sCreatureTextMgr->LoadCreatureTextLocales();
-
-    LOG_INFO("server.loading", "Loading Scripts...");
-    sScriptMgr->LoadDatabase();
-
-    LOG_INFO("server.loading", "Validating Spell Scripts...");
-    sObjectMgr->ValidateSpellScripts();
-
-    LOG_INFO("server.loading", "Loading SmartAI Scripts...");
-    sSmartScriptMgr->LoadSmartAIFromDB();
-
-    LOG_INFO("server.loading", "Loading Calendar Data...");
-    sCalendarMgr->LoadFromDB();
-
-    LOG_INFO("server.loading", "Initializing SpellInfo Precomputed Data..."); // must be called after loading items, professions, spells and pretty much anything
-    LOG_INFO("server.loading", " ");
-    sObjectMgr->InitializeSpellInfoPrecomputedData();
-
-    LOG_INFO("server.loading", "Initialize Commands...");
-    Acore::ChatCommands::LoadCommandMap();
+    SafeLoadTable("SpellInfo Precomputed Data", [] { sObjectMgr->InitializeSpellInfoPrecomputedData(); });
+    SafeLoadTable("Commands", [] { Acore::ChatCommands::LoadCommandMap(); });
 
     ///- Initialize game time and timers
     LOG_INFO("server.loading", "Initialize Game Time and Timers");
@@ -909,17 +853,19 @@ void World::SetInitialWorldSettings()
     _mail_expire_check_timer = GameTime::GetGameTime() + 6h;
 
     ///- Initialize MapMgr
-    LOG_INFO("server.loading", "Starting Map System");
     LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  Phase 10: Systems Initialization");
+    LOG_INFO("server.loading", "========================================");
+
+    LOG_INFO("server.loading", "Starting Map System");
     sMapMgr->Initialize();
 
     LOG_INFO("server.loading", "Starting Game Event system...");
-    LOG_INFO("server.loading", " ");
     uint32 nextGameEvent = sGameEventMgr->StartSystem();
     _timers[WUPDATE_EVENTS].SetInterval(nextGameEvent);    //depend on next event
 
-    LOG_INFO("server.loading", "Loading WorldState...");
-    sWorldState->Load(); // must be called after loading game events
+    SafeLoadTable("WorldState (dynamic)", [] { sWorldState->Load(); }); // must be called after loading game events
 
     // Delete all characters which have been deleted X days before
     Player::DeleteOldCharacters();
@@ -933,75 +879,54 @@ void World::SetInitialWorldSettings()
     LOG_INFO("server.loading", "Initializing Opcodes...");
     opcodeTable.Initialize();
 
-    LOG_INFO("server.loading", "Loading Arena Season Rewards...");
-    sArenaSeasonMgr->LoadRewards();
-    LOG_INFO("server.loading", "Loading Active Arena Season...");
-    sArenaSeasonMgr->LoadActiveSeason();
+    SafeLoadTable("Arena Season Rewards", [] { sArenaSeasonMgr->LoadRewards(); });
+    SafeLoadTable("Active Arena Season", [] { sArenaSeasonMgr->LoadActiveSeason(); });
 
     sTicketMgr->Initialize();
 
-    ///- Initialize Battlegrounds
-    LOG_INFO("server.loading", "Starting Battleground System");
-    sBattlegroundMgr->LoadBattlegroundTemplates();
-    sBattlegroundMgr->InitAutomaticArenaPointDistribution();
+    SafeLoadTable("Battleground Templates", [] {
+        sBattlegroundMgr->LoadBattlegroundTemplates();
+        sBattlegroundMgr->InitAutomaticArenaPointDistribution();
+    });
 
-    ///- Initialize outdoor pvp
-    LOG_INFO("server.loading", "Starting Outdoor PvP System");
-    sOutdoorPvPMgr->InitOutdoorPvP();
-
-    ///- Initialize Battlefield
-    LOG_INFO("server.loading", "Starting Battlefield System");
-    sBattlefieldMgr->InitBattlefield();
-
-    LOG_INFO("server.loading", "Loading Transports...");
-    sTransportMgr->SpawnContinentTransports();
-
-    ///- Initialize Warden
-    LOG_INFO("server.loading", "Loading Warden Checks..." );
-    sWardenCheckMgr->LoadWardenChecks();
-
-    LOG_INFO("server.loading", "Loading Warden Action Overrides..." );
-    sWardenCheckMgr->LoadWardenOverrides();
+    SafeLoadTable("Outdoor PvP", [] { sOutdoorPvPMgr->InitOutdoorPvP(); });
+    SafeLoadTable("Battlefield", [] { sBattlefieldMgr->InitBattlefield(); });
+    SafeLoadTable("Continent Transports", [] { sTransportMgr->SpawnContinentTransports(); });
+    SafeLoadTable("Warden Checks", [] { sWardenCheckMgr->LoadWardenChecks(); });
+    SafeLoadTable("Warden Overrides", [] { sWardenCheckMgr->LoadWardenOverrides(); });
 
     LOG_INFO("server.loading", "Deleting Expired Bans...");
     LoginDatabase.Execute("DELETE FROM ip_banned WHERE unbandate <= UNIX_TIMESTAMP() AND unbandate<>bandate");      // One-time query
 
-    LOG_INFO("server.loading", "Calculate Next Daily Quest Reset Time...");
     InitDailyQuestResetTime();
-
-    LOG_INFO("server.loading", "Calculate Next Weekly Quest Reset Time..." );
     InitWeeklyQuestResetTime();
-
-    LOG_INFO("server.loading", "Calculate Next Monthly Quest Reset Time...");
     InitMonthlyQuestResetTime();
-
-    LOG_INFO("server.loading", "Calculate Random Battleground Reset Time..." );
     InitRandomBGResetTime();
-
-    LOG_INFO("server.loading", "Calculate Deletion Of Old Calendar Events Time...");
     InitCalendarOldEventsDeletionTime();
-
-    LOG_INFO("server.loading", "Calculate Guild Cap Reset Time...");
-    LOG_INFO("server.loading", " ");
     InitGuildResetTime();
 
-    LOG_INFO("server.loading", "Load Petitions...");
-    sPetitionMgr->LoadPetitions();
+    SafeLoadTable("Petitions", [] {
+        sPetitionMgr->LoadPetitions();
+        sPetitionMgr->LoadSignatures();
+    });
+    SafeLoadTable("Stored Loot Items", [] { sLootItemStorage->LoadStorageFromDB(); });
+    SafeLoadTable("Channel Rights", [] { ChannelMgr::LoadChannelRights(); });
+    SafeLoadTable("Channels", [] { ChannelMgr::LoadChannels(); });
+    SafeLoadTable("AntiDos Policies", [] { sWorldGlobals->LoadAntiDosOpcodePolicies(); });
 
-    LOG_INFO("server.loading", "Load Petition Signs...");
-    sPetitionMgr->LoadSignatures();
-
-    LOG_INFO("server.loading", "Load Stored Loot Items...");
-    sLootItemStorage->LoadStorageFromDB();
-
-    LOG_INFO("server.loading", "Load Channel Rights...");
-    ChannelMgr::LoadChannelRights();
-
-    LOG_INFO("server.loading", "Load Channels...");
-    ChannelMgr::LoadChannels();
-
-    LOG_INFO("server.loading", "Loading AntiDos opcode policies");
-    sWorldGlobals->LoadAntiDosOpcodePolicies();
+    // Final DB loading summary
+    LOG_INFO("server.loading", " ");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", "  DB Loading Summary");
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", ">> Tables loaded successfully: {}", s_totalTablesLoaded);
+    if (s_totalTablesSkipped > 0)
+        LOG_ERROR("server.loading", ">> Tables FAILED/SKIPPED:     {}", s_totalTablesSkipped);
+    else
+        LOG_INFO("server.loading", ">> Tables failed/skipped:      0");
+    LOG_INFO("server.loading", ">> Total DB load time:         {} ms ({}s)", s_totalLoadTimeMs, s_totalLoadTimeMs / 1000);
+    LOG_INFO("server.loading", "========================================");
+    LOG_INFO("server.loading", " ");
 
     sScriptMgr->OnBeforeWorldInitialized();
 
@@ -1812,7 +1737,9 @@ void World::UpdateAreaDependentAuras()
 void World::ProcessQueryCallbacks()
 {
     _queryProcessor.ProcessReadyCallbacks();
-    _queryHolderProcessor.ProcessReadyCallbacks();
+    // Limit heavy query-holder callbacks (e.g. bot logins) to 10 per tick
+    // to prevent heap corruption from massive simultaneous allocations.
+    _queryHolderProcessor.ProcessReadyCallbacks(10);
 }
 
 SQLQueryHolderCallback& World::AddQueryHolderCallback(SQLQueryHolderCallback&& callback)

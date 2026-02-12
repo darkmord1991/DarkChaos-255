@@ -2422,6 +2422,13 @@ void ObjectMgr::LoadCreatures()
     LOG_INFO("server.loading", " ");
 }
 
+void ObjectMgr::VisitAllCreatureData(std::function<void(CreatureDataContainer::value_type const&)> visitor) const
+{
+    std::shared_lock<std::shared_mutex> lock(_creatureDataLock);
+    for (auto const& pair : _creatureDataStore)
+        visitor(pair);
+}
+
 // Loads a single creature spawn from DB into the cache.
 // Creature::LoadCreatureFromDB() reads from cache (GetCreatureData()), not from DB directly,
 // so this must be called first for spawns not loaded at startup.
@@ -2470,6 +2477,7 @@ CreatureData const* ObjectMgr::LoadCreatureDataFromDB(ObjectGuid::LowType spawnI
         return nullptr;
     }
 
+    std::unique_lock<std::shared_mutex> lock(_creatureDataLock);
     CreatureData& creatureData    = _creatureDataStore[spawnId];
     creatureData.id1              = id1;
     creatureData.id2              = id2;
@@ -2618,15 +2626,138 @@ void ObjectMgr::LoadCreatureSparring()
 
 CellObjectGuids ObjectMgr::GetGridObjectGuids(uint16 mapid, uint8 spawnMode, uint32 gridId)
 {
-    std::shared_lock<std::shared_mutex> lock(_mapObjectGuidsLock);
-    MapObjectGuids::const_iterator itr1 = _mapObjectGuidsStore.find(MAKE_PAIR32(mapid, spawnMode));
-    if (itr1 != _mapObjectGuidsStore.end())
+    static constexpr std::size_t MAX_SANE_SET_SIZE = 100000;
+
+    // Stage 1: Under shared_lock, copy GUIDs into flat vectors.
+    // This minimises lock hold-time and avoids per-element tree-node
+    // heap allocations while the lock is held (reduces exposure to
+    // heap corruption from other threads).
+    std::vector<uint32> creatureGuids;
+    std::vector<uint32> gameobjectGuids;
+
     {
-        CellObjectGuidsMap::const_iterator itr2 = itr1->second.find(gridId);
-        if (itr2 != itr1->second.end())
-            return itr2->second;
+        std::shared_lock<std::shared_mutex> lock(_mapObjectGuidsLock);
+        MapObjectGuids::const_iterator itr1 = _mapObjectGuidsStore.find(MAKE_PAIR32(mapid, spawnMode));
+        if (itr1 != _mapObjectGuidsStore.end())
+        {
+            CellObjectGuidsMap::const_iterator itr2 = itr1->second.find(gridId);
+            if (itr2 != itr1->second.end())
+            {
+                auto const& src = itr2->second;
+
+                // --- creatures: bounded copy to vector ---
+                {
+                    const std::size_t reported = src.creatures.size();
+                    if (reported <= MAX_SANE_SET_SIZE)
+                    {
+                        creatureGuids.reserve(reported);
+                        std::size_t count = 0;
+                        for (auto it = src.creatures.begin();
+                             it != src.creatures.end() && count <= reported;
+                             ++it, ++count)
+                        {
+                            creatureGuids.push_back(*it);
+                        }
+                        if (count > reported)
+                        {
+                            LOG_ERROR("misc", "GetGridObjectGuids: creatures set corruption detected "
+                                "(map={}, grid={}, reported_size={}, iterated={}). Returning partial data.",
+                                mapid, gridId, reported, count);
+                        }
+                    }
+                    else
+                    {
+                        LOG_ERROR("misc", "GetGridObjectGuids: creatures set has insane size {} "
+                            "(map={}, grid={}). Skipping copy.", reported, mapid, gridId);
+                    }
+                }
+
+                // --- gameobjects: bounded copy to vector ---
+                {
+                    const std::size_t reported = src.gameobjects.size();
+                    if (reported <= MAX_SANE_SET_SIZE)
+                    {
+                        gameobjectGuids.reserve(reported);
+                        std::size_t count = 0;
+                        for (auto it = src.gameobjects.begin();
+                             it != src.gameobjects.end() && count <= reported;
+                             ++it, ++count)
+                        {
+                            gameobjectGuids.push_back(*it);
+                        }
+                        if (count > reported)
+                        {
+                            LOG_ERROR("misc", "GetGridObjectGuids: gameobjects set corruption detected "
+                                "(map={}, grid={}, reported_size={}, iterated={}). Returning partial data.",
+                                mapid, gridId, reported, count);
+                        }
+                    }
+                    else
+                    {
+                        LOG_ERROR("misc", "GetGridObjectGuids: gameobjects set has insane size {} "
+                            "(map={}, grid={}). Skipping copy.", reported, mapid, gridId);
+                    }
+                }
+            }
+            else
+            {
+                return _emptyCellObjectGuids;
+            }
+        }
+        else
+        {
+            return _emptyCellObjectGuids;
+        }
     }
-    return _emptyCellObjectGuids;
+    // lock released
+
+    // Stage 2: Build result sets outside the lock.
+    // Source sets are sorted, so the vectors are already sorted.
+    // NOTE: Avoid std::set::insert(first, last) here.
+    // We have seen crashes in libstdc++ rb_tree range insertion when the
+    // input iterators are corrupted (usually due to memory corruption
+    // elsewhere). A manual hinted insertion keeps the failure mode to
+    // a logged partial/empty result rather than a SIGSEGV.
+    CellObjectGuids result;
+
+    auto safeInsertSorted = [&](CellGuidSet& out, std::vector<uint32> const& in, char const* what)
+    {
+        if (in.empty())
+            return;
+
+        if (in.size() > MAX_SANE_SET_SIZE)
+        {
+            LOG_ERROR("misc", "GetGridObjectGuids: {} vector size {} exceeds max sane size {}, map={}, grid={}.",
+                what, in.size(), MAX_SANE_SET_SIZE, mapid, gridId);
+            return;
+        }
+
+        uint32 const* data = in.data();
+        if (!data)
+        {
+            LOG_ERROR("misc", "GetGridObjectGuids: {} vector has null data with size {} (corruption?) map={}, grid={}.",
+                what, in.size(), mapid, gridId);
+            return;
+        }
+
+        // Heuristic guard: a very low address is almost certainly invalid on 64-bit.
+        uintptr_t const addr = reinterpret_cast<uintptr_t>(data);
+        if (addr < 0x10000)
+        {
+            LOG_ERROR("misc", "GetGridObjectGuids: {} vector data pointer looks invalid (0x{:x}) size {} map={}, grid={}.",
+                what, addr, in.size(), mapid, gridId);
+            return;
+        }
+
+        // Vectors come from a set, so they are already sorted/unique. Use hinted insertion for O(n).
+        CellGuidSet::iterator hint = out.end();
+        for (std::size_t i = 0; i < in.size(); ++i)
+            hint = out.insert(hint, in[i]);
+    };
+
+    safeInsertSorted(result.creatures, creatureGuids, "creature");
+    safeInsertSorted(result.gameobjects, gameobjectGuids, "gameobject");
+    return result;
 }
 
 void ObjectMgr::AddCreatureToGrid(ObjectGuid::LowType guid, CreatureData const* data)
@@ -2944,18 +3075,22 @@ void ObjectMgr::LoadGameobjects()
     LOG_INFO("server.loading", " ");
 }
 
-// Loads a single gameobject spawn from DB into the cache.
-// GameObject::LoadGameObjectFromDB() reads from cache (GetGameObjectData()), not from DB directly,
-// so this must be called first for spawns not loaded at startup.
+void ObjectMgr::VisitAllGOData(std::function<void(GameObjectDataContainer::value_type const&)> visitor) const
+{
+    std::shared_lock<std::shared_mutex> lock(_gameObjectDataLock);
+    for (auto const& pair : _gameObjectDataStore)
+        visitor(pair);
+}
+
 GameObjectData const* ObjectMgr::LoadGameObjectDataFromDB(ObjectGuid::LowType spawnId)
 {
     GameObjectData const* data = GetGameObjectData(spawnId);
     if (data)
         return data;
 
-    QueryResult result = WorldDatabase.Query("SELECT gameobject.guid, id, map, position_x, position_y, position_z, orientation, "
-        "rotation0, rotation1, rotation2, rotation3, spawntimesecs, animprogress, state, spawnMask, phaseMask, "
-        "ScriptName "
+    QueryResult result = WorldDatabase.Query("SELECT gameobject.guid, id, map, position_x, position_y, "
+        "position_z, orientation, rotation0, rotation1, rotation2, rotation3, "
+        "spawntimesecs, animprogress, state, spawnMask, phaseMask, ScriptName "
         "FROM gameobject WHERE gameobject.guid = {}", spawnId);
 
     if (!result)
@@ -2978,6 +3113,7 @@ GameObjectData const* ObjectMgr::LoadGameObjectDataFromDB(ObjectGuid::LowType sp
         return nullptr;
     }
 
+    std::unique_lock<std::shared_mutex> lock(_gameObjectDataLock);
     GameObjectData& goData  = _gameObjectDataStore[spawnId];
     goData.id               = entry;
     goData.mapid            = fields[2].Get<uint16>();

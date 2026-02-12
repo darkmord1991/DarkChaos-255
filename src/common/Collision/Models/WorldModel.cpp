@@ -31,9 +31,14 @@ template<> struct BoundsTrait<VMAP::GroupModel>
 
 namespace VMAP
 {
-    bool IntersectTriangle(const MeshTriangle& tri, std::vector<Vector3>::const_iterator points, const G3D::Ray& ray, float& distance)
+    bool IntersectTriangle(const MeshTriangle& tri, const std::vector<Vector3>& points, const G3D::Ray& ray, float& distance)
     {
         static const float EPS = 1e-5f;
+
+        if (tri.idx0 >= points.size() || tri.idx1 >= points.size() || tri.idx2 >= points.size())
+        {
+            return false;
+        }
 
         // See RTR2 ch. 13.7 for the algorithm.
 
@@ -427,14 +432,14 @@ namespace VMAP
     struct GModelRayCallback
     {
         GModelRayCallback(const std::vector<MeshTriangle>& tris, const std::vector<Vector3>& vert):
-            vertices(vert.begin()), triangles(tris.begin()), hit(false) { }
+            vertices(&vert), triangles(tris.begin()), hit(false) { }
         bool operator()(const G3D::Ray& ray, uint32 entry, float& distance, bool /*StopAtFirstHit*/)
         {
-            bool result = IntersectTriangle(triangles[entry], vertices, ray, distance);
+            bool result = IntersectTriangle(triangles[entry], *vertices, ray, distance);
             if (result) { hit = true; }
             return hit;
         }
-        std::vector<Vector3>::const_iterator vertices;
+        const std::vector<Vector3>* vertices;
         std::vector<MeshTriangle>::const_iterator triangles;
         bool hit;
     };

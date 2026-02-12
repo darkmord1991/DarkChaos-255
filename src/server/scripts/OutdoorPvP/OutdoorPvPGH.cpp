@@ -126,9 +126,8 @@ void OPvPCapturePointGH::ChangeState()
     }
 
     Map* map = sMapMgr->FindMap(MAP_NORTHREND, 0);
-    auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(m_capturePointSpawnId);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : map->GetGameObjectsBySpawnId(m_capturePointSpawnId))
+        go->SetGoArtKit(artkit);
 }
 
 class OutdoorPvP_grizzly_hills : public OutdoorPvPScript

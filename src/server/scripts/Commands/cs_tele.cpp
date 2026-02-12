@@ -306,19 +306,23 @@ public:
     static bool HandleTeleNameNpcIdCommand(ChatHandler* handler, PlayerIdentifier player, Variant<Hyperlink<creature_entry>, uint32> creatureId)
     {
         CreatureData const* spawnpoint = nullptr;
-        for (auto const& pair : sObjectMgr->GetAllCreatureData())
+        bool multiple = false;
+        sObjectMgr->VisitAllCreatureData([&](CreatureDataContainer::value_type const& pair)
         {
+            if (multiple)
+                return;
+
             if (pair.second.id1 != *creatureId)
-                continue;
+                return;
 
             if (!spawnpoint)
                 spawnpoint = &pair.second;
             else
             {
                 handler->SendSysMessage(LANG_COMMAND_GOCREATMULTIPLE);
-                break;
+                multiple = true;
             }
-        }
+        });
 
         if (!spawnpoint)
         {

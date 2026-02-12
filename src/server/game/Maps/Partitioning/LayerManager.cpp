@@ -83,6 +83,22 @@ void LayerManager::LoadConfig()
     ParsePerMapCapacityOverrides();
     LoadRebalancingConfig();
 
+    // Pre-reserve hash maps to minimize costly rehashing during bulk grid loads.
+    // Rehashing traverses ALL existing nodes; if any node was corrupted by
+    // external heap corruption (e.g. transaction use-after-free) the traversal
+    // segfaults.  Large initial bucket counts keep rehashing rare.
+    if (_config.goLayering)
+    {
+        _goLayers.reserve(100000);
+        _goLayerIndex.reserve(2048);
+    }
+    if (_config.npcLayering)
+    {
+        _npcLayers.reserve(100000);
+        _npcLayerIndex.reserve(2048);
+    }
+    _playerLayers.reserve(5000);
+
     LOG_INFO("map.partition", "LayerManager config loaded: enabled={} capacity={} max={} npc={} go={}",
         _config.enabled, _config.capacity, _config.maxLayers, _config.npcLayering, _config.goLayering);
 }
@@ -1076,32 +1092,64 @@ void LayerManager::AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid cons
     if (!IsNPCLayeringEnabled())
         return;
 
+    if (!npcGuid || npcGuid.GetCounter() == 0)
+    {
+        LOG_ERROR("map.partition", "AssignNPCToLayer: invalid NPC guid (mapId={} zoneId={} layerId={})",
+            mapId, zoneId, layerId);
+        return;
+    }
+
     std::unique_lock<std::shared_mutex> guard(_layerLock);
     LayerKey layerKey = MakeLayerKey(mapId, npcGuid);
-    _npcLayers[layerKey] = { mapId, zoneId, layerId, npcGuid.GetEntry() };
-    uint64 indexKey = (static_cast<uint64>(mapId) << 32) | layerId;
-    _npcLayerIndex[indexKey].insert(layerKey);
-    
+
+    try
+    {
+        auto [it, inserted] = _npcLayers.try_emplace(layerKey, LayerAssignment{ mapId, zoneId, layerId, npcGuid.GetEntry() });
+        if (!inserted)
+            it->second = { mapId, zoneId, layerId, npcGuid.GetEntry() };
+
+        uint64 indexKey = (static_cast<uint64>(mapId) << 32) | layerId;
+        _npcLayerIndex[indexKey].insert(layerKey);
+    }
+    catch (std::exception const& e)
+    {
+        LOG_ERROR("map.partition", "AssignNPCToLayer: exception inserting NPC {} map {} zone {} layer {}: {}",
+            npcGuid.ToString(), mapId, zoneId, layerId, e.what());
+        return;
+    }
+
     LOG_DEBUG("map.partition", "Assigned NPC {} to layer {} in map {} zone {}",
         npcGuid.ToString(), layerId, mapId, zoneId);
 }
 
 void LayerManager::RemoveNPCFromLayer(uint32 mapId, ObjectGuid const& npcGuid)
 {
+    if (!npcGuid || npcGuid.GetCounter() == 0)
+        return;
+
     std::unique_lock<std::shared_mutex> guard(_layerLock);
     LayerKey layerKey = MakeLayerKey(mapId, npcGuid);
-    auto it = _npcLayers.find(layerKey);
-    if (it != _npcLayers.end())
+
+    try
     {
-        uint64 indexKey = (static_cast<uint64>(it->second.mapId) << 32) | it->second.layerId;
-        auto indexIt = _npcLayerIndex.find(indexKey);
-        if (indexIt != _npcLayerIndex.end())
+        auto it = _npcLayers.find(layerKey);
+        if (it != _npcLayers.end())
         {
-            indexIt->second.erase(layerKey);
-            if (indexIt->second.empty())
-                _npcLayerIndex.erase(indexIt);
+            uint64 indexKey = (static_cast<uint64>(it->second.mapId) << 32) | it->second.layerId;
+            auto indexIt = _npcLayerIndex.find(indexKey);
+            if (indexIt != _npcLayerIndex.end())
+            {
+                indexIt->second.erase(layerKey);
+                if (indexIt->second.empty())
+                    _npcLayerIndex.erase(indexIt);
+            }
+            _npcLayers.erase(it);
         }
-        _npcLayers.erase(it);
+    }
+    catch (std::exception const& e)
+    {
+        LOG_ERROR("map.partition", "RemoveNPCFromLayer: exception for NPC {} map {}: {}",
+            npcGuid.ToString(), mapId, e.what());
     }
 }
 
@@ -1194,11 +1242,35 @@ void LayerManager::AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const
     if (!IsGOLayeringEnabled())
         return;
 
+    // Validate the GO GUID before modifying the hash table.  Garbage inputs
+    // could produce sentinel LayerKeys that collide with bookkeeping entries.
+    if (!goGuid || goGuid.GetCounter() == 0)
+    {
+        LOG_ERROR("map.partition", "AssignGOToLayer: invalid GO guid (mapId={} zoneId={} layerId={})",
+            mapId, zoneId, layerId);
+        return;
+    }
+
     std::unique_lock<std::shared_mutex> guard(_layerLock);
     LayerKey layerKey = MakeLayerKey(mapId, goGuid);
-    _goLayers[layerKey] = { mapId, zoneId, layerId, goGuid.GetEntry() };
-    uint64 indexKey = (static_cast<uint64>(mapId) << 32) | layerId;
-    _goLayerIndex[indexKey].insert(layerKey);
+
+    // Use try_emplace + assign to avoid double-lookup on new insertions,
+    // and protect against exceptions from the allocator / hash function.
+    try
+    {
+        auto [it, inserted] = _goLayers.try_emplace(layerKey, LayerAssignment{ mapId, zoneId, layerId, goGuid.GetEntry() });
+        if (!inserted)
+            it->second = { mapId, zoneId, layerId, goGuid.GetEntry() };
+
+        uint64 indexKey = (static_cast<uint64>(mapId) << 32) | layerId;
+        _goLayerIndex[indexKey].insert(layerKey);
+    }
+    catch (std::exception const& e)
+    {
+        LOG_ERROR("map.partition", "AssignGOToLayer: exception inserting GO {} map {} zone {} layer {}: {}",
+            goGuid.ToString(), mapId, zoneId, layerId, e.what());
+        return;
+    }
 
     LOG_DEBUG("map.partition", "Assigned GO {} to layer {} in map {} zone {}",
         goGuid.ToString(), layerId, mapId, zoneId);
@@ -1206,20 +1278,32 @@ void LayerManager::AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const
 
 void LayerManager::RemoveGOFromLayer(uint32 mapId, ObjectGuid const& goGuid)
 {
+    if (!goGuid || goGuid.GetCounter() == 0)
+        return;
+
     std::unique_lock<std::shared_mutex> guard(_layerLock);
     LayerKey layerKey = MakeLayerKey(mapId, goGuid);
-    auto it = _goLayers.find(layerKey);
-    if (it != _goLayers.end())
+
+    try
     {
-        uint64 indexKey = (static_cast<uint64>(it->second.mapId) << 32) | it->second.layerId;
-        auto indexIt = _goLayerIndex.find(indexKey);
-        if (indexIt != _goLayerIndex.end())
+        auto it = _goLayers.find(layerKey);
+        if (it != _goLayers.end())
         {
-            indexIt->second.erase(layerKey);
-            if (indexIt->second.empty())
-                _goLayerIndex.erase(indexIt);
+            uint64 indexKey = (static_cast<uint64>(it->second.mapId) << 32) | it->second.layerId;
+            auto indexIt = _goLayerIndex.find(indexKey);
+            if (indexIt != _goLayerIndex.end())
+            {
+                indexIt->second.erase(layerKey);
+                if (indexIt->second.empty())
+                    _goLayerIndex.erase(indexIt);
+            }
+            _goLayers.erase(it);
         }
-        _goLayers.erase(it);
+    }
+    catch (std::exception const& e)
+    {
+        LOG_ERROR("map.partition", "RemoveGOFromLayer: exception for GO {} map {}: {}",
+            goGuid.ToString(), mapId, e.what());
     }
 }
 

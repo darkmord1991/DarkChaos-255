@@ -17,6 +17,19 @@
 
 #include "EventProcessor.h"
 #include "Errors.h"
+#include "Log.h"
+#include <cstring>
+
+namespace
+{
+    bool IsEventAlreadyQueued(EventList const& events, BasicEvent const* event)
+    {
+        for (auto const& entry : events)
+            if (entry.second == event)
+                return true;
+        return false;
+    }
+}
 
 void BasicEvent::ScheduleAbort()
 {
@@ -44,16 +57,78 @@ void EventProcessor::Update(uint32 p_time)
     // update time
     m_time += p_time;
 
+    if (m_events.empty())
+        return;
+
+    // Safety limit: prevent infinite loops on corrupted tree.
+    // Events can be added during processing, so allow generous headroom.
+    const size_t maxIterations = m_events.size() + 1000;
+    size_t iterations = 0;
+
     // main event loop
+    // NOTE: the loop is restructured to validate the iterator BEFORE any
+    // dereference. Heap corruption (e.g. from transport data races) can
+    // zero the multimap's internal leftmost pointer, yielding a null-node
+    // iterator that passes != end() but crashes on dereference/erase.
     EventList::iterator i;
-    while (((i = m_events.begin()) != m_events.end()) && i->first <= m_time)
+    while (true)
     {
+        if (m_events.empty())
+            break;
+
+        i = m_events.begin();
+        if (i == m_events.end())
+            break;
+
+        // Defensive: validate iterator's internal node pointer before
+        // dereferencing.  In libstdc++ (GCC) an rb_tree iterator is a
+        // single pointer (_M_node).  If heap corruption zeroed the tree's
+        // leftmost pointer we get a null-node iterator here.
+        {
+            static_assert(sizeof(EventList::iterator) == sizeof(void*),
+                "EventProcessor corruption guard: iterator layout assumption broken");
+            void* nodePtr = nullptr;
+            std::memcpy(&nodePtr, &i, sizeof(void*));
+            if (!nodePtr || reinterpret_cast<uintptr_t>(nodePtr) < 0x10000)
+            {
+                LOG_ERROR("misc", "EventProcessor::Update: corrupted event tree "
+                    "(node ptr {:p}, reported size {}). Leaking corrupted tree to avoid crash.",
+                    nodePtr, m_events.size());
+                // Swap internals into a heap-allocated map and intentionally
+                // leak it — freeing corrupted nodes could deadlock the allocator.
+                auto* leaked = new EventList();
+                leaked->swap(m_events);
+                return;
+            }
+        }
+
+        // Now safe to dereference the iterator
+        if (i->first > m_time)
+            break;
+
+        if (++iterations > maxIterations)
+        {
+            LOG_ERROR("misc", "EventProcessor::Update: exceeded safety limit "
+                "({} iterations, {} reported size). Aborting event processing.",
+                iterations, m_events.size());
+            break;
+        }
+
         // get and remove event from queue
         BasicEvent* event = i->second;
+
+        // Validate event pointer — corrupted node data could yield garbage
+        if (!event || reinterpret_cast<uintptr_t>(event) < 0x10000)
+        {
+            LOG_ERROR("misc", "EventProcessor::Update: corrupted event pointer {:p} in tree node. Removing entry.",
+                static_cast<void*>(event));
+            m_events.erase(i);
+            continue;
+        }
+
         m_events.erase(i);
 
         uint64 currentTime = m_time;
-        lock.unlock();
 
         bool deleteEvent = false;
 
@@ -74,8 +149,6 @@ void EventProcessor::Update(uint32 p_time)
                 deleteEvent = true;
         }
 
-        lock.lock();
-
         if (deleteEvent)
         {
             delete event;
@@ -83,8 +156,11 @@ void EventProcessor::Update(uint32 p_time)
         }
 
         // Reschedule non deletable events to be checked at
-        // the next update tick
-        AddEvent(event, CalculateTime(1), false);
+        // the next update tick.
+        // Some events (e.g. SpellEvent delayed states) re-queue themselves
+        // during Execute(). Avoid inserting the same pointer twice.
+        if (!IsEventAlreadyQueued(m_events, event))
+            AddEvent(event, CalculateTime(1), false);
     }
 }
 

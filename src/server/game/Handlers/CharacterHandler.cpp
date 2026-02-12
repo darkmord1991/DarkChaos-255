@@ -889,7 +889,24 @@ void WorldSession::HandlePlayerLoginFromDB(LoginQueryHolder const& holder)
     // Xinef: moved this from below
     ObjectAccessor::AddObject(pCurrChar);
 
-    if (!pCurrChar->GetMap()->AddPlayerToMap(pCurrChar) || !pCurrChar->CheckInstanceLoginValid())
+    // Create/retrieve map for player before adding to map
+    Map* map = sMapMgr->CreateMap(pCurrChar->GetMapId(), pCurrChar);
+    if (!map)
+    {
+        LOG_ERROR("network.opcode", "Player {} login failed - could not create map {} (possible corruption)",
+            pCurrChar->GetName(), pCurrChar->GetMapId());
+        SetPlayer(nullptr);
+        KickPlayer("Map creation failed");
+        ObjectAccessor::RemoveObject(pCurrChar);
+        delete pCurrChar;
+        m_playerLoading = false;
+        return;
+    }
+
+    // Assign map to player before AddPlayerToMap
+    pCurrChar->SetMap(map);
+
+    if (!map->AddPlayerToMap(pCurrChar) || !pCurrChar->CheckInstanceLoginValid())
     {
         AreaTriggerTeleport const* at = sObjectMgr->GetGoBackTrigger(pCurrChar->GetMapId());
         if (at)

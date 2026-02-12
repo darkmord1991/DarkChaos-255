@@ -37,6 +37,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <thread>
 namespace
 {
     std::unordered_map<uint32, uint32> ParseTileOverrides(std::string_view overrides)
@@ -135,8 +136,9 @@ namespace
                 continue;
 
             bool allDigits = true;
-            for (char c : name)
+            for (size_t i = 0; i < mapIdDigits; ++i)
             {
+                char c = name[i];
                 if (!std::isdigit(static_cast<unsigned char>(c)))
                 {
                     allDigits = false;
@@ -160,6 +162,29 @@ namespace
         }
 
         return counts;
+    }
+}
+
+uint64 PartitionManager::GetThreadIdHash()
+{
+    return static_cast<uint64>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+}
+
+void PartitionManager::CheckGridWriter(SpatialHashGrid& grid, uint32 mapId, uint32 partitionId, char const* op)
+{
+    uint64 current = GetThreadIdHash();
+    uint64 prev = grid.lastWriterThreadHash.load(std::memory_order_relaxed);
+    if (prev == 0)
+    {
+        grid.lastWriterThreadHash.store(current, std::memory_order_relaxed);
+        return;
+    }
+
+    if (prev != current)
+    {
+        LOG_ERROR("map.partition", "Boundary grid cross-thread mutation detected (map {}, partition {}, op {}, prev=0x{:X}, now=0x{:X})",
+            mapId, partitionId, op, prev, current);
+        grid.lastWriterThreadHash.store(current, std::memory_order_relaxed);
     }
 }
 
@@ -994,6 +1019,8 @@ void PartitionManager::UnregisterBoundaryObject(uint32 mapId, uint32 partitionId
     if (partitionIt == mapIt->second.end())
         return;
 
+    if (IsRuntimeDiagnosticsEnabled())
+        CheckGridWriter(partitionIt->second, mapId, partitionId, "UnregisterBoundaryObject");
     partitionIt->second.Remove(guid);
 
     LOG_DEBUG("map.partition", "Unregistered boundary object {} from map {} partition {}", guid.ToString(), mapId, partitionId);
@@ -1024,7 +1051,10 @@ void PartitionManager::RegisterBoundaryObjectWithPosition(uint32 mapId, uint32 p
         return;
 
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
-    _boundarySpatialGrids[mapId][partitionId].Insert(guid, x, y);
+    auto& grid = _boundarySpatialGrids[mapId][partitionId];
+    if (IsRuntimeDiagnosticsEnabled())
+        CheckGridWriter(grid, mapId, partitionId, "RegisterBoundaryObjectWithPosition");
+    grid.Insert(guid, x, y);
 
     LOG_DEBUG("map.partition", "Registered boundary object {} with position ({:.1f}, {:.1f}) in map {} partition {}", 
         guid.ToString(), x, y, mapId, partitionId);
@@ -1036,7 +1066,10 @@ void PartitionManager::UpdateBoundaryObjectPosition(uint32 mapId, uint32 partiti
         return;
 
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
-    _boundarySpatialGrids[mapId][partitionId].Update(guid, x, y);
+    auto& grid = _boundarySpatialGrids[mapId][partitionId];
+    if (IsRuntimeDiagnosticsEnabled())
+        CheckGridWriter(grid, mapId, partitionId, "UpdateBoundaryObjectPosition");
+    grid.Update(guid, x, y);
 }
 
 void PartitionManager::UnregisterBoundaryObjectFromGrid(uint32 mapId, uint32 partitionId, ObjectGuid const& guid)
@@ -1050,7 +1083,11 @@ void PartitionManager::UnregisterBoundaryObjectFromGrid(uint32 mapId, uint32 par
     {
         auto partIt = mapIt->second.find(partitionId);
         if (partIt != mapIt->second.end())
+        {
+            if (IsRuntimeDiagnosticsEnabled())
+                CheckGridWriter(partIt->second, mapId, partitionId, "UnregisterBoundaryObjectFromGrid");
             partIt->second.Remove(guid);
+        }
     }
     
 
@@ -1119,6 +1156,9 @@ void PartitionManager::CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, 
     if (partitionIt == mapIt->second.end())
         return;
 
+    if (IsRuntimeDiagnosticsEnabled())
+        CheckGridWriter(partitionIt->second, mapId, partitionId, "CleanupBoundaryObjects");
+
     std::vector<ObjectGuid> toRemove;
     for (auto const& [cellKey, entries] : partitionIt->second.cells)
     {
@@ -1146,6 +1186,8 @@ void PartitionManager::BatchUpdateBoundaryPositions(uint32 mapId, uint32 partiti
 
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     auto& grid = _boundarySpatialGrids[mapId][partitionId];
+    if (IsRuntimeDiagnosticsEnabled())
+        CheckGridWriter(grid, mapId, partitionId, "BatchUpdateBoundaryPositions");
     for (auto const& upd : updates)
     {
         grid.Update(upd.guid, upd.x, upd.y);
@@ -1172,7 +1214,11 @@ void PartitionManager::BatchUnregisterBoundaryObjects(uint32 mapId, uint32 parti
     for (auto const& guid : guids)
     {
         if (spatialGrid)
+        {
+            if (IsRuntimeDiagnosticsEnabled())
+                CheckGridWriter(*spatialGrid, mapId, partitionId, "BatchUnregisterBoundaryObjects");
             spatialGrid->Remove(guid);
+        }
     }
 }
 
@@ -1536,6 +1582,8 @@ std::vector<uint32> PartitionManager::GetAdjacentPartitions(uint32 mapId, uint32
         return adjacent;
     
     const PartitionGridLayout& layout = it->second;
+    if (partitionId == 0 || partitionId > layout.count)
+        return adjacent;
     
     // Calculate grid position
     uint32 col = (partitionId - 1) % layout.cols;

@@ -109,9 +109,8 @@ uint32 OPvPCapturePointNA::GetAliveGuardsCount()
     uint32 count = 0;
     for (auto itr = _creatures.begin(); itr != _creatures.end(); ++itr)
     {
-        auto bounds = _pvp->GetMap()->GetCreatureBySpawnIdStore().equal_range(itr->second);
-        for (auto itr2 = bounds.first; itr2 != bounds.second; ++itr2)
-            if (itr2->second->IsAlive() && (itr2->second->GetEntry() == NA_HALAANI_GUARD_A || itr2->second->GetEntry() == NA_HALAANI_GUARD_H))
+        for (Creature* creature : _pvp->GetMap()->GetCreaturesBySpawnId(itr->second))
+            if (creature->IsAlive() && (creature->GetEntry() == NA_HALAANI_GUARD_A || creature->GetEntry() == NA_HALAANI_GUARD_H))
                 ++count;
     }
     return count;
@@ -127,15 +126,12 @@ void OPvPCapturePointNA::DespawnCreatures(HalaaNPCS teamNPC)
     for (int i = 0; i < NA_HALAA_CREATURE_TEAM_SPAWN; i++)
     {
         ObjectGuid::LowType spawnId = teamNPC[i];
-        auto bounds = _pvp->GetMap()->GetCreatureBySpawnIdStore().equal_range(spawnId);
+        auto creatures = _pvp->GetMap()->GetCreaturesBySpawnId(spawnId);
         CreatureData const* data = sObjectMgr->GetCreatureData(spawnId);
-        for (auto itr = bounds.first; itr != bounds.second;)
+        for (Creature* c : creatures)
         {
-            // can happen when closing the core
-            Creature* c = itr->second;
             if (c)
             {
-                ++itr;
                 c->AddObjectToRemoveList();
                 sObjectMgr->RemoveCreatureFromGrid(spawnId, data);
                 _creatures[i] = 0;
@@ -817,9 +813,8 @@ void OPvPCapturePointNA::ChangeState()
             break;
     }
 
-    auto bounds = sMapMgr->FindMap(MAP_OUTLAND, 0)->GetGameObjectBySpawnIdStore().equal_range(m_capturePointSpawnId);
-    for (auto itr = bounds.first; itr != bounds.second; ++itr)
-        itr->second->SetGoArtKit(artkit);
+    for (GameObject* go : sMapMgr->FindMap(MAP_OUTLAND, 0)->GetGameObjectsBySpawnId(m_capturePointSpawnId))
+        go->SetGoArtKit(artkit);
 
     UpdateHalaaWorldState();
 }

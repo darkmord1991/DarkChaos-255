@@ -1872,9 +1872,20 @@ public:
     void SetPvP(bool state)
     {
         Unit::SetPvP(state);
-        if (!m_Controlled.empty())
-            for (auto& itr : m_Controlled)
-                itr->SetPvP(state);
+
+        std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+        for (auto itr = m_Controlled.begin(); itr != m_Controlled.end();)
+        {
+            Unit* controlled = *itr;
+            if (!Unit::IsUnitPointerLive(controlled))
+            {
+                itr = m_Controlled.erase(itr);
+                continue;
+            }
+
+            controlled->SetPvP(state);
+            ++itr;
+        }
     }
     void UpdatePvP(bool state, bool _override = false);
     void UpdateZone(uint32 newZone, uint32 newArea, bool force = false);

@@ -39,6 +39,7 @@ public:
     virtual void AddPassenger(WorldObject* passenger, bool withAll = false) = 0;
     virtual void RemovePassenger(WorldObject* passenger, bool withAll = false) = 0;
     PassengerSet const& GetPassengers() const { return _passengers; }
+    virtual PassengerSet GetPassengerSnapshot() const { return _passengers; }
 
     virtual void DelayedUpdate(uint32 /*diff*/) {}
 
@@ -71,6 +72,8 @@ public:
 
     void LoadStaticPassengers();
     PassengerSet const& GetStaticPassengers() const { return _staticPassengers; }
+    PassengerSet GetStaticPassengerSnapshot() const;
+    PassengerSet GetPassengerSnapshot() const override;
     void UnloadStaticPassengers();
     void UnloadNonStaticPassengers();
     void SetPassengersLoaded(bool loaded) { _passengersLoaded.store(loaded, std::memory_order_release); }
@@ -108,7 +111,7 @@ private:
     bool _triggeredDepartureEvent;
 
     PassengerSet _staticPassengers;
-    mutable std::mutex Lock;
+    mutable std::recursive_mutex Lock;
     std::atomic<bool> _passengersLoaded;
     std::atomic<bool> _passengersLoading;
     bool _delayedTeleport;
@@ -140,6 +143,8 @@ public:
 private:
     bool _needDoInitialRelocation;
     mutable std::recursive_mutex _passengerLock;
+
+    PassengerSet GetPassengerSnapshot() const override;
 };
 
 #endif

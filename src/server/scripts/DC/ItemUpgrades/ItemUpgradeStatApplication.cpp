@@ -43,7 +43,7 @@ namespace DarkChaos
 
             // Method 5: Trigger item stat update for all equipped items
             // This ensures the item upgrade changes are reflected
-            for (int slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
             {
                 Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
                 if (item)

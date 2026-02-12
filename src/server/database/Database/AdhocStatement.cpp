@@ -20,7 +20,9 @@
 #include "QueryResult.h"
 
 /*! Basic, ad-hoc queries. */
-BasicStatementTask::BasicStatementTask(std::string_view sql, bool async) : m_result(nullptr)
+BasicStatementTask::BasicStatementTask(std::string_view sql, bool async)
+        : SQLOperation("BasicStatementTask", &BasicStatementTask::ExecuteThunk, &BasicStatementTask::DestroyThunk),
+            m_result(nullptr)
 {
     m_sql = std::string(sql);
     m_has_result = async; // If the operation is async, then there's a result

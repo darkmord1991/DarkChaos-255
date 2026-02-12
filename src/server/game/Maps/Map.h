@@ -455,14 +455,12 @@ public:
     }
 
     typedef std::unordered_multimap<ObjectGuid::LowType, Creature*> CreatureBySpawnIdContainer;
-    CreatureBySpawnIdContainer& GetCreatureBySpawnIdStore() { return _creatureBySpawnIdStore; }
     std::vector<Creature*> GetCreaturesBySpawnId(ObjectGuid::LowType spawnId) const;
     std::vector<std::pair<ObjectGuid::LowType, Creature*>> GetCreatureBySpawnIdStoreSnapshot() const;
     void AddCreatureToSpawnIdStore(ObjectGuid::LowType spawnId, Creature* creature);
     void RemoveCreatureFromSpawnIdStore(ObjectGuid::LowType spawnId, Creature* creature);
 
     typedef std::unordered_multimap<ObjectGuid::LowType, GameObject*> GameObjectBySpawnIdContainer;
-    GameObjectBySpawnIdContainer& GetGameObjectBySpawnIdStore() { return _gameobjectBySpawnIdStore; }
     std::vector<GameObject*> GetGameObjectsBySpawnId(ObjectGuid::LowType spawnId) const;
     std::vector<std::pair<ObjectGuid::LowType, GameObject*>> GetGameObjectBySpawnIdStoreSnapshot() const;
     void AddGameObjectToSpawnIdStore(ObjectGuid::LowType spawnId, GameObject* gameObject);
@@ -626,7 +624,7 @@ public:
     void RemoveObjectFromMapUpdateList(WorldObject* obj);
 
     typedef std::vector<WorldObject*> UpdatableObjectList;
-    typedef std::unordered_set<WorldObject*> PendingAddUpdatableObjectList;
+    typedef std::vector<WorldObject*> PendingAddUpdatableObjectList;
     typedef std::unordered_map<uint32, UpdatableObjectList> PartitionedUpdatableObjectLists;
 
     struct PartitionThreatRelay
@@ -869,6 +867,9 @@ public:
 
     void AddToPartitionedUpdateList(WorldObject* obj);
     void RemoveFromPartitionedUpdateList(WorldObject* obj);
+    void RemoveFromPartitionedUpdateListNoLock(WorldObject* obj);
+    void QueuePartitionedUpdateListRemoval(WorldObject* obj);
+    void ApplyQueuedPartitionedRemovals();
     void UpdatePartitionedOwnership(WorldObject* obj);
     void ApplyQueuedPartitionedOwnershipUpdates();
     void CollectPartitionedUpdatableGuids(uint32 partitionId, std::vector<std::pair<ObjectGuid, uint8>>& out);
@@ -902,7 +903,6 @@ public:
         Map& _map;
         bool _active;
     };
-    PartitionedUpdatableObjectLists& GetPartitionedUpdatableObjectLists() { return _partitionedUpdatableObjectLists; }
     std::shared_lock<std::shared_mutex> AcquirePartitionedUpdateListReadLock() const { return std::shared_lock<std::shared_mutex>(_partitionedUpdateListLock); }
     std::unique_lock<std::shared_mutex> AcquirePartitionedUpdateListWriteLock() { return std::unique_lock<std::shared_mutex>(_partitionedUpdateListLock); }
     Unit* GetUnitByGuid(ObjectGuid const& guid) const;
@@ -950,10 +950,20 @@ private:
         TypeID typeId = TYPEID_OBJECT;
     };
 
+    struct PendingPartitionRemovalUpdate
+    {
+        ObjectGuid guid;
+        TypeID typeId = TYPEID_OBJECT;
+    };
+
     void QueuePartitionedOwnershipUpdate(ObjectGuid const& guid, TypeID typeId);
     void UpdatePartitionedOwnershipNoLock(WorldObject* obj);
+    void RemoveFromPartitionedUpdateListByGuidNoLock(ObjectGuid const& guid, TypeID typeId, size_t maxRemovals = 64);
     std::mutex _pendingPartitionOwnershipLock;
     std::vector<PendingPartitionOwnershipUpdate> _pendingPartitionOwnershipUpdates;
+
+    std::mutex _pendingPartitionRemovalLock;
+    std::vector<PendingPartitionRemovalUpdate> _pendingPartitionRemovals;
 
     bool EnsureGridLoaded(Cell const& cell);
     void EnsureGridLayerLoaded(Cell const& cell, uint32 layerId);
@@ -1032,6 +1042,7 @@ private:
     std::unordered_map<WorldObject*, PartitionedUpdatableEntry> _partitionedUpdatableIndex;
     std::unordered_map<uint32, MapStoredObjectTypesContainer> _partitionedObjectsStore;
     mutable std::shared_mutex _partitionedObjectStoreLock; // Protects _partitionedObjectsStore and _partitionedObjectIndex
+    std::atomic<uint64> _partitionedObjectStoreWriter{0};
     mutable std::shared_mutex _partitionPlayerBucketsLock;
     std::vector<std::vector<Player*>> _partitionPlayerBuckets;
     bool _partitionPlayerBucketsReady = false;

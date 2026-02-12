@@ -1010,8 +1010,11 @@
                 HL_NpcAuraWorker worker{ zoneId, spellId };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
-                    TypeContainerVisitor<HL_NpcAuraWorker, MapStoredObjectTypesContainer> v(worker);
-                    v.Visit(m->GetObjectsStore());
+                    m->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
+                    {
+                        TypeContainerVisitor<HL_NpcAuraWorker, MapStoredObjectTypesContainer> v(worker);
+                        v.Visit(objects);
+                    });
                 });
             }
         };
@@ -1026,8 +1029,11 @@
                 HL_EnrageWorker worker{ this, zoneId, _affixSpellBossEnrage };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
-                    TypeContainerVisitor<HL_EnrageWorker, MapStoredObjectTypesContainer> v(worker);
-                    v.Visit(m->GetObjectsStore());
+                    m->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
+                    {
+                        TypeContainerVisitor<HL_EnrageWorker, MapStoredObjectTypesContainer> v(worker);
+                        v.Visit(objects);
+                    });
                 });
             }
         };
@@ -1120,8 +1126,11 @@
                 HL_ClearEnrageWorker worker{ this, zoneId, _affixSpellBossEnrage };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
-                    TypeContainerVisitor<HL_ClearEnrageWorker, MapStoredObjectTypesContainer> v(worker);
-                    v.Visit(m->GetObjectsStore());
+                    m->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
+                    {
+                        TypeContainerVisitor<HL_ClearEnrageWorker, MapStoredObjectTypesContainer> v(worker);
+                        v.Visit(objects);
+                    });
                 });
             }
         }
@@ -1135,8 +1144,11 @@
                 HL_ClearNpcBuffWorker worker{ this, zoneId, _affixSpellBadWeatherNpcBuff };
                 sMapMgr->DoForAllMapsWithMapId(mapId, [&worker](Map* m)
                 {
-                    TypeContainerVisitor<HL_ClearNpcBuffWorker, MapStoredObjectTypesContainer> v(worker);
-                    v.Visit(m->GetObjectsStore());
+                    m->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
+                    {
+                        TypeContainerVisitor<HL_ClearNpcBuffWorker, MapStoredObjectTypesContainer> v(worker);
+                        v.Visit(objects);
+                    });
                 });
             }
         }

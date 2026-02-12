@@ -188,6 +188,12 @@ public:
         {
             while (true)
             {
+                // Bounds check: prevent reading beyond tree array
+                if (static_cast<size_t>(node) >= tree.size() || node < 0)
+                {
+                    return; // Corrupted tree or invalid node index
+                }
+                
                 uint32 tn = tree[node];
                 uint32 axis = (tn & (3 << 30)) >> 30; // cppcheck-suppress integerOverflow
                 bool BVH2 = tn & (1 << 29); // cppcheck-suppress integerOverflow
@@ -221,6 +227,12 @@ public:
                         }
                         // ray passes through both nodes
                         // push back node
+                        if (stackPos >= MAX_STACK_SIZE)
+                        {
+                            // Stack overflow - BIH tree is too deep or has a cycle
+                            // This indicates corrupted collision geometry
+                            return;
+                        }
                         stack[stackPos].node = back;
                         stack[stackPos].tnear = (tb >= intervalMin) ? tb : intervalMin;
                         stack[stackPos].tfar = intervalMax;
@@ -298,6 +310,12 @@ public:
         {
             while (true)
             {
+                // Bounds check: prevent reading beyond tree array
+                if (static_cast<size_t>(node) >= tree.size() || node < 0)
+                {
+                    return; // Corrupted tree or invalid node index
+                }
+                
                 uint32 tn = tree[node];
                 uint32 axis = (tn & (3 << 30)) >> 30; // cppcheck-suppress integerOverflow
                 bool BVH2 = tn & (1 << 29); // cppcheck-suppress integerOverflow
@@ -329,6 +347,12 @@ public:
                         }
                         // point is in both nodes
                         // push back right node
+                        if (stackPos >= MAX_STACK_SIZE)
+                        {
+                            // Stack overflow - BIH tree is too deep or has a cycle
+                            // This indicates corrupted collision geometry
+                            return;
+                        }
                         stack[stackPos].node = right;
                         stackPos++;
                         continue;

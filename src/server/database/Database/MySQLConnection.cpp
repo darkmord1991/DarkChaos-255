@@ -96,6 +96,18 @@ uint32 MySQLConnection::Open()
     uint32 port;
     char const* unix_socket;
 
+    // Set connection timeouts to prevent indefinite hangs during startup/queries
+    unsigned int connectTimeout = 30;  // 30 seconds to establish connection
+    unsigned int readTimeout = 300;    // 5 minutes for large queries (creature_template, item_template etc.)
+    unsigned int writeTimeout = 120;   // 2 minutes for write operations
+    mysql_options(mysqlInit, MYSQL_OPT_CONNECT_TIMEOUT, &connectTimeout);
+    mysql_options(mysqlInit, MYSQL_OPT_READ_TIMEOUT, &readTimeout);
+    mysql_options(mysqlInit, MYSQL_OPT_WRITE_TIMEOUT, &writeTimeout);
+
+    // Enable automatic reconnection at the MySQL client library level
+    bool reconnect = true;
+    mysql_options(mysqlInit, MYSQL_OPT_RECONNECT, &reconnect);
+
     mysql_options(mysqlInit, MYSQL_SET_CHARSET_NAME, "utf8");
 
 #ifdef _WIN32
@@ -204,10 +216,26 @@ bool MySQLConnection::Execute(PreparedStatementBase* stmt)
     if (!m_Mysql)
         return false;
 
+    if (!stmt)
+    {
+        LOG_ERROR("sql.driver", "MySQLConnection::Execute: NULL prepared statement - skipping");
+        return false;
+    }
+
+    if (!stmt->IsAlive())
+    {
+        LOG_ERROR("sql.driver", "MySQLConnection::Execute: Corrupted/freed prepared statement (magic=0x{:08X}) - skipping", stmt->GetDebugMagic());
+        return false;
+    }
+
     uint32 index = stmt->GetIndex();
 
     MySQLPreparedStatement* m_mStmt = GetPreparedStatement(index);
-    ASSERT(m_mStmt); // Can only be null if preparation failed, server side error or bad query
+    if (!m_mStmt)
+    {
+        LOG_ERROR("sql.sql", "MySQLConnection::Execute: Failed to get prepared statement index {} - skipping", index);
+        return false;
+    }
 
     m_mStmt->BindParameters(stmt);
 
@@ -255,10 +283,27 @@ bool MySQLConnection::_Query(PreparedStatementBase* stmt, MySQLPreparedStatement
     if (!m_Mysql)
         return false;
 
+    // Validate statement pointer before dereferencing
+    if (!stmt)
+    {
+        LOG_ERROR("sql.driver", "MySQLConnection::_Query: NULL prepared statement - cannot execute");
+        return false;
+    }
+
+    if (!stmt->IsAlive())
+    {
+        LOG_ERROR("sql.driver", "MySQLConnection::_Query: Corrupted/freed prepared statement (magic=0x{:08X}) - skipping", stmt->GetDebugMagic());
+        return false;
+    }
+
     uint32 index = stmt->GetIndex();
 
     MySQLPreparedStatement* m_mStmt = GetPreparedStatement(index);
-    ASSERT(m_mStmt);            // Can only be null if preparation failed, server side error or bad query
+    if (!m_mStmt)
+    {
+        LOG_ERROR("sql.sql", "MySQLConnection::_Query: Failed to get prepared statement index {} - skipping", index);
+        return false;
+    }
 
     m_mStmt->BindParameters(stmt);
     *mysqlStmt = m_mStmt;
@@ -381,6 +426,7 @@ void MySQLConnection::CommitTransaction()
 
 int MySQLConnection::ExecuteTransaction(std::shared_ptr<TransactionBase> transaction)
 {
+    std::lock_guard<std::mutex> queriesGuard(transaction->_queriesMutex);
     std::vector<SQLElementData> const& queries = transaction->m_queries;
     if (queries.empty())
         return -1;
@@ -406,6 +452,13 @@ int MySQLConnection::ExecuteTransaction(std::shared_ptr<TransactionBase> transac
                 }
 
                 ASSERT(stmt);
+
+                if (!stmt->IsAlive())
+                {
+                    LOG_ERROR("sql.driver", "ExecuteTransaction: Corrupted/freed prepared statement (magic=0x{:08X}) in transaction - aborting", stmt->GetDebugMagic());
+                    RollbackTransaction();
+                    return -1;
+                }
 
                 if (!Execute(stmt))
                 {
@@ -490,8 +543,13 @@ std::string MySQLConnection::GetServerInfo() const
 
 MySQLPreparedStatement* MySQLConnection::GetPreparedStatement(uint32 index)
 {
-    ASSERT(index < m_stmts.size(), "Tried to access invalid prepared statement index {} (max index {}) on database `{}`, connection type: {}",
-        index, m_stmts.size(), m_connectionInfo.database, (m_connectionFlags & CONNECTION_ASYNC) ? "asynchronous" : "synchronous");
+    if (index >= m_stmts.size())
+    {
+        LOG_ERROR("sql.sql", "Tried to access invalid prepared statement index {} (max index {}) on database `{}`, connection type: {} "
+            "- likely heap corruption of PreparedStatementBase, skipping query",
+            index, m_stmts.size(), m_connectionInfo.database, (m_connectionFlags & CONNECTION_ASYNC) ? "asynchronous" : "synchronous");
+        return nullptr;
+    }
 
     MySQLPreparedStatement* ret = m_stmts[index].get();
 
@@ -536,6 +594,19 @@ void MySQLConnection::PrepareStatement(uint32 index, std::string_view sql, Conne
 
 PreparedResultSet* MySQLConnection::Query(PreparedStatementBase* stmt)
 {
+    // Validate statement before executing query
+    if (!stmt)
+    {
+        LOG_ERROR("sql.driver", "MySQLConnection::Query: NULL prepared statement passed - cannot execute");
+        return nullptr;
+    }
+
+    if (!stmt->IsAlive())
+    {
+        LOG_ERROR("sql.driver", "MySQLConnection::Query: Corrupted/freed prepared statement (magic=0x{:08X}) - skipping", stmt->GetDebugMagic());
+        return nullptr;
+    }
+
     MySQLPreparedStatement* mysqlStmt = nullptr;
     MySQLResult* result = nullptr;
     uint64 rowCount = 0;
@@ -610,9 +681,13 @@ bool MySQLConnection::_HandleMySQLErrno(uint32 errNo, char const* err, uint8 att
             else
             {
                 // It's possible this attempted reconnect throws 2006 at us.
-                // To prevent crazy recursive calls, sleep here.
-                std::this_thread::sleep_for(3s); // Sleep 3 seconds
-                return _HandleMySQLErrno(lErrno, mysql_error(m_Mysql), attempts); // Call self (recursive)
+                // To prevent crazy recursive calls, sleep here with exponential backoff.
+                uint32 sleepSecs = std::min(3u * (6u - attempts), 15u); // 3s, 6s, 9s, 12s, 15s
+                LOG_WARN("sql.sql", "Reconnect attempt {} failed, retrying in {} seconds...", (5 - attempts + 1), sleepSecs);
+                std::this_thread::sleep_for(std::chrono::seconds(sleepSecs));
+                // Safe: get error string BEFORE recursive call since m_Mysql may be null after failed Open()
+                char const* safeErr = m_Mysql ? mysql_error(m_Mysql) : "connection lost";
+                return _HandleMySQLErrno(lErrno, safeErr, attempts); // Call self (recursive)
             }
             [[fallthrough]];
         }

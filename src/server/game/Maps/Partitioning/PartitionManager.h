@@ -35,6 +35,7 @@
 #include <set>
 #include <vector>
 #include <memory>
+#include <atomic>
 
 class PartitionManager
 {
@@ -130,6 +131,10 @@ public:
 private:
     PartitionManager() = default;
 
+    struct SpatialHashGrid;
+    static uint64 GetThreadIdHash();
+    static void CheckGridWriter(SpatialHashGrid& grid, uint32 mapId, uint32 partitionId, char const* op);
+
     void HandlePartitionOwnershipLoad(PreparedQueryResult result);
     std::shared_mutex& GetBoundaryLock(uint32 mapId) const;
     std::shared_mutex& GetVisibilityLock(uint32 mapId) const;
@@ -213,6 +218,8 @@ private:
         
         // GUID -> cell key (for fast removal)
         std::unordered_map<ObjectGuid::LowType, uint64> objectCellMap;
+
+        std::atomic<uint64> lastWriterThreadHash{0};
         
         static uint64 GetCellKey(float x, float y) {
             // Offset by MAP_HALFSIZE (~17066) to ensure all world coordinates hash to positive cells.
@@ -300,6 +307,7 @@ private:
         void Clear() {
             cells.clear();
             objectCellMap.clear();
+            lastWriterThreadHash.store(0, std::memory_order_relaxed);
         }
         
         size_t Size() const {

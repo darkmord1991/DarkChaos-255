@@ -78,8 +78,15 @@ DatabaseLoader& DatabaseLoader::AddDatabase(DatabaseWorkerPool<T>& pool, std::st
 
         if (uint32 error = pool.Open())
         {
-            // Try reconnect
-            if (error == CR_CONNECTION_ERROR)
+            // Retry on any connection-related error, not just CR_CONNECTION_ERROR
+            bool isConnectionError = (error == CR_CONNECTION_ERROR ||
+                                       error == CR_CONN_HOST_ERROR ||
+                                       error == CR_SERVER_GONE_ERROR ||
+                                       error == CR_SERVER_LOST ||
+                                       error == CR_SERVER_LOST_EXTENDED ||
+                                       error == CR_UNKNOWN_ERROR);
+
+            if (isConnectionError)
             {
                 uint8 const attempts = sConfigMgr->GetOption<uint8>("Database.Reconnect.Attempts", 20);
                 Seconds reconnectSeconds = Seconds(sConfigMgr->GetOption<uint8>("Database.Reconnect.Seconds", 15));
@@ -87,11 +94,14 @@ DatabaseLoader& DatabaseLoader::AddDatabase(DatabaseWorkerPool<T>& pool, std::st
 
                 while (reconnectCount < attempts)
                 {
-                    LOG_WARN(_logger, "> Retrying after {} seconds", static_cast<uint32>(reconnectSeconds.count()));
+                    LOG_WARN(_logger, "> Database {} connection failed (error {}). Retrying ({}/{}) after {} seconds...",
+                        name, error, reconnectCount + 1, attempts, static_cast<uint32>(reconnectSeconds.count()));
                     std::this_thread::sleep_for(reconnectSeconds);
                     error = pool.Open();
 
-                    if (error == CR_CONNECTION_ERROR)
+                    if (error == CR_CONNECTION_ERROR || error == CR_CONN_HOST_ERROR ||
+                        error == CR_SERVER_GONE_ERROR || error == CR_SERVER_LOST ||
+                        error == CR_SERVER_LOST_EXTENDED || error == CR_UNKNOWN_ERROR)
                     {
                         reconnectCount++;
                     }

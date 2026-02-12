@@ -110,16 +110,15 @@ public:
                 // If map found, try to find active version of this creature
                 if (thisMap)
                 {
-                    auto const creBounds = thisMap->GetCreatureBySpawnIdStore().equal_range(guid);
-                    if (creBounds.first != creBounds.second)
+                    auto const creatures = thisMap->GetCreaturesBySpawnId(guid);
+                    if (!creatures.empty())
                     {
-                        for (std::unordered_multimap<uint32, Creature*>::const_iterator itr = creBounds.first; itr != creBounds.second;)
+                        for (Creature* creature : creatures)
                         {
                             if (handler->GetSession())
-                                handler->PSendSysMessage(LANG_CREATURE_LIST_CHAT, guid, cInfo->Entry, guid, cInfo->Name, x, y, z, mapId, itr->second->GetGUID().ToString(), itr->second->IsAlive() ? "*" : " ");
+                                handler->PSendSysMessage(LANG_CREATURE_LIST_CHAT, guid, cInfo->Entry, guid, cInfo->Name, x, y, z, mapId, creature->GetGUID().ToString(), creature->IsAlive() ? "*" : " ");
                             else
-                                handler->PSendSysMessage(LANG_CREATURE_LIST_CONSOLE, guid, cInfo->Name, x, y, z, mapId, itr->second->GetGUID().ToString(), itr->second->IsAlive() ? "*" : " ");
-                            ++itr;
+                                handler->PSendSysMessage(LANG_CREATURE_LIST_CONSOLE, guid, cInfo->Name, x, y, z, mapId, creature->GetGUID().ToString(), creature->IsAlive() ? "*" : " ");
                         }
                         liveFound = true;
                     }
@@ -396,16 +395,15 @@ public:
                 // If map found, try to find active version of this object
                 if (thisMap)
                 {
-                    auto const goBounds = thisMap->GetGameObjectBySpawnIdStore().equal_range(guid);
-                    if (goBounds.first != goBounds.second)
+                    auto const gameObjects = thisMap->GetGameObjectsBySpawnId(guid);
+                    if (!gameObjects.empty())
                     {
-                        for (std::unordered_multimap<uint32, GameObject*>::const_iterator itr = goBounds.first; itr != goBounds.second;)
+                        for (GameObject* go : gameObjects)
                         {
                             if (handler->GetSession())
-                                handler->PSendSysMessage(LANG_GO_LIST_CHAT, guid, entry, guid, gInfo->name, x, y, z, mapId, itr->second->GetGUID().ToString(), itr->second->isSpawned() ? "*" : " ");
+                                handler->PSendSysMessage(LANG_GO_LIST_CHAT, guid, entry, guid, gInfo->name, x, y, z, mapId, go->GetGUID().ToString(), go->isSpawned() ? "*" : " ");
                             else
-                                handler->PSendSysMessage(LANG_GO_LIST_CONSOLE, guid, gInfo->name, x, y, z, mapId, itr->second->GetGUID().ToString(), itr->second->isSpawned() ? "*" : " ");
-                            ++itr;
+                                handler->PSendSysMessage(LANG_GO_LIST_CONSOLE, guid, gInfo->name, x, y, z, mapId, go->GetGUID().ToString(), go->isSpawned() ? "*" : " ");
                         }
                         liveFound = true;
                     }

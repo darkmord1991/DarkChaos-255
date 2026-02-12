@@ -25,14 +25,44 @@
  */
 
 #include "Dynamic/TypeList.h"
+#include "Log.h"
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 
 namespace Acore
 {
+    /// Lightweight sanity check for unordered_map internals.
+    /// Only reads bucket_count() and size() — plain field reads, no chain
+    /// traversal — so it is safe even when the internal hash chains are damaged.
+    /// Returns false when the container appears corrupted (avoids SIGSEGV in
+    /// _M_find_before_node that follows a corrupted hash chain).
+    template<class Container>
+    inline bool IsUnorderedMapSane(Container const& c)
+    {
+        constexpr std::size_t kLimit = 50'000'000;
+        auto* ptr = std::addressof(c);
+        if (reinterpret_cast<std::uintptr_t>(ptr) < 0x10000)
+            return false;
+        std::size_t const bc = c.bucket_count();
+        std::size_t const sz = c.size();
+        return (bc > 0 && bc <= kLimit && sz <= kLimit);
+    }
     // Helpers
     // Insert helpers
     template<class SPECIFIC_TYPE, class KEY_TYPE>
     bool Insert(ContainerUnorderedMap<SPECIFIC_TYPE, KEY_TYPE>& elements, KEY_TYPE const& handle, SPECIFIC_TYPE* obj)
     {
+        auto* mapPtr = std::addressof(elements._element);
+        if (reinterpret_cast<std::uintptr_t>(mapPtr) < 0x10000)
+        {
+            LOG_ERROR("maps", "TypeContainer Insert: corrupted unordered_map pointer {}", static_cast<void*>(mapPtr));
+            return false;
+        }
+
+        if (!IsUnorderedMapSane(elements._element))
+            return false;
+
         auto i = elements._element.find(handle);
         if (i == elements._element.end())
         {
@@ -69,6 +99,16 @@ namespace Acore
     template<class SPECIFIC_TYPE, class KEY_TYPE>
     SPECIFIC_TYPE* Find(ContainerUnorderedMap<SPECIFIC_TYPE, KEY_TYPE> const& elements, KEY_TYPE const& handle, SPECIFIC_TYPE* /*obj*/)
     {
+        auto* mapPtr = std::addressof(elements._element);
+        if (reinterpret_cast<std::uintptr_t>(mapPtr) < 0x10000)
+        {
+            LOG_ERROR("maps", "TypeContainer Find: corrupted unordered_map pointer {}", static_cast<void const*>(mapPtr));
+            return nullptr;
+        }
+
+        if (!IsUnorderedMapSane(elements._element))
+            return nullptr;
+
         auto i = elements._element.find(handle);
         if (i == elements._element.end())
         {
@@ -103,6 +143,16 @@ namespace Acore
     template<class SPECIFIC_TYPE, class KEY_TYPE>
     bool Remove(ContainerUnorderedMap<SPECIFIC_TYPE, KEY_TYPE>& elements, KEY_TYPE const& handle, SPECIFIC_TYPE* /*obj*/)
     {
+        auto* mapPtr = std::addressof(elements._element);
+        if (reinterpret_cast<std::uintptr_t>(mapPtr) < 0x10000)
+        {
+            LOG_ERROR("maps", "TypeContainer Remove: corrupted unordered_map pointer {}", static_cast<void*>(mapPtr));
+            return false;
+        }
+
+        if (!IsUnorderedMapSane(elements._element))
+            return false;
+
         elements._element.erase(handle);
         return true;
     }

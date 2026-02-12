@@ -606,23 +606,23 @@ public:
     static CreatureData const* GetCreatureData(ChatHandler* handler, uint32 entry)
     {
         CreatureData const* spawnpoint = nullptr;
-        for (auto const& pair : sObjectMgr->GetAllCreatureData())
+        bool multiple = false;
+        sObjectMgr->VisitAllCreatureData([&](CreatureDataContainer::value_type const& pair)
         {
+            if (multiple)
+                return;
+
             if (pair.second.id1 != entry)
-            {
-                continue;
-            }
+                return;
 
             if (!spawnpoint)
-            {
                 spawnpoint = &pair.second;
-            }
             else
             {
                 handler->SendSysMessage(LANG_COMMAND_GOCREATMULTIPLE);
-                break;
+                multiple = true;
             }
-        }
+        });
 
         return spawnpoint;
     }
@@ -630,15 +630,13 @@ public:
     static std::vector<CreatureData const*> GetCreatureDataList(uint32 entry)
     {
         std::vector<CreatureData const*> spawnpoints;
-        for (auto const& pair : sObjectMgr->GetAllCreatureData())
+        sObjectMgr->VisitAllCreatureData([&](CreatureDataContainer::value_type const& pair)
         {
             if (pair.second.id1 != entry)
-            {
-                continue;
-            }
+                return;
 
             spawnpoints.emplace_back(&pair.second);
-        }
+        });
 
         return spawnpoints;
     }
@@ -646,23 +644,23 @@ public:
     static GameObjectData const* GetGameObjectData(ChatHandler* handler, uint32 entry)
     {
         GameObjectData const* spawnpoint = nullptr;
-        for (auto const& pair : sObjectMgr->GetAllGOData())
+        bool multiple = false;
+        sObjectMgr->VisitAllGOData([&](GameObjectDataContainer::value_type const& pair)
         {
+            if (multiple)
+                return;
+
             if (pair.second.id != entry)
-            {
-                continue;
-            }
+                return;
 
             if (!spawnpoint)
-            {
                 spawnpoint = &pair.second;
-            }
             else
             {
                 handler->SendSysMessage(LANG_COMMAND_GOCREATMULTIPLE);
-                break;
+                multiple = true;
             }
-        }
+        });
 
         return spawnpoint;
     }
@@ -670,15 +668,13 @@ public:
     static std::vector<GameObjectData const*> GetGameObjectDataList(uint32 entry)
     {
         std::vector<GameObjectData const*> spawnpoints;
-        for (auto const& pair : sObjectMgr->GetAllGOData())
+        sObjectMgr->VisitAllGOData([&](GameObjectDataContainer::value_type const& pair)
         {
             if (pair.second.id != entry)
-            {
-                continue;
-            }
+                return;
 
             spawnpoints.emplace_back(&pair.second);
-        }
+        });
 
         return spawnpoints;
     }

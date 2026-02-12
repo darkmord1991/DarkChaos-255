@@ -1212,9 +1212,12 @@ public:
             return &itr->second;
         return nullptr;
     }
-    [[nodiscard]] CreatureDataContainer const& GetAllCreatureData() const { return _creatureDataStore; }
+    void VisitAllCreatureData(std::function<void(CreatureDataContainer::value_type const&)> visitor) const;
+    void VisitAllGOData(std::function<void(GameObjectDataContainer::value_type const&)> visitor) const;
+
     [[nodiscard]] CreatureData const* GetCreatureData(ObjectGuid::LowType spawnId) const
     {
+        std::shared_lock<std::shared_mutex> lock(_creatureDataLock);
         CreatureDataContainer::const_iterator itr = _creatureDataStore.find(spawnId);
         if (itr == _creatureDataStore.end()) return nullptr;
         return &itr->second;
@@ -1222,7 +1225,11 @@ public:
 
     [[nodiscard]] CreatureSparringContainer const& GetSparringData() const { return _creatureSparringStore; }
 
-    CreatureData& NewOrExistCreatureData(ObjectGuid::LowType spawnId) { return _creatureDataStore[spawnId]; }
+    CreatureData& NewOrExistCreatureData(ObjectGuid::LowType spawnId)
+    {
+        std::unique_lock<std::shared_mutex> lock(_creatureDataLock);
+        return _creatureDataStore[spawnId];
+    }
     /**
      * @brief Loads a single creature spawn entry from the database into the data store cache.
      *
@@ -1247,9 +1254,11 @@ public:
         return itr->second;
     }
 
-    [[nodiscard]] GameObjectDataContainer const& GetAllGOData() const { return _gameObjectDataStore; }
+
+
     [[nodiscard]] GameObjectData const* GetGameObjectData(ObjectGuid::LowType spawnId) const
     {
+        std::shared_lock<std::shared_mutex> lock(_gameObjectDataLock);
         GameObjectDataContainer::const_iterator itr = _gameObjectDataStore.find(spawnId);
         if (itr == _gameObjectDataStore.end()) return nullptr;
             return &itr->second;
@@ -1322,7 +1331,11 @@ public:
     }
     [[nodiscard]] QuestGreeting const* GetQuestGreeting(TypeID type, uint32 id) const;
 
-    GameObjectData& NewGOData(ObjectGuid::LowType guid) { return _gameObjectDataStore[guid]; }
+    GameObjectData& NewGOData(ObjectGuid::LowType guid)
+    {
+        std::unique_lock<std::shared_mutex> lock(_gameObjectDataLock);
+        return _gameObjectDataStore[guid];
+    }
     /**
      * @brief Loads a single gameobject spawn entry from the database into the data store cache.
      *
@@ -1614,6 +1627,7 @@ private:
     CellObjectGuidsMap _emptyCellObjectGuidsMap;
     CellObjectGuids _emptyCellObjectGuids;
     CreatureDataContainer _creatureDataStore;
+    mutable std::shared_mutex _creatureDataLock;
     CreatureTemplateContainer _creatureTemplateStore;
     CreatureCustomIDsContainer _creatureCustomIDsStore;
     std::vector<CreatureTemplate*> _creatureTemplateStoreFast; // pussywizard
@@ -1628,6 +1642,7 @@ private:
     LinkedRespawnContainer _linkedRespawnStore;
     CreatureLocaleContainer _creatureLocaleStore;
     GameObjectDataContainer _gameObjectDataStore;
+    mutable std::shared_mutex _gameObjectDataLock;
     GameObjectLocaleContainer _gameObjectLocaleStore;
     GameObjectTemplateContainer _gameObjectTemplateStore;
     GameObjectTemplateAddonContainer _gameObjectTemplateAddonStore;

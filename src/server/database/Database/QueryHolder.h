@@ -26,16 +26,23 @@ class AC_DATABASE_API SQLQueryHolderBase
 friend class SQLQueryHolderTask;
 
 public:
+    static constexpr uint32 HOLDER_MAGIC_ALIVE = 0xA11BEA11;
+    static constexpr uint32 HOLDER_MAGIC_FREED = 0xFEEDFACE;
+
     SQLQueryHolderBase() = default;
     virtual ~SQLQueryHolderBase();
     void SetSize(std::size_t size);
     PreparedQueryResult GetPreparedResult(std::size_t index) const;
     void SetPreparedResult(std::size_t index, PreparedResultSet* result);
 
+    [[nodiscard]] bool IsHolderAlive() const { return _holderMagic == HOLDER_MAGIC_ALIVE; }
+    [[nodiscard]] uint32 GetHolderMagic() const { return _holderMagic; }
+
 protected:
     bool SetPreparedQueryImpl(std::size_t index, PreparedStatementBase* stmt);
 
 private:
+    uint32 _holderMagic{HOLDER_MAGIC_ALIVE};
     std::vector<std::pair<PreparedStatementBase*, PreparedQueryResult>> m_queries;
 };
 
@@ -53,12 +60,16 @@ class AC_DATABASE_API SQLQueryHolderTask : public SQLOperation
 {
 public:
     explicit SQLQueryHolderTask(std::shared_ptr<SQLQueryHolderBase> holder)
-        : m_holder(std::move(holder)) { }
+                : SQLOperation("SQLQueryHolderTask", &SQLQueryHolderTask::ExecuteThunk, &SQLQueryHolderTask::DestroyThunk),
+                    m_holder(std::move(holder)) { }
 
     ~SQLQueryHolderTask();
 
-    bool Execute() override;
+    bool Execute();
     QueryResultHolderFuture GetFuture() { return m_result.get_future(); }
+
+    static bool ExecuteThunk(SQLOperation* op) { return static_cast<SQLQueryHolderTask*>(op)->Execute(); }
+    static void DestroyThunk(SQLOperation* op) { delete static_cast<SQLQueryHolderTask*>(op); }
 
 private:
     std::shared_ptr<SQLQueryHolderBase> m_holder;

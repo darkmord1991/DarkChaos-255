@@ -801,6 +801,35 @@ namespace DCPerfTest
         return JoinPath(logsDir, filename);
     }
 
+    struct LoopRunMetrics
+    {
+        uint32 okCount = 0;
+        uint32 failCount = 0;
+        uint64 slowestTotalUs = 0;
+        std::string slowestTest;
+    };
+
+    static LoopRunMetrics ComputeLoopRunMetrics(std::vector<TimingResult> const& results)
+    {
+        LoopRunMetrics metrics;
+
+        for (TimingResult const& r : results)
+        {
+            if (r.success)
+                ++metrics.okCount;
+            else
+                ++metrics.failCount;
+
+            if (r.totalUs >= metrics.slowestTotalUs)
+            {
+                metrics.slowestTotalUs = r.totalUs;
+                metrics.slowestTest = r.testName;
+            }
+        }
+
+        return metrics;
+    }
+
     static void WriteLoopReportJsonHeader(std::ofstream& out,
         std::string const& suite,
         uint32 loops,
@@ -828,6 +857,7 @@ namespace DCPerfTest
         uint32 runIndex,
         uint64 wallUs,
         std::vector<TimingResult> const& results,
+        LoopRunMetrics const& metrics,
         bool first)
     {
         if (!first)
@@ -836,6 +866,10 @@ namespace DCPerfTest
         out << "    {\n";
         out << "      \"run_index\": " << runIndex << ",\n";
         out << "      \"wall_us\": " << wallUs << ",\n";
+        out << "      \"ok_count\": " << metrics.okCount << ",\n";
+        out << "      \"fail_count\": " << metrics.failCount << ",\n";
+        out << "      \"slowest_test\": \"" << JsonEscape(metrics.slowestTest) << "\",\n";
+        out << "      \"slowest_total_us\": " << metrics.slowestTotalUs << ",\n";
         out << "      \"results\": [\n";
 
         for (size_t i = 0; i < results.size(); ++i)
@@ -888,18 +922,23 @@ namespace DCPerfTest
         out << "suite_args," << CsvEscape(suiteArgs) << "\n";
         out << "generated_at," << CsvEscape(MakeTimestampForFilename()) << "\n";
         out << "\n";
-        out << "run_index,wall_us,testName,success,iterations,total_us,avg_us,min_us,max_us,p95_us,p99_us,error\n";
+        out << "run_index,wall_us,ok_count,fail_count,slowest_test,slowest_total_us,testName,success,iterations,total_us,avg_us,min_us,max_us,p95_us,p99_us,error\n";
     }
 
     static void WriteLoopReportCsvRun(std::ofstream& out,
         uint32 runIndex,
         uint64 wallUs,
-        std::vector<TimingResult> const& results)
+        std::vector<TimingResult> const& results,
+        LoopRunMetrics const& metrics)
     {
         for (TimingResult const& r : results)
         {
             out << runIndex << ",";
             out << wallUs << ",";
+            out << metrics.okCount << ",";
+            out << metrics.failCount << ",";
+            out << CsvEscape(metrics.slowestTest) << ",";
+            out << metrics.slowestTotalUs << ",";
             out << CsvEscape(r.testName) << ",";
             out << (r.success ? 1 : 0) << ",";
             out << r.iterations << ",";
@@ -2888,6 +2927,62 @@ public:
                 return true;
             }
 
+            if (suite == "maprandom")
+            {
+                // Must be run in-game.
+                Player* player = handler->GetPlayer();
+                if (!player)
+                {
+                    DCPerfTest::TimingResult r;
+                    r.testName = "RandomMapSampling";
+                    r.success = false;
+                    r.error = "Player context required (in-game only)";
+                    AppendAndMaybePrint(handler, printDetails, out, r);
+                    return false;
+                }
+
+                uint32 mapSamples = 5;
+                uint32 pointsPerMap = 100;
+                if (args && *args)
+                {
+                    std::istringstream iss(args);
+                    uint32 val1 = 0;
+                    uint32 val2 = 0;
+                    iss >> val1 >> val2;
+                    if (val1 > 0)
+                        mapSamples = val1;
+                    if (val2 > 0)
+                        pointsPerMap = val2;
+                }
+
+                if (mapSamples > 30)
+                    mapSamples = 30;
+                if (pointsPerMap > 1000)
+                    pointsPerMap = 1000;
+
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestRandomMapSampling(player, mapSamples, pointsPerMap));
+                return true;
+            }
+
+            if (suite == "partition")
+            {
+                if (printDetails)
+                    handler->SendSysMessage("|cff00ff00=== DC Performance Test: Partition/Layer Suite ===|r");
+
+                uint32 iterations = 100000;
+                if (args && *args)
+                {
+                    uint32 val = atoi(args);
+                    if (val > 0)
+                        iterations = val;
+                }
+                if (iterations > 2000000)
+                    iterations = 2000000;
+
+                AppendAndMaybePrint(handler, printDetails, out, DCPerfTest::TestPartitionSuite(iterations));
+                return true;
+            }
+
             if (suite == "stress" || suite == "big")
             {
                 if (printDetails)
@@ -3058,7 +3153,7 @@ public:
         // Usage:
         // .stresstest loop <suite> [loops=10] [sleepMs=1000] [suiteArgs...]
         // Optional: prefix suiteArgs with "quiet" to only print the final summary.
-        // suite: sql|cache|systems|coredb|playersim|stress|dbasync|path|cpu|mysql|full
+        // suite: sql|cache|systems|coredb|playersim|stress|dbasync|path|maprandom|partition|cpu|mysql|full
         handler->SendSysMessage("|cff00ff00=== DC Performance Test: LOOP ===|r");
 
         std::string suite;
@@ -3116,36 +3211,12 @@ public:
         {
             auto start = DCPerfTest::Clock::now();
 
-            bool ok = true;
             char const* passArgs = suiteArgs.empty() ? "" : suiteArgs.c_str();
 
-            if (suite == "sql")
-                ok = HandlePerfTestSQL(handler, passArgs);
-            else if (suite == "cache")
-                ok = HandlePerfTestCache(handler, passArgs);
-            else if (suite == "systems")
-                ok = HandlePerfTestSystems(handler, passArgs);
-            else if (suite == "coredb")
-                ok = HandlePerfTestCoreDB(handler, passArgs);
-            else if (suite == "playersim")
-                ok = HandlePerfTestPlayerSim(handler, passArgs);
-            else if (suite == "stress" || suite == "big")
-                ok = HandlePerfTestStress(handler, passArgs);
-            else if (suite == "dbasync")
-                ok = HandlePerfTestDBAsync(handler, passArgs);
-            else if (suite == "path")
-                ok = HandlePerfTestPath(handler, passArgs);
-            else if (suite == "cpu")
-                ok = HandlePerfTestCPU(handler, passArgs);
-            else if (suite == "mysql")
-                ok = PrintMySQLStatus(handler, passArgs);
-            else if (suite == "full")
-                ok = HandlePerfTestFull(handler, passArgs);
-            else
-            {
-                handler->SendSysMessage(Acore::StringFormat("|cffff0000Unknown suite '{}'|r", suite));
-                return true;
-            }
+            std::vector<DCPerfTest::TimingResult> results;
+            results.reserve(32);
+            bool ok = RunSuite(handler, suite, passArgs, !quiet, results);
+            DCPerfTest::LoopRunMetrics runMetrics = DCPerfTest::ComputeLoopRunMetrics(results);
 
             auto end = DCPerfTest::Clock::now();
             uint64 us = std::chrono::duration_cast<DCPerfTest::Microseconds>(end - start).count();
@@ -3153,10 +3224,26 @@ public:
 
             if (!quiet)
             {
+                std::string slowest = runMetrics.slowestTest.empty() ? "n/a" : runMetrics.slowestTest;
                 if (infinite)
-                    handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}|r: {}{}", i + 1, DCPerfTest::FormatTime(us), ok ? "" : " (errors)"));
+                    handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}|r: {} | ok={} fail={} | slowest={} ({}){}",
+                        i + 1,
+                        DCPerfTest::FormatTime(us),
+                        runMetrics.okCount,
+                        runMetrics.failCount,
+                        slowest,
+                        DCPerfTest::FormatTime(runMetrics.slowestTotalUs),
+                        ok ? "" : " (errors)"));
                 else
-                    handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}/{}|r: {}{}", i + 1, loops, DCPerfTest::FormatTime(us), ok ? "" : " (errors)"));
+                    handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}/{}|r: {} | ok={} fail={} | slowest={} ({}){}",
+                        i + 1,
+                        loops,
+                        DCPerfTest::FormatTime(us),
+                        runMetrics.okCount,
+                        runMetrics.failCount,
+                        slowest,
+                        DCPerfTest::FormatTime(runMetrics.slowestTotalUs),
+                        ok ? "" : " (errors)"));
             }
 
             ++i;
@@ -3220,6 +3307,114 @@ public:
         auto r = TestAsyncQueryBurst(totalQueries, concurrency);
         PrintResult(handler, r);
         handler->SendSysMessage("|cff00ff00=== Test Complete ===|r");
+        return true;
+    }
+
+    static bool HandlePerfTestQuickFull(ChatHandler* handler, const char* args)
+    {
+        // Usage:
+        // .stresstest quickfull [loops=3] [sleepMs=750] [format=json|csv]
+        handler->SendSysMessage("|cff00ff00=== DC Performance Test: QUICKFULL ===|r");
+
+        uint32 loops = 3;
+        uint32 sleepMs = 750;
+        std::string format = "json";
+
+        if (args && *args)
+        {
+            std::istringstream iss(args);
+            if (!(iss >> loops))
+                loops = 3;
+            if (!(iss >> sleepMs))
+                sleepMs = 750;
+
+            std::string maybeFormat;
+            if (iss >> maybeFormat)
+            {
+                if (maybeFormat == "json" || maybeFormat == "csv")
+                    format = maybeFormat;
+            }
+        }
+
+        if (loops == 0)
+            loops = 3;
+        if (loops > 20)
+            loops = 20;
+        if (sleepMs > 10000)
+            sleepMs = 10000;
+
+        // Forward to loopreport with sane defaults for compact but useful full-suite runs.
+        // topN=10, details=0 keeps chat noise low while writing full data to logs.
+        std::ostringstream forwarded;
+        forwarded << "full " << loops << " " << sleepMs << " 10 0 " << format;
+
+        handler->SendSysMessage(Acore::StringFormat("Running quick full loopreport: loops={}, sleepMs={}, format={}", loops, sleepMs, format));
+        std::string cmd = forwarded.str();
+        return HandlePerfTestLoopReport(handler, cmd.c_str());
+    }
+
+    static bool HandlePerfTestQuickParallel(ChatHandler* handler, const char* args)
+    {
+        // Usage:
+        // .stresstest quickparallel [loops=4] [sleepMs=500] [format=json|csv]
+        // Runs focused loopreports for concurrency-sensitive suites.
+        handler->SendSysMessage("|cff00ff00=== DC Performance Test: QUICKPARALLEL ===|r");
+
+        uint32 loops = 4;
+        uint32 sleepMs = 500;
+        std::string format = "json";
+
+        if (args && *args)
+        {
+            std::istringstream iss(args);
+            if (!(iss >> loops))
+                loops = 4;
+            if (!(iss >> sleepMs))
+                sleepMs = 500;
+
+            std::string maybeFormat;
+            if (iss >> maybeFormat)
+            {
+                if (maybeFormat == "json" || maybeFormat == "csv")
+                    format = maybeFormat;
+            }
+        }
+
+        if (loops == 0)
+            loops = 4;
+        if (loops > 20)
+            loops = 20;
+        if (sleepMs > 10000)
+            sleepMs = 10000;
+
+        handler->SendSysMessage(Acore::StringFormat("QuickParallel config: loops={}, sleepMs={}, format={}", loops, sleepMs, format));
+
+        // 1) Async DB saturation profile
+        std::ostringstream asyncCmd;
+        asyncCmd << "dbasync " << loops << " " << sleepMs << " 10 0 " << format << " 2000 16";
+        handler->SendSysMessage("|cff32c4ff[1/3]|r Running dbasync profile (2000 queries, conc=16)...");
+        std::string asyncArgs = asyncCmd.str();
+        bool okAsync = HandlePerfTestLoopReport(handler, asyncArgs.c_str());
+
+        // 2) Partition/layer lock & routing churn profile
+        std::ostringstream partCmd;
+        partCmd << "partition " << loops << " " << sleepMs << " 10 0 " << format << " 250000";
+        handler->SendSysMessage("|cff32c4ff[2/3]|r Running partition profile (250000 iterations)...");
+        std::string partArgs = partCmd.str();
+        bool okPart = HandlePerfTestLoopReport(handler, partArgs.c_str());
+
+        // 3) CPU hot-path cache lookup profile
+        std::ostringstream cpuCmd;
+        cpuCmd << "cpu " << loops << " " << sleepMs << " 10 0 " << format << " 120000";
+        handler->SendSysMessage("|cff32c4ff[3/3]|r Running cpu profile (120000 iterations)...");
+        std::string cpuArgs = cpuCmd.str();
+        bool okCpu = HandlePerfTestLoopReport(handler, cpuArgs.c_str());
+
+        if (okAsync && okPart && okCpu)
+            handler->SendSysMessage("|cff00ff00=== QUICKPARALLEL Complete ===|r");
+        else
+            handler->SendSysMessage("|cffffaa00=== QUICKPARALLEL finished with warnings ===|r");
+
         return true;
     }
 
@@ -3335,21 +3530,37 @@ public:
 
             ++iter;
 
+            DCPerfTest::LoopRunMetrics runMetrics = DCPerfTest::ComputeLoopRunMetrics(results);
+
             if (format == "csv")
             {
-                DCPerfTest::WriteLoopReportCsvRun(out, iter, wallUs, results);
+                DCPerfTest::WriteLoopReportCsvRun(out, iter, wallUs, results, runMetrics);
             }
             else
             {
-                DCPerfTest::WriteLoopReportJsonRun(out, iter, wallUs, results, firstJsonRun);
+                DCPerfTest::WriteLoopReportJsonRun(out, iter, wallUs, results, runMetrics, firstJsonRun);
                 firstJsonRun = false;
             }
             out.flush();
 
+            std::string slowest = runMetrics.slowestTest.empty() ? "n/a" : runMetrics.slowestTest;
             if (infinite)
-                handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}|r: wall {} | appended", iter, DCPerfTest::FormatTime(wallUs)));
+                handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}|r: wall {} | ok={} fail={} | slowest={} ({}) | appended",
+                    iter,
+                    DCPerfTest::FormatTime(wallUs),
+                    runMetrics.okCount,
+                    runMetrics.failCount,
+                    slowest,
+                    DCPerfTest::FormatTime(runMetrics.slowestTotalUs)));
             else
-                handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}/{}|r: wall {} | appended", iter, loops, DCPerfTest::FormatTime(wallUs)));
+                handler->SendSysMessage(Acore::StringFormat("|cff32c4ffLoop {}/{}|r: wall {} | ok={} fail={} | slowest={} ({}) | appended",
+                    iter,
+                    loops,
+                    DCPerfTest::FormatTime(wallUs),
+                    runMetrics.okCount,
+                    runMetrics.failCount,
+                    slowest,
+                    DCPerfTest::FormatTime(runMetrics.slowestTotalUs)));
 
             if (!infinite && iter >= loops)
                 break;
@@ -3451,6 +3662,8 @@ public:
             ChatCommandBuilder("cpu",     HandlePerfTestCPU,     SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("loop",    HandlePerfTestLoop,    SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("loopreport", HandlePerfTestLoopReport, SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("quickfull", HandlePerfTestQuickFull, SEC_GAMEMASTER, Console::Yes),
+            ChatCommandBuilder("quickparallel", HandlePerfTestQuickParallel, SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("mysql",   PrintMySQLStatus,      SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("partition", DCPerfTest::HandlePartitionStressTest, SEC_GAMEMASTER, Console::Yes),
             ChatCommandBuilder("full",    HandlePerfTestFull,    SEC_GAMEMASTER, Console::Yes),
