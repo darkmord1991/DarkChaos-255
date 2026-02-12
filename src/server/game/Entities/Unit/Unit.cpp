@@ -5687,9 +5687,11 @@ void Unit::RemoveAurasByShapeShift()
 
 void Unit::RemoveAreaAurasDueToLeaveWorld()
 {
-    // Collect aura identification data (not raw pointers) to avoid use-after-free when
-    // releasing _auraLock before calling RemoveAura on other units.
-    // This prevents lock inversion with grid/object locks during multithreaded updates.
+    // Only collect non-owned auras currently applied to this unit and remove them after
+    // releasing _auraLock. Avoid iterating Aura::m_applications here, as that traversal
+    // has shown pathological stalls under heavy multithreaded teardown.
+    //
+    // Owned aura cleanup is handled by RemoveAllAuras() in CleanupBeforeRemoveFromMap().
     struct AuraRemoveInfo
     {
         ObjectGuid targetGuid;
@@ -5698,54 +5700,30 @@ void Unit::RemoveAreaAurasDueToLeaveWorld()
     };
     std::vector<AuraRemoveInfo> toRemove;
 
-    while (true)
     {
-        toRemove.clear();
+        std::lock_guard<std::recursive_mutex> lock(_auraLock);
 
+        for (auto const& appliedPair : m_appliedAuras)
         {
-            std::lock_guard<std::recursive_mutex> lock(_auraLock);
-
-            // remove area auras owned by this unit but applied to other units
-            for (auto const& ownedPair : m_ownedAuras)
-            {
-                Aura* aura = ownedPair.second;
-                if (!aura || aura->IsRemoved())
-                    continue;
-
-                std::list<AuraApplication*> applications;
-                aura->GetApplicationList(applications);
-                for (AuraApplication* aurApp : applications)
-                {
-                    if (!aurApp)
-                        continue;
-                    Unit* target = aurApp->GetTarget();
-                    if (target && target != this)
-                        toRemove.push_back({target->GetGUID(), aura->GetId(), GetGUID()});
-                }
-            }
-
-            // remove area auras owned by others
-            for (auto const& appliedPair : m_appliedAuras)
-            {
-                AuraApplication* aurApp = appliedPair.second;
-                if (!aurApp)
-                    continue;
-                Aura* base = aurApp->GetBase();
-                if (base && base->GetOwner() != this)
-                    toRemove.push_back({GetGUID(), base->GetId(), base->GetOwner() ? base->GetOwner()->GetGUID() : ObjectGuid::Empty});
-            }
-        }
-
-        if (toRemove.empty())
-            break;
-
-        for (auto const& info : toRemove)
-        {
-            Unit* target = ObjectAccessor::GetUnit(*this, info.targetGuid);
-            if (!target)
+            AuraApplication* aurApp = appliedPair.second;
+            if (!aurApp)
                 continue;
-            target->RemoveAura(info.spellId, info.casterGuid, 0, AURA_REMOVE_BY_DEFAULT);
+
+            Aura* base = aurApp->GetBase();
+            if (!base || base->GetOwner() == this)
+                continue;
+
+            toRemove.push_back({GetGUID(), base->GetId(), base->GetOwner() ? base->GetOwner()->GetGUID() : ObjectGuid::Empty});
         }
+    }
+
+    for (auto const& info : toRemove)
+    {
+        Unit* target = ObjectAccessor::GetUnit(*this, info.targetGuid);
+        if (!target)
+            continue;
+
+        target->RemoveAura(info.spellId, info.casterGuid, 0, AURA_REMOVE_BY_DEFAULT);
     }
 }
 
@@ -11864,16 +11842,12 @@ void Unit::RemoveAllControlled(bool onDeath /*= false*/)
     if (IsPlayer())
         ToPlayer()->StopCastingCharm();
 
-    std::lock_guard<std::recursive_mutex> lock(_controlledLock);
-    while (!m_Controlled.empty())
+    auto processControlledUnit = [this, onDeath](Unit* target)
     {
-        Unit* target = *m_Controlled.begin();
-        m_Controlled.erase(m_Controlled.begin());
-
         if (!IsLiveUnitPointer(target))
         {
             LOG_ERROR("entities.unit", "Unit {} skipping stale controlled pointer while releasing controlled units", GetGUID().ToString());
-            continue;
+            return;
         }
 
         if (target->GetCharmerGUID() == GetGUID())
@@ -11883,13 +11857,40 @@ void Unit::RemoveAllControlled(bool onDeath /*= false*/)
         else if (target->GetOwnerGUID() == GetGUID() && target->IsSummon())
         {
             if (!(onDeath && !IsPlayer() && target->IsGuardian()))
-            {
                 target->ToTempSummon()->UnSummon();
-            }
         }
         else
         {
             LOG_ERROR("entities.unit", "Unit {} is trying to release unit {} which is neither charmed nor owned by it", GetGUID().ToString(), Object::GetGUID(target).ToString());
+        }
+    };
+
+    // Process controlled units outside the lock to avoid long critical sections
+    // and re-entrant lock contention from RemoveCharmAuras/UnSummon callbacks.
+    // Use bounded passes to guarantee forward progress if callbacks add entries.
+    constexpr uint8 maxDrainPasses = 4;
+    for (uint8 pass = 0; pass < maxDrainPasses; ++pass)
+    {
+        ControlSet snapshot;
+        {
+            std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+            if (m_Controlled.empty())
+                break;
+            snapshot.swap(m_Controlled);
+        }
+
+        for (Unit* target : snapshot)
+            processControlledUnit(target);
+    }
+
+    // Last-resort safety: drop any leftover entries to avoid pathological
+    // non-terminating loops when external systems keep re-adding references.
+    {
+        std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+        if (!m_Controlled.empty())
+        {
+            LOG_ERROR("entities.unit", "Unit {} clearing {} residual controlled entries after bounded release passes", GetGUID().ToString(), m_Controlled.size());
+            m_Controlled.clear();
         }
     }
 }
@@ -21726,19 +21727,79 @@ void Unit::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target)
 
     uint64 cacheKey = static_cast<uint64>(visibleFlag) << 8 | updateType;
 
-    auto cacheIt = _valuesUpdateCache.find(cacheKey);
-    if (cacheIt != _valuesUpdateCache.end())
+    auto isValidBuildValuesCache = [this](BuildValuesCachedBuffer const& cache) -> bool
+    {
+        constexpr size_t kMaxCachedValuesUpdateSize = 128 * 1024;
+        size_t const bufferSize = cache.buffer.size();
+
+        if (bufferSize == 0 || bufferSize > kMaxCachedValuesUpdateSize)
+            return false;
+
+        auto isPosValid = [bufferSize](int32 pos) -> bool
+        {
+            if (pos < 0)
+                return true;
+
+            size_t const writePos = static_cast<size_t>(pos);
+            return writePos + sizeof(uint32) <= bufferSize;
+        };
+
+        if (!isPosValid(cache.posPointers.UnitNPCFlagsPos) ||
+            !isPosValid(cache.posPointers.UnitFieldAuraStatePos) ||
+            !isPosValid(cache.posPointers.UnitFieldFlagsPos) ||
+            !isPosValid(cache.posPointers.UnitFieldDisplayPos) ||
+            !isPosValid(cache.posPointers.UnitDynamicFlagsPos) ||
+            !isPosValid(cache.posPointers.UnitFieldBytes2Pos) ||
+            !isPosValid(cache.posPointers.UnitFieldFactionTemplatePos))
+        {
+            return false;
+        }
+
+        if (cache.posPointers.other.size() > m_valuesCount)
+            return false;
+
+        for (auto const& [index, pos] : cache.posPointers.other)
+        {
+            if (index >= m_valuesCount)
+                return false;
+
+            if (static_cast<size_t>(pos) + sizeof(uint32) > bufferSize)
+                return false;
+        }
+
+        return true;
+    };
+
+    BuildValuesCachedBuffer cachedValue(0);
+    bool hasCachedValue = false;
+    {
+        std::lock_guard<std::mutex> lock(_valuesUpdateCacheLock);
+        auto cacheIt = _valuesUpdateCache.find(cacheKey);
+        if (cacheIt != _valuesUpdateCache.end())
+        {
+            cachedValue = cacheIt->second;
+            hasCachedValue = true;
+        }
+    }
+
+    if (hasCachedValue && isValidBuildValuesCache(cachedValue))
     {
         int32 cachePos = static_cast<int32>(data->wpos());
-        data->append(cacheIt->second.buffer);
+        data->append(cachedValue.buffer);
 
-        BuildValuesCachePosPointers dataAdjustedPos = cacheIt->second.posPointers;
+        BuildValuesCachePosPointers dataAdjustedPos = cachedValue.posPointers;
         if (cachePos)
             dataAdjustedPos.ApplyOffset(cachePos);
 
         PatchValuesUpdate(*data, dataAdjustedPos, target);
 
         return;
+    }
+
+    if (hasCachedValue)
+    {
+        std::lock_guard<std::mutex> lock(_valuesUpdateCacheLock);
+        _valuesUpdateCache.erase(cacheKey);
     }
 
     BuildValuesCachedBuffer cacheValue(500);
@@ -21835,7 +21896,11 @@ void Unit::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target)
 
     PatchValuesUpdate(*data, dataAdjustedPos, target);
 
-    _valuesUpdateCache.insert(std::pair<uint64, BuildValuesCachedBuffer>(cacheKey, std::move(cacheValue)));
+    if (isValidBuildValuesCache(cacheValue))
+    {
+        std::lock_guard<std::mutex> lock(_valuesUpdateCacheLock);
+        _valuesUpdateCache.insert(std::pair<uint64, BuildValuesCachedBuffer>(cacheKey, std::move(cacheValue)));
+    }
 }
 
 void Unit::PatchValuesUpdate(ByteBuffer& valuesUpdateBuf, BuildValuesCachePosPointers& posPointers, Player* target)

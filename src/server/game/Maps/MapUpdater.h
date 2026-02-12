@@ -24,6 +24,7 @@
 #include <functional>
 #include <thread>
 #include <atomic>
+#include <mutex>
 #include <vector>
 
 class Map;

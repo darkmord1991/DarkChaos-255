@@ -2291,7 +2291,11 @@ private:
     [[nodiscard]] uint32 GetCombatRatingDamageReduction(CombatRating cr, float rate, float cap, uint32 damage) const;
 
     void PatchValuesUpdate(ByteBuffer& valuesUpdateBuf, BuildValuesCachePosPointers& posPointers, Player* target);
-    void InvalidateValuesUpdateCache() { _valuesUpdateCache.clear(); }
+    void InvalidateValuesUpdateCache()
+    {
+        std::lock_guard<std::mutex> lock(_valuesUpdateCacheLock);
+        _valuesUpdateCache.clear();
+    }
 
     [[nodiscard]] float processDummyAuras(float TakenTotalMod) const;
 
@@ -2328,6 +2332,7 @@ private:
     ObjectGuid _lastDamagedTargetGuid;
 
     typedef std::unordered_map<uint64 /*visibleFlag(uint32) + updateType(uint8)*/, BuildValuesCachedBuffer>  ValuesUpdateCache;
+    mutable std::mutex _valuesUpdateCacheLock;
     ValuesUpdateCache _valuesUpdateCache;
 };
 

@@ -20,6 +20,8 @@
 
 #include "Define.h"
 #include "ObjectGuid.h"
+#include "PartitionManager.h"
+#include <utility>
 #include <vector>
 
 class Map;
@@ -72,7 +74,13 @@ private:
     // flushed once per tick per partition to reduce lock acquisitions.
     struct PosUpdate { ObjectGuid guid; float x; float y; };
     std::vector<PosUpdate> _batchPosUpdates;
+    std::vector<ObjectGuid> _batchBoundaryOverrides;
     std::vector<ObjectGuid> _batchUnregisters;
+
+    // Reusable scratch buffers to reduce per-tick allocations in worker hot paths.
+    std::vector<Player*> _scratchPlayers;
+    std::vector<std::pair<ObjectGuid, uint8>> _scratchObjects;
+    std::vector<PartitionManager::BoundaryPositionUpdate> _scratchBoundaryUpdates;
 };
 
 #endif // AC_PARTITION_UPDATE_WORKER_H

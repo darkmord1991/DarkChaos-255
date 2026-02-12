@@ -180,6 +180,7 @@ private:
     // O(1) partition lookup index: mapId -> partitionId -> raw pointer (non-owning)
     std::unordered_map<uint32, std::unordered_map<uint32, MapPartition*>> _partitionIndex;
     std::unordered_set<uint32_t> _partitionedMaps;
+    std::unordered_set<uint32_t> _fixedPartitionCountMaps;
     std::unordered_set<uint32_t> _excludedZones;
     mutable std::unordered_map<uint32, bool> _zoneExcludedCache;
     std::unordered_map<ObjectGuid::LowType, PartitionRelocationTxn> _relocations;
@@ -367,6 +368,8 @@ private:
         float borderOverlap = 0.0f;
         float densitySplitThreshold = 0.0f;
         float densityMergeThreshold = 0.0f;
+        uint32 minPartitions = 1;
+        uint32 maxPartitions = 1;
     } _config;
 };
 

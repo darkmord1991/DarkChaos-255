@@ -1905,41 +1905,46 @@ void Player::UpdateZoneDependentAuras(uint32 newZone)
 void Player::UpdateAreaDependentAuras(uint32 newArea)
 {
     // remove auras from spells with area limitations
-    for (AuraMap::iterator iter = m_ownedAuras.begin();
-         iter != m_ownedAuras.end();)
+    RemoveOwnedAuras([this, newArea](Aura const* aura)
     {
+        if (!aura)
+            return false;
+
+        SpellInfo const* spellInfo = aura->GetSpellInfo();
+        if (!spellInfo)
+            return false;
+
         // use m_zoneUpdateId for speed: UpdateArea called from UpdateZone or
         // instead UpdateZone in both cases m_zoneUpdateId up-to-date
-        if (iter->second->GetSpellInfo()->CheckLocation(
-                GetMapId(), m_zoneUpdateId, newArea, this, false) !=
-            SPELL_CAST_OK)
-            RemoveOwnedAura(iter);
-        else
-            ++iter;
-    }
+        return spellInfo->CheckLocation(GetMapId(), m_zoneUpdateId, newArea, this, false) != SPELL_CAST_OK;
+    });
 
     // Xinef: check controlled auras
-    if (!m_Controlled.empty())
-        for (ControlSet::iterator itr = m_Controlled.begin();
-             itr != m_Controlled.end();)
+    std::vector<Unit*> controlledSnapshot;
+    {
+        std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+        controlledSnapshot.reserve(m_Controlled.size());
+        for (Unit* controlled : m_Controlled)
+            controlledSnapshot.push_back(controlled);
+    }
+
+    for (Unit* controlled : controlledSnapshot)
+    {
+        if (!controlled || !Unit::IsUnitPointerLive(controlled) || controlled->IsPet())
+            continue;
+
+        controlled->RemoveOwnedAuras([this, newArea](Aura const* aura)
         {
-            Unit* controlled = *itr;
-            ++itr;
-            if (controlled && !controlled->IsPet())
-            {
-                Unit::AuraMap& tAuras = controlled->GetOwnedAuras();
-                for (Unit::AuraMap::iterator auraIter = tAuras.begin();
-                     auraIter != tAuras.end();)
-                {
-                    if (auraIter->second->GetSpellInfo()->CheckLocation(
-                            GetMapId(), m_zoneUpdateId, newArea, nullptr) !=
-                        SPELL_CAST_OK)
-                        controlled->RemoveOwnedAura(auraIter);
-                    else
-                        ++auraIter;
-                }
-            }
-        }
+            if (!aura)
+                return false;
+
+            SpellInfo const* spellInfo = aura->GetSpellInfo();
+            if (!spellInfo)
+                return false;
+
+            return spellInfo->CheckLocation(GetMapId(), m_zoneUpdateId, newArea, nullptr) != SPELL_CAST_OK;
+        });
+    }
 
     // some auras applied at subzone enter
     SpellAreaForAreaMapBounds saBounds =

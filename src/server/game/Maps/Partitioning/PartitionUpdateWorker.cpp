@@ -23,6 +23,7 @@
 #include "Player.h"
 #include "WorldSession.h"
 #include "Metric.h"
+#include <cmath>
 
 PartitionUpdateWorker::PartitionUpdateWorker(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff)
     : _map(map), _partitionId(partitionId), _diff(diff), _sDiff(s_diff)
@@ -61,7 +62,7 @@ void PartitionUpdateWorker::ProcessRelays()
 void PartitionUpdateWorker::UpdatePlayers()
 {
     // Collect players in this partition
-    std::vector<Player*> players;
+    _scratchPlayers.clear();
     std::vector<Player*> const* bucket = _map.GetPartitionPlayerBucket(_partitionId);
     if (!bucket)
     {
@@ -78,10 +79,10 @@ void PartitionUpdateWorker::UpdatePlayers()
                 _map.GetId(), player->GetPositionX(), player->GetPositionY(), zoneId, player->GetGUID());
 
             if (playerPartition == _partitionId)
-                players.push_back(player);
+                _scratchPlayers.push_back(player);
         }
 
-        bucket = &players;
+        bucket = &_scratchPlayers;
     }
 
     _playerCount = static_cast<uint32>(bucket->size());
@@ -89,6 +90,8 @@ void PartitionUpdateWorker::UpdatePlayers()
     // Update each player in this partition
     uint32 playerUpdateDiff = _sDiff ? _sDiff : _diff;
     bool markNearbyCells = _map.ShouldMarkNearbyCells();
+    constexpr uint32 kBoundaryApproachEveryNTicks = 4;
+    bool const checkBoundaryApproach = (_map.GetUpdateCounter() % kBoundaryApproachEveryNTicks) == 0;
     for (Player* player : *bucket)
     {
         if (!player || !player->IsInWorld())
@@ -104,7 +107,14 @@ void PartitionUpdateWorker::UpdatePlayers()
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY()))
         {
             ++_boundaryPlayerCount;
-            _batchPosUpdates.push_back({player->GetGUID(), player->GetPositionX(), player->GetPositionY()});
+
+            ObjectGuid playerGuid = player->GetGUID();
+            _batchBoundaryOverrides.push_back(playerGuid);
+
+            bool needsPositionUpdate = !player->IsBoundaryTracked() || player->isMoving();
+            if (needsPositionUpdate)
+                _batchPosUpdates.push_back({playerGuid, player->GetPositionX(), player->GetPositionY()});
+
             if (!player->IsBoundaryTracked())
                 player->SetBoundaryTracked(true);
         }
@@ -145,7 +155,7 @@ void PartitionUpdateWorker::UpdatePlayers()
 
         // Feature 5: Adjacent Partition Pre-caching
         // Check if player is moving toward a boundary
-        if (player->isMoving())
+        if (checkBoundaryApproach && player->isMoving())
         {
             float dx = 0.0f, dy = 0.0f;
             // Get approximate velocity vector (not exact, but good enough for prediction)
@@ -165,11 +175,11 @@ void PartitionUpdateWorker::UpdatePlayers()
 void PartitionUpdateWorker::UpdateNonPlayerObjects()
 {
     // Collect GUIDs to avoid dangling pointer use when objects despawn mid-tick.
-    std::vector<std::pair<ObjectGuid, uint8>> objects;
+    _scratchObjects.clear();
     Map::VisibilityDeferGuard deferVisibility(_map);
-    _map.CollectPartitionedUpdatableGuids(_partitionId, objects);
+    _map.CollectPartitionedUpdatableGuids(_partitionId, _scratchObjects);
 
-    for (auto const& entry : objects)
+    for (auto const& entry : _scratchObjects)
     {
         WorldObject* obj = nullptr;
         switch (entry.second)
@@ -199,7 +209,20 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), obj->GetPositionX(), obj->GetPositionY()))
         {
             ++_boundaryObjectCount;
-            _batchPosUpdates.push_back({obj->GetGUID(), obj->GetPositionX(), obj->GetPositionY()});
+
+            ObjectGuid objectGuid = obj->GetGUID();
+            _batchBoundaryOverrides.push_back(objectGuid);
+
+            bool needsPositionUpdate = !obj->IsBoundaryTracked();
+            if (!needsPositionUpdate)
+            {
+                if (Creature* creature = obj->ToCreature())
+                    needsPositionUpdate = creature->isMoving();
+            }
+
+            if (needsPositionUpdate)
+                _batchPosUpdates.push_back({objectGuid, obj->GetPositionX(), obj->GetPositionY()});
+
             if (!obj->IsBoundaryTracked())
                 obj->SetBoundaryTracked(true);
         }
@@ -232,20 +255,17 @@ void PartitionUpdateWorker::FlushBoundaryBatches()
     // Batch position updates → single _boundaryLock acquisition
     if (!_batchPosUpdates.empty())
     {
-        std::vector<PartitionManager::BoundaryPositionUpdate> updates;
-        updates.reserve(_batchPosUpdates.size());
-        std::vector<ObjectGuid> overrideGuids;
-        overrideGuids.reserve(_batchPosUpdates.size());
+        _scratchBoundaryUpdates.clear();
+        _scratchBoundaryUpdates.reserve(_batchPosUpdates.size());
 
         for (auto const& entry : _batchPosUpdates)
-        {
-            updates.push_back({entry.guid, entry.x, entry.y});
-            overrideGuids.push_back(entry.guid);
-        }
+            _scratchBoundaryUpdates.push_back({entry.guid, entry.x, entry.y});
 
-        sPartitionMgr->BatchUpdateBoundaryPositions(mapId, _partitionId, updates);
-        sPartitionMgr->BatchSetPartitionOverrides(overrideGuids, mapId, _partitionId, 500);
+        sPartitionMgr->BatchUpdateBoundaryPositions(mapId, _partitionId, _scratchBoundaryUpdates);
     }
+
+    if (!_batchBoundaryOverrides.empty())
+        sPartitionMgr->BatchSetPartitionOverrides(_batchBoundaryOverrides, mapId, _partitionId, 500);
 
     // Batch unregistrations → single _boundaryLock acquisition
     if (!_batchUnregisters.empty())

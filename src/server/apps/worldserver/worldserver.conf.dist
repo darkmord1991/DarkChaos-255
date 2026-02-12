@@ -685,6 +685,7 @@ Appender.Errors=2,2,0,Errors.log,w
 Appender.DC=2,5,0,dcsystem.log,w
 # DarkChaos console colors (yellow info for DC startup logs)
 Appender.DCConsole=1,4,0,"1 9 3 8 5 8"
+Appender.PartitionSlow=2,3,0,PartitionSlow.log,w
 # Appender.DB=3,5,0
 # Appender.Dev=2,5,0,Dev.log,a
 
@@ -730,6 +731,7 @@ Logger.hlbg=4,DCConsole Server DC
 Logger.seasonal=4,DCConsole Server DC
 Logger.spells.scripts=2,Console Errors
 Logger.playerbots=5,Console Playerbots
+Logger.map.partition.slow=3,Console PartitionSlow
 #Logger.achievement=4,Console Server
 #Logger.addon=4,Console Server
 #Logger.auctionHouse=4,Console Server

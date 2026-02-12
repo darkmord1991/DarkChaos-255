@@ -455,6 +455,7 @@ void PartitionManager::Initialize()
     {
         std::unique_lock<std::shared_mutex> guard(_partitionLock);
         _partitionedMaps.clear();
+        _fixedPartitionCountMaps.clear();
         _partitionsByMap.clear();
         _partitionIndex.clear();
         _gridLayouts.clear();
@@ -548,6 +549,9 @@ void PartitionManager::Initialize()
         if (auto it = partitionCountOverrides.find(mapId); it != partitionCountOverrides.end())
         {
             partitionCount = it->second;
+
+            std::unique_lock<std::shared_mutex> guard(_partitionLock);
+            _fixedPartitionCountMaps.insert(mapId);
         }
         else if (tileBased && tilesPerPartitionDefault > 0)
         {
@@ -1397,8 +1401,10 @@ void PartitionManager::ResizeMapPartitions(uint32 mapId, uint32 newCount, char c
     if (!IsEnabled())
         return;
 
-    if (newCount < 1)
-        newCount = 1;
+    if (newCount < _config.minPartitions)
+        newCount = _config.minPartitions;
+    if (newCount > _config.maxPartitions)
+        newCount = _config.maxPartitions;
 
     uint64 nowMs = GameTime::GetGameTimeMS().count();
     uint32 oldCount = 0;
@@ -1512,6 +1518,12 @@ void PartitionManager::EvaluatePartitionDensity(uint32 mapId)
     if (partitionCount == 0)
         return;
 
+    {
+        std::shared_lock<std::shared_mutex> guard(_partitionLock);
+        if (_fixedPartitionCountMaps.find(mapId) != _fixedPartitionCountMaps.end())
+            return;
+    }
+
     float splitThreshold = GetDensitySplitThreshold();
     float mergeThreshold = GetDensityMergeThreshold();
 
@@ -1527,7 +1539,7 @@ void PartitionManager::EvaluatePartitionDensity(uint32 mapId)
             minDensity = density;
     }
 
-    uint32 maxPartitions = MAX_NUMBER_OF_GRIDS;
+    uint32 maxPartitions = _config.maxPartitions;
 
     if (maxDensity > splitThreshold && partitionCount < maxPartitions)
     {
@@ -1537,7 +1549,7 @@ void PartitionManager::EvaluatePartitionDensity(uint32 mapId)
         return;
     }
 
-    if (minDensity < mergeThreshold && partitionCount > 1 && maxDensity < mergeThreshold)
+    if (minDensity < mergeThreshold && partitionCount > _config.minPartitions && maxDensity < mergeThreshold)
     {
         LOG_INFO("map.partition", "Partition density merge: map {} maxDensity {} < {} (count {} -> {})",
             mapId, maxDensity, mergeThreshold, partitionCount, partitionCount - 1);
@@ -1565,6 +1577,15 @@ void PartitionManager::LoadConfig()
     _config.borderOverlap = sWorld->getFloatConfig(CONFIG_MAP_PARTITIONS_BORDER_OVERLAP);
     _config.densitySplitThreshold = sWorld->getFloatConfig(CONFIG_MAP_PARTITIONS_DENSITY_SPLIT_THRESHOLD);
     _config.densityMergeThreshold = sWorld->getFloatConfig(CONFIG_MAP_PARTITIONS_DENSITY_MERGE_THRESHOLD);
+    _config.minPartitions = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_MIN_PARTITIONS);
+    _config.maxPartitions = sWorld->getIntConfig(CONFIG_MAP_PARTITIONS_TILE_BASED_MAX_PARTITIONS);
+
+    if (_config.minPartitions == 0)
+        _config.minPartitions = 1;
+    if (_config.maxPartitions == 0)
+        _config.maxPartitions = 1;
+    if (_config.maxPartitions < _config.minPartitions)
+        _config.maxPartitions = _config.minPartitions;
 
     LOG_INFO("map.partition", "PartitionManager config loaded: enabled={} storeOnly={} overlap={:.2f}",
         _config.enabled, _config.storeOnly, _config.borderOverlap);

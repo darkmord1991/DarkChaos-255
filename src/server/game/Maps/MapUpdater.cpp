@@ -113,7 +113,7 @@ class MapUpdateRequest final : public UpdateRequest
 public:
     MapUpdateRequest(Map& m, MapUpdater& u, uint32 d, uint32 sd)
                 : UpdateRequest(u, MapUpdater::UpdateRequestType::General, &MapUpdateRequest::DoCall, &MapUpdateRequest::DoDestroy),
-          m_map(m), m_updater(u), m_diff(d), s_diff(sd)
+          m_map(m), m_diff(d), s_diff(sd)
     {
     }
 
@@ -132,7 +132,6 @@ public:
 
 private:
     Map& m_map;
-    MapUpdater& m_updater;
     uint32 m_diff;
     uint32 s_diff;
 };
@@ -142,7 +141,7 @@ class MapPreloadRequest : public UpdateRequest
 public:
     MapPreloadRequest(uint32 mapId, MapUpdater& updater)
                 : UpdateRequest(updater, MapUpdater::UpdateRequestType::General, &MapPreloadRequest::DoCall, &MapPreloadRequest::DoDestroy),
-          _mapId(mapId), _updater(updater)
+          _mapId(mapId)
     {
     }
 
@@ -162,7 +161,6 @@ public:
 
 private:
     uint32 _mapId;
-    MapUpdater& _updater;
 };
 
 class GridObjectPreloadRequest : public UpdateRequest
@@ -170,7 +168,7 @@ class GridObjectPreloadRequest : public UpdateRequest
 public:
     GridObjectPreloadRequest(uint32 mapId, uint32 instanceId, MapUpdater& updater, std::vector<uint32> gridIds)
                 : UpdateRequest(updater, MapUpdater::UpdateRequestType::General, &GridObjectPreloadRequest::DoCall, &GridObjectPreloadRequest::DoDestroy),
-          _mapId(mapId), _instanceId(instanceId), _updater(updater), _gridIds(std::move(gridIds))
+          _mapId(mapId), _instanceId(instanceId), _gridIds(std::move(gridIds))
     {
     }
 
@@ -221,7 +219,6 @@ public:
 private:
     uint32 _mapId;
     uint32 _instanceId;
-    MapUpdater& _updater;
     std::vector<uint32> _gridIds;
 };
 
@@ -229,7 +226,7 @@ class LFGUpdateRequest : public UpdateRequest
 {
 public:
     LFGUpdateRequest(MapUpdater& u, uint32 d)
-        : UpdateRequest(u, MapUpdater::UpdateRequestType::General, &LFGUpdateRequest::DoCall, &LFGUpdateRequest::DoDestroy), m_updater(u), m_diff(d) {}
+        : UpdateRequest(u, MapUpdater::UpdateRequestType::General, &LFGUpdateRequest::DoCall, &LFGUpdateRequest::DoDestroy), m_diff(d) {}
 
     static void DoCall(UpdateRequest* base) noexcept
     {
@@ -243,7 +240,6 @@ public:
         delete static_cast<LFGUpdateRequest*>(base);
     }
 private:
-    MapUpdater& m_updater;
     uint32 m_diff;
 };
 
@@ -253,7 +249,7 @@ public:
     PartitionUpdateRequest(Map& map, MapUpdater& updater, uint32 partitionId, uint32 diff, uint32 s_diff,
         std::function<void()> onDone)
                 : UpdateRequest(updater, MapUpdater::UpdateRequestType::Partition, &PartitionUpdateRequest::DoCall, &PartitionUpdateRequest::DoDestroy),
-          _map(map), _updater(updater), _partitionId(partitionId), _diff(diff), _sDiff(s_diff),
+          _map(map), _partitionId(partitionId), _diff(diff), _sDiff(s_diff),
           _onDone(std::move(onDone))
     {
     }
@@ -337,7 +333,6 @@ public:
 
 private:
     Map& _map;
-    MapUpdater& _updater;
     uint32 _partitionId;
     uint32 _diff;
     uint32 _sDiff;

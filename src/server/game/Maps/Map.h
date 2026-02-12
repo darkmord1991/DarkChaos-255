@@ -39,6 +39,7 @@
 #include "GridTerrainData.h"
 #include <atomic>
 #include <array>
+#include <deque>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -210,7 +211,7 @@ public:
     void SetPartitioned(bool value) { _isPartitioned = value; }
     bool UseParallelPartitions() const { return _useParallelPartitions; }
     void SetUseParallelPartitions(bool value) { _useParallelPartitions = value; }
-    void SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff);
+    bool SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff);
     void OnCreateMap();
     //function for setting up visibility distance for maps on per-type/per-Id basis
     virtual void InitVisibilityDistance();
@@ -1093,9 +1094,22 @@ private:
 
     std::mutex _deferredVisibilityLock;
     std::unordered_set<ObjectGuid> _deferredVisibilitySet;
-    std::vector<ObjectGuid> _deferredVisibilityUpdates;
+    std::deque<ObjectGuid> _deferredVisibilityUpdates;
+
+    bool _partitionUpdatesInProgress = false;
+    uint32 _partitionUpdatesTotal = 0;
+    uint32 _partitionUpdatesScheduled = 0;
+    uint32 _partitionUpdatesMaxInFlight = 1;
+    uint64 _partitionUpdatesStartMs = 0;
+    std::atomic<uint32> _partitionUpdatesCompleted{0};
+    std::atomic<uint32> _partitionUpdateGeneration{0};
 
     std::atomic<uint32> _updateCounter{0};
+    uint32 _pendingDynamicTreeDiff = 0;
+    uint32 _adaptiveSessionStrideTicks = 2;
+    size_t _adaptiveDeferredVisibilityBudget = 512;
+    size_t _adaptiveObjectUpdateBudget = 2048;
+    uint32 _adaptivePartitionInFlightLimit = 4;
     std::mutex _gridLayerLock;
     std::unordered_map<uint32, std::unordered_set<uint32>> _gridLoadedLayers;
 

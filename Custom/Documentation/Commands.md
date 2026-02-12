@@ -450,12 +450,16 @@ Performance and stress testing tools for diagnosing server performance issues. M
 | `dbasync` | `[queries] [concurrency]` | Test async DB burst throughput. |
 | `partition` | `[iterations] [detailed] [persist|db] [filters...]` | Layer/partition microbenchmarks. Filters: partition, mixed, relocation, layering, boundary, density, migration, overflow, npc, lookup, layercache, boundarygrid, preload. `persist` enables DB-backed layer persistence during the test (off by default). |
 | `path` | `[iterations]` | Test pathfinding performance (requires in-game player). |
+| `maprandom` | `[mapSamples] [pointsPerMap]` | Randomly sample multiple maps and benchmark terrain/zone/water/partition lookups (requires in-game player). |
 | `cpu` | `[iterations]` | Run CPU hot-path benchmark. |
 | `mysql` | | Print MySQL connection and performance status. |
 | `full` | | Run all stress tests in sequence. |
 | `report` | `[suite=full] [topN=10] [details=0|1] [format=chat|json|csv] [suiteArgs...]` | Generate a consolidated report (optionally write JSON/CSV). |
 | `loop` | `<suite> [loops=10] [sleepMs=1000] [suiteArgs...]` | Repeat a suite and summarize timings (use `quiet` or `q` to suppress per-loop output). |
-| `loopreport` | `<suite> [loops=0] [sleepMs=1000] [topN=10] [details=0|1] [format=json|csv] [suiteArgs...]` | Run repeated suite and write a JSON/CSV loop report (loops=0 means infinite). |
+| `loopreport` | `<suite> [loops=0] [sleepMs=1000] [topN=10] [details=0|1] [format=json|csv] [suiteArgs...]` | Run repeated suite and write a JSON/CSV loop report (loops=0 means infinite). Includes per-run metrics: `ok_count`, `fail_count`, `slowest_test`, `slowest_total_us`. |
+| `quickfull` | `[loops=3] [sleepMs=750] [format=json|csv]` | Convenience preset: runs a small `full` loopreport with compact defaults and writes logs. |
+| `quickparallel` | `[loops=4] [sleepMs=500] [format=json|csv]` | Concurrency preset: runs loopreports for `dbasync` (2000/16), `partition` (250000), and `cpu` (120000). |
 
-*Suite aliases:* `stress` also accepts `big` in loop/report suites.
+*Loop/report suites:* `sql`, `cache`, `systems`, `coredb`, `playersim`, `stress` (`big` alias), `dbasync`, `path`, `maprandom`, `partition`, `cpu`, `mysql`, `full`.
 *Partition examples:* `.stresstest partition 200000 layer lookup`, `.stresstest partition detailed relocation`, `.stresstest partition 50000 persist`.
+*Preset examples:* `.stresstest quickfull`, `.stresstest quickparallel 6 750 json`.
