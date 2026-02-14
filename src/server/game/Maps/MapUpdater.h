@@ -48,6 +48,7 @@ public:
     {
         uint32 activeWorkers = 0;
         uint32 pendingJobs = 0;
+        uint32 pendingGeneralJobs = 0;
         uint32 oldestQueuedAgeMs = 0;
         uint32 maxPartitionRunMs = 0;
     };
@@ -84,7 +85,7 @@ public:
     void OnPartitionWorkerDone(uint64 runMs);
 
 private:
-    void WorkerThread();
+    void WorkerThread(bool partitionOnly);
     ProducerConsumerQueue<UpdateRequest*> _queue;
     ProducerConsumerQueue<UpdateRequest*> _partitionQueue;
     std::atomic<int> pending_requests;  // Use std::atomic for pending_requests to avoid lock contention
@@ -99,6 +100,7 @@ private:
     std::multiset<uint64> _partitionQueuedEnqueueTimes;
     std::atomic<uint32> _activePartitionWorkers{0};
     std::atomic<uint32> _maxPartitionRuntimeMs{0};
+    std::atomic<uint32> _dedicatedPartitionWorkers{0};
 };
 
 #endif //_MAP_UPDATER_H_INCLUDED

@@ -318,13 +318,12 @@ void MotionMaster::MoveChase(Unit* target, std::optional<ChaseRange> dist, std::
     if (!target || target == _owner || _owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
-            map->QueuePartitionPathRelay(ownerPartition, _owner->GetGUID(), target->GetGUID());
+            map->QueuePartitionPathRelay(relayPartition, _owner->GetGUID(), target->GetGUID());
             return;
         }
     }
@@ -386,11 +385,10 @@ void MotionMaster::MoveBackwards(Unit* target, float dist)
         return;
     }
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -398,7 +396,7 @@ void MotionMaster::MoveBackwards(Unit* target, float dist)
             relay.action = Map::MOTION_RELAY_BACKWARDS;
             relay.dist = dist;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -431,11 +429,10 @@ void MotionMaster::MoveForwards(Unit* target, float dist)
         return;
     }
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -443,7 +440,7 @@ void MotionMaster::MoveForwards(Unit* target, float dist)
             relay.action = Map::MOTION_RELAY_FORWARDS;
             relay.dist = dist;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -473,18 +470,17 @@ void MotionMaster::MoveCircleTarget(Unit* target)
         return;
     }
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
             relay.targetGuid = target->GetGUID();
             relay.action = Map::MOTION_RELAY_CIRCLE;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -513,13 +509,12 @@ void MotionMaster::MoveFollow(Unit* target, float dist, float angle, MovementSlo
         return;
     }
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
-            map->QueuePartitionPathRelay(ownerPartition, _owner->GetGUID(), target->GetGUID());
+            map->QueuePartitionPathRelay(relayPartition, _owner->GetGUID(), target->GetGUID());
             return;
         }
     }
@@ -549,13 +544,12 @@ void MotionMaster::MovePoint(uint32 id, float x, float y, float z, ForcedMovemen
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
-            map->QueuePartitionPointRelay(ownerPartition, _owner->GetGUID(), id, x, y, z, forcedMovement, speed, orientation, generatePath, forceDestination, slot, animTier.has_value(), animTier.value_or(AnimTier::Ground));
+            map->QueuePartitionPointRelay(relayPartition, _owner->GetGUID(), id, x, y, z, forcedMovement, speed, orientation, generatePath, forceDestination, slot, animTier.has_value(), animTier.value_or(AnimTier::Ground));
             return;
         }
     }
@@ -579,11 +573,10 @@ void MotionMaster::MoveSplinePath(Movement::PointsArray* path, ForcedMovement fo
         return;
 
     Map* map = _owner->GetMap();
-    if (path && map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (path && map)
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -591,7 +584,7 @@ void MotionMaster::MoveSplinePath(Movement::PointsArray* path, ForcedMovement fo
             relay.forcedMovement = forcedMovement;
             relay.pathPoints.assign(path->begin(), path->end());
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, std::move(relay));
+            map->QueuePartitionMotionRelay(relayPartition, std::move(relay));
             return;
         }
     }
@@ -608,11 +601,10 @@ void MotionMaster::MoveSplinePath(Movement::PointsArray* path, ForcedMovement fo
 
 void MotionMaster::MovePath(uint32 path_id, ForcedMovement forcedMovement, PathSource pathSource)
 {
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -621,7 +613,7 @@ void MotionMaster::MovePath(uint32 path_id, ForcedMovement forcedMovement, PathS
             relay.pathSource = static_cast<uint8>(pathSource);
             relay.forcedMovement = forcedMovement;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -668,11 +660,10 @@ void MotionMaster::MoveLand(uint32 id, Position const& pos, float speed /* = 0.0
 
     LOG_DEBUG("movement.motionmaster", "Creature (Entry: {}) landing point (ID: {} X: {} Y: {} Z: {})", _owner->GetEntry(), id, x, y, z);
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -683,7 +674,7 @@ void MotionMaster::MoveLand(uint32 id, Position const& pos, float speed /* = 0.0
             relay.z = z;
             relay.speed = speed;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -723,11 +714,10 @@ void MotionMaster::MoveTakeoff(uint32 id, Position const& pos, float speed /* = 
 
     LOG_DEBUG("movement.motionmaster", "Creature (Entry: {}) landing point (ID: {} X: {} Y: {} Z: {})", _owner->GetEntry(), id, x, y, z);
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -739,7 +729,7 @@ void MotionMaster::MoveTakeoff(uint32 id, Position const& pos, float speed /* = 
             relay.speed = speed;
             relay.skipAnimation = skipAnimation;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -774,11 +764,10 @@ void MotionMaster::MoveKnockbackFrom(float srcX, float srcY, float speedXY, floa
     if (speedXY <= 0.1f)
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -788,7 +777,7 @@ void MotionMaster::MoveKnockbackFrom(float srcX, float srcY, float speedXY, floa
             relay.speedXY = speedXY;
             relay.speedZ = speedZ;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -837,11 +826,10 @@ void MotionMaster::MoveJump(float x, float y, float z, float speedXY, float spee
     if (speedXY <= 0.1f)
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -854,7 +842,7 @@ void MotionMaster::MoveJump(float x, float y, float z, float speedXY, float spee
             relay.speedXY = speedXY;
             relay.speedZ = speedZ;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -880,11 +868,10 @@ void MotionMaster::MoveFall(uint32 id /*=0*/, bool addFlagForNPC)
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -892,7 +879,7 @@ void MotionMaster::MoveFall(uint32 id /*=0*/, bool addFlagForNPC)
             relay.id = id;
             relay.addFlagForNPC = addFlagForNPC;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -940,11 +927,10 @@ void MotionMaster::MoveCharge(float x, float y, float z, float speed, uint32 id,
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -960,7 +946,7 @@ void MotionMaster::MoveCharge(float x, float y, float z, float speed, uint32 id,
             if (path)
                 relay.pathPoints.assign(path->begin(), path->end());
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, std::move(relay));
+            map->QueuePartitionMotionRelay(relayPartition, std::move(relay));
             return;
         }
     }
@@ -987,11 +973,10 @@ void MotionMaster::MoveCharge(PathGenerator const& path, float speed /*= SPEED_C
 {
     G3D::Vector3 dest = path.GetActualEndPosition();
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -1004,7 +989,7 @@ void MotionMaster::MoveCharge(PathGenerator const& path, float speed /*= SPEED_C
             relay.speed = speed;
             relay.pathPoints.assign(path.GetPath().begin(), path.GetPath().end());
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, std::move(relay));
+            map->QueuePartitionMotionRelay(relayPartition, std::move(relay));
             return;
         }
     }
@@ -1024,13 +1009,12 @@ void MotionMaster::MoveSeekAssistance(float x, float y, float z)
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
-            map->QueuePartitionAssistRelay(ownerPartition, _owner->GetGUID(), x, y, z);
+            map->QueuePartitionAssistRelay(relayPartition, _owner->GetGUID(), x, y, z);
             return;
         }
     }
@@ -1055,13 +1039,12 @@ void MotionMaster::MoveSeekAssistanceDistract(uint32 time)
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
-            map->QueuePartitionAssistDistractRelay(ownerPartition, _owner->GetGUID(), time);
+            map->QueuePartitionAssistDistractRelay(relayPartition, _owner->GetGUID(), time);
             return;
         }
     }
@@ -1088,11 +1071,10 @@ void MotionMaster::MoveFleeing(Unit* enemy, uint32 time)
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
@@ -1100,7 +1082,7 @@ void MotionMaster::MoveFleeing(Unit* enemy, uint32 time)
             relay.action = Map::MOTION_RELAY_FLEE;
             relay.timeMs = time;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }
@@ -1157,18 +1139,17 @@ void MotionMaster::MoveDistract(uint32 timer)
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
-    if (Map* map = _owner->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = _owner->GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(_owner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(_owner, relayPartition))
         {
             Map::PartitionMotionRelay relay;
             relay.moverGuid = _owner->GetGUID();
             relay.action = Map::MOTION_RELAY_DISTRACT;
             relay.timeMs = timer;
             relay.queuedMs = GameTime::GetGameTimeMS().count();
-            map->QueuePartitionMotionRelay(ownerPartition, relay);
+            map->QueuePartitionMotionRelay(relayPartition, relay);
             return;
         }
     }

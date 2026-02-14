@@ -861,26 +861,30 @@ bool StaticTransport::Create(ObjectGuid::LowType guidlow, uint32 name_id, Map* m
     SetGoState(goinfo->transport.startOpen ? GO_STATE_ACTIVE : GO_STATE_READY);
     SetGoAnimProgress(animprogress);
     m_goValue.Transport.AnimationInfo = sTransportMgr->GetTransportAnimInfo(goinfo->entry);
-    //ASSERT(m_goValue.Transport.AnimationInfo);
-    if (!m_goValue.Transport.AnimationInfo)
+    if (!m_goValue.Transport.AnimationInfo || !m_goValue.Transport.AnimationInfo->TotalTime)
     {
-        LOG_ERROR("vehicle", "StaticTransport::Create: No AnimationInfo was found for GameObject entry ({})", goinfo->entry);
-        return false;
-    }
-    //ASSERT(m_goValue.Transport.AnimationInfo->TotalTime > 0);
-    if (!m_goValue.Transport.AnimationInfo->TotalTime)
-    {
-        LOG_ERROR("vehicle", "StaticTransport::Create: AnimationInfo->TotalTime is 0 for GameObject entry ({})", goinfo->entry);
-        return false;
-    }
-    SetPauseTime(goinfo->transport.pauseAtTime);
-    if (goinfo->transport.startOpen && goinfo->transport.pauseAtTime)
-    {
-        SetPathProgress(goinfo->transport.pauseAtTime);
-        _needDoInitialRelocation = true;
+        // Missing or empty animation data — spawn as a non-animated static
+        // transport instead of failing entirely.  This keeps the GO visible
+        // in-world and avoids repeated error log spam on every map load.
+        if (!m_goValue.Transport.AnimationInfo)
+            LOG_WARN("entities.transport", "StaticTransport::Create: No AnimationInfo found for GameObject entry ({}) — spawning as static object", goinfo->entry);
+        else
+            LOG_WARN("entities.transport", "StaticTransport::Create: AnimationInfo->TotalTime is 0 for GameObject entry ({}) — spawning as static object", goinfo->entry);
+
+        SetPauseTime(0);
+        SetPathProgress(0);
     }
     else
-        SetPathProgress(0);
+    {
+        SetPauseTime(goinfo->transport.pauseAtTime);
+        if (goinfo->transport.startOpen && goinfo->transport.pauseAtTime)
+        {
+            SetPathProgress(goinfo->transport.pauseAtTime);
+            _needDoInitialRelocation = true;
+        }
+        else
+            SetPathProgress(0);
+    }
 
     if (GameObjectAddon const* addon = sObjectMgr->GetGameObjectAddon(guidlow))
     {

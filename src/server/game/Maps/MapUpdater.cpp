@@ -54,6 +54,12 @@ namespace
     std::mutex gSlowMapUpdateLogGateLock;
     std::unordered_map<uint64, uint64> gSlowMapUpdateNextLogAtMs;
 
+    uint64 GetSteadyNowMs()
+    {
+        return static_cast<uint64>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+
     bool IsPartitionPercentileSamplingEnabled()
     {
         static bool const enabled = sConfigMgr->GetOption<bool>("System.PartitionMetrics.EnablePercentiles", false);
@@ -64,6 +70,13 @@ namespace
     {
         static bool const enabled = sConfigMgr->GetOption<bool>("System.SlowPartitionCycle.TrackQueueAge", false);
         return enabled;
+    }
+
+    uint32 GetPartitionBurstBeforeGeneral()
+    {
+        static uint32 const burst = static_cast<uint32>(std::max<int64>(1,
+            sConfigMgr->GetOption<int64>("MapUpdate.PartitionBurstBeforeGeneral", 3)));
+        return burst;
     }
 
     int64 GetSlowMapUpdateTaskThresholdMs()
@@ -267,7 +280,7 @@ public:
         self->m_map.Update(self->m_diff, self->s_diff);
 
         int64 const elapsedMs = std::chrono::duration_cast<Milliseconds>(std::chrono::steady_clock::now() - start).count();
-        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        uint64 const nowMs = GetSteadyNowMs();
         uint64 const logIntervalMs = GetSlowMapUpdateTaskLogIntervalMs();
         if (elapsedMs >= GetSlowMapUpdateTaskThresholdMs() && ShouldEmitSlowMapUpdateLog(self->m_map, nowMs, logIntervalMs))
         {
@@ -418,7 +431,7 @@ public:
     {
         auto* self = static_cast<PartitionUpdateRequest*>(base);
         auto startTime = std::chrono::steady_clock::now();
-        uint64 const startMs = GameTime::GetGameTimeMS().count();
+        uint64 const startMs = GetSteadyNowMs();
         MapUpdater* owner = self->GetOwner();
         if (owner)
             owner->OnPartitionWorkerStart();
@@ -437,7 +450,7 @@ public:
 
             ~FinishGuard()
             {
-                uint64 const endMs = GameTime::GetGameTimeMS().count();
+                uint64 const endMs = GetSteadyNowMs();
                 int64 const elapsedMs = std::chrono::duration_cast<Milliseconds>(
                     std::chrono::steady_clock::now() - _start).count();
                 uint32 const runMs = elapsedMs > 0 ? static_cast<uint32>(elapsedMs) : 0;
@@ -537,10 +550,19 @@ MapUpdater::MapUpdater() : pending_requests(0), pending_partition_requests(0), _
 
 void MapUpdater::activate(std::size_t num_threads)
 {
+    uint32 dedicatedPartitionWorkers = 0;
+    if (num_threads >= 4)
+    {
+        dedicatedPartitionWorkers = std::clamp<uint32>(static_cast<uint32>(num_threads / 3), 2u, 4u);
+        dedicatedPartitionWorkers = std::min<uint32>(dedicatedPartitionWorkers, static_cast<uint32>(num_threads - 1));
+    }
+
+    _dedicatedPartitionWorkers.store(dedicatedPartitionWorkers, std::memory_order_release);
     _workerThreads.reserve(num_threads);
     for (std::size_t i = 0; i < num_threads; ++i)
     {
-        _workerThreads.push_back(std::thread(&MapUpdater::WorkerThread, this));
+        bool const partitionOnly = i < dedicatedPartitionWorkers;
+        _workerThreads.push_back(std::thread(&MapUpdater::WorkerThread, this, partitionOnly));
     }
 }
 
@@ -615,7 +637,7 @@ void MapUpdater::schedule_lfg_update(uint32 diff)
 void MapUpdater::schedule_partition_update(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff,
     std::function<void(PartitionTaskTiming const&)> onDone)
 {
-    uint64 const enqueueMs = GameTime::GetGameTimeMS().count();
+    uint64 const enqueueMs = GetSteadyNowMs();
     pending_requests.fetch_add(1, std::memory_order_release);
     pending_partition_requests.fetch_add(1, std::memory_order_release);
 
@@ -708,7 +730,10 @@ MapUpdater::PartitionPoolHealth MapUpdater::GetPartitionPoolHealth() const
 {
     PartitionPoolHealth health;
     health.activeWorkers = _activePartitionWorkers.load(std::memory_order_acquire);
-    health.pendingJobs = static_cast<uint32>(std::max(0, pending_partition_requests.load(std::memory_order_acquire)));
+    int const pendingPartition = pending_partition_requests.load(std::memory_order_acquire);
+    int const pendingTotal = pending_requests.load(std::memory_order_acquire);
+    health.pendingJobs = static_cast<uint32>(std::max(0, pendingPartition));
+    health.pendingGeneralJobs = static_cast<uint32>(std::max(0, pendingTotal - pendingPartition));
     health.maxPartitionRunMs = _maxPartitionRuntimeMs.load(std::memory_order_acquire);
 
     if (!IsPartitionQueueAgeTrackingEnabled())
@@ -723,7 +748,7 @@ MapUpdater::PartitionPoolHealth MapUpdater::GetPartitionPoolHealth() const
 
     if (oldestEnqueueMs > 0)
     {
-        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        uint64 const nowMs = GetSteadyNowMs();
         if (nowMs >= oldestEnqueueMs)
             health.oldestQueuedAgeMs = static_cast<uint32>(nowMs - oldestEnqueueMs);
     }
@@ -788,39 +813,73 @@ void MapUpdater::update_finished(UpdateRequestType type)
     }
 }
 
-void MapUpdater::WorkerThread()
+void MapUpdater::WorkerThread(bool partitionOnly)
 {
     LoginDatabase.WarnAboutSyncQueries(true);
     CharacterDatabase.WarnAboutSyncQueries(true);
     WorldDatabase.WarnAboutSyncQueries(true);
 
+    uint32 partitionBurstSinceGeneral = 0;
+    uint32 const partitionBurstBeforeGeneral = GetPartitionBurstBeforeGeneral();
+
     while (!_cancelationToken)
     {
         UpdateRequest* request = nullptr;
 
-        // Priority: partition tasks first (they're latency-sensitive for the
-        // cooperative main-thread spin in run_partition_tasks_until).
-        if (_partitionQueue.Pop(request))
+        if (partitionOnly)
         {
-            // got partition task
-        }
-        else if (_queue.Pop(request))
-        {
-            // got general task
+            if (!_partitionQueue.WaitAndPopFor(request, std::chrono::milliseconds(1)))
+                continue;
         }
         else
         {
-            // Neither queue has work — wait on general queue with a short timeout
-            // then recheck partition queue. Using a single 2ms wait keeps latency
-            // low while avoiding two consecutive timed waits (was 4ms worst case).
-            if (!_queue.WaitAndPopFor(request, std::chrono::milliseconds(1)))
-                _partitionQueue.WaitAndPopFor(request, std::chrono::milliseconds(1));
+            int const pendingPartition = pending_partition_requests.load(std::memory_order_acquire);
+            int const pendingTotal = pending_requests.load(std::memory_order_acquire);
+            int const pendingGeneral = std::max(0, pendingTotal - pendingPartition);
+            bool const preferGeneral = pendingGeneral > 0 &&
+                (partitionBurstSinceGeneral >= partitionBurstBeforeGeneral || pendingPartition <= 0);
+
+            if (preferGeneral && _queue.Pop(request))
+            {
+                // got general task
+            }
+            else if (_partitionQueue.Pop(request))
+            {
+                // got partition task
+            }
+            else if (_queue.Pop(request))
+            {
+                // got general task
+            }
+            else
+            {
+                if (preferGeneral)
+                {
+                    if (!_queue.WaitAndPopFor(request, std::chrono::milliseconds(1)))
+                        _partitionQueue.WaitAndPopFor(request, std::chrono::milliseconds(1));
+                }
+                else
+                {
+                    if (!_partitionQueue.WaitAndPopFor(request, std::chrono::milliseconds(1)))
+                        _queue.WaitAndPopFor(request, std::chrono::milliseconds(1));
+                }
+            }
         }
 
         if (request)
         {
-            if (request->GetType() == UpdateRequestType::Partition)
+            UpdateRequestType const requestType = request->GetType();
+
+            if (requestType == UpdateRequestType::Partition)
                 OnPartitionRequestDequeued(request);
+
+            if (!partitionOnly)
+            {
+                if (requestType == UpdateRequestType::Partition)
+                    ++partitionBurstSinceGeneral;
+                else
+                    partitionBurstSinceGeneral = 0;
+            }
 
             if (!_cancelationToken)
             {

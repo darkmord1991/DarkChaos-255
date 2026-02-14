@@ -136,6 +136,16 @@ void VisibleChangesNotifier::Visit(DynamicObjectMapType& m)
 
 inline void CreatureUnitRelocationWorker(Creature* c, Unit* u)
 {
+    if (!c || !u)
+    {
+        return;
+    }
+
+    if (!u->IsInWorld() || !c->IsInWorld() || u->IsDuringRemoveFromWorld() || c->IsDuringRemoveFromWorld())
+    {
+        return;
+    }
+
     if (!u->IsAlive() || !c->IsAlive() || c == u || u->IsInFlight())
     {
         return;
@@ -183,9 +193,22 @@ void CreatureRelocationNotifier::Visit(PlayerMapType& m)
 void AIRelocationNotifier::Visit(CreatureMapType& m)
 {
     bool self = isCreature && !((Creature*)(&i_unit))->IsMoveInLineOfSightStrictlyDisabled();
+
+    std::vector<ObjectGuid> targets;
     for (CreatureMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         Creature* c = iter->GetSource();
+        if (!c)
+            continue;
+
+        targets.push_back(c->GetGUID());
+    }
+
+    for (ObjectGuid const& guid : targets)
+    {
+        Creature* c = ObjectAccessor::GetCreature(i_unit, guid);
+        if (!c || !c->IsInWorld() || c->IsDuringRemoveFromWorld())
+            continue;
 
         // NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION does not guarantee that unit will do it itself (because distance is also checked), but screw it, it's not that important
         if (!c->isNeedNotify(NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION) && !c->IsMoveInLineOfSightStrictlyDisabled())

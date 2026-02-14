@@ -592,12 +592,10 @@ void AchievementMgr::SaveToDB(CharacterDatabaseTransaction trans)
             if (!iter->second.changed)
                 continue;
 
-            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHAR_ACHIEVEMENT_PROGRESS_BY_CRITERIA);
-            stmt->SetData(0, GetPlayer()->GetGUID().GetCounter());
-            stmt->SetData(1, iter->first);
-            trans->Append(stmt);
+            CharacterDatabasePreparedStatement* stmt = nullptr;
 
-            // pussywizard: insert only for (counter != 0) is very important! this is how criteria of completed achievements gets deleted from db (by setting counter to 0); if conflicted during merge - contact me
+            // insert only for (counter != 0) is very important: criteria of completed achievements
+            // gets deleted from db by setting counter to 0.
             if (iter->second.counter)
             {
                 stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHAR_ACHIEVEMENT_PROGRESS);
@@ -605,6 +603,13 @@ void AchievementMgr::SaveToDB(CharacterDatabaseTransaction trans)
                 stmt->SetData(1, iter->first);
                 stmt->SetData(2, iter->second.counter);
                 stmt->SetData(3, uint32(iter->second.date));
+                trans->Append(stmt);
+            }
+            else
+            {
+                stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHAR_ACHIEVEMENT_PROGRESS_BY_CRITERIA);
+                stmt->SetData(0, GetPlayer()->GetGUID().GetCounter());
+                stmt->SetData(1, iter->first);
                 trans->Append(stmt);
             }
 

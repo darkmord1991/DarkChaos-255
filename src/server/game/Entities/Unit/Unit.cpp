@@ -913,7 +913,59 @@ bool Unit::IsWithinCombatRange(Unit const* obj, float dist2compare) const
     float sizefactor = GetCombatReach() + obj->GetCombatReach();
     float maxdist = dist2compare + sizefactor;
 
-    return distsq < maxdist * maxdist;
+    if (distsq < maxdist * maxdist)
+        return true;
+
+    // Partitioned/parallel movement can briefly leave object positions one tick behind
+    // active spline destinations. Re-check with movement snapshot endpoints to reduce
+    // transient false SPELL_FAILED_OUT_OF_RANGE during chase/combat.
+    float thisX = GetPositionX();
+    float thisY = GetPositionY();
+    float thisZ = GetPositionZ();
+    float objX = obj->GetPositionX();
+    float objY = obj->GetPositionY();
+    float objZ = obj->GetPositionZ();
+
+    bool thisHasSnapshot = IsMoveSplineInitializedSnapshot() && !IsMoveSplineFinalizedSnapshot() && !IsMoveSplineBoardingSnapshot();
+    bool objHasSnapshot = obj->IsMoveSplineInitializedSnapshot() && !obj->IsMoveSplineFinalizedSnapshot() && !obj->IsMoveSplineBoardingSnapshot();
+
+    if (!thisHasSnapshot && !objHasSnapshot)
+        return false;
+
+    float distSqBest = distsq;
+    if (thisHasSnapshot)
+    {
+        GetMoveSplineFinalDestinationSnapshot(thisX, thisY, thisZ);
+        float altDx = thisX - obj->GetPositionX();
+        float altDy = thisY - obj->GetPositionY();
+        float altDz = thisZ - obj->GetPositionZ();
+        float altDistSq = altDx * altDx + altDy * altDy + altDz * altDz;
+        if (altDistSq < distSqBest)
+            distSqBest = altDistSq;
+    }
+
+    if (objHasSnapshot)
+    {
+        obj->GetMoveSplineFinalDestinationSnapshot(objX, objY, objZ);
+        float altDx = GetPositionX() - objX;
+        float altDy = GetPositionY() - objY;
+        float altDz = GetPositionZ() - objZ;
+        float altDistSq = altDx * altDx + altDy * altDy + altDz * altDz;
+        if (altDistSq < distSqBest)
+            distSqBest = altDistSq;
+    }
+
+    if (thisHasSnapshot && objHasSnapshot)
+    {
+        float altDx = thisX - objX;
+        float altDy = thisY - objY;
+        float altDz = thisZ - objZ;
+        float altDistSq = altDx * altDx + altDy * altDy + altDz * altDz;
+        if (altDistSq < distSqBest)
+            distSqBest = altDistSq;
+    }
+
+    return distSqBest < maxdist * maxdist;
 }
 
 bool Unit::IsWithinMeleeRange(Unit const* obj, float dist) const
@@ -4188,7 +4240,7 @@ void Unit::_UpdateSpells(uint32 time)
     {
         auto visibleAurasSnapshot = GetVisibleAurasSnapshot();
         for (auto& auraPair : visibleAurasSnapshot)
-            if (auraPair.second->IsNeedClientUpdate())
+            if (GetVisibleAura(auraPair.first) == auraPair.second && auraPair.second->IsNeedClientUpdate())
                 auraPair.second->ClientUpdate();
     }
 
@@ -5825,6 +5877,8 @@ void Unit::RemoveAreaAurasDueToLeaveWorld()
 
 void Unit::RemoveAllAuras()
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
+
     // this may be a dead loop if some events on aura remove will continiously apply aura on remove
     // we want to have all auras removed, so use your brain when linking events
     while (!m_appliedAuras.empty() || !m_ownedAuras.empty())
@@ -5855,6 +5909,8 @@ void Unit::RemoveArenaAuras()
 
 void Unit::RemoveAllAurasOnDeath()
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
+
     // used just after dieing to remove all visible auras
     // and disable the mods for the passive ones
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
@@ -5878,6 +5934,8 @@ void Unit::RemoveAllAurasOnDeath()
 
 void Unit::RemoveAllAurasRequiringDeadTarget()
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
+
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
     {
         Aura const* aura = iter->second->GetBase();
@@ -5899,6 +5957,8 @@ void Unit::RemoveAllAurasRequiringDeadTarget()
 
 void Unit::RemoveAllAurasExceptType(AuraType type)
 {
+    std::lock_guard<std::recursive_mutex> lock(_auraLock);
+
     for (AuraApplicationMap::iterator iter = m_appliedAuras.begin(); iter != m_appliedAuras.end();)
     {
         Aura const* aura = iter->second->GetBase();
@@ -14476,12 +14536,18 @@ void Unit::CombatStart(Unit* victim, bool initialAggro)
 
     if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
         uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+
+        // Skip relay if this unit is currently being updated by the active
+        // partition's worker (e.g. crossed a boundary during its own tick).
+        if (GetCurrentUpdatePartition() != activePartition)
         {
-            map->QueuePartitionCombatRelay(ownerPartition, GetGUID(), victim->GetGUID(), initialAggro);
-            return;
+            uint32 ownerPartition = map->GetPartitionIdForUnit(this);
+            if (ownerPartition && ownerPartition != activePartition)
+            {
+                map->QueuePartitionCombatRelay(ownerPartition, GetGUID(), victim->GetGUID(), initialAggro);
+                return;
+            }
         }
     }
 
@@ -14598,13 +14664,15 @@ void Unit::SetInCombatState(bool PvP, Unit* enemy, uint32 duration)
     if (!IsAlive())
         return;
 
-    if (Map* map = GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (enemy && (!IsLiveUnitPointer(enemy) || !enemy->IsInWorld() || !enemy->FindMap()))
+        enemy = nullptr;
+
+    if (Map* map = GetMap())
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(this);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(this, relayPartition))
         {
-            map->QueuePartitionCombatStateRelay(ownerPartition, GetGUID(), enemy ? enemy->GetGUID() : ObjectGuid::Empty, PvP, duration);
+            map->QueuePartitionCombatStateRelay(relayPartition, GetGUID(), enemy ? enemy->GetGUID() : ObjectGuid::Empty, PvP, duration);
             return;
         }
     }
@@ -14614,7 +14682,20 @@ void Unit::SetInCombatState(bool PvP, Unit* enemy, uint32 duration)
     else if (duration)
         m_CombatTimer = std::max<uint32>(GetCombatTimer(), duration);
 
-    if (HasUnitState(UNIT_STATE_EVADE) || GetCreatureType() == CREATURE_TYPE_NON_COMBAT_PET)
+    if (HasUnitState(UNIT_STATE_EVADE))
+        return;
+
+    if (IsCreature())
+    {
+        Creature* creature = ToCreature();
+        if (!creature || !creature->GetCreatureTemplate())
+            return;
+
+        if (creature->GetCreatureTemplate()->type == CREATURE_TYPE_NON_COMBAT_PET)
+            return;
+    }
+
+    if (!IsPlayer() && !IsCreature())
         return;
 
     // xinef: if we somehow engage in combat (scripts, dunno) with player, remove this flag so he can fight back
@@ -14669,8 +14750,17 @@ void Unit::SetInCombatState(bool PvP, Unit* enemy, uint32 duration)
             Unit* controlled = *itr;
             ++itr;
 
-            if (!controlled || !controlled->IsInWorld() || !controlled->FindMap())
+            if (!controlled || !IsLiveUnitPointer(controlled))
+            {
+                m_Controlled.erase(controlled);
                 continue;
+            }
+
+            if (controlled == this || !controlled->IsInWorld() || !controlled->FindMap())
+            {
+                m_Controlled.erase(controlled);
+                continue;
+            }
 
             // Xinef: Dont set combat for passive units, they will evade in next update...
             if (controlled->IsCreature() && controlled->ToCreature()->HasReactState(REACT_PASSIVE))
@@ -17111,7 +17201,7 @@ void Unit::ProcDamageAndSpellFor(bool isVictim, Unit* target, uint32 procFlag, u
             // On melee based hit/miss/resist/parry/dodge need to update skill (for victim and attacker)
             if (procExtra & (PROC_EX_NORMAL_HIT | PROC_EX_MISS | PROC_EX_RESIST | PROC_EX_PARRY | PROC_EX_DODGE))
             {
-                ToPlayer()->UpdateCombatSkills(target, attType, isVictim, procSpell ? procSpell->m_weaponItem : nullptr);
+                ToPlayer()->UpdateCombatSkills(target, attType, isVictim, procSpell ? procSpell->m_weaponItemGUID : ObjectGuid::Empty);
             }
             // Update defence if player is victim and we block - TODO: confirm that blocked attacks only have a chance to increase defence skill
             else if (isVictim && procExtra & (PROC_EX_BLOCK))

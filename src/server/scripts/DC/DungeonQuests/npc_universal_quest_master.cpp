@@ -283,8 +283,8 @@ public:
 
         void Reset() override
         {
-            // Set phase mask to be visible in all dungeon phases
-            me->SetPhaseMask(0xFFFFFFFE, true);
+            // Keep visible to players regardless of active phase bit
+            me->SetPhaseMask(PHASE_ALL_VISIBLE, true);
             
             // Set display on reset as well (handles .npc respawn cases)
             InitializeDisplay();

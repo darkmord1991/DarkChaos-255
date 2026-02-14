@@ -7339,11 +7339,10 @@ void Player::_SaveInventory(CharacterDatabaseTransaction trans)
         return;
 
     std::unordered_set<Item*> validItems;
-    if (WorldSession* session = GetSession(); session && session->IsBot())
     {
         validItems.reserve(PLAYER_SLOTS_COUNT * 2);
         for (Item* item : m_items)
-        {
+    {
             if (!item)
                 continue;
 
@@ -7360,47 +7359,18 @@ void Player::_SaveInventory(CharacterDatabaseTransaction trans)
     }
 
     ObjectGuid::LowType lowGuid = GetGUID().GetCounter();
-    bool useValidItems = !validItems.empty();
+    std::size_t staleQueueEntries = 0;
     for (std::size_t i = 0; i < m_itemUpdateQueue.size(); ++i)
     {
         Item* item = m_itemUpdateQueue[i];
         if (!item)
             continue;
 
-        if (useValidItems && validItems.find(item) == validItems.end())
+        if (validItems.find(item) == validItems.end())
         {
-            if (item->GetOwnerGUID() == GetGUID() && item->GetState() == ITEM_REMOVED)
-            {
-                // Item was removed from inventory but is still pending DB deletion.
-            }
-            else
-            {
-                LOG_ERROR("entities.player", "Player(GUID: {} Name: {})::_SaveInventory - stale update queue item pointer, skipping.",
-                          GetGUID().GetCounter(), GetName());
-                if (item->GetOwnerGUID() == GetGUID())
-                    item->RemoveFromUpdateQueueOf(this);
-                m_itemUpdateQueue[i] = nullptr;
-                continue;
-            }
-        }
-
-        if (!useValidItems)
-        {
-            bool ownedItem = false;
-            for (Item* owned : m_items)
-            {
-                if (owned == item)
-                {
-                    ownedItem = true;
-                    break;
-                }
-            }
-            if (!ownedItem)
-            {
-                LOG_ERROR("entities.player", "Player(GUID: {} Name: {})::_SaveInventory - stale item pointer in update queue, skipping.",
-                          GetGUID().GetCounter(), GetName());
-                continue;
-            }
+            ++staleQueueEntries;
+            m_itemUpdateQueue[i] = nullptr;
+            continue;
         }
 
         Bag* container = item->GetContainer();
@@ -7466,6 +7436,13 @@ void Player::_SaveInventory(CharacterDatabaseTransaction trans)
 
         item->SaveToDB(trans);                                   // item have unchanged inventory record and can be save standalone
     }
+
+    if (staleQueueEntries)
+    {
+        LOG_WARN("entities.player", "Player(GUID: {} Name: {})::_SaveInventory - skipped {} stale update queue item pointer(s).",
+                 GetGUID().GetCounter(), GetName(), staleQueueEntries);
+    }
+
     m_itemUpdateQueue.clear();
 }
 

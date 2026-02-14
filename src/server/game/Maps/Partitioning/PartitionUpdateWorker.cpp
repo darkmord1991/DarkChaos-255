@@ -19,11 +19,37 @@
 #include "DynamicObject.h"
 #include "Corpse.h"
 #include "Map.h"
+#include "Object.h"
 #include "PartitionManager.h"
 #include "Player.h"
-#include "WorldSession.h"
 #include "Metric.h"
 #include <cmath>
+
+namespace
+{
+template <typename T>
+auto TryBeginUpdateExecutionIfSupported(T* object, int) -> decltype(object->TryBeginUpdateExecution(), bool())
+{
+    return object->TryBeginUpdateExecution();
+}
+
+template <typename T>
+bool TryBeginUpdateExecutionIfSupported(T*, long)
+{
+    return true;
+}
+
+template <typename T>
+auto EndUpdateExecutionIfSupported(T* object, int) -> decltype(object->EndUpdateExecution(), void())
+{
+    object->EndUpdateExecution();
+}
+
+template <typename T>
+void EndUpdateExecutionIfSupported(T*, long)
+{
+}
+}
 
 PartitionUpdateWorker::PartitionUpdateWorker(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff)
     : _map(map), _partitionId(partitionId), _diff(diff), _sDiff(s_diff)
@@ -38,7 +64,9 @@ void PartitionUpdateWorker::Execute()
 
     _map.SetActivePartitionContext(_partitionId);
 
-    ProcessRelays();
+    if (_map.HasPendingPartitionRelayWork(_partitionId))
+        ProcessRelays();
+
     UpdatePlayers();
     UpdateNonPlayerObjects();
 
@@ -96,13 +124,6 @@ void PartitionUpdateWorker::UpdatePlayers()
     {
         if (!player || !player->IsInWorld())
             continue;
-
-        WorldSession* session = player->GetSession();
-        if (session)
-        {
-            MapSessionFilter updater(session);
-            session->Update(_sDiff, updater);
-        }
 
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY()))
         {
@@ -174,13 +195,43 @@ void PartitionUpdateWorker::UpdatePlayers()
 
 void PartitionUpdateWorker::UpdateNonPlayerObjects()
 {
+    struct UpdateExecutionGuard
+    {
+        explicit UpdateExecutionGuard(UpdatableMapObject* object) : _object(object) { }
+
+        ~UpdateExecutionGuard()
+        {
+            if (_object)
+                EndUpdateExecutionIfSupported(_object, 0);
+        }
+
+    private:
+        UpdatableMapObject* _object;
+    };
+
     // Collect GUIDs to avoid dangling pointer use when objects despawn mid-tick.
     _scratchObjects.clear();
     Map::VisibilityDeferGuard deferVisibility(_map);
     _map.CollectPartitionedUpdatableGuids(_partitionId, _scratchObjects);
 
-    for (auto const& entry : _scratchObjects)
+    uint32 windowStart = 0;
+    uint32 windowCount = static_cast<uint32>(_scratchObjects.size());
+    _map.GetPartitionObjectUpdateWindow(_partitionId, static_cast<uint32>(_scratchObjects.size()), windowStart, windowCount);
+
+    bool const partialSweep = windowCount < _scratchObjects.size();
+    if (partialSweep)
     {
+        for (auto const& entry : _scratchObjects)
+        {
+            if (entry.second == TYPEID_UNIT)
+                ++_creatureCount;
+        }
+    }
+
+    for (uint32 offset = 0; offset < windowCount; ++offset)
+    {
+        auto const& entry = _scratchObjects[(windowStart + offset) % _scratchObjects.size()];
+
         WorldObject* obj = nullptr;
         switch (entry.second)
         {
@@ -203,7 +254,7 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         if (!obj || !obj->IsInWorld())
             continue;
 
-        if (obj->ToCreature())
+        if (!partialSweep && obj->ToCreature())
             ++_creatureCount;
 
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), obj->GetPositionX(), obj->GetPositionY()))
@@ -236,7 +287,28 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
             }
         }
 
+        if (!obj->IsInWorld())
+            continue;
+
+        if (Creature* creature = obj->ToCreature(); creature && creature->IsDuringRemoveFromWorld())
+            continue;
+
+        UpdatableMapObject* updatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+        if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
+            continue;
+        UpdateExecutionGuard updateGuard(updatableObject);
+
+        // Tag the unit with our partition ID so that TryGetRelayTargetPartition
+        // won't relay MotionMaster calls when the creature crosses a partition
+        // boundary during its own UpdateSplineMovement within the same tick.
+        Unit* unit = obj->ToUnit();
+        if (unit)
+            unit->SetCurrentUpdatePartition(_partitionId);
+
         obj->Update(_diff);
+
+        if (unit)
+            unit->SetCurrentUpdatePartition(0);
 
         // After updating, check if this object still needs further ticks.
         // If not, queue it for removal so we don't keep waking idle creatures.

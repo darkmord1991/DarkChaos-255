@@ -252,6 +252,29 @@ namespace
         static SendUpdateWorkerPool pool;
         return pool;
     }
+
+    template <typename T>
+    auto TryBeginUpdateExecutionIfSupported(T* object, int) -> decltype(object->TryBeginUpdateExecution(), bool())
+    {
+        return object->TryBeginUpdateExecution();
+    }
+
+    template <typename T>
+    bool TryBeginUpdateExecutionIfSupported(T*, long)
+    {
+        return true;
+    }
+
+    template <typename T>
+    auto EndUpdateExecutionIfSupported(T* object, int) -> decltype(object->EndUpdateExecution(), void())
+    {
+        object->EndUpdateExecution();
+    }
+
+    template <typename T>
+    void EndUpdateExecutionIfSupported(T*, long)
+    {
+    }
 }
 
 #define MAP_INVALID_ZONE        0xFFFFFFFF
@@ -445,6 +468,7 @@ void Map::EnsureGridLayerLoaded(Cell const& cell, uint32 layerId)
         loadedLayers.insert(layerId);
     }
 
+    auto gridObjectLock = AcquireGridObjectWriteLock();
     std::lock_guard<std::recursive_mutex> guard(_mapGridManager._gridLock);
     MapGridType* grid = _mapGridManager.GetGrid(cell.GridX(), cell.GridY());
     if (!grid)
@@ -856,6 +880,31 @@ uint32 Map::GetPartitionIdForUnit(Unit const* unit) const
     return sPartitionMgr->GetPartitionIdForPosition(GetId(), unit->GetPositionX(), unit->GetPositionY(), unit->GetZoneId(), unit->GetGUID());
 }
 
+bool Map::TryGetRelayTargetPartition(Unit const* unit, uint32& relayPartitionId) const
+{
+    relayPartitionId = 0;
+    if (!unit || !_isPartitioned)
+        return false;
+
+    uint32 const activePartition = GetActivePartitionContext();
+    if (!activePartition || IsProcessingPartitionRelays())
+        return false;
+
+    // If this unit is currently being updated by the active partition's worker,
+    // allow all MotionMaster calls to execute directly even when the unit's
+    // position-based partition has changed (e.g. after crossing a boundary
+    // during UpdateSplineMovement within the same tick).
+    if (unit->GetCurrentUpdatePartition() == activePartition)
+        return false;
+
+    uint32 const ownerPartition = GetPartitionIdForUnit(unit);
+    if (!ownerPartition || ownerPartition == activePartition)
+        return false;
+
+    relayPartitionId = ownerPartition;
+    return true;
+}
+
 void Map::VisitAllObjectStores(std::function<void(MapStoredObjectTypesContainer&)> const& visitor)
 {
     if (!visitor)
@@ -988,15 +1037,15 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     {
         _adaptiveSessionStrideTicks = 4;
         _adaptiveDeferredVisibilityBudget = 256;
-        _adaptiveObjectUpdateBudget = 1024;
-        _adaptivePartitionInFlightLimit = 3;
+        _adaptiveObjectUpdateBudget = 384;
+        _adaptivePartitionInFlightLimit = 2;
     }
     else if (t_diff >= 80)
     {
         _adaptiveSessionStrideTicks = 3;
         _adaptiveDeferredVisibilityBudget = 384;
-        _adaptiveObjectUpdateBudget = 1536;
-        _adaptivePartitionInFlightLimit = 4;
+        _adaptiveObjectUpdateBudget = 768;
+        _adaptivePartitionInFlightLimit = 3;
     }
     else if (t_diff <= 35)
     {
@@ -1009,7 +1058,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     {
         _adaptiveSessionStrideTicks = 2;
         _adaptiveDeferredVisibilityBudget = 512;
-        _adaptiveObjectUpdateBudget = 2048;
+        _adaptiveObjectUpdateBudget = 1536;
         _adaptivePartitionInFlightLimit = 4;
     }
     if (_isPartitioned && !_useParallelPartitions && !_partitionLogShown)
@@ -1066,7 +1115,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
             ++sessionIndex;
 
             // update players at tick
-            if (!t_diff)
+            if (!t_diff && player->IsInWorld())
                 player->Update(s_diff);
         }
     }
@@ -1101,6 +1150,22 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         {
             // Parallel partitioned path: workers handle both player and NPC updates
             bool partitionCycleFinished = SchedulePartitionUpdates(t_diff, s_diff);
+            MapUpdater* updater = sMapMgr->GetMapUpdater();
+
+            if (!partitionCycleFinished && updater && updater->activated())
+            {
+                while (!partitionCycleFinished)
+                {
+                    uint32 const scheduledSnapshot = _partitionUpdatesScheduled;
+                    updater->run_partition_tasks_until([this, scheduledSnapshot]()
+                    {
+                        return !_partitionUpdatesInProgress || _partitionUpdatesCompleted.load(std::memory_order_acquire) >= scheduledSnapshot;
+                    });
+
+                    partitionCycleFinished = SchedulePartitionUpdates(t_diff, s_diff);
+                }
+            }
+
             if (partitionCycleFinished)
             {
                 _markNearbyCellsThisTick.store(false, std::memory_order_relaxed);
@@ -1233,6 +1298,9 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                 uint32 playerUpdateDiff = s_diff ? s_diff : t_diff;
                 for (Player* player : bucket)
                 {
+                    if (!player->IsInWorld())
+                        continue;
+
                     player->Update(playerUpdateDiff);
 
                     if (_updatableObjectListRecheckTimer.Passed())
@@ -1295,6 +1363,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         UpdateNonPlayerObjects(t_diff);
     }
 
+    ProcessDeferredPlayerRelocations();
     ProcessDeferredVisibilityUpdates();
     SendObjectUpdates();
 
@@ -1394,6 +1463,19 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
 void Map::UpdateNonPlayerObjects(uint32 const diff)
 {
+    struct UpdateExecutionGuard
+    {
+        explicit UpdateExecutionGuard(UpdatableMapObject* object) : _object(object) { }
+        ~UpdateExecutionGuard()
+        {
+            if (_object)
+                EndUpdateExecutionIfSupported(_object, 0);
+        }
+
+    private:
+        UpdatableMapObject* _object;
+    };
+
     FlushPendingUpdateListAdds();
 
     bool recheck = _updatableObjectListRecheckTimer.Passed();
@@ -1475,7 +1557,25 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                     }
                 }
 
+                if (!obj->IsInWorld())
+                    continue;
+
+                if (Creature* creature = obj->ToCreature(); creature && creature->IsDuringRemoveFromWorld())
+                    continue;
+
+                UpdatableMapObject* updatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+                if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
+                    continue;
+                UpdateExecutionGuard updateGuard(updatableObject);
+
+                Unit* unit = obj->ToUnit();
+                if (unit)
+                    unit->SetCurrentUpdatePartition(partitionId);
+
                 obj->Update(diff);
+
+                if (unit)
+                    unit->SetCurrentUpdatePartition(0);
 
                 if (!obj->IsUpdateNeeded())
                     RemoveObjectFromMapUpdateList(obj);
@@ -1546,6 +1646,21 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 ++i;
                 continue;
             }
+
+            if (Creature* creature = obj->ToCreature(); creature && creature->IsDuringRemoveFromWorld())
+            {
+                ++i;
+                continue;
+            }
+
+            UpdatableMapObject* updatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+            if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
+            {
+                ++i;
+                continue;
+            }
+            UpdateExecutionGuard updateGuard(updatableObject);
+
             obj->Update(diff);
 
             if (!obj->IsUpdateNeeded())
@@ -1572,6 +1687,14 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
             }
             if (!obj->IsInWorld())
                 continue;
+
+            if (Creature* creature = obj->ToCreature(); creature && creature->IsDuringRemoveFromWorld())
+                continue;
+
+            UpdatableMapObject* updatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+            if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
+                continue;
+            UpdateExecutionGuard updateGuard(updatableObject);
 
             obj->Update(diff);
         }
@@ -2186,29 +2309,64 @@ void Map::CollectPartitionedUpdatableGuids(uint32 partitionId, std::vector<std::
     if (!_isPartitioned || partitionId == 0)
         return;
 
-    std::shared_lock<std::shared_mutex> listLock(_partitionedUpdateListLock);
+    std::shared_lock<std::shared_mutex> storeLock(_partitionedObjectStoreLock);
 
-    if (!IsHashContainerSane(_partitionedUpdatableObjectLists,
-            "_partitionedUpdatableObjectLists (CollectGuids)", GetId()))
+    if (!IsHashContainerSane(_partitionedObjectsStore,
+            "_partitionedObjectsStore (CollectGuids)", GetId()))
         return;
 
-    auto listIt = _partitionedUpdatableObjectLists.find(partitionId);
-    if (listIt == _partitionedUpdatableObjectLists.end())
+    auto storeIt = _partitionedObjectsStore.find(partitionId);
+    if (storeIt == _partitionedObjectsStore.end())
         return;
 
-    auto& objectList = listIt->second;
-    out.reserve(out.size() + objectList.size());
-    for (WorldObject* obj : objectList)
+    struct GuidCollector
     {
-        if (!obj || !obj->IsInWorld())
-            continue;
+        std::vector<std::pair<ObjectGuid, uint8>>& out;
 
-        uint8 const typeId = obj->GetTypeId();
-        if (typeId != TYPEID_UNIT && typeId != TYPEID_GAMEOBJECT && typeId != TYPEID_DYNAMICOBJECT && typeId != TYPEID_CORPSE)
-            continue;
+        void Visit(std::unordered_map<ObjectGuid, Creature*>& container)
+        {
+            out.reserve(out.size() + container.size());
+            for (auto const& [guid, obj] : container)
+            {
+                (void)obj;
+                out.emplace_back(guid, TYPEID_UNIT);
+            }
+        }
 
-        out.emplace_back(obj->GetGUID(), typeId);
-    }
+        void Visit(std::unordered_map<ObjectGuid, GameObject*>& container)
+        {
+            out.reserve(out.size() + container.size());
+            for (auto const& [guid, obj] : container)
+            {
+                (void)obj;
+                out.emplace_back(guid, TYPEID_GAMEOBJECT);
+            }
+        }
+
+        void Visit(std::unordered_map<ObjectGuid, DynamicObject*>& container)
+        {
+            out.reserve(out.size() + container.size());
+            for (auto const& [guid, obj] : container)
+            {
+                (void)obj;
+                out.emplace_back(guid, TYPEID_DYNAMICOBJECT);
+            }
+        }
+
+        void Visit(std::unordered_map<ObjectGuid, Corpse*>& container)
+        {
+            out.reserve(out.size() + container.size());
+            for (auto const& [guid, obj] : container)
+            {
+                (void)obj;
+                out.emplace_back(guid, TYPEID_CORPSE);
+            }
+        }
+    };
+
+    GuidCollector collector{out};
+    TypeContainerVisitor<GuidCollector, MapStoredObjectTypesContainer> visitor(collector);
+    visitor.Visit(storeIt->second);
 }
 
 void Map::CollectPartitionedUpdatableObjects(uint32 partitionId, std::vector<WorldObject*>& out)
@@ -2883,6 +3041,19 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
     Cell old_cell(player->GetPositionX(), player->GetPositionY());
     Cell new_cell(x, y);
 
+    if (GetActivePartitionContext() != 0 && old_cell.DiffGrid(new_cell) && player->GetSession() == nullptr && !player->IsInCombat())
+    {
+        GridCoord const targetGrid(new_cell.GridX(), new_cell.GridY());
+        if (!IsGridLoaded(targetGrid))
+        {
+            if (MapUpdater* updater = sMapMgr->GetMapUpdater(); updater && updater->activated())
+                updater->schedule_grid_object_preload(*this, std::vector<uint32>{ targetGrid.GetId() });
+
+            QueueDeferredPlayerRelocation(player->GetGUID(), x, y, z, o);
+            return;
+        }
+    }
+
     bool gridChanged = false;
     if (old_cell.DiffGrid(new_cell) || old_cell.DiffCell(new_cell))
     {
@@ -2906,7 +3077,7 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
     player->UpdatePositionData();
     player->UpdateObjectVisibility(false);
 
-    if (gridChanged)
+    if (gridChanged && GetActivePartitionContext() == 0)
         LoadLayerClonesInRange(player, MAX_VISIBILITY_DISTANCE);
 
     if (_isPartitioned && partitionChanged)
@@ -3718,7 +3889,6 @@ void Map::GetFullTerrainStatusForPosition(uint32 /*phaseMask*/, float x, float y
     /*
     if (dynData.floorZ > VMAP_INVALID_HEIGHT && G3D::fuzzyGe(z, dynData.floorZ - GROUND_HEIGHT_TOLERANCE) &&
         (G3D::fuzzyLt(z, gridMapHeight - GROUND_HEIGHT_TOLERANCE) || dynData.floorZ > gridMapHeight) &&
-        (G3D::fuzzyLt(z, vmapData.floorZ - GROUND_HEIGHT_TOLERANCE) || dynData.floorZ > vmapData.floorZ))
     {
         data.floorZ = dynData.floorZ;
         wmoData = &dynData;

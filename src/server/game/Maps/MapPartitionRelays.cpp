@@ -28,11 +28,12 @@
 #include "Unit.h"
 
 #include <chrono>
+#include <cstring>
+#include <string>
 #include <unordered_map>
 
 namespace
 {
-    constexpr size_t kPartitionRelayLimit = 1024;
     constexpr uint8 kMaxRelayBounces = 3;
     constexpr int64 kSlowPartitionRelayCycleMs = 10;
     thread_local bool sProcessingPartitionRelays = false;
@@ -75,14 +76,53 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         return unit;
     };
 
-    std::vector<PartitionThreatRelay> threatRelays;
+    auto RecordRelayCounter = [this](char const* relayType, char const* eventType)
+    {
+        struct RelayCounters
+        {
+            uint64 mismatch = 0;
+            uint64 bounce = 0;
+            uint64 drop = 0;
+        };
+
+        static std::mutex sRelayCounterLock;
+        static std::unordered_map<uint32, std::unordered_map<std::string, RelayCounters>> sRelayCounters;
+        static uint64 sNextRelayCounterLogAtMs = 0;
+        constexpr uint64 kRelayCounterLogIntervalMs = 5000;
+
+        std::lock_guard<std::mutex> guard(sRelayCounterLock);
+        RelayCounters& counters = sRelayCounters[GetId()][relayType ? relayType : "unknown"];
+        if (eventType && std::strcmp(eventType, "mismatch") == 0)
+            ++counters.mismatch;
+        else if (eventType && std::strcmp(eventType, "bounce") == 0)
+            ++counters.bounce;
+        else if (eventType && std::strcmp(eventType, "drop") == 0)
+            ++counters.drop;
+
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        if (nowMs < sNextRelayCounterLogAtMs)
+            return;
+
+        for (auto const& mapEntry : sRelayCounters)
+        {
+            for (auto const& typeEntry : mapEntry.second)
+            {
+                LOG_INFO("maps.partition.counter",
+                    "Relay processing counters: map={} type={} mismatch={} bounce={} drop={}",
+                    mapEntry.first, typeEntry.first, typeEntry.second.mismatch, typeEntry.second.bounce, typeEntry.second.drop);
+            }
+        }
+
+        sNextRelayCounterLogAtMs = nowMs + kRelayCounterLogIntervalMs;
+    };
+
+    std::deque<PartitionThreatRelay> threatRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto threatIt = _partitionThreatRelays.find(partitionId);
         if (threatIt != _partitionThreatRelays.end())
         {
             threatRelays.swap(threatIt->second);
-            threatIt->second.reserve(std::min<size_t>(threatRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!threatRelays.empty())
@@ -120,14 +160,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionThreatActionRelay> threatActionRelays;
+    std::deque<PartitionThreatActionRelay> threatActionRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto threatActionIt = _partitionThreatActionRelays.find(partitionId);
         if (threatActionIt != _partitionThreatActionRelays.end())
         {
             threatActionRelays.swap(threatActionIt->second);
-            threatActionIt->second.reserve(std::min<size_t>(threatActionRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!threatActionRelays.empty())
@@ -167,14 +206,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionProcRelay> procRelays;
+    std::deque<PartitionProcRelay> procRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto procIt = _partitionProcRelays.find(partitionId);
         if (procIt != _partitionProcRelays.end())
         {
             procRelays.swap(procIt->second);
-            procIt->second.reserve(std::min<size_t>(procRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!procRelays.empty())
@@ -216,14 +254,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionAuraRelay> auraRelays;
+    std::deque<PartitionAuraRelay> auraRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto auraIt = _partitionAuraRelays.find(partitionId);
         if (auraIt != _partitionAuraRelays.end())
         {
             auraRelays.swap(auraIt->second);
-            auraIt->second.reserve(std::min<size_t>(auraRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!auraRelays.empty())
@@ -277,14 +314,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionPathRelay> pathRelays;
+    std::deque<PartitionPathRelay> pathRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto pathIt = _partitionPathRelays.find(partitionId);
         if (pathIt != _partitionPathRelays.end())
         {
             pathRelays.swap(pathIt->second);
-            pathIt->second.reserve(std::min<size_t>(pathRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!pathRelays.empty())
@@ -302,8 +338,20 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             uint32 moverPartition = GetPartitionIdForUnit(mover);
             if (moverPartition && moverPartition != partitionId)
             {
-                QueuePartitionPathRelay(moverPartition, relay.moverGuid, relay.targetGuid);
-                continue;
+                RecordRelayCounter("path", "mismatch");
+                if (relay.bounceCount < kMaxRelayBounces)
+                {
+                    PartitionPathRelay bounced = relay;
+                    bounced.bounceCount++;
+                    RecordRelayCounter("path", "bounce");
+                    std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
+                    _partitionPathRelays[moverPartition].push_back(bounced);
+                    continue;
+                }
+
+                RecordRelayCounter("path", "drop");
+                LOG_WARN("maps.partition", "Path relay exceeded bounce limit: map={} relay_partition={} owner_partition={} mover={}",
+                    GetId(), partitionId, moverPartition, relay.moverGuid.ToString());
             }
 
             mover->GetMotionMaster()->MoveChase(target);
@@ -328,14 +376,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionPointRelay> pointRelays;
+    std::deque<PartitionPointRelay> pointRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto pointIt = _partitionPointRelays.find(partitionId);
         if (pointIt != _partitionPointRelays.end())
         {
             pointRelays.swap(pointIt->second);
-            pointIt->second.reserve(std::min<size_t>(pointRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!pointRelays.empty())
@@ -352,10 +399,20 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             uint32 moverPartition = GetPartitionIdForUnit(mover);
             if (moverPartition && moverPartition != partitionId)
             {
-                QueuePartitionPointRelay(moverPartition, relay.moverGuid, relay.pointId, relay.x, relay.y, relay.z,
-                    relay.forcedMovement, relay.speed, relay.orientation, relay.generatePath, relay.forceDestination,
-                    relay.slot, relay.hasAnimTier, relay.animTier);
-                continue;
+                RecordRelayCounter("point", "mismatch");
+                if (relay.bounceCount < kMaxRelayBounces)
+                {
+                    PartitionPointRelay bounced = relay;
+                    bounced.bounceCount++;
+                    RecordRelayCounter("point", "bounce");
+                    std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
+                    _partitionPointRelays[moverPartition].push_back(bounced);
+                    continue;
+                }
+
+                RecordRelayCounter("point", "drop");
+                LOG_WARN("maps.partition", "Point relay exceeded bounce limit: map={} relay_partition={} owner_partition={} mover={}",
+                    GetId(), partitionId, moverPartition, relay.moverGuid.ToString());
             }
 
             std::optional<AnimTier> animTier;
@@ -384,14 +441,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionMotionRelay> motionRelays;
+    std::deque<PartitionMotionRelay> motionRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto motionIt = _partitionMotionRelays.find(partitionId);
         if (motionIt != _partitionMotionRelays.end())
         {
             motionRelays.swap(motionIt->second);
-            motionIt->second.reserve(std::min<size_t>(motionRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!motionRelays.empty())
@@ -408,8 +464,20 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             uint32 moverPartition = GetPartitionIdForUnit(mover);
             if (moverPartition && moverPartition != partitionId)
             {
-                QueuePartitionMotionRelay(moverPartition, relay);
-                continue;
+                RecordRelayCounter("motion", "mismatch");
+                if (relay.bounceCount < kMaxRelayBounces)
+                {
+                    PartitionMotionRelay bounced = relay;
+                    bounced.bounceCount++;
+                    RecordRelayCounter("motion", "bounce");
+                    std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
+                    _partitionMotionRelays[moverPartition].push_back(std::move(bounced));
+                    continue;
+                }
+
+                RecordRelayCounter("motion", "drop");
+                LOG_WARN("maps.partition", "Motion relay exceeded bounce limit: map={} relay_partition={} owner_partition={} mover={} action={}",
+                    GetId(), partitionId, moverPartition, relay.moverGuid.ToString(), relay.action);
             }
 
             switch (relay.action)
@@ -607,14 +675,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionAssistRelay> assistRelays;
+    std::deque<PartitionAssistRelay> assistRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto assistIt = _partitionAssistRelays.find(partitionId);
         if (assistIt != _partitionAssistRelays.end())
         {
             assistRelays.swap(assistIt->second);
-            assistIt->second.reserve(std::min<size_t>(assistRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!assistRelays.empty())
@@ -631,8 +698,20 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             uint32 moverPartition = GetPartitionIdForUnit(mover);
             if (moverPartition && moverPartition != partitionId)
             {
-                QueuePartitionAssistRelay(moverPartition, relay.moverGuid, relay.x, relay.y, relay.z);
-                continue;
+                RecordRelayCounter("assist", "mismatch");
+                if (relay.bounceCount < kMaxRelayBounces)
+                {
+                    PartitionAssistRelay bounced = relay;
+                    bounced.bounceCount++;
+                    RecordRelayCounter("assist", "bounce");
+                    std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
+                    _partitionAssistRelays[moverPartition].push_back(bounced);
+                    continue;
+                }
+
+                RecordRelayCounter("assist", "drop");
+                LOG_WARN("maps.partition", "Assist relay exceeded bounce limit: map={} relay_partition={} owner_partition={} mover={}",
+                    GetId(), partitionId, moverPartition, relay.moverGuid.ToString());
             }
 
             mover->GetMotionMaster()->MoveSeekAssistance(relay.x, relay.y, relay.z);
@@ -657,14 +736,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionAssistDistractRelay> distractRelays;
+    std::deque<PartitionAssistDistractRelay> distractRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto distractIt = _partitionAssistDistractRelays.find(partitionId);
         if (distractIt != _partitionAssistDistractRelays.end())
         {
             distractRelays.swap(distractIt->second);
-            distractIt->second.reserve(std::min<size_t>(distractRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!distractRelays.empty())
@@ -681,8 +759,20 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             uint32 moverPartition = GetPartitionIdForUnit(mover);
             if (moverPartition && moverPartition != partitionId)
             {
-                QueuePartitionAssistDistractRelay(moverPartition, relay.moverGuid, relay.timeMs);
-                continue;
+                RecordRelayCounter("assist_distract", "mismatch");
+                if (relay.bounceCount < kMaxRelayBounces)
+                {
+                    PartitionAssistDistractRelay bounced = relay;
+                    bounced.bounceCount++;
+                    RecordRelayCounter("assist_distract", "bounce");
+                    std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
+                    _partitionAssistDistractRelays[moverPartition].push_back(bounced);
+                    continue;
+                }
+
+                RecordRelayCounter("assist_distract", "drop");
+                LOG_WARN("maps.partition", "Assist distract relay exceeded bounce limit: map={} relay_partition={} owner_partition={} mover={}",
+                    GetId(), partitionId, moverPartition, relay.moverGuid.ToString());
             }
 
             mover->GetMotionMaster()->MoveSeekAssistanceDistract(relay.timeMs);
@@ -708,14 +798,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
 
     // BUG-1 FIX: Process threat-target-action relays (were previously queued but never consumed)
-    std::vector<PartitionThreatTargetActionRelay> threatTargetRelays;
+    std::deque<PartitionThreatTargetActionRelay> threatTargetRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto threatTargetIt = _partitionThreatTargetActionRelays.find(partitionId);
         if (threatTargetIt != _partitionThreatTargetActionRelays.end())
         {
             threatTargetRelays.swap(threatTargetIt->second);
-            threatTargetIt->second.reserve(std::min<size_t>(threatTargetRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!threatTargetRelays.empty())
@@ -756,14 +845,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionCombatRelay> combatRelays;
+    std::deque<PartitionCombatRelay> combatRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto combatIt = _partitionCombatRelays.find(partitionId);
         if (combatIt != _partitionCombatRelays.end())
         {
             combatRelays.swap(combatIt->second);
-            combatIt->second.reserve(std::min<size_t>(combatRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!combatRelays.empty())
@@ -801,14 +889,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionLootRelay> lootRelays;
+    std::deque<PartitionLootRelay> lootRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto lootIt = _partitionLootRelays.find(partitionId);
         if (lootIt != _partitionLootRelays.end())
         {
             lootRelays.swap(lootIt->second);
-            lootIt->second.reserve(std::min<size_t>(lootRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!lootRelays.empty())
@@ -846,14 +933,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionDynObjectRelay> dynObjectRelays;
+    std::deque<PartitionDynObjectRelay> dynObjectRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto dynObjIt = _partitionDynObjectRelays.find(partitionId);
         if (dynObjIt != _partitionDynObjectRelays.end())
         {
             dynObjectRelays.swap(dynObjIt->second);
-            dynObjIt->second.reserve(std::min<size_t>(dynObjectRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!dynObjectRelays.empty())
@@ -891,14 +977,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionMinionRelay> minionRelays;
+    std::deque<PartitionMinionRelay> minionRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto minionIt = _partitionMinionRelays.find(partitionId);
         if (minionIt != _partitionMinionRelays.end())
         {
             minionRelays.swap(minionIt->second);
-            minionIt->second.reserve(std::min<size_t>(minionRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!minionRelays.empty())
@@ -949,14 +1034,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionCharmRelay> charmRelays;
+    std::deque<PartitionCharmRelay> charmRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto charmIt = _partitionCharmRelays.find(partitionId);
         if (charmIt != _partitionCharmRelays.end())
         {
             charmRelays.swap(charmIt->second);
-            charmIt->second.reserve(std::min<size_t>(charmRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!charmRelays.empty())
@@ -1013,14 +1097,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionGameObjectRelay> gameObjectRelays;
+    std::deque<PartitionGameObjectRelay> gameObjectRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto goIt = _partitionGameObjectRelays.find(partitionId);
         if (goIt != _partitionGameObjectRelays.end())
         {
             gameObjectRelays.swap(goIt->second);
-            goIt->second.reserve(std::min<size_t>(gameObjectRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!gameObjectRelays.empty())
@@ -1082,14 +1165,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionCombatStateRelay> combatStateRelays;
+    std::deque<PartitionCombatStateRelay> combatStateRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto combatStateIt = _partitionCombatStateRelays.find(partitionId);
         if (combatStateIt != _partitionCombatStateRelays.end())
         {
             combatStateRelays.swap(combatStateIt->second);
-            combatStateIt->second.reserve(std::min<size_t>(combatStateRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!combatStateRelays.empty())
@@ -1106,15 +1188,25 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             uint32 unitPartition = GetPartitionIdForUnit(unit);
             if (unitPartition && unitPartition != partitionId && relay.bounceCount < kMaxRelayBounces)
             {
+                RecordRelayCounter("combat_state", "mismatch");
                 PartitionCombatStateRelay bounced = relay;
                 bounced.bounceCount++;
-                auto& queue = _partitionCombatStateRelays[unitPartition];
+                RecordRelayCounter("combat_state", "bounce");
                 std::lock_guard<std::mutex> lock(GetRelayLock(unitPartition));
-                queue.push_back(bounced);
+                _partitionCombatStateRelays[unitPartition].push_back(bounced);
                 continue;
             }
+            if (unitPartition && unitPartition != partitionId)
+                RecordRelayCounter("combat_state", "drop");
 
-            Unit* enemy = relay.enemyGuid ? GetUnitByGuid(relay.enemyGuid) : nullptr;
+            Unit* enemy = nullptr;
+            if (relay.enemyGuid)
+            {
+                Unit* candidate = GetUnitByGuid(relay.enemyGuid);
+                if (candidate && Unit::IsUnitPointerLive(candidate) && candidate->IsInWorld())
+                    enemy = candidate;
+            }
+
             unit->SetInCombatState(relay.pvp, enemy, relay.duration);
 
             if (relay.queuedMs)
@@ -1138,14 +1230,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionAttackRelay> attackRelays;
+    std::deque<PartitionAttackRelay> attackRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto attackIt = _partitionAttackRelays.find(partitionId);
         if (attackIt != _partitionAttackRelays.end())
         {
             attackRelays.swap(attackIt->second);
-            attackIt->second.reserve(std::min<size_t>(attackRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!attackRelays.empty())
@@ -1163,12 +1254,16 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             uint32 attackerPartition = GetPartitionIdForUnit(attacker);
             if (attackerPartition && attackerPartition != partitionId && relay.bounceCount < kMaxRelayBounces)
             {
+                RecordRelayCounter("attack", "mismatch");
                 PartitionAttackRelay bounced = relay;
                 bounced.bounceCount++;
+                RecordRelayCounter("attack", "bounce");
                 std::lock_guard<std::mutex> lock(GetRelayLock(attackerPartition));
                 _partitionAttackRelays[attackerPartition].push_back(bounced);
                 continue;
             }
+            if (attackerPartition && attackerPartition != partitionId)
+                RecordRelayCounter("attack", "drop");
 
             attacker->Attack(victim, relay.meleeAttack);
 
@@ -1193,14 +1288,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         }
     }
 
-    std::vector<PartitionEvadeRelay> evadeRelays;
+    std::deque<PartitionEvadeRelay> evadeRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto evadeIt = _partitionEvadeRelays.find(partitionId);
         if (evadeIt != _partitionEvadeRelays.end())
         {
             evadeRelays.swap(evadeIt->second);
-            evadeIt->second.reserve(std::min<size_t>(evadeRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!evadeRelays.empty())
@@ -1218,12 +1312,16 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             uint32 creaturePartition = GetPartitionIdForUnit(creature);
             if (creaturePartition && creaturePartition != partitionId && relay.bounceCount < kMaxRelayBounces)
             {
+                RecordRelayCounter("evade", "mismatch");
                 PartitionEvadeRelay bounced = relay;
                 bounced.bounceCount++;
+                RecordRelayCounter("evade", "bounce");
                 std::lock_guard<std::mutex> lock(GetRelayLock(creaturePartition));
                 _partitionEvadeRelays[creaturePartition].push_back(bounced);
                 continue;
             }
+            if (creaturePartition && creaturePartition != partitionId)
+                RecordRelayCounter("evade", "drop");
 
             creature->AI()->EnterEvadeMode(static_cast<CreatureAI::EvadeReason>(relay.reason));
 
@@ -1249,14 +1347,13 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     }
 
     // BUG-2 FIX: Process taunt relays (were previously in dead code in UpdateNonPlayerObjects)
-    std::vector<PartitionTauntRelay> tauntRelays;
+    std::deque<PartitionTauntRelay> tauntRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
         auto tauntIt = _partitionTauntRelays.find(partitionId);
         if (tauntIt != _partitionTauntRelays.end())
         {
             tauntRelays.swap(tauntIt->second);
-            tauntIt->second.reserve(std::min<size_t>(tauntRelays.size(), kPartitionRelayLimit));
         }
     }
     if (!tauntRelays.empty())

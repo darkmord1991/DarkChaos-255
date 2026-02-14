@@ -17,21 +17,64 @@
 
 #include "GameTime.h"
 #include "Log.h"
+#include "PartitionManager.h"
 
 #include <cstring>
+#include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace
 {
     constexpr size_t kPartitionRelayLimit = 1024;
+    constexpr uint64 kRelayCounterLogIntervalMs = 5000;
     thread_local std::unordered_map<Map const*, uint32> sActivePartitionContext;
 
-    bool IsMovementRelayType(char const* relayType)
+    struct RelayQueueCounters
+    {
+        uint64 dropped = 0;
+        uint64 replaced = 0;
+    };
+
+    std::mutex sRelayCounterLock;
+    std::unordered_map<uint32, std::unordered_map<std::string, RelayQueueCounters>> sRelayCounters;
+    uint64 sNextRelayCounterLogAtMs = 0;
+
+    void RecordRelayQueueCounter(uint32 mapId, char const* relayType, bool replaced)
+    {
+        std::lock_guard<std::mutex> guard(sRelayCounterLock);
+        RelayQueueCounters& counter = sRelayCounters[mapId][relayType ? relayType : "unknown"];
+        if (replaced)
+            ++counter.replaced;
+        else
+            ++counter.dropped;
+
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        if (nowMs < sNextRelayCounterLogAtMs)
+            return;
+
+        for (auto const& mapEntry : sRelayCounters)
+        {
+            for (auto const& typeEntry : mapEntry.second)
+            {
+                LOG_INFO("maps.partition.counter",
+                    "Relay queue counters: map={} type={} dropped={} replaced_oldest={}",
+                    mapEntry.first, typeEntry.first, typeEntry.second.dropped, typeEntry.second.replaced);
+            }
+        }
+
+        sNextRelayCounterLogAtMs = nowMs + kRelayCounterLogIntervalMs;
+    }
+
+    bool IsReplaceOldestRelayType(char const* relayType)
     {
         return relayType &&
             (std::strcmp(relayType, "motion") == 0 ||
              std::strcmp(relayType, "path") == 0 ||
-             std::strcmp(relayType, "point") == 0);
+             std::strcmp(relayType, "point") == 0 ||
+             std::strcmp(relayType, "combat-state") == 0 ||
+             std::strcmp(relayType, "attack") == 0 ||
+             std::strcmp(relayType, "combat") == 0);
     }
 
     template <typename QueueMap, typename Relay>
@@ -41,14 +84,16 @@ namespace
         auto& queue = relayMap[partitionId];
         if (queue.size() >= kPartitionRelayLimit)
         {
-            if (IsMovementRelayType(relayType) && !queue.empty())
+            if (IsReplaceOldestRelayType(relayType) && !queue.empty())
             {
-                queue.erase(queue.begin());
+                queue.pop_front();
                 queue.push_back(std::forward<Relay>(relay));
+                RecordRelayQueueCounter(mapId, relayType, true);
                 LOG_WARN("maps.partition", "Map {} partition {} {} relay queue full ({}), replacing oldest relay", mapId, partitionId, relayType, kPartitionRelayLimit);
                 return;
             }
 
+            RecordRelayQueueCounter(mapId, relayType, false);
             LOG_WARN("maps.partition", "Map {} partition {} {} relay queue full ({}), dropping relay", mapId, partitionId, relayType, kPartitionRelayLimit);
             return;
         }
@@ -126,6 +171,10 @@ void Map::QueuePartitionCombatRelay(uint32 partitionId, ObjectGuid const& ownerG
 {
     if (!_isPartitioned || partitionId == 0)
         return;
+
+    // Pin the owner to the target partition so the relay won't bounce when the
+    // creature's position fluctuates near a partition boundary between ticks.
+    sPartitionMgr->SetPartitionOverride(ownerGuid, GetId(), partitionId, 2000);
 
     PartitionCombatRelay relay;
     relay.ownerGuid = ownerGuid;
@@ -328,6 +377,10 @@ void Map::QueuePartitionPathRelay(uint32 partitionId, ObjectGuid const& moverGui
 {
     if (!_isPartitioned || partitionId == 0)
         return;
+
+    // Pin the mover to the target partition so the relay won't bounce when the
+    // creature's position fluctuates near a partition boundary between ticks.
+    sPartitionMgr->SetPartitionOverride(moverGuid, GetId(), partitionId, 2000);
 
     PartitionPathRelay relay;
     relay.moverGuid = moverGuid;

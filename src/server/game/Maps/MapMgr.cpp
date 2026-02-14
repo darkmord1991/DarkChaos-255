@@ -271,13 +271,38 @@ void MapMgr::Update(uint32 diff)
     }
 
     MapMapType::iterator iter = i_maps.begin();
-    for (; iter != i_maps.end(); ++iter)
+    auto const isFullUpdateStepForMap = [this](Map const* map) -> bool
     {
-        bool full = mapUpdateStep < 3 && ((mapUpdateStep == 0 && !iter->second->IsBattlegroundOrArena() && !iter->second->IsDungeon()) || (mapUpdateStep == 1 && iter->second->IsBattlegroundOrArena()) || (mapUpdateStep == 2 && iter->second->IsDungeon()));
-        if (m_updater.activated())
-            m_updater.schedule_update(*iter->second, uint32(full ? i_timer[mapUpdateStep].GetCurrent() : 0), diff);
-        else
+        return mapUpdateStep < 3 &&
+            ((mapUpdateStep == 0 && !map->IsBattlegroundOrArena() && !map->IsDungeon()) ||
+             (mapUpdateStep == 1 && map->IsBattlegroundOrArena()) ||
+             (mapUpdateStep == 2 && map->IsDungeon()));
+    };
+
+    if (m_updater.activated())
+    {
+        auto const scheduleByPartitionPriority = [this, &isFullUpdateStepForMap, diff](bool partitioned)
+        {
+            for (MapMapType::iterator mapIter = i_maps.begin(); mapIter != i_maps.end(); ++mapIter)
+            {
+                if (mapIter->second->IsPartitioned() != partitioned)
+                    continue;
+
+                bool const full = isFullUpdateStepForMap(mapIter->second);
+                m_updater.schedule_update(*mapIter->second, uint32(full ? i_timer[mapUpdateStep].GetCurrent() : 0), diff);
+            }
+        };
+
+        scheduleByPartitionPriority(true);
+        scheduleByPartitionPriority(false);
+    }
+    else
+    {
+        for (; iter != i_maps.end(); ++iter)
+        {
+            bool const full = isFullUpdateStepForMap(iter->second);
             iter->second->Update(uint32(full ? i_timer[mapUpdateStep].GetCurrent() : 0), diff);
+        }
     }
 
     if (m_updater.activated())

@@ -4804,8 +4804,14 @@ void Spell::EffectForceDeselect(SpellEffIndex /*effIndex*/)
     Unit::AttackerSet attackerSet;
     Unit::AttackerSet attackers = m_caster->getAttackers();
     for (Unit::AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end(); ++itr)
-        if ((*itr)->IsCreature() && !(*itr)->CanHaveThreatList())
-            attackerSet.insert(*itr);
+    {
+        Unit* attacker = *itr;
+        if (!attacker || !attacker->IsInWorld() || attacker->IsDuringRemoveFromWorld())
+            continue;
+
+        if (attacker->IsCreature() && !attacker->CanHaveThreatList())
+            attackerSet.insert(attacker);
+    }
 
     for (Unit::AttackerSet::const_iterator itr = attackerSet.begin(); itr != attackerSet.end(); ++itr)
         (*itr)->AttackStop();
@@ -4813,12 +4819,18 @@ void Spell::EffectForceDeselect(SpellEffIndex /*effIndex*/)
     // Xinef: Mirror images code Initialize Images
     if (m_spellInfo->Id == 58836)
     {
-        std::vector<Unit*> images;
-        for (Unit::ControlSet::const_iterator itr = m_caster->m_Controlled.begin(); itr != m_caster->m_Controlled.end(); ++itr)
-            if ((*itr)->GetEntry() == 31216 /*NPC_MIRROR_IMAGE*/)
-                images.push_back(*itr);
+        std::vector<ObjectGuid> imageGuids;
+        std::list<Creature*> mirrorImages;
+        m_caster->GetAllMinionsByEntry(mirrorImages, 31216 /*NPC_MIRROR_IMAGE*/);
+        for (Creature* image : mirrorImages)
+        {
+            if (!image || !image->IsInWorld() || image->IsDuringRemoveFromWorld())
+                continue;
 
-        if (images.empty())
+            imageGuids.push_back(image->GetGUID());
+        }
+
+        if (imageGuids.empty())
             return;
 
         UnitList targets;
@@ -4827,17 +4839,25 @@ void Spell::EffectForceDeselect(SpellEffIndex /*effIndex*/)
         Cell::VisitObjects(m_caster, searcher, m_caster->GetVisibilityRange());
         for (UnitList::iterator iter = targets.begin(); iter != targets.end(); ++iter)
         {
-            if (!(*iter)->HasUnitState(UNIT_STATE_CASTING))
+            Unit* listedTarget = *iter;
+            if (!listedTarget)
                 continue;
 
-            if (Spell* spell = (*iter)->GetCurrentSpell(CURRENT_GENERIC_SPELL))
+            Unit* target = ObjectAccessor::GetUnit(*m_caster, listedTarget->GetGUID());
+            if (!target || !target->IsInWorld() || target->IsDuringRemoveFromWorld())
+                continue;
+
+            if (!target->HasUnitState(UNIT_STATE_CASTING))
+                continue;
+
+            if (Spell* spell = target->GetCurrentSpell(CURRENT_GENERIC_SPELL))
             {
                 if (spell->m_targets.GetUnitTargetGUID() == m_caster->GetGUID())
                 {
                     SpellInfo const* si = spell->GetSpellInfo();
-                    if (si->HasAttribute(SPELL_ATTR6_IGNORE_PHASE_SHIFT) && (*iter)->IsCreature())
+                    if (si->HasAttribute(SPELL_ATTR6_IGNORE_PHASE_SHIFT) && target->IsCreature())
                     {
-                        Creature* c = (*iter)->ToCreature();
+                        Creature* c = target->ToCreature();
                         if ((!c->IsPet() && c->GetCreatureTemplate()->rank == CREATURE_ELITE_WORLDBOSS) || c->isWorldBoss() || c->IsDungeonBoss())
                             continue;
                     }
@@ -4852,7 +4872,11 @@ void Spell::EffectForceDeselect(SpellEffIndex /*effIndex*/)
                         }
 
                     if (interrupt)
-                        spell->m_targets.SetUnitTarget(images.at(urand(0, images.size() - 1)));
+                    {
+                        ObjectGuid imageGuid = imageGuids.at(urand(0, imageGuids.size() - 1));
+                        if (Unit* imageTarget = ObjectAccessor::GetUnit(*m_caster, imageGuid))
+                            spell->m_targets.SetUnitTarget(imageTarget);
+                    }
                 }
             }
         }

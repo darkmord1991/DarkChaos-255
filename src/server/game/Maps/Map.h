@@ -222,6 +222,7 @@ public:
     void DynamicObjectRelocation(DynamicObject* go, float x, float y, float z, float o);
 
     uint32 GetPartitionIdForUnit(Unit const* unit) const;
+    bool TryGetRelayTargetPartition(Unit const* unit, uint32& relayPartitionId) const;
     uint32 GetActivePartitionContext() const;
     void SetActivePartitionContext(uint32 partitionId);
     bool IsProcessingPartitionRelays() const;
@@ -715,6 +716,7 @@ public:
         uint32 spellId = 0;
         bool disableSpline = false;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionCombatRelay
@@ -830,6 +832,7 @@ public:
         ObjectGuid moverGuid;
         ObjectGuid targetGuid;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionPointRelay
@@ -848,6 +851,7 @@ public:
         bool hasAnimTier = false;
         AnimTier animTier = static_cast<AnimTier>(0);
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionAssistRelay
@@ -857,6 +861,7 @@ public:
         float y = 0.0f;
         float z = 0.0f;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionAssistDistractRelay
@@ -864,6 +869,7 @@ public:
         ObjectGuid moverGuid;
         uint32 timeMs = 0;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     void AddToPartitionedUpdateList(WorldObject* obj);
@@ -887,9 +893,14 @@ public:
     std::vector<Player*> const* GetPartitionPlayerBucket(uint32 partitionId) const;
     bool ShouldMarkNearbyCells() const;
     uint32 GetUpdateCounter() const;
+    void PreparePartitionObjectUpdateBudget(uint32 partitionCount, uint32 tDiff);
+    void GetPartitionObjectUpdateWindow(uint32 partitionId, uint32 totalObjects, uint32& startIndex, uint32& objectCount);
     void ProcessPartitionRelays(uint32 partitionId);
     void QueueDeferredVisibilityUpdate(ObjectGuid const& guid);
     void ProcessDeferredVisibilityUpdates();
+    void QueueDeferredPlayerRelocation(ObjectGuid const& playerGuid, float x, float y, float z, float o);
+    void ProcessDeferredPlayerRelocations();
+    bool HasPendingPartitionRelayWork(uint32 partitionId);
     bool ShouldDeferNonPlayerVisibility(WorldObject const* obj) const;
     void PushDeferNonPlayerVisibility();
     void PopDeferNonPlayerVisibility();
@@ -1049,26 +1060,26 @@ private:
     std::unordered_map<ObjectGuid, uint32> _partitionedObjectIndex;
     static constexpr size_t kRelayLockStripes = 16;
     std::array<std::mutex, kRelayLockStripes> _relayLocks;
-    std::unordered_map<uint32, std::vector<PartitionThreatRelay>> _partitionThreatRelays;
-    std::unordered_map<uint32, std::vector<PartitionThreatActionRelay>> _partitionThreatActionRelays;
-    std::unordered_map<uint32, std::vector<PartitionThreatTargetActionRelay>> _partitionThreatTargetActionRelays;
-    std::unordered_map<uint32, std::vector<PartitionTauntRelay>> _partitionTauntRelays;
-    std::unordered_map<uint32, std::vector<PartitionCombatRelay>> _partitionCombatRelays;
-    std::unordered_map<uint32, std::vector<PartitionLootRelay>> _partitionLootRelays;
-    std::unordered_map<uint32, std::vector<PartitionDynObjectRelay>> _partitionDynObjectRelays;
-    std::unordered_map<uint32, std::vector<PartitionMinionRelay>> _partitionMinionRelays;
-    std::unordered_map<uint32, std::vector<PartitionCharmRelay>> _partitionCharmRelays;
-    std::unordered_map<uint32, std::vector<PartitionGameObjectRelay>> _partitionGameObjectRelays;
-    std::unordered_map<uint32, std::vector<PartitionCombatStateRelay>> _partitionCombatStateRelays;
-    std::unordered_map<uint32, std::vector<PartitionAttackRelay>> _partitionAttackRelays;
-    std::unordered_map<uint32, std::vector<PartitionEvadeRelay>> _partitionEvadeRelays;
-    std::unordered_map<uint32, std::vector<PartitionMotionRelay>> _partitionMotionRelays;
-    std::unordered_map<uint32, std::vector<PartitionProcRelay>> _partitionProcRelays;
-    std::unordered_map<uint32, std::vector<PartitionAuraRelay>> _partitionAuraRelays;
-    std::unordered_map<uint32, std::vector<PartitionPathRelay>> _partitionPathRelays;
-    std::unordered_map<uint32, std::vector<PartitionPointRelay>> _partitionPointRelays;
-    std::unordered_map<uint32, std::vector<PartitionAssistRelay>> _partitionAssistRelays;
-    std::unordered_map<uint32, std::vector<PartitionAssistDistractRelay>> _partitionAssistDistractRelays;
+    std::unordered_map<uint32, std::deque<PartitionThreatRelay>> _partitionThreatRelays;
+    std::unordered_map<uint32, std::deque<PartitionThreatActionRelay>> _partitionThreatActionRelays;
+    std::unordered_map<uint32, std::deque<PartitionThreatTargetActionRelay>> _partitionThreatTargetActionRelays;
+    std::unordered_map<uint32, std::deque<PartitionTauntRelay>> _partitionTauntRelays;
+    std::unordered_map<uint32, std::deque<PartitionCombatRelay>> _partitionCombatRelays;
+    std::unordered_map<uint32, std::deque<PartitionLootRelay>> _partitionLootRelays;
+    std::unordered_map<uint32, std::deque<PartitionDynObjectRelay>> _partitionDynObjectRelays;
+    std::unordered_map<uint32, std::deque<PartitionMinionRelay>> _partitionMinionRelays;
+    std::unordered_map<uint32, std::deque<PartitionCharmRelay>> _partitionCharmRelays;
+    std::unordered_map<uint32, std::deque<PartitionGameObjectRelay>> _partitionGameObjectRelays;
+    std::unordered_map<uint32, std::deque<PartitionCombatStateRelay>> _partitionCombatStateRelays;
+    std::unordered_map<uint32, std::deque<PartitionAttackRelay>> _partitionAttackRelays;
+    std::unordered_map<uint32, std::deque<PartitionEvadeRelay>> _partitionEvadeRelays;
+    std::unordered_map<uint32, std::deque<PartitionMotionRelay>> _partitionMotionRelays;
+    std::unordered_map<uint32, std::deque<PartitionProcRelay>> _partitionProcRelays;
+    std::unordered_map<uint32, std::deque<PartitionAuraRelay>> _partitionAuraRelays;
+    std::unordered_map<uint32, std::deque<PartitionPathRelay>> _partitionPathRelays;
+    std::unordered_map<uint32, std::deque<PartitionPointRelay>> _partitionPointRelays;
+    std::unordered_map<uint32, std::deque<PartitionAssistRelay>> _partitionAssistRelays;
+    std::unordered_map<uint32, std::deque<PartitionAssistDistractRelay>> _partitionAssistDistractRelays;
 
         std::atomic<bool> _markNearbyCellsThisTick{false};
 
@@ -1095,11 +1106,31 @@ private:
     std::unordered_set<ObjectGuid> _deferredVisibilitySet;
     std::deque<ObjectGuid> _deferredVisibilityUpdates;
 
+    struct DeferredPlayerRelocation
+    {
+        ObjectGuid playerGuid;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float o = 0.0f;
+    };
+
+    std::mutex _deferredPlayerRelocationLock;
+    std::unordered_map<ObjectGuid, DeferredPlayerRelocation> _deferredPlayerRelocations;
+    std::deque<ObjectGuid> _deferredPlayerRelocationOrder;
+    uint64 _nextDeferredPlayerRelocationLogAtMs = 0;
+
     bool _partitionUpdatesInProgress = false;
     uint32 _partitionUpdatesTotal = 0;
     uint32 _partitionUpdatesScheduled = 0;
     uint32 _partitionUpdatesMaxInFlight = 1;
     uint64 _partitionUpdatesStartMs = 0;
+    std::vector<uint32> _partitionPrioritySchedule;
+    std::vector<uint32> _partitionDeferredSchedule;
+    std::mutex _partitionObjectBudgetLock;
+    std::vector<uint32> _partitionObjectUpdateCursor;
+    uint32 _partitionObjectUpdateBudget = 0;
+    bool _partitionObjectUpdateCarryOver = true;
     std::atomic<uint32> _partitionUpdatesCompleted{0};
     std::atomic<uint32> _partitionUpdateGeneration{0};
     std::atomic<uint64> _partitionCycleQueueWaitTotalMs{0};
@@ -1109,6 +1140,8 @@ private:
     std::atomic<uint64> _partitionCycleFirstTaskStartMs{0};
     std::atomic<uint64> _partitionCycleLastTaskEndMs{0};
     uint64 _nextSlowPartitionLogAtMs = 0;
+    uint32 _lastPartitionCycleMaxRunMs = 0;
+    uint32 _lastPartitionCycleMaxQueueWaitMs = 0;
 
     std::atomic<uint32> _updateCounter{0};
     uint32 _pendingDynamicTreeDiff = 0;

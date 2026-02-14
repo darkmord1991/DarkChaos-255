@@ -485,13 +485,12 @@ ThreatMgr::ThreatMgr(Unit* owner) : iCurrentVictim(nullptr), iOwner(owner), iUpd
 void ThreatMgr::ClearAllThreat()
 {
     std::lock_guard<std::recursive_mutex> lock(_threatLock);
-    if (Map* map = iOwner ? iOwner->FindMap() : nullptr; map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = iOwner ? iOwner->FindMap() : nullptr)
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(iOwner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition)
+        uint32 relayPartition = 0;
+        if (map->TryGetRelayTargetPartition(iOwner, relayPartition))
         {
-            map->QueuePartitionThreatClearAll(ownerPartition, iOwner->GetGUID());
+            map->QueuePartitionThreatClearAll(relayPartition, iOwner->GetGUID());
             return;
         }
     }
@@ -504,13 +503,12 @@ void ThreatMgr::ClearAllThreat()
 void ThreatMgr::ClearThreat(Unit const* who)
 {
     std::lock_guard<std::recursive_mutex> lock(_threatLock);
-    if (Map* map = iOwner ? iOwner->FindMap() : nullptr; map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+    if (Map* map = iOwner ? iOwner->FindMap() : nullptr)
     {
-        uint32 ownerPartition = map->GetPartitionIdForUnit(iOwner);
-        uint32 activePartition = map->GetActivePartitionContext();
-        if (ownerPartition && ownerPartition != activePartition && who)
+        uint32 relayPartition = 0;
+        if (who && map->TryGetRelayTargetPartition(iOwner, relayPartition))
         {
-            map->QueuePartitionThreatTargetClear(ownerPartition, iOwner->GetGUID(), who->GetGUID());
+            map->QueuePartitionThreatTargetClear(relayPartition, iOwner->GetGUID(), who->GetGUID());
             return;
         }
     }

@@ -656,11 +656,16 @@ class spell_dk_dancing_rune_weapon : public AuraScript
 
         Unit* player = eventInfo.GetActor();
         Unit* target = eventInfo.GetActionTarget();
+        if (!player || !target)
+            return;
+
         Unit* dancingRuneWeapon = nullptr;
-        for (Unit::ControlSet::const_iterator itr = player->m_Controlled.begin(); itr != player->m_Controlled.end(); ++itr)
-            if (int32((*itr)->GetEntry()) == GetSpellInfo()->Effects[EFFECT_0].MiscValue)
+        std::list<Creature*> runeWeapons;
+        player->GetAllMinionsByEntry(runeWeapons, GetSpellInfo()->Effects[EFFECT_0].MiscValue);
+        for (Creature* summon : runeWeapons)
+            if (summon && summon->IsInWorld())
             {
-                dancingRuneWeapon = *itr;
+                dancingRuneWeapon = summon;
                 break;
             }
 

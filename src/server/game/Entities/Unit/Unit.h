@@ -2162,6 +2162,9 @@ public:
     [[nodiscard]] uint32 GetMoveSplineIdSnapshot() const;
     void GetMoveSplineFinalDestinationSnapshot(float& x, float& y, float& z) const;
 
+    void SetCurrentUpdatePartition(uint32 partitionId) { _currentUpdatePartition.store(partitionId, std::memory_order_release); }
+    [[nodiscard]] uint32 GetCurrentUpdatePartition() const { return _currentUpdatePartition.load(std::memory_order_acquire); }
+
 protected:
     explicit Unit();
 
@@ -2245,6 +2248,13 @@ protected:
         std::atomic<float> destY{0.0f};
         std::atomic<float> destZ{0.0f};
     } _moveSplineSnapshot;
+
+    // Partition ID of the worker currently running this unit's Update().
+    // Set by PartitionUpdateWorker before obj->Update() and cleared after.
+    // Used by TryGetRelayTargetPartition to skip relaying when the creature
+    // crosses a partition boundary during its own update tick.
+    std::atomic<uint32> _currentUpdatePartition{0};
+
     mutable std::recursive_mutex _visibleAurasLock;
     VisibleAuraMap m_visibleAuras;
 

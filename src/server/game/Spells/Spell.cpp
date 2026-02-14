@@ -691,6 +691,7 @@ Spell::Spell(Unit* caster, SpellInfo const* info, TriggerCastFlags triggerFlags,
     _spellTargetsSelected = false;
 
     m_weaponItem = nullptr;
+    m_weaponItemGUID = ObjectGuid::Empty;
 }
 
 Spell::~Spell()
@@ -7819,6 +7820,7 @@ SpellCastResult Spell::CheckItems()
         }
 
         m_weaponItem = m_caster->ToPlayer()->GetWeaponForAttack(m_attackType, true);
+        m_weaponItemGUID = m_weaponItem ? m_weaponItem->GetGUID() : ObjectGuid::Empty;
     }
 
     return SPELL_CAST_OK;

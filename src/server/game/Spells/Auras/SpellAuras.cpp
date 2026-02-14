@@ -226,6 +226,24 @@ void AuraApplication::ClientUpdate(bool remove)
 {
     _needClientUpdate = false;
 
+    if (_slot >= MAX_AURAS)
+        return;
+
+    AuraApplication* visibleAura = GetTarget()->GetVisibleAura(_slot);
+    if (remove)
+    {
+        if (visibleAura)
+        {
+            LOG_DEBUG("spells.aura", "AuraApplication::ClientUpdate(remove): skip stale remove for spell {} at slot {}, visible spell {}", GetBase()->GetId(), _slot, visibleAura->GetBase()->GetId());
+            return;
+        }
+    }
+    else if (visibleAura != this)
+    {
+        LOG_DEBUG("spells.aura", "AuraApplication::ClientUpdate: skip stale update for spell {} at slot {}", GetBase()->GetId(), _slot);
+        return;
+    }
+
     WorldPacket data(SMSG_AURA_UPDATE);
     data << GetTarget()->GetPackGUID();
     BuildUpdatePacket(data, remove);
@@ -733,7 +751,7 @@ void Aura::UpdateOwner(uint32 diff, WorldObject* owner)
     for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
         activeEffectCount += (m_effects[i] != nullptr);
 
-    char const* effectBucket = "single";
+    [[maybe_unused]] char const* effectBucket = "single";
     if (activeEffectCount >= 3)
         effectBucket = "triple_plus";
     else if (activeEffectCount == 2)

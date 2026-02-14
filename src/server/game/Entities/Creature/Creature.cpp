@@ -3060,7 +3060,15 @@ uint8 Creature::getLevelForTarget(WorldObject const* target) const
 
 std::string const& Creature::GetAIName() const
 {
-    return sObjectMgr->GetCreatureTemplate(GetEntry())->AIName;
+    if (CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(GetEntry()))
+        return creatureTemplate->AIName;
+
+    if (GetOriginalEntry() != GetEntry())
+        if (CreatureTemplate const* originalTemplate = sObjectMgr->GetCreatureTemplate(GetOriginalEntry()))
+            return originalTemplate->AIName;
+
+    static std::string const emptyAIName;
+    return emptyAIName;
 }
 
 std::string Creature::GetScriptName() const
@@ -3077,7 +3085,14 @@ uint32 Creature::GetScriptId() const
             return scriptId;
     }
 
-    return sObjectMgr->GetCreatureTemplate(GetEntry())->ScriptID;
+    if (CreatureTemplate const* creatureTemplate = sObjectMgr->GetCreatureTemplate(GetEntry()))
+        return creatureTemplate->ScriptID;
+
+    if (GetOriginalEntry() != GetEntry())
+        if (CreatureTemplate const* originalTemplate = sObjectMgr->GetCreatureTemplate(GetOriginalEntry()))
+            return originalTemplate->ScriptID;
+
+    return 0;
 }
 
 VendorItemData const* Creature::GetVendorItems() const
@@ -3821,6 +3836,9 @@ bool Creature::IsUpdateNeeded()
         return true;
 
     if (GetMotionMaster()->HasMovementGeneratorType(WAYPOINT_MOTION_TYPE))
+        return true;
+
+    if (GetMotionMaster()->HasMovementGeneratorType(RANDOM_MOTION_TYPE))
         return true;
 
     if (HasUnitState(UNIT_STATE_EVADE))

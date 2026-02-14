@@ -747,10 +747,15 @@ void Item::SetState(ItemUpdateState state, Player* forplayer)
 
 void Item::AddToUpdateQueueOf(Player* player)
 {
-    if (IsInUpdateQueue())
-        return;
-
     ASSERT(player);
+
+    if (IsInUpdateQueue())
+    {
+        if (uQueuePos >= 0 && static_cast<size_t>(uQueuePos) < player->m_itemUpdateQueue.size() && player->m_itemUpdateQueue[uQueuePos] == this)
+            return;
+
+        uQueuePos = -1;
+    }
 
     if (player->GetGUID() != GetOwnerGUID())
     {
@@ -773,15 +778,24 @@ void Item::RemoveFromUpdateQueueOf(Player* player)
     ASSERT(player);
 
     if (player->GetGUID() != GetOwnerGUID())
-    {
         LOG_DEBUG("entities.player.items", "Item::RemoveFromUpdateQueueOf - Owner's guid ({}) and player's guid ({}) don't match!", GetOwnerGUID().ToString(), player->GetGUID().ToString());
-        return;
+
+    if (uQueuePos >= 0 && static_cast<size_t>(uQueuePos) < player->m_itemUpdateQueue.size() && player->m_itemUpdateQueue[uQueuePos] == this)
+    {
+        player->m_itemUpdateQueue[uQueuePos] = nullptr;
+    }
+    else
+    {
+        for (Item*& queuedItem : player->m_itemUpdateQueue)
+        {
+            if (queuedItem == this)
+            {
+                queuedItem = nullptr;
+                break;
+            }
+        }
     }
 
-    if (player->m_itemUpdateQueueBlocked)
-        return;
-
-    player->m_itemUpdateQueue[uQueuePos] = nullptr;
     uQueuePos = -1;
 }
 
