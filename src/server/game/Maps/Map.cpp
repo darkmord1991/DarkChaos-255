@@ -1032,34 +1032,52 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 {
     ++_updateCounter;
 
+    // Phase timing for diagnostics — only evaluated when the tick ends slow.
+    auto const _phaseStart = std::chrono::steady_clock::now();
+    auto _phaseLast = _phaseStart;
+    int64 _phSessions = 0, _phDynTree = 0, _phPartitions = 0, _phLegacyPlayers = 0;
+    int64 _phNpcUpdate = 0, _phRelocate = 0, _phVisibility = 0, _phSendObj = 0;
+    int64 _phScripts = 0, _phMoveList = 0, _phDelayedVis = 0, _phWeather = 0;
+    auto _phaseSnap = [&](int64& target) {
+        auto now = std::chrono::steady_clock::now();
+        target = std::chrono::duration_cast<std::chrono::milliseconds>(now - _phaseLast).count();
+        _phaseLast = now;
+    };
+
     // Adaptive main-thread budgets for heavy load handling.
-    if (t_diff >= 120)
+    // NOTE: In-flight limit controls how many partitions run concurrently.
+    // Being too aggressive here starves parallelism and creates a negative
+    // feedback loop (throttle -> work piles up -> higher diff -> more throttle).
+    // With 16 threads and 12 partitions per continent, setting in-flight to 2
+    // wastes most threads. Keep in-flight high enough that the thread pool stays
+    // saturated even under pressure.
+    if (t_diff >= 200)
     {
         _adaptiveSessionStrideTicks = 4;
         _adaptiveDeferredVisibilityBudget = 256;
         _adaptiveObjectUpdateBudget = 384;
-        _adaptivePartitionInFlightLimit = 2;
+        _adaptivePartitionInFlightLimit = 3;
     }
-    else if (t_diff >= 80)
+    else if (t_diff >= 120)
     {
         _adaptiveSessionStrideTicks = 3;
         _adaptiveDeferredVisibilityBudget = 384;
         _adaptiveObjectUpdateBudget = 768;
-        _adaptivePartitionInFlightLimit = 3;
+        _adaptivePartitionInFlightLimit = 4;
     }
     else if (t_diff <= 35)
     {
         _adaptiveSessionStrideTicks = 1;
         _adaptiveDeferredVisibilityBudget = 1024;
         _adaptiveObjectUpdateBudget = 3072;
-        _adaptivePartitionInFlightLimit = 5;
+        _adaptivePartitionInFlightLimit = 6;
     }
     else
     {
         _adaptiveSessionStrideTicks = 2;
         _adaptiveDeferredVisibilityBudget = 512;
         _adaptiveObjectUpdateBudget = 1536;
-        _adaptivePartitionInFlightLimit = 4;
+        _adaptivePartitionInFlightLimit = 5;
     }
     if (_isPartitioned && !_useParallelPartitions && !_partitionLogShown)
     {
@@ -1079,8 +1097,8 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
     if (t_diff)
     {
-        constexpr uint32 kDynamicTreeUpdateStrideTicks = 2;
-        constexpr uint32 kDynamicTreeMaxDeferredDiffMs = 50;
+        constexpr uint32 kDynamicTreeUpdateStrideTicks = 3;
+        constexpr uint32 kDynamicTreeMaxDeferredDiffMs = 100;
         _pendingDynamicTreeDiff += t_diff;
 
         if ((_updateCounter.load(std::memory_order_relaxed) % kDynamicTreeUpdateStrideTicks) == 0 ||
@@ -1091,6 +1109,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
             _pendingDynamicTreeDiff = 0;
         }
     }
+    _phaseSnap(_phDynTree);
 
     uint32 sessionIndex = 0;
 
@@ -1121,6 +1140,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     }
 
     Events.Update(t_diff);
+    _phaseSnap(_phSessions);
 
     if (!t_diff)
     {
@@ -1175,6 +1195,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                 ApplyQueuedPartitionedOwnershipUpdates();
                 ApplyQueuedPartitionedRemovals();
             }
+            _phaseSnap(_phPartitions);
         }
         else
         {
@@ -1329,6 +1350,8 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
             // pointers accumulating in _partitionedUpdatableIndex.
             ApplyQueuedPartitionedOwnershipUpdates();
             ApplyQueuedPartitionedRemovals();
+            _phaseSnap(_phPartitions);
+            _phaseSnap(_phNpcUpdate); // included in partitions for serial path
         }
     }
     else
@@ -1361,11 +1384,18 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
         // Legacy non-partitioned NPC update
         UpdateNonPlayerObjects(t_diff);
+        _phaseSnap(_phLegacyPlayers);
+        _phaseSnap(_phNpcUpdate); // included above for legacy path
     }
 
+    _phaseSnap(_phRelocate); // reset before post-partition phases
+    _phaseLast = std::chrono::steady_clock::now(); // reset
     ProcessDeferredPlayerRelocations();
+    _phaseSnap(_phRelocate);
     ProcessDeferredVisibilityUpdates();
+    _phaseSnap(_phVisibility);
     SendObjectUpdates();
+    _phaseSnap(_phSendObj);
 
     ///- Process necessary scripts
     if (!m_scriptSchedule.empty())
@@ -1387,16 +1417,42 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         }
     }
 
+    _phaseSnap(_phScripts);
+
     MoveAllCreaturesInMoveList();
     MoveAllGameObjectsInMoveList();
     MoveAllDynamicObjectsInMoveList();
+    _phaseSnap(_phMoveList);
 
     HandleDelayedVisibility();
+    _phaseSnap(_phDelayedVis);
 
     UpdateWeather(t_diff);
     UpdateExpiredCorpses(t_diff);
 
     sScriptMgr->OnMapUpdate(this, t_diff);
+    _phaseSnap(_phWeather);
+
+    // Emit phase breakdown when total map update exceeds threshold.
+    // This gives visibility into WHERE the time is spent rather than just
+    // knowing the total is slow.
+    {
+        int64 totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - _phaseStart).count();
+        static uint32 sPhaseBreakdownThresholdMs = sConfigMgr->GetOption<uint32>("System.SlowMapUpdateTask.PhaseBreakdownMs", 100);
+        if (totalMs >= sPhaseBreakdownThresholdMs)
+        {
+            LOG_WARN("map.update.slow",
+                "Map update phase breakdown: map={} total={}ms "
+                "dynTree={}ms sessions={}ms partitions={}ms npcUpdate={}ms "
+                "relocate={}ms visibility={}ms sendObj={}ms scripts={}ms "
+                "moveList={}ms delayedVis={}ms weather={}ms diff={} s_diff={}",
+                GetId(), totalMs,
+                _phDynTree, _phSessions, _phPartitions, _phNpcUpdate,
+                _phRelocate, _phVisibility, _phSendObj, _phScripts,
+                _phMoveList, _phDelayedVis, _phWeather, t_diff, s_diff);
+        }
+    }
 
     if (_isPartitioned && !useParallelPartitions)
     {
@@ -1563,7 +1619,7 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 if (Creature* creature = obj->ToCreature(); creature && creature->IsDuringRemoveFromWorld())
                     continue;
 
-                UpdatableMapObject* updatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+                UpdatableMapObject* updatableObject = obj->AsUpdatableMapObject();
                 if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
                     continue;
                 UpdateExecutionGuard updateGuard(updatableObject);
@@ -1653,7 +1709,7 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
                 continue;
             }
 
-            UpdatableMapObject* updatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+            UpdatableMapObject* updatableObject = obj->AsUpdatableMapObject();
             if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
             {
                 ++i;
@@ -1691,7 +1747,7 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
             if (Creature* creature = obj->ToCreature(); creature && creature->IsDuringRemoveFromWorld())
                 continue;
 
-            UpdatableMapObject* updatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+            UpdatableMapObject* updatableObject = obj->AsUpdatableMapObject();
             if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
                 continue;
             UpdateExecutionGuard updateGuard(updatableObject);
@@ -1709,7 +1765,7 @@ void Map::AddObjectToPendingUpdateList(WorldObject* obj)
     if (!obj->CanBeAddedToMapUpdateList())
         return;
 
-    UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+    UpdatableMapObject* mapUpdatableObject = obj->AsUpdatableMapObject();
     {
         std::lock_guard<std::mutex> lock(_pendingUpdateListLock);
         if (!mapUpdatableObject || mapUpdatableObject->GetUpdateState() != UpdatableMapObject::UpdateState::NotUpdating)
@@ -1731,7 +1787,7 @@ void Map::FlushPendingUpdateListAdds()
 
     for (WorldObject* obj : pending)
     {
-        UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+        UpdatableMapObject* mapUpdatableObject = obj->AsUpdatableMapObject();
         if (!mapUpdatableObject || mapUpdatableObject->GetUpdateState() != UpdatableMapObject::UpdateState::PendingAdd)
             continue;
         _AddObjectToUpdateList(obj);
@@ -1741,7 +1797,7 @@ void Map::FlushPendingUpdateListAdds()
 // Internal use only
 void Map::_AddObjectToUpdateList(WorldObject* obj)
 {
-    UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+    UpdatableMapObject* mapUpdatableObject = obj->AsUpdatableMapObject();
     ASSERT(mapUpdatableObject && mapUpdatableObject->GetUpdateState() == UpdatableMapObject::UpdateState::PendingAdd);
 
     std::lock_guard<std::mutex> lock(_updatableObjectListLock);
@@ -1754,7 +1810,7 @@ void Map::_AddObjectToUpdateList(WorldObject* obj)
 // Internal use only
 void Map::_RemoveObjectFromUpdateList(WorldObject* obj)
 {
-    UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+    UpdatableMapObject* mapUpdatableObject = obj->AsUpdatableMapObject();
     if (!mapUpdatableObject)
         return;
 
@@ -1767,7 +1823,7 @@ void Map::_RemoveObjectFromUpdateList(WorldObject* obj)
 
         if (obj != _updatableObjectList.back())
         {
-            UpdatableMapObject* backObj = dynamic_cast<UpdatableMapObject*>(_updatableObjectList.back());
+            UpdatableMapObject* backObj = _updatableObjectList.back()->AsUpdatableMapObject();
             if (backObj && backObj->GetUpdateState() == UpdatableMapObject::UpdateState::Updating)
                 backObj->SetMapUpdateListOffset(mapUpdatableObject->GetMapUpdateListOffset());
             std::swap(_updatableObjectList[mapUpdatableObject->GetMapUpdateListOffset()], _updatableObjectList.back());
@@ -2717,7 +2773,7 @@ void Map::RemoveObjectFromMapUpdateList(WorldObject* obj)
     if (!obj->CanBeAddedToMapUpdateList())
         return;
 
-    UpdatableMapObject* mapUpdatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+    UpdatableMapObject* mapUpdatableObject = obj->AsUpdatableMapObject();
     if (!mapUpdatableObject)
         return;
 
@@ -2859,6 +2915,20 @@ void Map::HandleDelayedVisibility()
         unitsToProcess.erase(std::unique(unitsToProcess.begin(), unitsToProcess.end()), unitsToProcess.end());
     }
 
+    // Budget-limit delayed visibility to prevent unbounded per-tick cost.
+    // Each ExecuteDelayedUnitRelocationEvent does a full grid visit (expensive).
+    static uint32 const kDelayedVisBudget = sConfigMgr->GetOption<uint32>("System.DelayedVisibility.BudgetPerTick", 256);
+    if (unitsToProcess.size() > kDelayedVisBudget)
+    {
+        // Put excess back into the queue for next tick
+        std::lock_guard<std::mutex> lock(_delayedVisibilityLock);
+        _objectsForDelayedVisibility.insert(
+            _objectsForDelayedVisibility.end(),
+            unitsToProcess.begin() + kDelayedVisBudget,
+            unitsToProcess.end());
+        unitsToProcess.resize(kDelayedVisBudget);
+    }
+
     char const* workloadBucket = "empty";
     if (!unitsToProcess.empty())
     {
@@ -2877,19 +2947,6 @@ void Map::HandleDelayedVisibility()
         METRIC_TAG("map_id", std::to_string(GetId())),
         METRIC_TAG("workload", workloadBucket));
 
-    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
-    static int64 const slowVisibilityThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_visibility_update_time", 6);
-    if (slowLogEnabled)
-    {
-        int64 const elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - slowLogStart).count();
-        if (elapsedMs >= slowVisibilityThresholdMs)
-        {
-            LOG_WARN("system.slow",
-                "Slow delayed visibility update: map_id={} workload={} batch={} elapsed_ms={} threshold_ms={}",
-                GetId(), workloadBucket, unitsToProcess.size(), elapsedMs, slowVisibilityThresholdMs);
-        }
-    }
-
     METRIC_VALUE("game_system_batch_size", unitsToProcess.size(),
         METRIC_TAG("system", "visibility"),
         METRIC_TAG("phase", "delayed"),
@@ -2907,6 +2964,20 @@ void Map::HandleDelayedVisibility()
 
         if (unit)
             unit->ExecuteDelayedUnitRelocationEvent();
+    }
+
+    // Slow log check AFTER the processing loop (grid visits are the expensive part)
+    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+    static int64 const slowVisibilityThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_visibility_update_time", 6);
+    if (slowLogEnabled)
+    {
+        int64 const elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - slowLogStart).count();
+        if (elapsedMs >= slowVisibilityThresholdMs)
+        {
+            LOG_WARN("system.slow",
+                "Slow delayed visibility update: map_id={} workload={} batch={} elapsed_ms={} threshold_ms={}",
+                GetId(), workloadBucket, unitsToProcess.size(), elapsedMs, slowVisibilityThresholdMs);
+        }
     }
 }
 

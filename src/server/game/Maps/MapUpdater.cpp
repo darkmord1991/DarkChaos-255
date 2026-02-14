@@ -553,8 +553,14 @@ void MapUpdater::activate(std::size_t num_threads)
     uint32 dedicatedPartitionWorkers = 0;
     if (num_threads >= 4)
     {
-        dedicatedPartitionWorkers = std::clamp<uint32>(static_cast<uint32>(num_threads / 3), 2u, 4u);
-        dedicatedPartitionWorkers = std::min<uint32>(dedicatedPartitionWorkers, static_cast<uint32>(num_threads - 1));
+        // Scale dedicated partition workers more aggressively for larger thread pools.
+        // With many partitioned maps (e.g. 6+ continent maps with 10-12 partitions each),
+        // 4 dedicated workers is insufficient to drain partition queues fast enough.
+        // Formula: ~40% of threads for dedicated partition work, capped at 8.
+        dedicatedPartitionWorkers = std::clamp<uint32>(
+            static_cast<uint32>((num_threads * 2 + 4) / 5), // ~40% rounded
+            2u,
+            std::min<uint32>(8u, static_cast<uint32>(num_threads - 2)));
     }
 
     _dedicatedPartitionWorkers.store(dedicatedPartitionWorkers, std::memory_order_release);

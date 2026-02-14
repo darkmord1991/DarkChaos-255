@@ -44,6 +44,7 @@ public:
 
     bool CreateDynamicObject(ObjectGuid::LowType guidlow, Unit* caster, uint32 spellId, Position const& pos, float radius, DynamicObjectType type);
     void Update(uint32 p_time) override;
+    [[nodiscard]] UpdatableMapObject* AsUpdatableMapObject() override { return static_cast<UpdatableMapObject*>(this); }
     void Remove();
     void SetDuration(int32 newDuration);
     [[nodiscard]] int32 GetDuration() const;

@@ -16,13 +16,16 @@
  */
 
 #include "PartitionUpdateWorker.h"
+#include "Config.h"
 #include "DynamicObject.h"
 #include "Corpse.h"
+#include "Log.h"
 #include "Map.h"
 #include "Object.h"
 #include "PartitionManager.h"
 #include "Player.h"
 #include "Metric.h"
+#include <chrono>
 #include <cmath>
 
 namespace
@@ -62,13 +65,26 @@ void PartitionUpdateWorker::Execute()
         METRIC_TAG("map_id", std::to_string(_map.GetId())),
         METRIC_TAG("partition_id", std::to_string(_partitionId)));
 
+    auto const pwStart = std::chrono::steady_clock::now();
+    auto pwLast = pwStart;
+    int64 pwRelays = 0, pwPlayers = 0, pwNpcs = 0, pwBoundary = 0, pwStats = 0;
+    auto pwSnap = [&](int64& target) {
+        auto now = std::chrono::steady_clock::now();
+        target = std::chrono::duration_cast<std::chrono::milliseconds>(now - pwLast).count();
+        pwLast = now;
+    };
+
     _map.SetActivePartitionContext(_partitionId);
 
     if (_map.HasPendingPartitionRelayWork(_partitionId))
         ProcessRelays();
+    pwSnap(pwRelays);
 
     UpdatePlayers();
+    pwSnap(pwPlayers);
+
     UpdateNonPlayerObjects();
+    pwSnap(pwNpcs);
 
     // NOTE: ApplyQueuedPartitionedOwnershipUpdates is intentionally NOT called
     // here. Multiple workers would race on _partitionedUpdatableObjectLists and
@@ -77,9 +93,26 @@ void PartitionUpdateWorker::Execute()
 
     // Flush batched boundary operations (1 lock per batch instead of per-entity)
     FlushBoundaryBatches();
+    pwSnap(pwBoundary);
+
     RecordStats();
+    pwSnap(pwStats);
 
     _map.SetActivePartitionContext(0);
+
+    // Emit sub-phase breakdown for slow partition workers
+    int64 totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - pwStart).count();
+    static uint32 sPwThresholdMs = sConfigMgr->GetOption<uint32>("System.SlowPartitionWorker.PhaseBreakdownMs", 80);
+    if (totalMs >= sPwThresholdMs)
+    {
+        LOG_WARN("map.partition.slow",
+            "Partition worker phase breakdown: map={} partition={} total={}ms "
+            "relays={}ms players={}ms(n={}) npcs={}ms(n={}) boundary={}ms stats={}ms diff={}",
+            _map.GetId(), _partitionId, totalMs,
+            pwRelays, pwPlayers, _playerCount, pwNpcs, _creatureCount,
+            pwBoundary, pwStats, _diff);
+    }
 }
 
 void PartitionUpdateWorker::ProcessRelays()
@@ -233,6 +266,7 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         auto const& entry = _scratchObjects[(windowStart + offset) % _scratchObjects.size()];
 
         WorldObject* obj = nullptr;
+        bool const isCreature = entry.second == TYPEID_UNIT;
         switch (entry.second)
         {
             case TYPEID_UNIT:
@@ -254,7 +288,7 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         if (!obj || !obj->IsInWorld())
             continue;
 
-        if (!partialSweep && obj->ToCreature())
+        if (!partialSweep && isCreature)
             ++_creatureCount;
 
         if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), obj->GetPositionX(), obj->GetPositionY()))
@@ -265,10 +299,9 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
             _batchBoundaryOverrides.push_back(objectGuid);
 
             bool needsPositionUpdate = !obj->IsBoundaryTracked();
-            if (!needsPositionUpdate)
+            if (!needsPositionUpdate && isCreature)
             {
-                if (Creature* creature = obj->ToCreature())
-                    needsPositionUpdate = creature->isMoving();
+                needsPositionUpdate = static_cast<Creature*>(obj)->isMoving();
             }
 
             if (needsPositionUpdate)
@@ -290,10 +323,10 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         if (!obj->IsInWorld())
             continue;
 
-        if (Creature* creature = obj->ToCreature(); creature && creature->IsDuringRemoveFromWorld())
+        if (isCreature && static_cast<Creature*>(obj)->IsDuringRemoveFromWorld())
             continue;
 
-        UpdatableMapObject* updatableObject = dynamic_cast<UpdatableMapObject*>(obj);
+        UpdatableMapObject* updatableObject = obj->AsUpdatableMapObject();
         if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
             continue;
         UpdateExecutionGuard updateGuard(updatableObject);
@@ -301,14 +334,16 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         // Tag the unit with our partition ID so that TryGetRelayTargetPartition
         // won't relay MotionMaster calls when the creature crosses a partition
         // boundary during its own UpdateSplineMovement within the same tick.
-        Unit* unit = obj->ToUnit();
-        if (unit)
-            unit->SetCurrentUpdatePartition(_partitionId);
-
-        obj->Update(_diff);
-
-        if (unit)
-            unit->SetCurrentUpdatePartition(0);
+        if (isCreature)
+        {
+            static_cast<Unit*>(obj)->SetCurrentUpdatePartition(_partitionId);
+            obj->Update(_diff);
+            static_cast<Unit*>(obj)->SetCurrentUpdatePartition(0);
+        }
+        else
+        {
+            obj->Update(_diff);
+        }
 
         // After updating, check if this object still needs further ticks.
         // If not, queue it for removal so we don't keep waking idle creatures.

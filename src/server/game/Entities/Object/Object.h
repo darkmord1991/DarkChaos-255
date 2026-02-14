@@ -467,6 +467,18 @@ public:
 protected:
     UpdatableMapObject() : _mapUpdateListOffset(0), _mapUpdateState(NotUpdating) { }
 
+public:
+    bool TryBeginUpdateExecution()
+    {
+        bool expected = false;
+        return _updateExecutionInProgress.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
+    }
+
+    void EndUpdateExecution()
+    {
+        _updateExecutionInProgress.store(false, std::memory_order_release);
+    }
+
 private:
     void SetMapUpdateListOffset(std::size_t const offset)
     {
@@ -493,6 +505,7 @@ private:
 private:
     std::size_t _mapUpdateListOffset;
     std::atomic<UpdateState> _mapUpdateState;
+    std::atomic<bool> _updateExecutionInProgress{false};
 };
 
 class WorldObject : public Object, public WorldLocation
@@ -503,6 +516,11 @@ public:
     ~WorldObject() override;
 
     virtual void Update(uint32 diff);
+
+    // Fast alternative to dynamic_cast<UpdatableMapObject*> for hot update loops.
+    // Overridden by Creature, GameObject, DynamicObject (which multiply-inherit UpdatableMapObject).
+    // Returns nullptr for types that don't inherit UpdatableMapObject (e.g. Corpse).
+    [[nodiscard]] virtual UpdatableMapObject* AsUpdatableMapObject() { return nullptr; }
 
     void _Create(ObjectGuid::LowType guidlow, HighGuid guidhigh, uint32 phaseMask);
 

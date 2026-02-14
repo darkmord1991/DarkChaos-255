@@ -72,6 +72,7 @@ public:
     [[nodiscard]] uint32 GetLayerCloneId() const { return _layerCloneId; }
 
     void Update(uint32 time) override;  // overwrited Unit::Update
+    [[nodiscard]] UpdatableMapObject* AsUpdatableMapObject() override { return static_cast<UpdatableMapObject*>(this); }
     void GetRespawnPosition(float& x, float& y, float& z, float* ori = nullptr, float* dist = nullptr) const;
 
     void SetCorpseDelay(uint32 delay) { m_corpseDelay = delay; }

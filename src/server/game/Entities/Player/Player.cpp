@@ -10039,10 +10039,25 @@ void Player::ApplySpellMod(uint32 spellId, SpellModOp op, T& basevalue, Spell* s
     };
 
     // Drop charges for triggering spells instead of triggered ones.
-    // Do not borrow m_spellModTakingSpell when no Spell context is provided
-    // (e.g. AI pre-checks like CalcCastTime), to avoid touching stale Spell state.
-    if (spell && m_spellModTakingSpell)
-        spell = m_spellModTakingSpell;
+    // Borrow m_spellModTakingSpell only if it still points to an active
+    // current spell; stale pointers can outlive finished casts.
+    if (!spell && m_spellModTakingSpell)
+    {
+        bool hasActiveTakingSpell = false;
+        for (uint32 currentSpellType = 0; currentSpellType < CURRENT_MAX_SPELL; ++currentSpellType)
+        {
+            if (GetCurrentSpell(currentSpellType) == m_spellModTakingSpell)
+            {
+                hasActiveTakingSpell = true;
+                break;
+            }
+        }
+
+        if (hasActiveTakingSpell)
+            spell = m_spellModTakingSpell;
+        else
+            m_spellModTakingSpell = nullptr;
+    }
 
     for (auto mod : m_spellMods[op])
     {

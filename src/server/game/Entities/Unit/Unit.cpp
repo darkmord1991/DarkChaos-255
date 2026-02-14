@@ -450,6 +450,9 @@ void Unit::Update(uint32 p_time)
 
     auto const slowLogStart = slowLogEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     char const* unitTypeTag = IsPlayer() ? "player" : "non_player";
+    // Sub-phase timing accumulators for slow unit diagnostics
+    int64 _suSpells = 0;
+    auto _suPhasePoint = slowLogStart;
 
     auto emitSlowUnitLog = [&]()
     {
@@ -467,9 +470,13 @@ void Unit::Update(uint32 p_time)
             if (slowUnitLogIntervalMs > 0)
                 nextSlowUnitLogAtMs.store(nowMs + slowUnitLogIntervalMs, std::memory_order_release);
 
+            uint32 entryId = GetEntry();
+            Map* map = FindMap();
             LOG_WARN("system.slow",
-                "Slow unit update: unit_type={} in_combat={} diff={} elapsed_ms={} threshold_ms={}",
-                unitTypeTag, IsInCombat() ? 1 : 0, p_time, elapsedMs, slowUnitThresholdMs);
+                "Slow unit update: unit_type={} in_combat={} diff={} elapsed_ms={} threshold_ms={} "
+                "entry={} guid={} map={} spells_ms={}",
+                unitTypeTag, IsInCombat() ? 1 : 0, p_time, elapsedMs, slowUnitThresholdMs,
+                entryId, GetGUID().ToString(), map ? map->GetId() : 0, _suSpells);
         }
     };
 
@@ -525,6 +532,14 @@ void Unit::Update(uint32 p_time)
     }
 
     _UpdateSpells( p_time );
+
+    // Record spell update sub-phase time for slow unit diagnostics
+    if (slowLogEnabled)
+    {
+        auto now = std::chrono::steady_clock::now();
+        _suSpells = std::chrono::duration_cast<std::chrono::milliseconds>(now - _suPhasePoint).count();
+        _suPhasePoint = now;
+    }
 
     if (CanHaveThreatList() && GetThreatMgr().isNeedUpdateToClient(p_time))
     {
@@ -4188,6 +4203,20 @@ void Unit::_DeleteRemovedAuras()
 
 void Unit::_UpdateSpells(uint32 time)
 {
+    // Fast-path: skip all lock acquisitions for units with no spells, auras, or game objects.
+    // This is the common case for idle NPCs and avoids 3+ mutex acquisitions per tick.
+    if (m_ownedAuras.empty() &&
+        !m_currentSpells[CURRENT_AUTOREPEAT_SPELL] &&
+        !m_currentSpells[CURRENT_CHANNELED_SPELL] &&
+        !m_currentSpells[CURRENT_GENERIC_SPELL] &&
+        !m_currentSpells[CURRENT_MELEE_SPELL] &&
+        m_visibleAuras.empty() &&
+        m_gameObj.empty())
+    {
+        _DeleteRemovedAuras();
+        return;
+    }
+
     std::vector<Aura*> auraSnapshot;
     {
         std::lock_guard<std::recursive_mutex> lock(_auraLock);
@@ -6857,21 +6886,24 @@ bool Unit::RemoveDynObject(uint32 spellId)
         if (!dynObj)
             continue;
 
-        if (Map* map = dynObj->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        if (!IsDuringRemoveFromWorld())
         {
-            uint32 zoneId = map->GetZoneId(dynObj->GetPhaseMask(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ());
-            uint32 dynPartition = sPartitionMgr->GetPartitionIdForPosition(map->GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), zoneId, dynObj->GetGUID());
-            uint32 activePartition = map->GetActivePartitionContext();
-            if (dynPartition && dynPartition != activePartition)
+            if (Map* map = dynObj->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
             {
-                bool queued = false;
+                uint32 zoneId = map->GetZoneId(dynObj->GetPhaseMask(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ());
+                uint32 dynPartition = sPartitionMgr->GetPartitionIdForPosition(map->GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), zoneId, dynObj->GetGUID());
+                uint32 activePartition = map->GetActivePartitionContext();
+                if (dynPartition && dynPartition != activePartition)
                 {
-                    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
-                    queued = _pendingDynObjectRemovals.insert(dynObj->GetGUID()).second;
+                    bool queued = false;
+                    {
+                        std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+                        queued = _pendingDynObjectRemovals.insert(dynObj->GetGUID()).second;
+                    }
+                    if (queued)
+                        map->QueuePartitionDynObjectRelay(dynPartition, dynObj->GetGUID(), 1);
+                    continue;
                 }
-                if (queued)
-                    map->QueuePartitionDynObjectRelay(dynPartition, dynObj->GetGUID(), 1);
-                continue;
             }
         }
 
@@ -6895,23 +6927,26 @@ void Unit::RemoveAllDynObjects()
         if (!dynObj)
             continue;
 
-        if (Map* map = dynObj->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        if (!IsDuringRemoveFromWorld())
         {
-            uint32 zoneId = map->GetZoneId(dynObj->GetPhaseMask(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ());
-            uint32 dynPartition = sPartitionMgr->GetPartitionIdForPosition(map->GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), zoneId, dynObj->GetGUID());
-            uint32 activePartition = map->GetActivePartitionContext();
-            if (dynPartition && dynPartition != activePartition)
+            if (Map* map = dynObj->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
             {
-                bool queued = false;
+                uint32 zoneId = map->GetZoneId(dynObj->GetPhaseMask(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ());
+                uint32 dynPartition = sPartitionMgr->GetPartitionIdForPosition(map->GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), zoneId, dynObj->GetGUID());
+                uint32 activePartition = map->GetActivePartitionContext();
+                if (dynPartition && dynPartition != activePartition)
                 {
-                    std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
-                    if (_pendingDynObjectRemovals.count(dynObj->GetGUID()) == 0)
-                        queued = _pendingDynObjectRemovals.insert(dynObj->GetGUID()).second;
+                    bool queued = false;
+                    {
+                        std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+                        if (_pendingDynObjectRemovals.count(dynObj->GetGUID()) == 0)
+                            queued = _pendingDynObjectRemovals.insert(dynObj->GetGUID()).second;
+                    }
+                    if (queued)
+                        map->QueuePartitionDynObjectRelay(dynPartition, dynObj->GetGUID(), 1);
+                    deferred.push_back(dynObj);
+                    continue;
                 }
-                if (queued)
-                    map->QueuePartitionDynObjectRelay(dynPartition, dynObj->GetGUID(), 1);
-                deferred.push_back(dynObj);
-                continue;
             }
         }
 
@@ -6924,6 +6959,11 @@ void Unit::RemoveAllDynObjects()
         std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
         for (DynamicObject* dynObj : deferred)
             m_dynObj.push_back(dynObj);
+    }
+    else
+    {
+        std::lock_guard<std::mutex> lock(_dynObjGameObjLock);
+        _pendingDynObjectRemovals.clear();
     }
 }
 

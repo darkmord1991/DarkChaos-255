@@ -159,13 +159,26 @@ void HostileRefMgr::updateThreatTables()
 
 void HostileRefMgr::deleteReferences(bool removeFromMap /*= false*/)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::vector<HostileReference*> refsToRemove;
+    {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        HostileReference* ref = getFirst();
+        while (ref)
+        {
+            HostileReference* nextRef = ref->next();
+            ref->delink();
+            refsToRemove.push_back(ref);
+            ref = nextRef;
+        }
+    }
+
     std::vector<Creature*> creaturesToEvade;
 
-    HostileReference* ref = getFirst();
-    while (ref)
+    for (HostileReference* ref : refsToRemove)
     {
-        HostileReference* nextRef = ref->next();
+        if (!ref)
+            continue;
+
         ref->removeReference();
 
         if (removeFromMap)
@@ -183,7 +196,6 @@ void HostileRefMgr::deleteReferences(bool removeFromMap /*= false*/)
         }
 
         delete ref;
-        ref = nextRef;
     }
 
     for (Creature* creature : creaturesToEvade)
@@ -197,17 +209,29 @@ void HostileRefMgr::deleteReferences(bool removeFromMap /*= false*/)
 
 void HostileRefMgr::deleteReferencesForFaction(uint32 faction)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    HostileReference* ref = getFirst();
-    while (ref)
+    std::vector<HostileReference*> refsToRemove;
     {
-        HostileReference* nextRef = ref->next();
-        if (ref->GetSource()->GetOwner()->GetFactionTemplateEntry()->faction == faction)
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        HostileReference* ref = getFirst();
+        while (ref)
         {
-            ref->removeReference();
-            delete ref;
+            HostileReference* nextRef = ref->next();
+            if (ref->GetSource()->GetOwner()->GetFactionTemplateEntry()->faction == faction)
+            {
+                ref->delink();
+                refsToRemove.push_back(ref);
+            }
+            ref = nextRef;
         }
-        ref = nextRef;
+    }
+
+    for (HostileReference* ref : refsToRemove)
+    {
+        if (!ref)
+            continue;
+
+        ref->removeReference();
+        delete ref;
     }
 }
 
@@ -216,18 +240,27 @@ void HostileRefMgr::deleteReferencesForFaction(uint32 faction)
 
 void HostileRefMgr::deleteReference(Unit* creature)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    HostileReference* ref = getFirst();
-    while (ref)
+    HostileReference* refToRemove = nullptr;
     {
-        HostileReference* nextRef = ref->next();
-        if (ref->GetSource()->GetOwner() == creature)
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        HostileReference* ref = getFirst();
+        while (ref)
         {
-            ref->removeReference();
-            delete ref;
-            break;
+            HostileReference* nextRef = ref->next();
+            if (ref->GetSource()->GetOwner() == creature)
+            {
+                ref->delink();
+                refToRemove = ref;
+                break;
+            }
+            ref = nextRef;
         }
-        ref = nextRef;
+    }
+
+    if (refToRemove)
+    {
+        refToRemove->removeReference();
+        delete refToRemove;
     }
 }
 
@@ -236,19 +269,32 @@ void HostileRefMgr::deleteReference(Unit* creature)
 
 void HostileRefMgr::deleteReferencesOutOfRange(float range)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    HostileReference* ref = getFirst();
+    std::vector<HostileReference*> refsToRemove;
+
     range = range * range;
-    while (ref)
     {
-        HostileReference* nextRef = ref->next();
-        Unit* owner = ref->GetSource()->GetOwner();
-        if (!owner->isActiveObject() && owner->GetExactDist2dSq(GetOwner()) > range)
+        std::lock_guard<std::recursive_mutex> guard(_lock);
+        HostileReference* ref = getFirst();
+        while (ref)
         {
-            ref->removeReference();
-            delete ref;
+            HostileReference* nextRef = ref->next();
+            Unit* owner = ref->GetSource()->GetOwner();
+            if (!owner->isActiveObject() && owner->GetExactDist2dSq(GetOwner()) > range)
+            {
+                ref->delink();
+                refsToRemove.push_back(ref);
+            }
+            ref = nextRef;
         }
-        ref = nextRef;
+    }
+
+    for (HostileReference* ref : refsToRemove)
+    {
+        if (!ref)
+            continue;
+
+        ref->removeReference();
+        delete ref;
     }
 }
 

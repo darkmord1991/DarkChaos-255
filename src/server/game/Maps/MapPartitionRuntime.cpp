@@ -265,6 +265,7 @@ bool Map::SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff)
 void Map::PreparePartitionObjectUpdateBudget(uint32 partitionCount, uint32 tDiff)
 {
     uint32 configuredBudget = static_cast<uint32>(std::max<int64>(0, sConfigMgr->GetOption<int64>("MapPartitions.Worker.ObjectUpdateBudget", 0)));
+    bool const useAdaptiveFallback = sConfigMgr->GetOption<bool>("MapPartitions.Worker.ObjectUpdateBudget.UseAdaptiveFallback", false);
     bool const carryOver = sConfigMgr->GetOption<bool>("MapPartitions.Worker.ObjectUpdateBudgetCarryOver", true);
     uint32 const hotPartitionThresholdMs = static_cast<uint32>(std::max<int64>(1,
         sConfigMgr->GetOption<int64>("MapPartitions.Worker.ObjectUpdateBudget.HotPartitionThresholdMs", 320)));
@@ -274,6 +275,35 @@ void Map::PreparePartitionObjectUpdateBudget(uint32 partitionCount, uint32 tDiff
 
     if (configuredBudget == 0)
     {
+        if (useAdaptiveFallback)
+        {
+            uint32 adaptiveBudget = static_cast<uint32>(std::max<size_t>(1, _adaptiveObjectUpdateBudget));
+            uint32 divisor = std::max<uint32>(1, partitionCount);
+            configuredBudget = std::max<uint32>(1, adaptiveBudget / divisor);
+        }
+
+        if (configuredBudget > 0 && _lastPartitionCycleMaxRunMs >= hotPartitionThresholdMs && hotScalePct > 0)
+            configuredBudget = std::max<uint32>(1, (configuredBudget * hotScalePct) / 100);
+
+        if (configuredBudget > 0)
+        {
+            if (tDiff >= 300)
+                configuredBudget = std::max<uint32>(1, configuredBudget / 3);
+            else if (tDiff >= 180)
+                configuredBudget = std::max<uint32>(1, configuredBudget / 2);
+            else if (tDiff >= 120)
+                configuredBudget = std::max<uint32>(1, (configuredBudget * 3) / 4);
+        }
+
+        if (configuredBudget > 0)
+        {
+            std::lock_guard<std::mutex> guard(_partitionObjectBudgetLock);
+            _partitionObjectUpdateBudget = configuredBudget;
+            _partitionObjectUpdateCarryOver = carryOver;
+            _partitionObjectUpdateCursor.assign(partitionCount, 0);
+            return;
+        }
+
         std::lock_guard<std::mutex> guard(_partitionObjectBudgetLock);
         _partitionObjectUpdateBudget = 0;
         _partitionObjectUpdateCarryOver = carryOver;

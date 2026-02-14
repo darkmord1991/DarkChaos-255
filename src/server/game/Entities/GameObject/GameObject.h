@@ -135,6 +135,7 @@ public:
 
     virtual bool Create(ObjectGuid::LowType guidlow, uint32 name_id, Map* map, uint32 phaseMask, float x, float y, float z, float ang, G3D::Quat const& rotation, uint32 animprogress, GOState go_state, uint32 artKit = 0);
     void Update(uint32 p_time) override;
+    [[nodiscard]] UpdatableMapObject* AsUpdatableMapObject() override { return static_cast<UpdatableMapObject*>(this); }
     [[nodiscard]] GameObjectTemplate const* GetGOInfo() const { return m_goInfo; }
     [[nodiscard]] GameObjectTemplateAddon const* GetTemplateAddon() const;
     [[nodiscard]] GameObjectData const* GetGameObjectData() const { return m_goData; }
