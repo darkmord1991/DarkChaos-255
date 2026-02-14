@@ -19,11 +19,16 @@
 #include "Quests/QuestDef.h"
 #include "Log.h"
 #include "Chat.h"
-#include "ItemUpgradeManager.h"
+#include "Config.h"
+#include "GameTime.h"
+#include "Map.h"
 #include "DC/CrossSystem/SeasonResolver.h"
 #include "../CrossSystem/CrossSystemUtilities.h"
 #include "Common.h"
+#include <mutex>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace DarkChaos
 {
@@ -63,6 +68,111 @@ namespace DarkChaos
         // =====================================================================
         // Helper Functions
         // =====================================================================
+
+        static uint32 GetLogSamplePct(char const* option, uint32 defaultValue)
+        {
+            int32 value = sConfigMgr->GetOption<int32>(option, static_cast<int32>(defaultValue));
+            if (value < 0)
+                value = 0;
+            if (value > 100)
+                value = 100;
+            return static_cast<uint32>(value);
+        }
+
+        static uint32 GetLogMinIntervalMs(char const* option, uint32 defaultValue)
+        {
+            int32 value = sConfigMgr->GetOption<int32>(option, static_cast<int32>(defaultValue));
+            return value > 0 ? static_cast<uint32>(value) : 0u;
+        }
+
+        static bool ShouldEmitTokenLog(char const* samplePctOption, char const* minIntervalOption,
+                                       uint32 defaultSamplePct, uint32 defaultMinIntervalMs)
+        {
+            uint32 samplePct = GetLogSamplePct(samplePctOption, defaultSamplePct);
+            if (samplePct == 0)
+                return false;
+
+            uint32 minIntervalMs = GetLogMinIntervalMs(minIntervalOption, defaultMinIntervalMs);
+            if (minIntervalMs > 0)
+            {
+                static std::mutex s_logThrottleMutex;
+                static std::unordered_map<char const*, uint64> s_nextAllowedLogMs;
+
+                uint64 nowMs = GameTime::GetGameTimeMS().count();
+
+                std::lock_guard<std::mutex> guard(s_logThrottleMutex);
+                uint64& nextAllowed = s_nextAllowedLogMs[minIntervalOption];
+                if (nowMs < nextAllowed)
+                    return false;
+
+                nextAllowed = nowMs + minIntervalMs;
+            }
+
+            if (samplePct >= 100)
+                return true;
+
+            return urand(1, 100) <= samplePct;
+        }
+
+        static bool TryClaimArtifactAchievement(uint32 playerGuid, uint32 achievementId)
+        {
+            static std::mutex s_claimMutex;
+            static std::unordered_map<uint64, uint64> s_claimedUntilMs;
+
+            uint64 claimKey = (uint64(playerGuid) << 32) | uint64(achievementId);
+            uint32 cacheTtlMs = GetLogMinIntervalMs("ItemUpgrade.Perf.AchievementClaimCacheMs", 5000);
+            uint64 nowMs = GameTime::GetGameTimeMS().count();
+
+            std::lock_guard<std::mutex> guard(s_claimMutex);
+
+            if (cacheTtlMs > 0)
+            {
+                auto cached = s_claimedUntilMs.find(claimKey);
+                if (cached != s_claimedUntilMs.end())
+                {
+                    if (nowMs < cached->second)
+                        return false;
+
+                    s_claimedUntilMs.erase(cached);
+                }
+
+                if (s_claimedUntilMs.size() > 4096)
+                {
+                    for (auto it = s_claimedUntilMs.begin(); it != s_claimedUntilMs.end();)
+                    {
+                        it = (nowMs >= it->second) ? s_claimedUntilMs.erase(it) : std::next(it);
+                    }
+                }
+            }
+
+            QueryResult existing = CharacterDatabase.Query(
+                "SELECT 1 FROM dc_player_artifact_discoveries "
+                "WHERE player_guid = {} AND artifact_id = {} LIMIT 1",
+                playerGuid, achievementId);
+
+            if (existing)
+            {
+                if (cacheTtlMs > 0)
+                    s_claimedUntilMs[claimKey] = nowMs + cacheTtlMs;
+                return false;
+            }
+
+            try
+            {
+                CharacterDatabase.Execute(
+                    "INSERT IGNORE INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovery_type, discovered_at) "
+                    "VALUES ({}, {}, 'event', NOW())",
+                    playerGuid, achievementId);
+            }
+            catch (...)
+            {
+                return false;
+            }
+
+            if (cacheTtlMs > 0)
+                s_claimedUntilMs[claimKey] = nowMs + cacheTtlMs;
+            return true;
+        }
 
         // Get quest difficulty tier (0 = trivial, 1 = easy, 2 = normal, 3 = hard, 4 = legendary)
         static uint8 GetQuestDifficultyTier(uint32 quest_level, uint8 player_level)
@@ -109,14 +219,17 @@ namespace DarkChaos
             if (!creature)
                 return false;
 
-            CreatureTemplate const* cTemplate = creature->GetCreatureTemplate();
-            return cTemplate && cTemplate->type_flags & CREATURE_TYPE_FLAG_BOSS_MOB;
+            Map const* map = creature->GetMap();
+            return map && map->IsRaid();
         }
 
         // Log token transaction to database
         static void LogTokenTransaction(uint32 player_guid, const char* transaction_type,
                                        const char* reason, int32 token_change, int32 essence_change)
         {
+            if (token_change == 0 && essence_change == 0)
+                return;
+
             // Determine currency type based on what changed
             const char* currency_type = (essence_change != 0) ? "artifact_essence" : "upgrade_token";
             uint32 amount = (essence_change != 0) ? std::abs(essence_change) : std::abs(token_change);
@@ -190,8 +303,12 @@ namespace DarkChaos
                 std::string pvpMsg = "|cff00ff00+" + std::to_string(reward) + " Upgrade Tokens|r (PvP Kill)";
                 ChatHandler(killer->GetSession()).SendSysMessage(pvpMsg.c_str());
 
-        LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} tokens from PvP kill of {}",
-            killer->GetGUID().GetCounter(), reward, victim->GetGUID().GetCounter());
+                if (ShouldEmitTokenLog("ItemUpgrade.Perf.PvpReward.SamplePct", "ItemUpgrade.Perf.PvpReward.MinIntervalMs",
+                                       20, 1500))
+                {
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} tokens from PvP kill of {}",
+                        killer->GetGUID().GetCounter(), reward, victim->GetGUID().GetCounter());
+                }
             }
 
             void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
@@ -230,8 +347,12 @@ namespace DarkChaos
                                       std::string(quest->GetTitle()) + ")";
                 ChatHandler(player->GetSession()).SendSysMessage(questMsg.c_str());
 
-        LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} tokens from quest {} ({})",
-            player->GetGUID().GetCounter(), reward, quest->GetQuestId(), quest->GetTitle());
+                if (ShouldEmitTokenLog("ItemUpgrade.Perf.QuestReward.SamplePct",
+                                       "ItemUpgrade.Perf.QuestReward.MinIntervalMs", 20, 1500))
+                {
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} tokens from quest {} ({})",
+                        player->GetGUID().GetCounter(), reward, quest->GetQuestId(), quest->GetTitle());
+                }
             }
 
             void OnPlayerAchievementComplete(Player* player, AchievementEntry const* achievement) override
@@ -239,73 +360,39 @@ namespace DarkChaos
                 if (!player || !achievement)
                     return;
 
+                uint32 playerGuid = player->GetGUID().GetCounter();
+                if (!TryClaimArtifactAchievement(playerGuid, achievement->ID))
+                    return;
+
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
 
                 // Award essence for achievement
                 uint32 essence_reward = ACHIEVEMENT_ESSENCE_REWARD;
-
-                try
-                {
-                    QueryResult result = CharacterDatabase.Query(
-                        "SELECT COUNT(*) FROM dc_player_artifact_discoveries "
-                        "WHERE player_guid = {} AND artifact_id = {}",
-                        player->GetGUID().GetCounter(), achievement->ID);
-                    if (result && result->Fetch()[0].Get<uint32>() > 0)
-                    {
-                        LOG_DEBUG("scripts.dc", "ItemUpgrade: Achievement {} already claimed by player {}",
-                                 achievement->ID, player->GetGUID().GetCounter());
-                        return;  // Already claimed
-                    }
-                }
-                catch (std::exception const& e)
-                {
-                    LOG_DEBUG("scripts.dc", "ItemUpgrade: dc_player_artifact_discoveries query failed: {}", e.what());
-                }
-                catch (...)
-                {
-                    // Table may not exist yet - skip artifact discovery check
-                    LOG_DEBUG("scripts.dc", "ItemUpgrade: dc_player_artifact_discoveries table not found, skipping duplicate check");
-                }
 
                 // Prepare a locale-aware achievement name (achievement->name is an array of locale strings)
                 uint8 loc = player->GetSession() ? player->GetSession()->GetSessionDbcLocale() : 0;
                 std::string achName = achievement->name[loc] ? achievement->name[loc] : "<unknown>";
 
                 // Award essence using centralized utility
-                uint32 playerGuid = player->GetGUID().GetCounter();
                 DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
                     playerGuid, CURRENCY_ARTIFACT_ESSENCE, essence_reward, season, player, true);
-
-                // Mark as claimed (using 'event' as discovery_type for achievements)
-                try
-                {
-                    CharacterDatabase.Execute(
-                        "INSERT INTO dc_player_artifact_discoveries (player_guid, artifact_id, discovery_type, discovered_at) "
-                        "VALUES ({}, {}, 'event', NOW())",
-                        player->GetGUID().GetCounter(), achievement->ID);
-                }
-                catch (std::exception const& e)
-                {
-                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Could not insert into dc_player_artifact_discoveries: {}", e.what());
-                }
-                catch (...)
-                {
-                    // Table may not exist - log but continue
-                    LOG_DEBUG("scripts.dc", "ItemUpgrade: Could not insert into dc_player_artifact_discoveries, table may not exist");
-                }
 
                 // Log transaction
                 std::ostringstream reason;
                 reason << "Achievement: " << achName;
-                LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reason.str().c_str(), 0, essence_reward);
+                LogTokenTransaction(playerGuid, "reward", reason.str().c_str(), 0, essence_reward);
 
                 // Send notification
                 std::string achieveMsg = "|cffff9900+" + std::to_string(essence_reward) + " Artifact Essence|r (Achievement: " +
                                         achName + ")";
                 ChatHandler(player->GetSession()).SendSysMessage(achieveMsg.c_str());
 
-                LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})",
-                    player->GetGUID().GetCounter(), essence_reward, achievement->ID, achName);
+                if (ShouldEmitTokenLog("ItemUpgrade.Perf.AchievementReward.SamplePct",
+                                       "ItemUpgrade.Perf.AchievementReward.MinIntervalMs", 30, 3000))
+                {
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} essence from achievement {} ({})",
+                        playerGuid, essence_reward, achievement->ID, achName);
+                }
             }
         };
 
@@ -327,7 +414,7 @@ namespace DarkChaos
                 if (!creature)
                     return;
 
-                Player* player = killer->ToPlayer();
+                Player* player = killer->GetCharmerOrOwnerPlayerOrPlayerItself();
                 if (!player)
                     return;
 
@@ -344,10 +431,17 @@ namespace DarkChaos
 
                 bool is_boss = IsCreatureBoss(creature);
                 bool is_raid = IsRaidCreature(creature);
+                bool is_world_boss = creature->isWorldBoss() && !is_raid;
 
-                if (is_raid)
+                if (is_world_boss)
                 {
-                    // Raid boss
+                    token_reward = WORLD_BOSS_REWARD;
+                    essence_reward = WORLD_BOSS_ESSENCE;
+                    reward_reason << "World Boss: " << creature->GetName();
+                }
+                else if (is_raid)
+                {
+                    // Raid mob
                     if (is_boss)
                     {
                         token_reward = RAID_BOSS_REWARD;
@@ -387,26 +481,40 @@ namespace DarkChaos
                 }
 
                 // Award tokens and essence
-                UpgradeManager* mgr = DarkChaos::ItemUpgrade::GetUpgradeManager();
+                uint32 playerGuid = player->GetGUID().GetCounter();
                 if (token_reward > 0)
-                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_UPGRADE_TOKEN, token_reward, season);
+                {
+                    DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+                        playerGuid, CURRENCY_UPGRADE_TOKEN, token_reward, season, player, true);
+                }
                 if (essence_reward > 0)
-                    mgr->AddCurrency(player->GetGUID().GetCounter(), CURRENCY_ARTIFACT_ESSENCE, essence_reward, season);
+                {
+                    DarkChaos::CrossSystem::CurrencyUtils::AddCurrencyAndSync(
+                        playerGuid, CURRENCY_ARTIFACT_ESSENCE, essence_reward, season, player, true);
+                }
 
                 // Log transaction
                 LogTokenTransaction(player->GetGUID().GetCounter(), "reward", reward_reason.str().c_str(),
                                    token_reward, essence_reward);
 
                 // Send notification
-                if (token_reward > 0 && essence_reward > 0)
-                    ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cff00ff00+{} Tokens|r, |cffff9900+{} Essence|r", token_reward, essence_reward).c_str());
-                else if (token_reward > 0)
-                    ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cff00ff00+{} Upgrade Tokens|r", token_reward).c_str());
-                else if (essence_reward > 0)
-                    ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff9900+{} Artifact Essence|r", essence_reward).c_str());
+                if (ShouldEmitTokenLog("ItemUpgrade.Perf.CreatureRewardChat.SamplePct",
+                                       "ItemUpgrade.Perf.CreatureRewardChat.MinIntervalMs", 100, 0))
+                {
+                    if (token_reward > 0 && essence_reward > 0)
+                        ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cff00ff00+{} Tokens|r, |cffff9900+{} Essence|r", token_reward, essence_reward).c_str());
+                    else if (token_reward > 0)
+                        ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cff00ff00+{} Upgrade Tokens|r", token_reward).c_str());
+                    else if (essence_reward > 0)
+                        ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff9900+{} Artifact Essence|r", essence_reward).c_str());
+                }
 
-        LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} tokens, {} essence from creature kill {}",
-            player->GetGUID().GetCounter(), token_reward, essence_reward, creature->GetGUID().GetCounter());
+                if (ShouldEmitTokenLog("ItemUpgrade.Perf.CreatureReward.SamplePct",
+                                       "ItemUpgrade.Perf.CreatureReward.MinIntervalMs", 10, 750))
+                {
+                    LOG_INFO("scripts.dc", "ItemUpgrade: Player {} earned {} tokens, {} essence from creature kill {}",
+                        player->GetGUID().GetCounter(), token_reward, essence_reward, creature->GetGUID().GetCounter());
+                }
             }
         };
 
