@@ -153,12 +153,25 @@ void PartitionUpdateWorker::UpdatePlayers()
     bool markNearbyCells = _map.ShouldMarkNearbyCells();
     constexpr uint32 kBoundaryApproachEveryNTicks = 4;
     bool const checkBoundaryApproach = (_map.GetUpdateCounter() % kBoundaryApproachEveryNTicks) == 0;
+    _scratchBoundaryByGrid.clear();
     for (Player* player : *bucket)
     {
         if (!player || !player->IsInWorld())
             continue;
 
-        if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY()))
+        GridCoord gridCoord = Acore::ComputeGridCoord(player->GetPositionX(), player->GetPositionY());
+        uint32 const gridKey = (gridCoord.x_coord << 16) | gridCoord.y_coord;
+        bool nearBoundary = false;
+        auto cacheItr = _scratchBoundaryByGrid.find(gridKey);
+        if (cacheItr != _scratchBoundaryByGrid.end())
+            nearBoundary = cacheItr->second;
+        else
+        {
+            nearBoundary = sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), player->GetPositionX(), player->GetPositionY());
+            _scratchBoundaryByGrid.emplace(gridKey, nearBoundary);
+        }
+
+        if (nearBoundary)
         {
             ++_boundaryPlayerCount;
 
@@ -261,37 +274,63 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         }
     }
 
+    _scratchResolvedObjects.clear();
+    _scratchResolvedObjects.reserve(windowCount);
+    _scratchBoundaryByGrid.clear();
+
     for (uint32 offset = 0; offset < windowCount; ++offset)
     {
         auto const& entry = _scratchObjects[(windowStart + offset) % _scratchObjects.size()];
+        ResolvedObject resolved;
+        resolved.guid = entry.first;
+        resolved.typeId = entry.second;
+        resolved.isCreature = entry.second == TYPEID_UNIT;
 
-        WorldObject* obj = nullptr;
-        bool const isCreature = entry.second == TYPEID_UNIT;
         switch (entry.second)
         {
             case TYPEID_UNIT:
-                obj = _map.GetCreature(entry.first);
+                resolved.object = _map.GetCreature(entry.first);
                 break;
             case TYPEID_GAMEOBJECT:
-                obj = _map.GetGameObject(entry.first);
+                resolved.object = _map.GetGameObject(entry.first);
                 break;
             case TYPEID_DYNAMICOBJECT:
-                obj = _map.GetDynamicObject(entry.first);
+                resolved.object = _map.GetDynamicObject(entry.first);
                 break;
             case TYPEID_CORPSE:
-                obj = _map.GetCorpse(entry.first);
+                resolved.object = _map.GetCorpse(entry.first);
                 break;
             default:
                 break;
         }
 
-        if (!obj || !obj->IsInWorld())
+        if (!resolved.object || !resolved.object->IsInWorld())
             continue;
+
+        _scratchResolvedObjects.push_back(resolved);
+    }
+
+    for (ResolvedObject const& resolved : _scratchResolvedObjects)
+    {
+        WorldObject* obj = resolved.object;
+        bool const isCreature = resolved.isCreature;
 
         if (!partialSweep && isCreature)
             ++_creatureCount;
 
-        if (sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), obj->GetPositionX(), obj->GetPositionY()))
+        GridCoord gridCoord = Acore::ComputeGridCoord(obj->GetPositionX(), obj->GetPositionY());
+        uint32 const gridKey = (gridCoord.x_coord << 16) | gridCoord.y_coord;
+        bool nearBoundary = false;
+        auto cacheItr = _scratchBoundaryByGrid.find(gridKey);
+        if (cacheItr != _scratchBoundaryByGrid.end())
+            nearBoundary = cacheItr->second;
+        else
+        {
+            nearBoundary = sPartitionMgr->IsNearPartitionBoundary(_map.GetId(), obj->GetPositionX(), obj->GetPositionY());
+            _scratchBoundaryByGrid.emplace(gridKey, nearBoundary);
+        }
+
+        if (nearBoundary)
         {
             ++_boundaryObjectCount;
 

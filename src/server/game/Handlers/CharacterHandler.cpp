@@ -62,6 +62,8 @@
 #include "LayerManager.h"
 #include "Log.h"
 
+#include <unordered_map>
+
 LoginQueryHolder::LoginQueryHolder(uint32 accountId, ObjectGuid guid) : m_accountId(accountId), m_guid(guid)
 {
 }
@@ -1981,10 +1983,13 @@ void WorldSession::HandleCharFactionOrRaceChange(WorldPacket& recvData)
     stmt->SetData(0, factionChangeInfo->Guid.GetCounter());
 
     _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt)
-        .WithPreparedCallback(std::bind(&WorldSession::HandleCharFactionOrRaceChangeCallback, this, factionChangeInfo, std::placeholders::_1)));
+        .WithPreparedCallback([this, factionChangeInfo](PreparedQueryResult callbackResult)
+            {
+                HandleCharFactionOrRaceChangeCallback(factionChangeInfo, callbackResult, nullptr, false);
+            }));
 }
 
-void WorldSession::HandleCharFactionOrRaceChangeCallback(std::shared_ptr<CharacterFactionChangeInfo> factionChangeInfo, PreparedQueryResult result)
+void WorldSession::HandleCharFactionOrRaceChangeCallback(std::shared_ptr<CharacterFactionChangeInfo> factionChangeInfo, PreparedQueryResult result, PreparedQueryResult reputationRows, bool reputationPreloaded)
 {
     if (!result)
     {
@@ -1993,6 +1998,30 @@ void WorldSession::HandleCharFactionOrRaceChangeCallback(std::shared_ptr<Charact
     }
 
     ObjectGuid::LowType lowGuid = factionChangeInfo->Guid.GetCounter();
+
+    if (factionChangeInfo->FactionChange && !reputationPreloaded)
+    {
+        CharacterDatabasePreparedStatement* repStmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_REPUTATION);
+        repStmt->SetData(0, lowGuid);
+
+        _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(repStmt)
+            .WithPreparedCallback([this, factionChangeInfo, result](PreparedQueryResult preloadedReputationRows)
+                {
+                    HandleCharFactionOrRaceChangeCallback(factionChangeInfo, result, preloadedReputationRows, true);
+                }));
+        return;
+    }
+
+    std::unordered_map<uint32, int32> cachedReputationStanding;
+    if (reputationRows)
+    {
+        do
+        {
+            Field* reputationFields = reputationRows->Fetch();
+            cachedReputationStanding.emplace(reputationFields[0].Get<uint16>(), reputationFields[1].Get<int32>());
+        }
+        while (reputationRows->NextRow());
+    }
 
     // get the players old (at this moment current) race
     CharacterCacheEntry const* playerData = sCharacterCache->GetCharacterCacheByGuid(factionChangeInfo->Guid);
@@ -2473,17 +2502,11 @@ void WorldSession::HandleCharFactionOrRaceChangeCallback(std::shared_ptr<Charact
                 uint32 newReputation = (newTeam == TEAM_ALLIANCE) ? reputation_alliance : reputation_horde;
                 uint32 oldReputation = (newTeam == TEAM_ALLIANCE) ? reputation_horde : reputation_alliance;
 
-                // select old standing set in db
-                stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHAR_REP_BY_FACTION);
-                stmt->SetData(0, oldReputation);
-                stmt->SetData(1, lowGuid);
-
-                PreparedQueryResult result = CharacterDatabase.Query(stmt);
-                if (!result)
+                auto standingItr = cachedReputationStanding.find(oldReputation);
+                if (standingItr == cachedReputationStanding.end())
                     continue;
 
-                fields = result->Fetch();
-                int32 oldDBRep = fields[0].Get<int32>();
+                int32 oldDBRep = standingItr->second;
                 FactionEntry const* factionEntry = sFactionStore.LookupEntry(oldReputation);
 
                 // old base reputation

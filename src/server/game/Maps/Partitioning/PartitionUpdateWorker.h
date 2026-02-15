@@ -21,6 +21,7 @@
 #include "Define.h"
 #include "ObjectGuid.h"
 #include "PartitionManager.h"
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -73,6 +74,14 @@ private:
     // Batched boundary operations — collected during Update methods,
     // flushed once per tick per partition to reduce lock acquisitions.
     struct PosUpdate { ObjectGuid guid; float x; float y; };
+    struct ResolvedObject
+    {
+        ObjectGuid guid;
+        uint8 typeId = 0;
+        WorldObject* object = nullptr;
+        bool isCreature = false;
+    };
+
     std::vector<PosUpdate> _batchPosUpdates;
     std::vector<ObjectGuid> _batchBoundaryOverrides;
     std::vector<ObjectGuid> _batchUnregisters;
@@ -81,6 +90,8 @@ private:
     std::vector<Player*> _scratchPlayers;
     std::vector<std::pair<ObjectGuid, uint8>> _scratchObjects;
     std::vector<PartitionManager::BoundaryPositionUpdate> _scratchBoundaryUpdates;
+    std::vector<ResolvedObject> _scratchResolvedObjects;
+    std::unordered_map<uint32, bool> _scratchBoundaryByGrid;
 };
 
 #endif // AC_PARTITION_UPDATE_WORKER_H

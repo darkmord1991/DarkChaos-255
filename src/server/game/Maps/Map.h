@@ -901,6 +901,7 @@ public:
     void QueueDeferredPlayerRelocation(ObjectGuid const& playerGuid, float x, float y, float z, float o);
     void ProcessDeferredPlayerRelocations();
     bool HasPendingPartitionRelayWork(uint32 partitionId);
+    void MarkPartitionRelayWorkPending(uint32 partitionId);
     bool ShouldDeferNonPlayerVisibility(WorldObject const* obj) const;
     void PushDeferNonPlayerVisibility();
     void PopDeferNonPlayerVisibility();
@@ -925,6 +926,7 @@ public:
     void RemoveWorldObjectFromZoneWideVisibleMap(uint32 zoneId, WorldObject* obj);
     ZoneWideVisibleWorldObjectsSet const* GetZoneWideVisibleWorldObjectsForZone(uint32 zoneId) const;
     ZoneWideVisibleWorldObjectsSet GetZoneWideVisibleWorldObjectsForZoneCopy(uint32 zoneId) const;
+    void GetZoneWideVisibleWorldObjectsForZoneSnapshot(uint32 zoneId, std::vector<WorldObject*>& out) const;
 
     void LoadLayerClonesInRange(Player* player, float radius);
     void ClearLoadedLayer(uint32 layerId);
@@ -1058,8 +1060,10 @@ private:
     std::vector<std::vector<Player*>> _partitionPlayerBuckets;
     bool _partitionPlayerBucketsReady = false;
     std::unordered_map<ObjectGuid, uint32> _partitionedObjectIndex;
-    static constexpr size_t kRelayLockStripes = 16;
+    static constexpr size_t kRelayLockStripes = 1;
     std::array<std::mutex, kRelayLockStripes> _relayLocks;
+    std::mutex _partitionRelayPendingLock;
+    std::unordered_set<uint32> _partitionsWithRelayWork;
     std::unordered_map<uint32, std::deque<PartitionThreatRelay>> _partitionThreatRelays;
     std::unordered_map<uint32, std::deque<PartitionThreatActionRelay>> _partitionThreatActionRelays;
     std::unordered_map<uint32, std::deque<PartitionThreatTargetActionRelay>> _partitionThreatTargetActionRelays;
@@ -1119,6 +1123,7 @@ private:
     std::unordered_map<ObjectGuid, DeferredPlayerRelocation> _deferredPlayerRelocations;
     std::deque<ObjectGuid> _deferredPlayerRelocationOrder;
     uint64 _nextDeferredPlayerRelocationLogAtMs = 0;
+    uint64 _nextSlowDelayedVisibilityLogAtMs = 0;
 
     bool _partitionUpdatesInProgress = false;
     uint32 _partitionUpdatesTotal = 0;

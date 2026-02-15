@@ -651,7 +651,7 @@ public:                                                 // opcodes handlers
     void HandlePlayerLoginToCharInWorld(Player* pCurrChar);
     void HandlePlayerLoginToCharOutOfWorld(Player* pCurrChar);
     void HandleCharFactionOrRaceChange(WorldPacket& recvData);
-    void HandleCharFactionOrRaceChangeCallback(std::shared_ptr<CharacterFactionChangeInfo> factionChangeInfo, PreparedQueryResult result);
+    void HandleCharFactionOrRaceChangeCallback(std::shared_ptr<CharacterFactionChangeInfo> factionChangeInfo, PreparedQueryResult result, PreparedQueryResult reputationRows = nullptr, bool reputationPreloaded = false);
 
     void SendCharCreate(ResponseCodes result);
     void SendCharDelete(ResponseCodes result);

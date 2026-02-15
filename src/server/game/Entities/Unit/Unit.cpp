@@ -424,7 +424,7 @@ Unit::~Unit()
     }
 
     {
-        std::lock_guard<std::mutex> lock(_followerRefMgrLock);
+        std::lock_guard<std::recursive_mutex> lock(_followerRefMgrLock);
         m_FollowingRefMgr.clearReferences();
     }
 
@@ -4217,24 +4217,25 @@ void Unit::_UpdateSpells(uint32 time)
         return;
     }
 
+    if (m_currentSpells[CURRENT_AUTOREPEAT_SPELL])
+        _UpdateAutoRepeatSpell();
+
+    // Remove finished spells from current pointers without nesting under _auraLock.
+    {
+        std::lock_guard<std::recursive_mutex> spellLock(_currentSpellsLock);
+        for (uint32 i = 0; i < CURRENT_MAX_SPELL; ++i)
+        {
+            if (m_currentSpells[i] && m_currentSpells[i]->getState() == SPELL_STATE_FINISHED)
+            {
+                m_currentSpells[i]->SetReferencedFromCurrent(false);
+                m_currentSpells[i] = nullptr;                      // remove pointer
+            }
+        }
+    }
+
     std::vector<Aura*> auraSnapshot;
     {
         std::lock_guard<std::recursive_mutex> lock(_auraLock);
-        if (m_currentSpells[CURRENT_AUTOREPEAT_SPELL])
-            _UpdateAutoRepeatSpell();
-
-        // remove finished spells from current pointers
-        {
-            std::lock_guard<std::recursive_mutex> spellLock(_currentSpellsLock);
-            for (uint32 i = 0; i < CURRENT_MAX_SPELL; ++i)
-            {
-                if (m_currentSpells[i] && m_currentSpells[i]->getState() == SPELL_STATE_FINISHED)
-                {
-                    m_currentSpells[i]->SetReferencedFromCurrent(false);
-                    m_currentSpells[i] = nullptr;                      // remove pointer
-                }
-            }
-        }
 
         // Snapshot owned auras so UpdateOwner doesn't hold _auraLock while
         // performing grid visits, which can deadlock with other map locks.
@@ -5049,7 +5050,7 @@ void Unit::_ApplyAura(AuraApplication* aurApp, uint8 effMask)
     // apply effects of the aura
     for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
     {
-        if (effMask & 1 << i && (!aurApp->GetRemoveMode()))
+        if ((effMask & 1 << i) && !aurApp->GetRemoveMode() && !aurApp->HasEffect(i))
             aurApp->_HandleEffect(i, true);
     }
 

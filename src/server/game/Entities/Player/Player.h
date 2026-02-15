@@ -2408,7 +2408,7 @@ public:
 
     void SetMover(Unit* target);
 
-    void SetSeer(WorldObject* target) { m_seer = target; }
+    void SetSeer(WorldObject* target) { m_seer = target; InvalidateCanSeeOrDetectCache(); }
     WorldObject* GetSeer() const { return m_seer; }
     void SetViewpoint(WorldObject* target, bool apply);
     [[nodiscard]] WorldObject* GetViewpoint() const;
@@ -2442,6 +2442,9 @@ public:
 
     // currently visible objects at player client
     std::vector<Unit*> m_newVisible; // pussywizard
+    std::unordered_map<ObjectGuid, bool> _canSeeOrDetectCache;
+    uint32 _canSeeOrDetectCacheEpoch = 0;
+    ObjectGuid _canSeeOrDetectCacheSeer = ObjectGuid::Empty;
 
     [[nodiscard]] bool HaveAtClient(WorldObject const* u) const;
     [[nodiscard]] bool HaveAtClient(ObjectGuid guid) const;
@@ -2455,6 +2458,8 @@ public:
     void UpdateVisibilityForPlayer(bool mapChange = false);
     void UpdateVisibilityOf(WorldObject* target);
     void UpdateTriggerVisibility();
+    bool CanSeeOrDetectCached(WorldObject const* target);
+    void InvalidateCanSeeOrDetectCache();
 
     template<class T>
     void UpdateVisibilityOf(T* target, UpdateData& data, std::vector<Unit*>& visibleNow);

@@ -16,6 +16,7 @@
  */
 
 #include "ObjectVisibilityContainer.h"
+#include "ObjectAccessor.h"
 #include "Object.h"
 #include "Player.h"
 
@@ -34,9 +35,28 @@ ObjectVisibilityContainer::ObjectVisibilityContainer(WorldObject* selfObject) :
 
 ObjectVisibilityContainer::~ObjectVisibilityContainer()
 {
-    ASSERT(_visiblePlayersMap.empty());
-    if (_visibleWorldObjectsMap)
-        ASSERT((*_visibleWorldObjectsMap).empty());
+    size_t visiblePlayersCount = 0;
+    size_t visibleWorldObjectsCount = 0;
+    {
+        std::lock_guard<std::mutex> guard(_lock);
+        visiblePlayersCount = _visiblePlayersMap.size();
+        _visiblePlayersMap.clear();
+
+        if (_visibleWorldObjectsMap)
+        {
+            visibleWorldObjectsCount = _visibleWorldObjectsMap->size();
+            _visibleWorldObjectsMap->clear();
+        }
+    }
+
+    if (visiblePlayersCount || visibleWorldObjectsCount)
+    {
+        LOG_ERROR("entities.visibility",
+            "ObjectVisibilityContainer::~ObjectVisibilityContainer - forced clear for {} (players={}, worldObjects={})",
+            _selfObject ? _selfObject->GetGUID().ToString() : "<null>",
+            visiblePlayersCount,
+            visibleWorldObjectsCount);
+    }
 }
 
 void ObjectVisibilityContainer::InitForPlayer()
@@ -47,30 +67,36 @@ void ObjectVisibilityContainer::InitForPlayer()
 
 void ObjectVisibilityContainer::CleanVisibilityReferences()
 {
-    std::vector<Player*> visiblePlayers;
-    std::vector<WorldObject*> visibleWorldObjects;
+    std::vector<ObjectGuid> visiblePlayerGuids;
+    std::vector<ObjectGuid> visibleWorldObjectGuids;
     {
         std::lock_guard<std::mutex> guard(_lock);
-        visiblePlayers.reserve(_visiblePlayersMap.size());
+        visiblePlayerGuids.reserve(_visiblePlayersMap.size());
         for (auto const& kvPair : _visiblePlayersMap)
-            visiblePlayers.push_back(kvPair.second);
+            visiblePlayerGuids.push_back(kvPair.first);
 
         if (_visibleWorldObjectsMap)
         {
-            visibleWorldObjects.reserve(_visibleWorldObjectsMap->size());
+            visibleWorldObjectGuids.reserve(_visibleWorldObjectsMap->size());
             for (auto const& kvPair : *_visibleWorldObjectsMap)
-                visibleWorldObjects.push_back(kvPair.second);
+                visibleWorldObjectGuids.push_back(kvPair.first);
             _visibleWorldObjectsMap->clear();
         }
 
         _visiblePlayersMap.clear();
     }
 
-    for (Player* player : visiblePlayers)
-        player->GetObjectVisibilityContainer().DirectRemoveVisibilityReference(_selfObject->GetGUID());
+    for (ObjectGuid const& guid : visiblePlayerGuids)
+    {
+        if (Player* player = ObjectAccessor::GetPlayer(*_selfObject, guid))
+            player->GetObjectVisibilityContainer().DirectRemoveVisibilityReference(_selfObject->GetGUID());
+    }
 
-    for (WorldObject* worldObject : visibleWorldObjects)
-        worldObject->GetObjectVisibilityContainer().DirectRemoveVisiblePlayerReference(_selfObject->GetGUID());
+    for (ObjectGuid const& guid : visibleWorldObjectGuids)
+    {
+        if (WorldObject* worldObject = ObjectAccessor::GetWorldObject(*_selfObject, guid))
+            worldObject->GetObjectVisibilityContainer().DirectRemoveVisiblePlayerReference(_selfObject->GetGUID());
+    }
 }
 
 void ObjectVisibilityContainer::LinkWorldObjectVisibility(WorldObject* worldObject)

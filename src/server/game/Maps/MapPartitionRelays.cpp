@@ -346,6 +346,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                     RecordRelayCounter("path", "bounce");
                     std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
                     _partitionPathRelays[moverPartition].push_back(bounced);
+                    MarkPartitionRelayWorkPending(moverPartition);
                     continue;
                 }
 
@@ -407,6 +408,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                     RecordRelayCounter("point", "bounce");
                     std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
                     _partitionPointRelays[moverPartition].push_back(bounced);
+                    MarkPartitionRelayWorkPending(moverPartition);
                     continue;
                 }
 
@@ -472,6 +474,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                     RecordRelayCounter("motion", "bounce");
                     std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
                     _partitionMotionRelays[moverPartition].push_back(std::move(bounced));
+                    MarkPartitionRelayWorkPending(moverPartition);
                     continue;
                 }
 
@@ -706,6 +709,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                     RecordRelayCounter("assist", "bounce");
                     std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
                     _partitionAssistRelays[moverPartition].push_back(bounced);
+                    MarkPartitionRelayWorkPending(moverPartition);
                     continue;
                 }
 
@@ -767,6 +771,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                     RecordRelayCounter("assist_distract", "bounce");
                     std::lock_guard<std::mutex> lock(GetRelayLock(moverPartition));
                     _partitionAssistDistractRelays[moverPartition].push_back(bounced);
+                    MarkPartitionRelayWorkPending(moverPartition);
                     continue;
                 }
 
@@ -1008,6 +1013,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                 bounced.bounceCount++;
                 std::lock_guard<std::mutex> lock(GetRelayLock(ownerPartition));
                 _partitionMinionRelays[ownerPartition].push_back(bounced);
+                MarkPartitionRelayWorkPending(ownerPartition);
                 continue;
             }
 
@@ -1062,6 +1068,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                 bounced.bounceCount++;
                 std::lock_guard<std::mutex> lock(GetRelayLock(targetPartition));
                 _partitionCharmRelays[targetPartition].push_back(bounced);
+                MarkPartitionRelayWorkPending(targetPartition);
                 continue;
             }
 
@@ -1124,6 +1131,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                 bounced.bounceCount++;
                 std::lock_guard<std::mutex> lock(GetRelayLock(ownerPartition));
                 _partitionGameObjectRelays[ownerPartition].push_back(bounced);
+                MarkPartitionRelayWorkPending(ownerPartition);
                 continue;
             }
 
@@ -1194,6 +1202,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                 RecordRelayCounter("combat_state", "bounce");
                 std::lock_guard<std::mutex> lock(GetRelayLock(unitPartition));
                 _partitionCombatStateRelays[unitPartition].push_back(bounced);
+                MarkPartitionRelayWorkPending(unitPartition);
                 continue;
             }
             if (unitPartition && unitPartition != partitionId)
@@ -1260,6 +1269,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                 RecordRelayCounter("attack", "bounce");
                 std::lock_guard<std::mutex> lock(GetRelayLock(attackerPartition));
                 _partitionAttackRelays[attackerPartition].push_back(bounced);
+                MarkPartitionRelayWorkPending(attackerPartition);
                 continue;
             }
             if (attackerPartition && attackerPartition != partitionId)
@@ -1318,6 +1328,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                 RecordRelayCounter("evade", "bounce");
                 std::lock_guard<std::mutex> lock(GetRelayLock(creaturePartition));
                 _partitionEvadeRelays[creaturePartition].push_back(bounced);
+                MarkPartitionRelayWorkPending(creaturePartition);
                 continue;
             }
             if (creaturePartition && creaturePartition != partitionId)

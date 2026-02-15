@@ -26,6 +26,9 @@
 
 static bool IsMutualChase(Unit* owner, Unit* target)
 {
+    if (!owner || !target)
+        return false;
+
     if (target->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
         return false;
 
@@ -73,6 +76,7 @@ void ChaseMovementGenerator<T>::SetOffsetAndAngle(std::optional<ChaseRange> dist
 template<class T>
 void ChaseMovementGenerator<T>::SetNewTarget(Unit* target)
 {
+    std::lock_guard<std::recursive_mutex> guard(GetTargetLock());
     i_target.link(target, this);
     _lastTargetPosition.reset();
 }
@@ -80,6 +84,8 @@ void ChaseMovementGenerator<T>::SetNewTarget(Unit* target)
 template<class T>
 void ChaseMovementGenerator<T>::DistanceYourself(T* owner, float distance)
 {
+    std::lock_guard<std::recursive_mutex> guard(GetTargetLock());
+
     // make a new path if we have to...
     if (!i_path)
         i_path = std::make_unique<PathGenerator>(owner);
@@ -99,6 +105,8 @@ void ChaseMovementGenerator<T>::DistanceYourself(T* owner, float distance)
 template<class T>
 bool ChaseMovementGenerator<T>::DispatchSplineToPosition(T* owner, float x, float y, float z, bool walk, bool cutPath, float maxTarget, bool forceDest, bool target)
 {
+    std::lock_guard<std::recursive_mutex> guard(GetTargetLock());
+
     Creature* cOwner = owner->ToCreature();
 
     if (owner->IsHovering())
@@ -152,6 +160,8 @@ bool ChaseMovementGenerator<T>::DispatchSplineToPosition(T* owner, float x, floa
 template<class T>
 bool ChaseMovementGenerator<T>::DoUpdate(T* owner, uint32 time_diff)
 {
+    std::lock_guard<std::recursive_mutex> guard(GetTargetLock());
+
     if (!i_target.isValid() || !i_target->IsInWorld() || !owner->IsInMap(i_target.getTarget()))
         return false;
 
@@ -405,6 +415,8 @@ void ChaseMovementGenerator<T>::DoReset(T* owner)
 template<class T>
 void ChaseMovementGenerator<T>::MovementInform(T* owner)
 {
+    std::lock_guard<std::recursive_mutex> guard(GetTargetLock());
+
     if (!owner->IsCreature())
         return;
 
@@ -552,6 +564,8 @@ bool FollowMovementGenerator<T>::PositionOkay(Unit* target, bool isPlayerPet, bo
 template<class T>
 bool FollowMovementGenerator<T>::DoUpdate(T* owner, uint32 time_diff)
 {
+    std::lock_guard<std::recursive_mutex> guard(GetTargetLock());
+
     if (!i_target.isValid() || !i_target->IsInWorld() || !owner->IsInMap(i_target.getTarget()))
         return false;
 
@@ -712,6 +726,8 @@ void FollowMovementGenerator<T>::DoReset(T* owner)
 template<class T>
 void FollowMovementGenerator<T>::MovementInform(T* owner)
 {
+    std::lock_guard<std::recursive_mutex> guard(GetTargetLock());
+
     if (!owner->IsCreature())
         return;
 

@@ -1117,32 +1117,37 @@ void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
 
     stmt->SetData(0, accid);
 
-    PreparedQueryResult result = LoginDatabase.Query(stmt);
+    _queryProcessor.AddCallback(LoginDatabase.AsyncQuery(stmt).WithPreparedCallback(
+        [this, charname](PreparedQueryResult result)
+        {
+            if (!GetPlayer())
+                return;
 
-    if (!result)
-    {
-        ChatHandler(this).SendNotification(LANG_ACCOUNT_FOR_PLAYER_NOT_FOUND, charname.c_str());
-        return;
-    }
+            if (!result)
+            {
+                ChatHandler(this).SendNotification(LANG_ACCOUNT_FOR_PLAYER_NOT_FOUND, charname.c_str());
+                return;
+            }
 
-    Field* fields = result->Fetch();
-    std::string acc = fields[0].Get<std::string>();
-    if (acc.empty())
-        acc = "Unknown";
-    std::string email = fields[1].Get<std::string>();
-    if (email.empty())
-        email = "Unknown";
-    std::string lastip = fields[2].Get<std::string>();
-    if (lastip.empty())
-        lastip = "Unknown";
+            Field* fields = result->Fetch();
+            std::string acc = fields[0].Get<std::string>();
+            if (acc.empty())
+                acc = "Unknown";
+            std::string email = fields[1].Get<std::string>();
+            if (email.empty())
+                email = "Unknown";
+            std::string lastip = fields[2].Get<std::string>();
+            if (lastip.empty())
+                lastip = "Unknown";
 
-    std::string msg = charname + "'s " + "account is " + acc + ", e-mail: " + email + ", last ip: " + lastip;
+            std::string msg = charname + "'s " + "account is " + acc + ", e-mail: " + email + ", last ip: " + lastip;
 
-    WorldPacket data(SMSG_WHOIS, msg.size() + 1);
-    data << msg;
-    SendPacket(&data);
+            WorldPacket data(SMSG_WHOIS, msg.size() + 1);
+            data << msg;
+            SendPacket(&data);
 
-    LOG_DEBUG("network", "Received whois command from player {} for character {}", GetPlayer()->GetName(), charname);
+            LOG_DEBUG("network", "Received whois command from player {} for character {}", GetPlayer()->GetName(), charname);
+        }));
 }
 
 void WorldSession::HandleComplainOpcode(WorldPackets::Misc::Complain& packet)

@@ -5618,7 +5618,13 @@ void Spell::HandleThreatSpells()
 {
     std::list<TargetInfo> targetsCopy;
     {
-        std::lock_guard<std::recursive_mutex> lock(m_targetInfoLock);
+        std::unique_lock<std::recursive_mutex> lock(m_targetInfoLock, std::try_to_lock);
+        if (!lock.owns_lock())
+        {
+            LOG_DEBUG("spells", "HandleThreatSpells skipped for spell {} due to target lock contention", m_spellInfo->Id);
+            return;
+        }
+
         if (m_UniqueTargetInfo.empty())
             return;
         targetsCopy = m_UniqueTargetInfo;

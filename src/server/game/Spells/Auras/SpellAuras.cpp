@@ -167,8 +167,26 @@ void AuraApplication::_HandleEffect(uint8 effIndex, bool apply)
 {
     AuraEffect* aurEff = GetBase()->GetEffect(effIndex);
     ASSERT(aurEff);
-    ASSERT(HasEffect(effIndex) == (!apply));
-    ASSERT((1 << effIndex) & _effectsToApply);
+    if (!((1 << effIndex) & _effectsToApply))
+    {
+        LOG_ERROR("spells.aura", "AuraApplication::_HandleEffect: spell {} "
+            "target {} eff {} requested but not in _effectsToApply "
+            "(apply={}, toApplyMask={}, currentMask={})",
+            GetBase()->GetId(), GetTarget()->GetGUID().ToString(), effIndex,
+            apply, _effectsToApply, GetEffectMask());
+        return;
+    }
+
+    bool hasEffect = HasEffect(effIndex);
+    if ((apply && hasEffect) || (!apply && !hasEffect))
+    {
+        LOG_DEBUG("spells.aura", "AuraApplication::_HandleEffect: spell {} "
+            "target {} eff {} is already in requested state (apply={}, "
+            "toApplyMask={}, currentMask={})",
+            GetBase()->GetId(), GetTarget()->GetGUID().ToString(), effIndex,
+            apply, _effectsToApply, GetEffectMask());
+        return;
+    }
     LOG_DEBUG("spells.aura", "AuraApplication::_HandleEffect: {}, apply: {}: amount: {}", aurEff->GetAuraType(), apply, aurEff->GetAmount());
 
     if (apply)

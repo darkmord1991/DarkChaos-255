@@ -731,7 +731,7 @@ Logger.mythic=4,DCConsole Server DC
 Logger.hlbg=4,DCConsole Server DC
 Logger.seasonal=4,DCConsole Server DC
 Logger.spells.scripts=2,Console Errors
-Logger.playerbots=5,Console Playerbots
+Logger.playerbots=4,Console Playerbots
 Logger.map.partition.slow=3,Console PartitionSlow
 Logger.map.partition.summary=4,Console PartitionSlow
 Logger.map.update.slow=3,Console SlowSystems
@@ -925,7 +925,7 @@ Metric.OverallStatusInterval = 1
 #Metric.Threshold.slow_combat_update_time = 5
 #Metric.Threshold.slow_spell_update_time = 4
 #Metric.Threshold.slow_aura_update_time = 3
-#Metric.Threshold.slow_visibility_update_time = 6
+Metric.Threshold.slow_visibility_update_time = 10
 
 #
 #    System.SlowLog.Enable

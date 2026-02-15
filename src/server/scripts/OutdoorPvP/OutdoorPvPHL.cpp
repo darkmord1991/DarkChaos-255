@@ -1199,8 +1199,14 @@
     void OutdoorPvPHL::ForEachPlayerInZone(std::function<void(Player*)> f) const
     {
         uint32 const areaId = OutdoorPvPHLBattleAreaId;
-        // Optimized: Iterate locally tracked players (O(N_zone))
+        // Iterate a snapshot because callbacks may teleport players, which can
+        // trigger HandlePlayerLeaveZone and mutate _playersInHinterlands.
+        std::vector<ObjectGuid> guids;
+        guids.reserve(_playersInHinterlands.size());
         for (ObjectGuid const& guid : _playersInHinterlands)
+            guids.push_back(guid);
+
+        for (ObjectGuid const& guid : guids)
         {
             Map* map = GetMap();
             if (Player* p = map ? ObjectAccessor::GetPlayer(map, guid) : ObjectAccessor::FindPlayer(guid))

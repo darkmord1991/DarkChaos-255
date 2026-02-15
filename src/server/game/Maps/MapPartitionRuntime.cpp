@@ -627,6 +627,12 @@ bool Map::HasPendingPartitionRelayWork(uint32 partitionId)
     if (!_isPartitioned || partitionId == 0)
         return false;
 
+    {
+        std::lock_guard<std::mutex> markerLock(_partitionRelayPendingLock);
+        if (_partitionsWithRelayWork.find(partitionId) == _partitionsWithRelayWork.end())
+            return false;
+    }
+
     std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
     auto const hasRelayWork = [partitionId](auto const& relayMap)
     {
@@ -634,7 +640,7 @@ bool Map::HasPendingPartitionRelayWork(uint32 partitionId)
         return itr != relayMap.end() && !itr->second.empty();
     };
 
-    return hasRelayWork(_partitionThreatRelays) ||
+    bool const hasWork = hasRelayWork(_partitionThreatRelays) ||
         hasRelayWork(_partitionThreatActionRelays) ||
         hasRelayWork(_partitionThreatTargetActionRelays) ||
         hasRelayWork(_partitionTauntRelays) ||
@@ -654,6 +660,23 @@ bool Map::HasPendingPartitionRelayWork(uint32 partitionId)
         hasRelayWork(_partitionPointRelays) ||
         hasRelayWork(_partitionAssistRelays) ||
         hasRelayWork(_partitionAssistDistractRelays);
+
+    if (!hasWork)
+    {
+        std::lock_guard<std::mutex> markerLock(_partitionRelayPendingLock);
+        _partitionsWithRelayWork.erase(partitionId);
+    }
+
+    return hasWork;
+}
+
+void Map::MarkPartitionRelayWorkPending(uint32 partitionId)
+{
+    if (!_isPartitioned || partitionId == 0)
+        return;
+
+    std::lock_guard<std::mutex> lock(_partitionRelayPendingLock);
+    _partitionsWithRelayWork.insert(partitionId);
 }
 
 std::vector<Player*> const* Map::GetPartitionPlayerBucket(uint32 partitionId) const

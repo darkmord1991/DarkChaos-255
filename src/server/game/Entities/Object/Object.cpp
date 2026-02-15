@@ -2198,35 +2198,17 @@ void WorldObject::SendMessageToSet(WorldPacket const* data, bool self) const
 void WorldObject::SendMessageToSetInRange(WorldPacket const* data, float dist, bool /*self*/) const
 {
     Acore::MessageDistDeliverer notifier(this, data, dist);
-    std::vector<Player*> players;
     std::vector<ObjectGuid> guids;
     GetObjectVisibilityContainer().GetVisiblePlayerGuids(guids);
-    players.reserve(guids.size());
-    for (ObjectGuid const& guid : guids)
-    {
-        if (Player* player = ObjectAccessor::GetPlayer(*this, guid))
-            players.push_back(player);
-        else
-            GetObjectVisibilityContainer().EraseVisiblePlayerByGuid(guid);
-    }
-    notifier.Visit(players);
+    notifier.Visit(guids);
 }
 
 void WorldObject::SendMessageToSet(WorldPacket const* data, Player const* skipped_rcvr) const
 {
     Acore::MessageDistDeliverer notifier(this, data, 0.0f, false, skipped_rcvr);
-    std::vector<Player*> players;
     std::vector<ObjectGuid> guids;
     GetObjectVisibilityContainer().GetVisiblePlayerGuids(guids);
-    players.reserve(guids.size());
-    for (ObjectGuid const& guid : guids)
-    {
-        if (Player* player = ObjectAccessor::GetPlayer(*this, guid))
-            players.push_back(player);
-        else
-            GetObjectVisibilityContainer().EraseVisiblePlayerByGuid(guid);
-    }
-    notifier.Visit(players);
+    notifier.Visit(guids);
 }
 
 void WorldObject::SendObjectDeSpawnAnim(ObjectGuid guid)

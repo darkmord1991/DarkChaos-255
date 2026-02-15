@@ -275,6 +275,28 @@ namespace
     void EndUpdateExecutionIfSupported(T*, long)
     {
     }
+
+    template <typename T>
+    auto WaitForUpdateExecutionToFinishIfSupported(T* object, int) -> decltype(object->TryBeginUpdateExecution(), void())
+    {
+        if (!object)
+            return;
+        uint32 spinCount = 0;
+
+        while (!object->TryBeginUpdateExecution())
+        {
+            ++spinCount;
+            if ((spinCount & 0xFF) == 0)
+                std::this_thread::yield();
+        }
+
+        object->EndUpdateExecution();
+    }
+
+    template <typename T>
+    void WaitForUpdateExecutionToFinishIfSupported(T*, long)
+    {
+    }
 }
 
 #define MAP_INVALID_ZONE        0xFFFFFFFF
@@ -415,6 +437,8 @@ void Map::AddToGrid(Corpse* obj, Cell const& cell)
 template<class T>
 void Map::DeleteFromWorld(T* obj)
 {
+    WaitForUpdateExecutionToFinishIfSupported(obj, 0);
+
     // Note: In case resurrectable corpse and pet its removed from global lists in own destructor
     delete obj;
 }
@@ -1217,11 +1241,6 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                 if (!player || !player->IsInWorld())
                 {
                     ++totalPlayersSkipped;
-                    if (player)
-                    {
-                        LOG_ERROR("maps.partition", "Map::Update (Partitioned) - Skipping player {} ({}) because IsInWorld() = false, map: {}",
-                            player->GetName(), player->GetGUID().ToString(), GetId());
-                    }
                     continue;
                 }
 
@@ -1235,7 +1254,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
             if (totalPlayersSkipped > 0)
             {
-                LOG_ERROR("maps.partition", "Map::Update (Partitioned) - Map {} skipped {} out of {} players due to IsInWorld() check",
+                LOG_WARN("maps.partition", "Map::Update (Partitioned) - Map {} skipped {} out of {} players due to IsInWorld() check",
                     GetId(), totalPlayersSkipped, totalPlayersChecked);
             }
 
@@ -2891,6 +2910,18 @@ ZoneWideVisibleWorldObjectsSet Map::GetZoneWideVisibleWorldObjectsForZoneCopy(ui
     return itr->second;
 }
 
+void Map::GetZoneWideVisibleWorldObjectsForZoneSnapshot(uint32 zoneId, std::vector<WorldObject*>& out) const
+{
+    std::shared_lock<std::shared_mutex> lock(_zoneWideVisibleLock);
+    auto itr = _zoneWideVisibleWorldObjectsMap.find(zoneId);
+    if (itr == _zoneWideVisibleWorldObjectsMap.end())
+        return;
+
+    out.reserve(out.size() + itr->second.size());
+    for (WorldObject* obj : itr->second)
+        out.push_back(obj);
+}
+
 void Map::HandleDelayedVisibility()
 {
     auto const slowLogStart = std::chrono::steady_clock::now();
@@ -2969,14 +3000,25 @@ void Map::HandleDelayedVisibility()
     // Slow log check AFTER the processing loop (grid visits are the expensive part)
     static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
     static int64 const slowVisibilityThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_visibility_update_time", 6);
+    static int64 const slowVisibilityHardThresholdMs = sConfigMgr->GetOption<int64>("System.SlowLog.DelayedVisibility.HardThresholdMs", 12);
+    static uint32 const slowVisibilityMinBatch = sConfigMgr->GetOption<uint32>("System.SlowLog.DelayedVisibility.MinBatch", 16);
+    static uint64 const slowVisibilityLogIntervalMs = sConfigMgr->GetOption<uint64>("System.SlowLog.DelayedVisibility.IntervalMs", 2000);
     if (slowLogEnabled)
     {
         int64 const elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - slowLogStart).count();
-        if (elapsedMs >= slowVisibilityThresholdMs)
+        bool const passesThreshold = elapsedMs >= slowVisibilityThresholdMs;
+        bool const isHardSlow = elapsedMs >= slowVisibilityHardThresholdMs;
+        bool const isMeaningfulBatch = unitsToProcess.size() >= slowVisibilityMinBatch;
+        if (passesThreshold && (isHardSlow || isMeaningfulBatch))
         {
-            LOG_WARN("system.slow",
-                "Slow delayed visibility update: map_id={} workload={} batch={} elapsed_ms={} threshold_ms={}",
-                GetId(), workloadBucket, unitsToProcess.size(), elapsedMs, slowVisibilityThresholdMs);
+            uint64 const nowMs = GameTime::GetGameTimeMS().count();
+            if (nowMs >= _nextSlowDelayedVisibilityLogAtMs)
+            {
+                _nextSlowDelayedVisibilityLogAtMs = nowMs + slowVisibilityLogIntervalMs;
+                LOG_WARN("system.slow",
+                    "Slow delayed visibility update: map_id={} workload={} batch={} elapsed_ms={} threshold_ms={} hard_threshold_ms={}",
+                    GetId(), workloadBucket, unitsToProcess.size(), elapsedMs, slowVisibilityThresholdMs, slowVisibilityHardThresholdMs);
+            }
         }
     }
 }
@@ -3028,6 +3070,8 @@ void Map::AfterPlayerUnlinkFromMap()
 template<class T>
 void Map::RemoveFromMap(T* obj, bool remove)
 {
+    WaitForUpdateExecutionToFinishIfSupported(obj, 0);
+
     obj->RemoveFromWorld();
 
     RemoveObjectFromMapUpdateList(obj);

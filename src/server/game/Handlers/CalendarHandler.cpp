@@ -565,47 +565,54 @@ void WorldSession::HandleCalendarEventInvite(WorldPacket& recvData)
         return;
     }
 
-    // xinef: sync query
-    if (QueryResult result = CharacterDatabase.Query("SELECT flags FROM character_social WHERE guid = {} AND friend = {}", inviteeGuid.GetCounter(), playerGuid.GetCounter()))
-    {
-        Field* fields = result->Fetch();
-        if (fields[0].Get<uint8>() & SOCIAL_FLAG_IGNORED)
-        {
-            sCalendarMgr->SendCalendarCommandResult(playerGuid, CALENDAR_ERROR_IGNORING_YOU_S, name.c_str());
-            return;
-        }
-    }
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_SOCIAL_FLAGS_BY_FRIEND);
+    stmt->SetData(0, inviteeGuid.GetCounter());
+    stmt->SetData(1, playerGuid.GetCounter());
 
-    if (!isPreInvite)
-    {
-        if (CalendarEvent* calendarEvent = sCalendarMgr->GetEvent(eventId))
+    _queryProcessor.AddCallback(CharacterDatabase.AsyncQuery(stmt).WithPreparedCallback(
+        [this, eventId, inviteId, name, isPreInvite, isGuildEvent, inviteeGuid, inviteeGuildId, playerGuid](PreparedQueryResult result)
         {
-            if (calendarEvent->IsGuildEvent() && calendarEvent->GetGuildId() == inviteeGuildId)
-            {
-                // we can't invite guild members to guild events
-                sCalendarMgr->SendCalendarCommandResult(playerGuid, CALENDAR_ERROR_NO_GUILD_INVITES);
+            if (!GetPlayer())
                 return;
+
+            if (result)
+            {
+                Field* fields = result->Fetch();
+                if (fields[0].Get<uint8>() & SOCIAL_FLAG_IGNORED)
+                {
+                    sCalendarMgr->SendCalendarCommandResult(playerGuid, CALENDAR_ERROR_IGNORING_YOU_S, name.c_str());
+                    return;
+                }
             }
 
-            // 946684800 is 01/01/2000 00:00:00 - default response time
-            CalendarInvite* invite = new CalendarInvite(sCalendarMgr->GetFreeInviteId(), eventId, inviteeGuid, playerGuid, 946684800, CALENDAR_STATUS_INVITED, CALENDAR_RANK_PLAYER, "");
-            sCalendarMgr->AddInvite(calendarEvent, invite);
-        }
-        else
-            sCalendarMgr->SendCalendarCommandResult(playerGuid, CALENDAR_ERROR_EVENT_INVALID);
-    }
-    else
-    {
-        if (isGuildEvent && inviteeGuildId == _player->GetGuildId())
-        {
-            sCalendarMgr->SendCalendarCommandResult(playerGuid, CALENDAR_ERROR_NO_GUILD_INVITES);
-            return;
-        }
+            if (!isPreInvite)
+            {
+                if (CalendarEvent* calendarEvent = sCalendarMgr->GetEvent(eventId))
+                {
+                    if (calendarEvent->IsGuildEvent() && calendarEvent->GetGuildId() == inviteeGuildId)
+                    {
+                        sCalendarMgr->SendCalendarCommandResult(playerGuid, CALENDAR_ERROR_NO_GUILD_INVITES);
+                        return;
+                    }
 
-        // 946684800 is 01/01/2000 00:00:00 - default response time
-        CalendarInvite* invite = new CalendarInvite(inviteId, 0, inviteeGuid, playerGuid, 946684800, CALENDAR_STATUS_INVITED, CALENDAR_RANK_PLAYER, "");
-        sCalendarMgr->SendCalendarEventInvite(*invite);
-    }
+                    CalendarInvite* invite = new CalendarInvite(sCalendarMgr->GetFreeInviteId(), eventId, inviteeGuid, playerGuid, 946684800, CALENDAR_STATUS_INVITED, CALENDAR_RANK_PLAYER, "");
+                    sCalendarMgr->AddInvite(calendarEvent, invite);
+                }
+                else
+                    sCalendarMgr->SendCalendarCommandResult(playerGuid, CALENDAR_ERROR_EVENT_INVALID);
+            }
+            else
+            {
+                if (isGuildEvent && inviteeGuildId == GetPlayer()->GetGuildId())
+                {
+                    sCalendarMgr->SendCalendarCommandResult(playerGuid, CALENDAR_ERROR_NO_GUILD_INVITES);
+                    return;
+                }
+
+                CalendarInvite* invite = new CalendarInvite(inviteId, 0, inviteeGuid, playerGuid, 946684800, CALENDAR_STATUS_INVITED, CALENDAR_RANK_PLAYER, "");
+                sCalendarMgr->SendCalendarEventInvite(*invite);
+            }
+        }));
 }
 
 void WorldSession::HandleCalendarEventSignup(WorldPacket& recvData)

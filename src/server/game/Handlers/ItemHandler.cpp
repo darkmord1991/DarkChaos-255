@@ -1510,7 +1510,7 @@ bool WorldSession::recoveryItem(Item* pItem)
         stmt->SetData(1, pItem->GetTemplate()->ItemId);
         stmt->SetData(2, pItem->GetCount());
 
-        CharacterDatabase.Query(stmt);
+        CharacterDatabase.Execute(stmt);
 
         return true;
     }

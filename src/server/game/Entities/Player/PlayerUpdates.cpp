@@ -1629,6 +1629,39 @@ template void Player::UpdateVisibilityOf(DynamicObject*      target,
                                          UpdateData&         data,
                                          std::vector<Unit*>& visibleNow);
 
+void Player::InvalidateCanSeeOrDetectCache()
+{
+    _canSeeOrDetectCache.clear();
+    _canSeeOrDetectCacheEpoch = 0;
+    _canSeeOrDetectCacheSeer = ObjectGuid::Empty;
+}
+
+bool Player::CanSeeOrDetectCached(WorldObject const* target)
+{
+    if (!target)
+        return false;
+
+    Map* map = FindMap();
+    uint32 epoch = map ? map->GetUpdateCounter() : static_cast<uint32>(GameTime::GetGameTimeMS().count() >> 5);
+    ObjectGuid seerGuid = m_seer ? m_seer->GetGUID() : ObjectGuid::Empty;
+
+    if (_canSeeOrDetectCacheEpoch != epoch || _canSeeOrDetectCacheSeer != seerGuid)
+    {
+        _canSeeOrDetectCache.clear();
+        _canSeeOrDetectCacheEpoch = epoch;
+        _canSeeOrDetectCacheSeer = seerGuid;
+    }
+
+    ObjectGuid targetGuid = target->GetGUID();
+    auto itr = _canSeeOrDetectCache.find(targetGuid);
+    if (itr != _canSeeOrDetectCache.end())
+        return itr->second;
+
+    bool canSee = CanSeeOrDetect(target, false, true);
+    _canSeeOrDetectCache.emplace(targetGuid, canSee);
+    return canSee;
+}
+
 void Player::UpdateVisibilityForPlayer(bool mapChange)
 {
     // After added to map seer must be a player - there is no possibility to
@@ -1641,6 +1674,8 @@ void Player::UpdateVisibilityForPlayer(bool mapChange)
 
     if (mapChange && m_seer != this)
         m_seer = this;
+
+    InvalidateCanSeeOrDetectCache();
 
     Acore::VisibleNotifier notifier(*this, mapChange);
     Cell::VisitObjects(m_seer, notifier, GetSightRange());
@@ -1662,6 +1697,8 @@ void Player::UpdateObjectVisibility(bool forced, bool fromUpdate)
         bRequestForcedVisibilityUpdate = true;
         return;
     }
+
+    InvalidateCanSeeOrDetectCache();
 
     if (!forced)
         AddToNotify(NOTIFY_VISIBILITY_CHANGED);
@@ -1727,7 +1764,7 @@ void Player::UpdateVisibilityOf(T* target, UpdateData& data,
 
     if (HaveAtClient(target))
     {
-        if (!CanSeeOrDetect(target, false, true))
+        if (!CanSeeOrDetectCached(target))
         {
             BeforeVisibilityDestroy<T>(target, this);
 
@@ -1737,7 +1774,7 @@ void Player::UpdateVisibilityOf(T* target, UpdateData& data,
     }
     else
     {
-        if (CanSeeOrDetect(target, false, true))
+        if (CanSeeOrDetectCached(target))
         {
             target->BuildCreateUpdateBlockForPlayer(&data, this);
             UpdateVisibilityOf_helper(this, target, visibleNow);
@@ -1760,7 +1797,7 @@ void Player::UpdateVisibilityOf(WorldObject* target)
 {
     if (HaveAtClient(target))
     {
-        if (!CanSeeOrDetect(target, false, true))
+        if (!CanSeeOrDetectCached(target))
         {
             if (target->IsCreature())
                 BeforeVisibilityDestroy<Creature>(target->ToCreature(), this);
@@ -1771,7 +1808,7 @@ void Player::UpdateVisibilityOf(WorldObject* target)
     }
     else
     {
-        if (CanSeeOrDetect(target, false, true))
+        if (CanSeeOrDetectCached(target))
         {
             target->SendUpdateToPlayer(this);
             GetObjectVisibilityContainer().LinkWorldObjectVisibility(target);

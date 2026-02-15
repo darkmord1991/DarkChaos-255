@@ -35,8 +35,9 @@ void VisibleNotifier::Visit(GameObjectMapType& m)
 
 void VisibleNotifier::SendToSelf()
 {
-    // Update far visible objects — use snapshot copy so we don't hold the shared_mutex across visibility updates
-    ZoneWideVisibleWorldObjectsSet zoneWideVisibleObjects = i_player.GetMap()->GetZoneWideVisibleWorldObjectsForZoneCopy(i_player.GetZoneId());
+    thread_local std::vector<WorldObject*> zoneWideVisibleObjects;
+    zoneWideVisibleObjects.clear();
+    i_player.GetMap()->GetZoneWideVisibleWorldObjectsForZoneSnapshot(i_player.GetZoneId(), zoneWideVisibleObjects);
     if (!zoneWideVisibleObjects.empty())
     {
         for (WorldObject* obj : zoneWideVisibleObjects)
@@ -58,7 +59,8 @@ void VisibleNotifier::SendToSelf()
         }
     }
 
-    std::vector<ObjectGuid> visibleGuids;
+    thread_local std::vector<ObjectGuid> visibleGuids;
+    visibleGuids.clear();
     i_player.GetObjectVisibilityContainer().GetVisibleWorldObjectGuids(visibleGuids);
     for (ObjectGuid const& guid : visibleGuids)
     {
@@ -70,7 +72,7 @@ void VisibleNotifier::SendToSelf()
         }
 
         if (!i_player.IsWorldObjectOutOfSightRange(obj)
-            || i_player.CanSeeOrDetect(obj, false, true))
+            || i_player.CanSeeOrDetectCached(obj))
             continue;
 
         i_data.AddOutOfRangeGUID(guid);
@@ -240,6 +242,24 @@ void MessageDistDeliverer::Visit(std::vector<Player*> const& players)
 {
     for (Player const* target : players)
     {
+        if (!target)
+            continue;
+
+        if (i_distSq != 0.0f && target->m_seer->GetExactDist2dSq(i_source) > i_distSq)
+            continue;
+
+        if (skipped_receiver == target)
+            continue;
+
+        target->SendDirectMessage(i_message);
+    }
+}
+
+void MessageDistDeliverer::Visit(std::vector<ObjectGuid> const& guids)
+{
+    for (ObjectGuid const& guid : guids)
+    {
+        Player* target = ObjectAccessor::GetPlayer(*i_source, guid);
         if (!target)
             continue;
 

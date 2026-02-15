@@ -1920,14 +1920,13 @@ public:
     // Followers
     void addFollower(FollowerReference* pRef)
     {
-        std::lock_guard<std::mutex> lock(_followerRefMgrLock);
+        std::lock_guard<std::recursive_mutex> lock(_followerRefMgrLock);
         m_FollowingRefMgr.insertFirst(pRef);
     }
-    void removeFollower(FollowerReference* /*pRef*/)
+    void removeFollower(FollowerReference* pRef)
     {
-        std::lock_guard<std::mutex> lock(_followerRefMgrLock);
-        // Intentional no-op: actual removal from the linked list is done by
-        // Reference::delink() before this callback. The lock synchronizes with addFollower().
+        std::lock_guard<std::recursive_mutex> lock(_followerRefMgrLock);
+        pRef->delink();
     }
     [[nodiscard]] virtual float GetFollowAngle() const { return static_cast<float>(M_PI / 2); }
 
@@ -2263,7 +2262,7 @@ protected:
     CharmInfo* m_charmInfo;
     SharedVisionList m_sharedVision;
     mutable std::mutex _sharedVisionLock;
-    mutable std::mutex _followerRefMgrLock;
+    mutable std::recursive_mutex _followerRefMgrLock;
 
     MotionMaster* i_motionMaster;
 

@@ -5857,18 +5857,9 @@ void Player::SendMessageToSetInRange(WorldPacket const* data, float dist, bool s
         SendDirectMessage(data);
 
     Acore::MessageDistDeliverer notifier(this, data, dist);
-    std::vector<Player*> players;
     std::vector<ObjectGuid> guids;
     GetObjectVisibilityContainer().GetVisiblePlayerGuids(guids);
-    players.reserve(guids.size());
-    for (ObjectGuid const& guid : guids)
-    {
-        if (Player* player = ObjectAccessor::GetPlayer(*this, guid))
-            players.push_back(player);
-        else
-            GetObjectVisibilityContainer().EraseVisiblePlayerByGuid(guid);
-    }
-    notifier.Visit(players);
+    notifier.Visit(guids);
 }
 
 void Player::SendMessageToSet(WorldPacket const* data, Player const* skipped_rcvr) const
@@ -5877,22 +5868,16 @@ void Player::SendMessageToSet(WorldPacket const* data, Player const* skipped_rcv
         SendDirectMessage(data);
 
     Acore::MessageDistDeliverer notifier(this, data, 0.0f, false, skipped_rcvr);
-    std::vector<Player*> players;
     std::vector<ObjectGuid> guids;
     GetObjectVisibilityContainer().GetVisiblePlayerGuids(guids);
-    players.reserve(guids.size());
-    for (ObjectGuid const& guid : guids)
-    {
-        if (Player* player = ObjectAccessor::GetPlayer(*this, guid))
-            players.push_back(player);
-        else
-            GetObjectVisibilityContainer().EraseVisiblePlayerByGuid(guid);
-    }
-    notifier.Visit(players);
+    notifier.Visit(guids);
 }
 
 void Player::SendDirectMessage(WorldPacket const* data) const
 {
+    if (!m_session)
+        return;
+
     m_session->SendPacket(data);
 }
 

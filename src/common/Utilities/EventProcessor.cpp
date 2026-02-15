@@ -130,6 +130,8 @@ void EventProcessor::Update(uint32 p_time)
 
         uint64 currentTime = m_time;
 
+        lock.unlock();
+
         bool deleteEvent = false;
 
         if (event->IsRunning())
@@ -148,6 +150,8 @@ void EventProcessor::Update(uint32 p_time)
             if (event->IsDeletable())
                 deleteEvent = true;
         }
+
+        lock.lock();
 
         if (deleteEvent)
         {

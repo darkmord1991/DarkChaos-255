@@ -24,19 +24,34 @@
 #include "PathGenerator.h"
 #include "Timer.h"
 #include "Unit.h"
+#include <mutex>
 
 class TargetedMovementGeneratorBase
 {
 public:
-    TargetedMovementGeneratorBase(Unit* target) { i_target.link(target, this); }
+    TargetedMovementGeneratorBase(Unit* target)
+    {
+        std::lock_guard<std::recursive_mutex> lock(_targetLock);
+        i_target.link(target, this);
+    }
     ~TargetedMovementGeneratorBase()
     {
+        std::lock_guard<std::recursive_mutex> lock(_targetLock);
         if (i_target.isValid())
             i_target.unlink();
     }
-    void stopFollowing() { }
+    void stopFollowing()
+    {
+        std::lock_guard<std::recursive_mutex> lock(_targetLock);
+        if (i_target.isValid())
+            i_target.unlink();
+    }
 protected:
+    std::recursive_mutex& GetTargetLock() { return _targetLock; }
     FollowerReference i_target;
+
+private:
+    std::recursive_mutex _targetLock;
 };
 
 enum ChaseMovementMode

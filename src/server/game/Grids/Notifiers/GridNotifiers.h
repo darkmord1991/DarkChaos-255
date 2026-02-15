@@ -114,6 +114,7 @@ namespace Acore
         }
         void Visit(VisiblePlayersMap const& m);
         void Visit(std::vector<Player*> const& players);
+        void Visit(std::vector<ObjectGuid> const& guids);
         void Visit(PlayerMapType& m);
         void Visit(CreatureMapType& m);
         void Visit(DynamicObjectMapType& m);
