@@ -646,8 +646,7 @@ void World::SetInitialWorldSettings()
     SafeLoadTable("Creature Addons", [] { sObjectMgr->LoadCreatureAddons(); }); // must be after LoadCreatureTemplates() and LoadCreatures()
     SafeLoadTable("Creature Movement Overrides", [] { sObjectMgr->LoadCreatureMovementOverrides(); }); // must be after LoadCreatures()
 
-    LOG_INFO("server.loading", "Loading Gameobject Data...");
-    sObjectMgr->LoadGameobjects();
+    SafeLoadTable("Gameobject Data", [] { sObjectMgr->LoadGameobjects(); }, /*critical=*/true, /*maxRetries=*/2);
 
     SafeLoadTable("GameObject Addons", [] { sObjectMgr->LoadGameObjectAddons(); });
     SafeLoadTable("GameObject Quest Items", [] { sObjectMgr->LoadGameObjectQuestItems(); });
