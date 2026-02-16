@@ -167,6 +167,7 @@ void HostileRefMgr::deleteReferences(bool removeFromMap /*= false*/)
         {
             HostileReference* nextRef = ref->next();
             ref->delink();
+            ref->AddRef();
             refsToRemove.push_back(ref);
             ref = nextRef;
         }
@@ -195,7 +196,7 @@ void HostileRefMgr::deleteReferences(bool removeFromMap /*= false*/)
             }
         }
 
-        delete ref;
+        ref->ReleaseRef();
     }
 
     for (Creature* creature : creaturesToEvade)
@@ -219,6 +220,7 @@ void HostileRefMgr::deleteReferencesForFaction(uint32 faction)
             if (ref->GetSource()->GetOwner()->GetFactionTemplateEntry()->faction == faction)
             {
                 ref->delink();
+                ref->AddRef();
                 refsToRemove.push_back(ref);
             }
             ref = nextRef;
@@ -231,7 +233,7 @@ void HostileRefMgr::deleteReferencesForFaction(uint32 faction)
             continue;
 
         ref->removeReference();
-        delete ref;
+        ref->ReleaseRef();
     }
 }
 
@@ -250,6 +252,7 @@ void HostileRefMgr::deleteReference(Unit* creature)
             if (ref->GetSource()->GetOwner() == creature)
             {
                 ref->delink();
+                ref->AddRef();
                 refToRemove = ref;
                 break;
             }
@@ -260,7 +263,7 @@ void HostileRefMgr::deleteReference(Unit* creature)
     if (refToRemove)
     {
         refToRemove->removeReference();
-        delete refToRemove;
+        refToRemove->ReleaseRef();
     }
 }
 
@@ -282,6 +285,7 @@ void HostileRefMgr::deleteReferencesOutOfRange(float range)
             if (!owner->isActiveObject() && owner->GetExactDist2dSq(GetOwner()) > range)
             {
                 ref->delink();
+                ref->AddRef();
                 refsToRemove.push_back(ref);
             }
             ref = nextRef;
@@ -294,7 +298,7 @@ void HostileRefMgr::deleteReferencesOutOfRange(float range)
             continue;
 
         ref->removeReference();
-        delete ref;
+        ref->ReleaseRef();
     }
 }
 

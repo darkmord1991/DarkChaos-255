@@ -23,6 +23,7 @@
 #include "Reference.h"
 #include "SharedDefines.h"
 #include "UnitEvents.h"
+#include <atomic>
 #include <list>
 #include <mutex>
 #include <vector>
@@ -107,6 +108,9 @@ public:
 
     [[nodiscard]] ObjectGuid getUnitGuid() const { return iUnitGuid; }
 
+    void AddRef();
+    void ReleaseRef();
+
     //=================================================
     // reference is not needed anymore. realy delete it !
 
@@ -136,6 +140,7 @@ private:
     float iTempThreatModifier;                          // used for taunt
     ObjectGuid iUnitGuid;
     bool iOnline;
+    std::atomic<uint32> _refCount{1};
 };
 
 //==============================================================

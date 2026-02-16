@@ -99,6 +99,19 @@ HostileReference::HostileReference(Unit* refUnit, ThreatMgr* threatMgr, float th
     iOnline = true;
 }
 
+void HostileReference::AddRef()
+{
+    _refCount.fetch_add(1, std::memory_order_acq_rel);
+}
+
+void HostileReference::ReleaseRef()
+{
+    uint32 const previous = _refCount.fetch_sub(1, std::memory_order_acq_rel);
+    ASSERT(previous > 0);
+    if (previous == 1)
+        delete this;
+}
+
 //============================================================
 // Tell our refTo (target) object that we have a link
 void HostileReference::targetObjectBuildLink()
@@ -250,7 +263,7 @@ void ThreatContainer::clearReferences()
     for (ThreatContainer::StorageType::const_iterator i = iThreatList.begin(); i != iThreatList.end(); ++i)
     {
         (*i)->unlink();
-        delete (*i);
+        (*i)->ReleaseRef();
     }
 
     iThreatList.clear();
@@ -733,10 +746,18 @@ void ThreatMgr::processThreatEvent(ThreatRefStatusChangeEvent* threatRefStatusCh
                 setDirty(true);
             }
             iOwner->SendRemoveFromThreatListOpcode(hostileRef);
-            if (hostileRef->IsOnline())
-                iThreatContainer.remove(hostileRef);
-            else
-                iThreatOfflineContainer.remove(hostileRef);
+            {
+                ThreatContainer::StorageType& threatList = hostileRef->IsOnline() ? iThreatContainer.iThreatList : iThreatOfflineContainer.iThreatList;
+                for (ThreatContainer::StorageType::iterator itr = threatList.begin(); itr != threatList.end(); ++itr)
+                {
+                    if (*itr != hostileRef)
+                        continue;
+
+                    threatList.erase(itr);
+                    hostileRef->ReleaseRef();
+                    break;
+                }
+            }
             break;
     }
 }

@@ -22,6 +22,8 @@
 #include "Player.h"
 #include "ReputationMgr.h"
 
+#include <unordered_map>
+
 using namespace Acore::ChatCommands;
 
 class quest_commandscript : public CommandScript
@@ -401,22 +403,33 @@ public:
 
             trans->Append(stmt);
 
+            std::unordered_map<uint32, int32> repStandingByFaction;
+            stmt = CharacterDatabase.GetPreparedStatement(
+                CHAR_SEL_CHARACTER_REPUTATION);
+            stmt->SetData(0, guid);
+            if (PreparedQueryResult repRows = CharacterDatabase.Query(stmt))
+            {
+                do
+                {
+                    Field* repFields = repRows->Fetch();
+                    repStandingByFaction.emplace(
+                        repFields[0].Get<uint16>(),
+                        repFields[1].Get<int32>());
+                }
+                while (repRows->NextRow());
+            }
+
             // If the quest requires reputation to complete, set the player rep to the required amount.
             if (uint32 repFaction = quest->GetRepObjectiveFaction())
             {
                 uint32 repValue = quest->GetRepObjectiveValue();
 
-                stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHAR_REP_BY_FACTION);
-                stmt->SetData(0, repFaction);
-                stmt->SetData(1, guid);
-                PreparedQueryResult result = CharacterDatabase.Query(stmt);
-
-                if (result)
+                if (auto repItr = repStandingByFaction.find(repFaction);
+                    repItr != repStandingByFaction.end())
                 {
-                    Field* fields = result->Fetch();
-                    uint32 curRep = fields[0].Get<uint32>();
+                    int32 curRep = repItr->second;
 
-                    if (curRep < repValue)
+                    if (curRep < int32(repValue))
                     {
                         if (sFactionStore.LookupEntry(repFaction))
                         {
@@ -436,17 +449,12 @@ public:
             {
                 uint32 repValue = quest->GetRepObjectiveValue();
 
-                stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHAR_REP_BY_FACTION);
-                stmt->SetData(0, repFaction);
-                stmt->SetData(1, guid);
-                PreparedQueryResult result = CharacterDatabase.Query(stmt);
-
-                if (result)
+                if (auto repItr = repStandingByFaction.find(repFaction);
+                    repItr != repStandingByFaction.end())
                 {
-                    Field* fields = result->Fetch();
-                    uint32 curRep = fields[0].Get<uint32>();
+                    int32 curRep = repItr->second;
 
-                    if (curRep < repValue)
+                    if (curRep < int32(repValue))
                     {
                         if (sFactionStore.LookupEntry(repFaction))
                         {
