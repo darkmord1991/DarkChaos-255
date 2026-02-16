@@ -640,6 +640,7 @@ void World::SetInitialWorldSettings()
     SafeLoadTable("Creature Data", [] { sObjectMgr->LoadCreatures(); }, /*critical=*/true, /*maxRetries=*/2);
     SafeLoadTable("Creature Sparring", [] { sObjectMgr->LoadCreatureSparring(); });
     SafeLoadTable("Temporary Summons", [] { sObjectMgr->LoadTempSummons(); }); // must be after LoadCreatureTemplates() and LoadGameObjectTemplates()
+    SafeLoadTable("GameObject Summons", [] { sObjectMgr->LoadGameObjectSummons(); }); // must be after LoadCreatureTemplates() and LoadGameObjectTemplates()
     SafeLoadTable("Pet Levelup Spells", [] { sSpellMgr->LoadPetLevelupSpellMap(); });
     SafeLoadTable("Pet Default Spells", [] { sSpellMgr->LoadPetDefaultSpells(); });
     SafeLoadTable("Creature Addons", [] { sObjectMgr->LoadCreatureAddons(); }); // must be after LoadCreatureTemplates() and LoadCreatures()
