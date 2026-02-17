@@ -56,9 +56,7 @@
 #include "MiscPackets.h"
 #include "MMapFactory.h"
 #include "Object.h"
-#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
-#include "Pet.h"
 #include "ScriptMgr.h"
 #include "SpellMgr.h"
 #include "TypeContainerVisitor.h"
@@ -941,18 +939,20 @@ void Map::VisitAllObjectStores(std::function<void(MapStoredObjectTypesContainer&
         return;
     }
 
-    // When using partition stores, only visit partition stores to avoid double-processing objects
-    if (sPartitionMgr->UsePartitionStoreOnly() || !_partitionedObjectsStore.empty())
+    // When using partition stores, only visit partition stores to avoid double-processing objects.
+    // Important: read _partitionedObjectsStore state only while holding its lock.
     {
-        std::shared_lock<std::shared_mutex> storeLock(_partitionedObjectStoreLock);
-        for (auto& pair : _partitionedObjectsStore)
-            visitor(pair.second);
+        std::shared_lock<std::shared_mutex> partitionStoreLock(_partitionedObjectStoreLock);
+        if (sPartitionMgr->UsePartitionStoreOnly() || !_partitionedObjectsStore.empty())
+        {
+            for (auto& pair : _partitionedObjectsStore)
+                visitor(pair.second);
+            return;
+        }
     }
-    else
-    {
-        std::shared_lock<std::shared_mutex> storeLock(_objectsStoreLock);
-        visitor(_objectsStore);
-    }
+
+    std::shared_lock<std::shared_mutex> storeLock(_objectsStoreLock);
+    visitor(_objectsStore);
 }
 
 Unit* Map::GetUnitByGuid(ObjectGuid const& guid) const
@@ -4408,7 +4408,8 @@ void Map::SendObjectUpdates()
         size_t desiredWorkers = sendJobs.size() / kMinPlayersPerWorker;
         size_t workerCount = std::min<size_t>(maxWorkers, std::max<size_t>(1, desiredWorkers));
 
-        std::vector<std::unique_ptr<WorldPacket>> packets(sendJobs.size());
+        std::vector<WorldPacket> packets(sendJobs.size());
+        std::vector<uint8> packetReady(sendJobs.size(), 0);
 
         if (workerCount <= 1)
         {
@@ -4416,8 +4417,8 @@ void Map::SendObjectUpdates()
             {
                 if (!sendJobs[i].send)
                     continue;
-                packets[i] = std::make_unique<WorldPacket>();
-                sendJobs[i].data.BuildPacket(*packets[i]);
+                sendJobs[i].data.BuildPacket(packets[i]);
+                packetReady[i] = 1;
             }
         }
         else
@@ -4426,7 +4427,7 @@ void Map::SendObjectUpdates()
             pool.EnsureThreads(workerCount);
 
             size_t blockSize = (sendJobs.size() + workerCount - 1) / workerCount;
-            pool.RunTasks(workerCount, [&sendJobs, &packets, blockSize](size_t workerIndex)
+            pool.RunTasks(workerCount, [&sendJobs, &packets, &packetReady, blockSize](size_t workerIndex)
             {
                 size_t beginIndex = workerIndex * blockSize;
                 size_t endIndex = std::min(sendJobs.size(), beginIndex + blockSize);
@@ -4437,18 +4438,17 @@ void Map::SendObjectUpdates()
                 {
                     if (!sendJobs[i].send)
                         continue;
-                    auto packet = std::make_unique<WorldPacket>();
-                    sendJobs[i].data.BuildPacket(*packet);
-                    packets[i] = std::move(packet);
+                    sendJobs[i].data.BuildPacket(packets[i]);
+                    packetReady[i] = 1;
                 }
             });
         }
 
         for (size_t i = 0; i < sendJobs.size(); ++i)
         {
-            if (!sendJobs[i].send || !packets[i])
+            if (!sendJobs[i].send || !packetReady[i])
                 continue;
-            sendJobs[i].player->SendDirectMessage(packets[i].get());
+            sendJobs[i].player->SendDirectMessage(&packets[i]);
         }
     }
 }
@@ -5102,8 +5102,39 @@ Corpse* Map::GetCorpse(ObjectGuid const& guid)
 Creature* Map::GetCreature(ObjectGuid const& guid)
 {
     if (_isPartitioned)
+    {
         if (Creature* creature = FindPartitionedObject<Creature>(guid))
             return creature;
+
+        Creature* fallbackCreature = FindObjectStore<Creature>(guid);
+        if (sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+        {
+            static std::atomic<uint32> fallbackHitSamples{0};
+            static std::atomic<uint32> missSamples{0};
+
+            if (fallbackCreature)
+            {
+                uint32 sample = fallbackHitSamples.fetch_add(1, std::memory_order_relaxed) + 1;
+                if ((sample & 0x3F) == 0)
+                {
+                    LOG_INFO("map.partition", "Telemetry: GetCreature partition miss with object-store fallback guid={} map={} instance={} activePartition={} sample={}",
+                        guid.ToString(), GetId(), GetInstanceId(), GetActivePartitionContext(), sample);
+                }
+            }
+            else
+            {
+                uint32 sample = missSamples.fetch_add(1, std::memory_order_relaxed) + 1;
+                if ((sample & 0x3FF) == 0)
+                {
+                    LOG_INFO("map.partition", "Telemetry: GetCreature lookup miss guid={} map={} instance={} activePartition={} sample={}",
+                        guid.ToString(), GetId(), GetInstanceId(), GetActivePartitionContext(), sample);
+                }
+            }
+        }
+
+        return fallbackCreature;
+    }
+
     return FindObjectStore<Creature>(guid);
 }
 

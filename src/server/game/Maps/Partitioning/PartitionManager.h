@@ -92,10 +92,19 @@ public:
     bool IsObjectInBoundarySet(uint32 mapId, uint32 partitionId, ObjectGuid const& guid) const;
     
     // Spatial Hash Grid boundary methods (Phase 2 optimization)
+    struct NearbyBoundaryQuery
+    {
+        uint32 partitionId = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float radius = 0.0f;
+    };
+
     void RegisterBoundaryObjectWithPosition(uint32 mapId, uint32 partitionId, ObjectGuid const& guid, float x, float y);
     void UpdateBoundaryObjectPosition(uint32 mapId, uint32 partitionId, ObjectGuid const& guid, float x, float y);
     void UnregisterBoundaryObjectFromGrid(uint32 mapId, uint32 partitionId, ObjectGuid const& guid);
     std::vector<ObjectGuid> GetNearbyBoundaryObjects(uint32 mapId, uint32 partitionId, float x, float y, float radius) const;
+    std::vector<std::vector<ObjectGuid>> BatchGetNearbyBoundaryObjects(uint32 mapId, std::vector<NearbyBoundaryQuery> const& queries) const;
 
     // Batched boundary operations (reduces per-entity lock overhead)
     struct BoundaryPositionUpdate { ObjectGuid guid; float x; float y; };
@@ -213,31 +222,47 @@ private:
             ObjectGuid guid;
             float x, y;
         };
-        
+
         // Cell key -> list of boundary objects in that cell
         std::unordered_map<uint64, std::vector<BoundaryEntry>> cells;
-        
+
         // GUID -> cell key (for fast removal)
         std::unordered_map<ObjectGuid::LowType, uint64> objectCellMap;
 
         std::atomic<uint64> lastWriterThreadHash{0};
-        
-        static uint64 GetCellKey(float x, float y) {
-            // Offset by MAP_HALFSIZE (~17066) to ensure all world coordinates hash to positive cells.
-            // Without offset, all negative coords collapse to cell 0, degrading spatial queries to O(N).
-            static constexpr float COORD_OFFSET = 17066.6656f; // MAP_HALFSIZE
-            uint32 cx = static_cast<uint32>((x + COORD_OFFSET) / CELL_SIZE);
-            uint32 cy = static_cast<uint32>((y + COORD_OFFSET) / CELL_SIZE);
+
+        static constexpr float COORD_OFFSET = 17066.6656f; // MAP_HALFSIZE
+
+        static uint64 GetCellKeyFromCoords(uint32 cx, uint32 cy)
+        {
             return (static_cast<uint64>(cx) << 32) | cy;
         }
+
+        static void GetCellCoords(float x, float y, uint32& cx, uint32& cy)
+        {
+            // Offset by MAP_HALFSIZE (~17066) to ensure all world coordinates hash to positive cells.
+            // Without offset, all negative coords collapse to cell 0, degrading spatial queries to O(N).
+            cx = static_cast<uint32>((x + COORD_OFFSET) / CELL_SIZE);
+            cy = static_cast<uint32>((y + COORD_OFFSET) / CELL_SIZE);
+        }
         
-        void Insert(ObjectGuid const& guid, float x, float y) {
+        static uint64 GetCellKey(float x, float y)
+        {
+            uint32 cx = 0;
+            uint32 cy = 0;
+            GetCellCoords(x, y, cx, cy);
+            return GetCellKeyFromCoords(cx, cy);
+        }
+
+        void Insert(ObjectGuid const& guid, float x, float y)
+        {
             uint64 key = GetCellKey(x, y);
             cells[key].push_back({guid, x, y});
             objectCellMap[guid.GetCounter()] = key;
         }
 
-        void Update(ObjectGuid const& guid, float x, float y) {
+        void Update(ObjectGuid const& guid, float x, float y)
+        {
             auto cellIt = objectCellMap.find(guid.GetCounter());
             if (cellIt == objectCellMap.end())
             {
@@ -264,36 +289,53 @@ private:
                 }
             }
         }
-        
-        void Remove(ObjectGuid const& guid) {
+
+        void Remove(ObjectGuid const& guid)
+        {
             auto cellIt = objectCellMap.find(guid.GetCounter());
             if (cellIt == objectCellMap.end())
                 return;
-            
+
             uint64 cellKey = cellIt->second;
             auto& cell = cells[cellKey];
             cell.erase(std::remove_if(cell.begin(), cell.end(),
                 [&guid](BoundaryEntry const& e) { return e.guid == guid; }), cell.end());
-            
+
             // Clean up empty cell vector to prevent unbounded map growth
             if (cell.empty())
                 cells.erase(cellKey);
-            
+
             objectCellMap.erase(cellIt);
         }
-        
-        std::vector<ObjectGuid> QueryNearby(float x, float y, float radius) const {
+
+        std::vector<ObjectGuid> QueryNearby(float x, float y, float radius) const
+        {
             std::vector<ObjectGuid> result;
             float radiusSq = radius * radius;
-            
+            uint32 centerCx = 0;
+            uint32 centerCy = 0;
+            GetCellCoords(x, y, centerCx, centerCy);
+
             // Query 3x3 neighborhood of cells (covers up to ~150 yard radius)
             int32 cellRadius = static_cast<int32>(radius / CELL_SIZE) + 1;
-            for (int dx = -cellRadius; dx <= cellRadius; ++dx) {
-                for (int dy = -cellRadius; dy <= cellRadius; ++dy) {
-                    uint64 key = GetCellKey(x + dx * CELL_SIZE, y + dy * CELL_SIZE);
+            for (int32 dx = -cellRadius; dx <= cellRadius; ++dx)
+            {
+                int64 cx64 = static_cast<int64>(centerCx) + dx;
+                if (cx64 < 0)
+                    continue;
+
+                for (int32 dy = -cellRadius; dy <= cellRadius; ++dy)
+                {
+                    int64 cy64 = static_cast<int64>(centerCy) + dy;
+                    if (cy64 < 0)
+                        continue;
+
+                    uint64 key = GetCellKeyFromCoords(static_cast<uint32>(cx64), static_cast<uint32>(cy64));
                     auto it = cells.find(key);
-                    if (it != cells.end()) {
-                        for (auto const& entry : it->second) {
+                    if (it != cells.end())
+                    {
+                        for (auto const& entry : it->second)
+                        {
                             float distX = entry.x - x;
                             float distY = entry.y - y;
                             if ((distX * distX + distY * distY) <= radiusSq)
@@ -304,24 +346,26 @@ private:
             }
             return result;
         }
-        
-        void Clear() {
+
+        void Clear()
+        {
             cells.clear();
             objectCellMap.clear();
             lastWriterThreadHash.store(0, std::memory_order_relaxed);
         }
-        
-        size_t Size() const {
+
+        size_t Size() const
+        {
             size_t total = 0;
             for (auto const& [_, cell] : cells)
                 total += cell.size();
             return total;
         }
     };
-    
+
     // Map -> Partition -> Spatial Grid for boundary objects
     std::unordered_map<uint32, std::unordered_map<uint32, SpatialHashGrid>> _boundarySpatialGrids;
-    
+
     // Layering data moved to LayerManager.h
 
     // NPC Layering data moved to LayerManager

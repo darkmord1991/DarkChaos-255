@@ -27,6 +27,7 @@
 #include "Metric.h"
 #include <chrono>
 #include <cmath>
+#include <unordered_set>
 
 namespace
 {
@@ -278,6 +279,23 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
     _scratchResolvedObjects.reserve(windowCount);
     _scratchBoundaryByGrid.clear();
 
+    auto resolveObject = [this](ObjectGuid const& guid, uint8 typeId) -> WorldObject*
+    {
+        switch (typeId)
+        {
+            case TYPEID_UNIT:
+                return _map.GetCreature(guid);
+            case TYPEID_GAMEOBJECT:
+                return _map.GetGameObject(guid);
+            case TYPEID_DYNAMICOBJECT:
+                return _map.GetDynamicObject(guid);
+            case TYPEID_CORPSE:
+                return _map.GetCorpse(guid);
+            default:
+                return nullptr;
+        }
+    };
+
     for (uint32 offset = 0; offset < windowCount; ++offset)
     {
         auto const& entry = _scratchObjects[(windowStart + offset) % _scratchObjects.size()];
@@ -286,25 +304,8 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         resolved.typeId = entry.second;
         resolved.isCreature = entry.second == TYPEID_UNIT;
 
-        switch (entry.second)
-        {
-            case TYPEID_UNIT:
-                resolved.object = _map.GetCreature(entry.first);
-                break;
-            case TYPEID_GAMEOBJECT:
-                resolved.object = _map.GetGameObject(entry.first);
-                break;
-            case TYPEID_DYNAMICOBJECT:
-                resolved.object = _map.GetDynamicObject(entry.first);
-                break;
-            case TYPEID_CORPSE:
-                resolved.object = _map.GetCorpse(entry.first);
-                break;
-            default:
-                break;
-        }
-
-        if (!resolved.object || !resolved.object->IsInWorld())
+        WorldObject* const object = resolveObject(resolved.guid, resolved.typeId);
+        if (!object || !object->IsInWorld())
             continue;
 
         _scratchResolvedObjects.push_back(resolved);
@@ -312,7 +313,10 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
 
     for (ResolvedObject const& resolved : _scratchResolvedObjects)
     {
-        WorldObject* obj = resolved.object;
+        WorldObject* obj = resolveObject(resolved.guid, resolved.typeId);
+        if (!obj || !obj->IsInWorld())
+            continue;
+
         bool const isCreature = resolved.isCreature;
 
         if (!partialSweep && isCreature)
@@ -334,7 +338,7 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         {
             ++_boundaryObjectCount;
 
-            ObjectGuid objectGuid = obj->GetGUID();
+            ObjectGuid objectGuid = resolved.guid;
             _batchBoundaryOverrides.push_back(objectGuid);
 
             bool needsPositionUpdate = !obj->IsBoundaryTracked();
@@ -354,7 +358,7 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
             if (obj->IsBoundaryTracked())
             {
                 // Object left boundary zone - unregister to prevent memory leak
-                _batchUnregisters.push_back(obj->GetGUID());
+                _batchUnregisters.push_back(resolved.guid);
                 obj->SetBoundaryTracked(false);
             }
         }
@@ -397,6 +401,12 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
 void PartitionUpdateWorker::FlushBoundaryBatches()
 {
     uint32 mapId = _map.GetId();
+    static uint32 const sBoundaryOverrideDurationMs = static_cast<uint32>(std::max<int64>(100,
+        sConfigMgr->GetOption<int64>("MapPartitions.Boundary.OverrideDurationMs", 500)));
+    static uint32 const sNearbyMergeEveryNTicks = static_cast<uint32>(std::max<int64>(1,
+        sConfigMgr->GetOption<int64>("MapPartitions.Boundary.NearbyMergeEveryNTicks", 1)));
+    static uint32 const sNearbyMergeMaxQueries = static_cast<uint32>(std::max<int64>(0,
+        sConfigMgr->GetOption<int64>("MapPartitions.Boundary.NearbyMergeMaxQueries", 0)));
 
     // Batch position updates → single _boundaryLock acquisition
     if (!_batchPosUpdates.empty())
@@ -408,10 +418,57 @@ void PartitionUpdateWorker::FlushBoundaryBatches()
             _scratchBoundaryUpdates.push_back({entry.guid, entry.x, entry.y});
 
         sPartitionMgr->BatchUpdateBoundaryPositions(mapId, _partitionId, _scratchBoundaryUpdates);
+
+        std::vector<std::vector<ObjectGuid>> nearbyBoundaryResults;
+        bool const shouldMergeNearby = (_map.GetUpdateCounter() % sNearbyMergeEveryNTicks) == 0;
+        if (shouldMergeNearby)
+        {
+            float const nearbyRadius = std::max(1.0f, sPartitionMgr->GetBorderOverlap());
+            _scratchNearbyBoundaryQueries.clear();
+
+            size_t queryCount = _batchPosUpdates.size();
+            if (sNearbyMergeMaxQueries > 0)
+                queryCount = std::min<size_t>(queryCount, sNearbyMergeMaxQueries);
+
+            _scratchNearbyBoundaryQueries.reserve(queryCount);
+            for (size_t i = 0; i < queryCount; ++i)
+            {
+                auto const& entry = _batchPosUpdates[i];
+                _scratchNearbyBoundaryQueries.push_back({ _partitionId, entry.x, entry.y, nearbyRadius });
+            }
+
+            nearbyBoundaryResults = sPartitionMgr->BatchGetNearbyBoundaryObjects(mapId, _scratchNearbyBoundaryQueries);
+        }
+
+        _scratchMergedBoundaryOverrides.clear();
+        _scratchMergedBoundaryOverrides.reserve(_batchBoundaryOverrides.size());
+
+        std::unordered_set<ObjectGuid::LowType> seenOverrideGuids;
+        seenOverrideGuids.reserve(_batchBoundaryOverrides.size() + _batchPosUpdates.size());
+
+        auto appendUniqueOverride = [this, &seenOverrideGuids](ObjectGuid const& guid)
+        {
+            if (!guid)
+                return;
+
+            if (seenOverrideGuids.emplace(guid.GetCounter()).second)
+                _scratchMergedBoundaryOverrides.push_back(guid);
+        };
+
+        for (ObjectGuid const& guid : _batchBoundaryOverrides)
+            appendUniqueOverride(guid);
+
+        for (std::vector<ObjectGuid> const& nearbyGuids : nearbyBoundaryResults)
+        {
+            for (ObjectGuid const& guid : nearbyGuids)
+                appendUniqueOverride(guid);
+        }
     }
 
-    if (!_batchBoundaryOverrides.empty())
-        sPartitionMgr->BatchSetPartitionOverrides(_batchBoundaryOverrides, mapId, _partitionId, 500);
+    if (!_scratchMergedBoundaryOverrides.empty())
+        sPartitionMgr->BatchSetPartitionOverrides(_scratchMergedBoundaryOverrides, mapId, _partitionId, sBoundaryOverrideDurationMs);
+    else if (!_batchBoundaryOverrides.empty())
+        sPartitionMgr->BatchSetPartitionOverrides(_batchBoundaryOverrides, mapId, _partitionId, sBoundaryOverrideDurationMs);
 
     // Batch unregistrations → single _boundaryLock acquisition
     if (!_batchUnregisters.empty())

@@ -206,7 +206,8 @@ namespace lfg
 
         // we have to take into account that FindNewGroups is called every X minutes if number of compatibles is low!
         // build set of already present compatibles for this guid
-        std::set<Lfg5Guids> currentCompatibles;
+        std::unordered_set<Lfg5Guids, Lfg5GuidsHash> currentCompatibles;
+        currentCompatibles.reserve(CompatibleList.size());
         for (Lfg5GuidsList::iterator it = CompatibleList.begin(); it != CompatibleList.end(); ++it)
             if (it->hasGuid(newGuid))
             {
@@ -244,7 +245,7 @@ namespace lfg
         return selfCompatibility;
     }
 
-    LfgCompatibility LFGQueue::CheckCompatibility(Lfg5Guids const& checkWith, const ObjectGuid& newGuid, uint64& foundMask, uint32& foundCount, const std::set<Lfg5Guids>& currentCompatibles)
+    LfgCompatibility LFGQueue::CheckCompatibility(Lfg5Guids const& checkWith, const ObjectGuid& newGuid, uint64& foundMask, uint32& foundCount, const std::unordered_set<Lfg5Guids, Lfg5GuidsHash>& currentCompatibles)
     {
         LOG_DEBUG("lfg", "CHECK CheckCompatibility: {}, new guid: {}", checkWith.toString(), newGuid.ToString());
         Lfg5Guids check(checkWith, false); // here newGuid is at front
@@ -316,7 +317,15 @@ namespace lfg
         {
             for (uint8 i = 0; i < 5 && check.guids[i]; ++i)
             {
-                const LfgRolesMap& roles = QueueDataStore[check.guids[i]].roles;
+                LfgQueueDataContainer::const_iterator queueIt = QueueDataStore.find(check.guids[i]);
+                if (queueIt == QueueDataStore.end())
+                {
+                    LOG_ERROR("lfg", "LFGQueue::CheckCompatibility: [{}] is not queued but listed as queued!", check.guids[i].ToString());
+                    RemoveFromQueue(check.guids[i]);
+                    return LFG_COMPATIBILITY_PENDING;
+                }
+
+                const LfgRolesMap& roles = queueIt->second.roles;
                 for (LfgRolesMap::const_iterator itRoles = roles.begin(); itRoles != roles.end(); ++itRoles)
                 {
                     LfgRolesMap::const_iterator itPlayer;
@@ -369,11 +378,19 @@ namespace lfg
             else
                 addToFoundMask |= (((uint64)1) << (roleCheckResult - 1));
 
-            proposalDungeons = QueueDataStore[check.front()].dungeons;
+            LfgQueueDataContainer::const_iterator firstQueueIt = QueueDataStore.find(check.front());
+            if (firstQueueIt == QueueDataStore.end())
+                return LFG_COMPATIBILITY_PENDING;
+
+            proposalDungeons = firstQueueIt->second.dungeons;
             for (uint8 i = 1; i < 5 && check.guids[i]; ++i)
             {
                 LfgDungeonSet temporal;
-                LfgDungeonSet& dungeons = QueueDataStore[check.guids[i]].dungeons;
+                LfgQueueDataContainer::const_iterator dungeonQueueIt = QueueDataStore.find(check.guids[i]);
+                if (dungeonQueueIt == QueueDataStore.end())
+                    return LFG_COMPATIBILITY_PENDING;
+
+                LfgDungeonSet const& dungeons = dungeonQueueIt->second.dungeons;
                 std::set_intersection(proposalDungeons.begin(), proposalDungeons.end(), dungeons.begin(), dungeons.end(), std::inserter(temporal, temporal.begin()));
                 proposalDungeons = temporal;
             }
@@ -384,7 +401,11 @@ namespace lfg
         else
         {
             ObjectGuid gguid = check.front();
-            const LfgQueueData& queue = QueueDataStore[gguid];
+            LfgQueueDataContainer::const_iterator queueItr = QueueDataStore.find(gguid);
+            if (queueItr == QueueDataStore.end())
+                return LFG_COMPATIBILITY_PENDING;
+
+            const LfgQueueData& queue = queueItr->second;
             proposalDungeons = queue.dungeons;
             proposalRoles = queue.roles;
             LFGMgr::CheckGroupRoles(proposalRoles);          // assing new roles
@@ -397,7 +418,7 @@ namespace lfg
             for (uint8 i = 0; i < 5 && check.guids[i]; ++i)
             {
                 LfgQueueDataContainer::iterator itr = QueueDataStore.find(check.guids[i]);
-                if (!itr->second.bestCompatible.empty()) // update if groups don't have it empty (for empty it will be generated in UpdateQueueTimers)
+                if (itr != QueueDataStore.end() && !itr->second.bestCompatible.empty()) // update if groups don't have it empty (for empty it will be generated in UpdateQueueTimers)
                     UpdateBestCompatibleInQueue(itr, strGuids);
             }
             AddToCompatibles(strGuids);

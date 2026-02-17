@@ -3303,7 +3303,7 @@ Invasion.SendAddonPackets = 0
 #        Description: Master toggle for fake players
 #        Default:     1 (Enabled)
 #
-FakePlayers.Enable = 1
+FakePlayers.Enable = 0
 
 #
 #    FakePlayers.Count
@@ -3464,7 +3464,7 @@ MapPartitions.Enabled = 1
 #        Default:     "" (none - disabled)
 #        Recommended: "0,1,530,571,745,1405"
 #
-MapPartitions.Maps = "0,1,530,571,745,1405,37"
+MapPartitions.Maps = "0,1,530,571,745,1405"
 
 #
 #    MapPartitions.DefaultCount
@@ -3522,7 +3522,7 @@ MapPartitions.TileBased.TilesPerPartitionOverrides = ""
 #        Example:     "0:12,1:12,530:10,571:12"
 #        Default:     ""
 #
-MapPartitions.TileBased.PartitionOverrides = "0:8,1:8,530:8,571:8,745:2,1405:2,37:4"
+MapPartitions.TileBased.PartitionOverrides = "0:8,1:8,530:8,571:8,745:2,1405:2"
 
 #
 #    MapPartitions.BorderOverlap
@@ -3530,6 +3530,31 @@ MapPartitions.TileBased.PartitionOverrides = "0:8,1:8,530:8,571:8,745:2,1405:2,3
 #        Default:     100.0
 #
 MapPartitions.BorderOverlap = 100.0
+
+#
+#    MapPartitions.Boundary.OverrideDurationMs
+#        Description: Temporary partition-override lifetime (ms) for entities near boundaries.
+#                     Higher values reduce override write churn at the cost of slightly slower
+#                     partition override decay after leaving boundary zones.
+#        Default:     500
+#
+MapPartitions.Boundary.OverrideDurationMs = 500
+
+#
+#    MapPartitions.Boundary.NearbyMergeEveryNTicks
+#        Description: Run nearby-boundary merge queries once every N map ticks.
+#                     1 = every tick, 2 = every other tick, etc.
+#        Default:     1
+#
+MapPartitions.Boundary.NearbyMergeEveryNTicks = 1
+
+#
+#    MapPartitions.Boundary.NearbyMergeMaxQueries
+#        Description: Hard cap for nearby-boundary queries per worker flush.
+#                     Prevents spikes when many entities are moving near boundaries.
+#        Default:     0 (unlimited)
+#
+MapPartitions.Boundary.NearbyMergeMaxQueries = 0
 
 #
 #    MapPartitions.ExcludeZones
@@ -3800,7 +3825,7 @@ MapPartitions.Layers.SoftTransfers.TimeoutMs = 600000
 #                     >0 = budgeted window with carry-over cursor support.
 #        Default:     0
 #
-MapPartitions.Worker.ObjectUpdateBudget = 0
+MapPartitions.Worker.ObjectUpdateBudget = 10000
 
 #
 #    MapPartitions.Worker.ObjectUpdateBudgetCarryOver
@@ -3822,7 +3847,7 @@ MapPartitions.Worker.ObjectUpdateBudget.UseAdaptiveFallback = 0
 #        Description: If previous partition cycle max worker runtime exceeds this,
 #                     shrink next cycle object budget.
 #        Default:     320
-MapPartitions.Worker.ObjectUpdateBudget.HotPartitionThresholdMs = 260
+MapPartitions.Worker.ObjectUpdateBudget.HotPartitionThresholdMs = 340
 
 #    MapPartitions.Worker.ObjectUpdateBudget.HotPartitionScalePct
 #        Description: Budget scale (percent) applied after hot partition cycle.
@@ -3838,17 +3863,17 @@ MapPartitions.Worker.DynamicInFlight.Enable = 1
 #    MapPartitions.Worker.DynamicInFlight.HotRunThresholdMs
 #        Description: Previous cycle max partition runtime threshold for downshift.
 #        Default:     320
-MapPartitions.Worker.DynamicInFlight.HotRunThresholdMs = 320
+MapPartitions.Worker.DynamicInFlight.HotRunThresholdMs = 460
 
 #    MapPartitions.Worker.DynamicInFlight.HotQueueWaitThresholdMs
 #        Description: Previous cycle max queue-wait threshold for downshift.
 #        Default:     20
-MapPartitions.Worker.DynamicInFlight.HotQueueWaitThresholdMs = 40
+MapPartitions.Worker.DynamicInFlight.HotQueueWaitThresholdMs = 80
 
 #    MapPartitions.Worker.DynamicInFlight.ReduceBy
 #        Description: In-flight slot reduction when hot-cycle downshift triggers.
 #        Default:     3
-MapPartitions.Worker.DynamicInFlight.ReduceBy = 2
+MapPartitions.Worker.DynamicInFlight.ReduceBy = 1
 
 #    MapPartitions.DeferredPlayerRelocation.MaxPerTick
 #        Description: Max deferred cross-grid player relocations processed per map
@@ -3883,22 +3908,22 @@ MapPartitions.DeferredPlayerRelocation.Telemetry.LogIntervalMs = 2000
 #                     After this many partition tasks in a row, a worker will
 #                     prefer one general map task when general backlog exists.
 #        Default:     3
-MapUpdate.PartitionBurstBeforeGeneral = 4
+MapUpdate.PartitionBurstBeforeGeneral = 3
 
 #    System.SlowMapUpdateTask.ThresholdMs
 #        Description: Warn when a map update task exceeds this duration.
 #        Default:     120
-System.SlowMapUpdateTask.ThresholdMs = 180
+System.SlowMapUpdateTask.ThresholdMs = 160
 
 #    System.SlowMapUpdateTask.LogIntervalMs
 #        Description: Per-map warning throttle interval.
 #        Default:     5000
-System.SlowMapUpdateTask.LogIntervalMs = 8000
+System.SlowMapUpdateTask.LogIntervalMs = 5000
 
 #    System.SlowPartitionWorker.ThresholdMs
 #        Description: Warn when a single partition worker exceeds this duration.
 #        Default:     300
-System.SlowPartitionWorker.ThresholdMs = 420
+System.SlowPartitionWorker.ThresholdMs = 300
 
 #    System.SlowPartitionCycle.Enable
 #        Description: Enable slow partition cycle diagnostics.
@@ -3908,37 +3933,42 @@ System.SlowPartitionCycle.Enable = 1
 #    System.SlowPartitionCycle.ThresholdMs
 #        Description: Warn when an entire partition cycle exceeds this duration.
 #        Default:     350
-System.SlowPartitionCycle.ThresholdMs = 450
+System.SlowPartitionCycle.ThresholdMs = 320
 
 #    System.SlowPartitionCycle.LogIntervalMs
 #        Description: Per-map warning throttle interval.
 #        Default:     5000
-System.SlowPartitionCycle.LogIntervalMs = 8000
+System.SlowPartitionCycle.LogIntervalMs = 5000
 
 #    System.SlowPartitionCycle.TrackQueueAge
 #        Description: Track oldest queued partition age in pool health diagnostics.
 #        Default:     0
-System.SlowPartitionCycle.TrackQueueAge = 0
+System.SlowPartitionCycle.TrackQueueAge = 1
+
+#    System.PartitionMetrics.EnablePercentiles
+#        Description: Emit partition queue/run/total p50/p95/p99 summaries.
+#        Default:     0
+System.PartitionMetrics.EnablePercentiles = 0
 
 #    System.SlowMapUpdateTask.PhaseBreakdownMs
 #        Description: When a map update exceeds this threshold, log per-phase
 #                     timing breakdown (sessions, partitions, npc update,
 #                     relocate, visibility, sendObj, moveList, etc.).
 #        Default:     100
-System.SlowMapUpdateTask.PhaseBreakdownMs = 160
+System.SlowMapUpdateTask.PhaseBreakdownMs = 120
 
 #    System.SlowPartitionWorker.PhaseBreakdownMs
 #        Description: When a single partition worker exceeds this threshold,
 #                     log sub-phase breakdown (relays, players, npcs, boundary).
 #        Default:     80
-System.SlowPartitionWorker.PhaseBreakdownMs = 140
+System.SlowPartitionWorker.PhaseBreakdownMs = 100
 
 #    System.DelayedVisibility.BudgetPerTick
 #        Description: Max visibility relocations to process per Map::Update tick.
 #                     Each relocation does a full grid visit which is expensive.
 #                     Excess items are deferred to the next tick.
 #        Default:     256
-System.DelayedVisibility.BudgetPerTick = 256
+System.DelayedVisibility.BudgetPerTick = 192
 
 # -----------------------------------------------------------------------------
 # Playerbots NewRPG perf logging controls

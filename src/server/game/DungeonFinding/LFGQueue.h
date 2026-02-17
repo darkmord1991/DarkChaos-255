@@ -19,6 +19,7 @@
 #define _LFGQUEUE_H
 
 #include "LFG.h"
+#include <unordered_set>
 
 namespace lfg
 {
@@ -66,6 +67,22 @@ namespace lfg
     typedef std::map<ObjectGuid, LfgQueueData> LfgQueueDataContainer;
     typedef std::list<Lfg5Guids> LfgCompatibleContainer;
 
+    struct Lfg5GuidsHash
+    {
+        std::size_t operator()(Lfg5Guids const& value) const
+        {
+            std::size_t seed = 0;
+            std::hash<ObjectGuid> hasher;
+            for (uint8 i = 0; i < 5; ++i)
+            {
+                std::size_t guidHash = hasher(value.guids[i]);
+                seed ^= guidHash + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            }
+
+            return seed;
+        }
+    };
+
     /**
         Stores all data related to queue
     */
@@ -104,7 +121,7 @@ namespace lfg
         void UpdateBestCompatibleInQueue(LfgQueueDataContainer::iterator itrQueue, Lfg5Guids const& key);
 
         LfgCompatibility FindNewGroups(const ObjectGuid& newGuid);
-        LfgCompatibility CheckCompatibility(Lfg5Guids const& checkWith, const ObjectGuid& newGuid, uint64& foundMask, uint32& foundCount, const std::set<Lfg5Guids>& currentCompatibles);
+        LfgCompatibility CheckCompatibility(Lfg5Guids const& checkWith, const ObjectGuid& newGuid, uint64& foundMask, uint32& foundCount, const std::unordered_set<Lfg5Guids, Lfg5GuidsHash>& currentCompatibles);
 
         // Queue
         uint32 m_QueueStatusTimer;                         // used to check interval of sending queue status

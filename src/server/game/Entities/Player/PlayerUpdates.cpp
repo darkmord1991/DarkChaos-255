@@ -39,7 +39,6 @@
 #include "Weather.h"
 #include "WeatherMgr.h"
 #include "WorldState.h"
-#include "WorldState.h"
 #include "WorldStatePackets.h"
 #include "LayerManager.h"
 

@@ -262,8 +262,14 @@ void ThreatContainer::clearReferences()
 {
     for (ThreatContainer::StorageType::const_iterator i = iThreatList.begin(); i != iThreatList.end(); ++i)
     {
-        (*i)->unlink();
-        (*i)->ReleaseRef();
+        HostileReference* ref = *i;
+        if (!ref)
+            continue;
+
+        if (ref->isValid())
+            ref->unlink();
+
+        ref->ReleaseRef();
     }
 
     iThreatList.clear();
@@ -497,7 +503,7 @@ ThreatMgr::ThreatMgr(Unit* owner) : iCurrentVictim(nullptr), iOwner(owner), iUpd
 
 void ThreatMgr::ClearAllThreat()
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     if (Map* map = iOwner ? iOwner->FindMap() : nullptr)
     {
         uint32 relayPartition = 0;
@@ -515,7 +521,7 @@ void ThreatMgr::ClearAllThreat()
 
 void ThreatMgr::ClearThreat(Unit const* who)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     if (Map* map = iOwner ? iOwner->FindMap() : nullptr)
     {
         uint32 relayPartition = 0;
@@ -534,7 +540,7 @@ void ThreatMgr::ClearThreat(Unit const* who)
 
 void ThreatMgr::clearReferences()
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     iThreatContainer.clearReferences();
     iThreatOfflineContainer.clearReferences();
     iCurrentVictim = nullptr;
@@ -545,7 +551,7 @@ void ThreatMgr::clearReferences()
 
 void ThreatMgr::AddThreat(Unit* victim, float threat, SpellSchoolMask schoolMask, SpellInfo const* threatSpell)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     if (!ThreatCalcHelper::isValidProcess(victim, iOwner, threatSpell))
         return;
 
@@ -563,7 +569,7 @@ void ThreatMgr::AddThreat(Unit* victim, float threat, SpellSchoolMask schoolMask
 
 void ThreatMgr::DoAddThreat(Unit* victim, float threat)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     uint32 redirectThreadPct = victim->GetRedirectThreatPercent();
     Unit* redirectTarget = victim->GetRedirectThreatTarget();
 
@@ -599,7 +605,7 @@ void ThreatMgr::DoAddThreat(Unit* victim, float threat)
 
 void ThreatMgr::_addThreat(Unit* victim, float threat)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     HostileReference* ref = iThreatContainer.AddThreat(victim, threat);
     // Ref is not in the online refs, search the offline refs next
     if (!ref)
@@ -620,7 +626,7 @@ void ThreatMgr::_addThreat(Unit* victim, float threat)
 
 void ThreatMgr::ModifyThreatByPercent(Unit* victim, int32 percent)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     iThreatContainer.ModifyThreatByPercent(victim, percent);
 }
 
@@ -628,7 +634,7 @@ void ThreatMgr::ModifyThreatByPercent(Unit* victim, int32 percent)
 
 Unit* ThreatMgr::getHostileTarget()
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     iThreatContainer.update();
     HostileReference* nextVictim = iThreatContainer.SelectNextVictim(GetOwner()->ToCreature(), getCurrentVictim());
     setCurrentVictim(nextVictim);
@@ -639,7 +645,7 @@ Unit* ThreatMgr::getHostileTarget()
 
 float ThreatMgr::GetThreat(Unit* victim, bool alsoSearchOfflineList)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     float threat = 0.0f;
     HostileReference* ref = iThreatContainer.getReferenceByTarget(victim);
     if (!ref && alsoSearchOfflineList)
@@ -653,7 +659,7 @@ float ThreatMgr::GetThreat(Unit* victim, bool alsoSearchOfflineList)
 
 float ThreatMgr::getThreatWithoutTemp(Unit* victim, bool alsoSearchOfflineList)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     float threat = 0.0f;
     HostileReference* ref = iThreatContainer.getReferenceByTarget(victim);
     if (!ref && alsoSearchOfflineList)
@@ -667,7 +673,7 @@ float ThreatMgr::getThreatWithoutTemp(Unit* victim, bool alsoSearchOfflineList)
 
 void ThreatMgr::tauntApply(Unit* taunter)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     HostileReference* ref = iThreatContainer.getReferenceByTarget(taunter);
     if (getCurrentVictim() && ref && (ref->GetThreat() < getCurrentVictim()->GetThreat()))
     {
@@ -680,7 +686,7 @@ void ThreatMgr::tauntApply(Unit* taunter)
 
 void ThreatMgr::tauntFadeOut(Unit* taunter)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     HostileReference* ref = iThreatContainer.getReferenceByTarget(taunter);
     if (ref)
         ref->resetTempThreat();
@@ -690,7 +696,7 @@ void ThreatMgr::tauntFadeOut(Unit* taunter)
 
 void ThreatMgr::setCurrentVictim(HostileReference* pHostileReference)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     if (pHostileReference && pHostileReference != iCurrentVictim)
     {
         iOwner->SendChangeCurrentVictimOpcode(pHostileReference);
@@ -704,7 +710,7 @@ void ThreatMgr::setCurrentVictim(HostileReference* pHostileReference)
 
 void ThreatMgr::processThreatEvent(ThreatRefStatusChangeEvent* threatRefStatusChangeEvent)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     threatRefStatusChangeEvent->setThreatMgr(this);     // now we can set the threat manager
 
     HostileReference* hostileRef = threatRefStatusChangeEvent->getReference();
@@ -729,14 +735,16 @@ void ThreatMgr::processThreatEvent(ThreatRefStatusChangeEvent* threatRefStatusCh
                         if (GetOwner()->IsInMap(target))
                             GetOwner()->SendRemoveFromThreatListOpcode(hostileRef);
                 iThreatContainer.remove(hostileRef);
+                iThreatOfflineContainer.remove(hostileRef);
                 iThreatOfflineContainer.addReference(hostileRef);
             }
             else
             {
                 if (getCurrentVictim() && hostileRef->GetThreat() > (1.1f * getCurrentVictim()->GetThreat()))
                     setDirty(true);
-                iThreatContainer.addReference(hostileRef);
+                iThreatContainer.remove(hostileRef);
                 iThreatOfflineContainer.remove(hostileRef);
+                iThreatContainer.addReference(hostileRef);
             }
             break;
         case UEV_THREAT_REF_REMOVE_FROM_LIST:
@@ -747,16 +755,30 @@ void ThreatMgr::processThreatEvent(ThreatRefStatusChangeEvent* threatRefStatusCh
             }
             iOwner->SendRemoveFromThreatListOpcode(hostileRef);
             {
-                ThreatContainer::StorageType& threatList = hostileRef->IsOnline() ? iThreatContainer.iThreatList : iThreatOfflineContainer.iThreatList;
-                for (ThreatContainer::StorageType::iterator itr = threatList.begin(); itr != threatList.end(); ++itr)
+                bool released = false;
+                auto tryRemoveAndRelease = [&](ThreatContainer::StorageType& threatList)
                 {
-                    if (*itr != hostileRef)
-                        continue;
+                    for (ThreatContainer::StorageType::iterator itr = threatList.begin(); itr != threatList.end(); ++itr)
+                    {
+                        if (*itr != hostileRef)
+                            continue;
 
-                    threatList.erase(itr);
-                    hostileRef->ReleaseRef();
-                    break;
-                }
+                        threatList.erase(itr);
+                        if (!released)
+                        {
+                            hostileRef->ReleaseRef();
+                            released = true;
+                        }
+                        return;
+                    }
+                };
+
+                tryRemoveAndRelease(iThreatContainer.iThreatList);
+                tryRemoveAndRelease(iThreatOfflineContainer.iThreatList);
+
+                if (!released)
+                    LOG_DEBUG("combat.threat", "Threat remove event for non-listed ref owner={} target={}",
+                        iOwner ? iOwner->GetGUID().ToString() : "<null>", hostileRef->getUnitGuid().ToString());
             }
             break;
     }
@@ -764,7 +786,7 @@ void ThreatMgr::processThreatEvent(ThreatRefStatusChangeEvent* threatRefStatusCh
 
 bool ThreatMgr::isNeedUpdateToClient(uint32 time)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     if (isThreatListEmpty())
         return false;
 
@@ -780,7 +802,7 @@ bool ThreatMgr::isNeedUpdateToClient(uint32 time)
 // Reset all aggro without modifying the threatlist.
 void ThreatMgr::ResetAllThreat()
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     if (Map* map = iOwner ? iOwner->GetMap() : nullptr; map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
     {
         uint32 ownerPartition = map->GetPartitionIdForUnit(iOwner);
@@ -808,7 +830,7 @@ void ThreatMgr::ResetAllThreat()
 
 void ThreatMgr::ResetThreat(Unit const* who)
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     if (Map* map = iOwner ? iOwner->GetMap() : nullptr; map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
     {
         uint32 ownerPartition = map->GetPartitionIdForUnit(iOwner);
@@ -826,7 +848,7 @@ void ThreatMgr::ResetThreat(Unit const* who)
 
 void ThreatMgr::GetThreatListSnapshot(std::vector<std::pair<ObjectGuid, float>>& out, bool includeOffline) const
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     out.clear();
     out.reserve(iThreatContainer.GetThreatList().size());
     for (HostileReference* ref : iThreatContainer.GetThreatList())
@@ -847,7 +869,7 @@ void ThreatMgr::GetThreatListSnapshot(std::vector<std::pair<ObjectGuid, float>>&
 
 bool ThreatMgr::HasThreatFor(ObjectGuid const& guid, bool includeOffline) const
 {
-    std::lock_guard<std::recursive_mutex> lock(_threatLock);
+    std::lock_guard<decltype(_threatLock)> lock(_threatLock);
     if (iThreatContainer.getReferenceByTarget(guid))
         return true;
     if (includeOffline)

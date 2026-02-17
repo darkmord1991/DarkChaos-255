@@ -21,6 +21,7 @@
 #include "SpellMgr.h"
 #include "ThreatMgr.h"
 #include "Unit.h"
+#include <vector>
 
 HostileRefMgr::~HostileRefMgr()
 {
@@ -29,7 +30,7 @@ HostileRefMgr::~HostileRefMgr()
 
 void HostileRefMgr::AddReference(HostileReference* reference)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::lock_guard<decltype(_lock)> guard(_lock);
     insertFirst(reference);
 }
 
@@ -38,13 +39,13 @@ void HostileRefMgr::RemoveReference(HostileReference* reference)
     if (!reference)
         return;
 
-    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::lock_guard<decltype(_lock)> guard(_lock);
     reference->delink();
 }
 
 void HostileRefMgr::UpdateOnlineStateForPhase(uint32 newPhaseMask)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::lock_guard<decltype(_lock)> guard(_lock);
     HostileReference* ref = getFirst();
     while (ref)
     {
@@ -64,30 +65,47 @@ void HostileRefMgr::UpdateOnlineStateForPhase(uint32 newPhaseMask)
 
 void HostileRefMgr::threatAssist(Unit* victim, float baseThreat, SpellInfo const* threatSpell)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    if (getSize() == 0)
+    std::vector<HostileReference*> refs;
+    {
+        std::lock_guard<decltype(_lock)> guard(_lock);
+        if (getSize() == 0)
+            return;
+
+        refs.reserve(getSize());
+        for (HostileReference* ref = getFirst(); ref; ref = ref->next())
+        {
+            ref->AddRef();
+            refs.push_back(ref);
+        }
+    }
+
+    if (refs.empty())
         return;
 
-    HostileReference* ref = getFirst();
-    float threat = ThreatCalcHelper::calcThreat(victim, baseThreat, (threatSpell ? threatSpell->GetSchoolMask() : SPELL_SCHOOL_MASK_NORMAL), threatSpell);
-    threat /= getSize();
-    while (ref)
-    {
-        Unit* refOwner = ref->GetSource()->GetOwner();
-        if (ThreatCalcHelper::isValidProcess(victim, refOwner, threatSpell))
-        {
-            if (Creature* hatingCreature = refOwner->ToCreature())
-            {
-                if (hatingCreature->IsAIEnabled)
-                {
-                    hatingCreature->AI()->CalculateThreat(victim, threat, threatSpell);
-                }
-            }
+    float threat = ThreatCalcHelper::calcThreat(victim, baseThreat,
+        (threatSpell ? threatSpell->GetSchoolMask() : SPELL_SCHOOL_MASK_NORMAL),
+        threatSpell);
+    threat /= refs.size();
 
-            ref->GetSource()->DoAddThreat(victim, threat);
+    for (HostileReference* ref : refs)
+    {
+        ThreatMgr* sourceThreat = ref ? ref->GetSource() : nullptr;
+        Unit* refOwner = sourceThreat ? sourceThreat->GetOwner() : nullptr;
+        if (!refOwner || !ThreatCalcHelper::isValidProcess(victim, refOwner, threatSpell))
+        {
+            if (ref)
+                ref->ReleaseRef();
+            continue;
         }
 
-        ref = ref->next();
+        if (Creature* hatingCreature = refOwner->ToCreature())
+        {
+            if (hatingCreature->IsAIEnabled)
+                hatingCreature->AI()->CalculateThreat(victim, threat, threatSpell);
+        }
+
+        sourceThreat->DoAddThreat(victim, threat);
+        ref->ReleaseRef();
     }
 }
 
@@ -95,7 +113,7 @@ void HostileRefMgr::threatAssist(Unit* victim, float baseThreat, SpellInfo const
 
 void HostileRefMgr::addTempThreat(float threat, bool apply)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::lock_guard<decltype(_lock)> guard(_lock);
     HostileReference* ref = getFirst();
 
     while (ref)
@@ -116,7 +134,7 @@ void HostileRefMgr::addTempThreat(float threat, bool apply)
 
 void HostileRefMgr::addThreatPercent(int32 percent)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::lock_guard<decltype(_lock)> guard(_lock);
     HostileReference* ref = getFirst();
     while (ref)
     {
@@ -130,7 +148,7 @@ void HostileRefMgr::addThreatPercent(int32 percent)
 
 void HostileRefMgr::setOnlineOfflineState(bool isOnline)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::lock_guard<decltype(_lock)> guard(_lock);
     HostileReference* ref = getFirst();
     while (ref)
     {
@@ -144,7 +162,7 @@ void HostileRefMgr::setOnlineOfflineState(bool isOnline)
 
 void HostileRefMgr::updateThreatTables()
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::lock_guard<decltype(_lock)> guard(_lock);
     HostileReference* ref = getFirst();
     while (ref)
     {
@@ -161,7 +179,7 @@ void HostileRefMgr::deleteReferences(bool removeFromMap /*= false*/)
 {
     std::vector<HostileReference*> refsToRemove;
     {
-        std::lock_guard<std::recursive_mutex> guard(_lock);
+        std::lock_guard<decltype(_lock)> guard(_lock);
         HostileReference* ref = getFirst();
         while (ref)
         {
@@ -212,7 +230,7 @@ void HostileRefMgr::deleteReferencesForFaction(uint32 faction)
 {
     std::vector<HostileReference*> refsToRemove;
     {
-        std::lock_guard<std::recursive_mutex> guard(_lock);
+        std::lock_guard<decltype(_lock)> guard(_lock);
         HostileReference* ref = getFirst();
         while (ref)
         {
@@ -244,7 +262,7 @@ void HostileRefMgr::deleteReference(Unit* creature)
 {
     HostileReference* refToRemove = nullptr;
     {
-        std::lock_guard<std::recursive_mutex> guard(_lock);
+        std::lock_guard<decltype(_lock)> guard(_lock);
         HostileReference* ref = getFirst();
         while (ref)
         {
@@ -276,7 +294,7 @@ void HostileRefMgr::deleteReferencesOutOfRange(float range)
 
     range = range * range;
     {
-        std::lock_guard<std::recursive_mutex> guard(_lock);
+        std::lock_guard<decltype(_lock)> guard(_lock);
         HostileReference* ref = getFirst();
         while (ref)
         {
@@ -307,7 +325,7 @@ void HostileRefMgr::deleteReferencesOutOfRange(float range)
 
 void HostileRefMgr::setOnlineOfflineState(Unit* creature, bool isOnline)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
+    std::lock_guard<decltype(_lock)> guard(_lock);
     HostileReference* ref = getFirst();
     while (ref)
     {
@@ -325,17 +343,29 @@ void HostileRefMgr::setOnlineOfflineState(Unit* creature, bool isOnline)
 
 void HostileRefMgr::UpdateVisibility(bool checkThreat)
 {
-    std::lock_guard<std::recursive_mutex> guard(_lock);
-    HostileReference* ref = getFirst();
-    while (ref)
+    std::vector<HostileReference*> refsToRemove;
     {
-        HostileReference* nextRef = ref->next();
-        if ((!checkThreat || ref->GetSource()->GetThreatListSize() <= 1))
+        std::lock_guard<decltype(_lock)> guard(_lock);
+        HostileReference* ref = getFirst();
+        while (ref)
         {
-            nextRef = ref->next();
-            ref->removeReference();
-            delete ref;
+            HostileReference* nextRef = ref->next();
+            if (!checkThreat || ref->GetSource()->GetThreatListSize() <= 1)
+            {
+                ref->delink();
+                ref->AddRef();
+                refsToRemove.push_back(ref);
+            }
+            ref = nextRef;
         }
-        ref = nextRef;
+    }
+
+    for (HostileReference* ref : refsToRemove)
+    {
+        if (!ref)
+            continue;
+
+        ref->removeReference();
+        ref->ReleaseRef();
     }
 }

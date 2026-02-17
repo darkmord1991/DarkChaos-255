@@ -20,12 +20,14 @@
 #include "CreatureGroups.h"
 #include "Map.h"
 #include "MapMgr.h"
+#include "Maps/Partitioning/PartitionManager.h"
 #include "MoveSpline.h"
 #include "MoveSplineInit.h"
 #include "ObjectAccessor.h"
 #include "Spell.h"
 #include "Util.h"
 #include "World.h"
+#include <atomic>
 
 template<class T>
 RandomMovementGenerator<T>::~RandomMovementGenerator() { }
@@ -36,6 +38,9 @@ template<>
 void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
 {
     if (!creature)
+        return;
+
+    if (_currentPoint > RANDOM_POINTS_NUMBER)
         return;
 
     if (creature->_moveState != MAP_OBJECT_CELL_MOVE_NONE)
@@ -77,6 +82,12 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
     uint8 newPoint = *randomIter;
     uint16 pathIdx = uint16(_currentPoint * RANDOM_POINTS_NUMBER + newPoint);
 
+    if (newPoint >= RANDOM_POINTS_NUMBER || pathIdx >= _preComputedPaths.size())
+    {
+        _validPointsVector[_currentPoint].erase(randomIter);
+        return;
+    }
+
     // cant go anywhere from new point, so dont go there to not be stuck
     if (_validPointsVector[newPoint].empty())
     {
@@ -93,7 +104,7 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
         if (!Acore::IsValidMapCoord(x, y))
         {
             _validPointsVector[_currentPoint].erase(randomIter);
-            _preComputedPaths.erase(pathIdx);
+            _preComputedPaths[pathIdx].clear();
             return;
         }
 
@@ -110,7 +121,7 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
             if (!creature->CanEnterWater())
             {
                 _validPointsVector[_currentPoint].erase(randomIter);
-                _preComputedPaths.erase(pathIdx);
+                _preComputedPaths[pathIdx].clear();
                 return;
             }
             else
@@ -126,7 +137,7 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
             if (levelZ <= INVALID_HEIGHT || !creature->CanWalk())
             {
                 _validPointsVector[_currentPoint].erase(randomIter);
-                _preComputedPaths.erase(pathIdx);
+                _preComputedPaths[pathIdx].clear();
                 return;
             }
         }
@@ -139,7 +150,7 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
             if (!creature->IsWithinLOS(x, y, newZ))
             {
                 _validPointsVector[_currentPoint].erase(randomIter);
-                _preComputedPaths.erase(pathIdx);
+                _preComputedPaths[pathIdx].clear();
                 return;
             }
 
@@ -148,20 +159,50 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
         }
         else // ground
         {
-            if (!_pathGenerator)
+            if (!_pathGenerator || _pathGeneratorOwnerGuid != creature->GetGUID())
+            {
                 _pathGenerator = std::make_unique<PathGenerator>(creature);
+                _pathGeneratorOwnerGuid = creature->GetGUID();
+            }
             else
                 _pathGenerator->Clear();
 
             bool result = _pathGenerator->CalculatePath(x, y, levelZ, false);
+            auto logPathFailure = [&](char const* reason, PathType pathType = PATHFIND_BLANK, std::size_t pointCount = 0, float pathLen = -1.0f)
+            {
+                if (!sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+                    return;
+
+                static std::atomic<uint32> pathFailureSamples{0};
+                uint32 sample = pathFailureSamples.fetch_add(1, std::memory_order_relaxed) + 1;
+                if ((sample & 0x7F) != 0)
+                    return;
+
+                LOG_INFO("movement.path.telemetry", "RandomMovement path failure reason={} guid={} map={} instance={} src=({:.2f},{:.2f},{:.2f}) dst=({:.2f},{:.2f},{:.2f}) levelZ={:.2f} fromPoint={} toPoint={} pathType={} pointCount={} pathLen={:.2f} sample={}",
+                    reason,
+                    creature->GetGUID().ToString(),
+                    creature->GetMapId(),
+                    creature->GetInstanceId(),
+                    creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
+                    x, y, z,
+                    levelZ,
+                    _currentPoint,
+                    newPoint,
+                    uint32(pathType),
+                    pointCount,
+                    pathLen,
+                    sample);
+            };
+
             if (result && !(_pathGenerator->GetPathType() & PATHFIND_NOPATH))
             {
                 // generated path is too long
                 float pathLen = _pathGenerator->getPathLength();
                 if (pathLen * pathLen > creature->GetExactDistSq(x, y, levelZ) * MAX_PATH_LENGHT_FACTOR * MAX_PATH_LENGHT_FACTOR)
                 {
+                    logPathFailure("path_too_long", _pathGenerator->GetPathType(), _pathGenerator->GetPath().size(), pathLen);
                     _validPointsVector[_currentPoint].erase(randomIter);
-                    _preComputedPaths.erase(pathIdx);
+                    _preComputedPaths[pathIdx].clear();
                     return;
                 }
 
@@ -179,16 +220,18 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
                     if (zDiff > 2.0f ||
                             (G3D::fuzzyNe(zDiff, 0.0f) && distDiff / zDiff < 2.15f)) // ~25˚
                     {
+                        logPathFailure("segment_too_steep", _pathGenerator->GetPathType(), finalPath.size(), pathLen);
                         _validPointsVector[_currentPoint].erase(randomIter);
-                        _preComputedPaths.erase(pathIdx);
+                        _preComputedPaths[pathIdx].clear();
                         return;
                     }
 
                     if (!map->isInLineOfSight((*itr).x, (*itr).y, (*itr).z + 2.f, (*itrNext).x, (*itrNext).y, (*itrNext).z + 2.f, creature->GetPhaseMask(),
                         LINEOFSIGHT_ALL_CHECKS, VMAP::ModelIgnoreFlags::Nothing))
                     {
+                        logPathFailure("segment_los_blocked", _pathGenerator->GetPathType(), finalPath.size(), pathLen);
                         _validPointsVector[_currentPoint].erase(randomIter);
-                        _preComputedPaths.erase(pathIdx);
+                        _preComputedPaths[pathIdx].clear();
                         return;
                     }
                 }
@@ -196,15 +239,17 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
                 // no valid path
                 if (finalPath.size() < 2)
                 {
+                    logPathFailure("path_too_short", _pathGenerator->GetPathType(), finalPath.size(), pathLen);
                     _validPointsVector[_currentPoint].erase(randomIter);
-                    _preComputedPaths.erase(pathIdx);
+                    _preComputedPaths[pathIdx].clear();
                     return;
                 }
             }
             else
             {
+                logPathFailure(result ? "pathfind_nopath" : "calculate_path_false", _pathGenerator->GetPathType());
                 _validPointsVector[_currentPoint].erase(randomIter);
-                _preComputedPaths.erase(pathIdx);
+                _preComputedPaths[pathIdx].clear();
                 return;
             }
         }
@@ -240,7 +285,7 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
         _nextMoveTime.Reset(urand(4000, 8000));
     }
     if (sWorld->getBoolConfig(CONFIG_DONT_CACHE_RANDOM_MOVEMENT_PATHS))
-        _preComputedPaths.erase(pathIdx);
+        _preComputedPaths[pathIdx].clear();
 
     //Call for creature group update
     if (creature->GetFormation() && creature->GetFormation()->GetLeader() == creature)
@@ -284,6 +329,8 @@ template<>
 void RandomMovementGenerator<Creature>::DoFinalize(Creature* creature)
 {
     creature->ClearUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);
+    _pathGenerator.reset();
+    _pathGeneratorOwnerGuid = ObjectGuid::Empty;
 }
 
 template<>

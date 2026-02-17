@@ -78,7 +78,6 @@ private:
     {
         ObjectGuid guid;
         uint8 typeId = 0;
-        WorldObject* object = nullptr;
         bool isCreature = false;
     };
 
@@ -90,6 +89,8 @@ private:
     std::vector<Player*> _scratchPlayers;
     std::vector<std::pair<ObjectGuid, uint8>> _scratchObjects;
     std::vector<PartitionManager::BoundaryPositionUpdate> _scratchBoundaryUpdates;
+    std::vector<PartitionManager::NearbyBoundaryQuery> _scratchNearbyBoundaryQueries;
+    std::vector<ObjectGuid> _scratchMergedBoundaryOverrides;
     std::vector<ResolvedObject> _scratchResolvedObjects;
     std::unordered_map<uint32, bool> _scratchBoundaryByGrid;
 };

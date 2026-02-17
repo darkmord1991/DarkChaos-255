@@ -60,7 +60,6 @@
 #include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "LayerManager.h"
-#include "Log.h"
 
 #include <unordered_map>
 

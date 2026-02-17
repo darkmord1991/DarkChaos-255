@@ -175,6 +175,8 @@ public:
     [[nodiscard]] _Ty top() const
     {
         ASSERT(!empty());
+        if (empty())
+            return nullptr;
         return Impl[_top];
     }
     [[nodiscard]] _Ty GetMotionSlot(int slot) const

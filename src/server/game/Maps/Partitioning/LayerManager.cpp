@@ -1051,6 +1051,9 @@ uint32 LayerManager::GetPartyTargetLayer(uint32 mapId, ObjectGuid const& playerG
     if (!IsLayeringEnabled())
         return 0;
 
+    if (!playerGuid)
+        return 0;
+
     // Fast path: thread-local cache avoids any lock on the hot path
     struct PartyLayerTLCache
     {
@@ -1065,6 +1068,22 @@ uint32 LayerManager::GetPartyTargetLayer(uint32 mapId, ObjectGuid const& playerG
     if (tlCache.guid == playerGuid.GetCounter() && tlCache.mapId == mapId && nowMs <= tlCache.expiresMs)
         return tlCache.layerId;
 
+    {
+        std::lock_guard<std::mutex> cacheGuard(_partyLayerCacheLock);
+        auto cacheIt = _partyTargetLayerCache.find(playerGuid.GetCounter());
+        if (cacheIt != _partyTargetLayerCache.end())
+        {
+            if (cacheIt->second.mapId == mapId && nowMs <= cacheIt->second.expiresMs)
+            {
+                tlCache = { playerGuid.GetCounter(), mapId, cacheIt->second.layerId, cacheIt->second.expiresMs };
+                return cacheIt->second.layerId;
+            }
+
+            if (nowMs > cacheIt->second.expiresMs)
+                _partyTargetLayerCache.erase(cacheIt);
+        }
+    }
+
     Player* player = ObjectAccessor::FindPlayer(playerGuid);
     if (!player)
         return 0;
@@ -1077,20 +1096,7 @@ uint32 LayerManager::GetPartyTargetLayer(uint32 mapId, ObjectGuid const& playerG
     if (leaderGuid == playerGuid)
         return 0; // Player is leader, no target layer
 
-    // LOCK ORDER: _layerLock -> _partyLayerCacheLock (matches documented invariant)
-    uint32 layerId = 0;
-    {
-        std::shared_lock<std::shared_mutex> layerGuard(_layerLock);
-        auto it = _playerLayers.find(leaderGuid.GetCounter());
-        if (it == _playerLayers.end())
-            return 0;
-
-        // Blizzard-style: sync to leader's layer if on the same MAP (not zone)
-        if (it->second.mapId != mapId)
-            return 0;
-
-        layerId = it->second.layerId;
-    }
+    uint32 layerId = GetLayerForPlayer(mapId, leaderGuid);
 
     LOG_DEBUG("map.partition", "Party sync: Player {} targeting leader {} layer {} on map {}",
         playerGuid.ToString(), leaderGuid.ToString(), layerId, mapId);
@@ -2234,51 +2240,55 @@ void LayerManager::ProcessPendingLayerAssignments()
 
     {
         std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
-        for (auto const& [guidLow, entry] : _pendingLayerAssignments)
+        for (auto it = _pendingLayerAssignments.begin(); it != _pendingLayerAssignments.end();)
         {
-            if (nowMs >= entry.readyMs)
-                ready.emplace_back(guidLow, entry);
+            if (nowMs >= it->second.readyMs)
+            {
+                ready.emplace_back(it->first, it->second);
+                it = _pendingLayerAssignments.erase(it);
+            }
+            else
+                ++it;
         }
     }
 
     if (ready.empty())
         return;
 
+    std::vector<std::pair<ObjectGuid::LowType, PendingLayerAssignment>> retryEntries;
+    retryEntries.reserve(ready.size());
+
     for (auto const& [guidLow, entry] : ready)
     {
         ObjectGuid playerGuid = ObjectGuid::Create<HighGuid::Player>(guidLow);
         Player* player = ObjectAccessor::FindPlayer(playerGuid);
         if (!player || player->GetMapId() != entry.mapId)
-        {
-            std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
-            _pendingLayerAssignments.erase(guidLow);
             continue;
-        }
 
         if (SwitchPlayerToLayer(playerGuid, entry.layerId, "post-join"))
-        {
-            std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
-            _pendingLayerAssignments.erase(guidLow);
-        }
+            continue;
+
         else
         {
-            std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
-            auto it = _pendingLayerAssignments.find(guidLow);
-            if (it != _pendingLayerAssignments.end())
+            PendingLayerAssignment retry = entry;
+            ++retry.retryCount;
+            if (retry.retryCount >= PendingLayerAssignment::MAX_RETRIES)
             {
-                ++it->second.retryCount;
-                if (it->second.retryCount >= PendingLayerAssignment::MAX_RETRIES)
-                {
-                    LOG_WARN("map.partition", "PendingLayerAssignment for guid {} exceeded max retries ({}), removing",
-                        guidLow, PendingLayerAssignment::MAX_RETRIES);
-                    _pendingLayerAssignments.erase(it);
-                }
-                else
-                {
-                    it->second.readyMs = nowMs + 1000;
-                }
+                LOG_WARN("map.partition", "PendingLayerAssignment for guid {} exceeded max retries ({}), removing",
+                    guidLow, PendingLayerAssignment::MAX_RETRIES);
+                continue;
             }
+
+            retry.readyMs = nowMs + 1000;
+            retryEntries.emplace_back(guidLow, retry);
         }
+    }
+
+    if (!retryEntries.empty())
+    {
+        std::lock_guard<std::mutex> guard(_pendingLayerAssignmentLock);
+        for (auto const& [guidLow, retry] : retryEntries)
+            _pendingLayerAssignments[guidLow] = retry;
     }
 }
 
@@ -2453,20 +2463,19 @@ void LayerManager::Update(uint32 mapId, uint32 diff)
         uint64 intervalMs = GetRebalancingConfig().checkIntervalMs;
         if (intervalMs == 0) intervalMs = 300000; // Safety: default 5min
 
-        uint64 lastCheck = 0;
+        bool shouldRebalance = false;
         {
             std::lock_guard<std::mutex> guard(_rebalanceCheckLock);
-            lastCheck = _lastRebalanceCheck[mapId];
+            uint64& lastCheck = _lastRebalanceCheck[mapId];
+            if (now >= lastCheck + intervalMs)
+            {
+                lastCheck = now;
+                shouldRebalance = true;
+            }
         }
 
-        if (now >= lastCheck + intervalMs)
-        {
-            {
-                std::lock_guard<std::mutex> guard(_rebalanceCheckLock);
-                _lastRebalanceCheck[mapId] = now;
-            }
+        if (shouldRebalance)
             EvaluateLayerRebalancing(mapId);
-        }
     }
 }
 

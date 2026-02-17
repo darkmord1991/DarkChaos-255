@@ -19,7 +19,7 @@
 #define _HOSTILEREFMANAGER
 
 #include "RefMgr.h"
-#include <mutex>
+#include "ThreatLockDebug.h"
 
 class Unit;
 class ThreatMgr;
@@ -32,7 +32,7 @@ class HostileRefMgr : public RefMgr<Unit, ThreatMgr>
 {
 private:
     Unit* iOwner;
-    mutable std::recursive_mutex _lock;
+    mutable Acore::ThreatTrackedRecursiveMutex _lock{Acore::ThreatLockTag::HostileRefMgr, "HostileRefMgr::_lock"};
 public:
     explicit HostileRefMgr(Unit* owner) { iOwner = owner; }
     ~HostileRefMgr() override;

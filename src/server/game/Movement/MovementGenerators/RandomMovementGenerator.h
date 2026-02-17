@@ -19,8 +19,10 @@
 #define ACORE_RANDOMMOTIONGENERATOR_H
 
 #include "MovementGenerator.h"
+#include "ObjectGuid.h"
 #include "PathGenerator.h"
 #include "Timer.h"
+#include <array>
 
 #define RANDOM_POINTS_NUMBER        12
 #define RANDOM_LINKS_COUNT          7
@@ -32,7 +34,7 @@ template<class T>
 class RandomMovementGenerator : public MovementGeneratorMedium< T, RandomMovementGenerator<T> >
 {
 public:
-    RandomMovementGenerator(float wanderDistance = 0.0f) : _nextMoveTime(0), _moveCount(0), _wanderDistance(wanderDistance), _pathGenerator(nullptr), _currentPoint(RANDOM_POINTS_NUMBER)
+    RandomMovementGenerator(float wanderDistance = 0.0f) : _nextMoveTime(0), _moveCount(0), _wanderDistance(wanderDistance), _pathGenerator(nullptr), _pathGeneratorOwnerGuid(ObjectGuid::Empty), _currentPoint(RANDOM_POINTS_NUMBER)
     {
         _initialPosition.Relocate(0.0f, 0.0f, 0.0f, 0.0f);
         _destinationPoints.reserve(RANDOM_POINTS_NUMBER);
@@ -63,10 +65,11 @@ private:
     uint8 _moveCount;
     float _wanderDistance;
     std::unique_ptr<PathGenerator> _pathGenerator;
+    ObjectGuid _pathGeneratorOwnerGuid;
     std::vector<G3D::Vector3> _destinationPoints;
     std::vector<uint8> _validPointsVector[RANDOM_POINTS_NUMBER + 1];
     uint8 _currentPoint;
-    std::map<uint16, Movement::PointsArray> _preComputedPaths;
+    std::array<Movement::PointsArray, RANDOM_POINTS_NUMBER * RANDOM_POINTS_NUMBER> _preComputedPaths;
     Position _initialPosition, _currDestPosition;
 };
 #endif

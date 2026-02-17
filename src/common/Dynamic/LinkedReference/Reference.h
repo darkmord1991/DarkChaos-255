@@ -61,7 +61,8 @@ public:
     // Tell our refTo object, that the link is cut
     void unlink()
     {
-        targetObjectDestroyLink();
+        if (iRefTo)
+            targetObjectDestroyLink();
         delink();
         iRefTo = nullptr;
         iRefFrom = nullptr;

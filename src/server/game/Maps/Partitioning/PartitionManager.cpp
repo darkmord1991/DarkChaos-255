@@ -301,25 +301,70 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
     if (guid)
     {
         uint64 nowMs = GameTime::GetGameTimeMS().count();
+
+        struct OverrideLookupCache
+        {
+            ObjectGuid::LowType guid = 0;
+            uint32 mapId = 0;
+            uint32 partitionId = 0;
+            uint64 expiresMs = 0;
+            uint64 cacheUntilMs = 0;
+            bool hasOverride = false;
+        };
+
+        thread_local OverrideLookupCache cache;
+        ObjectGuid::LowType guidLow = guid.GetCounter();
+        if (cache.guid == guidLow && cache.mapId == mapId && nowMs <= cache.cacheUntilMs)
+        {
+            if (cache.hasOverride && nowMs <= cache.expiresMs)
+                return cache.partitionId;
+
+            return GetPartitionIdForPosition(mapId, x, y);
+        }
+
+        bool hasOverride = false;
+        uint32 cachedPartitionId = 0;
+        uint64 cachedExpiry = 0;
         
         // Fast path: shared lock for read-only lookups (hot path every tick per player)
         {
             std::shared_lock<std::shared_mutex> guard(_overrideLock);
             
             // Check persistent ownership first
-            auto ownership = _partitionOwnership.find(guid.GetCounter());
+            auto ownership = _partitionOwnership.find(guidLow);
             if (ownership != _partitionOwnership.end() && ownership->second.mapId == mapId)
-                return ownership->second.partitionId;
+            {
+                hasOverride = true;
+                cachedPartitionId = ownership->second.partitionId;
+                cachedExpiry = std::numeric_limits<uint64>::max();
+            }
             
             // Check temporary overrides
-            auto it = _partitionOverrides.find(guid.GetCounter());
-            if (it != _partitionOverrides.end() && it->second.mapId == mapId)
+            if (!hasOverride)
             {
-                if (it->second.expiresMs >= nowMs)
-                    return it->second.partitionId;
-                // Expired — will be cleaned up by CleanupExpiredOverrides()
+                auto it = _partitionOverrides.find(guidLow);
+                if (it != _partitionOverrides.end() && it->second.mapId == mapId)
+                {
+                    if (it->second.expiresMs >= nowMs)
+                    {
+                        hasOverride = true;
+                        cachedPartitionId = it->second.partitionId;
+                        cachedExpiry = it->second.expiresMs;
+                    }
+                    // Expired — will be cleaned up by CleanupExpiredOverrides()
+                }
             }
         }
+
+        cache.guid = guidLow;
+        cache.mapId = mapId;
+        cache.partitionId = cachedPartitionId;
+        cache.expiresMs = cachedExpiry;
+        cache.hasOverride = hasOverride;
+        cache.cacheUntilMs = nowMs + 50;
+
+        if (hasOverride)
+            return cachedPartitionId;
     }
 
     return GetPartitionIdForPosition(mapId, x, y);
@@ -1126,6 +1171,32 @@ std::vector<ObjectGuid> PartitionManager::GetNearbyBoundaryObjects(uint32 mapId,
     return partIt->second.QueryNearby(x, y, radius);
 }
 
+    std::vector<std::vector<ObjectGuid>> PartitionManager::BatchGetNearbyBoundaryObjects(uint32 mapId, std::vector<NearbyBoundaryQuery> const& queries) const
+    {
+        std::vector<std::vector<ObjectGuid>> results;
+        results.resize(queries.size());
+        if (queries.empty())
+            return results;
+
+        std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
+
+        auto mapIt = _boundarySpatialGrids.find(mapId);
+        if (mapIt == _boundarySpatialGrids.end())
+            return results;
+
+        for (size_t i = 0; i < queries.size(); ++i)
+        {
+            NearbyBoundaryQuery const& query = queries[i];
+            auto partIt = mapIt->second.find(query.partitionId);
+            if (partIt == mapIt->second.end())
+                continue;
+
+            results[i] = partIt->second.QueryNearby(query.x, query.y, query.radius);
+        }
+
+        return results;
+    }
+
 // ======================== NEW CLEANUP METHODS ========================
 
 void PartitionManager::CleanupStaleRelocations()
@@ -1226,12 +1297,14 @@ void PartitionManager::BatchUnregisterBoundaryObjects(uint32 mapId, uint32 parti
             spatialGrid = &spatialPartIt->second;
     }
 
+    bool diagnosticsEnabled = IsRuntimeDiagnosticsEnabled();
+    if (spatialGrid && diagnosticsEnabled)
+        CheckGridWriter(*spatialGrid, mapId, partitionId, "BatchUnregisterBoundaryObjects");
+
     for (auto const& guid : guids)
     {
         if (spatialGrid)
         {
-            if (IsRuntimeDiagnosticsEnabled())
-                CheckGridWriter(*spatialGrid, mapId, partitionId, "BatchUnregisterBoundaryObjects");
             spatialGrid->Remove(guid);
         }
     }
@@ -1541,14 +1614,29 @@ void PartitionManager::EvaluatePartitionDensity(uint32 mapId)
     float maxDensity = 0.0f;
     float minDensity = std::numeric_limits<float>::max();
 
-    for (uint32 pid = 1; pid <= partitionCount; ++pid)
     {
-        float density = GetPartitionDensity(mapId, pid);
-        if (density > maxDensity)
-            maxDensity = density;
-        if (density < minDensity)
-            minDensity = density;
+        std::shared_lock<std::shared_mutex> guard(_partitionLock);
+        auto mapIt = _partitionIndex.find(mapId);
+        if (mapIt == _partitionIndex.end() || mapIt->second.empty())
+            return;
+
+        for (auto const& [partitionId, partition] : mapIt->second)
+        {
+            (void)partitionId;
+            if (!partition)
+                continue;
+
+            float density = static_cast<float>(partition->GetPlayersCount()) +
+                static_cast<float>(partition->GetCreaturesCount()) / 10.0f;
+            if (density > maxDensity)
+                maxDensity = density;
+            if (density < minDensity)
+                minDensity = density;
+        }
     }
+
+    if (minDensity == std::numeric_limits<float>::max())
+        return;
 
     uint32 maxPartitions = _config.maxPartitions;
 
@@ -1630,7 +1718,7 @@ std::vector<uint32> PartitionManager::GetAdjacentPartitions(uint32 mapId, uint32
         adjacent.push_back(partitionId - layout.cols);  // Up
     if (row < layout.rows - 1)
         adjacent.push_back(partitionId + layout.cols);  // Down
-    
+
     return adjacent;
 }
 
@@ -1638,7 +1726,7 @@ void PartitionManager::CheckBoundaryApproach(ObjectGuid const& playerGuid, uint3
 {
     // Check if player is moving toward a partition boundary
     // If so, queue the adjacent partition for precaching
-    
+
     if (!IsEnabled())
         return;
 
@@ -1650,18 +1738,18 @@ void PartitionManager::CheckBoundaryApproach(ObjectGuid const& playerGuid, uint3
             return;
         lastCheck = nowMs;
     }
-    
+
     uint32 currentPartition = GetPartitionIdForPosition(mapId, x, y);
-    
+
     // Predict position in ~5 seconds based on velocity
     float predictX = x + dx * 5.0f;
     float predictY = y + dy * 5.0f;
     uint32 predictedPartition = GetPartitionIdForPosition(mapId, predictX, predictY);
-    
+
     if (predictedPartition != currentPartition && predictedPartition > 0)
     {
         // Player is approaching boundary
-        LOG_DEBUG("map.partition", "Player {} approaching partition boundary: {} -> {}", 
+        LOG_DEBUG("map.partition", "Player {} approaching partition boundary: {} -> {}",
             playerGuid.ToString(), currentPartition, predictedPartition);
 
         uint64 key = (static_cast<uint64>(mapId) << 32) | predictedPartition;
@@ -1690,29 +1778,46 @@ void PartitionManager::ProcessPrecacheQueue(uint32 mapId)
     if (!map)
         return;
 
-    uint32 processed = 0;
     uint64 nowMs = GameTime::GetGameTimeMS().count();
 
     std::vector<PrecacheRequest> toProcess;
     {
         std::lock_guard<std::mutex> guard(_precacheLock);
-        size_t queueSize = _precacheQueue.size();
-        for (size_t i = 0; i < queueSize && processed < PartitionConst::MAX_PRECACHE_REQUESTS_PER_TICK; ++i)
+        if (!_precacheQueue.empty())
         {
-            PrecacheRequest req = _precacheQueue.front();
-            _precacheQueue.pop_front();
+            std::deque<PrecacheRequest> remaining;
+            remaining.swap(_precacheQueue);
 
-            if (req.mapId != mapId)
+            std::deque<PrecacheRequest> untouched;
+            untouched.clear();
+            uint32 processed = 0;
+
+            while (!remaining.empty())
             {
-                _precacheQueue.push_back(req);
-                continue;
+                PrecacheRequest req = remaining.front();
+                remaining.pop_front();
+
+                if (req.mapId != mapId)
+                {
+                    untouched.push_back(req);
+                    continue;
+                }
+
+                if (nowMs - req.queuedMs > PartitionConst::PRECACHE_REQUEST_MAX_AGE_MS)
+                    continue;
+
+                if (processed < PartitionConst::MAX_PRECACHE_REQUESTS_PER_TICK)
+                {
+                    toProcess.push_back(req);
+                    ++processed;
+                }
+                else
+                {
+                    untouched.push_back(req);
+                }
             }
 
-            if (nowMs - req.queuedMs > PartitionConst::PRECACHE_REQUEST_MAX_AGE_MS)
-                continue;
-
-            toProcess.push_back(req);
-            ++processed;
+            _precacheQueue.swap(untouched);
         }
 
         // Prune stale entries from _precacheRecent to prevent unbounded growth

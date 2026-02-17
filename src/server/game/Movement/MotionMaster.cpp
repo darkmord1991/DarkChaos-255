@@ -110,10 +110,17 @@ void MotionMaster::UpdateMotion(uint32 diff)
 
     ASSERT(!empty());
 
+    if (empty() || !top())
+        Initialize();
+
+    MovementGenerator* current = top();
+    if (!current)
+        return;
+
     _cleanFlag |= MMCF_INUSE;
 
     _cleanFlag |= MMCF_UPDATE;
-    if (!top()->Update(_owner, diff))
+    if (!current->Update(_owner, diff))
     {
         _cleanFlag &= ~MMCF_UPDATE;
         MovementExpired();
@@ -137,7 +144,10 @@ void MotionMaster::UpdateMotion(uint32 diff)
         else if (needInitTop())
             InitTop();
         else if (_cleanFlag & MMCF_RESET)
-            top()->Reset(_owner);
+        {
+            if (MovementGenerator* resetTarget = top())
+                resetTarget->Reset(_owner);
+        }
 
         _cleanFlag &= ~MMCF_RESET;
     }
@@ -1331,7 +1341,8 @@ uint32 MotionMaster::GetCurrentSplineId() const
 
 void MotionMaster::InitTop()
 {
-    top()->Initialize(_owner);
+    if (MovementGenerator* current = top())
+        current->Initialize(_owner);
     _needInit[_top] = false;
 }
 

@@ -16,7 +16,6 @@
 #include "ObjectMgr.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
-#include "Player.h"
 
 class npc_dungeon_quest_daily_weekly : public PlayerScript
 {

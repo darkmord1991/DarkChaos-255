@@ -2138,32 +2138,45 @@ void Spell::SearchChainTargets(std::list<WorldObject*>& targets, uint32 chainTar
     if (isBouncingFar)
         searchRadius *= chainTargets;
 
-    WorldObject* chainSource = m_spellInfo->HasAttribute(SPELL_ATTR2_CHAIN_FROM_CASTER) ? m_caster : target;
-    std::list<WorldObject*> tempTargets;
-    SearchAreaTargets(tempTargets, searchRadius, chainSource, m_caster, objectType, selectType, condList);
-    tempTargets.remove(target);
+    bool const chainFromCaster = m_spellInfo->HasAttribute(SPELL_ATTR2_CHAIN_FROM_CASTER);
+    WorldObject* chainSource = chainFromCaster ? m_caster : target;
 
-    // remove targets which are always invalid for chain spells
-    // for some spells allow only chain targets in front of caster (swipe for example)
-    if (!isBouncingFar)
-        tempTargets.remove_if([this](WorldObject* target) { return !m_caster->HasInArc(static_cast<float>(M_PI), target); });
+    std::list<WorldObject*> areaTargets;
+    SearchAreaTargets(areaTargets, searchRadius, chainSource, m_caster, objectType, selectType, condList);
 
-    while (chainTargets)
+    std::vector<WorldObject*> tempTargets;
+    tempTargets.reserve(areaTargets.size());
+
+    for (WorldObject* candidate : areaTargets)
+    {
+        if (candidate == target)
+            continue;
+
+        // remove targets which are always invalid for chain spells
+        // for some spells allow only chain targets in front of caster (swipe for example)
+        if (!isBouncingFar && !m_caster->HasInArc(static_cast<float>(M_PI), candidate))
+            continue;
+
+        tempTargets.push_back(candidate);
+    }
+
+    while (chainTargets && !tempTargets.empty())
     {
         // try to get unit for next chain jump
-        std::list<WorldObject*>::iterator foundItr = tempTargets.end();
+        size_t foundIndex = tempTargets.size();
+
         // get unit with highest hp deficit in dist
         if (isChainHeal)
         {
             uint32 maxHPDeficit = 0;
-            for (std::list<WorldObject*>::iterator itr = tempTargets.begin(); itr != tempTargets.end(); ++itr)
+            for (size_t i = 0; i < tempTargets.size(); ++i)
             {
-                if (Unit* unit = (*itr)->ToUnit())
+                if (Unit* unit = tempTargets[i]->ToUnit())
                 {
                     uint32 deficit = unit->GetMaxHealth() - unit->GetHealth();
                     if (deficit > maxHPDeficit && chainSource->IsWithinDist(unit, jumpRadius) && chainSource->IsWithinLOSInMap(unit, VMAP::ModelIgnoreFlags::M2))
                     {
-                        foundItr = itr;
+                        foundIndex = i;
                         maxHPDeficit = deficit;
                     }
                 }
@@ -2172,26 +2185,31 @@ void Spell::SearchChainTargets(std::list<WorldObject*>& targets, uint32 chainTar
         // get closest object
         else
         {
-            for (std::list<WorldObject*>::iterator itr = tempTargets.begin(); itr != tempTargets.end(); ++itr)
+            for (size_t i = 0; i < tempTargets.size(); ++i)
             {
-                if (foundItr == tempTargets.end())
+                WorldObject* candidate = tempTargets[i];
+                if (foundIndex == tempTargets.size())
                 {
-                    if ((!isBouncingFar || chainSource->IsWithinDist(*itr, jumpRadius)) && chainSource->IsWithinLOSInMap(*itr, VMAP::ModelIgnoreFlags::M2))
-                        foundItr = itr;
+                    if ((!isBouncingFar || chainSource->IsWithinDist(candidate, jumpRadius)) && chainSource->IsWithinLOSInMap(candidate, VMAP::ModelIgnoreFlags::M2))
+                        foundIndex = i;
                 }
-                else if (chainSource->GetDistanceOrder(*itr, *foundItr) && chainSource->IsWithinLOSInMap(*itr, VMAP::ModelIgnoreFlags::M2))
-                    foundItr = itr;
+                else if (chainSource->GetDistanceOrder(candidate, tempTargets[foundIndex]) && chainSource->IsWithinLOSInMap(candidate, VMAP::ModelIgnoreFlags::M2))
+                    foundIndex = i;
             }
         }
+
         // not found any valid target - chain ends
-        if (foundItr == tempTargets.end())
+        if (foundIndex == tempTargets.size())
             break;
 
-        if (!m_spellInfo->HasAttribute(SPELL_ATTR2_CHAIN_FROM_CASTER))
-            chainSource = *foundItr;
+        WorldObject* foundTarget = tempTargets[foundIndex];
 
-        targets.push_back(*foundItr);
-        tempTargets.erase(foundItr);
+        if (!chainFromCaster)
+            chainSource = foundTarget;
+
+        targets.push_back(foundTarget);
+        tempTargets[foundIndex] = tempTargets.back();
+        tempTargets.pop_back();
         --chainTargets;
     }
 }
