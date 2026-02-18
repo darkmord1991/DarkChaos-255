@@ -93,6 +93,24 @@ local searchBoxes = {}  -- [frameName] = EditBox
 -- ============================================================
 local function GetItemKey(bag, slot) return bag .. ":" .. slot end
 
+local function ToDebugString(value)
+    if value == nil then return "nil" end
+
+    local valueType = type(value)
+    if valueType == "string" then return value end
+    if valueType == "number" then return "" .. value end
+    if valueType == "boolean" then
+        return value and "true" or "false"
+    end
+
+    local ok, result = pcall(tostring, value)
+    if ok and result then
+        return result
+    end
+
+    return "<" .. valueType .. ">"
+end
+
 local function NormalizeSearchText(text)
     if not text then return "" end
     text = text:lower()
@@ -260,61 +278,11 @@ local function GetOrCreateButton(bag, slot, parentFrame)
     local name = "DCQoS_Item_" .. bag .. "_" .. slot
     
     local button = CreateFrame("Button", name, proxy, "ContainerFrameItemButtonTemplate")
+    if ContainerFrameItemButton_OnLoad then
+        ContainerFrameItemButton_OnLoad(button)
+    end
     button:SetID(slot)
     button.bag = bag  -- Store bag ID for tooltip/click handling
-    
-    -- Setup click handlers (like Bagnon's item.lua)
-    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    button:RegisterForDrag("LeftButton")
-    
-    button:SetScript("OnClick", function(self, mouseButton)
-        local bagID = self.bag
-        local slotID = self:GetID()
-        local link = GetContainerItemLink(bagID, slotID)
-        
-        -- Handle modified clicks (Shift+Click for link, Ctrl+Click for dressing room)
-        if link and HandleModifiedItemClick(link) then
-            return
-        end
-        
-        -- Split stack with Shift+Click on stackable items
-        if IsShiftKeyDown() and not CursorHasItem() then
-            local texture, itemCount = GetContainerItemInfo(bagID, slotID)
-            if itemCount and itemCount > 1 then
-                OpenStackSplitFrame(itemCount, self, "BOTTOMRIGHT", "TOPRIGHT")
-                return
-            end
-        end
-        
-        if mouseButton == "RightButton" then
-            UseContainerItem(bagID, slotID)
-        else
-            PickupContainerItem(bagID, slotID)
-        end
-    end)
-    
-    button:SetScript("OnDragStart", function(self)
-        PickupContainerItem(self.bag, self:GetID())
-    end)
-    
-    button:SetScript("OnReceiveDrag", function(self)
-        PickupContainerItem(self.bag, self:GetID())
-    end)
-    
-    -- Stack split callback (called by StackSplitFrame)
-    button.SplitStack = function(self, split)
-        SplitContainerItem(self.bag, self:GetID(), split)
-    end
-    
-    button:SetScript("OnEnter", function(self)
-        GameTooltip_SetDefaultAnchor(GameTooltip, self)
-        GameTooltip:SetBagItem(self.bag, self:GetID())
-        GameTooltip:Show()
-    end)
-    
-    button:SetScript("OnLeave", function(self)
-        GameTooltip:Hide()
-    end)
     
     itemButtons[bag][slot] = button
     return button
@@ -513,6 +481,14 @@ local function CreateBagFrame(frameDefName)
     f:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -20, 120)
     f:Hide()
     
+    -- Force refresh when shown
+    f:SetScript("OnShow", function(self)
+        if addon.Debug then
+            addon:Debug("Frame " .. frameDefName .. " shown, forcing refresh")
+        end
+        LayoutFrame(frameDefName)
+    end)
+    
     -- Register for Escape key closing
     tinsert(UISpecialFrames, f:GetName())
     
@@ -595,19 +571,40 @@ end
 -- Event Handlers
 -- ============================================================
 local function OnBagUpdate(bag)
+    if bag ~= nil then
+        bag = tonumber(bag) or bag
+    end
     local settings = addon.settings.bags
     
+    -- Debug logging
+    if addon.Debug then
+        addon:Debug("OnBagUpdate fired for bag: " .. ToDebugString(bag))
+    end
+    
     if settings.oneBag then
-        -- OneBag Mode
+        -- OneBag Mode - refresh all matching frames
+        local refreshed = false
         for name, def in pairs(FRAMES) do
-            for _, b in ipairs(def.bags) do
-                if b == bag then
-                    if frames[name] and frames[name]:IsShown() then
-                        LayoutFrame(name)
+            if bag == nil then
+                -- Nil bag = refresh all shown frames
+                if frames[name] and frames[name]:IsShown() then
+                    LayoutFrame(name)
+                    refreshed = true
+                end
+            else
+                for _, b in ipairs(def.bags) do
+                    if b == bag then
+                        if frames[name] and frames[name]:IsShown() then
+                            LayoutFrame(name)
+                            refreshed = true
+                        end
+                        break
                     end
-                    return
                 end
             end
+        end
+        if addon.Debug and refreshed then
+            addon:Debug("OneBag frame refreshed for bag " .. ToDebugString(bag))
         end
     else
         -- Default Mode
@@ -623,11 +620,35 @@ local function OnBagUpdate(bag)
     end
 end
 
+local function RefreshShownFrames()
+    local settings = addon.settings.bags
+    if settings.oneBag then
+        if frames.inventory and frames.inventory:IsShown() then LayoutFrame("inventory") end
+        if frames.bank and frames.bank:IsShown() then LayoutFrame("bank") end
+    else
+        for i = 1, 13 do
+            local f = _G["ContainerFrame"..i]
+            if f and f:IsShown() then UpdateDefaultContainerFrame(f) end
+        end
+        if BankFrame and BankFrame:IsShown() then UpdateDefaultBankFrame() end
+    end
+end
+
 local function OpenInventory()
     if not addon.settings.bags.oneBag then return end
     local f = CreateBagFrame("inventory")
+    if addon.Debug then
+        addon:Debug("OpenInventory called, forcing layout refresh")
+    end
     f:Show()
     LayoutFrame("inventory")
+    
+    -- Force immediate refresh after a tiny delay to ensure items are loaded
+    C_Timer.After(0.1, function()
+        if f and f:IsShown() then
+            LayoutFrame("inventory")
+        end
+    end)
     
     -- Hide default bags
     for i = 1, 13 do
@@ -749,117 +770,118 @@ function BagEnhancements.OnEnable()
     -- OneBag Mode: Replace bag functions (like Bagnon)
     -- ============================================================
     if settings.oneBag then
-        -- Store original functions
-        local oOpenBackpack = OpenBackpack
-        local oToggleBackpack = ToggleBackpack
-        local oToggleBag = ToggleBag
-        local oOpenAllBags = OpenAllBags
-        local oOpenBag = OpenBag
-        
-        -- Hide all default container frames
+        local function IsInventoryBagSlot(bagSlot)
+            for _, b in ipairs(FRAMES.inventory.bags) do
+                if b == bagSlot then
+                    return true
+                end
+            end
+            return false
+        end
+
         local function HideDefaultBags()
             for i = 1, 13 do
                 local f = _G["ContainerFrame"..i]
                 if f then f:Hide() end
             end
         end
-        
-        -- Replace OpenBackpack
-        OpenBackpack = function()
-            if settings.oneBag then
+
+        local function IsAnyInventoryContainerShown()
+            for i = 1, 13 do
+                local f = _G["ContainerFrame"..i]
+                if f and f:IsShown() and IsInventoryBagSlot(f:GetID()) then
+                    return true
+                end
+            end
+            return false
+        end
+
+        local function SyncInventoryToBlizzardState()
+            if not settings.oneBag then return end
+            if IsAnyInventoryContainerShown() then
                 OpenInventory()
                 HideDefaultBags()
             else
-                oOpenBackpack()
+                CloseInventory()
             end
         end
-        
-        -- Replace ToggleBackpack
-        ToggleBackpack = function()
-            if settings.oneBag then
-                if frames.inventory and frames.inventory:IsShown() then
+
+        local function QueueSyncInventoryToBlizzardState()
+            if not settings.oneBag then return end
+            C_Timer.After(0, function()
+                if not addon.settings or not addon.settings.bags or not addon.settings.bags.oneBag then
+                    return
+                end
+                SyncInventoryToBlizzardState()
+            end)
+        end
+
+        local function QueueSyncOrToggleInventoryFallback()
+            if not settings.oneBag then return end
+            local wasShown = frames.inventory and frames.inventory:IsShown()
+            C_Timer.After(0, function()
+                if not addon.settings or not addon.settings.bags or not addon.settings.bags.oneBag then
+                    return
+                end
+
+                if IsAnyInventoryContainerShown() then
+                    OpenInventory()
+                    HideDefaultBags()
+                    return
+                end
+
+                if wasShown then
                     CloseInventory()
                 else
                     OpenInventory()
                     HideDefaultBags()
                 end
-            else
-                oToggleBackpack()
-            end
+            end)
         end
-        
-        -- Replace ToggleBag
-        ToggleBag = function(bagSlot)
-            if settings.oneBag then
-                -- Check if it's an inventory bag (0-4)
-                local isInv = false
-                for _, b in ipairs(FRAMES.inventory.bags) do
-                    if b == bagSlot then isInv = true break end
-                end
-                
-                if isInv then
-                    if frames.inventory and frames.inventory:IsShown() then
-                        CloseInventory()
-                    else
-                        OpenInventory()
-                        HideDefaultBags()
-                    end
-                else
-                    -- Bank bag, let it through for now
-                    oToggleBag(bagSlot)
-                end
-            else
-                oToggleBag(bagSlot)
-            end
+
+        hooksecurefunc("OpenBackpack", function()
+            if not settings.oneBag then return end
+            OpenInventory()
+            HideDefaultBags()
+        end)
+
+        hooksecurefunc("ToggleBackpack", function()
+            QueueSyncOrToggleInventoryFallback()
+        end)
+
+        hooksecurefunc("ToggleBag", function(bagSlot)
+            if not settings.oneBag then return end
+            if not IsInventoryBagSlot(bagSlot) then return end
+            QueueSyncOrToggleInventoryFallback()
+        end)
+
+        if ToggleAllBags then
+            hooksecurefunc("ToggleAllBags", function()
+                QueueSyncOrToggleInventoryFallback()
+            end)
         end
-        
-        -- Replace OpenAllBags
-        OpenAllBags = function(force)
-            if settings.oneBag then
-                if force or not (frames.inventory and frames.inventory:IsShown()) then
-                    OpenInventory()
-                    HideDefaultBags()
-                else
-                    CloseInventory()
-                end
-            else
-                oOpenAllBags(force)
-            end
-        end
-        
-        -- Replace OpenBag
-        OpenBag = function(bagSlot)
-            if settings.oneBag then
-                -- Check if it's an inventory bag (0-4)
-                local isInv = false
-                for _, b in ipairs(FRAMES.inventory.bags) do
-                    if b == bagSlot then isInv = true break end
-                end
-                
-                if isInv then
-                    OpenInventory()
-                    HideDefaultBags()
-                else
-                    -- Bank bag
-                    oOpenBag(bagSlot)
-                end
-            else
-                oOpenBag(bagSlot)
-            end
-        end
+
+        hooksecurefunc("OpenAllBags", function()
+            if not settings.oneBag then return end
+            OpenInventory()
+            HideDefaultBags()
+        end)
+
+        hooksecurefunc("OpenBag", function(bagSlot)
+            if not settings.oneBag then return end
+            if not IsInventoryBagSlot(bagSlot) then return end
+            OpenInventory()
+            HideDefaultBags()
+        end)
         
         -- Hook CloseAllBags (cannot replace, needed for combat/game menu)
         hooksecurefunc("CloseAllBags", function()
-            if settings.oneBag then
-                CloseInventory()
-            end
+            QueueSyncInventoryToBlizzardState()
         end)
         
         -- Hook CloseBackpack
         hooksecurefunc("CloseBackpack", function()
-            if settings.oneBag then
-                CloseInventory()
-            end
+            QueueSyncInventoryToBlizzardState()
         end)
     end
     
@@ -883,12 +905,48 @@ function BagEnhancements.OnEnable()
     ev:RegisterEvent("BAG_UPDATE")
     ev:RegisterEvent("PLAYER_MONEY")
     ev:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    ev:RegisterEvent("BAG_UPDATE_DELAYED")
+    ev:RegisterEvent("BAG_UPDATE_COOLDOWN")
+    ev:RegisterEvent("ITEM_PUSH")
+    ev:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
     ev:RegisterEvent("BANKFRAME_OPENED")
     ev:RegisterEvent("BANKFRAME_CLOSED")
     
     ev:SetScript("OnEvent", function(self, event, ...)
+        if addon.Debug then
+            local args = {...}
+            local argStr = #args > 0 and table.concat({...}, ", ") or "none"
+            addon:Debug("BagEnhancements event: " .. event .. " args: " .. argStr)
+        end
+        
         if event == "BAG_UPDATE" then
             OnBagUpdate(...)
+        elseif event == "BAG_UPDATE_DELAYED" then
+            if addon.Debug then
+                addon:Debug("BAG_UPDATE_DELAYED - forcing refresh")
+            end
+            RefreshShownFrames()
+        elseif event == "BAG_UPDATE_COOLDOWN" then
+            RefreshShownFrames()
+        elseif event == "PLAYERBANKSLOTS_CHANGED" then
+            if settings.oneBag and frames.bank and frames.bank:IsShown() then
+                LayoutFrame("bank")
+            elseif not settings.oneBag and BankFrame and BankFrame:IsShown() then
+                UpdateDefaultBankFrame()
+            end
+        elseif event == "ITEM_PUSH" then
+            local bag, slot = ...
+            bag = tonumber(bag) or bag
+            slot = tonumber(slot) or slot
+            if addon.Debug then
+                addon:Debug("ITEM_PUSH bag=" .. ToDebugString(bag) .. " slot=" .. ToDebugString(slot))
+            end
+            if bag and slot then
+                newItems[GetItemKey(bag, slot)] = GetTime()
+                OnBagUpdate(bag)
+            else
+                RefreshShownFrames()
+            end
         elseif event == "PLAYER_MONEY" then
             if frames.inventory and frames.inventory:IsShown() then
                 MoneyFrame_Update(frames.inventory.moneyFrame:GetName(), GetMoney())
@@ -919,7 +977,7 @@ function BagEnhancements.OnEnable()
     BagEnhancements.eventFrame = ev
 
     if addon and addon.Debug then
-        addon:Debug("Bag Enhancements Loaded. OneBag Mode: " .. tostring(settings.oneBag))
+        addon:Debug("Bag Enhancements Loaded. OneBag Mode: " .. ToDebugString(settings.oneBag))
     end
 end
 

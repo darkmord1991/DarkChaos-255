@@ -39,6 +39,19 @@ local KeystonePlugin = {
     _inventoryKeystone = nil,  -- Cached keystone from inventory
 }
 
+local function ParseKeystoneName(itemName)
+    if type(itemName) ~= "string" or itemName == "" then
+        return nil, nil
+    end
+
+    local level = string.match(itemName, "%+(%d+)") or
+        string.match(itemName, "Level (%d+)")
+    local dungeonName = string.match(itemName, ":%s*(.+)%s*%+") or
+        string.match(itemName, "Keystone:%s*(.+)")
+
+    return level, dungeonName
+end
+
 -- Scan inventory for keystone items
 function KeystonePlugin:ScanInventoryForKeystone()
     -- Check all bag slots for keystone items
@@ -50,9 +63,11 @@ function KeystonePlugin:ScanInventoryForKeystone()
                 -- Fast path: check known keystone item IDs
                 if KEYSTONE_ITEM_IDS[itemId] then
                     local itemName, itemLink = GetItemInfo(itemId)
+                    if not itemLink then
+                        itemLink = GetContainerItemLink(bag, slot)
+                    end
                     -- Extract level and dungeon and continue below
-                    local level = string.match(itemName, "%+(%d+)") or string.match(itemName, "Level (%d+)")
-                    local dungeonName = string.match(itemName, ":%s*(.+)%s*%+") or string.match(itemName, "Keystone:%s*(.+)")
+                    local level, dungeonName = ParseKeystoneName(itemName)
                     -- Also check item tooltip for additional info
                     local tooltipData = self:GetItemTooltipData(bag, slot)
                     if tooltipData then
@@ -74,10 +89,12 @@ function KeystonePlugin:ScanInventoryForKeystone()
                 else
                     -- Check item name for "Keystone" text
                     local itemName, itemLink = GetItemInfo(itemId)
+                    if not itemLink then
+                        itemLink = GetContainerItemLink(bag, slot)
+                    end
                     if itemName and string.find(itemName, "Keystone") then
                     -- Parse keystone level from item name or tooltip
-                    local level = string.match(itemName, "%+(%d+)") or string.match(itemName, "Level (%d+)")
-                    local dungeonName = string.match(itemName, ":%s*(.+)%s*%+") or string.match(itemName, "Keystone:%s*(.+)")
+                    local level, dungeonName = ParseKeystoneName(itemName)
                     
                     -- Also check item tooltip for additional info
                     local tooltipData = self:GetItemTooltipData(bag, slot)

@@ -411,7 +411,7 @@ do
     local orig_ChatFrame_MessageEventHandler = ChatFrame_MessageEventHandler
     if orig_ChatFrame_MessageEventHandler then
         ChatFrame_MessageEventHandler = function(self, event, ...)
-            -- Only process CHAT_MSG_CHANNEL events for protection
+            -- Only process CHAT_MSG_CHANNEL and CHAT_MSG_CHANNEL_NOTICE events for protection
             if event == "CHAT_MSG_CHANNEL" then
                 -- arg7 is the channel number, arg8 is the channel name in 3.3.5a
                 local msg, sender, lang, channelString, _, _, channelNumber, channelName = ...
@@ -426,6 +426,13 @@ do
                         -- It's usually just a join/leave message during teleport
                         return
                     end
+                end
+            elseif event == "CHAT_MSG_CHANNEL_NOTICE" then
+                -- arg1 (notice type) is used to look up a global string in ChatFrame.lua
+                -- If the global string is missing, format() will throw. Provide a safe fallback.
+                local noticeType = ...
+                if type(noticeType) == "string" and not _G[noticeType] then
+                    _G[noticeType] = noticeType
                 end
             end
             

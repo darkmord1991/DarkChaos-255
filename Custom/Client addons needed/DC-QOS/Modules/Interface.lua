@@ -18,6 +18,26 @@ local Interface = {
 
 -- Event frames storage for cleanup (must be defined before functions that use it)
 local eventFrames = {}
+local zoomSettingHookRegistered = false
+
+local function SafeSetCVar(name, value)
+    if type(SetCVar) ~= "function" then
+        return false
+    end
+
+    local ok = pcall(SetCVar, name, value)
+    return ok and true or false
+end
+
+local function GetClampedZoomFactor(value)
+    local zoom = tonumber(value) or 4
+    if zoom < 1 then
+        zoom = 1
+    elseif zoom > 4 then
+        zoom = 4
+    end
+    return math.floor((zoom * 10) + 0.5) / 10
+end
 
 -- ============================================================
 -- Combat Nameplates
@@ -199,6 +219,46 @@ local function SetupEnhancedMinimap()
 end
 
 -- ============================================================
+-- Camera Zoom Distance
+-- ============================================================
+local function ApplyCameraZoomDistance()
+    local settings = addon.settings.interface
+    if not settings or not settings.enabled then return end
+
+    if settings.extendedCameraZoom then
+        local zoomFactor = GetClampedZoomFactor(settings.maxZoomFactor)
+        SafeSetCVar("cameraDistanceMaxFactor", tostring(zoomFactor))
+    else
+        SafeSetCVar("cameraDistanceMaxFactor", "1")
+    end
+end
+
+local function SetupCameraZoomDistance()
+    local settings = addon.settings.interface
+    if not settings or not settings.enabled then return end
+
+    ApplyCameraZoomDistance()
+
+    local frame = CreateFrame("Frame")
+    table.insert(eventFrames, frame)
+    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    frame:SetScript("OnEvent", function()
+        ApplyCameraZoomDistance()
+    end)
+
+    addon:DelayedCall(1.0, ApplyCameraZoomDistance)
+
+    if not zoomSettingHookRegistered then
+        zoomSettingHookRegistered = true
+        addon:RegisterEvent("SETTING_CHANGED", function(path)
+            if path == "interface.enabled" or path == "interface.extendedCameraZoom" or path == "interface.maxZoomFactor" then
+                ApplyCameraZoomDistance()
+            end
+        end)
+    end
+end
+
+-- ============================================================
 -- Player Frame Offset
 -- ============================================================
 local function SetupPlayerFrameOffset()
@@ -241,6 +301,7 @@ function Interface.OnEnable()
     if not (addon.settings.minimap and addon.settings.minimap.enabled) then
         SetupEnhancedMinimap()
     end
+    SetupCameraZoomDistance()
     SetupBuffFramePosition()
     SetupPlayerFrameOffset()
 end
@@ -313,6 +374,44 @@ function Interface.CreateSettings(parent)
         addon:Print("Requires /reload to take effect", true)
     end)
     yOffset = yOffset - 25
+
+    -- ============================================================
+    -- Camera Section
+    -- ============================================================
+    local cameraHeader = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    cameraHeader:SetPoint("TOPLEFT", 16, yOffset)
+    cameraHeader:SetText("Camera")
+    yOffset = yOffset - 25
+
+    local zoomCb = addon:CreateCheckbox(parent)
+    zoomCb:SetPoint("TOPLEFT", 16, yOffset)
+    zoomCb.Text:SetText("Allow further camera zoom out")
+    zoomCb:SetChecked(settings.extendedCameraZoom)
+    zoomCb:SetScript("OnClick", function(self)
+        addon:SetSetting("interface.extendedCameraZoom", self:GetChecked())
+        ApplyCameraZoomDistance()
+    end)
+    yOffset = yOffset - 30
+
+    local zoomSlider = addon:CreateSlider(parent)
+    zoomSlider:SetPoint("TOPLEFT", 16, yOffset)
+    zoomSlider:SetWidth(220)
+    zoomSlider:SetMinMaxValues(1, 4)
+    zoomSlider:SetValueStep(0.1)
+    zoomSlider.Text:SetText("Camera Max Zoom Factor")
+    zoomSlider.Low:SetText("1.0")
+    zoomSlider.High:SetText("4.0")
+    zoomSlider:SetValue(GetClampedZoomFactor(settings.maxZoomFactor))
+    zoomSlider:SetScript("OnValueChanged", function(self, value)
+        local rounded = GetClampedZoomFactor(value)
+        if self._dcqosLastValue == rounded then return end
+        self._dcqosLastValue = rounded
+        addon:SetSetting("interface.maxZoomFactor", rounded)
+        if settings.extendedCameraZoom then
+            ApplyCameraZoomDistance()
+        end
+    end)
+    yOffset = yOffset - 55
 
     -- ============================================================
     -- Buff/Aura Frame Section

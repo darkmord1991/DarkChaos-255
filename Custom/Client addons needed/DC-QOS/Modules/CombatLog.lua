@@ -1774,10 +1774,12 @@ local function ShowDeathRecap()
             if entry.absorbed and entry.absorbed > 0 then
                 extraText = extraText .. string.format(" |cff00ff00Absorbed: %s|r", FormatNumber(entry.absorbed))
             end
+            local sourceText = entry.source or "Unknown"
+            local spellText = entry.spell or "Unknown"
             print(string.format("  |cffff6600%s|r from %s (%s)%s%s", 
                 FormatNumber(entry.amount), 
-                entry.source, 
-                entry.spell,
+                sourceText, 
+                spellText,
                 hpText,
                 extraText))
         end

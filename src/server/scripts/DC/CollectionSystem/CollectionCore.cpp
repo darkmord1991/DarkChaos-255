@@ -231,12 +231,7 @@ namespace DCCollection
     // Account Helpers
     // =======================================================================
 
-    uint32 GetAccountId(Player* player)
-    {
-        if (!player || !player->GetSession())
-            return 0;
-        return player->GetSession()->GetAccountId();
-    }
+    // Duplicate definition removed; implemented in dc_addon_collection.cpp
 
     // =======================================================================
     // Forward References - Implemented in other split files
