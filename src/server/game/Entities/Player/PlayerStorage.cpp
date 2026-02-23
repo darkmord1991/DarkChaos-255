@@ -3402,30 +3402,48 @@ void Player::DestroyZoneLimitedItem(bool update, uint32 new_zone)
 {
     LOG_DEBUG("entities.player.items", "STORAGE: DestroyZoneLimitedItem in map {} and area {}", GetMapId(), new_zone);
 
+    struct PendingDestroy
+    {
+        uint8 Bag;
+        uint8 Slot;
+        ObjectGuid Guid;
+    };
+
+    std::vector<PendingDestroy> pendingDestroy;
+    pendingDestroy.reserve(64);
+
+    auto queueIfLimited = [this, new_zone, &pendingDestroy](uint8 bag, uint8 slot, Item* item)
+    {
+        if (!item)
+            return;
+
+        if (item->IsLimitedToAnotherMapOrZone(GetMapId(), new_zone))
+            pendingDestroy.push_back({ bag, slot, item->GetGUID() });
+    };
+
     // in inventory
     for (uint8 i = INVENTORY_SLOT_ITEM_START; i < INVENTORY_SLOT_ITEM_END; i++)
-        if (Item* pItem = GetItemByPos(INVENTORY_SLOT_BAG_0, i))
-            if (pItem->IsLimitedToAnotherMapOrZone(GetMapId(), new_zone))
-                DestroyItem(INVENTORY_SLOT_BAG_0, i, update);
+        queueIfLimited(INVENTORY_SLOT_BAG_0, i, GetItemByPos(INVENTORY_SLOT_BAG_0, i));
 
     for (uint8 i = KEYRING_SLOT_START; i < CURRENCYTOKEN_SLOT_END; ++i)
-        if (Item* pItem = GetItemByPos(INVENTORY_SLOT_BAG_0, i))
-            if (pItem->IsLimitedToAnotherMapOrZone(GetMapId(), new_zone))
-                DestroyItem(INVENTORY_SLOT_BAG_0, i, update);
+        queueIfLimited(INVENTORY_SLOT_BAG_0, i, GetItemByPos(INVENTORY_SLOT_BAG_0, i));
 
     // in inventory bags
     for (uint8 i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; i++)
         if (Bag* pBag = GetBagByPos(i))
             for (uint32 j = 0; j < pBag->GetBagSize(); j++)
-                if (Item* pItem = pBag->GetItemByPos(j))
-                    if (pItem->IsLimitedToAnotherMapOrZone(GetMapId(), new_zone))
-                        DestroyItem(i, j, update);
+                queueIfLimited(i, static_cast<uint8>(j), pBag->GetItemByPos(j));
 
     // in equipment and bag list
     for (uint8 i = EQUIPMENT_SLOT_START; i < INVENTORY_SLOT_BAG_END; i++)
-        if (Item* pItem = GetItemByPos(INVENTORY_SLOT_BAG_0, i))
-            if (pItem->IsLimitedToAnotherMapOrZone(GetMapId(), new_zone))
-                DestroyItem(INVENTORY_SLOT_BAG_0, i, update);
+        queueIfLimited(INVENTORY_SLOT_BAG_0, i, GetItemByPos(INVENTORY_SLOT_BAG_0, i));
+
+    for (PendingDestroy const& destroy : pendingDestroy)
+    {
+        if (Item* item = GetItemByPos(destroy.Bag, destroy.Slot))
+            if (item->GetGUID() == destroy.Guid)
+                DestroyItem(destroy.Bag, destroy.Slot, update);
+    }
 }
 
 void Player::DestroyConjuredItems(bool update)

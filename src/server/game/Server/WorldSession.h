@@ -596,6 +596,8 @@ public:
     // Locales
     LocaleConstant GetSessionDbcLocale() const { return m_sessionDbcLocale; }
     LocaleConstant GetSessionDbLocaleIndex() const { return m_sessionDbLocaleIndex; }
+    uint64 GetInstanceId() const { return _instanceId; }
+    static bool IsLiveSessionInstance(WorldSession const* session, uint64 expectedInstanceId);
     std::string GetAcoreString(uint32 entry) const;
     std::string const* GetModuleString(std::string module, uint32 id) const;
 
@@ -1299,6 +1301,7 @@ private:
     uint32 _timeSyncTimer;
 
     uint32 _orderCounter;
+    uint64 _instanceId;
 
     bool _isBot;
 

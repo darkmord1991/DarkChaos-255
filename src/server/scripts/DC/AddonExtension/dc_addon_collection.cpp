@@ -614,7 +614,7 @@ namespace DCCollection
     }
 
     // Forward declarations: ensure functions are visible at call sites
-    inline uint32 GetAccountId(Player* player);
+    uint32 GetAccountId(Player* player);
     // Note: WorldTableExists is already forward-declared at line 146
 
     void ImportExistingCollections(Player* player)
@@ -1147,7 +1147,7 @@ namespace DCCollection
     }
 
     // Get player's account ID for account-wide collections
-    inline uint32 GetAccountId(Player* player)
+    uint32 GetAccountId(Player* player)
     {
         if (!player || !player->GetSession())
             return 0;

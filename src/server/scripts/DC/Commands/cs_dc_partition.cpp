@@ -16,6 +16,7 @@
 #include "DBCStores.h"
 #include "Maps/Partitioning/PartitionManager.h"
 #include "Maps/Partitioning/LayerManager.h"
+#include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <map>
@@ -181,18 +182,25 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
         if (norm == "on" || norm == "enable" || norm == "enabled")
         {
             sLayerMgr->SetRuntimeDiagnosticsEnabled(true);
+            sPartitionMgr->SetRuntimeDiagnosticsEnabled(true);
             handler->SendSysMessage("Partition diagnostics enabled.");
             return true;
         }
         if (norm == "off" || norm == "disable" || norm == "disabled")
         {
             sLayerMgr->SetRuntimeDiagnosticsEnabled(false);
+            sPartitionMgr->SetRuntimeDiagnosticsEnabled(false);
             handler->SendSysMessage("Partition diagnostics disabled.");
             return true;
         }
 
-        uint64 remainingMs = sLayerMgr->GetRuntimeDiagnosticsRemainingMs();
-        handler->PSendSysMessage("Partition diagnostics: {}", sLayerMgr->IsRuntimeDiagnosticsEnabled() ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
+        bool const layerDiag = sLayerMgr->IsRuntimeDiagnosticsEnabled();
+        bool const partitionDiag = sPartitionMgr->IsRuntimeDiagnosticsEnabled();
+        uint64 const remainingMs = std::max<uint64>(
+            sLayerMgr->GetRuntimeDiagnosticsRemainingMs(),
+            sPartitionMgr->GetRuntimeDiagnosticsRemainingMs());
+        handler->PSendSysMessage("Partition diagnostics (layer): {}", layerDiag ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
+        handler->PSendSysMessage("Partition diagnostics (runtime): {}", partitionDiag ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
         handler->PSendSysMessage("Diagnostics window remaining: {} ms", remainingMs);
         handler->PSendSysMessage("Metrics enabled: {}", sMetric->IsEnabled() ? "|cff00ff00YES|r" : "|cffff0000NO|r");
         if (!sMetric->IsEnabled())
@@ -276,7 +284,7 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
     if (sub2Norm == "config")
     {
         handler->SendSysMessage("|cff00ff00=== Partition System Configuration ===|r");
-        
+
         // Core Settings
         handler->PSendSysMessage("MapPartitions.Enabled: {}", sPartitionMgr->IsEnabled() ? "|cff00ff00TRUE|r" : "|cffff0000FALSE|r");
         handler->PSendSysMessage("MapPartitions.Maps: |cff00ffff{}|r", sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_MAPS));
@@ -304,16 +312,16 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
             handler->PSendSysMessage("MapPartitions.TileBased.PartitionOverrides: |cff00ffff{}|r", countOverrides);
         else
             handler->PSendSysMessage("MapPartitions.TileBased.PartitionOverrides: |cff888888(none)|r");
-        
-        // Zone Exclusions  
+
+        // Zone Exclusions
         std::string_view excludedZones = sWorld->getStringConfig(CONFIG_MAP_PARTITIONS_EXCLUDE_ZONES);
         if (!excludedZones.empty())
             handler->PSendSysMessage("MapPartitions.ExcludeZones: |cff00ffff{}|r", excludedZones);
         else
             handler->PSendSysMessage("MapPartitions.ExcludeZones: |cff888888(none)|r");
-        
+
         handler->SendSysMessage("");  // Blank line separator
-        
+
         // Layering Settings
         handler->PSendSysMessage("MapPartitions.Layers.Enabled: {}", sLayerMgr->IsLayeringEnabled() ? "|cff00ff00TRUE|r" : "|cffff0000FALSE|r");
         handler->PSendSysMessage("MapPartitions.Layers.Capacity: |cff00ffff{}|r players/layer (global)", sLayerMgr->GetLayerCapacity());
@@ -333,7 +341,7 @@ bool HandleDcPartitionSubcommand(ChatHandler* handler, std::vector<std::string_v
         // Soft transfers
         handler->PSendSysMessage("SoftTransfers.Enabled: {}", sLayerMgr->IsSoftTransfersEnabled() ? "|cff00ff00TRUE|r" : "|cffff0000FALSE|r");
         handler->PSendSysMessage("SoftTransfers.TimeoutMs: |cff00ffff{}|r", sLayerMgr->GetSoftTransferTimeoutMs());
-        
+
         handler->SendSysMessage("");  // Blank line separator
         handler->SendSysMessage("|cff888888Tip: Use '.dc partition status' to see runtime stats|r");
         return true;

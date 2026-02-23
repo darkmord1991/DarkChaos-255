@@ -24,6 +24,8 @@
 #include "Position.h"
 #include "SharedDefines.h"
 #include "Spline/MoveSpline.h"
+#include <atomic>
+#include <mutex>
 #include <optional>
 #include <vector>
 
@@ -147,6 +149,7 @@ private:
         Impl[_top] = nullptr;
         while (!empty() && !top())
             --_top;
+        UpdateCurrentMovementType();
     }
 
     [[nodiscard]] bool needInitTop() const
@@ -157,7 +160,7 @@ private:
     }
     void InitTop();
 public:
-    explicit MotionMaster(Unit* unit) : _expList(nullptr), _top(-1), _owner(unit), _cleanFlag(MMCF_NONE)
+    explicit MotionMaster(Unit* unit) : _expList(nullptr), _top(-1), _owner(unit), _cleanFlag(MMCF_NONE), _currentMovementGeneratorType(IDLE_MOTION_TYPE)
     {
         for (uint8 i = 0; i < MAX_MOTION_SLOT; ++i)
         {
@@ -185,7 +188,13 @@ public:
         return Impl[slot];
     }
 
-    [[nodiscard]] uint8 GetCleanFlags() const { return _cleanFlag; }
+    // Thread-safe wrappers for external callers
+    [[nodiscard]] bool empty_locked() const { std::lock_guard<std::recursive_mutex> guard(_motionLock); return empty(); }
+    [[nodiscard]] int size_locked() const { std::lock_guard<std::recursive_mutex> guard(_motionLock); return size(); }
+    [[nodiscard]] _Ty top_locked() const { std::lock_guard<std::recursive_mutex> guard(_motionLock); return top(); }
+    [[nodiscard]] _Ty GetMotionSlot_locked(int slot) const { std::lock_guard<std::recursive_mutex> guard(_motionLock); return GetMotionSlot(slot); }
+
+    [[nodiscard]] uint8 GetCleanFlags() const { std::lock_guard<std::recursive_mutex> guard(_motionLock); return _cleanFlag; }
 
     void DirectDelete(_Ty curr);
     void DelayedDelete(_Ty curr);
@@ -193,6 +202,7 @@ public:
     void UpdateMotion(uint32 diff);
     void Clear(bool reset = true)
     {
+        std::lock_guard<std::recursive_mutex> guard(_motionLock);
         if (_cleanFlag & MMCF_UPDATE)
         {
             if (reset)
@@ -206,6 +216,7 @@ public:
     }
     void MovementExpired(bool reset = true)
     {
+        std::lock_guard<std::recursive_mutex> guard(_motionLock);
         if (_cleanFlag & MMCF_UPDATE)
         {
             if (reset)
@@ -220,6 +231,7 @@ public:
 
     void MovementExpiredOnSlot(MovementSlot slot, bool reset = true)
     {
+        std::lock_guard<std::recursive_mutex> guard(_motionLock);
         // xinef: cannot be used during motion update!
         if (!(_cleanFlag & MMCF_UPDATE))
             DirectExpireSlot(slot, reset);
@@ -268,7 +280,7 @@ public:
     void MoveKnockbackFromForPlayer(float srcX, float srcY, float speedXY, float speedZ);
     void MovePointBackwards(uint32 id, float x, float y, float z, bool generatePath = true, bool forceDestination = true, MovementSlot slot = MOTION_SLOT_ACTIVE, float orientation = 0.0f);
 #endif
-    [[nodiscard]] MovementGeneratorType GetCurrentMovementGeneratorType() const;
+    [[nodiscard]] MovementGeneratorType GetCurrentMovementGeneratorType() const { return _currentMovementGeneratorType.load(std::memory_order_relaxed); }
     [[nodiscard]] MovementGeneratorType GetMotionSlotType(int slot) const;
     bool HasMovementGeneratorType(MovementGeneratorType type) const;
     [[nodiscard]] uint32 GetCurrentSplineId() const; // Xinef: Escort system
@@ -296,5 +308,9 @@ private:
     Unit* _owner;
     bool _needInit[MAX_MOTION_SLOT];
     uint8 _cleanFlag;
+    mutable std::recursive_mutex _motionLock;
+    std::atomic<MovementGeneratorType> _currentMovementGeneratorType; // Deadlock fix: Lock-free access
+
+    void UpdateCurrentMovementType();
 };
 #endif

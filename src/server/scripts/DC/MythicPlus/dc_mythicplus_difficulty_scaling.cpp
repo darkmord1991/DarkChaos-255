@@ -245,7 +245,7 @@ void MythicDifficultyScaling::ScaleCreature(Creature* creature, Map* map)
         creature->UpdateAllStats();
     }
 
-    LOG_INFO("mythic.scaling", "Scaled creature {} (entry {}) on map {} (difficulty {}) to level {} with {:.2f}x HP ({} -> {}), {:.2f}x Damage",
+    LOG_DEBUG("mythic.scaling", "Scaled creature {} (entry {}) on map {} (difficulty {}) to level {} with {:.2f}x HP ({} -> {}), {:.2f}x Damage",
               creature->GetName(), creature->GetEntry(), map->GetId(), uint32(difficulty), newLevel,
               hpMult, creature->GetCreateHealth(), creature->GetMaxHealth(), damageMult);
 }

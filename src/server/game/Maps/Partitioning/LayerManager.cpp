@@ -500,7 +500,7 @@ void LayerManager::AssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerG
         layerWasEmpty = targetLayer.empty();
         targetLayer.insert(playerGuid.GetCounter());
         _playerLayers[playerGuid.GetCounter()] = { mapId, 0, layerId };
-        
+
         // Sync atomic for lock-free reads
         _atomicPlayerLayers[playerGuid.GetCounter()].Store(mapId, layerId);
 
@@ -513,7 +513,7 @@ void LayerManager::AssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerG
 
     // Phase 2: expensive despawn outside lock
     if (needsDespawn)
-        DespawnLayerClones(despawnMapId, despawnLayerId);
+        QueueDespawnLayerClones(despawnMapId, despawnLayerId);
 
     SyncControlledToLayer(mapId, playerGuid, layerId);
 
@@ -530,7 +530,7 @@ void LayerManager::RemovePlayerFromLayer(uint32_t mapId, ObjectGuid const& playe
     uint32 despawnLayerId = 0;
     {
         std::unique_lock<std::shared_mutex> guard(_layerLock);
-        
+
         auto it = _playerLayers.find(playerGuid.GetCounter());
         if (it == _playerLayers.end())
             return;
@@ -548,7 +548,7 @@ void LayerManager::RemovePlayerFromLayer(uint32_t mapId, ObjectGuid const& playe
         }
 
         _playerLayers.erase(it);
-        
+
         // Erase atomic entry entirely to prevent unbounded map growth
         _atomicPlayerLayers.erase(playerGuid.GetCounter());
 
@@ -561,7 +561,7 @@ void LayerManager::RemovePlayerFromLayer(uint32_t mapId, ObjectGuid const& playe
 
     // Phase 2: expensive despawn outside lock
     if (needsDespawn)
-        DespawnLayerClones(mapId, despawnLayerId);
+        QueueDespawnLayerClones(mapId, despawnLayerId);
 }
 
 bool LayerManager::CleanupEmptyLayers(uint32 mapId, uint32 layerId)
@@ -611,14 +611,37 @@ bool LayerManager::CleanupEmptyLayers(uint32 mapId, uint32 layerId)
     return true; // Caller must call DespawnLayerClones(mapId, layerId) outside the lock
 }
 
-void LayerManager::DespawnLayerClones(uint32 mapId, uint32 layerId)
+void LayerManager::QueueDespawnLayerClones(uint32 mapId, uint32 layerId)
 {
-    // Phase 2: Expensive map iteration — must be called OUTSIDE _layerLock.
-    sMapMgr->DoForAllMapsWithMapId(mapId, [&](Map* map)
-    {
-        if (!map)
-            return;
+    std::lock_guard<std::mutex> guard(_pendingDespawnLock);
+    _pendingDespawns.push_back({mapId, layerId});
+}
 
+void LayerManager::ProcessPendingDespawns(uint32 mapId)
+{
+    std::vector<std::pair<uint32, uint32>> despawnsToProcess;
+    {
+        std::lock_guard<std::mutex> guard(_pendingDespawnLock);
+        auto it = std::remove_if(_pendingDespawns.begin(), _pendingDespawns.end(),
+            [mapId](auto const& p) { return p.first == mapId; });
+
+        if (it != _pendingDespawns.end())
+        {
+            despawnsToProcess.insert(despawnsToProcess.end(), it, _pendingDespawns.end());
+            _pendingDespawns.erase(it, _pendingDespawns.end());
+        }
+    }
+
+    if (despawnsToProcess.empty())
+        return;
+
+    Map* map = sMapMgr->FindBaseMap(mapId);
+    if (!map)
+        return;
+
+    for (auto const& p : despawnsToProcess)
+    {
+        uint32 layerId = p.second;
         map->ClearLoadedLayer(layerId);
 
         std::vector<Creature*> creaturesToRemove;
@@ -641,7 +664,7 @@ void LayerManager::DespawnLayerClones(uint32 mapId, uint32 layerId)
             creature->AddObjectToRemoveList();
         for (GameObject* go : gosToRemove)
             go->AddObjectToRemoveList();
-    });
+    }
 }
 
 void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& playerGuid)
@@ -941,7 +964,7 @@ void LayerManager::AutoAssignPlayerToLayer(uint32_t mapId, ObjectGuid const& pla
 
     // Phase 2: expensive despawn outside lock
     if (needsDespawn)
-        DespawnLayerClones(despawnMapId, despawnLayerId);
+        QueueDespawnLayerClones(despawnMapId, despawnLayerId);
 
     // Perform DB I/O outside the lock to prevent deadlocks
     if (shouldSync)
@@ -1206,13 +1229,13 @@ uint32 LayerManager::GetLayerForNPC(uint32 mapId, ObjectGuid const& npcGuid) con
         cache = { npcGuid.GetCounter(), mapId, 0, nowMs + 250 };
         return 0;
     }
-    
+
     if (it->second.mapId != mapId)
     {
         cache = { npcGuid.GetCounter(), mapId, 0, nowMs + 250 };
         return 0;
     }
-    
+
     cache = { npcGuid.GetCounter(), mapId, it->second.layerId, nowMs + 250 };
     return it->second.layerId;
 }
@@ -1484,15 +1507,15 @@ bool LayerManager::CanSwitchLayer(ObjectGuid const& playerGuid) const
     Player* player = ObjectAccessor::FindPlayer(playerGuid);
     if (!player)
         return false;
-    
+
     // Combat check
     if (player->IsInCombat())
         return false;
-    
+
     // Death check
     if (player->isDead())
         return false;
-    
+
     // Cooldown check
     std::lock_guard<std::mutex> guard(_cooldownLock);
     auto it = _layerSwitchCooldowns.find(playerGuid.GetCounter());
@@ -1502,7 +1525,7 @@ bool LayerManager::CanSwitchLayer(ObjectGuid const& playerGuid) const
         if (!it->second.CanSwitch(nowMs))
             return false;
     }
-    
+
     return true;
 }
 
@@ -1512,7 +1535,7 @@ uint32 LayerManager::GetLayerSwitchCooldownMs(ObjectGuid const& playerGuid) cons
     auto it = _layerSwitchCooldowns.find(playerGuid.GetCounter());
     if (it == _layerSwitchCooldowns.end())
         return 0;
-    
+
     uint64 nowMs = GameTime::GetGameTimeMS().count();
     return it->second.GetRemainingCooldownMs(nowMs);
 }
@@ -1528,13 +1551,13 @@ bool LayerManager::SwitchPlayerToLayer(ObjectGuid const& playerGuid, uint32 targ
 
     if (player->GetMapId() == 0 && player->GetAreaId() == kHinterlandBattleAreaId)
         targetLayer = 0;
-    
+
     // Enforce restrictions
     if (!CanSwitchLayer(playerGuid))
         return false;
-    
+
     uint32 mapId = player->GetMapId();
-    
+
     // Check if target layer actually exists
     {
         std::shared_lock<std::shared_mutex> guard(_layerLock);
@@ -1544,12 +1567,12 @@ bool LayerManager::SwitchPlayerToLayer(ObjectGuid const& playerGuid, uint32 targ
         if (mapIt->second.find(targetLayer) == mapIt->second.end())
             return false;
     }
-    
+
     // Get current layer
     uint32 currentLayer = GetLayerForPlayer(mapId, playerGuid);
     if (currentLayer == targetLayer)
         return false; // Already on target layer
-    
+
     // Perform the switch
     AssignPlayerToLayer(mapId, playerGuid, targetLayer);
 
@@ -1564,23 +1587,23 @@ bool LayerManager::SwitchPlayerToLayer(ObjectGuid const& playerGuid, uint32 targ
 
     // Force visibility rebuild
     player->UpdateObjectVisibility(true, true);
-    
+
     // Record the switch for cooldown tracking
     {
         std::lock_guard<std::mutex> guard(_cooldownLock);
         uint64 nowMs = GameTime::GetGameTimeMS().count();
         _layerSwitchCooldowns[playerGuid.GetCounter()].RecordSwitch(nowMs);
     }
-    
+
     LOG_DEBUG("map.partition", "Player {} switched from layer {} to layer {} (reason: {})",
         playerGuid.ToString(), currentLayer, targetLayer, reason);
-    
+
     if (IsRuntimeDiagnosticsEnabled())
     {
         LOG_INFO("map.partition", "Diag: SwitchPlayerToLayer player={} from={} to={} reason={}",
             playerGuid.ToString(), currentLayer, targetLayer, reason);
     }
-    
+
     return true;
 }
 
@@ -1624,7 +1647,7 @@ void LayerManager::LoadPersistentLayerAssignment(ObjectGuid const& playerGuid)
 {
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_DC_LAYER_ASSIGNMENT);
     stmt->SetData(0, playerGuid.GetCounter());
-    
+
     sWorld->GetQueryProcessor().AddCallback(CharacterDatabase.AsyncQuery(stmt).WithPreparedCallback(
         [this, playerGuid](PreparedQueryResult result)
         {
@@ -1700,7 +1723,7 @@ void LayerManager::HandlePersistentLayerAssignmentLoad(ObjectGuid const& playerG
 
     // Phase 2: expensive despawn outside lock
     if (needsDespawn)
-        DespawnLayerClones(despawnMapId, despawnLayerId);
+        QueueDespawnLayerClones(despawnMapId, despawnLayerId);
 
     // If we moved the player, rebuild visibility outside the lock
     if (needsReassign)
@@ -1739,7 +1762,7 @@ void LayerManager::EvaluateLayerRebalancing(uint32 mapId)
         return;
 
     std::vector<uint32> layersToMerge;
-    
+
     {
         // Use shared lock for read-only evaluation — no mutation happens here
         std::shared_lock<std::shared_mutex> guard(_layerLock);
@@ -1747,7 +1770,7 @@ void LayerManager::EvaluateLayerRebalancing(uint32 mapId)
         if (mapIt == _layers.end())
             return;
         auto& mapLayers = mapIt->second;
-        
+
         if (mapLayers.size() <= 1)
         {
             // Only 1 layer — no consolidation needed, reset destruction hysteresis
@@ -1845,7 +1868,7 @@ void LayerManager::ConsolidateLayers(uint32 mapId, uint32 sourceLayerId, uint32 
     std::vector<ObjectGuid::LowType> playersToMove;
 
     {
-        std::shared_lock<std::shared_mutex> guard(_layerLock); 
+        std::shared_lock<std::shared_mutex> guard(_layerLock);
         auto mapIt = _layers.find(mapId);
         if (mapIt == _layers.end()) return;
         auto layerIt = mapIt->second.find(sourceLayerId);
@@ -2166,7 +2189,7 @@ void LayerManager::PeriodicCacheSweep()
                 ++it;
         }
     }
-    
+
     // 2. Sweep switch cooldowns
     {
         std::lock_guard<std::mutex> guard(_cooldownLock);
@@ -2362,6 +2385,8 @@ void LayerManager::Update(uint32 mapId, uint32 diff)
     if (!IsLayeringEnabled())
         return;
 
+    ProcessPendingDespawns(mapId);
+
     // 1. Periodic cleanup (throttled global 1s)
     uint64 now = GameTime::GetGameTimeMS().count();
     uint64 lastCleanup = _lastCleanupMs.load(std::memory_order_relaxed);
@@ -2518,7 +2543,7 @@ void LayerManager::ForceRemovePlayerFromAllLayers(ObjectGuid const& playerGuid)
 
     // Phase 2: expensive despawn outside lock
     if (needsDespawn)
-        DespawnLayerClones(despawnMapId, despawnLayerId);
+        QueueDespawnLayerClones(despawnMapId, despawnLayerId);
 
     // Clean up layer switch cooldown to prevent unbounded growth
     {

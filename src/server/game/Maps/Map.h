@@ -100,7 +100,7 @@ struct ScriptAction
 
 #define DEFAULT_HEIGHT_SEARCH     50.0f                     // default search distance to find height at nearby locations
 #define MIN_UNLOAD_DELAY      1                             // immediate unload
-#define UPDATABLE_OBJECT_LIST_RECHECK_TIMER 30 * IN_MILLISECONDS // Time to recheck update object list
+#define UPDATABLE_OBJECT_LIST_RECHECK_TIMER 3 * IN_MILLISECONDS // Time to recheck nearby cells and update object list
 
 struct PositionFullTerrainStatus
 {
@@ -294,7 +294,8 @@ public:
         if (!guid)
             return;
         std::lock_guard<std::mutex> lock(_delayedVisibilityLock);
-        _objectsForDelayedVisibility.push_back(guid);
+        if (_delayedVisibilitySet.insert(guid).second)
+            _objectsForDelayedVisibility.push_back(guid);
     }
     void HandleDelayedVisibility();
 
@@ -815,6 +816,7 @@ public:
         uint32 procPhase = 0;
         bool isVictim = false;
         uint64 queuedMs = 0;
+        uint8 bounceCount = 0;
     };
 
     struct PartitionAuraRelay
@@ -901,6 +903,9 @@ public:
     void ProcessDeferredVisibilityUpdates();
     void QueueDeferredPlayerRelocation(ObjectGuid const& playerGuid, float x, float y, float z, float o);
     void ProcessDeferredPlayerRelocations();
+    void QueueDeferredAIRelocation(ObjectGuid guid);
+    void ProcessDeferredAIRelocation();
+    bool ShouldDeferAIRelocation() const { return GetActivePartitionContext() > 0; }
     bool HasPendingPartitionRelayWork(uint32 partitionId);
     void MarkPartitionRelayWorkPending(uint32 partitionId);
     bool ShouldDeferNonPlayerVisibility(WorldObject const* obj) const;
@@ -1042,6 +1047,7 @@ private:
     mutable std::mutex _objectsToRemoveLock;
 
     mutable std::mutex _delayedVisibilityLock;
+    std::unordered_set<ObjectGuid> _delayedVisibilitySet;
     std::vector<ObjectGuid> _objectsForDelayedVisibility;
 
     PartitionedUpdatableObjectLists _partitionedUpdatableObjectLists;
@@ -1110,6 +1116,9 @@ private:
     std::mutex _deferredVisibilityLock;
     std::unordered_set<ObjectGuid> _deferredVisibilitySet;
     std::deque<ObjectGuid> _deferredVisibilityUpdates;
+    std::mutex _deferredAIRelocationLock;
+    std::unordered_set<ObjectGuid> _deferredAIRelocationSet;
+    std::deque<ObjectGuid> _objectsForDeferredAIRelocation;
 
     struct DeferredPlayerRelocation
     {
@@ -1124,6 +1133,9 @@ private:
     std::unordered_map<ObjectGuid, DeferredPlayerRelocation> _deferredPlayerRelocations;
     std::deque<ObjectGuid> _deferredPlayerRelocationOrder;
     uint64 _nextDeferredPlayerRelocationLogAtMs = 0;
+    uint64 _nextDeferredVisibilityLogAtMs = 0;
+    uint64 _nextDeferredAIRelocationLogAtMs = 0;
+    uint64 _nextDelayedVisibilityTelemetryLogAtMs = 0;
     uint64 _nextSlowDelayedVisibilityLogAtMs = 0;
 
     bool _partitionUpdatesInProgress = false;

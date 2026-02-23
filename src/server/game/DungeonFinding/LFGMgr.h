@@ -527,8 +527,8 @@ namespace lfg
         LfgReward const* GetRandomDungeonReward(uint32 dungeon, uint8 level);
         /// Returns all random and seasonal dungeons for given level and expansion
         LfgDungeonSet GetRandomAndSeasonalDungeons(uint8 level, uint8 expansion);
-        /// Teleport a player to/from selected dungeon
-        void TeleportPlayer(Player* player, bool out, WorldLocation const* teleportLocation = nullptr);
+        /// Teleport a player to/from selected dungeon. Returns true on success.
+        bool TeleportPlayer(Player* player, bool out, WorldLocation const* teleportLocation = nullptr);
         /// Inits new proposal to boot a player
         void InitBoot(ObjectGuid gguid, ObjectGuid kicker, ObjectGuid victim, std::string const& reason);
         /// Updates player boot proposal with new player answer
@@ -585,6 +585,8 @@ namespace lfg
 
         void SetDungeon(ObjectGuid guid, uint32 dungeon);
         LFGDungeonData const* GetLFGDungeon(uint32 id);
+        LfgDungeonSet const& GetDungeonsByRandom(uint32 randomdungeon);
+        LfgType GetDungeonType(uint32 dungeon);
 
     private:
         TeamId GetTeam(ObjectGuid guid);
@@ -604,8 +606,6 @@ namespace lfg
 
         // Generic
         LFGQueue& GetQueue(ObjectGuid guid);
-        LfgDungeonSet const& GetDungeonsByRandom(uint32 randomdungeon);
-        LfgType GetDungeonType(uint32 dungeon);
 
         void SendLfgBootProposalUpdate(ObjectGuid guid, LfgPlayerBoot const& boot);
         void SendLfgJoinResult(ObjectGuid guid, LfgJoinResultData const& data);

@@ -69,7 +69,7 @@ AuraApplication::AuraApplication(Unit* target, Unit* caster, Aura* aura, uint8 e
             std::set<uint8> usedSlots;
             for (auto& auraPair : visibleAurasSnapshot)
                 usedSlots.insert(auraPair.first);
-            
+
             for (uint32 freeSlot = 0; freeSlot < MAX_AURAS; ++freeSlot)
             {
                 if (usedSlots.find(freeSlot) == usedSlots.end())
@@ -583,41 +583,48 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
     m_updateTargetMapInterval = UPDATE_TARGET_MAP_INTERVAL;
 
     // fill up to date target list
-    //       target, effMask
-    std::map<Unit*, uint8> targets;
+    //       targetGuid, effMask
+    std::map<ObjectGuid, uint8> targets;
 
     FillTargetMap(targets, caster);
 
-    UnitList targetsToRemove;
+    std::vector<ObjectGuid> targetsToRemove;
 
-    std::vector<std::pair<Unit*, uint8>> currentApplications;
+    std::vector<std::pair<ObjectGuid, uint8>> currentApplications;
     {
         std::lock_guard<std::recursive_mutex> lock(_applicationLock);
         currentApplications.reserve(m_applications.size());
         for (ApplicationMap::const_iterator appIter = m_applications.begin(); appIter != m_applications.end(); ++appIter)
-            currentApplications.emplace_back(appIter->second->GetTarget(), appIter->second->GetEffectMask());
+            currentApplications.emplace_back(appIter->first, appIter->second->GetEffectMask());
     }
 
     // mark all auras as ready to remove
     for (auto const& currentApplication : currentApplications)
     {
-        std::map<Unit*, uint8>::iterator existing = targets.find(currentApplication.first);
+        std::map<ObjectGuid, uint8>::iterator existing = targets.find(currentApplication.first);
         // not found in current area - remove the aura
         if (existing == targets.end())
             targetsToRemove.push_back(currentApplication.first);
         else
         {
+            Unit* target = ObjectAccessor::GetUnit(*GetOwner(), existing->first);
+            if (!target)
+            {
+                targetsToRemove.push_back(currentApplication.first);
+                continue;
+            }
+
             // xinef: check immunities here, so aura wont get removed on every tick and then reapplied
             if (IsArea())
                 for (uint8 effIndex = 0; effIndex < MAX_SPELL_EFFECTS; ++effIndex)
                 {
-                    if ((existing->second & (1 << effIndex)) && existing->first->IsImmunedToSpellEffect(GetSpellInfo(), effIndex))
+                    if ((existing->second & (1 << effIndex)) && target->IsImmunedToSpellEffect(GetSpellInfo(), effIndex))
                         existing->second &= ~(1 << effIndex);
                 }
 
             // needs readding - remove now, will be applied in next update cycle
             // (dbcs do not have auras which apply on same type of targets but have different radius, so this is not really needed)
-            if (currentApplication.second != existing->second || !CanBeAppliedOn(existing->first))
+            if (currentApplication.second != existing->second || !CanBeAppliedOn(target))
                 targetsToRemove.push_back(currentApplication.first);
             // nothing todo - aura already applied
             // remove from auras to register list
@@ -626,17 +633,24 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
     }
 
     // register auras for units
-    for (std::map<Unit*, uint8>::iterator itr = targets.begin(); itr != targets.end();)
+    for (std::map<ObjectGuid, uint8>::iterator itr = targets.begin(); itr != targets.end();)
     {
+        Unit* target = ObjectAccessor::GetUnit(*GetOwner(), itr->first);
+        if (!target)
+        {
+            targets.erase(itr++);
+            continue;
+        }
+
         // aura mustn't be already applied on target
-        if (AuraApplication* aurApp = GetApplicationOfTarget(itr->first->GetGUID()))
+        if (AuraApplication* aurApp = GetApplicationOfTarget(itr->first))
         {
             // the core created 2 different units with same guid
             // this is a major failue, which i can't fix right now
             // let's remove one unit from aura list
             // this may cause area aura "bouncing" between 2 units after each update
             // but because we know the reason of a crash we can remove the assertion for now
-            if (aurApp->GetTarget() != itr->first)
+            if (aurApp->GetTarget() != target)
             {
                 // remove from auras to register list
                 targets.erase(itr++);
@@ -654,13 +668,13 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
         // check target immunities
         for (uint8 effIndex = 0; effIndex < MAX_SPELL_EFFECTS; ++effIndex)
         {
-            if ((itr->second & (1 << effIndex)) && itr->first->IsImmunedToSpellEffect(GetSpellInfo(), effIndex))
+            if ((itr->second & (1 << effIndex)) && target->IsImmunedToSpellEffect(GetSpellInfo(), effIndex))
                 itr->second &= ~(1 << effIndex);
         }
-        if (!itr->second || itr->first->IsImmunedToSpell(GetSpellInfo()) || !CanBeAppliedOn(itr->first))
+        if (!itr->second || target->IsImmunedToSpell(GetSpellInfo()) || !CanBeAppliedOn(target))
             addUnit = false;
 
-        if (addUnit && !itr->first->IsHighestExclusiveAura(this, true))
+        if (addUnit && !target->IsHighestExclusiveAura(this, true))
             addUnit = false;
 
         if (addUnit)
@@ -668,22 +682,22 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
             // persistent area aura does not hit flying targets
             if (GetType() == DYNOBJ_AURA_TYPE)
             {
-                if (itr->first->IsInFlight())
+                if (target->IsInFlight())
                     addUnit = false;
 
             // Allow only 1 persistent area aura to affect our targets if a custom flag is set.
-            if (itr->first->HasAura(GetId()) && GetSpellInfo()->HasAttribute(SPELL_ATTR0_CU_ONLY_ONE_AREA_AURA))
+            if (target->HasAura(GetId()) && GetSpellInfo()->HasAttribute(SPELL_ATTR0_CU_ONLY_ONE_AREA_AURA))
                 addUnit = false;
             }
             // unit auras can not stack with each other
             else // (GetType() == UNIT_AURA_TYPE)
             {
                 // Allow to remove by stack when aura is going to be applied on owner
-                if (itr->first != GetOwner())
+                if (target != GetOwner())
                 {
                     // check if not stacking aura already on target
                     // this one prevents unwanted usefull buff loss because of stacking and prevents overriding auras periodicaly by 2 near area aura owners
-                    for (Unit::AuraApplicationMap::iterator iter = itr->first->GetAppliedAuras().begin(); iter != itr->first->GetAppliedAuras().end(); ++iter)
+                    for (Unit::AuraApplicationMap::iterator iter = target->GetAppliedAuras().begin(); iter != target->GetAppliedAuras().end(); ++iter)
                     {
                         Aura const* aura = iter->second->GetBase();
                         if (!CanStackWith(aura))
@@ -700,38 +714,43 @@ void Aura::UpdateTargetMap(Unit* caster, bool apply)
         else
         {
             // owner has to be in world, or effect has to be applied to self
-            if (!GetOwner()->IsSelfOrInSameMap(itr->first))
+            if (!GetOwner()->IsSelfOrInSameMap(target))
             {
                 //TODO: There is a crash caused by shadowfiend load addon
                 LOG_FATAL("spells.aura", "Aura {}: Owner {} (map {}) is not in the same map as target {} (map {}).", GetSpellInfo()->Id,
                                GetOwner()->GetName(), GetOwner()->IsInWorld() ? GetOwner()->GetMap()->GetId() : uint32(-1),
-                               itr->first->GetName(), itr->first->IsInWorld() ? itr->first->GetMap()->GetId() : uint32(-1));
+                               target->GetName(), target->IsInWorld() ? target->GetMap()->GetId() : uint32(-1));
                 ABORT();
             }
             if (!IsRemoved())
-                itr->first->_CreateAuraApplication(this, itr->second);
+                target->_CreateAuraApplication(this, itr->second);
             ++itr;
         }
     }
 
     // remove auras from units no longer needing them
-    for (UnitList::iterator itr = targetsToRemove.begin(); itr != targetsToRemove.end(); ++itr)
-        if (AuraApplication* aurApp = GetApplicationOfTarget((*itr)->GetGUID()))
-            (*itr)->_UnapplyAura(aurApp, AURA_REMOVE_BY_DEFAULT);
+    for (ObjectGuid const& guid : targetsToRemove)
+        if (AuraApplication* aurApp = GetApplicationOfTarget(guid))
+            if (Unit* target = ObjectAccessor::GetUnit(*GetOwner(), guid))
+                target->_UnapplyAura(aurApp, AURA_REMOVE_BY_DEFAULT);
 
     if (!apply)
         return;
 
     // apply aura effects for units
-    for (std::map<Unit*, uint8>::iterator itr = targets.begin(); itr != targets.end(); ++itr)
+    for (std::map<ObjectGuid, uint8>::iterator itr = targets.begin(); itr != targets.end(); ++itr)
     {
-        if (AuraApplication* aurApp = GetApplicationOfTarget(itr->first->GetGUID()))
+        Unit* target = ObjectAccessor::GetUnit(*GetOwner(), itr->first);
+        if (!target)
+            continue;
+
+        if (AuraApplication* aurApp = GetApplicationOfTarget(itr->first))
         {
             // owner has to be in world, or effect has to be applied to self
-            ASSERT((!GetOwner()->IsInWorld() && GetOwner() == itr->first) || GetOwner()->IsInMap(itr->first));
+            ASSERT((!GetOwner()->IsInWorld() && GetOwner() == target) || GetOwner()->IsInMap(target));
             uint8 missingMask = itr->second & ~aurApp->GetEffectMask();
             if (missingMask)
-                itr->first->_ApplyAura(aurApp, missingMask);
+                target->_ApplyAura(aurApp, missingMask);
         }
     }
 }
@@ -824,7 +843,7 @@ void Aura::UpdateOwner(uint32 diff, WorldObject* owner)
 
     _DeleteRemovedApplications();
 
-    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", false);
     static int64 const slowAuraThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_aura_update_time", 3);
     if (slowLogEnabled)
     {
@@ -2865,7 +2884,7 @@ void UnitAura::Remove(AuraRemoveMode removeMode)
     GetUnitOwner()->RemoveOwnedAura(this, removeMode);
 }
 
-void UnitAura::FillTargetMap(std::map<Unit*, uint8>& targets, Unit* caster)
+void UnitAura::FillTargetMap(std::map<ObjectGuid, uint8>& targets, Unit* caster)
 {
     for (uint8 effIndex = 0; effIndex < MAX_SPELL_EFFECTS; ++effIndex)
     {
@@ -2925,11 +2944,15 @@ void UnitAura::FillTargetMap(std::map<Unit*, uint8>& targets, Unit* caster)
 
         for (UnitList::iterator itr = targetList.begin(); itr != targetList.end(); ++itr)
         {
-            std::map<Unit*, uint8>::iterator existing = targets.find(*itr);
+            if (!*itr)
+                continue;
+
+            ObjectGuid targetGuid = (*itr)->GetGUID();
+            std::map<ObjectGuid, uint8>::iterator existing = targets.find(targetGuid);
             if (existing != targets.end())
                 existing->second |= 1 << effIndex;
             else
-                targets[*itr] = 1 << effIndex;
+                targets[targetGuid] = 1 << effIndex;
         }
     }
 }
@@ -2952,7 +2975,7 @@ void DynObjAura::Remove(AuraRemoveMode removeMode)
     _Remove(removeMode);
 }
 
-void DynObjAura::FillTargetMap(std::map<Unit*, uint8>& targets, Unit* /*caster*/)
+void DynObjAura::FillTargetMap(std::map<ObjectGuid, uint8>& targets, Unit* /*caster*/)
 {
     Unit* dynObjOwnerCaster = GetDynobjOwner()->GetCaster();
     float radius = GetDynobjOwner()->GetRadius();
@@ -3003,11 +3026,12 @@ void DynObjAura::FillTargetMap(std::map<Unit*, uint8>& targets, Unit* /*caster*/
                 continue;
             }
 
-            std::map<Unit*, uint8>::iterator existing = targets.find(*itr);
+            ObjectGuid targetGuid = target->GetGUID();
+            std::map<ObjectGuid, uint8>::iterator existing = targets.find(targetGuid);
             if (existing != targets.end())
                 existing->second |= 1 << effIndex;
             else
-                targets[*itr] = 1 << effIndex;
+                targets[targetGuid] = 1 << effIndex;
         }
     }
 }

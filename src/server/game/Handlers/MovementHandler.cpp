@@ -252,10 +252,8 @@ void WorldSession::HandleMoveWorldportAck()
     if (!allowMount)
         _player->RemoveAurasByType(SPELL_AURA_MOUNTED);
 
-    // update zone immediately, otherwise leave channel will cause crash in mtmap
-    uint32 newzone, newarea;
-    GetPlayer()->GetZoneAndAreaId(newzone, newarea);
-    GetPlayer()->UpdateZone(newzone, newarea);
+    // Zone and area are already updated in SendInitialPacketsAfterAddToMap().
+    // Calling UpdateZone() again here repeats zone-limited item cleanup.
 
     // honorless target
     if (GetPlayer()->pvpInfo.IsHostile)

@@ -2127,6 +2127,7 @@ public:
     float m_threatModifier[MAX_SPELL_SCHOOL];
     float m_modAttackSpeedPct[3];
 
+    mutable std::recursive_mutex _spellImmuneLock; // protects m_spellImmune
     SpellImmuneList m_spellImmune[MAX_SPELL_IMMUNITY];
     uint32 m_lastSanctuaryTime;
 

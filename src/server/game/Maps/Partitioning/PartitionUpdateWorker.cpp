@@ -62,7 +62,7 @@ PartitionUpdateWorker::PartitionUpdateWorker(Map& map, uint32 partitionId, uint3
 
 void PartitionUpdateWorker::Execute()
 {
-    METRIC_TIMER("partition_update_time", 
+    METRIC_TIMER("partition_update_time",
         METRIC_TAG("map_id", std::to_string(_map.GetId())),
         METRIC_TAG("partition_id", std::to_string(_partitionId)));
 
@@ -231,8 +231,8 @@ void PartitionUpdateWorker::UpdatePlayers()
             float orientation = player->GetOrientation();
             dx = std::cos(orientation) * player->GetSpeed(MOVE_RUN);
             dy = std::sin(orientation) * player->GetSpeed(MOVE_RUN);
-            
-            sPartitionMgr->CheckBoundaryApproach(player->GetGUID(), _map.GetId(), 
+
+            sPartitionMgr->CheckBoundaryApproach(player->GetGUID(), _map.GetId(),
                 player->GetPositionX(), player->GetPositionY(), dx, dy);
         }
     }
@@ -303,11 +303,6 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         resolved.guid = entry.first;
         resolved.typeId = entry.second;
         resolved.isCreature = entry.second == TYPEID_UNIT;
-
-        WorldObject* const object = resolveObject(resolved.guid, resolved.typeId);
-        if (!object || !object->IsInWorld())
-            continue;
-
         _scratchResolvedObjects.push_back(resolved);
     }
 
@@ -316,6 +311,23 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         WorldObject* obj = resolveObject(resolved.guid, resolved.typeId);
         if (!obj || !obj->IsInWorld())
             continue;
+
+        // Reject stale/reused pointers before any virtual dispatch.
+        // This protects against races where an old pointer address is observed
+        // briefly during cross-thread remove/despawn churn.
+        if (obj->GetGUID() != resolved.guid)
+            continue;
+
+        if (obj->GetTypeId() != resolved.typeId)
+            continue;
+
+        if (obj->GetMapId() != _map.GetId())
+            continue;
+
+        UpdatableMapObject* updatableObject = obj->AsUpdatableMapObject();
+        if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
+            continue;
+        UpdateExecutionGuard updateGuard(updatableObject);
 
         bool const isCreature = resolved.isCreature;
 
@@ -369,11 +381,6 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
         if (isCreature && static_cast<Creature*>(obj)->IsDuringRemoveFromWorld())
             continue;
 
-        UpdatableMapObject* updatableObject = obj->AsUpdatableMapObject();
-        if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
-            continue;
-        UpdateExecutionGuard updateGuard(updatableObject);
-
         // Tag the unit with our partition ID so that TryGetRelayTargetPartition
         // won't relay MotionMaster calls when the creature crosses a partition
         // boundary during its own UpdateSplineMovement within the same tick.
@@ -411,47 +418,44 @@ void PartitionUpdateWorker::FlushBoundaryBatches()
     // Batch position updates → single _boundaryLock acquisition
     if (!_batchPosUpdates.empty())
     {
-        _scratchBoundaryUpdates.clear();
-        _scratchBoundaryUpdates.reserve(_batchPosUpdates.size());
+        sPartitionMgr->BatchUpdateBoundaryPositions(mapId, _partitionId, _batchPosUpdates);
+    }
 
-        for (auto const& entry : _batchPosUpdates)
-            _scratchBoundaryUpdates.push_back({entry.guid, entry.x, entry.y});
+    std::vector<std::vector<ObjectGuid>> nearbyBoundaryResults;
+    bool const shouldMergeNearby = (_map.GetUpdateCounter() % sNearbyMergeEveryNTicks) == 0;
+    if (shouldMergeNearby && !_batchPosUpdates.empty())
+    {
+        float const nearbyRadius = std::max(1.0f, sPartitionMgr->GetBorderOverlap());
+        _scratchNearbyBoundaryQueries.clear();
 
-        sPartitionMgr->BatchUpdateBoundaryPositions(mapId, _partitionId, _scratchBoundaryUpdates);
+        size_t queryCount = _batchPosUpdates.size();
+        if (sNearbyMergeMaxQueries > 0)
+            queryCount = std::min<size_t>(queryCount, sNearbyMergeMaxQueries);
 
-        std::vector<std::vector<ObjectGuid>> nearbyBoundaryResults;
-        bool const shouldMergeNearby = (_map.GetUpdateCounter() % sNearbyMergeEveryNTicks) == 0;
-        if (shouldMergeNearby)
+        _scratchNearbyBoundaryQueries.reserve(queryCount);
+        for (size_t i = 0; i < queryCount; ++i)
         {
-            float const nearbyRadius = std::max(1.0f, sPartitionMgr->GetBorderOverlap());
-            _scratchNearbyBoundaryQueries.clear();
-
-            size_t queryCount = _batchPosUpdates.size();
-            if (sNearbyMergeMaxQueries > 0)
-                queryCount = std::min<size_t>(queryCount, sNearbyMergeMaxQueries);
-
-            _scratchNearbyBoundaryQueries.reserve(queryCount);
-            for (size_t i = 0; i < queryCount; ++i)
-            {
-                auto const& entry = _batchPosUpdates[i];
-                _scratchNearbyBoundaryQueries.push_back({ _partitionId, entry.x, entry.y, nearbyRadius });
-            }
-
-            nearbyBoundaryResults = sPartitionMgr->BatchGetNearbyBoundaryObjects(mapId, _scratchNearbyBoundaryQueries);
+            auto const& entry = _batchPosUpdates[i];
+            _scratchNearbyBoundaryQueries.push_back({ _partitionId, entry.x, entry.y, nearbyRadius });
         }
 
+        nearbyBoundaryResults = sPartitionMgr->BatchGetNearbyBoundaryObjects(mapId, _scratchNearbyBoundaryQueries);
+    }
+
+    if (!nearbyBoundaryResults.empty() || !_batchBoundaryOverrides.empty())
+    {
         _scratchMergedBoundaryOverrides.clear();
         _scratchMergedBoundaryOverrides.reserve(_batchBoundaryOverrides.size());
 
-        std::unordered_set<ObjectGuid::LowType> seenOverrideGuids;
-        seenOverrideGuids.reserve(_batchBoundaryOverrides.size() + _batchPosUpdates.size());
+        _scratchSeenOverrides.clear();
+        _scratchSeenOverrides.reserve(_batchBoundaryOverrides.size() + _batchPosUpdates.size());
 
-        auto appendUniqueOverride = [this, &seenOverrideGuids](ObjectGuid const& guid)
+        auto appendUniqueOverride = [this](ObjectGuid const& guid)
         {
             if (!guid)
                 return;
 
-            if (seenOverrideGuids.emplace(guid.GetCounter()).second)
+            if (_scratchSeenOverrides.emplace(guid.GetCounter()).second)
                 _scratchMergedBoundaryOverrides.push_back(guid);
         };
 
@@ -463,12 +467,9 @@ void PartitionUpdateWorker::FlushBoundaryBatches()
             for (ObjectGuid const& guid : nearbyGuids)
                 appendUniqueOverride(guid);
         }
-    }
 
-    if (!_scratchMergedBoundaryOverrides.empty())
         sPartitionMgr->BatchSetPartitionOverrides(_scratchMergedBoundaryOverrides, mapId, _partitionId, sBoundaryOverrideDurationMs);
-    else if (!_batchBoundaryOverrides.empty())
-        sPartitionMgr->BatchSetPartitionOverrides(_batchBoundaryOverrides, mapId, _partitionId, sBoundaryOverrideDurationMs);
+    }
 
     // Batch unregistrations → single _boundaryLock acquisition
     if (!_batchUnregisters.empty())
@@ -480,17 +481,21 @@ void PartitionUpdateWorker::RecordStats()
     PartitionManager::PartitionStats stats;
     if (sPartitionMgr->GetPartitionStats(_map.GetId(), _partitionId, stats))
     {
+        // Cache tag strings to avoid 8x std::to_string heap allocations per tick
+        auto const mapIdStr = std::to_string(_map.GetId());
+        auto const partIdStr = std::to_string(_partitionId);
+
         METRIC_VALUE("partition_players", uint64(stats.players),
-            METRIC_TAG("map_id", std::to_string(_map.GetId())),
-            METRIC_TAG("partition_id", std::to_string(_partitionId)));
+            METRIC_TAG("map_id", mapIdStr),
+            METRIC_TAG("partition_id", partIdStr));
         METRIC_VALUE("partition_creatures", uint64(stats.creatures),
-            METRIC_TAG("map_id", std::to_string(_map.GetId())),
-            METRIC_TAG("partition_id", std::to_string(_partitionId)));
+            METRIC_TAG("map_id", mapIdStr),
+            METRIC_TAG("partition_id", partIdStr));
         METRIC_VALUE("partition_boundary_objects", uint64(stats.boundaryObjects),
-            METRIC_TAG("map_id", std::to_string(_map.GetId())),
-            METRIC_TAG("partition_id", std::to_string(_partitionId)));
+            METRIC_TAG("map_id", mapIdStr),
+            METRIC_TAG("partition_id", partIdStr));
         METRIC_VALUE("partition_visibility_count", uint64(sPartitionMgr->GetVisibilityCount(_map.GetId(), _partitionId)),
-            METRIC_TAG("map_id", std::to_string(_map.GetId())),
-            METRIC_TAG("partition_id", std::to_string(_partitionId)));
+            METRIC_TAG("map_id", mapIdStr),
+            METRIC_TAG("partition_id", partIdStr));
     }
 }

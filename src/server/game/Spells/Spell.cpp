@@ -1134,6 +1134,7 @@ void Spell::SelectImplicitNearbyTargets(SpellEffIndex effIndex, SpellImplicitTar
     ConditionList* condList = m_spellInfo->Effects[effIndex].ImplicitTargetConditions;
 
     // handle emergency case - try to use other provided targets if no conditions provided
+    // this also allows to bypass wrong conditions on some spells (like healing reduc or mana burn increase)
     if (targetType.GetCheckType() == TARGET_CHECK_ENTRY && (!condList || condList->empty()))
     {
         LOG_DEBUG("spells.aura", "Spell::SelectImplicitNearbyTargets: no conditions entry for target with TARGET_CHECK_ENTRY of spell ID {}, effect {} - selecting default targets", m_spellInfo->Id, effIndex);
@@ -1543,7 +1544,7 @@ void Spell::SelectImplicitCasterDestTargets(SpellEffIndex effIndex, SpellImplici
                                 srange = srange2;
                             }
 
-                            //LOG_ERROR("spells", "step on ground, number of cycle = {} , distance of step = {}, total path = {}", j, srange, totalpath);
+                            //LOG_ERROR("spells", "step on ground, number of cycle = {} , distance of step = {}", j, srange, totalpath);
                         }
 
                         destx = tstX;
@@ -1615,9 +1616,6 @@ void Spell::SelectImplicitCasterDestTargets(SpellEffIndex effIndex, SpellImplici
                         }
                         // we have correct destz now
                     }
-
-                    lastpos.Relocate(destx, desty, destz, pos.GetOrientation());
-                    dest = SpellDestination(lastpos);
                 }
                 else
                 {
@@ -1904,15 +1902,15 @@ void Spell::SelectImplicitTrajTargets(SpellEffIndex effIndex, SpellImplicitTarge
         bestDist = std::min(std::max(bestDist, triggerSpellInfo->GetMaxRange(false)), std::min(dist2d, 300.0f));
 
     // GameObjects don't cast traj
-    Unit* unitCaster = ASSERT_NOTNULL(m_caster->ToUnit());
+    Unit* caster = ASSERT_NOTNULL(m_caster->ToUnit());
     for (auto itr = targets.begin(); itr != targets.end(); ++itr)
     {
-        if (m_spellInfo->CheckTarget(unitCaster, *itr, true) != SPELL_CAST_OK)
+        if (m_spellInfo->CheckTarget(caster, *itr, true) != SPELL_CAST_OK)
             continue;
 
         if (Unit* unit = (*itr)->ToUnit())
         {
-            if (unitCaster == *itr || unitCaster->IsOnVehicle(unit) || unit->GetVehicle())
+            if (caster == *itr || caster->IsOnVehicle(unit) || unit->GetVehicle())
                 continue;
 
             if (Creature* creatureTarget = unit->ToCreature())
@@ -1943,11 +1941,11 @@ void Spell::SelectImplicitTrajTargets(SpellEffIndex effIndex, SpellImplicitTarge
 
     if (dist2d > bestDist)
     {
-        float x = m_targets.GetSrcPos()->m_positionX + std::cos(unitCaster->GetOrientation()) * bestDist;
-        float y = m_targets.GetSrcPos()->m_positionY + std::sin(unitCaster->GetOrientation()) * bestDist;
+        float x = m_targets.GetSrcPos()->m_positionX + std::cos(caster->GetOrientation()) * bestDist;
+        float y = m_targets.GetSrcPos()->m_positionY + std::sin(caster->GetOrientation()) * bestDist;
         float z = m_targets.GetSrcPos()->m_positionZ + bestDist * (a * bestDist + b);
 
-        SpellDestination dest(x, y, z, unitCaster->GetOrientation());
+        SpellDestination dest(x, y, z, caster->GetOrientation());
         CallScriptDestinationTargetSelectHandlers(dest, effIndex, targetType);
         m_targets.ModDst(dest);
     }
@@ -2009,9 +2007,8 @@ void Spell::SelectEffectTypeImplicitTargets(uint8 effIndex)
             }
             if (targetMask & TARGET_FLAG_ITEM_MASK)
             {
-                if (Item* itemTarget = m_targets.GetItemTarget())
-                    AddItemTarget(itemTarget, 1 << effIndex);
-                return;
+                if (Item* item = m_targets.GetItemTarget())
+                    AddItemTarget(item, 1 << effIndex);
             }
             if (targetMask & TARGET_FLAG_GAMEOBJECT_MASK)
                 target = m_targets.GetGOTarget();
@@ -4406,7 +4403,7 @@ void Spell::update(uint32 difftime)
 
     auto emitSlowSpellLog = [&]()
     {
-        static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+        static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", false);
         static int64 const slowSpellThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_spell_update_time", 4);
         if (!slowLogEnabled)
             return;
@@ -5281,9 +5278,9 @@ void Spell::SendResurrectRequest(Player* target)
 {
     // get resurrector name for creature resurrections, otherwise packet will be not accepted
     // for player resurrections the name is looked up by guid
-    std::string const sentName(m_caster->IsPlayer()
-                               ? ""
-                               : m_caster->GetNameForLocaleIdx(target->GetSession()->GetSessionDbLocaleIndex()));
+    std::string sentName = "";
+    if (!m_caster->IsPlayer() && target->GetSession())
+        sentName = m_caster->GetNameForLocaleIdx(target->GetSession()->GetSessionDbLocaleIndex());
 
     WorldPacket data(SMSG_RESURRECT_REQUEST, (8 + 4 + sentName.size() + 1 + 1 + 1 + 4));
     data << m_caster->GetGUID();

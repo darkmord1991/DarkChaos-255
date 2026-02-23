@@ -755,8 +755,13 @@ void ThreatMgr::processThreatEvent(ThreatRefStatusChangeEvent* threatRefStatusCh
             }
             iOwner->SendRemoveFromThreatListOpcode(hostileRef);
             {
-                bool released = false;
-                auto tryRemoveAndRelease = [&](ThreatContainer::StorageType& threatList)
+                // Erase the ref from BOTH containers before releasing, so that no
+                // dangling pointer is left in the list that was not searched first.
+                // Previously the lambda returned after the first match, leaving a
+                // stale pointer in the other container that would be double-released
+                // by clearReferences() later.
+                bool found = false;
+                auto tryRemove = [&](ThreatContainer::StorageType& threatList)
                 {
                     for (ThreatContainer::StorageType::iterator itr = threatList.begin(); itr != threatList.end(); ++itr)
                     {
@@ -764,19 +769,17 @@ void ThreatMgr::processThreatEvent(ThreatRefStatusChangeEvent* threatRefStatusCh
                             continue;
 
                         threatList.erase(itr);
-                        if (!released)
-                        {
-                            hostileRef->ReleaseRef();
-                            released = true;
-                        }
+                        found = true;
                         return;
                     }
                 };
 
-                tryRemoveAndRelease(iThreatContainer.iThreatList);
-                tryRemoveAndRelease(iThreatOfflineContainer.iThreatList);
+                tryRemove(iThreatContainer.iThreatList);
+                tryRemove(iThreatOfflineContainer.iThreatList);
 
-                if (!released)
+                if (found)
+                    hostileRef->ReleaseRef();
+                else
                     LOG_DEBUG("combat.threat", "Threat remove event for non-listed ref owner={} target={}",
                         iOwner ? iOwner->GetGUID().ToString() : "<null>", hostileRef->getUnitGuid().ToString());
             }

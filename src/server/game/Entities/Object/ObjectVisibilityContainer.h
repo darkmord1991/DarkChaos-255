@@ -21,7 +21,7 @@
 #include "Common.h"
 #include "ObjectGuid.h"
 #include <memory>
-#include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -102,7 +102,7 @@ private:
     void DirectRemoveVisiblePlayerReference(ObjectGuid guid);
 
     WorldObject* _selfObject;
-    mutable std::mutex _lock;
+    mutable std::shared_mutex _lock;
 
     // List of all worldobjects that are visible to us (including other players)
     // Only players contain this map, thus we will only allocate it as needed.

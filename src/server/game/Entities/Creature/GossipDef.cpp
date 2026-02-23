@@ -40,8 +40,6 @@ GossipMenu::~GossipMenu()
 
 void GossipMenu::AddMenuItem(int32 menuItemId, uint8 icon, std::string const& message, uint32 sender, uint32 action, std::string const& boxMessage, uint32 boxMoney, bool coded /*= false*/)
 {
-    ASSERT(_menuItems.size() <= GOSSIP_MAX_MENU_ITEMS);
-
     // Find a free new id - script case
     if (menuItemId == -1)
     {
@@ -56,6 +54,14 @@ void GossipMenu::AddMenuItem(int32 menuItemId, uint8 icon, std::string const& me
                 menuItemId = itr->first + 1;
             }
         }
+    }
+
+    bool isNewItem = _menuItems.find(menuItemId) == _menuItems.end();
+    if (isNewItem && _menuItems.size() >= GOSSIP_MAX_MENU_ITEMS)
+    {
+        LOG_WARN("entities.player", "GossipMenu::AddMenuItem: menu size limit ({}) reached, skipping new item id {}.",
+            GOSSIP_MAX_MENU_ITEMS, menuItemId);
+        return;
     }
 
     GossipMenuItem& menuItem = _menuItems[menuItemId];
@@ -288,7 +294,12 @@ void QuestMenu::AddMenuItem(uint32 QuestId, uint8 Icon)
     if (!sObjectMgr->GetQuestTemplate(QuestId))
         return;
 
-    ASSERT(_questMenuItems.size() <= GOSSIP_MAX_MENU_ITEMS);
+    if (_questMenuItems.size() >= GOSSIP_MAX_MENU_ITEMS)
+    {
+        LOG_WARN("entities.player", "QuestMenu::AddMenuItem: menu size limit ({}) reached, skipping quest {}.",
+            GOSSIP_MAX_MENU_ITEMS, QuestId);
+        return;
+    }
 
     QuestMenuItem questMenuItem;
 

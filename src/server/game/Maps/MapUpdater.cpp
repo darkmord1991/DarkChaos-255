@@ -28,9 +28,11 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include <functional>
 
 namespace
 {
@@ -45,6 +47,9 @@ namespace
         std::vector<uint32> queueWaitSamples;
         std::vector<uint32> runSamples;
         std::vector<uint32> totalSamples;
+        size_t nextQueueWaitIndex = 0;
+        size_t nextRunIndex = 0;
+        size_t nextTotalIndex = 0;
         uint64 windowSamples = 0;
         uint64 lastLogMs = 0;
     };
@@ -53,6 +58,18 @@ namespace
     std::unordered_map<uint64, PartitionLatencySummary> gPartitionSummaryByMapPartition;
     std::mutex gSlowMapUpdateLogGateLock;
     std::unordered_map<uint64, uint64> gSlowMapUpdateNextLogAtMs;
+    std::mutex gPartitionExecutionLockMapLock;
+    std::unordered_map<uint64, std::shared_ptr<std::mutex>> gPartitionExecutionLocksByMapInstance;
+
+    std::shared_ptr<std::mutex> GetPartitionExecutionMutex(uint32 mapId, uint32 instanceId)
+    {
+        uint64 const key = (static_cast<uint64>(mapId) << 32) | instanceId;
+        std::lock_guard<std::mutex> guard(gPartitionExecutionLockMapLock);
+        auto& entry = gPartitionExecutionLocksByMapInstance[key];
+        if (!entry)
+            entry = std::make_shared<std::mutex>();
+        return entry;
+    }
 
     uint64 GetSteadyNowMs()
     {
@@ -112,6 +129,20 @@ namespace
         return thresholdMs;
     }
 
+    int AtomicSubtractClamped(std::atomic<int>& value, int delta)
+    {
+        if (delta <= 0)
+            return value.load(std::memory_order_acquire);
+
+        int observed = value.load(std::memory_order_acquire);
+        while (true)
+        {
+            int const desired = std::max(0, observed - delta);
+            if (value.compare_exchange_weak(observed, desired, std::memory_order_acq_rel, std::memory_order_acquire))
+                return desired;
+        }
+    }
+
     uint32 ComputePercentile(std::vector<uint32> samples, double percentile)
     {
         if (samples.empty())
@@ -123,7 +154,8 @@ namespace
         return samples[index];
     }
 
-    void AddSample(std::vector<uint32>& samples, uint32 value)
+    // O(1) ring-buffer insertion instead of O(N) std::move shift.
+    void AddSample(std::vector<uint32>& samples, size_t& nextIndex, uint32 value)
     {
         if (samples.size() < kPartitionPercentileSampleCap)
         {
@@ -131,8 +163,8 @@ namespace
             return;
         }
 
-        std::move(samples.begin() + 1, samples.end(), samples.begin());
-        samples.back() = value;
+        samples[nextIndex % kPartitionPercentileSampleCap] = value;
+        ++nextIndex;
     }
 
     void RecordPartitionPercentileSample(uint32 mapId, uint32 partitionId, uint32 queueWaitMs, uint32 runMs, uint64 nowMs)
@@ -142,9 +174,9 @@ namespace
 
         std::lock_guard<std::mutex> guard(gPartitionSummaryLock);
         PartitionLatencySummary& summary = gPartitionSummaryByMapPartition[key];
-        AddSample(summary.queueWaitSamples, queueWaitMs);
-        AddSample(summary.runSamples, runMs);
-        AddSample(summary.totalSamples, totalMs);
+        AddSample(summary.queueWaitSamples, summary.nextQueueWaitIndex, queueWaitMs);
+        AddSample(summary.runSamples, summary.nextRunIndex, runMs);
+        AddSample(summary.totalSamples, summary.nextTotalIndex, totalMs);
         ++summary.windowSamples;
 
         if (summary.lastLogMs == 0)
@@ -171,6 +203,9 @@ namespace
         summary.queueWaitSamples.clear();
         summary.runSamples.clear();
         summary.totalSamples.clear();
+        summary.nextQueueWaitIndex = 0;
+        summary.nextRunIndex = 0;
+        summary.nextTotalIndex = 0;
         summary.windowSamples = 0;
         summary.lastLogMs = nowMs;
     }
@@ -225,6 +260,9 @@ public:
 
     void Destroy() noexcept
     {
+        // Ensure counters are updated if the request was cancelled/dropped
+        Finish();
+
         // Avoid double-destroy if called multiple times from cancellation paths
         if (_magic == REQUEST_MAGIC_FREED)
             return;
@@ -515,17 +553,19 @@ public:
 
         try
         {
+            std::shared_ptr<std::mutex> executionMutex = GetPartitionExecutionMutex(self->_map.GetId(), self->_map.GetInstanceId());
+            std::lock_guard<std::mutex> executionGuard(*executionMutex);
             PartitionUpdateWorker worker(self->_map, self->_partitionId, self->_diff, self->_sDiff);
             worker.Execute();
         }
         catch (std::exception const& e)
         {
-            LOG_FATAL("map.partition", "PartitionUpdateWorker EXCEPTION map {} partition {}: {}",
+            LOG_ERROR("map.partition", "PartitionUpdateWorker EXCEPTION map {} partition {}: {}",
                 self->_map.GetId(), self->_partitionId, e.what());
         }
         catch (...)
         {
-            LOG_FATAL("map.partition", "PartitionUpdateWorker UNKNOWN EXCEPTION map {} partition {}",
+            LOG_ERROR("map.partition", "PartitionUpdateWorker UNKNOWN EXCEPTION map {} partition {}",
                 self->_map.GetId(), self->_partitionId);
         }
     }
@@ -564,11 +604,17 @@ void MapUpdater::activate(std::size_t num_threads)
     }
 
     _dedicatedPartitionWorkers.store(dedicatedPartitionWorkers, std::memory_order_release);
+    _workerDebugStates.clear();
+    _workerDebugStates.reserve(num_threads);
     _workerThreads.reserve(num_threads);
     for (std::size_t i = 0; i < num_threads; ++i)
     {
         bool const partitionOnly = i < dedicatedPartitionWorkers;
-        _workerThreads.push_back(std::thread(&MapUpdater::WorkerThread, this, partitionOnly));
+        auto debugState = std::make_shared<WorkerDebugState>();
+        debugState->partitionOnly.store(partitionOnly ? 1u : 0u, std::memory_order_release);
+        debugState->lastBeatMs.store(GetSteadyNowMs(), std::memory_order_release);
+        _workerDebugStates.push_back(debugState);
+        _workerThreads.push_back(std::thread(&MapUpdater::WorkerThread, this, i, partitionOnly));
     }
 }
 
@@ -601,12 +647,31 @@ void MapUpdater::wait()
         return pending_requests.load(std::memory_order_acquire) == 0;
     }))
     {
+        int const pendingPartition = pending_partition_requests.load(std::memory_order_acquire);
+        int const pendingTotal = pending_requests.load(std::memory_order_acquire);
+        uint32 const activeWorkers = _activePartitionWorkers.load(std::memory_order_acquire);
+        size_t const partitionQueued = _partitionQueue.Size();
+        size_t const generalQueued = _queue.Size();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - start).count();
-        LOG_FATAL("maps.update",
-            "MapUpdater::wait() stalled for {} seconds! pending_requests={} "
-            "— possible deadlock. Attach GDB and run 'thread apply all bt'.",
-            elapsed, pending_requests.load(std::memory_order_acquire));
+        LOG_ERROR("maps.update",
+            "MapUpdater::wait() stalled for {} seconds! pending_requests={} pending_partition_requests={} active_partition_workers={} queue_partition={} queue_general={} "
+            "— possible deadlock/hung worker. Capture thread dump (GDB on Linux, ProcDump/VS on Windows).",
+            elapsed, pendingTotal, pendingPartition, activeWorkers, partitionQueued, generalQueued);
+        LogWorkerDebugState("MapUpdater::wait");
+
+        if (pendingTotal > 0 && pendingPartition >= 0 && activeWorkers == 0 && partitionQueued == 0 && generalQueued == 0)
+        {
+            int const reclaimedPartition = pending_partition_requests.exchange(0, std::memory_order_acq_rel);
+            int const reclaimedTotal = pending_requests.exchange(0, std::memory_order_acq_rel);
+
+            LOG_ERROR("maps.update",
+                "MapUpdater::wait() recovered stale pending counters: reclaimed_total={} reclaimed_partition={} (no active workers, empty queues)",
+                reclaimedTotal, reclaimedPartition);
+
+            _condition.notify_all();
+            break;
+        }
     }
 }
 
@@ -661,14 +726,18 @@ void MapUpdater::run_tasks_until(std::function<bool()> done)
 
     while (!done())
     {
+        if (_cancelationToken)
+            break;
+
         auto now = std::chrono::steady_clock::now();
         if (now - lastWarn >= kWarnInterval)
         {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
-            LOG_FATAL("map.partition",
+            LOG_ERROR("map.partition",
                 "run_tasks_until: STALLED for {} seconds! pending_requests={} "
-                "— possible deadlock or hung partition worker. Use 'thread apply all bt' in GDB.",
+                "— possible deadlock or hung partition worker. Capture thread dump (GDB on Linux, ProcDump/VS on Windows).",
                 elapsed, pending_requests.load(std::memory_order_acquire));
+            LogWorkerDebugState("run_tasks_until");
             lastWarn = now;
         }
 
@@ -694,14 +763,38 @@ void MapUpdater::run_partition_tasks_until(std::function<bool()> done)
 
     while (!done())
     {
+        if (_cancelationToken)
+            break;
+
         auto now = std::chrono::steady_clock::now();
         if (now - lastWarn >= kWarnInterval)
         {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
-            LOG_FATAL("map.partition",
-                "run_partition_tasks_until: STALLED for {} seconds! pending_partition_requests={} "
-                "— possible deadlock or hung partition worker. Use 'thread apply all bt' in GDB.",
-                elapsed, pending_partition_requests.load(std::memory_order_acquire));
+            int const pendingPartition = pending_partition_requests.load(std::memory_order_acquire);
+            int const pendingTotal = pending_requests.load(std::memory_order_acquire);
+            uint32 const activeWorkers = _activePartitionWorkers.load(std::memory_order_acquire);
+            size_t const partitionQueued = _partitionQueue.Size();
+            size_t const generalQueued = _queue.Size();
+            LOG_ERROR("map.partition",
+                "run_partition_tasks_until: STALLED for {} seconds! pending_partition_requests={} pending_requests={} active_partition_workers={} queue_partition={} queue_general={} "
+                "— possible deadlock or hung partition worker. Capture thread dump (GDB on Linux, ProcDump/VS on Windows).",
+                elapsed, pendingPartition, pendingTotal, activeWorkers, partitionQueued, generalQueued);
+            LogWorkerDebugState("run_partition_tasks_until");
+
+            // If counters are non-zero but there is no queued work and no worker
+            // currently executing partition updates, recover from stale counters
+            // to avoid permanent wait loops.
+            if (pendingPartition > 0 && activeWorkers == 0 && partitionQueued == 0)
+            {
+                int const reclaimedPartition = pending_partition_requests.exchange(0, std::memory_order_acq_rel);
+                int const remainingTotal = AtomicSubtractClamped(pending_requests, reclaimedPartition);
+                LOG_ERROR("map.partition",
+                    "Recovered stale partition counters after stall: reclaimed_partition={} remaining_pending_requests={}",
+                    reclaimedPartition, remainingTotal);
+
+                std::lock_guard<std::mutex> lock(_lock);
+                _condition.notify_all();
+            }
             lastWarn = now;
         }
 
@@ -819,17 +912,79 @@ void MapUpdater::update_finished(UpdateRequestType type)
     }
 }
 
-void MapUpdater::WorkerThread(bool partitionOnly)
+void MapUpdater::LogWorkerDebugState(char const* sourceTag) const
+{
+    if (_workerDebugStates.empty())
+        return;
+
+    uint64 const nowMs = GetSteadyNowMs();
+    for (std::size_t i = 0; i < _workerDebugStates.size(); ++i)
+    {
+        std::shared_ptr<WorkerDebugState> const& state = _workerDebugStates[i];
+        if (!state)
+            continue;
+
+        int32 const currentType = state->currentType.load(std::memory_order_acquire);
+        char const* typeName = "idle";
+        if (currentType == 0)
+            typeName = "general";
+        else if (currentType == 1)
+            typeName = "partition";
+
+        uint64 const lastStartMs = state->lastStartMs.load(std::memory_order_acquire);
+        uint64 const lastFinishMs = state->lastFinishMs.load(std::memory_order_acquire);
+        uint64 const lastBeatMs = state->lastBeatMs.load(std::memory_order_acquire);
+        uint64 const runningForMs = (lastStartMs > 0 && nowMs >= lastStartMs)
+            ? (nowMs - lastStartMs)
+            : 0;
+        uint64 const sinceFinishMs = (lastFinishMs > 0 && nowMs >= lastFinishMs)
+            ? (nowMs - lastFinishMs)
+            : 0;
+        uint64 const sinceBeatMs = (lastBeatMs > 0 && nowMs >= lastBeatMs)
+            ? (nowMs - lastBeatMs)
+            : 0;
+
+        LOG_ERROR("maps.update",
+            "{} worker_state: idx={} partition_only={} active={} type={} request_ptr=0x{:X} thread_hash={} running_for_ms={} since_finish_ms={} since_heartbeat_ms={}",
+            sourceTag,
+            i,
+            state->partitionOnly.load(std::memory_order_acquire),
+            state->active.load(std::memory_order_acquire),
+            typeName,
+            static_cast<uint64>(state->requestPtr.load(std::memory_order_acquire)),
+            state->threadIdHash.load(std::memory_order_acquire),
+            runningForMs,
+            sinceFinishMs,
+            sinceBeatMs);
+    }
+}
+
+void MapUpdater::WorkerThread(std::size_t workerIndex, bool partitionOnly)
 {
     LoginDatabase.WarnAboutSyncQueries(true);
     CharacterDatabase.WarnAboutSyncQueries(true);
     WorldDatabase.WarnAboutSyncQueries(true);
+
+    std::shared_ptr<WorkerDebugState> debugState;
+    if (workerIndex < _workerDebugStates.size())
+        debugState = _workerDebugStates[workerIndex];
+
+    if (debugState)
+    {
+        uint64 const threadHash = static_cast<uint64>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+        debugState->threadIdHash.store(threadHash, std::memory_order_release);
+        debugState->partitionOnly.store(partitionOnly ? 1u : 0u, std::memory_order_release);
+        debugState->lastBeatMs.store(GetSteadyNowMs(), std::memory_order_release);
+    }
 
     uint32 partitionBurstSinceGeneral = 0;
     uint32 const partitionBurstBeforeGeneral = GetPartitionBurstBeforeGeneral();
 
     while (!_cancelationToken)
     {
+        if (debugState)
+            debugState->lastBeatMs.store(GetSteadyNowMs(), std::memory_order_release);
+
         UpdateRequest* request = nullptr;
 
         if (partitionOnly)
@@ -876,6 +1031,14 @@ void MapUpdater::WorkerThread(bool partitionOnly)
         {
             UpdateRequestType const requestType = request->GetType();
 
+            if (debugState)
+            {
+                debugState->active.store(1u, std::memory_order_release);
+                debugState->currentType.store(requestType == UpdateRequestType::Partition ? 1 : 0, std::memory_order_release);
+                debugState->requestPtr.store(reinterpret_cast<uintptr_t>(request), std::memory_order_release);
+                debugState->lastStartMs.store(GetSteadyNowMs(), std::memory_order_release);
+            }
+
             if (requestType == UpdateRequestType::Partition)
                 OnPartitionRequestDequeued(request);
 
@@ -892,6 +1055,16 @@ void MapUpdater::WorkerThread(bool partitionOnly)
                 request->Execute("MapUpdater::WorkerThread");  // Execute the request
             }
             request->Destroy();  // Always clean up to prevent memory leak
+
+            if (debugState)
+            {
+                uint64 const nowMs = GetSteadyNowMs();
+                debugState->active.store(0u, std::memory_order_release);
+                debugState->currentType.store(-1, std::memory_order_release);
+                debugState->requestPtr.store(0, std::memory_order_release);
+                debugState->lastFinishMs.store(nowMs, std::memory_order_release);
+                debugState->lastBeatMs.store(nowMs, std::memory_order_release);
+            }
         }
     }
 }

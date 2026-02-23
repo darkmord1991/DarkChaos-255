@@ -85,9 +85,8 @@ void EventProcessor::Update(uint32 p_time)
         // single pointer (_M_node).  If heap corruption zeroed the tree's
         // leftmost pointer we get a null-node iterator here.
         {
-            static_assert(sizeof(EventList::iterator) == sizeof(void*),
-                "EventProcessor corruption guard: iterator layout assumption broken");
             void* nodePtr = nullptr;
+            static_assert(sizeof(i) >= sizeof(void*), "EventProcessor corruption guard: iterator layout assumption broken");
             std::memcpy(&nodePtr, &i, sizeof(void*));
             if (!nodePtr || reinterpret_cast<uintptr_t>(nodePtr) < 0x10000)
             {

@@ -31,6 +31,8 @@
 #include "PoolMgr.h"
 #include "TargetedMovementGenerator.h"                      // for HandleNpcUnFollowCommand
 #include "Transport.h"
+#include "RandomMovementGenerator.h"
+#include "MoveSpline.h"
 #include <string>
 #include <unordered_set>
 
@@ -666,6 +668,49 @@ public:
         handler->PSendSysMessage(LANG_NPCINFO_ARMOR, target->GetArmor());
         handler->PSendSysMessage(LANG_NPCINFO_POSITION, float(target->GetPositionX()), float(target->GetPositionY()), float(target->GetPositionZ()));
         handler->PSendSysMessage(LANG_NPCINFO_AIINFO, target->GetAIName(), target->GetScriptName());
+        if (MotionMaster* mm = target->GetMotionMaster())
+        {
+            handler->PSendSysMessage("MotionMaster: Size {}, Empty {}, Top {}", uint32(mm->size()), mm->empty(), (void*)mm->top());
+            if (mm->GetMotionSlot(MOTION_SLOT_IDLE))
+                handler->PSendSysMessage("  Idle Slot: Active (Type {})", mm->GetMotionSlot(MOTION_SLOT_IDLE)->GetMovementGeneratorType());
+            if (mm->GetMotionSlot(MOTION_SLOT_ACTIVE))
+                handler->PSendSysMessage("  Active Slot: Active (Type {})", mm->GetMotionSlot(MOTION_SLOT_ACTIVE)->GetMovementGeneratorType());
+            if (mm->GetMotionSlot(MOTION_SLOT_CONTROLLED))
+                handler->PSendSysMessage("  Controlled Slot: Active (Type {})", mm->GetMotionSlot(MOTION_SLOT_CONTROLLED)->GetMovementGeneratorType());
+
+            if (!mm->empty() && mm->top())
+            {
+                handler->PSendSysMessage("  Top Gen Type: {}", mm->top()->GetMovementGeneratorType());
+                if (mm->top()->GetMovementGeneratorType() == RANDOM_MOTION_TYPE)
+                {
+                    handler->PSendSysMessage("  Random Generator Active");
+                }
+            }
+
+            {
+                bool finalized = target->IsMoveSplineFinalizedSnapshot();
+                handler->PSendSysMessage("MoveSpline: {}", finalized ? "Finalized" : "In Progress");
+
+                std::lock_guard<std::recursive_mutex> key(target->GetMoveSplineLock());
+                if (target->movespline)
+                {
+                    handler->PSendSysMessage("  Spline Duration: {} ms", target->movespline->Duration());
+                    handler->PSendSysMessage("  Spline TimePassed: {} ms", target->movespline->timePassed());
+                }
+            }
+
+            handler->PSendSysMessage("  Wander Distance: {}", target->GetWanderDistance());
+            handler->PSendSysMessage("  Unit State: 0x{:X}", target->GetUnitState());
+            if (target->HasUnitState(UNIT_STATE_NOT_MOVE)) handler->PSendSysMessage("    UNIT_STATE_NOT_MOVE");
+            if (target->HasUnitState(UNIT_STATE_ROAMING)) handler->PSendSysMessage("    UNIT_STATE_ROAMING");
+            if (target->HasUnitState(UNIT_STATE_ROAMING_MOVE)) handler->PSendSysMessage("    UNIT_STATE_ROAMING_MOVE");
+            if (target->HasUnitState(UNIT_STATE_CONFUSED)) handler->PSendSysMessage("    UNIT_STATE_CONFUSED");
+            if (target->HasUnitState(UNIT_STATE_FLEEING)) handler->PSendSysMessage("    UNIT_STATE_FLEEING");
+            if (target->HasUnitState(UNIT_STATE_CHASE)) handler->PSendSysMessage("    UNIT_STATE_CHASE");
+            if (target->HasUnitState(UNIT_STATE_ROOT)) handler->PSendSysMessage("    UNIT_STATE_ROOT");
+            if (target->HasUnitState(UNIT_STATE_STUNNED)) handler->PSendSysMessage("    UNIT_STATE_STUNNED");
+            if (target->HasUnitState(UNIT_STATE_DISTRACTED)) handler->PSendSysMessage("    UNIT_STATE_DISTRACTED");
+        }
 
         for (uint8 i = 0; i < NPCFLAG_COUNT; i++)
         {

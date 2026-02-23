@@ -196,22 +196,21 @@ void AIRelocationNotifier::Visit(CreatureMapType& m)
 {
     bool self = isCreature && !((Creature*)(&i_unit))->IsMoveInLineOfSightStrictlyDisabled();
 
-    std::vector<ObjectGuid> targets;
+    // Collect Creature* pointers directly instead of GUIDs — eliminates N ObjectAccessor
+    // hash-map lookups that the previous GUID-based approach required.
+    std::vector<Creature*> targets;
+    targets.reserve(m.getSize());
     for (CreatureMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         Creature* c = iter->GetSource();
-        if (!c)
-            continue;
-
-        targets.push_back(c->GetGUID());
-    }
-
-    for (ObjectGuid const& guid : targets)
-    {
-        Creature* c = ObjectAccessor::GetCreature(i_unit, guid);
         if (!c || !c->IsInWorld() || c->IsDuringRemoveFromWorld())
             continue;
 
+        targets.push_back(c);
+    }
+
+    for (Creature* c : targets)
+    {
         // NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION does not guarantee that unit will do it itself (because distance is also checked), but screw it, it's not that important
         if (!c->isNeedNotify(NOTIFY_VISIBILITY_CHANGED | NOTIFY_AI_RELOCATION) && !c->IsMoveInLineOfSightStrictlyDisabled())
             CreatureUnitRelocationWorker(c, &i_unit);

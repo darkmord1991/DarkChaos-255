@@ -118,7 +118,7 @@ void OutdoorPvPMgr::HandlePlayerEnterZone(Player* player, uint32 zoneid)
     if (itr == m_OutdoorPvPMap.end())
         return;
 
-    std::lock_guard<std::mutex> guard(_lock); // pussywizard
+    std::lock_guard<std::recursive_mutex> guard(_lock); // pussywizard
 
     if (itr->second->HasPlayer(player))
         return;
@@ -133,7 +133,7 @@ void OutdoorPvPMgr::HandlePlayerLeaveZone(Player* player, uint32 zoneid)
     if (itr == m_OutdoorPvPMap.end())
         return;
 
-    std::lock_guard<std::mutex> guard(_lock); // pussywizard
+    std::lock_guard<std::recursive_mutex> guard(_lock); // pussywizard
 
     // teleport: remove once in removefromworld, once in updatezone
     if (!itr->second->HasPlayer(player))
@@ -197,7 +197,7 @@ ZoneScript* OutdoorPvPMgr::GetZoneScript(uint32 zoneId)
 
 bool OutdoorPvPMgr::HandleOpenGo(Player* player, GameObject* go)
 {
-    std::lock_guard<std::mutex> guard(_lock); // pussywizard
+    std::lock_guard<std::recursive_mutex> guard(_lock); // pussywizard
 
     for (auto& itr : m_OutdoorPvPSet)
     {
@@ -212,7 +212,7 @@ bool OutdoorPvPMgr::HandleOpenGo(Player* player, GameObject* go)
 
 void OutdoorPvPMgr::HandleGossipOption(Player* player, Creature* creature, uint32 gossipid)
 {
-    std::lock_guard<std::mutex> guard(_lock); // pussywizard
+    std::lock_guard<std::recursive_mutex> guard(_lock); // pussywizard
 
     for (auto& itr : m_OutdoorPvPSet)
     {

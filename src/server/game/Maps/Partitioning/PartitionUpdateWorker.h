@@ -73,7 +73,6 @@ private:
 
     // Batched boundary operations — collected during Update methods,
     // flushed once per tick per partition to reduce lock acquisitions.
-    struct PosUpdate { ObjectGuid guid; float x; float y; };
     struct ResolvedObject
     {
         ObjectGuid guid;
@@ -81,18 +80,18 @@ private:
         bool isCreature = false;
     };
 
-    std::vector<PosUpdate> _batchPosUpdates;
+    std::vector<PartitionManager::BoundaryPositionUpdate> _batchPosUpdates;
     std::vector<ObjectGuid> _batchBoundaryOverrides;
     std::vector<ObjectGuid> _batchUnregisters;
 
     // Reusable scratch buffers to reduce per-tick allocations in worker hot paths.
     std::vector<Player*> _scratchPlayers;
     std::vector<std::pair<ObjectGuid, uint8>> _scratchObjects;
-    std::vector<PartitionManager::BoundaryPositionUpdate> _scratchBoundaryUpdates;
     std::vector<PartitionManager::NearbyBoundaryQuery> _scratchNearbyBoundaryQueries;
     std::vector<ObjectGuid> _scratchMergedBoundaryOverrides;
     std::vector<ResolvedObject> _scratchResolvedObjects;
     std::unordered_map<uint32, bool> _scratchBoundaryByGrid;
+    std::unordered_set<ObjectGuid::LowType> _scratchSeenOverrides;
 };
 
 #endif // AC_PARTITION_UPDATE_WORKER_H

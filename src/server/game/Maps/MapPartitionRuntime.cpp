@@ -57,6 +57,24 @@ namespace
         {
         }
     }
+
+    // Helper: apply hot-partition scaling + tDiff-based reduction to a budget.
+    uint32 ApplyBudgetScaling(uint32 budget, uint32 lastMaxRunMs, uint32 hotPartitionThresholdMs, uint32 hotScalePct, uint32 tDiff)
+    {
+        if (budget > 0 && lastMaxRunMs >= hotPartitionThresholdMs && hotScalePct > 0)
+            budget = std::max<uint32>(1, (budget * hotScalePct) / 100);
+
+        if (budget > 0)
+        {
+            if (tDiff >= 300)
+                budget = std::max<uint32>(1, budget / 3);
+            else if (tDiff >= 180)
+                budget = std::max<uint32>(1, budget / 2);
+            else if (tDiff >= 120)
+                budget = std::max<uint32>(1, (budget * 3) / 4);
+        }
+        return budget;
+    }
 }
 
 bool Map::SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff)
@@ -264,14 +282,15 @@ bool Map::SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff)
 
 void Map::PreparePartitionObjectUpdateBudget(uint32 partitionCount, uint32 tDiff)
 {
-    uint32 configuredBudget = static_cast<uint32>(std::max<int64>(0, sConfigMgr->GetOption<int64>("MapPartitions.Worker.ObjectUpdateBudget", 0)));
-    bool const useAdaptiveFallback = sConfigMgr->GetOption<bool>("MapPartitions.Worker.ObjectUpdateBudget.UseAdaptiveFallback", false);
-    bool const carryOver = sConfigMgr->GetOption<bool>("MapPartitions.Worker.ObjectUpdateBudgetCarryOver", true);
-    uint32 const hotPartitionThresholdMs = static_cast<uint32>(std::max<int64>(1,
+    static uint32 const sConfiguredBudget = static_cast<uint32>(std::max<int64>(0, sConfigMgr->GetOption<int64>("MapPartitions.Worker.ObjectUpdateBudget", 0)));
+    static bool const useAdaptiveFallback = sConfigMgr->GetOption<bool>("MapPartitions.Worker.ObjectUpdateBudget.UseAdaptiveFallback", false);
+    static bool const carryOver = sConfigMgr->GetOption<bool>("MapPartitions.Worker.ObjectUpdateBudgetCarryOver", true);
+    static uint32 const hotPartitionThresholdMs = static_cast<uint32>(std::max<int64>(1,
         sConfigMgr->GetOption<int64>("MapPartitions.Worker.ObjectUpdateBudget.HotPartitionThresholdMs", 320)));
-    uint32 hotScalePct = static_cast<uint32>(sConfigMgr->GetOption<int64>("MapPartitions.Worker.ObjectUpdateBudget.HotPartitionScalePct", 50));
-    if (hotScalePct > 100)
-        hotScalePct = 100;
+    static uint32 sHotScalePct = static_cast<uint32>(sConfigMgr->GetOption<int64>("MapPartitions.Worker.ObjectUpdateBudget.HotPartitionScalePct", 50));
+    uint32 const hotScalePct = std::min<uint32>(100, sHotScalePct);
+
+    uint32 configuredBudget = sConfiguredBudget;
 
     if (configuredBudget == 0)
     {
@@ -282,49 +301,16 @@ void Map::PreparePartitionObjectUpdateBudget(uint32 partitionCount, uint32 tDiff
             configuredBudget = std::max<uint32>(1, adaptiveBudget / divisor);
         }
 
-        if (configuredBudget > 0 && _lastPartitionCycleMaxRunMs >= hotPartitionThresholdMs && hotScalePct > 0)
-            configuredBudget = std::max<uint32>(1, (configuredBudget * hotScalePct) / 100);
-
-        if (configuredBudget > 0)
-        {
-            if (tDiff >= 300)
-                configuredBudget = std::max<uint32>(1, configuredBudget / 3);
-            else if (tDiff >= 180)
-                configuredBudget = std::max<uint32>(1, configuredBudget / 2);
-            else if (tDiff >= 120)
-                configuredBudget = std::max<uint32>(1, (configuredBudget * 3) / 4);
-        }
-
-        if (configuredBudget > 0)
-        {
-            std::lock_guard<std::mutex> guard(_partitionObjectBudgetLock);
-            _partitionObjectUpdateBudget = configuredBudget;
-            _partitionObjectUpdateCarryOver = carryOver;
-            _partitionObjectUpdateCursor.assign(partitionCount, 0);
-            return;
-        }
+        configuredBudget = ApplyBudgetScaling(configuredBudget, _lastPartitionCycleMaxRunMs, hotPartitionThresholdMs, hotScalePct, tDiff);
 
         std::lock_guard<std::mutex> guard(_partitionObjectBudgetLock);
-        _partitionObjectUpdateBudget = 0;
+        _partitionObjectUpdateBudget = configuredBudget;
         _partitionObjectUpdateCarryOver = carryOver;
         _partitionObjectUpdateCursor.assign(partitionCount, 0);
         return;
     }
 
-    if (configuredBudget > 0 && _lastPartitionCycleMaxRunMs >= hotPartitionThresholdMs && hotScalePct > 0)
-    {
-        configuredBudget = std::max<uint32>(1, (configuredBudget * hotScalePct) / 100);
-    }
-
-    if (configuredBudget > 0)
-    {
-        if (tDiff >= 300)
-            configuredBudget = std::max<uint32>(1, configuredBudget / 3);
-        else if (tDiff >= 180)
-            configuredBudget = std::max<uint32>(1, configuredBudget / 2);
-        else if (tDiff >= 120)
-            configuredBudget = std::max<uint32>(1, (configuredBudget * 3) / 4);
-    }
+    configuredBudget = ApplyBudgetScaling(configuredBudget, _lastPartitionCycleMaxRunMs, hotPartitionThresholdMs, hotScalePct, tDiff);
 
     std::lock_guard<std::mutex> guard(_partitionObjectBudgetLock);
     _partitionObjectUpdateBudget = configuredBudget;
@@ -434,18 +420,24 @@ void Map::QueueDeferredPlayerRelocation(ObjectGuid const& playerGuid, float x, f
 
 void Map::ProcessDeferredPlayerRelocations()
 {
+    static uint32 const sConfiguredBudget = static_cast<uint32>(std::max<int64>(0,
+        sConfigMgr->GetOption<int64>("MapPartitions.DeferredPlayerRelocation.MaxPerTick", 0)));
+    static bool const telemetryEnabled = sConfigMgr->GetOption<bool>("MapPartitions.DeferredPlayerRelocation.Telemetry.Enable", true);
+    static uint32 const telemetryWarnQueueDepth = static_cast<uint32>(std::max<int64>(1,
+        sConfigMgr->GetOption<int64>("MapPartitions.DeferredPlayerRelocation.Telemetry.WarnQueueDepth", 128)));
+    static uint64 const telemetryLogIntervalMs = static_cast<uint64>(std::max<int64>(0,
+        sConfigMgr->GetOption<int64>("MapPartitions.DeferredPlayerRelocation.Telemetry.LogIntervalMs", 2000)));
+
     std::vector<DeferredPlayerRelocation> pending;
     size_t queueDepthBefore = 0;
     size_t queueDepthAfter = 0;
     size_t budgetUsed = 0;
-    uint32 configuredBudget = 0;
+    uint32 configuredBudget = sConfiguredBudget;
     {
         std::lock_guard<std::mutex> guard(_deferredPlayerRelocationLock);
         if (_deferredPlayerRelocationOrder.empty())
             return;
 
-        configuredBudget = static_cast<uint32>(std::max<int64>(0,
-            sConfigMgr->GetOption<int64>("MapPartitions.DeferredPlayerRelocation.MaxPerTick", 0)));
         size_t budget = configuredBudget;
         if (budget == 0)
         {
@@ -464,20 +456,20 @@ void Map::ProcessDeferredPlayerRelocations()
         queueDepthBefore = _deferredPlayerRelocationOrder.size();
         budgetUsed = budget;
 
+        // Swap-and-process: drain the front of the deque in bulk rather than per-element pop_front.
         size_t const takeCount = std::min(budget, _deferredPlayerRelocationOrder.size());
         pending.reserve(takeCount);
-        for (size_t i = 0; i < takeCount; ++i)
+        auto orderItr = _deferredPlayerRelocationOrder.begin();
+        for (size_t i = 0; i < takeCount; ++i, ++orderItr)
         {
-            ObjectGuid const guid = _deferredPlayerRelocationOrder.front();
-            _deferredPlayerRelocationOrder.pop_front();
-
-            auto itr = _deferredPlayerRelocations.find(guid);
+            auto itr = _deferredPlayerRelocations.find(*orderItr);
             if (itr == _deferredPlayerRelocations.end())
                 continue;
 
             pending.push_back(itr->second);
             _deferredPlayerRelocations.erase(itr);
         }
+        _deferredPlayerRelocationOrder.erase(_deferredPlayerRelocationOrder.begin(), orderItr);
 
         queueDepthAfter = _deferredPlayerRelocationOrder.size();
     }
@@ -497,21 +489,16 @@ void Map::ProcessDeferredPlayerRelocations()
         ++applied;
     }
 
+    auto const mapIdStr = std::to_string(GetId());
     METRIC_VALUE("partition_deferred_player_relocation_queue", queueDepthBefore,
-        METRIC_TAG("map_id", std::to_string(GetId())),
+        METRIC_TAG("map_id", mapIdStr),
         METRIC_TAG("phase", "before"));
     METRIC_VALUE("partition_deferred_player_relocation_queue", queueDepthAfter,
-        METRIC_TAG("map_id", std::to_string(GetId())),
+        METRIC_TAG("map_id", mapIdStr),
         METRIC_TAG("phase", "after"));
     METRIC_VALUE("partition_deferred_player_relocation_batch", pending.size(),
-        METRIC_TAG("map_id", std::to_string(GetId())),
+        METRIC_TAG("map_id", mapIdStr),
         METRIC_TAG("phase", "drained"));
-
-    static bool const telemetryEnabled = sConfigMgr->GetOption<bool>("MapPartitions.DeferredPlayerRelocation.Telemetry.Enable", true);
-    static uint32 const telemetryWarnQueueDepth = static_cast<uint32>(std::max<int64>(1,
-        sConfigMgr->GetOption<int64>("MapPartitions.DeferredPlayerRelocation.Telemetry.WarnQueueDepth", 128)));
-    static uint64 const telemetryLogIntervalMs = static_cast<uint64>(std::max<int64>(0,
-        sConfigMgr->GetOption<int64>("MapPartitions.DeferredPlayerRelocation.Telemetry.LogIntervalMs", 2000)));
 
     bool const saturatedDrain = queueDepthBefore > pending.size() && pending.size() >= budgetUsed;
     if (telemetryEnabled && (queueDepthBefore >= telemetryWarnQueueDepth || saturatedDrain))
@@ -532,27 +519,98 @@ void Map::ProcessDeferredPlayerRelocations()
 
 void Map::ProcessDeferredVisibilityUpdates()
 {
+    // Cache all config reads as static locals — these were previously read every tick.
+    static uint32 const sAdaptiveMaxBudget = static_cast<uint32>(std::max<int64>(1,
+        sConfigMgr->GetOption<int64>("MapPartitions.DeferredVisibility.AdaptiveMaxBudgetPerTick", 4096)));
+    static bool const sTelemetryEnabled = sConfigMgr->GetOption<bool>(
+        "MapPartitions.DeferredVisibility.Telemetry.Enable", true);
+    static uint32 const sTelemetryWarnQueueDepth = static_cast<uint32>(
+        std::max<int64>(1, sConfigMgr->GetOption<int64>(
+            "MapPartitions.DeferredVisibility.Telemetry.WarnQueueDepth", 256)));
+    static uint64 const sTelemetryLogIntervalMs = static_cast<uint64>(
+        std::max<int64>(0, sConfigMgr->GetOption<int64>(
+            "MapPartitions.DeferredVisibility.Telemetry.LogIntervalMs", 2000)));
+    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", false);
+    static int64 const slowVisibilityThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_visibility_update_time", 6);
+
     auto const slowLogStart = std::chrono::steady_clock::now();
+    auto const mapIdStr = std::to_string(GetId());
 
     METRIC_TIMER("game_system_update_time",
         METRIC_TAG("system", "visibility"),
         METRIC_TAG("phase", "partition_deferred"),
-        METRIC_TAG("map_id", std::to_string(GetId())));
+        METRIC_TAG("map_id", mapIdStr));
 
     std::vector<ObjectGuid> pending;
+    size_t queueDepthBefore = 0;
+    size_t queueDepthAfter = 0;
+    uint32 configuredBudget = 0;
+    size_t budgetUsed = 0;
     {
         std::lock_guard<std::mutex> guard(_deferredVisibilityLock);
         if (_deferredVisibilityUpdates.empty())
             return;
 
-        size_t const takeCount = std::min(_adaptiveDeferredVisibilityBudget, _deferredVisibilityUpdates.size());
-        pending.reserve(takeCount);
-        for (size_t i = 0; i < takeCount; ++i)
+        queueDepthBefore = _deferredVisibilityUpdates.size();
+        configuredBudget = static_cast<uint32>(std::max<int64>(1,
+            static_cast<int64>(_adaptiveDeferredVisibilityBudget)));
+
+        size_t effectiveBudget = configuredBudget;
+        if (queueDepthBefore > effectiveBudget)
         {
-            ObjectGuid const guid = _deferredVisibilityUpdates.front();
-            _deferredVisibilityUpdates.pop_front();
-            pending.push_back(guid);
-            _deferredVisibilitySet.erase(guid);
+            size_t const backlogBudget = std::max<size_t>(
+                effectiveBudget, queueDepthBefore / 2);
+            effectiveBudget = std::min<size_t>(sAdaptiveMaxBudget, backlogBudget);
+        }
+
+        budgetUsed = std::max<size_t>(1, effectiveBudget);
+
+        // Swap-and-process: bulk-drain instead of per-element pop_front.
+        size_t const takeCount = std::min(budgetUsed, _deferredVisibilityUpdates.size());
+        pending.reserve(takeCount);
+        auto itr = _deferredVisibilityUpdates.begin();
+        for (size_t i = 0; i < takeCount; ++i, ++itr)
+        {
+            pending.push_back(*itr);
+            _deferredVisibilitySet.erase(*itr);
+        }
+        _deferredVisibilityUpdates.erase(_deferredVisibilityUpdates.begin(), itr);
+
+        queueDepthAfter = _deferredVisibilityUpdates.size();
+    }
+
+    METRIC_VALUE("partition_deferred_visibility_queue", queueDepthBefore,
+        METRIC_TAG("map_id", mapIdStr),
+        METRIC_TAG("phase", "before"));
+    METRIC_VALUE("partition_deferred_visibility_queue", queueDepthAfter,
+        METRIC_TAG("map_id", mapIdStr),
+        METRIC_TAG("phase", "after"));
+    METRIC_VALUE("partition_deferred_visibility_batch", pending.size(),
+        METRIC_TAG("map_id", mapIdStr),
+        METRIC_TAG("phase", "drained"));
+
+    bool const deferredVisibilitySaturated =
+        queueDepthBefore > pending.size() && pending.size() >= budgetUsed;
+    if (sTelemetryEnabled &&
+        (queueDepthBefore >= sTelemetryWarnQueueDepth ||
+         deferredVisibilitySaturated))
+    {
+        uint64 const nowMs = GetSteadyNowMs();
+        if (sTelemetryLogIntervalMs == 0 ||
+            nowMs >= _nextDeferredVisibilityLogAtMs)
+        {
+            LOG_WARN("map.partition.defer",
+                "Deferred visibility queue pressure: map={} queue_before={} "
+                "drained={} queue_after={} budget={} configured_budget={} "
+                "adaptive_visibility_budget={} saturated_drain={}",
+                GetId(), queueDepthBefore, pending.size(), queueDepthAfter,
+                budgetUsed, configuredBudget,
+                _adaptiveDeferredVisibilityBudget,
+                deferredVisibilitySaturated ? 1 : 0);
+
+            if (sTelemetryLogIntervalMs > 0)
+                _nextDeferredVisibilityLogAtMs =
+                    nowMs + sTelemetryLogIntervalMs;
         }
     }
 
@@ -566,16 +624,13 @@ void Map::ProcessDeferredVisibilityUpdates()
 
     METRIC_DETAILED_TIMER("slow_visibility_update_time",
         METRIC_TAG("phase", "partition_deferred"),
-        METRIC_TAG("map_id", std::to_string(GetId())),
+        METRIC_TAG("map_id", mapIdStr),
         METRIC_TAG("workload", workloadBucket));
-
-    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
-    static int64 const slowVisibilityThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_visibility_update_time", 6);
 
     METRIC_VALUE("game_system_batch_size", pending.size(),
         METRIC_TAG("system", "visibility"),
         METRIC_TAG("phase", "partition_deferred"),
-        METRIC_TAG("map_id", std::to_string(GetId())));
+        METRIC_TAG("map_id", mapIdStr));
 
     for (ObjectGuid const& guid : pending)
     {
@@ -627,47 +682,10 @@ bool Map::HasPendingPartitionRelayWork(uint32 partitionId)
     if (!_isPartitioned || partitionId == 0)
         return false;
 
-    {
-        std::lock_guard<std::mutex> markerLock(_partitionRelayPendingLock);
-        if (_partitionsWithRelayWork.find(partitionId) == _partitionsWithRelayWork.end())
-            return false;
-    }
-
-    std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
-    auto const hasRelayWork = [partitionId](auto const& relayMap)
-    {
-        auto itr = relayMap.find(partitionId);
-        return itr != relayMap.end() && !itr->second.empty();
-    };
-
-    bool const hasWork = hasRelayWork(_partitionThreatRelays) ||
-        hasRelayWork(_partitionThreatActionRelays) ||
-        hasRelayWork(_partitionThreatTargetActionRelays) ||
-        hasRelayWork(_partitionTauntRelays) ||
-        hasRelayWork(_partitionCombatRelays) ||
-        hasRelayWork(_partitionLootRelays) ||
-        hasRelayWork(_partitionDynObjectRelays) ||
-        hasRelayWork(_partitionMinionRelays) ||
-        hasRelayWork(_partitionCharmRelays) ||
-        hasRelayWork(_partitionGameObjectRelays) ||
-        hasRelayWork(_partitionCombatStateRelays) ||
-        hasRelayWork(_partitionAttackRelays) ||
-        hasRelayWork(_partitionEvadeRelays) ||
-        hasRelayWork(_partitionMotionRelays) ||
-        hasRelayWork(_partitionProcRelays) ||
-        hasRelayWork(_partitionAuraRelays) ||
-        hasRelayWork(_partitionPathRelays) ||
-        hasRelayWork(_partitionPointRelays) ||
-        hasRelayWork(_partitionAssistRelays) ||
-        hasRelayWork(_partitionAssistDistractRelays);
-
-    if (!hasWork)
-    {
-        std::lock_guard<std::mutex> markerLock(_partitionRelayPendingLock);
-        _partitionsWithRelayWork.erase(partitionId);
-    }
-
-    return hasWork;
+    // Fast path: check the marker set first (populated by MarkPartitionRelayWorkPending).
+    // This avoids acquiring the relay lock and scanning 20 relay maps when no work exists.
+    std::lock_guard<std::mutex> markerLock(_partitionRelayPendingLock);
+    return _partitionsWithRelayWork.find(partitionId) != _partitionsWithRelayWork.end();
 }
 
 void Map::MarkPartitionRelayWorkPending(uint32 partitionId)

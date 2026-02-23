@@ -539,6 +539,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     });
 
     uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
+    if (player->GetGroup())
+        playerMinQuality = 0;
 
     auto shouldAutoLootForPlayer = [&](Player* p) -> bool {
         if (!p) return false;
@@ -558,6 +560,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         // Apply quality filter to single corpse if active
         if (playerMinQuality > 0)
         {
+            size_t initialItems = mainLoot->items.size();
             mainLoot->items.erase(
                 std::remove_if(mainLoot->items.begin(), mainLoot->items.end(),
                     [playerMinQuality](const LootItem& item) {
@@ -566,54 +569,74 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                     }),
                 mainLoot->items.end()
             );
+                size_t const removedCount = initialItems - mainLoot->items.size();
+                if (removedCount >= mainLoot->unlootedCount)
+                    mainLoot->unlootedCount = 0;
+                else
+                    mainLoot->unlootedCount -= removedCount;
 
             if (mainLoot->items.empty() && mainLoot->gold == 0)
                 return false;
+        }
 
-            if (shouldAutoLootForPlayer(player))
+        if (shouldAutoLootForPlayer(player))
+        {
+            std::vector<std::pair<uint32, uint32>> mailItems;
+            auto storeOrMail = [&](LootItem& li) {
+                if (li.is_blocked || li.is_looted) return;
+                ItemPosCountVec dest;
+                InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, li.itemid, li.count);
+                if (msg == EQUIP_ERR_OK)
+                {
+                    Item* newItem = player->StoreNewItem(dest, li.itemid, true, li.randomPropertyId);
+                    if (newItem) player->SendNewItem(newItem, uint32(li.count), false, false, true);
+                }
+                else
+                    mailItems.emplace_back(li.itemid, uint32(li.count));
+
+                li.is_looted = true;
+                li.count = 0;
+                if (mainLoot->unlootedCount > 0) --mainLoot->unlootedCount;
+            };
+
+            for (auto& li : mainLoot->items) storeOrMail(li);
+            for (auto& li : mainLoot->quest_items) storeOrMail(li);
+
+            if (mainLoot->gold > 0)
             {
-                std::vector<std::pair<uint32, uint32>> mailItems;
-                for (auto const& li : mainLoot->items)
+                player->ModifyMoney(mainLoot->gold);
+                player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LOOT_MONEY, mainLoot->gold);
+                mainLoot->gold = 0;
+            }
+            if (!mailItems.empty())
+            {
+                CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+                MailSender sender(mainCreature);
+                MailDraft draft("Recovered Items", "Some items could not fit in your bags.");
+                for (auto const& p : mailItems)
                 {
-                    ItemPosCountVec dest;
-                    InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, li.itemid, li.count);
-                    if (msg == EQUIP_ERR_OK)
+                    if (Item* mailItem = Item::CreateItem(p.first, p.second))
                     {
-                        Item* newItem = player->StoreNewItem(dest, li.itemid, true, li.randomPropertyId);
-                        if (newItem) player->SendNewItem(newItem, uint32(li.count), false, false, true);
+                        mailItem->SaveToDB(trans);
+                        draft.AddItem(mailItem);
                     }
-                    else
-                        mailItems.emplace_back(li.itemid, li.count);
                 }
-                if (mainLoot->gold > 0)
-                {
-                    player->ModifyMoney(mainLoot->gold);
-                    player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_LOOT_MONEY, mainLoot->gold);
-                }
-                if (!mailItems.empty())
-                {
-                    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
-                    MailSender sender(mainCreature);
-                    MailDraft draft("Recovered Items", "Some items could not fit in your bags.");
-                    for (auto const& p : mailItems)
-                    {
-                        if (Item* mailItem = Item::CreateItem(p.first, p.second))
-                        {
-                            mailItem->SaveToDB(trans);
-                            draft.AddItem(mailItem);
-                        }
-                    }
-                    draft.SendMailTo(trans, MailReceiver(player), sender);
-                    CharacterDatabase.CommitTransaction(trans);
-                }
+                draft.SendMailTo(trans, MailReceiver(player), sender);
+                CharacterDatabase.CommitTransaction(trans);
+            }
+            if (mainLoot->isLooted())
+            {
                 mainLoot->clear();
                 mainCreature->AllLootRemovedFromCorpse();
                 mainCreature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
                 return true;
             }
-            player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
+            player->SendLootRelease(mainCreature->GetGUID());
             return true;
         }
+        player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
+        return true;
+
         if (ShouldShowMessage(player))
             ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: no nearby corpses found");
         return false;
@@ -635,6 +658,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     // Filter main loot
     if (playerMinQuality > 0)
     {
+        size_t initialItems = mainLoot->items.size();
         mainLoot->items.erase(
             std::remove_if(mainLoot->items.begin(), mainLoot->items.end(),
                 [playerMinQuality, player](const LootItem& item) {
@@ -646,6 +670,11 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                 }),
             mainLoot->items.end()
         );
+        size_t const removedCount = initialItems - mainLoot->items.size();
+        if (removedCount >= mainLoot->unlootedCount)
+            mainLoot->unlootedCount = 0;
+        else
+            mainLoot->unlootedCount -= removedCount;
     }
 
     size_t processed = 0;
@@ -699,11 +728,13 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
     {
         if (mainLoot->items.size() + mainLoot->quest_items.size() >= MAX_MERGE_SLOTS) break;
         mainLoot->items.push_back(it);
+        mainLoot->unlootedCount++;
     }
     for (auto const& it : questItemsToAdd)
     {
         if (mainLoot->items.size() + mainLoot->quest_items.size() >= MAX_MERGE_SLOTS) break;
         mainLoot->quest_items.push_back(it);
+        mainLoot->unlootedCount++;
     }
 
     mainLoot->gold = totalGold;
@@ -719,19 +750,18 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         if (method == MASTER_LOOT)
         {
             group->MasterLoot(mainLoot, mainCreature);
-            return true;
         }
         else if (method == NEED_BEFORE_GREED || method == GROUP_LOOT || method == FREE_FOR_ALL)
         {
             group->GroupLoot(mainLoot, mainCreature);
-            return true;
         }
     }
 
     if (shouldAutoLootForPlayer(player))
     {
         std::vector<std::pair<uint32, uint32>> mailItems;
-        auto storeOrMail = [&](LootItem const& li) {
+        auto storeOrMail = [&](LootItem& li) {
+            if (li.is_blocked || li.is_looted) return;
             if (!ItemMeetsQualityFilter(li.itemid, playerMinQuality)) return;
             ItemPosCountVec dest;
             InventoryResult msg = player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, li.itemid, li.count);
@@ -741,16 +771,21 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
                 if (newItem) player->SendNewItem(newItem, uint32(li.count), false, false, true);
             }
             else
-                mailItems.emplace_back(li.itemid, li.count);
+                mailItems.emplace_back(li.itemid, uint32(li.count));
+
+            li.is_looted = true;
+            li.count = 0;
+            if (mainLoot->unlootedCount > 0) --mainLoot->unlootedCount;
         };
-        for (auto const& it : mainLoot->items) storeOrMail(it);
-        for (auto const& it : mainLoot->quest_items) storeOrMail(it);
+        for (auto& it : mainLoot->items) storeOrMail(it);
+        for (auto& it : mainLoot->quest_items) storeOrMail(it);
 
         if (mainLoot->gold > 0)
         {
             player->ModifyMoney(mainLoot->gold);
             data.lastCreditedGold = mainLoot->gold;
             data.accumulatedCreditedGold += mainLoot->gold;
+            mainLoot->gold = 0;
         }
 
         if (!mailItems.empty())
@@ -769,10 +804,13 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
             draft.SendMailTo(trans, MailReceiver(player), sender);
             CharacterDatabase.CommitTransaction(trans);
         }
-        mainLoot->clear();
-        mainCreature->AllLootRemovedFromCorpse();
-        mainCreature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
-        return true;
+        if (mainLoot->isLooted())
+        {
+            mainLoot->clear();
+            mainCreature->AllLootRemovedFromCorpse();
+            mainCreature->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+            return true;
+        }
     }
 
     // Auto-credit gold to solo looter
@@ -785,7 +823,10 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         data.accumulatedCreditedGold += credited;
     }
 
-    player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
+    if (shouldAutoLootForPlayer(player))
+        player->SendLootRelease(mainCreature->GetGUID());
+    else
+        player->SendLoot(mainCreature->GetGUID(), LOOT_CORPSE);
 
     if (processed > 0)
         UpdateDetailedStats(player->GetGUID(), static_cast<uint32>(itemsToAdd.size()), mergedGold, 0);

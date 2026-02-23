@@ -46,23 +46,19 @@ public:
     }
 
     // Process quest rewards
-    void OnQuestComplete(Player* player, Quest const* quest)
+    void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
     {
-        if (!sSeasonalRewards->GetConfig().enabled)
+        if (!sSeasonalRewards->GetConfig().enabled || !player || !quest)
             return;
 
-        sSeasonalRewards->ProcessQuestReward(player, quest->GetQuestId());
+        sSeasonalRewards->ProcessQuestReward(player, quest);
     }
 
     // Process creature kills
-    void OnCreatureKill(Player* player, Creature* creature)
+    void OnPlayerCreatureKill(Player* player, Creature* creature) override
     {
-        if (!sSeasonalRewards->GetConfig().enabled)
+        if (!sSeasonalRewards->GetConfig().enabled || !player || !creature)
             return;
-
-        // Determine if dungeon or world boss
-        bool isDungeonBoss = creature->IsDungeonBoss();
-        bool isWorldBoss = creature->isWorldBoss();
 
         // Handle group loot distribution
         Group* group = player->GetGroup();
@@ -74,14 +70,14 @@ public:
                 Player* member = itr->GetSource();
                 if (member && member->IsInRange(creature, 100.0f, true)) // 100 yard range
                 {
-                    sSeasonalRewards->ProcessCreatureKill(member, creature->GetEntry(), isDungeonBoss, isWorldBoss);
+                    sSeasonalRewards->ProcessCreatureKill(member, creature);
                 }
             }
         }
         else
         {
             // Solo kill
-            sSeasonalRewards->ProcessCreatureKill(player, creature->GetEntry(), isDungeonBoss, isWorldBoss);
+            sSeasonalRewards->ProcessCreatureKill(player, creature);
         }
     }
 };

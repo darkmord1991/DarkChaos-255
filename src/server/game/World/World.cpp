@@ -419,6 +419,19 @@ void World::LoadConfigSettings(bool reload)
     VMAP::VMapFactory::createOrGetVMapMgr()->setEnableHeightCalc(enableHeight);
     LOG_INFO("server.loading", "WORLD: VMap support included. LineOfSight:{}, getHeight:{}, indoorCheck:{} PetLOS:{}", enableLOS, enableHeight, enableIndoor, enablePetLOS);
 
+    bool const enableMoveMaps = getBoolConfig(CONFIG_ENABLE_MMAPS);
+    bool const randomPathTelemetry =
+        sConfigMgr->GetOption<bool>("Movement.RandomPathFailureTelemetry.Enable", false);
+    uint32 const randomPathTelemetrySampleMask =
+        sConfigMgr->GetOption<uint32>(
+            "Movement.RandomPathFailureTelemetry.SampleMask", 127);
+    LOG_INFO(
+        "server.loading",
+        "WORLD: MoveMaps:{} RandomPathFailureTelemetry:{} SampleMask:{}",
+        enableMoveMaps,
+        randomPathTelemetry,
+        randomPathTelemetrySampleMask);
+
     MMAP::MMapFactory::InitializeDisabledMaps();
 
     // call ScriptMgr if we're reloading the configuration

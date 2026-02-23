@@ -38,7 +38,7 @@ ObjectVisibilityContainer::~ObjectVisibilityContainer()
     size_t visiblePlayersCount = 0;
     size_t visibleWorldObjectsCount = 0;
     {
-        std::lock_guard<std::mutex> guard(_lock);
+        std::unique_lock<std::shared_mutex> guard(_lock);
         visiblePlayersCount = _visiblePlayersMap.size();
         _visiblePlayersMap.clear();
 
@@ -51,7 +51,7 @@ ObjectVisibilityContainer::~ObjectVisibilityContainer()
 
     if (visiblePlayersCount || visibleWorldObjectsCount)
     {
-        LOG_ERROR("entities.visibility",
+        LOG_DEBUG("entities.visibility",
             "ObjectVisibilityContainer::~ObjectVisibilityContainer - forced clear for {} (players={}, worldObjects={})",
             _selfObject ? _selfObject->GetGUID().ToString() : "<null>",
             visiblePlayersCount,
@@ -61,7 +61,7 @@ ObjectVisibilityContainer::~ObjectVisibilityContainer()
 
 void ObjectVisibilityContainer::InitForPlayer()
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::unique_lock<std::shared_mutex> guard(_lock);
     _visibleWorldObjectsMap = std::make_unique<VisibleWorldObjectsMap>();
 }
 
@@ -70,7 +70,7 @@ void ObjectVisibilityContainer::CleanVisibilityReferences()
     std::vector<ObjectGuid> visiblePlayerGuids;
     std::vector<ObjectGuid> visibleWorldObjectGuids;
     {
-        std::lock_guard<std::mutex> guard(_lock);
+        std::unique_lock<std::shared_mutex> guard(_lock);
         visiblePlayerGuids.reserve(_visiblePlayersMap.size());
         for (auto const& kvPair : _visiblePlayersMap)
             visiblePlayerGuids.push_back(kvPair.first);
@@ -111,7 +111,7 @@ void ObjectVisibilityContainer::LinkWorldObjectVisibility(WorldObject* worldObje
 
     // Only players can link visibility
     {
-        std::lock_guard<std::mutex> guard(_lock);
+        std::unique_lock<std::shared_mutex> guard(_lock);
         if (!_visibleWorldObjectsMap)
             return;
 
@@ -125,7 +125,7 @@ void ObjectVisibilityContainer::UnlinkWorldObjectVisibility(WorldObject* worldOb
 {
     // Only players can unlink visibility
     {
-        std::lock_guard<std::mutex> guard(_lock);
+        std::unique_lock<std::shared_mutex> guard(_lock);
         if (!_visibleWorldObjectsMap)
             return;
 
@@ -139,14 +139,14 @@ VisibleWorldObjectsMap::iterator ObjectVisibilityContainer::UnlinkVisibilityFrom
 {
     ASSERT(_visibleWorldObjectsMap); // Ensure we aren't for some reason calling this as a non-player object
     worldObject->GetObjectVisibilityContainer().DirectRemoveVisiblePlayerReference(_selfObject->GetGUID());
-    std::lock_guard<std::mutex> guard(_lock);
+    std::unique_lock<std::shared_mutex> guard(_lock);
     return _visibleWorldObjectsMap->erase(itr);
 }
 
 VisiblePlayersMap::iterator ObjectVisibilityContainer::UnlinkVisibilityFromWorldObject(Player* player, VisiblePlayersMap::iterator itr)
 {
     player->GetObjectVisibilityContainer().DirectRemoveVisibilityReference(_selfObject->GetGUID());
-    std::lock_guard<std::mutex> guard(_lock);
+    std::unique_lock<std::shared_mutex> guard(_lock);
     return _visiblePlayersMap.erase(itr);
 }
 
@@ -156,44 +156,44 @@ void ObjectVisibilityContainer::UnlinkVisibilityFromWorldObject(Player* player)
         return;
 
     player->GetObjectVisibilityContainer().DirectRemoveVisibilityReference(_selfObject->GetGUID());
-    std::lock_guard<std::mutex> guard(_lock);
+    std::unique_lock<std::shared_mutex> guard(_lock);
     _visiblePlayersMap.erase(player->GetGUID());
 }
 
 void ObjectVisibilityContainer::DirectRemoveVisibilityReference(ObjectGuid guid)
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::unique_lock<std::shared_mutex> guard(_lock);
     ASSERT(_visibleWorldObjectsMap);
     _visibleWorldObjectsMap->erase(guid);
 }
 
 void ObjectVisibilityContainer::DirectInsertVisiblePlayerReference(Player* player)
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::unique_lock<std::shared_mutex> guard(_lock);
     _visiblePlayersMap.insert(std::make_pair(player->GetGUID(), player));
 }
 
 void ObjectVisibilityContainer::DirectRemoveVisiblePlayerReference(ObjectGuid guid)
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::unique_lock<std::shared_mutex> guard(_lock);
     _visiblePlayersMap.erase(guid);
 }
 
 bool ObjectVisibilityContainer::VisiblePlayersEmpty() const
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::shared_lock<std::shared_mutex> guard(_lock);
     return _visiblePlayersMap.empty();
 }
 
 size_t ObjectVisibilityContainer::VisiblePlayersCount() const
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::shared_lock<std::shared_mutex> guard(_lock);
     return _visiblePlayersMap.size();
 }
 
 void ObjectVisibilityContainer::GetVisiblePlayersSnapshot(std::vector<Player*>& out) const
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::shared_lock<std::shared_mutex> guard(_lock);
     out.reserve(out.size() + _visiblePlayersMap.size());
     for (auto const& kvPair : _visiblePlayersMap)
         out.push_back(kvPair.second);
@@ -201,7 +201,7 @@ void ObjectVisibilityContainer::GetVisiblePlayersSnapshot(std::vector<Player*>& 
 
 void ObjectVisibilityContainer::GetVisiblePlayerGuids(std::vector<ObjectGuid>& out) const
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::shared_lock<std::shared_mutex> guard(_lock);
     out.reserve(out.size() + _visiblePlayersMap.size());
     for (auto const& kvPair : _visiblePlayersMap)
         out.push_back(kvPair.first);
@@ -209,13 +209,13 @@ void ObjectVisibilityContainer::GetVisiblePlayerGuids(std::vector<ObjectGuid>& o
 
 void ObjectVisibilityContainer::EraseVisiblePlayerByGuid(ObjectGuid const& guid) const
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::unique_lock<std::shared_mutex> guard(_lock);
     _visiblePlayersMap.erase(guid);
 }
 
 bool ObjectVisibilityContainer::VisibleWorldObjectsEmpty() const
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::shared_lock<std::shared_mutex> guard(_lock);
     if (!_visibleWorldObjectsMap)
         return true;
 
@@ -224,7 +224,7 @@ bool ObjectVisibilityContainer::VisibleWorldObjectsEmpty() const
 
 bool ObjectVisibilityContainer::HasVisibleWorldObject(ObjectGuid const& guid) const
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::shared_lock<std::shared_mutex> guard(_lock);
     if (!_visibleWorldObjectsMap)
         return false;
 
@@ -233,7 +233,7 @@ bool ObjectVisibilityContainer::HasVisibleWorldObject(ObjectGuid const& guid) co
 
 void ObjectVisibilityContainer::GetVisibleWorldObjectGuids(std::vector<ObjectGuid>& out) const
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::shared_lock<std::shared_mutex> guard(_lock);
     if (!_visibleWorldObjectsMap)
         return;
 
@@ -244,7 +244,7 @@ void ObjectVisibilityContainer::GetVisibleWorldObjectGuids(std::vector<ObjectGui
 
 void ObjectVisibilityContainer::EraseVisibleWorldObjectByGuid(ObjectGuid const& guid) const
 {
-    std::lock_guard<std::mutex> guard(_lock);
+    std::unique_lock<std::shared_mutex> guard(_lock);
     if (!_visibleWorldObjectsMap)
         return;
 

@@ -18,6 +18,7 @@
 #ifndef _BIH_WRAP
 #define _BIH_WRAP
 
+#include <mutex>
 #include "BoundingIntervalHierarchy.h"
 #include "G3D/Array.h"
 #include "G3D/Set.h"
@@ -70,18 +71,21 @@ class BIHWrap
     G3D::Table<const T*, uint32> m_obj2Idx;
     G3D::Set<const T*> m_objects_to_push;
     int unbalanced_times;
+    mutable std::recursive_mutex _lock;
 
 public:
     BIHWrap() : unbalanced_times(0) { }
 
     void insert(const T& obj)
     {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
         ++unbalanced_times;
         m_objects_to_push.insert(&obj);
     }
 
     void remove(const T& obj)
     {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
         ++unbalanced_times;
         uint32 Idx = 0;
         const T* temp;
@@ -97,6 +101,7 @@ public:
 
     void balance()
     {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
         if (unbalanced_times == 0)
         {
             return;
@@ -114,6 +119,7 @@ public:
     template<typename RayCallback>
     void intersectRay(const G3D::Ray& ray, RayCallback& intersectCallback, float& maxDist, bool stopAtFirstHit)
     {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
         balance();
         MDLCallback<RayCallback> temp_cb(intersectCallback, m_objects.getCArray(), m_objects.size());
         m_tree.intersectRay(ray, temp_cb, maxDist, stopAtFirstHit);
@@ -122,6 +128,7 @@ public:
     template<typename IsectCallback>
     void intersectPoint(const G3D::Vector3& point, IsectCallback& intersectCallback)
     {
+        std::lock_guard<std::recursive_mutex> guard(_lock);
         balance();
         MDLCallback<IsectCallback> callback(intersectCallback, m_objects.getCArray(), m_objects.size());
         m_tree.intersectPoint(point, callback);

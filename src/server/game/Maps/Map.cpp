@@ -123,8 +123,15 @@ namespace
         }
         if (prev != current)
         {
-            LOG_ERROR("map.partition", "Partitioned store cross-thread mutation detected (map {}, op {}, prev=0x{:X}, now=0x{:X})",
-                mapId, op, prev, current);
+            static std::atomic<uint64> sLastThreadSwitchWarnMs{ 0 };
+            uint64 const nowMs = GameTime::GetGameTimeMS().count();
+            uint64 const lastWarnMs = sLastThreadSwitchWarnMs.load(std::memory_order_relaxed);
+            if (nowMs > lastWarnMs + 5000)
+            {
+                sLastThreadSwitchWarnMs.store(nowMs, std::memory_order_relaxed);
+                LOG_WARN("map.partition", "Partitioned store writer thread switched (map {}, op {}, prev=0x{:X}, now=0x{:X})",
+                    mapId, op, prev, current);
+            }
             writerHash.store(current, std::memory_order_relaxed);
         }
     }
@@ -334,7 +341,11 @@ Map::Map(uint32 id, uint32 InstanceId, uint8 SpawnMode, Map* _parent) :
 
     _zonePlayerCountMap.clear();
     resetMarkedCells();
-    _updatableObjectListRecheckTimer.SetInterval(UPDATABLE_OBJECT_LIST_RECHECK_TIMER);
+    uint32 const nearbyCellsRecheckIntervalMs = std::clamp<uint32>(
+        sConfigMgr->GetOption<uint32>("MapUpdate.NearbyCellsRecheckIntervalMs",
+            UPDATABLE_OBJECT_LIST_RECHECK_TIMER),
+        250u, 30000u);
+    _updatableObjectListRecheckTimer.SetInterval(nearbyCellsRecheckIntervalMs);
 
     //lets initialize visibility distance for map
     Map::InitVisibilityDistance();
@@ -1077,31 +1088,31 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     // saturated even under pressure.
     if (t_diff >= 200)
     {
-        _adaptiveSessionStrideTicks = 4;
-        _adaptiveDeferredVisibilityBudget = 256;
-        _adaptiveObjectUpdateBudget = 384;
-        _adaptivePartitionInFlightLimit = 3;
+        _adaptiveSessionStrideTicks = 1;
+        _adaptiveDeferredVisibilityBudget = 384;
+        _adaptiveObjectUpdateBudget = 768;
+        _adaptivePartitionInFlightLimit = 5;
     }
     else if (t_diff >= 120)
     {
-        _adaptiveSessionStrideTicks = 3;
-        _adaptiveDeferredVisibilityBudget = 384;
-        _adaptiveObjectUpdateBudget = 768;
-        _adaptivePartitionInFlightLimit = 4;
+        _adaptiveSessionStrideTicks = 1;
+        _adaptiveDeferredVisibilityBudget = 512;
+        _adaptiveObjectUpdateBudget = 1024;
+        _adaptivePartitionInFlightLimit = 6;
     }
     else if (t_diff <= 35)
     {
         _adaptiveSessionStrideTicks = 1;
-        _adaptiveDeferredVisibilityBudget = 1024;
-        _adaptiveObjectUpdateBudget = 3072;
-        _adaptivePartitionInFlightLimit = 6;
+        _adaptiveDeferredVisibilityBudget = 1536;
+        _adaptiveObjectUpdateBudget = 4096;
+        _adaptivePartitionInFlightLimit = 8;
     }
     else
     {
-        _adaptiveSessionStrideTicks = 2;
-        _adaptiveDeferredVisibilityBudget = 512;
-        _adaptiveObjectUpdateBudget = 1536;
-        _adaptivePartitionInFlightLimit = 5;
+        _adaptiveSessionStrideTicks = 1;
+        _adaptiveDeferredVisibilityBudget = 768;
+        _adaptiveObjectUpdateBudget = 2048;
+        _adaptivePartitionInFlightLimit = 7;
     }
     if (_isPartitioned && !_useParallelPartitions && !_partitionLogShown)
     {
@@ -1136,6 +1147,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     _phaseSnap(_phDynTree);
 
     uint32 sessionIndex = 0;
+    uint32 const updateCounterSnapshot = _updateCounter.load(std::memory_order_relaxed);
 
     // Update world sessions and players
     for (m_mapRefIter = m_mapRefMgr.begin(); m_mapRefIter != m_mapRefMgr.end(); ++m_mapRefIter)
@@ -1145,8 +1157,8 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         {
             // Always update session on main thread to reduce worker-thread contention.
             WorldSession* session = player->GetSession();
-            bool doSessionUpdate = ((_updateCounter.load(std::memory_order_relaxed) + sessionIndex) % _adaptiveSessionStrideTicks) == 0;
-            if (player->IsInCombat() || player->isMoving())
+            bool doSessionUpdate = ((updateCounterSnapshot + sessionIndex) % _adaptiveSessionStrideTicks) == 0;
+            if (player->IsInCombat() || player->isMoving() || player->IsInFlight() || player->HasUnitState(UNIT_STATE_CASTING) || player->IsNonMeleeSpellCast(false))
                 doSessionUpdate = true;
 
             if (session && doSessionUpdate)
@@ -1165,6 +1177,9 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
     Events.Update(t_diff);
     _phaseSnap(_phSessions);
+
+    if (GetId() == 37 && t_diff)
+        HandleDelayedVisibility();
 
     if (!t_diff)
     {
@@ -1266,38 +1281,46 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
                 return it != map.end() ? uint64(it->second.size()) : 0;
             };
 
+            // Cache map ID string once for the entire metric loop to avoid 20+ allocations.
+            auto const mapIdStrForMetrics = std::to_string(GetId());
+            // Only emit per-partition relay queue metrics every 10 ticks to reduce overhead.
+            bool const emitRelayMetrics = (_updateCounter.load(std::memory_order_relaxed) % 10) == 0;
             for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
             {
-                METRIC_VALUE("partition_relay_queue_threat", safeQueueSize(_partitionThreatRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_relay_queue_threat_action", safeQueueSize(_partitionThreatActionRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_relay_queue_threat_target", safeQueueSize(_partitionThreatTargetActionRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_relay_queue_taunt", safeQueueSize(_partitionTauntRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_relay_queue_proc", safeQueueSize(_partitionProcRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_relay_queue_aura", safeQueueSize(_partitionAuraRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_relay_queue_path", safeQueueSize(_partitionPathRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_relay_queue_point", safeQueueSize(_partitionPointRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_relay_queue_assist", safeQueueSize(_partitionAssistRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_relay_queue_assist_distract", safeQueueSize(_partitionAssistDistractRelays, partitionId),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                auto const partIdStr = std::to_string(partitionId);
+                if (emitRelayMetrics)
+                {
+                    METRIC_VALUE("partition_relay_queue_threat", safeQueueSize(_partitionThreatRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_relay_queue_threat_action", safeQueueSize(_partitionThreatActionRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_relay_queue_threat_target", safeQueueSize(_partitionThreatTargetActionRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_relay_queue_taunt", safeQueueSize(_partitionTauntRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_relay_queue_proc", safeQueueSize(_partitionProcRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_relay_queue_aura", safeQueueSize(_partitionAuraRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_relay_queue_path", safeQueueSize(_partitionPathRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_relay_queue_point", safeQueueSize(_partitionPointRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_relay_queue_assist", safeQueueSize(_partitionAssistRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_relay_queue_assist_distract", safeQueueSize(_partitionAssistDistractRelays, partitionId),
+                        METRIC_TAG("map_id", mapIdStrForMetrics),
+                        METRIC_TAG("partition_id", partIdStr));
+                }
                 SetActivePartitionContext(partitionId);
                 ProcessPartitionRelays(partitionId);
                 auto& bucket = partitionBuckets[partitionId - 1];
@@ -1410,6 +1433,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
     _phaseSnap(_phRelocate); // reset before post-partition phases
     _phaseLast = std::chrono::steady_clock::now(); // reset
     ProcessDeferredPlayerRelocations();
+    ProcessDeferredAIRelocation();
     _phaseSnap(_phRelocate);
     ProcessDeferredVisibilityUpdates();
     _phaseSnap(_phVisibility);
@@ -1475,30 +1499,35 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
     if (_isPartitioned && !useParallelPartitions)
     {
-        uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
-        if (partitionCount == 0)
-            partitionCount = 1;
-
-        for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
+        // Only emit partition stats every 10 ticks to reduce overhead.
+        if ((_updateCounter.load(std::memory_order_relaxed) % 10) == 0)
         {
-            PartitionManager::PartitionStats stats;
-            if (sPartitionMgr->GetPartitionStats(GetId(), partitionId, stats))
+            uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+            if (partitionCount == 0)
+                partitionCount = 1;
+
+            auto const mapIdStr = std::to_string(GetId());
+            for (uint32 partitionId = 1; partitionId <= partitionCount; ++partitionId)
             {
-                METRIC_VALUE("partition_players", uint64(stats.players),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_creatures", uint64(stats.creatures),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_boundary_objects", uint64(stats.boundaryObjects),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
-                METRIC_VALUE("partition_visibility_count", uint64(sPartitionMgr->GetVisibilityCount(GetId(), partitionId)),
-                    METRIC_TAG("map_id", std::to_string(GetId())),
-                    METRIC_TAG("partition_id", std::to_string(partitionId)));
+                auto const partIdStr = std::to_string(partitionId);
+                PartitionManager::PartitionStats stats;
+                if (sPartitionMgr->GetPartitionStats(GetId(), partitionId, stats))
+                {
+                    METRIC_VALUE("partition_players", uint64(stats.players),
+                        METRIC_TAG("map_id", mapIdStr),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_creatures", uint64(stats.creatures),
+                        METRIC_TAG("map_id", mapIdStr),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_boundary_objects", uint64(stats.boundaryObjects),
+                        METRIC_TAG("map_id", mapIdStr),
+                        METRIC_TAG("partition_id", partIdStr));
+                    METRIC_VALUE("partition_visibility_count", uint64(sPartitionMgr->GetVisibilityCount(GetId(), partitionId)),
+                        METRIC_TAG("map_id", mapIdStr),
+                        METRIC_TAG("partition_id", partIdStr));
+                }
             }
         }
-
     }
 
     if (_isPartitioned)
@@ -1675,92 +1704,84 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
 
         if (recheck)
         {
-            for (uint32 i = 0;;)
+            // Snapshot under one lock, then iterate lock-free
+            std::vector<WorldObject*> recheckSnapshot;
             {
-                WorldObject* obj = nullptr;
+                std::lock_guard<std::mutex> lock(_updatableObjectListLock);
+                recheckSnapshot = _updatableObjectList;
+            }
+
+            std::vector<WorldObject*> toRemove;
+            for (WorldObject* obj : recheckSnapshot)
+            {
+                if (!obj || !obj->IsInWorld())
                 {
-                    std::lock_guard<std::mutex> lock(_updatableObjectListLock);
-                    if (i >= _updatableObjectList.size())
-                        break;
-                    obj = _updatableObjectList[i];
-                }
-                if (!obj->IsInWorld())
-                {
-                    RemoveObjectFromMapUpdateList(obj);
+                    if (obj)
+                        toRemove.push_back(obj);
                     continue;
                 }
 
                 if (!obj->IsUpdateNeeded())
-                {
-                    RemoveObjectFromMapUpdateList(obj);
-                }
-                else
-                {
-                    ++i;
-                }
+                    toRemove.push_back(obj);
             }
+
+            for (WorldObject* obj : toRemove)
+                RemoveObjectFromMapUpdateList(obj);
+
             _updatableObjectListRecheckTimer.Reset();
         }
 
         return;
     }
 
+    // Snapshot the updatable list under a single lock acquisition instead of
+    // locking/unlocking per element (~17k cycles per tick).
+    std::vector<WorldObject*> updateSnapshot;
+    {
+        std::lock_guard<std::mutex> lock(_updatableObjectListLock);
+        updateSnapshot = _updatableObjectList;
+    }
+
     if (recheck)
     {
-        for (uint32 i = 0;;)
+        std::vector<WorldObject*> toRemove;
+
+        for (WorldObject* obj : updateSnapshot)
         {
-            WorldObject* obj = nullptr;
+            if (!obj || !obj->IsInWorld())
             {
-                std::lock_guard<std::mutex> lock(_updatableObjectListLock);
-                if (i >= _updatableObjectList.size())
-                    break;
-                obj = _updatableObjectList[i];
-            }
-            if (!obj->IsInWorld())
-            {
-                ++i;
+                toRemove.push_back(obj);
                 continue;
             }
 
             if (Creature* creature = obj->ToCreature(); creature && creature->IsDuringRemoveFromWorld())
-            {
-                ++i;
                 continue;
-            }
 
             UpdatableMapObject* updatableObject = obj->AsUpdatableMapObject();
             if (updatableObject && !TryBeginUpdateExecutionIfSupported(updatableObject, 0))
-            {
-                ++i;
                 continue;
-            }
             UpdateExecutionGuard updateGuard(updatableObject);
 
             obj->Update(diff);
 
             if (!obj->IsUpdateNeeded())
-            {
-                    RemoveObjectFromMapUpdateList(obj);
-                // Intentional no iteration here, obj is swapped with last element in
-                // _updatableObjectList so next loop will update that object at the same index
-            }
-            else
-                ++i;
+                toRemove.push_back(obj);
         }
+
+        // Batch-remove stale objects after iteration (each call acquires the lock internally)
+        for (WorldObject* obj : toRemove)
+        {
+            if (obj)
+                RemoveObjectFromMapUpdateList(obj);
+        }
+
         _updatableObjectListRecheckTimer.Reset();
     }
     else
     {
-        for (uint32 i = 0;; ++i)
+        for (WorldObject* obj : updateSnapshot)
         {
-            WorldObject* obj = nullptr;
-            {
-                std::lock_guard<std::mutex> lock(_updatableObjectListLock);
-                if (i >= _updatableObjectList.size())
-                    break;
-                obj = _updatableObjectList[i];
-            }
-            if (!obj->IsInWorld())
+            if (!obj || !obj->IsInWorld())
                 continue;
 
             if (Creature* creature = obj->ToCreature(); creature && creature->IsDuringRemoveFromWorld())
@@ -2315,7 +2336,6 @@ void Map::UpdatePartitionedOwnershipNoLock(WorldObject* obj)
 
     UpdatePartitionedObjectStore(obj);
 }
-
 
 void Map::QueuePartitionedOwnershipUpdate(ObjectGuid const& guid, TypeID typeId)
 {
@@ -2933,31 +2953,124 @@ void Map::HandleDelayedVisibility()
 
     // Extract objects under lock, then process outside lock
     std::vector<ObjectGuid> unitsToProcess;
+    size_t delayedQueueDepthBeforeDrain = 0;
+    uint32 configuredDelayedVisBudget = 0;
+    size_t delayedVisBudgetUsed = 0;
     {
         std::lock_guard<std::mutex> lock(_delayedVisibilityLock);
         if (_objectsForDelayedVisibility.empty())
             return;
+        delayedQueueDepthBeforeDrain = _objectsForDelayedVisibility.size();
+
+        static uint32 const s_configuredDelayedVisBudget = std::max<uint32>(1,
+            sConfigMgr->GetOption<uint32>(
+                "System.DelayedVisibility.BudgetPerTick", 256));
+        configuredDelayedVisBudget = s_configuredDelayedVisBudget;
+
+        static uint32 const s_adaptiveDelayedVisMaxBudget = std::max<uint32>(
+            s_configuredDelayedVisBudget,
+            sConfigMgr->GetOption<uint32>(
+                "System.DelayedVisibility.AdaptiveMaxBudgetPerTick", 4096));
+        uint32 const adaptiveDelayedVisMaxBudget = s_adaptiveDelayedVisMaxBudget;
+
+        size_t effectiveBudget = configuredDelayedVisBudget;
+        if (delayedQueueDepthBeforeDrain > effectiveBudget)
+        {
+            size_t const backlogBudget = std::max<size_t>(
+                effectiveBudget, delayedQueueDepthBeforeDrain / 2);
+            effectiveBudget = std::min<size_t>(adaptiveDelayedVisMaxBudget, backlogBudget);
+        }
+
+        if (GetId() == 37 && delayedQueueDepthBeforeDrain > effectiveBudget)
+            effectiveBudget = std::min<size_t>(adaptiveDelayedVisMaxBudget, delayedQueueDepthBeforeDrain);
+
+        delayedVisBudgetUsed = effectiveBudget;
         unitsToProcess.swap(_objectsForDelayedVisibility);
+        _delayedVisibilitySet.clear();
     }
 
     if (unitsToProcess.size() > 1)
     {
-        std::sort(unitsToProcess.begin(), unitsToProcess.end());
-        unitsToProcess.erase(std::unique(unitsToProcess.begin(), unitsToProcess.end()), unitsToProcess.end());
+        std::stable_sort(
+            unitsToProcess.begin(),
+            unitsToProcess.end(),
+            [](ObjectGuid const& a, ObjectGuid const& b)
+            {
+                if (a.IsPlayer() != b.IsPlayer())
+                    return a.IsPlayer() && !b.IsPlayer();
+                return a < b;
+            });
+    }
+
+    if (unitsToProcess.size() > delayedVisBudgetUsed)
+    {
+        auto const overflowBegin = unitsToProcess.begin() + delayedVisBudgetUsed;
+
+        std::lock_guard<std::mutex> lock(_delayedVisibilityLock);
+        _objectsForDelayedVisibility.insert(
+            _objectsForDelayedVisibility.end(),
+            overflowBegin,
+            unitsToProcess.end());
+
+        for (auto itr = overflowBegin; itr != unitsToProcess.end(); ++itr)
+            _delayedVisibilitySet.insert(*itr);
+
+        unitsToProcess.resize(delayedVisBudgetUsed);
     }
 
     // Budget-limit delayed visibility to prevent unbounded per-tick cost.
     // Each ExecuteDelayedUnitRelocationEvent does a full grid visit (expensive).
-    static uint32 const kDelayedVisBudget = sConfigMgr->GetOption<uint32>("System.DelayedVisibility.BudgetPerTick", 256);
-    if (unitsToProcess.size() > kDelayedVisBudget)
+    size_t delayedQueueDepthAfterBudget = 0;
     {
-        // Put excess back into the queue for next tick
         std::lock_guard<std::mutex> lock(_delayedVisibilityLock);
-        _objectsForDelayedVisibility.insert(
-            _objectsForDelayedVisibility.end(),
-            unitsToProcess.begin() + kDelayedVisBudget,
-            unitsToProcess.end());
-        unitsToProcess.resize(kDelayedVisBudget);
+        delayedQueueDepthAfterBudget = _objectsForDelayedVisibility.size();
+    }
+
+    METRIC_VALUE("partition_delayed_visibility_queue", delayedQueueDepthBeforeDrain,
+        METRIC_TAG("map_id", std::to_string(GetId())),
+        METRIC_TAG("phase", "before"));
+    METRIC_VALUE("partition_delayed_visibility_queue", delayedQueueDepthAfterBudget,
+        METRIC_TAG("map_id", std::to_string(GetId())),
+        METRIC_TAG("phase", "after"));
+    METRIC_VALUE("partition_delayed_visibility_batch", unitsToProcess.size(),
+        METRIC_TAG("map_id", std::to_string(GetId())),
+        METRIC_TAG("phase", "drained"));
+
+    static bool const delayedVisibilityTelemetryEnabled =
+        sConfigMgr->GetOption<bool>(
+            "System.DelayedVisibility.Telemetry.Enable", true);
+    static uint32 const delayedVisibilityWarnQueueDepth =
+        std::max<uint32>(1, sConfigMgr->GetOption<uint32>(
+            "System.DelayedVisibility.Telemetry.WarnQueueDepth", 256));
+    static uint64 const delayedVisibilityTelemetryLogIntervalMs =
+        sConfigMgr->GetOption<uint64>(
+            "System.DelayedVisibility.Telemetry.LogIntervalMs", 2000);
+    bool const delayedVisibilitySaturated =
+        delayedQueueDepthBeforeDrain > unitsToProcess.size() &&
+        unitsToProcess.size() >= delayedVisBudgetUsed;
+    if (delayedVisibilityTelemetryEnabled &&
+        (delayedQueueDepthBeforeDrain >= delayedVisibilityWarnQueueDepth ||
+         delayedVisibilitySaturated))
+    {
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        if (delayedVisibilityTelemetryLogIntervalMs == 0 ||
+            nowMs >= _nextDelayedVisibilityTelemetryLogAtMs)
+        {
+            LOG_WARN("map.partition.defer",
+                "Delayed visibility queue pressure: map={} queue_before={} "
+                "drained={} queue_after={} budget={} configured_budget={} "
+                "saturated_drain={}",
+                GetId(), delayedQueueDepthBeforeDrain, unitsToProcess.size(),
+                delayedQueueDepthAfterBudget, delayedVisBudgetUsed,
+                configuredDelayedVisBudget,
+                delayedVisibilitySaturated ? 1 : 0);
+
+            if (delayedVisibilityTelemetryLogIntervalMs > 0)
+            {
+                _nextDelayedVisibilityTelemetryLogAtMs =
+                    nowMs + delayedVisibilityTelemetryLogIntervalMs;
+            }
+        }
     }
 
     char const* workloadBucket = "empty";
@@ -2998,7 +3111,7 @@ void Map::HandleDelayedVisibility()
     }
 
     // Slow log check AFTER the processing loop (grid visits are the expensive part)
-    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", false);
     static int64 const slowVisibilityThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_visibility_update_time", 6);
     static int64 const slowVisibilityHardThresholdMs = sConfigMgr->GetOption<int64>("System.SlowLog.DelayedVisibility.HardThresholdMs", 12);
     static uint32 const slowVisibilityMinBatch = sConfigMgr->GetOption<uint32>("System.SlowLog.DelayedVisibility.MinBatch", 16);
@@ -5996,4 +6109,117 @@ std::string InstanceMap::GetDebugInfo() const
     return sstr.str();
 }
 
+void Map::QueueDeferredAIRelocation(ObjectGuid guid)
+{
+    if (!guid)
+        return;
 
+    std::lock_guard<std::mutex> lock(_deferredAIRelocationLock);
+    if (_deferredAIRelocationSet.insert(guid).second)
+        _objectsForDeferredAIRelocation.push_back(guid);
+}
+
+void Map::ProcessDeferredAIRelocation()
+{
+    // Cache config reads as static locals — these were previously read every tick.
+    static uint32 const sConfiguredBudget = static_cast<uint32>(std::max<int64>(0,
+        sConfigMgr->GetOption<int64>("MapPartitions.DeferredAIRelocation.MaxPerTick", 0)));
+    static bool const telemetryEnabled = sConfigMgr->GetOption<bool>(
+        "MapPartitions.DeferredAIRelocation.Telemetry.Enable", true);
+    static uint32 const telemetryWarnQueueDepth = static_cast<uint32>(std::max<int64>(1,
+        sConfigMgr->GetOption<int64>(
+            "MapPartitions.DeferredAIRelocation.Telemetry.WarnQueueDepth", 256)));
+    static uint64 const telemetryLogIntervalMs = static_cast<uint64>(std::max<int64>(0,
+        sConfigMgr->GetOption<int64>(
+            "MapPartitions.DeferredAIRelocation.Telemetry.LogIntervalMs", 2000)));
+
+    std::vector<ObjectGuid> processList;
+    size_t queueDepthBefore = 0;
+    size_t queueDepthAfter = 0;
+    size_t budgetUsed = 0;
+    uint32 configuredBudget = sConfiguredBudget;
+    {
+        std::lock_guard<std::mutex> lock(_deferredAIRelocationLock);
+        if (_objectsForDeferredAIRelocation.empty())
+            return;
+
+        size_t budget = configuredBudget;
+        if (budget == 0)
+        {
+            size_t adaptiveBudget = std::clamp<size_t>(_adaptiveDeferredVisibilityBudget, 128, 2048);
+            size_t const queueDepth = _objectsForDeferredAIRelocation.size();
+            if (queueDepth > adaptiveBudget)
+            {
+                size_t const backlogBudget = std::max<size_t>(adaptiveBudget, queueDepth / 2);
+                adaptiveBudget = std::min<size_t>(4096, backlogBudget);
+            }
+
+            budget = adaptiveBudget;
+        }
+
+        queueDepthBefore = _objectsForDeferredAIRelocation.size();
+        budgetUsed = budget;
+        size_t const takeCount = std::min(budget, queueDepthBefore);
+        processList.reserve(takeCount);
+
+        // Bulk iterator-erase instead of per-element pop_front.
+        auto itr = _objectsForDeferredAIRelocation.begin();
+        for (size_t i = 0; i < takeCount; ++i, ++itr)
+        {
+            _deferredAIRelocationSet.erase(*itr);
+            processList.push_back(*itr);
+        }
+        _objectsForDeferredAIRelocation.erase(_objectsForDeferredAIRelocation.begin(), itr);
+
+        queueDepthAfter = _objectsForDeferredAIRelocation.size();
+    }
+
+    size_t applied = 0;
+    size_t skipped = 0;
+    for (ObjectGuid const& guid : processList)
+    {
+        Unit* unit = GetUnitByGuid(guid);
+        if (!unit || !unit->IsInWorld())
+        {
+            ++skipped;
+            continue;
+        }
+
+        Acore::AIRelocationNotifier notifier(*unit);
+        Cell::VisitObjects(unit, notifier, unit->GetVisibilityRange());
+        ++applied;
+    }
+
+    auto const mapIdStr = std::to_string(GetId());
+    METRIC_VALUE("partition_deferred_ai_relocation_queue", queueDepthBefore,
+        METRIC_TAG("map_id", mapIdStr),
+        METRIC_TAG("phase", "before"));
+    METRIC_VALUE("partition_deferred_ai_relocation_queue", queueDepthAfter,
+        METRIC_TAG("map_id", mapIdStr),
+        METRIC_TAG("phase", "after"));
+    METRIC_VALUE("partition_deferred_ai_relocation_batch", processList.size(),
+        METRIC_TAG("map_id", mapIdStr),
+        METRIC_TAG("phase", "drained"));
+
+    bool const saturatedDrain =
+        queueDepthBefore > processList.size() && processList.size() >= budgetUsed;
+    if (telemetryEnabled &&
+        (queueDepthBefore >= telemetryWarnQueueDepth || saturatedDrain))
+    {
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        if (telemetryLogIntervalMs == 0 || nowMs >= _nextDeferredAIRelocationLogAtMs)
+        {
+            LOG_WARN("map.partition.defer",
+                "Deferred AI relocation queue pressure: map={} "
+                "queue_before={} drained={} applied={} skipped={} "
+                "queue_after={} budget={} configured_budget={} "
+                "adaptive_visibility_budget={} saturated_drain={}",
+                GetId(), queueDepthBefore, processList.size(), applied, skipped,
+                queueDepthAfter, budgetUsed, configuredBudget,
+                _adaptiveDeferredVisibilityBudget, saturatedDrain ? 1 : 0);
+
+            if (telemetryLogIntervalMs > 0)
+                _nextDeferredAIRelocationLogAtMs = nowMs + telemetryLogIntervalMs;
+        }
+    }
+}

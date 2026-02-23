@@ -1412,8 +1412,9 @@ public:
             }
             // Use the reassembled payload
             rawPayload = reassembledPayload;
-            LOG_INFO("module.dc", "[DC-CHUNK] player={}, reassembled message ready, len={}",
-                player->GetName(), rawPayload.length());
+            if (s_AddonConfig.EnableDebugLog)
+                LOG_DEBUG("module.dc", "[DC-CHUNK] player={}, reassembled message ready, len={}",
+                    player->GetName(), rawPayload.length());
         }
 
         std::string payload = rawPayload;
@@ -1432,8 +1433,9 @@ public:
 
         // Early logging: show ALL incoming DC messages
         uint8 incomingOpcode = ExtractOpcode(payload);
-        LOG_INFO("module.dc", "[DC-INCOMING] player={}, module={}, opcode=0x{:02X}, payloadLen={}",
-            player->GetName(), ExtractModuleCode(payload), incomingOpcode, payload.length());
+        if (s_AddonConfig.EnableDebugLog)
+            LOG_DEBUG("module.dc", "[DC-INCOMING] player={}, module={}, opcode=0x{:02X}, payloadLen={}",
+                player->GetName(), ExtractModuleCode(payload), incomingOpcode, payload.length());
 
         // Check rate limit before processing. Allow a small bypass list for UI-critical requests.
         // Bypassed messages don't count against the rate limit.
@@ -1445,7 +1447,7 @@ public:
             {
                 // Log dropped messages for diagnostics
                 uint8 droppedOpcode = ExtractOpcode(payload);
-                LOG_INFO("module.dc", "[RateLimit] DROPPED message from {}: module={}, opcode=0x{:02X}",
+                LOG_WARN("module.dc", "[RateLimit] DROPPED message from {}: module={}, opcode=0x{:02X}",
                     player->GetName(), ExtractModuleCode(payload), droppedOpcode);
                 msg.clear();
                 return;

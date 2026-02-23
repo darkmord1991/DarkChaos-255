@@ -183,13 +183,18 @@ void PartitionManager::CheckGridWriter(SpatialHashGrid& grid, uint32 mapId, uint
 
     if (prev != current)
     {
-        LOG_ERROR("map.partition", "Boundary grid cross-thread mutation detected (map {}, partition {}, op {}, prev=0x{:X}, now=0x{:X})",
-            mapId, partitionId, op, prev, current);
+        static std::atomic<uint64> sLastThreadSwitchWarnMs{ 0 };
+        uint64 const nowMs = GameTime::GetGameTimeMS().count();
+        uint64 const lastWarnMs = sLastThreadSwitchWarnMs.load(std::memory_order_relaxed);
+        if (nowMs > lastWarnMs + 5000)
+        {
+            sLastThreadSwitchWarnMs.store(nowMs, std::memory_order_relaxed);
+            LOG_WARN("map.partition", "Boundary grid writer thread switched (map {}, partition {}, op {}, prev=0x{:X}, now=0x{:X})",
+                mapId, partitionId, op, prev, current);
+        }
         grid.lastWriterThreadHash.store(current, std::memory_order_relaxed);
     }
 }
-
-
 
 std::shared_mutex& PartitionManager::GetBoundaryLock(uint32 mapId) const
 {
@@ -242,11 +247,12 @@ bool PartitionManager::UsePartitionStoreOnly() const
 
 bool PartitionManager::IsZoneExcluded(uint32_t zoneId) const
 {
-    {
-        std::lock_guard<std::mutex> cacheGuard(_excludedCacheLock);
-        if (auto it = _zoneExcludedCache.find(zoneId); it != _zoneExcludedCache.end())
-            return it->second;
-    }
+    // Thread-local cache — avoids _excludedCacheLock + _partitionLock on every call.
+    // Excluded zones only change at config reload so stale entries are fine.
+    thread_local std::unordered_map<uint32_t, bool> tlExcludedCache;
+
+    if (auto it = tlExcludedCache.find(zoneId); it != tlExcludedCache.end())
+        return it->second;
 
     bool excluded = false;
     {
@@ -254,21 +260,52 @@ bool PartitionManager::IsZoneExcluded(uint32_t zoneId) const
         excluded = _excludedZones.count(zoneId) > 0;
     }
 
-    {
-        std::lock_guard<std::mutex> cacheGuard(_excludedCacheLock);
-        _zoneExcludedCache[zoneId] = excluded;
-    }
-
+    tlExcludedCache[zoneId] = excluded;
     return excluded;
 }
 
 bool PartitionManager::IsRuntimeDiagnosticsEnabled() const
 {
-    return _runtimeDiagnostics.load(std::memory_order_relaxed);
+    if (!_runtimeDiagnostics.load(std::memory_order_relaxed))
+        return false;
+
+    uint64 until = _runtimeDiagnosticsUntilMs.load(std::memory_order_relaxed);
+    if (!until)
+        return true;
+
+    uint64 const nowMs = GameTime::GetGameTimeMS().count();
+    if (nowMs <= until)
+        return true;
+
+    return false;
+}
+
+void PartitionManager::SetRuntimeDiagnosticsEnabled(bool enabled)
+{
+    _runtimeDiagnostics.store(enabled, std::memory_order_relaxed);
+    if (enabled)
+        _runtimeDiagnosticsUntilMs.store(GameTime::GetGameTimeMS().count() + 15000, std::memory_order_relaxed);
+    else
+        _runtimeDiagnosticsUntilMs.store(0, std::memory_order_relaxed);
+}
+
+uint64 PartitionManager::GetRuntimeDiagnosticsRemainingMs() const
+{
+    if (!IsRuntimeDiagnosticsEnabled())
+        return 0;
+
+    uint64 until = _runtimeDiagnosticsUntilMs.load(std::memory_order_relaxed);
+    if (!until)
+        return 0;
+
+    uint64 const nowMs = GameTime::GetGameTimeMS().count();
+    if (nowMs >= until)
+        return 0;
+
+    return until - nowMs;
 }
 
 // Layering implementations moved to LayerManager.cpp
-
 
 bool PartitionManager::IsMapPartitioned(uint32 mapId) const
 {
@@ -312,8 +349,10 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
             bool hasOverride = false;
         };
 
-        thread_local OverrideLookupCache cache;
+        thread_local std::array<OverrideLookupCache, 256> caches{};
         ObjectGuid::LowType guidLow = guid.GetCounter();
+        OverrideLookupCache& cache = caches[guidLow % 256];
+
         if (cache.guid == guidLow && cache.mapId == mapId && nowMs <= cache.cacheUntilMs)
         {
             if (cache.hasOverride && nowMs <= cache.expiresMs)
@@ -325,11 +364,11 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
         bool hasOverride = false;
         uint32 cachedPartitionId = 0;
         uint64 cachedExpiry = 0;
-        
+
         // Fast path: shared lock for read-only lookups (hot path every tick per player)
         {
             std::shared_lock<std::shared_mutex> guard(_overrideLock);
-            
+
             // Check persistent ownership first
             auto ownership = _partitionOwnership.find(guidLow);
             if (ownership != _partitionOwnership.end() && ownership->second.mapId == mapId)
@@ -338,7 +377,7 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
                 cachedPartitionId = ownership->second.partitionId;
                 cachedExpiry = std::numeric_limits<uint64>::max();
             }
-            
+
             // Check temporary overrides
             if (!hasOverride)
             {
@@ -459,6 +498,9 @@ void PartitionManager::ClearPartitions(uint32 mapId)
 
     std::unique_lock<std::shared_mutex> bGuard(GetBoundaryLock(mapId));
     _boundarySpatialGrids.erase(mapId);
+
+    std::unique_lock<std::shared_mutex> vGuard(GetVisibilityLock(mapId));
+    _visibilitySets.erase(mapId);
 }
 
 void PartitionManager::Initialize()
@@ -564,7 +606,6 @@ void PartitionManager::Initialize()
         return;
     }
 
-
     {
         std::lock_guard<std::mutex> guard(_precacheLock);
         _boundaryApproachLastCheck.clear();
@@ -641,6 +682,7 @@ void PartitionManager::Initialize()
             _gridLayouts[mapId] = ComputeGridLayout(partitionCount);
             _layoutEpochByMap[mapId] = 1;
         }
+        _globalLayoutEpoch.fetch_add(1, std::memory_order_release);
 
         LOG_INFO("map.partition", "Initialized {} partitions for map {}", partitionCount, mapId);
     }
@@ -762,6 +804,19 @@ void PartitionManager::UpdatePartitionsForMap(uint32 mapId, uint32 diff)
 {
     // Throttle cleanup to once per second (was running every tick per map)
     uint64 now = GameTime::GetGameTimeMS().count();
+
+    // Proactively clear expired runtime diagnostics in a non-const path.
+    // This keeps diagnostics state self-healing without mutating const accessors.
+    if (_runtimeDiagnostics.load(std::memory_order_relaxed))
+    {
+        uint64 const until = _runtimeDiagnosticsUntilMs.load(std::memory_order_relaxed);
+        if (until > 0 && now > until)
+        {
+            _runtimeDiagnostics.store(false, std::memory_order_relaxed);
+            _runtimeDiagnosticsUntilMs.store(0, std::memory_order_relaxed);
+        }
+    }
+
     uint64 lastCleanup = _lastCleanupMs.load(std::memory_order_relaxed);
     if (now - lastCleanup >= 1000)
     {
@@ -806,8 +861,6 @@ void PartitionManager::UpdatePartitionStats(uint32 mapId, uint32 partitionId, ui
         return;
     partIt->second->SetCounts(players, creatures, boundaryObjects);
 }
-
-
 
 void PartitionManager::UpdatePartitionPlayerCount(uint32 mapId, uint32 partitionId, uint32 players)
 {
@@ -864,7 +917,9 @@ void PartitionManager::NotifyVisibilityAttach(ObjectGuid const& guid, uint32 map
 {
     {
         std::unique_lock<std::shared_mutex> guard(GetVisibilityLock(mapId));
-        _visibilitySets[mapId][partitionId].insert(guid.GetCounter());
+        auto& visibility = _visibilitySets[mapId][partitionId];
+        std::lock_guard<std::mutex> innerGuard(visibility.Lock);
+        visibility.Guids.insert(guid.GetCounter());
     }
     LOG_DEBUG("visibility.partition", "Attach visibility guid {} map {} partition {}", guid.GetCounter(), mapId, partitionId);
 }
@@ -872,13 +927,16 @@ void PartitionManager::NotifyVisibilityAttach(ObjectGuid const& guid, uint32 map
 void PartitionManager::NotifyVisibilityDetach(ObjectGuid const& guid, uint32 mapId, uint32 partitionId)
 {
     {
-        std::unique_lock<std::shared_mutex> guard(GetVisibilityLock(mapId));
+        std::shared_lock<std::shared_mutex> guard(GetVisibilityLock(mapId));
         auto mapIt = _visibilitySets.find(mapId);
         if (mapIt != _visibilitySets.end())
         {
             auto partIt = mapIt->second.find(partitionId);
             if (partIt != mapIt->second.end())
-                partIt->second.erase(guid.GetCounter());
+            {
+                std::lock_guard<std::mutex> innerGuard(partIt->second.Lock);
+                partIt->second.Guids.erase(guid.GetCounter());
+            }
         }
     }
     LOG_DEBUG("visibility.partition", "Detach visibility guid {} map {} partition {}", guid.GetCounter(), mapId, partitionId);
@@ -893,7 +951,9 @@ uint32 PartitionManager::GetVisibilityCount(uint32 mapId, uint32 partitionId) co
     auto partIt = mapIt->second.find(partitionId);
     if (partIt == mapIt->second.end())
         return 0;
-    return static_cast<uint32>(partIt->second.size());
+
+    std::lock_guard<std::mutex> innerGuard(partIt->second.Lock);
+    return static_cast<uint32>(partIt->second.Guids.size());
 }
 
 void PartitionManager::RecordCombatHandoff(uint32 mapId)
@@ -956,8 +1016,6 @@ void PartitionManager::SetPartitionOverride(ObjectGuid const& guid, uint32 mapId
     _partitionOverrides[guid.GetCounter()] = entry;
 }
 
-
-
 uint32 PartitionManager::GetBoundaryCount(uint32 mapId, uint32 partitionId) const
 {
     std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
@@ -1012,7 +1070,7 @@ bool PartitionManager::CommitRelocation(ObjectGuid const& guid)
 
     it->second.state = RelocationState::COMMITTED;
 
-    LOG_DEBUG("map.partition", "Commit relocation guid {} map {} {} -> {} (duration {}ms)", 
+    LOG_DEBUG("map.partition", "Commit relocation guid {} map {} {} -> {} (duration {}ms)",
         low, it->second.mapId, it->second.fromPartition, it->second.toPartition, duration);
     _relocations.erase(it);
     return true;
@@ -1036,7 +1094,7 @@ void PartitionManager::RollbackRelocation(ObjectGuid const& guid)
 
     _relocations.erase(it);
 
-    LOG_WARN("map.partition", "Rollback relocation guid {} map {} {} -> {} (after {}ms)", 
+    LOG_WARN("map.partition", "Rollback relocation guid {} map {} {} -> {} (after {}ms)",
         low, txnMapId, fromPart, toPart, duration);
 }
 
@@ -1053,8 +1111,11 @@ std::vector<ObjectGuid> PartitionManager::GetBoundaryObjectGuids(uint32 mapId, u
     if (partitionIt == mapIt->second.end())
         return result;
 
-    result.reserve(partitionIt->second.objectCellMap.size());
-    for (auto const& [cellKey, entries] : partitionIt->second.cells)
+    auto& grid = partitionIt->second;
+    std::lock_guard<std::mutex> gridGuard(grid.Lock);
+
+    result.reserve(grid.objectCellMap.size());
+    for (auto const& [cellKey, entries] : grid.cells)
     {
         for (auto const& entry : entries)
             result.push_back(entry.guid);
@@ -1063,14 +1124,12 @@ std::vector<ObjectGuid> PartitionManager::GetBoundaryObjectGuids(uint32 mapId, u
     return result;
 }
 
-
-
 void PartitionManager::UnregisterBoundaryObject(uint32 mapId, uint32 partitionId, ObjectGuid const& guid)
 {
     if (!guid)
         return;
 
-    std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
+    std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     auto mapIt = _boundarySpatialGrids.find(mapId);
     if (mapIt == _boundarySpatialGrids.end())
         return;
@@ -1079,9 +1138,12 @@ void PartitionManager::UnregisterBoundaryObject(uint32 mapId, uint32 partitionId
     if (partitionIt == mapIt->second.end())
         return;
 
+    auto& grid = partitionIt->second;
+    std::lock_guard<std::mutex> gridGuard(grid.Lock);
+
     if (IsRuntimeDiagnosticsEnabled())
-        CheckGridWriter(partitionIt->second, mapId, partitionId, "UnregisterBoundaryObject");
-    partitionIt->second.Remove(guid);
+        CheckGridWriter(grid, mapId, partitionId, "UnregisterBoundaryObject");
+    grid.Remove(guid);
 
     LOG_DEBUG("map.partition", "Unregistered boundary object {} from map {} partition {}", guid.ToString(), mapId, partitionId);
 }
@@ -1100,7 +1162,9 @@ bool PartitionManager::IsObjectInBoundarySet(uint32 mapId, uint32 partitionId, O
     if (partitionIt == mapIt->second.end())
         return false;
 
-    return partitionIt->second.objectCellMap.count(guid.GetCounter()) > 0;
+    auto& grid = partitionIt->second;
+    std::lock_guard<std::mutex> gridGuard(grid.Lock);
+    return grid.objectCellMap.count(guid.GetCounter()) > 0;
 }
 
 // ======================== SPATIAL HASH GRID BOUNDARY METHODS (Phase 2) ========================
@@ -1112,11 +1176,13 @@ void PartitionManager::RegisterBoundaryObjectWithPosition(uint32 mapId, uint32 p
 
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     auto& grid = _boundarySpatialGrids[mapId][partitionId];
+    std::lock_guard<std::mutex> gridGuard(grid.Lock);
+
     if (IsRuntimeDiagnosticsEnabled())
         CheckGridWriter(grid, mapId, partitionId, "RegisterBoundaryObjectWithPosition");
     grid.Insert(guid, x, y);
 
-    LOG_DEBUG("map.partition", "Registered boundary object {} with position ({:.1f}, {:.1f}) in map {} partition {}", 
+    LOG_DEBUG("map.partition", "Registered boundary object {} with position ({:.1f}, {:.1f}) in map {} partition {}",
         guid.ToString(), x, y, mapId, partitionId);
 }
 
@@ -1127,6 +1193,8 @@ void PartitionManager::UpdateBoundaryObjectPosition(uint32 mapId, uint32 partiti
 
     std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     auto& grid = _boundarySpatialGrids[mapId][partitionId];
+    std::lock_guard<std::mutex> gridGuard(grid.Lock);
+
     if (IsRuntimeDiagnosticsEnabled())
         CheckGridWriter(grid, mapId, partitionId, "UpdateBoundaryObjectPosition");
     grid.Update(guid, x, y);
@@ -1137,38 +1205,40 @@ void PartitionManager::UnregisterBoundaryObjectFromGrid(uint32 mapId, uint32 par
     if (!guid)
         return;
 
-    std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
+    std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     auto mapIt = _boundarySpatialGrids.find(mapId);
     if (mapIt != _boundarySpatialGrids.end())
     {
         auto partIt = mapIt->second.find(partitionId);
         if (partIt != mapIt->second.end())
         {
+            auto& grid = partIt->second;
+            std::lock_guard<std::mutex> gridGuard(grid.Lock);
             if (IsRuntimeDiagnosticsEnabled())
-                CheckGridWriter(partIt->second, mapId, partitionId, "UnregisterBoundaryObjectFromGrid");
-            partIt->second.Remove(guid);
+                CheckGridWriter(grid, mapId, partitionId, "UnregisterBoundaryObjectFromGrid");
+            grid.Remove(guid);
         }
     }
-    
 
-
-    LOG_DEBUG("map.partition", "Unregistered boundary object {} from spatial grid in map {} partition {}", 
+    LOG_DEBUG("map.partition", "Unregistered boundary object {} from spatial grid in map {} partition {}",
         guid.ToString(), mapId, partitionId);
 }
 
 std::vector<ObjectGuid> PartitionManager::GetNearbyBoundaryObjects(uint32 mapId, uint32 partitionId, float x, float y, float radius) const
 {
     std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
-    
+
     auto mapIt = _boundarySpatialGrids.find(mapId);
     if (mapIt == _boundarySpatialGrids.end())
         return {};
-    
+
     auto partIt = mapIt->second.find(partitionId);
     if (partIt == mapIt->second.end())
         return {};
-    
-    return partIt->second.QueryNearby(x, y, radius);
+
+    auto& grid = partIt->second;
+    std::lock_guard<std::mutex> gridGuard(grid.Lock);
+    return grid.QueryNearby(x, y, radius);
 }
 
     std::vector<std::vector<ObjectGuid>> PartitionManager::BatchGetNearbyBoundaryObjects(uint32 mapId, std::vector<NearbyBoundaryQuery> const& queries) const
@@ -1191,7 +1261,9 @@ std::vector<ObjectGuid> PartitionManager::GetNearbyBoundaryObjects(uint32 mapId,
             if (partIt == mapIt->second.end())
                 continue;
 
-            results[i] = partIt->second.QueryNearby(query.x, query.y, query.radius);
+            auto& grid = partIt->second;
+            std::lock_guard<std::mutex> gridGuard(grid.Lock);
+            results[i] = grid.QueryNearby(query.x, query.y, query.radius);
         }
 
         return results;
@@ -1203,12 +1275,12 @@ void PartitionManager::CleanupStaleRelocations()
 {
     std::lock_guard<std::mutex> guard(_relocationLock);
     uint64 nowMs = GameTime::GetGameTimeMS().count();
-    
+
     for (auto it = _relocations.begin(); it != _relocations.end();)
     {
         if (nowMs - it->second.startTimeMs > it->second.timeoutMs)
         {
-            LOG_WARN("map.partition", "Auto-rollback stale relocation guid {} (after {}ms)", 
+            LOG_WARN("map.partition", "Auto-rollback stale relocation guid {} (after {}ms)",
                 it->first, nowMs - it->second.startTimeMs);
             it = _relocations.erase(it);
         }
@@ -1221,7 +1293,7 @@ void PartitionManager::CleanupExpiredOverrides()
 {
     std::unique_lock<std::shared_mutex> guard(_overrideLock);
     uint64 nowMs = GameTime::GetGameTimeMS().count();
-    
+
     for (auto it = _partitionOverrides.begin(); it != _partitionOverrides.end();)
     {
         if (nowMs > it->second.expiresMs)
@@ -1233,7 +1305,7 @@ void PartitionManager::CleanupExpiredOverrides()
 
 void PartitionManager::CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, std::unordered_set<ObjectGuid> const& validGuids)
 {
-    std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
+    std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     auto mapIt = _boundarySpatialGrids.find(mapId);
     if (mapIt == _boundarySpatialGrids.end())
         return;
@@ -1242,11 +1314,14 @@ void PartitionManager::CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, 
     if (partitionIt == mapIt->second.end())
         return;
 
+    auto& grid = partitionIt->second;
+    std::lock_guard<std::mutex> gridGuard(grid.Lock);
+
     if (IsRuntimeDiagnosticsEnabled())
-        CheckGridWriter(partitionIt->second, mapId, partitionId, "CleanupBoundaryObjects");
+        CheckGridWriter(grid, mapId, partitionId, "CleanupBoundaryObjects");
 
     std::vector<ObjectGuid> toRemove;
-    for (auto const& [cellKey, entries] : partitionIt->second.cells)
+    for (auto const& [cellKey, entries] : grid.cells)
     {
         for (auto const& entry : entries)
         {
@@ -1256,7 +1331,7 @@ void PartitionManager::CleanupBoundaryObjects(uint32 mapId, uint32 partitionId, 
     }
 
     for (auto const& guid : toRemove)
-        partitionIt->second.Remove(guid);
+        grid.Remove(guid);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1270,8 +1345,10 @@ void PartitionManager::BatchUpdateBoundaryPositions(uint32 mapId, uint32 partiti
     if (updates.empty())
         return;
 
-    std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
+    std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     auto& grid = _boundarySpatialGrids[mapId][partitionId];
+    std::lock_guard<std::mutex> gridGuard(grid.Lock);
+
     if (IsRuntimeDiagnosticsEnabled())
         CheckGridWriter(grid, mapId, partitionId, "BatchUpdateBoundaryPositions");
     for (auto const& upd : updates)
@@ -1286,7 +1363,7 @@ void PartitionManager::BatchUnregisterBoundaryObjects(uint32 mapId, uint32 parti
     if (guids.empty())
         return;
 
-    std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
+    std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
 
     SpatialHashGrid* spatialGrid = nullptr;
     auto spatialMapIt = _boundarySpatialGrids.find(mapId);
@@ -1297,16 +1374,18 @@ void PartitionManager::BatchUnregisterBoundaryObjects(uint32 mapId, uint32 parti
             spatialGrid = &spatialPartIt->second;
     }
 
+    if (!spatialGrid)
+        return;
+
+    std::lock_guard<std::mutex> gridGuard(spatialGrid->Lock);
+
     bool diagnosticsEnabled = IsRuntimeDiagnosticsEnabled();
-    if (spatialGrid && diagnosticsEnabled)
+    if (diagnosticsEnabled)
         CheckGridWriter(*spatialGrid, mapId, partitionId, "BatchUnregisterBoundaryObjects");
 
     for (auto const& guid : guids)
     {
-        if (spatialGrid)
-        {
-            spatialGrid->Remove(guid);
-        }
+        spatialGrid->Remove(guid);
     }
 }
 
@@ -1386,7 +1465,13 @@ void PartitionManager::PeriodicCacheSweep()
         {
             for (auto partIt = mapIt->second.begin(); partIt != mapIt->second.end();)
             {
-                if (partIt->second.empty())
+                bool empty = false;
+                {
+                    std::lock_guard<std::mutex> innerGuard(partIt->second.Lock);
+                    empty = partIt->second.Guids.empty();
+                }
+
+                if (empty)
                     partIt = mapIt->second.erase(partIt);
                 else
                     ++partIt;
@@ -1426,22 +1511,19 @@ PartitionManager::PartitionGridLayout const* PartitionManager::GetCachedLayout(u
     // Support multiple maps without thrashing — keyed by mapId
     thread_local std::unordered_map<uint32, LayoutCacheEntry> cache;
 
-    // Single lock acquisition: read both epoch and layout together
-    std::shared_lock<std::shared_mutex> guard(_partitionLock);
-    auto epochIt = _layoutEpochByMap.find(mapId);
-    if (epochIt == _layoutEpochByMap.end())
-        return nullptr;
-
-    uint64 epoch = epochIt->second;
+    uint64 currentEpoch = _globalLayoutEpoch.load(std::memory_order_acquire);
 
     auto cacheIt = cache.find(mapId);
-    if (cacheIt != cache.end() && cacheIt->second.epoch == epoch)
+    if (cacheIt != cache.end() && cacheIt->second.epoch == currentEpoch)
         return &cacheIt->second.layout;
+
+    // Single lock acquisition: read layout
+    std::shared_lock<std::shared_mutex> guard(_partitionLock);
 
     if (PartitionGridLayout const* layout = GetGridLayout(mapId))
     {
         auto& entry = cache[mapId];
-        entry.epoch = epoch;
+        entry.epoch = currentEpoch;
         entry.layout = *layout;
         return &entry.layout;
     }
@@ -1470,11 +1552,11 @@ float PartitionManager::GetPartitionDensity(uint32 mapId, uint32 partitionId) co
     PartitionStats stats;
     if (!GetPartitionStats(mapId, partitionId, stats))
         return 0.0f;
-    
+
     // Density = (players + creatures/10) per cell
     // Creatures counted at 1/10 weight since they're less impactful than players
     float density = static_cast<float>(stats.players) + static_cast<float>(stats.creatures) / 10.0f;
-    
+
     // Normalize by grid cell size (assume 533x533 yard cells for WoW maps)
     // Higher density = more entities per unit area
     return density;
@@ -1528,6 +1610,7 @@ void PartitionManager::ResizeMapPartitions(uint32 mapId, uint32 newCount, char c
         PartitionGridLayout layout = ComputeGridLayout(newCount);
         _gridLayouts[mapId] = layout;
         _layoutEpochByMap[mapId] = _layoutEpochByMap[mapId] + 1;
+        _globalLayoutEpoch.fetch_add(1, std::memory_order_release);
 
         // Rebuild O(1) partition index for this map
         _partitionIndex.erase(mapId);
@@ -1572,7 +1655,8 @@ void PartitionManager::ResizeMapPartitions(uint32 mapId, uint32 newCount, char c
                     it = mapIt->second.erase(it);
                 else
                 {
-                    it->second.clear();
+                    std::lock_guard<std::mutex> innerGuard(it->second.Lock);
+                    it->second.Guids.clear();
                     ++it;
                 }
             }
@@ -1594,10 +1678,10 @@ void PartitionManager::EvaluatePartitionDensity(uint32 mapId)
     // 2. Split partitions when density > split threshold
     // 3. Merge adjacent partitions when both < merge threshold
     // 4. Update all affected data structures atomically
-    
+
     if (!IsEnabled())
         return;
-        
+
     uint32 partitionCount = GetPartitionCount(mapId);
     if (partitionCount == 0)
         return;
@@ -1695,20 +1779,20 @@ void PartitionManager::LoadConfig()
 std::vector<uint32> PartitionManager::GetAdjacentPartitions(uint32 mapId, uint32 partitionId) const
 {
     std::vector<uint32> adjacent;
-    
+
     std::shared_lock<std::shared_mutex> guard(_partitionLock);
     auto it = _gridLayouts.find(mapId);
     if (it == _gridLayouts.end() || it->second.count <= 1)
         return adjacent;
-    
+
     const PartitionGridLayout& layout = it->second;
     if (partitionId == 0 || partitionId > layout.count)
         return adjacent;
-    
+
     // Calculate grid position
     uint32 col = (partitionId - 1) % layout.cols;
     uint32 row = (partitionId - 1) / layout.cols;
-    
+
     // Add valid adjacent partitions (4-connected)
     if (col > 0)
         adjacent.push_back(partitionId - 1);  // Left
@@ -1731,6 +1815,29 @@ void PartitionManager::CheckBoundaryApproach(ObjectGuid const& playerGuid, uint3
         return;
 
     uint64 nowMs = GameTime::GetGameTimeMS().count();
+
+    // Thread-local throttle — avoid _precacheLock mutex on most calls.
+    // Only fall through to the mutex path when the local TTL expires.
+    {
+        thread_local std::unordered_map<ObjectGuid::LowType, uint64> tlThrottle;
+        auto& lastLocal = tlThrottle[playerGuid.GetCounter()];
+        if (nowMs - lastLocal < PartitionConst::BOUNDARY_APPROACH_CHECK_INTERVAL_MS)
+            return;
+        lastLocal = nowMs;
+
+        // Periodic trim to prevent unbounded growth if players leave
+        if (tlThrottle.size() > 512)
+        {
+            for (auto it = tlThrottle.begin(); it != tlThrottle.end();)
+            {
+                if (nowMs - it->second > 60000)
+                    it = tlThrottle.erase(it);
+                else
+                    ++it;
+            }
+        }
+    }
+
     {
         std::lock_guard<std::mutex> guard(_precacheLock);
         uint64& lastCheck = _boundaryApproachLastCheck[playerGuid.GetCounter()];
@@ -1839,4 +1946,3 @@ void PartitionManager::ProcessPrecacheQueue(uint32 mapId)
         map->LoadGridsInRange(center, SIZE_OF_GRIDS * 1.5f);
     }
 }
-

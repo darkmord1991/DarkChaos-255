@@ -90,7 +90,7 @@ public:
     std::vector<ObjectGuid> GetBoundaryObjectGuids(uint32 mapId, uint32 partitionId) const;
     void UnregisterBoundaryObject(uint32 mapId, uint32 partitionId, ObjectGuid const& guid);
     bool IsObjectInBoundarySet(uint32 mapId, uint32 partitionId, ObjectGuid const& guid) const;
-    
+
     // Spatial Hash Grid boundary methods (Phase 2 optimization)
     struct NearbyBoundaryQuery
     {
@@ -131,6 +131,8 @@ public:
 
     // Runtime diagnostics
     bool IsRuntimeDiagnosticsEnabled() const;
+    void SetRuntimeDiagnosticsEnabled(bool enabled);
+    uint64 GetRuntimeDiagnosticsRemainingMs() const;
 
     // Adjacent partition pre-caching
     void CheckBoundaryApproach(ObjectGuid const& playerGuid, uint32 mapId, float x, float y, float dx, float dy);
@@ -195,7 +197,13 @@ private:
     std::unordered_map<ObjectGuid::LowType, PartitionRelocationTxn> _relocations;
     std::unordered_map<uint32, uint32> _combatHandoffCounts;
     std::unordered_map<uint32, uint32> _pathHandoffCounts;
-    std::unordered_map<uint32, std::unordered_map<uint32, std::unordered_set<ObjectGuid::LowType>>> _visibilitySets;
+
+    struct PartitionVisibility
+    {
+        mutable std::mutex Lock;
+        std::unordered_set<ObjectGuid::LowType> Guids;
+    };
+    std::unordered_map<uint32, std::unordered_map<uint32, PartitionVisibility>> _visibilitySets;
     struct PartitionOverride
     {
         uint32 mapId = 0;
@@ -211,12 +219,13 @@ private:
     std::unordered_map<ObjectGuid::LowType, PartitionOwnership> _partitionOwnership;
 
     // _pendingLayerAssignments moved to LayerManager
-    
+
     // Phase 2: Spatial Hash Grid for O(1) boundary lookups
     struct SpatialHashGrid
     {
+        mutable std::mutex Lock;
         static constexpr uint32 CELL_SIZE = 100;  // 100 yards per cell
-        
+
         struct BoundaryEntry
         {
             ObjectGuid guid;
@@ -245,7 +254,7 @@ private:
             cx = static_cast<uint32>((x + COORD_OFFSET) / CELL_SIZE);
             cy = static_cast<uint32>((y + COORD_OFFSET) / CELL_SIZE);
         }
-        
+
         static uint64 GetCellKey(float x, float y)
         {
             uint32 cx = 0;
@@ -390,13 +399,14 @@ private:
 
     // Layout epoch tracking for fast per-thread layout caching
     std::unordered_map<uint32, uint64> _layoutEpochByMap;
+    std::atomic<uint64> _globalLayoutEpoch{1};
 
     // Helper to get cached grid layout (lock must be held)
     PartitionGridLayout const* GetGridLayout(uint32 mapId) const;
-    
+
     // Helper to compute grid layout from partition count
     PartitionGridLayout ComputeGridLayout(uint32 count) const;
-    
+
 public:
     PartitionGridLayout const* GetCachedLayout(uint32 mapId) const;
 

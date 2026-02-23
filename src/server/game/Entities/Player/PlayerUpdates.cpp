@@ -257,7 +257,16 @@ void Player::Update(uint32 p_time)
             {
                 _restTime = currTime;
 
-                float bubble = 0.125f * sWorld->getRate(RATE_REST_INGAME);
+                static float cachedRestIngameRate = sWorld->getRate(RATE_REST_INGAME);
+                static uint32 lastRestIngameRateCheck = 0;
+
+                if (currTime - lastRestIngameRateCheck > 5000)
+                {
+                    cachedRestIngameRate = sWorld->getRate(RATE_REST_INGAME);
+                    lastRestIngameRateCheck = currTime;
+                }
+
+                float bubble = 0.125f * cachedRestIngameRate;
                 float extraPerSec =
                     ((float) GetUInt32Value(PLAYER_NEXT_LEVEL_XP) / 72000.0f) *
                     bubble;
@@ -323,7 +332,7 @@ void Player::Update(uint32 p_time)
     if (IsAlive())
     {
         m_regenTimer += p_time;
-        
+
         RegenerateAll();
     }
 
@@ -495,7 +504,9 @@ void Player::UpdateNextMailTimeAndUnreads()
 
 void Player::UpdateLFGChannel()
 {
-    if (!sWorld->getBoolConfig(CONFIG_RESTRICTED_LFG_CHANNEL))
+    static thread_local bool restrictedLfgChannel = sWorld->getBoolConfig(CONFIG_RESTRICTED_LFG_CHANNEL);
+
+    if (!restrictedLfgChannel)
         return;
 
     ChannelMgr* cMgr = ChannelMgr::forTeam(GetTeamId());
@@ -634,8 +645,8 @@ void Player::UpdateLocalChannels(uint32 newZone)
 
 void Player::UpdateDefense()
 {
-    if (UpdateSkill(SKILL_DEFENSE,
-                    sWorld->getIntConfig(CONFIG_SKILL_GAIN_DEFENSE)))
+    static thread_local uint32 cachedDefenseGain = sWorld->getIntConfig(CONFIG_SKILL_GAIN_DEFENSE);
+    if (UpdateSkill(SKILL_DEFENSE, cachedDefenseGain))
         UpdateDefenseBonusesMod(); // update dependent from defense skill part
 }
 
@@ -782,13 +793,18 @@ bool Player::UpdateSkill(uint32 skill_id, uint32 step)
 inline int SkillGainChance(uint32 SkillValue, uint32 GrayLevel,
                            uint32 GreenLevel, uint32 YellowLevel)
 {
+    static thread_local int skillGrey = sWorld->getIntConfig(CONFIG_SKILL_CHANCE_GREY) * 10;
+    static thread_local int skillGreen = sWorld->getIntConfig(CONFIG_SKILL_CHANCE_GREEN) * 10;
+    static thread_local int skillYellow = sWorld->getIntConfig(CONFIG_SKILL_CHANCE_YELLOW) * 10;
+    static thread_local int skillOrange = sWorld->getIntConfig(CONFIG_SKILL_CHANCE_ORANGE) * 10;
+
     if (SkillValue >= GrayLevel)
-        return sWorld->getIntConfig(CONFIG_SKILL_CHANCE_GREY) * 10;
+        return skillGrey;
     if (SkillValue >= GreenLevel)
-        return sWorld->getIntConfig(CONFIG_SKILL_CHANCE_GREEN) * 10;
+        return skillGreen;
     if (SkillValue >= YellowLevel)
-        return sWorld->getIntConfig(CONFIG_SKILL_CHANCE_YELLOW) * 10;
-    return sWorld->getIntConfig(CONFIG_SKILL_CHANCE_ORANGE) * 10;
+        return skillYellow;
+    return skillOrange;
 }
 
 bool Player::UpdateGatherSkill(uint32 SkillId, uint32 SkillValue,

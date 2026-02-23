@@ -74,6 +74,7 @@ inline bool isStatic(MovementGenerator* movement)
 
 void MotionMaster::Initialize()
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     // clear ALL movement generators (including default)
     while (!empty())
     {
@@ -88,11 +89,23 @@ void MotionMaster::Initialize()
 // set new default movement generator
 void MotionMaster::InitDefault()
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     Mutate(FactorySelector::SelectMovementGenerator(_owner), MOTION_SLOT_IDLE);
+}
+
+void MotionMaster::UpdateCurrentMovementType()
+{
+    if (empty())
+        _currentMovementGeneratorType = IDLE_MOTION_TYPE;
+    else if (Impl[_top])
+        _currentMovementGeneratorType = Impl[_top]->GetMovementGeneratorType();
+    else
+        _currentMovementGeneratorType = NULL_MOTION_TYPE;
 }
 
 MotionMaster::~MotionMaster()
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     // clear ALL movement generators (including default)
     while (!empty())
     {
@@ -108,6 +121,7 @@ void MotionMaster::UpdateMotion(uint32 diff)
     if (!_owner)
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     ASSERT(!empty());
 
     if (empty() || !top())
@@ -171,6 +185,8 @@ void MotionMaster::DirectClean(bool reset)
         InitTop();
     else if (reset)
         top()->Reset(_owner);
+
+    UpdateCurrentMovementType();
 }
 
 void MotionMaster::DelayedClean()
@@ -214,6 +230,8 @@ void MotionMaster::DelayedExpire()
 
     while (!empty() && !top())
         --_top;
+
+    UpdateCurrentMovementType();
 }
 
 void MotionMaster::DirectExpireSlot(MovementSlot slot, bool reset)
@@ -239,10 +257,13 @@ void MotionMaster::DirectExpireSlot(MovementSlot slot, bool reset)
         InitTop();
     else if (reset)
         top()->Reset(_owner);
+
+    UpdateCurrentMovementType();
 }
 
 void MotionMaster::MoveIdle()
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     //! Should be preceded by MovementExpired or Clear if there's an overlying movementgenerator active
     if (empty() || !isStatic(top()))
         Mutate(GetIdleMovementGenerator(), MOTION_SLOT_IDLE);
@@ -256,6 +277,7 @@ void MotionMaster::MoveRandom(float wanderDistance)
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (_owner->IsCreature())
     {
         LOG_DEBUG("movement.motionmaster", "Creature ({}) start moving random", _owner->GetGUID().ToString());
@@ -270,6 +292,7 @@ void MotionMaster::MoveRandom(float wanderDistance)
  */
 void MotionMaster::MoveTargetedHome(bool walk /*= false*/)
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     Clear(false);
 
     if (_owner->IsCreature() && !_owner->ToCreature()->GetCharmerOrOwnerGUID())
@@ -307,6 +330,7 @@ void MotionMaster::MoveConfused()
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (_owner->IsPlayer())
     {
         LOG_DEBUG("movement.motionmaster", "Player ({}) move confused", _owner->GetGUID().ToString());
@@ -327,6 +351,8 @@ void MotionMaster::MoveChase(Unit* target, std::optional<ChaseRange> dist, std::
     // ignore movement request if target not exist
     if (!target || target == _owner || _owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     if (Map* map = _owner->GetMap())
     {
@@ -372,6 +398,7 @@ void MotionMaster::MoveChase(Unit* target, std::optional<ChaseRange> dist, std::
 
 void MotionMaster::DistanceYourself(float dist)
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
     {
         if (_owner->IsPlayer())
@@ -394,6 +421,8 @@ void MotionMaster::MoveBackwards(Unit* target, float dist)
     {
         return;
     }
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     if (Map* map = _owner->GetMap())
     {
@@ -439,6 +468,8 @@ void MotionMaster::MoveForwards(Unit* target, float dist)
         return;
     }
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     if (Map* map = _owner->GetMap())
     {
         uint32 relayPartition = 0;
@@ -480,6 +511,8 @@ void MotionMaster::MoveCircleTarget(Unit* target)
         return;
     }
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     if (Map* map = _owner->GetMap())
     {
         uint32 relayPartition = 0;
@@ -519,6 +552,8 @@ void MotionMaster::MoveFollow(Unit* target, float dist, float angle, MovementSlo
         return;
     }
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     if (Map* map = _owner->GetMap())
     {
         uint32 relayPartition = 0;
@@ -554,6 +589,8 @@ void MotionMaster::MovePoint(uint32 id, float x, float y, float z, ForcedMovemen
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     if (Map* map = _owner->GetMap())
     {
         uint32 relayPartition = 0;
@@ -582,6 +619,7 @@ void MotionMaster::MoveSplinePath(Movement::PointsArray* path, ForcedMovement fo
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     Map* map = _owner->GetMap();
     if (path && map)
     {
@@ -611,6 +649,7 @@ void MotionMaster::MoveSplinePath(Movement::PointsArray* path, ForcedMovement fo
 
 void MotionMaster::MovePath(uint32 path_id, ForcedMovement forcedMovement, PathSource pathSource)
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (Map* map = _owner->GetMap())
     {
         uint32 relayPartition = 0;
@@ -665,6 +704,8 @@ void MotionMaster::MoveLand(uint32 id, Position const& pos, float speed /* = 0.0
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     float x, y, z;
     pos.GetPosition(x, y, z);
 
@@ -707,6 +748,7 @@ void MotionMaster::MoveLand(uint32 id, Position const& pos, float speed /* = 0.0
  */
 void MotionMaster::MoveLand(uint32 id, float x, float y, float z, float speed /* = 0.0f*/)
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     Position pos = {x, y, z, 0.0f};
     MoveLand(id, pos, speed);
 }
@@ -718,6 +760,8 @@ void MotionMaster::MoveTakeoff(uint32 id, Position const& pos, float speed /* = 
 {
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     float x, y, z;
     pos.GetPosition(x, y, z);
@@ -761,6 +805,7 @@ void MotionMaster::MoveTakeoff(uint32 id, Position const& pos, float speed /* = 
  */
 void MotionMaster::MoveTakeoff(uint32 id, float x, float y, float z, float speed /* = 0.0f*/, bool skipAnimation)
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     Position pos = {x, y, z, 0.0f};
     MoveTakeoff(id, pos, speed, skipAnimation);
 }
@@ -773,6 +818,8 @@ void MotionMaster::MoveKnockbackFrom(float srcX, float srcY, float speedXY, floa
 
     if (speedXY <= 0.1f)
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     if (Map* map = _owner->GetMap())
     {
@@ -818,6 +865,8 @@ void MotionMaster::MoveJumpTo(float angle, float speedXY, float speedZ)
     if (_owner->IsPlayer())
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     float x, y, z;
 
     float moveTimeHalf = speedZ / Movement::gravity;
@@ -835,6 +884,8 @@ void MotionMaster::MoveJump(float x, float y, float z, float speedXY, float spee
 
     if (speedXY <= 0.1f)
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     if (Map* map = _owner->GetMap())
     {
@@ -877,6 +928,8 @@ void MotionMaster::MoveFall(uint32 id /*=0*/, bool addFlagForNPC)
 {
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     if (Map* map = _owner->GetMap())
     {
@@ -937,6 +990,8 @@ void MotionMaster::MoveCharge(float x, float y, float z, float speed, uint32 id,
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     if (Map* map = _owner->GetMap())
     {
         uint32 relayPartition = 0;
@@ -981,6 +1036,7 @@ void MotionMaster::MoveCharge(float x, float y, float z, float speed, uint32 id,
  */
 void MotionMaster::MoveCharge(PathGenerator const& path, float speed /*= SPEED_CHARGE*/, ObjectGuid targetGUID /*= ObjectGuid::Empty*/)
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     G3D::Vector3 dest = path.GetActualEndPosition();
 
     if (Map* map = _owner->GetMap())
@@ -1019,6 +1075,8 @@ void MotionMaster::MoveSeekAssistance(float x, float y, float z)
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     if (Map* map = _owner->GetMap())
     {
         uint32 relayPartition = 0;
@@ -1048,6 +1106,8 @@ void MotionMaster::MoveSeekAssistanceDistract(uint32 time)
     // Xinef: do not allow to move with UNIT_FLAG_DISABLE_MOVE
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     if (Map* map = _owner->GetMap())
     {
@@ -1080,6 +1140,8 @@ void MotionMaster::MoveFleeing(Unit* enemy, uint32 time)
 
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     if (Map* map = _owner->GetMap())
     {
@@ -1116,6 +1178,7 @@ void MotionMaster::MoveFleeing(Unit* enemy, uint32 time)
 
 void MotionMaster::MoveTaxiFlight(uint32 path, uint32 pathnode)
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (_owner->IsPlayer())
     {
         if (path < sTaxiPathNodesByPath.size())
@@ -1143,6 +1206,7 @@ void MotionMaster::MoveTaxiFlight(uint32 path, uint32 pathnode)
  */
 void MotionMaster::MoveDistract(uint32 timer)
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (Impl[MOTION_SLOT_CONTROLLED])
         return;
 
@@ -1205,6 +1269,8 @@ void MotionMaster::Mutate(MovementGenerator* m, MovementSlot slot)
         _needInit[slot] = false;
         m->Initialize(_owner);
     }
+
+    UpdateCurrentMovementType();
 }
 
 /**
@@ -1217,6 +1283,8 @@ void MotionMaster::MoveWaypoint(uint32 path_id, bool repeatable, PathSource path
 
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     Mutate(new WaypointMovementGenerator<Creature>(path_id, pathSource, repeatable), MOTION_SLOT_IDLE);
 
@@ -1232,6 +1300,8 @@ void MotionMaster::MoveRotate(uint32 time, RotateDirection direction)
     if (!time)
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     Mutate(new RotateMovementGenerator(time, direction), MOTION_SLOT_ACTIVE);
 }
 
@@ -1240,6 +1310,8 @@ void MotionMaster::MoveKnockbackFromForPlayer(float srcX, float srcY, float spee
 {
     if (speedXY <= 0.1f)
         return;
+
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
 
     Position dest = _owner->GetPosition();
     float moveTimeHalf = speedZ / Movement::gravity;
@@ -1263,6 +1335,8 @@ void MotionMaster::MovePointBackwards(uint32 id, float x, float y, float z, bool
     if (_owner->HasUnitFlag(UNIT_FLAG_DISABLE_MOVE))
         return;
 
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
+
     if (_owner->IsPlayer())
     {
         LOG_DEBUG("movement.motionmaster", "Player ({}) targeted point (Id: {} X: {} Y: {} Z: {})", _owner->GetGUID().ToString(), id, x, y, z);
@@ -1279,6 +1353,7 @@ void MotionMaster::MovePointBackwards(uint32 id, float x, float y, float z, bool
 
 void MotionMaster::propagateSpeedChange()
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     /*Impl::container_type::iterator it = Impl::c.begin();
     for (; it != end(); ++it)
     {
@@ -1293,6 +1368,7 @@ void MotionMaster::propagateSpeedChange()
 
 void MotionMaster::ReinitializeMovement()
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     for (int i = 0; i <= _top; ++i)
     {
         if (Impl[i])
@@ -1300,16 +1376,9 @@ void MotionMaster::ReinitializeMovement()
     }
 }
 
-MovementGeneratorType MotionMaster::GetCurrentMovementGeneratorType() const
-{
-    if (empty())
-        return IDLE_MOTION_TYPE;
-
-    return top()->GetMovementGeneratorType();
-}
-
 MovementGeneratorType MotionMaster::GetMotionSlotType(int slot) const
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (!Impl[slot])
         return NULL_MOTION_TYPE;
     else
@@ -1318,6 +1387,7 @@ MovementGeneratorType MotionMaster::GetMotionSlotType(int slot) const
 
 bool MotionMaster::HasMovementGeneratorType(MovementGeneratorType type) const
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (empty() && type == IDLE_MOTION_TYPE)
         return true;
 
@@ -1333,6 +1403,7 @@ bool MotionMaster::HasMovementGeneratorType(MovementGeneratorType type) const
 // Xinef: Escort system
 uint32 MotionMaster::GetCurrentSplineId() const
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (empty())
         return 0;
 
@@ -1366,6 +1437,7 @@ void MotionMaster::DelayedDelete(_Ty curr)
 
 bool MotionMaster::GetDestination(float& x, float& y, float& z)
 {
+    std::lock_guard<std::recursive_mutex> guard(_motionLock);
     if (_owner->IsMoveSplineFinalizedSnapshot())
         return false;
 

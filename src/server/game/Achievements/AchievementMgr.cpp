@@ -2278,6 +2278,12 @@ void AchievementMgr::RemoveTimedAchievement(AchievementCriteriaTimedTypes type, 
 
 void AchievementMgr::CompletedAchievement(AchievementEntry const* achievement)
 {
+    if (!achievement)
+    {
+        LOG_ERROR("achievement", "AchievementMgr::CompletedAchievement called with null achievement for player {}", _player ? _player->GetGUID().ToString() : "<null>");
+        return;
+    }
+
     // disable for gamemasters with GM-mode enabled
     if (_player->IsGameMaster())
     {

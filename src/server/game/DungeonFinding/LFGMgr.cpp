@@ -20,6 +20,7 @@
 #include "Chat.h"
 #include "CharacterCache.h"
 #include "Common.h"
+#include "ObjectAccessor.h"
 #include "DBCStores.h"
 #include "DisableMgr.h"
 #include "GameEventMgr.h"
@@ -1741,8 +1742,13 @@ namespace lfg
         // Teleport Player
         for (GuidUnorderedSet::const_iterator it = playersToTeleport.begin(); it != playersToTeleport.end(); ++it)
         {
+            Player* player = nullptr;
             if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(*it))
-            if (Player* player = session->GetPlayer())
+                player = session->GetPlayer();
+            // Fallback for players not registered in WorldSessionMgr (e.g. playerbots)
+            if (!player)
+                player = ObjectAccessor::FindConnectedPlayer(*it);
+            if (player)
             {
                 if (player->GetGroup() != grp) // pussywizard: could not add because group was full
                     continue;
@@ -1790,7 +1796,105 @@ namespace lfg
 
         for (Player* player : playersTeleported)
         {
-            TeleportPlayer(player, false, teleportLocation);
+            // Clear combat state so the teleport isn't blocked — when LFG forms
+            // a group, players (and especially bots) should leave combat and enter
+            // the dungeon immediately.
+            if (player->IsInCombat())
+            {
+                player->CombatStopWithPets(true);
+                player->getHostileRefMgr().deleteReferences();
+            }
+
+            // Also clear unit states that can block teleport (falling, jumping, etc.)
+            player->ClearUnitState(UNIT_STATE_ALL_STATE);
+
+            // Clear any pending teleport state that blocks TeleportTo
+            if (player->IsBeingTeleported())
+            {
+                player->SetSemaphoreTeleportNear(0);
+                player->SetSemaphoreTeleportFar(0);
+                LOG_DEBUG("lfg", "LFGMgr::MakeNewGroup: Cleared pending teleport for [{}]", player->GetName());
+            }
+
+            // Resurrect dead bots/players so teleport works
+            if (!player->IsAlive())
+            {
+                player->ResurrectPlayer(1.0f);
+                player->SpawnCorpseBones();
+            }
+
+            // Exit vehicle if applicable
+            if (player->GetVehicle())
+                player->ExitVehicle();
+
+            // Remove charm effects
+            player->RemoveCharmAuras();
+
+            // Reset fall information to clear stale falling state
+            player->SetFallInformation(uint32(GameTime::GetGameTime().count()), player->GetPositionZ());
+
+            if (!TeleportPlayer(player, false, teleportLocation))
+            {
+                // Build a human-readable reason for the failure
+                std::string reason;
+                if (!player->IsAlive())
+                    reason = "dead";
+                else if (player->IsFalling() || player->HasUnitState(UNIT_STATE_JUMPING))
+                    reason = "falling";
+                else if (player->IsMirrorTimerActive(FATIGUE_TIMER))
+                    reason = "fatigued";
+                else if (player->GetVehicle())
+                    reason = "in a vehicle";
+                else if (player->GetCharmGUID() || player->IsInCombat())
+                    reason = "in combat";
+                else
+                    reason = "invalid location";
+
+                LOG_ERROR("lfg", "LFGMgr::MakeNewGroup: Player [{}] ({}) failed to teleport into dungeon {} (map {}) at {}, {}, {}. Reason: {}",
+                    player->GetName(), player->GetGUID().ToString(), dungeon->id, dungeon->map, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), reason);
+
+                // Notify the group via party chat
+                std::string msg = player->GetName() + " could not enter the dungeon (" + reason + "). Retrying...";
+                WorldPacket data;
+                ChatHandler::BuildChatPacket(data, CHAT_MSG_PARTY, LANG_UNIVERSAL, player, nullptr, msg);
+                grp->BroadcastPacket(&data, false);
+
+                // Retry once: clear any remaining blocking states and try again
+                if (player->IsInCombat())
+                {
+                    player->CombatStopWithPets(true);
+                    player->getHostileRefMgr().deleteReferences();
+                }
+                if (!player->IsAlive())
+                {
+                    player->ResurrectPlayer(1.0f);
+                    player->SpawnCorpseBones();
+                }
+                player->ClearUnitState(UNIT_STATE_ALL_STATE);
+                player->ExitVehicle();
+                player->RemoveCharmAuras();
+
+                // Xinef: Reset fall information before retry to clear stale "falling" state
+                player->SetFallInformation(uint32(GameTime::GetGameTime().count()), player->GetPositionZ());
+
+                if (!TeleportPlayer(player, false, teleportLocation))
+                {
+                    std::string failMsg = player->GetName() + " still cannot enter the dungeon. They will be teleported in shortly.";
+                    WorldPacket data2;
+                    ChatHandler::BuildChatPacket(data2, CHAT_MSG_PARTY, LANG_UNIVERSAL, player, nullptr, failMsg);
+                    grp->BroadcastPacket(&data2, false);
+
+                    LOG_ERROR("lfg", "LFGMgr::MakeNewGroup: Player [{}] failed teleport retry — will rely on recovery",
+                        player->GetName());
+                }
+                else
+                {
+                    std::string okMsg = player->GetName() + " has entered the dungeon.";
+                    WorldPacket data2;
+                    ChatHandler::BuildChatPacket(data2, CHAT_MSG_PARTY, LANG_UNIVERSAL, player, nullptr, okMsg);
+                    grp->BroadcastPacket(&data2, false);
+                }
+            }
         }
 
         if (randomDungeon)
@@ -1934,10 +2038,16 @@ namespace lfg
         // pussywizard: add cooldown for not accepting (after 40 secs) or declining
         for (LfgProposalPlayerContainer::iterator it = proposal.players.begin(); it != proposal.players.end(); ++it)
             if (it->second.accept == LFG_ANSWER_DENY)
+            {
+                Player* plr = nullptr;
                 if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(it->first))
-                    if (Player* plr = session->GetPlayer())
-                        if (Aura* aura = plr->AddAura(LFG_SPELL_DUNGEON_COOLDOWN, plr))
-                            aura->SetDuration(150 * IN_MILLISECONDS);
+                    plr = session->GetPlayer();
+                if (!plr)
+                    plr = ObjectAccessor::FindConnectedPlayer(it->first);
+                if (plr)
+                    if (Aura* aura = plr->AddAura(LFG_SPELL_DUNGEON_COOLDOWN, plr))
+                        aura->SetDuration(150 * IN_MILLISECONDS);
+            }
 
         // Mark players/groups to be removed
         LfgGuidSet toRemove;
@@ -2126,7 +2236,7 @@ namespace lfg
        @param[in]     out Teleport out (true) or in (false)
        @param[in]     fromOpcode Function called from opcode handlers? (Default false)
     */
-    void LFGMgr::TeleportPlayer(Player* player, bool out, WorldLocation const* teleportLocation /*= nullptr*/)
+    bool LFGMgr::TeleportPlayer(Player* player, bool out, WorldLocation const* teleportLocation /*= nullptr*/)
     {
         LFGDungeonData const* dungeon = nullptr;
         Group* group = player->GetGroup();
@@ -2137,7 +2247,7 @@ namespace lfg
         if (!dungeon)
         {
             player->GetSession()->SendLfgTeleportError(uint8(LFG_TELEPORTERROR_INVALID_LOCATION));
-            return;
+            return false;
         }
 
         LfgTeleportError error = LFG_TELEPORTERROR_OK;
@@ -2167,7 +2277,7 @@ namespace lfg
             if (player->GetMapId() == uint32(dungeon->map))
                 player->TeleportToEntryPoint();
 
-            return;
+            return true;
         }
         else
         {
@@ -2197,15 +2307,20 @@ namespace lfg
         {
             player->GetSession()->SendLfgTeleportError(uint8(error));
 
-            LOG_DEBUG("lfg", "Player [{}] could NOT be teleported in to map [{}] (x: {}, y: {}, z: {}) Error: {}",
-            player->GetName(), dungeon->map, dungeon->x, dungeon->y, dungeon->z, error);
-        }
-        else
-        {
-            LOG_DEBUG("lfg", "Player [{}] is being teleported in to map [{}] (x: {}, y: {}, z: {})",
-            player->GetName(), dungeon->map, dungeon->x, dungeon->y, dungeon->z);
+            LOG_INFO("lfg", "Player [{}] could NOT be teleported in to map [{}] (x: {}, y: {}, z: {}) Reason: {} (error: {})",
+                player->GetName(), dungeon->map, dungeon->x, dungeon->y, dungeon->z,
+                (error == LFG_TELEPORTERROR_PLAYER_DEAD ? "Player Dead" :
+                 error == LFG_TELEPORTERROR_FALLING ? "Falling/Jumping" :
+                 error == LFG_TELEPORTERROR_FATIGUE ? "Fatigued" :
+                 error == LFG_TELEPORTERROR_IN_VEHICLE ? "In Vehicle" :
+                 error == LFG_TELEPORTERROR_COMBAT ? "In Combat" :
+                 error == LFG_TELEPORTERROR_INVALID_LOCATION ? "Invalid Location" : "Unknown"), error);
+            return false;
         }
 
+        LOG_DEBUG("lfg", "Player [{}] is being teleported in to map [{}] (x: {}, y: {}, z: {})",
+        player->GetName(), dungeon->map, dungeon->x, dungeon->y, dungeon->z);
+        return true;
     }
 
     /**
@@ -2261,6 +2376,9 @@ namespace lfg
             Player* player = nullptr;
             if (WorldSession* session = sWorldSessionMgr->FindSessionByPlayerGuid(guid))
                 player = session->GetPlayer();
+            // Fallback for players not registered in WorldSessionMgr (e.g. playerbots)
+            if (!player)
+                player = ObjectAccessor::FindConnectedPlayer(guid);
             if (!player || player->FindMap() != currMap) // pussywizard: currMap - multithreading crash if on other map (map id check is not enough, binding system is not reliable)
             {
                 LOG_DEBUG("lfg", "LFGMgr::FinishDungeon: [{}] not found in world", guid.ToString());

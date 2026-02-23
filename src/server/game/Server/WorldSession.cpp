@@ -43,6 +43,24 @@
 #include "Player.h"
 #include "QueryHolder.h"
 #include "ScriptMgr.h"
+#include <unordered_map>
+
+namespace
+{
+std::mutex gWorldSessionInstanceRegistryMutex;
+std::unordered_map<uintptr_t, uint64> gWorldSessionInstanceRegistry;
+std::atomic<uint64> gWorldSessionInstanceCounter{1};
+}
+
+bool WorldSession::IsLiveSessionInstance(WorldSession const* session, uint64 expectedInstanceId)
+{
+    if (!session || expectedInstanceId == 0)
+        return false;
+
+    std::lock_guard<std::mutex> lock(gWorldSessionInstanceRegistryMutex);
+    auto const it = gWorldSessionInstanceRegistry.find(reinterpret_cast<uintptr_t>(session));
+    return it != gWorldSessionInstanceRegistry.end() && it->second == expectedInstanceId;
+}
 #include "SocialMgr.h"
 #include "Transport.h"
 #include "Tokenize.h"
@@ -138,8 +156,15 @@ WorldSession::WorldSession(uint32 id, std::string&& name, uint32 accountFlags, s
     _timeSyncClockDelta(0),
     _pendingTimeSyncRequests(),
     _orderCounter(0),
+    _instanceId(0),
     _isBot(isBot)
 {
+    _instanceId = gWorldSessionInstanceCounter.fetch_add(1, std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> lock(gWorldSessionInstanceRegistryMutex);
+        gWorldSessionInstanceRegistry[reinterpret_cast<uintptr_t>(this)] = _instanceId;
+    }
+
     memset(m_Tutorials, 0, sizeof(m_Tutorials));
 
     _offlineTime = 0;
@@ -163,6 +188,11 @@ WorldSession::WorldSession(uint32 id, std::string&& name, uint32 accountFlags, s
 /// WorldSession destructor
 WorldSession::~WorldSession()
 {
+    {
+        std::lock_guard<std::mutex> lock(gWorldSessionInstanceRegistryMutex);
+        gWorldSessionInstanceRegistry.erase(reinterpret_cast<uintptr_t>(this));
+    }
+
     LoginDatabase.Execute("UPDATE account SET totaltime = {} WHERE id = {}", GetTotalTime(), GetAccountId());
 
     ///- unload player if not unloaded
@@ -293,7 +323,9 @@ void WorldSession::SendPacket(WorldPacket const* packet)
         return;
     }
 
-    sScriptMgr->OnPlayerbotPacketSent(GetPlayer(), packet);
+    Player* const player = GetPlayer();
+    if (player && (!IsBot() || !m_playerLoading))
+        sScriptMgr->OnPlayerbotPacketSent(player, packet);
 
     if (!m_Socket)
         return;
@@ -864,6 +896,13 @@ void WorldSession::KickPlayer(std::string const& reason, bool setKicked)
             _player ? _player->GetGUID().ToString() : "", reason);
 
         m_Socket->CloseSocket();
+    }
+    else
+    {
+        LOG_INFO("network.kick",
+            "Account: {} Character: '{}' {} kicked (socketless session, isBot={}) with reason: {}",
+            GetAccountId(), _player ? _player->GetName() : "<none>",
+            _player ? _player->GetGUID().ToString() : "", IsBot(), reason);
     }
 
     if (setKicked)

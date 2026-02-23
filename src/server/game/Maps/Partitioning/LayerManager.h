@@ -33,7 +33,7 @@
 
 /**
  * @brief LayerManager handles all layering logic for high-population areas.
- * 
+ *
  * Layering creates virtual copies of maps (continents) to prevent overcrowding:
  * - Players are assigned to layers on map entry (Blizzard-style, map-wide)
  * - Zone changes do NOT trigger layer reassignment
@@ -62,7 +62,7 @@ public:
     uint32 GetHysteresisDestructionCooldownMs() const;
     void ParsePerMapCapacityOverrides();
     void LoadConfig();
-    
+
     // ======================== PLAYER LAYER QUERIES ========================
     // Blizzard-style: layers are map-wide (continent-wide), not per-zone.
     // Players stay on the same layer across all zones of a map.
@@ -72,7 +72,7 @@ public:
     std::vector<uint32> GetLayerIds(uint32 mapId) const;
     void GetActiveLayerIds(uint32 mapId, std::vector<uint32>& out) const;
     bool HasPlayersOnMap(uint32 mapId) const;
-    
+
     // Combined lookups (single lock acquisition)
     std::pair<uint32, uint32> GetLayersForTwoPlayers(uint32 mapId,
         ObjectGuid const& player1, ObjectGuid const& player2) const;
@@ -124,7 +124,7 @@ public:
 
     // ======================== LAYER REBALANCING ========================
     // Note: LayerRebalancingConfig and RebalancingMetrics are defined in PartitionConstants.h
-    
+
     void LoadRebalancingConfig();
     void EvaluateLayerRebalancing(uint32 mapId);
     void ConsolidateLayers(uint32 mapId, uint32 sourceLayerId, uint32 targetLayerId);
@@ -156,7 +156,8 @@ private:
     void ReassignGOsForNewLayer(uint32 mapId, uint32 layerId);
     void HandlePersistentLayerAssignmentLoad(ObjectGuid const& playerGuid, PreparedQueryResult result);
     bool CleanupEmptyLayers(uint32 mapId, uint32 layerId);
-    void DespawnLayerClones(uint32 mapId, uint32 layerId);
+    void QueueDespawnLayerClones(uint32 mapId, uint32 layerId);
+    void ProcessPendingDespawns(uint32 mapId);
     void BalanceLayersAtMax(uint32 mapId);
     void RebalanceBotLayers(uint32 mapId);
     void ProcessPendingLayerAssignments();
@@ -187,23 +188,23 @@ private:
         // Packs map/layer into a single atomic uint64 for lock-free reads.
         // Blizzard-style: layers are map-wide, so no zoneId needed.
         std::atomic<uint64> packed{0};  // [mapId:32][layerId:32]
-        
+
         void Store(uint32 mapId, uint32 layerId) {
             uint64 value = (static_cast<uint64>(mapId) << 32) |
                           static_cast<uint64>(layerId);
             packed.store(value, std::memory_order_release);
         }
-        
+
         void Load(uint32& mapId, uint32& layerId) const {
             uint64 value = packed.load(std::memory_order_acquire);
             mapId = static_cast<uint32>(value >> 32);
             layerId = static_cast<uint32>(value & 0xFFFFFFFF);
         }
-        
+
         void Clear() {
             packed.store(0, std::memory_order_release);
         }
-        
+
         bool IsValid() const {
             return packed.load(std::memory_order_relaxed) != 0;
         }
@@ -251,7 +252,7 @@ private:
         uint64 lastSwitchMs = 0;       // Timestamp of last switch
         uint32 switchCount = 0;        // Number of switches in cooldown window
         static constexpr uint64 COOLDOWN_WINDOW_MS = 3600000;  // 1 hour window
-        
+
         uint32 GetCurrentCooldownMs() const {
             if (switchCount == 0) return 0;
             if (switchCount == 1) return static_cast<uint32>(PartitionConst::LAYER_SWITCH_COOLDOWN_BASE_MS);
@@ -259,24 +260,24 @@ private:
             if (switchCount <= 5) return static_cast<uint32>(PartitionConst::LAYER_SWITCH_COOLDOWN_TIER3_MS);
             return static_cast<uint32>(PartitionConst::LAYER_SWITCH_COOLDOWN_MAX_MS);
         }
-        
+
         bool CanSwitch(uint64 nowMs) const {
             if (switchCount == 0) return true;
             return (nowMs - lastSwitchMs) >= GetCurrentCooldownMs();
         }
-        
+
         uint32 GetRemainingCooldownMs(uint64 nowMs) const {
             if (switchCount == 0) return 0;
             uint64 elapsed = nowMs - lastSwitchMs;
             uint32 cooldown = GetCurrentCooldownMs();
             return elapsed >= cooldown ? 0 : static_cast<uint32>(cooldown - elapsed);
         }
-        
+
         void RecordSwitch(uint64 nowMs) {
             // Reset counter if outside cooldown window
             if (switchCount > 0 && (nowMs - lastSwitchMs) > COOLDOWN_WINDOW_MS)
                 switchCount = 0;
-            
+
             lastSwitchMs = nowMs;
             ++switchCount;
         }
@@ -337,6 +338,7 @@ private:
     //   _layerLock  ->  _partyLayerCacheLock  (via ForceRemovePlayerFromAllLayers)
     //   _layerLock  ->  _hysteresisLock  (via AutoAssignPlayerToLayer, EvaluateLayerRebalancing)
     //   _softTransferLock is independent (never held together with _layerLock)
+    //   _pendingDespawnLock is independent
     //   _rebalanceCheckLock is independent (lightweight timestamp guard)
     // NEVER acquire _layerLock while already holding a Map/MapMgr lock.
     mutable std::shared_mutex _layerLock;
@@ -345,13 +347,16 @@ private:
     mutable std::mutex _cooldownLock;
     mutable std::mutex _softTransferLock;
     mutable std::mutex _hysteresisLock;
+    mutable std::mutex _pendingDespawnLock;
+
+    std::vector<std::pair<uint32, uint32>> _pendingDespawns; // mapId, layerId
 
     // Rebalancing
     LayerRebalancingConfig _rebalancingConfig;
     mutable RebalancingMetrics _rebalancingMetrics;
     mutable std::mutex _rebalanceCheckLock;
     std::unordered_map<uint32, uint64> _lastRebalanceCheck;
-    
+
     // Diagnostics
     std::atomic<bool> _runtimeDiagnostics{false};
     std::atomic<uint64> _runtimeDiagnosticsUntilMs{0};

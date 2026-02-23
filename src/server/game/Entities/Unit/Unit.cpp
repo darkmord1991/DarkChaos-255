@@ -443,7 +443,7 @@ Unit::~Unit()
 
 void Unit::Update(uint32 p_time)
 {
-    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+    static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", false);
     static int64 const slowUnitThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_unit_update_time", 8);
     static uint64 const slowUnitLogIntervalMs = static_cast<uint64>(std::max<int64>(0, sConfigMgr->GetOption<int64>("Metric.Threshold.slow_unit_update_log_interval_ms", 1000)));
     static std::atomic<uint64> nextSlowUnitLogAtMs{0};
@@ -513,8 +513,11 @@ void Unit::Update(uint32 p_time)
             if (m_delayed_unit_relocation_timer <= p_time)
             {
                 m_delayed_unit_relocation_timer = 0;
-                //ExecuteDelayedUnitRelocationEvent();
-                FindMap()->AddToDelayedVisibility(GetGUID());
+                Map* map = FindMap();
+                if (map && IsPlayer() && map->GetId() == 37 && !map->IsPartitioned())
+                    ExecuteDelayedUnitRelocationEvent();
+                else if (map)
+                    map->AddToDelayedVisibility(GetGUID());
             }
             else
                 m_delayed_unit_relocation_timer -= p_time;
@@ -553,7 +556,7 @@ void Unit::Update(uint32 p_time)
             METRIC_TAG("unit_type", unitTypeTag));
         SendThreatListUpdate();
 
-        static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+        static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", false);
         static int64 const slowCombatThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_combat_update_time", 5);
         if (slowLogEnabled)
         {
@@ -594,7 +597,7 @@ void Unit::Update(uint32 p_time)
                 m_CombatTimer -= p_time;
         }
 
-        static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", true);
+        static bool const slowLogEnabled = sConfigMgr->GetOption<bool>("System.SlowLog.Enable", false);
         static int64 const slowCombatThresholdMs = sConfigMgr->GetOption<int64>("Metric.Threshold.slow_combat_update_time", 5);
         if (slowLogEnabled)
         {
@@ -674,7 +677,6 @@ void Unit::Update(uint32 p_time)
             setAttackTimer(RANGED_ATTACK, ranged_attack > 0 ? ranged_attack - (int32)p_time : 0);
         }
     }
-
 
     // update abilities available only for fraction of time
     UpdateReactives(p_time);
@@ -12054,11 +12056,18 @@ void Unit::RemoveAllControlled(bool onDeath /*= false*/)
     if (IsPlayer())
         ToPlayer()->StopCastingCharm();
 
+    static std::atomic<uint32> staleControlledLogSamples{0};
+    static std::atomic<uint32> invalidControlledOwnerLogSamples{0};
+
     auto processControlledUnit = [this, onDeath](Unit* target)
     {
         if (!IsLiveUnitPointer(target))
         {
-            LOG_ERROR("entities.unit", "Unit {} skipping stale controlled pointer while releasing controlled units", GetGUID().ToString());
+            uint32 sample = staleControlledLogSamples.fetch_add(1, std::memory_order_relaxed) + 1;
+            if ((sample & 0x3F) == 0)
+            {
+                LOG_ERROR("entities.unit", "Unit {} skipping stale controlled pointer while releasing controlled units (sample={})", GetGUID().ToString(), sample);
+            }
             return;
         }
 
@@ -12073,7 +12082,11 @@ void Unit::RemoveAllControlled(bool onDeath /*= false*/)
         }
         else
         {
-            LOG_ERROR("entities.unit", "Unit {} is trying to release unit {} which is neither charmed nor owned by it", GetGUID().ToString(), Object::GetGUID(target).ToString());
+            uint32 sample = invalidControlledOwnerLogSamples.fetch_add(1, std::memory_order_relaxed) + 1;
+            if ((sample & 0x3F) == 0)
+            {
+                LOG_ERROR("entities.unit", "Unit {} is trying to release unit {} which is neither charmed nor owned by it (sample={})", GetGUID().ToString(), Object::GetGUID(target).ToString(), sample);
+            }
         }
     };
 
@@ -12081,6 +12094,7 @@ void Unit::RemoveAllControlled(bool onDeath /*= false*/)
     // and re-entrant lock contention from RemoveCharmAuras/UnSummon callbacks.
     // Use bounded passes to guarantee forward progress if callbacks add entries.
     constexpr uint8 maxDrainPasses = 4;
+    constexpr size_t maxProcessedPerPass = 128;
     for (uint8 pass = 0; pass < maxDrainPasses; ++pass)
     {
         ControlSet snapshot;
@@ -12091,8 +12105,25 @@ void Unit::RemoveAllControlled(bool onDeath /*= false*/)
             snapshot.swap(m_Controlled);
         }
 
+        ControlSet leftovers;
+        size_t processedThisPass = 0;
         for (Unit* target : snapshot)
+        {
+            if (processedThisPass >= maxProcessedPerPass)
+            {
+                leftovers.insert(target);
+                continue;
+            }
+
             processControlledUnit(target);
+            ++processedThisPass;
+        }
+
+        if (!leftovers.empty())
+        {
+            std::lock_guard<std::recursive_mutex> lock(_controlledLock);
+            m_Controlled.insert(leftovers.begin(), leftovers.end());
+        }
     }
 
     // Last-resort safety: drop any leftover entries to avoid pathological
@@ -13709,6 +13740,7 @@ bool Unit::IsImmunedToDamage(SpellSchoolMask meleeSchoolMask) const
     }
 
     // If m_immuneToDamage type contain magic, IMMUNE damage.
+    std::lock_guard<std::recursive_mutex> lock(_spellImmuneLock);
     SpellImmuneList const& damageList = m_spellImmune[IMMUNITY_DAMAGE];
     for (SpellImmuneList::const_iterator itr = damageList.begin(); itr != damageList.end(); ++itr)
         if ((itr->type & meleeSchoolMask) == meleeSchoolMask)
@@ -13741,6 +13773,7 @@ bool Unit::IsImmunedToDamage(SpellInfo const* spellInfo) const
     }
 
     // If m_immuneToDamage type contain magic, IMMUNE damage.
+    std::lock_guard<std::recursive_mutex> lock(_spellImmuneLock);
     SpellImmuneList const& damageList = m_spellImmune[IMMUNITY_DAMAGE];
     for (SpellImmuneList::const_iterator itr = damageList.begin(); itr != damageList.end(); ++itr)
         if ((itr->type & schoolMask) == schoolMask)
@@ -13774,6 +13807,7 @@ bool Unit::IsImmunedToDamage(Spell const* spell) const
     }
 
     // If m_immuneToDamage type contain magic, IMMUNE damage.
+    std::lock_guard<std::recursive_mutex> lock(_spellImmuneLock);
     SpellImmuneList const& damageList = m_spellImmune[IMMUNITY_DAMAGE];
     for (SpellImmuneList::const_iterator itr = damageList.begin(); itr != damageList.end(); ++itr)
     {
@@ -13794,6 +13828,7 @@ bool Unit::IsImmunedToSchool(SpellSchoolMask meleeSchoolMask) const
     }
 
     // If m_immuneToSchool type contain this school type, IMMUNE damage.
+    std::lock_guard<std::recursive_mutex> lock(_spellImmuneLock);
     SpellImmuneList const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
     for (SpellImmuneList::const_iterator itr = schoolList.begin(); itr != schoolList.end(); ++itr)
         if ((itr->type & meleeSchoolMask) == meleeSchoolMask)
@@ -13816,6 +13851,7 @@ bool Unit::IsImmunedToSchool(SpellInfo const* spellInfo) const
     if (spellInfo->Id != 42292 && spellInfo->Id != 59752 && spellInfo->Id != 19574 && spellInfo->Id != 34471)
     {
         // If m_immuneToSchool type contain this school type, IMMUNE damage.
+        std::lock_guard<std::recursive_mutex> lock(_spellImmuneLock);
         SpellImmuneList const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
         for (SpellImmuneList::const_iterator itr = schoolList.begin(); itr != schoolList.end(); ++itr)
             if ((itr->type & schoolMask) == schoolMask && !spellInfo->CanPierceImmuneAura(sSpellMgr->GetSpellInfo(itr->spellId)))
@@ -13842,6 +13878,7 @@ bool Unit::IsImmunedToSchool(Spell const* spell) const
     if (spellInfo->Id != 42292 && spellInfo->Id != 59752 && spellInfo->Id != 19574 && spellInfo->Id != 34471)
     {
         // If m_immuneToSchool type contain this school type, IMMUNE damage.
+        std::lock_guard<std::recursive_mutex> lock(_spellImmuneLock);
         SpellImmuneList const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
         for (SpellImmuneList::const_iterator itr = schoolList.begin(); itr != schoolList.end(); ++itr)
         {
@@ -13874,6 +13911,8 @@ bool Unit::IsImmunedToSpell(SpellInfo const* spellInfo, Spell const* spell)
 {
     if (!spellInfo)
         return false;
+
+    std::lock_guard<std::recursive_mutex> lock(_spellImmuneLock);
 
     // Single spell immunity.
     SpellImmuneList const& idList = m_spellImmune[IMMUNITY_ID];
@@ -13973,6 +14012,7 @@ bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, uint32 index) cons
         return false;
 
     //If m_immuneToEffect type contain this effect type, IMMUNE effect.
+    std::lock_guard<std::recursive_mutex> lock(_spellImmuneLock);
     uint32 effect = spellInfo->Effects[index].Effect;
     SpellImmuneList const& effectList = m_spellImmune[IMMUNITY_EFFECT];
     for (SpellImmuneList::const_iterator itr = effectList.begin(); itr != effectList.end(); ++itr)
@@ -14328,6 +14368,8 @@ private:
 
 void Unit::ApplySpellImmune(uint32 spellId, uint32 op, uint32 type, bool apply, SpellImmuneBlockType blockType)
 {
+    std::lock_guard<std::recursive_mutex> lock(_spellImmuneLock);
+
     if (apply)
     {
         // xinef: immunities with spellId 0 are intended to be applied only once (script purposes mosty)
@@ -15770,15 +15812,23 @@ Unit* Creature::SelectVictim()
     Unit* target = nullptr;
 
     // First checking if we have some taunt on us
-    AuraEffectList const& tauntAuras = GetAuraEffectsByType(SPELL_AURA_MOD_TAUNT);
-    if (!tauntAuras.empty())
-        for (Unit::AuraEffectList::const_reverse_iterator itr = tauntAuras.rbegin(); itr != tauntAuras.rend(); ++itr)
-            if (Unit* caster = (*itr)->GetCaster())
-                if (CanCreatureAttack(caster) && !caster->HasAuraTypeWithCaster(SPELL_AURA_IGNORED, GetGUID()))
-                {
-                    target = caster;
-                    break;
-                }
+    std::vector<ObjectGuid> tauntCasterGuids;
+    {
+        std::lock_guard<std::recursive_mutex> lock(_auraLock);
+        AuraEffectList const& tauntAuras = GetAuraEffectsByType(SPELL_AURA_MOD_TAUNT);
+        tauntCasterGuids.reserve(tauntAuras.size());
+        for (AuraEffect* auraEffect : tauntAuras)
+            if (auraEffect)
+                tauntCasterGuids.push_back(auraEffect->GetCasterGUID());
+    }
+
+    for (std::vector<ObjectGuid>::const_reverse_iterator itr = tauntCasterGuids.rbegin(); itr != tauntCasterGuids.rend(); ++itr)
+        if (Unit* caster = ObjectAccessor::GetUnit(*this, *itr))
+            if (CanCreatureAttack(caster) && !caster->HasAuraTypeWithCaster(SPELL_AURA_IGNORED, GetGUID()))
+            {
+                target = caster;
+                break;
+            }
 
     if (CanHaveThreatList())
     {
@@ -15841,15 +15891,21 @@ Unit* Creature::SelectVictim()
 
     // pussywizard: not sure why it's here
     // pussywizard: can't evade when having invisibility aura with duration? o_O
-    Unit::AuraEffectList const& iAuras = GetAuraEffectsByType(SPELL_AURA_MOD_INVISIBILITY);
-    if (!iAuras.empty())
+    bool hasPermanentInvisibilityAura = false;
     {
-        for (Unit::AuraEffectList::const_iterator itr = iAuras.begin(); itr != iAuras.end(); ++itr)
-            if ((*itr)->GetBase()->IsPermanent())
+        std::lock_guard<std::recursive_mutex> lock(_auraLock);
+        Unit::AuraEffectList const& iAuras = GetAuraEffectsByType(SPELL_AURA_MOD_INVISIBILITY);
+        for (AuraEffect* auraEffect : iAuras)
+            if (auraEffect && auraEffect->GetBase() && auraEffect->GetBase()->IsPermanent())
             {
-                AI()->EnterEvadeMode(CreatureAI::EVADE_REASON_NO_HOSTILES);
+                hasPermanentInvisibilityAura = true;
                 break;
             }
+    }
+
+    if (hasPermanentInvisibilityAura)
+    {
+        AI()->EnterEvadeMode(CreatureAI::EVADE_REASON_NO_HOSTILES);
         return nullptr;
     }
 
@@ -16914,7 +16970,7 @@ void Unit::CleanupBeforeRemoveFromMap(bool finalCleanup)
         RemoveFromWorld();
 
     // Added for mod_playerbots crash fixes; cancel and remove pending events before aura/spellmod cleanup.
-    // Without this SpellEvent may be cancelled later during EventProcessor destruction after auras/spellmods 
+    // Without this SpellEvent may be cancelled later during EventProcessor destruction after auras/spellmods
     // are already removed and leading to invalid access in Player::RestoreSpellMods on logout.
     m_Events.KillAllEvents(false);
 
@@ -21248,35 +21304,60 @@ void Unit::RewardRage(uint32 damage, uint32 weaponSpeedHitFactor, bool attacker)
 
 void Unit::StopAttackFaction(uint32 faction_id)
 {
-    if (Unit* victim = GetVictim())
+    bool stoppedAttack = false;
+
+    auto stopCurrentAttack = [this](Unit* victim)
     {
-        if (victim->GetFactionTemplateEntry()->faction == faction_id)
+        if (m_attacking.load() == victim)
         {
             AttackStop();
-            if (IsNonMeleeSpellCast(false))
-                InterruptNonMeleeSpells(false);
-
-            // melee and ranged forced attack cancel
-            if (IsPlayer())
-                ToPlayer()->SendAttackSwingCancelAttack();
+            return;
         }
-    }
 
-    bool removed = false;
-    do
+        if (victim)
+            victim->_removeAttacker(this);
+
+        m_attacking.store(nullptr);
+        SetTarget(ObjectGuid::Empty);
+        ClearUnitState(UNIT_STATE_MELEE_ATTACKING);
+        InterruptSpell(CURRENT_MELEE_SPELL);
+        SendMeleeAttackStop(victim);
+    };
+
+    if (ObjectGuid targetGuid = GetTarget(); !targetGuid.IsEmpty())
     {
-        removed = false;
-        AttackerSet attackers = getAttackers();
-        for (AttackerSet::const_iterator itr = attackers.begin(); itr != attackers.end(); ++itr)
+        if (Unit* victim = ObjectAccessor::GetUnit(*this, targetGuid))
         {
-            if ((*itr)->GetFactionTemplateEntry()->faction == faction_id)
+            if (FactionTemplateEntry const* factionEntry = victim->GetFactionTemplateEntry())
             {
-                (*itr)->AttackStop();
-                removed = true;
-                break;
+                if (factionEntry->faction == faction_id)
+                {
+                    stopCurrentAttack(victim);
+                    stoppedAttack = true;
+                }
             }
         }
-    } while (removed);
+        else
+        {
+            stopCurrentAttack(nullptr);
+            stoppedAttack = true;
+        }
+    }
+    else if (m_attacking.load())
+    {
+        stopCurrentAttack(nullptr);
+        stoppedAttack = true;
+    }
+
+    if (stoppedAttack)
+    {
+        if (IsNonMeleeSpellCast(false))
+            InterruptNonMeleeSpells(false);
+
+        // melee and ranged forced attack cancel
+        if (IsPlayer())
+            ToPlayer()->SendAttackSwingCancelAttack();
+    }
 
     getHostileRefMgr().deleteReferencesForFaction(faction_id);
 
@@ -21595,6 +21676,15 @@ void Unit::ExecuteDelayedUnitAINotifyEvent()
     this->RemoveFromNotify(NOTIFY_AI_RELOCATION);
     if (!this->IsInWorld() || this->IsDuringRemoveFromWorld())
         return;
+
+    if (Map* map = GetMap())
+    {
+        if (map->ShouldDeferAIRelocation())
+        {
+            map->QueueDeferredAIRelocation(GetGUID());
+            return;
+        }
+    }
 
     Acore::AIRelocationNotifier notifier(*this);
     float radius = 60.0f;
@@ -21969,6 +22059,7 @@ void Unit::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target)
         visibleFlag |= UF_FLAG_PARTY_MEMBER;
 
     uint64 cacheKey = static_cast<uint64>(visibleFlag) << 8 | updateType;
+    bool const useBuildValuesCache = !GetMap() || !GetMap()->IsPartitioned();
 
     auto isValidBuildValuesCache = [this](BuildValuesCachedBuffer const& cache) -> bool
     {
@@ -22015,6 +22106,7 @@ void Unit::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target)
 
     BuildValuesCachedBuffer cachedValue(0);
     bool hasCachedValue = false;
+    if (useBuildValuesCache)
     {
         std::lock_guard<std::mutex> lock(_valuesUpdateCacheLock);
         auto cacheIt = _valuesUpdateCache.find(cacheKey);
@@ -22039,7 +22131,7 @@ void Unit::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target)
         return;
     }
 
-    if (hasCachedValue)
+    if (useBuildValuesCache && hasCachedValue)
     {
         std::lock_guard<std::mutex> lock(_valuesUpdateCacheLock);
         _valuesUpdateCache.erase(cacheKey);
@@ -22139,7 +22231,7 @@ void Unit::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target)
 
     PatchValuesUpdate(*data, dataAdjustedPos, target);
 
-    if (isValidBuildValuesCache(cacheValue))
+    if (useBuildValuesCache && isValidBuildValuesCache(cacheValue))
     {
         std::lock_guard<std::mutex> lock(_valuesUpdateCacheLock);
         _valuesUpdateCache.insert(std::pair<uint64, BuildValuesCachedBuffer>(cacheKey, std::move(cacheValue)));
@@ -22449,7 +22541,7 @@ void Unit::TextEmote(std::string_view text, WorldObject const* target /*= nullpt
 
 void Unit::Whisper(std::string_view text, Language language, Player* target, bool isBossWhisper /*= false*/)
 {
-    if (!target)
+    if (!target || !target->GetSession())
     {
         return;
     }

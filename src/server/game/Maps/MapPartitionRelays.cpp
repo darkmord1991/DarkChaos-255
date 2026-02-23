@@ -28,6 +28,7 @@
 #include "Unit.h"
 
 #include <chrono>
+#include <atomic>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -226,6 +227,66 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             Unit* target = GetUnitByGuid(relay.targetGuid);
             if (!actor || !target)
                 continue;
+
+            if (!actor->IsInWorld() || actor->IsDuringRemoveFromWorld() || actor->GetMap() != this)
+                continue;
+
+            if (!target->IsInWorld() || target->IsDuringRemoveFromWorld() || target->GetMap() != this)
+                continue;
+
+            uint32 actorPartition = GetPartitionIdForUnit(actor);
+            if (!actorPartition)
+            {
+                RecordRelayCounter("proc", "drop");
+                continue;
+            }
+
+            if (actorPartition != partitionId)
+            {
+                RecordRelayCounter("proc", "mismatch");
+                if (relay.bounceCount < kMaxRelayBounces)
+                {
+                    PartitionProcRelay bounced = relay;
+                    bounced.bounceCount++;
+                    RecordRelayCounter("proc", "bounce");
+                    std::lock_guard<std::mutex> lock(GetRelayLock(actorPartition));
+                    _partitionProcRelays[actorPartition].push_back(bounced);
+                    MarkPartitionRelayWorkPending(actorPartition);
+                    continue;
+                }
+
+                RecordRelayCounter("proc", "drop");
+                LOG_WARN("maps.partition", "Proc relay exceeded bounce limit: map={} relay_partition={} owner_partition={} actor={} target={} proc_flag={}",
+                    GetId(), partitionId, actorPartition, relay.actorGuid.ToString(), relay.targetGuid.ToString(), relay.procFlag);
+                continue;
+            }
+
+            uint32 targetPartition = GetPartitionIdForUnit(target);
+            if (!targetPartition || targetPartition != partitionId)
+            {
+                RecordRelayCounter("proc", "drop");
+                continue;
+            }
+
+            // Safety gate: cross-partition proc relays that carry proc spell/aura
+            // context are currently unstable under heavy logout/despawn churn and
+            // can crash in Spell::_cast/DoAllEffectOnTarget.
+            // Keep non-spell proc flags flowing, but drop spell/aura-trigger relays.
+            if (relay.procSpellId || relay.procAuraId)
+            {
+                RecordRelayCounter("proc", "drop");
+
+                static std::atomic<uint32> sDroppedSpellProcRelays{0};
+                uint32 sample = sDroppedSpellProcRelays.fetch_add(1, std::memory_order_relaxed) + 1;
+                if ((sample & 0x3F) == 0)
+                {
+                    LOG_WARN("maps.partition",
+                        "Dropped unsafe spell proc relay (sample={}): map={} partition={} actor={} target={} proc_spell={} proc_aura={}",
+                        sample, GetId(), partitionId, relay.actorGuid.ToString(), relay.targetGuid.ToString(), relay.procSpellId, relay.procAuraId);
+                }
+
+                continue;
+            }
 
             SpellInfo const* procSpellInfo = relay.procSpellId ? sSpellMgr->GetSpellInfo(relay.procSpellId) : nullptr;
             SpellInfo const* procAuraInfo = relay.procAuraId ? sSpellMgr->GetSpellInfo(relay.procAuraId) : nullptr;
@@ -1412,6 +1473,43 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             "Slow partition relay cycle: map={} partition={} cycle_ms={} lookup_cache_size={} emit_metrics={}",
             GetId(), partitionId, relayCycleMs, unitLookupCache.size(), emitRelayMetrics ? 1 : 0);
     }
+
+    bool hasPendingWork = false;
+    {
+        std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
+        auto const hasRelayWork = [partitionId](auto const& relayMap)
+        {
+            auto itr = relayMap.find(partitionId);
+            return itr != relayMap.end() && !itr->second.empty();
+        };
+
+        hasPendingWork = hasRelayWork(_partitionThreatRelays) ||
+            hasRelayWork(_partitionThreatActionRelays) ||
+            hasRelayWork(_partitionThreatTargetActionRelays) ||
+            hasRelayWork(_partitionTauntRelays) ||
+            hasRelayWork(_partitionCombatRelays) ||
+            hasRelayWork(_partitionLootRelays) ||
+            hasRelayWork(_partitionDynObjectRelays) ||
+            hasRelayWork(_partitionMinionRelays) ||
+            hasRelayWork(_partitionCharmRelays) ||
+            hasRelayWork(_partitionGameObjectRelays) ||
+            hasRelayWork(_partitionCombatStateRelays) ||
+            hasRelayWork(_partitionAttackRelays) ||
+            hasRelayWork(_partitionEvadeRelays) ||
+            hasRelayWork(_partitionMotionRelays) ||
+            hasRelayWork(_partitionProcRelays) ||
+            hasRelayWork(_partitionAuraRelays) ||
+            hasRelayWork(_partitionPathRelays) ||
+            hasRelayWork(_partitionPointRelays) ||
+            hasRelayWork(_partitionAssistRelays) ||
+            hasRelayWork(_partitionAssistDistractRelays);
+    }
+
+    {
+        std::lock_guard<std::mutex> markerLock(_partitionRelayPendingLock);
+        if (hasPendingWork)
+            _partitionsWithRelayWork.insert(partitionId);
+        else
+            _partitionsWithRelayWork.erase(partitionId);
+    }
 }
-
-

@@ -88,13 +88,12 @@ namespace
             {
                 queue.pop_front();
                 queue.push_back(std::forward<Relay>(relay));
+                map.MarkPartitionRelayWorkPending(partitionId);
                 RecordRelayQueueCounter(map.GetId(), relayType, true);
-                LOG_WARN("maps.partition", "Map {} partition {} {} relay queue full ({}), replacing oldest relay", map.GetId(), partitionId, relayType, kPartitionRelayLimit);
                 return;
             }
 
             RecordRelayQueueCounter(map.GetId(), relayType, false);
-            LOG_WARN("maps.partition", "Map {} partition {} {} relay queue full ({}), dropping relay", map.GetId(), partitionId, relayType, kPartitionRelayLimit);
             return;
         }
 

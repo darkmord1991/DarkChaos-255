@@ -855,7 +855,8 @@ void Creature::Update(uint32 diff)
                         SetNoCallAssistance(false);
                         CallAssistance();
                     }
-                    m_assistanceTimer = sWorld->getIntConfig(CONFIG_CREATURE_FAMILY_ASSISTANCE_PERIOD);
+                    static thread_local uint32 assistancePeriod = sWorld->getIntConfig(CONFIG_CREATURE_FAMILY_ASSISTANCE_PERIOD);
+                    m_assistanceTimer = assistancePeriod;
                 }
                 else
                 {
@@ -865,10 +866,19 @@ void Creature::Update(uint32 diff)
 
             if (!IsInEvadeMode() && IsAIEnabled)
             {
+                if (!i_AI)
+                {
+                    LOG_ERROR("entities.unit", "Creature::Update: missing AI while IsAIEnabled=true for creature {} (entry={}, map={}, instance={}); disabling AI update to prevent crash",
+                        GetGUID().ToString(), GetEntry(), GetMapId(), GetInstanceId());
+                    IsAIEnabled = false;
+                }
+                else
+                {
                 // do not allow the AI to be changed during update
                 m_AI_locked = true;
                 i_AI->UpdateAI(diff);
                 m_AI_locked = false;
+                }
             }
 
             // creature can be dead after UpdateAI call
@@ -888,7 +898,8 @@ void Creature::Update(uint32 diff)
                     {
                         // regenerate health if cannot reach the target and the setting is set to do so.
                         // this allows to disable the health regen of raid bosses if pathfinding has issues for whatever reason
-                        if (sWorld->getBoolConfig(CONFIG_REGEN_HP_CANNOT_REACH_TARGET_IN_RAID) || !GetMap()->IsRaid())
+                        static thread_local bool regenHPIfCannotReach = sWorld->getBoolConfig(CONFIG_REGEN_HP_CANNOT_REACH_TARGET_IN_RAID);
+                        if (regenHPIfCannotReach || !GetMap()->IsRaid())
                         {
                             RegenerateHealth();
                             LOG_DEBUG("entities.unit", "RegenerateHealth() enabled because Creature cannot reach the target. Detail: {}", GetDebugInfo());
@@ -909,7 +920,8 @@ void Creature::Update(uint32 diff)
             if (CanNotReachTarget() && !IsInEvadeMode())
             {
                 m_cannotReachTimer += diff;
-                if (m_cannotReachTimer >= (sWorld->getIntConfig(CONFIG_NPC_EVADE_IF_NOT_REACHABLE) * IN_MILLISECONDS))
+                static thread_local uint32 npcEvadeTime = sWorld->getIntConfig(CONFIG_NPC_EVADE_IF_NOT_REACHABLE) * IN_MILLISECONDS;
+                if (m_cannotReachTimer >= npcEvadeTime)
                 {
                     Player* cannotReachPlayer = ObjectAccessor::GetPlayer(*this, m_cannotReachTarget);
                     if (cannotReachPlayer && IsEngagedBy(cannotReachPlayer) && IsAIEnabled && AI()->OnTeleportUnreacheablePlayer(cannotReachPlayer))
@@ -1015,8 +1027,8 @@ void Creature::Regenerate(Powers power)
     {
         case POWER_FOCUS:
             {
-                // For hunter pets.
-                addvalue = 24 * sWorld->getRate(RATE_POWER_FOCUS);
+                static thread_local float ratePowerFocus = sWorld->getRate(RATE_POWER_FOCUS);
+                addvalue = 24 * ratePowerFocus;
                 break;
             }
         case POWER_ENERGY:
@@ -1036,10 +1048,10 @@ void Creature::Regenerate(Powers power)
                     }
                     else if (!IsUnderLastManaUseEffect())
                     {
-                        float ManaIncreaseRate = sWorld->getRate(RATE_POWER_MANA);
+                        static thread_local float ratePowerMana = sWorld->getRate(RATE_POWER_MANA);
                         float Spirit = GetStat(STAT_SPIRIT);
 
-                        addvalue = uint32((Spirit / 5.0f + 17.0f) * ManaIncreaseRate);
+                        addvalue = uint32((Spirit / 5.0f + 17.0f) * ratePowerMana);
                     }
                 }
                 else
@@ -1077,13 +1089,13 @@ void Creature::RegenerateHealth()
         addvalue = maxValue / 3;
     else //if (GetCharmerOrOwnerGUID())
     {
-        float HealthIncreaseRate = sWorld->getRate(RATE_HEALTH);
+        static thread_local float rateHealth = sWorld->getRate(RATE_HEALTH);
         float Spirit = GetStat(STAT_SPIRIT);
 
         if (GetPower(POWER_MANA) > 0)
-            addvalue = uint32(Spirit * 0.25 * HealthIncreaseRate);
+            addvalue = uint32(Spirit * 0.25 * rateHealth);
         else
-            addvalue = uint32(Spirit * 0.80 * HealthIncreaseRate);
+            addvalue = uint32(Spirit * 0.80 * rateHealth);
     }
 
     // Apply modifiers (if any).
@@ -1102,7 +1114,7 @@ void Creature::DoFleeToGetAssistance()
     if (HasPreventsFleeingAura())
         return;
 
-    float radius = sWorld->getFloatConfig(CONFIG_CREATURE_FAMILY_FLEE_ASSISTANCE_RADIUS);
+    static thread_local float radius = sWorld->getFloatConfig(CONFIG_CREATURE_FAMILY_FLEE_ASSISTANCE_RADIUS);
     if (radius > 0)
     {
         Creature* creature = nullptr;
@@ -3835,11 +3847,19 @@ bool Creature::IsUpdateNeeded()
     if (ToTempSummon())
         return true;
 
-    if (GetMotionMaster()->HasMovementGeneratorType(WAYPOINT_MOTION_TYPE))
-        return true;
-
-    if (GetMotionMaster()->HasMovementGeneratorType(RANDOM_MOTION_TYPE))
-        return true;
+    // Waypoint/random-motion creatures only need frequent updates when near
+    // a player (cell is marked) or on a staggered slow-tick schedule.
+    // This avoids updating ~17k distant NPCs every tick in large partitions.
+    if (GetMotionMaster()->HasMovementGeneratorType(WAYPOINT_MOTION_TYPE)
+        || GetMotionMaster()->HasMovementGeneratorType(RANDOM_MOTION_TYPE))
+    {
+        // Active cell → always update (player is nearby)
+        if (GetMap()->isCellMarked(GetCurrentCell().GetCellCoord().GetId()))
+            return true;
+        // Staggered slow-tick: update every 8th tick, spread by GUID to avoid spikes
+        if ((GetMap()->GetUpdateCounter() & 7) == (GetGUID().GetCounter() & 7))
+            return true;
+    }
 
     if (HasUnitState(UNIT_STATE_EVADE))
         return true;

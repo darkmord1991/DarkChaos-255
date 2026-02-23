@@ -81,7 +81,7 @@ public:
     void HandleDropFlag(Player* player, uint32 spellId);
 
     // pussywizard: lock required because different functions affect _players
-    std::mutex _lock;
+    std::recursive_mutex _lock;
 
 private:
     // contains all initiated outdoor pvp events

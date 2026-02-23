@@ -16,6 +16,7 @@
  */
 
 #include "RandomMovementGenerator.h"
+#include "Config.h"
 #include "Creature.h"
 #include "CreatureGroups.h"
 #include "Map.h"
@@ -28,6 +29,7 @@
 #include "Util.h"
 #include "World.h"
 #include <atomic>
+#include <cmath>
 
 template<class T>
 RandomMovementGenerator<T>::~RandomMovementGenerator() { }
@@ -43,13 +45,56 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
     if (_currentPoint > RANDOM_POINTS_NUMBER)
         return;
 
+    static bool const debugRMG = sConfigMgr->GetOption<bool>("Debug.RandomMovement", false);
+
     if (creature->_moveState != MAP_OBJECT_CELL_MOVE_NONE)
+    {
+        if (debugRMG)
+            LOG_INFO("server", "RandomMove fail: moveState locked ({}) for {}", uint32(creature->_moveState), creature->GetGUID().ToString());
+        _nextMoveTime.Reset(500); // Retry later
         return;
+    }
+
+    auto rebuildRandomGraph = [&](bool recenter)
+    {
+        if (recenter)
+            _initialPosition.Relocate(creature);
+
+        _destinationPoints.clear();
+        for (uint8 i = 0; i < RANDOM_POINTS_NUMBER; ++i)
+        {
+            _validPointsVector[i].clear();
+            for (uint8 j = 0; j < RANDOM_LINKS_COUNT; ++j)
+                _validPointsVector[i].push_back((i + j + RANDOM_POINTS_NUMBER / 2 - RANDOM_LINKS_COUNT / 2) % RANDOM_POINTS_NUMBER);
+
+            float angle = (M_PI * 2.0f / static_cast<float>(RANDOM_POINTS_NUMBER)) * i;
+            float factor = 0.5f + rand_norm() * 0.5f;
+            _destinationPoints.push_back(G3D::Vector3(
+                _initialPosition.GetPositionX() + _wanderDistance * std::cos(angle) * factor,
+                _initialPosition.GetPositionY() + _wanderDistance * std::sin(angle) * factor,
+                _initialPosition.GetPositionZ()));
+        }
+
+        _validPointsVector[RANDOM_POINTS_NUMBER].clear();
+        for (uint8 i = 0; i < RANDOM_POINTS_NUMBER; ++i)
+            _validPointsVector[RANDOM_POINTS_NUMBER].push_back(i);
+
+        for (Movement::PointsArray& path : _preComputedPaths)
+            path.clear();
+
+        _currentPoint = RANDOM_POINTS_NUMBER;
+    };
 
     if (_validPointsVector[_currentPoint].empty())
     {
         if (_currentPoint == RANDOM_POINTS_NUMBER) // cant go anywhere from initial position, lets stay
+        {
+            // Recovery: if all links from the current anchor are exhausted,
+            // rebuild graph around current position and try again shortly.
+            rebuildRandomGraph(true);
+            _nextMoveTime.Reset(urand(1200, 2400));
             return;
+        }
         // go back to initial position and will never return to this point
         _currentPoint = RANDOM_POINTS_NUMBER;
         _currDestPosition.Relocate(_initialPosition);
@@ -85,6 +130,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
     if (newPoint >= RANDOM_POINTS_NUMBER || pathIdx >= _preComputedPaths.size())
     {
         _validPointsVector[_currentPoint].erase(randomIter);
+        if (debugRMG)
+            LOG_INFO("server", "RandomMove fail: invalid newPoint {} for {}", newPoint, creature->GetGUID().ToString());
+        _nextMoveTime.Reset(500); // Retry later
         return;
     }
 
@@ -92,6 +140,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
     if (_validPointsVector[newPoint].empty())
     {
         _validPointsVector[_currentPoint].erase(randomIter);
+        if (debugRMG)
+            LOG_INFO("server", "RandomMove fail: newPoint {} has no links for {}", newPoint, creature->GetGUID().ToString());
+        _nextMoveTime.Reset(500); // Retry later
         return;
     }
 
@@ -105,6 +156,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
         {
             _validPointsVector[_currentPoint].erase(randomIter);
             _preComputedPaths[pathIdx].clear();
+            if (debugRMG)
+                LOG_INFO("server", "RandomMove fail: invalid map coord ({}, {}) for {}", x, y, creature->GetGUID().ToString());
+            _nextMoveTime.Reset(500); // Retry later
             return;
         }
 
@@ -122,6 +176,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
             {
                 _validPointsVector[_currentPoint].erase(randomIter);
                 _preComputedPaths[pathIdx].clear();
+                if (debugRMG)
+                    LOG_INFO("server", "RandomMove fail: underwater but cannot swim for {}", creature->GetGUID().ToString());
+                _nextMoveTime.Reset(500); // Retry later
                 return;
             }
             else
@@ -138,6 +195,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
             {
                 _validPointsVector[_currentPoint].erase(randomIter);
                 _preComputedPaths[pathIdx].clear();
+                if (debugRMG)
+                    LOG_INFO("server", "RandomMove fail: ground check failed (levelZ {}, canWalk {}) for {}", levelZ, creature->CanWalk(), creature->GetGUID().ToString());
+                _nextMoveTime.Reset(500); // Retry later
                 return;
             }
         }
@@ -151,6 +211,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
             {
                 _validPointsVector[_currentPoint].erase(randomIter);
                 _preComputedPaths[pathIdx].clear();
+                if (debugRMG)
+                    LOG_INFO("server", "RandomMove fail: air path LOS blocked for {}", creature->GetGUID().ToString());
+                _nextMoveTime.Reset(500); // Retry later
                 return;
             }
 
@@ -170,12 +233,15 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
             bool result = _pathGenerator->CalculatePath(x, y, levelZ, false);
             auto logPathFailure = [&](char const* reason, PathType pathType = PATHFIND_BLANK, std::size_t pointCount = 0, float pathLen = -1.0f)
             {
-                if (!sPartitionMgr->IsRuntimeDiagnosticsEnabled())
+                static bool const pathFailureTelemetryEnabled = sConfigMgr->GetOption<bool>("Movement.RandomPathFailureTelemetry.Enable", false);
+                bool const diagnosticsEnabled = sPartitionMgr->IsRuntimeDiagnosticsEnabled() || pathFailureTelemetryEnabled;
+                if (!diagnosticsEnabled)
                     return;
 
+                static uint32 const sampleMask = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("Movement.RandomPathFailureTelemetry.SampleMask", 127));
                 static std::atomic<uint32> pathFailureSamples{0};
                 uint32 sample = pathFailureSamples.fetch_add(1, std::memory_order_relaxed) + 1;
-                if ((sample & 0x7F) != 0)
+                if ((sample & sampleMask) != 0)
                     return;
 
                 LOG_INFO("movement.path.telemetry", "RandomMovement path failure reason={} guid={} map={} instance={} src=({:.2f},{:.2f},{:.2f}) dst=({:.2f},{:.2f},{:.2f}) levelZ={:.2f} fromPoint={} toPoint={} pathType={} pointCount={} pathLen={:.2f} sample={}",
@@ -203,6 +269,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
                     logPathFailure("path_too_long", _pathGenerator->GetPathType(), _pathGenerator->GetPath().size(), pathLen);
                     _validPointsVector[_currentPoint].erase(randomIter);
                     _preComputedPaths[pathIdx].clear();
+                    if (debugRMG)
+                        LOG_INFO("server", "RandomMove fail: path too long for {}", creature->GetGUID().ToString());
+                    _nextMoveTime.Reset(500); // Retry later
                     return;
                 }
 
@@ -223,6 +292,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
                         logPathFailure("segment_too_steep", _pathGenerator->GetPathType(), finalPath.size(), pathLen);
                         _validPointsVector[_currentPoint].erase(randomIter);
                         _preComputedPaths[pathIdx].clear();
+                        if (debugRMG)
+                            LOG_INFO("server", "RandomMove fail: segment too steep for {}", creature->GetGUID().ToString());
+                        _nextMoveTime.Reset(500); // Retry later
                         return;
                     }
 
@@ -232,6 +304,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
                         logPathFailure("segment_los_blocked", _pathGenerator->GetPathType(), finalPath.size(), pathLen);
                         _validPointsVector[_currentPoint].erase(randomIter);
                         _preComputedPaths[pathIdx].clear();
+                        if (debugRMG)
+                            LOG_INFO("server", "RandomMove fail: non-swim LOS blocked for {}", creature->GetGUID().ToString());
+                        _nextMoveTime.Reset(500); // Retry later
                         return;
                     }
                 }
@@ -242,6 +317,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
                     logPathFailure("path_too_short", _pathGenerator->GetPathType(), finalPath.size(), pathLen);
                     _validPointsVector[_currentPoint].erase(randomIter);
                     _preComputedPaths[pathIdx].clear();
+                    if (debugRMG)
+                        LOG_INFO("server", "RandomMove fail: path too short for {}", creature->GetGUID().ToString());
+                    _nextMoveTime.Reset(500); // Retry later
                     return;
                 }
             }
@@ -250,6 +328,9 @@ void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
                 logPathFailure(result ? "pathfind_nopath" : "calculate_path_false", _pathGenerator->GetPathType());
                 _validPointsVector[_currentPoint].erase(randomIter);
                 _preComputedPaths[pathIdx].clear();
+                if (debugRMG)
+                    LOG_INFO("server", "RandomMove fail: no path calculate {} for {}", result, creature->GetGUID().ToString());
+                _nextMoveTime.Reset(500); // Retry later
                 return;
             }
         }
@@ -314,6 +395,11 @@ void RandomMovementGenerator<Creature>::DoInitialize(Creature* creature)
             float factor = 0.5f + rand_norm() * 0.5f;
             _destinationPoints.push_back(G3D::Vector3(_initialPosition.GetPositionX() + _wanderDistance * cos(angle)*factor, _initialPosition.GetPositionY() + _wanderDistance * std::sin(angle)*factor, _initialPosition.GetPositionZ()));
         }
+    }
+    else
+    {
+        for (Movement::PointsArray& path : _preComputedPaths)
+            path.clear();
     }
 
     creature->AddUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);

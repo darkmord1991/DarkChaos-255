@@ -28,6 +28,7 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
 class Map;
 class UpdateRequest;
@@ -85,7 +86,20 @@ public:
     void OnPartitionWorkerDone(uint64 runMs);
 
 private:
-    void WorkerThread(bool partitionOnly);
+    struct WorkerDebugState
+    {
+        std::atomic<uint32> partitionOnly{0};
+        std::atomic<uint32> active{0};
+        std::atomic<int32> currentType{-1};
+        std::atomic<uintptr_t> requestPtr{0};
+        std::atomic<uint64> threadIdHash{0};
+        std::atomic<uint64> lastStartMs{0};
+        std::atomic<uint64> lastFinishMs{0};
+        std::atomic<uint64> lastBeatMs{0};
+    };
+
+    void WorkerThread(std::size_t workerIndex, bool partitionOnly);
+    void LogWorkerDebugState(char const* sourceTag) const;
     ProducerConsumerQueue<UpdateRequest*> _queue;
     ProducerConsumerQueue<UpdateRequest*> _partitionQueue;
     std::atomic<int> pending_requests;  // Use std::atomic for pending_requests to avoid lock contention
@@ -101,6 +115,7 @@ private:
     std::atomic<uint32> _activePartitionWorkers{0};
     std::atomic<uint32> _maxPartitionRuntimeMs{0};
     std::atomic<uint32> _dedicatedPartitionWorkers{0};
+    std::vector<std::shared_ptr<WorkerDebugState>> _workerDebugStates;
 };
 
 #endif //_MAP_UPDATER_H_INCLUDED

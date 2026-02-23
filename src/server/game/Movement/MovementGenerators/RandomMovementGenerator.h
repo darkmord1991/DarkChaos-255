@@ -69,7 +69,7 @@ private:
     std::vector<G3D::Vector3> _destinationPoints;
     std::vector<uint8> _validPointsVector[RANDOM_POINTS_NUMBER + 1];
     uint8 _currentPoint;
-    std::array<Movement::PointsArray, RANDOM_POINTS_NUMBER * RANDOM_POINTS_NUMBER> _preComputedPaths;
+    std::array<Movement::PointsArray, RANDOM_POINTS_NUMBER * (RANDOM_POINTS_NUMBER + 1)> _preComputedPaths;
     Position _initialPosition, _currDestPosition;
 };
 #endif

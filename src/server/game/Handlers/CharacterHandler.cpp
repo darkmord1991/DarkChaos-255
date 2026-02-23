@@ -890,8 +890,11 @@ void WorldSession::HandlePlayerLoginFromDB(LoginQueryHolder const& holder)
     // Xinef: moved this from below
     ObjectAccessor::AddObject(pCurrChar);
 
-    // Create/retrieve map for player before adding to map
-    Map* map = sMapMgr->CreateMap(pCurrChar->GetMapId(), pCurrChar);
+    // Player::LoadFromDB() already validates and assigns the map.
+    // Re-creating/re-assigning it here can conflict on instance id.
+    Map* map = pCurrChar->GetMap();
+    if (!map)
+        map = sMapMgr->CreateMap(pCurrChar->GetMapId(), pCurrChar);
     if (!map)
     {
         LOG_ERROR("network.opcode", "Player {} login failed - could not create map {} (possible corruption)",
@@ -903,9 +906,6 @@ void WorldSession::HandlePlayerLoginFromDB(LoginQueryHolder const& holder)
         m_playerLoading = false;
         return;
     }
-
-    // Assign map to player before AddPlayerToMap
-    pCurrChar->SetMap(map);
 
     if (!map->AddPlayerToMap(pCurrChar) || !pCurrChar->CheckInstanceLoginValid())
     {
@@ -1137,12 +1137,32 @@ void WorldSession::HandlePlayerLoginFromDB(LoginQueryHolder const& holder)
     // Load persistent layer assignment for map partitioning (if layering is enabled)
     sLayerMgr->LoadPersistentLayerAssignment(pCurrChar->GetGUID());
 
-    sScriptMgr->OnPlayerLogin(pCurrChar);
-
-    if (pCurrChar->HasAtLoginFlag(AT_LOGIN_FIRST))
+    if (IsKicked() || GetPlayer() != pCurrChar || pCurrChar->GetSession() != this)
     {
+        LOG_ERROR("network.opcode",
+            "Aborting OnPlayerLogin hooks due to invalid session state. account={} guid={} kicked={} getplayer_match={} playersession_match={}",
+            GetAccountId(),
+            pCurrChar->GetGUID().ToString(),
+            IsKicked(),
+            GetPlayer() == pCurrChar,
+            pCurrChar->GetSession() == this);
+        return;
+    }
+
+    if (!IsBot())
+    {
+        sScriptMgr->OnPlayerLogin(pCurrChar);
+
+        if (pCurrChar->HasAtLoginFlag(AT_LOGIN_FIRST))
+        {
+            pCurrChar->RemoveAtLoginFlag(AT_LOGIN_FIRST);
+            sScriptMgr->OnPlayerFirstLogin(pCurrChar);
+        }
+    }
+    else if (pCurrChar->HasAtLoginFlag(AT_LOGIN_FIRST))
+    {
+        // Keep bot first-login state consistent without running full player login scripts.
         pCurrChar->RemoveAtLoginFlag(AT_LOGIN_FIRST);
-        sScriptMgr->OnPlayerFirstLogin(pCurrChar);
     }
 
     METRIC_EVENT("player_events", "Login", pCurrChar->GetName());

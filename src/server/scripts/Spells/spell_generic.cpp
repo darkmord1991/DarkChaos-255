@@ -144,7 +144,7 @@ class spell_the_flag_of_ownership : public SpellScript
             return;
         caster->CastSpell(target, SPELL_TAUNT_FLAG, true);
 
-        LocaleConstant loc_idx = caster->ToPlayer()->GetSession()->GetSessionDbLocaleIndex();
+        LocaleConstant loc_idx = caster->ToPlayer()->GetSession() ? caster->ToPlayer()->GetSession()->GetSessionDbLocaleIndex() : LOCALE_enUS;
         BroadcastText const* bct = sObjectMgr->GetBroadcastText(TEXT_FLAG_OF_OWNERSHIP);
         std::string bctMsg = Acore::StringFormat(bct->GetText(loc_idx, caster->getGender()), caster->GetName(), target->GetName());
         caster->Talk(bctMsg, CHAT_MSG_MONSTER_EMOTE, LANG_UNIVERSAL, sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_TEXTEMOTE), target);
@@ -2017,9 +2017,15 @@ class spell_gen_animal_blood : public AuraScript
 
     void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
-        // Remove all auras with spell id 46221, except the one currently being applied
-        while (Aura* aur = GetUnitOwner()->GetOwnedAura(SPELL_ANIMAL_BLOOD, ObjectGuid::Empty, ObjectGuid::Empty, 0, GetAura()))
-            GetUnitOwner()->RemoveOwnedAura(aur, AURA_REMOVE_BY_EXPIRE);
+        Unit* owner = GetUnitOwner();
+        Aura* currentAura = GetAura();
+        if (!owner || !currentAura)
+            return;
+
+        owner->RemoveOwnedAuras(SPELL_ANIMAL_BLOOD, [currentAura](Aura const* aura)
+        {
+            return aura && aura != currentAura;
+        });
     }
 
     void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)

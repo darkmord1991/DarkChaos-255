@@ -256,6 +256,12 @@ namespace DarkChaos
             return false;
         }
 
+        static bool IsSeasonalConsolidationEnabled()
+        {
+            return sConfigMgr->GetOption<bool>("SeasonalRewards.Enable", true) &&
+                   sConfigMgr->GetOption<bool>("SeasonalRewards.ConsolidateItemUpgradeHooks", true);
+        }
+
         // =====================================================================
         // Player Script Hooks
         // =====================================================================
@@ -314,6 +320,9 @@ namespace DarkChaos
             void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
             {
                 if (!player || !quest)
+                    return;
+
+                if (IsSeasonalConsolidationEnabled())
                     return;
 
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
@@ -416,6 +425,9 @@ namespace DarkChaos
 
                 Player* player = killer->GetCharmerOrOwnerPlayerOrPlayerItself();
                 if (!player)
+                    return;
+
+                if (IsSeasonalConsolidationEnabled())
                     return;
 
                 uint32 season = DarkChaos::ItemUpgrade::GetCurrentSeasonId();
