@@ -221,8 +221,11 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
+        uint32 processedCount = 0;
         for (PartitionProcRelay const& relay : procRelays)
         {
+            // actorGuid = the unit ProcSkillsAndReactives is called ON (the victim that was relayed)
+            // targetGuid = the "target" parameter (the original attacker)
             Unit* actor = GetUnitByGuid(relay.actorGuid);
             Unit* target = GetUnitByGuid(relay.targetGuid);
             if (!actor || !target)
@@ -261,40 +264,26 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                 continue;
             }
 
-            uint32 targetPartition = GetPartitionIdForUnit(target);
-            if (!targetPartition || targetPartition != partitionId)
+            if (!actor->IsAlive())
             {
                 RecordRelayCounter("proc", "drop");
                 continue;
             }
 
-            // Safety gate: cross-partition proc relays that carry proc spell/aura
-            // context are currently unstable under heavy logout/despawn churn and
-            // can crash in Spell::_cast/DoAllEffectOnTarget.
-            // Keep non-spell proc flags flowing, but drop spell/aura-trigger relays.
-            if (relay.procSpellId || relay.procAuraId)
-            {
-                RecordRelayCounter("proc", "drop");
-
-                static std::atomic<uint32> sDroppedSpellProcRelays{0};
-                uint32 sample = sDroppedSpellProcRelays.fetch_add(1, std::memory_order_relaxed) + 1;
-                if ((sample & 0x3F) == 0)
-                {
-                    LOG_WARN("maps.partition",
-                        "Dropped unsafe spell proc relay (sample={}): map={} partition={} actor={} target={} proc_spell={} proc_aura={}",
-                        sample, GetId(), partitionId, relay.actorGuid.ToString(), relay.targetGuid.ToString(), relay.procSpellId, relay.procAuraId);
-                }
-
-                continue;
-            }
-
-            // TODO: ProcDamageAndSpellFor was removed by upstream proc system refactor.
-            // Proc relays are no longer queued (QueuePartitionProcRelay callers removed).
-            // This code path is dead but kept for reference until partition proc relay is redesigned.
+            // Resolve spell info from carried IDs (may be nullptr if spell was removed)
             SpellInfo const* procSpellInfo = relay.procSpellId ? sSpellMgr->GetSpellInfo(relay.procSpellId) : nullptr;
             SpellInfo const* procAuraInfo = relay.procAuraId ? sSpellMgr->GetSpellInfo(relay.procAuraId) : nullptr;
-            (void)procSpellInfo;
-            (void)procAuraInfo;
+
+            // Execute ProcSkillsAndReactives for the relayed unit.
+            // Note: procSpell is nullptr since the original Spell* doesn't survive cross-partition.
+            // This only affects weapon GUID for UpdateCombatSkills, which is minor.
+            actor->ProcSkillsAndReactives(relay.isVictim, target, relay.procFlag, relay.procExtra,
+                relay.attackType, procSpellInfo, relay.amount, procAuraInfo,
+                relay.procAuraEffectIndex, /*procSpell=*/nullptr, /*damageInfo=*/nullptr,
+                /*healInfo=*/nullptr, relay.procPhase);
+
+            processedCount++;
+            RecordRelayCounter("proc", "ok");
 
             if (relay.queuedMs)
             {

@@ -7317,12 +7317,36 @@ void Unit::SendSpellNonMeleeDamageLog(Unit* target, SpellInfo const* spellInfo, 
 
 void Unit::ProcSkillsAndAuras(Unit* actor, Unit* victim, uint32 procAttacker, uint32 procVictim, uint32 procExtra, uint32 amount, WeaponAttackType attType, SpellInfo const* procSpellInfo, SpellInfo const* procAura, int8 procAuraEffectIndex, Spell const* procSpell, DamageInfo* damageInfo, HealInfo* healInfo, uint32 procPhase)
 {
+    // Partition relay check: if actor and victim are in different partitions,
+    // relay victim-side processing and restrict aura procs to actor-side only.
+    bool crossPartition = false;
+    if (actor && victim && victim != actor)
+    {
+        if (Map* map = actor->GetMap(); map && map->IsPartitioned() && map->GetActivePartitionContext() && !map->IsProcessingPartitionRelays())
+        {
+            uint32 const activePartition = map->GetActivePartitionContext();
+            uint32 const victimPartition = map->GetPartitionIdForUnit(victim);
+            if (victimPartition && victimPartition != activePartition)
+            {
+                crossPartition = true;
+                // Queue relay for victim's ProcSkillsAndReactives in the victim's partition.
+                // actorGuid = victim (the unit ProcSkillsAndReactives is called ON in the relay).
+                // targetGuid = actor (passed as the "target" parameter).
+                map->QueuePartitionProcRelay(victimPartition, victim->GetGUID(), actor->GetGUID(),
+                    /*isVictim=*/true, procVictim, procExtra, amount, attType,
+                    procSpellInfo ? procSpellInfo->Id : 0,
+                    procAura ? procAura->Id : 0,
+                    procAuraEffectIndex, procPhase);
+            }
+        }
+    }
+
     // Handle skills and reactives for actor
     if (procAttacker && actor)
         actor->ProcSkillsAndReactives(false, victim, procAttacker, procExtra, attType, procSpellInfo, amount, procAura, procAuraEffectIndex, procSpell, damageInfo, healInfo, procPhase);
 
-    // Handle skills and reactives for victim
-    if (victim && victim->IsAlive() && procVictim)
+    // Handle skills and reactives for victim (skip if relayed cross-partition)
+    if (!crossPartition && victim && victim->IsAlive() && procVictim)
         victim->ProcSkillsAndReactives(true, actor, procVictim, procExtra, attType, procSpellInfo, amount, procAura, procAuraEffectIndex, procSpell, damageInfo, healInfo, procPhase);
 
     // Handle aura procs via new proc system (TriggerAurasProcOnEvent)
@@ -7345,7 +7369,10 @@ void Unit::ProcSkillsAndAuras(Unit* actor, Unit* victim, uint32 procAttacker, ui
         else if (procSpellInfo)
             spellTypeMask = PROC_SPELL_TYPE_NO_DMG_HEAL;
 
-        actor->TriggerAurasProcOnEvent(nullptr, nullptr, victim, procAttacker, procVictim, spellTypeMask, procPhase, procExtra, const_cast<Spell*>(procSpell), damageInfo, healInfo);
+        // When cross-partition, process actor-side aura procs only (pass 0 for
+        // typeMaskActionTarget to skip reading/triggering victim's auras).
+        uint32 effectiveProcVictim = crossPartition ? 0 : procVictim;
+        actor->TriggerAurasProcOnEvent(nullptr, nullptr, victim, procAttacker, effectiveProcVictim, spellTypeMask, procPhase, procExtra, const_cast<Spell*>(procSpell), damageInfo, healInfo);
     }
 }
 
