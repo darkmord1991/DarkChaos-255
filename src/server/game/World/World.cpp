@@ -618,7 +618,6 @@ void World::SetInitialWorldSettings()
     SafeLoadTable("Spell Required Data", [] { sSpellMgr->LoadSpellRequired(); });
     SafeLoadTable("Spell Groups", [] { sSpellMgr->LoadSpellGroups(); });
     SafeLoadTable("Spell Learn Skills", [] { sSpellMgr->LoadSpellLearnSkills(); }); // must be after LoadSpellRanks
-    SafeLoadTable("Spell Proc Events", [] { sSpellMgr->LoadSpellProcEvents(); });
     SafeLoadTable("Spell Procs", [] { sSpellMgr->LoadSpellProcs(); });
     SafeLoadTable("Spell Bonuses", [] { sSpellMgr->LoadSpellBonuses(); });
     SafeLoadTable("Spell Threats", [] { sSpellMgr->LoadSpellThreats(); });

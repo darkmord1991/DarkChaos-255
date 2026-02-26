@@ -288,12 +288,14 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                 continue;
             }
 
+            // TODO: ProcDamageAndSpellFor was removed by upstream proc system refactor.
+            // Proc relays are no longer queued (QueuePartitionProcRelay callers removed).
+            // This code path is dead but kept for reference until partition proc relay is redesigned.
             SpellInfo const* procSpellInfo = relay.procSpellId ? sSpellMgr->GetSpellInfo(relay.procSpellId) : nullptr;
             SpellInfo const* procAuraInfo = relay.procAuraId ? sSpellMgr->GetSpellInfo(relay.procAuraId) : nullptr;
-            if (relay.isVictim)
-                actor->ProcDamageAndSpellFor(true, target, relay.procFlag, relay.procExtra, relay.attackType, procSpellInfo, relay.amount, procAuraInfo, relay.procAuraEffectIndex, nullptr, nullptr, nullptr, relay.procPhase);
-            else
-                actor->ProcDamageAndSpellFor(false, target, relay.procFlag, relay.procExtra, relay.attackType, procSpellInfo, relay.amount, procAuraInfo, relay.procAuraEffectIndex, nullptr, nullptr, nullptr, relay.procPhase);
+            (void)procSpellInfo;
+            (void)procAuraInfo;
+
             if (relay.queuedMs)
             {
                 uint64 latency = nowMs - relay.queuedMs;

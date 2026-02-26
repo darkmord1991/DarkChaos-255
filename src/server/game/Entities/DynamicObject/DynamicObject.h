@@ -63,6 +63,8 @@ public:
 
     ObjectGuid const& GetOldFarsightGUID() const { return _oldFarsightGUID; }
 
+    bool IsUpdateNeeded() override;
+
 protected:
     Aura* _aura;
     Aura* _removedAura;
