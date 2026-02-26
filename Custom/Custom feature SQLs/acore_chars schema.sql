@@ -676,83 +676,6 @@ CREATE TABLE IF NOT EXISTS `characters` (
   KEY `idx_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player System';
 
-CREATE TABLE IF NOT EXISTS `characters_npcbot` (
-  `entry` int unsigned NOT NULL COMMENT 'creature_template.entry',
-  `owner` int unsigned NOT NULL DEFAULT '0' COMMENT 'characters.guid (lowguid)',
-  `roles` int unsigned NOT NULL COMMENT 'bitmask: tank(1),dps(2),heal(4),ranged(8)',
-  `spec` tinyint unsigned NOT NULL DEFAULT '1',
-  `faction` int unsigned NOT NULL DEFAULT '35',
-  `equipMhEx` int unsigned NOT NULL DEFAULT '0',
-  `equipOhEx` int unsigned NOT NULL DEFAULT '0',
-  `equipRhEx` int unsigned NOT NULL DEFAULT '0',
-  `equipHead` int unsigned NOT NULL DEFAULT '0',
-  `equipShoulders` int unsigned NOT NULL DEFAULT '0',
-  `equipChest` int unsigned NOT NULL DEFAULT '0',
-  `equipWaist` int unsigned NOT NULL DEFAULT '0',
-  `equipLegs` int unsigned NOT NULL DEFAULT '0',
-  `equipFeet` int unsigned NOT NULL DEFAULT '0',
-  `equipWrist` int unsigned NOT NULL DEFAULT '0',
-  `equipHands` int unsigned NOT NULL DEFAULT '0',
-  `equipBack` int unsigned NOT NULL DEFAULT '0',
-  `equipBody` int unsigned NOT NULL DEFAULT '0',
-  `equipFinger1` int unsigned NOT NULL DEFAULT '0',
-  `equipFinger2` int unsigned NOT NULL DEFAULT '0',
-  `equipTrinket1` int unsigned NOT NULL DEFAULT '0',
-  `equipTrinket2` int unsigned NOT NULL DEFAULT '0',
-  `equipNeck` int unsigned NOT NULL DEFAULT '0',
-  `spells_disabled` longtext,
-  PRIMARY KEY (`entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
-CREATE TABLE IF NOT EXISTS `characters_npcbot_group_member` (
-  `guid` int unsigned NOT NULL,
-  `entry` int unsigned NOT NULL,
-  `memberFlags` tinyint unsigned NOT NULL DEFAULT '0',
-  `subgroup` tinyint unsigned NOT NULL DEFAULT '0',
-  `roles` tinyint unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
-CREATE TABLE IF NOT EXISTS `characters_npcbot_stats` (
-  `entry` int unsigned NOT NULL DEFAULT '0',
-  `maxhealth` int unsigned NOT NULL DEFAULT '0',
-  `maxpower` int unsigned NOT NULL DEFAULT '0',
-  `strength` int unsigned NOT NULL DEFAULT '0',
-  `agility` int unsigned NOT NULL DEFAULT '0',
-  `stamina` int unsigned NOT NULL DEFAULT '0',
-  `intellect` int unsigned NOT NULL DEFAULT '0',
-  `spirit` int unsigned NOT NULL DEFAULT '0',
-  `armor` int unsigned NOT NULL DEFAULT '0',
-  `defense` int unsigned NOT NULL DEFAULT '0',
-  `resHoly` int unsigned NOT NULL DEFAULT '0',
-  `resFire` int unsigned NOT NULL DEFAULT '0',
-  `resNature` int unsigned NOT NULL DEFAULT '0',
-  `resFrost` int unsigned NOT NULL DEFAULT '0',
-  `resShadow` int unsigned NOT NULL DEFAULT '0',
-  `resArcane` int unsigned NOT NULL DEFAULT '0',
-  `blockPct` float unsigned NOT NULL DEFAULT '0',
-  `dodgePct` float unsigned NOT NULL DEFAULT '0',
-  `parryPct` float unsigned NOT NULL DEFAULT '0',
-  `critPct` float unsigned NOT NULL DEFAULT '0',
-  `attackPower` int unsigned NOT NULL DEFAULT '0',
-  `spellPower` int unsigned NOT NULL DEFAULT '0',
-  `spellPen` int unsigned NOT NULL DEFAULT '0',
-  `hastePct` float unsigned NOT NULL DEFAULT '0',
-  `hitBonusPct` float unsigned NOT NULL DEFAULT '0',
-  `expertise` int unsigned NOT NULL DEFAULT '0',
-  `armorPenPct` float unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
-CREATE TABLE IF NOT EXISTS `characters_npcbot_transmog` (
-  `entry` int unsigned NOT NULL,
-  `slot` tinyint unsigned NOT NULL,
-  `item_id` int unsigned NOT NULL DEFAULT '0',
-  `fake_id` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`entry`,`slot`),
-  CONSTRAINT `bot_id` FOREIGN KEY (`entry`) REFERENCES `characters_npcbot` (`entry`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
-
 CREATE TABLE IF NOT EXISTS `corpse` (
   `guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Character Global Unique Identifier',
   `posX` float NOT NULL DEFAULT '0',
@@ -821,18 +744,6 @@ CREATE TABLE IF NOT EXISTS `dc_account_outfits` (
   PRIMARY KEY (`account_id`,`outfit_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account-wide saved outfits';
 
-CREATE TABLE IF NOT EXISTS `dc_achievement_definitions` (
-  `achievement_id` int unsigned NOT NULL,
-  `name` varchar(100) NOT NULL,
-  `description` varchar(255) NOT NULL,
-  `reward_mastery_points` int unsigned NOT NULL DEFAULT '0',
-  `reward_tokens` int unsigned NOT NULL DEFAULT '0',
-  `is_hidden` tinyint(1) NOT NULL DEFAULT '0',
-  `unlock_requirement` int unsigned NOT NULL DEFAULT '0',
-  `unlock_type` varchar(50) NOT NULL,
-  PRIMARY KEY (`achievement_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Achievement definitions';
-
 CREATE TABLE IF NOT EXISTS `dc_addon_client_caps` (
   `account_id` int unsigned NOT NULL,
   `addon_name` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DC',
@@ -845,20 +756,6 @@ CREATE TABLE IF NOT EXISTS `dc_addon_client_caps` (
   PRIMARY KEY (`account_id`,`addon_name`),
   KEY `idx_last_seen` (`last_seen`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Addon client capabilities per account';
-
-CREATE TABLE IF NOT EXISTS `dc_addon_protocol_daily` (
-  `date` date NOT NULL,
-  `module` varchar(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `total_c2s` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total client-to-server messages',
-  `total_s2c` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total server-to-client messages',
-  `unique_players` int unsigned NOT NULL DEFAULT '0' COMMENT 'Distinct player count',
-  `error_count` int unsigned NOT NULL DEFAULT '0',
-  `avg_response_time_ms` float DEFAULT '0',
-  `peak_hour` tinyint unsigned DEFAULT NULL COMMENT 'Hour with most traffic (0-23)',
-  PRIMARY KEY (`date`,`module`),
-  KEY `idx_date` (`date`),
-  KEY `idx_module` (`module`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Daily aggregated statistics for trend analysis';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -879,7 +776,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_errors` (
   KEY `idx_account` (`account_id`),
   KEY `idx_module` (`module`),
   KEY `idx_event_type` (`event_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=261 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=758 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Discrete addon protocol error/timeout events (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
@@ -904,7 +801,7 @@ CREATE TABLE IF NOT EXISTS `dc_addon_protocol_log` (
   KEY `idx_direction_module` (`direction`,`module`),
   KEY `idx_status` (`status`),
   KEY `idx_request_type` (`request_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=100398 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
+) ENGINE=InnoDB AUTO_INCREMENT=553897 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Detailed log of all addon protocol messages (debugging)';
 
 CREATE TABLE IF NOT EXISTS `dc_addon_protocol_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -989,40 +886,51 @@ CREATE TABLE IF NOT EXISTS `dc_artifact_mastery_events` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Historical log of artifact mastery events';
 
 CREATE TABLE IF NOT EXISTS `dc_character_challenge_mode_log` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `character_guid` int unsigned NOT NULL,
-  `dungeon_id` int unsigned NOT NULL,
-  `difficulty` tinyint unsigned NOT NULL DEFAULT '0',
-  `completion_time` int unsigned NOT NULL DEFAULT '0' COMMENT 'In seconds',
-  `deaths` int unsigned NOT NULL DEFAULT '0',
-  `party_size` tinyint unsigned NOT NULL DEFAULT '1',
-  `success` tinyint(1) NOT NULL DEFAULT '0',
-  `score` int unsigned NOT NULL DEFAULT '0',
-  `completed_at` bigint unsigned NOT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry ID',
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
+  `event_type` enum('ACTIVATE','DEACTIVATE','DEATH','LOCK','UNLOCK','MODIFY') NOT NULL COMMENT 'Type of event',
+  `modes_before` int unsigned DEFAULT NULL COMMENT 'Active modes before this event (bitwise flags)',
+  `modes_after` int unsigned DEFAULT NULL COMMENT 'Active modes after this event (bitwise flags)',
+  `event_details` text COMMENT 'Detailed description of the event',
+  `character_level` tinyint unsigned DEFAULT NULL COMMENT 'Character level at time of event',
+  `map_id` smallint unsigned DEFAULT NULL COMMENT 'Map ID where event occurred',
+  `zone_id` smallint unsigned DEFAULT NULL COMMENT 'Zone ID where event occurred',
+  `position_x` float DEFAULT NULL COMMENT 'X coordinate',
+  `position_y` float DEFAULT NULL COMMENT 'Y coordinate',
+  `position_z` float DEFAULT NULL COMMENT 'Z coordinate',
+  `killer_entry` int unsigned DEFAULT NULL COMMENT 'Creature entry that killed player (for DEATH events)',
+  `killer_name` varchar(100) DEFAULT NULL COMMENT 'Name of killer (for DEATH events)',
+  `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When this event occurred',
   PRIMARY KEY (`id`),
-  KEY `idx_character_dungeon` (`character_guid`,`dungeon_id`),
-  KEY `idx_dungeon_difficulty` (`dungeon_id`,`difficulty`),
-  KEY `idx_completed_at` (`completed_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Challenge mode run history log';
+  KEY `idx_guid` (`guid`),
+  KEY `idx_event_type` (`event_type`),
+  KEY `idx_timestamp` (`timestamp`),
+  KEY `idx_guid_event` (`guid`,`event_type`),
+  KEY `idx_deaths` (`guid`,`event_type`,`timestamp`)
+) ENGINE=InnoDB AUTO_INCREMENT=29435 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Complete history of challenge mode events per character';
 
 CREATE TABLE IF NOT EXISTS `dc_character_challenge_mode_stats` (
-  `character_guid` int unsigned NOT NULL,
-  `dungeon_id` int unsigned NOT NULL,
-  `total_runs` int unsigned NOT NULL DEFAULT '0',
-  `successful_runs` int unsigned NOT NULL DEFAULT '0',
-  `failed_runs` int unsigned NOT NULL DEFAULT '0',
-  `best_time` int unsigned DEFAULT NULL COMMENT 'In seconds',
-  `best_score` int unsigned DEFAULT NULL,
-  `highest_difficulty` tinyint unsigned NOT NULL DEFAULT '0',
-  `total_deaths` int unsigned NOT NULL DEFAULT '0',
-  `last_run_at` bigint unsigned DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`character_guid`,`dungeon_id`),
-  KEY `idx_character_guid` (`character_guid`),
-  KEY `idx_best_time` (`dungeon_id`,`best_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Challenge mode statistics per character per dungeon';
+  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
+  `mode_id` tinyint unsigned NOT NULL COMMENT 'Challenge mode ID (1-8)',
+  `mode_name` varchar(50) NOT NULL COMMENT 'Challenge mode name for reference',
+  `times_activated` int unsigned NOT NULL DEFAULT '0' COMMENT 'Times this specific mode was activated',
+  `total_playtime_seconds` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Total playtime with this mode active',
+  `max_level_reached` tinyint unsigned NOT NULL DEFAULT '1' COMMENT 'Maximum level reached with this mode',
+  `total_deaths` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total deaths while mode was active',
+  `total_kills` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total creature kills with mode active',
+  `dungeons_completed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Dungeons completed with mode active',
+  `quests_completed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Quests completed with mode active',
+  `pvp_kills` int unsigned NOT NULL DEFAULT '0' COMMENT 'PvP kills with mode active',
+  `first_activated` timestamp NULL DEFAULT NULL COMMENT 'First time this mode was activated',
+  `last_activated` timestamp NULL DEFAULT NULL COMMENT 'Most recent activation',
+  `last_deactivated` timestamp NULL DEFAULT NULL COMMENT 'Most recent deactivation',
+  `achievements_earned` int unsigned NOT NULL DEFAULT '0' COMMENT 'Achievements earned while mode was active',
+  `currently_active` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '1 if currently active, 0 otherwise',
+  PRIMARY KEY (`guid`,`mode_id`),
+  KEY `idx_mode_active` (`mode_id`,`currently_active`),
+  KEY `idx_max_level` (`mode_id`,`max_level_reached`),
+  KEY `idx_playtime` (`mode_id`,`total_playtime_seconds`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Challenge mode statistics per character per mode';
 
 CREATE TABLE IF NOT EXISTS `dc_character_challenge_modes` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1057,19 +965,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_difficulty_completions` (
   KEY `idx_best_time` (`best_time_seconds`),
   CONSTRAINT `fk_diff_comp_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='v4.0 - Track per-difficulty dungeon completions for each player';
-
-CREATE TABLE IF NOT EXISTS `dc_character_difficulty_streaks` (
-  `guid` int unsigned NOT NULL COMMENT 'Character GUID from characters table',
-  `difficulty` enum('Normal','Heroic','Mythic','Mythic+') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `current_streak` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Current consecutive completions',
-  `longest_streak` smallint unsigned NOT NULL DEFAULT '0' COMMENT 'Longest streak ever achieved',
-  `last_completion_date` timestamp NULL DEFAULT NULL,
-  `streak_start_date` timestamp NULL DEFAULT NULL,
-  PRIMARY KEY (`guid`,`difficulty`),
-  KEY `idx_current_streak` (`current_streak`),
-  KEY `idx_longest_streak` (`longest_streak`),
-  CONSTRAINT `fk_diff_streak_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='v4.0 - Track consecutive completion streaks per difficulty';
 
 CREATE TABLE IF NOT EXISTS `dc_character_dungeon_npc_respawn` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1150,14 +1045,25 @@ CREATE TABLE IF NOT EXISTS `dc_character_dungeon_statistics` (
   CONSTRAINT `fk_stat_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Overall statistics for dungeon quest achievements';
 
-CREATE TABLE IF NOT EXISTS `dc_character_outfits` (
-  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
-  `outfit_id` tinyint unsigned NOT NULL COMMENT 'Outfit Slot ID (0-N)',
-  `name` varchar(50) NOT NULL DEFAULT 'New Outfit',
-  `icon` varchar(100) NOT NULL DEFAULT 'Interface\\Icons\\INV_Misc_QuestionMark',
-  `items` text COMMENT 'JSON string of slot->appearance',
-  PRIMARY KEY (`guid`,`outfit_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Player saved outfits for Wardrobe';
+CREATE TABLE IF NOT EXISTS `dc_character_layer_assignment` (
+  `guid` bigint unsigned NOT NULL,
+  `map_id` int unsigned NOT NULL,
+  `zone_id` int unsigned NOT NULL,
+  `layer_id` int unsigned NOT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`guid`),
+  KEY `idx_map_zone_layer` (`map_id`,`zone_id`,`layer_id`),
+  KEY `idx_updated_at` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dc_character_partition_ownership` (
+  `guid` bigint unsigned NOT NULL,
+  `map_id` smallint unsigned NOT NULL,
+  `partition_id` smallint unsigned NOT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`guid`,`map_id`),
+  KEY `idx_map_partition` (`map_id`,`partition_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_character_prestige` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -1180,13 +1086,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_prestige_log` (
   KEY `idx_prestige_time` (`prestige_time`)
 ) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Prestige history log for all characters';
 
-CREATE TABLE IF NOT EXISTS `dc_character_prestige_stats` (
-  `prestige_level` tinyint unsigned NOT NULL,
-  `total_players` int unsigned NOT NULL DEFAULT '0',
-  `last_updated` int unsigned NOT NULL,
-  PRIMARY KEY (`prestige_level`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos: Statistics for prestige levels';
-
 CREATE TABLE IF NOT EXISTS `dc_character_transmog` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID (low)',
   `slot` tinyint unsigned NOT NULL COMMENT 'Equipment slot (0-18)',
@@ -1195,15 +1094,6 @@ CREATE TABLE IF NOT EXISTS `dc_character_transmog` (
   PRIMARY KEY (`guid`,`slot`),
   KEY `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Applied transmog per character';
-
-CREATE TABLE IF NOT EXISTS `dc_collection_achievements` (
-  `account_id` int unsigned NOT NULL,
-  `achievement_id` int unsigned NOT NULL COMMENT 'Custom achievement ID',
-  `completed_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `completed_by` int unsigned NOT NULL COMMENT 'Character GUID',
-  `reward_claimed` tinyint(1) NOT NULL DEFAULT '0',
-  PRIMARY KEY (`account_id`,`achievement_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection achievements';
 
 CREATE TABLE IF NOT EXISTS `dc_collection_community_favorites` (
   `account_id` int unsigned NOT NULL,
@@ -1232,17 +1122,6 @@ CREATE TABLE IF NOT EXISTS `dc_collection_community_outfits` (
   KEY `idx_author_account_id` (`author_account_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS `dc_collection_currency` (
-  `account_id` int unsigned NOT NULL,
-  `tokens` int unsigned NOT NULL DEFAULT '0' COMMENT 'Collection Tokens',
-  `emblems` int unsigned NOT NULL DEFAULT '0' COMMENT 'Collectors Emblems (rare)',
-  `lifetime_tokens` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total tokens ever earned',
-  `lifetime_emblems` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total emblems ever earned',
-  `last_daily_reward` date DEFAULT NULL COMMENT 'Last daily token claim',
-  `last_updated` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`account_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection currency per account';
-
 CREATE TABLE IF NOT EXISTS `dc_collection_items` (
   `account_id` int unsigned NOT NULL,
   `collection_type` tinyint unsigned NOT NULL COMMENT '1=mount,2=pet,3=toy,4=heirloom,5=title,6=transmog',
@@ -1268,14 +1147,6 @@ CREATE TABLE IF NOT EXISTS `dc_collection_migrations` (
   PRIMARY KEY (`account_id`,`migration_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='One-time account migrations for DC-Collection';
 
-CREATE TABLE IF NOT EXISTS `dc_collection_mount_speed` (
-  `account_id` int unsigned NOT NULL,
-  `enhancement_level` tinyint unsigned NOT NULL COMMENT '1-4',
-  `learned_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `learned_by` int unsigned NOT NULL COMMENT 'Character GUID',
-  PRIMARY KEY (`account_id`,`enhancement_level`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Mount speed enhancements learned';
-
 CREATE TABLE IF NOT EXISTS `dc_collection_shop_purchases` (
   `purchase_id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `account_id` int unsigned NOT NULL,
@@ -1292,20 +1163,6 @@ CREATE TABLE IF NOT EXISTS `dc_collection_shop_purchases` (
   KEY `idx_date` (`purchase_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Shop purchase history';
 
-CREATE TABLE IF NOT EXISTS `dc_collection_stats` (
-  `account_id` int unsigned NOT NULL,
-  `mount_count` int unsigned NOT NULL DEFAULT '0',
-  `pet_count` int unsigned NOT NULL DEFAULT '0',
-  `toy_count` int unsigned NOT NULL DEFAULT '0',
-  `heirloom_count` int unsigned NOT NULL DEFAULT '0',
-  `transmog_count` int unsigned NOT NULL DEFAULT '0',
-  `title_count` int unsigned NOT NULL DEFAULT '0',
-  `total_count` int unsigned NOT NULL DEFAULT '0',
-  `mount_speed_bonus` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Current speed bonus %',
-  `last_updated` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`account_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection statistics cache';
-
 CREATE TABLE IF NOT EXISTS `dc_collection_wishlist` (
   `account_id` int unsigned NOT NULL COMMENT 'Account ID',
   `collection_type` enum('mount','pet','toy','transmog','title','heirloom') NOT NULL,
@@ -1315,22 +1172,6 @@ CREATE TABLE IF NOT EXISTS `dc_collection_wishlist` (
   `notes` varchar(255) DEFAULT NULL COMMENT 'User notes',
   PRIMARY KEY (`account_id`,`collection_type`,`item_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Collection wishlist';
-
-CREATE TABLE IF NOT EXISTS `dc_cross_system_achievement_triggers` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `achievement_id` int unsigned NOT NULL COMMENT 'Custom achievement ID to grant',
-  `trigger_type` enum('total_stat','single_run','threshold','combination') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `stat_key` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Stat key from dc_player_cross_system_stats',
-  `threshold_value` bigint unsigned NOT NULL DEFAULT '0',
-  `additional_conditions` json DEFAULT NULL COMMENT 'Additional conditions in JSON',
-  `title_reward_id` int unsigned DEFAULT NULL COMMENT 'Title to grant, if any',
-  `enabled` tinyint(1) NOT NULL DEFAULT '1',
-  `description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_achievement` (`achievement_id`),
-  KEY `idx_enabled` (`enabled`),
-  KEY `idx_stat_key` (`stat_key`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cross-system achievement trigger definitions';
 
 DELIMITER //
 CREATE EVENT `dc_cross_system_cleanup` ON SCHEDULE EVERY 1 DAY STARTS '2025-12-04 13:09:05' ON COMPLETION NOT PRESERVE ENABLE DO BEGIN
@@ -1362,7 +1203,7 @@ CREATE TABLE IF NOT EXISTS `dc_cross_system_config` (
 CREATE TABLE IF NOT EXISTS `dc_cross_system_events` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `event_type` tinyint unsigned NOT NULL COMMENT '0=DUNGEON_START, 1=DUNGEON_END, 2=BOSS_KILL, etc.',
-  `source_system` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'System that generated the event',
+  `source_system` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'System that generated the event',
   `player_guid` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player GUID if applicable',
   `event_data` json DEFAULT NULL COMMENT 'Event-specific JSON data',
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1372,53 +1213,6 @@ CREATE TABLE IF NOT EXISTS `dc_cross_system_events` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_timestamp` (`timestamp`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cross-system event log for debugging and analytics';
-
-CREATE TABLE IF NOT EXISTS `dc_cross_system_multipliers` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `target_type` enum('global','player','account','guild') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'global',
-  `target_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player/Account/Guild GUID or 0 for global',
-  `source_system` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Specific system or NULL for all systems',
-  `reward_type` tinyint unsigned DEFAULT NULL COMMENT 'Specific reward type or NULL for all',
-  `multiplier` decimal(5,3) NOT NULL DEFAULT '1.000',
-  `reason` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Why this override exists',
-  `expires_at` timestamp NULL DEFAULT NULL COMMENT 'When this override expires, NULL = permanent',
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_target` (`target_type`,`target_id`),
-  KEY `idx_expires` (`expires_at`),
-  KEY `idx_system` (`source_system`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-player or per-system multiplier overrides';
-
-CREATE TABLE IF NOT EXISTS `dc_duel_class_matchups` (
-  `winner_class` tinyint unsigned NOT NULL,
-  `loser_class` tinyint unsigned NOT NULL,
-  `total_matches` int unsigned NOT NULL DEFAULT '0',
-  `avg_duration_seconds` float NOT NULL DEFAULT '0',
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`winner_class`,`loser_class`),
-  KEY `idx_matchups` (`winner_class`,`loser_class`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos Phased Dueling - Class Matchup Stats';
-
-CREATE TABLE IF NOT EXISTS `dc_duel_history` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `winner_guid` int unsigned NOT NULL,
-  `loser_guid` int unsigned NOT NULL,
-  `winner_class` tinyint unsigned NOT NULL,
-  `loser_class` tinyint unsigned NOT NULL,
-  `winner_spec` tinyint unsigned NOT NULL DEFAULT '0',
-  `loser_spec` tinyint unsigned NOT NULL DEFAULT '0',
-  `duration_seconds` int unsigned NOT NULL DEFAULT '0',
-  `winner_damage_dealt` int unsigned NOT NULL DEFAULT '0',
-  `loser_damage_dealt` int unsigned NOT NULL DEFAULT '0',
-  `duel_type` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Normal, 1=Tournament, 2=Rated',
-  `zone_id` int unsigned NOT NULL DEFAULT '0',
-  `area_id` int unsigned NOT NULL DEFAULT '0',
-  `duel_time` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_winner` (`winner_guid`,`duel_time` DESC),
-  KEY `idx_loser` (`loser_guid`,`duel_time` DESC),
-  KEY `idx_time` (`duel_time` DESC)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos Phased Dueling - Match History';
 
 CREATE TABLE IF NOT EXISTS `dc_duel_statistics` (
   `player_guid` int unsigned NOT NULL,
@@ -1437,20 +1231,6 @@ CREATE TABLE IF NOT EXISTS `dc_duel_statistics` (
   KEY `idx_wins` (`wins` DESC),
   KEY `idx_last_duel` (`last_duel_time` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos Phased Dueling - Player Statistics';
-
-CREATE TABLE IF NOT EXISTS `dc_dungeon_instance_resets` (
-  `reset_id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `guid` int unsigned NOT NULL COMMENT 'Character GUID',
-  `dungeon_id` int unsigned NOT NULL COMMENT 'Dungeon ID',
-  `reset_type` enum('DAILY','WEEKLY') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `reset_date` date NOT NULL,
-  `reset_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`reset_id`),
-  UNIQUE KEY `uk_guid_dungeon_date` (`guid`,`dungeon_id`,`reset_date`,`reset_type`),
-  KEY `idx_dungeon_id` (`dungeon_id`),
-  KEY `idx_reset_date` (`reset_date`),
-  CONSTRAINT `fk_reset_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Track reset dates for daily/weekly quests';
 
 CREATE TABLE IF NOT EXISTS `dc_group_finder_applications` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -1512,7 +1292,8 @@ CREATE TABLE IF NOT EXISTS `dc_group_finder_listings` (
   PRIMARY KEY (`id`),
   KEY `idx_leader` (`leader_guid`),
   KEY `idx_status_type` (`status`,`listing_type`),
-  KEY `idx_dungeon` (`dungeon_id`,`keystone_level`)
+  KEY `idx_dungeon` (`dungeon_id`,`keystone_level`),
+  KEY `idx_active_type` (`status`,`listing_type`)
 ) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_group_finder_rewards` (
@@ -1564,9 +1345,10 @@ CREATE TABLE IF NOT EXISTS `dc_guild_house` (
   `positionY` float NOT NULL DEFAULT '0',
   `positionZ` float NOT NULL DEFAULT '0',
   `orientation` float NOT NULL DEFAULT '0',
+  `guildhouse_level` tinyint unsigned NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `guild` (`guild`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb3;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb3;
 
 CREATE TABLE IF NOT EXISTS `dc_guild_house_log` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -1611,7 +1393,7 @@ CREATE TABLE IF NOT EXISTS `dc_guild_house_purchase_log` (
   KEY `idx_guild_time` (`guild_id`,`created_at`),
   KEY `idx_player_time` (`player_guid`,`created_at`),
   KEY `idx_entry_time` (`entry`,`created_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=153 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=155 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `dc_guild_leaderboard` (
 	`guildid` INT UNSIGNED NOT NULL,
@@ -1652,60 +1434,24 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_collection` (
   KEY `idx_obtained_by` (`obtained_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account heirloom collection';
 
-CREATE TABLE IF NOT EXISTS `dc_heirloom_package_history` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID',
-  `player_guid` int unsigned NOT NULL COMMENT 'Character GUID',
-  `old_package_id` tinyint unsigned NOT NULL COMMENT 'Previous package ID',
-  `old_package_level` tinyint unsigned NOT NULL COMMENT 'Previous package level',
-  `new_package_id` tinyint unsigned NOT NULL COMMENT 'New package ID',
-  `new_package_level` tinyint unsigned NOT NULL DEFAULT '1' COMMENT 'New package level (usually 1)',
-  `essence_refunded` int unsigned NOT NULL DEFAULT '0' COMMENT 'Essence refunded (50% of invested)',
-  `respec_cost` int unsigned NOT NULL DEFAULT '0' COMMENT 'Gold cost for respec (if any)',
-  `reason` varchar(64) DEFAULT NULL COMMENT 'Optional reason (manual, spec_change, etc.)',
-  `timestamp` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_player` (`player_guid`),
-  KEY `idx_item` (`item_guid`),
-  KEY `idx_timestamp` (`timestamp`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='History of package changes for analytics';
-
-CREATE TABLE IF NOT EXISTS `dc_heirloom_player_packages` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID from item_instance',
-  `player_guid` int unsigned NOT NULL COMMENT 'Character GUID',
-  `item_entry` int unsigned NOT NULL COMMENT 'Item template entry (e.g., 300365)',
-  `package_id` tinyint unsigned NOT NULL COMMENT 'Chosen package (1-12, FK to dc_heirloom_stat_packages)',
-  `package_level` tinyint unsigned NOT NULL DEFAULT '1' COMMENT 'Current upgrade level (1-15)',
-  `essence_invested` int unsigned NOT NULL DEFAULT '50' COMMENT 'Total essence spent on this package',
-  `times_respec` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Number of times player changed packages',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `unique_item` (`item_guid`) COMMENT 'One package per item instance',
-  KEY `idx_player` (`player_guid`),
-  KEY `idx_package` (`package_id`),
-  KEY `idx_entry` (`item_entry`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Player heirloom stat package selections and progress';
-
 CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrade_log` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `player_guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID',
-  `item_entry` int unsigned NOT NULL COMMENT 'Item template entry',
+  `item_entry` int unsigned NOT NULL DEFAULT '0',
   `from_level` tinyint unsigned NOT NULL COMMENT 'Previous level',
   `to_level` tinyint unsigned NOT NULL COMMENT 'New level',
   `from_package` tinyint unsigned NOT NULL DEFAULT '0' COMMENT 'Previous package ID',
   `to_package` tinyint unsigned NOT NULL COMMENT 'New package ID',
-  `enchant_id` int unsigned NOT NULL COMMENT 'Applied enchantment ID',
+  `enchant_id` int unsigned NOT NULL DEFAULT '0',
   `token_cost` int unsigned NOT NULL DEFAULT '0' COMMENT 'Tokens spent for this upgrade',
   `essence_cost` int unsigned NOT NULL DEFAULT '0' COMMENT 'Essence spent for this upgrade',
-  `timestamp` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `timestamp` bigint unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_item` (`item_guid`),
   KEY `idx_timestamp` (`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=48 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom upgrade transaction log';
+) ENGINE=InnoDB AUTO_INCREMENT=57 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Heirloom upgrade transaction log';
 
 CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   `item_guid` int unsigned NOT NULL COMMENT 'Item instance GUID from item_instance',
@@ -1716,8 +1462,8 @@ CREATE TABLE IF NOT EXISTS `dc_heirloom_upgrades` (
   `enchant_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Applied SpellItemEnchantment.dbc ID',
   `essence_invested` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total essence spent',
   `tokens_invested` int unsigned NOT NULL DEFAULT '0' COMMENT 'Total tokens spent',
-  `first_upgraded_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When first upgraded',
-  `last_upgraded_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'When last upgraded',
+  `first_upgraded_at` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp when first upgraded (64-bit)',
+  `last_upgraded_at` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Unix timestamp when last upgraded (64-bit)',
   PRIMARY KEY (`item_guid`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_package` (`package_id`),
@@ -1747,24 +1493,21 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_match_participants` (
   `team` tinyint NOT NULL COMMENT 'Team number (1=Horde, 2=Alliance)',
   `season_id` int unsigned NOT NULL DEFAULT '1' COMMENT 'Season when match occurred',
   `match_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When match was played',
-  `kills` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player kills in match',
-  `deaths` int unsigned NOT NULL DEFAULT '0' COMMENT 'Player deaths in match',
-  `healing_done` int unsigned NOT NULL DEFAULT '0' COMMENT 'Healing dealt to allies',
-  `damage_done` int unsigned NOT NULL DEFAULT '0' COMMENT 'Damage done to enemies',
-  `resources_captured` int unsigned NOT NULL DEFAULT '0' COMMENT 'Resources collected (flags/resources)',
-  `flags_returned` int unsigned NOT NULL DEFAULT '0' COMMENT 'For CTF-style: flags returned',
-  `objectives_completed` int unsigned NOT NULL DEFAULT '0' COMMENT 'Any objective-based points',
-  `rating_change` int NOT NULL DEFAULT '0' COMMENT 'Positive or negative rating change',
+  `kills` int unsigned NOT NULL DEFAULT '0',
+  `deaths` int unsigned NOT NULL DEFAULT '0',
+  `healing_done` int unsigned NOT NULL DEFAULT '0',
+  `damage_done` int unsigned NOT NULL DEFAULT '0',
+  `resources_captured` int unsigned NOT NULL DEFAULT '0',
+  `flags_returned` int unsigned NOT NULL DEFAULT '0',
+  `objectives_completed` int unsigned NOT NULL DEFAULT '0',
+  `rating_change` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   KEY `idx_guid` (`guid`),
   KEY `idx_match_id` (`match_id`),
   KEY `idx_account` (`account_id`),
   KEY `idx_season` (`season_id`),
-  KEY `idx_date` (`match_date`),
-  KEY `idx_participant_season_guid` (`season_id`,`guid`),
-  KEY `idx_participant_team_date` (`team`,`match_date`),
-  KEY `idx_participant_match_guid` (`match_id`,`guid`)
-) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks individual player statistics for each HLBG match';
+  KEY `idx_date` (`match_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tracks individual player statistics for each HLBG match';
 
 CREATE TABLE IF NOT EXISTS `dc_hlbg_player_history` (
   `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
@@ -1863,7 +1606,7 @@ CREATE TABLE IF NOT EXISTS `dc_hlbg_winner_history` (
   KEY `idx_weather` (`weather`) COMMENT 'Weather statistics queries',
   KEY `idx_win_reason` (`win_reason`) COMMENT 'Win condition analysis',
   KEY `idx_season_occurred` (`season`,`occurred_at`) COMMENT 'Composite index for season history'
-) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Battle History - Primary table for all battle results';
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='HLBG Battle History - Primary table for all battle results';
 
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `tier_id` tinyint unsigned NOT NULL COMMENT 'Item tier (1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary)',
@@ -1879,18 +1622,6 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_costs` (
   `last_modified` int unsigned DEFAULT NULL COMMENT 'Last modification timestamp',
   PRIMARY KEY (`tier_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Item upgrade cost configuration per tier';
-
-CREATE TABLE IF NOT EXISTS `dc_item_upgrade_currency_exchange_log` (
-  `log_id` int unsigned NOT NULL AUTO_INCREMENT,
-  `player_guid` int unsigned NOT NULL,
-  `exchange_type` enum('tokens_to_essence','essence_to_tokens') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `amount` int unsigned NOT NULL,
-  `exchange_rate` decimal(5,2) NOT NULL,
-  `exchange_time` int unsigned NOT NULL,
-  PRIMARY KEY (`log_id`),
-  KEY `idx_player_guid` (`player_guid`),
-  KEY `idx_exchange_time` (`exchange_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_log` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry ID',
@@ -1920,24 +1651,24 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrade_log` (
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_missing_items` (
   `log_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry ID',
   `player_guid` int unsigned NOT NULL COMMENT 'Player who triggered the query',
-  `player_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Player name for easy reference',
+  `player_name` varchar(50) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Player name for easy reference',
   `item_id` int unsigned NOT NULL COMMENT 'Item template ID that failed',
   `item_guid` int unsigned DEFAULT NULL COMMENT 'Item instance GUID if available',
-  `item_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Item name if template exists',
-  `error_type` enum('ITEM_NOT_FOUND','TEMPLATE_MISSING','TIER_INVALID','CLONE_MISSING','SLOT_INVALID','OTHER') CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'Type of failure',
-  `error_detail` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Additional error details',
+  `item_name` varchar(255) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Item name if template exists',
+  `error_type` enum('ITEM_NOT_FOUND','TEMPLATE_MISSING','TIER_INVALID','CLONE_MISSING','SLOT_INVALID','OTHER') COLLATE utf8mb4_general_ci NOT NULL COMMENT 'Type of failure',
+  `error_detail` varchar(512) COLLATE utf8mb4_general_ci DEFAULT NULL COMMENT 'Additional error details',
   `bag_slot` tinyint unsigned DEFAULT NULL COMMENT 'Bag slot requested',
   `item_slot` tinyint unsigned DEFAULT NULL COMMENT 'Item slot requested',
   `timestamp` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When error occurred',
   `resolved` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether issue has been resolved',
-  `resolution_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci COMMENT 'Notes on how issue was fixed',
+  `resolution_notes` text COLLATE utf8mb4_general_ci COMMENT 'Notes on how issue was fixed',
   PRIMARY KEY (`log_id`),
   KEY `idx_item_id` (`item_id`),
   KEY `idx_error_type` (`error_type`),
   KEY `idx_timestamp` (`timestamp`),
   KEY `idx_player` (`player_guid`),
   KEY `idx_unresolved` (`resolved`,`timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=914 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Log of items that failed upgrade queries for analysis';
 
 CREATE TABLE `dc_item_upgrade_missing_items_summary` (
 	`item_id` INT UNSIGNED NOT NULL COMMENT 'Item template ID that failed',
@@ -1948,16 +1679,6 @@ CREATE TABLE `dc_item_upgrade_missing_items_summary` (
 	`first_occurrence` DATETIME NULL COMMENT 'When error occurred',
 	`affected_players` TEXT NULL COLLATE 'utf8mb4_general_ci'
 );
-
-CREATE TABLE IF NOT EXISTS `dc_item_upgrade_stat_scaling` (
-  `scaling_id` tinyint unsigned NOT NULL COMMENT 'Unique scaling configuration ID',
-  `base_multiplier_per_level` float DEFAULT '0.025' COMMENT 'Base stat multiplier per level (2.5% = 0.025)',
-  `min_upgrade_level` tinyint unsigned DEFAULT '0' COMMENT 'Minimum level for scaling',
-  `max_upgrade_level` tinyint unsigned DEFAULT '15' COMMENT 'Maximum level for scaling',
-  `enabled` tinyint(1) DEFAULT '1' COMMENT 'Enable/disable scaling',
-  `last_modified` int unsigned DEFAULT NULL COMMENT 'Last modification timestamp',
-  PRIMARY KEY (`scaling_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='DarkChaos: Item upgrade stat scaling configuration';
 
 CREATE TABLE IF NOT EXISTS `dc_item_upgrade_state` (
   `item_guid` int unsigned NOT NULL COMMENT 'From item_instance.guid',
@@ -2032,7 +1753,20 @@ CREATE TABLE IF NOT EXISTS `dc_item_upgrades` (
   KEY `k_season` (`season`),
   KEY `k_last_upgraded` (`last_upgraded_at`),
   KEY `idx_tier` (`tier_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=45 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade state tracking - stores player item upgrade progress and history';
+) ENGINE=InnoDB AUTO_INCREMENT=48 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item upgrade state tracking - stores player item upgrade progress and history';
+
+DELIMITER //
+CREATE EVENT `dc_layer_assignment_cleanup` ON SCHEDULE EVERY 1 HOUR STARTS '2026-02-06 21:10:38' ON COMPLETION NOT PRESERVE ENABLE DO BEGIN
+    -- Remove stale assignments older than 24 hours
+    DELETE FROM `dc_character_layer_assignment`
+    WHERE `updated_at` < DATE_SUB(NOW(), INTERVAL 24 HOUR);
+
+    -- Remove orphaned GUIDs that no longer exist in the characters table
+    DELETE a FROM `dc_character_layer_assignment` a
+    LEFT JOIN `characters` c ON a.`guid` = c.`guid`
+    WHERE c.`guid` IS NULL;
+END//
+DELIMITER ;
 
 CREATE TABLE IF NOT EXISTS `dc_leaderboard_cache` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -2051,19 +1785,6 @@ CREATE TABLE IF NOT EXISTS `dc_leaderboard_cache` (
   KEY `idx_entity` (`entity_guid`,`entity_type`),
   KEY `idx_expires` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Cached leaderboard rankings for fast retrieval';
-
-CREATE TABLE IF NOT EXISTS `dc_migration_auth_unlocks` (
-  `account_id` int unsigned NOT NULL,
-  `displayid` int unsigned NOT NULL,
-  PRIMARY KEY (`account_id`,`displayid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Migration staging: auth unlocks (account_id -> displayid)';
-
-CREATE TABLE IF NOT EXISTS `dc_migration_item_display` (
-  `entry` mediumint unsigned NOT NULL,
-  `displayid` int unsigned NOT NULL,
-  PRIMARY KEY (`entry`),
-  KEY `idx_displayid` (`displayid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Migration helper: item_template entry -> displayid';
 
 CREATE TABLE IF NOT EXISTS `dc_mount_collection` (
   `account_id` int unsigned NOT NULL COMMENT 'Account ID',
@@ -2157,7 +1878,9 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_runs` (
   KEY `idx_player_season` (`character_guid`,`season_id`,`completed_at` DESC),
   KEY `idx_vault_eligibility` (`character_guid`,`season_id`,`success`,`completed_at`),
   KEY `idx_map_level` (`map_id`,`keystone_level`),
-  KEY `idx_completion` (`completed_at`)
+  KEY `idx_completion` (`completed_at`),
+  KEY `idx_map_completed` (`map_id`,`completed_at`),
+  KEY `idx_season_map` (`season_id`,`map_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete Mythic+ run history for vault and statistics';
 
 CREATE TABLE IF NOT EXISTS `dc_mplus_scores` (
@@ -2174,30 +1897,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_scores` (
   KEY `idx_season_score` (`season_id`,`best_score` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-dungeon Mythic+ scores and best clears';
 
-CREATE TABLE IF NOT EXISTS `dc_mplus_spec_invites` (
-  `code` varchar(8) NOT NULL,
-  `instance_id` int unsigned NOT NULL,
-  `created_by` int unsigned NOT NULL,
-  `created_at` bigint unsigned NOT NULL,
-  `expires_at` bigint unsigned NOT NULL,
-  `max_uses` int unsigned NOT NULL DEFAULT '10',
-  `use_count` int unsigned NOT NULL DEFAULT '0',
-  PRIMARY KEY (`code`),
-  KEY `idx_instance` (`instance_id`),
-  KEY `idx_expires` (`expires_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Invite Links';
-
-CREATE TABLE IF NOT EXISTS `dc_mplus_spec_popularity` (
-  `map_id` int unsigned NOT NULL,
-  `keystone_level` tinyint unsigned NOT NULL,
-  `total_spectators` int unsigned NOT NULL DEFAULT '0',
-  `total_watch_time` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'In seconds',
-  `last_spectated` timestamp NULL DEFAULT NULL,
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`map_id`,`keystone_level`),
-  KEY `idx_popularity` (`total_spectators` DESC)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Popularity Stats';
-
 CREATE TABLE IF NOT EXISTS `dc_mplus_spec_replays` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `map_id` int unsigned NOT NULL,
@@ -2213,32 +1912,6 @@ CREATE TABLE IF NOT EXISTS `dc_mplus_spec_replays` (
   KEY `idx_start_time` (`start_time` DESC),
   KEY `idx_completed` (`completed`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Replay Storage';
-
-CREATE TABLE IF NOT EXISTS `dc_mplus_spec_sessions` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `spectator_guid` int unsigned NOT NULL,
-  `instance_id` int unsigned NOT NULL,
-  `map_id` int unsigned NOT NULL,
-  `keystone_level` tinyint unsigned NOT NULL,
-  `join_time` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `leave_time` timestamp NULL DEFAULT NULL,
-  `duration_seconds` int unsigned NOT NULL DEFAULT '0',
-  `stream_mode` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '0=Normal, 1=Names Hidden, 2=Full Anonymous',
-  PRIMARY KEY (`id`),
-  KEY `idx_spectator` (`spectator_guid`,`join_time` DESC),
-  KEY `idx_instance` (`instance_id`),
-  KEY `idx_time` (`join_time` DESC)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Session Log';
-
-CREATE TABLE IF NOT EXISTS `dc_mplus_spec_settings` (
-  `player_guid` int unsigned NOT NULL,
-  `allow_spectators` tinyint(1) NOT NULL DEFAULT '1',
-  `allow_public_listing` tinyint(1) NOT NULL DEFAULT '1',
-  `default_stream_mode` tinyint unsigned NOT NULL DEFAULT '0',
-  `blocked_spectators` text COMMENT 'Comma-separated list of blocked player GUIDs',
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`player_guid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='DarkChaos M+ Spectator - Player Settings';
 
 CREATE TABLE IF NOT EXISTS `dc_mythic_dungeon_stats` (
   `season_id` int unsigned NOT NULL,
@@ -2318,23 +1991,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_artifact_mastery` (
   KEY `idx_mastery_level` (`mastery_level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Artifact mastery progression per player';
 
-CREATE TABLE IF NOT EXISTS `dc_player_claimed_chests` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `player_guid` int unsigned NOT NULL,
-  `season_id` int unsigned NOT NULL,
-  `chest_id` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `chest_tier` tinyint NOT NULL,
-  `items_received` json DEFAULT NULL,
-  `claimed_at` bigint unsigned NOT NULL,
-  `claimed_by_npc_guid` int unsigned DEFAULT NULL,
-  `transaction_id` bigint unsigned DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_player_season` (`player_guid`,`season_id`),
-  KEY `idx_chest_id` (`chest_id`),
-  KEY `idx_claimed_at` (`claimed_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prevents duplicate chest claims';
-
 CREATE TABLE IF NOT EXISTS `dc_player_cross_system_stats` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
   `total_dungeons_started` int unsigned NOT NULL DEFAULT '0',
@@ -2356,8 +2012,8 @@ CREATE TABLE IF NOT EXISTS `dc_player_cross_system_stats` (
   `highest_mythic_level_cleared` tinyint unsigned NOT NULL DEFAULT '0',
   `highest_prestige_level` tinyint unsigned NOT NULL DEFAULT '0',
   `best_seasonal_rank` smallint unsigned NOT NULL DEFAULT '0',
-  `first_cross_system_event` timestamp NULL DEFAULT NULL COMMENT 'When player first triggered cross-system',
-  `last_cross_system_event` timestamp NULL DEFAULT NULL COMMENT 'Last cross-system activity',
+  `first_cross_system_event` timestamp NULL DEFAULT NULL,
+  `last_cross_system_event` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`guid`),
   KEY `idx_dungeons_completed` (`total_dungeons_completed`),
@@ -2388,27 +2044,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_dungeon_completion_stats` (
   KEY `idx_last_activity` (`last_activity`),
   CONSTRAINT `fk_dc_player_dungeon_stats_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-player dungeon completion stats and timestamps';
-
-CREATE TABLE IF NOT EXISTS `dc_player_item_upgrades` (
-  `upgrade_id` int NOT NULL AUTO_INCREMENT COMMENT 'Unique upgrade record ID',
-  `item_guid` int NOT NULL COMMENT 'Unique item GUID from player inventory',
-  `player_guid` int NOT NULL COMMENT 'Character GUID (from characters table)',
-  `base_item_name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Base item name for display',
-  `tier_id` tinyint NOT NULL DEFAULT '1' COMMENT 'Upgrade tier (1-5)',
-  `upgrade_level` tinyint NOT NULL DEFAULT '0' COMMENT 'Current upgrade level (0-15 per tier)',
-  `tokens_invested` int NOT NULL DEFAULT '0' COMMENT 'Total upgrade tokens spent',
-  `essence_invested` int NOT NULL DEFAULT '0' COMMENT 'Total essence spent',
-  `stat_multiplier` float NOT NULL DEFAULT '1' COMMENT 'Current stat multiplier (1.0 = base stats)',
-  `first_upgraded_at` int unsigned DEFAULT '0' COMMENT 'Unix timestamp when first upgraded',
-  `last_upgraded_at` int unsigned DEFAULT '0' COMMENT 'Unix timestamp when last upgraded',
-  `season` int NOT NULL DEFAULT '0' COMMENT 'Season ID for seasonal resets',
-  PRIMARY KEY (`upgrade_id`),
-  UNIQUE KEY `item_guid` (`item_guid`),
-  KEY `k_player` (`player_guid`),
-  KEY `k_item_guid` (`item_guid`),
-  KEY `k_season` (`season`),
-  KEY `k_tier` (`tier_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player item upgrade state and history';
 
 CREATE TABLE IF NOT EXISTS `dc_player_keystones` (
   `player_guid` int unsigned NOT NULL,
@@ -2466,25 +2101,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_season_data` (
   KEY `idx_mastery` (`mastery_earned` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Per-season player statistics';
 
-CREATE TABLE IF NOT EXISTS `dc_player_seasonal_achievements` (
-  `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `player_guid` int unsigned NOT NULL,
-  `season_id` int unsigned NOT NULL,
-  `achievement_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `achievement_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `achievement_description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `progress_value` int unsigned DEFAULT NULL,
-  `reward_tokens` int unsigned DEFAULT '0',
-  `reward_essence` int unsigned DEFAULT '0',
-  `achieved_at` bigint unsigned NOT NULL,
-  `rewarded_at` bigint unsigned DEFAULT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_player_season` (`player_guid`,`season_id`),
-  KEY `idx_achievement_type` (`achievement_type`),
-  KEY `idx_achieved_at` (`achieved_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Seasonal achievements';
-
 CREATE TABLE IF NOT EXISTS `dc_player_seasonal_chests` (
   `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique chest ID',
   `player_guid` int unsigned NOT NULL COMMENT 'Player GUID',
@@ -2530,7 +2146,8 @@ CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats` (
   PRIMARY KEY (`player_guid`,`season_id`),
   KEY `idx_season` (`season_id`),
   KEY `idx_tokens` (`total_tokens_earned`),
-  KEY `idx_essence` (`total_essence_earned`)
+  KEY `idx_essence` (`total_essence_earned`),
+  KEY `idx_season_player` (`season_id`,`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player seasonal statistics and progression';
 
 CREATE TABLE IF NOT EXISTS `dc_player_seasonal_stats_history` (
@@ -2561,12 +2178,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_seen_features` (
   PRIMARY KEY (`guid`,`feature`),
   KEY `idx_feature` (`feature`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tracks which feature intros players have seen';
-
-CREATE TABLE IF NOT EXISTS `dc_player_synthesis_cooldowns` (
-  `player_guid` int unsigned NOT NULL,
-  `last_synthesis` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`player_guid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Player synthesis cooldown tracking';
 
 CREATE TABLE IF NOT EXISTS `dc_player_tier_caps` (
   `player_guid` int unsigned NOT NULL,
@@ -2631,7 +2242,7 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_cap_snapshot` (
   UNIQUE KEY `idx_player_season_week` (`player_guid`,`season_id`,`week_timestamp`),
   KEY `idx_season` (`season_id`),
   KEY `idx_week` (`week_timestamp`)
-) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
+) ENGINE=InnoDB AUTO_INCREMENT=7049 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Weekly cap snapshots for players';
 
 CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2645,41 +2256,6 @@ CREATE TABLE IF NOT EXISTS `dc_player_weekly_quest_progress` (
   KEY `idx_weekly_entry` (`weekly_quest_entry`),
   CONSTRAINT `fk_dc_player_weekly_progress_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Per-player tracking for weekly dungeon quest progress';
-
-CREATE TABLE IF NOT EXISTS `dc_player_weekly_rewards` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `character_guid` int unsigned NOT NULL COMMENT 'Character GUID',
-  `season_id` int unsigned NOT NULL COMMENT 'Season ID',
-  `week_start` bigint unsigned NOT NULL COMMENT 'Week start timestamp (Unix Tuesday reset)',
-  `system_type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'mythic_plus, seasonal_rewards, pvp, hlbg',
-  `mplus_runs_completed` tinyint unsigned DEFAULT '0' COMMENT 'Mythic+ runs this week',
-  `mplus_highest_level` tinyint unsigned DEFAULT '0' COMMENT 'Highest keystone cleared',
-  `tokens_earned` int unsigned DEFAULT '0' COMMENT 'Total tokens earned this week',
-  `essence_earned` int unsigned DEFAULT '0' COMMENT 'Total essence earned this week',
-  `slot1_unlocked` tinyint(1) NOT NULL DEFAULT '0',
-  `slot1_tokens` int unsigned DEFAULT '0',
-  `slot1_essence` int unsigned DEFAULT '0',
-  `slot1_item_ilvl` smallint unsigned DEFAULT '0' COMMENT 'M+ item reward ilvl',
-  `slot2_unlocked` tinyint(1) NOT NULL DEFAULT '0',
-  `slot2_tokens` int unsigned DEFAULT '0',
-  `slot2_essence` int unsigned DEFAULT '0',
-  `slot2_item_ilvl` smallint unsigned DEFAULT '0',
-  `slot3_unlocked` tinyint(1) NOT NULL DEFAULT '0',
-  `slot3_tokens` int unsigned DEFAULT '0',
-  `slot3_essence` int unsigned DEFAULT '0',
-  `slot3_item_ilvl` smallint unsigned DEFAULT '0',
-  `reward_claimed` tinyint(1) NOT NULL DEFAULT '0',
-  `claimed_slot` tinyint unsigned DEFAULT '0' COMMENT '1/2/3 - which slot was claimed',
-  `claimed_item_id` int unsigned DEFAULT NULL COMMENT 'Item entry if item claimed',
-  `claimed_tokens` int unsigned DEFAULT '0' COMMENT 'Tokens claimed',
-  `claimed_essence` int unsigned DEFAULT '0' COMMENT 'Essence claimed',
-  `claimed_at` bigint unsigned DEFAULT NULL COMMENT 'Claim timestamp',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_char_season_week_system` (`character_guid`,`season_id`,`week_start`,`system_type`),
-  KEY `idx_season_week` (`season_id`,`week_start`),
-  KEY `idx_system_type` (`system_type`),
-  KEY `idx_pending_rewards` (`season_id`,`week_start`,`reward_claimed`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Unified weekly rewards tracking for all systems';
 
 CREATE TABLE IF NOT EXISTS `dc_player_welcome` (
   `guid` int unsigned NOT NULL COMMENT 'Character GUID',
@@ -2848,7 +2424,7 @@ CREATE TABLE IF NOT EXISTS `dc_server_firsts` (
   `achievement_time` int unsigned NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_category` (`category`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `dc_spectator_settings` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
@@ -2877,37 +2453,6 @@ CREATE TABLE IF NOT EXISTS `dc_tier_conversion_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_timestamp` (`timestamp`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS `dc_title_collection` (
-  `account_id` int unsigned NOT NULL COMMENT 'Account ID',
-  `title_id` int unsigned NOT NULL COMMENT 'Title ID from CharTitles.dbc',
-  `obtained_by` int unsigned NOT NULL COMMENT 'Character GUID who obtained it',
-  `obtained_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `is_favorite` tinyint(1) NOT NULL DEFAULT '0',
-  PRIMARY KEY (`account_id`,`title_id`),
-  KEY `idx_obtained_by` (`obtained_by`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Account title collection';
-
-CREATE TABLE IF NOT EXISTS `dc_token_event_config` (
-  `event_id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique event config ID',
-  `event_type` enum('quest','creature','achievement','pvp','battleground','daily') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Type of event',
-  `event_source_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Source ID (quest_id, creature_id, achievement_id, etc.; 0 for general PvP)',
-  `token_reward` int unsigned NOT NULL DEFAULT '0' COMMENT 'Base upgrade tokens awarded',
-  `essence_reward` int unsigned NOT NULL DEFAULT '0' COMMENT 'Base artifact essence awarded',
-  `scaling_factor` float DEFAULT '1' COMMENT 'Multiplier for difficulty/level scaling (1.0 = no scaling)',
-  `cooldown_seconds` int unsigned DEFAULT '0' COMMENT 'Cooldown between awards (0 = no cooldown)',
-  `is_active` tinyint unsigned DEFAULT '1' COMMENT 'Is this event currently active',
-  `is_repeatable` tinyint unsigned DEFAULT '1' COMMENT 'Can award be earned multiple times (0 = one-time like achievements)',
-  `season` int unsigned NOT NULL DEFAULT '1' COMMENT 'Season this config applies to',
-  `notes` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Notes about this event config',
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'When this config was created',
-  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'When last updated',
-  PRIMARY KEY (`event_id`),
-  UNIQUE KEY `uix_event_source` (`event_type`,`event_source_id`,`season`),
-  KEY `idx_event_type` (`event_type`),
-  KEY `idx_is_active` (`is_active`),
-  KEY `idx_season` (`season`)
-) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Configuration for which events award tokens and how much';
 
 CREATE TABLE IF NOT EXISTS `dc_token_rewards_log` (
   `log_id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'Unique log entry',
@@ -2938,7 +2483,7 @@ CREATE TABLE IF NOT EXISTS `dc_token_transaction_log` (
   KEY `idx_player_guid` (`player_guid`),
   KEY `idx_created_at` (`created_at`),
   KEY `idx_transaction_type` (`transaction_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=813 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
+) ENGINE=InnoDB AUTO_INCREMENT=288649 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Complete audit trail of token/currency transactions';
 
 CREATE TABLE `dc_top_upgraders` (
 	`player_guid` INT UNSIGNED NOT NULL,
@@ -3578,6 +3123,32 @@ CREATE TABLE IF NOT EXISTS `petition_sign` (
   KEY `idx_petition_id_player` (`petition_id`,`playerguid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Guild System';
 
+CREATE TABLE IF NOT EXISTS `playerbots_arena_team_names` (
+  `name_id` mediumint NOT NULL AUTO_INCREMENT,
+  `name` varchar(24) NOT NULL,
+  `type` tinyint NOT NULL,
+  PRIMARY KEY (`name_id`),
+  UNIQUE KEY `name_id` (`name_id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=MyISAM AUTO_INCREMENT=301 DEFAULT CHARSET=utf8mb3 ROW_FORMAT=FIXED COMMENT='Playerbot arena team names';
+
+CREATE TABLE IF NOT EXISTS `playerbots_guild_names` (
+  `name_id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(24) NOT NULL,
+  PRIMARY KEY (`name_id`),
+  UNIQUE KEY `name_id` (`name_id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB AUTO_INCREMENT=401 DEFAULT CHARSET=utf8mb3 ROW_FORMAT=DYNAMIC COMMENT='Playerbot guild names';
+
+CREATE TABLE IF NOT EXISTS `playerbots_names` (
+  `name_id` int NOT NULL,
+  `name` varchar(12) DEFAULT NULL,
+  `gender` tinyint unsigned NOT NULL,
+  PRIMARY KEY (`name_id`),
+  UNIQUE KEY `name_id` (`name_id`),
+  UNIQUE KEY `name` (`name`,`gender`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 ROW_FORMAT=DYNAMIC COMMENT='Playerbot RandomBot names';
+
 CREATE TABLE IF NOT EXISTS `players_reports_status` (
   `guid` int unsigned NOT NULL DEFAULT '0',
   `creation_time` int unsigned NOT NULL DEFAULT '0',
@@ -4064,8 +3635,8 @@ CREATE TABLE `v_player_heirloom_upgrades` (
 	`enchant_id` INT UNSIGNED NOT NULL COMMENT 'Applied SpellItemEnchantment.dbc ID',
 	`essence_invested` INT UNSIGNED NOT NULL COMMENT 'Total essence spent',
 	`tokens_invested` INT UNSIGNED NOT NULL COMMENT 'Total tokens spent',
-	`first_upgraded_at` TIMESTAMP NULL COMMENT 'When first upgraded',
-	`last_upgraded_at` TIMESTAMP NULL COMMENT 'When last upgraded'
+	`first_upgraded_at` BIGINT UNSIGNED NOT NULL COMMENT 'Unix timestamp when first upgraded (64-bit)',
+	`last_upgraded_at` BIGINT UNSIGNED NOT NULL COMMENT 'Unix timestamp when last upgraded (64-bit)'
 );
 
 CREATE TABLE `v_seasonal_leaderboard` (
