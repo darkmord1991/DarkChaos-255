@@ -198,8 +198,11 @@ void AIRelocationNotifier::Visit(CreatureMapType& m)
 
     // Collect Creature* pointers directly instead of GUIDs — eliminates N ObjectAccessor
     // hash-map lookups that the previous GUID-based approach required.
+    // NOTE: Do NOT call m.getSize() here. LinkedListHead::iSize is a plain uint32 with no
+    // thread-safety guarantees. Partition worker threads can call decSize()/incSize() without
+    // holding _gridObjectLock, which can cause iSize to transiently underflow and wrap to
+    // ~4 billion. Passing that to reserve() triggers std::bad_alloc and a crash.
     std::vector<Creature*> targets;
-    targets.reserve(m.getSize());
     for (CreatureMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         Creature* c = iter->GetSource();
