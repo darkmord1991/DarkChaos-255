@@ -412,13 +412,36 @@ uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float 
 uint32 PartitionManager::GetPartitionIdForPosition(uint32 mapId, float x, float y, uint32 zoneId, ObjectGuid const& guid) const
 {
     // Force single-partition behavior in Hinterland BG battle area to avoid split battles.
+    // Cache the area check result per player GUID to avoid a global ObjectAccessor::FindPlayer
+    // lookup on every call (this is hit every tick for every player on Eastern Kingdoms).
     if (mapId == 0 && guid && guid.IsPlayer())
     {
-        if (Player* player = ObjectAccessor::FindPlayer(guid))
+        struct HinterlandBGCache
         {
-            if (player->GetAreaId() == 6738)
-                return 1;
+            ObjectGuid::LowType guid = 0;
+            uint32 areaId = 0;
+            uint64 expiresMs = 0;
+        };
+        thread_local HinterlandBGCache hintCache;
+
+        uint64 nowMs = GameTime::GetGameTimeMS().count();
+        ObjectGuid::LowType guidLow = guid.GetCounter();
+
+        uint32 areaId = 0;
+        if (hintCache.guid == guidLow && nowMs <= hintCache.expiresMs)
+        {
+            areaId = hintCache.areaId;
         }
+        else
+        {
+            if (Player* player = ObjectAccessor::FindPlayer(guid))
+                areaId = player->GetAreaId();
+
+            hintCache = { guidLow, areaId, nowMs + 500 };
+        }
+
+        if (areaId == 6738)
+            return 1;
     }
 
     // If this zone is excluded from partitioning (e.g., cities), use partition 1
@@ -1345,8 +1368,14 @@ void PartitionManager::BatchUpdateBoundaryPositions(uint32 mapId, uint32 partiti
     if (updates.empty())
         return;
 
-    std::shared_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
+    // Must use unique_lock (not shared_lock): _boundarySpatialGrids[mapId][partitionId] uses
+    // operator[], which inserts a new entry if it doesn't exist. That is a write on the outer
+    // unordered_map. Concurrent partition workers all calling this under a shared_lock would
+    // race on the map mutation, causing memory corruption and a crash in push_back / operator new.
+    std::unique_lock<std::shared_mutex> guard(GetBoundaryLock(mapId));
     auto& grid = _boundarySpatialGrids[mapId][partitionId];
+    // grid.Lock is redundant while we hold the unique_lock on the stripe, but keep it for
+    // correctness in case reader paths lock grid.Lock without the stripe lock in the future.
     std::lock_guard<std::mutex> gridGuard(grid.Lock);
 
     if (IsRuntimeDiagnosticsEnabled())
@@ -1672,12 +1701,9 @@ void PartitionManager::ResizeMapPartitions(uint32 mapId, uint32 newCount, char c
 
 void PartitionManager::EvaluatePartitionDensity(uint32 mapId)
 {
-    // NOTE: This is a placeholder for future dynamic resizing.
-    // Full implementation would require:
-    // 1. Track density over time (rolling average)
-    // 2. Split partitions when density > split threshold
-    // 3. Merge adjacent partitions when both < merge threshold
-    // 4. Update all affected data structures atomically
+    // Dynamic partition resizing based on entity density.
+    // Splits partitions whose density exceeds the split threshold,
+    // and merges adjacent partitions that fall below the merge threshold.
 
     if (!IsEnabled())
         return;
