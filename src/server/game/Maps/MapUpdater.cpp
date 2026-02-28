@@ -25,6 +25,7 @@
 #include "MapMgr.h"
 #include "Metric.h"
 #include "PartitionUpdateWorker.h"
+#include "SteadyTimeUtil.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -58,24 +59,9 @@ namespace
     std::unordered_map<uint64, PartitionLatencySummary> gPartitionSummaryByMapPartition;
     std::mutex gSlowMapUpdateLogGateLock;
     std::unordered_map<uint64, uint64> gSlowMapUpdateNextLogAtMs;
-    std::mutex gPartitionExecutionLockMapLock;
-    std::unordered_map<uint64, std::shared_ptr<std::mutex>> gPartitionExecutionLocksByMapInstance;
-
-    std::shared_ptr<std::mutex> GetPartitionExecutionMutex(uint32 mapId, uint32 instanceId)
-    {
-        uint64 const key = (static_cast<uint64>(mapId) << 32) | instanceId;
-        std::lock_guard<std::mutex> guard(gPartitionExecutionLockMapLock);
-        auto& entry = gPartitionExecutionLocksByMapInstance[key];
-        if (!entry)
-            entry = std::make_shared<std::mutex>();
-        return entry;
-    }
-
-    uint64 GetSteadyNowMs()
-    {
-        return static_cast<uint64>(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
-    }
+    // Per-object update execution guards (TryBeginUpdateExecution / EndUpdateExecution)
+    // in PartitionUpdateWorker already prevent concurrent updates to the same object.
+    // No per-map execution mutex is needed — partition workers run truly in parallel.
 
     bool IsPartitionPercentileSamplingEnabled()
     {
@@ -553,8 +539,6 @@ public:
 
         try
         {
-            std::shared_ptr<std::mutex> executionMutex = GetPartitionExecutionMutex(self->_map.GetId(), self->_map.GetInstanceId());
-            std::lock_guard<std::mutex> executionGuard(*executionMutex);
             PartitionUpdateWorker worker(self->_map, self->_partitionId, self->_diff, self->_sDiff);
             worker.Execute();
         }

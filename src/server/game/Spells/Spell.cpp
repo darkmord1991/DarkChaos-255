@@ -5690,6 +5690,18 @@ void Spell::HandleEffects(Unit* pUnitTarget, Item* pItemTarget, GameObject* pGOT
     if (HasTriggeredCastFlag(TRIGGERED_IGNORE_EFFECTS))
         return;
 
+    // Save mutable per-effect state in case of reentrant HandleEffects calls.
+    // Script hooks, triggered spells, proc chains, and cross-partition relays can
+    // all re-enter this function on the same Spell object, corrupting unitTarget /
+    // effectHandleMode mid-execution and causing null-this crashes in callees like
+    // Unit::SpellHealingBonusTaken.
+    Unit*                  savedUnitTarget    = unitTarget;
+    Item*                  savedItemTarget    = itemTarget;
+    GameObject*            savedGameObjTarget = gameObjTarget;
+    WorldLocation*         savedDestTarget    = destTarget;
+    SpellEffectHandleMode  savedMode          = effectHandleMode;
+    int32                  savedDamage        = damage;
+
     effectHandleMode = mode;
     unitTarget = pUnitTarget;
     itemTarget = pItemTarget;
@@ -5709,6 +5721,14 @@ void Spell::HandleEffects(Unit* pUnitTarget, Item* pItemTarget, GameObject* pGOT
     {
         (this->*SpellEffects[eff])((SpellEffIndex)i);
     }
+
+    // Restore saved state so the outer caller sees its original values.
+    unitTarget       = savedUnitTarget;
+    itemTarget       = savedItemTarget;
+    gameObjTarget    = savedGameObjTarget;
+    destTarget       = savedDestTarget;
+    effectHandleMode = savedMode;
+    damage           = savedDamage;
 }
 
 SpellCastResult Spell::CheckCast(bool strict)

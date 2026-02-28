@@ -68,6 +68,8 @@
 #include "WeatherMgr.h"
 #include "Unit.h"
 #include "MapUpdater.h"
+#include "UpdateExecutionHelpers.h"
+#include "SteadyTimeUtil.h"
 
 namespace
 {
@@ -258,50 +260,9 @@ namespace
         return pool;
     }
 
-    template <typename T>
-    auto TryBeginUpdateExecutionIfSupported(T* object, int) -> decltype(object->TryBeginUpdateExecution(), bool())
-    {
-        return object->TryBeginUpdateExecution();
-    }
-
-    template <typename T>
-    bool TryBeginUpdateExecutionIfSupported(T*, long)
-    {
-        return true;
-    }
-
-    template <typename T>
-    auto EndUpdateExecutionIfSupported(T* object, int) -> decltype(object->EndUpdateExecution(), void())
-    {
-        object->EndUpdateExecution();
-    }
-
-    template <typename T>
-    void EndUpdateExecutionIfSupported(T*, long)
-    {
-    }
-
-    template <typename T>
-    auto WaitForUpdateExecutionToFinishIfSupported(T* object, int) -> decltype(object->TryBeginUpdateExecution(), void())
-    {
-        if (!object)
-            return;
-        uint32 spinCount = 0;
-
-        while (!object->TryBeginUpdateExecution())
-        {
-            ++spinCount;
-            if ((spinCount & 0xFF) == 0)
-                std::this_thread::yield();
-        }
-
-        object->EndUpdateExecution();
-    }
-
-    template <typename T>
-    void WaitForUpdateExecutionToFinishIfSupported(T*, long)
-    {
-    }
+    // TryBeginUpdateExecutionIfSupported, EndUpdateExecutionIfSupported,
+    // WaitForUpdateExecutionToFinishIfSupported, and UpdateExecutionGuard
+    // are now provided by UpdateExecutionHelpers.h
 }
 
 #define MAP_INVALID_ZONE        0xFFFFFFFF
@@ -362,6 +323,14 @@ void Map::OnCreateMap()
         LoadAllGrids();
 
     sScriptMgr->OnCreateMap(this);
+}
+
+void Map::RefreshCachedPartitionCount()
+{
+    if (_isPartitioned)
+        _cachedPartitionCount = sPartitionMgr->GetPartitionCount(GetId());
+    else
+        _cachedPartitionCount = 0;
 }
 
 void Map::InitVisibilityDistance()
@@ -1130,6 +1099,10 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         }
     }
 
+    // Cache partition count once per tick to avoid repeated shared_lock acquisitions
+    // in GetPartitionCount() which is called 3–6× per tick per map.
+    RefreshCachedPartitionCount();
+
     if (t_diff)
     {
         constexpr uint32 kDynamicTreeUpdateStrideTicks = 3;
@@ -1177,9 +1150,6 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
     Events.Update(t_diff);
     _phaseSnap(_phSessions);
-
-    if (GetId() == 37 && t_diff)
-        HandleDelayedVisibility();
 
     if (!t_diff)
     {
@@ -1239,7 +1209,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         else
         {
             // Serial partitioned path
-            uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+            uint32 partitionCount = GetCachedPartitionCount();
             if (partitionCount == 0)
                 partitionCount = 1;
 
@@ -1502,7 +1472,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
         // Only emit partition stats every 10 ticks to reduce overhead.
         if ((_updateCounter.load(std::memory_order_relaxed) % 10) == 0)
         {
-            uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+            uint32 partitionCount = GetCachedPartitionCount();
             if (partitionCount == 0)
                 partitionCount = 1;
 
@@ -1567,18 +1537,7 @@ void Map::Update(const uint32 t_diff, const uint32 s_diff, bool  /*thread*/)
 
 void Map::UpdateNonPlayerObjects(uint32 const diff)
 {
-    struct UpdateExecutionGuard
-    {
-        explicit UpdateExecutionGuard(UpdatableMapObject* object) : _object(object) { }
-        ~UpdateExecutionGuard()
-        {
-            if (_object)
-                EndUpdateExecutionIfSupported(_object, 0);
-        }
-
-    private:
-        UpdatableMapObject* _object;
-    };
+    // UpdateExecutionGuard is now provided by UpdateExecutionHelpers.h
 
     FlushPendingUpdateListAdds();
 
@@ -1586,7 +1545,7 @@ void Map::UpdateNonPlayerObjects(uint32 const diff)
 
     if (_isPartitioned)
     {
-        uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+        uint32 partitionCount = GetCachedPartitionCount();
         if (partitionCount == 0)
             partitionCount = 1;
 
@@ -2503,7 +2462,7 @@ void Map::RegisterPartitionedObject(WorldObject* obj)
             partitionId = persistedPartition;
     }
 
-    uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+    uint32 partitionCount = GetCachedPartitionCount();
     if (partitionId == 0 || (partitionCount > 0 && partitionId > partitionCount))
     {
         LOG_ERROR("map.partition", "RegisterPartitionedObject: invalid partitionId {} (count {}) for guid {} map {} zone {}",
@@ -2981,24 +2940,21 @@ void Map::HandleDelayedVisibility()
             effectiveBudget = std::min<size_t>(adaptiveDelayedVisMaxBudget, backlogBudget);
         }
 
-        if (GetId() == 37 && delayedQueueDepthBeforeDrain > effectiveBudget)
-            effectiveBudget = std::min<size_t>(adaptiveDelayedVisMaxBudget, delayedQueueDepthBeforeDrain);
-
         delayedVisBudgetUsed = effectiveBudget;
         unitsToProcess.swap(_objectsForDelayedVisibility);
         _delayedVisibilitySet.clear();
     }
 
+    // O(n) partition: move all player GUIDs to the front so they get visibility
+    // updates first.  Replaces the previous O(n log n) stable_sort.
     if (unitsToProcess.size() > 1)
     {
-        std::stable_sort(
+        std::partition(
             unitsToProcess.begin(),
             unitsToProcess.end(),
-            [](ObjectGuid const& a, ObjectGuid const& b)
+            [](ObjectGuid const& a)
             {
-                if (a.IsPlayer() != b.IsPlayer())
-                    return a.IsPlayer() && !b.IsPlayer();
-                return a < b;
+                return a.IsPlayer();
             });
     }
 
@@ -3256,7 +3212,9 @@ void Map::PlayerRelocation(Player* player, float x, float y, float z, float o)
     // 2× GetZoneId (BIH ray-intersection) per passenger per tick.
     if (_isPartitioned && !player->GetTransport())
     {
-        uint32 oldZoneId = GetZoneId(player->GetPhaseMask(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+        // Reuse the cached zone from the previous UpdatePositionData() for the old
+        // position — avoids a redundant BIH ray-intersection per relocation.
+        uint32 oldZoneId = player->GetZoneId();
         uint32 newZoneId = GetZoneId(player->GetPhaseMask(), x, y, z);
         oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), player->GetPositionX(), player->GetPositionY(), oldZoneId, player->GetGUID());
         newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, newZoneId, player->GetGUID());
@@ -3344,7 +3302,9 @@ void Map::CreatureRelocation(Creature* creature, float x, float y, float z, floa
     // 2× GetZoneId (BIH ray-intersection) per passenger per tick.
     if (_isPartitioned && !creature->GetTransport())
     {
-        uint32 oldZoneId = GetZoneId(creature->GetPhaseMask(), creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ());
+        // Reuse the cached zone from the previous UpdatePositionData() for the old
+        // position — avoids a redundant BIH ray-intersection per relocation.
+        uint32 oldZoneId = creature->GetZoneId();
         uint32 newZoneId = GetZoneId(creature->GetPhaseMask(), x, y, z);
         oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), creature->GetPositionX(), creature->GetPositionY(), oldZoneId, creature->GetGUID());
         newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, newZoneId, creature->GetGUID());
@@ -3417,7 +3377,8 @@ void Map::GameObjectRelocation(GameObject* go, float x, float y, float z, float 
     // the transport and don't independently cross partition boundaries.
     if (_isPartitioned && !go->GetTransport())
     {
-        uint32 oldZoneId = GetZoneId(go->GetPhaseMask(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ());
+        // Reuse cached zone from previous UpdatePositionData() for old position.
+        uint32 oldZoneId = go->GetZoneId();
         uint32 newZoneId = GetZoneId(go->GetPhaseMask(), x, y, z);
         oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), go->GetPositionX(), go->GetPositionY(), oldZoneId, go->GetGUID());
         newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, newZoneId, go->GetGUID());
@@ -3471,7 +3432,8 @@ void Map::DynamicObjectRelocation(DynamicObject* dynObj, float x, float y, float
     // Skip expensive partition detection for transport passengers.
     if (_isPartitioned && !dynObj->GetTransport())
     {
-        uint32 oldZoneId = GetZoneId(dynObj->GetPhaseMask(), dynObj->GetPositionX(), dynObj->GetPositionY(), dynObj->GetPositionZ());
+        // Reuse cached zone from previous UpdatePositionData() for old position.
+        uint32 oldZoneId = dynObj->GetZoneId();
         uint32 newZoneId = GetZoneId(dynObj->GetPhaseMask(), x, y, z);
         oldPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), dynObj->GetPositionX(), dynObj->GetPositionY(), oldZoneId, dynObj->GetGUID());
         newPartitionId = sPartitionMgr->GetPartitionIdForPosition(GetId(), x, y, newZoneId, dynObj->GetGUID());

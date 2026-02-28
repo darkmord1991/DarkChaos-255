@@ -1240,35 +1240,6 @@ uint32 LayerManager::GetLayerForNPC(uint32 mapId, ObjectGuid const& npcGuid) con
     return it->second.layerId;
 }
 
-uint32 LayerManager::GetLayerForNPC(ObjectGuid const& npcGuid) const
-{
-    struct LayerCache
-    {
-        ObjectGuid::LowType guid = 0;
-        uint32 layerId = 0;
-        uint64 expiresMs = 0;
-    };
-
-    thread_local LayerCache cache;
-    uint64 nowMs = GameTime::GetGameTimeMS().count();
-    if (cache.guid == npcGuid.GetCounter() && nowMs <= cache.expiresMs)
-        return cache.layerId;
-
-    std::shared_lock<std::shared_mutex> guard(_layerLock);
-    ObjectGuid::LowType guidLow = npcGuid.GetCounter();
-    for (auto const& [key, assignment] : _npcLayers)
-    {
-        if (static_cast<ObjectGuid::LowType>(key) == guidLow)
-        {
-            cache = { guidLow, assignment.layerId, nowMs + 250 };
-            return assignment.layerId;
-        }
-    }
-
-    cache = { guidLow, 0, nowMs + 250 };
-    return 0;
-}
-
 uint32 LayerManager::GetDefaultLayerForMap(uint32 mapId, uint64 seed) const
 {
     std::shared_lock<std::shared_mutex> guard(_layerLock);
@@ -1392,35 +1363,6 @@ uint32 LayerManager::GetLayerForGO(uint32 mapId, ObjectGuid const& goGuid) const
 
     cache = { goGuid.GetCounter(), mapId, it->second.layerId, nowMs + 250 };
     return it->second.layerId;
-}
-
-uint32 LayerManager::GetLayerForGO(ObjectGuid const& goGuid) const
-{
-    struct LayerCache
-    {
-        ObjectGuid::LowType guid = 0;
-        uint32 layerId = 0;
-        uint64 expiresMs = 0;
-    };
-
-    thread_local LayerCache cache;
-    uint64 nowMs = GameTime::GetGameTimeMS().count();
-    if (cache.guid == goGuid.GetCounter() && nowMs <= cache.expiresMs)
-        return cache.layerId;
-
-    std::shared_lock<std::shared_mutex> guard(_layerLock);
-    ObjectGuid::LowType guidLow = goGuid.GetCounter();
-    for (auto const& [key, assignment] : _goLayers)
-    {
-        if (static_cast<ObjectGuid::LowType>(key) == guidLow)
-        {
-            cache = { guidLow, assignment.layerId, nowMs + 250 };
-            return assignment.layerId;
-        }
-    }
-
-    cache = { guidLow, 0, nowMs + 250 };
-    return 0;
 }
 
 void LayerManager::ReassignGOsForNewLayer(uint32 mapId, uint32 layerId)

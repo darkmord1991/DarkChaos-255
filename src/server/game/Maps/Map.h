@@ -211,6 +211,8 @@ public:
     void SetPartitioned(bool value) { _isPartitioned = value; }
     bool UseParallelPartitions() const { return _useParallelPartitions; }
     void SetUseParallelPartitions(bool value) { _useParallelPartitions = value; }
+    uint32 GetCachedPartitionCount() const { return _cachedPartitionCount; }
+    void RefreshCachedPartitionCount();
     bool SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff);
     void OnCreateMap();
     //function for setting up visibility distance for maps on per-type/per-Id basis
@@ -1013,6 +1015,7 @@ protected:
     bool _isPartitioned = false;
     bool _partitionLogShown = false;
     bool _useParallelPartitions = false;
+    uint32 _cachedPartitionCount = 0;
     DynamicMapTree _dynamicTree;
     mutable std::shared_mutex _dynamicTreeLock;
     time_t _instanceResetPeriod; // pussywizard

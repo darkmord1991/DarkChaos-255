@@ -91,14 +91,12 @@ public:
     void AssignNPCToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& npcGuid, uint32 layerId);
     void RemoveNPCFromLayer(uint32 mapId, ObjectGuid const& npcGuid);
     uint32 GetLayerForNPC(uint32 mapId, ObjectGuid const& npcGuid) const;
-    uint32 GetLayerForNPC(ObjectGuid const& npcGuid) const; // Back-compat
     uint32 GetDefaultLayerForMap(uint32 mapId, uint64 seed) const;
 
     // ======================== GAMEOBJECT LAYERING ========================
     void AssignGOToLayer(uint32 mapId, uint32 zoneId, ObjectGuid const& goGuid, uint32 layerId);
     void RemoveGOFromLayer(uint32 mapId, ObjectGuid const& goGuid);
     uint32 GetLayerForGO(uint32 mapId, ObjectGuid const& goGuid) const;
-    uint32 GetLayerForGO(ObjectGuid const& goGuid) const;
 
     // ======================== LAYER STATISTICS ========================
     using LayerCountByZone = std::map<uint32, std::map<uint32, uint32>>;

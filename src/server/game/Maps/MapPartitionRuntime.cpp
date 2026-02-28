@@ -26,6 +26,7 @@
 #include "DynamicObject.h"
 #include "PartitionManager.h"
 #include "Player.h"
+#include "SteadyTimeUtil.h"
 #include "World.h"
 #include <algorithm>
 #include <chrono>
@@ -36,11 +37,7 @@ namespace
     constexpr uint64 kSlowPartitionUpdateCycleMsDefault = 90;
     constexpr uint64 kSlowPartitionLogIntervalMsDefault = 5000;
 
-    uint64 GetSteadyNowMs()
-    {
-        return static_cast<uint64>(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
-    }
+    // GetSteadyNowMs() is now provided by SteadyTimeUtil.h
 
     void AtomicMax(std::atomic<uint64>& target, uint64 value)
     {
@@ -89,7 +86,7 @@ bool Map::SchedulePartitionUpdates(uint32 t_diff, uint32 s_diff)
         return true;
     }
 
-    uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+    uint32 partitionCount = GetCachedPartitionCount();
     if (partitionCount == 0)
         partitionCount = 1;
 
@@ -348,7 +345,7 @@ void Map::GetPartitionObjectUpdateWindow(uint32 partitionId, uint32 totalObjects
 
 void Map::BuildPartitionPlayerBuckets()
 {
-    uint32 partitionCount = sPartitionMgr->GetPartitionCount(GetId());
+    uint32 partitionCount = GetCachedPartitionCount();
     if (partitionCount == 0)
         partitionCount = 1;
 

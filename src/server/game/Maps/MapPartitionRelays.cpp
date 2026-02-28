@@ -59,6 +59,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
     uint64 const relayNowMs = GameTime::GetGameTimeMS().count();
     auto const relayCycleStart = std::chrono::steady_clock::now();
     bool const emitRelayMetrics = (_updateCounter.load(std::memory_order_relaxed) % 10) == 0;
+
+    // Pre-compute metric tag strings once for this cycle instead of
+    // calling std::to_string() per relay type (~40 heap allocations saved).
+    std::string const mapIdStr = std::to_string(GetId());
+    std::string const partIdStr = std::to_string(partitionId);
+
     std::unordered_map<uint64, Unit*> unitLookupCache;
     unitLookupCache.reserve(128);
 
@@ -77,22 +83,27 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         return unit;
     };
 
+    // Thread-local relay counters — accumulate without a global mutex,
+    // flush to the log periodically.  Eliminates the per-event static
+    // mutex acquisition that was hitting 20+ times per partition tick.
+    struct RelayCounters
+    {
+        uint64 mismatch = 0;
+        uint64 bounce = 0;
+        uint64 drop = 0;
+    };
+    struct ThreadLocalRelayCounterState
+    {
+        std::unordered_map<uint32, std::unordered_map<std::string, RelayCounters>> counters;
+        uint64 nextLogMs = 0;
+    };
+    thread_local ThreadLocalRelayCounterState tlRelayCounters;
+
     auto RecordRelayCounter = [this](char const* relayType, char const* eventType)
     {
-        struct RelayCounters
-        {
-            uint64 mismatch = 0;
-            uint64 bounce = 0;
-            uint64 drop = 0;
-        };
-
-        static std::mutex sRelayCounterLock;
-        static std::unordered_map<uint32, std::unordered_map<std::string, RelayCounters>> sRelayCounters;
-        static uint64 sNextRelayCounterLogAtMs = 0;
         constexpr uint64 kRelayCounterLogIntervalMs = 5000;
 
-        std::lock_guard<std::mutex> guard(sRelayCounterLock);
-        RelayCounters& counters = sRelayCounters[GetId()][relayType ? relayType : "unknown"];
+        RelayCounters& counters = tlRelayCounters.counters[GetId()][relayType ? relayType : "unknown"];
         if (eventType && std::strcmp(eventType, "mismatch") == 0)
             ++counters.mismatch;
         else if (eventType && std::strcmp(eventType, "bounce") == 0)
@@ -101,10 +112,10 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             ++counters.drop;
 
         uint64 const nowMs = GameTime::GetGameTimeMS().count();
-        if (nowMs < sNextRelayCounterLogAtMs)
+        if (nowMs < tlRelayCounters.nextLogMs)
             return;
 
-        for (auto const& mapEntry : sRelayCounters)
+        for (auto const& mapEntry : tlRelayCounters.counters)
         {
             for (auto const& typeEntry : mapEntry.second)
             {
@@ -114,7 +125,7 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
             }
         }
 
-        sNextRelayCounterLogAtMs = nowMs + kRelayCounterLogIntervalMs;
+        tlRelayCounters.nextLogMs = nowMs + kRelayCounterLogIntervalMs;
     };
 
     std::deque<PartitionThreatRelay> threatRelays;
@@ -151,12 +162,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / threatRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "threat"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "threat"));
         }
     }
@@ -197,12 +208,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / threatActionRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "threat_action"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "threat_action"));
         }
     }
@@ -221,7 +232,6 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         uint64 nowMs = relayNowMs;
         uint64 totalLatency = 0;
         uint64 maxLatency = 0;
-        uint32 processedCount = 0;
         for (PartitionProcRelay const& relay : procRelays)
         {
             // actorGuid = the unit ProcSkillsAndReactives is called ON (the victim that was relayed)
@@ -282,7 +292,6 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
                 relay.procAuraEffectIndex, /*procSpell=*/nullptr, /*damageInfo=*/nullptr,
                 /*healInfo=*/nullptr, relay.procPhase);
 
-            processedCount++;
             RecordRelayCounter("proc", "ok");
 
             if (relay.queuedMs)
@@ -296,12 +305,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / procRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "proc"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "proc"));
         }
     }
@@ -356,12 +365,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / auraRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "aura"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "aura"));
         }
     }
@@ -419,12 +428,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / pathRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "path"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "path"));
         }
     }
@@ -485,12 +494,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / pointRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "point"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "point"));
         }
     }
@@ -720,12 +729,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / motionRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "motion"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "motion"));
         }
     }
@@ -782,12 +791,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / assistRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "assist"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "assist"));
         }
     }
@@ -844,17 +853,17 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / distractRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "assist_distract"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "assist_distract"));
         }
     }
 
-    // BUG-1 FIX: Process threat-target-action relays (were previously queued but never consumed)
+    // Process threat-target-action relays
     std::deque<PartitionThreatTargetActionRelay> threatTargetRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
@@ -892,12 +901,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / threatTargetRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "threat_target_action"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "threat_target_action"));
         }
     }
@@ -936,12 +945,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / combatRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "combat"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "combat"));
         }
     }
@@ -980,12 +989,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / lootRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "loot"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "loot"));
         }
     }
@@ -1024,12 +1033,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / dynObjectRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "dynobject"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "dynobject"));
         }
     }
@@ -1082,12 +1091,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / minionRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "minion"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "minion"));
         }
     }
@@ -1146,12 +1155,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / charmRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "charm"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "charm"));
         }
     }
@@ -1215,12 +1224,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / gameObjectRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "gameobject"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "gameobject"));
         }
     }
@@ -1281,12 +1290,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / combatStateRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "combat_state"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "combat_state"));
         }
     }
@@ -1340,12 +1349,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / attackRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "attack"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "attack"));
         }
     }
@@ -1399,17 +1408,17 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / evadeRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "evade"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "evade"));
         }
     }
 
-    // BUG-2 FIX: Process taunt relays (were previously in dead code in UpdateNonPlayerObjects)
+    // Process taunt relays
     std::deque<PartitionTauntRelay> tauntRelays;
     {
         std::lock_guard<std::mutex> lock(GetRelayLock(partitionId));
@@ -1447,12 +1456,12 @@ void Map::ProcessPartitionRelays(uint32 partitionId)
         {
             uint64 avgLatency = totalLatency / tauntRelays.size();
             METRIC_VALUE("partition_relay_latency_ms", avgLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "taunt"));
             METRIC_VALUE("partition_relay_latency_max_ms", maxLatency,
-                METRIC_TAG("map_id", std::to_string(GetId())),
-                METRIC_TAG("partition_id", std::to_string(partitionId)),
+                METRIC_TAG("map_id", mapIdStr),
+                METRIC_TAG("partition_id", partIdStr),
                 METRIC_TAG("type", "taunt"));
         }
     }

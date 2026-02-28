@@ -73,14 +73,16 @@
 //  see: https://github.com/azerothcore/azerothcore-wotlk/issues/9766
 #include "GridNotifiersImpl.h"
 
+#include <algorithm>
+#include <unordered_set>
+
 /*********************************************************/
 /***                    STORAGE SYSTEM                 ***/
 /*********************************************************/
 
 void Player::SetVirtualItemSlot(uint8 i, Item* item)
 {
-#include <algorithm>
-#include <unordered_set>
+    ASSERT(i < 3);
     if (i < 2 && item)
     {
         if (!item->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT))
@@ -7425,7 +7427,7 @@ void Player::_SaveInventory(CharacterDatabaseTransaction trans)
     {
         validItems.reserve(PLAYER_SLOTS_COUNT * 2);
         for (Item* item : m_items)
-    {
+        {
             if (!item)
                 continue;
 
@@ -7451,9 +7453,19 @@ void Player::_SaveInventory(CharacterDatabaseTransaction trans)
 
         if (validItems.find(item) == validItems.end())
         {
-            ++staleQueueEntries;
-            m_itemUpdateQueue[i] = nullptr;
-            continue;
+            // Items pending DB deletion (ITEM_REMOVED) are no longer in the
+            // player's inventory slots, so they won't appear in validItems.
+            // They must still be processed so the DB rows are cleaned up.
+            if (item->GetOwnerGUID() == GetGUID() && item->GetState() == ITEM_REMOVED)
+            {
+                // fall through to the normal save/delete logic below
+            }
+            else
+            {
+                ++staleQueueEntries;
+                m_itemUpdateQueue[i] = nullptr;
+                continue;
+            }
         }
 
         Bag* container = item->GetContainer();

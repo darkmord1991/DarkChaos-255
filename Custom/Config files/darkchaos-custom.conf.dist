@@ -5,7 +5,7 @@
 # Master configuration file for DarkChaos-255 private server (WoW 3.3.5a)
 # Level 255 progression with custom systems
 #
-# Last Updated: January 2026
+# Last Updated: February 2026
 #
 # =============================================================================
 # TABLE OF CONTENTS
@@ -94,12 +94,6 @@ DC.Achievements.Enable = 1
 #
 DC.Achievements.Debug = 0
 
-#
-#    OutdoorPvPCaptureRate
-#        Description: Rate multiplier for outdoor PvP capture points
-#        Default:     1.0
-#
-OutdoorPvPCaptureRate = 1
 
 
 ###############################################################################
@@ -132,6 +126,9 @@ DarkChaos.Seasonal.EssenceItemID = 300312
 #
 #    DarkChaos.Seasonal.WeeklyTokenCap
 #        Description: Maximum Seasonal Tokens earnable per week (0 = unlimited)
+#                     NOTE: The addon seasonal system reads this first, then
+#                     falls back to SeasonalRewards.MaxTokensPerWeek.
+#                     Set both to the same value for consistent behavior.
 #        Default:     1000
 #
 DarkChaos.Seasonal.WeeklyTokenCap = 1000
@@ -139,6 +136,9 @@ DarkChaos.Seasonal.WeeklyTokenCap = 1000
 #
 #    DarkChaos.Seasonal.WeeklyEssenceCap
 #        Description: Maximum Seasonal Essence earnable per week (0 = unlimited)
+#                     NOTE: The addon seasonal system reads this first, then
+#                     falls back to SeasonalRewards.MaxEssencePerWeek.
+#                     Set both to the same value for consistent behavior.
 #        Default:     1000
 #
 DarkChaos.Seasonal.WeeklyEssenceCap = 1000
@@ -224,6 +224,8 @@ SeasonalRewards.EventBossBonus = 1.25
 #
 #    SeasonalRewards.MaxTokensPerWeek
 #        Description: Weekly token earning cap per character (0 = unlimited)
+#                     NOTE: Fallback target for DarkChaos.Seasonal.WeeklyTokenCap.
+#                     SeasonalRewardSystem uses this key directly.
 #        Default:     0
 #
 SeasonalRewards.MaxTokensPerWeek = 0
@@ -231,6 +233,8 @@ SeasonalRewards.MaxTokensPerWeek = 0
 #
 #    SeasonalRewards.MaxEssencePerWeek
 #        Description: Weekly essence earning cap per character (0 = unlimited)
+#                     NOTE: Fallback target for DarkChaos.Seasonal.WeeklyEssenceCap.
+#                     SeasonalRewardSystem uses this key directly.
 #        Default:     0
 #
 SeasonalRewards.MaxEssencePerWeek = 0
@@ -406,28 +410,40 @@ DC.AddonProtocol.Collection.Enable = 1
 
 #
 #    DC.AddonProtocol.Prestige.Enable
-#        Description: Enable DC addon protocol for Prestige system
+#        Description: Enable DC addon protocol message routing for Prestige system.
+#                     Gates the addon protocol dispatcher layer.
+#                     See also: DCPrestigeAddon.Enable (gates the feature handler).
+#                     Both must be enabled for full prestige addon functionality.
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Prestige.Enable = 1
 
 #
 #    DCPrestigeAddon.Enable
-#        Description: Backward-compatible toggle for legacy prestige addon
+#        Description: Enable the prestige addon feature handler.
+#                     Gates the prestige-specific message processing.
+#                     See also: DC.AddonProtocol.Prestige.Enable (gates protocol routing).
+#                     Both must be enabled for full prestige addon functionality.
 #        Default:     1 (Enabled)
 #
 DCPrestigeAddon.Enable = 1
 
 #
 #    DC.AddonProtocol.Duels.Enable
-#        Description: Enable DC addon protocol for Phased Dueling system
+#        Description: Enable DC addon protocol message routing for Phased Dueling.
+#                     Gates the addon protocol dispatcher layer.
+#                     See also: DCDuelAddon.Enable (gates the feature handler).
+#                     Both must be enabled for full duel addon functionality.
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Duels.Enable = 1
 
 #
 #    DCDuelAddon.Enable
-#        Description: Backward-compatible toggle for legacy duel addon
+#        Description: Enable the duel addon feature handler.
+#                     Gates the duel-specific message processing.
+#                     See also: DC.AddonProtocol.Duels.Enable (gates protocol routing).
+#                     Both must be enabled for full duel addon functionality.
 #        Default:     1 (Enabled)
 #
 DCDuelAddon.Enable = 1
@@ -441,14 +457,20 @@ DC.AddonProtocol.Seasonal.Enable = 1
 
 #
 #    DC.AddonProtocol.HinterlandBG.Enable
-#        Description: Enable DC addon protocol for Hinterland Battleground
+#        Description: Enable DC addon protocol message routing for Hinterland BG.
+#                     Gates the addon protocol dispatcher layer.
+#                     See also: DC.Addon.HLBG.Enable (gates the feature handler).
+#                     Both must be enabled for full HLBG addon functionality.
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.HinterlandBG.Enable = 1
 
 #
 #    DC.Addon.HLBG.Enable
-#        Description: Enable Hinterland BG client addon support
+#        Description: Enable the Hinterland BG addon feature handler.
+#                     Gates HLBG-specific message processing.
+#                     See also: DC.AddonProtocol.HinterlandBG.Enable (gates protocol routing).
+#                     Both must be enabled for full HLBG addon functionality.
 #        Default:     1 (Enabled)
 #
 DC.Addon.HLBG.Enable = 1
@@ -1503,19 +1525,6 @@ DCCollection.Outfits.AllowCommunityImport = 1
 #
 DCCollection.Shop.Enable = 1
 
-#
-#    DCCollection.Shop.CurrencyToken
-#        Description: Item ID for shop token currency
-#        Default:     300311
-#
-DCCollection.Shop.CurrencyToken = 300311
-
-#
-#    DCCollection.Shop.CurrencyEmblem
-#        Description: Item ID for shop emblem currency
-#        Default:     300312
-#
-DCCollection.Shop.CurrencyEmblem = 300312
 
 # -----------------------------------------------------------------------------
 # Wishlist System
@@ -1535,30 +1544,6 @@ DCCollection.Wishlist.Enable = 1
 #
 DCCollection.Wishlist.MaxItems = 50
 
-#
-#    DCCollection.Wishlist.NotifyOnZoneEnter
-#        Description: Notify when entering zone with wishlist item source
-#        Default:     1 (Enabled)
-#
-DCCollection.Wishlist.NotifyOnZoneEnter = 1
-
-# -----------------------------------------------------------------------------
-# Notifications
-# -----------------------------------------------------------------------------
-
-#
-#    DCCollection.Notifications.Enable
-#        Description: Enable toast notifications for new collections
-#        Default:     1 (Enabled)
-#
-DCCollection.Notifications.Enable = 1
-
-#
-#    DCCollection.Notifications.Sound
-#        Description: Play sound when collecting new items
-#        Default:     1 (Enabled)
-#
-DCCollection.Notifications.Sound = 1
 
 #
 #    DCCollection.SyncInterval
@@ -1567,23 +1552,6 @@ DCCollection.Notifications.Sound = 1
 #
 DCCollection.SyncInterval = 30
 
-# -----------------------------------------------------------------------------
-# Leaderboard Integration
-# -----------------------------------------------------------------------------
-
-#
-#    DCCollection.Leaderboards.Enable
-#        Description: Enable collection leaderboards
-#        Default:     1 (Enabled)
-#
-DCCollection.Leaderboards.Enable = 1
-
-#
-#    DCCollection.Leaderboards.UpdateInterval
-#        Description: Leaderboard cache update interval (minutes)
-#        Default:     15
-#
-DCCollection.Leaderboards.UpdateInterval = 15
 
 
 ###############################################################################
@@ -3144,13 +3112,6 @@ DC.GroupFinder.Reward.DailyLimit = 1
 #
 DC.GroupFinder.CleanupIntervalMs = 60000
 
-#
-#    DungeonFinder.AllowCompleted
-#        Description: Allow completed heroic dungeons in LFG queue
-#        Default:     1 (Blizzlike)
-#
-DungeonFinder.AllowCompleted = 1
-
 
 ###############################################################################
 #
@@ -3161,7 +3122,7 @@ DungeonFinder.AllowCompleted = 1
 ###############################################################################
 
 # -----------------------------------------------------------------------------
-# Currency Configuration
+# Spawn Preset
 # -----------------------------------------------------------------------------
 
 #
@@ -3172,18 +3133,9 @@ DungeonFinder.AllowCompleted = 1
 #
 GuildHouseSpawnPreset = default
 
-#
-#    GuildHouse.Currency.ItemId
-#        Description: Item ID for guild house upgrade currency
-#                     Set to 0 to use gold instead
-#        Default:     300311 (Standard Token)
-#
-GuildHouse.Currency.ItemId = 300311
-
 # -----------------------------------------------------------------------------
 # Purchase Costs
-# If GuildHouse.Currency.ItemId is set, these are token counts.
-# If set to 0, these are copper amounts.
+# These are token counts (using DarkChaos.Seasonal.TokenItemID currency).
 # -----------------------------------------------------------------------------
 
 CostGuildHouse = 10000000
@@ -3191,7 +3143,6 @@ GuildHouseInnKeeper = 10
 GuildHouseBank = 50
 GuildHouseMailbox = 5
 GuildHouseAuctioneer = 100
-GuildHouseTrainerCost = 25
 GuildHouseVendor = 20
 GuildHouseObject = 15
 GuildHousePortal = 50
@@ -3439,13 +3390,20 @@ Logger.dc.addon=3,DC
 # Mythic+ System
 Logger.mythic=3,DC
 Logger.mythic.run=3,DC
+Logger.mythic.affixes=3,DC
+Logger.mythic.scaling=3,DC
+Logger.mythic.keystone=3,DC
 
 # Hinterland BG
 Logger.hlbg=3,DC
 Logger.hlbg.aio=3,DC
+Logger.hlbg.seasonal=3,DC
 
 # Seasonal System
 Logger.seasonal=3,DC
+
+# Map Partitioning System
+Logger.map.partition=3,DC
 
 # Ground movement path failure telemetry
 Logger.movement.path.telemetry=4,Console SlowSystems
@@ -3542,7 +3500,7 @@ MapPartitions.TileBased.TilesPerPartitionOverrides = ""
 #        Example:     "0:12,1:12,530:10,571:12"
 #        Default:     ""
 #
-MapPartitions.TileBased.PartitionOverrides = "0:6,1:6,530:6,571:6,745:2,1405:2,37:2"
+MapPartitions.TileBased.PartitionOverrides = "0:6,1:6,530:6,571:8,745:2,1405:2,37:2"
 
 #
 #    MapPartitions.BorderOverlap
@@ -3931,7 +3889,7 @@ MapPartitions.Worker.DynamicInFlight.HotQueueWaitThresholdMs = 40
 #    MapPartitions.Worker.DynamicInFlight.ReduceBy
 #        Description: In-flight slot reduction when hot-cycle downshift triggers.
 #        Default:     3
-MapPartitions.Worker.DynamicInFlight.ReduceBy = 1
+MapPartitions.Worker.DynamicInFlight.ReduceBy = 2
 
 #    MapPartitions.DeferredPlayerRelocation.MaxPerTick
 #        Description: Max deferred cross-grid player relocations processed per map
@@ -3968,7 +3926,7 @@ MapPartitions.DeferredVisibility.Telemetry.Enable = 0
 #                     per map update tick.
 #                     Higher values reduce visibility lag but increase tick cost.
 #        Default:     adaptive runtime budget
-MapPartitions.DeferredVisibility.BudgetPerTick = 1536
+MapPartitions.DeferredVisibility.BudgetPerTick = 2048
 
 #    MapPartitions.DeferredVisibility.AdaptiveMaxBudgetPerTick
 #        Description: Upper cap for adaptive deferred visibility drain budget
@@ -4025,7 +3983,7 @@ MapUpdate.PartitionBurstBeforeGeneral = 2
 #    System.SlowMapUpdateTask.ThresholdMs
 #        Description: Warn when a map update task exceeds this duration.
 #        Default:     120
-System.SlowMapUpdateTask.ThresholdMs = 250
+System.SlowMapUpdateTask.ThresholdMs = 350
 
 #    System.SlowMapUpdateTask.LogIntervalMs
 #        Description: Per-map warning throttle interval.
@@ -4035,7 +3993,7 @@ System.SlowMapUpdateTask.LogIntervalMs = 5000
 #    System.SlowPartitionWorker.ThresholdMs
 #        Description: Warn when a single partition worker exceeds this duration.
 #        Default:     300
-System.SlowPartitionWorker.ThresholdMs = 350
+System.SlowPartitionWorker.ThresholdMs = 400
 
 #    System.SlowPartitionCycle.Enable
 #        Description: Enable slow partition cycle diagnostics.
@@ -4045,7 +4003,7 @@ System.SlowPartitionCycle.Enable = 1
 #    System.SlowPartitionCycle.ThresholdMs
 #        Description: Warn when an entire partition cycle exceeds this duration.
 #        Default:     350
-System.SlowPartitionCycle.ThresholdMs = 450
+System.SlowPartitionCycle.ThresholdMs = 500
 
 #    System.SlowPartitionCycle.LogIntervalMs
 #        Description: Per-map warning throttle interval.
@@ -4067,13 +4025,13 @@ System.PartitionMetrics.EnablePercentiles = 0
 #                     timing breakdown (sessions, partitions, npc update,
 #                     relocate, visibility, sendObj, moveList, etc.).
 #        Default:     100
-System.SlowMapUpdateTask.PhaseBreakdownMs = 300
+System.SlowMapUpdateTask.PhaseBreakdownMs = 350
 
 #    System.SlowPartitionWorker.PhaseBreakdownMs
 #        Description: When a single partition worker exceeds this threshold,
 #                     log sub-phase breakdown (relays, players, npcs, boundary).
 #        Default:     80
-System.SlowPartitionWorker.PhaseBreakdownMs = 140
+System.SlowPartitionWorker.PhaseBreakdownMs = 170
 
 #    System.DelayedVisibility.BudgetPerTick
 #        Description: Max visibility relocations to process per Map::Update tick.
@@ -4106,37 +4064,6 @@ System.DelayedVisibility.Telemetry.WarnQueueDepth = 256
 System.DelayedVisibility.Telemetry.LogIntervalMs = 2000
 
 # -----------------------------------------------------------------------------
-# Playerbots NewRPG perf logging controls
-# -----------------------------------------------------------------------------
-
-#    Playerbots.Perf.NewRpgRandomInn.SamplePct
-#        Description: Sample percentage for random inn-selection logs.
-#        Default:     10
-Playerbots.Perf.NewRpgRandomInn.SamplePct = 10
-
-#    Playerbots.Perf.NewRpgRandomInn.MinIntervalMs
-#        Description: Minimum interval between sampled random inn-selection logs.
-#        Default:     5000
-Playerbots.Perf.NewRpgRandomInn.MinIntervalMs = 5000
-
-#    Playerbots.Perf.NewRpgRandomGrind.SamplePct
-#        Description: Sample percentage for random grind-selection logs.
-#        Default:     10
-Playerbots.Perf.NewRpgRandomGrind.SamplePct = 10
-
-#    Playerbots.Perf.NewRpgRandomGrind.MinIntervalMs
-#        Description: Minimum interval between sampled random grind-selection logs.
-#        Default:     5000
-Playerbots.Perf.NewRpgRandomGrind.MinIntervalMs = 5000
-
-#    Playerbots.Perf.TeleportRefresh.MaxPerSecond
-#        Description: Global cap for random bot refresh+teleport operations per second.
-#                     0 = unlimited.
-#        Default:     8
-Playerbots.Perf.TeleportRefresh.MaxPerSecond = 8
-
-
-# -----------------------------------------------------------------------------
 # Missing properties logged at runtime (added to suppress warnings)
 # -----------------------------------------------------------------------------
 
@@ -4144,22 +4071,56 @@ Playerbots.Perf.TeleportRefresh.MaxPerSecond = 8
 #        Description: Hard threshold in ms for a single delayed-visibility
 #                     relocation before it is logged as slow.
 #        Default:     12
-System.SlowLog.DelayedVisibility.HardThresholdMs = 12
+System.SlowLog.DelayedVisibility.HardThresholdMs = 20
 
 #    System.SlowLog.DelayedVisibility.MinBatch
 #        Description: Minimum batch size before slow-visibility warnings fire.
 #        Default:     16
-System.SlowLog.DelayedVisibility.MinBatch = 64
+System.SlowLog.DelayedVisibility.MinBatch = 128
 
 #    System.SlowLog.DelayedVisibility.IntervalMs
 #        Description: Per-map throttle interval for delayed-visibility warnings.
 #        Default:     2000
-System.SlowLog.DelayedVisibility.IntervalMs = 10000
+System.SlowLog.DelayedVisibility.IntervalMs = 30000
 
 #    Metric.Threshold.slow_unit_update_log_interval_ms
 #        Description: Throttle interval for per-unit slow-update metric logs.
 #        Default:     1000
 Metric.Threshold.slow_unit_update_log_interval_ms = 1000
+
+# -----------------------------------------------------------------------------
+# Missing properties (suppress Server.log startup warnings)
+# -----------------------------------------------------------------------------
+
+#    Rate.XP.BattlegroundBonus
+#        Description: BG experience bonus multiplier.
+#        Default:     1
+Rate.XP.BattlegroundBonus = 1
+
+#    Rate.ArenaPoints2v2
+#        Description: Arena points multiplier for 2v2 brackets.
+#        Default:     0.76
+Rate.ArenaPoints2v2 = 0.76
+
+#    Rate.ArenaPoints3v3
+#        Description: Arena points multiplier for 3v3 brackets.
+#        Default:     0.88
+Rate.ArenaPoints3v3 = 0.88
+
+#    OutdoorPvPCaptureRate
+#        Description: Speed multiplier for outdoor PvP capture points.
+#        Default:     1
+OutdoorPvPCaptureRate = 1
+
+#    DungeonFinder.AllowCompleted
+#        Description: Allow queueing for already-completed LFD dungeons.
+#        Default:     1
+DungeonFinder.AllowCompleted = 1
+
+#    Debug.LFG
+#        Description: Enable LFG debug logging.
+#        Default:     0
+Debug.LFG = 0
 
 ###############################################################################
 # END OF CONFIGURATION FILE

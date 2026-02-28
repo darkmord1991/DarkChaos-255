@@ -25,34 +25,15 @@
 #include "PartitionManager.h"
 #include "Player.h"
 #include "Metric.h"
+#include "UpdateExecutionHelpers.h"
 #include <chrono>
 #include <cmath>
 #include <unordered_set>
 
 namespace
 {
-template <typename T>
-auto TryBeginUpdateExecutionIfSupported(T* object, int) -> decltype(object->TryBeginUpdateExecution(), bool())
-{
-    return object->TryBeginUpdateExecution();
-}
-
-template <typename T>
-bool TryBeginUpdateExecutionIfSupported(T*, long)
-{
-    return true;
-}
-
-template <typename T>
-auto EndUpdateExecutionIfSupported(T* object, int) -> decltype(object->EndUpdateExecution(), void())
-{
-    object->EndUpdateExecution();
-}
-
-template <typename T>
-void EndUpdateExecutionIfSupported(T*, long)
-{
-}
+// TryBeginUpdateExecutionIfSupported, EndUpdateExecutionIfSupported,
+// and UpdateExecutionGuard are now provided by UpdateExecutionHelpers.h
 }
 
 PartitionUpdateWorker::PartitionUpdateWorker(Map& map, uint32 partitionId, uint32 diff, uint32 s_diff)
@@ -237,24 +218,13 @@ void PartitionUpdateWorker::UpdatePlayers()
         }
     }
 
-    sPartitionMgr->UpdatePartitionPlayerCount(_map.GetId(), _partitionId, _playerCount);
+    // Player count is deferred to UpdatePartitionStats in UpdateNonPlayerObjects,
+    // where creature and boundary counts are also finalized — single lock acquisition.
 }
 
 void PartitionUpdateWorker::UpdateNonPlayerObjects()
 {
-    struct UpdateExecutionGuard
-    {
-        explicit UpdateExecutionGuard(UpdatableMapObject* object) : _object(object) { }
-
-        ~UpdateExecutionGuard()
-        {
-            if (_object)
-                EndUpdateExecutionIfSupported(_object, 0);
-        }
-
-    private:
-        UpdatableMapObject* _object;
-    };
+    // UpdateExecutionGuard is provided by UpdateExecutionHelpers.h
 
     // Collect GUIDs to avoid dangling pointer use when objects despawn mid-tick.
     _scratchObjects.clear();
@@ -401,8 +371,7 @@ void PartitionUpdateWorker::UpdateNonPlayerObjects()
             _map.RemoveObjectFromMapUpdateList(obj);
     }
 
-    sPartitionMgr->UpdatePartitionCreatureCount(_map.GetId(), _partitionId, _creatureCount);
-    sPartitionMgr->UpdatePartitionBoundaryCount(_map.GetId(), _partitionId, _boundaryPlayerCount + _boundaryObjectCount);
+    sPartitionMgr->UpdatePartitionStats(_map.GetId(), _partitionId, _playerCount, _creatureCount, _boundaryPlayerCount + _boundaryObjectCount);
 }
 
 void PartitionUpdateWorker::FlushBoundaryBatches()

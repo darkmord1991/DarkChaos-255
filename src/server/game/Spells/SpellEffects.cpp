@@ -1488,7 +1488,11 @@ void Spell::EffectHeal(SpellEffIndex effIndex)
 
     if (unitTarget && unitTarget->IsAlive() && damage >= 0)
     {
-        // Try to get original caster
+        // Snapshot mutable members into locals. HandleEffects now saves/restores
+        // these across reentrant calls, but operations below (RemoveAura, CastSpell)
+        // can still trigger procs that re-enter HandleEffects on this Spell object.
+        // Using locals avoids reading a stale/null unitTarget after such calls.
+        Unit* target = unitTarget;
         Unit* caster = m_originalCasterGUID ? m_originalCaster : m_caster;
 
         // Skip if m_originalCaster not available
@@ -1508,12 +1512,17 @@ void Spell::EffectHeal(SpellEffIndex effIndex)
                 m_caster->RemoveAurasDueToSpell(45062);
             }
 
+            // Validate target is still alive after aura removal (proc chains
+            // can despawn or kill the target).
+            if (!target->IsAlive())
+                return;
+
             addhealth += damageAmount;
         }
         // Swiftmend - consumes Regrowth or Rejuvenation
-        else if (m_spellInfo->TargetAuraState == AURA_STATE_SWIFTMEND && unitTarget->HasAuraState(AURA_STATE_SWIFTMEND, m_spellInfo, m_caster))
+        else if (m_spellInfo->TargetAuraState == AURA_STATE_SWIFTMEND && target->HasAuraState(AURA_STATE_SWIFTMEND, m_spellInfo, m_caster))
         {
-            Unit::AuraEffectList const& RejorRegr = unitTarget->GetAuraEffectsByType(SPELL_AURA_PERIODIC_HEAL);
+            Unit::AuraEffectList const& RejorRegr = target->GetAuraEffectsByType(SPELL_AURA_PERIODIC_HEAL);
             // find most short by duration
             AuraEffect* forcedTargetAura = nullptr;
             AuraEffect* targetAura = nullptr;
@@ -1537,13 +1546,13 @@ void Spell::EffectHeal(SpellEffIndex effIndex)
 
             if (!targetAura)
             {
-                LOG_ERROR("spells.effect", "Target({}) has aurastate AURA_STATE_SWIFTMEND but no matching aura.", unitTarget->GetGUID().ToString());
+                LOG_ERROR("spells.effect", "Target({}) has aurastate AURA_STATE_SWIFTMEND but no matching aura.", target->GetGUID().ToString());
                 return;
             }
 
             int32 tickheal = targetAura->GetAmount();
             if (Unit* auraCaster = targetAura->GetCaster())
-                tickheal = unitTarget->SpellHealingBonusTaken(auraCaster, targetAura->GetSpellInfo(), tickheal, DOT);
+                tickheal = target->SpellHealingBonusTaken(auraCaster, targetAura->GetSpellInfo(), tickheal, DOT);
 
             //int32 tickheal = targetAura->GetSpellInfo()->EffectBasePoints[idx] + 1;
             //It is said that talent bonus should not be included
@@ -1560,23 +1569,27 @@ void Spell::EffectHeal(SpellEffIndex effIndex)
 
             // Glyph of Swiftmend
             if (!caster->HasAura(54824))
-                unitTarget->RemoveAura(targetAura->GetId(), targetAura->GetCasterGUID());
+                target->RemoveAura(targetAura->GetId(), targetAura->GetCasterGUID());
+
+            // Validate target survived aura removal.
+            if (!target->IsAlive())
+                return;
 
             //addhealth += tickheal * tickcount;
-            //addhealth = caster->SpellHealingBonus(m_spellInfo, addhealth, HEAL, unitTarget);
+            //addhealth = caster->SpellHealingBonus(m_spellInfo, addhealth, HEAL, target);
         }
         // Death Pact - return pct of max health to caster
         else if (m_spellInfo->SpellFamilyName == SPELLFAMILY_DEATHKNIGHT && m_spellInfo->SpellFamilyFlags[0] & 0x00080000)
         {
-            addhealth = caster->SpellHealingBonusDone(unitTarget, m_spellInfo, int32(caster->CountPctFromMaxHealth(damage)), HEAL, effIndex);
+            addhealth = caster->SpellHealingBonusDone(target, m_spellInfo, int32(caster->CountPctFromMaxHealth(damage)), HEAL, effIndex);
             m_damageBeforeTakenMods -= addhealth;
-            addhealth = unitTarget->SpellHealingBonusTaken(caster, m_spellInfo, addhealth, HEAL);
+            addhealth = target->SpellHealingBonusTaken(caster, m_spellInfo, addhealth, HEAL);
         }
         else if (m_spellInfo->Id != 33778) // not lifebloom
         {
-            addhealth = caster->SpellHealingBonusDone(unitTarget, m_spellInfo, addhealth, HEAL, effIndex);
+            addhealth = caster->SpellHealingBonusDone(target, m_spellInfo, addhealth, HEAL, effIndex);
             m_damageBeforeTakenMods -= addhealth;
-            addhealth = unitTarget->SpellHealingBonusTaken(caster, m_spellInfo, addhealth, HEAL);
+            addhealth = target->SpellHealingBonusTaken(caster, m_spellInfo, addhealth, HEAL);
         }
 
         // Implemented this way as there is no other way to do it currently (that I know :P)...
@@ -1585,7 +1598,7 @@ void Spell::EffectHeal(SpellEffIndex effIndex)
             if (!m_spellInfo->HasAura(SPELL_AURA_PERIODIC_HEAL) && (m_spellInfo->GetSchoolMask() & SPELL_SCHOOL_MASK_HOLY))
             {
                 m_damage = 0;
-                caster->CastSpell(unitTarget, 23402, false); // Nefarian Corrupted Healing Periodic Damage effect.
+                caster->CastSpell(target, 23402, false); // Nefarian Corrupted Healing Periodic Damage effect.
                 return;
             }
         }
@@ -1606,9 +1619,10 @@ void Spell::EffectHealPct(SpellEffIndex effIndex)
     if (!m_originalCaster)
         return;
 
-    uint32 heal = m_originalCaster->SpellHealingBonusDone(unitTarget, m_spellInfo, unitTarget->CountPctFromMaxHealth(damage), HEAL, effIndex);
+    Unit* target = unitTarget;
+    uint32 heal = m_originalCaster->SpellHealingBonusDone(target, m_spellInfo, target->CountPctFromMaxHealth(damage), HEAL, effIndex);
     m_damageBeforeTakenMods -= heal;
-    heal = unitTarget->SpellHealingBonusTaken(m_originalCaster, m_spellInfo, heal, HEAL);
+    heal = target->SpellHealingBonusTaken(m_originalCaster, m_spellInfo, heal, HEAL);
 
     m_damage -= heal;
 }
@@ -1625,10 +1639,11 @@ void Spell::EffectHealMechanical(SpellEffIndex effIndex)
     if (!m_originalCaster)
         return;
 
-    uint32 heal = m_originalCaster->SpellHealingBonusDone(unitTarget, m_spellInfo, uint32(damage), HEAL, effIndex);
+    Unit* target = unitTarget;
+    uint32 heal = m_originalCaster->SpellHealingBonusDone(target, m_spellInfo, uint32(damage), HEAL, effIndex);
     m_damageBeforeTakenMods -= heal;
 
-    m_damage -= unitTarget->SpellHealingBonusTaken(m_originalCaster, m_spellInfo, heal, HEAL);
+    m_damage -= target->SpellHealingBonusTaken(m_originalCaster, m_spellInfo, heal, HEAL);
 }
 
 void Spell::EffectHealthLeech(SpellEffIndex  effIndex)
