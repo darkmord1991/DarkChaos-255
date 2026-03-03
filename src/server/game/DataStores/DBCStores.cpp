@@ -415,6 +415,14 @@ void LoadDBCStores(const std::string& dataPath)
     for (CharStartOutfitEntry const* outfit : sCharStartOutfitStore)
         sCharStartOutfitMap[outfit->Race | (outfit->Class << 8) | (outfit->Gender << 16)] = outfit;
 
+#ifndef RACEMASK_ALL_PLAYABLE
+#define RACEMASK_ALL_PLAYABLE \
+    ((1<<(RACE_HUMAN-1))|(1<<(RACE_ORC-1))|(1<<(RACE_DWARF-1))| \
+    (1<<(RACE_NIGHTELF-1))|(1<<(RACE_UNDEAD_PLAYER-1))|(1<<(RACE_TAUREN-1))| \
+    (1<<(RACE_GNOME-1))|(1<<(RACE_TROLL-1))|(1<<(RACE_BLOODELF-1)) | \
+    (1<<(RACE_DRAENEI-1)))
+#endif
+
     for (CharSectionsEntry const* charSection : sCharSectionsStore)
         if (charSection->Race && ((1 << (charSection->Race - 1)) & RACEMASK_ALL_PLAYABLE) != 0) //ignore Nonplayable races
             sCharSectionMap.insert({ charSection->GenType | (charSection->Gender << 8) | (charSection->Race << 16), charSection });
