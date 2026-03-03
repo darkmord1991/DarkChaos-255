@@ -17,6 +17,7 @@
 
 #include "Battlefield.h"
 #include "BattlefieldMgr.h"
+#include "ScriptMgr.h"
 #include "CellImpl.h"
 #include "CreatureTextMgr.h"
 #include "GameGraveyard.h"
@@ -96,6 +97,10 @@ Battlefield::~Battlefield()
 // Called when a player enters the zone
 void Battlefield::HandlePlayerEnterZone(Player* player, uint32 /*zone*/)
 {
+    // Allow scripts to adjust the player's effective team or appearance before
+    // any team-based battlefield containers (such as player lists or queues) are updated.
+    sScriptMgr->OnBattlefieldPlayerEnterZone(this, player);
+
     // Xinef: do not invite players on taxi
     if (!player->IsInFlight())
     {
@@ -141,6 +146,7 @@ void Battlefield::HandlePlayerLeaveZone(Player* player, uint32 /*zone*/)
                     group->RemoveMember(player->GetGUID());
 
             OnPlayerLeaveWar(player);
+            sScriptMgr->OnBattlefieldPlayerLeaveWar(this, player);
         }
     }
 
@@ -153,6 +159,10 @@ void Battlefield::HandlePlayerLeaveZone(Player* player, uint32 /*zone*/)
     SendRemoveWorldStates(player);
     RemovePlayerFromResurrectQueue(player->GetGUID());
     OnPlayerLeaveZone(player);
+    // Scripts must restore player->GetTeamId() here (e.g. ClearFakePlayer).
+    // All Battlefield data-structure cleanup above has already completed using
+    // the assigned team, so it is safe to restore the real team now.
+    sScriptMgr->OnBattlefieldPlayerLeaveZone(this, player);
 }
 
 bool Battlefield::Update(uint32 diff)
@@ -317,6 +327,8 @@ void Battlefield::InvitePlayerToWar(Player* player)
     if (m_PlayersInWar[player->GetTeamId()].count(player->GetGUID()) || m_InvitedPlayers[player->GetTeamId()].count(player->GetGUID()))
         return;
 
+    sScriptMgr->OnBattlefieldBeforeInvitePlayerToWar(this, player);
+
     m_PlayersWillBeKick[player->GetTeamId()].erase(player->GetGUID());
     m_InvitedPlayers[player->GetTeamId()][player->GetGUID()] = GameTime::GetGameTime().count() + m_TimeForAcceptInvite;
     player->GetSession()->SendBfInvitePlayerToWar(m_BattleId, m_ZoneId, m_TimeForAcceptInvite);
@@ -438,6 +450,8 @@ void Battlefield::PlayerAcceptInviteToWar(Player* player)
 {
     if (!IsWarTime())
         return;
+
+    sScriptMgr->OnBattlefieldPlayerJoinWar(this, player);
 
     if (AddOrSetPlayerToCorrectBfGroup(player))
     {

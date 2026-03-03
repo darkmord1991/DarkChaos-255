@@ -38,6 +38,7 @@
 #include "MapMgr.h"
 #include "Pet.h"
 #include "PoolMgr.h"
+#include "RaceMgr.h"
 #include "ReputationMgr.h"
 #include "ScriptMgr.h"
 #include "Spell.h"
@@ -308,8 +309,6 @@ ObjectMgr::ObjectMgr():
     for (uint8 i = 0; i < MAX_CLASSES; ++i)
     {
         _playerClassInfo[i] = nullptr;
-        for (uint8 j = 0; j < MAX_RACES; ++j)
-            _playerInfo[j][i] = nullptr;
     }
 }
 
@@ -329,7 +328,7 @@ ObjectMgr::~ObjectMgr()
         delete _playerClassInfo[class_];
     }
 
-    for (int race = 0; race < MAX_RACES; ++race)
+    for (int race = 0; race < sRaceMgr->GetMaxRaces(); ++race)
     {
         for (int class_ = 0; class_ < MAX_CLASSES; ++class_)
         {
@@ -1111,8 +1110,8 @@ void ObjectMgr::CheckCreatureTemplate(CreatureTemplate const* cInfo)
 
     if (!cInfo->unit_class || ((1 << (cInfo->unit_class - 1)) & CLASSMASK_ALL_CREATURES) == 0)
     {
-        LOG_ERROR("sql.sql", "Creature (Entry: {}) has invalid unit_class ({}) in creature_template. Set to 1 (UNIT_CLASS_WARRIOR).", cInfo->Entry, cInfo->unit_class);
-        const_cast<CreatureTemplate*>(cInfo)->unit_class = UNIT_CLASS_WARRIOR;
+        LOG_ERROR("sql.sql", "Creature (Entry: {}) has invalid unit_class ({}) in creature_template. Set to 1 (CLASS_WARRIOR).", cInfo->Entry, cInfo->unit_class);
+        const_cast<CreatureTemplate*>(cInfo)->unit_class = CLASS_WARRIOR;
     }
 
     if (cInfo->dmgschool >= MAX_SPELL_SCHOOL)
@@ -3645,7 +3644,7 @@ void ObjectMgr::LoadItemTemplates()
                 if (!(itemTemplate.AllowableClass & CLASSMASK_ALL_PLAYABLE))
                     LOG_ERROR("sql.sql", "Item (Entry: {}) does not have any playable classes ({}) in `AllowableClass` and can't be equipped or used.", entry, itemTemplate.AllowableClass);
 
-                if (!(itemTemplate.AllowableRace & RACEMASK_ALL_PLAYABLE))
+                if (!(itemTemplate.AllowableRace & sRaceMgr->GetPlayableRaceMask()))
                     LOG_ERROR("sql.sql", "Item (Entry: {}) does not have any playable races ({}) in `AllowableRace` and can't be equipped or used.", entry, itemTemplate.AllowableRace);
             }
         }
@@ -4405,6 +4404,14 @@ void ObjectMgr::LoadPlayerInfo()
 {
     // Load playercreate
     {
+        if (_playerInfo.empty() || _playerInfo.size() != sRaceMgr->GetMaxRaces())
+        {
+            _playerInfo.clear();
+            _playerInfo.resize(sRaceMgr->GetMaxRaces());
+            for (auto& classVec : _playerInfo)
+                classVec.resize(MAX_CLASSES, nullptr);
+        }
+
         uint32 oldMSTime = getMSTime();
         //                                                0     1      2    3        4          5           6
         QueryResult result = WorldDatabase.Query("SELECT race, class, map, zone, position_x, position_y, position_z, orientation FROM playercreateinfo");
@@ -4432,7 +4439,7 @@ void ObjectMgr::LoadPlayerInfo()
                 float  positionZ     = fields[6].Get<float>();
                 float  orientation   = fields[7].Get<float>();
 
-                if (current_race >= MAX_RACES)
+                if (current_race >= sRaceMgr->GetMaxRaces())
                 {
                     LOG_ERROR("sql.sql", "Wrong race {} in `playercreateinfo` table, ignoring.", current_race);
                     continue;
@@ -4510,7 +4517,7 @@ void ObjectMgr::LoadPlayerInfo()
                 Field* fields = result->Fetch();
 
                 uint32 current_race = fields[0].Get<uint8>();
-                if (current_race >= MAX_RACES)
+                if (current_race >= sRaceMgr->GetMaxRaces())
                 {
                     LOG_ERROR("sql.sql", "Wrong race {} in `playercreateinfo_item` table, ignoring.", current_race);
                     continue;
@@ -4542,7 +4549,7 @@ void ObjectMgr::LoadPlayerInfo()
                 if (!current_race || !current_class)
                 {
                     uint32 min_race = current_race ? current_race : 1;
-                    uint32 max_race = current_race ? current_race + 1 : MAX_RACES;
+                    uint32 max_race = current_race ? current_race + 1 : sRaceMgr->GetMaxRaces();
                     uint32 min_class = current_class ? current_class : 1;
                     uint32 max_class = current_class ? current_class + 1 : MAX_CLASSES;
                     for (uint32 r = min_race; r < max_race; ++r)
@@ -4590,7 +4597,7 @@ void ObjectMgr::LoadPlayerInfo()
                     continue;
                 }
 
-                if (raceMask != 0 && !(raceMask & RACEMASK_ALL_PLAYABLE))
+                if (raceMask != 0 && !(raceMask & sRaceMgr->GetPlayableRaceMask()))
                 {
                     LOG_ERROR("sql.sql", "Wrong race mask {} in `playercreateinfo_skills` table, ignoring.", raceMask);
                     continue;
@@ -4608,7 +4615,7 @@ void ObjectMgr::LoadPlayerInfo()
                     continue;
                 }
 
-                for (uint32 raceIndex = RACE_HUMAN; raceIndex < MAX_RACES; ++raceIndex)
+                for (uint32 raceIndex = RACE_HUMAN; raceIndex < sRaceMgr->GetMaxRaces(); ++raceIndex)
                 {
                     if (raceMask == 0 || ((1 << (raceIndex - 1)) & raceMask))
                     {
@@ -4657,7 +4664,7 @@ void ObjectMgr::LoadPlayerInfo()
                 uint32 classMask = fields[1].Get<uint32>();
                 uint32 spellId = fields[2].Get<uint32>();
 
-                if (raceMask != 0 && !(raceMask & RACEMASK_ALL_PLAYABLE))
+                if (raceMask != 0 && !(raceMask & sRaceMgr->GetPlayableRaceMask()))
                 {
                     LOG_ERROR("sql.sql", "Wrong race mask {} in `playercreateinfo_spell_custom` table, ignoring.", raceMask);
                     continue;
@@ -4669,7 +4676,7 @@ void ObjectMgr::LoadPlayerInfo()
                     continue;
                 }
 
-                for (uint32 raceIndex = RACE_HUMAN; raceIndex < MAX_RACES; ++raceIndex)
+                for (uint32 raceIndex = RACE_HUMAN; raceIndex < sRaceMgr->GetMaxRaces(); ++raceIndex)
                 {
                     if (raceMask == 0 || ((1 << (raceIndex - 1)) & raceMask))
                     {
@@ -4715,7 +4722,7 @@ void ObjectMgr::LoadPlayerInfo()
                 uint32 classMask = fields[1].Get<uint32>();
                 uint32 spellId   = fields[2].Get<uint32>();
 
-                if (raceMask != 0 && !(raceMask & RACEMASK_ALL_PLAYABLE))
+                if (raceMask != 0 && !(raceMask & sRaceMgr->GetPlayableRaceMask()))
                 {
                     LOG_ERROR("sql.sql", "Wrong race mask {} in `playercreateinfo_cast_spell` table, ignoring.", raceMask);
                     continue;
@@ -4727,7 +4734,7 @@ void ObjectMgr::LoadPlayerInfo()
                     continue;
                 }
 
-                for (uint32 raceIndex = RACE_HUMAN; raceIndex < MAX_RACES; ++raceIndex)
+                for (uint32 raceIndex = RACE_HUMAN; raceIndex < sRaceMgr->GetMaxRaces(); ++raceIndex)
                 {
                     if (raceMask == 0 || ((1 << (raceIndex - 1)) & raceMask))
                     {
@@ -4773,7 +4780,7 @@ void ObjectMgr::LoadPlayerInfo()
                 Field* fields = result->Fetch();
 
                 uint32 current_race = fields[0].Get<uint8>();
-                if (current_race >= MAX_RACES)
+                if (current_race >= sRaceMgr->GetMaxRaces())
                 {
                     LOG_ERROR("sql.sql", "Wrong race {} in `playercreateinfo_action` table, ignoring.", current_race);
                     continue;
@@ -4805,7 +4812,9 @@ void ObjectMgr::LoadPlayerInfo()
             int16 StatModifier[MAX_STATS];
         };
 
-        std::array<RaceStats, MAX_RACES> raceStatModifiers;
+        std::vector<RaceStats> raceStatModifiers;
+
+        raceStatModifiers.resize(sRaceMgr->GetMaxRaces());
 
         uint32 oldMSTime = getMSTime();
 
@@ -4824,7 +4833,7 @@ void ObjectMgr::LoadPlayerInfo()
             Field* fields = raceStatsResult->Fetch();
 
             uint32 current_race = fields[0].Get<uint8>();
-            if (current_race >= MAX_RACES)
+            if (current_race >= sRaceMgr->GetMaxRaces())
             {
                 LOG_ERROR("sql.sql", "Wrong race {} in `player_race_stats` table, ignoring.", current_race);
                 continue;
@@ -4898,7 +4907,7 @@ void ObjectMgr::LoadPlayerInfo()
         } while (result->NextRow());
 
         // Fill gaps and check integrity
-        for (int race = 0; race < MAX_RACES; ++race)
+        for (int race = RACE_HUMAN; race < sRaceMgr->GetMaxRaces(); ++race)
         {
             // skip non existed races
             if (!sChrRacesStore.LookupEntry(race))
@@ -5037,7 +5046,7 @@ void ObjectMgr::GetPlayerClassLevelInfo(uint32 class_, uint8 level, PlayerClassL
 
 void ObjectMgr::GetPlayerLevelInfo(uint32 race, uint32 class_, uint8 level, PlayerLevelInfo* info) const
 {
-    if (level < 1 || race >= MAX_RACES || class_ >= MAX_CLASSES)
+    if (level < 1 || race >= sRaceMgr->GetMaxRaces() || class_ >= MAX_CLASSES)
         return;
 
     PlayerInfo const* pInfo = _playerInfo[race][class_];
@@ -5406,10 +5415,10 @@ void ObjectMgr::LoadQuests()
                 qinfo->RequiredClasses = 0;
             }
         }
-        // AllowableRaces, can be 0/RACEMASK_ALL_PLAYABLE to allow any race
+        // AllowableRaces, can be 0/PlayableRaceMask to allow any race
         if (qinfo->AllowableRaces)
         {
-            if (!(qinfo->AllowableRaces & RACEMASK_ALL_PLAYABLE))
+            if (!(qinfo->AllowableRaces & sRaceMgr->GetPlayableRaceMask()))
             {
                 LOG_ERROR("sql.sql", "Quest {} does not contain any playable races in `AllowableRaces` ({}), value set to 0 (all races).", qinfo->GetQuestId(), qinfo->AllowableRaces);
                 qinfo->AllowableRaces = 0;
@@ -9830,7 +9839,7 @@ void ObjectMgr::LoadMailLevelRewards()
             continue;
         }
 
-        if (!(raceMask & RACEMASK_ALL_PLAYABLE))
+        if (!(raceMask & sRaceMgr->GetPlayableRaceMask()))
         {
             LOG_ERROR("sql.sql", "Table `mail_level_reward` have raceMask ({}) for level {} that not include any player races, ignoring.", raceMask, level);
             continue;
@@ -10927,7 +10936,7 @@ VehicleAccessoryList const* ObjectMgr::GetVehicleAccessoryList(Vehicle* veh) con
 
 PlayerInfo const* ObjectMgr::GetPlayerInfo(uint32 race, uint32 class_) const
 {
-    if (race >= MAX_RACES)
+    if (race >= sRaceMgr->GetMaxRaces())
         return nullptr;
     if (class_ >= MAX_CLASSES)
         return nullptr;
