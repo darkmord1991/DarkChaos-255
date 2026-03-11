@@ -859,7 +859,7 @@ void SmartAI::AttackStart(Unit* who)
         return;
     }
 
-    if (who && me->Attack(who, me->IsWithinMeleeRange(who) || _currentRangeMode))
+    if (who && me->Attack(who, me->IsWithinMeleeRange(who)))
     {
         if (!me->HasUnitState(UNIT_STATE_NO_COMBAT_MOVEMENT))
         {
@@ -1250,10 +1250,10 @@ bool SmartAI::IsMainSpellPrevented(SpellInfo const* spellInfo) const
     return false;
 }
 
-void SmartAI::OnSpellCastFinished(SpellInfo const* spell, SpellFinishReason reason)
+void SmartAI::OnSpellFailed(SpellInfo const* spell)
 {
-    CreatureAI::OnSpellCastFinished(spell, reason);
-    if (reason == SPELL_FINISHED_CANCELED && _mainSpellId == spell->Id)
+    CreatureAI::OnSpellFailed(spell);
+    if (_mainSpellId == spell->Id)
         if (_currentRangeMode && IsMainSpellPrevented(spell))
             SetCurrentRangeMode(false);
 }
