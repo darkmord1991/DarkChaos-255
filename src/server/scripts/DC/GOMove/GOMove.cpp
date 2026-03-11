@@ -178,7 +178,7 @@ GameObject * GOMove::MoveGameObject(Player* player, float x, float y, float z, f
     // copy paste .gob move command
     // copy paste .gob turn command
     object->Relocate(x, y, z, o);
-    object->SetLocalRotationAngles(o, 0.0f, 0.0f);
+    object->SetWorldRotationAngles(o, 0.0f, 0.0f);
     object->SaveToDB();
 
     // Generate a completely new spawn with new guid

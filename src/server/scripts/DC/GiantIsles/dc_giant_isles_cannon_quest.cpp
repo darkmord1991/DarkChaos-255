@@ -473,13 +473,9 @@ public:
         }
 
         // Called when cannon finishes casting a spell
-        void OnSpellCastFinished(SpellInfo const* spell, SpellFinishReason reason) override
+        void OnSpellCast(SpellInfo const* spell) override
         {
             if (!spell)
-                return;
-
-            // Only process successful cannon spell casts
-            if (reason != SPELL_FINISHED_SUCCESSFUL_CAST)
                 return;
 
             // Check if this is a cannon spell
