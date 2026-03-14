@@ -896,7 +896,7 @@ class AoELootServerScript : public ServerScript
 public:
     AoELootServerScript() : ServerScript("AoELootServerScript") { }
 
-    bool CanPacketReceive(WorldSession* session, WorldPacket& packet) override
+    bool CanPacketReceive(WorldSession* session, WorldPacket const& packet) override
     {
         if (!sConfig.enabled || !session) return true;
 
