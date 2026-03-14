@@ -81,11 +81,8 @@ void OutdoorPvPHL::HandleReset()
         {
             HLZoneResetCollectWorker collector{};
             collector.areaId = OutdoorPvPHLBattleAreaId;
-            map->VisitAllObjectStores([&](MapStoredObjectTypesContainer& objects)
-            {
-                TypeContainerVisitor<HLZoneResetCollectWorker, MapStoredObjectTypesContainer> visitor(collector);
-                visitor.Visit(objects);
-            });
+            TypeContainerVisitor<HLZoneResetCollectWorker, MapStoredObjectTypesContainer> visitor(collector);
+            visitor.Visit(map->GetObjectsStore());
 
             for (ObjectGuid const& guid : collector.creatureGuids)
             {

@@ -296,6 +296,8 @@ public:
     Battleground();
     virtual ~Battleground();
 
+    void CopyFromTemplate(Battleground const* bgTemplate);
+
     void Update(uint32 diff);
 
     virtual bool SetupBattleground()                    // must be implemented in BG subclass

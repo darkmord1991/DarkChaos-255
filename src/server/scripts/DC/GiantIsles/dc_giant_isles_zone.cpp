@@ -173,9 +173,9 @@ static Creature* FindSpawnedCreatureBySpawnId(Map* map, uint32 spawnId, uint32 e
     if (!map)
         return nullptr;
 
-    auto creatures = map->GetCreaturesBySpawnId(spawnId);
-    if (!creatures.empty())
-        return creatures.front();
+    auto bounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
+    if (bounds.first != bounds.second)
+        return bounds.first->second;
 
     return map->GetCreature(ObjectGuid::Create<HighGuid::Unit>(entry, spawnId));
 }

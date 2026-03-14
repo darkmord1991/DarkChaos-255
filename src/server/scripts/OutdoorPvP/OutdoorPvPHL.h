@@ -111,6 +111,7 @@
     const uint32 WinBuffs[WinBuffsNum]      = { 39233, 23693, 53899, 62213 }; // Whoever wins, gets these buffs
     const uint32 LoseBuffs[LoseBuffsNum]    = { 23948, 40079}; // Whoever loses, gets this buff.
 
+    const uint32 OutdoorPvPHLBattleAreaId = 6738;
     const uint32 HL_RESOURCES_A         = 450;
     const uint32 HL_RESOURCES_H         = 450;
     // Default match duration used for the status timer (in seconds)
@@ -409,6 +410,7 @@
             void AddPlayerToQueue(Player* player);
             void RemovePlayerFromQueue(Player* player);
             bool IsPlayerInQueue(Player* player);
+            void RemoveQueueEntryAtIndex(size_t index);
 public:
             uint32 GetQueuedPlayerCount();
             uint32 GetQueuedPlayerCountByTeam(TeamId teamId);
@@ -537,6 +539,7 @@ public:
     std::unordered_map<uint32, size_t> _queuedIndexByGuid;
     uint32 _queuedAllianceCount = 0;
     uint32 _queuedHordeCount = 0;
+    std::unordered_map<uint32, uint32> _lastQueueJoinAttemptSec;
     uint32 _minPlayersToStart;
     uint32 _maxGroupSize;
     bool   _lockEnabled;               // enable lock window after win

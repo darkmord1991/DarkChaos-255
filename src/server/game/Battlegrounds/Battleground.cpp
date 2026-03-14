@@ -211,6 +211,31 @@ Battleground::Battleground()
     m_UpdateTimer = 0;
 }
 
+void Battleground::CopyFromTemplate(Battleground const* bgTemplate)
+{
+    if (!bgTemplate)
+        return;
+
+    SetMapId(bgTemplate->GetMapId());
+    SetName(bgTemplate->GetName());
+    SetArenaorBGType(bgTemplate->isArena());
+    SetMinPlayersPerTeam(bgTemplate->GetMinPlayersPerTeam());
+    SetMaxPlayersPerTeam(bgTemplate->GetMaxPlayersPerTeam());
+    SetStartMaxDist(bgTemplate->GetStartMaxDist());
+    SetLevelRange(bgTemplate->GetMinLevel(), bgTemplate->GetMaxLevel());
+    SetScriptId(bgTemplate->GetScriptId());
+
+    for (uint8 i = 0; i < BG_STARTING_EVENT_COUNT; ++i)
+    {
+        StartDelayTimes[i] = bgTemplate->StartDelayTimes[i];
+        StartMessageIds[i] = bgTemplate->StartMessageIds[i];
+    }
+
+    SetTeamStartPosition(TEAM_ALLIANCE, *bgTemplate->GetTeamStartPosition(TEAM_ALLIANCE));
+    SetTeamStartPosition(TEAM_HORDE, *bgTemplate->GetTeamStartPosition(TEAM_HORDE));
+    m_HonorMode = bgTemplate->m_HonorMode;
+}
+
 Battleground::~Battleground()
 {
     LOG_DEBUG("bg.battleground", "> Remove Battleground {} {} {}", GetName(), GetBgTypeID(), GetInstanceID());
