@@ -214,6 +214,73 @@ namespace DCCustomLogin
         return "";
     }
 
+    bool IsItemEquipped(Player* player, uint32 itemId)
+    {
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            Item* equipped = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (equipped && equipped->GetEntry() == itemId)
+                return true;
+        }
+
+        return false;
+    }
+
+    bool EquipExistingItem(Player* player, uint32 itemId, bool debug)
+    {
+        Item* item = player->GetItemByEntry(itemId);
+        if (!item)
+            return false;
+
+        if (Player::IsEquipmentPos(item->GetPos()))
+            return true;
+
+        ItemTemplate const* proto = item->GetTemplate();
+        if (!proto)
+            return false;
+
+        uint8 equipSlot = player->FindEquipSlot(proto, NULL_SLOT, true);
+        if (equipSlot == NULL_SLOT)
+        {
+            if (debug)
+                LOG_WARN("module.dc", "[DCCustomLogin] Could not find equip slot for existing item {} on {}",
+                         itemId, player->GetName());
+            return false;
+        }
+
+        uint16 srcPos = item->GetPos();
+        uint16 dstPos = (INVENTORY_SLOT_BAG_0 << 8) | equipSlot;
+
+        if (srcPos == dstPos)
+            return true;
+
+        player->SwapItem(srcPos, dstPos);
+        player->AutoUnequipOffhandIfNeed();
+
+        return IsItemEquipped(player, itemId);
+    }
+
+    bool AddAndEquipItem(Player* player, uint32 itemId, bool debug)
+    {
+        uint16 destPos = 0;
+        InventoryResult result = player->CanEquipNewItem(NULL_SLOT, destPos, itemId, true);
+        if (result == EQUIP_ERR_OK)
+        {
+            player->EquipNewItem(destPos, itemId, true);
+            player->AutoUnequipOffhandIfNeed();
+            return true;
+        }
+
+        if (player->AddItem(itemId, 1))
+            return EquipExistingItem(player, itemId, debug);
+
+        if (debug)
+            LOG_WARN("module.dc", "[DCCustomLogin] Failed to add BoA item {} to {}",
+                     itemId, player->GetName());
+
+        return false;
+    }
+
     bool HasFirstLoginMarker(ObjectGuid guid)
     {
         QueryResult result = CharacterDatabase.Query(
@@ -430,9 +497,24 @@ namespace DCCustomLogin
 
             if (itemId > 0)
             {
-                player->AddItem(itemId, 1);
-                if (debug)
-                    LOG_INFO("module.dc", "[DCCustomLogin] Added BoA item {} ({}) to {}", itemId, slot, player->GetName());
+                if (player->GetItemCount(itemId, true) == 0)
+                {
+                    bool equipped = AddAndEquipItem(player, itemId, debug);
+                    if (debug)
+                    {
+                        LOG_INFO("module.dc", "[DCCustomLogin] Added BoA item {} ({}) to {} (equipped: {})",
+                                 itemId, slot, player->GetName(), equipped ? "yes" : "no");
+                    }
+                }
+                else
+                {
+                    bool equipped = IsItemEquipped(player, itemId) || EquipExistingItem(player, itemId, debug);
+                    if (debug)
+                    {
+                        LOG_INFO("module.dc", "[DCCustomLogin] BoA item {} ({}) already exists for {} (equipped: {})",
+                                 itemId, slot, player->GetName(), equipped ? "yes" : "no");
+                    }
+                }
             }
         }
 

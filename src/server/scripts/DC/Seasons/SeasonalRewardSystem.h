@@ -17,6 +17,9 @@
 #include <map>
 #include <vector>
 
+class Creature;
+class Quest;
+
 namespace DarkChaos
 {
     namespace SeasonalRewards
@@ -35,6 +38,8 @@ namespace DarkChaos
         struct SeasonalConfig
         {
             bool enabled = true;
+            bool consolidateItemUpgradeHooks = true;
+            bool parityFallback = true;
             uint32 activeSeason = 1;
             uint32 tokenItemId = 49426;                     // Default token item ID
             uint32 essenceItemId = 47241;                   // Default essence item ID
@@ -140,10 +145,10 @@ namespace DarkChaos
             bool AwardBoth(Player* player, uint32 tokens, uint32 essence, const std::string& source, uint32 sourceId = 0);
 
             // Quest Rewards
-            bool ProcessQuestReward(Player* player, uint32 questId);
+            bool ProcessQuestReward(Player* player, Quest const* quest);
 
             // Creature Kill Rewards
-            bool ProcessCreatureKill(Player* player, uint32 creatureEntry, bool isDungeonBoss = false, bool isWorldBoss = false);
+            bool ProcessCreatureKill(Player* player, Creature const* creature);
 
             // Weekly Cap Management
             bool CheckWeeklyCap(Player* player, uint32& tokens, uint32& essence);

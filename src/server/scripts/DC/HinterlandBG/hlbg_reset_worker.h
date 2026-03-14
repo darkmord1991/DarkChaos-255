@@ -4,10 +4,10 @@
 #include "GameObject.h"
 #include <unordered_map>
 
-// HLZoneResetWorker: traverses object stores to respawn/reset creatures and gameobjects in a zone
+// HLZoneResetWorker: traverses object stores to respawn/reset creatures and gameobjects in the battle area
 struct HLZoneResetWorker
 {
-    uint32 zoneId;
+    uint32 areaId;
     uint32 creatureCount = 0;
     uint32 goCount = 0;
 
@@ -18,7 +18,7 @@ struct HLZoneResetWorker
             Creature* c = p.second;
             if (!c || !c->IsInWorld())
                 continue;
-            if (c->GetZoneId() != zoneId)
+            if (c->GetAreaId() != areaId)
                 continue;
             // Skip non-world NPCs
             if (c->IsPlayer() || c->IsPet() || c->IsTotem() || c->IsGuardian() || c->IsSummon())
@@ -44,7 +44,7 @@ struct HLZoneResetWorker
             GameObject* go = p.second;
             if (!go || !go->IsInWorld())
                 continue;
-            if (go->GetZoneId() != zoneId)
+            if (go->GetAreaId() != areaId)
                 continue;
             go->Respawn();
             ++goCount;

@@ -2,6 +2,7 @@
 #define DC_HOTSPOT_MGR_H
 
 #include "HotspotGrid.h"
+#include <mutex>
 #include <unordered_map>
 
 class HotspotMgr
@@ -24,6 +25,7 @@ private:
         time_t lastXPGain;
     };
     std::unordered_map<ObjectGuid, PlayerHotspotTracking> _playerTracking;
+    std::mutex _playerDataLock;
 
 public:
     static HotspotMgr* instance();

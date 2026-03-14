@@ -354,7 +354,7 @@ namespace DarkChaos
                 }
 
                 // Find the player
-                Player* player = ObjectAccessor::FindPlayer(ObjectGuid::Create<HighGuid::Player>(player_guid));
+                Player* player = FindPlayerWithContext(player_guid);
                 if (!player)
                 {
                     LOG_ERROR("scripts.dc", "ItemUpgrade: ExchangeCurrency failed - player {} not found", player_guid);

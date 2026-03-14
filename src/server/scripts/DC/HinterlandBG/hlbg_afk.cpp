@@ -10,7 +10,7 @@
 // Update last-move timestamps for AFK detection when player meaningfully moves.
 void OutdoorPvPHL::NotePlayerMovement(Player* player)
 {
-    if (!player || player->GetZoneId() != OutdoorPvPHLBuffZones[0])
+    if (!player || player->GetAreaId() != OutdoorPvPHLBattleAreaId)
         return;
     // Update last move time on any movement that meaningfully changes position
     Position const& cur = player->GetPosition();

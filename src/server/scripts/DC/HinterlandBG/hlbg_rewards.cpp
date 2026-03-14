@@ -120,7 +120,7 @@ void OutdoorPvPHL::HandleRewards(TeamId winner)
         // OutdoorPvP base tracks participating players by team.
         for (auto const& guid : _players[team])
         {
-            if (Player* plr = ObjectAccessor::FindPlayer(guid))
+            if (Player* plr = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), guid) : nullptr)
             {
                 plr->RewardHonor(nullptr, 0, float(honor));
                 // Optional: token reward for match participation/victory
@@ -267,7 +267,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
             if (_rewardKillItemId && _rewardKillItemCount)
                 plr->AddItem(_rewardKillItemId, _rewardKillItemCount);
             // Add scoreboard points if member is in zone
-            if (plr->GetZoneId() == OutdoorPvPHLBuffZones[0])
+            if (plr->GetAreaId() == OutdoorPvPHLBattleAreaId)
             {
                 AddPlayerScore(plr->GetGUID(), scorePoints);
                 // Record resources captured for leaderboards
@@ -286,7 +286,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
                 if (!mate->IsAtGroupRewardDistance(killed) && player != mate)
                     continue;
                 // Only count if active in HL zone
-                if (mate->IsOutdoorPvPActive() && mate->GetZoneId() == OutdoorPvPHLBuffZones[0])
+                if (mate->IsOutdoorPvPActive() && mate->GetAreaId() == OutdoorPvPHLBattleAreaId)
                     rewardToMember(mate);
             }
         }

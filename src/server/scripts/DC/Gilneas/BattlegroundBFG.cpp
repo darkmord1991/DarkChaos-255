@@ -615,7 +615,12 @@ void AddBattleForGilneasScripts() {
     BattlegroundMgr::bgToQueue[BATTLEGROUND_BFG] = BATTLEGROUND_QUEUE_BFG;
     BattlegroundMgr::bgtypeToBattleground[BATTLEGROUND_BFG] = new BattlegroundBFG;
 
-    BattlegroundMgr::bgTypeToTemplate[BATTLEGROUND_BFG] = [](Battleground *bg_t) -> Battleground * { return new BattlegroundBFG(*(BattlegroundBFG *) bg_t); };
+    BattlegroundMgr::bgTypeToTemplate[BATTLEGROUND_BFG] = [](Battleground* bg_t) -> Battleground*
+    {
+        Battleground* bg = new BattlegroundBFG();
+        bg->CopyFromTemplate(bg_t);
+        return bg;
+    };
 
     // BattlegroundMgr::getBgFromTypeID[BATTLEGROUND_BFG] = [](WorldPacket* data, Battleground::BattlegroundScoreMap::const_iterator itr2, Battleground* /* bg */) {
     //     *data << uint32(0x00000002);            // count of next fields

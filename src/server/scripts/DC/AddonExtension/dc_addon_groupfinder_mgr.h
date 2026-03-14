@@ -71,6 +71,8 @@ namespace DCAddon
         uint32 id = 0;
         uint32 leaderGuid = 0;
         uint32 groupGuid = 0;
+        uint32 leaderMapId = 0;
+        uint32 leaderInstanceId = 0;
         uint8 listingType = GF_LISTING_MYTHIC_PLUS;
         uint32 dungeonId = 0;
         std::string dungeonName;
@@ -95,6 +97,8 @@ namespace DCAddon
         uint32 id = 0;
         uint32 listingId = 0;
         uint32 playerGuid = 0;
+        uint32 playerMapId = 0;
+        uint32 playerInstanceId = 0;
         std::string playerName;
         uint8 role = GF_ROLE_DPS;
         uint8 playerClass = 0;

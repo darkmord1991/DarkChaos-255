@@ -56,10 +56,10 @@ namespace HLBGUtils
         return true;
     }
 
-    // Check if player is in Hinterlands zone
+    // Check if player is in Hinterland BG battle area
     bool IsPlayerInHinterlandsZone(Player* player)
     {
-        return player && player->GetZoneId() == OutdoorPvPHLBuffZones[0];
+        return player && player->GetAreaId() == OutdoorPvPHLBattleAreaId;
     }
 
     // Get team name string for display
@@ -166,7 +166,7 @@ namespace HLBGUtils
         // Collect players using the public ForEachPlayerInZone helper to avoid
         // accessing private members like CollectZonePlayers.
         hl->ForEachPlayerInZone([&zonePlayers](Player* p) {
-            if (p && p->IsInWorld() && p->GetZoneId() == OutdoorPvPHLBuffZones[0])
+            if (p && p->IsInWorld() && p->GetAreaId() == OutdoorPvPHLBattleAreaId)
                 zonePlayers.push_back(p);
         });
 

@@ -19,6 +19,7 @@
 #include "GameObject.h"
 #include "GameTime.h"
 #include "Group.h"
+#include "MapMgr.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_run_manager.h"
 #include "Player.h"
@@ -42,6 +43,8 @@ struct PendingKeystoneActivation
 {
     ObjectGuid goGuid;
     ObjectGuid playerGuid;
+    uint32 mapId = 0;
+    uint32 instanceId = 0;
     KeystoneDescriptor keystone;
     std::map<ObjectGuid, int8> memberStates; // 0=pending, 1=ready, 2=declined
     uint32 timeout = 60;
@@ -178,6 +181,8 @@ private:
         PendingKeystoneActivation& pending = s_pendingActivations[groupGuid];
         pending.goGuid = go->GetGUID();
         pending.playerGuid = player->GetGUID();
+        pending.mapId = go->GetMapId();
+        pending.instanceId = go->GetInstanceId();
         pending.keystone = descriptor;
         pending.startTime = GameTime::GetGameTime().count();
         pending.timeout = 60;
@@ -432,8 +437,9 @@ public:
         PendingKeystoneActivation& pending = it->second;
 
         // Find the player and GO to activate
-        Player* player = ObjectAccessor::FindPlayer(pending.playerGuid);
-        GameObject* go = player ? player->GetMap()->GetGameObject(pending.goGuid) : nullptr;
+        Map* map = pending.mapId ? sMapMgr->FindMap(pending.mapId, pending.instanceId) : nullptr;
+        Player* player = map ? ObjectAccessor::GetPlayer(map, pending.playerGuid) : nullptr;
+        GameObject* go = map ? map->GetGameObject(pending.goGuid) : (player ? player->GetMap()->GetGameObject(pending.goGuid) : nullptr);
 
         if (player && go)
         {

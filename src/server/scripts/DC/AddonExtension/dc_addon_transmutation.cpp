@@ -44,6 +44,12 @@ namespace Upgrade
         return defaultVal;
     }
 
+    static void CacheContext(Player* player)
+    {
+        if (player)
+            DarkChaos::ItemUpgrade::CachePlayerMapContext(player);
+    }
+
     // Send Open UI Signal
     void SendOpenTransmutationUI(Player* player)
     {
@@ -53,6 +59,7 @@ namespace Upgrade
     // Send Currency Exchange Info (Rates, Status)
     static void SendTransmutationInfo(Player* player)
     {
+        CacheContext(player);
         using namespace DarkChaos::ItemUpgrade;
 
         TransmutationManager* transMgr = GetTransmutationManager();
@@ -92,11 +99,13 @@ namespace Upgrade
 
     static void HandleGetTransmuteInfo(Player* player, const ParsedMessage& /*msg*/)
     {
+        CacheContext(player);
         SendTransmutationInfo(player);
     }
 
     static void HandleDoTransmute(Player* player, const ParsedMessage& msg)
     {
+        CacheContext(player);
         // Format: Type|Arg1|Arg2...
         // Type 1: Tier Conversion (ItemGUID, TargetTier) - Not implemented
         // Type 2: Currency Exchange (Type, Amount)

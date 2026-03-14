@@ -92,6 +92,8 @@ namespace DCMythicSpectator
         RunReplay replay;
         size_t nextEventIndex = 0;
         uint64 playbackStartMs = 0;
+        uint32 viewerMapId = 0;
+        uint32 viewerInstanceId = 0;
     };
 
     // ============================================================

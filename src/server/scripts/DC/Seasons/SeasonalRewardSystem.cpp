@@ -13,10 +13,77 @@
 #include "Log.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "Creature.h"
 #include "Item.h"
 #include "Chat.h"
+#include "Map.h"
+#include "Quests/QuestDef.h"
 #include "DC/ItemUpgrades/ItemUpgradeManager.h"
 #include <sstream>
+#include <mutex>
+#include <unordered_set>
+
+namespace
+{
+    constexpr uint32 LEGACY_QUEST_REWARD_BASE = 10;
+    constexpr float LEGACY_QUEST_SCALING_FACTOR = 0.5f;
+
+    constexpr uint32 LEGACY_DUNGEON_TRASH_REWARD = 5;
+    constexpr uint32 LEGACY_DUNGEON_BOSS_REWARD = 25;
+    constexpr uint32 LEGACY_DUNGEON_BOSS_ESSENCE = 5;
+    constexpr uint32 LEGACY_RAID_TRASH_REWARD = 10;
+    constexpr uint32 LEGACY_RAID_BOSS_REWARD = 50;
+    constexpr uint32 LEGACY_RAID_BOSS_ESSENCE = 10;
+    constexpr uint32 LEGACY_WORLD_BOSS_REWARD = 100;
+    constexpr uint32 LEGACY_WORLD_BOSS_ESSENCE = 20;
+
+    std::unordered_set<uint32> sMissingAchievementTemplates;
+    std::mutex sMissingAchievementTemplatesLock;
+
+    uint8 GetLegacyQuestDifficultyTier(uint32 questLevel, uint8 playerLevel)
+    {
+        if (playerLevel >= questLevel + 5)
+            return 0;
+        if (playerLevel >= questLevel + 3)
+            return 1;
+        if (playerLevel >= questLevel)
+            return 2;
+        if (playerLevel >= questLevel - 5)
+            return 3;
+        return 4;
+    }
+
+    uint32 CalculateLegacyQuestReward(uint32 questLevel, uint8 playerLevel)
+    {
+        uint8 difficulty = GetLegacyQuestDifficultyTier(questLevel, playerLevel);
+        if (difficulty == 0)
+            return 0;
+
+        return static_cast<uint32>(LEGACY_QUEST_REWARD_BASE *
+            (1.0f + (difficulty - 1) * LEGACY_QUEST_SCALING_FACTOR));
+    }
+
+    bool IsLegacyBossCreature(Creature const* creature)
+    {
+        if (!creature)
+            return false;
+
+        CreatureTemplate const* cTemplate = creature->GetCreatureTemplate();
+        if (!cTemplate)
+            return false;
+
+        return cTemplate->rank >= CREATURE_ELITE_RARE;
+    }
+
+    bool IsLegacyRaidCreature(Creature const* creature)
+    {
+        if (!creature)
+            return false;
+
+        Map const* map = creature->GetMap();
+        return map && map->IsRaid();
+    }
+}
 
 namespace DarkChaos
 {
@@ -39,6 +106,8 @@ namespace DarkChaos
         void SeasonalRewardManager::LoadConfiguration()
         {
             config_.enabled = sConfigMgr->GetOption<bool>("SeasonalRewards.Enable", true);
+            config_.consolidateItemUpgradeHooks = sConfigMgr->GetOption<bool>("SeasonalRewards.ConsolidateItemUpgradeHooks", true);
+            config_.parityFallback = sConfigMgr->GetOption<bool>("SeasonalRewards.ParityFallback", true);
 
             // Try to get active season from generic seasonal system first
             if (Seasonal::GetSeasonalManager())
@@ -79,6 +148,8 @@ namespace DarkChaos
             LOG_INFO("module.dc", ">> [SeasonalRewards] Configuration loaded:");
             LOG_INFO("module.dc", ">>   Active Season: {}", config_.activeSeason);
             LOG_INFO("module.dc", ">>   Token Item: {}, Essence Item: {}", config_.tokenItemId, config_.essenceItemId);
+            LOG_INFO("module.dc", ">>   Consolidate ItemUpgrade Hooks: {}", config_.consolidateItemUpgradeHooks ? "enabled" : "disabled");
+            LOG_INFO("module.dc", ">>   Parity Fallback: {}", config_.parityFallback ? "enabled" : "disabled");
             LOG_INFO("module.dc", ">>   Weekly Caps: {} tokens, {} essence",
                 config_.weeklyTokenCap == 0 ? "unlimited" : std::to_string(config_.weeklyTokenCap),
                 config_.weeklyEssenceCap == 0 ? "unlimited" : std::to_string(config_.weeklyEssenceCap));
@@ -293,17 +364,26 @@ namespace DarkChaos
         // Quest Rewards
         // =====================================================================
 
-        bool SeasonalRewardManager::ProcessQuestReward(Player* player, uint32 questId)
+        bool SeasonalRewardManager::ProcessQuestReward(Player* player, Quest const* quest)
         {
-            if (!config_.enabled || !player)
+            if (!config_.enabled || !player || !quest)
                 return false;
+
+            uint32 questId = quest->GetQuestId();
+
+            uint32 tokens = 0;
+            uint32 essence = 0;
 
             auto it = questRewards_.find(questId);
-            if (it == questRewards_.end())
-                return false;
-
-            uint32 tokens = static_cast<uint32>(it->second.first * config_.questMultiplier);
-            uint32 essence = static_cast<uint32>(it->second.second * config_.questMultiplier);
+            if (it != questRewards_.end())
+            {
+                tokens = static_cast<uint32>(it->second.first * config_.questMultiplier);
+                essence = static_cast<uint32>(it->second.second * config_.questMultiplier);
+            }
+            else if (config_.parityFallback)
+            {
+                tokens = CalculateLegacyQuestReward(quest->GetQuestLevel(), player->GetLevel());
+            }
 
             if (tokens == 0 && essence == 0)
                 return false;
@@ -327,23 +407,69 @@ namespace DarkChaos
         // Creature Kill Rewards
         // =====================================================================
 
-        bool SeasonalRewardManager::ProcessCreatureKill(Player* player, uint32 creatureEntry, bool isDungeonBoss, bool isWorldBoss)
+        bool SeasonalRewardManager::ProcessCreatureKill(Player* player, Creature const* creature)
         {
-            if (!config_.enabled || !player)
+            if (!config_.enabled || !player || !creature)
                 return false;
+
+            uint32 creatureEntry = creature->GetEntry();
+            bool isDungeonBoss = creature->IsDungeonBoss();
+            bool isWorldBoss = creature->isWorldBoss();
+
+            uint32 tokens = 0;
+            uint32 essence = 0;
 
             auto it = creatureRewards_.find(creatureEntry);
-            if (it == creatureRewards_.end())
-                return false;
+            if (it != creatureRewards_.end())
+            {
+                float multiplier = config_.creatureMultiplier;
+                if (isWorldBoss)
+                    multiplier *= config_.worldBossMultiplier;
+                else if (isDungeonBoss)
+                    multiplier *= 1.0f; // Dungeon bosses use base multiplier
 
-            float multiplier = config_.creatureMultiplier;
-            if (isWorldBoss)
-                multiplier *= config_.worldBossMultiplier;
-            else if (isDungeonBoss)
-                multiplier *= 1.0f; // Dungeon bosses use base multiplier
+                tokens = static_cast<uint32>(it->second.first * multiplier);
+                essence = static_cast<uint32>(it->second.second * multiplier);
+            }
+            else if (config_.parityFallback)
+            {
+                if (creature->GetLevel() < 50)
+                    return false;
 
-            uint32 tokens = static_cast<uint32>(it->second.first * multiplier);
-            uint32 essence = static_cast<uint32>(it->second.second * multiplier);
+                bool isBoss = IsLegacyBossCreature(creature);
+                bool isRaid = IsLegacyRaidCreature(creature);
+                bool isWorldBossLegacy = creature->isWorldBoss() && !isRaid;
+
+                if (isWorldBossLegacy)
+                {
+                    tokens = LEGACY_WORLD_BOSS_REWARD;
+                    essence = LEGACY_WORLD_BOSS_ESSENCE;
+                }
+                else if (isRaid)
+                {
+                    if (isBoss)
+                    {
+                        tokens = LEGACY_RAID_BOSS_REWARD;
+                        essence = LEGACY_RAID_BOSS_ESSENCE;
+                    }
+                    else
+                    {
+                        tokens = LEGACY_RAID_TRASH_REWARD;
+                    }
+                }
+                else
+                {
+                    if (isBoss)
+                    {
+                        tokens = LEGACY_DUNGEON_BOSS_REWARD;
+                        essence = LEGACY_DUNGEON_BOSS_ESSENCE;
+                    }
+                    else
+                    {
+                        tokens = LEGACY_DUNGEON_TRASH_REWARD;
+                    }
+                }
+            }
 
             if (tokens == 0 && essence == 0)
                 return false;
@@ -457,7 +583,11 @@ namespace DarkChaos
             // Archive previous week
             std::string sql = Acore::StringFormat("INSERT INTO dc_player_weekly_cap_snapshot "
                 "(player_guid, season_id, week_timestamp, tokens_earned, essence_earned, dungeons_completed) "
-                "VALUES ({}, {}, {}, {}, {}, {})",
+                "VALUES ({}, {}, {}, {}, {}, {}) "
+                "ON DUPLICATE KEY UPDATE "
+                "tokens_earned = VALUES(tokens_earned), "
+                "essence_earned = VALUES(essence_earned), "
+                "dungeons_completed = VALUES(dungeons_completed)",
                 stats->playerGuid, stats->seasonId, stats->lastWeeklyReset,
                 stats->weeklyTokensEarned, stats->weeklyEssenceEarned, stats->dungeonBossesKilled);
             CharacterDatabase.Execute(sql.c_str());
@@ -712,7 +842,21 @@ namespace DarkChaos
             if (!player)
                 return;
 
-            player->CompletedAchievement(sAchievementMgr->GetAchievement(achievementId));
+            AchievementEntry const* achievement = sAchievementMgr->GetAchievement(achievementId);
+            if (!achievement)
+            {
+                bool shouldLogMissingTemplate = false;
+                {
+                    std::lock_guard<std::mutex> guard(sMissingAchievementTemplatesLock);
+                    shouldLogMissingTemplate = sMissingAchievementTemplates.insert(achievementId).second;
+                }
+
+                if (shouldLogMissingTemplate)
+                    LOG_ERROR("module.dc", "[SeasonalRewards] Missing achievement template {} (first occurrence)", achievementId);
+                return;
+            }
+
+            player->CompletedAchievement(achievement);
             LOG_DEBUG("module.dc", "[SeasonalRewards] Granted achievement {} to player {}", achievementId, player->GetName());
         }
 
@@ -812,11 +956,21 @@ namespace DarkChaos
 
         void SeasonalRewardManager::LogTransaction(const RewardTransaction& transaction)
         {
+            std::string transactionType = "manual";
+            if (transaction.source == "Quest")
+                transactionType = "quest";
+            else if (transaction.source == "WeeklyChest")
+                transactionType = "chest";
+            else if (transaction.source == "DungeonBoss" || transaction.source == "WorldBoss" || transaction.source == "Creature")
+                transactionType = "creature";
+
             std::string sql = Acore::StringFormat("INSERT INTO dc_reward_transactions "
-                "(player_guid, season_id, source, source_id, tokens_awarded, essence_awarded, timestamp) "
-                "VALUES ({}, {}, '{}', {}, {}, {}, {})",
-                transaction.playerGuid, transaction.seasonId, transaction.source,
-                transaction.sourceId, transaction.tokensAwarded, transaction.essenceAwarded,
+                "(player_guid, season_id, transaction_type, source_id, source_name, reward_type, token_amount, essence_amount, transaction_at) "
+                "VALUES ({}, {}, '{}', {}, '{}', {}, {}, {}, {})",
+                transaction.playerGuid, transaction.seasonId, transactionType,
+                transaction.sourceId, transaction.source,
+                (transaction.tokensAwarded > 0 && transaction.essenceAwarded > 0) ? 3 : (transaction.tokensAwarded > 0 ? 1 : 2),
+                transaction.tokensAwarded, transaction.essenceAwarded,
                 transaction.timestamp);
             CharacterDatabase.Execute(sql.c_str());
         }
@@ -825,9 +979,9 @@ namespace DarkChaos
         {
             std::vector<RewardTransaction> transactions;
 
-            std::string sql = Acore::StringFormat("SELECT season_id, source, source_id, tokens_awarded, "
-                "essence_awarded, timestamp FROM dc_reward_transactions WHERE player_guid = {} "
-                "ORDER BY timestamp DESC LIMIT {}",
+            std::string sql = Acore::StringFormat("SELECT season_id, transaction_type, source_id, token_amount, "
+                "essence_amount, transaction_at FROM dc_reward_transactions WHERE player_guid = {} "
+                "ORDER BY transaction_at DESC LIMIT {}",
                 playerGuid, limit);
 
             QueryResult result = CharacterDatabase.Query(sql.c_str());
@@ -999,20 +1153,20 @@ namespace DarkChaos
             if (tokens > 0 && essence > 0)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Seasonal Reward]|r Earned |cffffd700%u tokens|r and |cff00ffff%u essence|r from %s!",
-                    tokens, essence, source.c_str());
+                    "|cff00ff00[Seasonal Reward]|r Earned |cffffd700{} tokens|r and |cff00ffff{} essence|r from {}!",
+                    tokens, essence, source);
             }
             else if (tokens > 0)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Seasonal Reward]|r Earned |cffffd700%u tokens|r from %s!",
-                    tokens, source.c_str());
+                    "|cff00ff00[Seasonal Reward]|r Earned |cffffd700{} tokens|r from {}!",
+                    tokens, source);
             }
             else if (essence > 0)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Seasonal Reward]|r Earned |cff00ffff%u essence|r from %s!",
-                    essence, source.c_str());
+                    "|cff00ff00[Seasonal Reward]|r Earned |cff00ffff{} essence|r from {}!",
+                    essence, source);
             }
         }
 

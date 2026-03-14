@@ -1047,14 +1047,14 @@ namespace DCAddon
             // If the module is disabled globally, send a structured addon error
             if (!IsModuleEnabled(msg.GetModule()))
             {
-                LOG_INFO("module.dc", "[MessageRouter] Module '{}' is DISABLED, rejecting opcode {}", msg.GetModule(), msg.GetOpcode());
+                LOG_DEBUG("module.dc", "[MessageRouter] Module '{}' is DISABLED, rejecting opcode {}", msg.GetModule(), msg.GetOpcode());
                 if (player && player->GetSession())
                     SendError(player, msg.GetModule(), "Module is disabled on server", ErrorCode::MODULE_DISABLED, Opcode::Core::SMSG_ERROR);
                 return false;
             }
             auto it = _handlers.find(key);
 
-            LOG_INFO("module.dc", "[MessageRouter] Looking for handler key='{}', found={}", key, (it != _handlers.end()));
+            LOG_DEBUG("module.dc", "[MessageRouter] Looking for handler key='{}', found={}", key, (it != _handlers.end()));
 
             if (it != _handlers.end())
             {
@@ -1082,7 +1082,7 @@ namespace DCAddon
                 return true;
             }
 
-            LOG_INFO("module.dc", "[MessageRouter] No handler found for key='{}', returning false", key);
+            LOG_DEBUG("module.dc", "[MessageRouter] No handler found for key='{}', returning false", key);
             return false;  // No handler registered
         }
 

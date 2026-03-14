@@ -11,6 +11,7 @@
 #include "dc_addon_namespace.h"
 #include "ScriptMgr.h"
 #include "Player.h"
+#include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "DatabaseEnv.h"
 #include "Item.h"
@@ -1608,9 +1609,12 @@ namespace DCCollection
             sql = Acore::StringFormat("DELETE FROM dc_collection_community_favorites WHERE account_id = {} AND outfit_id = {}", accountId, id);
 
         ObjectGuid playerGuid = player->GetGUID();
-        CharacterDatabase.AsyncQuery(sql).WithCallback([playerGuid, id, add](QueryResult)
+        uint32 mapId = player->GetMapId();
+        uint32 instanceId = player->GetInstanceId();
+        CharacterDatabase.AsyncQuery(sql).WithCallback([playerGuid, id, add, mapId, instanceId](QueryResult)
         {
-            if (Player* player = ObjectAccessor::FindPlayer(playerGuid))
+            Map* map = mapId ? sMapMgr->FindMap(mapId, instanceId) : nullptr;
+            if (Player* player = map ? ObjectAccessor::GetPlayer(map, playerGuid) : nullptr)
             {
                 DCAddon::JsonMessage res(MODULE, DCAddon::Opcode::Collection::SMSG_COMMUNITY_FAVORITE_RESULT);
                 res.Set("id", id);
@@ -2106,8 +2110,11 @@ namespace DCCollection
         uint32 accountId = player->GetSession()->GetAccountId();
 
         std::string sql = "DELETE FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId) + " AND outfit_id = " + std::to_string(outfitId);
-        CharacterDatabase.AsyncQuery(sql).WithCallback([playerGuid = player->GetGUID(), msg](QueryResult) {
-            Player* p = ObjectAccessor::FindPlayer(playerGuid);
+        uint32 mapId = player->GetMapId();
+        uint32 instanceId = player->GetInstanceId();
+        CharacterDatabase.AsyncQuery(sql).WithCallback([playerGuid = player->GetGUID(), msg, mapId, instanceId](QueryResult) {
+            Map* map = mapId ? sMapMgr->FindMap(mapId, instanceId) : nullptr;
+            Player* p = map ? ObjectAccessor::GetPlayer(map, playerGuid) : nullptr;
             if (p) HandleGetSavedOutfits(p, msg);
         });
     }
@@ -2234,13 +2241,16 @@ namespace DCCollection
         uint32 communityId = json["id"].AsUInt32();
         uint32 accountId = player->GetSession()->GetAccountId();
         ObjectGuid playerGuid = player->GetGUID();
+        uint32 mapId = player->GetMapId();
+        uint32 instanceId = player->GetInstanceId();
 
         // 1. Check Count
         std::string countQuery = "SELECT COUNT(*) FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
 
         CharacterDatabase.AsyncQuery(countQuery)
-            .WithCallback([playerGuid, accountId, communityId, msg](QueryResult countResult) {
-                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+            .WithCallback([playerGuid, accountId, communityId, msg, mapId, instanceId](QueryResult countResult) {
+                Map* map = mapId ? sMapMgr->FindMap(mapId, instanceId) : nullptr;
+                Player* player = map ? ObjectAccessor::GetPlayer(map, playerGuid) : nullptr;
                 if (!player) return;
 
                 uint32 maxOutfits = sConfigMgr->GetOption<uint32>("DCCollection.Outfits.MaxPerAccount", 50);
@@ -2257,8 +2267,9 @@ namespace DCCollection
                 std::string commQuery = "SELECT name, author_name, items_string FROM dc_collection_community_outfits WHERE id = " + std::to_string(communityId);
 
                 CharacterDatabase.AsyncQuery(commQuery)
-                    .WithCallback([playerGuid, accountId, communityId, msg](QueryResult commResult) {
-                        Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                    .WithCallback([playerGuid, accountId, communityId, msg, mapId, instanceId](QueryResult commResult) {
+                        Map* map = mapId ? sMapMgr->FindMap(mapId, instanceId) : nullptr;
+                        Player* player = map ? ObjectAccessor::GetPlayer(map, playerGuid) : nullptr;
                         if (!player) return;
 
                         if (!commResult)
@@ -2282,8 +2293,9 @@ namespace DCCollection
                         std::string maxQuery = "SELECT COALESCE(MAX(outfit_id), 0) + 1 FROM dc_account_outfits WHERE account_id = " + std::to_string(accountId);
 
                          CharacterDatabase.AsyncQuery(maxQuery)
-                            .WithCallback([playerGuid, accountId, communityId, name, author, items, msg](QueryResult maxResult) {
-                                Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                            .WithCallback([playerGuid, accountId, communityId, name, author, items, msg, mapId, instanceId](QueryResult maxResult) {
+                                Map* map = mapId ? sMapMgr->FindMap(mapId, instanceId) : nullptr;
+                                Player* player = map ? ObjectAccessor::GetPlayer(map, playerGuid) : nullptr;
                                 if (!player) return;
 
                                 uint32 newId = maxResult ? maxResult->Fetch()[0].Get<uint32>() : 1;
@@ -2293,8 +2305,9 @@ namespace DCCollection
                                     std::to_string(accountId) + ", " + std::to_string(newId) + ", '" + name + "', 'Interface/Icons/INV_Chest_Cloth_17', '" + items + "', " + std::to_string(communityId) + ", '" + author + "')";
 
                                 CharacterDatabase.AsyncQuery(insertSql)
-                                    .WithCallback([playerGuid, communityId, msg](QueryResult) {
-                                        Player* player = ObjectAccessor::FindPlayer(playerGuid);
+                                    .WithCallback([playerGuid, communityId, msg, mapId, instanceId](QueryResult) {
+                                        Map* map = mapId ? sMapMgr->FindMap(mapId, instanceId) : nullptr;
+                                        Player* player = map ? ObjectAccessor::GetPlayer(map, playerGuid) : nullptr;
                                         if (!player) return;
 
                                         // 5. Update Downloads

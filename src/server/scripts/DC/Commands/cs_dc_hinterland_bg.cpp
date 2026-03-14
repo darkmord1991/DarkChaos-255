@@ -15,7 +15,7 @@
 /*
  * hlbg_commandscript
  * ------------------
- * Provides GM/admin commands to inspect and manage the Hinterland (zone 47)
+ * Provides GM/admin commands to inspect and manage the Hinterland battle area (6738)
  * outdoor battleground state.
  *
  * Commands (quick reference):
@@ -78,13 +78,15 @@ public:
             { "join",    HandleHLBGQueueJoin,    SEC_PLAYER, Console::No },
             { "leave",   HandleHLBGQueueLeave,   SEC_PLAYER, Console::No },
             { "status",  HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
-            { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No }
+            { "qstatus", HandleHLBGQueueStatus,  SEC_PLAYER, Console::No },
+            { "list",    HandleHLBGQueueListCommand, SEC_GAMEMASTER, Console::No }
         };
 
         static ChatCommandTable hlbgCommandTable =
         {
             // Admin/GM commands
             { "status", HandleHLBGStatusCommand, SEC_GAMEMASTER, Console::No },
+            { "qlist", HandleHLBGQueueListCommand, SEC_GAMEMASTER, Console::No },
             { "get",    HandleHLBGGetCommand,    SEC_GAMEMASTER, Console::No },
             { "set",    HandleHLBGSetCommand,    SEC_GAMEMASTER, Console::No },
             { "reset",  HandleHLBGResetCommand,  SEC_GAMEMASTER, Console::No },
@@ -212,6 +214,28 @@ public:
             }
         }
         return true;
+    }
+
+    static bool HandleHLBGQueueListCommand(ChatHandler* handler, char const* /*args*/)
+    {
+        if (!handler || !handler->GetSession())
+            return false;
+
+        Player* admin = handler->GetSession()->GetPlayer();
+        if (!admin)
+            return false;
+
+        if (OutdoorPvP* out = sOutdoorPvPMgr->GetOutdoorPvPToZoneId(OutdoorPvPHLBuffZones[0]))
+        {
+            if (OutdoorPvPHL* hl = dynamic_cast<OutdoorPvPHL*>(out))
+            {
+                if (hl->HandleAdminCommand(admin, "queue_admin", "list"))
+                    return true;
+            }
+        }
+
+        handler->PSendSysMessage("Hinterland BG instance not found.");
+        return false;
     }
 
     static bool HandleHLBGGetCommand(ChatHandler* handler, char const* args)

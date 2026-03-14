@@ -189,7 +189,7 @@ public:
                 creature->SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, baseOffhandMax * damageMult);
             }
 
-            LOG_INFO("mythic.scaling", "Scaled creature {} (entry {}) on map {} (difficulty {}) to level {} with {:.2f}x HP ({} -> {}), {:.2f}x Damage",
+            LOG_DEBUG("mythic.scaling", "Scaled creature {} (entry {}) on map {} (difficulty {}) to level {} with {:.2f}x HP ({} -> {}), {:.2f}x Damage",
                       creature->GetName(), creature->GetEntry(), map->GetId(), uint32(difficulty), creature->GetLevel(),
                       hpMult, uint32(baseHealth), newHealth, damageMult);
         }
@@ -259,7 +259,7 @@ public:
         sMythicRuns->RegisterPlayerEnter(player);
 
         DungeonProfile* profile = sMythicScaling->GetDungeonProfile(map->GetId());
-        
+
         // Define helper lambda first so it's available for both branches
         auto FormatScalingText = [](float hpMult, float damageMult) -> std::string
         {
@@ -391,7 +391,7 @@ public:
             ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00=== Dungeon Entered ===");
             ChatHandler(player->GetSession()).SendSysMessage(("Dungeon: |cffffffff" + dungeonName + "|r").c_str());
             ChatHandler(player->GetSession()).SendSysMessage(("Difficulty: " + diffName).c_str());
-            
+
             // Only show Scaling info if a profile exists and thus scaling is actually active
             if (profile)
             {

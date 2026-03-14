@@ -787,7 +787,7 @@ namespace HLBG
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_GET_PLAYER_STATS, HandleGetPlayerStats);
         DC_REGISTER_HANDLER(Module::HINTERLAND, CMSG_GET_ALLTIME_STATS, HandleGetAllTimeStats);
 
-        LOG_INFO("dc.addon", "HLBG unified handler registered with %s support",
+        LOG_INFO("dc.addon", "HLBG unified handler registered with {} support",
             "real-time + leaderboards + unified schema");
     }
 

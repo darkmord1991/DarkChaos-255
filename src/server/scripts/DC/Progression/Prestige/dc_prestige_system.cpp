@@ -31,6 +31,7 @@
 #include "dc_prestige_api.h"
 #include "../../AddonExtension/dc_addon_prestige_notify.h"
 #include <sstream>
+#include <mutex>
 
 using namespace Acore::ChatCommands;
 
@@ -143,9 +144,12 @@ public:
             return 0;
 
         uint32 guid = player->GetGUID().GetCounter();
-        auto it = prestigeCache.find(guid);
-        if (it != prestigeCache.end())
-            return it->second;
+        {
+            std::lock_guard<std::mutex> lock(cacheMutex);
+            auto it = prestigeCache.find(guid);
+            if (it != prestigeCache.end())
+                return it->second;
+        }
 
         // Query from database - guid is uint32 so SQL injection is not possible
         std::string sql = Acore::StringFormat("SELECT prestige_level FROM dc_character_prestige WHERE guid = {}", guid);
@@ -156,7 +160,11 @@ public:
             Field* fields = result->Fetch();
             level = fields[0].Get<uint32>();
         }
-        prestigeCache[guid] = level;
+        
+        {
+            std::lock_guard<std::mutex> lock(cacheMutex);
+            prestigeCache[guid] = level;
+        }
         return level;
     }
 
@@ -173,11 +181,13 @@ public:
             guid, level, level);
         CharacterDatabase.Execute(sql.c_str());
 
+        std::lock_guard<std::mutex> lock(cacheMutex);
         prestigeCache[guid] = level;
     }
 
     void ClearPrestigeCache(ObjectGuid guid)
     {
+        std::lock_guard<std::mutex> lock(cacheMutex);
         auto it = prestigeCache.find(guid.GetCounter());
         if (it != prestigeCache.end())
         {
@@ -541,6 +551,7 @@ private:
     bool grantStarterGear;
     bool announcePrestige;
     std::unordered_map<uint32, std::vector<PrestigeReward>> prestigeRewards;
+    std::mutex cacheMutex;
     std::unordered_map<uint32, uint32> prestigeCache;
 
     static uint32 CountStacksForItem(uint32 itemEntry, uint32 count)
@@ -816,6 +827,7 @@ private:
 class PrestigePlayerScript : public PlayerScript
 {
 private:
+    std::mutex auraCheckMutex;
     // Throttle aura checking to once per 30 seconds instead of every frame
     std::unordered_map<uint32, uint32> lastAuraCheckTime;
 
@@ -863,6 +875,7 @@ public:
 
         // Clean up throttle map
         uint32 guid = player->GetGUID().GetCounter();
+        std::lock_guard<std::mutex> lock(auraCheckMutex);
         auto it = lastAuraCheckTime.find(guid);
         if (it != lastAuraCheckTime.end())
         {
@@ -883,14 +896,17 @@ public:
         uint32 guid = player->GetGUID().GetCounter();
         uint32 currentTime = GameTime::GetGameTimeMS().count();
 
-        auto it = lastAuraCheckTime.find(guid);
-        if (it != lastAuraCheckTime.end())
         {
-            if (currentTime - it->second < 30000)
-                return; // Too soon, skip this check
-        }
+            std::lock_guard<std::mutex> lock(auraCheckMutex);
+            auto it = lastAuraCheckTime.find(guid);
+            if (it != lastAuraCheckTime.end())
+            {
+                if (currentTime - it->second < 30000)
+                    return; // Too soon, skip this check
+            }
 
-        lastAuraCheckTime[guid] = currentTime;
+            lastAuraCheckTime[guid] = currentTime;
+        }
 
         // Check if prestige aura is missing and reapply it
         uint32 spellId = PrestigeSystem::instance()->GetPrestigeSpell(prestigeLevel);
