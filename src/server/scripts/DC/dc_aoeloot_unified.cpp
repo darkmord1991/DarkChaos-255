@@ -909,10 +909,10 @@ public:
             uint8 playerMinQuality = GetPlayerMinQualityFilter(player);
             if (playerMinQuality > 0)
             {
-                packet.rpos(0);
+                WorldPacket p(packet);
+                p.rpos(0);
                 uint8 lootSlot;
-                packet >> lootSlot;
-                packet.rpos(0);
+                p >> lootSlot;
 
                 Loot* loot = nullptr;
                 ObjectGuid lootGuid = player->GetLootGUID();
@@ -941,10 +941,10 @@ public:
         Player* player = session->GetPlayer();
         if (!player) return true;
 
-        packet.rpos(0);
+        WorldPacket p(packet);
+        p.rpos(0);
         ObjectGuid guid;
-        packet >> guid;
-        packet.rpos(0);
+        p >> guid;
 
         if (!guid || !guid.IsCreature()) return true;
 
