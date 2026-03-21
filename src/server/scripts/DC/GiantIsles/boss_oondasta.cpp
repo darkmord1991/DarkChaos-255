@@ -173,11 +173,9 @@ public:
         {
             // Get a random ranged target for charge
             std::vector<Unit*> targets;
-            ThreatContainer::StorageType const& threatList = me->GetThreatMgr().GetThreatList();
-
-            for (auto itr = threatList.begin(); itr != threatList.end(); ++itr)
+            for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
             {
-                if (Unit* target = ObjectAccessor::GetUnit(*me, (*itr)->getUnitGuid()))
+                if (Unit* target = ref->GetVictim())
                 {
                     if (target->IsPlayer() && me->GetDistance(target) > 15.0f)
                         targets.push_back(target);

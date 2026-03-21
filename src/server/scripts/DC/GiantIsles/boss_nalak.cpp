@@ -211,11 +211,9 @@ public:
 
             // Get 2-3 random players and chain them
             std::vector<Unit*> targets;
-            ThreatContainer::StorageType const& threatList = me->GetThreatMgr().GetThreatList();
-
-            for (auto itr = threatList.begin(); itr != threatList.end(); ++itr)
+            for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
             {
-                if (Unit* target = ObjectAccessor::GetUnit(*me, (*itr)->getUnitGuid()))
+                if (Unit* target = ref->GetVictim())
                 {
                     if (target->IsPlayer())
                         targets.push_back(target);
