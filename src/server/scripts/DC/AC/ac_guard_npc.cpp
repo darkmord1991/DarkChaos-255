@@ -80,18 +80,18 @@ struct ACGuardPOI {
 // candidate for being moved to a configuration file in a future change.
 static const ACGuardPOI ac_guard_pois[] = {
     // Teleport entries
-    {"Startcamp",            37,  131.000f, 1012.000f, 295.000f, 5.000f,      true,  ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_Campfire",      GOSSIP_ICON_TAXI},
-    {"Flightmaster Startcamp", 37, 72.5327f, 932.2570f, 339.3900f, 0.0680255f, true, ICON_POI_BLUETOWER,   "Interface\\Icons\\Ability_Mount_Wyvern_01", GOSSIP_ICON_TAXI},
+    {"Startcamp",            37,  131.000f, 1012.000f, 295.000f, 5.000f,      true,  ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Spell_Fire_CampFire",        GOSSIP_ICON_TAXI},
+    {"Flightmaster Startcamp", 37, 72.5327f, 932.2570f, 339.3900f, 0.0680255f, true, ICON_POI_BLUETOWER,   "Interface\\Icons\\Ability_Mount_Wyvern_01",    GOSSIP_ICON_TAXI},
 
     // Map/minimap POI entries
-    {"Innkeeper",            37,  100.973f, 1037.9f,  297.107f, 2.56106f,     false, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_InnKey",        GOSSIP_ICON_TALK},
-    {"Auction House",        37,  117.113f, 1051.78f, 297.107f, 0.92979f,     false, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_Coin_02",      GOSSIP_ICON_MONEY_BAG},
-    {"Stable Master",        37,   95.3867f, 1027.84f, 297.107f, 2.5163f,     false, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Hunter_BeastCall", GOSSIP_ICON_VENDOR},
-    {"Riding Trainer",       37,  120.768f, 955.565f, 295.072f, 5.15048f,     false, ICON_POI_GREYTOWER,   "Interface\\Icons\\Ability_Mount_RidingHorse", GOSSIP_ICON_TRAINER},
-    {"Profession Trainers",  37,   43.905f, 1172.420f, 367.342f, 2.560f,      false, ICON_POI_BWTOWER,     "Interface\\Icons\\INV_Scroll_05",        GOSSIP_ICON_TRAINER},
-    {"Weapon Trainer",       37,  100.351f, 1004.96f, 296.329f, 0.258275f,    false, ICON_POI_GREYTOWER,   "Interface\\Icons\\INV_Sword_04",         GOSSIP_ICON_TRAINER},
-    {"Violet Temple",        37, -574.179f, -208.159f, 355.034f, 3.8202f,     false, ICON_POI_BWTOWER,     "Interface\\Icons\\Spell_Arcane_MindMastery", GOSSIP_ICON_CHAT},
-    {"Dragon Statues",       37,  -53.4259f, -40.4419f, 271.541f, 3.42052f,   false, ICON_POI_TOMBSTONE,   "Interface\\Icons\\INV_Misc_StoneDragon",  GOSSIP_ICON_DOT}
+    {"Innkeeper",            37,  100.973f, 1037.9f,  297.107f, 2.56106f,     false, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Spell_Shadow_Teleport",      GOSSIP_ICON_TALK},
+    {"Auction House",        37,  117.113f, 1051.78f, 297.107f, 0.92979f,     false, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\INV_Misc_Coin_02",           GOSSIP_ICON_MONEY_BAG},
+    {"Stable Master",        37,   95.3867f, 1027.84f, 297.107f, 2.5163f,     false, ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Ability_Hunter_BeastCall",    GOSSIP_ICON_VENDOR},
+    {"Riding Trainer",       37,  120.768f, 955.565f, 295.072f, 5.15048f,     false, ICON_POI_GREYTOWER,   "Interface\\Icons\\Ability_Mount_RidingHorse",  GOSSIP_ICON_TRAINER},
+    {"Profession Trainers",  37,   43.905f, 1172.420f, 367.342f, 2.560f,      false, ICON_POI_BWTOWER,     "Interface\\Icons\\Trade_Engineering",          GOSSIP_ICON_TRAINER},
+    {"Weapon Trainer",       37,  100.351f, 1004.96f, 296.329f, 0.258275f,    false, ICON_POI_GREYTOWER,   "Interface\\Icons\\INV_Sword_04",              GOSSIP_ICON_TRAINER},
+    {"Violet Temple",        37, -574.179f, -208.159f, 355.034f, 3.8202f,     false, ICON_POI_BWTOWER,     "Interface\\Icons\\Spell_Arcane_PortalDalaran", GOSSIP_ICON_CHAT},
+    {"Dragon Statues",       37,  -53.4259f, -40.4419f, 271.541f, 3.42052f,   false, ICON_POI_TOMBSTONE,   "Interface\\Icons\\INV_Misc_Head_Dragon_01",    GOSSIP_ICON_DOT}
 };
 
 namespace

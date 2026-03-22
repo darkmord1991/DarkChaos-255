@@ -8,6 +8,7 @@
 
 #include "dc_challenge_modes.h"
 #include "dc_challenge_mode_database.h"
+#include "../../AddonExtension/dc_addon_death_markers.h"
 #include "World.h"
 #include "WorldSessionMgr.h"
 #include "Chat.h"
@@ -70,6 +71,7 @@ public:
             return;
 
         HandleHardcoreDeath(player, 0, "Environment");
+        DCAddon::DeathMarkers::RecordChallengeDeath(player, nullptr, "hardcore", "Hardcore");
         player->SetPvPDeath(true);
     }
 
@@ -79,6 +81,7 @@ public:
             return;
 
         HandleHardcoreDeath(victim, killer ? killer->GetEntry() : 0, killer ? killer->GetName() : "Unknown");
+        DCAddon::DeathMarkers::RecordChallengeDeath(victim, killer, "hardcore", "Hardcore");
 
         // Make player a permanent ghost (original functionality)
         victim->SetPvPDeath(true);
@@ -90,6 +93,7 @@ public:
             return;
 
         HandleHardcoreDeath(victim, 0, killer ? killer->GetName() : "Unknown");
+        DCAddon::DeathMarkers::RecordChallengeDeath(victim, killer, "hardcore", "Hardcore");
 
         // Make player a permanent ghost (original functionality)
         victim->SetPvPDeath(true);

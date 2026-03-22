@@ -1,4 +1,4 @@
-﻿-- HLBG_HUD_Modern.lua - Modern HUD implementation with fixes and enhancements
+-- HLBG_HUD_Modern.lua - Modern HUD implementation with fixes and enhancements
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 -- Initialize HUD settings with defaults (telemetry disabled by default to prevent blinking)
 -- migrate to a DC-prefixed saved vars table so addon appears as "DC HLBG Addon"
@@ -16,24 +16,40 @@ if not HLBG.UI.ModernHUD or not _G['HLBG_ModernHUD'] then
 end
 local HUD = HLBG.UI.ModernHUD
 
--- Shared zone predicate for Hinterlands / HLBG instance.
+-- Shared zone predicate for the Hinterland BG area (NOT the entire Hinterlands zone).
+-- Only returns true when the player is in the specific BG sub-area (6738),
+-- or when the server is actively sending HLBG status updates.
 local function IsInHLBGZone()
     local zone = (type(GetRealZoneText) == "function" and GetRealZoneText()) or ""
     local subzone = (type(GetSubZoneText) == "function" and GetSubZoneText()) or ""
 
-    -- Normalize to lowercase for robust matching (handles "Hinterland Defence" and subzones like "Aerie Peak").
+    -- Normalize to lowercase for robust matching.
     local z = tostring(zone or ""):lower()
     local sz = tostring(subzone or ""):lower()
 
-    if z == "the hinterlands" then
-        return true
-    end
-    if z:find("hinterland", 1, true) then
-        return true
-    end
+    -- Check subzone first — the custom area 6738 has its own subzone name
+    -- (e.g. "Hinterland Defence", "Hinterland BG", or similar BG-specific subzone).
+    -- We intentionally do NOT match on the parent zone "The Hinterlands" alone,
+    -- as that would show the HUD everywhere in zone 47.
     if sz:find("hinterland", 1, true) or sz:find("azshara crater", 1, true) then
         return true
     end
+
+    -- Also match if the main zone itself is changed to a BG-specific name
+    -- (e.g. "Hinterland Defence"), but NOT "The Hinterlands" which is the parent zone.
+    if z:find("hinterland", 1, true) and z ~= "the hinterlands" then
+        return true
+    end
+
+    -- Fallback: if the server is actively sending STATUS messages (within last 60s),
+    -- the player is in the BG regardless of zone text detection.
+    if HLBG and HLBG._lastStatusTime then
+        local elapsed = GetTime() - HLBG._lastStatusTime
+        if elapsed < 60 then
+            return true
+        end
+    end
+
     return false
 end
 

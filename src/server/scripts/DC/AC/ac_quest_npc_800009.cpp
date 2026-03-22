@@ -106,7 +106,7 @@ public:
                 scheduler.Schedule(1s, [this](TaskContext /*ctx*/)
                 {
                     if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), targetPlayerGuid))
-                        me->Whisper("Let me show you the Start of the Level Area of Ashzara Crater.", LANG_UNIVERSAL, player);
+                        me->Whisper("Follow me, I will show you around the Ashzara Crater!", LANG_UNIVERSAL, player);
                 });
 
                 // Start moving to the first station immediately
@@ -146,7 +146,7 @@ public:
                     scheduler.Schedule(1200ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), guidedPlayer))
-                            me->Whisper("We have lots of creatures living in the Crater, as it was never explored completely, its your turn now!", LANG_UNIVERSAL, player);
+                            me->Whisper("The crater is teeming with creatures! Ancient beasts, corrupted wildlife, and things far worse lurk in every corner.", LANG_UNIVERSAL, player);
                     });
                 }
                 else if (reached == 3)
@@ -155,19 +155,19 @@ public:
                     scheduler.Schedule(1000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), guidedPlayer))
-                            me->Whisper("This area is huge and has lots of different zones!", LANG_UNIVERSAL, player);
+                            me->Whisper("Ashzara Crater is vast — from the volcanic ridges to the ancient ruins, every zone holds new dangers and treasures!", LANG_UNIVERSAL, player);
                     }).Schedule(2000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), guidedPlayer))
-                            me->Whisper("Go and start your journey, you will find lots of wild stuff, I am sure.", LANG_UNIVERSAL, player);
+                            me->Whisper("Venture forth and carve your own path, champion. The crater rewards the bold!", LANG_UNIVERSAL, player);
                     }).Schedule(3000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), guidedPlayer))
-                            me->Whisper("Use your start gear and your mobile teleporter pet to get around!", LANG_UNIVERSAL, player);
+                            me->Whisper("Your starting gear and mobile teleporter pet will serve you well on these treacherous paths!", LANG_UNIVERSAL, player);
                     }).Schedule(4000ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         if (Player* player = ObjectAccessor::GetPlayer(me->GetMap(), guidedPlayer))
-                            me->Whisper("Do you see this Shrine? It is for more challenging experiences.", LANG_UNIVERSAL, player);
+                            me->Whisper("See that ancient Shrine over there? It holds the key to far greater challenges... if you dare.", LANG_UNIVERSAL, player);
                     }).Schedule(3500ms, [this, guidedPlayer](TaskContext /*ctx*/)
                     {
                         // Face the player and wave early to ensure animation is seen
@@ -231,7 +231,7 @@ public:
             // === Quest 820056: Welcome — OnQuestAccept ===
             case Q_WELCOME:
                 // creature:SendUnitSay("A warm Welcome to DC-WoW! We wish you all the fun! HÖHÖHÖ", 0)
-                creature->Say("A warm Welcome to DC-WoW! We wish you all the fun! HÖHÖHÖ", LANG_UNIVERSAL);
+                creature->Say("Welcome to the Ashzara Crater, brave soul! May your journey through these untamed lands be glorious!", LANG_UNIVERSAL);
                 break;
 
             // === Quest 820057: LevelArea Show AC — OnQuestAccept ===
@@ -265,11 +265,11 @@ public:
             // === Quest 820056: Welcome — OnQuestReward ===
             case Q_WELCOME:
                 // creature:SendUnitSay("For more questions please use the .faq commands or check on discord! There is also a world chat for everyone.", 0)
-                creature->Say("For more questions please use the .faq commands or check on discord! There is also a world chat for everyone.", LANG_UNIVERSAL);
+                creature->Say("If you need help, use the .faq commands or reach out on Discord. The world chat is always open for adventurers!", LANG_UNIVERSAL);
                 break;
             // === Quest 820057: LevelArea Show AC — OnQuestReward ===
             case Q_LEVELAREA:
-                creature->Whisper("Lots of fun with leveling to 80!", LANG_UNIVERSAL, player);
+                creature->Whisper("May the crater's power guide you to level 80 and beyond!", LANG_UNIVERSAL, player);
                 // No despawn: original quest giver should remain; the summoned duplicate will auto-despawn
                 break;
             default:

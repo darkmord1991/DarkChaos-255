@@ -1,4 +1,4 @@
-﻿-- HLBG_Handlers.lua
+-- HLBG_Handlers.lua
 local HLBG = _G.HLBG or {}; _G.HLBG = HLBG
 local function DebugPrint(...)
     if HLBG and type(HLBG.Debug) == 'function' then
@@ -134,7 +134,7 @@ function HLBG.ShowDebugWindow()
         frame:Show()
     end)
 end
--- Zone watcher: show/hide HUD when entering Hinterlands
+-- Zone watcher: show/hide HUD when entering Hinterland BG area (NOT the entire Hinterlands zone)
 local function InHinterlands()
     local z = (type(HLBG) == 'table' and type(HLBG.safeGetRealZoneText) == 'function')
         and HLBG.safeGetRealZoneText()
@@ -143,15 +143,28 @@ local function InHinterlands()
 
     local zl = tostring(z or ""):lower()
     local szl = tostring(sz or ""):lower()
-    if zl == "the hinterlands" then
-        return true
-    end
-    if zl:find("hinterland", 1, true) then
-        return true
-    end
+
+    -- Check subzone first — the custom BG area (6738) has its own subzone name.
+    -- Do NOT match broadly on the parent zone "The Hinterlands" (zone 47)
+    -- as that would activate the HUD outside the BG area.
     if szl:find("hinterland", 1, true) or szl:find("azshara crater", 1, true) then
         return true
     end
+
+    -- Match BG-specific zone names (e.g. "Hinterland Defence") but NOT "The Hinterlands".
+    if zl:find("hinterland", 1, true) and zl ~= "the hinterlands" then
+        return true
+    end
+
+    -- Fallback: if the server is actively sending STATUS messages recently,
+    -- the player is in the BG.
+    if type(HLBG) == 'table' and HLBG._lastStatusTime then
+        local elapsed = GetTime() - HLBG._lastStatusTime
+        if elapsed < 60 then
+            return true
+        end
+    end
+
     return false
 end
 local zoneWatcher = CreateFrame("Frame")
