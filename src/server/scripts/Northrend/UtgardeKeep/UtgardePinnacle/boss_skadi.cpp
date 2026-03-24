@@ -25,7 +25,6 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "Vehicle.h"
-#include "DC/MythicPlus/dc_mythicplus_run_manager.h"
 #include "utgarde_pinnacle.h"
 
 enum Spells
@@ -492,31 +491,6 @@ class spell_skadi_launch_harpoon : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
-        if (Unit* caster = GetCaster())
-        {
-            if (Map* map = caster->GetMap())
-            {
-                if (sMythicRuns->IsMythicPlusActive(map))
-                {
-                    if (Player* pPlayer = caster->ToPlayer())
-                        ChatHandler(pPlayer->GetSession()).SendSysMessage("|cffff0000Mythic+|r: Harpoon cannons are disabled in this mode.");
-                    targets.clear();
-                    return;
-                }
-            }
-        }
-        else if (GameObject* go = GetSpell()->GetGOCaster())
-        {
-            if (Map* map = go->GetMap())
-            {
-                if (sMythicRuns->IsMythicPlusActive(map))
-                {
-                    targets.clear();
-                    return;
-                }
-            }
-        }
-
         if (targets.size() >= 2)
             targets.remove_if([](WorldObject* obj) { return obj->GetEntry() != NPC_GRAUF; });
     }
