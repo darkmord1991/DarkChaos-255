@@ -68,7 +68,7 @@ void WaypointMovementGenerator<Creature>::DoInitialize(Creature* creature)
         }
     }
 
-    if (!i_path || i_path->empty())
+    if (!i_path || i_path->Nodes.empty())
     {
         LOG_ERROR("sql.sql", "WaypointMovementGenerator::DoInitialize: creature {} ({}) doesn't have waypoint path id: {}",
             creature->GetName(), creature->GetGUID().ToString(), _pathId);
