@@ -541,9 +541,32 @@ function Wardrobe:CreateLeftPanel(parent)
     end)
     parent.disableVisualsBtn = disableVisualsBtn
 
+    Wardrobe.previewUnit = "player"
+    
+    local targetBtn = CreateFrame("Button", nil, left, "UIPanelButtonTemplate")
+    targetBtn:SetSize(110, 20)
+    targetBtn:SetPoint("LEFT", disableVisualsBtn, "RIGHT", 3, 0)
+    targetBtn:SetText("Target: Player")
+    targetBtn:SetScript("OnClick", function()
+        if Wardrobe.previewUnit == "player" then
+            if UnitExists("target") then
+                Wardrobe.previewUnit = "target"
+                targetBtn:SetText("Target: Target")
+            else
+                if DC and DC.Print then DC:Print("You don't have a target to preview on.") end
+                return
+            end
+        else
+            Wardrobe.previewUnit = "player"
+            targetBtn:SetText("Target: Player")
+        end
+        Wardrobe:UpdateModel()
+    end)
+    parent.targetBtn = targetBtn
+
     local refreshBtn = CreateFrame("Button", nil, left, "UIPanelButtonTemplate")
     refreshBtn:SetSize(85, 20)
-    refreshBtn:SetPoint("LEFT", disableVisualsBtn, "RIGHT", 3, 0)
+    refreshBtn:SetPoint("LEFT", targetBtn, "RIGHT", 3, 0)
     refreshBtn:SetText("Refresh Data")
     refreshBtn:SetScript("OnClick", function(self)
         -- If we're actively refreshing transmog definitions, this button always acts as Cancel.

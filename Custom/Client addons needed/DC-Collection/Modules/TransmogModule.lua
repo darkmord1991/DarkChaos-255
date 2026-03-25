@@ -19,43 +19,7 @@ local L = DC.L
 local TransmogModule = {}
 DC.TransmogModule = TransmogModule
 
--- ============================================================================
--- SLOT CONSTANTS
--- ============================================================================
 
-DC.TRANSMOG_SLOTS = {
-    HEAD = 1,
-    SHOULDER = 3,
-    SHIRT = 4,
-    CHEST = 5,
-    WAIST = 6,
-    LEGS = 7,
-    FEET = 8,
-    WRIST = 9,
-    HANDS = 10,
-    BACK = 15,
-    MAIN_HAND = 16,
-    OFF_HAND = 17,
-    RANGED = 18,
-    TABARD = 19,
-}
-
-local SLOT_NAMES = {
-    [1] = "Head",
-    [3] = "Shoulder",
-    [4] = "Shirt",
-    [5] = "Chest",
-    [6] = "Waist",
-    [7] = "Legs",
-    [8] = "Feet",
-    [9] = "Wrist",
-    [10] = "Hands",
-    [15] = "Back",
-    [16] = "Main Hand",
-    [17] = "Off Hand",
-    [18] = "Ranged",
-    [19] = "Tabard",
-}
 
 -- ============================================================================
 -- INITIALIZATION
@@ -360,11 +324,18 @@ function DC:ApplyOutfit(name)
 
     local appliedSlots = {}
 
+    local entries = {}
+    local canBatch = type(self.ApplyTransmogBatchByEquipmentSlot) == "function"
+
     -- Clear current applied transmogs first
     for slotStr in pairs(self.transmogState or {}) do
         local slot = tonumber(slotStr)
         if slot ~= nil then
-            self:RequestClearTransmogByEquipmentSlot(slot)
+            if canBatch then
+                table.insert(entries, { slot = slot, clear = true })
+            else
+                self:RequestClearTransmogByEquipmentSlot(slot)
+            end
         end
     end
 
@@ -381,10 +352,32 @@ function DC:ApplyOutfit(name)
                 -- Back-compat: treat as already 0-based equipment slot.
                 equipmentSlot = slot
             end
-            self:RequestSetTransmogByEquipmentSlot(equipmentSlot, app)
+            
+            if canBatch then
+                -- Override clear operation if setting a new transmog for this slot
+                local found = false
+                for _, entry in ipairs(entries) do
+                    if entry.slot == equipmentSlot then
+                        entry.clear = false
+                        entry.appearanceId = app
+                        found = true
+                        break
+                    end
+                end
+                
+                if not found then
+                    table.insert(entries, { slot = equipmentSlot, appearanceId = app, clear = false })
+                end
+            else
+                self:RequestSetTransmogByEquipmentSlot(equipmentSlot, app)
+            end
 
             appliedSlots[tostring(equipmentSlot)] = app
         end
+    end
+
+    if canBatch and #entries > 0 then
+        self:ApplyTransmogBatchByEquipmentSlot(entries)
     end
 
     if type(self.StoreLastAppliedOutfit) == "function" and next(appliedSlots) ~= nil then
@@ -500,20 +493,32 @@ end
 local OUTFIT_LINK_VER = "1"
 local OUTFIT_LINK_PREFIX = "dc:outfit"
 local SERIALIZATION_ORDER = {
-    DC.TRANSMOG_SLOTS.HEAD,
-    DC.TRANSMOG_SLOTS.SHOULDER,
-    DC.TRANSMOG_SLOTS.SHIRT,
-    DC.TRANSMOG_SLOTS.CHEST,
-    DC.TRANSMOG_SLOTS.WAIST,
-    DC.TRANSMOG_SLOTS.LEGS,
-    DC.TRANSMOG_SLOTS.FEET,
-    DC.TRANSMOG_SLOTS.WRIST,
-    DC.TRANSMOG_SLOTS.HANDS,
-    DC.TRANSMOG_SLOTS.BACK,
-    DC.TRANSMOG_SLOTS.MAIN_HAND,
-    DC.TRANSMOG_SLOTS.OFF_HAND,
-    DC.TRANSMOG_SLOTS.RANGED,
-    DC.TRANSMOG_SLOTS.TABARD,
+    DC.InventoryTypes.HEAD,
+    DC.InventoryTypes.SHOULDER,
+    DC.InventoryTypes.SHIRT,
+    DC.InventoryTypes.CHEST,
+    DC.InventoryTypes.WAIST,
+    DC.InventoryTypes.LEGS,
+    DC.InventoryTypes.FEET,
+    DC.InventoryTypes.WRIST,
+    DC.InventoryTypes.HANDS,
+    DC.InventoryTypes.CLOAK, -- Back
+    DC.InventoryTypes.WEAPONMAINHAND, -- Main hand (16 in old mapping was apparently missing or conflated with cloak... wait, let me check. Old Mapping: MAIN_HAND = 16. But WAIT. In old mapping, BACK was 15, MAIN_HAND was 16. That means Main Hand serialization was 16! That's DC.InventoryTypes.CLOAK!)
+    -- Wait, let's keep the exact numbers to not break existing links
+    1,  -- Head
+    3,  -- Shoulder
+    4,  -- Shirt
+    5,  -- Chest
+    6,  -- Waist
+    7,  -- Legs
+    8,  -- Feet
+    9,  -- Wrist
+    10, -- Hands
+    15, -- Back (Old DC.TRANSMOG_SLOTS.BACK was 15, even though INVTYPE_CLOAK is 16)
+    16, -- Main Hand (Old DC.TRANSMOG_SLOTS.MAIN_HAND was 16)
+    17, -- Off Hand (Old DC.TRANSMOG_SLOTS.OFF_HAND was 17)
+    18, -- Ranged (Old DC.TRANSMOG_SLOTS.RANGED was 18)
+    19, -- Tabard (Old DC.TRANSMOG_SLOTS.TABARD was 19)
 }
 
 local function HexEncode(num)
@@ -692,34 +697,60 @@ function DC:ApplyCommunityOutfit(itemsString)
         table.insert(apps, tonumber(id))
     end
     
-    -- Apply each appearance
-    -- Note: This requires mapping appearance -> slot.
-    -- We'll do a best-effort approach.
+    -- Function to map WoW InventoryType directly to WoW EquipmentSlot
+    local function GetEquipmentSlotForInvType(invType)
+        local it = DC.InventoryTypes
+        local eq = DC.EquipmentSlots
+        
+        if invType == it.HEAD then return eq.HEAD end
+        if invType == it.SHOULDER then return eq.SHOULDER end
+        if invType == it.SHIRT then return eq.SHIRT end
+        if invType == it.CHEST or invType == it.ROBE then return eq.CHEST end
+        if invType == it.WAIST then return eq.WAIST end
+        if invType == it.LEGS then return eq.LEGS end
+        if invType == it.FEET then return eq.FEET end
+        if invType == it.WRIST then return eq.WRIST end
+        if invType == it.HANDS then return eq.HANDS end
+        if invType == it.CLOAK then return eq.BACK end
+        if invType == it.WEAPON or invType == it.WEAPONMAINHAND or invType == it.TWOHWEAPON then return eq.MAINHAND end
+        if invType == it.WEAPONOFFHAND or invType == it.SHIELD or invType == it.HOLDABLE then return eq.OFFHAND end
+        if invType == it.RANGED or invType == it.RANGEDRIGHT or invType == it.THROWN or invType == it.RELIC then return eq.RANGED end
+        if invType == it.TABARD then return eq.TABARD end
+        
+        return nil
+    end
+    
+    local entries = {}
     local count = 0
+    
+    -- Clear current transmogs first
+    for _, equipSlot in pairs(DC.EquipmentSlots) do
+        table.insert(entries, { slot = equipSlot, clear = true })
+    end
+    
     for _, app in ipairs(apps) do
         local def = DC.TransmogModule and DC.TransmogModule:GetAppearanceDefinition(app)
         if def and def.inventoryType then
-             -- Simple inventory type to slot mapping
-             -- This is incomplete but handles main armor.
-             local slot = nil
-             if def.inventoryType == 1 then slot = 1 -- Head
-             elseif def.inventoryType == 3 then slot = 3 -- Shoulder
-             elseif def.inventoryType == 16 then slot = 15 -- Back
-             elseif def.inventoryType == 5 or def.inventoryType == 20 then slot = 5 -- Chest
-             elseif def.inventoryType == 4 then slot = 4 -- Shirt
-             elseif def.inventoryType == 19 then slot = 19 -- Tabard
-             elseif def.inventoryType == 9 then slot = 9 -- Wrist
-             elseif def.inventoryType == 10 then slot = 10 -- Hands
-             elseif def.inventoryType == 6 then slot = 6 -- Waist
-             elseif def.inventoryType == 7 then slot = 7 -- Legs
-             elseif def.inventoryType == 8 then slot = 8 -- Feet
-             end
+             local slot = GetEquipmentSlotForInvType(def.inventoryType)
              
-             if slot then
-                  DC:RequestSetTransmogByEquipmentSlot(slot - 1, app) -- Request uses 0-based
+             if slot ~= nil then
+                  table.insert(entries, { slot = slot, appearanceId = app, clear = false })
                   count = count + 1
              end
         end
     end
+    
+    if type(self.ApplyTransmogBatchByEquipmentSlot) == "function" then
+        self:ApplyTransmogBatchByEquipmentSlot(entries)
+    else
+        for _, entry in ipairs(entries) do
+            if entry.clear then
+                self:RequestClearTransmogByEquipmentSlot(entry.slot)
+            else
+                self:RequestSetTransmogByEquipmentSlot(entry.slot, entry.appearanceId)
+            end
+        end
+    end
+    
     DC:Print("Applied " .. count .. " items from community outfit.")
 end

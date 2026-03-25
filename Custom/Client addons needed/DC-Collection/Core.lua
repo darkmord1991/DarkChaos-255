@@ -163,6 +163,65 @@ DC.currency = {
 -- Wishlist
 DC.wishlist = {}
 
+-- ============================================================================
+-- AUTHORITATIVE SLOT MAPPINGS
+-- ============================================================================
+
+-- Standard WoW Equipment Slot IDs (0-based, used for server communication and inventory APIs)
+DC.EquipmentSlots = {
+    HEAD = 0,
+    NECK = 1,
+    SHOULDER = 2,
+    SHIRT = 3,
+    CHEST = 4,
+    WAIST = 5,
+    LEGS = 6,
+    FEET = 7,
+    WRIST = 8,
+    HANDS = 9,
+    FINGER1 = 10,
+    FINGER2 = 11,
+    TRINKET1 = 12,
+    TRINKET2 = 13,
+    BACK = 14,
+    MAINHAND = 15,
+    OFFHAND = 16,
+    RANGED = 17,
+    TABARD = 18,
+}
+
+-- Standard WoW Inventory Types (from item_template.InventoryType)
+DC.InventoryTypes = {
+    HEAD = 1,
+    NECK = 2,
+    SHOULDER = 3,
+    SHIRT = 4,
+    CHEST = 5,
+    WAIST = 6,
+    LEGS = 7,
+    FEET = 8,
+    WRIST = 9,
+    HANDS = 10,
+    FINGER = 11,
+    TRINKET = 12,
+    WEAPON = 13,
+    SHIELD = 14,
+    RANGED = 15,
+    CLOAK = 16,
+    TWOHWEAPON = 17,
+    BAG = 18,
+    TABARD = 19,
+    ROBE = 20,
+    WEAPONMAINHAND = 21,
+    WEAPONOFFHAND = 22,
+    HOLDABLE = 23,
+    AMMO = 24,
+    THROWN = 25,
+    RANGEDRIGHT = 26,
+    QUIVER = 27,
+    RELIC = 28,
+}
+
 -- Mount speed bonus
 DC.mountSpeedBonus = 0
 
@@ -1544,6 +1603,16 @@ function events:PLAYER_ENTERING_WORLD()
         if type(DC.RequestTransmogStateWithRetry) == "function" then
             DC:RequestTransmogStateWithRetry(6, 1)
         elseif type(DC.RequestTransmogState) == "function" and DC:IsProtocolReady() then
+            DC:RequestTransmogState()
+        end
+    end)
+end
+
+function events:PLAYER_EQUIPMENT_CHANGED(slotId, hasItem)
+    -- When the player swaps an item, the server resets the visual natively.
+    -- Send a transmog state sync request to intelligently re-apply overrides.
+    After(0.5, function()
+        if type(DC.RequestTransmogState) == "function" and DC:IsProtocolReady() then
             DC:RequestTransmogState()
         end
     end)

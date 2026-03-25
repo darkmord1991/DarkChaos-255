@@ -54,6 +54,9 @@ namespace DCCollection
     // When true, emit verbose per-request logging for batch preview apply.
     constexpr const char* TRANSMOG_DEBUG_APPLY_PREVIEW = "DCCollection.Transmog.Debug.ApplyPreview";
 
+    // When true, group appearances by base name to generate "Virtual Sets" on the fly.
+    constexpr const char* TRANSMOG_VIRTUAL_SETS_ENABLED = "DCCollection.Transmog.VirtualSets.Enabled";
+
     // =======================================================================
     // Transmog Helper Implementations
     // =======================================================================
@@ -833,6 +836,12 @@ namespace DCCollection
                 state.Set(std::to_string(slot), displayId);
                 // Also send the item entry for outfit preview TryOn
                 itemIds.Set(std::to_string(slot), fakeEntry);
+
+                // --- DC-Collection Transmog Persistence Fix ---
+                // Re-apply the appearance to the player immediately when sending state.
+                // This ensures transmog is restored natively on login and map changes, overriding the equipped item.
+                if (fakeEntry > 0)
+                    player->SetUInt32Value(PLAYER_VISIBLE_ITEM_1_ENTRYID + (slot * 2), fakeEntry);
             } while (result->NextRow());
         }
 
@@ -1580,9 +1589,32 @@ namespace DCCollection
         res.Send(player);
     }
 
-    void HandleCommunityRate(Player* /*player*/, const DCAddon::ParsedMessage& msg)
+    void HandleCommunityRate(Player* player, const DCAddon::ParsedMessage& msg)
     {
         if (!DCAddon::IsJsonMessage(msg)) return;
+        
+        static std::unordered_map<uint32, uint32> s_rateLimitMap;
+        static std::mutex s_rateLimitMutex;
+
+        uint32 accountId = GetAccountId(player);
+        uint32 now = getMSTime();
+
+        {
+            std::lock_guard<std::mutex> lock(s_rateLimitMutex);
+            auto it = s_rateLimitMap.find(accountId);
+            if (it != s_rateLimitMap.end())
+            {
+                // 1 second cooldown per account for rating to prevent spam
+                if (now - it->second < 1000)
+                    return;
+                it->second = now;
+            }
+            else
+            {
+                s_rateLimitMap[accountId] = now;
+            }
+        }
+
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
 
@@ -1859,6 +1891,28 @@ namespace DCCollection
             payload.setJson.reserve(600);
             payload.setPacked.reserve(600);
 
+            // Packed-name escaping (percent-encoding for a few separators/controls).
+            auto packEscape = [](std::string const& s)
+            {
+                std::string out;
+                out.reserve(s.size());
+                auto hex = [](uint8 v) -> char { return v < 10 ? char('0' + v) : char('A' + (v - 10)); };
+                for (unsigned char uc : s)
+                {
+                    char c = static_cast<char>(uc);
+                    bool need = (c == '%' || c == '\n' || c == '\r' || c == ';' || c == ',' || c == '|' || c == '"' || c == '\\');
+                    if (!need)
+                    {
+                        out += c;
+                        continue;
+                    }
+                    out += '%';
+                    out += hex((uc >> 4) & 0xF);
+                    out += hex(uc & 0xF);
+                }
+                return out;
+            };
+
             Acore::Crypto::MD5 md5;
 
             uint32 const rows = sItemSetStore.GetNumRows();
@@ -1881,28 +1935,6 @@ namespace DCCollection
                     else if (c == '"') escaped += "\\\"";
                     else escaped += c;
                 }
-
-                // Packed-name escaping (percent-encoding for a few separators/controls).
-                auto packEscape = [](std::string const& s)
-                {
-                    std::string out;
-                    out.reserve(s.size());
-                    auto hex = [](uint8 v) -> char { return v < 10 ? char('0' + v) : char('A' + (v - 10)); };
-                    for (unsigned char uc : s)
-                    {
-                        char c = static_cast<char>(uc);
-                        bool need = (c == '%' || c == '\n' || c == '\r' || c == ';' || c == ',' || c == '|' || c == '"' || c == '\\');
-                        if (!need)
-                        {
-                            out += c;
-                            continue;
-                        }
-                        out += '%';
-                        out += hex((uc >> 4) & 0xF);
-                        out += hex(uc & 0xF);
-                    }
-                    return out;
-                };
 
                 std::ostringstream entry;
                 entry << "{\"id\":" << i << ",\"name\":\"" << escaped << "\",\"items\":[";
@@ -1934,6 +1966,76 @@ namespace DCCollection
                 std::ostringstream packed;
                 packed << i << ';' << packEscape(name) << ';' << itemsCsv.str();
                 payload.setPacked.emplace_back(packed.str());
+            }
+
+            // Virtual Sets Generation
+            // Group appearances by base name (removing the last word, e.g. "Netherwind Crown" -> "Netherwind")
+            if (sConfigMgr->GetOption<bool>(TRANSMOG_VIRTUAL_SETS_ENABLED, true)) // just use a loosely related config or default true
+            {
+                uint32 vSetId = sItemSetStore.GetNumRows() + 10000;
+                auto const& idx = GetTransmogAppearanceIndexCached();
+                std::map<std::string, std::set<uint32>> virtualSets;
+                
+                for (auto const& pair : idx)
+                {
+                    for (auto const& v : pair.second)
+                    {
+                        if (v.name.empty()) continue;
+                        
+                        // Find last space
+                        size_t lastSpace = v.name.find_last_of(' ');
+                        if (lastSpace == std::string::npos) continue;
+                        
+                        std::string baseName = v.name.substr(0, lastSpace);
+                        if (baseName.empty() || baseName.length() < 4) continue;
+                        if (baseName.find("Gladiator") != std::string::npos) continue; // Skip huge PvP buckets
+                        
+                        virtualSets[baseName].insert(v.canonicalItemId);
+                    }
+                }
+                
+                for (auto const& pair : virtualSets)
+                {
+                    std::string const& vName = pair.first;
+                    std::set<uint32> const& entries = pair.second;
+                    
+                    // Only create a set if there are enough pieces (e.g. 5-15 items) to avoid junk sets
+                    if (entries.size() >= 5 && entries.size() <= 20)
+                    {
+                        std::string finalName = vName + " (Virtual)";
+                        std::string escaped;
+                        escaped.reserve(finalName.size());
+                        for (char c : finalName)
+                        {
+                            if (c == '\\') escaped += "\\\\";
+                            else if (c == '"') escaped += "\\\"";
+                            else escaped += c;
+                        }
+                        
+                        std::ostringstream entry;
+                        entry << "{\"id\":" << vSetId << ",\"name\":\"" << escaped << "\",\"items\":[";
+                        bool firstItem = true;
+                        std::ostringstream itemsCsv;
+                        for (uint32 e : entries)
+                        {
+                            if (!firstItem) { entry << ','; itemsCsv << ','; }
+                            entry << e; itemsCsv << e;
+                            firstItem = false;
+                        }
+                        entry << "]}";
+
+                        std::string s = entry.str();
+                        md5.UpdateData(s);
+                        md5.UpdateData("\n");
+                        payload.setJson.emplace_back(std::move(s));
+
+                        std::ostringstream packed;
+                        packed << vSetId << ';' << packEscape(finalName) << ';' << itemsCsv.str();
+                        payload.setPacked.emplace_back(packed.str());
+                        
+                        vSetId++;
+                    }
+                }
             }
 
             md5.Finalize();

@@ -113,41 +113,41 @@ Wardrobe.CAMERA_ROTATION_SPEED = 0.01
 
 Wardrobe.EQUIPMENT_SLOTS = {
     -- Left column (top to bottom)
-    { key = "HeadSlot",      label = "Head",      invType = 1,  side = "left",  row = 1 },
-    { key = "ShoulderSlot",  label = "Shoulder",  invType = 3,  side = "left",  row = 2 },
-    { key = "BackSlot",      label = "Back",      invType = 16, side = "left",  row = 3 },
-    { key = "ChestSlot",     label = "Chest",     invType = 5,  side = "left",  row = 4 },
-    { key = "ShirtSlot",     label = "Shirt",     invType = 4,  side = "left",  row = 5 },
-    { key = "TabardSlot",    label = "Tabard",    invType = 19, side = "left",  row = 6 },
-    { key = "WristSlot",     label = "Wrist",     invType = 9,  side = "left",  row = 7 },
+    { key = "HeadSlot",      label = "Head",      invType = DC.InventoryTypes.HEAD,       side = "left",  row = 1 },
+    { key = "ShoulderSlot",  label = "Shoulder",  invType = DC.InventoryTypes.SHOULDER,   side = "left",  row = 2 },
+    { key = "BackSlot",      label = "Back",      invType = DC.InventoryTypes.CLOAK,      side = "left",  row = 3 },
+    { key = "ChestSlot",     label = "Chest",     invType = DC.InventoryTypes.CHEST,      side = "left",  row = 4 },
+    { key = "ShirtSlot",     label = "Shirt",     invType = DC.InventoryTypes.SHIRT,      side = "left",  row = 5 },
+    { key = "TabardSlot",    label = "Tabard",    invType = DC.InventoryTypes.TABARD,     side = "left",  row = 6 },
+    { key = "WristSlot",     label = "Wrist",     invType = DC.InventoryTypes.WRIST,      side = "left",  row = 7 },
 
     -- Right column (top to bottom)
-    { key = "HandsSlot",     label = "Hands",     invType = 10, side = "right", row = 1 },
-    { key = "WaistSlot",     label = "Waist",     invType = 6,  side = "right", row = 2 },
-    { key = "LegsSlot",      label = "Legs",      invType = 7,  side = "right", row = 3 },
-    { key = "FeetSlot",      label = "Feet",      invType = 8,  side = "right", row = 4 },
+    { key = "HandsSlot",     label = "Hands",     invType = DC.InventoryTypes.HANDS,      side = "right", row = 1 },
+    { key = "WaistSlot",     label = "Waist",     invType = DC.InventoryTypes.WAIST,      side = "right", row = 2 },
+    { key = "LegsSlot",      label = "Legs",      invType = DC.InventoryTypes.LEGS,       side = "right", row = 3 },
+    { key = "FeetSlot",      label = "Feet",      invType = DC.InventoryTypes.FEET,       side = "right", row = 4 },
 
     -- Bottom (weapons)
-    { key = "MainHandSlot",      label = "Main Hand", invType = 13, side = "bottom", row = 1 },
-    { key = "SecondaryHandSlot", label = "Off Hand",  invType = 14, side = "bottom", row = 2 },
-    { key = "RangedSlot",        label = "Ranged",    invType = 15, side = "bottom", row = 3 },
+    { key = "MainHandSlot",      label = "Main Hand", invType = DC.InventoryTypes.WEAPON, side = "bottom", row = 1 },
+    { key = "SecondaryHandSlot", label = "Off Hand",  invType = DC.InventoryTypes.SHIELD, side = "bottom", row = 2 },
+    { key = "RangedSlot",        label = "Ranged",    invType = DC.InventoryTypes.RANGED, side = "bottom", row = 3 },
 }
 
 Wardrobe.SLOT_FILTERS = {
-    { label = "Head",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Head",     invTypes = { [1] = true } },
-    { label = "Shoulder",  icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shoulder", invTypes = { [3] = true } },
-    { label = "Chest",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest",    invTypes = { [5] = true, [20] = true } },
-    { label = "Shirt",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shirt",    invTypes = { [4] = true } },
-    { label = "Tabard",    icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Tabard",   invTypes = { [19] = true } },
-    { label = "Wrist",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Wrists",   invTypes = { [9] = true } },
-    { label = "Hands",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Hands",    invTypes = { [10] = true } },
-    { label = "Waist",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Waist",    invTypes = { [6] = true } },
-    { label = "Legs",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Legs",     invTypes = { [7] = true } },
-    { label = "Feet",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Feet",     invTypes = { [8] = true } },
-    { label = "Back",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest",    invTypes = { [16] = true } }, -- Back uses chest icon
-    { label = "Main Hand", icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand", invTypes = { [13] = true, [17] = true, [21] = true } }, -- Weapon, 2H, MainHand
-    { label = "Off Hand",  icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-SecondaryHand", invTypes = { [13] = true, [14] = true, [17] = true, [22] = true, [23] = true } }, -- Weapon, Shield, 2H, OffHand, Holdable
-    { label = "Ranged",    icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ranged",   invTypes = { [15] = true, [25] = true, [26] = true, [28] = true } }, -- Ranged, Thrown, RangedRight, Relic
+    { label = "Head",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Head",     invTypes = { [DC.InventoryTypes.HEAD] = true } },
+    { label = "Shoulder",  icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shoulder", invTypes = { [DC.InventoryTypes.SHOULDER] = true } },
+    { label = "Chest",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest",    invTypes = { [DC.InventoryTypes.CHEST] = true, [DC.InventoryTypes.ROBE] = true } },
+    { label = "Shirt",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Shirt",    invTypes = { [DC.InventoryTypes.SHIRT] = true } },
+    { label = "Tabard",    icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Tabard",   invTypes = { [DC.InventoryTypes.TABARD] = true } },
+    { label = "Wrist",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Wrists",   invTypes = { [DC.InventoryTypes.WRIST] = true } },
+    { label = "Hands",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Hands",    invTypes = { [DC.InventoryTypes.HANDS] = true } },
+    { label = "Waist",     icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Waist",    invTypes = { [DC.InventoryTypes.WAIST] = true } },
+    { label = "Legs",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Legs",     invTypes = { [DC.InventoryTypes.LEGS] = true } },
+    { label = "Feet",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Feet",     invTypes = { [DC.InventoryTypes.FEET] = true } },
+    { label = "Back",      icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest",    invTypes = { [DC.InventoryTypes.CLOAK] = true } }, -- Back uses chest icon
+    { label = "Main Hand", icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand", invTypes = { [DC.InventoryTypes.WEAPON] = true, [DC.InventoryTypes.TWOHWEAPON] = true, [DC.InventoryTypes.WEAPONMAINHAND] = true } }, -- Weapon, 2H, MainHand
+    { label = "Off Hand",  icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-SecondaryHand", invTypes = { [DC.InventoryTypes.WEAPON] = true, [DC.InventoryTypes.SHIELD] = true, [DC.InventoryTypes.TWOHWEAPON] = true, [DC.InventoryTypes.WEAPONOFFHAND] = true, [DC.InventoryTypes.HOLDABLE] = true } }, -- Weapon, Shield, 2H, OffHand, Holdable
+    { label = "Ranged",    icon = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ranged",   invTypes = { [DC.InventoryTypes.RANGED] = true, [DC.InventoryTypes.THROWN] = true, [DC.InventoryTypes.RANGEDRIGHT] = true, [DC.InventoryTypes.RELIC] = true } }, -- Ranged, Thrown, RangedRight, Relic
 }
 
 Wardrobe.VISUAL_SLOTS = {
@@ -452,22 +452,31 @@ function Wardrobe:IsWishlistedTransmog(itemId)
         transmogTypeId = DC:GetTypeIdFromName("transmog")
     end
 
-    for _, wish in ipairs(DC.wishlist) do
-        if type(wish) == "table" then
-            local wishEntry = tonumber(wish.entryId or wish.entry_id or wish.itemId or wish.item_id) or (wish.entryId or wish.entry_id or wish.itemId or wish.item_id)
-            if wishEntry == itemId then
-                if transmogTypeId == nil then
-                    return true
-                end
-                local wishType = wish.type or wish.typeId or wish.type_id
-                if wishType == nil or tonumber(wishType) == tonumber(transmogTypeId) then
-                    return true
+    local firstItem = DC.wishlist[1] and (DC.wishlist[1].entryId or DC.wishlist[1].entry_id or DC.wishlist[1].itemId or DC.wishlist[1].item_id) or 0
+    local lastItem = DC.wishlist[#DC.wishlist] and (DC.wishlist[#DC.wishlist].entryId or DC.wishlist[#DC.wishlist].entry_id or DC.wishlist[#DC.wishlist].itemId or DC.wishlist[#DC.wishlist].item_id) or 0
+    local currentHash = #DC.wishlist .. "_" .. tostring(firstItem) .. "_" .. tostring(lastItem) .. "_" .. tostring(DC.wishlist)
+
+    if not self.wishlistCache or self.wishlistCacheHash ~= currentHash then
+        self.wishlistCache = {}
+        for _, wish in ipairs(DC.wishlist) do
+            if type(wish) == "table" then
+                local wishEntry = tonumber(wish.entryId or wish.entry_id or wish.itemId or wish.item_id) or (wish.entryId or wish.entry_id or wish.itemId or wish.item_id)
+                if wishEntry then
+                    if transmogTypeId == nil then
+                        self.wishlistCache[wishEntry] = true
+                    else
+                        local wishType = wish.type or wish.typeId or wish.type_id
+                        if wishType == nil or tonumber(wishType) == tonumber(transmogTypeId) then
+                            self.wishlistCache[wishEntry] = true
+                        end
+                    end
                 end
             end
         end
+        self.wishlistCacheHash = currentHash
     end
 
-    return false
+    return self.wishlistCache[itemId] == true
 end
 
 function Wardrobe:HookItemTooltip()

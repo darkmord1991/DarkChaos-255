@@ -833,8 +833,8 @@ function Wardrobe:PreviewAppearance(itemId)
 
     local model = self.frame.model
     
-    -- Reset model to player with all current equipment
-    model:SetUnit("player")
+    -- Reset model to current preview unit with all current equipment
+    model:SetUnit(Wardrobe.previewUnit or "player")
     
     -- Only preview the specific slot if one is selected
     if self.selectedSlot and model.Undress and model.TryOn then
@@ -1035,7 +1035,7 @@ function Wardrobe:UpdateModel()
     if not self.frame or not self.frame.model then return end
 
     local model = self.frame.model
-    model:SetUnit("player")
+    model:SetUnit(Wardrobe.previewUnit or "player")
 
     if self.transmogDisabled then
         model:Undress()
