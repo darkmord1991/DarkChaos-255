@@ -298,16 +298,6 @@ function HLBG.UpdateSettings()
     -- Show the tab
     settings:Show()
 end
--- Hook settings to the OpenUI function
-HLBG._oldSettingsEnsure = HLBG._ensureUI
-function HLBG._ensureUI(what)
-    local result = HLBG._oldSettingsEnsure and HLBG._oldSettingsEnsure(what) or true
-    -- If Settings tab is requested, update its content
-    if what == "Settings" and result and HLBG.UI and HLBG.UI.Settings then
-        HLBG.UpdateSettings()
-    end
-    return result
-end
 -- Hook to load settings on init
 if HLBG.OnLoad then
     local oldOnLoad = HLBG.OnLoad

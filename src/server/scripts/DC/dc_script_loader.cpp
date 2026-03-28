@@ -68,6 +68,7 @@ void AddSC_hinterlandbg_Varian_wrynn();       // HinterlandBG\hlbg_npc_varian.cp
 void AddSC_hl_scoreboard();                   // HinterlandBG\hlbg_scoreboard_npc.cpp
 void AddSC_hlbg_addon();                      // HLBG chat fallback (in AddonExtension/dc_addon_hlbg.cpp)
 void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG\hlbg_npc_battlemaster.cpp
+void AddSC_hlbg_battlemaster_hook();          // HinterlandBG\hlbg_battlemaster_hook.cpp
 void AddSC_hlbg_native_broadcast();           // HinterlandBG\hlbg_native_broadcast.cpp
 void AddSC_outdoorpvp_hl_dc();                // HinterlandBG\outdoorpvp_hl_registration.cpp
 // Note: HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
@@ -343,6 +344,7 @@ void AddDCScripts()
         AddSC_hl_scoreboard();
         AddSC_hlbg_addon();
         AddSC_npc_hinterlands_battlemaster();
+        AddSC_hlbg_battlemaster_hook();
         AddSC_hlbg_native_broadcast();
         AddSC_outdoorpvp_hl_dc();
         LOG_INFO("scripts.dc", ">>   ✓ Hinterland BG NPCs, commands, and OutdoorPvP loaded");

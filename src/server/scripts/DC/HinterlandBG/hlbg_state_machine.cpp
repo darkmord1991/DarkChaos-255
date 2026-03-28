@@ -111,7 +111,7 @@ void OutdoorPvPHL::EnterWarmupState()
     _matchEndTime = NowSec() + _warmupDurationSeconds;
 
     // Announce warmup phase
-    BroadcastToZone("Hinterland BG: Warmup phase started! Join now to participate.");
+    BroadcastToZone("|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cff00ccffHinterland BG|r: |cffffff00Warmup phase started!|r |cff98fb98Join now to participate.|r");
 
     // Reset battle statistics
     _playerScores.clear();
@@ -156,7 +156,7 @@ void OutdoorPvPHL::UpdateWarmupState(uint32 diff)
         uint32 remainingSeconds = _warmupTimeRemaining / IN_MILLISECONDS;
         if (remainingSeconds == 60 || remainingSeconds == 30 || remainingSeconds == 10)
         {
-            BroadcastToZone("Hinterland BG warmup: %u seconds remaining!", remainingSeconds);
+            BroadcastToZone("|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cff00ccffHinterland BG|r: |cffffff00Warmup|r |cffffffff%u|r |cffffff00seconds remaining!|r", remainingSeconds);
         }
     }
 }
@@ -168,7 +168,7 @@ void OutdoorPvPHL::EnterInProgressState()
     _matchEndTime = _matchStartTime + _matchDurationSeconds;
 
     // Announce battle start
-    BroadcastToZone("Hinterland BG: Battle has begun! Current affix: %s", GetAffixName(_activeAffix));
+    BroadcastToZone("|TInterface\\Icons\\Ability_DualWield:16|t |cff00ccffHinterland BG|r: |cffff7f00Battle has begun!|r |cffffff00Current affix:|r |cff98fb98%s|r", GetAffixName(_activeAffix));
 
     // Apply affix effects if enabled
     if (_affixEnabled)
@@ -243,7 +243,7 @@ void OutdoorPvPHL::UpdateInProgressState(uint32 diff)
 
 void OutdoorPvPHL::EnterPausedState()
 {
-    BroadcastToZone("Hinterland BG: Battle paused by administrator.");
+    BroadcastToZone("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccffHinterland BG|r: |cffff8080Battle paused by administrator.|r");
     // Store pause time to adjust match end time when resumed
     _pauseStartTime = NowSec();
 }
@@ -264,12 +264,12 @@ void OutdoorPvPHL::EnterFinishedState()
     TeamId winner = GetLastWinnerTeamId();
     if (winner != TEAM_NEUTRAL)
     {
-        BroadcastToZone("Hinterland BG: %s wins!", winner == TEAM_ALLIANCE ? "Alliance" : "Horde");
+        BroadcastToZone("|TInterface\\Icons\\Achievement_BG_winAB:16|t |cff00ccffHinterland BG|r: %s |cffffff00wins!|r", winner == TEAM_ALLIANCE ? "|cff1e90ffAlliance|r" : "|cffff2020Horde|r");
         HandleRewards(winner);
     }
     else
     {
-        BroadcastToZone("Hinterland BG: Battle ends in a draw!");
+        BroadcastToZone("|TInterface\\Icons\\INV_Misc_Coin_01:16|t |cff00ccffHinterland BG|r: |cffffff00Battle ends in a draw!|r");
     }
 
     // Start cleanup timer (5 seconds)

@@ -106,7 +106,8 @@ public:
 
         static ChatCommandTable commandTable =
         {
-            { "hlbg", hlbgCommandTable }
+            { "hlbg", hlbgCommandTable },
+            { "hlbgq", queueSubTable }
         };
 
         return commandTable;

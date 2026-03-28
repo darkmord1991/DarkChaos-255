@@ -13,6 +13,7 @@
 #include "ScriptMgr.h"
 #include "GameTime.h"
 #include "ObjectAccessor.h"
+#include "hlbg_constants.h"
 #include "../AddonExtension/dc_addon_hlbg.h"
 
 #include <algorithm>
@@ -62,7 +63,7 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
             TeleportToTeamBase(player);
         }
         uint32 warmupSec = static_cast<uint32>(_warmupTimeRemaining / IN_MILLISECONDS);
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG: Warmup is active. You have been moved to your base. {} seconds until battle begins.", warmupSec);
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cff00ccff[HLBG Queue]|r |cffffff00Warmup active.|r |cff98fb98You were moved to your base.|r |cffffff00Battle starts in|r |cffffffff{}|r |cffffff00seconds.|r", warmupSec);
         return;
     }
 
@@ -75,7 +76,7 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     {
         if (nowSec - joinAttemptIt->second < HLBG_QUEUE_JOIN_THROTTLE_SECONDS)
         {
-            ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: Please wait a few seconds before trying to join again.");
+            ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Please wait a few seconds before trying again.|r");
             return;
         }
     }
@@ -84,14 +85,14 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     // Check if player is already in queue
     if (IsPlayerInQueue(player))
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("You are already in the Hinterland BG queue.");
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cff00ccff[HLBG Queue]|r |cffffff00You are already in the queue.|r");
         return;
     }
 
     // Check if battle is in progress
     if (_bgState == BG_STATE_IN_PROGRESS)
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("A battle is currently in progress. You can join the queue for the next battle.");
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_DualWield:16|t |cff00ccff[HLBG Queue]|r |cffff7f00Battle in progress.|r |cffffff00You are joining the queue for the next battle.|r");
     }
 
     // Add player to queue
@@ -114,7 +115,7 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     std::string playerName = player->GetName();
     uint32 queueSize = GetQueuedPlayerCount();
 
-    ChatHandler(player->GetSession()).PSendSysMessage("You have joined the Hinterland BG queue. Position: {}", queueSize);
+    ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cff00ccff[HLBG Queue]|r |cff98fb98Joined queue.|r |cffffff00Position:|r |cffffffff{}|r", queueSize);
     SendQueueStatusAIO(player);
 
     // Notify zone if we're getting close to battle start
@@ -137,13 +138,13 @@ void OutdoorPvPHL::RemovePlayerFromQueue(Player* player)
     if (indexIt != _queuedIndexByGuid.end())
     {
         RemoveQueueEntryAtIndex(indexIt->second);
-        ChatHandler(player->GetSession()).PSendSysMessage("You have left the Hinterland BG queue.");
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Spell_Shadow_Teleport:16|t |cff00ccff[HLBG Queue]|r |cffff8080You left the queue.|r");
         SendQueueStatusAIO(player);
         LOG_DEBUG("bg.battleground", "Player {} left HLBG queue", player->GetName());
     }
     else
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("You are not in the Hinterland BG queue.");
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffffff00You are not in the queue.|r");
     }
 }
 
@@ -179,10 +180,10 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
     uint32 hordeQueued = GetQueuedPlayerCountByTeam(TEAM_HORDE);
 
     ChatHandler ch(player->GetSession());
-    ch.PSendSysMessage("=== Hinterland BG Queue Status ===");
-    ch.PSendSysMessage("Total players in queue: {}", totalQueued);
-    ch.PSendSysMessage("Alliance: {} | Horde: {}", allianceQueued, hordeQueued);
-    ch.PSendSysMessage("Minimum players to start: {}", _minPlayersToStart);
+    ch.PSendSysMessage("|TInterface\\Icons\\INV_Misc_Map_01:16|t |cff00ccff=== HLBG Queue Status ===|r");
+    ch.PSendSysMessage("|cffffff00Total queued:|r |cffffffff{}|r", totalQueued);
+    ch.PSendSysMessage("|cff1e90ffAlliance|r: |cffffffff{}|r |cffffff00| |r |cffff2020Horde|r: |cffffffff{}|r", allianceQueued, hordeQueued);
+    ch.PSendSysMessage("|cffffff00Minimum to start:|r |cffffffff{}|r", _minPlayersToStart);
 
     if (IsPlayerInQueue(player))
     {
@@ -199,7 +200,7 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
 
             QueueEntry const& entry = _queuedPlayers[index];
             uint32 waitTime = static_cast<uint32>(GameTime::GetGameTime().count() - entry.joinTime);
-            ch.PSendSysMessage("Your position: {} | Wait time: {} seconds", position, waitTime);
+            ch.PSendSysMessage("|cffffff00Your position:|r |cffffffff{}|r |cffffff00Wait time:|r |cffffffff{}s|r", position, waitTime);
         }
     }
 
@@ -207,19 +208,19 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
     switch (_bgState)
     {
         case BG_STATE_WARMUP:
-            ch.PSendSysMessage("Status: Warmup phase - Battle starting soon!");
+            ch.PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_01:14|t |cffffff00Status:|r |cffffd700Warmup phase - battle starting soon!|r");
             break;
         case BG_STATE_IN_PROGRESS:
-            ch.PSendSysMessage("Status: Battle in progress");
+            ch.PSendSysMessage("|TInterface\\Icons\\Ability_DualWield:14|t |cffffff00Status:|r |cffff7f00Battle in progress|r");
             break;
         case BG_STATE_PAUSED:
-            ch.PSendSysMessage("Status: Battle paused");
+            ch.PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:14|t |cffffff00Status:|r |cffff8080Battle paused|r");
             break;
         case BG_STATE_FINISHED:
-            ch.PSendSysMessage("Status: Battle finished");
+            ch.PSendSysMessage("|TInterface\\Icons\\Achievement_BG_winAB:14|t |cffffff00Status:|r |cff98fb98Battle finished|r");
             break;
         case BG_STATE_CLEANUP:
-            ch.PSendSysMessage("Status: Waiting for players");
+            ch.PSendSysMessage("|TInterface\\Icons\\INV_Misc_GroupLooking:14|t |cffffff00Status:|r |cff98fb98Waiting for players|r");
             break;
     }
 }
@@ -322,14 +323,14 @@ void OutdoorPvPHL::TeleportQueuedPlayers()
                 teleportCount++;
                 // _warmupTimeRemaining is stored in milliseconds. Convert to seconds for messaging.
                 uint32 warmupSec = static_cast<uint32>(_warmupTimeRemaining / IN_MILLISECONDS);
-                ChatHandler(player->GetSession()).PSendSysMessage("Welcome to Hinterland Battleground! Warmup phase: {} seconds remaining.", warmupSec);
+                ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cff00ccff[HLBG Queue]|r |cff98fb98Welcome to Hinterland Battleground!|r |cffffff00Warmup remaining:|r |cffffffff{}s|r", warmupSec);
             }
         }
         else
         {
             // Player is already in zone, just send notification
             uint32 warmupSec = static_cast<uint32>(_warmupTimeRemaining / IN_MILLISECONDS);
-            ChatHandler(player->GetSession()).PSendSysMessage("Hinterland Battle warmup phase has started! {} seconds until battle begins.", warmupSec);
+            ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cff00ccff[HLBG Queue]|r |cffffd700Warmup started!|r |cffffff00Battle begins in|r |cffffffff{}s|r", warmupSec);
         }
     }
 
@@ -374,7 +375,7 @@ bool OutdoorPvPHL::AddGroupToQueue(Player* leader)
     // Check if leader is group leader
     if (group->GetLeaderGUID() != leader->GetGUID())
     {
-        ChatHandler(leader->GetSession()).PSendSysMessage("Only the group leader can add the group to queue.");
+        ChatHandler(leader->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_Warrior_RallyingCry:16|t |cff00ccff[HLBG Queue]|r |cffff8080Only the group leader can add the group to queue.|r");
         return false;
     }
 
@@ -382,7 +383,49 @@ bool OutdoorPvPHL::AddGroupToQueue(Player* leader)
     uint32 memberCount = group->GetMembersCount();
     if (memberCount > _maxGroupSize)
     {
-        ChatHandler(leader->GetSession()).PSendSysMessage("Group is too large for Hinterland BG (max {} players).", _maxGroupSize);
+        ChatHandler(leader->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_Creature_Cursed_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Group is too large|r |cffffff00(max|r |cffffffff{}|r |cffffff00players).|r", _maxGroupSize);
+        return false;
+    }
+
+    // Validate member eligibility (same policy as individual queue join)
+    bool hasIneligibleMember = false;
+    std::string ineligibleReason;
+    group->DoForAllMembers([this, &hasIneligibleMember, &ineligibleReason](Player* member)
+    {
+        if (hasIneligibleMember)
+            return;
+        if (!member || !member->IsInWorld())
+            return;
+
+        if (!IsMaxLevel(member))
+        {
+            hasIneligibleMember = true;
+            ineligibleReason = "at least one member is below minimum level";
+            return;
+        }
+        if (member->HasAura(HinterlandBGConstants::BG_DESERTER_SPELL))
+        {
+            hasIneligibleMember = true;
+            ineligibleReason = "at least one member has deserter";
+            return;
+        }
+        if (!member->IsAlive())
+        {
+            hasIneligibleMember = true;
+            ineligibleReason = "at least one member is dead";
+            return;
+        }
+        if (member->IsInCombat())
+        {
+            hasIneligibleMember = true;
+            ineligibleReason = "at least one member is in combat";
+            return;
+        }
+    });
+
+    if (hasIneligibleMember)
+    {
+        ChatHandler(leader->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_Creature_Cursed_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Cannot queue group: {}.|r", ineligibleReason);
         return false;
     }
 
@@ -397,7 +440,7 @@ bool OutdoorPvPHL::AddGroupToQueue(Player* leader)
 
     if (anyMemberQueued)
     {
-        ChatHandler(leader->GetSession()).PSendSysMessage("Some group members are already in the queue.");
+        ChatHandler(leader->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffffff00Some group members are already in the queue.|r");
         return false;
     }
 
@@ -413,7 +456,7 @@ bool OutdoorPvPHL::AddGroupToQueue(Player* leader)
         }
     });
 
-    ChatHandler(leader->GetSession()).PSendSysMessage("Added {} group members to Hinterland BG queue.", addedCount);
+    ChatHandler(leader->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_Warrior_RallyingCry:16|t |cff00ccff[HLBG Queue]|r |cff98fb98Added|r |cffffffff{}|r |cff98fb98group members to queue.|r", addedCount);
     return true;
 }
 
@@ -433,7 +476,7 @@ bool OutdoorPvPHL::RemoveGroupFromQueue(Player* leader)
     // Check if leader is group leader
     if (group->GetLeaderGUID() != leader->GetGUID())
     {
-        ChatHandler(leader->GetSession()).PSendSysMessage("Only the group leader can remove the group from queue.");
+        ChatHandler(leader->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_Warrior_RallyingCry:16|t |cff00ccff[HLBG Queue]|r |cffff8080Only the group leader can remove the group from queue.|r");
         return false;
     }
 
@@ -449,11 +492,11 @@ bool OutdoorPvPHL::RemoveGroupFromQueue(Player* leader)
 
     if (removedCount > 0)
     {
-    ChatHandler(leader->GetSession()).PSendSysMessage("Removed {} group members from Hinterland BG queue.", removedCount);
+    ChatHandler(leader->GetSession()).PSendSysMessage("|TInterface\\Icons\\Spell_Shadow_Teleport:16|t |cff00ccff[HLBG Queue]|r |cffff8080Removed|r |cffffffff{}|r |cffff8080group members from queue.|r", removedCount);
     }
     else
     {
-        ChatHandler(leader->GetSession()).PSendSysMessage("No group members were in the queue.");
+        ChatHandler(leader->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffffff00No group members were in the queue.|r");
     }
 
     return true;

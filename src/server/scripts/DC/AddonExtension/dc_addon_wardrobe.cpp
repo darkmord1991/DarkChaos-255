@@ -40,7 +40,6 @@ namespace DCCollection
     // =======================================================================
 
     // Transmog constants
-    constexpr uint32 TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL = 200000;
     constexpr const char* TRANSMOG_MIN_QUALITY = "DCCollection.Transmog.MinQuality";
     constexpr const char* TRANSMOG_SLOT_ITEMS_PAGE_SIZE = "DCCollection.Transmog.SlotItemsPageSize";
     constexpr const char* TRANSMOG_SESSION_NOTIFICATION_DEDUP = "DCCollection.Transmog.SessionNotificationDedup";
@@ -169,8 +168,8 @@ namespace DCCollection
             }
             bucket->itemIds.push_back(entry);
 
-            bool entryIsNonCustom = entry < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
-            bool existingIsNonCustom = bucket->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
+            bool entryIsNonCustom = entry < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
+            bool existingIsNonCustom = bucket->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
             if (IsBetterTransmogRepresentative(entry, entryIsNonCustom, quality, itemLevel,
                 bucket->canonicalItemId, existingIsNonCustom, bucket->quality, bucket->itemLevel))
             {
@@ -621,8 +620,8 @@ namespace DCCollection
             if (!IsAppearanceCompatible(slot, equippedProto, v)) continue;
             if (!best) { best = &v; continue; }
 
-            bool newIsNonCustom = v.canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
-            bool oldIsNonCustom = best->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
+            bool newIsNonCustom = v.canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
+            bool oldIsNonCustom = best->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
             if (IsBetterTransmogRepresentative(v.canonicalItemId, newIsNonCustom, v.quality, v.itemLevel,
                 best->canonicalItemId, oldIsNonCustom, best->quality, best->itemLevel))
             {
@@ -667,8 +666,8 @@ namespace DCCollection
                 continue;
             }
 
-            bool newIsNonCustom = v.canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
-            bool oldIsNonCustom = best->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD_VAL;
+            bool newIsNonCustom = v.canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
+            bool oldIsNonCustom = best->canonicalItemId < TRANSMOG_CANONICAL_ITEMID_THRESHOLD;
             if (IsBetterTransmogRepresentative(v.canonicalItemId, newIsNonCustom, v.quality, v.itemLevel,
                 best->canonicalItemId, oldIsNonCustom, best->quality, best->itemLevel))
             {
@@ -706,9 +705,12 @@ namespace DCCollection
 
     static std::unordered_set<uint32> GetAccountUnlockedTransmogAppearances(uint32 accountId)
     {
-        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
-        auto it = s_AccountUnlockedTransmogAppearances.find(accountId);
-        if (it != s_AccountUnlockedTransmogAppearances.end()) return it->second;
+        {
+            std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+            auto it = s_AccountUnlockedTransmogAppearances.find(accountId);
+            if (it != s_AccountUnlockedTransmogAppearances.end())
+                return it->second;
+        }
 
         std::unordered_set<uint32> unlocked;
 
@@ -726,6 +728,11 @@ namespace DCCollection
                 if (dId) unlocked.insert(dId);
             } while (result->NextRow());
         }
+
+        std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+        auto it = s_AccountUnlockedTransmogAppearances.find(accountId);
+        if (it != s_AccountUnlockedTransmogAppearances.end())
+            return it->second;
 
         s_AccountUnlockedTransmogAppearances[accountId] = unlocked;
         return unlocked;
@@ -785,9 +792,12 @@ namespace DCCollection
             "VALUES ({}, {}, 0, '{}', 'DC-Collection', NOW())",
             accountId, displayId, source);
 
-        auto cacheIt = s_AccountUnlockedTransmogAppearances.find(accountId);
-        if (cacheIt != s_AccountUnlockedTransmogAppearances.end())
-            cacheIt->second.insert(displayId);
+        {
+            std::lock_guard<std::mutex> lock(s_WardrobeMutex);
+            auto cacheIt = s_AccountUnlockedTransmogAppearances.find(accountId);
+            if (cacheIt != s_AccountUnlockedTransmogAppearances.end())
+                cacheIt->second.insert(displayId);
+        }
 
         if (shouldNotify)
         {
@@ -1591,7 +1601,7 @@ namespace DCCollection
 
     void HandleCommunityRate(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        if (!DCAddon::IsJsonMessage(msg)) return;
+        if (!player || !player->GetSession() || !DCAddon::IsJsonMessage(msg)) return;
         
         static std::unordered_map<uint32, uint32> s_rateLimitMap;
         static std::mutex s_rateLimitMutex;
@@ -1627,7 +1637,7 @@ namespace DCCollection
 
     void HandleCommunityFavorite(Player* player, const DCAddon::ParsedMessage& msg)
     {
-        if (!DCAddon::IsJsonMessage(msg)) return;
+        if (!player || !player->GetSession() || !DCAddon::IsJsonMessage(msg)) return;
         EnsureCommunityTables();
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
@@ -1804,8 +1814,26 @@ namespace DCCollection
         if (!player || !DCAddon::IsJsonMessage(msg)) return;
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
 
+        if (!json.HasKey("target"))
+            return;
+
         std::string targetStr = json["target"].IsString() ? json["target"].AsString() : std::to_string(static_cast<uint64>(json["target"].AsNumber()));
-        uint64 targetGuid = std::stoull(targetStr);
+        if (!IsDigitsOnly(targetStr))
+        {
+            LOG_DEBUG("module.dc", "[DCWardrobe] InspectTransmog rejected invalid target format from player={}", player->GetName());
+            return;
+        }
+
+        uint64 targetGuid = 0;
+        try
+        {
+            targetGuid = std::stoull(targetStr);
+        }
+        catch (...)
+        {
+            LOG_DEBUG("module.dc", "[DCWardrobe] InspectTransmog failed to parse target GUID from player={}", player->GetName());
+            return;
+        }
 
         // Query DB for transmog entries
         QueryResult result = CharacterDatabase.Query("SELECT slot, fake_entry FROM dc_character_transmog WHERE guid = {}", (uint32)targetGuid);

@@ -189,14 +189,4 @@ function HLBG.UpdateInfo()
     info:Show()
 end
 
--- Hook this to the OpenUI function
-HLBG._oldInfoEnsure = HLBG._ensureUI
-function HLBG._ensureUI(what)
-    local result = HLBG._oldInfoEnsure and HLBG._oldInfoEnsure(what) or true
-    -- If Info tab is requested, update its content
-    if what == "Info" and result and HLBG.UI and HLBG.UI.Info then
-        HLBG.UpdateInfo()
-    end
-    return result
-end
 

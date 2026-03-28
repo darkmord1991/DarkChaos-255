@@ -93,7 +93,7 @@ void OutdoorPvPHL::_tickRaidLifecycle()
                                 ng->ConvertToRaid();
                                 sGroupMgr->AddGroup(ng);
                                 _teamRaidGroups[tid].push_back(ng->GetGUID());
-                                Whisper(last, "|cffffd700Your battleground raid remains active.|r");
+                                Whisper(last, "|TInterface\\Icons\\Ability_Warrior_RallyingCry:14|t |cff00ccff[Hinterland BG]|r |cffffd700Your battleground raid remains active.|r");
                             }
                             else
                             {

@@ -167,6 +167,13 @@ SeasonalRewards.LogTransactions = 1
 #
 SeasonalRewards.AchievementTracking = 1
 
+#
+#    SeasonalRewards.ConsolidateItemUpgradeHooks
+#        Description: Consolidate Item Upgrade hooks into the seasonal reward pipeline
+#        Default:     1 (Enabled)
+#
+SeasonalRewards.ConsolidateItemUpgradeHooks = 1
+
 # -----------------------------------------------------------------------------
 # Seasonal Reward Multipliers
 # -----------------------------------------------------------------------------
@@ -1089,6 +1096,31 @@ ItemUpgrade.Enable = 1
 ItemUpgrade.DebugToSay = 0
 
 # -----------------------------------------------------------------------------
+# Performance Tuning
+# -----------------------------------------------------------------------------
+
+#
+#    ItemUpgrade.Perf.AchievementClaimCacheMs
+#        Description: Achievement claim cache timeout (ms) for upgrade rewards
+#        Default:     5000
+#
+ItemUpgrade.Perf.AchievementClaimCacheMs = 5000
+
+#
+#    ItemUpgrade.Perf.AchievementReward.MinIntervalMs
+#        Description: Minimum interval (ms) between achievement reward checks
+#        Default:     3000
+#
+ItemUpgrade.Perf.AchievementReward.MinIntervalMs = 3000
+
+#
+#    ItemUpgrade.Perf.AchievementReward.SamplePct
+#        Description: Sample percentage for achievement reward performance events
+#        Default:     30
+#
+ItemUpgrade.Perf.AchievementReward.SamplePct = 30
+
+# -----------------------------------------------------------------------------
 # Currency Configuration
 # -----------------------------------------------------------------------------
 
@@ -1190,6 +1222,13 @@ DCCollection.Heirlooms.Enable = 1
 #        Default:     1 (Enabled)
 #
 DCCollection.Transmog.Enable = 1
+
+#
+#    DCCollection.Transmog.Debug.ApplyPreview
+#        Description: Enable debug logging for transmog preview apply operations
+#        Default:     0 (Disabled)
+#
+DCCollection.Transmog.Debug.ApplyPreview = 0
 
 # -----------------------------------------------------------------------------
 # Account-Wide Sync

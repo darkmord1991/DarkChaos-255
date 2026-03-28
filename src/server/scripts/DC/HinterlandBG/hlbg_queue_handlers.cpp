@@ -22,32 +22,32 @@ void OutdoorPvPHL::HandleQueueJoinCommand(Player* player)
     // Basic eligibility checks
     if (!IsMaxLevel(player))
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You must be at least level {} to join.", _minLevel);
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_Creature_Cursed_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Requires level|r |cffffffff{}|r |cffff8080to join.|r", _minLevel);
         return;
     }
 
     if (player->HasAura(HinterlandBGConstants::BG_DESERTER_SPELL)) // Deserter debuff
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You cannot join while flagged as deserter.");
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Spell_Shadow_Possession:16|t |cff00ccff[HLBG Queue]|r |cffff8080You cannot join while flagged as deserter.|r");
         return;
     }
 
     if (!player->IsAlive())
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You must be alive to join the queue.");
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Spell_Holy_Resurrection:16|t |cff00ccff[HLBG Queue]|r |cffff8080You must be alive to join the queue.|r");
         return;
     }
 
     if (player->IsInCombat())
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You cannot join while in combat.");
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_DualWield:16|t |cff00ccff[HLBG Queue]|r |cffff8080You cannot join while in combat.|r");
         return;
     }
 
     // Check if queue is enabled
     if (!_queueEnabled)
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: Queue system is currently disabled.");
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Queue system is currently disabled.|r");
         return;
     }
 
@@ -79,13 +79,13 @@ void OutdoorPvPHL::HandleGroupQueueJoinCommand(Player* player)
     // Basic eligibility checks first
     if (!IsMaxLevel(player))
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: You must be at least level {} to join.", _minLevel);
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Ability_Creature_Cursed_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Requires level|r |cffffffff{}|r |cffff8080to join.|r", _minLevel);
         return;
     }
 
     if (!_queueEnabled)
     {
-        ChatHandler(player->GetSession()).PSendSysMessage("HLBG Queue: Queue system is currently disabled.");
+        ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffff8080Queue system is currently disabled.|r");
         return;
     }
 

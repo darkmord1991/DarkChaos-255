@@ -21,6 +21,7 @@ namespace DCCollection
 {
     // Module identifier
     constexpr const char* MODULE = "COLL";
+    constexpr uint32 TRANSMOG_CANONICAL_ITEMID_THRESHOLD = 200000;
 
     // Collection types
     enum class CollectionType : uint8

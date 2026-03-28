@@ -1355,7 +1355,7 @@ SlashCmdList['HLBGPROTO'] = function(msg)
         -- Quick queue via DC protocol
         if HLBG.QuickQueue then
             HLBG.QuickQueue()
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Joining HLBG queue...')
+            HLBG.QueueMessage('proto_joining')
         else
             DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r DC protocol not available')
         end
@@ -1363,7 +1363,7 @@ SlashCmdList['HLBGPROTO'] = function(msg)
         -- Leave queue via DC protocol
         if HLBG.LeaveQueue then
             HLBG.LeaveQueue()
-            DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG:|r Leaving HLBG queue...')
+            HLBG.QueueMessage('proto_leaving')
         else
             DEFAULT_CHAT_FRAME:AddMessage('|cFFFF5555HLBG:|r DC protocol not available')
         end
@@ -1379,8 +1379,8 @@ SlashCmdList['HLBGPROTO'] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage('|cFF33FF99HLBG Protocol Commands:|r')
         DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto json - Toggle JSON protocol mode')
         DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto status - Request BG status')
-        DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto queue - Quick queue for HLBG')
-        DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto leave - Leave HLBG queue')
+        HLBG.QueueMessage('proto_help_queue')
+        HLBG.QueueMessage('proto_help_leave')
         DEFAULT_CHAT_FRAME:AddMessage('  /hlbgproto stats - Request your stats')
     else
         -- Show protocol status
@@ -1500,26 +1500,15 @@ if DC then
     -- Helper to decode JSON from DC protocol
     local function DecodeJSON(jsonStr)
         if type(DC.DecodeJSON) == 'function' then
-            return DC:DecodeJSON(jsonStr)
-        end
-        -- Try HLBG's built-in decoder
-        if type(HLBG.json_decode) == 'function' then
-            return HLBG.json_decode(jsonStr)
-        end
-        -- Fallback simple JSON decoder
-        local ok, result = pcall(function()
-            if type(jsonStr) ~= 'string' then return nil end
-            local obj = {}
-            for key, val in jsonStr:gmatch('"([^"]+)":([^,}]+)') do
-                val = val:gsub('^%s*', ''):gsub('%s*$', '')
-                if val == 'true' then obj[key] = true
-                elseif val == 'false' then obj[key] = false
-                elseif val:match('^"') then obj[key] = val:gsub('^"', ''):gsub('"$', '')
-                else obj[key] = tonumber(val) or val end
+            local ok, decoded = pcall(function()
+                return DC:DecodeJSON(jsonStr)
+            end)
+            if ok and decoded ~= nil then
+                return decoded
             end
-            return obj
-        end)
-        return ok and result or nil
+        end
+
+        return nil
     end
 
     -- Check if message is JSON format (starts with "J" marker)
@@ -1623,36 +1612,31 @@ if DC then
         end
     end)
     
-    -- SMSG_QUEUE_UPDATE (0x13) - Queue status
+    -- SMSG_QUEUE_UPDATE (0x13) - Queue updates
     DC:RegisterHandler("HLBG", 0x13, function(...)
         local args = {...}
-        
+
         if IsJSONMessage(...) then
             local json = DecodeJSON(args[2])
-            if json then
-                local status = json.status
-                local position = json.position or 0
-                local eta = json.eta or 0
-                local inQueue = json.inQueue or 0
-                
-                if status == 1 then
-                    HLBGPrint(string.format("Queued for HLBG! Position: %d, ETA: %d sec, Players in queue: %d",
-                        position, eta, inQueue))
-                elseif status == 0 then
-                    HLBGPrint("Left the HLBG queue.")
-                end
-                
-                if type(HLBG.HandleQueueStatus) == 'function' then
-                    pcall(HLBG.HandleQueueStatus, json)
-                end
+            if json and type(HLBG.HandleQueueStatusRaw) == "function" then
+                HLBG.HandleQueueStatusRaw(
+                    json.queueStatus,
+                    json.position,
+                    json.estimatedTime,
+                    json.totalQueued,
+                    json.allianceQueued,
+                    json.hordeQueued,
+                    json.minPlayers,
+                    json.state
+                )
+                return
             end
-        else
-            local queueStatus, position, estimatedTime = args[1], args[2], args[3]
-            if tonumber(queueStatus) == 1 then
-                HLBGPrint("Queued for HLBG!")
-            elseif tonumber(queueStatus) == 0 then
-                HLBGPrint("Left the HLBG queue.")
-            end
+        end
+
+        if type(HLBG.HandleQueueStatusRaw) == "function" then
+            HLBG.HandleQueueStatusRaw(
+                args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]
+            )
         end
     end)
     

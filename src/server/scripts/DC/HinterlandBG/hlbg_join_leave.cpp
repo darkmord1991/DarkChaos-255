@@ -30,14 +30,14 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     if (_lockEnabled && _isLocked)
     {
         uint32 remaining = (_lockUntilEpoch > NowSec()) ? (_lockUntilEpoch - NowSec()) : 0u;
-        Whisper(player, "Hinterland BG is currently locked between matches. Next battle begins in " + std::to_string(remaining) + "s.");
+        Whisper(player, "|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[Hinterland BG]|r |cffff8080Locked between matches.|r |cffffff00Next battle in|r |cffffffff" + std::to_string(remaining) + "s|r.");
         TeleportToTeamBase(player);
         return;
     }
     // Min level gate
     if (!IsMaxLevel(player))
     {
-        Whisper(player, "You must be at least level " + std::to_string(_minLevel) + " to join the Hinterland battle. Teleporting to your capital city.");
+        Whisper(player, "|TInterface\\Icons\\Ability_Creature_Cursed_02:16|t |cff00ccff[Hinterland BG]|r |cffff8080Requires level|r |cffffffff" + std::to_string(_minLevel) + "|r. |cffffff00Teleporting you to your capital city.|r");
         // Teleport under-min-level players to their faction capital
         TeleportToCapital(player);
         return; // do not register enter to PvP logic
@@ -51,8 +51,8 @@ void OutdoorPvPHL::HandlePlayerEnterZone(Player* player, uint32 zone)
     }
 
     // Welcome and current standing whisper (colored)
-    Whisper(player, "|cffffd700Welcome to Hinterland BG!|r");
-    Whisper(player, "Current standing — |cff1e90ffAlliance|r: " + std::to_string(_ally_gathered) + ", |cffff0000Horde|r: " + std::to_string(_horde_gathered) + ".");
+    Whisper(player, "|TInterface\\Icons\\Achievement_BG_winAB:16|t |cff00ccff[Hinterland BG]|r |cffffd700Welcome to the battlefield!|r");
+    Whisper(player, "|TInterface\\Icons\\INV_Misc_Coin_01:14|t |cffffff00Current standing:|r |cff1e90ffAlliance|r=" + std::to_string(_ally_gathered) + ", |cffff2020Horde|r=" + std::to_string(_horde_gathered) + ".");
 
     ++_playersInZone;
     // entering the zone clears AFK flagged edge state
@@ -139,7 +139,7 @@ void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
     }
 
     // Private warning to the player (no emote/broadcast).
-    ChatHandler(player->GetSession()).PSendSysMessage("You are leaving the battlefield while the battle is still ongoing.");
+    ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[Hinterland BG]|r |cffff8080You are leaving while the battle is still ongoing.|r");
 
      if (_playersInZone > 0)
      {
@@ -201,7 +201,7 @@ void OutdoorPvPHL::HandlePlayerLeaveZone(Player* player, uint32 zone)
                                     ng->ConvertToRaid();
                                     sGroupMgr->AddGroup(ng);
                                     _teamRaidGroups[other->GetTeamId()].push_back(ng->GetGUID());
-                                    Whisper(other, "|cffffd700Your battleground raid remains active.|r");
+                                    Whisper(other, "|TInterface\\Icons\\Ability_Warrior_RallyingCry:14|t |cff00ccff[Hinterland BG]|r |cffffd700Your battleground raid remains active.|r");
                                 }
                                 else
                                 {

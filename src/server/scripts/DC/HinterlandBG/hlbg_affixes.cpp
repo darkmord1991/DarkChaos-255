@@ -239,8 +239,8 @@ void OutdoorPvPHL::_selectAffixForNewBattle()
         const char* name = HL_AffixName(_activeAffix);
         if (Map* m = GetMap())
         {
-            char buf[128];
-            snprintf(buf, sizeof(buf), "Hinterland BG: New affix active — %s", name);
+            char buf[192];
+            snprintf(buf, sizeof(buf), "|TInterface\\Icons\\Spell_Nature_Cyclone:16|t |cff00ccffHinterland BG|r: |cff98fb98New affix active:|r |cffffff00%s|r", name);
             m->SendZoneText(OutdoorPvPHLBuffZones[0], buf);
         }
     }

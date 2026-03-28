@@ -1,5 +1,6 @@
 -- HinterlandBG - Additional faction NPC templates (810006+)
--- Includes: creature_template, creature_template_model, creature_text, smart_scripts
+-- Includes: creature_template, creature_template_model, creature_template_addon,
+--           creature_text, smart_scripts
 -- Note: This file defines templates only (no spawns).
 
 -- =========================================
@@ -8,8 +9,8 @@
 
 -- Horde: Revantusk Warcaller (drummer/sergeant)
 DELETE FROM `creature_template` WHERE (`entry` = 810006);
-INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(810006, 0, 0, 0, 0, 0, 'Revantusk Warcaller', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 1, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 60, 10, 5, 1, 0, 0, 1, 0, 0, 0, '', 12340);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810006, 0, 0, 0, 0, 0, 'Revantusk Warcaller', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 60, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810006);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -20,8 +21,8 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 
 -- Horde: Revantusk Watchblade (melee)
 DELETE FROM `creature_template` WHERE (`entry` = 810007);
-INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(810007, 0, 0, 0, 0, 0, 'Revantusk Watchblade', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 1, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 60, 10, 5, 1, 0, 0, 1, 0, 0, 0, '', 12340);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810007, 0, 0, 0, 0, 0, 'Revantusk Watchblade', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 60, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810007);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -32,8 +33,8 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 
 -- Horde: Revantusk Spiritmender (caster)
 DELETE FROM `creature_template` WHERE (`entry` = 810008);
-INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(810008, 0, 0, 0, 0, 0, 'Revantusk Spiritmender', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 1, 0, 0, 2, 2000, 2000, 1, 1, 2, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 50, 10, 5, 1, 0, 0, 1, 0, 0, 0, '', 12340);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810008, 0, 0, 0, 0, 0, 'Revantusk Spiritmender', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 0, 0, 2, 2000, 2000, 1, 1, 2, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 50, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810008);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -42,8 +43,8 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 
 -- Alliance: Wildhammer Battlewarden (melee)
 DELETE FROM `creature_template` WHERE (`entry` = 810009);
-INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(810009, 0, 0, 0, 0, 0, 'Wildhammer Battlewarden', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 1, 0, 0, 2, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 50, 10, 5, 1, 0, 0, 1, 0, 0, 98304, '', 12340);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810009, 0, 0, 0, 0, 0, 'Wildhammer Battlewarden', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 0, 0, 2, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 50, 10, 5, 1, 0, 0, 1, 0, 98304, '', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810009);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -54,8 +55,8 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 
 -- Alliance: Wildhammer Sentry (rifleman)
 DELETE FROM `creature_template` WHERE (`entry` = 810010);
-INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(810010, 0, 0, 0, 0, 0, 'Wildhammer Sentry', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 1, 0, 0, 2, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 45, 10, 5, 1, 0, 0, 1, 0, 0, 98304, '', 12340);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810010, 0, 0, 0, 0, 0, 'Wildhammer Sentry', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 0, 0, 2, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 45, 10, 5, 1, 0, 0, 1, 0, 98304, '', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810010);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -66,8 +67,8 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 
 -- Alliance: Wildhammer Scout (skirmisher)
 DELETE FROM `creature_template` WHERE (`entry` = 810011);
-INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `scale`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `trainer_type`, `trainer_spell`, `trainer_class`, `trainer_race`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `mechanic_immune_mask`, `spell_school_immune_mask`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
-(810011, 0, 0, 0, 0, 0, 'Wildhammer Scout', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 1, 0, 0, 2, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 40, 10, 5, 1, 0, 0, 1, 0, 0, 98304, '', 12340);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810011, 0, 0, 0, 0, 0, 'Wildhammer Scout', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 0, 0, 2, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 'SmartAI', 0, 1, 40, 10, 5, 1, 0, 0, 1, 0, 98304, '', 12340);
 
 DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810011);
 INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
@@ -75,6 +76,121 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (810011, 1, 18789, 1, 1, 12340),
 (810011, 2, 18790, 1, 1, 12340),
 (810011, 3, 18791, 1, 1, 12340);
+
+-- Horde: Revantusk Banner-Singer (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810012);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810012, 0, 0, 0, 0, 0, 'Revantusk Banner-Singer', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 20, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810012);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810012, 0, 28257, 1, 1, 12340),
+(810012, 1, 28258, 1, 1, 12340),
+(810012, 2, 28259, 1, 1, 12340),
+(810012, 3, 14767, 1, 1, 12340);
+
+-- Alliance: Wildhammer Gryphon Herald (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810013);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810013, 0, 0, 0, 0, 0, 'Wildhammer Gryphon Herald', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 20, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810013);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810013, 0, 18749, 1, 1, 12340),
+(810013, 1, 18750, 1, 1, 12340),
+(810013, 2, 18751, 1, 1, 12340),
+(810013, 3, 18752, 1, 1, 12340);
+
+-- Horde: Revantusk Drumkeeper (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810014);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810014, 0, 0, 0, 0, 0, 'Revantusk Drumkeeper', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 18, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810014);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810014, 0, 28257, 1, 1, 12340),
+(810014, 1, 28258, 1, 1, 12340),
+(810014, 2, 28259, 1, 1, 12340),
+(810014, 3, 14767, 1, 1, 12340);
+
+-- Alliance: Wildhammer Banner-Bearer (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810015);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810015, 0, 0, 0, 0, 0, 'Wildhammer Banner-Bearer', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 18, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810015);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810015, 0, 18749, 1, 1, 12340),
+(810015, 1, 18750, 1, 1, 12340),
+(810015, 2, 18751, 1, 1, 12340),
+(810015, 3, 18752, 1, 1, 12340);
+
+-- Horde: Revantusk Fireside Shaman (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810016);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810016, 0, 0, 0, 0, 0, 'Revantusk Fireside Shaman', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 0, 0, 2, 2000, 2000, 1, 1, 2, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 16, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810016);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810016, 0, 3996, 1, 1, 12340),
+(810016, 1, 28237, 1, 1, 12340);
+
+-- Alliance: Wildhammer Watch Captain (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810017);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810017, 0, 0, 0, 0, 0, 'Wildhammer Watch Captain', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 0, 0, 2, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 22, 10, 5, 1, 0, 0, 1, 0, 98304, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810017);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810017, 0, 7859, 1, 1, 12340),
+(810017, 1, 7860, 1, 1, 12340),
+(810017, 2, 7861, 1, 1, 12340),
+(810017, 3, 7862, 1, 1, 12340);
+
+-- =========================================
+-- Creature template addons
+-- =========================================
+
+-- `emote` here is a persistent idle state from SharedDefines.h, not a one-shot
+-- animation. It is a good fit for ambient NPCs that should look active even
+-- before you place any spawns.
+
+-- Emotes used for the decorative HLBG NPCs:
+-- 313 = EMOTE_STATE_AT_EASE
+-- 333 = EMOTE_STATE_READY1H
+-- 214 = EMOTE_STATE_READY_RIFLE
+-- 376 = EMOTE_STATE_READY_BOW
+-- 378 = EMOTE_STATE_TALK
+-- 69  = EMOTE_STATE_USE_STANDING
+
+-- Decorative entries and their idle states:
+-- 810006 Revantusk Warcaller -> ready 1H
+-- 810007 Revantusk Watchblade -> at ease
+-- 810008 Revantusk Spiritmender -> talk
+-- 810009 Wildhammer Battlewarden -> ready 1H
+-- 810010 Wildhammer Sentry -> ready rifle
+-- 810011 Wildhammer Scout -> ready bow
+-- 810012 Revantusk Banner-Singer -> at ease
+-- 810013 Wildhammer Gryphon Herald -> talk
+-- 810014 Revantusk Drumkeeper -> use standing
+-- 810015 Wildhammer Banner-Bearer -> at ease
+-- 810016 Revantusk Fireside Shaman -> talk
+-- 810017 Wildhammer Watch Captain -> ready rifle
+
+DELETE FROM `creature_template_addon` WHERE `entry` IN (810006, 810007, 810008, 810009, 810010, 810011, 810012, 810013, 810014, 810015, 810016, 810017);
+INSERT INTO `creature_template_addon` (`entry`, `path_id`, `mount`, `bytes1`, `bytes2`, `emote`, `visibilityDistanceType`, `auras`) VALUES
+(810006, 0, 0, 0, 0, 333, 0, ''),
+(810007, 0, 0, 0, 0, 313, 0, ''),
+(810008, 0, 0, 0, 0, 378, 0, ''),
+(810009, 0, 0, 0, 0, 333, 0, ''),
+(810010, 0, 0, 0, 0, 214, 0, ''),
+(810011, 0, 0, 0, 0, 376, 0, ''),
+(810012, 0, 0, 0, 0, 313, 0, ''),
+(810013, 0, 0, 0, 0, 378, 0, ''),
+(810014, 0, 0, 0, 0, 69, 0, ''),
+(810015, 0, 0, 0, 0, 313, 0, ''),
+(810016, 0, 0, 0, 0, 378, 0, ''),
+(810017, 0, 0, 0, 0, 214, 0, '');
 
 -- =========================================
 -- Creature texts

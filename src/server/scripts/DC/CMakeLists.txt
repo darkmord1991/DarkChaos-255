@@ -72,6 +72,7 @@ set(SCRIPTS_DC_AC
     HinterlandBG/hlbg_npc_varian.cpp
     HinterlandBG/outdoorpvp_hl_registration.cpp
     HinterlandBG/hlbg_npc_battlemaster.cpp
+    HinterlandBG/hlbg_battlemaster_hook.cpp
     # HinterlandBG/hlbg_addon.cpp (moved into AddonExtension/dc_addon_hlbg.cpp)
     HinterlandBG/hlbg_native_broadcast.cpp
     HinterlandBG/hlbg_scoreboard_npc.cpp

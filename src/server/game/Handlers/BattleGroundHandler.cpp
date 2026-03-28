@@ -100,8 +100,20 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
 
     LOG_DEBUG("network", "WORLD: Recvd CMSG_BATTLEMASTER_JOIN Message from {}", guid.ToString());
 
-    // get queue typeid and random typeid to check if already queued for them
+    // get battleground type id and queue result (default ok)
     BattlegroundTypeId bgTypeId = BattlegroundTypeId(bgTypeId_);
+    GroupJoinBattlegroundResult err = GroupJoinBattlegroundResult(bgTypeId);
+
+    // Let scripts override/redirect battlemaster joins before core template checks.
+    if (!sScriptMgr->OnPlayerCanJoinInBattlegroundQueue(_player, guid, bgTypeId, joinAsGroup, err) && err <= 0)
+    {
+        WorldPacket data;
+        sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, err);
+        SendPacket(&data);
+        return;
+    }
+
+    // get queue typeid and random typeid to check if already queued for them
     BattlegroundQueueTypeId bgQueueTypeId = BattlegroundMgr::BGQueueTypeId(bgTypeId, 0);
     BattlegroundQueueTypeId bgQueueTypeIdRandom = BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_RB, 0);
 
@@ -134,17 +146,6 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
     {
         WorldPacket data;
         sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, ERR_BATTLEGROUND_TOO_MANY_QUEUES);
-        SendPacket(&data);
-        return;
-    }
-
-    // queue result (default ok)
-    GroupJoinBattlegroundResult err = GroupJoinBattlegroundResult(bg->GetBgTypeID());
-
-    if (!sScriptMgr->OnPlayerCanJoinInBattlegroundQueue(_player, guid, bgTypeId, joinAsGroup, err) && err <= 0)
-    {
-        WorldPacket data;
-        sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, err);
         SendPacket(&data);
         return;
     }

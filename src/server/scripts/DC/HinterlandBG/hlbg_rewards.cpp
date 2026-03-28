@@ -71,7 +71,7 @@ void OutdoorPvPHL::HandleRewards(Player* player, uint32 honorpointsorarena, bool
         return;
     if (!player->IsGameMaster() && GetAfkCount(player) >= 1)
     {
-        Whisper(player, "|cffff0000AFK penalty: you receive no rewards.|r");
+        Whisper(player, "|TInterface\\Icons\\Ability_Creature_Cursed_02:16|t |cff00ccff[Hinterland BG]|r |cffff2020AFK penalty: you receive no rewards.|r");
         return;
     }
 
@@ -158,8 +158,8 @@ void OutdoorPvPHL::HandleWinMessage(TeamId winner)
         if (_worldAnnounceOnDepletion)
         {
             char msg[256];
-            snprintf(msg, sizeof(msg), "Hinterland BG: %s win by resource depletion! Final score A:%u H:%u",
-                     winner == TEAM_ALLIANCE ? "Alliance" : "Horde", _ally_gathered, _horde_gathered);
+            snprintf(msg, sizeof(msg), "|TInterface\\Icons\\Achievement_BG_winAB:16|t |cff00ccff[Hinterland BG]|r %s |cffffff00win by resource depletion! Final score|r |cff1e90ffA:%u|r |cffffff00H:|r|cffff2020%u|r",
+                     winner == TEAM_ALLIANCE ? "|cff1e90ffAlliance|r" : "|cffff2020Horde|r", _ally_gathered, _horde_gathered);
             sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, msg);
         }
     }
@@ -168,8 +168,8 @@ void OutdoorPvPHL::HandleWinMessage(TeamId winner)
         if (_worldAnnounceOnExpiry)
         {
             char msg[256];
-            snprintf(msg, sizeof(msg), "Hinterland BG: %s win by tiebreaker at expiry! Final score A:%u H:%u",
-                     winner == TEAM_ALLIANCE ? "Alliance" : "Horde", _ally_gathered, _horde_gathered);
+            snprintf(msg, sizeof(msg), "|TInterface\\Icons\\INV_Misc_Coin_01:16|t |cff00ccff[Hinterland BG]|r %s |cffffff00win by tiebreaker at expiry! Final score|r |cff1e90ffA:%u|r |cffffff00H:|r|cffff2020%u|r",
+                     winner == TEAM_ALLIANCE ? "|cff1e90ffAlliance|r" : "|cffff2020Horde|r", _ally_gathered, _horde_gathered);
             sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, msg);
         }
     }
@@ -260,7 +260,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
                 return;
             if (!plr->IsGameMaster() && GetAfkCount(plr) >= 1)
             {
-                Whisper(plr, "|cffff0000AFK penalty: no rewards for kills.|r");
+                Whisper(plr, "|TInterface\\Icons\\Ability_Creature_Cursed_02:16|t |cff00ccff[Hinterland BG]|r |cffff2020AFK penalty: no rewards for kills.|r");
                 return;
             }
             Randomizer(plr);
@@ -314,7 +314,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
                     if (count)
                     {
                         player->AddItem(_rewardNpcTokenItemId, count);
-                        Whisper(player, "You received " + std::to_string(count) + " token(s) for defeating a marked enemy NPC.");
+                        Whisper(player, "|TInterface\\Icons\\INV_Misc_Coin_01:16|t |cff00ccff[Hinterland BG]|r |cff98fb98You received|r |cffffffff" + std::to_string(count) + "|r |cff98fb98token(s) for defeating a marked enemy NPC.|r");
                     }
                 }
             }
@@ -332,7 +332,7 @@ void OutdoorPvPHL::HandleKill(Player* player, Unit* killed)
                     if (count)
                     {
                         player->AddItem(_rewardNpcTokenItemId, count);
-                        Whisper(player, "You received " + std::to_string(count) + " token(s) for defeating a marked enemy NPC.");
+                        Whisper(player, "|TInterface\\Icons\\INV_Misc_Coin_01:16|t |cff00ccff[Hinterland BG]|r |cff98fb98You received|r |cffffffff" + std::to_string(count) + "|r |cff98fb98token(s) for defeating a marked enemy NPC.|r");
                     }
                 }
             }

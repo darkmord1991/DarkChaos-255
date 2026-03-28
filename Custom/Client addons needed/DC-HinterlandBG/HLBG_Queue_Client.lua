@@ -28,23 +28,23 @@ function HLBG.RequestQueueStatus()
         -- See DCAddonNamespace.h: CMSG_REQUEST_STATUS = 0x01
         DC:Send("HLBG", 1)
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting queue status via DCAddonProtocol (opcode 1)...")
+            HLBG.QueueMessage("request_status_dc")
         end
     elseif AIO and AIO.Handle then
         AIO.Handle("HLBG", "RequestQueueStatus", "")
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting queue status via AIO...")
+            HLBG.QueueMessage("request_status_aio")
         end
     else
         -- Fallback: use chat command
-        local cmd = ".hlbgq status"
+        local cmd = ".hlbg queue status"
         local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
         if editBox then
             editBox:SetText(cmd)
             ChatEdit_SendText(editBox, 0)
         end
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Requesting queue status via command...")
+            HLBG.QueueMessage("request_status_cmd")
         end
     end
 end
@@ -56,22 +56,22 @@ function HLBG.JoinQueue()
         -- CMSG_QUICK_QUEUE = 0x04
         DC:Send("HLBG", 4)
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Joining queue via DCAddonProtocol (opcode 4)...")
+            HLBG.QueueMessage("join_dc")
         end
     elseif AIO and AIO.Handle then
         AIO.Handle("HLBG", "JoinQueue", "")
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Joining queue via AIO...")
+            HLBG.QueueMessage("join_aio")
         end
     else
         -- Fallback: use chat command
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r No DC Protocol or AIO found. Using command fallback...")
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r Please type: |cFFFFFFFF.hlbgq join|r or talk to the Battlemaster NPC.")
+            HLBG.QueueMessage("fallback_no_transport")
+            HLBG.QueueMessage("fallback_join_hint")
         end
         
         -- Try to execute command
-        local cmd = ".hlbgq join"
+        local cmd = ".hlbg queue join"
         local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
         if editBox then
             editBox:SetText(cmd)
@@ -87,23 +87,23 @@ function HLBG.LeaveQueue()
         -- CMSG_LEAVE_QUEUE = 0x05
         DC:Send("HLBG", 5)
         if DEFAULT_CHAT_FRAME and (HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode)) then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Leaving queue via DC...")
+            HLBG.QueueMessage("leave_dc")
         end
     elseif AIO and AIO.Handle then
         AIO.Handle("HLBG", "LeaveQueue", "")
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Leaving queue via AIO...")
+            HLBG.QueueMessage("leave_aio")
         end
     else
         -- Fallback: use chat command
-        local cmd = ".hlbgq leave"
+        local cmd = ".hlbg queue leave"
         local editBox = DEFAULT_CHAT_FRAME.editBox or ChatFrame1EditBox
         if editBox then
             editBox:SetText(cmd)
             ChatEdit_SendText(editBox, 0)
         end
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Leaving queue via command...")
+            HLBG.QueueMessage("leave_cmd")
         end
     end
 end
@@ -270,7 +270,7 @@ function HLBG.HandleQueueStatus(statusString)
     else
         -- Unknown format - show as-is
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage(string.format("|cFFFFAA00HLBG Queue:|r %s", statusString))
+            HLBG.QueueMessage("unknown_status", statusString)
         end
         return
     end
@@ -327,10 +327,10 @@ SlashCmdList['HLBGQ'] = function(msg)
         HLBG.RequestQueueStatus()
     else
         if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFFD700HLBG Queue Commands:|r")
-            DEFAULT_CHAT_FRAME:AddMessage("  /hlbgq status (or /hlbgq) - Check queue status")
-            DEFAULT_CHAT_FRAME:AddMessage("  /hlbgq join - Join the queue")
-            DEFAULT_CHAT_FRAME:AddMessage("  /hlbgq leave - Leave the queue")
+            HLBG.QueueMessage("commands_header")
+            HLBG.QueueMessage("commands_status")
+            HLBG.QueueMessage("commands_join")
+            HLBG.QueueMessage("commands_leave")
         end
     end
 end

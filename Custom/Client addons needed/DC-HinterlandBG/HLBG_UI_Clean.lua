@@ -718,7 +718,9 @@ if not HLBG.UI.Queue.Content then
             HLBG.UI.Queue.StatusText:SetText("|cFFFFAA00Requesting queue status...|r\n\nWaiting for server response...")
         end
         HLBG.RequestQueueStatus()
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Refreshing queue status...")
+        if type(HLBG.QueueMessage) == 'function' then
+            HLBG.QueueMessage("refreshing")
+        end
         -- Set timeout: if no response after 3 seconds, show error
         if C_Timer and C_Timer.After then
             C_Timer.After(3, function()
@@ -729,7 +731,9 @@ if not HLBG.UI.Queue.Content then
                         "Queue system may not be implemented yet.\n" ..
                         "Try talking to the Battlemaster NPC instead.\n\n" ..
                         "|cFFAAAA00Note:|r Queue commands (.hlbgq) are in development.")
-                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFF5555HLBG Queue:|r No response received. Queue system may not be active on this server.")
+                    if type(HLBG.QueueMessage) == 'function' then
+                        HLBG.QueueMessage("no_response")
+                    end
                 end
             end)
         end
@@ -744,18 +748,22 @@ To participate in Hinterland Battleground, currently you need to:
 1. Travel to the Hinterland BG entrance
 2. Talk to the Battlemaster NPC to queue
 3. Alternatively, use the PvP UI if queue system is enabled
-|cFFAAAAAANote: Automated queue commands (.hlbgq join/leave) are being developed.
-Check with server administrators for the current queue method.|r]])
+|cFFAAAAAANote: You can also use queue commands (/hlbgq join, /hlbgq leave, /hlbgq status).
+Check with server administrators for the currently enabled queue method.|r]])
     HLBG.UI.Queue.InfoText = infoText
     -- Auto-request queue status when tab is shown
     HLBG.UI.Queue:SetScript("OnShow", function()
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r Queue tab shown, requesting status...")
+        if type(HLBG.QueueMessage) == 'function' then
+            HLBG.QueueMessage("shown_requesting")
+        end
         if type(HLBG.RequestQueueStatus) == 'function' then
             C_Timer.After(0.3, function()  -- Small delay to ensure AIO ready
                 pcall(HLBG.RequestQueueStatus)
             end)
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF0000HLBG Error:|r RequestQueueStatus function not found!")
+            if type(HLBG.QueueMessage) == 'function' then
+                HLBG.QueueMessage("missing_request_function")
+            end
         end
     end)
     -- Initialize queue state
@@ -819,10 +827,16 @@ function ShowTab(i)
     if i == 3 and HLBG.UI.Info then
         HLBG.UI.Info:Show()
         if HLBG.UI.Info.Content then HLBG.UI.Info.Content:Show() end
+        if type(HLBG.UpdateInfo) == 'function' then
+            pcall(HLBG.UpdateInfo)
+        end
     end
     if i == 4 and HLBG.UI.Settings then
         HLBG.UI.Settings:Show()
         if HLBG.UI.Settings.Content then HLBG.UI.Settings.Content:Show() end
+        if type(HLBG.UpdateSettings) == 'function' then
+            pcall(HLBG.UpdateSettings)
+        end
     end
     if i == 5 and HLBG.UI.Queue then
         HLBG.UI.Queue:Show()
@@ -843,12 +857,16 @@ HLBG.UI.Tabs[5]:SetScript("OnClick", function() ShowTab(5) end)
 ShowTab(1)
 HLBG.UI.Frame:Show()
 -- Ensure UI helper function
-if not HLBG._ensureUI then
-    function HLBG._ensureUI(name)
-        if not (type(HLBG) == 'table' and type(HLBG.UI) == 'table') then return false end
-        if not name then return true end
-        return HLBG.UI[name] ~= nil
+function HLBG._ensureUI(name)
+    if not (type(HLBG) == 'table' and type(HLBG.UI) == 'table') then return false end
+    if not name then return true end
+
+    -- Compatibility alias for modules still requesting legacy panel names.
+    if name == 'Live' then
+        return HLBG.UI.Live ~= nil or HLBG.UI.Stats ~= nil
     end
+
+    return HLBG.UI[name] ~= nil
 end
 DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00HLBG:|r Clean UI loaded successfully")
 

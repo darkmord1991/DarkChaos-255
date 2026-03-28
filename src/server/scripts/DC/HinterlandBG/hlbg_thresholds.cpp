@@ -90,8 +90,8 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
         {
             if (_worldAnnounceOnDepletion)
             {
-                char announce[200];
-                snprintf(announce, sizeof(announce), "[Hinterland BG] Horde victory by depletion! Final score: Alliance %u — Horde %u", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                char announce[256];
+                snprintf(announce, sizeof(announce), "|TInterface\\Icons\\Achievement_BG_winAB:16|t |cff00ccff[Hinterland BG]|r |cffff2020Horde victory by depletion!|r |cffffff00Final score:|r |cff1e90ffAlliance %u|r |cffffff00-|r |cffff2020Horde %u|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                 ChatHandler(nullptr).SendGlobalSysMessage(announce);
             }
             HandleWinMessage("|cffff0000For the HORDE!|r");
@@ -105,8 +105,8 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
         {
             if (_worldAnnounceOnDepletion)
             {
-                char announce[200];
-                snprintf(announce, sizeof(announce), "[Hinterland BG] Alliance victory by depletion! Final score: Alliance %u — Horde %u", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                char announce[256];
+                snprintf(announce, sizeof(announce), "|TInterface\\Icons\\Achievement_BG_winAB:16|t |cff00ccff[Hinterland BG]|r |cff1e90ffAlliance victory by depletion!|r |cffffff00Final score:|r |cff1e90ffAlliance %u|r |cffffff00-|r |cffff2020Horde %u|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                 ChatHandler(nullptr).SendGlobalSysMessage(announce);
             }
             HandleWinMessage("|cff1e90ffFor the Alliance!|r");
@@ -125,14 +125,14 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
             // 300/200/100 threshold chatter
             if (limit_resources_message_A == 1 || limit_resources_message_A == 2 || limit_resources_message_A == 3)
             {
-                char line[160];
-                snprintf(line, sizeof(line), "|cff1e90ff[Hinterland Defence]: The Alliance has resources left! (Alliance=%u, Horde=%u)|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                char line[256];
+                snprintf(line, sizeof(line), "|TInterface\\Icons\\INV_Misc_Coin_01:14|t |cff1e90ffAlliance resources remaining!|r (|cff1e90ffA|r=%u, |cffff2020H|r=%u)", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                 player->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
             }
             else if (limit_resources_message_H == 1 || limit_resources_message_H == 2 || limit_resources_message_H == 3)
             {
-                char line[160];
-                snprintf(line, sizeof(line), "|cffff0000[Hinterland Defence]: The Horde has resources left! (Alliance=%u, Horde=%u)|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                char line[256];
+                snprintf(line, sizeof(line), "|TInterface\\Icons\\INV_Misc_Coin_01:14|t |cffff2020Horde resources remaining!|r (|cff1e90ffA|r=%u, |cffff2020H|r=%u)", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                 player->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
             }
 
@@ -141,14 +141,14 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
             {
                 if (limit_A == 1)
                 {
-                    char line[160];
-                    snprintf(line, sizeof(line), "|cff1e90ff[Hinterland Defence]: The Alliance has resources left! (Alliance=%u, Horde=%u)|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                    char line[256];
+                    snprintf(line, sizeof(line), "|TInterface\\Icons\\INV_Misc_Coin_01:14|t |cff1e90ffAlliance resources remaining!|r (|cff1e90ffA|r=%u, |cffff2020H|r=%u)", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                     player->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
                 }
                 else if (limit_A == 2)
                 {
-                    char line[200];
-                    snprintf(line, sizeof(line), "|cff1e90ff[Hinterland Defence]: The Alliance has no more resources left! (Alliance=%u, Horde=%u)|r |cffff0000Horde wins!|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                    char line[256];
+                    snprintf(line, sizeof(line), "|TInterface\\Icons\\Ability_Creature_Cursed_02:14|t |cff1e90ffAlliance is depleted!|r (|cff1e90ffA|r=%u, |cffff2020H|r=%u) |cffff2020Horde wins!|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                     player->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
                     HandleRewards(player, _rewardMatchHonorDepletion, true, false, false);
                     switch (player->GetTeamId())
@@ -166,14 +166,14 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
             {
                 if (limit_H == 1)
                 {
-                    char line[160];
-                    snprintf(line, sizeof(line), "|cffff0000[Hinterland Defence]: The Horde has resources left! (Alliance=%u, Horde=%u)|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                    char line[256];
+                    snprintf(line, sizeof(line), "|TInterface\\Icons\\INV_Misc_Coin_01:14|t |cffff2020Horde resources remaining!|r (|cff1e90ffA|r=%u, |cffff2020H|r=%u)", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                     player->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
                 }
                 else if (limit_H == 2)
                 {
-                    char line[200];
-                    snprintf(line, sizeof(line), "|cffff0000[Hinterland Defence]: The Horde has no more resources left! (Alliance=%u, Horde=%u)|r |cff1e90ffAlliance wins!|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
+                    char line[256];
+                    snprintf(line, sizeof(line), "|TInterface\\Icons\\Ability_Creature_Cursed_02:14|t |cffff2020Horde is depleted!|r (|cff1e90ffA|r=%u, |cffff2020H|r=%u) |cff1e90ffAlliance wins!|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                     player->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
                     HandleRewards(player, _rewardMatchHonorDepletion, true, false, false);
                     switch (player->GetTeamId())

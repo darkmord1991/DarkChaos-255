@@ -125,9 +125,6 @@ namespace DCCollection
     constexpr uint32 CURRENCY_TOKEN = 1;     // Upgrade Token
     constexpr uint32 CURRENCY_EMBLEM = 2;    // Artifact Essence
 
-    // Transmog behavior
-    constexpr uint32 TRANSMOG_CANONICAL_ITEMID_THRESHOLD = 200000; // Prefer non-custom items for naming/appearance
-
     // Mount speed bonus spell IDs (custom spells in Spell.csv)
     // Range: 300510-300513 (verified free in Spell.csv)
     constexpr uint32 SPELL_MOUNT_SPEED_TIER1 = 300510;  // +1% mount speed (25+ mounts)

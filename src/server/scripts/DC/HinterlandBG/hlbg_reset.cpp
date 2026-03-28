@@ -160,14 +160,14 @@ void OutdoorPvPHL::HandleReset()
             switch (_activeAffix) { case AFFIX_SUNLIGHT: aff = "Sunlight"; break; case AFFIX_CLEAR_SKIES: aff = "Clear Skies"; break; case AFFIX_GENTLE_BREEZE: aff = "Gentle Breeze"; break; case AFFIX_STORM: aff = "Storm"; break; case AFFIX_HEAVY_RAIN: aff = "Heavy Rain"; break; case AFFIX_FOG: aff = "Fog"; break; default: break; }
             if (Map* m = GetMap())
             {
-                char line[160];
-                snprintf(line, sizeof(line), "%sBattle restarted — current affix: %s", GetBgChatPrefix().c_str(), aff);
+                char line[224];
+                snprintf(line, sizeof(line), "%s|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cffffd700Battle restarted|r |cffffff00Current affix:|r |cff98fb98%s|r", GetBgChatPrefix().c_str(), aff);
                 m->SendZoneText(OutdoorPvPHLBuffZones[0], line);
             }
             // Global start-of-run announcement with affix
             {
-                char gmsg[180];
-                snprintf(gmsg, sizeof(gmsg), "[Hinterland BG] Battle restarted — current affix: %s", aff);
+                char gmsg[224];
+                snprintf(gmsg, sizeof(gmsg), "|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[Hinterland BG]|r |cffffd700Battle restarted|r |cffffff00Current affix:|r |cff98fb98%s|r", aff);
                 uint32 now = NowSec();
                 if (now - _lastGlobalAnnounceEpoch >= 3)
                 {
@@ -195,8 +195,8 @@ void OutdoorPvPHL::TeleportPlayersToStart()
         TeleportToTeamBase(p);
         if (team == TEAM_ALLIANCE) ++countA; else ++countH;
     });
-    char msg[128];
-    snprintf(msg, sizeof(msg), "Hinterland BG: Resetting — sent %u Alliance and %u Horde to their bases.", (unsigned)countA, (unsigned)countH);
+    char msg[224];
+    snprintf(msg, sizeof(msg), "|TInterface\\Icons\\Spell_Arcane_TeleportOrgrimmar:16|t |cff00ccffHinterland BG|r: |cffff8080Resetting|r |cffffff00sent|r |cff1e90ff%u Alliance|r |cffffff00and|r |cffff2020%u Horde|r |cffffff00to their bases.|r", (unsigned)countA, (unsigned)countH);
     uint32 now = NowSec();
     if (Map* m = GetMap())
     {
@@ -211,7 +211,7 @@ void OutdoorPvPHL::TeleportPlayersToStart()
     // Throttle global messages to once every few seconds to avoid duplicate broadcasts
     if (now - _lastGlobalAnnounceEpoch >= 3)
     {
-        ChatHandler(nullptr).SendGlobalSysMessage("[Hinterland BG] Resetting — teleporting players to their bases...");
+        ChatHandler(nullptr).SendGlobalSysMessage("|TInterface\\Icons\\Spell_Arcane_TeleportOrgrimmar:16|t |cff00ccff[Hinterland BG]|r |cffff8080Resetting|r |cffffff00teleporting players to their bases...|r");
         _lastGlobalAnnounceEpoch = now;
     }
 }
