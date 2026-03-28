@@ -60,6 +60,9 @@ namespace
 // Reset match state and respawn zone actors (creatures/GOs) within the zone.
 void OutdoorPvPHL::HandleReset()
 {
+    LOG_INFO("outdoorpvp.hl", "[HL][ResetDebug] HandleReset begin: state={}, playersInZoneCounter={}, trackedSet={}",
+        static_cast<uint32>(_bgState), _playersInZone, _playersInHinterlands.size());
+
     // Reset match state to defaults and respawn NPCs and GOs in the Hinterlands zone.
     _ally_gathered = _initialResourcesAlliance;
     _horde_gathered = _initialResourcesHorde;
@@ -183,18 +186,51 @@ void OutdoorPvPHL::HandleReset()
     SendAffixAddonToZone();
     SendStatusAddonToZone();
     _statusBroadcastTimerMs = 1;
+
+    LOG_INFO("outdoorpvp.hl", "[HL][ResetDebug] HandleReset complete: newMatchStart={}, newMatchEnd={}, durationSec={}",
+        _matchStartTime, _matchEndTime, _matchDurationSeconds);
 }
 
 // Teleport all players currently inside the Hinterlands to their faction bases.
 void OutdoorPvPHL::TeleportPlayersToStart()
 {
     uint32 const zoneId = OutdoorPvPHLBuffZones[0];
-    uint32 countA = 0, countH = 0;
-    ForEachPlayerInZone([&](Player* p){
+    uint32 countA = 0, countH = 0, skippedGm = 0, candidates = 0;
+
+    // Robust scan: use live sessions in the battle area instead of tracked sets.
+    for (auto const& sessionPair : sWorldSessionMgr->GetAllSessions())
+    {
+        WorldSession* session = sessionPair.second;
+        if (!session)
+            continue;
+
+        Player* p = session->GetPlayer();
+        if (!p || !p->IsInWorld())
+            continue;
+
+        if (p->GetAreaId() != OutdoorPvPHLBattleAreaId)
+            continue;
+
+        ++candidates;
+
+        // GM exclusion: keep game masters in place during automatic resets.
+        if (p->IsGameMaster())
+        {
+            ++skippedGm;
+            continue;
+        }
+
         TeamId team = p->GetTeamId();
         TeleportToTeamBase(p);
-        if (team == TEAM_ALLIANCE) ++countA; else ++countH;
-    });
+        if (team == TEAM_ALLIANCE)
+            ++countA;
+        else
+            ++countH;
+    }
+
+    LOG_INFO("outdoorpvp.hl", "[HL][ResetDebug] TeleportPlayersToStart: candidates={}, teleportedA={}, teleportedH={}, skippedGM={}, trackedSet={}, playersInZoneCounter={}",
+        candidates, countA, countH, skippedGm, _playersInHinterlands.size(), _playersInZone);
+
     char msg[224];
     snprintf(msg, sizeof(msg), "|TInterface\\Icons\\Spell_Arcane_TeleportOrgrimmar:16|t |cff00ccffHinterland BG|r: |cffff8080Resetting|r |cffffff00sent|r |cff1e90ff%u Alliance|r |cffffff00and|r |cffff2020%u Horde|r |cffffff00to their bases.|r", (unsigned)countA, (unsigned)countH);
     uint32 now = NowSec();

@@ -1,6 +1,6 @@
 ## Interface: 30300
 ## Title: |cffFFCC00DC|r Welcome
-## Notes: First-login welcome, progress tracking, addons hub, and seasons tracker for DarkChaos-255
+## Notes: Welcome screen, FAQ, addons hub, progression tracking, season tools, and integrated utility modules for DarkChaos-255
 ## Author: DarkChaos-255
 ## Version: 2.0.0
 ## SavedVariables: DCWelcomeDB
@@ -22,6 +22,3 @@ MinimapButton.lua
 TitleFix.lua
 RestoreXP.lua
 Seasons.lua
-
-## Tooltip helpers
-NPCTooltip.lua - REMOVED (now in DC-QOS)

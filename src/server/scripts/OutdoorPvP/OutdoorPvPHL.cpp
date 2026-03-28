@@ -576,11 +576,35 @@
         if (_bgState == BG_STATE_WARMUP)
             return false;
 
-        // If there are no players in the zone, do not perform expiry resets or announcements.
-        if (_playersInZone == 0)
+        // Robust presence check: derive live battle-area population from sessions,
+        // then sync the legacy counter to avoid stale state blocking resets.
+        uint32 livePlayersInBattleArea = 0;
+        for (auto const& sessionPair : sWorldSessionMgr->GetAllSessions())
+        {
+            WorldSession* session = sessionPair.second;
+            if (!session)
+                continue;
+
+            Player* p = session->GetPlayer();
+            if (!p || !p->IsInWorld())
+                continue;
+
+            if (p->GetAreaId() == OutdoorPvPHLBattleAreaId)
+                ++livePlayersInBattleArea;
+        }
+
+        if (_playersInZone != livePlayersInBattleArea)
+        {
+            LOG_INFO("outdoorpvp.hl", "[HL][ResetDebug] playersInZone counter corrected {} -> {}", _playersInZone, livePlayersInBattleArea);
+            _playersInZone = livePlayersInBattleArea;
+        }
+
+        // If there are no live players in the battle area, skip expiry reset.
+        if (livePlayersInBattleArea == 0)
             return false;
 
-        LOG_INFO("misc", "[OutdoorPvPHL]: Match timer expired - resetting Hinterland BG");
+        LOG_INFO("outdoorpvp.hl", "[HL][ResetDebug] Match timer expired: liveAreaPlayers={}, trackedSet={}, autoResetTeleport={}, lockEnabled={}",
+            livePlayersInBattleArea, _playersInHinterlands.size(), _autoResetTeleport, _lockEnabled);
         // Optional tiebreaker: declare winner by higher resources (equal => draw) and reward/buff accordingly
         if (_expiryUseTiebreaker)
         {
@@ -1187,13 +1211,36 @@
     void OutdoorPvPHL::ForEachPlayerInZone(std::function<void(Player*)> f) const
     {
         uint32 const zoneId = OutdoorPvPHLBuffZones[0];
-        // Optimized: Iterate locally tracked players (O(N_zone))
+        // Fast path: locally tracked players.
+        uint32 emitted = 0;
         for (ObjectGuid const& guid : _playersInHinterlands)
         {
             if (Player* p = ObjectAccessor::FindPlayer(guid))
             {
                 if (p->GetZoneId() == zoneId && p->IsInWorld())
+                {
                     f(p);
+                    ++emitted;
+                }
             }
+        }
+
+        // Fallback path: if tracking drifted (e.g. GM test sessions), scan live
+        // sessions by battle area so HUD/status updates are still delivered.
+        if (emitted > 0)
+            return;
+
+        for (auto const& sessionPair : sWorldSessionMgr->GetAllSessions())
+        {
+            WorldSession* session = sessionPair.second;
+            if (!session)
+                continue;
+
+            Player* p = session->GetPlayer();
+            if (!p || !p->IsInWorld())
+                continue;
+
+            if (p->GetAreaId() == OutdoorPvPHLBattleAreaId)
+                f(p);
         }
     }

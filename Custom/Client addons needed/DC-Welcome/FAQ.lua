@@ -29,6 +29,11 @@ DCWelcome.FAQCategories = {
     { id = "community", name = "Community", icon = (DCWelcome.ADDON_PATH or "Interface\\AddOns\\DC-Welcome\\") .. "Textures\\Icons\\ServerPortal_64.tga" },
 }
 
+DCWelcome.ObsoleteFAQQuestions = {
+    ["how do i get tier 11 gear?"] = true,
+    ["how do i get tier 12 gear?"] = true,
+}
+
 -- Extended FAQ entries with categories
 DCWelcome.ExtendedFAQ = {
     -- General
@@ -36,7 +41,7 @@ DCWelcome.ExtendedFAQ = {
         id = 1,
         category = "general",
         question = "What makes DarkChaos-255 different from other servers?",
-        answer = "DarkChaos-255 is a custom WotLK server featuring Mythic+ dungeons, a Prestige system, dynamic Hotspots, item upgrades, and seasonal content. We focus on end-game progression with multiple paths to gear up.",
+        answer = "DarkChaos-255 uses bracketed progression toward a long-term level 255 plan, while combining Mythic+, challenge modes, custom dungeon tiers, and a full client addon suite for long-term play.",
     },
     {
         id = 2,
@@ -47,8 +52,20 @@ DCWelcome.ExtendedFAQ = {
     {
         id = 3,
         category = "general",
-        question = "What's the server's max level?",
-        answer = "The max level is 80, same as retail WotLK. However, our Prestige system allows you to reset and gain permanent account-wide bonuses.",
+        question = "What is the current max level?",
+        answer = "The current live max level is 80. DarkChaos progresses in brackets, with future caps planned for 100, 130, 160, 200, and eventually 255.",
+    },
+    {
+        id = 4,
+        category = "general",
+        question = "How do I navigate the world?",
+        answer = "Use the server teleporter network and the DC-Mapupgrades addon for hotspots, world-content markers, and navigation help. You can also use /hotspot for the current bonus zones.",
+    },
+    {
+        id = 5,
+        category = "general",
+        question = "Where do I find all DarkChaos addons?",
+        answer = "Open the Addons tab in DC-Welcome or type /dcaddons. From there you can launch DC-MythicPlus, DC-QOS, DC-Collection, DC-InfoBar, DC-Mapupgrades, and the rest of the client suite.",
     },
     
     -- Mythic+
@@ -73,8 +90,8 @@ DCWelcome.ExtendedFAQ = {
     {
         id = 13,
         category = "mythicplus",
-        question = "Can I do M+ solo?",
-        answer = "Technically yes, but it's designed for groups. Mobs scale to 5 players. Use /lfg or the Group Finder NPC to find parties.",
+        question = "How do I find groups for Mythic+?",
+        answer = "Use the DC-MythicPlus group finder with /dcgf, or open the Mythic+ suite from the Addons tab. The addon handles group browsing, activity tools, and related M+ UI features.",
     },
     
     -- Prestige
@@ -82,25 +99,31 @@ DCWelcome.ExtendedFAQ = {
         id = 20,
         category = "prestige",
         question = "What is the Prestige system?",
-        answer = "At level 80, you can 'prestige' to reset your character to level 1. In exchange, you gain permanent account-wide bonuses that apply to ALL your characters.",
+        answer = "Prestige is planned for the future 255 bracket. Once that bracket is live and characters can reach it, prestige will reset a capped character back to level 1 for long-term progression rewards.",
     },
     {
         id = 21,
         category = "prestige",
         question = "What bonuses does Prestige give?",
-        answer = "Each prestige level grants: +5% XP rate, +3% gold find, +2% drop rate, and unlocks cosmetic rewards like titles and mounts.",
+        answer = "The planned prestige setup grants +1% to all stats per prestige level and can unlock prestige-related titles or rewards. The separate alt bonus system is also tied to later max-level progression once higher brackets are available.",
     },
     {
         id = 22,
         category = "prestige",
         question = "Do I lose my gear when I prestige?",
-        answer = "Your gear is stored in a special 'Prestige Vault' accessible at level 80. You don't lose items, but you can't equip high-level gear until you level up again.",
+        answer = "The planned prestige flow is built to preserve your progress where possible, with the exact retention rules controlled by the live server setup when the 255 bracket opens.",
     },
     {
         id = 23,
         category = "prestige",
         question = "Is there a max Prestige level?",
-        answer = "Currently Prestige 10 is the maximum. Each level takes progressively more effort but gives better rewards.",
+        answer = "The planned prestige cap is 10 by default. Once the 255 bracket is live, .prestige info can be used to inspect the active prestige settings and your current status.",
+    },
+    {
+        id = 24,
+        category = "prestige",
+        question = "What is the Prestige alt bonus?",
+        answer = "The planned alt bonus grants +5% XP per max-level character, up to +25%. It becomes relevant once later progression brackets and the eventual 255 cap are live.",
     },
     
     -- Server Systems
@@ -108,45 +131,69 @@ DCWelcome.ExtendedFAQ = {
         id = 30,
         category = "systems",
         question = "How do Hotspots work?",
-        answer = "Hotspots are zones that rotate every few hours with active bonuses. Check /hotspot to see current zones. Bonuses include +50% XP, +25% drops, rare mob spawns, and world events.",
+        answer = "Hotspots rotate on a timer and provide bonus XP plus world-map support through DC-Mapupgrades. Use /hotspot for the active zones and /dchotspot or /dcmap for the client map tools.",
     },
     {
         id = 31,
         category = "systems",
         question = "How do Item Upgrades work?",
-        answer = "Visit the Upgrade NPC in Dalaran with upgrade tokens. Each upgrade increases item level by 6. Tokens drop from M+ and raids, with higher content dropping better tokens.",
+        answer = "Open DC-ItemUpgrade from the Addons tab or use /dcu. Upgrade tokens come from progression content, and the addon also supports heirloom upgrades through its secondary interface.",
     },
     {
         id = 32,
         category = "systems",
-        question = "What are Seasonal rewards?",
-        answer = "Each 3-month season has unique rewards: mounts, titles, transmog. Compete on leaderboards or complete seasonal challenges to earn them before they're gone!",
+        question = "What custom dungeons are available?",
+        answer = "DarkChaos progression includes later custom dungeon brackets at level 100 (The Nexus, The Oculus), 130 (Gundrak, Ahn'kahet), and 160 (Auchenai Crypts, Mana-Tombs, Sethekk Halls, Shadow Labyrinth). Those brackets open as progression advances beyond the current level-80 cap.",
     },
     {
         id = 33,
         category = "systems",
+        question = "What is the Hinterland Battleground?",
+        answer = "Hinterland BG is DarkChaos's open-world PvP battleground with a dedicated addon, queue HUD, live stats, and seasonal support. Use the Addons tab to open the HLBG UI when the addon is loaded.",
+    },
+    {
+        id = 34,
+        category = "systems",
         question = "How does AOE Looting work?",
-        answer = "Kill enemies, then loot one corpse to collect from all nearby corpses. Configure settings with /aoe or in DC-Central addon: quality filter, auto-skin, loot range.",
+        answer = "Loot one corpse to collect nearby corpses in range. Configure it with /aoeloot or through DC-AOESettings for quality filters, auto-skinning, and related behavior.",
+    },
+    {
+        id = 35,
+        category = "systems",
+        question = "What does DC-QOS do?",
+        answer = "DC-QOS packages tooltip upgrades, automation helpers, cooldown text, bag and vendor improvements, mail helpers, nameplates, and other quality-of-life features under one addon.",
+    },
+    {
+        id = 36,
+        category = "systems",
+        question = "How do I browse mounts, pets, toys, and appearances?",
+        answer = "Open DC-Collection with /dcc or from the Addons tab. It brings together collections, titles, heirlooms, toys, and wardrobe-style appearance browsing in one interface.",
     },
     
     -- Community
     {
         id = 40,
         category = "community",
-        question = "How do I report a bug?",
-        answer = "Use /bug in-game or post in #bug-reports on Discord. Include: what happened, where you were, and steps to reproduce.",
+        question = "How do I join the Discord?",
+        answer = "Use /discord in-game or copy the Discord link from the Community tab in DC-Welcome.",
     },
     {
         id = 41,
         category = "community",
-        question = "Where can I find a guild?",
-        answer = "Check #guild-recruitment on Discord, or use /gf (Guild Finder) in-game. Many guilds recruit for M+ and raids.",
+        question = "Where is the source code?",
+        answer = "The current repository, changelog history, and project files live at https://github.com/darkmord1991/DarkChaos-255",
     },
     {
         id = 42,
         category = "community",
-        question = "How do I become a tester/helper?",
-        answer = "Active community members may be invited to help test new features. Participate in Discord, report bugs constructively, and help other players.",
+        question = "How do I report a bug?",
+        answer = "Use the GitHub issue tracker or the Discord bug-report channels. Include what happened, where it happened, and how to reproduce it.",
+    },
+    {
+        id = 43,
+        category = "community",
+        question = "Where can I find current guides and setup notes?",
+        answer = "Check the README and the Information folder in the GitHub repository. DC-Welcome's Community tab also keeps the latest project links together in one place.",
     },
 }
 

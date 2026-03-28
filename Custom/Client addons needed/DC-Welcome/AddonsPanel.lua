@@ -24,8 +24,8 @@ local L = DCWelcome.L
 DCWelcome.RegisteredAddons = {
     -- =========================================================================
     -- Only addons that actually exist in: Custom\Client addons needed\
-    -- DC-MythicPlus, DC-Leaderboards, DC-Hotspot, DC-ItemUpgrade,
-    -- DC-AOESettings, DC-HinterlandBG, DC-AddonProtocol
+    -- DC-MythicPlus, DC-Leaderboards, DC-Mapupgrades, DC-ItemUpgrade,
+    -- DC-AOESettings, DC-InfoBar, DC-Collection, DC-QOS, DC-HinterlandBG
     -- 
     -- VERIFIED globals and slash commands:
     -- - DCMythicPlusHUD + SlashCmdList["DCM"] (/dcm) + SlashCmdList["DCGF"] (/dcgf)
@@ -37,7 +37,7 @@ DCWelcome.RegisteredAddons = {
     {
         id = "dc-mythicplus",
         name = "Mythic+ Suite",
-        description = "HUD, Group Finder, Live Runs Spectator, Keystone Activation, and Scheduled Events",
+        description = "HUD, Group Finder, Live Runs, Spectator, Great Vault, and keystone tools.",
         icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\MythicPlus_64.tga",
         color = {0.2, 0.8, 1.0},  -- Cyan
         category = "Dungeons",
@@ -92,33 +92,35 @@ DCWelcome.RegisteredAddons = {
         color = {1, 0.84, 0},  -- Gold
         category = "Competition",
         minLevel = 1,
-        openCommand = "/dcboard",
+        openCommand = "/lb",
         settingsCommand = nil,
         openFunc = function()
-            if DCLeaderboards and DCLeaderboards.Toggle then
-                DCLeaderboards:Toggle()
-            elseif SlashCmdList["DCBOARD"] then
-                SlashCmdList["DCBOARD"]("")
+            if DCWelcome and DCWelcome.OpenLeaderboards then
+                DCWelcome:OpenLeaderboards()
             else
                 DCWelcome.Print("Leaderboards addon not loaded")
             end
         end,
         settingsFunc = nil,  -- No settings panel
         isLoaded = function()
-            return DCLeaderboards ~= nil or SlashCmdList["DCBOARD"] ~= nil
+            if DCWelcome and DCWelcome.IsLeaderboardsAvailable then
+                return DCWelcome:IsLeaderboardsAvailable()
+            end
+
+            return false
         end,
     },
     {
         id = "dc-hotspot",
-        name = "Hotspot Map",
-        description = "Shows dynamic XP zones on the world map. Type /dchotspot for options.",
+        name = "Map Upgrades",
+        description = "World map support for hotspots, world-content markers, and related map options.",
         icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\Mapupgrades_64.tga",
         color = {0, 0.8, 1},  -- Cyan
         category = "World",
         minLevel = 1,
         infoOnly = true,  -- No open button, integrated into world map
         openCommand = nil,
-        settingsCommand = "/dchotspot options",
+        settingsCommand = "/dcmap options",
         openFunc = nil,
         settingsFunc = function()
             -- /dchotspot options opens the settings panel
@@ -231,7 +233,7 @@ DCWelcome.RegisteredAddons = {
     {
         id = "dc-infobar",
         name = "Info Bar",
-        description = "Top/Bottom info bar (season, keystone, events, character stats).",
+        description = "Top or bottom info bar for season, keystone, events, bags, gold, and character stats.",
         icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\InfoBar_64.tga",
         color = {0.2, 0.8, 1.0},
         category = "UI",
@@ -263,7 +265,7 @@ DCWelcome.RegisteredAddons = {
     {
         id = "dc-collection",
         name = "Collections",
-        description = "Mounts, Pets, Toys, and Appearances interface.",
+        description = "Mounts, pets, toys, heirlooms, titles, and appearance browsing in one UI.",
         icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\Collection_64.tga",
         color = {0.1, 0.8, 0.2},  -- Fel Green
         category = "World",
@@ -286,7 +288,7 @@ DCWelcome.RegisteredAddons = {
     {
         id = "dc-qos",
         name = "Quality of Service",
-        description = "QoL features: Auto-Quest, Cooldown Text, Auto-Repair, Auto-Sell, and Mail Collection.",
+        description = "Tooltip upgrades, automation helpers, cooldowns, vendor/mail tools, and other QoL modules.",
         icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\QOS_64.tga",
         color = {1.0, 0.82, 0.0},  -- Gold
         category = "Settings",
@@ -310,7 +312,7 @@ DCWelcome.RegisteredAddons = {
     {
         id = "dc-hinterlandbg",
         name = "Hinterland BG",
-        description = "Open-world PvP battleground in The Hinterlands zone.",
+        description = "Queue HUD, live stats, match history, and settings for DarkChaos's Hinterland BG.",
         icon = DCWelcome.ADDON_PATH .. "Textures\\Icons\\HinterlandBG_64.tga",
         color = {1, 0, 0},  -- Red
         category = "PvP",
@@ -664,7 +666,7 @@ function DCWelcome:PopulateAddonsPanel(scrollChild)
     -- Intro text
     local intro = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     intro:SetPoint("TOP", 0, yOffset)
-    intro:SetText("|cff888888Click the green button to open, gear icon for settings|r")
+    intro:SetText("|cff888888Green opens an addon, the gear opens settings, and some cards expose a second feature button|r")
     yOffset = yOffset - 25
     
     -- Category grouping
@@ -672,6 +674,7 @@ function DCWelcome:PopulateAddonsPanel(scrollChild)
         { name = "Dungeons", addons = {} },
         { name = "Progression", addons = {} },
         { name = "Gear", addons = {} },
+        { name = "UI", addons = {} },
         { name = "World", addons = {} },
         { name = "PvP", addons = {} },
         { name = "Competition", addons = {} },

@@ -270,13 +270,15 @@ function DCWelcome:ShowMinimapMenu(anchor)
         {
             text = "Copy Discord Link",
             func = function()
-                if ChatFrame1EditBox then
+                if DCWelcome and DCWelcome.CopyToChatInput then
+                    DCWelcome:CopyToChatInput(DCWelcome:GetDiscordUrl(), "Discord link copied!")
+                elseif ChatFrame1EditBox then
                     ChatFrame1EditBox:SetText("https://discord.gg/pNddMEMbb2")
                     ChatFrame1EditBox:Show()
                     ChatFrame1EditBox:SetFocus()
                     ChatFrame1EditBox:HighlightText()
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC-Welcome]|r Discord link copied!")
                 end
-                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC-Welcome]|r Discord link copied!")
             end,
             notCheckable = true,
             icon = "Interface\\Icons\\INV_Misc_Note_06",

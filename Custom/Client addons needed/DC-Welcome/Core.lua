@@ -1,16 +1,16 @@
 --[[
     DC-Welcome Core.lua
     Main addon initialization, Plugin API, and DCAddonProtocol integration
-    
+
     Features:
     - First-login detection and welcome popup trigger
     - DCAddonProtocol handler registration
-    - Plugin Registration API (replaces DC-Central)
+    - Plugin Registration API for the DarkChaos addon suite
     - Event Bus for inter-addon communication
-    - Progress tracking (M+ rating, Prestige, Seasons)
+    - Progress tracking (M+, Prestige, Seasons)
     - Server-side config sync
     - Slash commands (/welcome, /faq, /dcprogress)
-    
+
     Author: DarkChaos-255
     Date: January 2025
     Updated: December 2025 - Added Plugin API and Event Bus
@@ -182,6 +182,89 @@ end
 -- Cache TTL constants (seconds)
 local CACHE_TTL_SERVER_INFO = 86400  -- 24 hours (server info rarely changes)
 local CACHE_TTL_FAQ = 86400          -- 24 hours (FAQ rarely changes)
+local DEFAULT_DISCORD_URL = "https://discord.gg/pNddMEMbb2"
+local DEFAULT_WEBSITE_URL = "https://github.com/darkmord1991/DarkChaos-255"
+local DEFAULT_WIKI_URL = "https://github.com/darkmord1991/DarkChaos-255/blob/master/README.md"
+local DEFAULT_ISSUES_URL = "https://github.com/darkmord1991/DarkChaos-255/issues"
+
+local function NormalizeUrl(url)
+    url = tostring(url or "")
+    url = string.gsub(url, "^%s+", "")
+    url = string.gsub(url, "%s+$", "")
+
+    if url ~= "" and not string.find(url, "^https?://") then
+        url = "https://" .. url
+    end
+
+    return url
+end
+
+local function BuildIssueTrackerUrl(websiteUrl)
+    local url = NormalizeUrl(websiteUrl)
+
+    if url ~= "" then
+        local trimmed = string.gsub(url, "/+$", "")
+        if string.find(trimmed, "github%.com/[^/]+/[^/]+$") then
+            return trimmed .. "/issues"
+        end
+    end
+
+    return DEFAULT_ISSUES_URL
+end
+
+local function NormalizeSeasonData(data)
+    if type(data) ~= "table" then
+        return nil
+    end
+
+    return {
+        id = data.id or data.seasonId or currentSeason.id or 1,
+        name = data.name or data.seasonName or currentSeason.name or "Season 1",
+        endTimestamp = data.endTimestamp or data.endTime or data.seasonEnd or currentSeason.endTimestamp or 0,
+    }
+end
+
+local function ApplyServerInfo(data)
+    if type(data) ~= "table" then
+        return
+    end
+
+    serverInfo.name = data.name or data.serverName or serverInfo.name or "DarkChaos-255"
+    serverInfo.maxLevel = data.maxLevel or serverInfo.maxLevel or 80
+    serverInfo.discordUrl = NormalizeUrl(data.discordUrl or serverInfo.discordUrl or DEFAULT_DISCORD_URL)
+    serverInfo.websiteUrl = NormalizeUrl(data.websiteUrl or serverInfo.websiteUrl or DEFAULT_WEBSITE_URL)
+    serverInfo.wikiUrl = NormalizeUrl(data.wikiUrl or serverInfo.wikiUrl or DEFAULT_WIKI_URL)
+    serverInfo.playersOnline = data.playersOnline or serverInfo.playersOnline
+    serverInfo.uptimeSeconds = data.uptimeSeconds or serverInfo.uptimeSeconds
+
+    local seasonData = NormalizeSeasonData(data.season or data)
+    if seasonData then
+        currentSeason = seasonData
+        serverInfo.seasonId = seasonData.id
+        serverInfo.seasonName = seasonData.name
+        serverInfo.seasonEnd = seasonData.endTimestamp
+    end
+end
+
+local function NormalizeFAQEntry(entry)
+    if type(entry) ~= "table" then
+        return nil
+    end
+
+    local question = tostring(entry.question or "")
+    local answer = tostring(entry.answer or "")
+
+    if question == "" or answer == "" then
+        return nil
+    end
+
+    return {
+        id = entry.id,
+        category = entry.category or "general",
+        question = question,
+        answer = answer,
+    }
+end
 
 local function LoadSettings()
     DCWelcomeDB = DCWelcomeDB or {}
@@ -201,7 +284,7 @@ local function LoadSettings()
     -- Restore cached server info if still fresh
     local now = time()
     if next(DCWelcomeDB.cache.serverInfo) and (now - DCWelcomeDB.cache.serverInfoTime) < CACHE_TTL_SERVER_INFO then
-        serverInfo = DCWelcomeDB.cache.serverInfo
+        ApplyServerInfo(DCWelcomeDB.cache.serverInfo)
     end
     
     -- Restore cached FAQ if still fresh
@@ -224,11 +307,119 @@ end
 -- =============================================================================
 
 function DCWelcome:GetServerInfo()
+    ApplyServerInfo(serverInfo)
     return serverInfo
 end
 
 function DCWelcome:GetCurrentSeason()
     return currentSeason
+end
+
+function DCWelcome:GetDiscordUrl()
+    return NormalizeUrl(serverInfo.discordUrl or DEFAULT_DISCORD_URL)
+end
+
+function DCWelcome:GetWebsiteUrl()
+    return NormalizeUrl(serverInfo.websiteUrl or DEFAULT_WEBSITE_URL)
+end
+
+function DCWelcome:GetWikiUrl()
+    return NormalizeUrl(serverInfo.wikiUrl or DEFAULT_WIKI_URL)
+end
+
+function DCWelcome:GetIssueTrackerUrl()
+    return BuildIssueTrackerUrl(self:GetWebsiteUrl())
+end
+
+function DCWelcome:GetCommunityLinks()
+    local links = {
+        {
+            name = (self.L and self.L["LINK_DISCORD"] and self.L["LINK_DISCORD"].name) or "Discord",
+            icon = (self.L and self.L["LINK_DISCORD"] and self.L["LINK_DISCORD"].icon) or "Interface\\Icons\\INV_Misc_Book_04",
+            url = self:GetDiscordUrl(),
+            desc = (self.L and self.L["LINK_DISCORD"] and self.L["LINK_DISCORD"].desc) or "Chat with players, get help, and join events!",
+        },
+        {
+            name = (self.L and self.L["LINK_WEBSITE"] and self.L["LINK_WEBSITE"].name) or "GitHub Repository",
+            icon = (self.L and self.L["LINK_WEBSITE"] and self.L["LINK_WEBSITE"].icon) or "Interface\\Icons\\INV_Misc_Note_01",
+            url = self:GetWebsiteUrl(),
+            desc = (self.L and self.L["LINK_WEBSITE"] and self.L["LINK_WEBSITE"].desc) or "Source code, changelog, and the current project state.",
+        },
+        {
+            name = (self.L and self.L["LINK_WIKI"] and self.L["LINK_WIKI"].name) or "README / Docs",
+            icon = (self.L and self.L["LINK_WIKI"] and self.L["LINK_WIKI"].icon) or "Interface\\Icons\\INV_Misc_Book_09",
+            url = self:GetWikiUrl(),
+            desc = (self.L and self.L["LINK_WIKI"] and self.L["LINK_WIKI"].desc) or "Setup notes, feature overview, and addon documentation.",
+        },
+        {
+            name = (self.L and self.L["LINK_DONATE"] and self.L["LINK_DONATE"].name) or "Issue Tracker",
+            icon = (self.L and self.L["LINK_DONATE"] and self.L["LINK_DONATE"].icon) or "Interface\\Icons\\INV_Misc_Note_05",
+            url = self:GetIssueTrackerUrl(),
+            desc = (self.L and self.L["LINK_DONATE"] and self.L["LINK_DONATE"].desc) or "Report bugs, follow fixes, and review open work.",
+        },
+    }
+
+    return links
+end
+
+function DCWelcome:CopyToChatInput(text, message)
+    text = tostring(text or "")
+    if text == "" then
+        return false
+    end
+
+    if ChatFrame1EditBox then
+        ChatFrame1EditBox:SetText(text)
+        ChatFrame1EditBox:Show()
+        ChatFrame1EditBox:SetFocus()
+        ChatFrame1EditBox:HighlightText()
+    end
+
+    if message then
+        Print(message)
+    end
+
+    return true
+end
+
+function DCWelcome:IsLeaderboardsAvailable()
+    if DCLeaderboards and (DCLeaderboards.Show or DCLeaderboards.Toggle) then
+        return true
+    end
+
+    return SlashCmdList and SlashCmdList["DCLEADERBOARDS"] ~= nil
+end
+
+function DCWelcome:OpenLeaderboards(categoryId, subcategoryId)
+    if self.HideWelcome then
+        self:HideWelcome()
+    end
+
+    if DCLeaderboards then
+        if DCLeaderboards.Show then
+            DCLeaderboards:Show()
+        elseif DCLeaderboards.Toggle then
+            DCLeaderboards:Toggle()
+        end
+
+        if categoryId and DCLeaderboards.SelectCategory then
+            DCLeaderboards:SelectCategory(categoryId)
+        end
+
+        if subcategoryId and DCLeaderboards.SelectSubCategory then
+            DCLeaderboards:SelectSubCategory(subcategoryId)
+        end
+
+        return true
+    end
+
+    if SlashCmdList and SlashCmdList["DCLEADERBOARDS"] then
+        SlashCmdList["DCLEADERBOARDS"](categoryId or "")
+        return true
+    end
+
+    Print("Leaderboards addon not loaded.")
+    return false
 end
 
 function DCWelcome:RequestServerInfo()
@@ -274,29 +465,75 @@ function DCWelcome:RequestWhatsNew()
     end
 end
 
--- Merge server FAQ entries with local entries (server takes priority for matching IDs)
+function DCWelcome:IsObsoleteFAQEntry(entry)
+    entry = NormalizeFAQEntry(entry)
+    if not entry then
+        return true
+    end
+
+    local key = string.lower(entry.question)
+    if self.ObsoleteFAQQuestions and self.ObsoleteFAQQuestions[key] then
+        return true
+    end
+
+    return false
+end
+
+-- Merge server FAQ entries with local entries (server takes priority for matching questions)
 function DCWelcome:MergeFAQ(serverEntries)
-    if not serverEntries or #serverEntries == 0 then
-        return
+    local merged = {}
+    local byQuestion = {}
+    local localEntries = self.ExtendedFAQ or {}
+
+    local function addEntry(entry, replaceExisting)
+        entry = NormalizeFAQEntry(entry)
+        if not entry or self:IsObsoleteFAQEntry(entry) then
+            return
+        end
+
+        local key = string.lower(entry.question)
+        local existingIndex = byQuestion[key]
+
+        if existingIndex and replaceExisting then
+            merged[existingIndex] = entry
+            return
+        end
+
+        if not existingIndex then
+            table.insert(merged, entry)
+            byQuestion[key] = #merged
+        end
     end
-    
-    -- If ExtendedFAQ exists, merge server entries
+
+    for _, entry in ipairs(localEntries) do
+        addEntry(entry, false)
+    end
+
+    if type(serverEntries) == "table" then
+        for _, entry in ipairs(serverEntries) do
+            addEntry(entry, true)
+        end
+    end
+
+    self.MergedFAQ = merged
+    DebugPrint("Prepared " .. #merged .. " FAQ entries")
+    return merged
+end
+
+function DCWelcome:GetFAQEntries()
+    if self.MergedFAQ and #self.MergedFAQ > 0 then
+        return self.MergedFAQ
+    end
+
+    if self.ServerFAQ and #self.ServerFAQ > 0 then
+        return self:MergeFAQ(self.ServerFAQ)
+    end
+
     if self.ExtendedFAQ then
-        -- Create lookup by question for deduplication
-        local existing = {}
-        for _, entry in ipairs(self.ExtendedFAQ) do
-            existing[string.lower(entry.question)] = true
-        end
-        
-        -- Add new server entries
-        for _, serverEntry in ipairs(serverEntries) do
-            if not existing[string.lower(serverEntry.question)] then
-                table.insert(self.ExtendedFAQ, serverEntry)
-            end
-        end
-        
-        DebugPrint("Merged " .. #serverEntries .. " server FAQ entries")
+        return self.ExtendedFAQ
     end
+
+    return {}
 end
 
 -- =============================================================================
@@ -326,22 +563,7 @@ local function RegisterHandlers()
         DebugPrint("Received SMSG_SHOW_WELCOME")
         
         if type(data) == "table" then
-            -- Update server info if provided
-            if data.serverName then
-                serverInfo.name = data.serverName
-            end
-            if data.maxLevel then
-                serverInfo.maxLevel = data.maxLevel
-            end
-            if data.season then
-                currentSeason = data.season
-            end
-            if data.discordUrl then
-                serverInfo.discordUrl = data.discordUrl
-            end
-            if data.websiteUrl then
-                serverInfo.websiteUrl = data.websiteUrl
-            end
+            ApplyServerInfo(data)
         end
         
         -- Show welcome frame if not dismissed
@@ -355,15 +577,11 @@ local function RegisterHandlers()
         DebugPrint("Received SMSG_SERVER_INFO")
         
         if type(data) == "table" then
-            serverInfo = data
-            
-            if data.season then
-                currentSeason = data.season
-            end
+            ApplyServerInfo(data)
             
             -- Cache the data
             if DCWelcomeDB and DCWelcomeDB.cache then
-                DCWelcomeDB.cache.serverInfo = data
+                DCWelcomeDB.cache.serverInfo = serverInfo
                 DCWelcomeDB.cache.serverInfoTime = time()
             end
         end
@@ -489,18 +707,6 @@ local function RegisterHandlers()
             DCWelcome.EventBus:Emit("PROGRESS_UPDATED", progress)
             
             DebugPrint("Progress data updated from server")
-        end
-    end)
-    
-    -- SMSG_NPC_INFO - Server sends NPC info (DB GUID)
-    DC:RegisterHandler(DCWelcome.Module, DCWelcome.Opcode.SMSG_NPC_INFO, function(data)
-        -- DebugPrint("Received SMSG_NPC_INFO")
-        
-        if type(data) == "table" and data.guid then
-            -- Pass to NPCTooltip handler
-            if DCWelcome.OnNPCInfoReceived then
-                DCWelcome.OnNPCInfoReceived(data)
-            end
         end
     end)
     
@@ -1038,15 +1244,15 @@ function DCWelcome:ShowLevelMilestone(level, feature, message)
             message = "|cff00ccffHotspots|r are now available! Use |cfffff000/hotspot|r to see active zones."
             icon = "Interface\\Icons\\INV_Misc_Map02"
         elseif level == 20 then
-            message = "Preview the |cffa335eePrestige System|r at level 80!"
+            message = "Prestige is planned for the future |cffa335eelevel-255 bracket|r. Progression will open in stages beyond the current cap."
             icon = "Interface\\Icons\\Achievement_Level_80"
         elseif level == 58 then
             message = "Outland awaits! At 80, unlock |cffff8000Item Upgrades|r!"
             icon = "Interface\\Icons\\INV_Misc_Gem_Pearl_03"
         elseif level == 80 then
-            message = "Congratulations! You've unlocked |cffff8000Mythic+ Dungeons|r and the |cffa335eePrestige System|r!"
+            message = "Congratulations! You've reached the current live bracket cap and unlocked |cffff8000Mythic+ Dungeons|r. Future brackets continue at 100, 130, 160, 200, and 255."
             icon = "Interface\\Icons\\Achievement_Dungeon_GlssDtDngeon_HeroicMc"
-            title = "|cffff8000MAX VANILLA LEVEL!|r"
+            title = "|cffff8000CURRENT BRACKET CAP REACHED!|r"
         elseif level == 100 then
             message = "Level 100! New custom dungeons available: |cff00ccffThe Nexus|r & |cff00ccffThe Oculus|r!"
             icon = "Interface\\Icons\\INV_Misc_QirajiCrystal_05"
@@ -1144,16 +1350,10 @@ end
 
 SLASH_DCDISCORD1 = "/discord"
 SlashCmdList["DCDISCORD"] = function(msg)
-    local url = "https://discord.gg/pNddMEMbb2"
+    local url = DCWelcome:GetDiscordUrl()
     Print("Discord: |cff00ccff" .. url .. "|r")
     Print("Click the link in chat or copy it!")
-    -- Put URL in edit box for easy copy
-    if ChatFrame1EditBox then
-        ChatFrame1EditBox:SetText(url)
-        ChatFrame1EditBox:Show()
-        ChatFrame1EditBox:SetFocus()
-        ChatFrame1EditBox:HighlightText()
-    end
+    DCWelcome:CopyToChatInput(url)
 end
 
 -- Progress command
@@ -1233,7 +1433,7 @@ local function CreateSettingsPanel()
     
     local serverInfo = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     serverInfo:SetPoint("TOPLEFT", 24, yPos)
-    serverInfo:SetWidth(300)
+    serverInfo:SetWidth(500)
     serverInfo:SetJustifyH("LEFT")
     panel.serverInfoText = serverInfo
     yPos = yPos - 60
@@ -1241,7 +1441,8 @@ local function CreateSettingsPanel()
     -- Discord link
     local discordLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     discordLabel:SetPoint("TOPLEFT", 16, yPos)
-    discordLabel:SetText("|cffffd700Discord:|r |cff00ccffhttps://discord.gg/pNddMEMbb2|r")
+    panel.discordLabel = discordLabel
+    discordLabel:SetText("|cffffd700Discord:|r |cff00ccff" .. DCWelcome:GetDiscordUrl() .. "|r")
     yPos = yPos - 25
     
     local discordBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
@@ -1249,13 +1450,7 @@ local function CreateSettingsPanel()
     discordBtn:SetPoint("TOPLEFT", 24, yPos)
     discordBtn:SetText("Copy Discord Link")
     discordBtn:SetScript("OnClick", function()
-        if ChatFrame1EditBox then
-            ChatFrame1EditBox:SetText("https://discord.gg/pNddMEMbb2")
-            ChatFrame1EditBox:Show()
-            ChatFrame1EditBox:SetFocus()
-            ChatFrame1EditBox:HighlightText()
-        end
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC-Welcome]|r Discord link copied to chat input!")
+        DCWelcome:CopyToChatInput(DCWelcome:GetDiscordUrl(), "Discord link copied to chat input!")
     end)
     yPos = yPos - 40
     
@@ -1287,17 +1482,6 @@ local function CreateSettingsPanel()
     end)
     yPos = yPos - 40
     
-    -- Tooltip checkbox
-    local showTooltipsCheck = CreateFrame("CheckButton", "DCWelcome_ShowTooltips", content, "InterfaceOptionsCheckButtonTemplate")
-    showTooltipsCheck:SetPoint("TOPLEFT", 24, yPos)
-    showTooltipsCheck:SetHitRectInsets(0, -260, 0, 0)
-    _G["DCWelcome_ShowTooltipsText"]:SetText("Show NPC tooltips (Entry + Spawn ID)")
-    showTooltipsCheck:SetScript("OnClick", function(self)
-        DCWelcomeDB = DCWelcomeDB or {}
-        DCWelcomeDB.showTooltips = self:GetChecked()
-    end)
-    yPos = yPos - 28
-
     -- Communication checkbox
     local commCheck = CreateFrame("CheckButton", "DCWelcome_EnableCommunication", content, "InterfaceOptionsCheckButtonTemplate")
     commCheck:SetPoint("TOPLEFT", 24, yPos)
@@ -1394,11 +1578,13 @@ local function CreateSettingsPanel()
     aboutText:SetWidth(500)
     aboutText:SetJustifyH("LEFT")
     aboutText:SetText("DC-Welcome v" .. tostring(DCWelcome.VERSION or "2.0.0") .. "\n" ..
-                      "First-start experience and new player introduction for DarkChaos-255.\n\n" ..
+                      "Welcome screen, FAQ, addons hub, and progression tracker for DarkChaos-255.\n\n" ..
                       "Commands:\n" ..
                       "  /welcome - Open the welcome screen\n" ..
                       "  /faq - Open the FAQ section\n" ..
-                      "  /discord - Get Discord invite link")
+                      "  /dcaddons - Open the addons hub\n" ..
+                      "  /dcprogress - Open the progress tab\n" ..
+                      "  /discord - Copy the Discord invite link")
 
     -- Finalize scroll child height
     content:SetHeight(math.abs(yPos) + 40)
@@ -1408,7 +1594,6 @@ local function CreateSettingsPanel()
         DCWelcomeDB = DCWelcomeDB or {}
         showOnLoginCheck:SetChecked(not DCWelcomeDB.dismissed)
         showMilestonesCheck:SetChecked(DCWelcomeDB.showMilestones ~= false)
-        showTooltipsCheck:SetChecked(DCWelcomeDB.showTooltips ~= false)
         commCheck:SetChecked(DCWelcomeDB.enableCommunication ~= false)
 
         local seasonHudEnabled = false
@@ -1419,10 +1604,14 @@ local function CreateSettingsPanel()
         
         local info = DCWelcome:GetServerInfo()
         local season = DCWelcome:GetCurrentSeason()
+        if self.discordLabel then
+            self.discordLabel:SetText("|cffffd700Discord:|r |cff00ccff" .. DCWelcome:GetDiscordUrl() .. "|r")
+        end
         self.serverInfoText:SetText(
             "Server: |cff00ff00" .. (info.name or "DarkChaos-255") .. "|r\n" ..
             "Max Level: |cffffff00" .. (info.maxLevel or 80) .. "|r\n" ..
-            "Season: |cff00ccff" .. (season.name or "Season 1") .. "|r"
+            "Season: |cff00ccff" .. (season.name or "Season 1") .. "|r\n" ..
+            "Project: |cff00ccff" .. DCWelcome:GetWebsiteUrl() .. "|r"
         )
     end)
     

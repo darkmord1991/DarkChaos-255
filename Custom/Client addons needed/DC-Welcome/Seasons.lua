@@ -584,17 +584,17 @@ SlashCmdList["DCSEASONS"] = function(msg)
     elseif cmd == "refresh" or cmd == "sync" then
         if DCWelcome.Seasons.RequestSeasonData then
             DCWelcome.Seasons.RequestSeasonData()
-            print("|cff00ff00[DC-Seasons]|r Requesting season data...")
+            print("|cff00ff00[DC-Welcome]|r Requesting season data...")
         end
     elseif cmd == "status" then
         local dcAvail = rawget(_G, "DCAddonProtocol") and "YES" or "NO"
-        print("|cff00ff00[DC-Seasons]|r Status:")
+        print("|cff00ff00[DC-Welcome]|r Season status:")
         print("  DCAddonProtocol: " .. dcAvail)
         print("  Season: " .. (Data.seasonNumber or "?") .. " - " .. (Data.seasonName or "Unknown"))
-        print("  Tokens: " .. (Data.weeklyTokens or 0) .. "/" .. (Data.weeklyTokenCap or 5000))
-        print("  Essence: " .. (Data.weeklyEssence or 0) .. "/" .. (Data.weeklyEssenceCap or 2500))
+        print("  Tokens: " .. (Data.weeklyTokens or 0) .. "/" .. (Data.weeklyTokenCap or 1000))
+        print("  Essence: " .. (Data.weeklyEssence or 0) .. "/" .. (Data.weeklyEssenceCap or 1000))
     else
-        print("|cff00ff00[Seasonal]|r Commands:")
+        print("|cff00ff00[DC-Welcome]|r Season commands:")
         print("  /seasonal show - Toggle progress tracker")
         print("  /seasonal hide - Hide progress tracker")
         print("  /seasonal refresh - Request data from server")

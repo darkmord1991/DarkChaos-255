@@ -94,9 +94,9 @@ namespace DCWelcome
 
     const std::vector<LevelMilestone> MILESTONES = {
         { 10,  "hotspots",        "Hotspots are now available! Use /hotspot to see active bonus zones." },
-        { 20,  "prestige_preview","At level 80, you'll unlock the Prestige system for permanent bonuses!" },
+        { 20,  "prestige_preview","Prestige is planned for the future level-255 bracket, where capped characters can reset for permanent bonuses." },
         { 58,  "outland",         "Outland awaits! At 80, unlock Item Upgrades to enhance your gear." },
-        { 80,  "endgame",         "Congratulations! You've unlocked Mythic+ Dungeons and the Prestige System!" },
+        { 80,  "endgame",         "Congratulations! You've reached the current live bracket cap and unlocked Mythic+ Dungeons plus the first major endgame systems!" },
         { 100, "tier_100",        "Level 100! New custom dungeons are now available: The Nexus & The Oculus!" },
         { 130, "tier_130",        "Level 130! Gundrak and Ahn'kahet dungeons are now accessible!" },
         { 160, "tier_160",        "Level 160! Auchindoun dungeons unlocked: Crypts, Mana Tombs, Sethekk, Shadow Lab!" },
@@ -121,9 +121,9 @@ namespace DCWelcome
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SERVER_INFO);
         msg.Set("serverName", sConfigMgr->GetOption<std::string>(Config::SERVER_NAME, "DarkChaos-255"));
         msg.Set("maxLevel", sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL));
-        msg.Set("discordUrl", sConfigMgr->GetOption<std::string>(Config::DISCORD_URL, "discord.gg/darkchaos"));
-        msg.Set("websiteUrl", sConfigMgr->GetOption<std::string>(Config::WEBSITE_URL, "darkchaos255.com"));
-        msg.Set("wikiUrl", sConfigMgr->GetOption<std::string>(Config::WIKI_URL, "wiki.darkchaos255.com"));
+        msg.Set("discordUrl", sConfigMgr->GetOption<std::string>(Config::DISCORD_URL, "https://discord.gg/pNddMEMbb2"));
+        msg.Set("websiteUrl", sConfigMgr->GetOption<std::string>(Config::WEBSITE_URL, "https://github.com/darkmord1991/DarkChaos-255"));
+        msg.Set("wikiUrl", sConfigMgr->GetOption<std::string>(Config::WIKI_URL, "https://github.com/darkmord1991/DarkChaos-255/blob/master/README.md"));
         msg.Set("seasonId", seasonId);
         msg.Set("seasonName", seasonName);
         msg.Set("uptimeSeconds", uint32(GameTime::GetUptime().count()));
@@ -145,8 +145,9 @@ namespace DCWelcome
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_SHOW_WELCOME);
         msg.Set("serverName", sConfigMgr->GetOption<std::string>(Config::SERVER_NAME, "DarkChaos-255"));
         msg.Set("maxLevel", sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL));
-        msg.Set("discordUrl", sConfigMgr->GetOption<std::string>(Config::DISCORD_URL, "discord.gg/darkchaos"));
-        msg.Set("websiteUrl", sConfigMgr->GetOption<std::string>(Config::WEBSITE_URL, "darkchaos255.com"));
+        msg.Set("discordUrl", sConfigMgr->GetOption<std::string>(Config::DISCORD_URL, "https://discord.gg/pNddMEMbb2"));
+        msg.Set("websiteUrl", sConfigMgr->GetOption<std::string>(Config::WEBSITE_URL, "https://github.com/darkmord1991/DarkChaos-255"));
+        msg.Set("wikiUrl", sConfigMgr->GetOption<std::string>(Config::WIKI_URL, "https://github.com/darkmord1991/DarkChaos-255/blob/master/README.md"));
         msg.Set("seasonId", seasonId);
         msg.Set("seasonName", seasonName);
         msg.Set("uptimeSeconds", uint32(GameTime::GetUptime().count()));
@@ -210,7 +211,7 @@ namespace DCWelcome
             categoryFilter = json["category"].AsString();
         }
 
-        // Build FAQ query - load from dc_welcome_faq table
+        // Build FAQ query - load shared welcome content from world DB
         std::string query = "SELECT id, category, question, answer FROM dc_welcome_faq WHERE active = 1";
         if (!categoryFilter.empty() && categoryFilter != "all")
         {
@@ -218,7 +219,7 @@ namespace DCWelcome
         }
         query += " ORDER BY category, priority DESC, id";
 
-        QueryResult result = CharacterDatabase.Query(query);
+        QueryResult result = WorldDatabase.Query(query);
 
         DCAddon::JsonMessage response(MODULE, Opcode::SMSG_FAQ_DATA);
 
@@ -296,8 +297,8 @@ namespace DCWelcome
         if (!player || !player->GetSession())
             return;
 
-        // Load What's New from database
-        QueryResult result = CharacterDatabase.Query(
+        // Load shared What's New content from world DB
+        QueryResult result = WorldDatabase.Query(
             "SELECT id, version, title, content, icon, category FROM dc_welcome_whats_new "
             "WHERE active = 1 AND (expires_at IS NULL OR expires_at > NOW()) "
             "ORDER BY priority DESC, id DESC LIMIT 10"

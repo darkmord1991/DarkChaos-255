@@ -223,6 +223,8 @@ end
 
 local function PopulateGettingStarted(scrollChild)
     local yOffset = -10
+    local info = DCWelcome:GetServerInfo() or {}
+    local currentCap = tonumber(info.maxLevel) or 80
     
     -- Header
     local header = CreateFontString(scrollChild, "GameFontNormalLarge")
@@ -249,6 +251,48 @@ local function PopulateGettingStarted(scrollChild)
         text:SetText(step.text)
         yOffset = yOffset - text:GetStringHeight() - 20
     end
+
+    yOffset = yOffset - 5
+    local bracketHeader = CreateFontString(scrollChild, "GameFontNormal")
+    bracketHeader:SetPoint("TOPLEFT", 10, yOffset)
+    bracketHeader:SetText("|cffffd700Bracket Overview:|r")
+    yOffset = yOffset - 22
+
+    local bracketIntro = CreateFontString(scrollChild, "GameFontHighlight")
+    bracketIntro:SetPoint("TOPLEFT", 25, yOffset)
+    bracketIntro:SetWidth(SCROLL_WIDTH - 60)
+    bracketIntro:SetJustifyH("LEFT")
+    bracketIntro:SetText("DarkChaos opens progression in brackets instead of releasing the full 255 path at once. The live cap is currently |cffffff00" .. currentCap .. "|r.")
+    yOffset = yOffset - bracketIntro:GetStringHeight() - 12
+
+    local brackets = {
+        { level = 80, desc = "Current live bracket cap. Mythic+ and the first major endgame systems open here." },
+        { level = 100, desc = "Future bracket: The Nexus and The Oculus custom dungeon tier." },
+        { level = 130, desc = "Future bracket: Gundrak and Ahn'kahet progression tier." },
+        { level = 160, desc = "Future bracket: Auchenai Crypts, Mana-Tombs, Sethekk Halls, and Shadow Labyrinth." },
+        { level = 200, desc = "Future bracket: late endgame tier and elite progression systems." },
+        { level = 255, desc = "Future bracket: final planned cap and Prestige unlock." },
+    }
+
+    for _, bracket in ipairs(brackets) do
+        local statusColor = "|cff888888"
+        local statusText = "Future bracket"
+
+        if bracket.level == currentCap then
+            statusColor = "|cff00ff00"
+            statusText = "Current live bracket"
+        elseif bracket.level < currentCap then
+            statusColor = "|cff00ccff"
+            statusText = "Earlier bracket"
+        end
+
+        local bracketText = CreateFontString(scrollChild, "GameFontHighlight")
+        bracketText:SetPoint("TOPLEFT", 25, yOffset)
+        bracketText:SetWidth(SCROLL_WIDTH - 60)
+        bracketText:SetJustifyH("LEFT")
+        bracketText:SetText("|cfffff000Level " .. bracket.level .. "|r - " .. statusColor .. statusText .. "|r - " .. bracket.desc)
+        yOffset = yOffset - bracketText:GetStringHeight() - 8
+    end
     
     -- Helpful commands section
     yOffset = yOffset - 10
@@ -260,10 +304,10 @@ local function PopulateGettingStarted(scrollChild)
     local commands = {
         { cmd = "/welcome", desc = "Open this welcome screen" },
         { cmd = "/faq", desc = "Open FAQ section" },
+        { cmd = "/dcaddons", desc = "Open the addon hub" },
+        { cmd = "/dcprogress", desc = "Open progression overview" },
         { cmd = "/hotspot", desc = "View current hotspot zones" },
-        { cmd = "/mplus", desc = "Mythic+ HUD controls" },
         { cmd = "/discord", desc = "Get Discord invite link" },
-        { cmd = "/help", desc = "Full command list" },
     }
     
     for _, cmdInfo in ipairs(commands) do
@@ -485,20 +529,21 @@ local function PopulateFeatures(scrollChild)
             name = L["FEATURE_MYTHIC"].name,
             icon = ICON_MYTHICPLUS,
             color = {1, 0.5, 0},  -- Orange
-            shortDesc = "Scale dungeon difficulty with keystones for better rewards!",
+            shortDesc = "Scale dungeon difficulty with keystones, affixes, and weekly vault progress!",
             fullDesc = L["FEATURE_MYTHIC"].desc,
-            howTo = "Complete any level 80 Heroic dungeon to receive your first Keystone. Use the Keystone at the Font of Power inside the dungeon to activate Mythic+ mode.",
+            howTo = "Complete a level 80 Heroic dungeon to receive your first keystone. Use the Font of Power inside the dungeon to activate Mythic+ mode, then manage runs with the DC-MythicPlus suite.",
             bullets = {
-                "Keystones level 2-30+ with increasing difficulty",
+                "Keystones scale well beyond base Heroic difficulty",
                 "Beat the timer to upgrade your keystone",
-                "Weekly affixes add unique challenges",
-                "Better loot and upgrade tokens at higher levels",
-                "Compete on seasonal leaderboards",
+                "Weekly affixes change how each run plays",
+                "DC-MythicPlus includes HUD, group finder, and live-run tools",
+                "Successful runs feed weekly Great Vault progress",
+                "Seasonal leaderboards track the strongest pushes",
             },
             unlock = L["FEATURE_MYTHIC"].unlock,
             commands = {
-                { cmd = "/mplus", desc = "Toggle Mythic+ HUD" },
-                { cmd = "/keystone", desc = "View your current keystone" },
+                { cmd = "/dcm", desc = "Open Mythic+ HUD and tools" },
+                { cmd = "/dcgf", desc = "Open Mythic+ Group Finder" },
             },
         },
         {
@@ -506,19 +551,20 @@ local function PopulateFeatures(scrollChild)
             name = L["FEATURE_PRESTIGE"].name,
             icon = L["FEATURE_PRESTIGE"].icon,
             color = {0.64, 0.21, 0.93},  -- Purple
-            shortDesc = "Reset to level 1 for permanent account-wide bonuses!",
+            shortDesc = "A future-bracket reset system planned for the eventual 255 cap!",
             fullDesc = L["FEATURE_PRESTIGE"].desc,
-            howTo = "At max level, visit the Prestige NPC in your capital city. Choose to Prestige and you'll restart at level 1 with permanent bonuses applied to all characters.",
+            howTo = "Prestige is intended for the later 255 bracket. Once that bracket is live and you can reach it, use .prestige info to review your status and start the prestige flow.",
             bullets = {
-                "+5% XP per prestige level (stacks!)",
-                "+5% gold find per prestige level",
-                "Exclusive prestige titles and mounts",
-                "Account-wide bonuses affect all characters",
-                "Prestige challenges for extra rewards",
+                "Planned for the future level-255 bracket",
+                "Each prestige is intended to grant +1% permanent stats by default",
+                "Planned prestige cap is 10",
+                "Alt bonus is tied to later max-level progression",
+                "Progress tab can surface prestige data once the bracket is live",
             },
             unlock = L["FEATURE_PRESTIGE"].unlock,
             commands = {
-                { cmd = "/prestige", desc = "View prestige status" },
+                { cmd = ".prestige info", desc = "Inspect prestige settings once the 255 bracket is live" },
+                { cmd = ".prestige reset", desc = "Begin the prestige reset flow when that bracket is available" },
             },
         },
         {
@@ -526,20 +572,20 @@ local function PopulateFeatures(scrollChild)
             name = L["FEATURE_HOTSPOTS"].name,
             icon = ICON_MAPUPGRADES,
             color = {0, 0.8, 1},  -- Cyan
-            shortDesc = "Rotating world zones with bonus XP and special events!",
+            shortDesc = "Rotating bonus zones with map support and world-content markers!",
             fullDesc = L["FEATURE_HOTSPOTS"].desc,
-            howTo = "Hotspots rotate every few hours. Use /hotspot to see the current active zone, then travel there for bonus rewards!",
+            howTo = "Hotspots rotate every few hours. Use /hotspot for the active zone list, then open DC-Mapupgrades to see markers and related world content on the map.",
             bullets = {
-                "Bonus XP in hotspot zones (up to +50%)",
-                "Increased drop rates for items",
-                "Rare mob spawns with special loot",
-                "Zone-specific events and challenges",
-                "Hotspot addon shows active zones on map",
+                "Bonus XP in hotspot zones",
+                "World-map pins for hotspots and world content",
+                "Quick launch to map settings with /dcmap",
+                "Useful while leveling and during open-world farming",
+                "Pairs well with teleporter travel routes",
             },
             unlock = L["FEATURE_HOTSPOTS"].unlock,
             commands = {
                 { cmd = "/hotspot", desc = "Show current hotspot zones" },
-                { cmd = "/dchotspot", desc = "Toggle hotspot overlay" },
+                { cmd = "/dcmap", desc = "Open the map upgrades panel" },
             },
         },
         {
@@ -547,19 +593,20 @@ local function PopulateFeatures(scrollChild)
             name = L["FEATURE_UPGRADE"].name,
             icon = ICON_ITEMUPGRADE,
             color = {0, 0.44, 0.87},  -- Blue
-            shortDesc = "Enhance your gear beyond normal item level limits!",
+            shortDesc = "Enhance gear and heirlooms with DarkChaos upgrade systems!",
             fullDesc = L["FEATURE_UPGRADE"].desc,
-            howTo = "Collect Upgrade Tokens from Mythic+ dungeons and raids. Visit the Upgrade NPC in Dalaran to enhance your equipped items.",
+            howTo = "Collect upgrade tokens from progression content, then open DC-ItemUpgrade or use the related upgrade flow to improve eligible items.",
             bullets = {
-                "Upgrade items up to +10 levels",
-                "Each upgrade increases stats proportionally",
-                "Higher M+ keys drop better tokens",
-                "Seasonal tokens for limited-time upgrades",
-                "Artifact system for ultimate gear enhancement",
+                "Upgrade supported endgame items through token-based progression",
+                "Secondary heirloom tab handles heirloom improvements",
+                "Works alongside Mythic+ and seasonal reward loops",
+                "Helps bridge gearing between progression tiers",
+                "Live token counts are surfaced in the addon UI",
             },
             unlock = L["FEATURE_UPGRADE"].unlock,
             commands = {
-                { cmd = "/upgrade", desc = "Open upgrade interface" },
+                { cmd = "/dcu", desc = "Open the item upgrade interface" },
+                { cmd = "/upgrade", desc = "Open the current upgrade panel" },
             },
         },
         {
@@ -567,20 +614,20 @@ local function PopulateFeatures(scrollChild)
             name = L["FEATURE_SEASONS"].name,
             icon = L["FEATURE_SEASONS"].icon,
             color = {1, 0.84, 0},  -- Gold
-            shortDesc = "Competitive seasons with exclusive rewards and leaderboards!",
+            shortDesc = "Track season tokens, essence, rankings, and reward progress!",
             fullDesc = L["FEATURE_SEASONS"].desc,
-            howTo = "Seasons run for several months. Earn Season Points by completing M+ runs, raids, and PvP. Climb the leaderboards for exclusive titles!",
+            howTo = "Use /seasonal to toggle the season tracker. DC-Welcome also surfaces season points, rank, and weekly activity from the server.",
             bullets = {
-                "Seasonal leaderboards for M+, PvP, and more",
-                "Exclusive seasonal mounts and titles",
-                "Season Pass with progressive rewards",
-                "End-of-season rewards based on ranking",
-                "Fresh competition each season",
+                "Season token and essence tracking",
+                "Reward popups for seasonal activity",
+                "Leaderboard integration through DC-Leaderboards",
+                "Season tab summarizes current synced season data",
+                "Progress tab combines season, Mythic+, and prestige status",
             },
             unlock = L["FEATURE_SEASONS"].unlock,
             commands = {
-                { cmd = "/season", desc = "View current season info" },
-                { cmd = "/dcboard", desc = "Open leaderboards" },
+                { cmd = "/seasonal", desc = "Toggle the season tracker" },
+                { cmd = "/lb", desc = "Open leaderboards" },
             },
         },
         {
@@ -588,20 +635,20 @@ local function PopulateFeatures(scrollChild)
             name = L["FEATURE_AOE_LOOT"].name,
             icon = ICON_AOESETTINGS,
             color = {0, 1, 0},  -- Green
-            shortDesc = "Loot multiple corpses at once with smart filtering!",
+            shortDesc = "Loot nearby corpses in one click with fast farming controls!",
             fullDesc = L["FEATURE_AOE_LOOT"].desc,
-            howTo = "AOE Looting is enabled by default. Open the settings with /aoeloot to configure quality filters, auto-skinning, and vendor options.",
+            howTo = "AOE Looting is enabled by default. Use /aoeloot or /dcaoe to adjust filters and related collection behavior.",
             bullets = {
                 "Loot all nearby corpses with one click",
-                "Filter by item quality (white, green, blue, etc.)",
-                "Auto-skin beasts after looting",
-                "Auto-vendor poor quality items",
-                "Gold-only mode for speed farming",
+                "Quality filters keep junk collection under control",
+                "Auto-skinning and convenience options are available",
+                "Useful for large farming pulls and event cleanup",
+                "Configured through the dedicated DC-AOESettings panel",
             },
             unlock = L["FEATURE_AOE_LOOT"].unlock,
             commands = {
                 { cmd = "/aoeloot", desc = "Open AOE Loot settings" },
-                { cmd = "/aoe", desc = "Toggle AOE loot on/off" },
+                { cmd = "/dcaoe", desc = "Open the advanced AOE settings panel" },
             },
         },
         {
@@ -611,18 +658,18 @@ local function PopulateFeatures(scrollChild)
             color = {1, 0, 0},  -- Red
             shortDesc = "Open-world PvP with objectives and raid-style gameplay!",
             fullDesc = L["FEATURE_HLBG"] and L["FEATURE_HLBG"].desc or "Open-world PvP zone with objective-based gameplay.",
-            howTo = "Travel to the Hinterlands and enter the PvP zone. The addon will automatically form raid groups and display objective HUD.",
+            howTo = "When Hinterland BG is active, open the addon UI to view queue status, objectives, and live match information.",
             bullets = {
-                "Capture and hold strategic objectives",
-                "Auto raid group formation",
-                "Modern HUD with minimap integration",
-                "Seasonal rewards and rankings",
-                "Class-based tactical gameplay",
+                "Queue HUD and battleground status display",
+                "Live objective and scoreboard tracking",
+                "Match history and player statistics",
+                "Integrated with seasonal competition systems",
+                "Dedicated settings panel for the HLBG UI",
             },
             unlock = L["FEATURE_HLBG"] and L["FEATURE_HLBG"].unlock or "Unlocks at level 80",
             commands = {
-                { cmd = "/hlbg", desc = "Toggle HLBG HUD" },
-                { cmd = "/hlbg join", desc = "Queue for battleground" },
+                { cmd = "/hlbgshow", desc = "Toggle the Hinterland BG UI" },
+                { cmd = "/hlbgconfig", desc = "Open HLBG settings" },
             },
         },
         {
@@ -630,60 +677,51 @@ local function PopulateFeatures(scrollChild)
             name = L["FEATURE_CHALLENGE"] and L["FEATURE_CHALLENGE"].name or "|cffff6600Challenge Modes|r",
             icon = L["FEATURE_CHALLENGE"] and L["FEATURE_CHALLENGE"].icon or "Interface\\Icons\\Spell_Shadow_DeathScream",
             color = {1, 0.4, 0},  -- Orange-red
-            shortDesc = "Hardcore, Iron Man, and Self-Crafted character modes!",
+            shortDesc = "Hardcore, Iron Man, and self-restricted character paths!",
             fullDesc = L["FEATURE_CHALLENGE"] and L["FEATURE_CHALLENGE"].desc or "Hardcore, Semi-Hardcore, Iron Man, and Self-Crafted modes.",
-            howTo = "Select your challenge mode during character creation. Each mode has different restrictions and exclusive rewards!",
+            howTo = "Use the Challenge Mode Manager or the server's challenge UI flow to inspect current challenge-mode options and rewards.",
             bullets = {
-                "Hardcore: Permadeath - one death = gone forever!",
-                "Semi-Hardcore: Limited lives per session",
-                "Iron Man: Solo play, no trading or AH",
-                "Self-Crafted: Only use self-made gear",
-                "Exclusive titles and achievements per mode",
+                "Hardcore and death-sensitive challenge paths",
+                "Iron Man and Self-Crafted style restrictions",
+                "Special titles and progression achievements",
+                "Separate from Prestige and seasonal systems",
+                "Best suited for players who want a fresh reroll path",
             },
             unlock = L["FEATURE_CHALLENGE"] and L["FEATURE_CHALLENGE"].unlock or "Available at character creation",
-            commands = {
-                { cmd = "/challenge", desc = "View challenge mode status" },
-            },
         },
         {
             id = "dungeonquests",
             name = L["FEATURE_DUNGEON_QUESTS"] and L["FEATURE_DUNGEON_QUESTS"].name or "|cff00ff99Dungeon Quest System|r",
             icon = L["FEATURE_DUNGEON_QUESTS"] and L["FEATURE_DUNGEON_QUESTS"].icon or "Interface\\Icons\\INV_Scroll_03",
             color = {0, 1, 0.6},  -- Teal-green
-            shortDesc = "Daily and weekly dungeon quests with token rewards!",
+            shortDesc = "Supported dungeon content can include bonus objectives and progression hooks!",
             fullDesc = L["FEATURE_DUNGEON_QUESTS"] and L["FEATURE_DUNGEON_QUESTS"].desc or "Daily and weekly dungeon objectives.",
-            howTo = "Personal quest NPCs appear when you enter dungeons. Accept quests for bonus tokens and rewards upon completion.",
+            howTo = "Follow the dungeon-specific quest flow or personal quest NPC prompts when they appear in supported content.",
             bullets = {
-                "Daily rotating dungeon objectives",
-                "Weekly challenges for raid and special content",
-                "Token currency for the upgrade system",
-                "Personal quest giver NPCs in dungeons",
-                "Bonus rewards for completing on higher difficulties",
+                "Bonus objectives layered onto supported dungeon runs",
+                "Extra rewards tied to completion and difficulty",
+                "Useful alongside Mythic+ and custom dungeon tiers",
+                "May include personal NPC prompts or event hooks",
+                "Progression details depend on the active content tier",
             },
             unlock = L["FEATURE_DUNGEON_QUESTS"] and L["FEATURE_DUNGEON_QUESTS"].unlock or "Unlocks at level 80",
-            commands = {
-                { cmd = "/dq", desc = "View active dungeon quests" },
-            },
         },
         {
             id = "vault",
             name = L["FEATURE_VAULT"] and L["FEATURE_VAULT"].name or "|cffa335eeItem Vault|r",
             icon = L["FEATURE_VAULT"] and L["FEATURE_VAULT"].icon or "Interface\\Icons\\INV_Misc_Bag_CoreFelcloth",
             color = {0.64, 0.21, 0.93},  -- Purple
-            shortDesc = "Weekly reward caches based on your activity!",
+            shortDesc = "Weekly reward progress based on your successful Mythic+ activity!",
             fullDesc = L["FEATURE_VAULT"] and L["FEATURE_VAULT"].desc or "Weekly reward caches from M+ and raids.",
-            howTo = "Complete Mythic+ runs and raid bosses throughout the week. On reset, visit the Vault NPC to claim rewards based on your activity!",
+            howTo = "Complete successful Mythic+ runs during the week. DC-Welcome tracks your current weekly vault progress in the Progress tab.",
             bullets = {
-                "Mythic+ Vault: Rewards based on M+ runs",
-                "Raid Vault: Rewards based on boss kills",
-                "More activity = more loot choices",
-                "Best rewards from highest content completed",
-                "Seasonal resets with fresh vault options",
+                "Weekly reward choices tied to Mythic+ completion",
+                "More successful runs unlock better choice depth",
+                "Progress tab shows vault progress and keys this week",
+                "Pairs with seasonal and Mythic+ leaderboards",
+                "Reset and reward timing follow the live server schedule",
             },
             unlock = L["FEATURE_VAULT"] and L["FEATURE_VAULT"].unlock or "Unlocks at level 80",
-            commands = {
-                { cmd = "/vault", desc = "View vault progress" },
-            },
         },
     }
     
@@ -762,10 +800,18 @@ local function PopulateFAQ(scrollChild)
     header:SetTextColor(1, 0.82, 0) -- Gold
     yOffset = yOffset - 35
     
-    -- FAQ entries
-    for i, entry in ipairs(L["FAQ_ENTRIES"]) do
-        local height = CreateFAQEntry(scrollChild, entry, yOffset, i)
-        yOffset = yOffset - height - 10
+    local faqEntries = (DCWelcome.GetFAQEntries and DCWelcome:GetFAQEntries()) or {}
+
+    if #faqEntries == 0 then
+        local empty = CreateFontString(scrollChild, "GameFontHighlight")
+        empty:SetPoint("TOP", 0, yOffset)
+        empty:SetText("FAQ data is still loading. Try again in a moment.")
+        yOffset = yOffset - 25
+    else
+        for i, entry in ipairs(faqEntries) do
+            local height = CreateFAQEntry(scrollChild, entry, yOffset, i)
+            yOffset = yOffset - height - 10
+        end
     end
     
     scrollChild:SetHeight(math.abs(yOffset) + 20)
@@ -820,13 +866,15 @@ local function CreateLinkCard(parent, linkInfo, yOffset)
     
     -- Click to copy
     card:SetScript("OnClick", function()
-        if ChatFrame1EditBox then
+        if DCWelcome and DCWelcome.CopyToChatInput then
+            DCWelcome:CopyToChatInput(linkInfo.url, L["MSG_LINK_COPIED"])
+        elseif ChatFrame1EditBox then
             ChatFrame1EditBox:SetText(linkInfo.url)
             ChatFrame1EditBox:Show()
             ChatFrame1EditBox:SetFocus()
             ChatFrame1EditBox:HighlightText()
+            DCWelcome.Print(L["MSG_LINK_COPIED"])
         end
-        DCWelcome.Print(L["MSG_LINK_COPIED"])
     end)
     
     return card
@@ -839,6 +887,8 @@ end
 local function PopulateSeasonPreview(scrollChild)
     local yOffset = -10
     local season = DCWelcome:GetCurrentSeason() or { id = 1, name = "Season 1", endTimestamp = 0 }
+    local info = DCWelcome:GetServerInfo() or {}
+    local progress = (DCWelcome.GetProgress and DCWelcome:GetProgress()) or {}
 
     -- Season Title Header
     local header = CreateFontString(scrollChild, "GameFontNormalLarge")
@@ -855,7 +905,7 @@ local function PopulateSeasonPreview(scrollChild)
         local date = date("%Y-%m-%d", season.endTimestamp) 
         statusText:SetText("Ends: " .. date)
     else
-        statusText:SetText("Status: Active")
+        statusText:SetText("Status: Active and synced from the server")
     end
     yOffset = yOffset - 40
 
@@ -866,10 +916,11 @@ local function PopulateSeasonPreview(scrollChild)
     yOffset = yOffset - 25
 
     local stats = {
-        "Mythic+ Cap: Level 30",
-        "PVP Season: 14",
-        "Raid Tier: Citadel of Chaos",
-        "Prestige Cap: Rank 50"
+        "Season Rank: " .. tostring(progress.seasonRank or "Unranked"),
+        "Season Points: " .. tostring(progress.seasonPoints or 0),
+        "Keys This Week: " .. tostring(progress.keysThisWeek or 0),
+        "Great Vault Progress: " .. tostring(progress.weeklyVaultProgress or 0),
+        "Players Online: " .. tostring(info.playersOnline or "Unknown"),
     }
 
     for _, stat in ipairs(stats) do
@@ -880,40 +931,51 @@ local function PopulateSeasonPreview(scrollChild)
     end
     yOffset = yOffset - 20
 
-    -- Rewards Section
+    -- Progress notes
     local rewardHeader = CreateFontString(scrollChild, "GameFontNormal")
     rewardHeader:SetPoint("TOPLEFT", 10, yOffset)
-    rewardHeader:SetText("|cffffd700Exclusive Rewards:|r")
+    rewardHeader:SetText("|cffffd700Progress Notes:|r")
     yOffset = yOffset - 25
 
     local rewards = {
-        { name = "Gladiator's Fel Drake", type = "Mount" },
-        { name = "Chaos-Forged Elite", type = "Title" },
-        { name = "Season 1 Weapon Enchant", type = "Cosmetic" },
+        { name = "Season tracker commands are available with /seasonal, /season, and /dcseasons.", type = "Tracker" },
+        { name = "Weekly token and essence caps are live values sent by the server.", type = "Sync" },
+        { name = "Use DC-Leaderboards for standings and rankings when that addon is loaded.", type = "Leaderboards" },
+        { name = "Progress tab combines seasonal data with Mythic+ and Prestige progress.", type = "Overview" },
     }
 
     for _, reward in ipairs(rewards) do
         local rText = CreateFontString(scrollChild, "GameFontHighlight")
         rText:SetPoint("TOPLEFT", 20, yOffset)
-        rText:SetText("• " .. reward.name .. " (" .. reward.type .. ")")
-        yOffset = yOffset - 20
+        rText:SetWidth(SCROLL_WIDTH - 60)
+        rText:SetJustifyH("LEFT")
+        rText:SetText("• " .. reward.name)
+        yOffset = yOffset - rText:GetStringHeight() - 6
     end
 
-    -- Leaderboard Button (Functional Placeholder)
+    -- Action buttons
     yOffset = yOffset - 30
     local lbBtn = CreateFrame("Button", "DCWelcomeSeasonLBBtn", scrollChild, "UIPanelButtonTemplate")
     lbBtn:SetSize(160, 30)
-    lbBtn:SetPoint("TOP", 0, yOffset)
+    lbBtn:SetPoint("TOP", -85, yOffset)
     lbBtn:SetText("View Leaderboards")
     lbBtn:SetScript("OnClick", function()
-        -- Close welcome frame and execute command
-        if DCWelcomeFrame then DCWelcomeFrame:Hide() end
-        if DCLeaderboards and DCLeaderboards.Toggle then
-            DCLeaderboards:Toggle()
-        elseif SlashCmdList["DCBOARD"] then
-            SlashCmdList["DCBOARD"]("")
-        else
+        if DCWelcome and DCWelcome.OpenLeaderboards then
+            DCWelcome:OpenLeaderboards("seasons")
+        elseif DCWelcome and DCWelcome.Print then
             DCWelcome.Print("Leaderboard addon not loaded.")
+        end
+    end)
+
+    local trackerBtn = CreateFrame("Button", "DCWelcomeSeasonTrackerBtn", scrollChild, "UIPanelButtonTemplate")
+    trackerBtn:SetSize(160, 30)
+    trackerBtn:SetPoint("LEFT", lbBtn, "RIGHT", 10, 0)
+    trackerBtn:SetText("Toggle Tracker")
+    trackerBtn:SetScript("OnClick", function()
+        if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.ToggleProgressTracker then
+            DCWelcome.Seasons:ToggleProgressTracker()
+        else
+            DCWelcome.Print("Season tracker is not available.")
         end
     end)
     yOffset = yOffset - 40
@@ -923,20 +985,8 @@ end
 
 local function PopulateCommunity(scrollChild)
     local yOffset = -10
-    
-    -- Server Logo (if exists)
-    -- Note: Logo file should be placed at: Interface\AddOns\DC-Welcome\Textures\ServerLogo.tga
-    -- Convert PNG to TGA (32-bit) or BLP format for WoW 3.3.5a compatibility
-    local logoPath = "Interface\\AddOns\\DC-Welcome\\Textures\\ServerLogo"
-    local hasLogo = true  -- Assume logo exists; WoW will show blank if not
-    
-    if hasLogo then
-        local logo = scrollChild:CreateTexture(nil, "ARTWORK")
-        logo:SetSize(200, 200)  -- Adjust size as needed
-        logo:SetPoint("TOP", 0, yOffset)
-        logo:SetTexture(logoPath)
-        yOffset = yOffset - 210
-    end
+    local info = DCWelcome:GetServerInfo() or {}
+    local season = DCWelcome:GetCurrentSeason() or {}
     
     -- Header
     local header = CreateFontString(scrollChild, "GameFontNormalLarge")
@@ -950,9 +1000,18 @@ local function PopulateCommunity(scrollChild)
     intro:SetPoint("TOP", 0, yOffset)
     intro:SetText(L["LINKS_INTRO"])
     yOffset = yOffset - 30
+
+    local summary = CreateFontString(scrollChild, "GameFontHighlight")
+    summary:SetPoint("TOP", 0, yOffset)
+    summary:SetWidth(SCROLL_WIDTH - 40)
+    summary:SetJustifyH("CENTER")
+    summary:SetText("|cff00ff00" .. (info.name or "DarkChaos-255") .. "|r  •  " ..
+        "Season: |cff00ccff" .. (season.name or "Season 1") .. "|r  •  " ..
+        "Players Online: |cffffff00" .. tostring(info.playersOnline or "Unknown") .. "|r")
+    yOffset = yOffset - summary:GetStringHeight() - 20
     
     -- Link cards
-    local links = {
+    local links = (DCWelcome.GetCommunityLinks and DCWelcome:GetCommunityLinks()) or {
         L["LINK_DISCORD"],
         L["LINK_WEBSITE"],
         L["LINK_WIKI"],

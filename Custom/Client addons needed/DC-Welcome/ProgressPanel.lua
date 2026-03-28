@@ -53,6 +53,138 @@ local function CreateTexture(parent, r, g, b, a)
     return tex
 end
 
+local function RunAction(action)
+    if type(action) ~= "function" then
+        return
+    end
+
+    local ok, err = pcall(action)
+    if not ok and DCWelcome and DCWelcome.Print then
+        DCWelcome.Print("Progress action failed: " .. tostring(err))
+    end
+end
+
+local function HideWelcomePanel()
+    if DCWelcome and DCWelcome.HideWelcome then
+        DCWelcome:HideWelcome()
+    end
+end
+
+local function ShowSimpleTooltip(owner, title, lines, anchor)
+    GameTooltip:SetOwner(owner, anchor or "ANCHOR_RIGHT")
+
+    if title then
+        GameTooltip:AddLine(title, 1, 1, 1)
+    end
+
+    for _, line in ipairs(lines or {}) do
+        GameTooltip:AddLine(line, 0.8, 0.8, 0.8)
+    end
+
+    GameTooltip:Show()
+end
+
+local function OpenLeaderboards(categoryId, subcategoryId)
+    if DCWelcome and DCWelcome.OpenLeaderboards then
+        return DCWelcome:OpenLeaderboards(categoryId, subcategoryId)
+    end
+
+    return false
+end
+
+local function OpenAchievementView()
+    HideWelcomePanel()
+
+    if ToggleAchievementFrame then
+        ToggleAchievementFrame()
+        return true
+    end
+
+    return OpenLeaderboards("achieve", "achieve_progress")
+end
+
+local function OpenGreatVaultView()
+    HideWelcomePanel()
+
+    if DCMythicPlusHUD and DCMythicPlusHUD.GreatVault and DCMythicPlusHUD.GreatVault.Toggle then
+        DCMythicPlusHUD.GreatVault:Toggle()
+        return true
+    end
+
+    if SlashCmdList and SlashCmdList["DCM"] then
+        SlashCmdList["DCM"]("vault")
+        return true
+    end
+
+    if DCWelcome and DCWelcome.Print then
+        DCWelcome.Print("Great Vault UI not available.")
+    end
+
+    return false
+end
+
+local function ToggleSeasonTracker()
+    if DCWelcome and DCWelcome.Seasons and DCWelcome.Seasons.ToggleProgressTracker then
+        HideWelcomePanel()
+        DCWelcome.Seasons:ToggleProgressTracker()
+        return true
+    end
+
+    if DCWelcome and DCWelcome.Print then
+        DCWelcome.Print("Season tracker is not available.")
+    end
+
+    return false
+end
+
+local function MakeWidgetInteractive(widget, data)
+    if not widget or type(data) ~= "table" then
+        return
+    end
+
+    if not data.onClick and not data.onEnter and not data.tooltipTitle then
+        return
+    end
+
+    widget:EnableMouse(true)
+
+    if data.onClick then
+        widget:SetScript("OnMouseUp", function(self, button)
+            if button == "LeftButton" then
+                RunAction(data.onClick)
+            end
+        end)
+    end
+
+    widget:SetScript("OnEnter", function(self)
+        if data.onEnter then
+            data.onEnter(self)
+            return
+        end
+
+        local lines = {}
+        for _, line in ipairs(data.tooltipLines or {}) do
+            table.insert(lines, line)
+        end
+
+        if data.onClick then
+            table.insert(lines, " ")
+            table.insert(lines, "Click to open the related view.")
+        end
+
+        ShowSimpleTooltip(self, data.tooltipTitle, lines, data.tooltipAnchor)
+    end)
+
+    widget:SetScript("OnLeave", function(self)
+        if data.onLeave then
+            data.onLeave(self)
+            return
+        end
+
+        GameTooltip:Hide()
+    end)
+end
+
 -- =============================================================================
 -- Stat Box Creation
 -- =============================================================================
@@ -100,6 +232,8 @@ local function CreateStatBox(parent, data)
     function box:SetColor(r, g, b)
         self.accent:SetTexture(r, g, b, 1)
     end
+
+    MakeWidgetInteractive(box, data)
     
     return box
 end
@@ -161,6 +295,8 @@ local function CreateProgressBar(parent, data)
     function container:SetColor(r, g, b)
         self.barFill:SetTexture(r, g, b, 1)
     end
+
+    MakeWidgetInteractive(container, data)
     
     return container
 end
@@ -211,7 +347,14 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         label = "M+ Rating",
         value = "---",
         icon = "Interface\\Icons\\Achievement_challengemode_gold",
-        color = { r = 1, g = 0.5, b = 0 }
+        color = { r = 1, g = 0.5, b = 0 },
+        onClick = function()
+            OpenLeaderboards("mplus", "mplus_score")
+        end,
+        tooltipTitle = "|cffffd700Mythic+ Rating|r",
+        tooltipLines = {
+            "Open the Mythic+ score leaderboard.",
+        },
     })
     statBoxes.mythicRating:SetPoint("TOPLEFT", xStart, yOffset)
     
@@ -220,7 +363,14 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         label = "Prestige",
         value = "---",
         icon = "Interface\\Icons\\Achievement_level_80",
-        color = { r = 0.64, g = 0.21, b = 0.93 }
+        color = { r = 0.64, g = 0.21, b = 0.93 },
+        onClick = function()
+            OpenLeaderboards("prestige", "prestige_level")
+        end,
+        tooltipTitle = "|cffffd700Prestige|r",
+        tooltipLines = {
+            "Open the prestige standings.",
+        },
     })
     statBoxes.prestige:SetPoint("TOPLEFT", xStart + boxSpacing, yOffset)
     
@@ -229,7 +379,14 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         label = "Season Rank",
         value = "---",
         icon = "Interface\\Icons\\Achievement_arena_2v2_7",
-        color = { r = 0, g = 0.8, b = 1 }
+        color = { r = 0, g = 0.8, b = 1 },
+        onClick = function()
+            OpenLeaderboards("seasons", "season_tokens")
+        end,
+        tooltipTitle = "|cffffd700Season Rank|r",
+        tooltipLines = {
+            "Open the seasonal leaderboard view.",
+        },
     })
     statBoxes.seasonRank:SetPoint("TOPLEFT", xStart + boxSpacing * 2, yOffset)
     
@@ -238,7 +395,14 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         label = "Achievements",
         value = GetTotalAchievementPoints and GetTotalAchievementPoints() or "---",
         icon = "Interface\\Icons\\Achievement_guildperk_workingovertime",
-        color = { r = 1, g = 0.84, b = 0 }
+        color = { r = 1, g = 0.84, b = 0 },
+        onClick = function()
+            OpenAchievementView()
+        end,
+        tooltipTitle = "|cffffd700Achievements|r",
+        tooltipLines = {
+            "Open your achievement view.",
+        },
     })
     statBoxes.achievements:SetPoint("TOPLEFT", xStart + boxSpacing * 3, yOffset)
     
@@ -253,29 +417,31 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         label = "Alt Bonus",
         value = "---",
         icon = "Interface\\Icons\\Spell_Holy_BlessingOfStrength",
-        color = { r = 0.2, g = 0.8, b = 0.4 }
+        color = { r = 0.2, g = 0.8, b = 0.4 },
+        onClick = function()
+            OpenLeaderboards("prestige", "prestige_level")
+        end,
+        onEnter = function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine("|cffffd700Prestige Alt Bonus|r", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Earn +5% XP bonus for each max-level", 0.8, 0.8, 0.8)
+            GameTooltip:AddLine("character on your account (max 25%).", 0.8, 0.8, 0.8)
+            GameTooltip:AddLine(" ")
+            local altLevel = DCWelcome.ProgressCache and DCWelcome.ProgressCache.altBonusLevel or 0
+            local altPercent = DCWelcome.ProgressCache and DCWelcome.ProgressCache.altBonusPercent or 0
+            GameTooltip:AddDoubleLine("Max-Level Alts:", tostring(altLevel) .. " / 5", 1, 1, 1, 0.2, 0.8, 0.4)
+            GameTooltip:AddDoubleLine("Current Bonus:", "+" .. tostring(altPercent) .. "% XP", 1, 1, 1, 0.2, 0.8, 0.4)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Click to open the prestige standings.", 0.4, 1, 0.4)
+            GameTooltip:Show()
+        end,
+        onLeave = function()
+            GameTooltip:Hide()
+        end,
     })
     -- Center the alt bonus box
     statBoxes.altBonus:SetPoint("TOPLEFT", xStart + boxSpacing * 1.5, yOffset)
-    
-    -- Add tooltip for alt bonus
-    statBoxes.altBonus:EnableMouse(true)
-    statBoxes.altBonus:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:AddLine("|cffffd700Prestige Alt Bonus|r", 1, 1, 1)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Earn +5% XP bonus for each max-level", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("character on your account (max 25%).", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine(" ")
-        local altLevel = DCWelcome.ProgressCache and DCWelcome.ProgressCache.altBonusLevel or 0
-        local altPercent = DCWelcome.ProgressCache and DCWelcome.ProgressCache.altBonusPercent or 0
-        GameTooltip:AddDoubleLine("Max-Level Alts:", tostring(altLevel) .. " / 5", 1, 1, 1, 0.2, 0.8, 0.4)
-        GameTooltip:AddDoubleLine("Current Bonus:", "+" .. tostring(altPercent) .. "% XP", 1, 1, 1, 0.2, 0.8, 0.4)
-        GameTooltip:Show()
-    end)
-    statBoxes.altBonus:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
     
     scrollChild.statBoxes = statBoxes
     yOffset = yOffset - STAT_BOX_HEIGHT - 20
@@ -307,7 +473,14 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         current = 0,
         max = 3,
         width = 260,
-        color = { r = 0.8, g = 0.6, b = 0.2 }
+        color = { r = 0.8, g = 0.6, b = 0.2 },
+        onClick = function()
+            OpenGreatVaultView()
+        end,
+        tooltipTitle = "|cffffd700Weekly Vault|r",
+        tooltipLines = {
+            "Open the Mythic+ Great Vault panel.",
+        },
     })
     progressBars.vault:SetPoint("TOPLEFT", 20, yOffset)
     
@@ -317,7 +490,14 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         current = 0,
         max = 1000,
         width = 260,
-        color = { r = 0, g = 0.7, b = 0.9 }
+        color = { r = 0, g = 0.7, b = 0.9 },
+        onClick = function()
+            ToggleSeasonTracker()
+        end,
+        tooltipTitle = "|cffffd700Season Points|r",
+        tooltipLines = {
+            "Toggle the season tracker HUD.",
+        },
     })
     progressBars.seasonPoints:SetPoint("TOPLEFT", 300, yOffset)
     
@@ -329,7 +509,14 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         current = 0,
         max = 100,
         width = 260,
-        color = { r = 0.7, g = 0.3, b = 0.9 }
+        color = { r = 0.7, g = 0.3, b = 0.9 },
+        onClick = function()
+            OpenLeaderboards("prestige", "prestige_points")
+        end,
+        tooltipTitle = "|cffffd700Prestige XP|r",
+        tooltipLines = {
+            "Open prestige point standings.",
+        },
     })
     progressBars.prestigeXP:SetPoint("TOPLEFT", 20, yOffset)
     
@@ -339,7 +526,14 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
         current = 0,
         max = 10,
         width = 260,
-        color = { r = 1, g = 0.5, b = 0 }
+        color = { r = 1, g = 0.5, b = 0 },
+        onClick = function()
+            OpenLeaderboards("mplus", "mplus_runs")
+        end,
+        tooltipTitle = "|cffffd700M+ Keys This Week|r",
+        tooltipLines = {
+            "Open Mythic+ run leaderboards.",
+        },
     })
     progressBars.keysWeek:SetPoint("TOPLEFT", 300, yOffset)
     
@@ -354,8 +548,8 @@ function DCWelcome:PopulateProgressPanel(scrollChild)
     infoText:SetPoint("TOPLEFT", 20, yOffset)
     infoText:SetWidth(540)
     infoText:SetJustifyH("LEFT")
-    infoText:SetText("|cff888888Progress data syncs from server and loaded addons. Values showing '---' are loading or unavailable.|r")
-    yOffset = yOffset - 40
+    infoText:SetText("|cff888888Progress data syncs from server and loaded addons. Click any stat card or progress bar to open the related addon, tracker, or leaderboard. Values showing '---' are loading or unavailable.|r")
+    yOffset = yOffset - 52
     
     -- ==========================================================================
     -- Refresh Button

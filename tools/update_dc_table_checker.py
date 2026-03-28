@@ -15,6 +15,11 @@ CREATE_TABLE_RE = re.compile(
     r"(?i)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+`(?P<table>dc_[^`]+)`"
 )
 
+SCHEMA_OVERRIDES = {
+    "dc_welcome_faq": "acore_world",
+    "dc_welcome_whats_new": "acore_world",
+}
+
 
 def extract_dc_tables(schema_path: Path) -> list[str]:
     text = schema_path.read_text(encoding="utf-8", errors="ignore")
@@ -137,6 +142,17 @@ def main() -> None:
     chars_set = set(chars_tables)
     world_set = set(world_tables)
 
+    for table, target_schema in SCHEMA_OVERRIDES.items():
+        if target_schema == "acore_world":
+            chars_set.discard(table)
+            world_set.add(table)
+        elif target_schema == "acore_chars":
+            world_set.discard(table)
+            chars_set.add(table)
+
+    chars_tables = sorted(chars_set)
+    world_tables = sorted(world_set)
+
     existing_text = CHECKER.read_text(encoding="utf-8", errors="ignore")
     existing_entries = []
     for m in ENTRY_RE.finditer(existing_text):
@@ -150,6 +166,8 @@ def main() -> None:
     seen = set()
     for schema, table, feature, critical in existing_entries:
         if not table.startswith("dc_"):
+            continue
+        if table in SCHEMA_OVERRIDES and schema != SCHEMA_OVERRIDES[table]:
             continue
         exists = (table in chars_set) if schema == "acore_chars" else (table in world_set)
         if not exists:
