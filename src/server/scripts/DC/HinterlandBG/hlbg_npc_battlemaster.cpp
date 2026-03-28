@@ -18,6 +18,8 @@ namespace
 {
     constexpr uint32 HLBG_QUEST_DAILY = 920100;
     constexpr uint32 HLBG_QUEST_WEEKLY = 920101;
+    constexpr uint32 HLBG_GOSSIP_SENDER_QUEST_MANUAL = 50001;
+    constexpr uint32 HLBG_GOSSIP_SENDER_QUEST_REWARD = 50002;
 
     enum HLBGGossipActions : uint32
     {
@@ -25,6 +27,7 @@ namespace
         ACTION_QUEUE_LEAVE = GOSSIP_ACTION_INFO_DEF + 2,
         ACTION_INFO        = GOSSIP_ACTION_INFO_DEF + 3,
         ACTION_QUEST_PROGRESS = GOSSIP_ACTION_INFO_DEF + 4,
+        ACTION_BACK_MAIN   = GOSSIP_ACTION_INFO_DEF + 5,
     };
 
     OutdoorPvPHL* GetHL()
@@ -55,7 +58,7 @@ public:
         {
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
                 MakeLargeGossipText("Interface\\Icons\\Achievement_Quests_Completed_08", label + " |cFF00FF00(Complete)|r"),
-                GOSSIP_SENDER_QUEST_REWARD, questId);
+                HLBG_GOSSIP_SENDER_QUEST_REWARD, questId);
             return;
         }
 
@@ -71,7 +74,7 @@ public:
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT,
                 MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", label),
-                GOSSIP_SENDER_QUEST_MANUAL, questId);
+                HLBG_GOSSIP_SENDER_QUEST_MANUAL, questId);
         }
     }
 
@@ -116,7 +119,7 @@ public:
 
         ClearGossipMenuFor(player);
 
-        if (sender == GOSSIP_SENDER_QUEST_MANUAL)
+        if (sender == HLBG_GOSSIP_SENDER_QUEST_MANUAL)
         {
             Quest const* quest = sObjectMgr->GetQuestTemplate(action);
             if (quest)
@@ -124,7 +127,7 @@ public:
             return true;
         }
 
-        if (sender == GOSSIP_SENDER_QUEST_REWARD)
+        if (sender == HLBG_GOSSIP_SENDER_QUEST_REWARD)
         {
             Quest const* quest = sObjectMgr->GetQuestTemplate(action);
             if (quest && player->GetQuestStatus(action) == QUEST_STATUS_COMPLETE)
@@ -151,10 +154,15 @@ public:
                 CloseGossipMenuFor(player);
                 return true;
             case ACTION_INFO: // Info
-                ChatHandler(player->GetSession()).SendNotification("Hinterlands BG is a zone-wide PvP event in the Hinterlands. Use this NPC or .hlbg queue to join/leave.");
-                return OnGossipHello(player, creature);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT,
+                    MakeLargeGossipText("Interface\\Icons\\INV_Misc_QuestionMark", "Back"),
+                    GOSSIP_SENDER_MAIN, ACTION_BACK_MAIN);
+                SendGossipMenuFor(player, player->GetGossipTextId(creature), creature->GetGUID());
+                return true;
             case ACTION_QUEST_PROGRESS:
                 ChatHandler(player->GetSession()).SendNotification("You already have this quest in progress. Complete it and return to turn it in.");
+                return OnGossipHello(player, creature);
+            case ACTION_BACK_MAIN:
                 return OnGossipHello(player, creature);
             default:
                 return OnGossipHello(player, creature);

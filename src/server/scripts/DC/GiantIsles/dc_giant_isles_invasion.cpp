@@ -59,11 +59,13 @@ namespace
         NPC_ZANDALARI_HONOR_GUARD       = 400337,
         NPC_ZANDALARI_INVASION_LEADER   = 400338,
 
-        // Defenders
-        NPC_PRIMAL_WARDEN_GUARD         = 401000,
-        NPC_EXPEDITION_RANGER           = 401001,
-        NPC_EXPEDITION_SHAMAN           = 401002,
-        NPC_WAR_MAMMOTH                 = 401003,
+        // Defenders (Horde camp units)
+        NPC_BEAST_HUNTER                = 401004,
+        NPC_BEAST_HUNTER_VETERAN        = 401005,
+        NPC_BEAST_HUNTER_TRAPPER        = 401006,
+        NPC_BEAST_HUNTER_WARLORD        = 401007,
+
+        DEFENDER_FACTION_HORDE          = 29,
 
         // World states
         WORLD_STATE_INVASION_ACTIVE     = 20000,
@@ -193,6 +195,26 @@ namespace
 
             ChatHandler(player->GetSession()).SendSysMessage(text);
         });
+    }
+
+    static void ForceStartCombat(Creature* attacker, Unit* target)
+    {
+        if (!attacker || !target)
+            return;
+
+        if (!attacker->IsAlive() || !target->IsAlive())
+            return;
+
+        attacker->EngageWithTarget(target);
+        attacker->AI()->AttackStart(target);
+
+        if (Creature* targetCreature = target->ToCreature())
+        {
+            targetCreature->EngageWithTarget(attacker);
+
+            if (!targetCreature->IsInCombat() || targetCreature->GetVictim() != attacker)
+                targetCreature->AI()->AttackStart(attacker);
+        }
     }
 
     static Player* ResolvePlayerKiller(Unit* killer)
@@ -330,7 +352,7 @@ namespace
                 raptor->SetReactState(REACT_AGGRESSIVE);
 
                 if (target)
-                    raptor->AI()->AttackStart(target);
+                    ForceStartCombat(raptor, target);
 
                 GI_RegisterSummonedInvader(raptor);
                 _raptorGuids.push_back(raptor->GetGUID());
@@ -598,6 +620,7 @@ namespace
                 if (_nudgeTimerMs <= diff)
                 {
                     NudgeInvaders(map);
+                    NudgeDefenders(map);
                     _nudgeTimerMs = NUDGE_INTERVAL_MS;
                 }
                 else
@@ -633,6 +656,7 @@ namespace
                 if (_nudgeTimerMs <= diff)
                 {
                     NudgeInvaders(map);
+                    NudgeDefenders(map);
                     _nudgeTimerMs = NUDGE_INTERVAL_MS;
                 }
                 else
@@ -1036,7 +1060,7 @@ namespace
             {
                 _nextAutoTriggerAtSec = now + AUTO_TRIGGER_RETRY_NO_HORN_SEC;
                 LOG_WARN("scripts.dc", "Giant Isles Invasion [AUTO]: due but no invasion horn {} found, retry in {} sec",
-                    NPC_INVASION_HORN,
+                    static_cast<uint32>(NPC_INVASION_HORN),
                     AUTO_TRIGGER_RETRY_NO_HORN_SEC);
                 return;
             }
@@ -1162,7 +1186,7 @@ namespace
 
             if (!leader)
             {
-                LOG_WARN("scripts.dc", "Giant Isles Invasion: leader {} not found on ship", NPC_ZANDALARI_INVASION_LEADER);
+                LOG_WARN("scripts.dc", "Giant Isles Invasion: leader {} not found on ship", static_cast<uint32>(NPC_ZANDALARI_INVASION_LEADER));
                 return;
             }
 
@@ -1411,11 +1435,11 @@ namespace
 
             std::array<uint32, 5> const entries =
             {{
-                NPC_WAR_MAMMOTH,
-                NPC_EXPEDITION_SHAMAN,
-                NPC_PRIMAL_WARDEN_GUARD,
-                NPC_EXPEDITION_RANGER,
-                NPC_PRIMAL_WARDEN_GUARD,
+                NPC_BEAST_HUNTER_WARLORD,
+                NPC_BEAST_HUNTER_TRAPPER,
+                NPC_BEAST_HUNTER,
+                NPC_BEAST_HUNTER_VETERAN,
+                NPC_BEAST_HUNTER,
             }};
 
             for (uint8 i = 0; i < DefenderSpawnPoints.size(); ++i)
@@ -1431,6 +1455,9 @@ namespace
                 }
 
                 defender->SetReactState(REACT_AGGRESSIVE);
+                defender->SetFaction(DEFENDER_FACTION_HORDE);
+                defender->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
+                defender->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
                 _defenderGuids.push_back(defender->GetGUID());
 
                 if (i < LaneObjectives.size())
@@ -1438,6 +1465,8 @@ namespace
                     InvasionSpawnPoint const& obj = LaneObjectives[i];
                     defender->GetMotionMaster()->MovePoint(50 + i, obj.x, obj.y, obj.z);
                 }
+
+                CommandDefender(defender, map);
             }
         }
 
@@ -1452,13 +1481,13 @@ namespace
             Position p2(rear.x + 2.0f, rear.y + 1.0f, rear.z, rear.o);
 
             Creature* ranger = map->SummonCreature(
-                NPC_EXPEDITION_RANGER,
+                NPC_BEAST_HUNTER_TRAPPER,
                 p1,
                 nullptr,
                 SUMMON_LIFETIME_MS);
 
             Creature* shaman = map->SummonCreature(
-                NPC_EXPEDITION_SHAMAN,
+                NPC_BEAST_HUNTER_VETERAN,
                 p2,
                 nullptr,
                 SUMMON_LIFETIME_MS);
@@ -1466,15 +1495,21 @@ namespace
             if (ranger)
             {
                 ranger->SetReactState(REACT_AGGRESSIVE);
+                ranger->SetFaction(DEFENDER_FACTION_HORDE);
+                ranger->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
+                ranger->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
                 _defenderGuids.push_back(ranger->GetGUID());
-                ranger->GetMotionMaster()->MovePoint(70, LaneObjectives[1].x, LaneObjectives[1].y, LaneObjectives[1].z);
+                CommandDefender(ranger, map);
             }
 
             if (shaman)
             {
                 shaman->SetReactState(REACT_AGGRESSIVE);
+                shaman->SetFaction(DEFENDER_FACTION_HORDE);
+                shaman->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
+                shaman->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
                 _defenderGuids.push_back(shaman->GetGUID());
-                shaman->GetMotionMaster()->MovePoint(71, LaneObjectives[2].x, LaneObjectives[2].y, LaneObjectives[2].z);
+                CommandDefender(shaman, map);
             }
         }
 
@@ -1510,8 +1545,8 @@ namespace
 
             _laneByInvader[guid] = lane;
 
-            // Keep invaders on hostile faction for reliable aggro behavior.
-            creature->SetFaction(16);
+            // Keep invaders on their template faction so SQL tuning remains authoritative.
+            creature->SetFaction(creature->GetCreatureTemplate()->faction);
             creature->SetReactState(REACT_AGGRESSIVE);
         }
 
@@ -1529,7 +1564,7 @@ namespace
                 return nullptr;
 
             Creature* bestDefender = nullptr;
-            float bestDefenderDist = 120.0f;
+            float bestDefenderDist = 180.0f;
 
             for (ObjectGuid const& guid : _defenderGuids)
             {
@@ -1570,7 +1605,54 @@ namespace
             return bestPlayer;
         }
 
+        Unit* SelectDefenderTarget(Creature* defender, Map* map) const
+        {
+            if (!defender || !map)
+                return nullptr;
+
+            Creature* bestInvader = nullptr;
+            float bestInvaderDist = 180.0f;
+
+            for (ObjectGuid const& guid : _invaderGuids)
+            {
+                Creature* invader = map->GetCreature(guid);
+                if (!invader || !invader->IsAlive())
+                    continue;
+
+                float dist = defender->GetDistance(invader);
+                if (dist < bestInvaderDist)
+                {
+                    bestInvaderDist = dist;
+                    bestInvader = invader;
+                }
+            }
+
+            return bestInvader;
+        }
+
         void CommandInvader(Creature* creature, Map* map, uint8 lane)
+        {
+            if (!creature || !map || !creature->IsAlive())
+                return;
+
+            creature->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_PACIFIED);
+            creature->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
+            creature->SetWalk(false);
+            creature->SetFaction(DEFENDER_FACTION_HORDE);
+            creature->SetReactState(REACT_AGGRESSIVE);
+
+            if (Unit* target = SelectInvaderTarget(creature, map))
+            {
+                ForceStartCombat(creature, target);
+                return;
+            }
+
+            InvasionSpawnPoint const& objective = LaneObjectives[lane % LaneObjectives.size()];
+            creature->GetMotionMaster()->Clear();
+            creature->GetMotionMaster()->MovePoint(100 + lane, objective.x, objective.y, objective.z);
+        }
+
+        void CommandDefender(Creature* creature, Map* map)
         {
             if (!creature || !map || !creature->IsAlive())
                 return;
@@ -1580,15 +1662,31 @@ namespace
             creature->SetWalk(false);
             creature->SetReactState(REACT_AGGRESSIVE);
 
-            if (Unit* target = SelectInvaderTarget(creature, map))
+            if (Unit* target = SelectDefenderTarget(creature, map))
             {
-                creature->AI()->AttackStart(target);
+                ForceStartCombat(creature, target);
                 return;
             }
 
-            InvasionSpawnPoint const& objective = LaneObjectives[lane % LaneObjectives.size()];
+            // Keep defenders anchored near objectives when no invaders are in range.
+            uint8 bestIndex = 0;
+            float bestDist = std::numeric_limits<float>::max();
+
+            for (uint8 i = 0; i < LaneObjectives.size(); ++i)
+            {
+                InvasionSpawnPoint const& obj = LaneObjectives[i];
+                float dist = creature->GetDistance(obj.x, obj.y, obj.z);
+
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    bestIndex = i;
+                }
+            }
+
+            InvasionSpawnPoint const& objective = LaneObjectives[bestIndex];
             creature->GetMotionMaster()->Clear();
-            creature->GetMotionMaster()->MovePoint(100 + lane, objective.x, objective.y, objective.z);
+            creature->GetMotionMaster()->MovePoint(150 + bestIndex, objective.x, objective.y, objective.z);
         }
 
         void NudgeInvaders(Map* map)
@@ -1617,6 +1715,35 @@ namespace
                     continue;
 
                 CommandInvader(c, map, GetLaneForInvader(guid));
+            }
+        }
+
+        void NudgeDefenders(Map* map)
+        {
+            if (!map)
+                return;
+
+            _defenderGuids.erase(
+                std::remove_if(_defenderGuids.begin(), _defenderGuids.end(),
+                    [&](ObjectGuid const& guid)
+                    {
+                        Creature* c = map->GetCreature(guid);
+                        if (!c)
+                            return true;
+                        return !c->IsAlive();
+                    }),
+                _defenderGuids.end());
+
+            for (ObjectGuid const& guid : _defenderGuids)
+            {
+                Creature* c = map->GetCreature(guid);
+                if (!c || !c->IsAlive())
+                    continue;
+
+                if (c->IsInCombat())
+                    continue;
+
+                CommandDefender(c, map);
             }
         }
 
