@@ -250,14 +250,14 @@ void AddDCScripts()
     try {
         AddSC_giant_isles_zone();
         AddSC_giant_isles_cannon_quest();
-        // AddSC_giant_isles_invasion();
-        // Disabled for now: invasion script needs a rewrite (random spawns).
+        AddSC_giant_isles_invasion();
         AddSC_boss_oondasta();
         AddSC_boss_thok();
         AddSC_boss_nalak();
         AddSC_dc_giant_isles_water_monster();
         LOG_INFO("scripts.dc", ">>   ✓ Giant Isles zone scripts loaded");
         LOG_INFO("scripts.dc", ">>   ✓ Cannon quest loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Invasion event loaded");
         LOG_INFO("scripts.dc", ">>   ✓ World bosses: Oondasta, Thok, Nalak loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in Giant Isles: {}", e.what());

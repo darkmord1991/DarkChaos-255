@@ -15,6 +15,13 @@
 #include "SharedDefines.h"
 #include <algorithm>
 #include <cstdio>
+
+namespace
+{
+    constexpr uint32 HLBG_QUEST_CREDIT_WIN = 920102;
+    constexpr uint32 HLBG_QUEST_CREDIT_PARTICIPATION = 920103;
+}
+
 // Scoreboard helpers ---------------------------------------------------------
 uint32 OutdoorPvPHL::GetPlayerScore(ObjectGuid const& guid) const
 {
@@ -114,18 +121,28 @@ void OutdoorPvPHL::HandleRewards(TeamId winner)
 
     auto rewardTeam = [&](TeamId team, uint32 honor)
     {
-        if (honor == 0)
-            return;
-
         // OutdoorPvP base tracks participating players by team.
         for (auto const& guid : _players[team])
         {
             if (Player* plr = GetMap() ? ObjectAccessor::GetPlayer(GetMap(), guid) : nullptr)
             {
-                plr->RewardHonor(nullptr, 0, float(honor));
+                if (!IsEligibleForRewards(plr))
+                    continue;
+                if (!plr->IsGameMaster() && GetAfkCount(plr) >= 1)
+                    continue;
+
+                if (honor > 0)
+                    plr->RewardHonor(nullptr, 0, float(honor));
                 // Optional: token reward for match participation/victory
                 if (_rewardNpcTokenItemId && _rewardNpcTokenCount && team == winner)
                     plr->AddItem(_rewardNpcTokenItemId, _rewardNpcTokenCount);
+
+                // Daily/weekly HLBG quest credits.
+                // Participation credit goes to eligible players of both teams;
+                // win credit goes only to eligible players on the winning team.
+                plr->KilledMonsterCredit(HLBG_QUEST_CREDIT_PARTICIPATION);
+                if (team == winner)
+                    plr->KilledMonsterCredit(HLBG_QUEST_CREDIT_WIN);
 
                 // Record win in hlbg_player_stats for leaderboards (winners only)
                 if (team == winner)

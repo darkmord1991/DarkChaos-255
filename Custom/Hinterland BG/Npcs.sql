@@ -147,6 +147,76 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (810017, 2, 7861, 1, 1, 12340),
 (810017, 3, 7862, 1, 1, 12340);
 
+-- Horde: Revantusk Headhunter (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810018);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810018, 0, 0, 0, 0, 0, 'Revantusk Headhunter', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 18, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810018);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810018, 0, 14762, 1, 1, 12340),
+(810018, 1, 14763, 1, 1, 12340),
+(810018, 2, 28260, 1, 1, 12340),
+(810018, 3, 28261, 1, 1, 12340);
+
+-- Horde: Revantusk Ritespeaker (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810019);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810019, 0, 0, 0, 0, 0, 'Revantusk Ritespeaker', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 0, 0, 2, 2000, 2000, 1, 1, 2, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 16, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810019);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810019, 0, 3996, 1, 1, 12340),
+(810019, 1, 28237, 1, 1, 12340);
+
+-- Horde: Revantusk Bonfire Tender (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810020);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810020, 0, 0, 0, 0, 0, 'Revantusk Bonfire Tender', 'HinterlandBG', NULL, 0, 80, 80, 1, 1495, 0, 1, 1.14286, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 18, 10, 5, 1, 0, 0, 1, 0, 0, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810020);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810020, 0, 28257, 1, 1, 12340),
+(810020, 1, 28258, 1, 1, 12340),
+(810020, 2, 28259, 1, 1, 12340),
+(810020, 3, 14767, 1, 1, 12340);
+
+-- Alliance: Wildhammer Marksman (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810021);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810021, 0, 0, 0, 0, 0, 'Wildhammer Marksman', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 0, 0, 2, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 18, 10, 5, 1, 0, 0, 1, 0, 98304, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810021);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810021, 0, 7859, 1, 1, 12340),
+(810021, 1, 7860, 1, 1, 12340),
+(810021, 2, 7861, 1, 1, 12340),
+(810021, 3, 7862, 1, 1, 12340);
+
+-- Alliance: Wildhammer Pathfinder (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810022);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810022, 0, 0, 0, 0, 0, 'Wildhammer Pathfinder', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 18, 10, 5, 1, 0, 0, 1, 0, 98304, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810022);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810022, 0, 18788, 1, 1, 12340),
+(810022, 1, 18789, 1, 1, 12340),
+(810022, 2, 18790, 1, 1, 12340),
+(810022, 3, 18791, 1, 1, 12340);
+
+-- Alliance: Wildhammer Roost Tender (decorative)
+DELETE FROM `creature_template` WHERE (`entry` = 810023);
+INSERT INTO `creature_template` (`entry`, `difficulty_entry_1`, `difficulty_entry_2`, `difficulty_entry_3`, `KillCredit1`, `KillCredit2`, `name`, `subname`, `IconName`, `gossip_menu_id`, `minlevel`, `maxlevel`, `exp`, `faction`, `npcflag`, `speed_walk`, `speed_run`, `speed_swim`, `speed_flight`, `detection_range`, `rank`, `dmgschool`, `DamageModifier`, `BaseAttackTime`, `RangeAttackTime`, `BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `dynamicflags`, `family`, `type`, `type_flags`, `lootid`, `pickpocketloot`, `skinloot`, `PetSpellDataId`, `VehicleId`, `mingold`, `maxgold`, `AIName`, `MovementType`, `HoverHeight`, `HealthModifier`, `ManaModifier`, `ArmorModifier`, `ExperienceModifier`, `RacialLeader`, `movementId`, `RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `VerifiedBuild`) VALUES
+(810023, 0, 0, 0, 0, 0, 'Wildhammer Roost Tender', 'HinterlandBG', NULL, 0, 80, 80, 1, 11, 0, 1, 1.42857, 1, 1, 18, 0, 0, 3, 2000, 2000, 1, 1, 1, 32768, 2048, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, '', 0, 1, 18, 10, 5, 1, 0, 0, 1, 0, 98304, '', 12340);
+
+DELETE FROM `creature_template_model` WHERE (`CreatureID` = 810023);
+INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`, `DisplayScale`, `Probability`, `VerifiedBuild`) VALUES
+(810023, 0, 18749, 1, 1, 12340),
+(810023, 1, 18750, 1, 1, 12340),
+(810023, 2, 18751, 1, 1, 12340),
+(810023, 3, 18752, 1, 1, 12340);
+
 -- =========================================
 -- Creature template addons
 -- =========================================
@@ -176,8 +246,14 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 -- 810015 Wildhammer Banner-Bearer -> at ease
 -- 810016 Revantusk Fireside Shaman -> talk
 -- 810017 Wildhammer Watch Captain -> ready rifle
+-- 810018 Revantusk Headhunter -> ready bow
+-- 810019 Revantusk Ritespeaker -> talk
+-- 810020 Revantusk Bonfire Tender -> use standing
+-- 810021 Wildhammer Marksman -> ready rifle
+-- 810022 Wildhammer Pathfinder -> ready bow
+-- 810023 Wildhammer Roost Tender -> use standing
 
-DELETE FROM `creature_template_addon` WHERE `entry` IN (810006, 810007, 810008, 810009, 810010, 810011, 810012, 810013, 810014, 810015, 810016, 810017);
+DELETE FROM `creature_template_addon` WHERE `entry` IN (810006, 810007, 810008, 810009, 810010, 810011, 810012, 810013, 810014, 810015, 810016, 810017, 810018, 810019, 810020, 810021, 810022, 810023);
 INSERT INTO `creature_template_addon` (`entry`, `path_id`, `mount`, `bytes1`, `bytes2`, `emote`, `visibilityDistanceType`, `auras`) VALUES
 (810006, 0, 0, 0, 0, 333, 0, ''),
 (810007, 0, 0, 0, 0, 313, 0, ''),
@@ -190,7 +266,13 @@ INSERT INTO `creature_template_addon` (`entry`, `path_id`, `mount`, `bytes1`, `b
 (810014, 0, 0, 0, 0, 69, 0, ''),
 (810015, 0, 0, 0, 0, 313, 0, ''),
 (810016, 0, 0, 0, 0, 378, 0, ''),
-(810017, 0, 0, 0, 0, 214, 0, '');
+(810017, 0, 0, 0, 0, 214, 0, ''),
+(810018, 0, 0, 0, 0, 376, 0, ''),
+(810019, 0, 0, 0, 0, 378, 0, ''),
+(810020, 0, 0, 0, 0, 69, 0, ''),
+(810021, 0, 0, 0, 0, 214, 0, ''),
+(810022, 0, 0, 0, 0, 376, 0, ''),
+(810023, 0, 0, 0, 0, 69, 0, '');
 
 -- =========================================
 -- Creature texts

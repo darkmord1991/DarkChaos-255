@@ -132,6 +132,12 @@
             Alliance_Battlewarden = 810009,
             Alliance_Sentry = 810010,
             Alliance_Scout = 810011,
+            Alliance_GryphonHerald = 810013,
+            Alliance_BannerBearer = 810015,
+            Alliance_WatchCaptain = 810017,
+            Alliance_Marksman = 810021,
+            Alliance_Pathfinder = 810022,
+            Alliance_RoostTender = 810023,
     };
 
     enum HordeNpcs
@@ -143,6 +149,12 @@
             Horde_Warcaller = 810006,
             Horde_Watchblade = 810007,
             Horde_Spiritmender = 810008,
+            Horde_BannerSinger = 810012,
+            Horde_Drumkeeper = 810014,
+            Horde_FiresideShaman = 810016,
+            Horde_Headhunter = 810018,
+            Horde_Ritespeaker = 810019,
+            Horde_BonfireTender = 810020,
     };
 
 /* OutdoorPvPHL Related */

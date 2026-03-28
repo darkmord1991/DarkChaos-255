@@ -32,8 +32,7 @@ inline void AddGiantIslesScripts()
     AddSC_giant_isles_water_monster();
 
     // Zandalari invasion event
-    // AddSC_giant_isles_invasion();
-    // Disabled for now: invasion script needs a rewrite (random spawns).
+    AddSC_giant_isles_invasion();
 
     // World Boss: Oondasta - King of Dinosaurs
     AddSC_boss_oondasta();

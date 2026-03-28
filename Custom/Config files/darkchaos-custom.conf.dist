@@ -2126,9 +2126,9 @@ HinterlandBG.WarmupDuration = 120
 #
 #    HinterlandBG.MinLevel
 #        Description: Minimum level required to enter
-#        Default:     1
+#        Default:     80
 #
-HinterlandBG.MinLevel = 1
+HinterlandBG.MinLevel = 80
 
 #
 #    HinterlandBG.Season

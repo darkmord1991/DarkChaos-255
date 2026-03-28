@@ -116,7 +116,7 @@
         _typeId = OUTDOOR_PVP_HL;
         // Set defaults for configurable values (can be overridden by LoadConfig)
         _matchDurationSeconds = HL_MATCH_DURATION_SECONDS;
-        _minLevel = 1;  // default minimum level (allows all levels 1-255 by default, config can restrict)
+        _minLevel = 80; // default minimum level for HLBG participation
         _afkWarnSeconds = 120;
         _afkTeleportSeconds = 180;
     // Default HLBG season to 1 (legacy DB rows commonly use season=1). A value of 0 means "all/current".
@@ -141,15 +141,44 @@
     _rewardKillItemCount = 1;
     _rewardNpcTokenItemId = 40752; // default to same token as kill item
     _rewardNpcTokenCount = 1;
-    _npcRewardEntriesAlliance.clear();
-    _npcRewardEntriesHorde.clear();
+    // Default token-target NPC entries by faction.
+    // These lists are used as enemy kill targets in HandleKill():
+    // - Alliance players check Horde list
+    // - Horde players check Alliance list
+    // Config CSV values override these defaults when provided.
+    _npcRewardEntriesAlliance = {
+        Alliance_Boss, Alliance_Healer, Alliance_Infantry,
+        Alliance_Squadleader, Alliance_Battlewarden, Alliance_Sentry,
+        Alliance_Scout, Alliance_GryphonHerald, Alliance_BannerBearer,
+        Alliance_WatchCaptain, Alliance_Marksman,
+        Alliance_Pathfinder, Alliance_RoostTender
+    };
+    _npcRewardEntriesHorde = {
+        Horde_Boss, Horde_Heal, Horde_Infantry,
+        Horde_Squadleader, Horde_Warcaller, Horde_Watchblade,
+        Horde_Spiritmender, Horde_BannerSinger, Horde_Drumkeeper,
+        Horde_FiresideShaman, Horde_Headhunter,
+        Horde_Ritespeaker, Horde_BonfireTender
+    };
     _npcRewardCountsAlliance.clear();
     _npcRewardCountsHorde.clear();
     // Default NPC classifications (can be overridden by config)
     _npcBossEntriesAlliance = { Alliance_Boss };
     _npcBossEntriesHorde    = { Horde_Boss };
-    _npcNormalEntriesAlliance = { Alliance_Healer, Alliance_Infantry, Alliance_Squadleader, Alliance_Battlewarden, Alliance_Sentry, Alliance_Scout };
-    _npcNormalEntriesHorde    = { Horde_Heal, Horde_Infantry, Horde_Squadleader, Horde_Warcaller, Horde_Watchblade, Horde_Spiritmender };
+    _npcNormalEntriesAlliance = {
+        Alliance_Healer, Alliance_Infantry, Alliance_Squadleader,
+        Alliance_Battlewarden, Alliance_Sentry, Alliance_Scout,
+        Alliance_GryphonHerald, Alliance_BannerBearer,
+        Alliance_WatchCaptain, Alliance_Marksman,
+        Alliance_Pathfinder, Alliance_RoostTender
+    };
+    _npcNormalEntriesHorde    = {
+        Horde_Heal, Horde_Infantry, Horde_Squadleader,
+        Horde_Warcaller, Horde_Watchblade, Horde_Spiritmender,
+        Horde_BannerSinger, Horde_Drumkeeper,
+        Horde_FiresideShaman, Horde_Headhunter,
+        Horde_Ritespeaker, Horde_BonfireTender
+    };
     // Resource loss defaults
     _resourcesLossPlayerKill = PointsLoseOnPvPKill; // 5
     _resourcesLossNpcNormal = 5;
@@ -209,9 +238,6 @@
 
         // Queue system initialization
         _queuedPlayers.clear();
-        _queuedIndexByGuid.clear();
-        _queuedAllianceCount = 0;
-        _queuedHordeCount = 0;
         _queuedIndexByGuid.clear();
         _queuedAllianceCount = 0;
         _queuedHordeCount = 0;
@@ -425,7 +451,6 @@
                 return false;
             }
             g->ConvertToRaid();
-                        _rewardKillItemId = 40752; // default to same token as kill item
             _teamRaidGroups[tid].push_back(g->GetGUID());
             return true;
         }
@@ -531,6 +556,13 @@
         if (_bgState == BG_STATE_IN_PROGRESS && _pendingLockFromDepletion)
         {
             _pendingLockFromDepletion = false;
+            TeamId depletionWinner = _pendingDepletionWinner;
+            _pendingDepletionWinner = TEAM_NEUTRAL;
+
+            // Centralize depletion rewards/quest credits in team-based logic.
+            if (depletionWinner == TEAM_ALLIANCE || depletionWinner == TEAM_HORDE)
+                HandleRewards(depletionWinner);
+
             if (_lockEnabled)
             {
                 _isLocked = true;
@@ -593,10 +625,13 @@
                 ++livePlayersInBattleArea;
         }
 
-        if (_playersInZone != livePlayersInBattleArea)
+        uint32 playersInZoneCounter = _playersInZone > 0 ?
+            static_cast<uint32>(_playersInZone) : 0u;
+
+        if (playersInZoneCounter != livePlayersInBattleArea)
         {
             LOG_INFO("outdoorpvp.hl", "[HL][ResetDebug] playersInZone counter corrected {} -> {}", _playersInZone, livePlayersInBattleArea);
-            _playersInZone = livePlayersInBattleArea;
+            _playersInZone = static_cast<int32>(livePlayersInBattleArea);
         }
 
         // If there are no live players in the battle area, skip expiry reset.
@@ -634,7 +669,7 @@
             if (_worldAnnounceOnExpiry)
             {
                 std::ostringstream ss;
-                ss << "[Hinterland BG] Time's up! Final score: Alliance " << _ally_gathered << "  Horde " << _horde_gathered;
+                ss << "[Hinterland BG] Time's up! Final score: Alliance " << _ally_gathered << " - Horde " << _horde_gathered;
                 if (winner == TEAM_ALLIANCE)
                     ss << " (Alliance win)";
                 else if (winner == TEAM_HORDE)
@@ -659,18 +694,10 @@
                 {
                     bool isWinner = (p->GetTeamId() == winner);
                     HandleBuffs(p, !isWinner);
-                    // Rewards: only winners and not AFK/Deserter unless GM
-                    if (isWinner)
-                    {
-                        if (IsEligibleForRewards(p))
-                        {
-                            if (!p->IsGameMaster() && GetAfkCount(p) >= 1)
-                                Whisper(p, "|cffff0000AFK penalty: you receive no rewards.|r");
-                            else
-                                HandleRewards(p, _rewardMatchHonorTiebreaker, true, false, false);
-                        }
-                    }
                 }); // End lambda
+
+                // Centralize expiry rewards/quest credits in team-based logic.
+                HandleRewards(winner);
             }
         }
 

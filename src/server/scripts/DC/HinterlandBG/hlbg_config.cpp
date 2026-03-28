@@ -20,7 +20,7 @@ void OutdoorPvPHL::LoadConfig()
     if (sConfigMgr)
     {
         _matchDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.MatchDuration", _matchDurationSeconds);
-        _minLevel = sConfigMgr->GetOption<uint32>("HinterlandBG.MinLevel", _minLevel);  // minimum level to join (default 1)
+        _minLevel = sConfigMgr->GetOption<uint32>("HinterlandBG.MinLevel", _minLevel);  // minimum level to join (default 80)
         _warmupDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.WarmupDuration", _warmupDurationSeconds);
         _queueEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Queue.Enabled", _queueEnabled);
         _minPlayersToStart = sConfigMgr->GetOption<uint32>("HinterlandBG.Queue.MinPlayers", _minPlayersToStart);

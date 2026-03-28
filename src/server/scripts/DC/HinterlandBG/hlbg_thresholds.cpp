@@ -150,7 +150,6 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
                     char line[256];
                     snprintf(line, sizeof(line), "|TInterface\\Icons\\Ability_Creature_Cursed_02:14|t |cff1e90ffAlliance is depleted!|r (|cff1e90ffA|r=%u, |cffff2020H|r=%u) |cffff2020Horde wins!|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                     player->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
-                    HandleRewards(player, _rewardMatchHonorDepletion, true, false, false);
                     switch (player->GetTeamId())
                     {
                         case TEAM_ALLIANCE:
@@ -175,7 +174,6 @@ void OutdoorPvPHL::_tickThresholdAnnouncements()
                     char line[256];
                     snprintf(line, sizeof(line), "|TInterface\\Icons\\Ability_Creature_Cursed_02:14|t |cffff2020Horde is depleted!|r (|cff1e90ffA|r=%u, |cffff2020H|r=%u) |cff1e90ffAlliance wins!|r", (unsigned)_ally_gathered, (unsigned)_horde_gathered);
                     player->TextEmote((GetBgChatPrefix() + std::string(line)).c_str());
-                    HandleRewards(player, _rewardMatchHonorDepletion, true, false, false);
                     switch (player->GetTeamId())
                     {
                         case TEAM_ALLIANCE:
