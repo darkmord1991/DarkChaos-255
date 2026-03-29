@@ -217,7 +217,7 @@ function Wardrobe:CreateCommunityGrid()
         end)
         btn.deleteBtn:Hide() -- Hidden by default, shown only for user's outfits
         
-        -- Stats (upvotes/downloads) with icons
+        -- Stats (upvotes/downvotes) with icons
         btn.upIcon = btn:CreateTexture(nil, "OVERLAY")
         btn.upIcon:SetSize(12, 12)
         btn.upIcon:SetPoint("TOPLEFT", btn, "TOPLEFT", 5, -5)
@@ -237,6 +237,73 @@ function Wardrobe:CreateCommunityGrid()
         btn.downText = btn:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         btn.downText:SetPoint("LEFT", btn.downIcon, "RIGHT", 2, 0)
         btn.downText:SetText("0")
+
+        -- Click targets for vote controls.
+        btn.upVoteBtn = CreateFrame("Button", nil, btn)
+        btn.upVoteBtn:SetPoint("TOPLEFT", btn.upIcon, "TOPLEFT", -2, 2)
+        btn.upVoteBtn:SetPoint("BOTTOMRIGHT", btn.upText, "BOTTOMRIGHT", 2, -2)
+        btn.upVoteBtn:SetScript("OnClick", function()
+            if not btn.outfit or not btn.outfit.id then
+                return
+            end
+            if not DC or type(DC.RequestCommunityRate) ~= "function" then
+                return
+            end
+            if tonumber(btn.outfit.my_vote) and tonumber(btn.outfit.my_vote) ~= 0 then
+                return
+            end
+
+            local ok = DC:RequestCommunityRate(btn.outfit.id, 1)
+            if ok ~= false then
+                btn.outfit.upvotes = (tonumber(btn.outfit.upvotes) or 0) + 1
+                btn.outfit.my_vote = 1
+                if btn.upText then
+                    btn.upText:SetText(tostring(btn.outfit.upvotes))
+                end
+                if btn.upVoteBtn and type(btn.upVoteBtn.Disable) == "function" then btn.upVoteBtn:Disable() end
+                if btn.downVoteBtn and type(btn.downVoteBtn.Disable) == "function" then btn.downVoteBtn:Disable() end
+            end
+        end)
+        btn.upVoteBtn:SetScript("OnEnter", function()
+            GameTooltip:SetOwner(btn.upVoteBtn, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Upvote", 1, 1, 1)
+            GameTooltip:AddLine("Current: " .. tostring((btn.outfit and btn.outfit.upvotes) or 0), 0.2, 1, 0.2)
+            GameTooltip:Show()
+        end)
+        btn.upVoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        btn.downVoteBtn = CreateFrame("Button", nil, btn)
+        btn.downVoteBtn:SetPoint("TOPLEFT", btn.downIcon, "TOPLEFT", -2, 2)
+        btn.downVoteBtn:SetPoint("BOTTOMRIGHT", btn.downText, "BOTTOMRIGHT", 2, -2)
+        btn.downVoteBtn:SetScript("OnClick", function()
+            if not btn.outfit or not btn.outfit.id then
+                return
+            end
+            if not DC or type(DC.RequestCommunityRate) ~= "function" then
+                return
+            end
+            if tonumber(btn.outfit.my_vote) and tonumber(btn.outfit.my_vote) ~= 0 then
+                return
+            end
+
+            local ok = DC:RequestCommunityRate(btn.outfit.id, -1)
+            if ok ~= false then
+                btn.outfit.downvotes = (tonumber(btn.outfit.downvotes) or 0) + 1
+                btn.outfit.my_vote = -1
+                if btn.downText then
+                    btn.downText:SetText(tostring(btn.outfit.downvotes))
+                end
+                if btn.upVoteBtn and type(btn.upVoteBtn.Disable) == "function" then btn.upVoteBtn:Disable() end
+                if btn.downVoteBtn and type(btn.downVoteBtn.Disable) == "function" then btn.downVoteBtn:Disable() end
+            end
+        end)
+        btn.downVoteBtn:SetScript("OnEnter", function()
+            GameTooltip:SetOwner(btn.downVoteBtn, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Downvote", 1, 1, 1)
+            GameTooltip:AddLine("Current: " .. tostring((btn.outfit and btn.outfit.downvotes) or 0), 1, 0.2, 0.2)
+            GameTooltip:Show()
+        end)
+        btn.downVoteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
         
         btn:Hide()
         table.insert(buttons, btn)
@@ -388,9 +455,19 @@ function Wardrobe:RefreshCommunityGrid()
             
             -- Stats
             local upvotes = outfit.upvotes or 0
-            local downloads = outfit.downloads or 0
+            local downvotes = outfit.downvotes or 0
+            local myVote = tonumber(outfit.my_vote) or 0
             if btn.upText then btn.upText:SetText(tostring(upvotes)) end
-            if btn.downText then btn.downText:SetText(tostring(downloads)) end
+            if btn.downText then btn.downText:SetText(tostring(downvotes)) end
+            if btn.upVoteBtn and btn.downVoteBtn then
+                if myVote ~= 0 then
+                    if type(btn.upVoteBtn.Disable) == "function" then btn.upVoteBtn:Disable() end
+                    if type(btn.downVoteBtn.Disable) == "function" then btn.downVoteBtn:Disable() end
+                else
+                    if type(btn.upVoteBtn.Enable) == "function" then btn.upVoteBtn:Enable() end
+                    if type(btn.downVoteBtn.Enable) == "function" then btn.downVoteBtn:Enable() end
+                end
+            end
             
             -- Setup Model Preview
             btn.model:Show()
@@ -424,6 +501,11 @@ function Wardrobe:RefreshCommunityGrid()
                 GameTooltip:AddLine("by " .. (selfBtn.outfit.author or selfBtn.outfit.author_name or "Unknown"), 0.7, 0.7, 0.7)
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("+" .. (selfBtn.outfit.upvotes or 0) .. " upvotes", 0.2, 1, 0.2)
+                GameTooltip:AddLine("-" .. (selfBtn.outfit.downvotes or 0) .. " downvotes", 1, 0.2, 0.2)
+                if tonumber(selfBtn.outfit.my_vote) and tonumber(selfBtn.outfit.my_vote) ~= 0 then
+                    local voteText = tonumber(selfBtn.outfit.my_vote) > 0 and "Your vote: +" or "Your vote: -"
+                    GameTooltip:AddLine(voteText, 1, 0.82, 0)
+                end
                 GameTooltip:AddLine((selfBtn.outfit.downloads or 0) .. " downloads", 0.7, 0.7, 1)
                 GameTooltip:AddLine((selfBtn.outfit.views or 0) .. " views", 0.7, 0.7, 0.7)
                 if selfBtn.outfit.created_at then

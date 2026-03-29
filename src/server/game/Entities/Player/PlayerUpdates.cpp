@@ -1861,13 +1861,26 @@ void Player::UpdateZoneDependentAuras(uint32 newZone)
 
 void Player::UpdateAreaDependentAuras(uint32 newArea)
 {
+    bool const skipMountedLocationChecks = GetMapId() == 745;
+
     // remove auras from spells with area limitations
     for (AuraMap::iterator iter = m_ownedAuras.begin();
          iter != m_ownedAuras.end();)
     {
+        SpellInfo const* spellInfo = iter->second->GetSpellInfo();
+
+        // Custom map 745 has incomplete AreaTable coverage; keep mounted
+        // auras from being stripped by location checks while traversing it.
+        if (skipMountedLocationChecks &&
+            spellInfo->HasAura(SPELL_AURA_MOUNTED))
+        {
+            ++iter;
+            continue;
+        }
+
         // use m_zoneUpdateId for speed: UpdateArea called from UpdateZone or
         // instead UpdateZone in both cases m_zoneUpdateId up-to-date
-        if (iter->second->GetSpellInfo()->CheckLocation(
+        if (spellInfo->CheckLocation(
                 GetMapId(), m_zoneUpdateId, newArea, this, false) !=
             SPELL_CAST_OK)
             RemoveOwnedAura(iter);

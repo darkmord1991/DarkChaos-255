@@ -65,6 +65,16 @@ local function FormatNumber(num)
 end
 
 local function GetCollectionStats(collType)
+    if collType == "heirlooms" and DC and DC.HeirloomModule and type(DC.HeirloomModule.GetStats) == "function" then
+        local ok, stats = pcall(DC.HeirloomModule.GetStats, DC.HeirloomModule)
+        if ok and type(stats) == "table" and type(stats.total) == "number" and stats.total > 0 then
+            return {
+                collected = tonumber(stats.owned) or 0,
+                total = stats.total,
+            }
+        end
+    end
+
     -- Returns { collected = X, total = Y } from server data
     local stats = DC.collectionStats or {}
     local typeStats = stats[collType] or {}
@@ -695,11 +705,12 @@ function DC:HandleStatsResponse(data)
         if self.HeirloomModule and type(self.HeirloomModule.GetStats) == "function" then
             local ok, stats = pcall(self.HeirloomModule.GetStats, self.HeirloomModule)
             if ok and type(stats) == "table" then
-                if type(stats.owned) == "number" and stats.owned > collected then
-                    collected = stats.owned
-                end
-                if (not total or total == 0) and type(stats.total) == "number" and stats.total > 0 then
+                -- Prefer local deduped heirloom stats when definitions are available.
+                if type(stats.total) == "number" and stats.total > 0 then
                     total = stats.total
+                    if type(stats.owned) == "number" then
+                        collected = stats.owned
+                    end
                 end
             end
         end

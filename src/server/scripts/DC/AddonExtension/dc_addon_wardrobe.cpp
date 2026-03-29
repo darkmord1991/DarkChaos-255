@@ -359,6 +359,7 @@ namespace DCCollection
                 "author_guid INT UNSIGNED,"
                 "items_string TEXT,"
                 "upvotes INT UNSIGNED DEFAULT 0,"
+                "downvotes INT UNSIGNED DEFAULT 0,"
                 "downloads INT UNSIGNED DEFAULT 0,"
                 "views INT UNSIGNED DEFAULT 0,"
                 "weekly_votes INT UNSIGNED DEFAULT 0,"
@@ -379,6 +380,18 @@ namespace DCCollection
                     "ADD COLUMN author_account_id INT UNSIGNED DEFAULT 0 AFTER author_name");
             }
 
+            // Migration: add downvotes for negative rating support.
+            if (QueryResult col = CharacterDatabase.Query("SHOW COLUMNS FROM dc_collection_community_outfits LIKE 'downvotes'"))
+            {
+                (void)col;
+            }
+            else
+            {
+                CharacterDatabase.Execute(
+                    "ALTER TABLE dc_collection_community_outfits "
+                    "ADD COLUMN downvotes INT UNSIGNED DEFAULT 0 AFTER upvotes");
+            }
+
             // Best-effort backfill from existing author_guid -> characters.account.
             // If this fails on some custom DB layouts, it will just be ignored.
             CharacterDatabase.Execute(
@@ -392,6 +405,16 @@ namespace DCCollection
                 "account_id INT UNSIGNED,"
                 "outfit_id INT UNSIGNED,"
                 "PRIMARY KEY(account_id, outfit_id)"
+                ")");
+
+            CharacterDatabase.Execute(
+                "CREATE TABLE IF NOT EXISTS dc_collection_community_votes ("
+                "account_id INT UNSIGNED,"
+                "outfit_id INT UNSIGNED,"
+                "vote TINYINT NOT NULL,"
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                "PRIMARY KEY(account_id, outfit_id),"
+                "KEY idx_outfit_id (outfit_id)"
                 ")");
         });
     }
@@ -1492,37 +1515,41 @@ namespace DCCollection
         if (filter == "favorites")
         {
             sql = Acore::StringFormat(
-                "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, 1 as is_favorite, o.views, o.tags, o.author_account_id, o.author_guid, o.created_at "
+                "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downvotes, o.downloads, 1 as is_favorite, "
+                "COALESCE(v.vote, 0) as my_vote, o.views, o.tags, o.author_account_id, o.author_guid, o.created_at "
                 "FROM dc_collection_community_outfits o "
                 "JOIN dc_collection_community_favorites f ON o.id = f.outfit_id "
+                "LEFT JOIN dc_collection_community_votes v ON v.outfit_id = o.id AND v.account_id = {} "
                 "WHERE f.account_id = {} {} "
                 "ORDER BY {} LIMIT {}, {}",
-                accountId, tagFilterCondition, orderBy, offset, limit);
+                accountId, accountId, tagFilterCondition, orderBy, offset, limit);
         }
         else if (filter == "my_outfits")
         {
             sql = Acore::StringFormat(
-                "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, "
-                "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, "
+                "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downvotes, o.downloads, "
+                "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, COALESCE(v.vote, 0) as my_vote, "
                 "o.views, o.tags, o.author_account_id, o.author_guid, o.created_at "
                 "FROM dc_collection_community_outfits o "
                 "LEFT JOIN dc_collection_community_favorites f ON f.outfit_id = o.id AND f.account_id = {} "
+                "LEFT JOIN dc_collection_community_votes v ON v.outfit_id = o.id AND v.account_id = {} "
                 "WHERE o.author_account_id = {} {} "
                 "ORDER BY o.created_at DESC LIMIT {}, {}",
-                accountId, accountId, tagFilterCondition, offset, limit);
+                accountId, accountId, accountId, tagFilterCondition, offset, limit);
         }
         else
         {
             std::string whereClause = (filter == "tag" && !tagFilterCondition.empty()) ? "WHERE " + tagFilterCondition.substr(5) : "";
             sql = Acore::StringFormat(
-                "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downloads, "
-                "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, "
+                "SELECT o.id, o.name, o.author_name, o.items_string, o.upvotes, o.downvotes, o.downloads, "
+                "CASE WHEN f.account_id IS NOT NULL THEN 1 ELSE 0 END as is_favorite, COALESCE(v.vote, 0) as my_vote, "
                 "o.views, o.tags, o.author_account_id, o.author_guid, o.created_at "
                 "FROM dc_collection_community_outfits o "
                 "LEFT JOIN dc_collection_community_favorites f ON f.outfit_id = o.id AND f.account_id = {} "
+                "LEFT JOIN dc_collection_community_votes v ON v.outfit_id = o.id AND v.account_id = {} "
                 "{} "
                 "ORDER BY {} LIMIT {}, {}",
-                accountId, whereClause, orderBy, offset, limit);
+                accountId, accountId, whereClause, orderBy, offset, limit);
         }
 
         // Synchronous query (max 50 rows) to guarantee a response even if DB errors prevent async callbacks.
@@ -1543,14 +1570,16 @@ namespace DCCollection
                 obj.Set("author", f[2].Get<std::string>());
                 obj.Set("items", f[3].Get<std::string>());
                 obj.Set("upvotes", f[4].Get<uint32>());
-                obj.Set("downloads", f[5].Get<uint32>());
-                obj.Set("is_favorite", f[6].Get<bool>());
-                obj.Set("views", f[7].Get<uint32>());
-                obj.Set("tags", f[8].Get<std::string>());
-                obj.Set("author_account_id", f[9].Get<uint32>());
-                obj.Set("author_guid", f[10].Get<uint32>());
-                obj.Set("created_at", f[11].Get<std::string>());
-                obj.Set("is_owner", f[9].Get<uint32>() == accountId);
+                obj.Set("downvotes", f[5].Get<uint32>());
+                obj.Set("downloads", f[6].Get<uint32>());
+                obj.Set("is_favorite", f[7].Get<bool>());
+                obj.Set("my_vote", f[8].Get<int32>());
+                obj.Set("views", f[9].Get<uint32>());
+                obj.Set("tags", f[10].Get<std::string>());
+                obj.Set("author_account_id", f[11].Get<uint32>());
+                obj.Set("author_guid", f[12].Get<uint32>());
+                obj.Set("created_at", f[13].Get<std::string>());
+                obj.Set("is_owner", f[11].Get<uint32>() == accountId);
                 outfits.Push(obj);
                 outfitCount++;
             } while (result->NextRow());
@@ -1627,12 +1656,43 @@ namespace DCCollection
 
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
         uint32 id = json["id"].AsUInt32();
+        int32 value = 1;
+        if (json.HasKey("value"))
+            value = json["value"].AsInt32();
+        value = (value >= 0) ? 1 : -1;
 
-        // Update both upvotes (lifetime) and weekly_votes (trending)
+        // Allow only one vote per player/outfit to prevent vote spamming.
         EnsureCommunityTables();
-        CharacterDatabase.AsyncQuery(Acore::StringFormat(
-            "UPDATE dc_collection_community_outfits SET upvotes = upvotes + 1, weekly_votes = weekly_votes + 1 WHERE id = {}",
-            id));
+
+        if (QueryResult existing = CharacterDatabase.Query(Acore::StringFormat(
+            "SELECT vote FROM dc_collection_community_votes WHERE account_id = {} AND outfit_id = {} LIMIT 1",
+            accountId, id)))
+        {
+            (void)existing;
+            return;
+        }
+
+        CharacterDatabase.Execute(Acore::StringFormat(
+            "INSERT INTO dc_collection_community_votes (account_id, outfit_id, vote) VALUES ({}, {}, {})",
+            accountId, id, value));
+
+        if (value > 0)
+        {
+            CharacterDatabase.AsyncQuery(Acore::StringFormat(
+                "UPDATE dc_collection_community_outfits "
+                "SET upvotes = upvotes + 1, weekly_votes = weekly_votes + 1 "
+                "WHERE id = {}",
+                id));
+        }
+        else
+        {
+            CharacterDatabase.AsyncQuery(Acore::StringFormat(
+                "UPDATE dc_collection_community_outfits "
+                "SET downvotes = downvotes + 1, "
+                "weekly_votes = CASE WHEN weekly_votes > 0 THEN weekly_votes - 1 ELSE 0 END "
+                "WHERE id = {}",
+                id));
+        }
     }
 
     void HandleCommunityFavorite(Player* player, const DCAddon::ParsedMessage& msg)

@@ -58,6 +58,140 @@ local function GetRarityColor(self, rarity)
     return c[1], c[2], c[3]
 end
 
+local function ApplyStableModelCamera(model, options)
+    if not model then
+        return
+    end
+
+    local refreshCamera = true
+    if options and options.refreshCamera == false then
+        refreshCamera = false
+    end
+
+    local distance = model.cameraDistance or model._dcDefaultCamDist or 1.6
+    local baseScale = model.baseCamDistanceScale or 2.5
+
+    if model.SetCamDistanceScale then
+        pcall(function()
+            model:SetCamDistanceScale(baseScale * distance)
+        end)
+    end
+
+    if refreshCamera and model.SetCamera then
+        local cameraId = model._dcCameraId
+        if cameraId == nil then
+            cameraId = 0
+        end
+
+        -- Warm-reset to camera 0 first to reduce random close-up camera states.
+        pcall(function()
+            model:SetCamera(0)
+        end)
+
+        if cameraId ~= 0 then
+            pcall(function()
+                model:SetCamera(cameraId)
+            end)
+        end
+    end
+
+    if model._dcUseModelScaleZoom and model.SetModelScale then
+        local baseDistance = model._dcBaseDistanceForScale or
+            model._dcDefaultCamDist or 1.6
+        local scale = baseDistance / math.max(0.01, distance)
+        if scale < 0.45 then
+            scale = 0.45
+        elseif scale > 1.6 then
+            scale = 1.6
+        end
+        pcall(function()
+            model:SetModelScale(scale)
+        end)
+    elseif model.SetModelScale then
+        pcall(function()
+            model:SetModelScale(1.0)
+        end)
+    end
+end
+
+local function ToPositiveNumber(value)
+    local n = nil
+    if type(value) == "number" then
+        n = value
+    elseif type(value) == "string" then
+        n = tonumber(value)
+    end
+
+    if n and n > 0 then
+        return n
+    end
+
+    return nil
+end
+
+local function GetMountCompanionDisplayIdBySpell(spellId)
+    local resolvedSpellId = ToPositiveNumber(spellId)
+    if not resolvedSpellId then
+        return nil
+    end
+
+    if type(GetNumCompanions) ~= "function" or
+        type(GetCompanionInfo) ~= "function" then
+        return nil
+    end
+
+    local numMounts = tonumber(GetNumCompanions("MOUNT")) or 0
+    for i = 1, numMounts do
+        local creatureId, _, companionSpellId = GetCompanionInfo("MOUNT", i)
+        if ToPositiveNumber(companionSpellId) == resolvedSpellId then
+            return ToPositiveNumber(creatureId)
+        end
+    end
+
+    return nil
+end
+
+local function ResolveMountPreviewDisplayId(item)
+    if type(item) ~= "table" then
+        return nil
+    end
+
+    local def = item.definition or {}
+
+    -- Prefer explicit display/model fields from server definitions.
+    local displayId =
+        ToPositiveNumber(def.displayId) or
+        ToPositiveNumber(def.display_id) or
+        ToPositiveNumber(def.creatureDisplayId) or
+        ToPositiveNumber(def.creature_display_id) or
+        ToPositiveNumber(def.modelId) or
+        ToPositiveNumber(def.model_id) or
+        ToPositiveNumber(item.displayId) or
+        ToPositiveNumber(item.display_id)
+    if displayId then
+        return displayId
+    end
+
+    -- Blizzard's companion preview relies on spell -> creature mapping.
+    local spellId =
+        ToPositiveNumber(item.id) or
+        ToPositiveNumber(item.spellId) or
+        ToPositiveNumber(item.spell_id) or
+        ToPositiveNumber(def.spellId) or
+        ToPositiveNumber(def.spell_id)
+
+    local companionDisplayId = GetMountCompanionDisplayIdBySpell(spellId)
+    if companionDisplayId then
+        return companionDisplayId
+    end
+
+    -- Last-resort legacy field used by some custom servers.
+    return
+        ToPositiveNumber(def.creatureId) or
+        ToPositiveNumber(def.creature_id) or
+        ToPositiveNumber(def.creatureID)
+end
+
 function DC:ResolveDefinitionIcon(collType, id, def)
     if def and def.icon and def.icon ~= "" then
         return def.icon
@@ -800,6 +934,32 @@ function DC:CreateContentArea(parent)
         if button == "LeftButton" then
             self.rotating = true
             self.prevX = GetCursorPosition()
+            self._dcPendingCameraApply = 0
+        elseif button == "RightButton" then
+            -- Manual recovery: reset camera/rotation if a model loads into a bad state.
+            self.rotating = false
+            self.rotation = 0
+            self.cameraDistance = self._dcDefaultCamDist or
+                self.cameraDistance or 1.6
+            if self.SetPosition then
+                self:SetPosition(0, 0, 0)
+            end
+            if self.SetFacing then
+                self:SetFacing(0)
+            end
+
+            if self._dcUseSimpleCreatureZoom then
+                self._dcModelScale = self._dcDefaultModelScale or 1.0
+                if self.SetModelScale then
+                    pcall(function()
+                        self:SetModelScale(self._dcModelScale)
+                    end)
+                end
+                self._dcPendingCameraApply = 0
+            else
+                ApplyStableModelCamera(self)
+                self._dcPendingCameraApply = 1
+            end
         end
     end)
     mountPreview.model:SetScript("OnMouseUp", function(self, button)
@@ -808,15 +968,47 @@ function DC:CreateContentArea(parent)
         end
     end)
     mountPreview.model:SetScript("OnUpdate", function(self)
+        if not self._dcUseSimpleCreatureZoom and
+            (self._dcPendingCameraApply or 0) > 0 then
+            ApplyStableModelCamera(self)
+            self._dcPendingCameraApply = (self._dcPendingCameraApply or 1) - 1
+        end
+
         if self.rotating then
             local x = GetCursorPosition()
             local delta = (x - (self.prevX or x)) * 0.01
             self.rotation = (self.rotation or 0) + delta
-            self:SetFacing(self.rotation)
+            if self.SetFacing then
+                self:SetFacing(self.rotation)
+            elseif self.SetRotation then
+                self:SetRotation(self.rotation)
+            end
             self.prevX = x
         end
     end)
     mountPreview.model:SetScript("OnMouseWheel", function(self, delta)
+        if self._dcUseSimpleCreatureZoom then
+            local step = self._dcModelScaleStep or 0.08
+            local minScale = self._dcMinModelScale or 0.55
+            local maxScale = self._dcMaxModelScale or 1.85
+            local scale = (self._dcModelScale or self._dcDefaultModelScale or 1.0) +
+                delta * step
+
+            if scale < minScale then
+                scale = minScale
+            elseif scale > maxScale then
+                scale = maxScale
+            end
+
+            self._dcModelScale = scale
+            if self.SetModelScale then
+                pcall(function()
+                    self:SetModelScale(scale)
+                end)
+            end
+            return
+        end
+
         -- Prefer camera distance scaling over moving the model around.
         -- Moving the model (SetPosition) often results in extreme head close-ups on player models.
         local minDist = self._dcMinCamDist or 0.8
@@ -829,15 +1021,13 @@ function DC:CreateContentArea(parent)
             self.cameraDistance = maxDist
         end
 
-        if self.SetCamDistanceScale then
-            self:SetCamDistanceScale((self.baseCamDistanceScale or 3.0) * self.cameraDistance)
-            if self.SetCamera and self._dcCameraId ~= nil then
-                pcall(function() self:SetCamera(self._dcCameraId) end)
-            end
-        else
+        -- Do not reset camera ID on each wheel tick; that can force head close-ups.
+        ApplyStableModelCamera(self, { refreshCamera = false })
+
+        if not self.SetCamDistanceScale and self.SetPosition then
             -- Fallback: keep old behavior but bias toward Z to reduce "head zoom".
-            local z = (self.cameraDistance or 1.0) - 1.0
-            self:SetCamera(0)
+            local z = (self.cameraDistance or 1.0) -
+                (self._dcDefaultCamDist or 1.0)
             self:SetPosition(0, 0, z)
         end
     end)
@@ -1058,6 +1248,22 @@ function DC:UpdateMountPreview(item)
     p.model.zoom = 0
     p.model.rotation = 0
     p.model.cameraDistance = 1.6
+    p.model._dcDefaultCamDist = 1.6
+    p.model._dcPendingCameraApply = 0
+    p.model._dcUseSimpleCreatureZoom = false
+    p.model._dcDefaultModelScale = 1.0
+    p.model._dcModelScale = 1.0
+    p.model._dcMinModelScale = 0.55
+    p.model._dcMaxModelScale = 1.85
+    p.model._dcModelScaleStep = 0.08
+    p.model._dcUseModelScaleZoom = false
+    p.model._dcBaseDistanceForScale = 1.6
+    if p.model.SetPosition then
+        p.model:SetPosition(0, 0, 0)
+    end
+    if p.model.SetModelScale then
+        pcall(function() p.model:SetModelScale(1.0) end)
+    end
 
     -- Toggle between showing the mount model and the player's model.
     -- Note: 3.3.5a cannot render "player mounted on the mount" in this simple preview;
@@ -1074,51 +1280,75 @@ function DC:UpdateMountPreview(item)
             end
             -- Player models: use a wider zoom-out range and avoid portrait-style cameras.
             p.model.baseCamDistanceScale = 3.4
-            p.model.cameraDistance = 2.6
+            p.model._dcDefaultCamDist = 2.6
+            p.model.cameraDistance = p.model._dcDefaultCamDist
             p.model._dcCameraId = 0
             p.model._dcMinCamDist = 1.4
             p.model._dcMaxCamDist = 6.5
             p.model._dcCamStep = 0.20
-            if p.model.SetCamDistanceScale then
-                p.model:SetCamDistanceScale(p.model.baseCamDistanceScale * (p.model.cameraDistance or 2.6))
+            p.model._dcUseSimpleCreatureZoom = false
+            p.model._dcUseModelScaleZoom = false
+            p.model._dcBaseDistanceForScale = p.model._dcDefaultCamDist
+            if p.model.SetPosition then
+                p.model:SetPosition(0, 0, 0)
             end
-            if p.model.SetCamera then
-                pcall(function() p.model:SetCamera(p.model._dcCameraId or 0) end)
+            if p.model.SetFacing then
+                p.model:SetFacing(0)
             end
-            p.model:SetPosition(0, 0, 0)
-            p.model:SetFacing(0)
+            ApplyStableModelCamera(p.model)
+            p.model._dcPendingCameraApply = 1
         end
         -- Still update buttons below.
     else
-        local displayId = item.definition and (item.definition.displayId or item.definition.display_id or item.definition.creatureId)
-    
-        -- Fallback: check if item itself has displayId
-        if not displayId and item.displayId then
-            displayId = item.displayId
-        end
+        local displayId = ResolveMountPreviewDisplayId(item)
 
-        if displayId and displayId > 0 then
+        if displayId then
             if p.model.SetCreature then
                 p.model:SetCreature(displayId)
             elseif p.model.SetDisplayInfo then
                 p.model:SetDisplayInfo(displayId)
             end
-            -- Creature models can use a slightly closer base than player models.
-            p.model.baseCamDistanceScale = 2.5
-            p.model.cameraDistance = 1.4
+            -- Blizzard-like companion preview: stable creature model + scale-based zoom.
+            p.model._dcUseSimpleCreatureZoom = true
+            p.model._dcDefaultModelScale = 0.85
+            p.model._dcModelScale = p.model._dcDefaultModelScale
+            p.model._dcMinModelScale = 0.45
+            p.model._dcMaxModelScale = 1.75
+            p.model.baseCamDistanceScale = 1.0
+            p.model._dcDefaultCamDist = 1.0
+            p.model.cameraDistance = p.model._dcDefaultCamDist
             p.model._dcCameraId = 0
-            p.model._dcMinCamDist = 0.7
-            p.model._dcMaxCamDist = 4.0
+            p.model._dcMinCamDist = 0.8
+            p.model._dcMaxCamDist = 4.8
             p.model._dcCamStep = 0.15
-            if p.model.SetCamDistanceScale then
-                p.model:SetCamDistanceScale(p.model.baseCamDistanceScale * (p.model.cameraDistance or 1.4))
+            p.model._dcUseModelScaleZoom = false
+            p.model._dcBaseDistanceForScale = p.model._dcDefaultCamDist
+        else
+            -- If no valid display ID is available, avoid showing a broken head close-up.
+            p.model:ClearModel()
+        end
+
+        if p.model._dcUseSimpleCreatureZoom then
+            if p.model.SetModelScale then
+                pcall(function()
+                    p.model:SetModelScale(p.model._dcModelScale or 1.0)
+                end)
+            end
+            p.model._dcPendingCameraApply = 0
+        else
+            if p.model.SetPosition then
+                p.model:SetPosition(0, 0, 0)
+            end
+            if p.model.SetFacing then
+                p.model:SetFacing(0)
             end
             if p.model.SetCamera then
-                pcall(function() p.model:SetCamera(p.model._dcCameraId or 0) end)
+                pcall(function()
+                    p.model:SetCamera(0)
+                end)
             end
+            p.model._dcPendingCameraApply = 0
         end
-        p.model:SetPosition(0, 0, 0)
-        p.model:SetFacing(0)
     end
     
     -- Buttons
@@ -2245,9 +2475,10 @@ function DC:GetFilteredItems()
     local definitions = self.definitions[collType] or {}
     local collection = self.collections[collType] or {}
     
-    -- Deduplication for appearance-based collections (transmog)
+    -- Deduplication for appearance-based collections.
+    -- Heirlooms can have multiple item IDs for the same appearance.
     local seenAppearances = {}
-    local shouldDedupe = (collType == "transmog")
+    local shouldDedupe = (collType == "transmog" or collType == "heirlooms")
     
     local function InvTypeMatchesSelectedTransmogSlot(invType)
         local slotName = DC.transmogSelectedSlotName
@@ -2280,6 +2511,25 @@ function DC:GetFilteredItems()
 
     for id, def in pairs(definitions) do
         local collData = collection[id]
+        if not collData then
+            local numericId = tonumber(id)
+            if numericId then
+                collData = collection[numericId]
+            end
+        end
+        if not collData then
+            collData = collection[tostring(id)]
+        end
+
+        if collType == "titles" and not collData and self.TitleModule and
+            type(self.TitleModule.IsTitleCollected) == "function" then
+            local ok, collected = pcall(self.TitleModule.IsTitleCollected,
+                self.TitleModule, id, def)
+            if ok and collected then
+                collData = { owned = true }
+            end
+        end
+
         local isCollected = collData ~= nil
 
         -- Transmog: filter by selected slot (retail-like slot browsing)
@@ -2292,61 +2542,103 @@ function DC:GetFilteredItems()
             -- Filter by search
             local name = string.lower(def.name or "")
             if searchText == "" or string.find(name, searchText, 1, true) then
-                -- Deduplication check for appearance-based collections
-                local shouldAdd = true
+                -- Deduplication check for appearance-based collections.
+                local displayId = def.displayId or def.display_id or def.itemDisplayId
+                local dedupeKey = nil
                 if shouldDedupe then
-                    local displayId = def.displayId or def.display_id or def.itemDisplayId
-                    -- Use displayId as key if available, otherwise fall back to name to group variants
-                    local dedupeKey = displayId or def.name
-                    if dedupeKey and seenAppearances[dedupeKey] then
-                        -- Already have this appearance, but update if this one is collected and previous wasn't
-                        local existing = seenAppearances[dedupeKey]
-                        if isCollected and not existing.collected then
-                            -- Replace with collected version
-                            for i, item in ipairs(items) do
-                                if item.dedupeKey == dedupeKey then
-                                    items[i] = {
-                                        id = id,
-                                        name = def.name,
-                                        icon = self:ResolveDefinitionIcon(collType, id, def),
-                                        rarity = def.rarity,
-                                        source = def.source,
-                                        sourceText = self:FormatSource(def.source),
-                                        sourceSort = self:GetSourceSortKey(def.source),
-                                        type = collType,
-                                        collected = isCollected,
-                                        is_favorite = collData and collData.is_favorite,
-                                        collectionData = collData,
-                                        definition = def,
-                                        dedupeKey = dedupeKey,
-                                    }
-                                    seenAppearances[dedupeKey] = { collected = isCollected }
-                                    break
-                                end
-                            end
-                        end
-                        shouldAdd = false
+                    if collType == "heirlooms" then
+                        -- Heirlooms dedupe strictly by displayId.
+                        dedupeKey = displayId
                     else
-                        seenAppearances[dedupeKey] = { collected = isCollected }
+                        -- Transmog keeps name fallback if displayId is missing.
+                        dedupeKey = displayId or def.name
                     end
                 end
-                
+
+                local itemData = {
+                    id = id,
+                    name = def.name,
+                    icon = self:ResolveDefinitionIcon(collType, id, def),
+                    rarity = def.rarity,
+                    source = def.source,
+                    sourceText = self:FormatSource(def.source),
+                    sourceSort = self:GetSourceSortKey(def.source),
+                    type = collType,
+                    collected = isCollected,
+                    is_favorite = collData and collData.is_favorite,
+                    collectionData = collData,
+                    definition = def,
+                    dedupeKey = dedupeKey,
+                }
+
+                local shouldAdd = true
+                if dedupeKey and seenAppearances[dedupeKey] then
+                    local existing = seenAppearances[dedupeKey]
+                    local existingItem = items[existing.index]
+
+                    if collType == "heirlooms" then
+                        -- Keep the canonical heirloom entry on the lowest item ID.
+                        local existingNum = tonumber(existingItem and existingItem.id or existing.id)
+                        local currentNum = tonumber(id)
+                        local shouldReplaceExisting = false
+
+                        if currentNum and existingNum then
+                            shouldReplaceExisting = currentNum < existingNum
+                        elseif currentNum and not existingNum then
+                            shouldReplaceExisting = true
+                        elseif not currentNum and not existingNum then
+                            shouldReplaceExisting = tostring(id) < tostring(existing.id or "")
+                        end
+
+                        if shouldReplaceExisting then
+                            if existingItem and existingItem.collected and not itemData.collected then
+                                itemData.collected = true
+                                itemData.collectionData = existingItem.collectionData or itemData.collectionData
+                            end
+                            if existingItem and existingItem.is_favorite and not itemData.is_favorite then
+                                itemData.is_favorite = true
+                            end
+                            items[existing.index] = itemData
+                            seenAppearances[dedupeKey] = {
+                                index = existing.index,
+                                id = id,
+                                collected = itemData.collected,
+                            }
+                        else
+                            -- Preserve the lowest-ID entry but merge state from duplicates.
+                            if existingItem then
+                                if itemData.collected and not existingItem.collected then
+                                    existingItem.collected = true
+                                    existingItem.collectionData = itemData.collectionData or existingItem.collectionData
+                                end
+                                if itemData.is_favorite and not existingItem.is_favorite then
+                                    existingItem.is_favorite = true
+                                end
+                            end
+                            seenAppearances[dedupeKey].collected = (existingItem and existingItem.collected) or existing.collected
+                        end
+                    elseif itemData.collected and not existing.collected then
+                        -- Transmog: prefer a collected variant when available.
+                        items[existing.index] = itemData
+                        seenAppearances[dedupeKey] = {
+                            index = existing.index,
+                            id = id,
+                            collected = itemData.collected,
+                        }
+                    end
+
+                    shouldAdd = false
+                end
+
                 if shouldAdd then
-                    table.insert(items, {
-                        id = id,
-                        name = def.name,
-                        icon = self:ResolveDefinitionIcon(collType, id, def),
-                        rarity = def.rarity,
-                        source = def.source,
-                        sourceText = self:FormatSource(def.source),
-                        sourceSort = self:GetSourceSortKey(def.source),
-                        type = collType,
-                        collected = isCollected,
-                        is_favorite = collData and collData.is_favorite,
-                        collectionData = collData,
-                        definition = def,
-                        dedupeKey = shouldDedupe and (def.displayId or def.display_id or def.itemDisplayId or def.name) or nil,
-                    })
+                    table.insert(items, itemData)
+                    if dedupeKey then
+                        seenAppearances[dedupeKey] = {
+                            index = #items,
+                            id = id,
+                            collected = itemData.collected,
+                        }
+                    end
                 end
             end
         end
@@ -2453,7 +2745,11 @@ function DC:OnItemLeftClick(item)
     elseif item.type == "pets" then
         self:RequestSummonPet(item.id)
     elseif item.type == "titles" then
-        self:RequestSetTitle(item.id)
+        if self.TitleModule and type(self.TitleModule.SetTitle) == "function" then
+            self.TitleModule:SetTitle(item.id)
+        else
+            self:RequestSetTitle(item.id)
+        end
     elseif item.type == "transmog" then
         -- Retail-ish workflow: click to apply to selected slot; fallback to preview.
         local invSlotId = self.transmogSelectedInvSlotId

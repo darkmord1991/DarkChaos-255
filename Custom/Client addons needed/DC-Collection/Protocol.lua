@@ -1177,9 +1177,17 @@ function DC:RequestCommunityPublish(name, items, tags)
     return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_PUBLISH, payload)
 end
 
-function DC:RequestCommunityRate(id)
+function DC:RequestCommunityRate(id, value)
+    local voteValue = tonumber(value) or 1
+    if voteValue >= 0 then
+        voteValue = 1
+    else
+        voteValue = -1
+    end
+
     return self:SendMessage(self.Opcodes.CMSG_COMMUNITY_RATE, {
-        id = id
+        id = id,
+        value = voteValue,
     })
 end
 
@@ -3009,6 +3017,32 @@ function DC:HandleCollection(data)
     local rawType = data.type
     local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
     local items = data.items or {}
+
+    -- Some servers/bridges return arrays instead of id->entry maps.
+    -- Normalize arrays to map form so CacheMergeCollection stores by entry id.
+    if type(items) == "table" and #items > 0 then
+        local mapped = {}
+        for _, entry in ipairs(items) do
+            local entryId = nil
+            local entryData = nil
+
+            if type(entry) == "table" then
+                entryId = entry.id or entry.entryId or entry.entry_id
+                entryData = entry
+            else
+                entryId = entry
+                entryData = { owned = true }
+            end
+
+            if entryId ~= nil then
+                mapped[entryId] = entryData
+            end
+        end
+
+        if next(mapped) ~= nil then
+            items = mapped
+        end
+    end
     
     self:CacheMergeCollection(collType, items)
     -- Cache will be saved by auto-save timer or on logout
@@ -3193,10 +3227,17 @@ end
 
 function DC:HandleStats(data)
     -- Store raw stats for legacy compatibility
-    for collType, stats in pairs(data.stats or {}) do
-        if self.stats[collType] then
-            self.stats[collType].owned = stats.owned or 0
-            self.stats[collType].total = stats.total or 0
+    for rawType, stats in pairs(data.stats or {}) do
+        if type(stats) == "table" then
+            local collType =
+                (type(self.NormalizeCollectionType) == "function" and
+                    self:NormalizeCollectionType(rawType)) or rawType
+
+            if self.stats[collType] then
+                self.stats[collType].owned =
+                    tonumber(stats.owned or stats.collected) or 0
+                self.stats[collType].total = tonumber(stats.total) or 0
+            end
         end
     end
     
@@ -3211,12 +3252,53 @@ function DC:HandleStats(data)
     
     -- Map from stats format to collectionStats format
     local statsData = data.stats or data
-    for collType, stats in pairs(statsData) do
-        if type(stats) == "table" then
+    for rawType, stats in pairs(statsData) do
+        if type(stats) == "table" and
+            (stats.owned ~= nil or stats.collected ~= nil or
+                stats.total ~= nil) then
+            local collType =
+                (type(self.NormalizeCollectionType) == "function" and
+                    self:NormalizeCollectionType(rawType)) or rawType
             self.collectionStats[collType] = {
-                collected = stats.owned or stats.collected or 0,
-                total = stats.total or 0,
+                collected = tonumber(stats.owned or stats.collected) or 0,
+                total = tonumber(stats.total) or 0,
             }
+
+            if self.stats[collType] then
+                self.stats[collType].owned =
+                    self.collectionStats[collType].collected
+                self.stats[collType].total =
+                    self.collectionStats[collType].total
+            end
+        end
+    end
+
+    -- Titles can be collected from the native client before server stats sync.
+    -- Keep counters in sync with locally known titles to avoid false 0 counts.
+    if self.TitleModule and type(self.TitleModule.GetStats) == "function" then
+        local ok, titleStats = pcall(self.TitleModule.GetStats,
+            self.TitleModule)
+        if ok and type(titleStats) == "table" then
+            local owned = tonumber(titleStats.owned) or 0
+            local total = tonumber(titleStats.total) or 0
+
+            self.stats.titles = self.stats.titles or { owned = 0, total = 0 }
+            if owned > (self.stats.titles.owned or 0) then
+                self.stats.titles.owned = owned
+            end
+            if total > (self.stats.titles.total or 0) then
+                self.stats.titles.total = total
+            end
+
+            local currentTitleStats = self.collectionStats.titles or
+                { collected = 0, total = 0 }
+            if owned > (currentTitleStats.collected or 0) then
+                currentTitleStats.collected = owned
+            end
+            if total > (currentTitleStats.total or 0) then
+                currentTitleStats.total = total
+            end
+            self.collectionStats.titles = currentTitleStats
         end
     end
     

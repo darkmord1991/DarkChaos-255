@@ -25,6 +25,19 @@ local function IsValidHeirloomItemId(itemId)
     return itemId ~= nil and itemId > 0 and itemId <= HEIRLOOM_ITEMID_MAX
 end
 
+local function GetHeirloomDisplayId(def)
+    if type(def) ~= "table" then
+        return nil
+    end
+
+    local displayId = tonumber(def.displayId or def.display_id or def.itemDisplayId)
+    if displayId and displayId > 0 then
+        return displayId
+    end
+
+    return nil
+end
+
 -- ============================================================================
 -- SLOT TYPE CONSTANTS
 -- ============================================================================
@@ -186,22 +199,62 @@ function HeirloomModule:GetStats()
     local owned = 0
     local total = 0
     local bySlot = {}
+    local deduped = {}
     
     local definitions = self:GetHeirloomDefinitions()
-    local collection = self:GetHeirlooms()
     
     for itemId, def in pairs(definitions) do
         if IsValidHeirloomItemId(itemId) then
-            total = total + 1
-        
-        local slot = def.slotType or 0
+            local currentId = tonumber(itemId) or itemId
+            local slot = def.slotType or 0
+            local collected = self:IsHeirloomCollected(itemId)
+
+            -- Keep one canonical heirloom per displayId using the lowest item ID.
+            local displayId = GetHeirloomDisplayId(def)
+            local dedupeKey = displayId and ("d:" .. tostring(displayId)) or ("i:" .. tostring(itemId))
+            local existing = deduped[dedupeKey]
+
+            if not existing then
+                deduped[dedupeKey] = {
+                    id = currentId,
+                    slot = slot,
+                    collected = collected,
+                }
+            else
+                local existingNum = tonumber(existing.id)
+                local currentNum = tonumber(currentId)
+                local shouldReplace = false
+
+                if currentNum and existingNum then
+                    shouldReplace = currentNum < existingNum
+                elseif currentNum and not existingNum then
+                    shouldReplace = true
+                elseif not currentNum and not existingNum then
+                    shouldReplace = tostring(currentId) < tostring(existing.id)
+                end
+
+                if shouldReplace then
+                    existing.id = currentId
+                    existing.slot = slot
+                end
+
+                if collected then
+                    existing.collected = true
+                end
+            end
+        end
+    end
+
+    for _, entry in pairs(deduped) do
+        local slot = entry.slot or 0
+        total = total + 1
+
         bySlot[slot] = bySlot[slot] or { owned = 0, total = 0 }
         bySlot[slot].total = bySlot[slot].total + 1
-        
-            if self:IsHeirloomCollected(itemId) then
-                owned = owned + 1
-                bySlot[slot].owned = bySlot[slot].owned + 1
-            end
+
+        if entry.collected then
+            owned = owned + 1
+            bySlot[slot].owned = bySlot[slot].owned + 1
         end
     end
     

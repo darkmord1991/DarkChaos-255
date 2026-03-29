@@ -147,6 +147,7 @@ namespace DCCollection
     void HandleSetTitle(Player* player, uint32 entryId);
     void HandleSummonHeirloom(Player* player, uint32 entryId);
     uint32 FindCompanionSpellIdForItem(uint32 itemId);
+    CharTitlesEntry const* ResolveTitleEntryByAnyKey(uint32 titleKey);
 
     uint32 FindCompanionItemIdForSpell(uint32 spellId)
     {
@@ -971,7 +972,7 @@ namespace DCCollection
                         }
                         case CollectionType::TITLE:
                         {
-                            CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(entryId);
+                            CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId);
                             if (!titleEntry)
                                 break;
 
@@ -1151,6 +1152,40 @@ namespace DCCollection
         return player->GetSession()->GetAccountId();
     }
 
+    // Resolve a title from either canonical DBC ID or bit_index style keys.
+    // Some legacy collection rows stored title bit_index instead of title ID.
+    CharTitlesEntry const* ResolveTitleEntryByAnyKey(uint32 titleKey)
+    {
+        if (!titleKey)
+            return nullptr;
+
+        if (CharTitlesEntry const* byId = sCharTitlesStore.LookupEntry(titleKey))
+            return byId;
+
+        static std::unordered_map<uint32, uint32> titleIdByBitIndex;
+        static bool titleBitIndexMapBuilt = false;
+
+        if (!titleBitIndexMapBuilt)
+        {
+            titleBitIndexMapBuilt = true;
+            for (uint32 i = 1; i < sCharTitlesStore.GetNumRows(); ++i)
+            {
+                CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(i);
+                if (!titleEntry || !titleEntry->ID)
+                    continue;
+
+                if (!titleIdByBitIndex.count(titleEntry->bit_index))
+                    titleIdByBitIndex[titleEntry->bit_index] = titleEntry->ID;
+            }
+        }
+
+        auto it = titleIdByBitIndex.find(titleKey);
+        if (it == titleIdByBitIndex.end())
+            return nullptr;
+
+        return sCharTitlesStore.LookupEntry(it->second);
+    }
+
     // =======================================================================
     // Database Queries
     // =======================================================================
@@ -1174,8 +1209,24 @@ namespace DCCollection
             do
             {
                 Field* fields = result->Fetch();
-                items.push_back(fields[0].Get<uint32>());
+                uint32 entryId = fields[0].Get<uint32>();
+                if (!entryId)
+                    continue;
+
+                if (type == CollectionType::TITLE)
+                {
+                    if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId))
+                        entryId = titleEntry->ID;
+                }
+
+                items.push_back(entryId);
             } while (result->NextRow());
+        }
+
+        if (type == CollectionType::TITLE)
+        {
+            std::sort(items.begin(), items.end());
+            items.erase(std::unique(items.begin(), items.end()), items.end());
         }
 
         return items;
@@ -1202,6 +1253,11 @@ namespace DCCollection
             } while (result->NextRow());
         }
 
+        // Titles may exist as both canonical ID and bit_index in legacy data.
+        // Use normalized title IDs to avoid inflated/incorrect counters.
+        auto normalizedTitles = LoadPlayerCollection(accountId, CollectionType::TITLE);
+        counts[CollectionType::TITLE] = static_cast<uint32>(normalizedTitles.size());
+
         return counts;
     }
 
@@ -1212,13 +1268,33 @@ namespace DCCollection
         if (itemsEntryCol.empty())
             return false;
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND {} = {} AND unlocked = 1 LIMIT 1",
-            accountId, static_cast<uint8>(type), itemsEntryCol, entryId);
-        return result != nullptr;
+        auto hasExactEntry = [&](uint32 rawEntryId) -> bool
+        {
+            QueryResult result = CharacterDatabase.Query(
+                "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND {} = {} AND unlocked = 1 LIMIT 1",
+                accountId, static_cast<uint8>(type), itemsEntryCol, rawEntryId);
+            return result != nullptr;
+        };
+
+        if (hasExactEntry(entryId))
+            return true;
+
+        if (type != CollectionType::TITLE)
+            return false;
+
+        CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId);
+        if (!titleEntry)
+            return false;
+
+        uint32 altEntryId = (titleEntry->ID == entryId) ?
+            titleEntry->bit_index : titleEntry->ID;
+
+        if (!altEntryId || altEntryId == entryId)
+            return false;
+
+        return hasExactEntry(altEntryId);
     }
 
-    // Forward declaration: ensure transmog keys available at call site
     std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached();
 
     // Get total counts for definitions (for % calculations)
@@ -1704,7 +1780,7 @@ namespace DCCollection
                 }
                 else if (r.typeId == static_cast<uint8>(CollectionType::TITLE))
                 {
-                    if (CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(r.entryId))
+                    if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(r.entryId))
                     {
                         std::string name;
                         if (titleEntry->nameMale[0])
@@ -1942,7 +2018,7 @@ namespace DCCollection
                     }
                     case CollectionType::TITLE:
                     {
-                        if (CharTitlesEntry const* title = sCharTitlesStore.LookupEntry(entryId))
+                        if (CharTitlesEntry const* title = ResolveTitleEntryByAnyKey(entryId))
                         {
                             itemName = title->nameMale[0]; // English locale
                         }
@@ -2683,19 +2759,21 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
-        // Verify player owns this title
-        if (!HasCollectionItem(accountId, CollectionType::TITLE, titleId))
+        // Resolve incoming title from either DBC ID or bit_index style keys.
+        CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(titleId);
+        if (!titleEntry)
         {
-            DCAddon::SendError(player, MODULE, "Title not in collection",
+            DCAddon::SendError(player, MODULE, "Invalid title ID",
                 DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
 
-        // Get title from DBC
-        CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(titleId);
-        if (!titleEntry)
+        uint32 canonicalTitleId = titleEntry->ID;
+
+        // Verify player owns this title
+        if (!HasCollectionItem(accountId, CollectionType::TITLE, canonicalTitleId))
         {
-            DCAddon::SendError(player, MODULE, "Invalid title ID",
+            DCAddon::SendError(player, MODULE, "Title not in collection",
                 DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
@@ -3508,8 +3586,10 @@ namespace DCCollection
                     }
                     else if (ct == CollectionType::TITLE)
                     {
-                        if (CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(entryId))
+                        CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId);
+                        if (titleEntry)
                         {
+                            entryId = titleEntry->ID;
                             if (titleEntry->nameMale[0])
                                 name = titleEntry->nameMale[0];
                             else if (titleEntry->nameFemale[0])
@@ -3685,7 +3765,7 @@ namespace DCCollection
                     }
                     else if (ct == CollectionType::TITLE)
                     {
-                        if (CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(entryId))
+                        if (CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId))
                         {
                             if (titleEntry->nameMale[0])
                                 name = titleEntry->nameMale[0];

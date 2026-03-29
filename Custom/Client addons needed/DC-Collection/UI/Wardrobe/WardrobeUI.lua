@@ -14,6 +14,13 @@ local Wardrobe = DC.Wardrobe
 local BG_FELLEATHER = "Interface\\AddOns\\DC-Collection\\Textures\\Backgrounds\\FelLeather_512.tga"
 local BG_TINT_ALPHA = 0.60
 
+local function GetLeftPanelWidth(modelWidth, slotSize)
+    local slotColumnWidth = slotSize + 10
+    local modelLayoutWidth = slotColumnWidth + modelWidth + slotColumnWidth + 40
+    local topButtonBarWidth = 110 + 120 + 110 + 125 + (3 * 3)
+    return math.max(modelLayoutWidth, topButtonBarWidth)
+end
+
 local function ApplyLeaderboardsStyle(frame)
     if not frame or frame.__dcLeaderboardsStyled then
         return
@@ -291,7 +298,7 @@ function Wardrobe:_ApplyEmbeddedLayout()
     local gap = 15
     local bottomBarHeight = 50
     local previewWidth = 280  -- Larger preview area to match bigger tooltip preview
-    local leftPanelWidth = self.MODEL_WIDTH + 130  -- Width for slots + model + slots
+    local leftPanelWidth = GetLeftPanelWidth(self.MODEL_WIDTH, self.SLOT_SIZE)
 
     -- Right-side reserved area for tooltip/model preview.
     previewHost:ClearAllPoints()
@@ -359,13 +366,13 @@ function Wardrobe:_ApplyStandaloneLayout()
     end
 
     -- Restore original standalone anchors/sizes.
-    local panelWidth = self.MODEL_WIDTH + 120  -- Slots on both sides of model
+    local panelWidth = GetLeftPanelWidth(self.MODEL_WIDTH, self.SLOT_SIZE)
     left:ClearAllPoints()
     left:SetPoint("TOPLEFT", frame, "TOPLEFT", 15, -20)
     left:SetSize(panelWidth, self.FRAME_HEIGHT - 100)
 
     right:ClearAllPoints()
-    right:SetPoint("TOPLEFT", frame, "TOPLEFT", 380, -20)
+    right:SetPoint("TOPLEFT", left, "TOPRIGHT", 15, 0)
     right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 70)
 
     bottom:ClearAllPoints()
@@ -498,7 +505,7 @@ function Wardrobe:CreateLeftPanel(parent)
     local LEFT_SLOTS = 7  -- HeadSlot through WristSlot
     local RIGHT_SLOTS = 4 -- HandsSlot through FeetSlot
     local SLOT_COLUMN_WIDTH = SLOT_SIZE + 10
-    local PANEL_WIDTH = SLOT_COLUMN_WIDTH + MODEL_WIDTH + SLOT_COLUMN_WIDTH + 40
+    local PANEL_WIDTH = GetLeftPanelWidth(MODEL_WIDTH, SLOT_SIZE)
 
     local left = CreateFrame("Frame", nil, parent)
     left:SetPoint("TOPLEFT", parent, "TOPLEFT", 15, -35)
@@ -565,7 +572,7 @@ function Wardrobe:CreateLeftPanel(parent)
     parent.targetBtn = targetBtn
 
     local refreshBtn = CreateFrame("Button", nil, left, "UIPanelButtonTemplate")
-    refreshBtn:SetSize(85, 20)
+    refreshBtn:SetSize(125, 20)
     refreshBtn:SetPoint("LEFT", targetBtn, "RIGHT", 3, 0)
     refreshBtn:SetText("Refresh Data")
     refreshBtn:SetScript("OnClick", function(self)
@@ -844,8 +851,12 @@ function Wardrobe:CreateRightPanel(parent)
     local ITEMS_PER_PAGE = self.ITEMS_PER_PAGE
 
     local right = CreateFrame("Frame", nil, parent)
-    -- Position right panel after the wider left panel (slots + model + slots)
-    right:SetPoint("TOPLEFT", parent, "TOPLEFT", 380, -50)
+    -- Anchor against the current left panel bounds so button rows cannot intrude.
+    if parent.leftPanel then
+        right:SetPoint("TOPLEFT", parent.leftPanel, "TOPRIGHT", 15, -15)
+    else
+        right:SetPoint("TOPLEFT", parent, "TOPLEFT", 380, -50)
+    end
     right:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -20, 70)
 
     local tabs = {
@@ -1446,23 +1457,33 @@ function Wardrobe:CreateOutfitsGrid(root, rightPanel)
     pageText:SetText("Page 1 / 1")
     root.outfitsPageText = pageText
 
-    -- Calculate total width to center it (widths may be 0 during initial creation)
-    local totalWidth = (OUTFIT_COLS * OUTFIT_WIDTH) + ((OUTFIT_COLS - 1) * GAP_X)
-
     local function LayoutOutfitButtons()
         local w = container:GetWidth()
         if not w or w <= 1 then
             w = rightPanel:GetWidth()
         end
         if not w or w <= 1 then
-            w = totalWidth
+            w = (OUTFIT_COLS * OUTFIT_WIDTH) + ((OUTFIT_COLS - 1) * GAP_X)
         end
-        local startX = (w - totalWidth) / 2
+
+        -- In embedded mode the right panel can be narrow; reduce columns to keep
+        -- all cards inside the container instead of clipping past the right edge.
+        local fitCols = OUTFIT_COLS
+        while fitCols > 1 do
+            local neededWidth = (fitCols * OUTFIT_WIDTH) + ((fitCols - 1) * GAP_X)
+            if neededWidth <= w then
+                break
+            end
+            fitCols = fitCols - 1
+        end
+
+        local layoutWidth = (fitCols * OUTFIT_WIDTH) + ((fitCols - 1) * GAP_X)
+        local startX = (w - layoutWidth) / 2
         if startX < 0 then startX = 0 end
 
         for i, btn in ipairs(root.outfitButtons) do
-            local row = math.floor((i - 1) / OUTFIT_COLS)
-            local col = (i - 1) % OUTFIT_COLS
+            local row = math.floor((i - 1) / fitCols)
+            local col = (i - 1) % fitCols
             btn:ClearAllPoints()
             btn:SetPoint("TOPLEFT", container, "TOPLEFT", startX + (col * (OUTFIT_WIDTH + GAP_X)), -2 - (row * (OUTFIT_HEIGHT + GAP_Y)))
         end
