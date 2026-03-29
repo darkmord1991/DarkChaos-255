@@ -216,6 +216,16 @@ namespace HLBG
                         totalQueued, allianceQueued, hordeQueued, minPlayers, state);
     }
 
+    static void SendRateLimitedError(Player* player)
+    {
+        if (!player)
+            return;
+
+        DCAddon::SendError(player, Module::HINTERLAND,
+            "HLBG request rate-limited", DCAddon::ErrorCode::UNKNOWN,
+            Opcode::Core::SMSG_ERROR);
+    }
+
     void SendTimerSync(Player* player, uint32 elapsedMs, uint32 maxMs)
     {
         Message msg(Module::HINTERLAND, SMSG_TIMER_SYNC);
@@ -520,8 +530,6 @@ namespace HLBG
     static void HandleRequestStatus(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
-        if (IsRateLimited(player, 300))
-            return;
 
         OutdoorPvPHL* hl = GetHL();
         uint32 zoneId = player->GetZoneId();
@@ -538,13 +546,15 @@ namespace HLBG
         }
 
         SendStatus(player, status, mapId, timeRemaining);
+
+        // Queue UI polls CMSG_REQUEST_STATUS; mirror queue payload so clients
+        // always get authoritative queue state even without an explicit 0x13 push.
+        SendQueueInfo(player);
     }
 
     static void HandleRequestResources(Player* player, const ParsedMessage& /*msg*/)
     {
         if (!player) return;
-        if (IsRateLimited(player, 300))
-            return;
 
         OutdoorPvPHL* hl = GetHL();
         if (!hl)
@@ -571,7 +581,10 @@ namespace HLBG
     {
         if (!player) return;
         if (IsRateLimited(player, 800))
+        {
+            SendRateLimitedError(player);
             return;
+        }
 
         if (OutdoorPvPHL* hl = GetHL())
             hl->QueueCommandFromAddon(player, "queue", "join");
@@ -585,7 +598,10 @@ namespace HLBG
     {
         if (!player) return;
         if (IsRateLimited(player, 800))
+        {
+            SendRateLimitedError(player);
             return;
+        }
 
         if (OutdoorPvPHL* hl = GetHL())
                 hl->QueueCommandFromAddon(player, "queue", "leave");
@@ -601,7 +617,10 @@ namespace HLBG
         if (!player) return;
 
         if (IsRateLimited(player, 800))
+        {
+            SendRateLimitedError(player);
             return;
+        }
 
         uint32 leaderboardType = 1;
         uint32 season = 0;
@@ -693,7 +712,10 @@ namespace HLBG
         if (!player) return;
 
         if (IsRateLimited(player, 800))
+        {
+            SendRateLimitedError(player);
             return;
+        }
 
         uint32 season = 0;
 
@@ -741,7 +763,10 @@ namespace HLBG
         if (!player) return;
 
         if (IsRateLimited(player, 800))
+        {
+            SendRateLimitedError(player);
             return;
+        }
 
         std::string statsJson;
         std::string error;

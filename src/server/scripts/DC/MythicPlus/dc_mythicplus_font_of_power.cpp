@@ -35,7 +35,8 @@ enum FontOfPowerActions : uint32
 {
     ACTION_START_RUN     = 1,
     ACTION_START_READY   = 2,  // Start group ready check
-    ACTION_CLOSE         = 3
+    ACTION_CLOSE         = 3,
+    ACTION_GM_LEVEL_BASE = 1000
 };
 
 // Pending activation state per group
@@ -75,9 +76,25 @@ public:
 
         ClearGossipMenuFor(player);
 
-        bool canActivate = sMythicRuns->CanActivateKeystone(player, go, descriptor, error);
+        bool isGameMaster = player->IsGameMaster();
 
-        if (!canActivate)
+        bool canActivate = sMythicRuns->CanActivateKeystone(player, go,
+            descriptor, error);
+
+        bool canActivateForced = false;
+        if (isGameMaster)
+        {
+            KeystoneDescriptor gmDescriptor;
+            std::string gmError;
+            canActivateForced = sMythicRuns->CanActivateKeystone(player, go,
+                gmDescriptor, gmError,
+                MythicPlusConstants::MIN_KEYSTONE_LEVEL);
+
+            if (!canActivate && !canActivateForced)
+                error = gmError;
+        }
+
+        if (!canActivate && !canActivateForced)
         {
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, Acore::StringFormat("|cffff0000{}|r", error), GOSSIP_SENDER_MAIN, ACTION_CLOSE);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Close", GOSSIP_SENDER_MAIN, ACTION_CLOSE);
@@ -92,7 +109,7 @@ public:
         Group* group = player->GetGroup();
         bool hasGroup = group && group->GetMembersCount() > 1;
 
-        if (hasGroup)
+        if (canActivate && hasGroup)
         {
             // Show group ready check option
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
@@ -107,12 +124,26 @@ public:
                     GOSSIP_SENDER_MAIN, ACTION_START_RUN);
             }
         }
-        else
+        else if (canActivate)
         {
             // Solo player - direct start
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
                 Acore::StringFormat("Start Mythic+ Run: +{} {}", descriptor.level, dungeonName),
                 GOSSIP_SENDER_MAIN, ACTION_START_RUN);
+        }
+
+        if (isGameMaster && canActivateForced)
+        {
+            for (uint8 level = MythicPlusConstants::MIN_KEYSTONE_LEVEL;
+                 level <= MythicPlusConstants::MAX_KEYSTONE_LEVEL;
+                 ++level)
+            {
+                AddGossipItemFor(player, GOSSIP_ICON_BATTLE,
+                    Acore::StringFormat("|cffff00ff[GM]|r Start {}",
+                        MythicPlusConstants::GetKeystoneColoredName(level)),
+                    GOSSIP_SENDER_MAIN,
+                    ACTION_GM_LEVEL_BASE + level);
+            }
         }
 
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "Cancel", GOSSIP_SENDER_MAIN, ACTION_CLOSE);
@@ -127,6 +158,29 @@ public:
             return false;
 
         CloseGossipMenuFor(player);
+
+        if (action >= ACTION_GM_LEVEL_BASE)
+        {
+            if (!player->IsGameMaster())
+                return true;
+
+            uint8 level = static_cast<uint8>(action - ACTION_GM_LEVEL_BASE);
+            constexpr uint8 MAX_FORCED_KEYSTONE_LEVEL = 30;
+
+            if (level < MythicPlusConstants::MIN_KEYSTONE_LEVEL ||
+                level > MAX_FORCED_KEYSTONE_LEVEL)
+            {
+                ChatHandler(player->GetSession()).PSendSysMessage(
+                    "Invalid key level {}. Allowed range is {} to {}.",
+                    static_cast<uint32>(level),
+                    MythicPlusConstants::MIN_KEYSTONE_LEVEL,
+                    MAX_FORCED_KEYSTONE_LEVEL);
+                return true;
+            }
+
+            sMythicRuns->TryActivateKeystone(player, go, level);
+            return true;
+        }
 
         if (action == ACTION_START_RUN)
         {

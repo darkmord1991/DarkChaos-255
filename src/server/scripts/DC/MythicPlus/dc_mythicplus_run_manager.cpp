@@ -236,11 +236,13 @@ bool MythicPlusRunManager::IsBossCreature(const Creature* creature) const
     return IsRecognizedBoss(map->GetId(), creature->GetEntry());
 }
 
-bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
+bool MythicPlusRunManager::TryActivateKeystone(Player* player,
+    GameObject* font, uint8 forcedKeystoneLevel)
 {
     KeystoneDescriptor descriptor;
     std::string validationError;
-    if (!CanActivateKeystone(player, font, descriptor, validationError))
+    if (!CanActivateKeystone(player, font, descriptor, validationError,
+        forcedKeystoneLevel))
     {
         SendGenericError(player, validationError);
         return false;
@@ -317,7 +319,8 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player, GameObject* font)
         }
     }
 
-    ConsumePlayerKeystone(player);
+    if (!forcedKeystoneLevel)
+        ConsumePlayerKeystone(player);
 
     // Teleport all players to entrance
     TeleportGroupToEntrance(player, map);

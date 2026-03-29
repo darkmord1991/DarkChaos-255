@@ -86,6 +86,8 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
     if (IsPlayerInQueue(player))
     {
         ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cff00ccff[HLBG Queue]|r |cffffff00You are already in the queue.|r");
+        SendQueueStatusAIO(player);
+        DCAddon::HLBG::SendStatus(player, DCAddon::HLBG::STATUS_QUEUED, player->GetMapId(), GetTimeRemainingSeconds());
         return;
     }
 
@@ -117,6 +119,7 @@ void OutdoorPvPHL::AddPlayerToQueue(Player* player)
 
     ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_01:16|t |cff00ccff[HLBG Queue]|r |cff98fb98Joined queue.|r |cffffff00Position:|r |cffffffff{}|r", queueSize);
     SendQueueStatusAIO(player);
+    DCAddon::HLBG::SendStatus(player, DCAddon::HLBG::STATUS_QUEUED, player->GetMapId(), GetTimeRemainingSeconds());
 
     // Notify zone if we're getting close to battle start
     if (queueSize >= _minPlayersToStart && _bgState == BG_STATE_CLEANUP)
@@ -140,11 +143,20 @@ void OutdoorPvPHL::RemovePlayerFromQueue(Player* player)
         RemoveQueueEntryAtIndex(indexIt->second);
         ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\Spell_Shadow_Teleport:16|t |cff00ccff[HLBG Queue]|r |cffff8080You left the queue.|r");
         SendQueueStatusAIO(player);
+        DCAddon::HLBG::HLBGStatus statusAfterLeave = (player->GetZoneId() == OutdoorPvPHLBuffZones[0])
+            ? DCAddon::HLBG::STATUS_ACTIVE
+            : DCAddon::HLBG::STATUS_NONE;
+        DCAddon::HLBG::SendStatus(player, statusAfterLeave, player->GetMapId(), GetTimeRemainingSeconds());
         LOG_DEBUG("bg.battleground", "Player {} left HLBG queue", player->GetName());
     }
     else
     {
         ChatHandler(player->GetSession()).PSendSysMessage("|TInterface\\Icons\\INV_Misc_PocketWatch_02:16|t |cff00ccff[HLBG Queue]|r |cffffff00You are not in the queue.|r");
+        SendQueueStatusAIO(player);
+        DCAddon::HLBG::HLBGStatus statusWhenNotQueued = (player->GetZoneId() == OutdoorPvPHLBuffZones[0])
+            ? DCAddon::HLBG::STATUS_ACTIVE
+            : DCAddon::HLBG::STATUS_NONE;
+        DCAddon::HLBG::SendStatus(player, statusWhenNotQueued, player->GetMapId(), GetTimeRemainingSeconds());
     }
 }
 
@@ -223,6 +235,12 @@ void OutdoorPvPHL::ShowQueueStatus(Player* player)
             ch.PSendSysMessage("|TInterface\\Icons\\INV_Misc_GroupLooking:14|t |cffffff00Status:|r |cff98fb98Waiting for players|r");
             break;
     }
+
+    SendQueueStatusAIO(player);
+    DCAddon::HLBG::HLBGStatus snapshotStatus = IsPlayerInQueue(player)
+        ? DCAddon::HLBG::STATUS_QUEUED
+        : (player->GetZoneId() == OutdoorPvPHLBuffZones[0] ? DCAddon::HLBG::STATUS_ACTIVE : DCAddon::HLBG::STATUS_NONE);
+    DCAddon::HLBG::SendStatus(player, snapshotStatus, player->GetMapId(), GetTimeRemainingSeconds());
 }
 
 void OutdoorPvPHL::ProcessQueueSystem()

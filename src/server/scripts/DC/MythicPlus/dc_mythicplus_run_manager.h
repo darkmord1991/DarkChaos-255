@@ -91,8 +91,11 @@ public:
     void Reset();
 
     // Keystone lifecycle
-    bool TryActivateKeystone(Player* player, GameObject* font);
-    bool CanActivateKeystone(Player* player, GameObject* font, KeystoneDescriptor& outDescriptor, std::string& outErrorText);
+    bool TryActivateKeystone(Player* player, GameObject* font,
+        uint8 forcedKeystoneLevel = 0);
+    bool CanActivateKeystone(Player* player, GameObject* font,
+        KeystoneDescriptor& outDescriptor, std::string& outErrorText,
+        uint8 forcedKeystoneLevel = 0);
     uint32 GetKeystoneLevel(Map* map) const;
 
     // Participation tracking
@@ -223,7 +226,9 @@ private:
     std::unordered_map<uint64, uint32> _bestRunDurationCache;
 };
 
-inline bool MythicPlusRunManager::CanActivateKeystone(Player* player, GameObject* font, KeystoneDescriptor& outDescriptor, std::string& outErrorText)
+inline bool MythicPlusRunManager::CanActivateKeystone(Player* player,
+    GameObject* font, KeystoneDescriptor& outDescriptor,
+    std::string& outErrorText, uint8 forcedKeystoneLevel)
 {
     outErrorText.clear();
 
@@ -259,7 +264,27 @@ inline bool MythicPlusRunManager::CanActivateKeystone(Player* player, GameObject
         return false;
     }
 
-    if (!LoadPlayerKeystone(player, map->GetId(), outDescriptor))
+    if (forcedKeystoneLevel)
+    {
+        // GM/test path: activate with an explicit key level without inventory item.
+        constexpr uint8 MAX_FORCED_KEYSTONE_LEVEL = 30;
+        if (forcedKeystoneLevel < MythicPlusConstants::MIN_KEYSTONE_LEVEL ||
+            forcedKeystoneLevel > MAX_FORCED_KEYSTONE_LEVEL)
+        {
+            outErrorText = Acore::StringFormat(
+                "Forced keystone level must be between {} and {}.",
+                MythicPlusConstants::MIN_KEYSTONE_LEVEL,
+                MAX_FORCED_KEYSTONE_LEVEL);
+            return false;
+        }
+
+        outDescriptor.mapId = map->GetId();
+        outDescriptor.level = forcedKeystoneLevel;
+        outDescriptor.seasonId = GetCurrentSeasonId();
+        outDescriptor.expiresOn = 0;
+        outDescriptor.ownerGuid = player->GetGUID();
+    }
+    else if (!LoadPlayerKeystone(player, map->GetId(), outDescriptor))
     {
         outErrorText = "You do not possess a valid keystone for this dungeon.";
         return false;

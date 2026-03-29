@@ -100,6 +100,18 @@ DC.Achievements.Debug = 0
 #
 OutdoorPvPCaptureRate = 1
 
+#
+#    Rate.Health.Above80
+#    Rate.Mana.Above80
+#        Description: Additional player regeneration multiplier applied when
+#                     player level is above 80.
+#                     Applied on top of Rate.Health and Rate.Mana.
+#        Default:     1 - (Rate.Health.Above80)
+#                     1 - (Rate.Mana.Above80)
+#
+Rate.Health.Above80 = 1
+Rate.Mana.Above80 = 1
+
 
 ###############################################################################
 #

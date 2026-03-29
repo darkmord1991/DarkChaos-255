@@ -1889,6 +1889,9 @@ void Player::Regenerate(Powers power)
                 if (sWorld->getBoolConfig(CONFIG_LOW_LEVEL_REGEN_BOOST) && GetLevel() < 15)
                     ManaIncreaseRate = sWorld->getRate(RATE_POWER_MANA) * (2.066f - (GetLevel() * 0.066f));
 
+                if (GetLevel() > 80)
+                    ManaIncreaseRate *= sWorld->getRate(RATE_POWER_MANA_ABOVE_80);
+
                 if (recentCast) // Trinity Updates Mana in intervals of 2s, which is correct
                     addvalue += GetFloatValue(UNIT_FIELD_POWER_REGEN_INTERRUPTED_FLAT_MODIFIER + AsUnderlyingType(POWER_MANA)) *  ManaIncreaseRate * 0.001f * m_regenTimer;
                 else
@@ -2003,6 +2006,9 @@ void Player::RegenerateHealth()
 
     if (sWorld->getBoolConfig(CONFIG_LOW_LEVEL_REGEN_BOOST) && GetLevel() < 15)
         HealthIncreaseRate = sWorld->getRate(RATE_HEALTH) * (2.066f - (GetLevel() * 0.066f));
+
+    if (GetLevel() > 80)
+        HealthIncreaseRate *= sWorld->getRate(RATE_HEALTH_ABOVE_80);
 
     float addvalue = 0.0f;
 
@@ -5298,16 +5304,41 @@ float Player::GetExpertiseDodgeOrParryReduction(WeaponAttackType attType) const
     return 0.0f;
 }
 
+template <typename T>
+static uint32 GetGtClassLevelIndex(DBCStorage<T> const& store, uint32 pclass, uint32 level)
+{
+    if (pclass < 1)
+        pclass = 1;
+    else if (pclass > MAX_CLASSES)
+        pclass = MAX_CLASSES;
+
+    uint32 rows = store.GetNumRows();
+    if (rows >= MAX_CLASSES)
+    {
+        uint32 entriesPerClass = rows / MAX_CLASSES;
+        if (entriesPerClass > 0)
+        {
+            uint32 clampedLevel = std::min(level, entriesPerClass);
+            uint32 index = (pclass - 1) * entriesPerClass + clampedLevel - 1;
+            if (index < rows)
+                return index;
+        }
+    }
+
+    uint32 fallbackLevel = std::min<uint32>(level, GT_MAX_LEVEL);
+    return (pclass - 1) * GT_MAX_LEVEL + fallbackLevel - 1;
+}
+
 float Player::OCTRegenHPPerSpirit()
 {
-    uint8 level = GetLevel();
+    uint32 level = GetLevel();
     uint32 pclass = getClass();
 
-    if (level > GT_MAX_LEVEL)
-        level = GT_MAX_LEVEL;
+    uint32 hpRegenIndex = GetGtClassLevelIndex(sGtOCTRegenHPStore, pclass, level);
+    uint32 hpPerSpiritIndex = GetGtClassLevelIndex(sGtRegenHPPerSptStore, pclass, level);
 
-    GtOCTRegenHPEntry     const* baseRatio = sGtOCTRegenHPStore.LookupEntry((pclass - 1) * GT_MAX_LEVEL + level - 1);
-    GtRegenHPPerSptEntry  const* moreRatio = sGtRegenHPPerSptStore.LookupEntry((pclass - 1) * GT_MAX_LEVEL + level - 1);
+    GtOCTRegenHPEntry const* baseRatio = sGtOCTRegenHPStore.LookupEntry(hpRegenIndex);
+    GtRegenHPPerSptEntry const* moreRatio = sGtRegenHPPerSptStore.LookupEntry(hpPerSpiritIndex);
     if (!baseRatio || !moreRatio)
         return 0.0f;
 
@@ -5323,14 +5354,12 @@ float Player::OCTRegenHPPerSpirit()
 
 float Player::OCTRegenMPPerSpirit()
 {
-    uint8 level = GetLevel();
+    uint32 level = GetLevel();
     uint32 pclass = getClass();
 
-    if (level > GT_MAX_LEVEL)
-        level = GT_MAX_LEVEL;
-
     //    GtOCTRegenMPEntry     const* baseRatio = sGtOCTRegenMPStore.LookupEntry((pclass-1)*GT_MAX_LEVEL + level-1);
-    GtRegenMPPerSptEntry  const* moreRatio = sGtRegenMPPerSptStore.LookupEntry((pclass - 1) * GT_MAX_LEVEL + level - 1);
+    uint32 mpPerSpiritIndex = GetGtClassLevelIndex(sGtRegenMPPerSptStore, pclass, level);
+    GtRegenMPPerSptEntry const* moreRatio = sGtRegenMPPerSptStore.LookupEntry(mpPerSpiritIndex);
     if (!moreRatio)
         return 0.0f;
 

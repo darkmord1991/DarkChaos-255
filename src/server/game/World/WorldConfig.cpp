@@ -28,7 +28,9 @@ void WorldConfig::BuildConfigCache()
 
     ///- Read all rates from the config file
     SetConfigValue<float>(RATE_HEALTH, "Rate.Health", 1.0f, ConfigValueCache::Reloadable::Yes, [](float const& value) { return value > 0.0f; }, "> 0");
+    SetConfigValue<float>(RATE_HEALTH_ABOVE_80, "Rate.Health.Above80", 1.0f, ConfigValueCache::Reloadable::Yes, [](float const& value) { return value > 0.0f; }, "> 0");
     SetConfigValue<float>(RATE_POWER_MANA, "Rate.Mana", 1.0f, ConfigValueCache::Reloadable::Yes, [](float const& value) { return value > 0.0f; }, "> 0");
+    SetConfigValue<float>(RATE_POWER_MANA_ABOVE_80, "Rate.Mana.Above80", 1.0f, ConfigValueCache::Reloadable::Yes, [](float const& value) { return value > 0.0f; }, "> 0");
     SetConfigValue<float>(RATE_POWER_RAGE_INCOME, "Rate.Rage.Income", 1.0f);
     SetConfigValue<float>(RATE_POWER_RAGE_LOSS, "Rate.Rage.Loss", 1.0f, ConfigValueCache::Reloadable::Yes, [](float const& value) { return value > 0.0f; }, "> 0");
     SetConfigValue<float>(RATE_POWER_RUNICPOWER_INCOME, "Rate.RunicPower.Income", 1.0f);

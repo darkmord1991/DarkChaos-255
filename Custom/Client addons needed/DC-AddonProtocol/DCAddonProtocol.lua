@@ -1871,9 +1871,15 @@ frame:SetScript("OnEvent", function()
                     return
                 end
 
-                -- Check if this is a JSON message (format: MODULE|OPCODE|J|{json} or MODULE|OPCODE|1|{json})
-                -- Note: Some servers send "1" instead of "J" as the JSON marker
-                local isJson = #parts >= (dataStart + 1) and (parts[dataStart] == "J" or parts[dataStart] == "1")
+                -- Check if this is a JSON message (format: MODULE|OPCODE|J|{json}
+                -- or MODULE|OPCODE|1|{json}). Guard against plain numeric payloads
+                -- where the first data field can also be "1".
+                local marker = parts[dataStart]
+                local nextToken = parts[dataStart + 1]
+                local isNumericJsonMarker = marker == "1"
+                    and type(nextToken) == "string"
+                    and (string.sub(nextToken, 1, 1) == "{" or string.sub(nextToken, 1, 1) == "[")
+                local isJson = #parts >= (dataStart + 1) and (marker == "J" or isNumericJsonMarker)
                 if isJson then
                     -- JSON message - reconstruct JSON (in case it had | in it)
                     local jsonParts = {}
@@ -1941,16 +1947,27 @@ frame:SetScript("OnEvent", function()
                     
                     local key = module .. "_" .. opcode
                     local h = DC._handlers[key]
+                    local handlerArgs = {}
+                    for i = dataStart, #parts do
+                        table.insert(handlerArgs, parts[i])
+                    end
+
                     if type(h) == 'table' then
                         if DC._debug then
                             DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Handler(s) found: " .. key .. " (" .. tostring(#h) .. ")")
                         end
-                        for _, handler in ipairs(h) do pcall(handler, parts[dataStart], parts[dataStart + 1], parts[dataStart + 2], parts[dataStart + 3], parts[dataStart + 4]) end
-                    else
+                        for _, handler in ipairs(h) do
+                            if type(handler) == 'function' then
+                                pcall(handler, unpack(handlerArgs))
+                            end
+                        end
+                    elseif type(h) == 'function' then
                         if DC._debug then
                             DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Handler found: " .. key)
                         end
-                        pcall(h, parts[dataStart], parts[dataStart + 1], parts[dataStart + 2], parts[dataStart + 3], parts[dataStart + 4]) 
+                        pcall(h, unpack(handlerArgs))
+                    elseif DC._debug then
+                        DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[DC]|r No handler for: " .. key)
                     end
                     -- handlers already dispatched above
                 end

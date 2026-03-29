@@ -17,6 +17,7 @@
 #include "ScriptedCreature.h"
 #include "GameTime.h"
 #include "WorldState.h"
+#include "Timer.h"
 #include "Map.h"
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
@@ -180,6 +181,14 @@ namespace
     static uint64 GetNowMs()
     {
         return static_cast<uint64>(GameTime::GetGameTimeMS().count());
+    }
+
+    static std::string FormatEpochTimestamp(uint32 epoch)
+    {
+        if (epoch == 0)
+            return "unscheduled";
+
+        return Acore::Time::TimeToTimestampStr(Seconds(epoch));
     }
 
     static void SendMapSystemMessage(Map* map, char const* text)
@@ -933,10 +942,11 @@ namespace
             uint32 delay = urand(AUTO_TRIGGER_MIN_DELAY_SEC, AUTO_TRIGGER_MAX_DELAY_SEC);
             _nextAutoTriggerAtSec = now + delay;
 
-            LOG_INFO("scripts.dc", "Giant Isles Invasion [AUTO]: next trigger in {} min (reason={}, targetEpoch={})",
+            LOG_INFO("scripts.dc", "Giant Isles Invasion [AUTO]: next trigger in {} min (reason={}, targetEpoch={}, targetTime={})",
                 delay / 60,
                 reason ? reason : "n/a",
-                _nextAutoTriggerAtSec);
+                _nextAutoTriggerAtSec,
+                FormatEpochTimestamp(_nextAutoTriggerAtSec));
         }
 
         Player* FindAutoStarter(Map* map) const
@@ -1025,11 +1035,12 @@ namespace
                     player->PlayDirectSound(6674);
             });
 
-            LOG_INFO("scripts.dc", "Giant Isles Invasion: warning phase started (trigger={}, starter={}, defenders={}, nextAutoWas={})",
+            LOG_INFO("scripts.dc", "Giant Isles Invasion: warning phase started (trigger={}, starter={}, defenders={}, nextAutoWas={}, nextAutoWasTime={})",
                 triggerSource,
                 starterName,
                 _defenderGuids.size(),
-                _nextAutoTriggerAtSec);
+                _nextAutoTriggerAtSec,
+                FormatEpochTimestamp(_nextAutoTriggerAtSec));
         }
 
         void HandleAutoTrigger(Map* map)
@@ -2193,6 +2204,7 @@ namespace
 
                         std::ostringstream ss;
                         ss << "[GM][Invasion Auto] nowEpoch=" << now
+                                    << " nowTime=" << FormatEpochTimestamp(now)
                            << " active=" << (sGiantIslesInvasion->IsActive() ? "true" : "false");
 
                         if (next == 0)
@@ -2201,20 +2213,25 @@ namespace
                         }
                         else if (next <= now)
                         {
-                            ss << " nextEpoch=" << next << " (due now)";
+                            ss << " nextEpoch=" << next
+                               << " nextTime=" << FormatEpochTimestamp(next)
+                               << " (due now)";
                         }
                         else
                         {
                             uint32 remainSec = next - now;
                             ss << " nextEpoch=" << next
+                               << " nextTime=" << FormatEpochTimestamp(next)
                                << " (in " << (remainSec / 60) << "m " << (remainSec % 60) << "s)";
                         }
 
                         ChatHandler(player->GetSession()).SendSysMessage(ss.str().c_str());
-                        LOG_INFO("scripts.dc", "Giant Isles Invasion [AUTO]: GM {} queried timer (now={}, next={}, active={})",
+                        LOG_INFO("scripts.dc", "Giant Isles Invasion [AUTO]: GM {} queried timer (now={}, nowTime={}, next={}, nextTime={}, active={})",
                             player->GetName(),
                             now,
+                            FormatEpochTimestamp(now),
                             next,
+                            FormatEpochTimestamp(next),
                             sGiantIslesInvasion->IsActive());
                     }
                     break;

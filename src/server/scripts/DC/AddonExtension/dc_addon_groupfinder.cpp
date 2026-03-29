@@ -547,11 +547,59 @@ namespace GroupFinder
                 difficulty = DUNGEON_DIFFICULTY_EPIC;
                 diffName = "Mythic";
             }
+            else
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Unknown dungeon difficulty")
+                    .Send(player);
+                player->SendDungeonDifficulty(group != nullptr);
+                return;
+            }
 
             if (group)
+            {
+                for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+                {
+                    Player* member = itr->GetSource();
+                    if (!member || !member->IsInWorld())
+                    {
+                        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                            .Set("error", "All group members must be online to change difficulty")
+                            .Send(player);
+                        player->SendDungeonDifficulty(true);
+                        return;
+                    }
+
+                    if (member->GetGUID() == player->GetGUID() ? member->GetMap()->IsDungeon() : member->GetMap()->IsNonRaidDungeon())
+                    {
+                        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                            .Set("error", "Leave the current dungeon before changing difficulty")
+                            .Send(player);
+                        player->SendDungeonDifficulty(true);
+                        return;
+                    }
+                }
+
+                group->ResetInstances(INSTANCE_RESET_CHANGE_DIFFICULTY, false, player);
                 group->SetDungeonDifficulty(Difficulty(difficulty));
+            }
             else
+            {
+                if (Map* map = player->FindMap())
+                {
+                    if (map->IsDungeon())
+                    {
+                        JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                            .Set("error", "Leave the current dungeon before changing difficulty")
+                            .Send(player);
+                        player->SendDungeonDifficulty(false);
+                        return;
+                    }
+                }
+
+                Player::ResetInstances(player->GetGUID(), INSTANCE_RESET_CHANGE_DIFFICULTY, false);
                 player->SetDungeonDifficulty(Difficulty(difficulty));
+            }
 
             player->SendDungeonDifficulty(group != nullptr);
         }
@@ -576,6 +624,14 @@ namespace GroupFinder
             {
                 difficulty = RAID_DIFFICULTY_25MAN_HEROIC;
                 diffName = "25-man Heroic";
+            }
+            else
+            {
+                JsonMessage(Module::GROUP_FINDER, Opcode::GroupFinder::SMSG_ERROR)
+                    .Set("error", "Unknown raid difficulty")
+                    .Send(player);
+                player->SendRaidDifficulty(group != nullptr);
+                return;
             }
 
             if (group)

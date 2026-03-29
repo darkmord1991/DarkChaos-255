@@ -74,6 +74,13 @@ namespace DCAddon
             uint32 lowguid = msg.GetUInt32(1);
             uint32 ARG = msg.GetUInt32(2);
 
+            bool sentExplicitResult = false;
+            auto SendMoveResult = [&](std::string const& text)
+            {
+                SendGOMoveMessage(player, text);
+                sentExplicitResult = true;
+            };
+
             using namespace DarkChaos::GOMove;
 
             if (ID < SPAWN) // no args
@@ -83,7 +90,7 @@ namespace DCAddon
                     GameObject* target = ::GOMove::GetGameObject(player, lowguid);
                     if (!target)
                     {
-                        SendGOMoveMessage(player, "Object GUID not found");
+                        SendMoveResult("Object GUID not found");
                         return;
                     }
 
@@ -135,7 +142,7 @@ namespace DCAddon
                         {
                             GameObject* object = ChatHandler(player->GetSession()).GetNearbyGameObject();
                             if (!object)
-                                SendGOMoveMessage(player, "No objects found");
+                                SendMoveResult("No objects found");
                             else
                             {
                                 ::GOMove::SendAdd(player, object->GetSpawnId());
@@ -151,7 +158,7 @@ namespace DCAddon
                     GameObject* target = ::GOMove::GetGameObject(player, lowguid);
                     if (!target)
                     {
-                        SendGOMoveMessage(player, "Object GUID not found");
+                        SendMoveResult("Object GUID not found");
                         return;
                     }
 
@@ -203,6 +210,9 @@ namespace DCAddon
                     }
                 }
             }
+
+            if (!sentExplicitResult)
+                SendMoveResult("OK");
         }
 
         static void HandleRequestSearch(Player* player, const ParsedMessage& msg)

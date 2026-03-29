@@ -103,6 +103,13 @@ namespace DCAddon
             SendAddonMessage(player, msg);
         }
 
+        static void SendNPCMoveResult(Player* player, std::string const& msg)
+        {
+            Message response(Module::NPCMOVE, Opcode::NPCMove::SMSG_MOVE_RESULT);
+            response.Add(msg);
+            response.Send(player);
+        }
+
         static Creature* GetCreature(Player* player, ObjectGuid::LowType lowguid)
         {
             return ChatHandler(player->GetSession()).GetCreatureFromPlayerMapByDbGuid(lowguid);
@@ -212,11 +219,21 @@ namespace DCAddon
             }
 
             if (msg.GetDataCount() < 3)
+            {
+                DCAddon::SendError(player, Module::NPCMOVE, "Missing command payload", DCAddon::ErrorCode::BAD_FORMAT, Opcode::Core::SMSG_ERROR);
                 return;
+            }
 
             uint32 ID = msg.GetUInt32(0);
             uint32 lowguid = msg.GetUInt32(1);
             uint32 ARG = msg.GetUInt32(2);
+
+            bool sentExplicitResult = false;
+            auto SendMoveResult = [&](std::string const& text)
+            {
+                SendNPCMoveResult(player, text);
+                sentExplicitResult = true;
+            };
 
             using namespace DarkChaos::GOMove;
 
@@ -297,7 +314,10 @@ namespace DCAddon
                             if (!creature)
                                 creature = FindNearestCreature(player, 30.0f);
                             if (!creature)
+                            {
                                 DCAddon::SendError(player, Module::NPCMOVE, "No creatures found");
+                                return;
+                            }
                             else
                                 SendAdd(player, creature->GetSpawnId());
                         } break;
@@ -375,6 +395,9 @@ namespace DCAddon
                     }
                 }
             }
+
+            if (!sentExplicitResult)
+                SendMoveResult("OK");
         }
 
         void RegisterHandlers()

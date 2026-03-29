@@ -286,9 +286,6 @@ if not HLBG.UI.History.Content then
     
     -- Auto-load history when History tab is shown
     HLBG.UI.History:SetScript("OnShow", function()
-        if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99HLBG:|r History view moved to DC-Leaderboards.")
-        end
         if HLBG.UI and HLBG.UI.History and HLBG.UI.History.Placeholder then
             HLBG.UI.History.Placeholder:SetText("History is now available in |cFFFFFFFFDC-Leaderboards|r.\n\nClick the button below or use |cFFFFFFFF/leaderboard|r.")
         end
@@ -729,7 +726,7 @@ if not HLBG.UI.Queue.Content then
                     HLBG.UI.Queue.StatusText:SetText(
                         "|cFFFF5555No response from server|r\n\n" ..
                         "Queue system may not be implemented yet.\n" ..
-                        "Try talking to the Battlemaster NPC instead.\n\n" ..
+                        "Try talking to Battlemaster NPC 900001 instead.\n\n" ..
                         "|cFFAAAA00Note:|r Queue commands (.hlbgq) are in development.")
                     if type(HLBG.QueueMessage) == 'function' then
                         HLBG.QueueMessage("no_response")
@@ -746,7 +743,7 @@ if not HLBG.UI.Queue.Content then
     infoText:SetText([[|cFFFFD700How to Join Hinterland BG:|r
 To participate in Hinterland Battleground, currently you need to:
 1. Travel to the Hinterland BG entrance
-2. Talk to the Battlemaster NPC to queue
+2. Talk to Battlemaster NPC 900001 to queue
 3. Alternatively, use the PvP UI if queue system is enabled
 |cFFAAAAAANote: You can also use queue commands (/hlbgq join, /hlbgq leave, /hlbgq status).
 Check with server administrators for the currently enabled queue method.|r]])

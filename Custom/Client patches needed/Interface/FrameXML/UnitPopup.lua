@@ -175,6 +175,44 @@ UnitLootMethod["master"] = { text = LOOT_MASTER_LOOTER, tooltipText = NEWBIE_TOO
 UnitLootMethod["group"] = { text = LOOT_GROUP_LOOT, tooltipText = NEWBIE_TOOLTIP_UNIT_GROUP_LOOT };
 UnitLootMethod["needbeforegreed"] = { text = LOOT_NEED_BEFORE_GREED, tooltipText = NEWBIE_TOOLTIP_UNIT_NEED_BEFORE_GREED };
 
+local function UnitPopup_GetDungeonDifficultyIndex()
+	local dungeonDifficulty = GetDungeonDifficulty();
+	if ( dungeonDifficulty == nil ) then
+		return nil;
+	end
+
+	-- Most clients expose 1-based values (1=Normal,2=Heroic,3=Mythic).
+	if ( dungeonDifficulty >= 1 and dungeonDifficulty <= 3 ) then
+		return dungeonDifficulty;
+	end
+
+	-- Fallback for environments exposing 0-based values.
+	if ( dungeonDifficulty == 0 ) then
+		return 1;
+	elseif ( dungeonDifficulty == 1 ) then
+		return 2;
+	elseif ( dungeonDifficulty == 2 ) then
+		return 3;
+	end
+
+	return nil;
+end
+
+local function UnitPopup_SetDungeonDifficultyByIndex(dungeonDifficulty)
+	if ( dungeonDifficulty == 3 ) then
+		-- Prefer protocol path for mythic; native 3.3.5 clients may not emit this mode.
+		local DC = rawget(_G, "DCAddonProtocol");
+		if ( DC and DC.GroupFinder and DC.GroupFinder.SetDifficulty ) then
+			DC.GroupFinder.SetDifficulty("dungeon", "mythic");
+		else
+			SetDungeonDifficulty(dungeonDifficulty);
+		end
+		return;
+	end
+
+	SetDungeonDifficulty(dungeonDifficulty);
+end
+
 
 UnitPopupFrames = {
 	"PlayerFrameDropDown",
@@ -306,8 +344,8 @@ function UnitPopup_ShowMenu (dropdownMenu, which, unit, name, userData)
 					info.checked = 1;
 				end
 			elseif ( strsub(value, 1, 18) == "DUNGEON_DIFFICULTY" and (strlen(value) > 18)) then
-				local dungeonDifficulty = GetDungeonDifficulty();
-				if ( dungeonDifficulty == index ) then
+				local dungeonDifficulty = UnitPopup_GetDungeonDifficultyIndex();
+				if ( dungeonDifficulty and dungeonDifficulty == index ) then
 					info.checked = 1;
 				end
 				local inParty = 0;
@@ -1309,7 +1347,7 @@ function UnitPopup_OnClick (self)
 		CloseDropDownMenus();
 	elseif ( strsub(button, 1, 18) == "DUNGEON_DIFFICULTY" and (strlen(button) > 18) ) then
 		local dungeonDifficulty = tonumber( strsub(button,19,19) );
-		SetDungeonDifficulty(dungeonDifficulty);
+		UnitPopup_SetDungeonDifficultyByIndex(dungeonDifficulty);
 	elseif ( strsub(button, 1, 15) == "RAID_DIFFICULTY" and (strlen(button) > 15) ) then
 		local raidDifficulty = tonumber( strsub(button,16,16) );
 		SetRaidDifficulty(raidDifficulty);

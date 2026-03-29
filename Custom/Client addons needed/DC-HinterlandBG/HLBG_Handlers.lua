@@ -210,9 +210,6 @@ function HLBG.RequestHistoryUI(page, per, season, sortKey, sortDir)
     if type(HLBG.OpenLeaderboards) == 'function' then
         return HLBG.OpenLeaderboards()
     end
-    if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFFAA00HLBG:|r History view moved to DC-Leaderboards. Use /leaderboard.")
-    end
     return false
 end
 
@@ -1497,6 +1494,36 @@ DCHLBGDB.useDCProtocolJSON = DCHLBGDB.useDCProtocolJSON or true  -- Prefer JSON 
 local DC = rawget(_G, "DCAddonProtocol")
 
 if DC then
+    local function SyncQueueFromHLBGStatus(statusValue)
+        local statusNum = tonumber(statusValue)
+        if statusNum == nil then
+            return
+        end
+
+        if statusNum == 1 or statusNum == 2 then
+            HLBG.IsInQueue = true
+            HLBG._lastQueueSyncAt = GetTime()
+        elseif statusNum == 3 or statusNum == 4 then
+            HLBG.IsInQueue = false
+        end
+
+        if statusNum == 2 then
+            HLBG.BattleState = "WARMUP"
+        elseif statusNum == 3 then
+            HLBG.BattleState = "IN_PROGRESS"
+        elseif statusNum == 4 then
+            HLBG.BattleState = "FINISHED"
+        elseif statusNum == 1 then
+            HLBG.BattleState = "WAITING"
+        elseif statusNum == 0 and (HLBG.BattleState == nil or HLBG.BattleState == "UNKNOWN") then
+            HLBG.BattleState = "WAITING"
+        end
+
+        if type(HLBG.UpdateQueueUI) == "function" then
+            pcall(HLBG.UpdateQueueUI)
+        end
+    end
+
     -- Helper to decode JSON from DC protocol
     local function DecodeJSON(jsonStr)
         if type(DC.DecodeJSON) == 'function' then
@@ -1526,6 +1553,41 @@ if DC then
     -- SMSG_STATUS (0x10) - BG status update
     DC:RegisterHandler("HLBG", 0x10, function(...)
         local args = {...}
+
+        if type(args[1]) == "table" then
+            local payload = args[1]
+
+            RES = RES or {}
+            RES.A = tonumber(payload.alliance or payload.A or RES.A or 0) or 0
+            RES.H = tonumber(payload.horde or payload.H or RES.H or 0) or 0
+            RES.END = tonumber(payload.timeRemaining or payload.duration or payload.elapsed or payload.END or 0) or 0
+            RES.LOCK = tonumber(payload.lock or payload.LOCK or 0) or 0
+
+            HLBG._lastStatus = HLBG._lastStatus or {}
+            HLBG._lastStatus.A = RES.A
+            HLBG._lastStatus.H = RES.H
+            HLBG._lastStatus.allianceResources = RES.A
+            HLBG._lastStatus.hordeResources = RES.H
+            HLBG._lastStatus.DURATION = RES.END
+            HLBG._lastStatusTime = GetTime()
+
+            SyncQueueFromHLBGStatus(payload.status or payload.hlbgStatus or payload.state or payload[1])
+
+            if type(HLBG.UpdateHUDVisibility) == 'function' then
+                pcall(HLBG.UpdateHUDVisibility)
+            end
+            if type(HLBG.UpdateHUD) == 'function' then
+                pcall(HLBG.UpdateHUD)
+            end
+
+            pcall(function()
+                if HLBG._devMode or (DCHLBGDB and DCHLBGDB.devMode) then
+                    HLBG.DebugLog('DC_STATUS_TABLE', payload)
+                end
+            end)
+
+            return
+        end
         
         if IsJSONMessage(...) then
             local json = DecodeJSON(args[2])
@@ -1547,6 +1609,8 @@ if DC then
                 HLBG._lastStatus.affix = json.affix
                 HLBG._lastStatus.season = json.season
                 HLBG._lastStatusTime = GetTime()
+
+                SyncQueueFromHLBGStatus(json.status or json.hlbgStatus or json.state)
                 
                 if json.affix then
                     HLBG._affixText = json.affix
@@ -1570,6 +1634,7 @@ if DC then
             local status, mapId, timeRemaining = args[1], args[2], args[3]
             RES = RES or {}
             RES.END = tonumber(timeRemaining) or 0
+            SyncQueueFromHLBGStatus(status)
             if type(HLBG.UpdateHUD) == 'function' then
                 pcall(HLBG.UpdateHUD)
             end
@@ -1612,32 +1677,61 @@ if DC then
         end
     end)
     
+    local function ExtractQueuePayload(payload)
+        if type(payload) ~= "table" then
+            return nil
+        end
+
+        return payload.queueStatus or payload.inQueue or payload.isQueued or payload[1],
+               payload.position or payload.queuePosition or payload.pos or payload[2],
+               payload.estimatedTime or payload.waitTime or payload.estWait or payload[3],
+               payload.totalQueued or payload.total or payload.queueTotal or payload[4],
+               payload.allianceQueued or payload.alliance or payload.aQueued or payload[5],
+               payload.hordeQueued or payload.horde or payload.hQueued or payload[6],
+               payload.minPlayers or payload.minPlayersToStart or payload[7],
+               payload.state or payload.bgState or payload.battleState or payload[8]
+    end
+
+    local function ForwardQueueStatus(queueStatus, position, estimatedTime, totalQueued, allianceQueued, hordeQueued, minPlayers, state)
+        if type(HLBG.HandleQueueStatusRaw) ~= "function" then
+            return
+        end
+
+        HLBG.HandleQueueStatusRaw(
+            queueStatus,
+            position,
+            estimatedTime,
+            totalQueued,
+            allianceQueued,
+            hordeQueued,
+            minPlayers,
+            state
+        )
+    end
+
     -- SMSG_QUEUE_UPDATE (0x13) - Queue updates
     DC:RegisterHandler("HLBG", 0x13, function(...)
         local args = {...}
 
+        -- Newer DCAddonProtocol builds deliver a single decoded table argument.
+        if type(args[1]) == "table" then
+            local queueStatus, position, estimatedTime, totalQueued, allianceQueued, hordeQueued, minPlayers, state = ExtractQueuePayload(args[1])
+            ForwardQueueStatus(queueStatus, position, estimatedTime, totalQueued, allianceQueued, hordeQueued, minPlayers, state)
+            return
+        end
+
+        -- Legacy JSON marker payload: "J", "{...}"
         if IsJSONMessage(...) then
             local json = DecodeJSON(args[2])
-            if json and type(HLBG.HandleQueueStatusRaw) == "function" then
-                HLBG.HandleQueueStatusRaw(
-                    json.queueStatus,
-                    json.position,
-                    json.estimatedTime,
-                    json.totalQueued,
-                    json.allianceQueued,
-                    json.hordeQueued,
-                    json.minPlayers,
-                    json.state
-                )
+            if json then
+                local queueStatus, position, estimatedTime, totalQueued, allianceQueued, hordeQueued, minPlayers, state = ExtractQueuePayload(json)
+                ForwardQueueStatus(queueStatus, position, estimatedTime, totalQueued, allianceQueued, hordeQueued, minPlayers, state)
                 return
             end
         end
 
-        if type(HLBG.HandleQueueStatusRaw) == "function" then
-            HLBG.HandleQueueStatusRaw(
-                args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]
-            )
-        end
+        -- Positional payload fallback.
+        ForwardQueueStatus(args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8])
     end)
     
     -- SMSG_TIMER_SYNC (0x14) - Timer synchronization

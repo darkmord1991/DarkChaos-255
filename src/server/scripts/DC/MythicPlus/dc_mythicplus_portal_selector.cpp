@@ -12,6 +12,7 @@
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "WorldSession.h"
 #include "Map.h"
+#include "Group.h"
 #include "Log.h"
 #include "Config.h"
 #include "StringFormat.h"
@@ -102,6 +103,62 @@ static bool IsPortalSessionValid(Player* player, Creature** outCreature = nullpt
 
     if (outCreature)
         *outCreature = creature;
+    return true;
+}
+
+static bool ApplyDungeonDifficultySelection(Player* player, Difficulty selectedDifficulty, std::string* errorMessage = nullptr)
+{
+    if (!player)
+    {
+        if (errorMessage)
+            *errorMessage = "Invalid player context.";
+        return false;
+    }
+
+    Group* group = player->GetGroup();
+    auto rejectDifficultyChange = [&](char const* message) -> bool
+    {
+        if (errorMessage)
+            *errorMessage = message ? message : "Unable to change dungeon difficulty right now.";
+
+        // Keep the client UI in sync by sending the authoritative current difficulty.
+        player->SendDungeonDifficulty(group != nullptr);
+        return false;
+    };
+
+    if (group)
+    {
+        if (!group->IsLeader(player->GetGUID()))
+            return rejectDifficultyChange("Only the group leader can change dungeon difficulty.");
+
+        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+        {
+            Player* member = itr->GetSource();
+            if (!member || !member->IsInWorld())
+                return rejectDifficultyChange("All group members must be online to change dungeon difficulty.");
+
+            bool memberInDungeon = member->GetGUID() == player->GetGUID()
+                ? member->GetMap()->IsDungeon()
+                : member->GetMap()->IsNonRaidDungeon();
+
+            if (memberInDungeon)
+                return rejectDifficultyChange("Leave the current dungeon before changing difficulty.");
+        }
+
+        group->ResetInstances(INSTANCE_RESET_CHANGE_DIFFICULTY, false, player);
+        group->SetDungeonDifficulty(selectedDifficulty);
+        return true;
+    }
+
+    if (Map* map = player->FindMap())
+    {
+        if (map->IsDungeon())
+            return rejectDifficultyChange("Leave the current dungeon before changing difficulty.");
+    }
+
+    Player::ResetInstances(player->GetGUID(), INSTANCE_RESET_CHANGE_DIFFICULTY, false);
+    player->SetDungeonDifficulty(selectedDifficulty);
+    player->SendDungeonDifficulty(false);
     return true;
 }
 
@@ -268,7 +325,22 @@ static void HandleSeasonalPortalTeleport(Player* player, DCAddon::ParsedMessage 
             break;
     }
 
-    player->SetDungeonDifficulty(selectedDifficulty);
+    if (difficulty == 0)
+    {
+        LOG_INFO("mythic.portal", "Seasonal portal request from {} omitted difficulty, defaulting to Mythic.", player->GetName());
+    }
+
+    std::string applyError;
+    if (!ApplyDungeonDifficultySelection(player, selectedDifficulty, &applyError))
+    {
+        if (applyError.empty())
+            applyError = "Unable to change dungeon difficulty right now.";
+
+        ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff0000[Dungeon Portal]|r {}", applyError).c_str());
+        SendSeasonalPortalResult(player, false, applyError);
+        return;
+    }
+
     ChatHandler(player->GetSession()).SendSysMessage(
         Acore::StringFormat("|cff00ff00[Dungeon Portal]|r Teleporting to {} entrance...", difficultyLabel).c_str());
 
@@ -555,7 +627,17 @@ public:
                 break;
         }
 
-        player->SetDungeonDifficulty(selectedDifficulty);
+        std::string applyError;
+        if (!ApplyDungeonDifficultySelection(player, selectedDifficulty, &applyError))
+        {
+            if (applyError.empty())
+                applyError = "Unable to change dungeon difficulty right now.";
+
+            ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff0000[Dungeon Portal]|r {}", applyError).c_str());
+            CloseGossipMenuFor(player);
+            return true;
+        }
+
         std::string message = "|cff00ff00[Dungeon Portal]|r Teleporting to " + std::string(difficultyLabel) + " entrance...";
         ChatHandler(player->GetSession()).SendSysMessage(message.c_str());
 

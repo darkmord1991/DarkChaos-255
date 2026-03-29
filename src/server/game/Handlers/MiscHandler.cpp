@@ -1265,13 +1265,25 @@ void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPackets::Instance::SetD
 {
     LOG_DEBUG("network", "MSG_SET_DUNGEON_DIFFICULTY");
 
-    if (packet.Mode >= MAX_DUNGEON_DIFFICULTY)
-        return;
-
-    if (Difficulty(packet.Mode) == _player->GetDungeonDifficulty())
-        return;
-
     Group* group = _player->GetGroup();
+
+    // Some custom 3.3.5a client UI implementations send the third option as "3"
+    // (1-based list index) instead of the enum value "2" for Epic/Mythic.
+    uint32 selectedMode = packet.Mode;
+    if (selectedMode == MAX_DUNGEON_DIFFICULTY)
+        selectedMode = DUNGEON_DIFFICULTY_EPIC;
+
+    if (selectedMode >= MAX_DUNGEON_DIFFICULTY)
+    {
+        _player->SendDungeonDifficulty(group != nullptr);
+        return;
+    }
+
+    Difficulty selectedDifficulty = Difficulty(selectedMode);
+
+    if (selectedDifficulty == _player->GetDungeonDifficulty())
+        return;
+
     if (group)
     {
         if (group->IsLeader(_player->GetGUID()))
@@ -1296,8 +1308,10 @@ void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPackets::Instance::SetD
             }
 
             group->ResetInstances(INSTANCE_RESET_CHANGE_DIFFICULTY, false, _player);
-            group->SetDungeonDifficulty(Difficulty(packet.Mode));
+            group->SetDungeonDifficulty(selectedDifficulty);
         }
+        else
+            _player->SendDungeonDifficulty(true);
     }
     else
     {
@@ -1307,7 +1321,8 @@ void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPackets::Instance::SetD
             return;
         }
         Player::ResetInstances(_player->GetGUID(), INSTANCE_RESET_CHANGE_DIFFICULTY, false);
-        _player->SetDungeonDifficulty(Difficulty(packet.Mode));
+        _player->SetDungeonDifficulty(selectedDifficulty);
+        _player->SendDungeonDifficulty(false);
     }
 }
 
