@@ -12,17 +12,18 @@
 
 #include <algorithm>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-namespace DCCustomLogin::LearnSpells
+namespace DCFirstStart::LearnSpells
 {
     namespace
     {
-        constexpr char const* CONFIG_ENABLE = "DCCustomLogin.LearnSpells.Enable";
-        constexpr char const* CONFIG_MAX_LEVEL = "DCCustomLogin.LearnSpells.MaxLevel";
-        constexpr char const* CONFIG_SHAMAN_TOTEMS = "DCCustomLogin.LearnSpells.ShamanTotems";
+        constexpr char const* CONFIG_ENABLE = "DCFirstStart.LearnSpells.Enable";
+        constexpr char const* CONFIG_MAX_LEVEL = "DCFirstStart.LearnSpells.MaxLevel";
+        constexpr char const* CONFIG_SHAMAN_TOTEMS = "DCFirstStart.LearnSpells.ShamanTotems";
 
         struct AddSpell
         {
@@ -549,7 +550,7 @@ namespace DCCustomLogin::LearnSpells
                 }
 
                 if (debug)
-                    LOG_INFO("module.dc", "[DCCustomLogin] Built class spell caches (DBC + trainer tables)");
+                    LOG_INFO("module.dc", "[DCFirstStart] Built class spell caches (DBC + trainer tables)");
             });
         }
 
@@ -572,7 +573,7 @@ namespace DCCustomLogin::LearnSpells
                 if (!sSpellMgr->GetSpellInfo(spell.spellId))
                 {
                     if (debug)
-                        LOG_WARN("module.dc", "[DCCustomLogin] Additional spell {} not found", spell.spellId);
+                        LOG_WARN("module.dc", "[DCFirstStart] Additional spell {} not found", spell.spellId);
                     continue;
                 }
 
@@ -580,7 +581,7 @@ namespace DCCustomLogin::LearnSpells
                 {
                     player->learnSpell(spell.spellId, false);
                     if (debug)
-                        LOG_INFO("module.dc", "[DCCustomLogin] Learned additional spell {} at level {}", spell.spellId, level);
+                        LOG_INFO("module.dc", "[DCFirstStart] Learned additional spell {} at level {}", spell.spellId, level);
                 }
             }
         }
@@ -633,7 +634,7 @@ namespace DCCustomLogin::LearnSpells
             }
 
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Learned {} class spells via DBC scan", learnedCount);
+                LOG_INFO("module.dc", "[DCFirstStart] Learned {} class spells via DBC scan", learnedCount);
         }
 
         void LearnTrainerSpells(Player* player, uint32 maxLevel, bool debug)
@@ -670,7 +671,7 @@ namespace DCCustomLogin::LearnSpells
             }
 
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Learned {} class spells via trainer tables", learnedCount);
+                LOG_INFO("module.dc", "[DCFirstStart] Learned {} class spells via trainer tables", learnedCount);
         }
 
         void EnsureCoreWeaponPassives(Player* player, bool debug)
@@ -712,7 +713,7 @@ namespace DCCustomLogin::LearnSpells
                 player->learnSpell(dualWieldSpell, false);
                 learned = true;
                 if (debug)
-                    LOG_INFO("module.dc", "[DCCustomLogin] Learned Dual Wield for {} at level {}", player->GetName(), level);
+                    LOG_INFO("module.dc", "[DCFirstStart] Learned Dual Wield for {} at level {}", player->GetName(), level);
             }
 
             // Dual Wield is a passive spell; ensure the flag is enabled for equip checks.
@@ -720,7 +721,7 @@ namespace DCCustomLogin::LearnSpells
             {
                 player->SetCanDualWield(true);
                 if (debug && !learned)
-                    LOG_INFO("module.dc", "[DCCustomLogin] Enabled Dual Wield flag for {}", player->GetName());
+                    LOG_INFO("module.dc", "[DCFirstStart] Enabled Dual Wield flag for {}", player->GetName());
             }
         }
     } // namespace
@@ -741,7 +742,8 @@ namespace DCCustomLogin::LearnSpells
         LearnTrainerSpells(player, learnToLevel, debug);
         EnsureCoreWeaponPassives(player, debug);
 
-        if (player->getClass() == CLASS_SHAMAN && sConfigMgr->GetOption<bool>(CONFIG_SHAMAN_TOTEMS, true))
+        if (player->getClass() == CLASS_SHAMAN &&
+            sConfigMgr->GetOption<bool>(CONFIG_SHAMAN_TOTEMS, true))
         {
             player->AddItem(5175, 1); // Earth Totem
             player->AddItem(5176, 1); // Fire Totem
@@ -749,7 +751,7 @@ namespace DCCustomLogin::LearnSpells
             player->AddItem(5178, 1); // Air Totem
 
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted Shaman totems on first login");
+                LOG_INFO("module.dc", "[DCFirstStart] Granted Shaman totems on first login");
         }
     }
 
@@ -777,4 +779,4 @@ namespace DCCustomLogin::LearnSpells
         LearnTrainerSpells(player, toLevel, debug);
         EnsureCoreWeaponPassives(player, debug);
     }
-} // namespace DCCustomLogin::LearnSpells
+} // namespace DCFirstStart::LearnSpells

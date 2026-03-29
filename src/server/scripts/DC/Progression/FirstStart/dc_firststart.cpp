@@ -41,68 +41,70 @@
 #include <map>
 #include <vector>
 
-namespace DCCustomLogin
+namespace DCFirstStart
 {
     // Configuration keys (matches darkchaos-custom.conf.dist)
     namespace Config
     {
         // Master toggles
-        constexpr const char* ENABLE = "DCCustomLogin.Enable";
-        constexpr const char* DEBUG = "DCCustomLogin.Debug";
-        constexpr const char* ANNOUNCE = "DCCustomLogin.Announce";
-        constexpr const char* ANNOUNCE_MESSAGE = "DCCustomLogin.AnnounceMessage";
-        constexpr const char* PLAYER_ANNOUNCE = "DCCustomLogin.PlayerAnnounce";
+        constexpr const char* ENABLE = "DCFirstStart.Enable";
+        constexpr const char* DEBUG = "DCFirstStart.Debug";
+        constexpr const char* ANNOUNCE = "DCFirstStart.Announce";
+        constexpr const char* ANNOUNCE_MESSAGE = "DCFirstStart.AnnounceMessage";
+        constexpr const char* PLAYER_ANNOUNCE = "DCFirstStart.PlayerAnnounce";
 
         // BoA Items
-        constexpr const char* BOA_ENABLE = "DCCustomLogin.BoA";
+        constexpr const char* BOA_ENABLE = "DCFirstStart.BoA";
 
         // Skills
-        constexpr const char* SKILLS_ENABLE = "DCCustomLogin.Skills";
-        constexpr const char* SKILLS_LIST = "DCCustomLogin.Skills.List";
+        constexpr const char* SKILLS_ENABLE = "DCFirstStart.Skills.Enable";
+        constexpr const char* SKILLS_LIST = "DCFirstStart.Skills.List";
 
         // Starting Gold
-        constexpr const char* GOLD_ENABLE = "DCCustomLogin.StartingGold.Enable";
-        constexpr const char* GOLD_GOLD = "DCCustomLogin.StartingGold.Gold";
-        constexpr const char* GOLD_SILVER = "DCCustomLogin.StartingGold.Silver";
-        constexpr const char* GOLD_COPPER = "DCCustomLogin.StartingGold.Copper";
+        constexpr const char* GOLD_ENABLE = "DCFirstStart.StartingGold.Enable";
+        constexpr const char* GOLD_GOLD = "DCFirstStart.StartingGold.Gold";
+        constexpr const char* GOLD_SILVER = "DCFirstStart.StartingGold.Silver";
+        constexpr const char* GOLD_COPPER = "DCFirstStart.StartingGold.Copper";
 
         // Starting Mount
-        constexpr const char* MOUNT_ENABLE = "DCCustomLogin.StartingMount.Enable";
-        constexpr const char* MOUNT_SPELL = "DCCustomLogin.StartingMount.Spell";
-        constexpr const char* MOUNT_SKILL = "DCCustomLogin.StartingMount.Skill";
-        constexpr const char* MOUNT_MIN_LEVEL = "DCCustomLogin.StartingMount.MinLevel";
+        constexpr const char* MOUNT_ENABLE = "DCFirstStart.StartingMount.Enable";
+        constexpr const char* MOUNT_SPELL = "DCFirstStart.StartingMount.Spell";
+        constexpr const char* MOUNT_SKILL = "DCFirstStart.StartingMount.Skill";
+        constexpr const char* MOUNT_MIN_LEVEL = "DCFirstStart.StartingMount.MinLevel";
 
         // Starting Professions
-        constexpr const char* PROF_ENABLE = "DCCustomLogin.StartingProfessions.Enable";
-        constexpr const char* PROF_LIST = "DCCustomLogin.StartingProfessions.List";
+        constexpr const char* PROF_ENABLE = "DCFirstStart.StartingProfessions.Enable";
+        constexpr const char* PROF_LIST = "DCFirstStart.StartingProfessions.List";
 
         // Bags
-        constexpr const char* BAGS_DEFAULT = "DCCustomLogin.Bags.Default";
-        constexpr const char* BAGS_HUNTER = "DCCustomLogin.Bags.Hunter";
-        constexpr const char* BAGS_WARLOCK = "DCCustomLogin.Bags.Warlock";
-        constexpr const char* BAGS_ROGUE = "DCCustomLogin.Bags.Rogue";
+        constexpr const char* BAGS_DEFAULT = "DCFirstStart.Bags.Default";
+        constexpr const char* BAGS_HUNTER = "DCFirstStart.Bags.Hunter";
+        constexpr const char* BAGS_WARLOCK = "DCFirstStart.Bags.Warlock";
+        constexpr const char* BAGS_ROGUE = "DCFirstStart.Bags.Rogue";
 
         // Special Abilities
-        constexpr const char* SPECIAL_ENABLE = "DCCustomLogin.SpecialAbility";
-        constexpr const char* SPECIAL_SPELL1 = "DCCustomLogin.SpecialAbility.Spell1";
-        constexpr const char* SPECIAL_SPELL2 = "DCCustomLogin.SpecialAbility.Spell2";
-        constexpr const char* SPECIAL_TITLE = "DCCustomLogin.SpecialAbility.Title";
-        constexpr const char* SPECIAL_MOUNT = "DCCustomLogin.SpecialAbility.Mount";
+        constexpr const char* SPECIAL_ENABLE = "DCFirstStart.SpecialAbility.Enable";
+        constexpr const char* SPECIAL_SPELL1 = "DCFirstStart.SpecialAbility.Spell1";
+        constexpr const char* SPECIAL_SPELL2 = "DCFirstStart.SpecialAbility.Spell2";
+        constexpr const char* SPECIAL_TITLE = "DCFirstStart.SpecialAbility.Title";
+        constexpr const char* SPECIAL_MOUNT = "DCFirstStart.SpecialAbility.Mount";
 
         // Reputation
-        constexpr const char* REP_ENABLE = "DCCustomLogin.Reputation";
+        constexpr const char* REP_ENABLE = "DCFirstStart.Reputation.Enable";
 
         // DC Integrations
-        constexpr const char* DC_WELCOME_TRIGGER = "DCCustomLogin.TriggerWelcome";
-        constexpr const char* DC_SEASONAL_TOKENS = "DCCustomLogin.SeasonalTokens.Enable";
-        constexpr const char* DC_SEASONAL_TOKENS_AMOUNT = "DCCustomLogin.SeasonalTokens.Amount";
-        constexpr const char* DC_PRESTIGE_BONUSES = "DCCustomLogin.PrestigeBonuses";
-        constexpr const char* DC_MOBILE_TELEPORTER = "DCCustomLogin.MobileTeleporter.Enable";
-        constexpr const char* DC_MOBILE_TELEPORTER_ITEM = "DCCustomLogin.MobileTeleporter.ItemId";
+        constexpr const char* DC_WELCOME_TRIGGER = "DCFirstStart.TriggerWelcome";
+        constexpr const char* DC_SEASONAL_TOKENS = "DCFirstStart.SeasonalTokens.Enable";
+        constexpr const char* DC_SEASONAL_TOKENS_USE_CANONICAL = "DCFirstStart.SeasonalTokens.UseCanonicalCurrency";
+        constexpr const char* DC_SEASONAL_TOKENS_ITEM = "DCFirstStart.SeasonalTokens.ItemId";
+        constexpr const char* DC_SEASONAL_TOKENS_AMOUNT = "DCFirstStart.SeasonalTokens.Amount";
+        constexpr const char* DC_PRESTIGE_BONUSES = "DCFirstStart.PrestigeBonuses";
+        constexpr const char* DC_MOBILE_TELEPORTER = "DCFirstStart.MobileTeleporter.Enable";
+        constexpr const char* DC_MOBILE_TELEPORTER_ITEM = "DCFirstStart.MobileTeleporter.ItemId";
 
         // Dual Spec
-        constexpr const char* DUALSPEC_ENABLE = "DCCustomLogin.DualSpec.Enable";
-        constexpr const char* DUALSPEC_LEVEL = "DCCustomLogin.DualSpec.Level";
+        constexpr const char* DUALSPEC_ENABLE = "DCFirstStart.DualSpec.Enable";
+        constexpr const char* DUALSPEC_LEVEL = "DCFirstStart.DualSpec.Level";
     }
 
     // Class names for config lookups
@@ -243,7 +245,7 @@ namespace DCCustomLogin
         if (equipSlot == NULL_SLOT)
         {
             if (debug)
-                LOG_WARN("module.dc", "[DCCustomLogin] Could not find equip slot for existing item {} on {}",
+                LOG_WARN("module.dc", "[DCFirstStart] Could not find equip slot for existing item {} on {}",
                          itemId, player->GetName());
             return false;
         }
@@ -275,7 +277,7 @@ namespace DCCustomLogin
             return EquipExistingItem(player, itemId, debug);
 
         if (debug)
-            LOG_WARN("module.dc", "[DCCustomLogin] Failed to add BoA item {} to {}",
+            LOG_WARN("module.dc", "[DCFirstStart] Failed to add BoA item {} to {}",
                      itemId, player->GetName());
 
         return false;
@@ -313,13 +315,13 @@ namespace DCCustomLogin
             if (!sSpellMgr->GetSpellInfo(profId))
             {
                 if (debug)
-                    LOG_WARN("module.dc", "[DCCustomLogin] Profession spell {} not found", profId);
+                    LOG_WARN("module.dc", "[DCFirstStart] Profession spell {} not found", profId);
                 continue;
             }
 
             player->learnSpell(profId, false);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted profession {} to {}", profId, player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] Granted profession {} to {}", profId, player->GetName());
         }
     }
 
@@ -330,7 +332,7 @@ namespace DCCustomLogin
             return;
 
         std::string className = GetClassName(player->getClass());
-        std::string skillsKey = "DCCustomLogin.Skills." + className;
+        std::string skillsKey = "DCFirstStart.Skills." + className;
         std::string skillsList = sConfigMgr->GetOption<std::string>(skillsKey, "");
 
         // Fall back to global list if no class-specific
@@ -346,13 +348,13 @@ namespace DCCustomLogin
             if (!sSpellMgr->GetSpellInfo(skillId))
             {
                 if (debug)
-                    LOG_WARN("module.dc", "[DCCustomLogin] Skill spell {} not found", skillId);
+                    LOG_WARN("module.dc", "[DCFirstStart] Skill spell {} not found", skillId);
                 continue;
             }
 
             player->learnSpell(skillId, false);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted skill {} to {}", skillId, player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] Granted skill {} to {}", skillId, player->GetName());
         }
     }
 
@@ -373,14 +375,14 @@ namespace DCCustomLogin
         {
             player->learnSpell(ridingSkill, false);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted riding skill {} to {}", ridingSkill, player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] Granted riding skill {} to {}", ridingSkill, player->GetName());
         }
 
         if (mountSpell && sSpellMgr->GetSpellInfo(mountSpell))
         {
             player->learnSpell(mountSpell, false);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted mount {} to {}", mountSpell, player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] Granted mount {} to {}", mountSpell, player->GetName());
         }
     }
 
@@ -399,7 +401,7 @@ namespace DCCustomLogin
         player->UpdateSpecCount(2);
 
         if (debug)
-            LOG_INFO("module.dc", "[DCCustomLogin] Granted free dual spec to {}", player->GetName());
+            LOG_INFO("module.dc", "[DCFirstStart] Granted free dual spec to {}", player->GetName());
     }
 
     // Grant starting bags
@@ -420,7 +422,7 @@ namespace DCCustomLogin
                 {
                     player->EquipItem(slot, bag, true);
                     if (debug)
-                        LOG_INFO("module.dc", "[DCCustomLogin] Equipped bag {} in slot {}", bagId, slot);
+                        LOG_INFO("module.dc", "[DCFirstStart] Equipped bag {} in slot {}", bagId, slot);
                 }
             }
             slot++;
@@ -453,7 +455,7 @@ namespace DCCustomLogin
                     {
                         player->EquipItem(s, bag, true);
                         if (debug)
-                            LOG_INFO("module.dc", "[DCCustomLogin] Equipped class bag {} in slot {}", classBagId, s);
+                            LOG_INFO("module.dc", "[DCFirstStart] Equipped class bag {} in slot {}", classBagId, s);
                     }
                     break;
                 }
@@ -476,7 +478,7 @@ namespace DCCustomLogin
         {
             player->ModifyMoney(totalCopper);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted {}g {}s {}c to {}", gold, silver, copper, player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] Granted {}g {}s {}c to {}", gold, silver, copper, player->GetName());
         }
     }
 
@@ -492,7 +494,7 @@ namespace DCCustomLogin
 
         for (auto const& slot : ITEM_SLOTS)
         {
-            std::string key = "DCCustomLogin." + className + "." + slot;
+            std::string key = "DCFirstStart." + className + "." + slot;
             uint32 itemId = sConfigMgr->GetOption<uint32>(key, 0);
 
             if (itemId > 0)
@@ -502,7 +504,7 @@ namespace DCCustomLogin
                     bool equipped = AddAndEquipItem(player, itemId, debug);
                     if (debug)
                     {
-                        LOG_INFO("module.dc", "[DCCustomLogin] Added BoA item {} ({}) to {} (equipped: {})",
+                        LOG_INFO("module.dc", "[DCFirstStart] Added BoA item {} ({}) to {} (equipped: {})",
                                  itemId, slot, player->GetName(), equipped ? "yes" : "no");
                     }
                 }
@@ -511,7 +513,7 @@ namespace DCCustomLogin
                     bool equipped = IsItemEquipped(player, itemId) || EquipExistingItem(player, itemId, debug);
                     if (debug)
                     {
-                        LOG_INFO("module.dc", "[DCCustomLogin] BoA item {} ({}) already exists for {} (equipped: {})",
+                        LOG_INFO("module.dc", "[DCFirstStart] BoA item {} ({}) already exists for {} (equipped: {})",
                                  itemId, slot, player->GetName(), equipped ? "yes" : "no");
                     }
                 }
@@ -536,14 +538,14 @@ namespace DCCustomLogin
         {
             player->learnSpell(spell1, false);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted special spell1 {} to {}", spell1, player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] Granted special spell1 {} to {}", spell1, player->GetName());
         }
 
         if (spell2 && sSpellMgr->GetSpellInfo(spell2))
         {
             player->learnSpell(spell2, false);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted special spell2 {} to {}", spell2, player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] Granted special spell2 {} to {}", spell2, player->GetName());
         }
 
         if (title)
@@ -552,7 +554,7 @@ namespace DCCustomLogin
             {
                 player->SetTitle(titleEntry);
                 if (debug)
-                    LOG_INFO("module.dc", "[DCCustomLogin] Granted title {} to {}", title, player->GetName());
+                    LOG_INFO("module.dc", "[DCFirstStart] Granted title {} to {}", title, player->GetName());
             }
         }
 
@@ -560,7 +562,7 @@ namespace DCCustomLogin
         {
             player->learnSpell(mount, false);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted special mount {} to {}", mount, player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] Granted special mount {} to {}", mount, player->GetName());
         }
     }
 
@@ -572,14 +574,14 @@ namespace DCCustomLogin
 
         for (auto const& [factionId, name] : REPUTATION_FACTIONS)
         {
-            std::string key = "DCCustomLogin.Reputation." + name;
+            std::string key = "DCFirstStart.Reputation." + name;
             uint32 repValue = sConfigMgr->GetOption<uint32>(key, 0);
 
             if (repValue > 0)
             {
                 player->SetReputation(factionId, repValue);
                 if (debug)
-                    LOG_INFO("module.dc", "[DCCustomLogin] Set {} reputation to {} for {}", name, repValue, player->GetName());
+                    LOG_INFO("module.dc", "[DCFirstStart] Set {} reputation to {} for {}", name, repValue, player->GetName());
             }
         }
     }
@@ -594,8 +596,8 @@ namespace DCCustomLogin
 
         // Get the seasonal token item ID
         // Priority: UseCanonicalCurrency -> DarkChaos.Seasonal.TokenItemID
-        //           Otherwise -> DCCustomLogin.SeasonalTokens.ItemId
-        bool useCanonical = sConfigMgr->GetOption<bool>("DCCustomLogin.SeasonalTokens.UseCanonicalCurrency", true);
+        //           Otherwise -> DCFirstStart.SeasonalTokens.ItemId
+        bool useCanonical = sConfigMgr->GetOption<bool>(Config::DC_SEASONAL_TOKENS_USE_CANONICAL, true);
         uint32 tokenItemId;
 
         if (useCanonical)
@@ -606,14 +608,14 @@ namespace DCCustomLogin
         else
         {
             // Use custom token item ID
-            tokenItemId = sConfigMgr->GetOption<uint32>("DCCustomLogin.SeasonalTokens.ItemId", 0);
+            tokenItemId = sConfigMgr->GetOption<uint32>(Config::DC_SEASONAL_TOKENS_ITEM, 0);
         }
 
         if (tokenItemId > 0)
         {
             player->AddItem(tokenItemId, amount);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted {} seasonal tokens (item {}) to {}",
+                LOG_INFO("module.dc", "[DCFirstStart] Granted {} seasonal tokens (item {}) to {}",
                          amount, tokenItemId, player->GetName());
 
             ChatHandler(player->GetSession()).PSendSysMessage(
@@ -621,7 +623,7 @@ namespace DCCustomLogin
         }
         else if (debug)
         {
-            LOG_WARN("module.dc", "[DCCustomLogin] SeasonalTokens not configured (UseCanonical={}, ItemId={}), skipping token grant",
+            LOG_WARN("module.dc", "[DCFirstStart] SeasonalTokens not configured (UseCanonical={}, ItemId={}), skipping token grant",
                      useCanonical, tokenItemId);
         }
     }
@@ -638,7 +640,7 @@ namespace DCCustomLogin
         {
             player->AddItem(itemId, 1);
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] Granted mobile teleporter {} to {}", itemId, player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] Granted mobile teleporter {} to {}", itemId, player->GetName());
 
             ChatHandler(player->GetSession()).SendSysMessage(
                 "|cff00ccff[DarkChaos]:|r You received a |cffff8000Mobile Teleporter|r - use it to travel anywhere!");
@@ -672,7 +674,7 @@ namespace DCCustomLogin
                     "Bonuses are applied automatically.", prestigeLevel);
 
                 if (debug)
-                    LOG_INFO("module.dc", "[DCCustomLogin] Player {} has account prestige level {}",
+                    LOG_INFO("module.dc", "[DCFirstStart] Player {} has account prestige level {}",
                              player->GetName(), prestigeLevel);
             }
         }
@@ -692,7 +694,7 @@ namespace DCCustomLogin
         );
 
         if (debug)
-            LOG_INFO("module.dc", "[DCCustomLogin] Marked {} for DC-Welcome first-login trigger", player->GetName());
+            LOG_INFO("module.dc", "[DCFirstStart] Marked {} for DC-Welcome first-login trigger", player->GetName());
     }
 
     // Main function: Give all first login rewards
@@ -701,7 +703,7 @@ namespace DCCustomLogin
         bool debug = sConfigMgr->GetOption<bool>(Config::DEBUG, false);
 
         if (debug)
-            LOG_INFO("module.dc", "[DCCustomLogin] Processing first login for {}", player->GetName());
+            LOG_INFO("module.dc", "[DCFirstStart] Processing first login for {}", player->GetName());
 
         // Standard rewards (from mod-customlogin)
         GrantProfessions(player, debug);
@@ -722,51 +724,55 @@ namespace DCCustomLogin
         TriggerWelcomeAddon(player, debug);
 
         if (debug)
-            LOG_INFO("module.dc", "[DCCustomLogin] Completed first login rewards for {}", player->GetName());
+            LOG_INFO("module.dc", "[DCFirstStart] Completed first login rewards for {}", player->GetName());
     }
 
-} // namespace DCCustomLogin
+} // namespace DCFirstStart
 
 // =============================================================================
 // Player Script
 // =============================================================================
 
-class DCCustomLogin_PlayerScript : public PlayerScript
+class DCFirstStart_PlayerScript : public PlayerScript
 {
 public:
-    DCCustomLogin_PlayerScript() : PlayerScript("DCCustomLogin_PlayerScript") { }
+    DCFirstStart_PlayerScript() : PlayerScript("DCFirstStart_PlayerScript") { }
 
     void OnPlayerLogin(Player* player) override
     {
-        if (!sConfigMgr->GetOption<bool>(DCCustomLogin::Config::ENABLE, true))
+        if (!sConfigMgr->GetOption<bool>(
+            DCFirstStart::Config::ENABLE, true))
             return;
 
-        bool debug = sConfigMgr->GetOption<bool>(DCCustomLogin::Config::DEBUG, false);
+        bool debug = sConfigMgr->GetOption<bool>(
+            DCFirstStart::Config::DEBUG, false);
 
-        bool hasFirstLoginMarker = DCCustomLogin::HasFirstLoginMarker(player->GetGUID());
+        bool hasFirstLoginMarker = DCFirstStart::HasFirstLoginMarker(player->GetGUID());
 
         // Check for first login using marker + total played time
         if (!hasFirstLoginMarker && player->GetTotalPlayedTime() == 0)
         {
             if (debug)
-                LOG_INFO("module.dc", "[DCCustomLogin] First login detected for {}", player->GetName());
+                LOG_INFO("module.dc", "[DCFirstStart] First login detected for {}", player->GetName());
 
-            DCCustomLogin::GiveFirstLoginRewards(player);
-            DCCustomLogin::MarkFirstLoginComplete(player->GetGUID());
+            DCFirstStart::GiveFirstLoginRewards(player);
+            DCFirstStart::MarkFirstLoginComplete(player->GetGUID());
         }
 
         // Announce module if enabled
-        bool announce = sConfigMgr->GetOption<bool>(DCCustomLogin::Config::ANNOUNCE, false);
+        bool announce = sConfigMgr->GetOption<bool>(
+            DCFirstStart::Config::ANNOUNCE, false);
         if (announce)
         {
             std::string msg = sConfigMgr->GetOption<std::string>(
-                DCCustomLogin::Config::ANNOUNCE_MESSAGE,
+                DCFirstStart::Config::ANNOUNCE_MESSAGE,
                 "Welcome to |cff00ff00DarkChaos-255|r! Type |cfffff000/welcome|r to get started.");
             ChatHandler(player->GetSession()).SendSysMessage(msg);
         }
 
         // Player announce (faction-colored login message)
-        bool playerAnnounce = sConfigMgr->GetOption<bool>(DCCustomLogin::Config::PLAYER_ANNOUNCE, false);
+        bool playerAnnounce = sConfigMgr->GetOption<bool>(
+            DCFirstStart::Config::PLAYER_ANNOUNCE, false);
         if (playerAnnounce)
         {
             std::ostringstream ss;
@@ -786,7 +792,8 @@ public:
 
     void OnPlayerLogout(Player* player) override
     {
-        bool playerAnnounce = sConfigMgr->GetOption<bool>(DCCustomLogin::Config::PLAYER_ANNOUNCE, false);
+        bool playerAnnounce = sConfigMgr->GetOption<bool>(
+            DCFirstStart::Config::PLAYER_ANNOUNCE, false);
         if (playerAnnounce)
         {
             std::ostringstream ss;
@@ -806,19 +813,23 @@ public:
 
     void OnPlayerLevelChanged(Player* player, uint8 oldLevel) override
     {
-        if (!sConfigMgr->GetOption<bool>(DCCustomLogin::Config::ENABLE, true))
+        if (!sConfigMgr->GetOption<bool>(
+            DCFirstStart::Config::ENABLE, true))
             return;
 
-        bool debug = sConfigMgr->GetOption<bool>(DCCustomLogin::Config::DEBUG, false);
-        DCCustomLogin::LearnSpells::GrantClassSpellsOnLevelUp(player, oldLevel, debug);
+        bool debug = sConfigMgr->GetOption<bool>(
+            DCFirstStart::Config::DEBUG, false);
+        DCFirstStart::LearnSpells::GrantClassSpellsOnLevelUp(player, oldLevel, debug);
 
-        uint32 mountLevel = sConfigMgr->GetOption<uint32>(DCCustomLogin::Config::MOUNT_MIN_LEVEL, 10);
+        uint32 mountLevel = sConfigMgr->GetOption<uint32>(
+            DCFirstStart::Config::MOUNT_MIN_LEVEL, 10);
         if (oldLevel < mountLevel && player->GetLevel() >= mountLevel)
-            DCCustomLogin::GrantMount(player, debug);
+            DCFirstStart::GrantMount(player, debug);
 
-        uint32 dualSpecLevel = sConfigMgr->GetOption<uint32>(DCCustomLogin::Config::DUALSPEC_LEVEL, 10);
+        uint32 dualSpecLevel = sConfigMgr->GetOption<uint32>(
+            DCFirstStart::Config::DUALSPEC_LEVEL, 10);
         if (oldLevel < dualSpecLevel && player->GetLevel() >= dualSpecLevel)
-            DCCustomLogin::GrantDualSpec(player, debug);
+            DCFirstStart::GrantDualSpec(player, debug);
     }
 };
 
@@ -828,5 +839,5 @@ public:
 
 void AddSC_dc_firststart()
 {
-    new DCCustomLogin_PlayerScript();
+    new DCFirstStart_PlayerScript();
 }

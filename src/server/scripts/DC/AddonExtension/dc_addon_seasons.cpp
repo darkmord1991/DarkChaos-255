@@ -50,7 +50,7 @@ namespace Seasons
 
     void LoadConfig()
     {
-        s_enabled = sConfigMgr->GetOption<bool>("DC.Addon.Seasons.Enable", true);
+        s_enabled = sConfigMgr->GetOption<bool>("DC.AddonProtocol.Seasonal.Enable", true);
     }
 
     static uint32 GetSeasonIdFromMsg(const ParsedMessage& msg)

@@ -56,7 +56,7 @@ namespace DCDuelAddon
     // Configuration
     namespace Config
     {
-        constexpr const char* ENABLED = "DCDuelAddon.Enable";
+        constexpr const char* CANONICAL_ENABLED = "DC.AddonProtocol.Duels.Enable";
         // Note: LeaderboardLimit is currently unused but reserved for future config
         // constexpr const char* LEADERBOARD_LIMIT = "DCDuelAddon.LeaderboardLimit";
     }
@@ -447,7 +447,7 @@ public:
 
     void OnStartup() override
     {
-        bool enabled = sConfigMgr->GetOption<bool>(DCDuelAddon::Config::ENABLED, true);
+        bool enabled = sConfigMgr->GetOption<bool>(DCDuelAddon::Config::CANONICAL_ENABLED, true);
 
         if (enabled)
         {

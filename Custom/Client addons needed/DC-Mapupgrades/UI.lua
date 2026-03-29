@@ -29,10 +29,6 @@ local function ApplyLeaderboardsStyle(frame)
     frame.__dcTint = tint
 end
 
--- Track whether player is currently in a hotspot (based on server messages)
-local playerInHotspot = false
-local currentHotspotBonus = 100
-
 local function PlayerCanGainXP()
     if not UnitXPMax then
         return true
@@ -112,107 +108,10 @@ local function FormatHotspotLine(id, info)
 end
 
 -- Create the hotspot active indicator (shows when player is IN a hotspot)
-local function CreateHotspotIndicator()
-    local frame = CreateFrame("Frame", "DCMapupgradesActiveIndicator", UIParent)
-    frame:SetSize(120, 30)
-    frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -200, -20)
-    frame:EnableMouse(true)
-    frame:SetMovable(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    
-    -- Icon and other graphics removed as requested
-    
-    -- Bonus text
-    frame.text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    frame.text:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    frame.text:SetText("|cFFFFD700+100% XP|r")
-    frame.text:SetShadowColor(0, 0, 0, 1)
-    frame.text:SetShadowOffset(1, -1)
-    
-    -- Tooltip
-    frame:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("|cFFFFD700XP Hotspot Active|r", 1, 0.84, 0)
-        GameTooltip:AddLine("You are inside an XP Hotspot zone!", 1, 1, 1)
-        GameTooltip:AddLine(string.format("All XP gains are increased by %d%%", currentHotspotBonus), 0, 1, 0)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Drag to move this indicator", 0.7, 0.7, 0.7)
-        GameTooltip:Show()
-    end)
-    frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    
-    frame:Hide()
-    return frame
-end
-
--- Parse server messages to detect hotspot entry/exit
-local function ParseHotspotMessages(message)
-    -- Check for entry message: "[Hotspot] You have entered an XP Hotspot! +X% experience from kills!"
-    local bonus = message:match("%[Hotspot%].*%+(%d+)%% experience")
-    if bonus then
-        return "enter", tonumber(bonus)
-    end
-    
-    -- Also check for debug message that indicates entry
-    local debugBonus = message:match("%[Hotspot DEBUG%].*applied buff")
-    if debugBonus then
-        return "enter", currentHotspotBonus
-    end
-    
-    -- Check for exit message: "[Hotspot Notice] You have left the XP Hotspot zone"
-    if message:match("%[Hotspot.*%] You have left") then
-        return "exit", 0
-    end
-    
-    -- Check for XP gain message to confirm we're in hotspot
-    local xpBonus = message:match("%[Hotspot XP%].*%+(%d+) XP")
-    if xpBonus then
-        return "xpgain", currentHotspotBonus
-    end
-    
-    return nil, nil
-end
-
--- ============================================================
--- Hotspot chat spam suppression (movement debounce)
--- ============================================================
-local hotspotChatPending
-local hotspotChatPendingDueAt = 0
-local hotspotChatLastShownAt = 0
-local hotspotChatFlushInProgress = false
-local hotspotChatThrottleFrame
-
-local function IsOppositeHotspotKind(a, b)
-    return (a == "enter" and b == "leave") or (a == "leave" and b == "enter")
-end
-
-local function GetHotspotChatKind(message)
-    if type(message) ~= "string" then return nil end
-    if not message:find("%[Hotspot", 1, false) then
-        return nil
-    end
-
-    if message:find("%[Hotspot Results%]", 1, true) then
-        return "results"
-    end
-    if message:find("entered an XP Hotspot", 1, true) then
-        return "enter"
-    end
-    if message:find("left the XP Hotspot", 1, true) or message:find("left the XP Hotspot.", 1, true) then
-        return "leave"
-    end
-
-    return "other"
-end
-
 function UI:Init(state)
     self.state = state
     self:EnsurePopup()
     self:EnsureListFrame()
-    self:EnsureHotspotIndicator()
-    self:SetupMessageListener()
 
     local xpWatcher = CreateFrame("Frame")
     xpWatcher:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -224,8 +123,6 @@ function UI:Init(state)
         end
 
         if not PlayerCanGainXP() then
-            playerInHotspot = false
-            if UI.indicator then UI.indicator:Hide() end
             if UI.popup then UI.popup:Hide() end
             if UI.listFrame then UI.listFrame:Hide() end
         else
@@ -463,7 +360,7 @@ function UI:Init(state)
             end
             print("|cffFFD700[DC-Mapupgrades] Diagnostic:|r")
             print(string.format("  Active hotspots: %d", count))
-            print(string.format("  In hotspot: %s", tostring(playerInHotspot)))
+            print("  UI overlay indicator: disabled")
             print(string.format("  Settings loaded: %s", tostring(UI.state and UI.state.db ~= nil)))
             if UI.state and UI.state.db then
                 print(string.format("  Show world pins: %s", tostring(UI.state.db.showWorldPins)))
@@ -485,21 +382,12 @@ function UI:Init(state)
             return
         end
         if command == "indicator" or command == "buff" then
-            -- Toggle indicator visibility
-            if self.indicator then
-                if self.indicator:IsShown() then
-                    self.indicator:Hide()
-                    print("|cffFFD700[DC-Mapupgrades]|r Indicator hidden")
-                else
-                    self.indicator:Show()
-                    print("|cffFFD700[DC-Mapupgrades]|r Indicator shown (for testing)")
-                end
-            end
+            print("|cffFFD700[DC-Mapupgrades]|r The old +XP overlay indicator is disabled.")
+            print("|cffFFD700[DC-Mapupgrades]|r Use the server hotspot aura and notification instead.")
             return
         end
 
         if not PlayerCanGainXP() then
-            if self.indicator then self.indicator:Hide() end
             if self.popup then self.popup:Hide() end
             if self.listFrame then self.listFrame:Hide() end
             return
@@ -512,168 +400,6 @@ function UI:Init(state)
             self:RefreshList()
         end
     end
-end
-
--- Setup listener for server messages to detect hotspot entry/exit
-function UI:SetupMessageListener()
-    local messageFrame = CreateFrame("Frame")
-    messageFrame:RegisterEvent("CHAT_MSG_SYSTEM")
-    messageFrame:SetScript("OnEvent", function(self, event, message)
-        if not PlayerCanGainXP() then
-            return
-        end
-        if event == "CHAT_MSG_SYSTEM" then
-            local action, bonus = ParseHotspotMessages(message)
-            if action == "enter" then
-                playerInHotspot = true
-                currentHotspotBonus = bonus or 100
-                UI:ShowHotspotIndicator(bonus)
-            elseif action == "exit" then
-                playerInHotspot = false
-                UI:HideHotspotIndicator()
-            elseif action == "xpgain" and not playerInHotspot then
-                -- We got XP bonus but weren't tracking - sync state
-                playerInHotspot = true
-                UI:ShowHotspotIndicator(currentHotspotBonus)
-            end
-        end
-    end)
-
-    -- Reduce hotspot spam in chat when crossing boundaries quickly.
-    -- This only affects what gets printed; the event still fires so the indicator logic works.
-    if ChatFrame_AddMessageEventFilter and not self._dcHotspotChatFilterInstalled then
-        self._dcHotspotChatFilterInstalled = true
-
-        if not hotspotChatThrottleFrame then
-            hotspotChatThrottleFrame = CreateFrame("Frame", "DCMapupgrades_HotspotChatThrottle", UIParent)
-            hotspotChatThrottleFrame:Hide()
-        end
-
-        hotspotChatThrottleFrame:SetScript("OnUpdate", function()
-            if not hotspotChatPending or (hotspotChatPendingDueAt or 0) <= 0 then
-                return
-            end
-
-            local now = (GetTime and GetTime()) or 0
-            if now < (hotspotChatPendingDueAt or 0) then
-                return
-            end
-
-            local db = (UI.state and UI.state.db) or {}
-            local debounce = tonumber(db.hotspotChatDebounceSeconds) or 3
-            local cooldown = tonumber(db.hotspotChatCooldownSeconds) or 6
-            if debounce < 0 then debounce = 0 end
-            if cooldown < 0 then cooldown = 0 end
-
-            if (now - (hotspotChatLastShownAt or 0)) < cooldown then
-                hotspotChatPending = nil
-                hotspotChatPendingDueAt = 0
-                return
-            end
-
-            local chatFrame = DEFAULT_CHAT_FRAME or _G.ChatFrame1
-            if chatFrame and chatFrame.AddMessage then
-                hotspotChatFlushInProgress = true
-                chatFrame:AddMessage(hotspotChatPending)
-                hotspotChatFlushInProgress = false
-            end
-
-            hotspotChatLastShownAt = now
-            hotspotChatPending = nil
-            hotspotChatPendingDueAt = 0
-        end)
-
-        local function HotspotChatFilter(_, event, message, ...)
-            if hotspotChatFlushInProgress then
-                return false, message, ...
-            end
-
-            local db = (UI.state and UI.state.db) or {}
-            if db.suppressHotspotChatSpam == false then
-                return false, message, ...
-            end
-
-            local kind = GetHotspotChatKind(message)
-            if not kind then
-                return false, message, ...
-            end
-
-            local now = (GetTime and GetTime()) or 0
-            local debounce = tonumber(db.hotspotChatDebounceSeconds) or 3
-            local cooldown = tonumber(db.hotspotChatCooldownSeconds) or 6
-            if debounce < 0 then debounce = 0 end
-            if cooldown < 0 then cooldown = 0 end
-
-            -- If debounce is disabled, apply cooldown only (no delaying).
-            if debounce == 0 then
-                if (now - (hotspotChatLastShownAt or 0)) < cooldown then
-                    return true
-                end
-                hotspotChatLastShownAt = now
-                return false, message, ...
-            end
-
-            if hotspotChatPending then
-                local pendingKind = GetHotspotChatKind(hotspotChatPending)
-
-                -- If we rapidly flip enter/leave, suppress both.
-                if pendingKind and IsOppositeHotspotKind(pendingKind, kind) then
-                    hotspotChatPending = nil
-                    hotspotChatPendingDueAt = 0
-                    return true
-                end
-
-                -- Prefer showing Results over Notice when leaving.
-                if pendingKind == "leave" and kind == "results" then
-                    hotspotChatPending = message
-                    return true
-                end
-
-                -- Replace pending with the latest message of the same kind.
-                if pendingKind == kind then
-                    hotspotChatPending = message
-                    return true
-                end
-            end
-
-            hotspotChatPending = message
-            hotspotChatPendingDueAt = now + debounce
-            return true
-        end
-
-        ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", HotspotChatFilter)
-    end
-end
-
--- Ensure the hotspot indicator frame exists
-function UI:EnsureHotspotIndicator()
-    if self.indicator then return end
-    self.indicator = CreateHotspotIndicator()
-end
-
--- Show the hotspot indicator when player enters a hotspot
-function UI:ShowHotspotIndicator(bonus)
-    if not self.indicator then
-        self:EnsureHotspotIndicator()
-    end
-    currentHotspotBonus = bonus or 100
-    self.indicator.text:SetText(string.format("|cFFFFD700+%d%% XP|r", currentHotspotBonus))
-    self.indicator:Show()
-    
-    -- Play a subtle sound
-    SafePlaySound(SOUNDKIT and SOUNDKIT.UI_GARRISON_MISSION_COMPLETE or "PVPFLAGTAKEN")
-end
-
--- Hide the hotspot indicator when player leaves a hotspot
-function UI:HideHotspotIndicator()
-    if self.indicator then
-        self.indicator:Hide()
-    end
-end
-
--- Check if player is in hotspot (for external queries)
-function UI:IsPlayerInHotspot()
-    return playerInHotspot
 end
 
 function UI:EnsurePopup()

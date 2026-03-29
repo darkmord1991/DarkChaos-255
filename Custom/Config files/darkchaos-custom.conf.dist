@@ -174,6 +174,14 @@ SeasonalRewards.AchievementTracking = 1
 #
 SeasonalRewards.ConsolidateItemUpgradeHooks = 1
 
+#
+#    SeasonalRewards.ParityFallback
+#        Description: Use legacy reward fallback rules when explicit seasonal
+#                     reward table entries are missing for quests/creatures
+#        Default:     1 (Enabled)
+#
+SeasonalRewards.ParityFallback = 1
+
 # -----------------------------------------------------------------------------
 # Seasonal Reward Multipliers
 # -----------------------------------------------------------------------------
@@ -352,13 +360,6 @@ DC.AddonProtocol.Security.MaxPendingChunks = 5
 DC.AddonProtocol.QoS.Enable = 1
 
 #
-#    DC.AddonProtocol.QoS.Debug
-#        Description: Enable debug logging for DC-QoS addon handler
-#        Default:     0 (Disabled)
-#
-DC.AddonProtocol.QoS.Debug = 0
-
-#
 #    DC.AddonProtocol.AOELoot.Enable
 #        Description: Enable DCAOE prefix for AoE Loot addon sync
 #        Default:     1 (Enabled)
@@ -401,25 +402,11 @@ DC.AddonProtocol.Collection.Enable = 1
 DC.AddonProtocol.Prestige.Enable = 1
 
 #
-#    DCPrestigeAddon.Enable
-#        Description: Backward-compatible toggle for legacy prestige addon
-#        Default:     1 (Enabled)
-#
-DCPrestigeAddon.Enable = 1
-
-#
 #    DC.AddonProtocol.Duels.Enable
 #        Description: Enable DC addon protocol for Phased Dueling system
 #        Default:     1 (Enabled)
 #
 DC.AddonProtocol.Duels.Enable = 1
-
-#
-#    DCDuelAddon.Enable
-#        Description: Backward-compatible toggle for legacy duel addon
-#        Default:     1 (Enabled)
-#
-DCDuelAddon.Enable = 1
 
 #
 #    DC.AddonProtocol.Seasonal.Enable
@@ -886,14 +873,14 @@ Hotspots.InitialPopulateCount = 5
 
 #
 #    Hotspots.BuffSpell
-#        Description: Buff spell ID for visual effect AND XP bonus
+#        Description: Legacy fallback spell ID used when AuraSpell is unset
 #        Default:     800001 (Custom spell)
 #
 Hotspots.BuffSpell = 800001
 
 #
 #    Hotspots.AuraSpell
-#        Description: Aura spell ID for secondary hotspot effects
+#        Description: Primary hotspot aura spell shown to players
 #        Default:     800001
 #
 Hotspots.AuraSpell = 800001
@@ -929,37 +916,6 @@ Hotspots.AnnounceRadius = 500.0
 # -----------------------------------------------------------------------------
 # Zone Configuration
 # -----------------------------------------------------------------------------
-
-#
-#    Hotspots.EnabledMaps
-#        Description: Comma-separated list of map IDs where hotspots can spawn
-#                     0=Eastern Kingdoms, 1=Kalimdor, 530=Outland, 571=Northrend, 37=AzsharaCrater
-#        Default:     "0,1,530,571,37"
-#
-Hotspots.EnabledMaps = "0,1,530,571,37"
-
-#
-#    Hotspots.EnabledZones
-#        Description: Comma-separated list of zone IDs where hotspots can spawn
-#                     Empty = all zones on enabled maps
-#        Default:     ""
-#
-Hotspots.EnabledZones = ""
-
-#
-#    Hotspots.ExcludedZones
-#        Description: Comma-separated list of zone IDs where hotspots cannot spawn
-#        Default:     ""
-#
-Hotspots.ExcludedZones = ""
-
-#
-#    Hotspots.EnabledZonesPerMap
-#        Description: Per-map list of enabled zone IDs
-#                     Format: "mapId:zoneId1,zoneId2;mapId2:zoneId3"
-#        Default:     "1:0;37:268"
-#
-Hotspots.EnabledZonesPerMap = "1:0;37:268"
 
 # -----------------------------------------------------------------------------
 # Announcements
@@ -1081,20 +1037,6 @@ Hotspots.Objectives.ShowProgress = 1
 #
 ###############################################################################
 
-#
-#    ItemUpgrade.Enable
-#        Description: Master toggle for the Item Upgrade system
-#        Default:     1 (Enabled)
-#
-ItemUpgrade.Enable = 1
-
-#
-#    ItemUpgrade.DebugToSay
-#        Description: Send debug messages to player via Say channel
-#        Default:     0 (Disabled)
-#
-ItemUpgrade.DebugToSay = 0
-
 # -----------------------------------------------------------------------------
 # Performance Tuning
 # -----------------------------------------------------------------------------
@@ -1189,32 +1131,9 @@ DCCollection.Enable = 1
 #        Description: Enable debug logging for the Collection System
 #        Default:     0 (Disabled)
 #
-DCCollection.Debug = 0
-
 # -----------------------------------------------------------------------------
 # Module Toggles
 # -----------------------------------------------------------------------------
-
-#
-#    DCCollection.Mounts.Enable
-#        Description: Enable mount collection and journal
-#        Default:     1 (Enabled)
-#
-DCCollection.Mounts.Enable = 1
-
-#
-#    DCCollection.Titles.Enable
-#        Description: Enable title collection and management
-#        Default:     1 (Enabled)
-#
-DCCollection.Titles.Enable = 1
-
-#
-#    DCCollection.Heirlooms.Enable
-#        Description: Enable heirloom collection (integrates with Item Upgrade)
-#        Default:     1 (Enabled)
-#
-DCCollection.Heirlooms.Enable = 1
 
 #
 #    DCCollection.Transmog.Enable
@@ -1304,11 +1223,6 @@ DCCollection.MountBonuses.Enable = 1
 #        Description: Mount bonus thresholds "mounts_needed,bonus_percent"
 #        Defaults:    25=+2%, 50=+3%, 100=+3%, 150=+2% (total +10%)
 #
-DCCollection.MountBonuses.Threshold1 = "25,2"
-DCCollection.MountBonuses.Threshold2 = "50,3"
-DCCollection.MountBonuses.Threshold3 = "100,3"
-DCCollection.MountBonuses.Threshold4 = "150,2"
-
 # -----------------------------------------------------------------------------
 # Pet Definition Maintenance
 # -----------------------------------------------------------------------------
@@ -1436,20 +1350,6 @@ DCCollection.Outfits.AllowCommunityImport = 1
 #
 DCCollection.Shop.Enable = 1
 
-#
-#    DCCollection.Shop.CurrencyToken
-#        Description: Item ID for shop token currency
-#        Default:     300311
-#
-DCCollection.Shop.CurrencyToken = 300311
-
-#
-#    DCCollection.Shop.CurrencyEmblem
-#        Description: Item ID for shop emblem currency
-#        Default:     300312
-#
-DCCollection.Shop.CurrencyEmblem = 300312
-
 # -----------------------------------------------------------------------------
 # Wishlist System
 # -----------------------------------------------------------------------------
@@ -1469,31 +1369,6 @@ DCCollection.Wishlist.Enable = 1
 DCCollection.Wishlist.MaxItems = 50
 
 #
-#    DCCollection.Wishlist.NotifyOnZoneEnter
-#        Description: Notify when entering zone with wishlist item source
-#        Default:     1 (Enabled)
-#
-DCCollection.Wishlist.NotifyOnZoneEnter = 1
-
-# -----------------------------------------------------------------------------
-# Notifications
-# -----------------------------------------------------------------------------
-
-#
-#    DCCollection.Notifications.Enable
-#        Description: Enable toast notifications for new collections
-#        Default:     1 (Enabled)
-#
-DCCollection.Notifications.Enable = 1
-
-#
-#    DCCollection.Notifications.Sound
-#        Description: Play sound when collecting new items
-#        Default:     1 (Enabled)
-#
-DCCollection.Notifications.Sound = 1
-
-#
 #    DCCollection.SyncInterval
 #        Description: Interval (seconds) between automatic syncs
 #        Default:     30
@@ -1503,20 +1378,6 @@ DCCollection.SyncInterval = 30
 # -----------------------------------------------------------------------------
 # Leaderboard Integration
 # -----------------------------------------------------------------------------
-
-#
-#    DCCollection.Leaderboards.Enable
-#        Description: Enable collection leaderboards
-#        Default:     1 (Enabled)
-#
-DCCollection.Leaderboards.Enable = 1
-
-#
-#    DCCollection.Leaderboards.UpdateInterval
-#        Description: Leaderboard cache update interval (minutes)
-#        Default:     15
-#
-DCCollection.Leaderboards.UpdateInterval = 15
 
 
 ###############################################################################
@@ -1540,13 +1401,6 @@ DCCollection.Leaderboards.UpdateInterval = 15
 # -----------------------------------------------------------------------------
 # Core Mythic+ Settings
 # -----------------------------------------------------------------------------
-
-#
-#    MythicPlus.Enable
-#        Description: Master toggle for Mythic+ dungeon scaling system
-#        Default:     1 (Enabled)
-#
-MythicPlus.Enable = 1
 
 #
 #    MythicPlus.FeaturedOnly
@@ -1782,7 +1636,12 @@ MythicPlus.Vault.Enabled = 1
 #
 MythicPlus.Vault.RewardMode = 1
 
-# Mythic+ Vault Thresholds (runs needed for each slot)
+# Mythic+ Vault Thresholds (completed M+ runs needed for each slot)
+MythicPlus.Vault.Threshold1 = 1
+MythicPlus.Vault.Threshold2 = 4
+MythicPlus.Vault.Threshold3 = 8
+
+# Raid Vault Thresholds (raid bosses defeated for each slot)
 MythicPlus.Vault.Raid.Threshold1 = 2
 MythicPlus.Vault.Raid.Threshold2 = 4
 MythicPlus.Vault.Raid.Threshold3 = 6
@@ -1791,6 +1650,10 @@ MythicPlus.Vault.Raid.Threshold3 = 6
 MythicPlus.Vault.PvP.Threshold1 = 1
 MythicPlus.Vault.PvP.Threshold2 = 4
 MythicPlus.Vault.PvP.Threshold3 = 8
+
+# Vault gear-mode item levels (used when RewardMode = 1 or 2)
+MythicPlus.Vault.Raid.ItemLevel = 264
+MythicPlus.Vault.PvP.ItemLevel = 264
 
 # -----------------------------------------------------------------------------
 # Spectator System
@@ -2591,6 +2454,31 @@ Prestige.ClearBank = 0
 #
 Prestige.GrantStarterGear = 0
 
+#
+#    Prestige.ProfessionResetMode
+#        Description: Profession reset behavior on prestige
+#                     0 = Reset all professions
+#                     1 = Keep primary, reset secondary
+#                     2 = Keep all professions
+#        Default:     0
+#
+Prestige.ProfessionResetMode = 0
+
+# Class-specific starter gear lists (comma-separated item IDs)
+# Used only when Prestige.GrantStarterGear = 1
+# Class IDs: 1=Warrior, 2=Paladin, 3=Hunter, 4=Rogue, 5=Priest,
+#            6=DeathKnight, 7=Shaman, 8=Mage, 9=Warlock, 11=Druid
+Prestige.StarterGear.1 = ""
+Prestige.StarterGear.2 = ""
+Prestige.StarterGear.3 = ""
+Prestige.StarterGear.4 = ""
+Prestige.StarterGear.5 = ""
+Prestige.StarterGear.6 = ""
+Prestige.StarterGear.7 = ""
+Prestige.StarterGear.8 = ""
+Prestige.StarterGear.9 = ""
+Prestige.StarterGear.11 = ""
+
 # -----------------------------------------------------------------------------
 # Rewards & Announcements
 # -----------------------------------------------------------------------------
@@ -2695,225 +2583,225 @@ Prestige.Challenges.Solo.Enable = 1
 # -----------------------------------------------------------------------------
 
 #
-#    DCCustomLogin.Enable
+#    DCFirstStart.Enable
 #        Description: Master toggle for Custom Login system
 #        Default:     1 (Enabled)
 #
-DCCustomLogin.Enable = 1
+DCFirstStart.Enable = 1
 
 #
-#    DCCustomLogin.Debug
+#    DCFirstStart.Debug
 #        Description: Enable debug logging
 #        Default:     0 (Disabled)
 #
-DCCustomLogin.Debug = 0
+DCFirstStart.Debug = 0
 
 # -----------------------------------------------------------------------------
 # Announcements
 # -----------------------------------------------------------------------------
 
 #
-#    DCCustomLogin.Announce
+#    DCFirstStart.Announce
 #        Description: Send welcome message on login
 #        Default:     1 (Enabled)
 #
-DCCustomLogin.Announce = 1
+DCFirstStart.Announce = 1
 
 #
-#    DCCustomLogin.AnnounceMessage
+#    DCFirstStart.AnnounceMessage
 #        Description: Welcome message text
 #        Default:     "Welcome to |cff00ff00DarkChaos-255|r! Type |cfffff000/welcome|r to get started."
 #
-DCCustomLogin.AnnounceMessage = "Welcome to |cff00ff00DarkChaos-255|r! Type |cfffff000/welcome|r to get started."
+DCFirstStart.AnnounceMessage = "Welcome to |cff00ff00DarkChaos-255|r! Type |cfffff000/welcome|r to get started."
 
 #
-#    DCCustomLogin.PlayerAnnounce
+#    DCFirstStart.PlayerAnnounce
 #        Description: Announce player login/logout in world chat
 #        Default:     0 (Disabled)
 #
-DCCustomLogin.PlayerAnnounce = 0
+DCFirstStart.PlayerAnnounce = 0
 
 # -----------------------------------------------------------------------------
 # Bind-on-Account Heirloom Items
 # -----------------------------------------------------------------------------
 
 #
-#    DCCustomLogin.BoA
+#    DCFirstStart.BoA
 #        Description: Give new characters heirloom items
 #        Default:     1 (Enabled)
 #
-DCCustomLogin.BoA = 1
+DCFirstStart.BoA = 1
 
 # Class-specific heirloom configuration (Shoulders, Chest, Trinket, Weapons)
-DCCustomLogin.Warrior.Shoulders = 42949
-DCCustomLogin.Warrior.Chest = 48685
-DCCustomLogin.Warrior.Trinket = 42991
-DCCustomLogin.Warrior.Weapon1 = 42943
-DCCustomLogin.Warrior.Weapon2 = 0
-DCCustomLogin.Warrior.Weapon3 = 0
+DCFirstStart.Warrior.Shoulders = 42949
+DCFirstStart.Warrior.Chest = 48685
+DCFirstStart.Warrior.Trinket = 42991
+DCFirstStart.Warrior.Weapon1 = 42943
+DCFirstStart.Warrior.Weapon2 = 0
+DCFirstStart.Warrior.Weapon3 = 0
 
-DCCustomLogin.Paladin.Shoulders = 42949
-DCCustomLogin.Paladin.Chest = 48685
-DCCustomLogin.Paladin.Trinket = 42991
-DCCustomLogin.Paladin.Weapon1 = 42943
-DCCustomLogin.Paladin.Weapon2 = 0
-DCCustomLogin.Paladin.Weapon3 = 0
+DCFirstStart.Paladin.Shoulders = 42949
+DCFirstStart.Paladin.Chest = 48685
+DCFirstStart.Paladin.Trinket = 42991
+DCFirstStart.Paladin.Weapon1 = 42943
+DCFirstStart.Paladin.Weapon2 = 0
+DCFirstStart.Paladin.Weapon3 = 0
 
-DCCustomLogin.Hunter.Shoulders = 42950
-DCCustomLogin.Hunter.Chest = 48677
-DCCustomLogin.Hunter.Trinket = 42991
-DCCustomLogin.Hunter.Weapon1 = 42943
-DCCustomLogin.Hunter.Weapon2 = 0
-DCCustomLogin.Hunter.Weapon3 = 0
+DCFirstStart.Hunter.Shoulders = 42950
+DCFirstStart.Hunter.Chest = 48677
+DCFirstStart.Hunter.Trinket = 42991
+DCFirstStart.Hunter.Weapon1 = 42943
+DCFirstStart.Hunter.Weapon2 = 0
+DCFirstStart.Hunter.Weapon3 = 0
 
-DCCustomLogin.Rogue.Shoulders = 42952
-DCCustomLogin.Rogue.Chest = 48689
-DCCustomLogin.Rogue.Trinket = 42991
-DCCustomLogin.Rogue.Weapon1 = 42944
-DCCustomLogin.Rogue.Weapon2 = 42944
-DCCustomLogin.Rogue.Weapon3 = 0
+DCFirstStart.Rogue.Shoulders = 42952
+DCFirstStart.Rogue.Chest = 48689
+DCFirstStart.Rogue.Trinket = 42991
+DCFirstStart.Rogue.Weapon1 = 42944
+DCFirstStart.Rogue.Weapon2 = 42944
+DCFirstStart.Rogue.Weapon3 = 0
 
-DCCustomLogin.Priest.Shoulders = 42985
-DCCustomLogin.Priest.Chest = 48691
-DCCustomLogin.Priest.Trinket = 42992
-DCCustomLogin.Priest.Weapon1 = 42947
-DCCustomLogin.Priest.Weapon2 = 0
-DCCustomLogin.Priest.Weapon3 = 0
+DCFirstStart.Priest.Shoulders = 42985
+DCFirstStart.Priest.Chest = 48691
+DCFirstStart.Priest.Trinket = 42992
+DCFirstStart.Priest.Weapon1 = 42947
+DCFirstStart.Priest.Weapon2 = 0
+DCFirstStart.Priest.Weapon3 = 0
 
-DCCustomLogin.DeathKnight.Shoulders = 42949
-DCCustomLogin.DeathKnight.Chest = 48685
-DCCustomLogin.DeathKnight.Trinket = 42991
-DCCustomLogin.DeathKnight.Weapon1 = 42943
-DCCustomLogin.DeathKnight.Weapon2 = 0
-DCCustomLogin.DeathKnight.Weapon3 = 0
+DCFirstStart.DeathKnight.Shoulders = 42949
+DCFirstStart.DeathKnight.Chest = 48685
+DCFirstStart.DeathKnight.Trinket = 42991
+DCFirstStart.DeathKnight.Weapon1 = 42943
+DCFirstStart.DeathKnight.Weapon2 = 0
+DCFirstStart.DeathKnight.Weapon3 = 0
 
-DCCustomLogin.Shaman.Shoulders = 42950
-DCCustomLogin.Shaman.Chest = 48677
-DCCustomLogin.Shaman.Trinket = 42991
-DCCustomLogin.Shaman.Weapon1 = 42948
-DCCustomLogin.Shaman.Weapon2 = 0
-DCCustomLogin.Shaman.Weapon3 = 0
+DCFirstStart.Shaman.Shoulders = 42950
+DCFirstStart.Shaman.Chest = 48677
+DCFirstStart.Shaman.Trinket = 42991
+DCFirstStart.Shaman.Weapon1 = 42948
+DCFirstStart.Shaman.Weapon2 = 0
+DCFirstStart.Shaman.Weapon3 = 0
 
-DCCustomLogin.Mage.Shoulders = 42985
-DCCustomLogin.Mage.Chest = 48691
-DCCustomLogin.Mage.Trinket = 42992
-DCCustomLogin.Mage.Weapon1 = 42947
-DCCustomLogin.Mage.Weapon2 = 0
-DCCustomLogin.Mage.Weapon3 = 0
+DCFirstStart.Mage.Shoulders = 42985
+DCFirstStart.Mage.Chest = 48691
+DCFirstStart.Mage.Trinket = 42992
+DCFirstStart.Mage.Weapon1 = 42947
+DCFirstStart.Mage.Weapon2 = 0
+DCFirstStart.Mage.Weapon3 = 0
 
-DCCustomLogin.Warlock.Shoulders = 42985
-DCCustomLogin.Warlock.Chest = 48691
-DCCustomLogin.Warlock.Trinket = 42992
-DCCustomLogin.Warlock.Weapon1 = 42947
-DCCustomLogin.Warlock.Weapon2 = 0
-DCCustomLogin.Warlock.Weapon3 = 0
+DCFirstStart.Warlock.Shoulders = 42985
+DCFirstStart.Warlock.Chest = 48691
+DCFirstStart.Warlock.Trinket = 42992
+DCFirstStart.Warlock.Weapon1 = 42947
+DCFirstStart.Warlock.Weapon2 = 0
+DCFirstStart.Warlock.Weapon3 = 0
 
-DCCustomLogin.Druid.Shoulders = 42984
-DCCustomLogin.Druid.Chest = 48689
-DCCustomLogin.Druid.Trinket = 42992
-DCCustomLogin.Druid.Weapon1 = 42948
-DCCustomLogin.Druid.Weapon2 = 0
-DCCustomLogin.Druid.Weapon3 = 0
+DCFirstStart.Druid.Shoulders = 42984
+DCFirstStart.Druid.Chest = 48689
+DCFirstStart.Druid.Trinket = 42992
+DCFirstStart.Druid.Weapon1 = 42948
+DCFirstStart.Druid.Weapon2 = 0
+DCFirstStart.Druid.Weapon3 = 0
 
 # -----------------------------------------------------------------------------
 # Starting Gold
 # -----------------------------------------------------------------------------
 
-DCCustomLogin.StartingGold.Enable = 1
-DCCustomLogin.StartingGold.Gold = 10
-DCCustomLogin.StartingGold.Silver = 0
-DCCustomLogin.StartingGold.Copper = 0
+DCFirstStart.StartingGold.Enable = 1
+DCFirstStart.StartingGold.Gold = 10
+DCFirstStart.StartingGold.Silver = 0
+DCFirstStart.StartingGold.Copper = 0
 
 # -----------------------------------------------------------------------------
 # Starting Mount
 # -----------------------------------------------------------------------------
 
-DCCustomLogin.StartingMount.Enable = 1
-DCCustomLogin.StartingMount.Spell = 6653
-DCCustomLogin.StartingMount.Skill = 33388
-DCCustomLogin.StartingMount.MinLevel = 10
+DCFirstStart.StartingMount.Enable = 1
+DCFirstStart.StartingMount.Spell = 6653
+DCFirstStart.StartingMount.Skill = 33388
+DCFirstStart.StartingMount.MinLevel = 10
 
 # -----------------------------------------------------------------------------
 # Starting Professions
 # -----------------------------------------------------------------------------
 
-DCCustomLogin.StartingProfessions.Enable = 1
-DCCustomLogin.StartingProfessions.List = "129,185,356"
+DCFirstStart.StartingProfessions.Enable = 1
+DCFirstStart.StartingProfessions.List = "129,185,356"
 
 # -----------------------------------------------------------------------------
 # Bags
 # -----------------------------------------------------------------------------
 
-DCCustomLogin.Bags.Default = "21841,21841,21841,21841"
-DCCustomLogin.Bags.Hunter = 0
-DCCustomLogin.Bags.Warlock = 0
-DCCustomLogin.Bags.Rogue = 0
+DCFirstStart.Bags.Default = "21841,21841,21841,21841"
+DCFirstStart.Bags.Hunter = 0
+DCFirstStart.Bags.Warlock = 0
+DCFirstStart.Bags.Rogue = 0
 
 # -----------------------------------------------------------------------------
 # Weapon Skills
 # -----------------------------------------------------------------------------
 
-DCCustomLogin.Skills = 0
-DCCustomLogin.Skills.List = ""
+DCFirstStart.Skills.Enable = 0
+DCFirstStart.Skills.List = ""
 
 # -----------------------------------------------------------------------------
 # Learn Spells
 # -----------------------------------------------------------------------------
 
-DCCustomLogin.LearnSpells.Enable = 1
-DCCustomLogin.LearnSpells.MaxLevel = 80
-DCCustomLogin.LearnSpells.ShamanTotems = 1
+DCFirstStart.LearnSpells.Enable = 1
+DCFirstStart.LearnSpells.MaxLevel = 80
+DCFirstStart.LearnSpells.ShamanTotems = 1
 
 # -----------------------------------------------------------------------------
 # Dual Spec
 # -----------------------------------------------------------------------------
 
-DCCustomLogin.DualSpec.Enable = 1
-DCCustomLogin.DualSpec.Level = 10
+DCFirstStart.DualSpec.Enable = 1
+DCFirstStart.DualSpec.Level = 10
 
 # -----------------------------------------------------------------------------
 # Special Abilities
 # -----------------------------------------------------------------------------
 
-DCCustomLogin.SpecialAbility = 0
-DCCustomLogin.SpecialAbility.Spell1 = 0
-DCCustomLogin.SpecialAbility.Spell2 = 0
-DCCustomLogin.SpecialAbility.Title = 0
-DCCustomLogin.SpecialAbility.Mount = 0
+DCFirstStart.SpecialAbility.Enable = 0
+DCFirstStart.SpecialAbility.Spell1 = 0
+DCFirstStart.SpecialAbility.Spell2 = 0
+DCFirstStart.SpecialAbility.Title = 0
+DCFirstStart.SpecialAbility.Mount = 0
 
 # -----------------------------------------------------------------------------
 # Reputation
 # -----------------------------------------------------------------------------
 
-DCCustomLogin.Reputation = 0
+DCFirstStart.Reputation.Enable = 0
 
 # -----------------------------------------------------------------------------
 # DC System Integrations
 # -----------------------------------------------------------------------------
 
 #
-#    DCCustomLogin.TriggerWelcome
+#    DCFirstStart.TriggerWelcome
 #        Description: Trigger DC-Welcome addon on first login
 #        Default:     1 (Enabled)
 #
-DCCustomLogin.TriggerWelcome = 1
+DCFirstStart.TriggerWelcome = 1
 
 #
-#    DCCustomLogin.PrestigeBonuses
+#    DCFirstStart.PrestigeBonuses
 #        Description: Apply account-wide prestige bonuses to new characters
 #        Default:     1 (Enabled)
 #
-DCCustomLogin.PrestigeBonuses = 1
+DCFirstStart.PrestigeBonuses = 1
 
 # Seasonal Starter Tokens
-DCCustomLogin.SeasonalTokens.Enable = 1
-DCCustomLogin.SeasonalTokens.UseCanonicalCurrency = 1
-DCCustomLogin.SeasonalTokens.ItemId = 0
-DCCustomLogin.SeasonalTokens.Amount = 100
+DCFirstStart.SeasonalTokens.Enable = 1
+DCFirstStart.SeasonalTokens.UseCanonicalCurrency = 1
+DCFirstStart.SeasonalTokens.ItemId = 0
+DCFirstStart.SeasonalTokens.Amount = 100
 
 # Mobile Teleporter
-DCCustomLogin.MobileTeleporter.Enable = 1
-DCCustomLogin.MobileTeleporter.ItemId = 0
+DCFirstStart.MobileTeleporter.Enable = 1
+DCFirstStart.MobileTeleporter.ItemId = 0
 
 
 ###############################################################################
@@ -3105,31 +2993,21 @@ DungeonFinder.AllowCompleted = 1
 #
 GuildHouseSpawnPreset = default
 
-#
-#    GuildHouse.Currency.ItemId
-#        Description: Item ID for guild house upgrade currency
-#                     Set to 0 to use gold instead
-#        Default:     300311 (Standard Token)
-#
-GuildHouse.Currency.ItemId = 300311
-
 # -----------------------------------------------------------------------------
 # Purchase Costs
-# If GuildHouse.Currency.ItemId is set, these are token counts.
-# If set to 0, these are copper amounts.
+# All values below are interpreted as COPPER by current scripts.
 # -----------------------------------------------------------------------------
 
 CostGuildHouse = 10000000
-GuildHouseInnKeeper = 10
-GuildHouseBank = 50
-GuildHouseMailbox = 5
-GuildHouseAuctioneer = 100
-GuildHouseTrainerCost = 25
-GuildHouseVendor = 20
-GuildHouseObject = 15
-GuildHousePortal = 50
-GuildHouseProf = 30
-GuildHouseSpirit = 100
+GuildHouseInnKeeper = 1000000
+GuildHouseBank = 1000000
+GuildHouseMailbox = 500000
+GuildHouseAuctioneer = 500000
+GuildHouseVendor = 500000
+GuildHouseObject = 500000
+GuildHousePortal = 500000
+GuildHouseProf = 500000
+GuildHouseSpirit = 100000
 
 # -----------------------------------------------------------------------------
 # Operation Costs (in copper)
@@ -3213,21 +3091,9 @@ DC.Leaderboards.MaxCacheEntries = 100
 #
 #  Configuration for the Giant Isles Invasion event system.
 #
+#  No active runtime config keys are currently wired for this section.
+#
 ###############################################################################
-
-#
-#    Invasion.ChatSpawnMessages
-#        Description: Show chat messages when invaders spawn
-#        Default:     1 (Enabled)
-#
-Invasion.ChatSpawnMessages = 1
-
-#
-#    Invasion.SendAddonPackets
-#        Description: Send CHAT_MSG_ADDON JSON messages to clients
-#        Default:     0 (Disabled)
-#
-Invasion.SendAddonPackets = 0
 
 
 ###############################################################################

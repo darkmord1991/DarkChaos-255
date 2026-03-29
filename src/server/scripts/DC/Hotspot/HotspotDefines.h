@@ -23,8 +23,8 @@ struct HotspotsConfig
     uint32 maxPerZone = 2;                   // max hotspots allowed in same zone (0 = unlimited)
     uint32 respawnDelay = 30;                // minutes
     uint32 initialPopulateCount = 0;         // 0 = disabled (default: 0 -> populate to maxActive)
-    uint32 auraSpell = 800001;               // Custom hotspot XP buff spell
-    uint32 buffSpell = 800001;               // Custom hotspot XP buff spell with spellscript that handles XP multiplication
+    uint32 auraSpell = 800001;               // Primary hotspot aura shown to players
+    uint32 buffSpell = 800001;               // Legacy fallback spell if auraSpell is unset
     uint32 minimapIcon = 1;                  // 1=arrow, 2=cross
     float announceRadius = 500.0f;           // yards
     bool includeTextureInAddon = false;      // include a |tex:<path> field in addon payload if provided

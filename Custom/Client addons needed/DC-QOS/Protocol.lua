@@ -222,12 +222,15 @@ function protocol:HandleItemInfo(...)
     if type(args[1]) == "table" then
         local itemData = args[1]
         addon:FireEvent("ITEM_INFO_RECEIVED", itemData)
-        
-        -- Check if this is upgrade info (has upgradeLevel or tier)
-        if itemData.upgradeLevel ~= nil or itemData.tier ~= nil then
+
+        -- Treat any response with bag/slot as an upgrade-location response so
+        -- pending tooltip requests are always released, including error replies.
+        if itemData.bag ~= nil and itemData.slot ~= nil then
+            addon:FireEvent("ITEM_UPGRADE_INFO_RECEIVED", itemData)
+        elseif itemData.upgradeLevel ~= nil or itemData.tier ~= nil then
             addon:FireEvent("ITEM_UPGRADE_INFO_RECEIVED", itemData)
         end
-        
+
         -- Cache for tooltip display
         if itemData.itemId and addon.tooltipCache then
             addon.tooltipCache.items[itemData.itemId] = itemData

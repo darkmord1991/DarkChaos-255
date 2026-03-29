@@ -39,6 +39,7 @@
 #include "SpellMgr.h"
 #include "SpellInfo.h"
 #include "ItemTemplate.h"
+#include "DC/ItemUpgrades/ItemUpgradeUIHelpers.h"
 #include <string>
 #include <sstream>
 #include "Mail.h"
@@ -303,14 +304,53 @@ namespace DCQoS
             return;
 
         ObjectGuid itemGuid = item->GetGUID();
-        uint32 baseEntry = item->GetEntry();
+        uint32 currentEntry = item->GetEntry();
+        uint32 baseEntry = currentEntry;
         const ItemTemplate* itemTemplate = item->GetTemplate();
+
+        // Resolve base entry for cloned upgraded items.
+        QueryResult baseEntryResult = WorldDatabase.Query(
+            "SELECT base_item_id FROM dc_item_upgrade_clones WHERE clone_item_id = {} LIMIT 1",
+            currentEntry
+        );
+        if (baseEntryResult)
+        {
+            baseEntry = (*baseEntryResult)[0].Get<uint32>();
+        }
+
+        uint32 procSpellCount = 0;
+        DCAddon::JsonValue procSpellIds;
+        procSpellIds.SetArray();
+
+        if (itemTemplate)
+        {
+            for (auto const& itemSpell : itemTemplate->Spells)
+            {
+                if (itemSpell.SpellId <= 0)
+                    continue;
+
+                if (itemSpell.SpellTrigger == ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
+                    continue;
+
+                ++procSpellCount;
+                procSpellIds.Push(DCAddon::JsonValue(static_cast<uint32>(itemSpell.SpellId)));
+            }
+        }
+
+        bool hasProc = procSpellCount > 0;
+        float statMultiplier = 1.0f;
 
         DCAddon::JsonMessage msg(MODULE, Opcode::SMSG_ITEM_INFO);
         msg.Set("bag", static_cast<int32>(bag));
         msg.Set("slot", static_cast<int32>(slot));
-        msg.Set("itemId", static_cast<int32>(baseEntry));
+        msg.Set("itemId", static_cast<int32>(currentEntry));
         msg.Set("guid", itemGuid.GetCounter());
+        msg.Set("baseEntry", static_cast<int32>(baseEntry));
+        msg.Set("currentEntry", static_cast<int32>(currentEntry));
+        msg.Set("hasProc", hasProc);
+        msg.Set("procSpellCount", static_cast<int32>(procSpellCount));
+        if (hasProc)
+            msg.Set("procSpellIds", procSpellIds);
 
         // Query upgrade data from dc_item_upgrades table
         QueryResult upgradeResult = CharacterDatabase.Query(
@@ -342,19 +382,19 @@ namespace DCQoS
                 msg.Set("maxUpgrade", static_cast<int32>(maxLevel));
 
                 // Calculate stat multiplier: 1.0 + (upgradeLevel * (statMultiplierMax - 1.0) / maxLevel)
-                float statMultiplier = 1.0f;
                 if (maxLevel > 0)
                 {
                     statMultiplier = 1.0f + (static_cast<float>(upgradeLevel) * (statMultiplierMax - 1.0f) / static_cast<float>(maxLevel));
                 }
-                msg.Set("statMultiplier", statMultiplier);
             }
             else
             {
                 // Default tier values
                 msg.Set("maxUpgrade", 15);
-                msg.Set("statMultiplier", 1.0f + (static_cast<float>(upgradeLevel) * 0.02f));
+                statMultiplier = 1.0f + (static_cast<float>(upgradeLevel) * 0.02f);
             }
+
+            msg.Set("statMultiplier", static_cast<double>(statMultiplier));
 
             // Calculate effective item level
             if (itemTemplate)
@@ -363,14 +403,6 @@ namespace DCQoS
                 uint32 upgradedIlvl = baseIlvl + (upgradeLevel * 5);  // +5 ilvl per upgrade
                 msg.Set("baseIlvl", static_cast<int32>(baseIlvl));
                 msg.Set("upgradedIlvl", static_cast<int32>(upgradedIlvl));
-            }
-
-            // Check if item entry was changed (cloned for upgrade)
-            uint32 currentEntry = item->GetEntry();
-            if (currentEntry != baseEntry)
-            {
-                msg.Set("currentEntry", static_cast<int32>(currentEntry));
-                msg.Set("baseEntry", static_cast<int32>(baseEntry));
             }
         }
         else
@@ -389,15 +421,20 @@ namespace DCQoS
                 if (canUpgrade)
                 {
                     msg.Set("maxUpgrade", 15);  // Default max upgrade
-                    msg.Set("statMultiplier", 1.0f);
+                    statMultiplier = 1.0f;
                 }
                 else
                 {
                     msg.Set("maxUpgrade", 0);
-                    msg.Set("statMultiplier", 1.0f);
+                    statMultiplier = 1.0f;
                 }
             }
+
+            msg.Set("statMultiplier", static_cast<double>(statMultiplier));
         }
+
+        float procBonusPercent = (hasProc && statMultiplier > 1.0f) ? (statMultiplier - 1.0f) * 100.0f : 0.0f;
+        msg.Set("procBonusPercent", static_cast<double>(procBonusPercent));
 
         msg.Send(player);
     }
@@ -604,8 +641,35 @@ namespace DCQoS
         // Check if this is an upgrade info request (has bag/slot)
         if (!json.IsNull() && json.HasKey("bag") && json.HasKey("slot"))
         {
-            uint8 bag = static_cast<uint8>(json["bag"].AsNumber());
-            uint8 slot = static_cast<uint8>(json["slot"].AsNumber());
+            int32 extBag = json["bag"].AsInt32();
+            int32 extSlot = json["slot"].AsInt32();
+
+            uint8 bag = 0;
+            uint8 slot = 0;
+            bool translated = false;
+
+            // Legacy DC-QOS used -2 to denote equipment slots.
+            if (extBag == -2 && extSlot >= 1 && extSlot <= 255)
+            {
+                bag = INVENTORY_SLOT_BAG_0;
+                slot = static_cast<uint8>(extSlot - 1);
+                translated = true;
+            }
+            else if (extBag >= 0 && extSlot >= 0)
+            {
+                translated = DarkChaos::ItemUpgrade::UI::TranslateAddonBagSlot(
+                    static_cast<uint32>(extBag), static_cast<uint32>(extSlot), bag, slot);
+            }
+
+            if (!translated)
+            {
+                DCAddon::JsonMessage response(MODULE, Opcode::SMSG_ITEM_INFO);
+                response.Set("bag", extBag);
+                response.Set("slot", extSlot);
+                response.Set("error", "Invalid item location");
+                response.Send(player);
+                return;
+            }
 
             // Get item from player's inventory
             Item* item = player->GetItemByPos(bag, slot);

@@ -71,6 +71,10 @@ local ITEM_INFO_CACHE_DURATION = 60  -- 1 minute
 local itemUpgradeCache = {}
 local pendingUpgradeRequests = {}
 local UPGRADE_CACHE_DURATION = 300  -- 5 minutes
+local UPGRADE_ERROR_CACHE_DURATION = 5  -- short backoff for failed location lookups
+
+local BAG_EQUIPPED = _G.INVENTORY_SLOT_BAG_0 or 255
+local BAG_BANK = _G.BANK_CONTAINER or -1
 
 -- Tier color definitions (matches DC-ItemUpgrade)
 local TIER_COLORS = {
@@ -90,19 +94,32 @@ end
 -- Convert client bag to server bag ID
 local function GetServerBagFromClient(bag)
     -- Backpack is 0, other bags are 1-4 for regular, -1 for bank, 5-11 for bank bags
-    if bag == 0 then return 255 end  -- INVENTORY_SLOT_BAG_0
+    if bag == BAG_EQUIPPED or bag == -2 then return BAG_EQUIPPED end -- Equipment slots
+    if bag == 0 then return BAG_EQUIPPED end  -- Backpack container
     if bag >= 1 and bag <= 4 then return 18 + bag end  -- Regular bags (19-22)
-    if bag == -1 then return 255 end  -- Bank main
-    if bag >= 5 and bag <= 11 then return 62 + (bag - 5) end  -- Bank bags
+    if bag == BAG_BANK then return BAG_EQUIPPED end  -- Bank main slots are in bag 255
+    if bag >= 5 and bag <= 11 then return 67 + (bag - 5) end  -- Bank bags (67-73)
     return bag
 end
 
 -- Convert client slot to server slot ID  
 local function GetServerSlotFromClient(bag, slot)
+    local normalized = math.max(0, (slot or 1) - 1)
+
+    if bag == BAG_EQUIPPED or bag == -2 then
+        -- Equipped slots are 1-indexed in API, 0-indexed in server lookup.
+        return normalized
+    end
+
     if bag == 0 then
         return 22 + slot  -- Backpack slots start at 23
     end
-    return slot - 1  -- Other bags are 0-indexed on server
+
+    if bag == BAG_BANK and _G.BANK_SLOT_ITEM_START then
+        return _G.BANK_SLOT_ITEM_START + normalized
+    end
+
+    return normalized  -- Other bags are 0-indexed on server
 end
 
 -- Cached GetItemInfo to reduce API calls
@@ -160,6 +177,15 @@ local function RequestUpgradeInfo(bag, slot, itemLink)
     
     -- Check cache
     local cached = itemUpgradeCache[locationKey]
+    if cached and cached.error and (now - cached.timestamp) < UPGRADE_ERROR_CACHE_DURATION then
+        return
+    end
+
+    if cached and cached.error then
+        itemUpgradeCache[locationKey] = nil
+        cached = nil
+    end
+
     if cached and (now - cached.timestamp) < UPGRADE_CACHE_DURATION then
         return
     end
@@ -174,10 +200,25 @@ end
 -- Handle upgrade info from server
 local function OnUpgradeInfoReceived(data)
     if not data then return end
-    
-    local locationKey = BuildLocationKey(data.bag, data.slot)
+
+    local bag = tonumber(data.bag)
+    local slot = tonumber(data.slot)
+    if bag == nil or slot == nil then
+        return
+    end
+
+    local locationKey = BuildLocationKey(bag, slot)
     pendingUpgradeRequests[locationKey] = nil
-    
+
+    -- Cache short-lived errors to avoid immediate request spam while hovering.
+    if data.error then
+        itemUpgradeCache[locationKey] = {
+            timestamp = GetTime(),
+            error = data.error,
+        }
+        return
+    end
+
     itemUpgradeCache[locationKey] = {
         timestamp = GetTime(),
         upgradeLevel = data.upgradeLevel or 0,
@@ -188,6 +229,10 @@ local function OnUpgradeInfoReceived(data)
         currentEntry = data.currentEntry,
         baseIlvl = data.baseIlvl,
         upgradedIlvl = data.upgradedIlvl,
+        hasProc = data.hasProc,
+        procSpellCount = data.procSpellCount,
+        procBonusPercent = data.procBonusPercent,
+        procSpellIds = data.procSpellIds,
     }
     
     -- Don't force refresh to avoid lag cascade
@@ -230,6 +275,15 @@ local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
         RequestUpgradeInfo(bag, slot, itemLink)
         return
     end
+
+    -- Request failed recently for this location; wait for short backoff to expire.
+    if cached.error and (GetTime() - cached.timestamp) < UPGRADE_ERROR_CACHE_DURATION then
+        return
+    elseif cached.error then
+        itemUpgradeCache[locationKey] = nil
+        RequestUpgradeInfo(bag, slot, itemLink)
+        return
+    end
     
     -- Don't show if no upgrades possible
     if cached.maxUpgrade <= 0 and cached.upgradeLevel <= 0 then
@@ -264,6 +318,17 @@ local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
     -- Show stat bonus if upgraded
     if totalBonus > 0 then
         tooltip:AddLine(string.format("|cff00ff00+%.1f%% All Stats|r", totalBonus))
+    end
+
+    -- Proc scaling: show explicit proc bonus when this item has proc spells.
+    if cached.hasProc and (cached.procBonusPercent or 0) > 0 then
+        tooltip:AddLine(string.format("|cff33ff99Proc Effects: +%.1f%%|r", cached.procBonusPercent))
+
+        local procCount = tonumber(cached.procSpellCount) or 0
+        if procCount > 0 then
+            local suffix = (procCount == 1) and "" or "s"
+            tooltip:AddLine(string.format("|cff666666Affects %d proc spell%s|r", procCount, suffix))
+        end
     end
     
     -- Show item level difference if available

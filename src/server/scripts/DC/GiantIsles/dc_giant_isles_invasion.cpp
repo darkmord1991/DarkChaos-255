@@ -65,6 +65,7 @@ namespace
         NPC_BEAST_HUNTER_TRAPPER        = 401006,
         NPC_BEAST_HUNTER_WARLORD        = 401007,
 
+        INVADER_FACTION                 = 16,
         DEFENDER_FACTION_HORDE          = 29,
 
         // World states
@@ -348,7 +349,7 @@ namespace
                 if (!raptor)
                     return;
 
-                raptor->SetFaction(16);
+                raptor->SetFaction(INVADER_FACTION);
                 raptor->SetReactState(REACT_AGGRESSIVE);
 
                 if (target)
@@ -1545,8 +1546,8 @@ namespace
 
             _laneByInvader[guid] = lane;
 
-            // Keep invaders on their template faction so SQL tuning remains authoritative.
-            creature->SetFaction(creature->GetCreatureTemplate()->faction);
+            // Keep invaders on explicit invasion faction (never Horde-side guards).
+            creature->SetFaction(INVADER_FACTION);
             creature->SetReactState(REACT_AGGRESSIVE);
         }
 

@@ -53,7 +53,7 @@ namespace DCPrestigeAddon
     // Configuration
     namespace Config
     {
-        constexpr const char* ENABLED = "DCPrestigeAddon.Enable";
+        constexpr const char* CANONICAL_ENABLED = "DC.AddonProtocol.Prestige.Enable";
     }
 
     // =======================================================================
@@ -229,7 +229,7 @@ public:
 
     void OnStartup() override
     {
-        bool enabled = sConfigMgr->GetOption<bool>(DCPrestigeAddon::Config::ENABLED, true);
+        bool enabled = sConfigMgr->GetOption<bool>(DCPrestigeAddon::Config::CANONICAL_ENABLED, true);
 
         if (enabled)
         {
