@@ -45,8 +45,6 @@ void AddSC_boss_thok();                       // GiantIsles\boss_thok.cpp
 void AddSC_boss_nalak();                      // GiantIsles\boss_nalak.cpp
 void AddSC_dc_giant_isles_water_monster();    // GiantIsles\dc_giant_isles_water_monster.cpp
 
-// --- Map Extension (DISABLED - requires AIO which is not compiled) ---
-
 // --- Heirloom System ---
 void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_255.cpp
 void AddSC_go_heirloom_cache();               // ItemUpgrades/go_heirloom_cache.cpp
@@ -71,7 +69,7 @@ void AddSC_npc_hinterlands_battlemaster();    // HinterlandBG\hlbg_npc_battlemas
 void AddSC_hlbg_battlemaster_hook();          // HinterlandBG\hlbg_battlemaster_hook.cpp
 void AddSC_hlbg_native_broadcast();           // HinterlandBG\hlbg_native_broadcast.cpp
 void AddSC_outdoorpvp_hl_dc();                // HinterlandBG\outdoorpvp_hl_registration.cpp
-// Note: HL_StatsAIO.cpp provides HandleHLBGStatsUI implementation - no AddSC needed
+// HLBG stats chat handlers are provided by the addon extension integration.
 
 // --- Prestige System ---
 void AddSC_dc_prestige_system();              // Progression/Prestige/dc_prestige_system.cpp
@@ -90,9 +88,6 @@ void AddSC_spell_challenge_mode_auras();      // Progression/ChallengeMode/spell
 // --- Custom Achievements ---
 void AddSC_dc_achievements();                 // Achievements\dc_achievements.cpp
 
-// --- Collection System ---
-// void AddSC_dc_addon_collection(); // Moved to AddonExtension             // CollectionSystem\dc_addon_collection.cpp
-
 // --- GOMove System ---
 void AddSC_GOMove_commandscript();            // GOMove\GOMoveScripts.cpp
 
@@ -100,12 +95,11 @@ void AddSC_GOMove_commandscript();            // GOMove\GOMoveScripts.cpp
 void AddSC_ItemUpgradeMechanicsImpl();        // ItemUpgrades\ItemUpgradeMechanicsImpl.cpp (MUST load first)
 void AddSC_ItemUpgradeVendor();               // ItemUpgrades\ItemUpgradeNPC_Vendor.cpp
 void AddSC_ItemUpgradeCurator();              // ItemUpgrades\ItemUpgradeNPC_Curator.cpp
-void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades\ItemUpgradeSeasonalImpl.cpp (Deprecated - migrate to SeasonalSystem)
+void AddSC_ItemUpgradeSeasonal();             // ItemUpgrades\ItemUpgradeSeasonalImpl.cpp
 void AddSC_ItemUpgradeExchange();            // ItemUpgrades\ItemUpgradeExchangeNPC.cpp (Currency Exchange NPC)
 void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades\ItemUpgradeTokenHooks.cpp
 void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades\ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades\ItemUpgradeStatApplication.cpp
-// AddSC_ItemUpgradeQuestRewardHook REMOVED - Use SeasonalRewardSystem.ProcessQuestReward instead
 
 // --- Mythic+ Dungeon System ---
 void AddMythicPlusScripts();                  // MythicPlus/dc_mythicplus_loader.cpp
@@ -269,9 +263,6 @@ void AddDCScripts()
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // MAP EXTENSION & GPS (DISABLED - requires AIO which is not compiled)
-    // ═══════════════════════════════════════════════════════════════════════
-
     // ═══════════════════════════════════════════════════════════════════════
     // HEIRLOOM SYSTEM
     // ═══════════════════════════════════════════════════════════════════════
@@ -417,7 +408,6 @@ void AddDCScripts()
     LOG_INFO("scripts.dc", ">> Collection System (Mounts, Pets, Heirlooms, Transmog)");
     LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
-        // AddSC_dc_addon_collection(); // Moved to AddonExtension
         LOG_INFO("scripts.dc", ">>   ✓ Collection system handlers and scripts loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in Collection System: {}", e.what());
@@ -521,7 +511,7 @@ void AddDCScripts()
         LOG_ERROR("scripts.dc", ">>   ✗ CRASH in stat application");
     }
 
-    // Quest reward hooks removed - use SeasonalRewardSystem.ProcessQuestReward for quest rewards
+    // Quest reward handling is provided by the seasonal reward integration.
 
     LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     LOG_INFO("scripts.dc", ">> Item Upgrade System: All modules loaded successfully");

@@ -1,9 +1,8 @@
-# CMakeLists.txt for DC scripts (Updated to force re-scan)
+# CMakeLists.txt for DC scripts
 
 # Prestige System scripts
 set(SCRIPTS_DC_Prestige
     Progression/Prestige/dc_prestige_system.cpp
-    # Prestige/dc_prestige_chat.cpp (Moved to Commands)
     Progression/Prestige/dc_prestige_spells.cpp
     Progression/Prestige/dc_prestige_alt_bonus.cpp
     Progression/Prestige/dc_prestige_challenges.cpp
@@ -26,9 +25,8 @@ set(SCRIPTS_DC_Hotspot
     Hotspot/HotspotGrid.cpp
     Hotspot/HotspotMgr.cpp
     Hotspot/HotspotScripts.cpp
-    Commands/HotspotCommands.cpp
+    Commands/cs_dc_hotspot.cpp
     Hotspot/spell_hotspot_buff_800001.cpp
-    Hotspot/spell_hotspot_xp_buff.cpp
 )
 
 # Jadeforest Zone scripts
@@ -73,10 +71,8 @@ set(SCRIPTS_DC_AC
     HinterlandBG/outdoorpvp_hl_registration.cpp
     HinterlandBG/hlbg_npc_battlemaster.cpp
     HinterlandBG/hlbg_battlemaster_hook.cpp
-    # HinterlandBG/hlbg_addon.cpp (moved into AddonExtension/dc_addon_hlbg.cpp)
     HinterlandBG/hlbg_native_broadcast.cpp
     HinterlandBG/hlbg_scoreboard_npc.cpp
-    # MapExtension/cs_gps_test.cpp  # DISABLED - requires AIO which is not compiled
 )
 
 # DC HinterlandBG split implementations (config, rewards, reset, afk)
@@ -96,7 +92,6 @@ set(SCRIPTS_DC_HinterlandBG
     HinterlandBG/hlbg_utils.cpp
     HinterlandBG/hlbg_performance.cpp
     HinterlandBG/hlbg_affixes.cpp
-    # HinterlandBG/cs_hl_bg.cpp (Moved to Commands)
 )
 
 # DC Gilneas Battle for Gilneas implementation
@@ -107,8 +102,8 @@ set(SCRIPTS_DC_Gilneas
 # DC Dungeon Quest System implementation
 set(SCRIPTS_DC_DungeonQuests
     DungeonQuests/DungeonQuestSystem.cpp
-    DungeonQuests/DungeonQuestPhasing.cpp
-    DungeonQuests/npc_dungeon_quest_master.cpp
+    DungeonQuests/DungeonQuestMasterFollower.cpp
+    DungeonQuests/npc_universal_quest_master.cpp
     DungeonQuests/npc_dungeon_quest_daily_weekly.cpp
 )
 
@@ -126,7 +121,6 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4A
     ItemUpgrades/ItemUpgradeMechanicsImpl.cpp
     ItemUpgrades/ItemUpgradeStatApplication.cpp
     ItemUpgrades/ItemUpgradeProcScaling.cpp
-    # ItemUpgrades/dc_item_upgrade_commands.cpp (Moved to Commands)
     ItemUpgrades/heirloom_scaling_255.cpp
     ItemUpgrades/go_heirloom_cache.cpp
 )
@@ -146,14 +140,7 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4D
     ItemUpgrades/ItemUpgradeAdvancedImpl.cpp
 )
 
-# Phase 4E: Client Communication
-set(SCRIPTS_DC_ItemUpgrade_Phase4E
-    # ItemUpgrades/ItemUpgradeCommunication.cpp (Removed)
-    # ItemUpgrades/ItemUpgradeAddonHandler.cpp (Removed)
-)
-
-# Phase 4F: Currency Exchange System (renamed from Transmutation Jan 2026)
-# Synthesis removed - only currency exchange needed
+# Phase 4F: Currency Exchange System
 set(SCRIPTS_DC_ItemUpgrade_Phase4F
     ItemUpgrades/ItemUpgradeExchangeImpl.cpp
     ItemUpgrades/ItemUpgradeExchangeNPC.cpp
@@ -173,7 +160,6 @@ set(SCRIPTS_DC_SeasonalRewards
     Seasons/SeasonalRewardScripts.cpp
     Seasons/DCWeeklyResetHub.h
     Seasons/DCWeeklyResetHub.cpp
-    # Seasons/SeasonalRewardCommands.cpp (Moved to Commands)
 )
 
 # DC Mythic+ System - Dungeon Scaling, Keystone System & Spectator
@@ -267,7 +253,6 @@ set(SCRIPTS_DC_CrossSystem
     CrossSystem/CrossSystemScripts.cpp
     CrossSystem/CrossSystemSpawnResolver.cpp
     CrossSystem/CrossSystemWorldBossMgr.cpp
-    # CrossSystem/ItemUpgradeQuestRewardHook.cpp # REMOVED - Use SeasonalRewardSystem.ProcessQuestReward instead
 )
 
 # DC Commands - Unified command hub
@@ -275,14 +260,13 @@ set(SCRIPTS_DC_Commands
     Commands/cs_dc_addons.cpp
     Commands/cs_dc_challenge_modes.cpp
     Commands/cs_dc_dungeonquests.cpp
-    Commands/cs_hl_bg.cpp
-    Commands/mythic_plus_commands.cpp
-    Commands/SeasonalRewardCommands.cpp
-    Commands/dc_prestige_chat.cpp
-    Commands/dc_item_upgrade_commands.cpp
+    Commands/cs_dc_hinterland_bg.cpp
+    Commands/cs_dc_mythic_plus.cpp
+    Commands/cs_dc_seasonal_rewards.cpp
+    Commands/cs_dc_prestige.cpp
+    Commands/cs_dc_item_upgrade.cpp
     Commands/cs_dc_guildhouse.cpp
     Commands/cs_dc_stresstest.cpp
-
 )
 
 # DC Guild Housing
@@ -305,7 +289,6 @@ set(SCRIPTS_DC_ItemUpgrade
     ${SCRIPTS_DC_ItemUpgrade_Phase4B}
     ${SCRIPTS_DC_ItemUpgrade_Phase4C}
     ${SCRIPTS_DC_ItemUpgrade_Phase4D}
-    ${SCRIPTS_DC_ItemUpgrade_Phase4E}
     ${SCRIPTS_DC_ItemUpgrade_Phase4F}
     ${SCRIPTS_DC_SeasonalSystem}
     ${SCRIPTS_DC_SeasonalRewards}
@@ -327,7 +310,6 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_ItemUpgrade}
     ${SCRIPTS_DC_MythicPlus}
     ${SCRIPTS_DC_GreatVault}
-    ${SCRIPTS_DC_DungeonEnhancement}
     ${SCRIPTS_DC_Jadeforest}
     ${SCRIPTS_DC_GiantIsles}
     ${SCRIPTS_DC_AddonExtension}

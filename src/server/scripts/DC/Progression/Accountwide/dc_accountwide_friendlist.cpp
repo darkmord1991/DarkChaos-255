@@ -451,6 +451,14 @@ namespace
             SavePoolFromCharacter(player);
         }
 
+        void OnPlayerLogout(Player* player) override
+        {
+            if (!IsEnabled() || !player || !player->GetSession())
+                return;
+
+            ClearAccountCache(player->GetSession()->GetAccountId());
+        }
+
         void OnPlayerDelete(ObjectGuid guid, uint32 /*accountId*/) override
         {
             if (!IsEnabled())
