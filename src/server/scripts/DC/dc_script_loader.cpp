@@ -129,6 +129,7 @@ void AddDCAddonExtensionScripts();            // AddonExtension\\dc_addon_extens
 
 // --- Integration System (First-Start, Custom Login) ---
 void AddSC_dc_firststart();                   // Progression/FirstStart/dc_firststart.cpp
+void AddSC_dc_accountwide_reputation();       // Progression/FirstStart/dc_accountwide_reputation.cpp
 
 // --- Cross-System Integration Framework ---
 void AddSC_dc_cross_system_scripts();         // CrossSystem\\CrossSystemScripts.cpp
@@ -635,7 +636,9 @@ void AddDCScripts()
     LOG_INFO("scripts.dc", ">> ═══════════════════════════════════════════════════════════");
     try {
         AddSC_dc_firststart();
+        AddSC_dc_accountwide_reputation();
         LOG_INFO("scripts.dc", ">>   ✓ First-start experience loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Account-wide reputation pools loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in First-Start: {}", e.what());
     } catch (...) {

@@ -150,12 +150,77 @@ end
 -- Store expanded state
 AchievementsUI.expandedCategories = AchievementsUI.expandedCategories or {}
 
+local BLIZZARD_TOP_CATEGORY_PRIORITY_BY_ID = {
+    [92] = 2,   -- General
+    [96] = 3,   -- Quests
+    [97] = 4,   -- Exploration
+    [95] = 5,   -- Player vs. Player
+    [168] = 6,  -- Dungeons & Raids
+    [169] = 7,  -- Professions
+    [201] = 8,  -- Reputation
+    [155] = 9,  -- World Events
+    [81] = 10,  -- Feats of Strength
+}
+
+local BLIZZARD_TOP_CATEGORY_PRIORITY_BY_NAME = {
+    summary = 1,
+    general = 2,
+    quests = 3,
+    exploration = 4,
+    playervsplayer = 5,
+    dungeonsraids = 6,
+    professions = 7,
+    reputation = 8,
+    worldevents = 9,
+    featsofstrength = 10,
+}
+
+local function NormalizeCategoryName(name)
+    if type(name) ~= "string" then
+        return ""
+    end
+
+    local normalized = string.lower(name)
+    normalized = string.gsub(normalized, "[^%a%d]+", "")
+    return normalized
+end
+
+local function IsDarkChaosCategory(node)
+    local normalizedName = NormalizeCategoryName(node and node.name)
+    if normalizedName == "darkchaos" then
+        return true
+    end
+
+    local hasDark = string.find(normalizedName, "dark", 1, true)
+    local hasChaos = string.find(normalizedName, "chaos", 1, true)
+    return hasDark and hasChaos
+end
+
+local function GetTopLevelCategoryPriority(node)
+    if IsDarkChaosCategory(node) then
+        return 1000
+    end
+
+    local idPriority = BLIZZARD_TOP_CATEGORY_PRIORITY_BY_ID[node.id]
+    if idPriority then
+        return idPriority
+    end
+
+    local namePriority = BLIZZARD_TOP_CATEGORY_PRIORITY_BY_NAME[NormalizeCategoryName(node.name)]
+    if namePriority then
+        return namePriority
+    end
+
+    -- Unknown categories go after Blizzard categories and before Dark Chaos.
+    return 500
+end
+
 local function BuildCategoryTree(categories)
     local tree = {}
     local catMap = {}
     
     -- First pass: create nodes
-    for _, catId in ipairs(categories) do
+    for index, catId in ipairs(categories) do
         local name, parentId = "", -1
         if type(GetCategoryInfo) == "function" then
             name, parentId = GetCategoryInfo(catId)
@@ -164,18 +229,55 @@ local function BuildCategoryTree(categories)
             id = catId,
             name = name or tostring(catId),
             parentId = parentId,
-            children = {}
+            children = {},
+            sortIndex = index,
         }
     end
     
     -- Second pass: build tree
-    for _, node in pairs(catMap) do
+    for _, catId in ipairs(categories) do
+        local node = catMap[catId]
         if node.parentId and node.parentId ~= -1 and catMap[node.parentId] then
             table.insert(catMap[node.parentId].children, node)
         else
             table.insert(tree, node)
         end
     end
+
+    -- Keep child categories in API order, but force top-level categories to Blizzard order.
+    local function SortNodes(nodes, isTopLevel)
+        table.sort(nodes, function(a, b)
+            if isTopLevel then
+                local aPriority = GetTopLevelCategoryPriority(a)
+                local bPriority = GetTopLevelCategoryPriority(b)
+                if aPriority ~= bPriority then
+                    return aPriority < bPriority
+                end
+
+                -- For unknown top-level categories, keep a stable alphabetical order.
+                if aPriority == 500 then
+                    local aName = NormalizeCategoryName(a.name)
+                    local bName = NormalizeCategoryName(b.name)
+                    if aName ~= bName then
+                        return aName < bName
+                    end
+                end
+            end
+
+            if a.sortIndex ~= b.sortIndex then
+                return a.sortIndex < b.sortIndex
+            end
+            return tostring(a.id) < tostring(b.id)
+        end)
+
+        for _, node in ipairs(nodes) do
+            if #node.children > 0 then
+                SortNodes(node.children, false)
+            end
+        end
+    end
+
+    SortNodes(tree, true)
     
     return tree, catMap
 end

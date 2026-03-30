@@ -1739,6 +1739,12 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
         -- Only request lightweight data: currency + stats (for live balance updates).
         self:RequestCurrency()
         self:RequestStats()
+
+        -- Titles can desync if local cache kept stale ownership entries.
+        -- Always refresh title ownership from server even on fresh cache loads.
+        if type(self.RequestCollection) == "function" then
+            self:RequestCollection("title")
+        end
         return
     end
 

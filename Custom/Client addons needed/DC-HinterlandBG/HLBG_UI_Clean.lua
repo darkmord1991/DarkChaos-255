@@ -600,82 +600,18 @@ end
 if not HLBG.UI.Info.Content then
     HLBG.UI.Info.Content = CreateFrame("Frame", nil, HLBG.UI.Info)
     HLBG.UI.Info.Content:SetAllPoints()
-    HLBG.UI.Info.Content:Show()  -- Explicitly show
-    -- Info content (scrollable text) - positioned lower to avoid tab overlap
-    local infoScroll = CreateFrame("ScrollFrame", "HLBG_InfoScrollFrame", HLBG.UI.Info.Content, "UIPanelScrollFrameTemplate")
-    infoScroll:SetPoint("TOPLEFT", HLBG.UI.Info.Content, "TOPLEFT", 16, -60)  -- Moved down from -50 to -60
-    infoScroll:SetPoint("BOTTOMRIGHT", HLBG.UI.Info.Content, "BOTTOMRIGHT", -32, 20)
-    local infoContent = CreateFrame("Frame", nil, infoScroll)
-    infoContent:SetSize(500, 400)
-    infoScroll:SetScrollChild(infoContent)
-    local infoText = infoContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    infoText:SetPoint("TOPLEFT", 8, -8)
-    infoText:SetWidth(480)
-    infoText:SetJustifyH("LEFT")
-    infoText:SetText([[|cFFFFD700Objective:|r
-Capture and hold strategic points to gain resources. First team to reach 500 resources wins!
-|cFFFFD700How to Play:|r
-• Capture nodes by standing near them
-• Each controlled node generates resources over time
-• Defend your nodes and assault enemy positions
-• Work with your team to control the battlefield
-|cFFFFD700Commands:|r
-• .hlbg status - View current battleground status
-• Use /leaderboard - Match history & stats
-• Type /hlbg or click minimap button to open this UI
-|cFFFFD700Affixes:|r
-Special modifiers that change gameplay each season. Check the HUD for the current affix!]])
-    HLBG.UI.Info.Text = infoText
-    -- Populate Info tab
-    if HLBG.UpdateInfo and type(HLBG.UpdateInfo) == 'function' then
-        C_Timer.After(0.1, HLBG.UpdateInfo)
-    end
+    HLBG.UI.Info.Content:Show()
+
+    -- Content is rendered by HLBG.UpdateInfo() in HLBG_Info.lua.
+    -- Keep this container empty here to avoid duplicate overlays.
 end
 if not HLBG.UI.Settings.Content then
     HLBG.UI.Settings.Content = CreateFrame("Frame", nil, HLBG.UI.Settings)
     HLBG.UI.Settings.Content:SetAllPoints()
     HLBG.UI.Settings.Content:Show()
-    
-    -- Simple message directing users to Interface Options
-    local title = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
-    title:SetPoint("TOP", HLBG.UI.Settings.Content, "TOP", 0, -100)
-    title:SetText("|cFFFFD700Settings|r")
-    
-    local message = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    message:SetPoint("TOP", title, "BOTTOM", 0, -40)
-    message:SetWidth(550)
-    message:SetJustifyH("CENTER")
-    message:SetText("|cFFFFFFFFSettings have been moved to|r\n|cFF33FF99Interface Options → AddOns → DC HLBG Addon|r\n\n|cFFAAAAAAYou can access them from the game's main menu:|r\n|cFFFFFFFFEsc → Interface → AddOns|r")
-    
-    -- Button to open Interface Options
-    local openBtn = CreateFrame("Button", nil, HLBG.UI.Settings.Content, "UIPanelButtonTemplate")
-    openBtn:SetSize(200, 35)
-    openBtn:SetPoint("TOP", message, "BOTTOM", 0, -40)
-    openBtn:SetText("Open Interface Options")
-    openBtn:SetScript("OnClick", function()
-        -- Close HLBG UI
-        if HLBG.UI.Frame then HLBG.UI.Frame:Hide() end
-        -- Open Interface Options
-        if InterfaceOptionsFrame_OpenToCategory then
-            -- Call twice because of WoW bug where first call sometimes doesn't work
-            InterfaceOptionsFrame_OpenToCategory("DC HLBG Addon")
-            InterfaceOptionsFrame_OpenToCategory("DC HLBG Addon")
-        end
-    end)
-    openBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-        GameTooltip:AddLine("Open Blizzard Interface Options", 1,1,1)
-        GameTooltip:AddLine("Settings are available in the AddOns section", 0.7,0.7,0.7,1)
-        GameTooltip:Show()
-    end)
-    openBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    
-    -- Info text at bottom
-    local infoText = HLBG.UI.Settings.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    infoText:SetPoint("BOTTOM", HLBG.UI.Settings.Content, "BOTTOM", 0, 30)
-    infoText:SetWidth(500)
-    infoText:SetJustifyH("CENTER")
-    infoText:SetText("|cFFAAAAAASettings are saved in:\nWTF/Account/<ACCOUNT>/SavedVariables/DCHLBG.lua|r")
+
+    -- Content is rendered by HLBG.UpdateSettings() in HLBG_Settings.lua.
+    -- Keep this container empty here to avoid duplicate overlays.
 end
 if not HLBG.UI.Queue.Content then
     HLBG.UI.Queue.Content = CreateFrame("Frame", nil, HLBG.UI.Queue)

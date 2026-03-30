@@ -647,7 +647,7 @@ function PetJournal:SelectPet(petData)
 
     local def = petData.definition or {}
     infoFrame.icon:SetTexture(GetPetIcon(def.spellId or def.spell_id, def))
-    infoFrame.name:SetText(petData.name or "Unknown")
+    infoFrame.name:SetText((petData.name and petData.name ~= "" and petData.name) or def.name or "Unknown")
 
     local r, g, b = GetRarityColor(petData.rarity)
     infoFrame.name:SetTextColor(r, g, b)
@@ -664,10 +664,9 @@ function PetJournal:SelectPet(petData)
         end
     end
 
-    -- Display 3D model
-    -- IMPORTANT (WotLK 3.3.5a): PlayerModel does NOT have SetDisplayInfo.
-    -- Blizzard flow for collected companions: GetCompanionInfo("CRITTER", i) -> SetCreature(creatureID)
-    -- (where creatureID is the model identifier used by the client).
+    -- Display 3D model.
+    -- Collected companions are best resolved via Blizzard's companion list (SetCreature).
+    -- Not-collected entries often need displayId from server definitions (SetDisplayInfo).
     local function ResetModelPose()
         if model.SetFacing then model:SetFacing(0) end
         model.rotation = 0
@@ -676,16 +675,18 @@ function PetJournal:SelectPet(petData)
     end
 
     local creatureId = def.creatureId or def.creature_id or def.creatureEntry
+                   or def.creature_entry or def.petEntry or def.pet_entry
+                   or def.npcId or def.npc_id or def.entryId or def.entry_id
     if type(creatureId) == "string" then
         creatureId = tonumber(creatureId)
     end
 
-    -- Many datasets store only a CreatureDisplayInfoID (displayId). In WotLK,
-    -- Model:SetCreature(displayId) is typically the correct API (SetDisplayInfo
-    -- often doesn't exist). Keep this as a strong fallback.
+    -- Many datasets store only a CreatureDisplayInfoID (displayId).
+    -- Prefer SetDisplayInfo when available and keep SetCreature as compatibility fallback.
     local displayId = def.displayId or def.displayID or def.display_id
                    or def.creatureDisplayId or def.creature_display_id
                    or def.modelId or def.model_id
+                   or def.modelDisplayId or def.model_display_id
     if type(displayId) == "string" then
         displayId = tonumber(displayId)
     end
@@ -728,35 +729,75 @@ function PetJournal:SelectPet(petData)
 
     -- Priority rules:
     -- 1) If collected, prefer Blizzard creatureID from companion list.
-    -- 2) If not collected OR not found in companion list, fall back to server-provided displayId.
-    -- 3) Keep legacy creatureId as a last-ditch fallback to avoid regressions if some datasets still only provide it.
-    local resolvedCreatureId = nil
+    -- 2) For not-collected entries, prefer definition displayId via SetDisplayInfo.
+    -- 3) Keep definition creatureId as a last-ditch fallback.
+    local resolvedCompanionCreatureId = nil
     if petData.collected then
-        resolvedCreatureId = FindCollectedCompanionCreatureIdBySpellId(spellId)
+        resolvedCompanionCreatureId = FindCollectedCompanionCreatureIdBySpellId(spellId)
 
         -- If spellId in definitions is a "teaching" spell (LEARN_*), it won't match the companion list.
         -- Fall back to a name match so collected pets still get a model.
-        if (not resolvedCreatureId or resolvedCreatureId <= 0) then
-            resolvedCreatureId = FindCollectedCompanionCreatureIdByName(petData.name or def.name)
+        if (not resolvedCompanionCreatureId or resolvedCompanionCreatureId <= 0) then
+            resolvedCompanionCreatureId = FindCollectedCompanionCreatureIdByName(petData.name or def.name)
         end
     end
-    if (not resolvedCreatureId or resolvedCreatureId <= 0) and displayId and displayId > 0 then
-        resolvedCreatureId = displayId
+    local fallbackCreatureId = nil
+    if resolvedCompanionCreatureId and resolvedCompanionCreatureId > 0 then
+        fallbackCreatureId = resolvedCompanionCreatureId
+    elseif creatureId and creatureId > 0 then
+        fallbackCreatureId = creatureId
     end
-    if (not resolvedCreatureId or resolvedCreatureId <= 0) and creatureId and creatureId > 0 then
-        resolvedCreatureId = creatureId
+
+    local function TrySetCreature(modelId)
+        if not modelId or modelId <= 0 or type(model.SetCreature) ~= "function" then
+            return false
+        end
+
+        local ok = pcall(model.SetCreature, model, modelId)
+        if ok then
+            ResetModelPose()
+            return true
+        end
+
+        return false
+    end
+
+    local function TrySetDisplay(displayInfoId)
+        if not displayInfoId or displayInfoId <= 0 or type(model.SetDisplayInfo) ~= "function" then
+            return false
+        end
+
+        local ok = pcall(model.SetDisplayInfo, model, displayInfoId)
+        if ok then
+            ResetModelPose()
+            return true
+        end
+
+        return false
     end
 
     model:ClearModel()
-    if resolvedCreatureId and resolvedCreatureId > 0 then
-        if model.SetCreature then
-            model:SetCreature(resolvedCreatureId)
-            ResetModelPose()
-        elseif model.SetDisplayInfo and displayId and displayId > 0 then
-            -- Some custom clients expose SetDisplayInfo; keep it as a fallback.
-            model:SetDisplayInfo(displayId)
-            ResetModelPose()
+    local modelShown = false
+
+    -- Collected pets: companion creature IDs from the client list are most reliable.
+    if petData.collected and resolvedCompanionCreatureId and resolvedCompanionCreatureId > 0 then
+        modelShown = TrySetCreature(resolvedCompanionCreatureId)
+    end
+
+    -- Not-collected pets often only have displayId in definitions.
+    if not modelShown and displayId and displayId > 0 then
+        -- Prefer SetDisplayInfo when available (same pattern as mount preview).
+        modelShown = TrySetDisplay(displayId)
+
+        -- Some clients support only SetCreature for display-like IDs.
+        if not modelShown then
+            modelShown = TrySetCreature(displayId)
         end
+    end
+
+    -- Final fallback to creature/template id from definition.
+    if not modelShown and fallbackCreatureId and fallbackCreatureId > 0 then
+        modelShown = TrySetCreature(fallbackCreatureId)
     end
 
     local summonBtn = self.frame.actionBar.summonBtn

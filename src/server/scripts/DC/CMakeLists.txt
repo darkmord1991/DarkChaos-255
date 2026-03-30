@@ -247,6 +247,7 @@ set(SCRIPTS_DC_FirstStart
     Progression/FirstStart/dc_firststart.cpp
     Progression/FirstStart/dc_firststart_learnspells.cpp
     Progression/FirstStart/dc_login_announce.cpp
+    Progression/FirstStart/dc_accountwide_reputation.cpp
 )
 
 # GOMove System

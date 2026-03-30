@@ -50,6 +50,7 @@ void AddSC_dc_addon_wardrobe(); // Forward declaration
 #include <vector>
 #include <chrono>
 #include <mutex>
+#include <cstdlib>
 
 namespace DCCollection
 {
@@ -545,6 +546,282 @@ namespace DCCollection
         return isEnum;
     }
 
+    bool ItemsCollectionTypeIsEnum()
+    {
+        static bool checked = false;
+        static bool isEnum = false;
+        if (!checked)
+        {
+            isEnum = CharacterColumnTypeContains(
+                "dc_collection_items", "collection_type", "enum(");
+            checked = true;
+        }
+        return isEnum;
+    }
+
+    std::string const& GetItemsCollectionTypeColumnSpec()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_collection_items"))
+            return cached;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SHOW COLUMNS FROM `dc_collection_items` LIKE 'collection_type'");
+        if (!result)
+            return cached;
+
+        Field* fields = result->Fetch();
+        cached = fields[1].Get<std::string>();
+        return cached;
+    }
+
+    bool ItemsEnumSpecContainsValue(
+        std::string const& enumSpec,
+        std::string const& value)
+    {
+        if (enumSpec.empty() || value.empty())
+            return false;
+
+        return enumSpec.find("'" + value + "'") != std::string::npos;
+    }
+
+    std::vector<std::string> GetItemsCollectionTypeAliases(CollectionType type)
+    {
+        switch (type)
+        {
+            case CollectionType::MOUNT:
+                return { "mount", "mounts" };
+            case CollectionType::PET:
+                return { "pet", "pets", "companion", "companions" };
+            case CollectionType::TOY:
+                return { "toy", "toys" };
+            case CollectionType::HEIRLOOM:
+                return { "heirloom", "heirlooms" };
+            case CollectionType::TITLE:
+                return { "title", "titles" };
+            case CollectionType::TRANSMOG:
+                return { "transmog", "transmogs", "appearance", "appearances" };
+            case CollectionType::ITEM_SET:
+                return { "item_set", "itemset", "set", "sets" };
+            default:
+                return {};
+        }
+    }
+
+    uint8 ItemsCollectionTypeFromString(std::string const& type)
+    {
+        if (type.empty())
+            return 0;
+
+        if (uint8 baseType = WishlistTypeFromString(type))
+            return baseType;
+
+        if (type == "mounts")
+            return static_cast<uint8>(CollectionType::MOUNT);
+        if (type == "pets" || type == "companion" || type == "companions")
+            return static_cast<uint8>(CollectionType::PET);
+        if (type == "toys")
+            return static_cast<uint8>(CollectionType::TOY);
+        if (type == "heirlooms")
+            return static_cast<uint8>(CollectionType::HEIRLOOM);
+        if (type == "titles")
+            return static_cast<uint8>(CollectionType::TITLE);
+        if (type == "transmogs" || type == "appearance" || type == "appearances")
+            return static_cast<uint8>(CollectionType::TRANSMOG);
+        if (type == "item_set" || type == "itemset" || type == "set" || type == "sets")
+            return static_cast<uint8>(CollectionType::ITEM_SET);
+
+        return 0;
+    }
+
+    std::string BuildItemsCollectionTypeWhereClause(
+        std::string const& columnName,
+        CollectionType type)
+    {
+        std::string clause = fmt::format(
+            "{} = {}",
+            columnName,
+            static_cast<uint8>(type));
+
+        for (std::string const& alias : GetItemsCollectionTypeAliases(type))
+            clause = fmt::format("{} OR {} = '{}'", clause, columnName, alias);
+
+        return fmt::format("({})", clause);
+    }
+
+    std::string GetItemsCollectionTypeValueExpr(CollectionType type)
+    {
+        if (!ItemsCollectionTypeIsEnum())
+            return std::to_string(static_cast<uint8>(type));
+
+        std::string const& enumSpec = GetItemsCollectionTypeColumnSpec();
+        auto aliases = GetItemsCollectionTypeAliases(type);
+        for (std::string const& alias : aliases)
+            if (ItemsEnumSpecContainsValue(enumSpec, alias))
+                return fmt::format("'{}'", alias);
+
+        return std::to_string(static_cast<uint8>(type));
+    }
+
+    std::string const& GetLegacyTitleAccountColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_title_collection"))
+            return cached;
+
+        if (CharacterColumnExists("dc_title_collection", "account_id"))
+            cached = "account_id";
+        else if (CharacterColumnExists("dc_title_collection", "account"))
+            cached = "account";
+
+        return cached;
+    }
+
+    std::string const& GetLegacyTitleEntryColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_title_collection"))
+            return cached;
+
+        if (CharacterColumnExists("dc_title_collection", "title_id"))
+            cached = "title_id";
+        else if (CharacterColumnExists("dc_title_collection", "entry_id"))
+            cached = "entry_id";
+        else if (CharacterColumnExists("dc_title_collection", "entry"))
+            cached = "entry";
+        else if (CharacterColumnExists("dc_title_collection", "item_id"))
+            cached = "item_id";
+        else if (CharacterColumnExists("dc_title_collection", "id"))
+            cached = "id";
+
+        return cached;
+    }
+
+    std::string const& GetLegacyTitleGuidColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("dc_title_collection"))
+            return cached;
+
+        if (CharacterColumnExists("dc_title_collection", "guid"))
+            cached = "guid";
+        else if (CharacterColumnExists("dc_title_collection", "player_guid"))
+            cached = "player_guid";
+        else if (CharacterColumnExists("dc_title_collection", "character_guid"))
+            cached = "character_guid";
+        else if (CharacterColumnExists("dc_title_collection", "char_guid"))
+            cached = "char_guid";
+        else if (CharacterColumnExists("dc_title_collection", "char_id"))
+            cached = "char_id";
+        else if (CharacterColumnExists("dc_title_collection", "character_id"))
+            cached = "character_id";
+
+        return cached;
+    }
+
+    std::string const& GetCharactersAccountColumn()
+    {
+        static std::string cached;
+        static bool checked = false;
+        if (checked)
+            return cached;
+
+        checked = true;
+        if (!CharacterTableExists("characters"))
+            return cached;
+
+        if (CharacterColumnExists("characters", "account"))
+            cached = "account";
+        else if (CharacterColumnExists("characters", "account_id"))
+            cached = "account_id";
+
+        return cached;
+    }
+
+    std::vector<uint32> LoadLegacyTitleCollection(uint32 accountId)
+    {
+        std::vector<uint32> items;
+
+        if (!CharacterTableExists("dc_title_collection"))
+            return items;
+
+        std::string const& accountCol = GetLegacyTitleAccountColumn();
+        std::string const& entryCol = GetLegacyTitleEntryColumn();
+        if (entryCol.empty())
+            return items;
+
+        QueryResult result;
+
+        if (!accountCol.empty())
+        {
+            std::string unlockedFilter;
+            if (CharacterColumnExists("dc_title_collection", "unlocked"))
+                unlockedFilter = " AND unlocked = 1";
+
+            result = CharacterDatabase.Query(
+                "SELECT {} FROM dc_title_collection WHERE {} = {}{}",
+                entryCol,
+                accountCol,
+                accountId,
+                unlockedFilter);
+        }
+        else
+        {
+            std::string const& guidCol = GetLegacyTitleGuidColumn();
+            std::string const& charsAccountCol = GetCharactersAccountColumn();
+            if (guidCol.empty() || charsAccountCol.empty())
+                return items;
+
+            std::string unlockedFilter;
+            if (CharacterColumnExists("dc_title_collection", "unlocked"))
+                unlockedFilter = " AND t.unlocked = 1";
+
+            result = CharacterDatabase.Query(
+                "SELECT t.{} FROM dc_title_collection t "
+                "INNER JOIN characters c ON c.guid = t.{} "
+                "WHERE c.{} = {}{}",
+                entryCol,
+                guidCol,
+                charsAccountCol,
+                accountId,
+                unlockedFilter);
+        }
+
+        if (result)
+        {
+            do
+            {
+                uint32 entryId = result->Fetch()[0].Get<uint32>();
+                if (!entryId)
+                    continue;
+
+                items.push_back(entryId);
+            } while (result->NextRow());
+        }
+
+        return items;
+    }
+
     std::string const& GetWishlistIdColumn()
     {
         static std::string cached;
@@ -628,6 +905,20 @@ namespace DCCollection
         if (itemsEntryCol.empty())
             return;
 
+        std::string const typeMountValue =
+            GetItemsCollectionTypeValueExpr(CollectionType::MOUNT);
+        std::string const typePetValue =
+            GetItemsCollectionTypeValueExpr(CollectionType::PET);
+        std::string const typeHeirloomValue =
+            GetItemsCollectionTypeValueExpr(CollectionType::HEIRLOOM);
+        std::string const typeTitleValue =
+            GetItemsCollectionTypeValueExpr(CollectionType::TITLE);
+        std::string const typeTransmogValue =
+            GetItemsCollectionTypeValueExpr(CollectionType::TRANSMOG);
+
+        std::string const petTypeFilter =
+            BuildItemsCollectionTypeWhereClause("collection_type", CollectionType::PET);
+
         auto trans = CharacterDatabase.BeginTransaction();
 
         // Migrate older PET collection rows that used learned spellIds instead of companion itemIds.
@@ -635,8 +926,8 @@ namespace DCCollection
         {
             QueryResult pets = CharacterDatabase.Query(
                 "SELECT {} FROM dc_collection_items "
-                "WHERE account_id = {} AND collection_type = {} AND unlocked = 1",
-                itemsEntryCol, accountId, static_cast<uint8>(CollectionType::PET));
+                "WHERE account_id = {} AND {} AND unlocked = 1",
+                itemsEntryCol, accountId, petTypeFilter);
 
             if (pets)
             {
@@ -654,11 +945,11 @@ namespace DCCollection
                         "INSERT IGNORE INTO dc_collection_items "
                         "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                         "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                        itemsEntryCol, accountId, static_cast<uint8>(CollectionType::PET), mappedItemId);
+                        itemsEntryCol, accountId, typePetValue, mappedItemId);
 
                     trans->Append(
-                        "DELETE FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND {} = {}",
-                        accountId, static_cast<uint8>(CollectionType::PET), itemsEntryCol, entryId);
+                        "DELETE FROM dc_collection_items WHERE account_id = {} AND {} AND {} = {}",
+                        accountId, petTypeFilter, itemsEntryCol, entryId);
 
                 } while (pets->NextRow());
             }
@@ -700,7 +991,7 @@ namespace DCCollection
                     "INSERT IGNORE INTO dc_collection_items "
                     "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
+                    itemsEntryCol, accountId, typeMountValue, spellId);
             }
             else if (companionSummonSpellId)
             {
@@ -712,7 +1003,7 @@ namespace DCCollection
                     "INSERT IGNORE INTO dc_collection_items "
                     "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::PET), itemId);
+                    itemsEntryCol, accountId, typePetValue, itemId);
             }
         }
 
@@ -783,7 +1074,7 @@ namespace DCCollection
                         "INSERT IGNORE INTO dc_collection_items "
                         "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                         "VALUES ({}, {}, {}, 'IMPORT_ITEMSCAN', 1, NOW())",
-                        itemsEntryCol, accountId, static_cast<uint8>(CollectionType::HEIRLOOM), itemId);
+                        itemsEntryCol, accountId, typeHeirloomValue, itemId);
                 }
             }
         }
@@ -802,7 +1093,29 @@ namespace DCCollection
                 "INSERT IGNORE INTO dc_collection_items "
                 "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                 "VALUES ({}, {}, {}, 'IMPORT', 1, NOW())",
-                itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TITLE), titleEntry->ID);
+                itemsEntryCol, accountId, typeTitleValue, titleEntry->ID);
+        }
+
+        if (uint32 chosenTitleKey = player->GetUInt32Value(PLAYER_CHOSEN_TITLE))
+            if (CharTitlesEntry const* chosenTitle = ResolveTitleEntryByAnyKey(chosenTitleKey))
+                trans->Append(
+                    "INSERT IGNORE INTO dc_collection_items "
+                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
+                    "VALUES ({}, {}, {}, 'IMPORT_CHOSEN_TITLE', 1, NOW())",
+                    itemsEntryCol, accountId, typeTitleValue, chosenTitle->ID);
+
+        auto legacyTitles = LoadLegacyTitleCollection(accountId);
+        for (uint32 legacyTitleKey : legacyTitles)
+        {
+            CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(legacyTitleKey);
+            if (!titleEntry)
+                continue;
+
+            trans->Append(
+                "INSERT IGNORE INTO dc_collection_items "
+                "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
+                "VALUES ({}, {}, {}, 'IMPORT_LEGACY_TITLE', 1, NOW())",
+                itemsEntryCol, accountId, typeTitleValue, titleEntry->ID);
         }
 
         // Import legacy transmog appearances for old characters by scanning owned items.
@@ -870,7 +1183,7 @@ namespace DCCollection
                     "INSERT IGNORE INTO dc_collection_items "
                     "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'IMPORT_ITEMSCAN', 1, NOW())",
-                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::TRANSMOG), displayId);
+                    itemsEntryCol, accountId, typeTransmogValue, displayId);
             }
 
             // Mark migration as done even if nothing was found.
@@ -905,10 +1218,6 @@ namespace DCCollection
             if (!accountId)
                 return;
 
-            std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-            if (itemsEntryCol.empty())
-                return;
-
             std::vector<uint32> spellsToTeach;
             spellsToTeach.reserve(256);
 
@@ -928,66 +1237,46 @@ namespace DCCollection
                 spellsToTeach.push_back(spellId);
             };
 
-            // One DB pass for mounts/pets/titles.
-            QueryResult result = CharacterDatabase.Query(
-                "SELECT collection_type, {} FROM dc_collection_items "
-                "WHERE account_id = {} AND collection_type IN ({}, {}, {}) AND unlocked = 1",
-                itemsEntryCol,
-                accountId,
-                static_cast<uint8>(CollectionType::MOUNT),
-                static_cast<uint8>(CollectionType::PET),
-                static_cast<uint8>(CollectionType::TITLE));
-
-            if (result)
+            // Mounts
+            if (canSyncMounts)
             {
-                do
+                auto mounts = LoadPlayerCollection(accountId, CollectionType::MOUNT);
+                for (uint32 spellId : mounts)
+                    considerSpell(spellId);
+            }
+
+            // Pets
+            {
+                auto pets = LoadPlayerCollection(accountId, CollectionType::PET);
+                for (uint32 entryId : pets)
                 {
-                    Field* fields = result->Fetch();
-                    uint8 collectionType = fields[0].Get<uint8>();
-                    uint32 entryId = fields[1].Get<uint32>();
-                    if (!entryId)
+                    // Stored as teaching itemId (preferred) or a spellId (legacy).
+                    uint32 spellId = 0;
+                    if (sObjectMgr->GetItemTemplate(entryId))
+                        spellId = FindCompanionSpellIdForItem(entryId);
+                    else
+                        spellId = ResolveCompanionSummonSpellFromSpell(entryId);
+
+                    considerSpell(spellId);
+                }
+            }
+
+            // Titles
+            {
+                auto titles = LoadPlayerCollection(accountId, CollectionType::TITLE);
+                for (uint32 entryId : titles)
+                {
+                    CharTitlesEntry const* titleEntry =
+                        ResolveTitleEntryByAnyKey(entryId);
+                    if (!titleEntry)
                         continue;
 
-                    switch (static_cast<CollectionType>(collectionType))
-                    {
-                        case CollectionType::MOUNT:
-                        {
-                            // Stored as mount spellIds
-                            if (canSyncMounts)
-                                considerSpell(entryId);
-                            break;
-                        }
-                        case CollectionType::PET:
-                        {
-                            // Stored as teaching itemId (preferred) or a spellId (legacy).
-                            // Disambiguate by checking for an item template first.
-                            uint32 spellId = 0;
-                            if (sObjectMgr->GetItemTemplate(entryId))
-                                spellId = FindCompanionSpellIdForItem(entryId);
-                            else
-                                spellId = ResolveCompanionSummonSpellFromSpell(entryId);
+                    if (player->HasTitle(titleEntry))
+                        continue;
 
-                            considerSpell(spellId);
-                            break;
-                        }
-                        case CollectionType::TITLE:
-                        {
-                            CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(entryId);
-                            if (!titleEntry)
-                                break;
-
-                            if (player->HasTitle(titleEntry))
-                                break;
-
-                            player->SetTitle(titleEntry, false);
-                            ++titlesApplied;
-                            break;
-                        }
-                        default:
-                            break;
-                    }
-
-                } while (result->NextRow());
+                    player->SetTitle(titleEntry, false);
+                    ++titlesApplied;
+                }
             }
 
             if (spellsToTeach.empty())
@@ -1199,10 +1488,13 @@ namespace DCCollection
         if (itemsEntryCol.empty())
             return items;
 
+        std::string const typeFilter =
+            BuildItemsCollectionTypeWhereClause("collection_type", type);
+
         QueryResult result = CharacterDatabase.Query(
             "SELECT {} FROM dc_collection_items "
-            "WHERE account_id = {} AND collection_type = {} AND unlocked = 1",
-            itemsEntryCol, accountId, static_cast<uint8>(type));
+            "WHERE account_id = {} AND {} AND unlocked = 1",
+            itemsEntryCol, accountId, typeFilter);
 
         if (result)
         {
@@ -1225,6 +1517,16 @@ namespace DCCollection
 
         if (type == CollectionType::TITLE)
         {
+            auto legacyTitles = LoadLegacyTitleCollection(accountId);
+            for (uint32 entryId : legacyTitles)
+            {
+                if (CharTitlesEntry const* titleEntry =
+                    ResolveTitleEntryByAnyKey(entryId))
+                {
+                    items.push_back(titleEntry->ID);
+                }
+            }
+
             std::sort(items.begin(), items.end());
             items.erase(std::unique(items.begin(), items.end()), items.end());
         }
@@ -1237,26 +1539,15 @@ namespace DCCollection
     {
         std::map<CollectionType, uint32> counts;
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT collection_type, COUNT(*) FROM dc_collection_items "
-            "WHERE account_id = {} AND unlocked = 1 "
-            "GROUP BY collection_type",
-            accountId);
-
-        if (result)
+        for (int t = 1; t <= 6; ++t)
         {
-            do
-            {
-                Field* fields = result->Fetch();
-                CollectionType type = static_cast<CollectionType>(fields[0].Get<uint8>());
-                counts[type] = fields[1].Get<uint32>();
-            } while (result->NextRow());
-        }
+            if (t == static_cast<int>(CollectionType::TOY))
+                continue; // Toys are disabled
 
-        // Titles may exist as both canonical ID and bit_index in legacy data.
-        // Use normalized title IDs to avoid inflated/incorrect counters.
-        auto normalizedTitles = LoadPlayerCollection(accountId, CollectionType::TITLE);
-        counts[CollectionType::TITLE] = static_cast<uint32>(normalizedTitles.size());
+            CollectionType type = static_cast<CollectionType>(t);
+            auto owned = LoadPlayerCollection(accountId, type);
+            counts[type] = static_cast<uint32>(owned.size());
+        }
 
         return counts;
     }
@@ -1268,11 +1559,14 @@ namespace DCCollection
         if (itemsEntryCol.empty())
             return false;
 
+        std::string const typeFilter =
+            BuildItemsCollectionTypeWhereClause("collection_type", type);
+
         auto hasExactEntry = [&](uint32 rawEntryId) -> bool
         {
             QueryResult result = CharacterDatabase.Query(
-                "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND collection_type = {} AND {} = {} AND unlocked = 1 LIMIT 1",
-                accountId, static_cast<uint8>(type), itemsEntryCol, rawEntryId);
+                "SELECT 1 FROM dc_collection_items WHERE account_id = {} AND {} AND {} = {} AND unlocked = 1 LIMIT 1",
+                accountId, typeFilter, itemsEntryCol, rawEntryId);
             return result != nullptr;
         };
 
@@ -1289,10 +1583,28 @@ namespace DCCollection
         uint32 altEntryId = (titleEntry->ID == entryId) ?
             titleEntry->bit_index : titleEntry->ID;
 
-        if (!altEntryId || altEntryId == entryId)
-            return false;
+        if (altEntryId && altEntryId != entryId && hasExactEntry(altEntryId))
+            return true;
 
-        return hasExactEntry(altEntryId);
+        auto legacyTitles = LoadLegacyTitleCollection(accountId);
+        for (uint32 legacyId : legacyTitles)
+        {
+            if (legacyId == entryId || legacyId == altEntryId)
+                return true;
+
+            CharTitlesEntry const* legacyEntry =
+                ResolveTitleEntryByAnyKey(legacyId);
+            if (!legacyEntry)
+                continue;
+
+            if (legacyEntry->ID == titleEntry->ID ||
+                legacyEntry->bit_index == titleEntry->bit_index)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     std::vector<std::string> const& GetTransmogAppearanceVariantKeysCached();
@@ -1465,7 +1777,15 @@ namespace DCCollection
             {
                 Field* f = result->Fetch();
                 RecentAddition entry;
-                entry.typeId = f[0].Get<uint8>();
+                if (ItemsCollectionTypeIsEnum())
+                {
+                    std::string t = f[0].Get<std::string>();
+                    entry.typeId = ItemsCollectionTypeFromString(t);
+                }
+                else
+                {
+                    entry.typeId = f[0].Get<uint8>();
+                }
                 entry.entryId = f[1].Get<uint32>();
                 entry.timestamp = f[2].Get<uint32>();
                 recent.push_back(entry);
@@ -2308,6 +2628,11 @@ namespace DCCollection
         // Process purchase - use transaction for granting/recording
         auto trans = CharacterDatabase.BeginTransaction();
 
+        CollectionType const purchasedType =
+            static_cast<CollectionType>(collType);
+        std::string const collTypeValueExpr =
+            GetItemsCollectionTypeValueExpr(purchasedType);
+
         std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
         if (itemsEntryCol.empty())
         {
@@ -2323,7 +2648,7 @@ namespace DCCollection
             "INSERT INTO dc_collection_items (account_id, collection_type, {}, source_type, source_id, unlocked, acquired_date) "
             "VALUES ({}, {}, {}, 'SHOP', {}, 1, NOW()) "
             "ON DUPLICATE KEY UPDATE unlocked = 1, acquired_date = NOW()",
-            itemsEntryCol, accountId, collType, purchasedEntryId, shopId);
+            itemsEntryCol, accountId, collTypeValueExpr, purchasedEntryId, shopId);
 
         // Record purchase
         trans->Append(
@@ -2495,10 +2820,13 @@ namespace DCCollection
         if (itemsEntryCol.empty())
             return;
 
+        std::string const typeFilter = BuildItemsCollectionTypeWhereClause(
+            "collection_type", static_cast<CollectionType>(type));
+
         CharacterDatabase.Execute(
             "UPDATE dc_collection_items SET is_favorite = {} "
-            "WHERE account_id = {} AND collection_type = {} AND {} = {}",
-            favorite ? 1 : 0, accountId, type, itemsEntryCol, entryId);
+            "WHERE account_id = {} AND {} AND {} = {}",
+            favorite ? 1 : 0, accountId, typeFilter, itemsEntryCol, entryId);
 
         // No response needed, client handles optimistically
     }
@@ -2522,8 +2850,30 @@ namespace DCCollection
         DCAddon::JsonValue json = DCAddon::GetJsonData(msg);
 
         std::string typeStr = json.HasKey("type") ? json["type"].AsString() : "";
-        uint32 entryId = json.HasKey("entryId") ? json["entryId"].AsUInt32() : 0;
+        uint32 entryId = 0;
+        if (json.HasKey("entryId"))
+        {
+            if (json["entryId"].IsNumber())
+            {
+                entryId = json["entryId"].AsUInt32();
+            }
+            else if (json["entryId"].IsString())
+            {
+                std::string entryIdStr = json["entryId"].AsString();
+                if (!entryIdStr.empty())
+                    entryId = static_cast<uint32>(std::strtoul(entryIdStr.c_str(), nullptr, 10));
+            }
+        }
         bool random = json.HasKey("random") && json["random"].AsBool();
+
+        std::string rawEntryIdStr;
+        if (json.HasKey("entryId"))
+        {
+            if (json["entryId"].IsString())
+                rawEntryIdStr = json["entryId"].AsString();
+            else if (json["entryId"].IsNumber())
+                rawEntryIdStr = std::to_string(json["entryId"].AsUInt32());
+        }
 
         uint8 typeId = 0;
         if (typeStr == "mount" || typeStr == "mounts") typeId = static_cast<uint8>(CollectionType::MOUNT);
@@ -2531,6 +2881,20 @@ namespace DCCollection
         else if (typeStr == "heirloom" || typeStr == "heirlooms") typeId = static_cast<uint8>(CollectionType::HEIRLOOM);
         else if (json.HasKey("type") && json["type"].IsNumber())
             typeId = static_cast<uint8>(json["type"].AsUInt32());
+
+        if (typeId == static_cast<uint8>(CollectionType::TITLE))
+        {
+            LOG_INFO("module.dc",
+                "DC-Collection[TitleDebug] UseItem account={} guid={} type='{}' typeId={} entryId={} rawEntry='{}' isNum={} isStr={}",
+                GetAccountId(player),
+                player->GetGUID().GetCounter(),
+                typeStr,
+                typeId,
+                entryId,
+                rawEntryIdStr,
+                (json.HasKey("entryId") && json["entryId"].IsNumber()) ? 1 : 0,
+                (json.HasKey("entryId") && json["entryId"].IsString()) ? 1 : 0);
+        }
 
         switch (static_cast<CollectionType>(typeId))
         {
@@ -2579,10 +2943,14 @@ namespace DCCollection
                 if (itemsEntryCol.empty())
                     return;
 
+                std::string const mountTypeFilter =
+                    BuildItemsCollectionTypeWhereClause(
+                        "collection_type", CollectionType::MOUNT);
+
                 QueryResult result = CharacterDatabase.Query(
                     "SELECT {} FROM dc_collection_items "
-                    "WHERE account_id = {} AND collection_type = {} AND is_favorite = 1",
-                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::MOUNT));
+                    "WHERE account_id = {} AND {} AND is_favorite = 1",
+                    itemsEntryCol, accountId, mountTypeFilter);
                 if (result)
                 {
                     do
@@ -2741,8 +3109,12 @@ namespace DCCollection
 
         CharacterDatabase.Execute(
             "UPDATE dc_collection_items SET times_used = times_used + 1 "
-            "WHERE account_id = {} AND collection_type = {} AND {} = {}",
-            accountId, static_cast<uint8>(CollectionType::MOUNT), itemsEntryCol, spellId);
+            "WHERE account_id = {} AND {} AND {} = {}",
+            accountId,
+            BuildItemsCollectionTypeWhereClause(
+                "collection_type", CollectionType::MOUNT),
+            itemsEntryCol,
+            spellId);
     }
 
     void HandleSetTitle(Player* player, uint32 titleId)
@@ -2750,29 +3122,97 @@ namespace DCCollection
         if (!player || !player->GetSession())
             return;
 
+        uint32 accountId = GetAccountId(player);
+        uint32 guid = player->GetGUID().GetCounter();
+
+        LOG_INFO("module.dc",
+            "DC-Collection[TitleDebug] HandleSetTitle begin account={} guid={} titleKey={}",
+            accountId,
+            guid,
+            titleId);
+
         // titleId = 0 means clear title
         if (titleId == 0)
         {
             player->SetTitle(nullptr);
+            LOG_INFO("module.dc",
+                "DC-Collection[TitleDebug] HandleSetTitle clear account={} guid={}",
+                accountId,
+                guid);
             return;
         }
-
-        uint32 accountId = GetAccountId(player);
 
         // Resolve incoming title from either DBC ID or bit_index style keys.
         CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(titleId);
         if (!titleEntry)
         {
+            LOG_WARN("module.dc",
+                "DC-Collection[TitleDebug] HandleSetTitle resolve failed account={} guid={} titleKey={}",
+                accountId,
+                guid,
+                titleId);
             DCAddon::SendError(player, MODULE, "Invalid title ID",
                 DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
         }
 
         uint32 canonicalTitleId = titleEntry->ID;
+        bool hadTitleBefore = player->HasTitle(titleEntry);
+
+        std::string titleName;
+        if (titleEntry->nameMale[0])
+            titleName = titleEntry->nameMale[0];
+        else if (titleEntry->nameFemale[0])
+            titleName = titleEntry->nameFemale[0];
+
+        bool hasCollection = HasCollectionItem(accountId, CollectionType::TITLE, canonicalTitleId);
+
+        if (!hasCollection && hadTitleBefore)
+        {
+            std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+            if (!itemsEntryCol.empty())
+            {
+                std::string const typeTitleValue =
+                    GetItemsCollectionTypeValueExpr(CollectionType::TITLE);
+
+                CharacterDatabase.Execute(
+                    "INSERT IGNORE INTO dc_collection_items "
+                    "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
+                    "VALUES ({}, {}, {}, 'AUTO_IMPORT_TITLE', 1, NOW())",
+                    itemsEntryCol, accountId, typeTitleValue, canonicalTitleId);
+
+                hasCollection = HasCollectionItem(accountId, CollectionType::TITLE, canonicalTitleId);
+
+                LOG_INFO("module.dc",
+                    "DC-Collection[TitleDebug] HandleSetTitle auto-import account={} guid={} id={} nowHasCollection={}",
+                    accountId,
+                    guid,
+                    canonicalTitleId,
+                    hasCollection ? 1 : 0);
+            }
+        }
+
+        LOG_INFO("module.dc",
+            "DC-Collection[TitleDebug] HandleSetTitle resolved account={} guid={} key={} id={} bit={} name='{}' hasCollection={} hadTitleBefore={} chosenBefore={}",
+            accountId,
+            guid,
+            titleId,
+            canonicalTitleId,
+            titleEntry->bit_index,
+            titleName,
+            hasCollection ? 1 : 0,
+            hadTitleBefore ? 1 : 0,
+            player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
 
         // Verify player owns this title
-        if (!HasCollectionItem(accountId, CollectionType::TITLE, canonicalTitleId))
+        if (!hasCollection)
         {
+            LOG_WARN("module.dc",
+                "DC-Collection[TitleDebug] HandleSetTitle ownership failed account={} guid={} id={} bit={}",
+                accountId,
+                guid,
+                canonicalTitleId,
+                titleEntry->bit_index);
             DCAddon::SendError(player, MODULE, "Title not in collection",
                 DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
@@ -2782,10 +3222,24 @@ namespace DCCollection
         if (!player->HasTitle(titleEntry))
         {
             player->SetTitle(titleEntry, false);  // Grant the title
+            LOG_INFO("module.dc",
+                "DC-Collection[TitleDebug] HandleSetTitle granted missing title account={} guid={} id={}",
+                accountId,
+                guid,
+                canonicalTitleId);
         }
 
         // Set as active title (chosenTitle is the bit index)
         player->SetUInt32Value(PLAYER_CHOSEN_TITLE, titleEntry->bit_index);
+
+        LOG_INFO("module.dc",
+            "DC-Collection[TitleDebug] HandleSetTitle applied account={} guid={} id={} bit={} nowHasTitle={} chosenAfter={}",
+            accountId,
+            guid,
+            canonicalTitleId,
+            titleEntry->bit_index,
+            player->HasTitle(titleEntry) ? 1 : 0,
+            player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
     }
 
     void HandleSummonHeirloom(Player* player, uint32 itemId)
@@ -3885,6 +4339,32 @@ namespace DCCollection
         items.SetObject();
 
         auto owned = LoadPlayerCollection(accountId, ct);
+        uint32 titlesGranted = 0;
+
+        if (ct == CollectionType::TITLE)
+        {
+            for (uint32 id : owned)
+            {
+                CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(id);
+                if (!titleEntry)
+                    continue;
+
+                if (!player->HasTitle(titleEntry))
+                {
+                    player->SetTitle(titleEntry, false);
+                    ++titlesGranted;
+                }
+            }
+
+            LOG_INFO("module.dc",
+                "DC-Collection[TitleDebug] SendCollection titles account={} guid={} owned={} granted={} chosenTitle={}",
+                accountId,
+                player->GetGUID().GetCounter(),
+                owned.size(),
+                titlesGranted,
+                player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
+        }
+
         for (uint32 id : owned)
         {
             DCAddon::JsonValue entry;
@@ -4395,7 +4875,10 @@ namespace DCCollection
                     "INSERT IGNORE INTO dc_collection_items "
                     "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'LEARNED', 1, NOW())",
-                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::MOUNT), spellId);
+                    itemsEntryCol,
+                    accountId,
+                    GetItemsCollectionTypeValueExpr(CollectionType::MOUNT),
+                    spellId);
 
                 SendItemLearned(player, CollectionType::MOUNT, spellId);
                 UpdateMountSpeedBonus(player);
@@ -4418,7 +4901,10 @@ namespace DCCollection
                     "INSERT IGNORE INTO dc_collection_items "
                     "(account_id, collection_type, {}, source_type, unlocked, acquired_date) "
                     "VALUES ({}, {}, {}, 'LEARNED', 1, NOW())",
-                    itemsEntryCol, accountId, static_cast<uint8>(CollectionType::PET), itemId);
+                    itemsEntryCol,
+                    accountId,
+                    GetItemsCollectionTypeValueExpr(CollectionType::PET),
+                    itemId);
 
                 SendItemLearned(player, CollectionType::PET, itemId);
             }

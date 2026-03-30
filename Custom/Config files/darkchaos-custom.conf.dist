@@ -2805,6 +2805,47 @@ DCFirstStart.TriggerWelcome = 1
 #
 DCFirstStart.PrestigeBonuses = 1
 
+# -----------------------------------------------------------------------------
+# Account-Wide Reputation Pools
+# -----------------------------------------------------------------------------
+
+#
+#    DCReputation.Accountwide.Enable
+#        Description: Enable account-wide reputation pooling
+#        Default:     1 (Enabled)
+#
+DCReputation.Accountwide.Enable = 1
+
+#
+#    DCReputation.Accountwide.SyncOnLogin
+#        Description: Sync pooled reputation standings to character at login
+#        Default:     1 (Enabled)
+#
+DCReputation.Accountwide.SyncOnLogin = 1
+
+#
+#    DCReputation.Accountwide.HighestWins
+#        Description: If enabled, pool keeps the highest standing per faction
+#                     from any character on the account.
+#                     If disabled, latest standing overwrite is used.
+#        Default:     1 (Enabled)
+#
+DCReputation.Accountwide.HighestWins = 1
+
+#
+#    DCReputation.Accountwide.AnnounceSync
+#        Description: Show login sync summary message to player
+#        Default:     0 (Disabled)
+#
+DCReputation.Accountwide.AnnounceSync = 0
+
+#
+#    DCReputation.Accountwide.Debug
+#        Description: Enable debug logging for account-wide reputation syncing
+#        Default:     0 (Disabled)
+#
+DCReputation.Accountwide.Debug = 0
+
 # Seasonal Starter Tokens
 DCFirstStart.SeasonalTokens.Enable = 1
 DCFirstStart.SeasonalTokens.UseCanonicalCurrency = 1

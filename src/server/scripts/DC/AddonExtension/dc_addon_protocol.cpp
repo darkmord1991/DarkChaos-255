@@ -273,9 +273,33 @@ struct PendingAddonRequest
 static std::unordered_map<uint32, std::unordered_map<std::string, PendingAddonRequest>> s_PendingRequests;
 static std::mutex s_PendingRequestsMutex;
 
+static bool ShouldTrackPendingRequest(const DCAddon::ParsedMessage& msg)
+{
+    if (!msg.HasRequestId())
+        return false;
+
+    // These COLL requests are intentionally fire-and-forget and may not emit
+    // a response payload on success.
+    if (msg.GetModule() == DCAddon::Module::COLLECTION)
+    {
+        switch (msg.GetOpcode())
+        {
+            case DCAddon::Opcode::Collection::CMSG_USE_ITEM:
+            case DCAddon::Opcode::Collection::CMSG_SET_FAVORITE:
+            case DCAddon::Opcode::Collection::CMSG_COMMUNITY_RATE:
+            case DCAddon::Opcode::Collection::CMSG_COMMUNITY_VIEW:
+                return false;
+            default:
+                break;
+        }
+    }
+
+    return true;
+}
+
 static void RegisterPendingRequest(Player* player, const DCAddon::ParsedMessage& msg)
 {
-    if (!player || !player->GetSession() || !msg.HasRequestId())
+    if (!player || !player->GetSession() || !ShouldTrackPendingRequest(msg))
         return;
 
     PendingAddonRequest pending;

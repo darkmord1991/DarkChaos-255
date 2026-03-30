@@ -830,9 +830,10 @@ end
 -- Use/summon collection item (mount, pet, toy)
 function DC:RequestUseItem(collectionType, entryId)
     local typeId = type(collectionType) == "number" and collectionType or self:GetTypeIdFromName(collectionType)
+    local normalizedEntryId = tonumber(entryId) or entryId
     return self:SendMessage(self.Opcodes.CMSG_USE_ITEM, {
         type = typeId or 0,
-        entryId = entryId,
+        entryId = normalizedEntryId,
     })
 end
 
@@ -1262,7 +1263,28 @@ function DC:RequestSummonHeirloom(entryId)
 end
 
 function DC:RequestSetTitle(entryId)
-    return self:RequestUseItem("titles", entryId)
+    local numericEntryId = tonumber(entryId) or entryId
+
+    self._lastTitleRequest = {
+        rawEntryId = entryId,
+        entryId = numericEntryId,
+        sentAt = (type(GetTime) == "function") and GetTime() or 0,
+    }
+
+    self:Debug(string.format(
+        "[TitleDebug] RequestSetTitle raw=%s numeric=%s",
+        tostring(entryId),
+        tostring(numericEntryId)
+    ))
+
+    if type(self.LogNetEvent) == "function" then
+        self:LogNetEvent("info", "title", "RequestSetTitle", {
+            rawEntryId = entryId,
+            entryId = numericEntryId,
+        })
+    end
+
+    return self:RequestUseItem("titles", numericEntryId)
 end
 
 -- Set favorite status
@@ -2357,6 +2379,67 @@ function DC:HandleError(data)
         self:Print("|cffff0000Error:|r " .. errorMsg)
     end
 
+    -- Title apply diagnostics: surface recent title request context.
+    local titleReq = self._lastTitleRequest
+    if type(titleReq) == "table" then
+        local now = (type(GetTime) == "function") and GetTime() or 0
+        local age = now - (tonumber(titleReq.sentAt) or 0)
+        local msgLower = string.lower(tostring(errorMsg or ""))
+        local titleRelated = string.find(msgLower, "title", 1, true) ~= nil
+
+        if titleRelated or age <= 6 then
+            self:Print(string.format(
+                "|cffffcc00[TitleDebug]|r request raw=%s numeric=%s age=%.1fs error=%s",
+                tostring(titleReq.rawEntryId),
+                tostring(titleReq.entryId),
+                age,
+                tostring(errorMsg)
+            ))
+
+            if string.find(msgLower, "title not in collection", 1, true) or
+                (titleRelated and string.find(msgLower, "not in collection", 1, true)) then
+                local titles = self.collections and self.collections.titles
+                local staleId = tonumber(titleReq.entryId)
+                local removed = false
+
+                if titles and staleId then
+                    if titles[staleId] ~= nil then
+                        titles[staleId] = nil
+                        removed = true
+                    end
+
+                    local staleIdStr = tostring(staleId)
+                    if titles[staleIdStr] ~= nil then
+                        titles[staleIdStr] = nil
+                        removed = true
+                    end
+                end
+
+                if removed and type(self._BumpCollectionsRevision) == "function" then
+                    self:_BumpCollectionsRevision("titles")
+                end
+
+                if removed then
+                    self.cacheNeedsSave = true
+                end
+
+                if type(self.RequestCollection) == "function" then
+                    self:RequestCollection("title")
+                end
+            end
+
+            if type(self.LogNetEvent) == "function" then
+                self:LogNetEvent("error", "title", "Title apply failed", {
+                    requestedRaw = titleReq.rawEntryId,
+                    requestedEntryId = titleReq.entryId,
+                    ageSeconds = age,
+                    code = errorCode,
+                    error = errorMsg,
+                })
+            end
+        end
+    end
+
     -- Mark pending outfit apply as having received a server error (to avoid duplicate messages)
     if self.Wardrobe and self.Wardrobe._pendingApplyOutfit then
         self.Wardrobe._pendingApplyOutfit.hadServerError = true
@@ -3018,6 +3101,10 @@ function DC:HandleCollection(data)
     local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
     local items = data.items or {}
 
+    if collType == "titles" then
+        self._titleCollectionAuthoritative = true
+    end
+
     -- Some servers/bridges return arrays instead of id->entry maps.
     -- Normalize arrays to map form so CacheMergeCollection stores by entry id.
     if type(items) == "table" and #items > 0 then
@@ -3044,7 +3131,40 @@ function DC:HandleCollection(data)
         end
     end
     
-    self:CacheMergeCollection(collType, items)
+    if collType == "titles" and type(self.SetCollection) == "function" then
+        -- Title collection is authoritative from server. Replace stale local keys,
+        -- but preserve per-item local metadata (favorite/active flags) when possible.
+        local current = (self.collections and self.collections.titles) or {}
+        local authoritative = {}
+
+        for itemId, itemData in pairs(items) do
+            local normalizedId = tonumber(itemId) or itemId
+            local existing = current[normalizedId] or current[tostring(normalizedId)]
+            local merged = {}
+
+            if type(existing) == "table" then
+                for k, v in pairs(existing) do
+                    merged[k] = v
+                end
+            end
+
+            if type(itemData) == "table" then
+                for k, v in pairs(itemData) do
+                    merged[k] = v
+                end
+            end
+
+            if next(merged) == nil then
+                merged.owned = true
+            end
+
+            authoritative[normalizedId] = merged
+        end
+
+        self:SetCollection(collType, authoritative)
+    else
+        self:CacheMergeCollection(collType, items)
+    end
     -- Cache will be saved by auto-save timer or on logout
 
     -- Release inflight guard for this type.
@@ -3227,11 +3347,16 @@ end
 
 function DC:HandleStats(data)
     -- Store raw stats for legacy compatibility
+    local sawServerTitleStats = false
     for rawType, stats in pairs(data.stats or {}) do
         if type(stats) == "table" then
             local collType =
                 (type(self.NormalizeCollectionType) == "function" and
                     self:NormalizeCollectionType(rawType)) or rawType
+
+            if collType == "titles" then
+                sawServerTitleStats = true
+            end
 
             if self.stats[collType] then
                 self.stats[collType].owned =
@@ -3259,6 +3384,11 @@ function DC:HandleStats(data)
             local collType =
                 (type(self.NormalizeCollectionType) == "function" and
                     self:NormalizeCollectionType(rawType)) or rawType
+
+            if collType == "titles" then
+                sawServerTitleStats = true
+            end
+
             self.collectionStats[collType] = {
                 collected = tonumber(stats.owned or stats.collected) or 0,
                 total = tonumber(stats.total) or 0,
@@ -3273,9 +3403,11 @@ function DC:HandleStats(data)
         end
     end
 
-    -- Titles can be collected from the native client before server stats sync.
-    -- Keep counters in sync with locally known titles to avoid false 0 counts.
-    if self.TitleModule and type(self.TitleModule.GetStats) == "function" then
+    self._titleStatsFromServer = sawServerTitleStats and true or nil
+
+    -- Fallback only when server did not provide title stats in this payload.
+    if (not sawServerTitleStats) and self.TitleModule and
+        type(self.TitleModule.GetStats) == "function" then
         local ok, titleStats = pcall(self.TitleModule.GetStats,
             self.TitleModule)
         if ok and type(titleStats) == "table" then
@@ -3283,22 +3415,13 @@ function DC:HandleStats(data)
             local total = tonumber(titleStats.total) or 0
 
             self.stats.titles = self.stats.titles or { owned = 0, total = 0 }
-            if owned > (self.stats.titles.owned or 0) then
-                self.stats.titles.owned = owned
-            end
-            if total > (self.stats.titles.total or 0) then
-                self.stats.titles.total = total
-            end
+            self.stats.titles.owned = owned
+            self.stats.titles.total = total
 
-            local currentTitleStats = self.collectionStats.titles or
-                { collected = 0, total = 0 }
-            if owned > (currentTitleStats.collected or 0) then
-                currentTitleStats.collected = owned
-            end
-            if total > (currentTitleStats.total or 0) then
-                currentTitleStats.total = total
-            end
-            self.collectionStats.titles = currentTitleStats
+            self.collectionStats.titles = {
+                collected = owned,
+                total = total,
+            }
         end
     end
     

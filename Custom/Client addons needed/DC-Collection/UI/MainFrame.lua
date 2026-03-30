@@ -1985,6 +1985,9 @@ function DC:SelectTab(tabKey)
     elseif tabKey == "wardrobe" then
         self:UpdateHeader()
     else
+        if tabKey == "titles" and type(self.RequestCollection) == "function" then
+            self:RequestCollection("title")
+        end
         self:RefreshCurrentTab()
     end
 end

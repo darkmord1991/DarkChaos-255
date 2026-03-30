@@ -107,9 +107,10 @@ function HLBG.UpdateInfo()
         configDisplay:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 30, yOffset)
         configDisplay:SetPoint("RIGHT", info.Content, "RIGHT", -20, 0)
         configDisplay:SetJustifyH("LEFT")
+        configDisplay:SetJustifyV("TOP")
         configDisplay:SetText(configText)
         table.insert(info.Content.children, configDisplay)
-        yOffset = yOffset - 160
+        yOffset = yOffset - (configDisplay:GetStringHeight() + 20)
     end
     
     -- Create description
@@ -117,6 +118,7 @@ function HLBG.UpdateInfo()
     description:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 20, yOffset)
     description:SetPoint("TOPRIGHT", info.Content, "TOPRIGHT", -20, yOffset)
     description:SetJustifyH("LEFT")
+    description:SetJustifyV("TOP")
     description:SetText(
         "The Hinterland Battleground is a 25 vs 25 player PvP battleground featuring random affixes " ..
         "that change the gameplay mechanics. Players compete to collect resources by controlling " ..
@@ -126,7 +128,7 @@ function HLBG.UpdateInfo()
         "or provide unique buffs and debuffs to players."
     )
     table.insert(info.Content.children, description)
-    yOffset = yOffset - 120
+    yOffset = yOffset - (description:GetStringHeight() + 20)
     
     -- Create sections title
     local sectionsTitle = info.Content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -156,9 +158,14 @@ function HLBG.UpdateInfo()
         text:SetPoint("TOPLEFT", iconTitle, "BOTTOMLEFT", 10, -2)
         text:SetPoint("RIGHT", frame, "RIGHT", -10, 0)
         text:SetJustifyH("LEFT")
+        text:SetJustifyV("TOP")
         text:SetText(icon.text)
+
+        local frameHeight = math.max(40, 18 + text:GetStringHeight() + 6)
+        frame:SetHeight(frameHeight)
+
         table.insert(info.Content.children, frame)
-        yOffset = yOffset - 50
+        yOffset = yOffset - (frameHeight + 8)
     end
     
     -- Create commands title
@@ -173,6 +180,7 @@ function HLBG.UpdateInfo()
     commands:SetPoint("TOPLEFT", info.Content, "TOPLEFT", 30, yOffset)
     commands:SetPoint("RIGHT", info.Content, "RIGHT", -20, 0)
     commands:SetJustifyH("LEFT")
+    commands:SetJustifyV("TOP")
     commands:SetText(
         "/hlbg - Open main window\n" ..
         "/hlbg queue join - Join battleground queue\n" ..
@@ -181,7 +189,7 @@ function HLBG.UpdateInfo()
         "/hlbg season <n> - Set season filter (0 = all/current)"
     )
     table.insert(info.Content.children, commands)
-    yOffset = yOffset - 120
+    yOffset = yOffset - (commands:GetStringHeight() + 20)
     
     -- Set content height
     info.Content:SetHeight(math.abs(yOffset) + 100)

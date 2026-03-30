@@ -52,6 +52,10 @@ end
 -- ============================================================================
 
 function TitleModule:SeedFromClientKnownTitles()
+    if DC and DC._titleCollectionAuthoritative then
+        return false
+    end
+
     DC.definitions = DC.definitions or {}
     DC.definitions.titles = DC.definitions.titles or {}
     DC.collections = DC.collections or {}
@@ -193,6 +197,11 @@ end
 function TitleModule:IsTitleCollected(titleId, titleDef, knownByIndex, knownByName)
     local collData, knownIndex = self:GetCollectionDataForTitle(titleId, titleDef,
         knownByName)
+
+    if DC and DC._titleCollectionAuthoritative then
+        return collData ~= nil
+    end
+
     if collData then
         return true
     end
@@ -297,6 +306,14 @@ function TitleModule:SetTitle(titleId)
     end
 
     local requestId = tonumber(titleId)
+    local selectedName = def and (def.displayName or def.name) or "?"
+
+    DC:Print(string.format(
+        "|cffffcc00[TitleDebug]|r click name=%s titleId=%s requestId=%s",
+        tostring(selectedName),
+        tostring(titleId),
+        tostring(requestId)
+    ))
 
     -- Always try server-side apply first so the character learns/activates account titles
     -- even when client cache keys are stale or mismatched.
@@ -308,6 +325,19 @@ function TitleModule:SetTitle(titleId)
     local _, knownIndex = self:GetCollectionDataForTitle(titleId, def, knownByName)
     if not knownIndex and knownByName and def then
         knownIndex = knownByName[NormalizeTitleName(def.displayName or def.name)]
+    end
+
+    if knownIndex then
+        DC:Print(string.format(
+            "|cffffcc00[TitleDebug]|r resolved knownIndex=%s for name=%s",
+            tostring(knownIndex),
+            tostring(selectedName)
+        ))
+    else
+        DC:Print(string.format(
+            "|cffffcc00[TitleDebug]|r no knownIndex for name=%s",
+            tostring(selectedName)
+        ))
     end
 
     -- Extra server fallback for environments where titles are stored by index-like keys.
@@ -403,24 +433,27 @@ end
 function TitleModule:RefreshStatsCache()
     local stats = self:GetStats()
 
-    DC.stats = DC.stats or {}
-    DC.stats.titles = DC.stats.titles or { owned = 0, total = 0 }
-    if stats.owned > (DC.stats.titles.owned or 0) then
-        DC.stats.titles.owned = stats.owned
-    end
-    if stats.total > (DC.stats.titles.total or 0) then
-        DC.stats.titles.total = stats.total
+    if DC._titleStatsFromServer then
+        if DC.MainFrame and DC.MainFrame:IsShown() and
+            type(DC.UpdateHeader) == "function" then
+            DC:UpdateHeader()
+        end
+        if DC.MyCollection and type(DC.MyCollection.Update) == "function" then
+            DC.MyCollection:Update()
+        end
+        return
     end
 
+    DC.stats = DC.stats or {}
+    DC.stats.titles = DC.stats.titles or { owned = 0, total = 0 }
+    DC.stats.titles.owned = stats.owned
+    DC.stats.titles.total = stats.total
+
     DC.collectionStats = DC.collectionStats or {}
-    local titleStats = DC.collectionStats.titles or { collected = 0, total = 0 }
-    if stats.owned > (titleStats.collected or 0) then
-        titleStats.collected = stats.owned
-    end
-    if stats.total > (titleStats.total or 0) then
-        titleStats.total = stats.total
-    end
-    DC.collectionStats.titles = titleStats
+    DC.collectionStats.titles = {
+        collected = stats.owned,
+        total = stats.total,
+    }
 
     if DC.MainFrame and DC.MainFrame:IsShown() and
         type(DC.UpdateHeader) == "function" then
@@ -487,7 +520,9 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("KNOWN_TITLES_UPDATE")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "KNOWN_TITLES_UPDATE" then
-        TitleModule:SeedFromClientKnownTitles()
+        if not (DC and DC._titleCollectionAuthoritative) then
+            TitleModule:SeedFromClientKnownTitles()
+        end
         if DC and type(DC.RequestCollection) == "function" then
             DC:RequestCollection("titles")
         end
