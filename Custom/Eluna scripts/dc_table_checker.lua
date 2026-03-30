@@ -5,7 +5,7 @@
     and reports any missing tables. The server will continue to start,
     but features with missing tables will be disabled.
     
-    Updated: 2026-01-29 (synced with world/acore_chars schema dumps)
+    Updated: 2026-03-30 (includes account-wide pool tables)
     
     This script now strictly reflects the tables present in:
     - Custom/Custom feature SQLs/world schema.sql
@@ -23,7 +23,10 @@ local DC_TABLE_CHECKER = {
     
     -- Table definitions: {schema, table_name, feature, critical}
     REQUIRED_TABLES = {
+        {"acore_chars", "dc_account_achievement_pools", "Account-Wide Achievements", false},
         {"acore_chars", "dc_account_outfits", "Collection System", false},
+        {"acore_chars", "dc_account_reputation_pools", "Account-Wide Reputation", false},
+        {"acore_chars", "dc_account_social_friends", "Account-Wide Friendlist", false},
         {"acore_chars", "dc_addon_client_caps", "Protocol Logging", false},
         {"acore_chars", "dc_addon_protocol_errors", "Protocol Logging", false},
         {"acore_chars", "dc_addon_protocol_log", "Protocol Logging", false},

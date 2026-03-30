@@ -36,8 +36,15 @@ SET `spawnMask` = `spawnMask` | 1 | 2 | 4
 WHERE FIND_IN_SET(`id`, @INSTANCE_PORTAL_IDS);
 
 -- ========================================================================
--- FIX ALL OTHER DUNGEON GAMEOBJECTS (Comprehensive Fix)
+-- FIX DUNGEON CREATURE SPAWNS (Comprehensive Fix)
 -- ========================================================================
+-- Ensure all dungeon creatures are available in Mythic difficulty.
+-- ========================================================================
+
+UPDATE `creature`
+SET `spawnMask` = `spawnMask` | 1 | 2 | 4
+WHERE FIND_IN_SET(`map`, @WOTLK_DUNGEONS);
+
 -- ========================================================================
 -- FIX ALL OTHER DUNGEON GAMEOBJECTS (Comprehensive Fix)
 -- ========================================================================
@@ -53,12 +60,11 @@ WHERE FIND_IN_SET(`map`, @WOTLK_DUNGEONS)
 -- ========================================================================
 -- FIX PORTAL KEEPER NPCs (if any exist in world)
 -- ========================================================================
--- Update all Portal Keeper NPC spawns to be visible in all difficulties
--- These are world spawns (not inside dungeons) that should always be visible
+-- Portal Keeper is a world spawn and should stay on regular world mode.
 -- ========================================================================
 
 UPDATE `creature` 
-SET `spawnMask` = 3, `phaseMask` = 1
+SET `spawnMask` = 1, `phaseMask` = 1
 WHERE `id1` = 100101 
   AND `map` NOT IN (SELECT DISTINCT `map` FROM `gameobject` WHERE FIND_IN_SET(`map`, @WOTLK_DUNGEONS));
 

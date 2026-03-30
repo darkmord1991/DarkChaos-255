@@ -1,5 +1,5 @@
 -- DarkChaos account-wide reputation pools
--- Used by: Progression/FirstStart/dc_accountwide_reputation.cpp
+-- Used by: Progression/Accountwide/dc_accountwide_reputation.cpp
 
 CREATE TABLE IF NOT EXISTS `dc_account_reputation_pools` (
   `account_id` INT UNSIGNED NOT NULL,

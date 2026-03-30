@@ -129,7 +129,9 @@ void AddDCAddonExtensionScripts();            // AddonExtension\\dc_addon_extens
 
 // --- Integration System (First-Start, Custom Login) ---
 void AddSC_dc_firststart();                   // Progression/FirstStart/dc_firststart.cpp
-void AddSC_dc_accountwide_reputation();       // Progression/FirstStart/dc_accountwide_reputation.cpp
+void AddSC_dc_accountwide_reputation();       // Progression/Accountwide/dc_accountwide_reputation.cpp
+void AddSC_dc_accountwide_friendlist();       // Progression/Accountwide/dc_accountwide_friendlist.cpp
+void AddSC_dc_accountwide_achievements();     // Progression/Accountwide/dc_accountwide_achievements.cpp
 
 // --- Cross-System Integration Framework ---
 void AddSC_dc_cross_system_scripts();         // CrossSystem\\CrossSystemScripts.cpp
@@ -637,8 +639,12 @@ void AddDCScripts()
     try {
         AddSC_dc_firststart();
         AddSC_dc_accountwide_reputation();
+        AddSC_dc_accountwide_friendlist();
+        AddSC_dc_accountwide_achievements();
         LOG_INFO("scripts.dc", ">>   ✓ First-start experience loaded");
         LOG_INFO("scripts.dc", ">>   ✓ Account-wide reputation pools loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Account-wide friendlist loaded");
+        LOG_INFO("scripts.dc", ">>   ✓ Account-wide achievements loaded");
     } catch (std::exception& e) {
         LOG_ERROR("scripts.dc", ">>   ✗ EXCEPTION in First-Start: {}", e.what());
     } catch (...) {

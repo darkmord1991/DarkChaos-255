@@ -2846,6 +2846,91 @@ DCReputation.Accountwide.AnnounceSync = 0
 #
 DCReputation.Accountwide.Debug = 0
 
+# -----------------------------------------------------------------------------
+# Account-Wide Friendlist
+# -----------------------------------------------------------------------------
+
+#
+#    DCFriends.Accountwide.Enable
+#        Description: Enable account-wide friendlist pooling
+#        Default:     1 (Enabled)
+#
+DCFriends.Accountwide.Enable = 1
+
+#
+#    DCFriends.Accountwide.SyncOnLogin
+#        Description: Sync account friendlist to character at login
+#        Default:     1 (Enabled)
+#
+DCFriends.Accountwide.SyncOnLogin = 1
+
+#
+#    DCFriends.Accountwide.SaveOnLogout
+#        Description: Persist active character friendlist back to account pool
+#        Default:     1 (Enabled)
+#
+DCFriends.Accountwide.SaveOnLogout = 1
+
+#
+#    DCFriends.Accountwide.StrictSync
+#        Description: Remove character-only friends that are not in account pool
+#        Default:     1 (Enabled)
+#
+DCFriends.Accountwide.StrictSync = 1
+
+#
+#    DCFriends.Accountwide.AnnounceSync
+#        Description: Show login sync summary to player
+#        Default:     0 (Disabled)
+#
+DCFriends.Accountwide.AnnounceSync = 0
+
+#
+#    DCFriends.Accountwide.Debug
+#        Description: Enable debug logging for account-wide friendlist syncing
+#        Default:     0 (Disabled)
+#
+DCFriends.Accountwide.Debug = 0
+
+# -----------------------------------------------------------------------------
+# Account-Wide Achievements
+# -----------------------------------------------------------------------------
+
+#
+#    DCAchievements.Accountwide.Enable
+#        Description: Enable account-wide completed achievement pooling
+#        Default:     1 (Enabled)
+#
+DCAchievements.Accountwide.Enable = 1
+
+#
+#    DCAchievements.Accountwide.SyncOnLogin
+#        Description: Sync pooled completed achievements to character at login
+#        Default:     1 (Enabled)
+#
+DCAchievements.Accountwide.SyncOnLogin = 1
+
+#
+#    DCAchievements.Accountwide.ShareRealmFirst
+#        Description: Include realm-first achievements in account-wide pool
+#        Default:     0 (Disabled)
+#
+DCAchievements.Accountwide.ShareRealmFirst = 0
+
+#
+#    DCAchievements.Accountwide.AnnounceSync
+#        Description: Show login sync summary to player
+#        Default:     0 (Disabled)
+#
+DCAchievements.Accountwide.AnnounceSync = 0
+
+#
+#    DCAchievements.Accountwide.Debug
+#        Description: Enable debug logging for account-wide achievement sync
+#        Default:     0 (Disabled)
+#
+DCAchievements.Accountwide.Debug = 0
+
 # Seasonal Starter Tokens
 DCFirstStart.SeasonalTokens.Enable = 1
 DCFirstStart.SeasonalTokens.UseCanonicalCurrency = 1
