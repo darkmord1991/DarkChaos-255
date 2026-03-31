@@ -69,6 +69,9 @@ public:
     void RegisterAffix(std::unique_ptr<IAffixHandler> handler);
     void ActivateAffixes(Map* map, const std::vector<AffixType>& affixes, uint8 keystoneLevel);
     void DeactivateAffixes(Map* map);
+    bool HasHandler(AffixType affix) const;
+    std::string GetAffixName(AffixType affix) const;
+    std::string GetAffixDescription(AffixType affix) const;
 
     // Event dispatchers
     void OnCreatureDeath(Creature* creature, Unit* killer);

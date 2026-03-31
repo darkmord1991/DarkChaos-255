@@ -61,10 +61,10 @@ public:
         return "|T" + icon + ":40:40:-18|t " + text;
     }
 
-    // Use centralized constants for backwards compatibility
+    // Use the shared affix registry through the centralized HLBG helper.
     static const char* AffixName(uint8 a)
     {
-        return GetLegacyAffixName(a);
+        return GetAffixName(a);
     }
 
     void ShowHistoryPage(Player* player, Creature* creature, uint32 page)

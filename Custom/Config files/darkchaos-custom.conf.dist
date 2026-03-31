@@ -1548,7 +1548,7 @@ MythicPlus.CancellationVoteTimeout = 60
 
 #
 #    MythicPlus.Affixes.Enabled
-#        Description: Enable weekly affix modifiers
+#        Description: Enable weekly affix modifiers backed by registered runtime handlers
 #        Default:     0 (Disabled - work in progress)
 #
 MythicPlus.Affixes.Enabled = 0
@@ -2203,9 +2203,9 @@ HinterlandBG.Lock.Duration.Depletion = 0
 #
 #    HinterlandBG.Affix.Enabled
 #        Description: Enable HLBG affix system
-#        Default:     1 (Enabled)
+#        Default:     0 (Disabled)
 #
-HinterlandBG.Affix.Enabled = 1
+HinterlandBG.Affix.Enabled = 0
 
 #
 #    HinterlandBG.Affix.Weather.Enabled
@@ -2216,7 +2216,7 @@ HinterlandBG.Affix.Weather.Enabled = 1
 
 #
 #    HinterlandBG.Affix.Period
-#        Description: Affix rotation period (minutes, 0 = static)
+#        Description: Affix rotation period in seconds (0 = no mid-match rotation)
 #        Default:     0
 #
 HinterlandBG.Affix.Period = 0

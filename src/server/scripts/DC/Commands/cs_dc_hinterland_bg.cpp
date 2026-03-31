@@ -160,16 +160,7 @@ public:
             uint8 aff = hl->GetActiveAffixCode();
             if (aff > 0)
             {
-                const char* aname = "None";
-                switch (aff)
-                {
-                    case 1: aname = "Haste"; break;
-                    case 2: aname = "Slow"; break;
-                    case 3: aname = "Reduced Healing"; break;
-                    case 4: aname = "Reduced Armor"; break;
-                    case 5: aname = "Boss Enrage"; break;
-                    default: aname = "None"; break;
-                }
+                const char* aname = hl->GetAffixName(static_cast<OutdoorPvPHL::AffixType>(aff));
                 handler->PSendSysMessage("  Affix: {}", aname);
             }
         }
@@ -384,16 +375,7 @@ public:
         }
 
         uint8 code = hl->GetActiveAffixCode();
-        const char* name = "None";
-        switch (code)
-        {
-            case 1: name = "Haste"; break;
-            case 2: name = "Slow"; break;
-            case 3: name = "Reduced Healing"; break;
-            case 4: name = "Reduced Armor"; break;
-            case 5: name = "Boss Enrage"; break;
-            default: break;
-        }
+        const char* name = hl->GetAffixName(static_cast<OutdoorPvPHL::AffixType>(code));
         handler->PSendSysMessage("|cffffd700Hinterland BG affix:|r {} ({})", name, (unsigned)code);
         handler->PSendSysMessage("  Enabled: {}  Weather: {}  Worldstate: {}  Announce: {}",
             hl->IsAffixEnabled()?"on":"off",

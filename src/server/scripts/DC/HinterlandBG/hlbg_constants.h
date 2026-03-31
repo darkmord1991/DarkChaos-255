@@ -8,6 +8,7 @@
 #ifndef HINTERLAND_BG_CONSTANTS_H
 #define HINTERLAND_BG_CONSTANTS_H
 
+#include "DC/CrossSystem/CrossSystemAffixes.h"
 #include <cstdint>
 
 namespace HinterlandBGConstants
@@ -57,30 +58,17 @@ namespace HinterlandBGConstants
     // -------------------------------------------------------------------------
     inline const char* GetAffixName(uint8 affixCode)
     {
-        switch (affixCode)
-        {
-            case 1: return "Sunlight";
-            case 2: return "Clear Skies";
-            case 3: return "Gentle Breeze";
-            case 4: return "Storm";
-            case 5: return "Heavy Rain";
-            case 6: return "Fog";
-            default: return "None";
-        }
+        return DarkChaos::CrossSystem::Affixes::GetName(
+            DarkChaos::CrossSystem::SystemId::HLBG,
+            affixCode);
     }
 
     // Legacy affix name mapping (for backward compatibility)
     inline const char* GetLegacyAffixName(uint8 affixCode)
     {
-        switch (affixCode)
-        {
-            case 1: return "Haste";
-            case 2: return "Slow";
-            case 3: return "Reduced Healing";
-            case 4: return "Reduced Armor";
-            case 5: return "Boss Enrage";
-            default: return "None";
-        }
+        return DarkChaos::CrossSystem::Affixes::GetLegacyName(
+            DarkChaos::CrossSystem::SystemId::HLBG,
+            affixCode);
     }
 
     // -------------------------------------------------------------------------

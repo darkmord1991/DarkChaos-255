@@ -4,6 +4,7 @@
  */
 
 #include "dc_mythicplus_affixes.h"
+#include "DC/CrossSystem/CrossSystemAffixes.h"
 #include "Creature.h"
 #include "Map.h"
 #include "Player.h"
@@ -26,6 +27,25 @@ void MythicPlusAffixManager::RegisterAffix(std::unique_ptr<IAffixHandler> handle
     AffixType type = handler->GetType();
     _handlers[type] = std::move(handler);
     LOG_INFO("mythic.affixes", "Registered affix handler: {}", _handlers[type]->GetName());
+}
+
+bool MythicPlusAffixManager::HasHandler(AffixType affix) const
+{
+    return affix != AFFIX_NONE && _handlers.find(affix) != _handlers.end();
+}
+
+std::string MythicPlusAffixManager::GetAffixName(AffixType affix) const
+{
+    return DarkChaos::CrossSystem::Affixes::GetName(
+        DarkChaos::CrossSystem::SystemId::MythicPlus,
+        static_cast<uint32>(affix));
+}
+
+std::string MythicPlusAffixManager::GetAffixDescription(AffixType affix) const
+{
+    return DarkChaos::CrossSystem::Affixes::GetDescription(
+        DarkChaos::CrossSystem::SystemId::MythicPlus,
+        static_cast<uint32>(affix));
 }
 
 void MythicPlusAffixManager::ActivateAffixes(Map* map, const std::vector<AffixType>& affixes, uint8 keystoneLevel)

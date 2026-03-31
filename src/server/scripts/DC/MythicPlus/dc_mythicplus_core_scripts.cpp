@@ -368,13 +368,7 @@ public:
                 bool firstAffix = true;
                 for (auto affix : activeAffixes)
                 {
-                    uint32 affixId = static_cast<uint32>(affix);
-                    std::string affixName = "Unknown Affix";
-                    if (QueryResult affixResult = WorldDatabase.Query(
-                        "SELECT name FROM dc_mplus_affixes WHERE affix_id = {}", affixId))
-                    {
-                        affixName = affixResult->Fetch()[0].Get<std::string>();
-                    }
+                    std::string affixName = sAffixMgr->GetAffixName(affix);
 
                     if (!firstAffix)
                         affixLine << ", ";

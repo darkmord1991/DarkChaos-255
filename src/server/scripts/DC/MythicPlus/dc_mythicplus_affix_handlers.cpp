@@ -16,6 +16,7 @@
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
 #include <cmath>
+#include <unordered_set>
 
 // ============================================================================
 // BOLSTERING AFFIX
@@ -52,7 +53,7 @@ public:
             if (!ally || ally == creature || sMythicRuns->IsBossCreature(ally) || ally->isDead())
                 continue;
 
-            if (!ally->IsHostileTo(creature))
+            if (!ally->IsFriendlyTo(creature))
                 continue;
 
             // Apply bolster: +20% HP and damage
@@ -224,6 +225,7 @@ class TyrannicalAffixHandler : public IAffixHandler
 {
 private:
     uint8 _keystoneLevel = 0;
+    std::unordered_set<ObjectGuid> _scaledCreatures;
 
 public:
     AffixType GetType() const override { return AFFIX_TYRANNICAL; }
@@ -236,11 +238,13 @@ public:
     void OnAffixActivate(Map* /*map*/, uint8 keystoneLevel) override
     {
         _keystoneLevel = keystoneLevel;
+        _scaledCreatures.clear();
     }
 
     void OnAffixDeactivate(Map* /*map*/) override
     {
         _keystoneLevel = 0;
+        _scaledCreatures.clear();
     }
 
     void OnCreatureDeath(Creature* /*creature*/, Unit* /*killer*/) override { }
@@ -262,6 +266,9 @@ public:
         if (!creature || !sMythicRuns->IsBossCreature(creature))
             return;
 
+        if (!_scaledCreatures.insert(creature->GetGUID()).second)
+            return;
+
         // +40% HP for bosses
         uint32 baseHealth = creature->GetMaxHealth();
         uint32 newHealth = uint32(baseHealth * 1.40f);
@@ -279,6 +286,9 @@ public:
 // ============================================================================
 class FortifiedAffixHandler : public IAffixHandler
 {
+private:
+    std::unordered_set<ObjectGuid> _scaledCreatures;
+
 public:
     AffixType GetType() const override { return AFFIX_FORTIFIED; }
     std::string GetName() const override { return "Fortified"; }
@@ -287,8 +297,15 @@ public:
         return "Non-boss enemies have 20% more health and inflict 30% more damage.";
     }
 
-    void OnAffixActivate(Map* /*map*/, uint8 /*keystoneLevel*/) override { }
-    void OnAffixDeactivate(Map* /*map*/) override { }
+    void OnAffixActivate(Map* /*map*/, uint8 /*keystoneLevel*/) override
+    {
+        _scaledCreatures.clear();
+    }
+
+    void OnAffixDeactivate(Map* /*map*/) override
+    {
+        _scaledCreatures.clear();
+    }
     void OnCreatureDeath(Creature* /*creature*/, Unit* /*killer*/) override { }
 
     void OnCreatureDamageDone(Creature* attacker, Unit* /*victim*/, uint32& damage) override
@@ -306,6 +323,9 @@ public:
     void OnCreatureSelectLevel(Creature* creature) override
     {
         if (!creature || sMythicRuns->IsBossCreature(creature))
+            return;
+
+        if (!_scaledCreatures.insert(creature->GetGUID()).second)
             return;
 
         // +20% HP for non-bosses

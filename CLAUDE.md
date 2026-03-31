@@ -78,8 +78,10 @@ Scripts follow a registration pattern:
 1. Define a class inheriting from `SpellScript`, `CreatureScript`, etc.
 2. Implement an `AddSC_*()` function that calls `RegisterSpellScript(ClassName)` (or similar)
 3. The `AddSC_*()` is declared and called from the regional `*_script_loader.cpp`
-4. Script loaders per region: `spells_script_loader.cpp`, `eastern_kingdoms_script_loader.cpp`, `northrend_script_loader.cpp`, etc.
-5. Spell script files are organized by class: `spell_dk.cpp`, `spell_mage.cpp`, `spell_generic.cpp`, etc.
+4. DarkChaos custom scripts use `src/server/scripts/DC/dc_script_loader.cpp` as the top-level loader for the whole DC namespace
+5. Some DC entries are intentionally loaded transitively through subsystem loaders such as `AddDCAddonExtensionScripts()`, `AddMythicPlusScripts()`, `AddGuildHouseScripts()`, and `AddSC_ac_hotspots()`
+6. Do not register both a wrapper loader and its internal `AddSC_*()` entries in `dc_script_loader.cpp`, or you will create duplicate registration paths
+7. Spell script files are organized by class: `spell_dk.cpp`, `spell_mage.cpp`, `spell_generic.cpp`, etc.
 
 ### Three databases
 - **acore_auth** - Accounts, realm list, bans (`data/sql/base/db_auth/`)

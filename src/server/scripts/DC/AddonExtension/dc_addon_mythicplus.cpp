@@ -74,30 +74,20 @@ namespace MythicPlus
         uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
         uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
 
-        // Query affixes for current week by joining with dc_mplus_affixes
-        QueryResult result = WorldDatabase.Query(
-            "SELECT a.affix_id, a.name, a.description "
-            "FROM dc_mplus_weekly_affixes w "
-            "LEFT JOIN dc_mplus_affixes a ON a.affix_id IN (w.affix1_id, w.affix2_id, w.affix3_id, w.affix4_id) "
-            "WHERE w.week_number = {} AND w.active = 1 AND a.affix_id IS NOT NULL "
-            "ORDER BY FIELD(a.affix_id, w.affix1_id, w.affix2_id, w.affix3_id, w.affix4_id)",
-            weekNumber);
+        std::vector<MythicPlusRunManager::WeeklyAffixInfo> affixes;
+        if (sConfigMgr->GetOption<bool>("MythicPlus.Affixes.Enabled", false))
+            affixes = sMythicRuns->GetWeeklyAffixInfo(sMythicRuns->GetCurrentSeasonId());
 
         std::string affixList;
-        if (result)
+        if (!affixes.empty())
         {
-            bool first = true;
-            do
+            for (size_t i = 0; i < affixes.size(); ++i)
             {
-                if (!first) affixList += ";";
-                first = false;
+                if (i > 0)
+                    affixList += ";";
 
-                uint32 id = (*result)[0].Get<uint32>();
-                std::string name = (*result)[1].Get<std::string>();
-                std::string desc = (*result)[2].Get<std::string>();
-
-                affixList += std::to_string(id) + ":" + name + ":" + desc;
-            } while (result->NextRow());
+                affixList += std::to_string(affixes[i].affixId) + ":" + affixes[i].name + ":" + affixes[i].description;
+            }
         }
 
         Message(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_AFFIXES)
@@ -928,29 +918,20 @@ namespace MythicPlus
         uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
         uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
 
-        // Query affixes for current week by joining with dc_mplus_affixes
-        QueryResult result = WorldDatabase.Query(
-            "SELECT a.affix_id, a.name, a.description "
-            "FROM dc_mplus_weekly_affixes w "
-            "LEFT JOIN dc_mplus_affixes a ON a.affix_id IN (w.affix1_id, w.affix2_id, w.affix3_id, w.affix4_id) "
-            "WHERE w.week_number = {} AND w.active = 1 AND a.affix_id IS NOT NULL "
-            "ORDER BY FIELD(a.affix_id, w.affix1_id, w.affix2_id, w.affix3_id, w.affix4_id)",
-            weekNumber);
-
         JsonValue affixArray;
         affixArray.SetArray();
 
-        if (result)
+        if (sConfigMgr->GetOption<bool>("MythicPlus.Affixes.Enabled", false))
         {
-            do
+            for (MythicPlusRunManager::WeeklyAffixInfo const& info : sMythicRuns->GetWeeklyAffixInfo(sMythicRuns->GetCurrentSeasonId()))
             {
                 JsonValue affix;
                 affix.SetObject();
-                affix.Set("id", JsonValue((*result)[0].Get<int32>()));
-                affix.Set("name", JsonValue((*result)[1].Get<std::string>()));
-                affix.Set("description", JsonValue((*result)[2].Get<std::string>()));
+                affix.Set("id", JsonValue(static_cast<int32>(info.affixId)));
+                affix.Set("name", JsonValue(info.name));
+                affix.Set("description", JsonValue(info.description));
                 affixArray.Push(affix);
-            } while (result->NextRow());
+            }
         }
 
         JsonMessage(Module::MYTHIC_PLUS, Opcode::MPlus::SMSG_AFFIXES)

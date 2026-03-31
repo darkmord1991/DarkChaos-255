@@ -26,6 +26,7 @@
   - [Dungeon Quest System](#-dungeon-quest-system)
   - [Hotspot XP System](#️-hotspot-xp-system)
 - [DC Addon Protocol & Communication](#-dc-addon-protocol--communication)
+- [DC Script Loader](#-dc-script-loader)
 - [Client Addons](#️-client-addons)
 - [Custom Areas](#️-custom-areas)
 - [Used Modules](#-used-modules)
@@ -345,6 +346,25 @@ JSON:   DC|MODULE|OPCODE|J|{"key":"value",...}
 - **Metrics Tracking** - Messages sent/received, cache hits, errors
 - **Handler Registration** - Per-module/opcode handler registration
 - **S2C Logging** - Optional server-to-client message logging
+
+---
+
+## 🧩 DC Script Loader
+
+DarkChaos custom C++ registrations are centralized in `src/server/scripts/DC/dc_script_loader.cpp`.
+
+### Loader Conventions
+- **Top-Level Loader** - `AddDCScripts()` is the single entry point for DC script registration
+- **Sectioned Registration** - Systems are grouped by feature area with consistent logging and per-entry exception handling
+- **Transitive Sub-Loaders** - Some top-level entries intentionally load their own internal registrations:
+  - `AddDCAddonExtensionScripts()` loads addon protocol modules, collection handlers, QoS, teleports, and related NPC handlers
+  - `AddMythicPlusScripts()` loads the Mythic+ core, portal selector, Great Vault NPC, vendors, and keystone item scripts
+  - `AddGuildHouseScripts()` loads the guild housing core and guild house NPC registrations
+  - `AddSC_ac_hotspots()` loads the hotspot world/player scripts and hotspot command script
+- **No Double Registration** - Internal functions loaded by one of the wrappers above should not also be added directly to `AddDCScripts()`
+- **Command Hub Split** - Gameplay systems load in their own sections, while `.dc` command registrations live in the unified DC Commands section
+
+This keeps the DC loader readable while avoiding duplicate registrations and preserving subsystem-local ownership.
 
 ---
 

@@ -16,6 +16,7 @@
 #include "ScriptMgr.h"
 #include "ScriptedGossip.h"
 #include "Chat.h"
+#include "Config.h"
 #include "GameObject.h"
 #include "GameTime.h"
 #include "Group.h"
@@ -286,13 +287,11 @@ private:
             }
         }
 
-        // Build affixes list
-        std::vector<uint32> affixIds;
-        auto const& weeklyAffixes = sMythicScaling->GetWeeklyAffixes();
-        for (auto const& affix : weeklyAffixes)
-        {
-            affixIds.push_back(affix.spellId);
-        }
+        // Build affixes list from the same resolver the run manager uses.
+        uint32 seasonId = descriptor.seasonId ? descriptor.seasonId : sMythicRuns->GetCurrentSeasonId();
+        std::vector<MythicPlusRunManager::WeeklyAffixInfo> affixes;
+        if (sConfigMgr->GetOption<bool>("MythicPlus.Affixes.Enabled", false))
+            affixes = sMythicRuns->GetWeeklyAffixInfo(seasonId);
 
         // Send to each group member
         for (GroupReference* ref = group->GetFirstMember(); ref != nullptr; ref = ref->next())
@@ -313,10 +312,10 @@ private:
                 membersJson += "]";
 
                 std::string affixesJson = "[";
-                for (size_t i = 0; i < affixIds.size(); ++i)
+                for (size_t i = 0; i < affixes.size(); ++i)
                 {
                     if (i > 0) affixesJson += ",";
-                    affixesJson += Acore::StringFormat("{\"id\":%u}", affixIds[i]);
+                    affixesJson += Acore::StringFormat("{\"id\":%u,\"name\":\"%s\"}", affixes[i].affixId, affixes[i].name.c_str());
                 }
                 affixesJson += "]";
 

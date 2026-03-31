@@ -190,30 +190,35 @@ void OutdoorPvPHL::_selectAffixForNewBattle()
         return;
     }
 
-    // Choose a candidate affix. If random-on-start is enabled choose randomly,
-    // otherwise pick the next non-none affix in round-robin fashion.
+    // Choose a candidate affix. When the system is enabled, always rotate over
+    // actual affixes instead of selecting the inactive NONE state.
     AffixType newAffix = AFFIX_NONE;
-    const uint8 affixCount = static_cast<uint8>(AFFIX_FOG); // Last affix is FOG (6)
+    constexpr uint8 firstAffix = static_cast<uint8>(AFFIX_SUNLIGHT);
+    constexpr uint8 lastAffix = static_cast<uint8>(AFFIX_FOG);
     if (_affixRandomOnStart)
     {
-        // Prefer non-zero affixes; allow NONE only if randomness yields 0 rarely.
-        uint32 idx = urand(0, affixCount); // 0..affixCount
+        uint32 idx = urand(firstAffix, lastAffix);
         newAffix = static_cast<AffixType>(idx);
     }
     else
     {
-        // Round-robin: advance to next affix code, wrap and allow NONE as a rest state
         uint8 current = static_cast<uint8>(_activeAffix);
-        uint8 candidate = (current + 1) % (affixCount + 1);
+        if (current < firstAffix || current > lastAffix)
+            current = lastAffix;
+
+        uint8 candidate = current + 1;
+        if (candidate > lastAffix)
+            candidate = firstAffix;
         newAffix = static_cast<AffixType>(candidate);
     }
 
     // Avoid repeating the same affix consecutively when possible
     if (newAffix == _activeAffix)
     {
-        // try next value once more
         uint8 cur = static_cast<uint8>(newAffix);
-        cur = (cur + 1) % (affixCount + 1);
+        ++cur;
+        if (cur > lastAffix)
+            cur = firstAffix;
         newAffix = static_cast<AffixType>(cur);
     }
 

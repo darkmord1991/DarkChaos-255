@@ -195,7 +195,7 @@
     _killSpellOnPlayerKillAlliance = 0;
     _killSpellOnPlayerKillHorde = 0;
     _killSpellOnNpcKill = 0;
-    _affixEnabled = true;
+    _affixEnabled = false;
     _affixWeatherEnabled = true;
     _affixPeriodSec = 0;
     _affixTimerMs = 0;

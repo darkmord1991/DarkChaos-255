@@ -17,47 +17,51 @@ void OutdoorPvPHL::LoadConfig()
     // Read options that may come from worldserver.conf or modules configs.
     // Note: The modules config loader (modules/CMakeLists CONFIG_LIST) handles copying
     // and loading hinterlandbg.conf(.dist) under configs/modules automatically.
-    if (sConfigMgr)
-    {
-        _matchDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.MatchDuration", _matchDurationSeconds);
-        _minLevel = sConfigMgr->GetOption<uint32>("HinterlandBG.MinLevel", _minLevel);  // minimum level to join (default 80)
-        _warmupDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.WarmupDuration", _warmupDurationSeconds);
-        _queueEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Queue.Enabled", _queueEnabled);
-        _minPlayersToStart = sConfigMgr->GetOption<uint32>("HinterlandBG.Queue.MinPlayers", _minPlayersToStart);
-        _maxGroupSize = sConfigMgr->GetOption<uint32>("HinterlandBG.Queue.MaxGroupSize", _maxGroupSize);
-        _afkWarnSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.WarnSeconds", _afkWarnSeconds);
-        _afkTeleportSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.TeleportSeconds", _afkTeleportSeconds);
-        _statusBroadcastEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Broadcast.Enabled", _statusBroadcastEnabled);
-        uint32 periodSec = sConfigMgr->GetOption<uint32>("HinterlandBG.Broadcast.Period", _statusBroadcastPeriodMs / IN_MILLISECONDS);
-        _statusBroadcastPeriodMs = periodSec * IN_MILLISECONDS;
-        _autoResetTeleport = sConfigMgr->GetOption<bool>("HinterlandBG.AutoReset.Teleport", _autoResetTeleport);
-        _expiryUseTiebreaker = sConfigMgr->GetOption<bool>("HinterlandBG.Expiry.Tiebreaker", _expiryUseTiebreaker);
-        _initialResourcesAlliance = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Alliance", _initialResourcesAlliance);
-        _initialResourcesHorde = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Horde", _initialResourcesHorde);
+    InitAffixDefaults();
+
+    if (!sConfigMgr)
+        return;
+
+    _matchDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.MatchDuration", _matchDurationSeconds);
+    _minLevel = sConfigMgr->GetOption<uint32>("HinterlandBG.MinLevel", _minLevel);  // minimum level to join (default 80)
+    _warmupDurationSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.WarmupDuration", _warmupDurationSeconds);
+    _queueEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Queue.Enabled", _queueEnabled);
+    _minPlayersToStart = sConfigMgr->GetOption<uint32>("HinterlandBG.Queue.MinPlayers", _minPlayersToStart);
+    _maxGroupSize = sConfigMgr->GetOption<uint32>("HinterlandBG.Queue.MaxGroupSize", _maxGroupSize);
+    _afkWarnSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.WarnSeconds", _afkWarnSeconds);
+    _afkTeleportSeconds = sConfigMgr->GetOption<uint32>("HinterlandBG.AFK.TeleportSeconds", _afkTeleportSeconds);
+    _statusBroadcastEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Broadcast.Enabled", _statusBroadcastEnabled);
+    uint32 periodSec = sConfigMgr->GetOption<uint32>("HinterlandBG.Broadcast.Period", _statusBroadcastPeriodMs / IN_MILLISECONDS);
+    _statusBroadcastPeriodMs = periodSec * IN_MILLISECONDS;
+    _autoResetTeleport = sConfigMgr->GetOption<bool>("HinterlandBG.AutoReset.Teleport", _autoResetTeleport);
+    _expiryUseTiebreaker = sConfigMgr->GetOption<bool>("HinterlandBG.Expiry.Tiebreaker", _expiryUseTiebreaker);
+    _initialResourcesAlliance = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Alliance", _initialResourcesAlliance);
+    _initialResourcesHorde = sConfigMgr->GetOption<uint32>("HinterlandBG.Resources.Horde", _initialResourcesHorde);
     _season = sConfigMgr->GetOption<uint32>("HinterlandBG.Season", _season);
-        // Optional configurable base coordinates
-        auto getf = [](char const* key, float defv){ return sConfigMgr->GetOption<float>(key, defv); };
-        auto geti = [](char const* key, uint32 defv){ return sConfigMgr->GetOption<uint32>(key, defv); };
-        _baseAlliance.map = geti("HinterlandBG.Base.Alliance.Map", _baseAlliance.map);
-        _baseAlliance.x   = getf("HinterlandBG.Base.Alliance.X",   _baseAlliance.x);
-        _baseAlliance.y   = getf("HinterlandBG.Base.Alliance.Y",   _baseAlliance.y);
-        _baseAlliance.z   = getf("HinterlandBG.Base.Alliance.Z",   _baseAlliance.z);
-        _baseAlliance.o   = getf("HinterlandBG.Base.Alliance.O",   _baseAlliance.o);
-        _baseHorde.map    = geti("HinterlandBG.Base.Horde.Map",    _baseHorde.map);
-        _baseHorde.x      = getf("HinterlandBG.Base.Horde.X",      _baseHorde.x);
-        _baseHorde.y      = getf("HinterlandBG.Base.Horde.Y",      _baseHorde.y);
-        _baseHorde.z      = getf("HinterlandBG.Base.Horde.Z",      _baseHorde.z);
-        _baseHorde.o      = getf("HinterlandBG.Base.Horde.O",      _baseHorde.o);
-        _rewardMatchHonor = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonor", _rewardMatchHonor);
-        _rewardMatchHonorDepletion = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorDepletion", _rewardMatchHonorDepletion);
-        _rewardMatchHonorTiebreaker = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorTiebreaker", _rewardMatchHonorTiebreaker);
+
+    // Optional configurable base coordinates
+    auto getf = [](char const* key, float defv){ return sConfigMgr->GetOption<float>(key, defv); };
+    auto geti = [](char const* key, uint32 defv){ return sConfigMgr->GetOption<uint32>(key, defv); };
+    _baseAlliance.map = geti("HinterlandBG.Base.Alliance.Map", _baseAlliance.map);
+    _baseAlliance.x   = getf("HinterlandBG.Base.Alliance.X",   _baseAlliance.x);
+    _baseAlliance.y   = getf("HinterlandBG.Base.Alliance.Y",   _baseAlliance.y);
+    _baseAlliance.z   = getf("HinterlandBG.Base.Alliance.Z",   _baseAlliance.z);
+    _baseAlliance.o   = getf("HinterlandBG.Base.Alliance.O",   _baseAlliance.o);
+    _baseHorde.map    = geti("HinterlandBG.Base.Horde.Map",    _baseHorde.map);
+    _baseHorde.x      = getf("HinterlandBG.Base.Horde.X",      _baseHorde.x);
+    _baseHorde.y      = getf("HinterlandBG.Base.Horde.Y",      _baseHorde.y);
+    _baseHorde.z      = getf("HinterlandBG.Base.Horde.Z",      _baseHorde.z);
+    _baseHorde.o      = getf("HinterlandBG.Base.Horde.O",      _baseHorde.o);
+    _rewardMatchHonor = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonor", _rewardMatchHonor);
+    _rewardMatchHonorDepletion = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorDepletion", _rewardMatchHonorDepletion);
+    _rewardMatchHonorTiebreaker = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorTiebreaker", _rewardMatchHonorTiebreaker);
     _worldAnnounceOnExpiry = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.ExpiryWorld", _worldAnnounceOnExpiry);
-        _worldAnnounceOnDepletion = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.DepletionWorld", _worldAnnounceOnDepletion);
+    _worldAnnounceOnDepletion = sConfigMgr->GetOption<bool>("HinterlandBG.Announce.DepletionWorld", _worldAnnounceOnDepletion);
     _rewardMatchHonorLoser = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.MatchHonorLoser", _rewardMatchHonorLoser);
-        _rewardKillItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemId", _rewardKillItemId);
-        _rewardKillItemCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemCount", _rewardKillItemCount);
-        _rewardNpcTokenItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemId", _rewardNpcTokenItemId);
-        _rewardNpcTokenCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemCount", _rewardNpcTokenCount);
+    _rewardKillItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemId", _rewardKillItemId);
+    _rewardKillItemCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.KillItemCount", _rewardKillItemCount);
+    _rewardNpcTokenItemId = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemId", _rewardNpcTokenItemId);
+    _rewardNpcTokenCount = sConfigMgr->GetOption<uint32>("HinterlandBG.Reward.NPCTokenItemCount", _rewardNpcTokenCount);
     // Persistence and lock
     _persistenceEnabled   = sConfigMgr->GetOption<bool>("HinterlandBG.Persistence.Enabled", true);
     _lockEnabled          = sConfigMgr->GetOption<bool>("HinterlandBG.Lock.Enabled", false);
@@ -75,9 +79,6 @@ void OutdoorPvPHL::LoadConfig()
     _affixRandomOnStart = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.RandomOnStart", _affixRandomOnStart);
     _affixAnnounce = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Announce", _affixAnnounce);
     _affixWorldstateEnabled = sConfigMgr->GetOption<bool>("HinterlandBG.Affix.Worldstate", _affixWorldstateEnabled);
-
-    // Populate default spell/weather mappings (can be overridden below)
-    InitAffixDefaults();
 
     // Optional overrides for affix spells
     _affixPlayerSpell[AFFIX_SUNLIGHT] = sConfigMgr->GetOption<uint32>("HinterlandBG.Affix.PlayerSpell.Sunlight", _affixPlayerSpell[AFFIX_SUNLIGHT]);
@@ -106,23 +107,22 @@ void OutdoorPvPHL::LoadConfig()
     _resourcesLossPlayerKill = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.PlayerKill", _resourcesLossPlayerKill);
     _resourcesLossNpcNormal  = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.NpcNormal",  _resourcesLossNpcNormal);
     _resourcesLossNpcBoss    = sConfigMgr->GetOption<uint32>("HinterlandBG.ResourcesLoss.NpcBoss",    _resourcesLossNpcBoss);
-        std::string csv = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.KillHonorValues", "");
-        if (!csv.empty())
+    std::string csv = sConfigMgr->GetOption<std::string>("HinterlandBG.Reward.KillHonorValues", "");
+    if (!csv.empty())
+    {
+        std::vector<uint32> parsed;
+        size_t start = 0;
+        while (start < csv.size())
         {
-            std::vector<uint32> parsed;
-            size_t start = 0;
-            while (start < csv.size())
-            {
-                size_t comma = csv.find(',', start);
-                std::string token = csv.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-                try { uint32 v = static_cast<uint32>(std::stoul(token)); parsed.push_back(v); }
-                catch (std::exception const&) { /* Skip invalid numeric token */ }
-                catch (...) { /* Skip unknown parse error */ }
-                if (comma == std::string::npos) break; else start = comma + 1;
-            }
-            if (!parsed.empty())
-                _killHonorValues = std::move(parsed);
+            size_t comma = csv.find(',', start);
+            std::string token = csv.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            try { uint32 v = static_cast<uint32>(std::stoul(token)); parsed.push_back(v); }
+            catch (std::exception const&) { /* Skip invalid numeric token */ }
+            catch (...) { /* Skip unknown parse error */ }
+            if (comma == std::string::npos) break; else start = comma + 1;
         }
+        if (!parsed.empty())
+            _killHonorValues = std::move(parsed);
     }
     // Parse Alliance NPC reward entries (CSV of entry IDs)
     auto parseCsvU32 = [](std::string const& in) -> std::vector<uint32>

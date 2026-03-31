@@ -248,6 +248,7 @@ set(SCRIPTS_DC_GOMove
 set(SCRIPTS_DC_CrossSystem
     CrossSystem/SessionContext.cpp
     CrossSystem/EventBus.cpp
+    CrossSystem/CrossSystemAffixes.cpp
     CrossSystem/RewardDistributor.cpp
     CrossSystem/CrossSystemManager.cpp
     CrossSystem/CrossSystemScripts.cpp

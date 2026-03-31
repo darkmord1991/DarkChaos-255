@@ -8,6 +8,7 @@
 
 #include "Config.h"
 #include "GameObject.h"
+#include "dc_mythicplus_affixes.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_constants.h"
 #include "ObjectGuid.h"
@@ -38,6 +39,13 @@ struct KeystoneDescriptor
 class MythicPlusRunManager
 {
 public:
+    struct WeeklyAffixInfo
+    {
+        uint32 affixId = 0;
+        std::string name;
+        std::string description;
+    };
+
     // Define InstanceState first so it can be used in method signatures
     struct InstanceState
     {
@@ -81,7 +89,7 @@ public:
         std::vector<uint32> bossOrder;
         std::unordered_map<uint32, uint8> bossIndexLookup;
         std::unordered_map<uint32, uint64> bossKillStamps;
-        std::vector<uint32> activeAffixes;
+        std::vector<uint32> activeAffixes; // Runtime affix ids matching AffixType.
         std::string lastHudPayload;
     };
 
@@ -123,6 +131,7 @@ public:
     uint32 GetWeekStartTimestamp() const;
     uint32 GetVaultTokenReward(uint8 slot) const;
     uint8 GetVaultThreshold(uint8 slot) const;
+    std::vector<WeeklyAffixInfo> GetWeeklyAffixInfo(uint32 seasonId) const;
 
     // Keystone item management (NEW)
     uint8 GetPlayerKeystoneLevel(ObjectGuid::LowType playerGuid) const;
@@ -201,6 +210,7 @@ private:
     void ActivateAffixes(Map* map, const std::vector<uint32>& affixes, uint8 keystoneLevel);
     void AnnounceAffixes(Player* player, const std::vector<uint32>& affixes);
     std::string GetAffixName(uint32 affixId) const;
+    bool ResolveWeeklyAffixInfo(uint32 scheduledAffixId, WeeklyAffixInfo& outInfo) const;
     void InitializeHud(InstanceState* state, Map* map);
     void BuildBossTracking(InstanceState* state);
     void SetHudWorldState(InstanceState* state, Map* map, uint32 worldStateId, uint32 value);

@@ -18,6 +18,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "MapMgr.h"
+#include "DC/CrossSystem/CrossSystemAffixes.h"
 #include "dc_mythicplus_difficulty_scaling.h"
 #include "dc_mythicplus_constants.h"
 #include "dc_mythicplus_affixes.h"
@@ -309,7 +310,7 @@ bool MythicPlusRunManager::TryActivateKeystone(Player* player,
     }
 
     // Affix activation - apply weekly affixes to the run
-    if (sConfigMgr->GetOption<bool>("MythicPlus.Affixes.Enabled", true))
+    if (sConfigMgr->GetOption<bool>("MythicPlus.Affixes.Enabled", false))
     {
         std::vector<uint32> affixes = GetWeeklyAffixes(state->seasonId);
         if (!affixes.empty())
@@ -1250,31 +1251,49 @@ bool MythicPlusRunManager::IsDungeonFeaturedThisSeason(uint32 mapId, uint32 seas
     return isUnlocked && mythicPlusEnabled && seasonMatches;
 }
 
-std::vector<uint32> MythicPlusRunManager::GetWeeklyAffixes(uint32 seasonId) const
+std::vector<MythicPlusRunManager::WeeklyAffixInfo> MythicPlusRunManager::GetWeeklyAffixInfo(uint32 seasonId) const
 {
-    std::vector<uint32> affixes;
+    std::vector<WeeklyAffixInfo> affixes;
 
-    // Get current week number (0-51 for yearly rotation)
     uint32 weekStart = GetWeekStartTimestamp();
     uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
 
-    // Query affix schedule for this week
     QueryResult result = WorldDatabase.Query(
         "SELECT affix1, affix2 FROM dc_mplus_affix_schedule "
         "WHERE season_id = {} AND week_number = {}",
         seasonId, weekNumber);
 
-    if (result)
-    {
-        Field* fields = result->Fetch();
-        uint32 affix1 = fields[0].Get<uint32>();
-        uint32 affix2 = fields[1].Get<uint32>();
+    if (!result)
+        return affixes;
 
-        if (affix1 > 0)
-            affixes.push_back(affix1);
-        if (affix2 > 0)
-            affixes.push_back(affix2);
-    }
+    auto tryAddAffix = [&](uint32 scheduledAffixId)
+    {
+        WeeklyAffixInfo info;
+        if (!ResolveWeeklyAffixInfo(scheduledAffixId, info))
+            return;
+
+        auto duplicateItr = std::find_if(affixes.begin(), affixes.end(), [&](WeeklyAffixInfo const& existing)
+        {
+            return existing.affixId == info.affixId;
+        });
+
+        if (duplicateItr == affixes.end())
+            affixes.push_back(std::move(info));
+    };
+
+    Field* fields = result->Fetch();
+    tryAddAffix(fields[0].Get<uint32>());
+    tryAddAffix(fields[1].Get<uint32>());
+
+    return affixes;
+}
+
+std::vector<uint32> MythicPlusRunManager::GetWeeklyAffixes(uint32 seasonId) const
+{
+    std::vector<uint32> affixes;
+
+    for (WeeklyAffixInfo const& affix : GetWeeklyAffixInfo(seasonId))
+        affixes.push_back(affix.affixId);
 
     return affixes;
 }
@@ -1304,17 +1323,27 @@ void MythicPlusRunManager::ActivateAffixes(Map* map, const std::vector<uint32>& 
         handlerAffixes.reserve(affixes.size());
         for (uint32 affixId : affixes)
         {
-            if (affixId > AFFIX_NONE && affixId <= AFFIX_VOLCANIC)
-                handlerAffixes.push_back(static_cast<AffixType>(affixId));
+            if (affixId <= AFFIX_NONE || affixId > AFFIX_VOLCANIC)
+                continue;
+
+            AffixType affixType = static_cast<AffixType>(affixId);
+            if (!sAffixMgr->HasHandler(affixType))
+            {
+                LOG_WARN("mythic.affix", "Skipping runtime affix {} because no handler is registered", affixId);
+                continue;
+            }
+
+            handlerAffixes.push_back(affixType);
         }
 
         if (!handlerAffixes.empty())
+        {
+            sAffixMgr->DeactivateAffixes(map);
             sAffixMgr->ActivateAffixes(map, handlerAffixes, keystoneLevel);
+        }
 
-        // Apply affix scaling multipliers to creatures
-        // This would typically be handled by the MythicDifficultyScaling system
         LOG_INFO("mythic.affix", "Activated {} affixes for keystone level {} in map {}",
-            affixes.size(), keystoneLevel, map->GetId());
+            handlerAffixes.size(), keystoneLevel, map->GetId());
 
         // Debug logging for affixes
         if (sConfigMgr->GetOption<bool>("MythicPlus.AffixDebug", false))
@@ -1349,15 +1378,59 @@ void MythicPlusRunManager::AnnounceAffixes(Player* player, const std::vector<uin
 
 std::string MythicPlusRunManager::GetAffixName(uint32 affixId) const
 {
-    QueryResult result = WorldDatabase.Query(
-        "SELECT name FROM dc_mplus_affixes WHERE affix_id = {}", affixId);
+    return DarkChaos::CrossSystem::Affixes::GetName(
+        DarkChaos::CrossSystem::SystemId::MythicPlus,
+        affixId);
+}
 
-    if (result)
+bool MythicPlusRunManager::ResolveWeeklyAffixInfo(uint32 scheduledAffixId, WeeklyAffixInfo& outInfo) const
+{
+    outInfo = {};
+
+    if (scheduledAffixId == 0)
+        return false;
+
+    QueryResult result = WorldDatabase.Query(
+        "SELECT name, enabled FROM dc_mplus_affixes WHERE affix_id = {}",
+        scheduledAffixId);
+
+    if (!result)
     {
-        return result->Fetch()->Get<std::string>();
+        LOG_WARN("mythic.affix", "Scheduled affix id {} has no dc_mplus_affixes row", scheduledAffixId);
+        return false;
     }
 
-    return "Unknown Affix";
+    Field* fields = result->Fetch();
+    std::string dbName = fields[0].Get<std::string>();
+    bool enabled = fields[1].Get<bool>();
+
+    if (!enabled)
+    {
+        LOG_INFO("mythic.affix", "Scheduled affix {} ({}) is disabled in the world database and will be skipped", scheduledAffixId, dbName);
+        return false;
+    }
+
+    auto const* definition = DarkChaos::CrossSystem::Affixes::FindDefinitionByName(
+        DarkChaos::CrossSystem::SystemId::MythicPlus,
+        dbName);
+    if (!definition)
+    {
+        LOG_WARN("mythic.affix", "Scheduled affix {} ({}) does not map to a supported runtime affix and will be skipped", scheduledAffixId, dbName);
+        return false;
+    }
+
+    AffixType affixType = static_cast<AffixType>(definition->affixId);
+
+    if (!sAffixMgr->HasHandler(affixType))
+    {
+        LOG_WARN("mythic.affix", "Scheduled affix {} ({}) resolves to {} but no handler is registered", scheduledAffixId, dbName, sAffixMgr->GetAffixName(affixType));
+        return false;
+    }
+
+    outInfo.affixId = definition->affixId;
+    outInfo.name = definition->name;
+    outInfo.description = definition->description;
+    return true;
 }
 
 std::string MythicPlusRunManager::SerializeParticipants(const InstanceState* state) const
@@ -2320,7 +2393,10 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     {
         if (i > 0)
             payload << ',';
-        payload << state->activeAffixes[i];
+        payload << '{';
+        payload << "\"id\":" << state->activeAffixes[i] << ',';
+        payload << "\"name\":\"" << EscapeJson(GetAffixName(state->activeAffixes[i])) << "\"";
+        payload << '}';
     }
     payload << "],";
 

@@ -54,8 +54,7 @@ void OutdoorPvPHL::BroadcastStatusToZone()
         m->SendZoneText(OutdoorPvPHLBuffZones[0], (GetBgChatPrefix() + std::string(line2)).c_str());
     if (_affixAnnounce && _affixEnabled)
     {
-        const char* aff = "None";
-        switch (_activeAffix) { case AFFIX_SUNLIGHT: aff = "Sunlight"; break; case AFFIX_CLEAR_SKIES: aff = "Clear Skies"; break; case AFFIX_GENTLE_BREEZE: aff = "Gentle Breeze"; break; case AFFIX_STORM: aff = "Storm"; break; case AFFIX_HEAVY_RAIN: aff = "Heavy Rain"; break; case AFFIX_FOG: aff = "Fog"; break; default: break; }
+        const char* aff = GetAffixName(_activeAffix);
         char line3[160];
         snprintf(line3, sizeof(line3), "|TInterface\\Icons\\Spell_Nature_Cyclone:14|t |cffffff00Affix:|r |cff98fb98%s|r", aff);
         if (Map* m = GetMap())
