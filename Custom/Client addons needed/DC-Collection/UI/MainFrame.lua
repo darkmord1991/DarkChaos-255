@@ -129,6 +129,97 @@ local function ToPositiveNumber(value)
     return nil
 end
 
+local function ResolveMountSpellId(item)
+    if type(item) ~= "table" then
+        return nil
+    end
+
+    local def = item.definition or {}
+    return
+        ToPositiveNumber(item.id) or
+        ToPositiveNumber(item.spellId) or
+        ToPositiveNumber(item.spell_id) or
+        ToPositiveNumber(def.spellId) or
+        ToPositiveNumber(def.spell_id)
+end
+
+local function GetMountCompanionIndexBySpell(spellId)
+    local resolvedSpellId = ToPositiveNumber(spellId)
+    if not resolvedSpellId then
+        return nil
+    end
+
+    if type(GetNumCompanions) ~= "function" or
+        type(GetCompanionInfo) ~= "function" then
+        return nil
+    end
+
+    local numMounts = tonumber(GetNumCompanions("MOUNT")) or 0
+    for i = 1, numMounts do
+        local _, _, companionSpellId = GetCompanionInfo("MOUNT", i)
+        if ToPositiveNumber(companionSpellId) == resolvedSpellId then
+            return i
+        end
+    end
+
+    return nil
+end
+
+local function CursorHasPayload()
+    if type(GetCursorInfo) == "function" then
+        return GetCursorInfo() ~= nil
+    end
+
+    return nil
+end
+
+local function PickupMountForActionBar(item)
+    if type(item) ~= "table" then
+        return false
+    end
+
+    local collType = item.type
+    if collType == "shop" then
+        collType = item.collectionTypeName
+    end
+    if collType ~= "mounts" or item.collected == false then
+        return false
+    end
+
+    local spellId = ResolveMountSpellId(item)
+    if not spellId then
+        return false
+    end
+
+    local cursorBefore = CursorHasPayload()
+    if cursorBefore == true then
+        return false
+    end
+
+    if type(PickupSpell) == "function" then
+        local okSpell = pcall(PickupSpell, spellId)
+        if okSpell then
+            local cursorAfterSpell = CursorHasPayload()
+            if cursorAfterSpell ~= false then
+                return true
+            end
+        end
+    end
+
+    local companionIndex = GetMountCompanionIndexBySpell(spellId)
+    if companionIndex and type(PickupCompanion) == "function" then
+        local okCompanion = pcall(PickupCompanion, "MOUNT", companionIndex)
+        if okCompanion then
+            local cursorAfterCompanion = CursorHasPayload()
+            if cursorAfterCompanion ~= false then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 local function GetMountCompanionDisplayIdBySpell(spellId)
     local resolvedSpellId = ToPositiveNumber(spellId)
     if not resolvedSpellId then
@@ -1023,6 +1114,14 @@ function DC:CreateContentArea(parent)
     infoFrame.icon:SetSize(46, 46)
     infoFrame.icon:SetPoint("LEFT", infoFrame, "LEFT", 0, 0)
     infoFrame.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+
+    infoFrame.iconDragBtn = CreateFrame("Button", nil, infoFrame)
+    infoFrame.iconDragBtn:SetSize(46, 46)
+    infoFrame.iconDragBtn:SetPoint("CENTER", infoFrame.icon, "CENTER", 0, 0)
+    infoFrame.iconDragBtn:RegisterForDrag("LeftButton")
+    infoFrame.iconDragBtn:SetScript("OnDragStart", function()
+        PickupMountForActionBar(DC.selectedItem)
+    end)
     
     infoFrame.name = infoFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     infoFrame.name:SetPoint("TOPLEFT", infoFrame.icon, "TOPRIGHT", 10, 0)
@@ -2510,7 +2609,11 @@ function DC:PopulateMountList()
                 DC:PopulateMountList()
             end
         end)
+        btn:SetScript("OnDragStart", function()
+            PickupMountForActionBar(item)
+        end)
         btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        btn:RegisterForDrag("LeftButton")
         
         btnIndex = btnIndex + 1
     end
@@ -2970,16 +3073,33 @@ end
 
 function DC:OnSearchChanged(text)
     self.currentPage = 1
-    self:PopulateGrid()
+
+    if self.activeTab == "mounts" then
+        self:PopulateMountList()
+    elseif self.activeTab == "pets" then
+        if DC.PetJournal and DC.PetJournal.frame and DC.PetJournal.frame:IsShown() then
+            DC.PetJournal:UpdatePetList()
+        else
+            self:PopulateGrid()
+        end
+    else
+        self:PopulateGrid()
+    end
 end
 
 function DC:OnFilterChanged()
     self.currentPage = 1
-    self:PopulateGrid()
-    
-    -- Also update PetJournal if it's visible (pets tab uses separate frame)
-    if self.activeTab == "pets" and DC.PetJournal and DC.PetJournal.frame and DC.PetJournal.frame:IsShown() then
-        DC.PetJournal:UpdatePetList()
+
+    if self.activeTab == "mounts" then
+        self:PopulateMountList()
+    elseif self.activeTab == "pets" then
+        if DC.PetJournal and DC.PetJournal.frame and DC.PetJournal.frame:IsShown() then
+            DC.PetJournal:UpdatePetList()
+        else
+            self:PopulateGrid()
+        end
+    else
+        self:PopulateGrid()
     end
 end
 
