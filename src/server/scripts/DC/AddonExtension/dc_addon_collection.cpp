@@ -643,13 +643,74 @@ namespace DCCollection
         std::string const& columnName,
         CollectionType type)
     {
+        std::vector<std::string> aliases = GetItemsCollectionTypeAliases(type);
+        std::string const& typeSpec = GetItemsCollectionTypeColumnSpec();
+        std::string lowerTypeSpec = typeSpec;
+        std::transform(lowerTypeSpec.begin(), lowerTypeSpec.end(), lowerTypeSpec.begin(), ::tolower);
+
+        bool isEnumOrSet =
+            lowerTypeSpec.find("enum(") != std::string::npos ||
+            lowerTypeSpec.find("set(") != std::string::npos;
+        bool isText =
+            lowerTypeSpec.find("char") != std::string::npos ||
+            lowerTypeSpec.find("text") != std::string::npos;
+        bool isNumeric =
+            lowerTypeSpec.find("int") != std::string::npos ||
+            lowerTypeSpec.find("decimal") != std::string::npos ||
+            lowerTypeSpec.find("float") != std::string::npos ||
+            lowerTypeSpec.find("double") != std::string::npos ||
+            lowerTypeSpec.find("real") != std::string::npos;
+
+        // Numeric schemas must avoid string comparisons to prevent MySQL 1292 truncation warnings.
+        if (isNumeric)
+            return fmt::format("({} = {})", columnName, static_cast<uint8>(type));
+
+        // ENUM/SET schemas should match only aliases that exist in the actual enum definition.
+        if (isEnumOrSet)
+        {
+            std::vector<std::string> enumAliases;
+            enumAliases.reserve(aliases.size());
+            for (std::string const& alias : aliases)
+                if (ItemsEnumSpecContainsValue(typeSpec, alias))
+                    enumAliases.push_back(alias);
+
+            if (!enumAliases.empty())
+            {
+                std::string clause;
+                for (size_t i = 0; i < enumAliases.size(); ++i)
+                {
+                    if (i == 0)
+                        clause = fmt::format("{} = '{}'", columnName, enumAliases[i]);
+                    else
+                        clause = fmt::format("{} OR {} = '{}'", clause, columnName, enumAliases[i]);
+                }
+
+                return fmt::format("({})", clause);
+            }
+
+            return fmt::format("({} = {})", columnName, static_cast<uint8>(type));
+        }
+
+        // Text schemas can match both numeric-string and alias forms.
+        if (isText)
+        {
+            std::string clause = fmt::format("{} = '{}'", columnName, static_cast<uint8>(type));
+            for (std::string const& alias : aliases)
+                clause = fmt::format("{} OR {} = '{}'", clause, columnName, alias);
+            return fmt::format("({})", clause);
+        }
+
+        // Unknown schema: normalize via CHAR cast to avoid truncation warnings on mixed data.
         std::string clause = fmt::format(
-            "{} = {}",
+            "LOWER(CAST({} AS CHAR)) = '{}'",
             columnName,
             static_cast<uint8>(type));
-
-        for (std::string const& alias : GetItemsCollectionTypeAliases(type))
-            clause = fmt::format("{} OR {} = '{}'", clause, columnName, alias);
+        for (std::string const& alias : aliases)
+            clause = fmt::format(
+                "{} OR LOWER(CAST({} AS CHAR)) = '{}'",
+                clause,
+                columnName,
+                alias);
 
         return fmt::format("({})", clause);
     }
@@ -1310,7 +1371,11 @@ namespace DCCollection
             *tickPtr = [player, spellsPtr, indexPtr, taughtTotalPtr, effectiveBatchSize, effectiveBatchDelayMs, tickPtr, titlesApplied]()
             {
                 if (!player || !player->GetSession())
+                {
+                    // Break shared_ptr self-capture cycle on early exit.
+                    *tickPtr = std::function<void()>();
                     return;
+                }
 
                 size_t idx = *indexPtr;
                 size_t const total = spellsPtr->size();
@@ -1412,6 +1477,9 @@ namespace DCCollection
                             *taughtTotalPtr,
                             titlesApplied);
                     }
+
+                    // Break shared_ptr self-capture cycle once work is complete.
+                    *tickPtr = std::function<void()>();
                 }
             };
 
@@ -1424,8 +1492,15 @@ namespace DCCollection
     // Generate simple hash for delta sync comparison
     inline uint32 GenerateCollectionHash(const std::vector<uint32>& items)
     {
+        if (items.empty())
+            return 0;
+
+        // Keep hash deterministic regardless of SQL row ordering.
+        std::vector<uint32> normalized(items.begin(), items.end());
+        std::sort(normalized.begin(), normalized.end());
+
         uint32 hash = 0;
-        for (uint32 item : items)
+        for (uint32 item : normalized)
         {
             hash ^= (item * 2654435761u);  // Knuth's multiplicative hash
             hash = (hash << 13) | (hash >> 19);  // Rotate
@@ -1493,8 +1568,9 @@ namespace DCCollection
 
         QueryResult result = CharacterDatabase.Query(
             "SELECT {} FROM dc_collection_items "
-            "WHERE account_id = {} AND {} AND unlocked = 1",
-            itemsEntryCol, accountId, typeFilter);
+            "WHERE account_id = {} AND {} AND unlocked = 1 "
+            "ORDER BY {} ASC",
+            itemsEntryCol, accountId, typeFilter, itemsEntryCol);
 
         if (result)
         {
@@ -2495,6 +2571,16 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
 
+        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
+        if (itemsEntryCol.empty())
+        {
+            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
+            msg.Set("success", false);
+            msg.Set("error", "Collection table schema mismatch");
+            msg.Send(player);
+            return;
+        }
+
         std::string const& shopEntryCol = GetWorldEntryColumn("dc_collection_shop");
         if (shopEntryCol.empty())
         {
@@ -2632,16 +2718,6 @@ namespace DCCollection
             static_cast<CollectionType>(collType);
         std::string const collTypeValueExpr =
             GetItemsCollectionTypeValueExpr(purchasedType);
-
-        std::string const& itemsEntryCol = GetCharEntryColumn("dc_collection_items");
-        if (itemsEntryCol.empty())
-        {
-            DCAddon::JsonMessage msg(MODULE, DCAddon::Opcode::Collection::SMSG_PURCHASE_RESULT);
-            msg.Set("success", false);
-            msg.Set("error", "Collection table schema mismatch");
-            msg.Send(player);
-            return;
-        }
 
         // Add to collection
         trans->Append(
@@ -2882,7 +2958,8 @@ namespace DCCollection
         else if (json.HasKey("type") && json["type"].IsNumber())
             typeId = static_cast<uint8>(json["type"].AsUInt32());
 
-        if (typeId == static_cast<uint8>(CollectionType::TITLE))
+        bool titleDebugEnabled = sConfigMgr->GetOption<bool>("DCCollection.TitleDebug.Enable", false, false);
+        if (typeId == static_cast<uint8>(CollectionType::TITLE) && titleDebugEnabled)
         {
             LOG_INFO("module.dc",
                 "DC-Collection[TitleDebug] UseItem account={} guid={} type='{}' typeId={} entryId={} rawEntry='{}' isNum={} isStr={}",
@@ -3124,21 +3201,24 @@ namespace DCCollection
 
         uint32 accountId = GetAccountId(player);
         uint32 guid = player->GetGUID().GetCounter();
+        bool titleDebugEnabled = sConfigMgr->GetOption<bool>("DCCollection.TitleDebug.Enable", false, false);
 
-        LOG_INFO("module.dc",
-            "DC-Collection[TitleDebug] HandleSetTitle begin account={} guid={} titleKey={}",
-            accountId,
-            guid,
-            titleId);
+        if (titleDebugEnabled)
+            LOG_INFO("module.dc",
+                "DC-Collection[TitleDebug] HandleSetTitle begin account={} guid={} titleKey={}",
+                accountId,
+                guid,
+                titleId);
 
         // titleId = 0 means clear title
         if (titleId == 0)
         {
             player->SetTitle(nullptr);
-            LOG_INFO("module.dc",
-                "DC-Collection[TitleDebug] HandleSetTitle clear account={} guid={}",
-                accountId,
-                guid);
+            if (titleDebugEnabled)
+                LOG_INFO("module.dc",
+                    "DC-Collection[TitleDebug] HandleSetTitle clear account={} guid={}",
+                    accountId,
+                    guid);
             return;
         }
 
@@ -3146,11 +3226,12 @@ namespace DCCollection
         CharTitlesEntry const* titleEntry = ResolveTitleEntryByAnyKey(titleId);
         if (!titleEntry)
         {
-            LOG_WARN("module.dc",
-                "DC-Collection[TitleDebug] HandleSetTitle resolve failed account={} guid={} titleKey={}",
-                accountId,
-                guid,
-                titleId);
+            if (titleDebugEnabled)
+                LOG_WARN("module.dc",
+                    "DC-Collection[TitleDebug] HandleSetTitle resolve failed account={} guid={} titleKey={}",
+                    accountId,
+                    guid,
+                    titleId);
             DCAddon::SendError(player, MODULE, "Invalid title ID",
                 DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
@@ -3183,36 +3264,39 @@ namespace DCCollection
 
                 hasCollection = HasCollectionItem(accountId, CollectionType::TITLE, canonicalTitleId);
 
-                LOG_INFO("module.dc",
-                    "DC-Collection[TitleDebug] HandleSetTitle auto-import account={} guid={} id={} nowHasCollection={}",
-                    accountId,
-                    guid,
-                    canonicalTitleId,
-                    hasCollection ? 1 : 0);
+                if (titleDebugEnabled)
+                    LOG_INFO("module.dc",
+                        "DC-Collection[TitleDebug] HandleSetTitle auto-import account={} guid={} id={} nowHasCollection={}",
+                        accountId,
+                        guid,
+                        canonicalTitleId,
+                        hasCollection ? 1 : 0);
             }
         }
 
-        LOG_INFO("module.dc",
-            "DC-Collection[TitleDebug] HandleSetTitle resolved account={} guid={} key={} id={} bit={} name='{}' hasCollection={} hadTitleBefore={} chosenBefore={}",
-            accountId,
-            guid,
-            titleId,
-            canonicalTitleId,
-            titleEntry->bit_index,
-            titleName,
-            hasCollection ? 1 : 0,
-            hadTitleBefore ? 1 : 0,
-            player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
+        if (titleDebugEnabled)
+            LOG_INFO("module.dc",
+                "DC-Collection[TitleDebug] HandleSetTitle resolved account={} guid={} key={} id={} bit={} name='{}' hasCollection={} hadTitleBefore={} chosenBefore={}",
+                accountId,
+                guid,
+                titleId,
+                canonicalTitleId,
+                titleEntry->bit_index,
+                titleName,
+                hasCollection ? 1 : 0,
+                hadTitleBefore ? 1 : 0,
+                player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
 
         // Verify player owns this title
         if (!hasCollection)
         {
-            LOG_WARN("module.dc",
-                "DC-Collection[TitleDebug] HandleSetTitle ownership failed account={} guid={} id={} bit={}",
-                accountId,
-                guid,
-                canonicalTitleId,
-                titleEntry->bit_index);
+            if (titleDebugEnabled)
+                LOG_WARN("module.dc",
+                    "DC-Collection[TitleDebug] HandleSetTitle ownership failed account={} guid={} id={} bit={}",
+                    accountId,
+                    guid,
+                    canonicalTitleId,
+                    titleEntry->bit_index);
             DCAddon::SendError(player, MODULE, "Title not in collection",
                 DCAddon::ErrorCode::BAD_FORMAT, DCAddon::Opcode::Collection::SMSG_ERROR);
             return;
@@ -3222,24 +3306,26 @@ namespace DCCollection
         if (!player->HasTitle(titleEntry))
         {
             player->SetTitle(titleEntry, false);  // Grant the title
-            LOG_INFO("module.dc",
-                "DC-Collection[TitleDebug] HandleSetTitle granted missing title account={} guid={} id={}",
-                accountId,
-                guid,
-                canonicalTitleId);
+            if (titleDebugEnabled)
+                LOG_INFO("module.dc",
+                    "DC-Collection[TitleDebug] HandleSetTitle granted missing title account={} guid={} id={}",
+                    accountId,
+                    guid,
+                    canonicalTitleId);
         }
 
         // Set as active title (chosenTitle is the bit index)
         player->SetUInt32Value(PLAYER_CHOSEN_TITLE, titleEntry->bit_index);
 
-        LOG_INFO("module.dc",
-            "DC-Collection[TitleDebug] HandleSetTitle applied account={} guid={} id={} bit={} nowHasTitle={} chosenAfter={}",
-            accountId,
-            guid,
-            canonicalTitleId,
-            titleEntry->bit_index,
-            player->HasTitle(titleEntry) ? 1 : 0,
-            player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
+        if (titleDebugEnabled)
+            LOG_INFO("module.dc",
+                "DC-Collection[TitleDebug] HandleSetTitle applied account={} guid={} id={} bit={} nowHasTitle={} chosenAfter={}",
+                accountId,
+                guid,
+                canonicalTitleId,
+                titleEntry->bit_index,
+                player->HasTitle(titleEntry) ? 1 : 0,
+                player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
     }
 
     void HandleSummonHeirloom(Player* player, uint32 itemId)
@@ -3623,9 +3709,40 @@ namespace DCCollection
         // Non-transmog: try curated per-type tables first; fall back to the generic index; fall back to owned-only.
         CollectionType ct = static_cast<CollectionType>(type);
 
+        uint32 mountDisplayResolvedViaSpellScan = 0;
+        uint32 mountDisplayMissing = 0;
+        uint32 mountDisplayMissingCurated = 0;
+        uint32 mountDisplayMissingGeneric = 0;
+        uint32 mountDisplayMissingOwned = 0;
+        std::vector<uint32> mountDisplayMissingSamples;
+        mountDisplayMissingSamples.reserve(8);
+
+        auto trackMountDisplay = [&](uint32 spellId, uint8 sourceBucket, bool resolvedViaSpellScan, uint32 finalDisplayId)
+        {
+            if (ct != CollectionType::MOUNT)
+                return;
+
+            if (resolvedViaSpellScan)
+                ++mountDisplayResolvedViaSpellScan;
+
+            if (finalDisplayId)
+                return;
+
+            ++mountDisplayMissing;
+            if (sourceBucket == 1)
+                ++mountDisplayMissingCurated;
+            else if (sourceBucket == 2)
+                ++mountDisplayMissingGeneric;
+            else if (sourceBucket == 3)
+                ++mountDisplayMissingOwned;
+
+            if (spellId && mountDisplayMissingSamples.size() < 8)
+                mountDisplayMissingSamples.push_back(spellId);
+        };
+
         std::unordered_set<uint32> sentIds;
 
-        auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity, std::string const& source, int32 extraType, uint32 itemIdForSource = 0, uint32 displayId = 0)
+        auto addDef = [&](uint32 id, std::string const& name, std::string const& icon, uint32 rarity, std::string const& source, int32 extraType, uint32 itemIdForSource = 0, uint32 displayId = 0, uint32 creatureId = 0)
         {
             DCAddon::JsonValue d;
             d.SetObject();
@@ -3637,6 +3754,8 @@ namespace DCCollection
                 d.Set("rarity", rarity);
             if (displayId > 0)
                 d.Set("displayId", displayId);
+            if (creatureId > 0)
+                d.Set("creatureId", creatureId);
 
             if (!source.empty())
             {
@@ -3660,10 +3779,84 @@ namespace DCCollection
 
         bool loadedAny = false;
 
+        struct MountedModelInfo
+        {
+            uint32 displayId = 0;
+            uint32 creatureId = 0;
+        };
+
+        auto resolveMountedModelInfo = [&](uint32 rootSpellId) -> MountedModelInfo
+        {
+            MountedModelInfo info;
+
+            if (!rootSpellId)
+                return info;
+
+            std::vector<uint32> toVisit;
+            toVisit.push_back(rootSpellId);
+
+            std::unordered_set<uint32> visited;
+            visited.reserve(16);
+
+            while (!toVisit.empty())
+            {
+                uint32 spellIdToCheck = toVisit.back();
+                toVisit.pop_back();
+
+                if (!spellIdToCheck || visited.find(spellIdToCheck) != visited.end())
+                    continue;
+
+                visited.insert(spellIdToCheck);
+
+                SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellIdToCheck);
+                if (!spellInfo)
+                    continue;
+
+                for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                {
+                    SpellEffectInfo const& effect = spellInfo->Effects[i];
+
+                    if (effect.ApplyAuraName == SPELL_AURA_MOUNTED && effect.MiscValue > 0)
+                    {
+                        uint32 value = static_cast<uint32>(effect.MiscValue);
+
+                        // Keep raw mounted value as creature fallback for the addon.
+                        // In custom content this is often a creature entry ID.
+                        info.creatureId = value;
+
+                        // If this maps to a server creature template, derive its display ID.
+                        if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(value))
+                        {
+                            if (CreatureModel const* model = cInfo->GetFirstValidModel())
+                                info.displayId = model->CreatureDisplayID;
+                        }
+
+                        // If it wasn't a creature entry, it may already be a display ID.
+                        if (!info.displayId && sCreatureDisplayInfoStore.LookupEntry(value))
+                            info.displayId = value;
+
+                        return info;
+                    }
+
+                    if (effect.Effect == SPELL_EFFECT_LEARN_SPELL || effect.Effect == SPELL_EFFECT_TRIGGER_SPELL)
+                    {
+                        uint32 chainedSpellId = effect.TriggerSpell;
+                        if (!chainedSpellId && effect.MiscValue > 0)
+                            chainedSpellId = static_cast<uint32>(effect.MiscValue);
+
+                        if (chainedSpellId && visited.find(chainedSpellId) == visited.end())
+                            toVisit.push_back(chainedSpellId);
+                    }
+                }
+            }
+
+            return info;
+        };
+
         if (ct == CollectionType::MOUNT && WorldTableExists("dc_mount_definitions"))
         {
             QueryResult r = WorldDatabase.Query(
-                "SELECT md.spell_id, md.name, md.icon, md.rarity, md.mount_type, md.source, "
+                "SELECT md.spell_id, md.name, md.icon, md.rarity, md.mount_type, md.source, md.display_id, "
                 "(SELECT MIN(i.entry) FROM item_template i "
                 " WHERE i.class = 15 AND i.subclass = 5 AND ("
                 "   i.spellid_1 = md.spell_id OR i.spellid_2 = md.spell_id OR i.spellid_3 = md.spell_id OR "
@@ -3682,23 +3875,24 @@ namespace DCCollection
                     uint32 rarity = f[3].Get<uint32>();
                     int32 mountType = f[4].Get<int32>();
                     std::string source = f[5].Get<std::string>();
-                    uint32 itemId = f[6].Get<uint32>();
+                    uint32 displayId = f[6].Get<uint32>();
+                    uint32 itemId = f[7].Get<uint32>();
+                    uint32 creatureId = 0;
+                    bool resolvedViaSpellScan = false;
 
-                    // Get mount displayId from spell data
-                    uint32 displayId = 0;
-                    if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId))
+                    MountedModelInfo mountedModel = resolveMountedModelInfo(spellId);
+                    creatureId = mountedModel.creatureId;
+
+                    // Fallback for legacy rows where display_id was not set.
+                    // Some definitions reference teaching/trigger spells, so resolve through
+                    // spell chains until we find the mounted aura display.
+                    if (!displayId)
                     {
-                        // Mount spells typically use effect SPELL_EFFECT_APPLY_AURA with SPELL_AURA_MOUNTED
-                        // The mount displayId is stored in MiscValue or EffectMiscValue
-                        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
-                        {
-                            if (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED)
-                            {
-                                displayId = spellInfo->Effects[i].MiscValue;
-                                break;
-                            }
-                        }
+                        displayId = mountedModel.displayId;
+                        resolvedViaSpellScan = (displayId > 0);
                     }
+
+                    trackMountDisplay(spellId, 1, resolvedViaSpellScan, displayId);
 
                     DCAddon::JsonValue d;
                     d.SetObject();
@@ -3710,17 +3904,19 @@ namespace DCCollection
                         d.Set("rarity", rarity);
                     if (displayId > 0)
                         d.Set("displayId", displayId);
+                    if (creatureId > 0)
+                        d.Set("creatureId", creatureId);
                     {
                         if (!source.empty())
                         {
                             DCAddon::JsonValue srcVal = parseSourceValue(source);
                             if (isUnknownSource(srcVal) && itemId)
-                                srcVal = buildSourceForItem(itemId);
+                                srcVal = buildSourceForItemCached(itemId);
                             d.Set("source", srcVal);
                         }
                         else if (itemId)
                         {
-                            d.Set("source", buildSourceForItem(itemId));
+                            d.Set("source", buildSourceForItemCached(itemId));
                         }
                     }
                     if (mountType >= 0)
@@ -4008,22 +4204,41 @@ namespace DCCollection
             }
         }
 
-        if (!loadedAny && WorldTableExists("dc_collection_definitions"))
+        if ((ct == CollectionType::MOUNT || !loadedAny) &&
+            WorldTableExists("dc_collection_definitions"))
         {
             std::string const& defEntryCol = GetWorldEntryColumn("dc_collection_definitions");
             if (defEntryCol.empty())
                 return;
 
+            std::string defTypeWhere = fmt::format(
+                "LOWER(CAST(collection_type AS CHAR)) = '{}'",
+                static_cast<uint8>(ct));
+            for (std::string const& alias : GetItemsCollectionTypeAliases(ct))
+            {
+                defTypeWhere = fmt::format(
+                    "{} OR LOWER(CAST(collection_type AS CHAR)) = '{}'",
+                    defTypeWhere,
+                    alias);
+            }
+            defTypeWhere = fmt::format("({})", defTypeWhere);
+
             QueryResult r = WorldDatabase.Query(
-                "SELECT {} FROM dc_collection_definitions WHERE collection_type = {} AND enabled = 1",
-                defEntryCol, static_cast<uint8>(ct));
+                "SELECT {} FROM dc_collection_definitions WHERE {} AND enabled = 1",
+                defEntryCol, defTypeWhere);
 
             if (r)
             {
                 do
                 {
                     uint32 entryId = r->Fetch()[0].Get<uint32>();
+                    if (sentIds.count(entryId))
+                        continue;
+
                     std::string name;
+                    uint32 displayId = 0;
+                    uint32 creatureIdForPreview = 0;
+                    uint32 itemIdForSource = 0;
 
                     if (ct == CollectionType::MOUNT || ct == CollectionType::PET)
                     {
@@ -4031,6 +4246,15 @@ namespace DCCollection
                         {
                             if (spellInfo->SpellName[0])
                                 name = spellInfo->SpellName[0];
+                        }
+
+                        if (ct == CollectionType::MOUNT)
+                        {
+                            MountedModelInfo mountedModel = resolveMountedModelInfo(entryId);
+                            displayId = mountedModel.displayId;
+                            creatureIdForPreview = mountedModel.creatureId;
+                            itemIdForSource = FindMountItemIdForSpell(entryId);
+                            trackMountDisplay(entryId, 2, displayId > 0, displayId);
                         }
                     }
                     else if (ct == CollectionType::TOY || ct == CollectionType::HEIRLOOM)
@@ -4051,7 +4275,8 @@ namespace DCCollection
                         }
                     }
 
-                    addDef(entryId, name, std::string(), 0, std::string(), -1);
+                    addDef(entryId, name, std::string(), 0, std::string(), -1,
+                                                     itemIdForSource, displayId, creatureIdForPreview);
                     loadedAny = true;
                 } while (r->NextRow());
             }
@@ -4072,25 +4297,23 @@ namespace DCCollection
                     std::string icon;
                     uint32 rarity = 1;
                     uint32 displayId = 0;
+                    uint32 creatureIdForPreview = 0;
                     uint32 itemId = 0;
 
                     if (ct == CollectionType::MOUNT)
                     {
+                        itemId = FindMountItemIdForSpell(entryId);
+
                         if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(entryId))
                         {
                             if (spellInfo->SpellName[0])
                                 name = spellInfo->SpellName[0];
-
-                            // Try to find displayId
-                            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
-                            {
-                                if (spellInfo->Effects[i].ApplyAuraName == SPELL_AURA_MOUNTED)
-                                {
-                                    displayId = spellInfo->Effects[i].MiscValue;
-                                    break;
-                                }
-                            }
                         }
+
+                        MountedModelInfo mountedModel = resolveMountedModelInfo(entryId);
+                        displayId = mountedModel.displayId;
+                        creatureIdForPreview = mountedModel.creatureId;
+                        trackMountDisplay(entryId, 3, displayId > 0, displayId);
                     }
                     else if (ct == CollectionType::PET)
                     {
@@ -4228,8 +4451,46 @@ namespace DCCollection
                         }
                     }
 
-                    addDef(entryId, name, icon, rarity, std::string(), -1, itemId, displayId);
+                    addDef(entryId, name, icon, rarity, std::string(), -1, itemId, displayId, creatureIdForPreview);
                 }
+            }
+        }
+
+        if (ct == CollectionType::MOUNT && mountDisplayMissing > 0)
+        {
+            static std::unordered_map<uint32, uint32> lastMountDisplayWarnAtMs;
+
+            uint32 accountId = GetAccountId(player);
+            uint32 nowMs = getMSTime();
+            bool shouldWarn = true;
+
+            if (accountId)
+            {
+                uint32& lastWarnAt = lastMountDisplayWarnAtMs[accountId];
+                if (lastWarnAt && (nowMs - lastWarnAt) < 15000)
+                    shouldWarn = false;
+                else
+                    lastWarnAt = nowMs;
+            }
+
+            if (shouldWarn)
+            {
+                std::ostringstream sample;
+                for (size_t i = 0; i < mountDisplayMissingSamples.size(); ++i)
+                {
+                    if (i > 0)
+                        sample << ",";
+                    sample << mountDisplayMissingSamples[i];
+                }
+
+                LOG_WARN("module.dc", "[DCCollection] Mount definitions missing displayId: total={}, curated={}, generic={}, owned={}, resolvedViaSpellScan={}, accountId={}, sampleSpellIds=[{}]",
+                    mountDisplayMissing,
+                    mountDisplayMissingCurated,
+                    mountDisplayMissingGeneric,
+                    mountDisplayMissingOwned,
+                    mountDisplayResolvedViaSpellScan,
+                    accountId,
+                    sample.str());
             }
         }
 
@@ -4356,13 +4617,14 @@ namespace DCCollection
                 }
             }
 
-            LOG_INFO("module.dc",
-                "DC-Collection[TitleDebug] SendCollection titles account={} guid={} owned={} granted={} chosenTitle={}",
-                accountId,
-                player->GetGUID().GetCounter(),
-                owned.size(),
-                titlesGranted,
-                player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
+            if (sConfigMgr->GetOption<bool>("DCCollection.TitleDebug.Enable", false, false))
+                LOG_INFO("module.dc",
+                    "DC-Collection[TitleDebug] SendCollection titles account={} guid={} owned={} granted={} chosenTitle={}",
+                    accountId,
+                    player->GetGUID().GetCounter(),
+                    owned.size(),
+                    titlesGranted,
+                    player->GetUInt32Value(PLAYER_CHOSEN_TITLE));
         }
 
         for (uint32 id : owned)

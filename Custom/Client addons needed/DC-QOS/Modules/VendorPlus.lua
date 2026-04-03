@@ -237,6 +237,11 @@ end
 -- Enhanced Junk Selling
 -- ============================================================
 local function CalculateJunkValue()
+    local settings = addon.settings.vendorPlus
+    if not settings or settings.enabled == false then
+        return 0, 0
+    end
+
     local totalValue = 0
     local itemCount = 0
     
@@ -245,7 +250,7 @@ local function CalculateJunkValue()
         for slot = 1, numSlots do
             local itemLink = GetContainerItemLink(bag, slot)
             if itemLink then
-                local _, _, quality = GetItemInfo(itemLink)
+                local _, count, _, quality = GetContainerItemInfo(bag, slot)
                 local itemId = tonumber(itemLink:match("item:(%d+)"))
                 
                 -- Check if it's junk (grey quality or custom marked)
@@ -253,11 +258,10 @@ local function CalculateJunkValue()
                 local isProtected = IsNeverSell(itemId)
                 
                 if isJunk and not isProtected then
-                    local _, count = GetContainerItemInfo(bag, slot)
+                    itemCount = itemCount + (count or 1)
                     local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemLink)
                     if sellPrice and sellPrice > 0 then
                         totalValue = totalValue + (sellPrice * (count or 1))
-                        itemCount = itemCount + 1
                     end
                 end
             end
@@ -269,7 +273,7 @@ end
 
 local function SellAllJunk()
     local settings = addon.settings.vendorPlus
-    if not settings.enabled then return end
+    if not settings or settings.enabled == false then return end
     
     local totalValue = 0
     local itemCount = 0
@@ -279,21 +283,20 @@ local function SellAllJunk()
         for slot = 1, numSlots do
             local itemLink = GetContainerItemLink(bag, slot)
             if itemLink then
-                local _, _, quality = GetItemInfo(itemLink)
+                local _, count, _, quality = GetContainerItemInfo(bag, slot)
                 local itemId = tonumber(itemLink:match("item:(%d+)"))
                 
                 local isJunk = (quality == 0) or IsCustomJunk(itemId)
                 local isProtected = IsNeverSell(itemId)
                 
                 if isJunk and not isProtected then
-                    local _, count = GetContainerItemInfo(bag, slot)
                     local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemLink)
-                    
                     if sellPrice and sellPrice > 0 then
                         totalValue = totalValue + (sellPrice * (count or 1))
-                        itemCount = itemCount + 1
-                        UseContainerItem(bag, slot)
                     end
+
+                    itemCount = itemCount + (count or 1)
+                    UseContainerItem(bag, slot)
                 end
             end
         end
@@ -509,9 +512,44 @@ end
 -- Sell Junk Button
 -- ============================================================
 local sellJunkButton = nil
+local sellJunkPreviewText = nil
+
+local function UpdateSellJunkPreview()
+    if not sellJunkButton then return end
+
+    local settings = addon.settings.vendorPlus
+    if not settings or settings.enabled == false then
+        sellJunkButton:Disable()
+        if sellJunkPreviewText then
+            sellJunkPreviewText:SetText("|cff888888Disabled|r")
+        end
+        return
+    end
+
+    local junkValue, junkCount = CalculateJunkValue()
+
+    if junkCount > 0 then
+        sellJunkButton:Enable()
+        if sellJunkPreviewText then
+            sellJunkPreviewText:SetText("|cff888888" .. junkCount .. " items - " .. GetCoinTextureString(junkValue) .. "|r")
+        end
+    else
+        sellJunkButton:Disable()
+        if sellJunkPreviewText then
+            sellJunkPreviewText:SetText("|cff888888No junk items|r")
+        end
+    end
+end
 
 local function CreateSellJunkButton()
-    if sellJunkButton then return end
+    if sellJunkButton then
+        sellJunkButton:Show()
+        if sellJunkPreviewText then
+            sellJunkPreviewText:Show()
+        end
+        UpdateSellJunkPreview()
+        return
+    end
     
     sellJunkButton = CreateFrame("Button", "DCQoS_SellJunkButton", MerchantFrame, "UIPanelButtonTemplate")
     sellJunkButton:SetSize(80, 22)
@@ -520,7 +558,12 @@ local function CreateSellJunkButton()
     
     sellJunkButton:SetScript("OnClick", function()
         SellAllJunk()
+        addon:DelayedCall(0.2, UpdateSellJunkPreview)
     end)
+
+    sellJunkPreviewText = MerchantFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    sellJunkPreviewText:SetPoint("LEFT", sellJunkButton, "RIGHT", 8, 0)
+    sellJunkPreviewText:SetText("|cff888888No junk items|r")
     
     sellJunkButton:SetScript("OnEnter", function(self)
         local junkValue, junkCount = CalculateJunkValue()
@@ -541,6 +584,8 @@ local function CreateSellJunkButton()
     sellJunkButton:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
+
+    UpdateSellJunkPreview()
 end
 
 -- ============================================================
@@ -561,10 +606,17 @@ function VendorPlus.OnEnable()
     local merchantFrame = CreateFrame("Frame")
     merchantFrame:RegisterEvent("MERCHANT_SHOW")
     merchantFrame:RegisterEvent("MERCHANT_CLOSED")
+    merchantFrame:RegisterEvent("BAG_UPDATE")
     merchantFrame:SetScript("OnEvent", function(self, event)
         if event == "MERCHANT_SHOW" then
             OnMerchantShow()
             CreateSellJunkButton()
+            UpdateSellJunkPreview()
+        elseif event == "BAG_UPDATE" then
+            if MerchantFrame and MerchantFrame:IsShown() then
+                UpdateRepairCostFrame()
+                UpdateSellJunkPreview()
+            end
         elseif event == "MERCHANT_CLOSED" then
             OnMerchantClose()
         end
@@ -578,6 +630,7 @@ function VendorPlus.OnDisable()
     addon:Debug("VendorPlus module disabling")
     if repairCostFrame then repairCostFrame:Hide() end
     if sellJunkButton then sellJunkButton:Hide() end
+    if sellJunkPreviewText then sellJunkPreviewText:Hide() end
 end
 
 -- ============================================================

@@ -1143,6 +1143,16 @@ DCCollection.Enable = 1
 #        Description: Enable debug logging for the Collection System
 #        Default:     0 (Disabled)
 #
+DCCollection.Debug = 0
+
+#
+#    DCCollection.TitleDebug.Enable
+#        Description: Enable verbose title flow diagnostics for DC-Collection
+#                     (useful for troubleshooting title ownership/apply issues)
+#        Default:     0 (Disabled)
+#
+DCCollection.TitleDebug.Enable = 0
+
 # -----------------------------------------------------------------------------
 # Module Toggles
 # -----------------------------------------------------------------------------

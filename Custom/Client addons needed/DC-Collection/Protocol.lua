@@ -164,6 +164,7 @@ DC.pendingRequests = {}
 DC.requestTimeout = 10  -- seconds
 DC.isConnected = false
 DC.lastPing = 0
+DC.callbacks = DC.callbacks or {}
 
 -- ============================================================================
 -- CLIENT-SIDE ERROR/TIMEOUT LOG
@@ -442,12 +443,371 @@ function DC:_IsInflight(key)
     return self._inflightRequests and self._inflightRequests[key]
 end
 
+function DC:BeginSyncProgress(mode, plannedSteps)
+    self._syncProgressHideToken = (self._syncProgressHideToken or 0) + 1
+
+    local progress = {
+        mode = mode or "sync",
+        active = true,
+        total = 0,
+        completed = 0,
+        currentKey = nil,
+        currentLabel = nil,
+        steps = {},
+    }
+
+    if type(plannedSteps) == "table" then
+        for _, step in ipairs(plannedSteps) do
+            if type(step) == "table" and step.key then
+                local key = tostring(step.key)
+                if not progress.steps[key] then
+                    progress.steps[key] = {
+                        label = tostring(step.label or key),
+                        done = false,
+                    }
+                    progress.total = progress.total + 1
+                end
+            end
+        end
+    end
+
+    self._syncProgress = progress
+    self:RefreshSyncProgressUI(true)
+end
+
+function DC:_EnsureSyncProgressState()
+    if type(self._syncProgress) ~= "table" then
+        self:BeginSyncProgress("adhoc")
+    end
+    return self._syncProgress
+end
+
+function DC:_EnsureSyncProgressStep(stepKey, label)
+    if not stepKey then
+        return nil
+    end
+
+    local progress = self:_EnsureSyncProgressState()
+    local key = tostring(stepKey)
+    local step = progress.steps[key]
+    if not step then
+        step = {
+            label = tostring(label or key),
+            done = false,
+        }
+        progress.steps[key] = step
+        progress.total = (progress.total or 0) + 1
+    elseif label and label ~= "" then
+        step.label = tostring(label)
+    end
+
+    if (progress.total or 0) < (progress.completed or 0) then
+        progress.total = progress.completed
+    end
+
+    return key, step, progress
+end
+
+function DC:StartSyncProgressStep(stepKey, label)
+    local key, step, progress = self:_EnsureSyncProgressStep(stepKey, label)
+    if not key then
+        return
+    end
+
+    progress.active = true
+    progress.currentKey = key
+    progress.currentLabel = step.label or tostring(label or key)
+    self:RefreshSyncProgressUI(true)
+end
+
+function DC:CompleteSyncProgressStep(stepKey, label)
+    local key, step, progress = self:_EnsureSyncProgressStep(stepKey, label)
+    if not key then
+        return
+    end
+
+    if step and not step.done then
+        step.done = true
+        progress.completed = (progress.completed or 0) + 1
+    end
+
+    if key == progress.currentKey then
+        progress.currentLabel = step.label or progress.currentLabel
+    end
+
+    if (progress.total or 0) <= 0 then
+        progress.total = progress.completed
+    end
+
+    if (progress.completed or 0) >= (progress.total or 0) then
+        progress.active = nil
+        self:RefreshSyncProgressUI(true)
+
+        local token = (self._syncProgressHideToken or 0) + 1
+        self._syncProgressHideToken = token
+        if self.After and type(self.After) == "function" then
+            self.After(1.25, function()
+                if self._syncProgressHideToken ~= token then
+                    return
+                end
+                self._syncProgress = nil
+                self:RefreshSyncProgressUI(false)
+            end)
+        else
+            self._syncProgress = nil
+            self:RefreshSyncProgressUI(false)
+        end
+    else
+        self:RefreshSyncProgressUI(true)
+    end
+end
+
+function DC:AbortSyncProgress()
+    self._syncProgressHideToken = (self._syncProgressHideToken or 0) + 1
+    self._syncProgress = nil
+    self:RefreshSyncProgressUI(false)
+end
+
+function DC:GetSyncProgressSnapshot()
+    local progress = self._syncProgress
+    if type(progress) ~= "table" then
+        return nil
+    end
+
+    return {
+        active = progress.active and true or false,
+        mode = progress.mode,
+        total = tonumber(progress.total) or 0,
+        completed = tonumber(progress.completed) or 0,
+        currentLabel = progress.currentLabel or progress.currentKey,
+    }
+end
+
+function DC:_GetSyncProgressStagePrefix(stepKey)
+    local key = tostring(stepKey or "")
+
+    if string.sub(key, 1, 5) == "defs:" then
+        if key == "defs:transmog" then
+            return "|TInterface\\Icons\\INV_Chest_Cloth_17:12:12:0:0|t [APP]"
+        end
+        return "|TInterface\\Icons\\INV_Misc_Book_09:12:12:0:0|t [DEF]"
+    elseif string.sub(key, 1, 5) == "coll:" then
+        if key == "coll:transmog" then
+            return "|TInterface\\Icons\\INV_Chest_Cloth_17:12:12:0:0|t [WRD]"
+        end
+        return "|TInterface\\Icons\\INV_Chest_Cloth_17:12:12:0:0|t [COL]"
+    elseif key == "currency" then
+        return "|TInterface\\Icons\\INV_Misc_Coin_01:12:12:0:0|t [CUR]"
+    elseif key == "stats" then
+        return "|TInterface\\Icons\\INV_Misc_Note_01:12:12:0:0|t [STAT]"
+    elseif key == "shop" then
+        return "|TInterface\\Icons\\INV_Misc_Coin_02:12:12:0:0|t [SHOP]"
+    elseif key == "wishlist" then
+        return "|TInterface\\Icons\\INV_Misc_Note_05:12:12:0:0|t [WISH]"
+    elseif key == "handshake" then
+        return "|TInterface\\Icons\\Spell_Holy_SealOfMight:12:12:0:0|t [HS]"
+    end
+
+    return "|TInterface\\Buttons\\UI-GuildButton-PublicNote-Up:12:12:0:0|t [SYNC]"
+end
+
+function DC:_GetSyncProgressDisplayLabel(stepKey, currentLabel)
+    local key = tostring(stepKey or "")
+    local label = tostring(currentLabel or stepKey or "collection data")
+
+    label = string.gsub(label, "transmog", "wardrobe appearances")
+
+    if string.sub(key, 1, 5) == "defs:" then
+        label = string.gsub(label, "^definitions:%s*", "")
+    elseif string.sub(key, 1, 5) == "coll:" then
+        label = string.gsub(label, "^collection:%s*", "")
+    end
+
+    return label
+end
+
+function DC:RefreshSyncProgressUI(forceShow)
+    if not (self.MainFrame and self.MainFrame.topLoadBar and self.MainFrame.topLoadText) then
+        return
+    end
+
+    local bar = self.MainFrame.topLoadBar
+    local text = self.MainFrame.topLoadText
+    local progress = self._syncProgress
+
+    if type(progress) ~= "table" then
+        if not forceShow then
+            bar:Hide()
+        end
+        return
+    end
+
+    local total = tonumber(progress.total) or 0
+    local completed = tonumber(progress.completed) or 0
+
+    if total < completed then
+        total = completed
+    end
+    if total <= 0 then
+        total = 1
+    end
+    if completed < 0 then
+        completed = 0
+    end
+    if completed > total then
+        completed = total
+    end
+
+    local pct = math.floor((completed / total) * 100)
+    local stageKey = progress.currentKey
+    local label = self:_GetSyncProgressDisplayLabel(stageKey,
+        progress.currentLabel or progress.currentKey or "collection data")
+    local prefix = self:_GetSyncProgressStagePrefix(stageKey)
+
+    bar:Show()
+    bar:SetMinMaxValues(0, total)
+    bar:SetValue(completed)
+
+    if progress.active then
+        text:SetText(string.format("Syncing %s %s (%d/%d, %d%%)",
+            prefix,
+            tostring(label),
+            completed,
+            total,
+            pct))
+    else
+        text:SetText(string.format("Sync complete (%d/%d)", completed, total))
+    end
+end
+
+-- Track the first transmog definitions page so dropped initial responses don't
+-- leave paging stuck with no visible protocol timeout.
+function DC:_EnsureTransmogFirstPageWatchdog()
+    if self._transmogFirstPageWatchdogFrame then
+        return
+    end
+
+    local frame = CreateFrame("Frame")
+    frame.elapsed = 0
+    frame:SetScript("OnUpdate", function(f, elapsed)
+        f.elapsed = (f.elapsed or 0) + (elapsed or 0)
+        if f.elapsed < 1.0 then
+            return
+        end
+        f.elapsed = 0
+
+        if not DC._transmogDefAwaitingFirstPage then
+            f:Hide()
+            return
+        end
+
+        local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+        local startedAt = tonumber(DC._transmogDefStartedAt or 0) or 0
+        if now <= 0 or startedAt <= 0 then
+            return
+        end
+
+        local timeoutSec = tonumber(DC._transmogFirstPageTimeoutSec) or 15
+        if (now - startedAt) < timeoutSec then
+            return
+        end
+
+        local retryCount = tonumber(DC._transmogFirstPageRetryCount) or 0
+        if retryCount >= 2 then
+            if type(DC.LogNetEvent) == "function" then
+                DC:LogNetEvent("error", "wardrobe", "Transmog first page timed out (max retries reached)", {
+                    retries = retryCount,
+                })
+            end
+            if type(DC.AbortTransmogDefinitionsPaging) == "function" then
+                DC:AbortTransmogDefinitionsPaging("first_page_timeout_max_retries")
+            else
+                DC._transmogDefLoading = nil
+                DC._transmogDefAwaitingFirstPage = nil
+            end
+            f:Hide()
+            return
+        end
+
+        DC._transmogFirstPageRetryCount = retryCount + 1
+        if type(DC.LogNetEvent) == "function" then
+            DC:LogNetEvent("warn", "wardrobe", "Transmog first page timed out; retrying", {
+                retry = DC._transmogFirstPageRetryCount,
+            })
+        end
+
+        -- Adaptive fallback: reduce page size after first-page timeout so oversized
+        -- transmog payloads can still complete on strict clients/transports.
+        do
+            local currentLimit = tonumber(DC._transmogDefLimit) or 250
+            if currentLimit > 50 then
+                local nextLimit = math.floor(currentLimit / 2)
+                if nextLimit < 50 then
+                    nextLimit = 50
+                end
+                if nextLimit < currentLimit then
+                    DC._transmogDefLimit = nextLimit
+                    if type(DC.LogNetEvent) == "function" then
+                        DC:LogNetEvent("warn", "wardrobe", "Reducing transmog first-page limit after timeout", {
+                            oldLimit = currentLimit,
+                            newLimit = nextLimit,
+                            retry = DC._transmogFirstPageRetryCount,
+                        })
+                    end
+                end
+            end
+        end
+
+        if type(DC.AbortTransmogDefinitionsPaging) == "function" then
+            DC:AbortTransmogDefinitionsPaging("first_page_timeout_retry")
+        else
+            DC._transmogDefLoading = nil
+            DC._transmogDefAwaitingFirstPage = nil
+        end
+
+        if type(DC.RequestDefinitions) == "function" then
+            DC:RequestDefinitions("transmog", 0)
+        end
+
+        f:Hide()
+    end)
+
+    self._transmogFirstPageWatchdogFrame = frame
+end
+
+function DC:_StartTransmogFirstPageWatchdog()
+    self:_EnsureTransmogFirstPageWatchdog()
+    if self._transmogFirstPageWatchdogFrame then
+        self._transmogFirstPageWatchdogFrame.elapsed = 0
+        self._transmogFirstPageWatchdogFrame:Show()
+    end
+end
+
+function DC:_StopTransmogFirstPageWatchdog(resetRetries)
+    if self._transmogFirstPageWatchdogFrame then
+        self._transmogFirstPageWatchdogFrame:Hide()
+        self._transmogFirstPageWatchdogFrame.elapsed = 0
+    end
+    self._transmogDefAwaitingFirstPage = nil
+    if resetRetries then
+        self._transmogFirstPageRetryCount = 0
+    end
+end
+
 -- Perform initial handshake with server
 function DC:RequestHandshake()
     local hash = self:ComputeCollectionHash()
-    return self:SendMessage(self.Opcodes.CMSG_HANDSHAKE, {
+    if type(self._syncProgress) == "table" then
+        self:StartSyncProgressStep("handshake", "handshake")
+    end
+
+    local ok = self:SendMessage(self.Opcodes.CMSG_HANDSHAKE, {
         hash = hash,
     })
+    if not ok and type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep("handshake", "handshake (failed)")
+    end
+    return ok
 end
 
 -- Request full collection data
@@ -474,10 +834,16 @@ function DC:RequestStats()
         if self:_IsInflight(key) then
             return
         end
+        if type(self._syncProgress) == "table" then
+            self:StartSyncProgressStep("stats", "stats")
+        end
         self:_MarkInflight(key, true)
         local ok = self:SendMessage(self.Opcodes.CMSG_GET_STATS, {})
         if not ok then
             self:_MarkInflight(key, nil)
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep("stats", "stats (failed)")
+            end
         end
     end)
     return true
@@ -534,6 +900,8 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
 
     -- Canonical inflight key uses the normalized (canonical) type.
     local reqKey = "req:defs:" .. tostring(normalizedType)
+    local progressKey = "defs:" .. tostring(normalizedType)
+    local progressLabel = "definitions: " .. tostring(normalizedType)
 
     -- Avoid spamming the same request while waiting for a response.
     if self:_IsInflight(reqKey) then
@@ -550,10 +918,15 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             if self._transmogDefLoading then
                 return
             end
+            if type(self._syncProgress) == "table" then
+                self:StartSyncProgressStep(progressKey, progressLabel)
+            end
             self:_MarkInflight(reqKey, true)
             self._transmogDefOffset = 0
             -- Transmog definitions are huge; keep pages small to avoid client freezes and server hitching.
-            self._transmogDefLimit = self._transmogDefLimit or 250
+            self._transmogDefLimit = tonumber(self._transmogDefLimit) or 250
+            if self._transmogDefLimit < 50 then self._transmogDefLimit = 50 end
+            if self._transmogDefLimit > 250 then self._transmogDefLimit = 250 end
             self._transmogDefLoading = true
             self._transmogDefTotal = nil
             self._transmogDefLastRequestedOffset = 0
@@ -561,6 +934,9 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             self._transmogDefPagesFetched = 0
             self._transmogDefStartedAt = (type(GetTime) == "function" and GetTime()) or time()
             self._transmogDefLastReceivedAt = nil
+            self._transmogDefAwaitingFirstPage = true
+            self._transmogFirstPageRetryCount = 0
+            self:_StartTransmogFirstPageWatchdog()
 
             if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
                 self.Wardrobe:UpdateTransmogLoadingProgressUI(true)
@@ -582,9 +958,14 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
             local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, payload)
             if not ok then
                 self._transmogDefLoading = nil
+                self:_StopTransmogFirstPageWatchdog(false)
                 self:_MarkInflight(reqKey, nil)
                 self._transmogDefStartedAt = nil
                 self._transmogDefLastReceivedAt = nil
+
+                if type(self._syncProgress) == "table" then
+                    self:CompleteSyncProgressStep(progressKey, progressLabel .. " (failed)")
+                end
 
                 if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
                     self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
@@ -598,6 +979,9 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
     self:_DebounceRequest(reqKey, 0.10, function()
         if self:_IsInflight(reqKey) then
             return
+        end
+        if type(self._syncProgress) == "table" then
+            self:StartSyncProgressStep(progressKey, progressLabel)
         end
         self:_MarkInflight(reqKey, true)
 
@@ -616,6 +1000,9 @@ function DC:RequestDefinitions(collType, clientSyncVersion)
         local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, payload)
         if not ok then
             self:_MarkInflight(reqKey, nil)
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep(progressKey, progressLabel .. " (failed)")
+            end
         end
     end)
     return true
@@ -626,6 +1013,7 @@ end
 function DC:AbortTransmogDefinitionsPaging(reason)
     -- Clear paging state
     self._transmogDefLoading = nil
+    self:_StopTransmogFirstPageWatchdog(false)
     self._transmogDefOffset = nil
     self._transmogDefLastRequestedOffset = nil
     self._transmogDefLastRequestedLimit = nil
@@ -674,9 +1062,10 @@ function DC:ResumeTransmogDefinitions(reason)
     end
 
     local offset = tonumber(DCCollectionDB.transmogDefsResumeOffset) or 0
-    local limit = tonumber(DCCollectionDB.transmogDefsResumeLimit) or tonumber(self._transmogDefLimit) or 1000
+    local limit = tonumber(DCCollectionDB.transmogDefsResumeLimit) or tonumber(self._transmogDefLimit) or 250
     if offset < 0 then offset = 0 end
-    if limit < 1 then limit = 1000 end
+    if limit < 50 then limit = 50 end
+    if limit > 250 then limit = 250 end
 
     -- Start (or restart) paging from the saved offset without syncVersion.
     -- We only set syncVersion when paging fully completes.
@@ -698,6 +1087,10 @@ function DC:ResumeTransmogDefinitions(reason)
         self.Wardrobe:UpdateTransmogLoadingProgressUI(true)
     end
 
+    self._transmogDefAwaitingFirstPage = true
+    self._transmogFirstPageRetryCount = 0
+    self:_StartTransmogFirstPageWatchdog()
+
     if reason and type(self.Debug) == "function" then
         self:Debug("Resuming transmog definitions paging: " .. tostring(reason) .. " (offset=" .. tostring(offset) .. ", limit=" .. tostring(limit) .. ")")
     end
@@ -705,6 +1098,7 @@ function DC:ResumeTransmogDefinitions(reason)
     local ok = self:SendMessage(self.Opcodes.CMSG_GET_DEFINITIONS, { type = "transmog", offset = offset, limit = limit })
     if not ok then
         self._transmogDefLoading = nil
+        self:_StopTransmogFirstPageWatchdog(false)
         if type(self._MarkInflight) == "function" then
             self:_MarkInflight(reqKey, nil)
         end
@@ -738,6 +1132,8 @@ function DC:RequestCollection(collType)
     end
 
     local reqKey = "req:coll:" .. tostring(normalizedType)
+    local progressKey = "coll:" .. tostring(normalizedType)
+    local progressLabel = "collection: " .. tostring(normalizedType)
     if self:_IsInflight(reqKey) then
         return false
     end
@@ -746,11 +1142,17 @@ function DC:RequestCollection(collType)
         if self:_IsInflight(reqKey) then
             return
         end
+        if type(self._syncProgress) == "table" then
+            self:StartSyncProgressStep(progressKey, progressLabel)
+        end
         self:_MarkInflight(reqKey, true)
 
         local ok = self:SendMessage(self.Opcodes.CMSG_GET_COLLECTION, { type = serverType })
         if not ok then
             self:_MarkInflight(reqKey, nil)
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep(progressKey, progressLabel .. " (failed)")
+            end
         end
     end)
     return true
@@ -781,12 +1183,18 @@ function DC:RequestShopItems(category)
         if self:_IsInflight(reqKey) then
             return
         end
+        if type(self._syncProgress) == "table" then
+            self:StartSyncProgressStep("shop", "shop data")
+        end
         self:_MarkInflight(reqKey, true)
         local ok = self:SendMessage(self.Opcodes.CMSG_GET_SHOP, {
             category = category or "all",
         })
         if not ok then
             self:_MarkInflight(reqKey, nil)
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep("shop", "shop data (failed)")
+            end
         end
     end)
     return true
@@ -801,12 +1209,38 @@ end
 
 -- Request currency balance
 function DC:RequestCurrencies()
-    return self:SendMessage(self.Opcodes.CMSG_GET_CURRENCIES, {})
+    self:_MarkInflight("req:currency", true)
+    if type(self._syncProgress) == "table" then
+        self:StartSyncProgressStep("currency", "currency")
+    end
+
+    local ok = self:SendMessage(self.Opcodes.CMSG_GET_CURRENCIES, {})
+    if not ok then
+        self:_MarkInflight("req:currency", nil)
+        if type(self._syncProgress) == "table" then
+            self:CompleteSyncProgressStep("currency", "currency (failed)")
+        end
+    end
+
+    return ok
 end
 
 -- Request wishlist
 function DC:RequestWishlist()
-    return self:SendMessage(self.Opcodes.CMSG_GET_WISHLIST, {})
+    self:_MarkInflight("req:wishlist", true)
+    if type(self._syncProgress) == "table" then
+        self:StartSyncProgressStep("wishlist", "wishlist")
+    end
+
+    local ok = self:SendMessage(self.Opcodes.CMSG_GET_WISHLIST, {})
+    if not ok then
+        self:_MarkInflight("req:wishlist", nil)
+        if type(self._syncProgress) == "table" then
+            self:CompleteSyncProgressStep("wishlist", "wishlist (failed)")
+        end
+    end
+
+    return ok
 end
 
 -- Add to wishlist
@@ -1780,6 +2214,10 @@ function DC:HandleHandshakeAck(data)
     self.serverHash = data.serverHash
     self.isConnected = true
     self._handshakeAcked = true
+
+    if type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep("handshake", "handshake")
+    end
     
     if data.needsSync then
         self:Debug("Server indicates full sync needed")
@@ -1897,6 +2335,9 @@ function DC:HandleStatsLegacy(data)
     self:Debug("Received stats")
 
     self:_MarkInflight("req:stats", nil)
+    if type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep("stats", "stats")
+    end
     
     if data.stats then
         self.stats = data.stats
@@ -2007,6 +2448,9 @@ function DC:HandleShopData(data)
     self._inflightRequests = self._inflightRequests or {}
     self._inflightRequests["req:shop:all"] = nil
     self._inflightRequests["req:shop:default"] = nil
+    if type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep("shop", "shop data")
+    end
 
     self.shopCategory = data.category or "default"
     self.currency = self.currency or { tokens = 0, emblems = 0 }
@@ -2273,6 +2717,9 @@ function DC:HandleCurrencies(data)
     self:Debug("Received currencies")
 
     self:_MarkInflight("req:currency", nil)
+    if type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep("currency", "currency")
+    end
 
     self.currency = self.currency or { tokens = 0, emblems = 0 }
     local tokens = data.tokens or data.token or 0
@@ -2307,6 +2754,11 @@ end
 -- Handle wishlist data
 function DC:HandleWishlistData(data)
     self:Debug("Received wishlist")
+
+    self:_MarkInflight("req:wishlist", nil)
+    if type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep("wishlist", "wishlist")
+    end
     
     self.wishlist = data.items or {}
     self.wishlistCount = data.count or 0
@@ -2774,6 +3226,11 @@ end
 function DC:HandleDefinitions(data)
     local rawType = data.type
     local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
+    local defsProgressKey = "defs:" .. tostring(collType)
+    local defsProgressLabel = "definitions: " .. tostring(collType)
+    if type(self._syncProgress) == "table" then
+        self:StartSyncProgressStep(defsProgressKey, defsProgressLabel)
+    end
     
     local definitions = data.definitions or {}
     local syncVersion = data.syncVersion
@@ -2800,6 +3257,7 @@ function DC:HandleDefinitions(data)
     -- If a manual wardrobe refresh is in progress, delay-clearing the transmog table until the
     -- FIRST page arrives. This avoids wiping local data if the server never responds.
     if collType == "transmog" then
+        self:_StopTransmogFirstPageWatchdog(false)
         local requestedOffset = tonumber(data.offset or data.off) or 0
         if requestedOffset == 0 and self._transmogClearOnFirstPage then
             self._transmogClearOnFirstPage = nil
@@ -2848,6 +3306,61 @@ function DC:HandleDefinitions(data)
     if collType == "pets" then
         self:_MarkInflight("req:defs:pet", nil)
         self:_MarkInflight("req:defs:pets", nil)
+    end
+
+    -- Mount preview diagnostics: surface when server definitions are missing model/display hints.
+    if collType == "mounts" then
+        local total = 0
+        local missing = 0
+        local samples = {}
+
+        for id, def in pairs(definitions or {}) do
+            total = total + 1
+            local displayId = nil
+            local creatureId = nil
+
+            if type(def) == "table" then
+                displayId = tonumber(def.displayId or def.display_id or def.creatureDisplayId or def.creature_display_id or def.modelId or def.model_id)
+                creatureId = tonumber(def.creatureId or def.creature_id or def.creatureID or def.entryId or def.entry_id or def.entry)
+            end
+
+            if not displayId and not creatureId then
+                missing = missing + 1
+                if #samples < 6 then
+                    table.insert(samples, tostring(id))
+                end
+            end
+        end
+
+        if total > 0 then
+            self:Debug(string.format("Mount defs preview data: missing=%d/%d", missing, total))
+        end
+
+        if missing > 0 then
+            local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+            local shouldPrint = true
+            if now > 0 and self._lastMountDefsMissingWarnAt and (now - self._lastMountDefsMissingWarnAt) < 30 then
+                shouldPrint = false
+            end
+            if now > 0 then
+                self._lastMountDefsMissingWarnAt = now
+            end
+
+            if shouldPrint then
+                self:Print(string.format("|cffffcc00[Mount Preview]|r %d/%d mount definitions have no model data. Example spell IDs: %s",
+                    missing,
+                    total,
+                    (#samples > 0 and table.concat(samples, ", ") or "n/a")))
+            end
+
+            if type(self.LogNetEvent) == "function" then
+                self:LogNetEvent("warn", "mount", "Mount definitions missing preview model data", {
+                    missing = missing,
+                    total = total,
+                    examples = samples,
+                })
+            end
+        end
     end
 
     -- Debug: how many transmog definitions are missing inventoryType on this page
@@ -2904,6 +3417,12 @@ function DC:HandleDefinitions(data)
                         .. "Server admin should check that item_template is populated.")
                     self._transmogDefLoading = nil
                     self:_MarkInflight("req:defs:transmog", nil)
+                    if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                        self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
+                    end
+                    if type(self._syncProgress) == "table" then
+                        self:CompleteSyncProgressStep(defsProgressKey, defsProgressLabel)
+                    end
                     return
                 end
 
@@ -2913,6 +3432,9 @@ function DC:HandleDefinitions(data)
                     self:Debug("Transmog definitions reported up-to-date but local cache is empty; forcing full download")
                     self._transmogDefLoading = nil
                     self:_MarkInflight("req:defs:transmog", nil)
+                    if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                        self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
+                    end
                     self:RequestDefinitions("transmog", 0)
                     return
                 end
@@ -2921,6 +3443,12 @@ function DC:HandleDefinitions(data)
             self:Debug("Transmog definitions up-to-date; skipping download")
             self._transmogDefLoading = nil
             self:_MarkInflight("req:defs:transmog", nil)
+            if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
+            end
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep(defsProgressKey, defsProgressLabel)
+            end
             return
         end
 
@@ -2929,7 +3457,9 @@ function DC:HandleDefinitions(data)
         self._transmogPagingInterval = self._transmogPagingInterval or 0.75
 
         local requestedOffset = tonumber(data.offset or data.off) or tonumber(self._transmogDefLastRequestedOffset) or 0
-        local requestedLimit = tonumber(data.limit or data.lim) or tonumber(self._transmogDefLastRequestedLimit) or tonumber(self._transmogDefLimit) or 1000
+        local requestedLimit = tonumber(data.limit or data.lim) or tonumber(self._transmogDefLastRequestedLimit) or tonumber(self._transmogDefLimit) or 250
+        if requestedLimit < 50 then requestedLimit = 50 end
+        if requestedLimit > 250 then requestedLimit = 250 end
         local total = tonumber(data.total or data.count) or nil
 
         if total and total > 0 then
@@ -2982,6 +3512,18 @@ function DC:HandleDefinitions(data)
             self._transmogDefLastRequestedLimit = requestedLimit
             self._transmogDefPagesFetched = (self._transmogDefPagesFetched or 0) + 1
 
+            if type(self._syncProgress) == "table" then
+                local loadedSoFar = self:TableCount(self.definitions and self.definitions.transmog)
+                local totalKnown = tonumber(self._transmogDefTotal)
+                if totalKnown and totalKnown > 0 then
+                    self:StartSyncProgressStep(defsProgressKey,
+                        string.format("definitions: transmog (%d/%d items)", loadedSoFar, totalKnown))
+                else
+                    self:StartSyncProgressStep(defsProgressKey,
+                        string.format("definitions: transmog (%d items)", loadedSoFar))
+                end
+            end
+
             -- Persist resume state so we can continue after disconnect/relog.
             DCCollectionDB = DCCollectionDB or {}
             DCCollectionDB.transmogDefsIncomplete = true
@@ -2994,6 +3536,12 @@ function DC:HandleDefinitions(data)
             if (self._transmogDefPagesFetched or 0) > 500 then
                 self:Debug("Stopping transmog definitions paging: too many pages (possible server loop)")
                 self._transmogDefLoading = nil
+                if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
+                    self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
+                end
+                if type(self._syncProgress) == "table" then
+                    self:CompleteSyncProgressStep(defsProgressKey, defsProgressLabel .. " (stopped)")
+                end
                 return
             end
 
@@ -3021,7 +3569,11 @@ function DC:HandleDefinitions(data)
                     if wardrobeVisible and DC.Wardrobe and (DC.Wardrobe.currentTab == "outfits" or DC.Wardrobe.currentTab == "community") then
                         wardrobeVisible = false
                     end
-                    local mainTabVisible = (DC.MainFrame and DC.MainFrame:IsShown() and (DC.activeTab == "wardrobe" or DC.activeTab == "transmog"))
+                    local mainFrameVisible = (DC.MainFrame and DC.MainFrame:IsShown()) and true or false
+                    local mainTabVisible = (mainFrameVisible and (DC.activeTab == "wardrobe" or DC.activeTab == "transmog")) and true or false
+                    -- If the main collection UI is visible (for example on Mounts), keep paging in the
+                    -- background so users don't see progress stall at the first page until they open Wardrobe.
+                    local collectionUiVisible = mainFrameVisible
                     local allowBackground = false
                     if type(DC.IsBackgroundWardrobeSyncEnabled) == "function" then
                         allowBackground = DC:IsBackgroundWardrobeSyncEnabled() and true or false
@@ -3031,7 +3583,7 @@ function DC:HandleDefinitions(data)
 
                     local interval = DC._transmogPagingInterval or 0.75
                     -- If we're paging while the UI is not visible, be extra conservative.
-                    if not (wardrobeVisible or mainTabVisible) then
+                    if not (wardrobeVisible or mainTabVisible or collectionUiVisible) then
                         interval = math.max(interval, 1.25)
                     end
 
@@ -3040,7 +3592,7 @@ function DC:HandleDefinitions(data)
                         -- Pause paging if user isn't actively viewing Wardrobe/transmog UI,
                         -- unless background wardrobe sync is enabled OR manual refresh is in progress.
                         local isManualRefresh = DC.Wardrobe and DC.Wardrobe.isRefreshing
-                        if not (wardrobeVisible or mainTabVisible or isManualRefresh) and not allowBackground then
+                        if not (wardrobeVisible or mainTabVisible or collectionUiVisible or isManualRefresh) and not allowBackground then
                             frame.elapsed = 0
                             return
                         end
@@ -3084,6 +3636,7 @@ function DC:HandleDefinitions(data)
                 tostring(total)))
             self._transmogDefLoading = nil
             self:_MarkInflight("req:defs:transmog", nil)
+            self:_StopTransmogFirstPageWatchdog(true)
 
             -- Clear any deferred item set load.
             -- Item sets should be fetched on-demand (Sets tab) to avoid large transfers starving other UI.
@@ -3092,13 +3645,20 @@ function DC:HandleDefinitions(data)
             if self.Wardrobe and type(self.Wardrobe.UpdateTransmogLoadingProgressUI) == "function" then
                 self.Wardrobe:UpdateTransmogLoadingProgressUI(false)
             end
+            if type(self._syncProgress) == "table" then
+                self:CompleteSyncProgressStep(defsProgressKey, defsProgressLabel)
+            end
         end
+    elseif type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep(defsProgressKey, defsProgressLabel)
     end
 end
 
 function DC:HandleCollection(data)
     local rawType = data.type
     local collType = (type(self.NormalizeCollectionType) == "function" and self:NormalizeCollectionType(rawType)) or rawType
+    local collProgressKey = "coll:" .. tostring(collType)
+    local collProgressLabel = "collection: " .. tostring(collType)
     local items = data.items or {}
 
     if collType == "titles" then
@@ -3172,6 +3732,9 @@ function DC:HandleCollection(data)
     if collType == "pets" then
         self:_MarkInflight("req:coll:pet", nil)
         self:_MarkInflight("req:coll:pets", nil)
+    end
+    if type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep(collProgressKey, collProgressLabel)
     end
     
     -- Notify UI if open
@@ -3346,6 +3909,10 @@ function DC:HandleTitleSet(data)
 end
 
 function DC:HandleStats(data)
+    if type(self._syncProgress) == "table" then
+        self:CompleteSyncProgressStep("stats", "stats")
+    end
+
     -- Store raw stats for legacy compatibility
     local sawServerTitleStats = false
     for rawType, stats in pairs(data.stats or {}) do
@@ -3520,6 +4087,22 @@ end
 -- Full sync - request all data
 function DC:FullSync()
     self:Print(DC.L["SYNC_STARTED"] or "Syncing collection data...")
+
+    self:BeginSyncProgress("full-sync", {
+        { key = "defs:mounts", label = "definitions: mounts" },
+        { key = "defs:pets", label = "definitions: pets" },
+        { key = "defs:heirlooms", label = "definitions: heirlooms" },
+        { key = "defs:transmog", label = "definitions: transmog" },
+        { key = "defs:titles", label = "definitions: titles" },
+        { key = "coll:mounts", label = "collection: mounts" },
+        { key = "coll:pets", label = "collection: pets" },
+        { key = "coll:heirlooms", label = "collection: heirlooms" },
+        { key = "coll:transmog", label = "collection: transmog" },
+        { key = "coll:titles", label = "collection: titles" },
+        { key = "currency", label = "currency" },
+        { key = "stats", label = "stats" },
+        { key = "wishlist", label = "wishlist" },
+    })
     
     -- Request definitions for all types
     for _, collType in ipairs({"mounts", "pets", "heirlooms", "transmog", "titles"}) do
@@ -3536,6 +4119,21 @@ end
 -- Delta sync - only request changes
 function DC:DeltaSync()
     self:Debug("Starting delta sync...")
+
+    self:BeginSyncProgress("delta-sync", {
+        { key = "defs:mounts", label = "definitions: mounts" },
+        { key = "defs:pets", label = "definitions: pets" },
+        { key = "defs:heirlooms", label = "definitions: heirlooms" },
+        { key = "defs:transmog", label = "definitions: transmog" },
+        { key = "defs:titles", label = "definitions: titles" },
+        { key = "coll:mounts", label = "collection: mounts" },
+        { key = "coll:pets", label = "collection: pets" },
+        { key = "coll:heirlooms", label = "collection: heirlooms" },
+        { key = "coll:transmog", label = "collection: transmog" },
+        { key = "coll:titles", label = "collection: titles" },
+        { key = "currency", label = "currency" },
+        { key = "stats", label = "stats" },
+    })
     
     -- Request only definitions that changed
     for _, collType in ipairs({"mounts", "pets", "heirlooms", "transmog", "titles"}) do

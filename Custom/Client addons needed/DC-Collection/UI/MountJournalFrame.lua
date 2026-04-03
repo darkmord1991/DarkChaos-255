@@ -31,6 +31,7 @@ local LIST_WIDTH = 280
 local MODEL_WIDTH = 450
 local BUTTON_HEIGHT = 48
 local ITEMS_PER_PAGE = 12
+local SEARCH_DEBOUNCE_SECONDS = 0.15
 
 -- Mount type icons
 local MOUNT_TYPE_ICONS = {
@@ -82,6 +83,119 @@ local function GetMountIcon(spellId, def)
     return "Interface\\Icons\\INV_Misc_QuestionMark"
 end
 
+local function ToPositiveNumber(value)
+    local n = nil
+    if type(value) == "number" then
+        n = value
+    elseif type(value) == "string" then
+        n = tonumber(value)
+    end
+
+    if n and n > 0 then
+        return n
+    end
+
+    return nil
+end
+
+local function FindCollectedMountCreatureIdBySpellId(spellId)
+    local resolvedSpellId = ToPositiveNumber(spellId)
+    if not resolvedSpellId then
+        return nil
+    end
+
+    if type(GetNumCompanions) ~= "function" or type(GetCompanionInfo) ~= "function" then
+        return nil
+    end
+
+    local numMounts = tonumber(GetNumCompanions("MOUNT")) or 0
+    for i = 1, numMounts do
+        local creatureId, _, companionSpellId = GetCompanionInfo("MOUNT", i)
+        if ToPositiveNumber(companionSpellId) == resolvedSpellId then
+            return ToPositiveNumber(creatureId)
+        end
+    end
+
+    return nil
+end
+
+local function ResolveMountPreviewDisplayId(mountData)
+    if type(mountData) ~= "table" then
+        return nil
+    end
+
+    local def = mountData.definition or {}
+    return
+        ToPositiveNumber(def.displayId) or
+        ToPositiveNumber(def.display_id) or
+        ToPositiveNumber(def.creatureDisplayId) or
+        ToPositiveNumber(def.creature_display_id) or
+        ToPositiveNumber(def.modelId) or
+        ToPositiveNumber(def.model_id) or
+        ToPositiveNumber(mountData.displayId) or
+        ToPositiveNumber(mountData.display_id)
+end
+
+local function ResolveMountPreviewCreatureId(mountData, spellId)
+    if type(mountData) ~= "table" then
+        return nil
+    end
+
+    if mountData.collected then
+        local companionCreatureId = FindCollectedMountCreatureIdBySpellId(spellId)
+        if companionCreatureId then
+            return companionCreatureId
+        end
+    end
+
+    local def = mountData.definition or {}
+    return
+        ToPositiveNumber(def.creatureId) or
+        ToPositiveNumber(def.creature_id) or
+        ToPositiveNumber(def.creatureID) or
+        ToPositiveNumber(def.entryId) or
+        ToPositiveNumber(def.entry_id) or
+        ToPositiveNumber(def.entry) or
+        ToPositiveNumber(mountData.creatureId) or
+        ToPositiveNumber(mountData.creature_id) or
+        ToPositiveNumber(mountData.creatureID)
+end
+
+local function ReportMountPreviewIssue(mountData, reason)
+    if not DC or type(mountData) ~= "table" then
+        return
+    end
+
+    local spellId =
+        ToPositiveNumber(mountData.id) or
+        ToPositiveNumber(mountData.spellId) or
+        ToPositiveNumber(mountData.spell_id)
+    local key = string.format("%s:%s", tostring(spellId or mountData.id or "?"), tostring(reason or "unknown"))
+
+    DC._mountPreviewIssueSeen = DC._mountPreviewIssueSeen or {}
+    if DC._mountPreviewIssueSeen[key] then
+        return
+    end
+    DC._mountPreviewIssueSeen[key] = true
+
+    local message = string.format("Mount preview issue: %s (spellId=%s, name=%s)",
+        tostring(reason or "unknown"),
+        tostring(spellId or "?"),
+        tostring(mountData.name or "?"))
+
+    if type(DC.Debug) == "function" then
+        DC:Debug(message)
+    end
+
+    if type(DC.LogNetEvent) == "function" then
+        DC:LogNetEvent("warn", "mount", message, {
+            spellId = spellId,
+            name = mountData.name,
+            reason = reason,
+        })
+    end
+end
+
 -- ============================================================================
 -- FRAME CREATION
 -- ============================================================================
@@ -126,6 +240,7 @@ function MountJournal:Create()
     self.currentPage = 1
     self.selectedMount = nil
     self.filteredMounts = {}
+    self._searchDebounceToken = 0
 
     return frame
 end
@@ -670,18 +785,140 @@ function MountJournal:SelectMount(mountData)
     end
 
     -- Display 3D model
-    local displayId = mountData.definition and mountData.definition.displayId
-    if displayId and displayId > 0 then
-        model:SetDisplayInfo(displayId)
-        model:SetFacing(0)
+    local spellId =
+        ToPositiveNumber(mountData.id) or
+        ToPositiveNumber(mountData.spellId) or
+        ToPositiveNumber(mountData.spell_id)
+    local displayId = ResolveMountPreviewDisplayId(mountData)
+    local fallbackCreatureId = ResolveMountPreviewCreatureId(mountData, spellId)
+
+    local function ResetModelPose()
+        if model.SetFacing then
+            model:SetFacing(0)
+        end
         model.rotation = 0
         model.zoom = 0
-        model:SetPosition(0, 0, 0)
-    else
-        -- Fallback: try to show mount via spell
+        if model.SetPosition then
+            model:SetPosition(0, 0, 0)
+        end
+    end
+
+    local function HasLoadedModel()
+        if type(model.GetModel) ~= "function" then
+            return true
+        end
+
+        local currentModel = model:GetModel()
+        return currentModel ~= nil and currentModel ~= ""
+    end
+
+    local function TrySetCreature(modelId)
+        if not modelId or modelId <= 0 or type(model.SetCreature) ~= "function" then
+            return false
+        end
+
+        local ok = pcall(model.SetCreature, model, modelId)
+        if ok then
+            ResetModelPose()
+            return true
+        end
+
+        return false
+    end
+
+    local function TrySetDisplay(displayInfoId)
+        if not displayInfoId or displayInfoId <= 0 or type(model.SetDisplayInfo) ~= "function" then
+            return false
+        end
+
+        local ok = pcall(model.SetDisplayInfo, model, displayInfoId)
+        if ok then
+            ResetModelPose()
+            return true
+        end
+
+        return false
+    end
+
+    if type(model.ClearModel) == "function" then
+        model:ClearModel()
+    end
+
+    local modelShown = false
+
+    -- Prefer creature path first; some mount definitions carry a creature entry
+    -- where SetDisplayInfo succeeds but loads no model.
+    if fallbackCreatureId and fallbackCreatureId > 0 then
+        modelShown = TrySetCreature(fallbackCreatureId)
+    end
+
+    if not modelShown and displayId and displayId > 0 then
+        modelShown = TrySetDisplay(displayId)
+        if not modelShown then
+            modelShown = TrySetCreature(displayId)
+        end
+    end
+
+    if not modelShown and fallbackCreatureId and fallbackCreatureId > 0 then
+        modelShown = TrySetCreature(fallbackCreatureId)
+    end
+
+    if not modelShown then
+        if displayId or fallbackCreatureId then
+            ReportMountPreviewIssue(mountData, "model_apply_failed")
+        else
+            ReportMountPreviewIssue(mountData, "missing_model_data")
+        end
+    end
+
+    if not modelShown and type(model.SetUnit) == "function" then
         model:SetUnit("player")
-        -- Can't directly set mount model without displayId in 3.3.5a
-        -- So we'll just show a placeholder or the player
+        ResetModelPose()
+    end
+
+    -- Some clients load model assets asynchronously. Verify shortly after apply and
+    -- retry alternate model paths before giving up.
+    local verifyToken = (self._modelVerifyToken or 0) + 1
+    self._modelVerifyToken = verifyToken
+    local function VerifyModelLoaded()
+        if self._modelVerifyToken ~= verifyToken then
+            return
+        end
+        if self.selectedMount ~= mountData then
+            return
+        end
+        if HasLoadedModel() then
+            return
+        end
+
+        local recovered = false
+        if fallbackCreatureId and fallbackCreatureId > 0 then
+            recovered = TrySetCreature(fallbackCreatureId)
+        end
+        if not recovered and displayId and displayId > 0 then
+            recovered = TrySetDisplay(displayId)
+            if not recovered then
+                recovered = TrySetCreature(displayId)
+            end
+        end
+
+        if not recovered then
+            if type(model.SetUnit) == "function" then
+                model:SetUnit("player")
+                ResetModelPose()
+            end
+            if displayId or fallbackCreatureId then
+                ReportMountPreviewIssue(mountData, "model_async_load_failed")
+            else
+                ReportMountPreviewIssue(mountData, "missing_model_data")
+            end
+        end
+    end
+
+    if DC and type(DC.After) == "function" then
+        DC.After(0.12, VerifyModelLoaded)
+    else
+        VerifyModelLoaded()
     end
 
     -- Update summon button
@@ -718,7 +955,24 @@ function MountJournal:NextPage()
 end
 
 function MountJournal:OnSearchChanged(text)
-    self:UpdateMountList()
+    self._searchDebounceToken = (self._searchDebounceToken or 0) + 1
+    local token = self._searchDebounceToken
+
+    local function runSearch()
+        if token ~= self._searchDebounceToken then
+            return
+        end
+        if not self.frame or not self.frame:IsShown() then
+            return
+        end
+        self:UpdateMountList()
+    end
+
+    if DC and type(DC.After) == "function" then
+        DC.After(SEARCH_DEBOUNCE_SECONDS, runSearch)
+    else
+        runSearch()
+    end
 end
 
 -- ============================================================================

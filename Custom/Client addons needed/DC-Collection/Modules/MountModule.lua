@@ -77,6 +77,8 @@ function MountModule:GetFilteredMounts(filters)
     
     local definitions = self:GetMountDefinitions()
     local collection = self:GetMounts()
+    local hasSearch = filters.search and filters.search ~= ""
+    local searchLower = hasSearch and string.lower(filters.search) or nil
     
     for spellId, def in pairs(definitions) do
         local collected = collection[spellId] ~= nil
@@ -107,10 +109,12 @@ function MountModule:GetFilteredMounts(filters)
         end
         
         -- Search filter
-        if filters.search and filters.search ~= "" then
-            local searchLower = string.lower(filters.search)
-            local nameLower = string.lower(def.name or "")
-            if not string.find(nameLower, searchLower, 1, true) then
+        if hasSearch then
+            -- Cache lowercase name on the definition to avoid rebuilding it on every keypress.
+            if def._dcNameLower == nil then
+                def._dcNameLower = string.lower(def.name or "")
+            end
+            if not string.find(def._dcNameLower, searchLower, 1, true) then
                 include = false
             end
         end

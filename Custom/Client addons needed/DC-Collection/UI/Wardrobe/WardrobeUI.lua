@@ -515,16 +515,16 @@ function Wardrobe:CreateLeftPanel(parent)
     local disableTransmogBtn = CreateFrame("Button", nil, left, "UIPanelButtonTemplate")
     disableTransmogBtn:SetSize(110, 20)
     disableTransmogBtn:SetPoint("TOPLEFT", left, "TOPLEFT", 0, 0)
-    disableTransmogBtn:SetText("Disable Transmog")
+    disableTransmogBtn:SetText("Disable Appearances")
     disableTransmogBtn:SetScript("OnClick", function()
         Wardrobe.transmogDisabled = not Wardrobe.transmogDisabled
         if Wardrobe.transmogDisabled then
-            disableTransmogBtn:SetText("Enable Transmog")
+            disableTransmogBtn:SetText("Enable Appearances")
             if DC and DC.SendTransmogCommand then
                 DC:SendTransmogCommand("DISABLE_ALL")
             end
         else
-            disableTransmogBtn:SetText("Disable Transmog")
+            disableTransmogBtn:SetText("Disable Appearances")
             if DC and DC.SendTransmogCommand then
                 DC:SendTransmogCommand("ENABLE_ALL")
             end
@@ -818,7 +818,7 @@ function Wardrobe:CreateLeftPanel(parent)
                     local state = DC.transmogState or {}
                     local applied = state[tostring(eqSlot)] and tonumber(state[tostring(eqSlot)]) ~= 0
                     if applied then
-                        GameTooltip:AddLine("Transmogrified", 1, 0.82, 0)
+                        GameTooltip:AddLine("Appearance applied", 1, 0.82, 0)
                     end
                 else
                     GameTooltip:AddLine("No item equipped", 0.8, 0.8, 0.8)
@@ -1762,7 +1762,7 @@ function Wardrobe:ShowSlotContextMenu(slotDef)
     
     if hasTransmog then
         table.insert(menu, {
-            text = "Reset Transmog",
+            text = "Reset Appearance",
             notCheckable = true,
             func = function()
                 -- Send reset command to server

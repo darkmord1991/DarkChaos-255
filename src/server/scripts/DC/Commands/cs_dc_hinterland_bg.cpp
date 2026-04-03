@@ -7,6 +7,7 @@
 #include "Player.h"
 #include "OutdoorPvP/OutdoorPvPMgr.h"
 #include "OutdoorPvP/OutdoorPvPHL.h"
+#include "../HinterlandBG/hlbg_constants.h"
 #include <sstream>
 #include <algorithm>
 #include "DatabaseEnv.h"
@@ -160,7 +161,7 @@ public:
             uint8 aff = hl->GetActiveAffixCode();
             if (aff > 0)
             {
-                const char* aname = hl->GetAffixName(static_cast<OutdoorPvPHL::AffixType>(aff));
+                const char* aname = HinterlandBGConstants::GetAffixName(aff);
                 handler->PSendSysMessage("  Affix: {}", aname);
             }
         }
@@ -375,7 +376,7 @@ public:
         }
 
         uint8 code = hl->GetActiveAffixCode();
-        const char* name = hl->GetAffixName(static_cast<OutdoorPvPHL::AffixType>(code));
+        const char* name = HinterlandBGConstants::GetAffixName(code);
         handler->PSendSysMessage("|cffffd700Hinterland BG affix:|r {} ({})", name, (unsigned)code);
         handler->PSendSysMessage("  Enabled: {}  Weather: {}  Worldstate: {}  Announce: {}",
             hl->IsAffixEnabled()?"on":"off",

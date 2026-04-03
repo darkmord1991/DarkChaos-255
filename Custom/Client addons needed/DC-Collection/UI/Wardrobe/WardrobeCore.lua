@@ -280,8 +280,10 @@ end
 
 function Wardrobe:UpdateTransmogLoadingProgressUI(forceShow)
     local bar, text
+    local usingMainFrameBar = false
     if DC and DC.MainFrame and DC.MainFrame.topLoadBar and DC.MainFrame.topLoadText then
         bar, text = DC.MainFrame.topLoadBar, DC.MainFrame.topLoadText
+        usingMainFrameBar = true
     elseif self.frame and self.frame.loadBar and self.frame.loadText then
         bar, text = self.frame.loadBar, self.frame.loadText
     else
@@ -293,8 +295,27 @@ function Wardrobe:UpdateTransmogLoadingProgressUI(forceShow)
         return
     end
 
+    if type(DC.GetSyncProgressSnapshot) == "function" and type(DC.RefreshSyncProgressUI) == "function" then
+        local snapshot = DC:GetSyncProgressSnapshot()
+        if snapshot and snapshot.active then
+            DC:RefreshSyncProgressUI(true)
+            return
+        end
+    end
+
     local pending = DC._transmogPagingDelayFrame and DC._transmogPagingDelayFrame.pendingRequest
     local isLoading = (DC._transmogDefLoading and true or false) or (pending and true or false)
+
+    -- When rendering into the main collection frame, show this bar only on
+    -- wardrobe/transmog contexts to avoid implying mount/pet sync is in progress.
+    if usingMainFrameBar and not forceShow then
+        local activeTab = DC and DC.activeTab or nil
+        if activeTab ~= "wardrobe" and activeTab ~= "transmog" then
+            bar:Hide()
+            return
+        end
+    end
+
     if not isLoading and not forceShow then
         bar:Hide()
         return
@@ -312,11 +333,11 @@ function Wardrobe:UpdateTransmogLoadingProgressUI(forceShow)
         bar:SetMinMaxValues(0, total)
         bar:SetValue(math.min(loaded, total))
         local pct = math.floor((loaded / total) * 100)
-        text:SetText(string.format("Loading: %d/%d (%d%%)", loaded, total, pct))
+        text:SetText(string.format("Appearances Sync: %d/%d (%d%%)", loaded, total, pct))
     else
         bar:SetMinMaxValues(0, math.max(loaded, 1))
         bar:SetValue(math.max(loaded, 1))
-        text:SetText(string.format("Loading: %d (total unknown)", loaded))
+        text:SetText(string.format("Appearances Sync: %d (total unknown)", loaded))
     end
 end
 

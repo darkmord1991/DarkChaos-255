@@ -118,7 +118,7 @@ function DC:RegisterServerContextHandler(handler)
     if type(handler) ~= "function" then return false end
     table.insert(self._serverContextHandlers, handler)
     if self._serverContext then
-        pcall(handler, self._serverContext)
+        self:_InvokeHandlerSafe("server-context", "CORE", 0x14, handler, self._serverContext)
     end
     return true
 end
@@ -362,9 +362,9 @@ function DC:_CheckRequestTimeouts()
 end
 
 -- Maximum chunks allowed per message (security: prevent memory exhaustion)
-DC.MAX_CHUNKS_PER_MESSAGE = 200  -- Supports large collection/transmog syncs
+DC.MAX_CHUNKS_PER_MESSAGE = 2048  -- Supports large collection/transmog syncs
 -- Maximum JSON payload size (security: prevent parsing abuse)
-DC.MAX_JSON_PAYLOAD_SIZE = 131072  -- 128KB (supports large collection/transmog syncs)
+DC.MAX_JSON_PAYLOAD_SIZE = 524288  -- 512KB (supports large collection/transmog syncs)
 
 function DC:_CleanupChunkBuffers()
     if not self._chunkBuffers then
@@ -750,6 +750,67 @@ function DC:ClearLogs()
     self._pendingRequestsLegacy = {}
 end
 
+function DC:_InvokeHandlerSafe(handlerKind, module, opcode, handler, ...)
+    if type(handler) ~= "function" then
+        return false
+    end
+
+    local ok, err = pcall(handler, ...)
+    if not ok then
+        local errText = tostring(err or "unknown")
+        self:LogNetEvent("error", "handler", "Handler execution failed", {
+            kind = handlerKind,
+            module = module,
+            opcode = opcode,
+            error = errText,
+        })
+
+        if self._debug or self:GetSetting("chatOnError") then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                "|cffff4444[DC]|r Handler error (" .. tostring(handlerKind)
+                .. ") " .. tostring(module or "?")
+                .. " op=" .. tostring(opcode or "?")
+                .. ": " .. errText
+            )
+        end
+    end
+
+    return ok
+end
+
+function DC:_SendAddonWhisper(msg)
+    if type(msg) ~= "string" or msg == "" then
+        self:LogNetEvent("error", "send", "Attempted to send empty addon payload")
+        return false
+    end
+
+    if type(SendAddonMessage) ~= "function" then
+        self:LogNetEvent("error", "send", "SendAddonMessage API unavailable")
+        return false
+    end
+
+    local target = UnitName and UnitName("player")
+    if not target or target == "" then
+        self:LogNetEvent("error", "send", "Player target unavailable for addon whisper")
+        return false
+    end
+
+    local ok, err = pcall(SendAddonMessage, self.PREFIX, msg, "WHISPER", target)
+    if not ok then
+        self:LogNetEvent("error", "send", "SendAddonMessage failed", {
+            error = tostring(err or "unknown"),
+            size = string.len(msg),
+        })
+
+        if self._debug then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC]|r SendAddonMessage failed: " .. tostring(err))
+        end
+        return false
+    end
+
+    return true
+end
+
 function DC:RegisterHandler(module, opcode, handler)
     local key = module .. "_" .. tostring(opcode)
     if not self._handlers[key] then self._handlers[key] = {} end
@@ -856,7 +917,7 @@ function DC:Send(module, opcode, a1, a2, a3, a4, a5)
     if self._debug then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending: " .. msg)
     end
-    SendAddonMessage(self.PREFIX, msg, "WHISPER", UnitName("player"))
+    return self:_SendAddonWhisper(msg)
 end
 
 -- WoW 3.3.5a addon message size limit is 255 bytes
@@ -866,6 +927,11 @@ local CHUNK_HEADER_SIZE = 10  -- Reserve space for "99|99|" worst case
 
 -- Send a raw message with chunking support for messages > 255 bytes
 function DC:SendChunked(msg)
+    if type(msg) ~= "string" then
+        self:LogNetEvent("error", "send", "SendChunked received non-string payload")
+        return false
+    end
+
     local maxChunkDataSize = MAX_ADDON_MSG_SIZE - CHUNK_HEADER_SIZE
     
     if string.len(msg) <= MAX_ADDON_MSG_SIZE then
@@ -873,8 +939,7 @@ function DC:SendChunked(msg)
         if self._debug then
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Sending (no chunk): " .. string.sub(msg, 1, 80))
         end
-        SendAddonMessage(self.PREFIX, msg, "WHISPER", UnitName("player"))
-        return
+        return self:_SendAddonWhisper(msg)
     end
     
     -- Split into chunks
@@ -894,12 +959,24 @@ function DC:SendChunked(msg)
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r   Chunk " .. i .. "/" .. totalChunks .. ": " .. string.len(chunk) .. " bytes")
         end
         
-        SendAddonMessage(self.PREFIX, chunk, "WHISPER", UnitName("player"))
+        if not self:_SendAddonWhisper(chunk) then
+            return false
+        end
     end
+
+    return true
 end
 
 function DC:SendJSON(module, opcode, data)
     local json = self:EncodeJSON(data)
+    if type(json) ~= "string" then
+        self:LogNetEvent("error", "json", "Failed to encode JSON payload", {
+            module = module,
+            opcode = opcode,
+        })
+        return false
+    end
+
     local requestId = self:NextRequestId()
     local msg = module .. "|" .. tostring(opcode) .. "|RID:" .. tostring(requestId) .. "|J|" .. json
     
@@ -912,7 +989,7 @@ function DC:SendJSON(module, opcode, data)
     end
     
     -- Use chunked sending for large messages
-    self:SendChunked(msg)
+    return self:SendChunked(msg)
 end
 
 -- Standard request method - uses JSON format by default
@@ -920,13 +997,13 @@ end
 function DC:Request(module, opcode, data)
     if data == nil then
         -- Empty request - send minimal JSON object
-        self:SendJSON(module, opcode, {})
+        return self:SendJSON(module, opcode, {})
     elseif type(data) == "table" then
         -- Table data - send as JSON
-        self:SendJSON(module, opcode, data)
+        return self:SendJSON(module, opcode, data)
     else
         -- Simple value - wrap in object
-        self:SendJSON(module, opcode, { value = data })
+        return self:SendJSON(module, opcode, { value = data })
     end
 end
 
@@ -941,8 +1018,7 @@ function DC:SendMessage(moduleId, payload)
     if opcode == nil then
         return false
     end
-    self:SendJSON(moduleId, opcode, data)
-    return true
+    return self:SendJSON(moduleId, opcode, data)
 end
 
 -- Alias for Request
@@ -963,28 +1039,52 @@ local function EscapeJSONString(s)
     return s
 end
 
-function DC:EncodeJSON(val)
+local JSON_MAX_ENCODE_DEPTH = 48
+
+function DC:_EncodeJSONValue(val, seen, depth)
+    if depth > JSON_MAX_ENCODE_DEPTH then
+        self:LogNetEvent("error", "json", "JSON encode exceeded max nesting depth", {
+            depth = depth,
+        })
+        return "null"
+    end
+
     local t = type(val)
     if val == nil then return "null"
     elseif t == "boolean" then return val and "true" or "false"
     elseif t == "number" then return tostring(val)
     elseif t == "string" then return "\"" .. EscapeJSONString(val) .. "\""
     elseif t == "table" then
+        if seen[val] then
+            self:LogNetEvent("error", "json", "JSON encode cycle detected")
+            return "null"
+        end
+
+        seen[val] = true
         local parts = {}
         local isArr = (val[1] ~= nil)
         if isArr then
             for i = 1, #val do
-                table.insert(parts, self:EncodeJSON(val[i]))
+                table.insert(parts, self:_EncodeJSONValue(val[i], seen, depth + 1))
             end
+            seen[val] = nil
             return "[" .. table.concat(parts, ",") .. "]"
         else
             for k, v in pairs(val) do
-                table.insert(parts, "\"" .. EscapeJSONString(tostring(k)) .. "\":" .. self:EncodeJSON(v))
+                table.insert(parts,
+                    "\"" .. EscapeJSONString(tostring(k)) .. "\":"
+                    .. self:_EncodeJSONValue(v, seen, depth + 1)
+                )
             end
+            seen[val] = nil
             return "{" .. table.concat(parts, ",") .. "}"
         end
     end
     return "null"
+end
+
+function DC:EncodeJSON(val)
+    return self:_EncodeJSONValue(val, {}, 0)
 end
 
 function DC:DecodeJSON(str)
@@ -1170,7 +1270,13 @@ function DC:DecodeJSON(str)
         return nil
     end
     
-    return parseValue()
+    local result = parseValue()
+    skipWhitespace()
+    if pos <= len then
+        return nil
+    end
+
+    return result
 end
 
 DC.JSON = { encode = function(v) return DC:EncodeJSON(v) end, decode = function(s) return DC:DecodeJSON(s) end }
@@ -1790,8 +1896,43 @@ frame:SetScript("OnEvent", function()
                         
                         -- Build full key (with msgId if available)
                         local bufKey = msgId and (baseKey .. "_" .. msgId) or baseKey
-                        
+
                         local buf = DC._chunkBuffers[bufKey]
+
+                        -- Chunks can occasionally arrive before chunk 0; if that happened,
+                        -- we buffered them under baseKey without a msgId. Migrate/merge them
+                        -- once chunk 0 reveals the msgId to avoid splitting one message into
+                        -- multiple buffers.
+                        if msgId and bufKey ~= baseKey then
+                            local fallbackBuf = DC._chunkBuffers[baseKey]
+                            if fallbackBuf and fallbackBuf ~= buf then
+                                if not buf then
+                                    buf = fallbackBuf
+                                    buf.msgId = msgId
+                                    DC._chunkBuffers[bufKey] = buf
+                                else
+                                    buf.parts = buf.parts or {}
+                                    buf.seen = buf.seen or {}
+                                    for partIdx, partVal in pairs(fallbackBuf.parts or {}) do
+                                        if buf.parts[partIdx] == nil then
+                                            buf.parts[partIdx] = partVal
+                                        end
+                                    end
+                                    for seenKey, seenVal in pairs(fallbackBuf.seen or {}) do
+                                        if seenVal and not buf.seen[seenKey] then
+                                            buf.seen[seenKey] = true
+                                            buf.received = (buf.received or 0) + 1
+                                        end
+                                    end
+                                    if fallbackBuf.ts and (not buf.ts or fallbackBuf.ts > buf.ts) then
+                                        buf.ts = fallbackBuf.ts
+                                    end
+                                end
+
+                                DC._chunkBuffers[baseKey] = nil
+                            end
+                        end
+
                         -- Reset buffer if stale
                         local staleSec = tonumber(DC:GetSetting("chunkTimeoutSec")) or 10
                         if staleSec < 2 then staleSec = 2 end
@@ -1814,6 +1955,9 @@ frame:SetScript("OnEvent", function()
                             -- Use table.concat to avoid O(n^2) string growth and extra allocations.
                             payload = table.concat(buf.parts, "", 1, total)
                             DC._chunkBuffers[bufKey] = nil
+                            if bufKey ~= baseKey then
+                                DC._chunkBuffers[baseKey] = nil
+                            end
                             DC._chunkMsgIds[baseKey] = nil  -- Cleanup msgId lookup
                         else
                             -- Wait for more chunks
@@ -1850,12 +1994,12 @@ frame:SetScript("OnEvent", function()
                     local errHandlers = DC._errorHandlers[module]
                     if errHandlers then
                         for _, h in ipairs(errHandlers) do
-                            pcall(h, errCode, errMsg, opcode)
+                            DC:_InvokeHandlerSafe("module-error", module, opcode, h, errCode, errMsg, opcode)
                         end
                     end
                     -- Call global error handlers
                     for _, h in ipairs(DC._globalErrorHandlers) do
-                        pcall(h, module, errCode, errMsg, opcode)
+                        DC:_InvokeHandlerSafe("global-error", module, opcode, h, module, errCode, errMsg, opcode)
                     end
                     -- Default behavior: display error in chat (configurable)
                     DC:LogNetEvent("error", "server", module .. ": " .. tostring(errMsg or "Unknown error"), {
@@ -1888,6 +2032,22 @@ frame:SetScript("OnEvent", function()
                     end
                     local jsonStr = table.concat(jsonParts, "|")
                     local data = DC:DecodeJSON(jsonStr)
+
+                    if data == nil then
+                        local trimmed = string.gsub(jsonStr, "^%s+", "")
+                        trimmed = string.gsub(trimmed, "%s+$", "")
+                        if trimmed ~= "null" then
+                            DC:LogNetEvent("error", "json", "Failed to decode JSON payload", {
+                                module = module,
+                                opcode = opcode,
+                                size = string.len(jsonStr or ""),
+                            })
+                            if DC._debug then
+                                DEFAULT_CHAT_FRAME:AddMessage("|cffff4444[DC]|r JSON decode failed for " .. tostring(module) .. " opcode=" .. tostring(opcode) .. " size=" .. tostring(string.len(jsonStr or "")))
+                            end
+                            return
+                        end
+                    end
                     
                     -- Log response
                     DC:LogResponse(module, opcode, data, jsonStr, requestId)
@@ -1905,13 +2065,13 @@ frame:SetScript("OnEvent", function()
                                 DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler(s) found: " .. jsonKey .. " (" .. tostring(#jsonHandler) .. ")")
                             end
                             for _, _h in ipairs(jsonHandler) do
-                                pcall(_h, data, jsonStr)
+                                DC:_InvokeHandlerSafe("json", module, opcode, _h, data, jsonStr)
                             end
                         else
                             if DC._debug then
                                 DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. jsonKey)
                             end
-                            pcall(jsonHandler, data, jsonStr)
+                            DC:_InvokeHandlerSafe("json", module, opcode, jsonHandler, data, jsonStr)
                         end
                     else
                         -- Fall back to regular handler with decoded data
@@ -1922,12 +2082,14 @@ frame:SetScript("OnEvent", function()
                                 if DC._debug then
                                     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler(s) found: " .. key .. " (" .. tostring(#h) .. ")")
                                 end
-                                for _, handler in ipairs(h) do pcall(handler, data) end
+                                for _, handler in ipairs(h) do
+                                    DC:_InvokeHandlerSafe("decoded", module, opcode, handler, data)
+                                end
                             else
                                 if DC._debug then
                                     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00[DC]|r Handler found: " .. key)
                                 end
-                                pcall(h, data)
+                                DC:_InvokeHandlerSafe("decoded", module, opcode, h, data)
                             end
                         elseif DC._debug then
                             DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[DC]|r No handler for: " .. key)
@@ -1939,7 +2101,7 @@ frame:SetScript("OnEvent", function()
                     if modCallback then
                         -- Pass a payload similar to what the legacy API expects
                         local legacyPayload = { op = tonumber(opcode), data = data }
-                        pcall(modCallback, legacyPayload)
+                        DC:_InvokeHandlerSafe("module-callback", module, opcode, modCallback, legacyPayload)
                     end
                 else
                     -- Regular message - log it too
@@ -1958,14 +2120,14 @@ frame:SetScript("OnEvent", function()
                         end
                         for _, handler in ipairs(h) do
                             if type(handler) == 'function' then
-                                pcall(handler, unpack(handlerArgs))
+                                DC:_InvokeHandlerSafe("plain", module, opcode, handler, unpack(handlerArgs))
                             end
                         end
                     elseif type(h) == 'function' then
                         if DC._debug then
                             DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[DC]|r Handler found: " .. key)
                         end
-                        pcall(h, unpack(handlerArgs))
+                        DC:_InvokeHandlerSafe("plain", module, opcode, h, unpack(handlerArgs))
                     elseif DC._debug then
                         DEFAULT_CHAT_FRAME:AddMessage("|cffff6600[DC]|r No handler for: " .. key)
                     end
@@ -3176,14 +3338,14 @@ DC:RegisterHandler("CORE", 0x14, function(data)
         phaseMask = tonumber(data.phaseMask) or 1,
     }
     for _, handler in ipairs(DC._serverContextHandlers or {}) do
-        pcall(handler, DC._serverContext)
+        DC:_InvokeHandlerSafe("server-context", "CORE", 0x14, handler, DC._serverContext)
     end
 end)
 
 DC:RegisterHandler("CORE", 0x15, function(data)
     if type(data) ~= "table" then return end
     for _, handler in ipairs(DC._crossEventHandlers or {}) do
-        pcall(handler, data)
+        DC:_InvokeHandlerSafe("cross-event", "CORE", 0x15, handler, data)
     end
 end)
 

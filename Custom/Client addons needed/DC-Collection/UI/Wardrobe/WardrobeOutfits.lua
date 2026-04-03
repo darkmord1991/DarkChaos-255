@@ -614,8 +614,8 @@ function Wardrobe:SaveCurrentOutfit(name, overwriteId)
         elseif DC and type(DC.RequestTransmogState) == "function" then
             DC:RequestTransmogState()
         end
-        if DC and DC.Print then
-            DC:Print("Loading transmog state, retrying save...")
+            if DC and DC.Print then
+                DC:Print("Loading wardrobe state, retrying save...")
         end
         return
     end

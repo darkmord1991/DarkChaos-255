@@ -603,7 +603,7 @@ function DCInfoBar:EnsureDefaultWorldBosses()
         end
     end
 
-    for _, def in ipairs(DEFAULT_GIANT_ISLES_BOSSES) do
+    for _, def in ipairs(self.DEFAULT_WORLD_BOSSES or {}) do
         -- Ensure each configured spawnId exists. spawnId is the authoritative identity.
         local existing = existingBySpawnId[def.spawnId]
         if existing then

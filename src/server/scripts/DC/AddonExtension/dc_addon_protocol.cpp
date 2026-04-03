@@ -176,6 +176,7 @@ namespace DCAddon
         WorldPacket data;
         ChatHandler::BuildChatPacket(data, CHAT_MSG_WHISPER, LANG_ADDON, player, player, fullMsg);
         player->SendDirectMessage(&data);
+        g_ProtocolMetrics.messagesSent++;
     }
 
 }  // namespace DCAddon
@@ -410,8 +411,8 @@ static void LoadAddonConfig()
     s_AddonConfig.MinNPCMoveSecurity    = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.NPCMove.MinSecurity", 1);
 
     // Security limits (must match client-side DC.MAX_CHUNKS_PER_MESSAGE and DC.MAX_JSON_PAYLOAD_SIZE)
-    s_AddonConfig.MaxChunksPerMessage   = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxChunksPerMessage", 200);
-    s_AddonConfig.MaxJsonPayloadSize    = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxJsonPayloadSize", 131072);
+    s_AddonConfig.MaxChunksPerMessage   = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxChunksPerMessage", 2048);
+    s_AddonConfig.MaxJsonPayloadSize    = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxJsonPayloadSize", 524288);
     s_AddonConfig.MaxPendingChunks      = sConfigMgr->GetOption<uint32>("DC.AddonProtocol.Security.MaxPendingChunks", 5);
 
     // Set global flag for S2C logging (needed by Message::Send before config is accessible)
@@ -986,6 +987,19 @@ static void HandleBatch(Player* player, const DCAddon::ParsedMessage& msg)
         // Route through MessageRouter (excluding BATCH to prevent recursion)
         if (entry.module != DCAddon::Batch::MODULE)
         {
+            // Apply rate limiting per logical sub-message to avoid bypass via batching.
+            if (!ShouldBypassRateLimit(subMsg))
+            {
+                bool passedRateLimit = CheckRateLimit(player);
+                if (!passedRateLimit)
+                {
+                    uint8 droppedOpcode = ExtractOpcode(subMsg);
+                    LOG_WARN("module.dc", "[RateLimit] DROPPED batch sub-message from {}: module={}, opcode=0x{:02X}",
+                        player->GetName(), entry.module, droppedOpcode);
+                    continue;
+                }
+            }
+
             DCAddon::MessageRouter::Instance().Route(player, subMsg);
         }
     }
@@ -1338,18 +1352,35 @@ public:
         }
         catch (...)
         {
+            g_ProtocolMetrics.parseErrors++;
+            if (s_AddonConfig.EnableProtocolLogging)
+            {
+                LogProtocolErrorEvent(player, payload, "chunk_parse", "Malformed chunk header");
+            }
             return false;  // Not a valid chunk format
         }
 
         // Validate chunk parameters
         if (totalChunks == 0 || chunkIndex >= totalChunks)
+        {
+            g_ProtocolMetrics.parseErrors++;
+            if (s_AddonConfig.EnableProtocolLogging)
+            {
+                LogProtocolErrorEvent(player, payload, "chunk_bounds", "Invalid chunk index/total");
+            }
             return false;
+        }
 
         // Security limit: prevent memory exhaustion via excessive chunk count
         if (totalChunks > s_AddonConfig.MaxChunksPerMessage)
         {
+            g_ProtocolMetrics.parseErrors++;
             LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: totalChunks={} exceeds limit {}",
                 player->GetName(), totalChunks, s_AddonConfig.MaxChunksPerMessage);
+            if (s_AddonConfig.EnableProtocolLogging)
+            {
+                LogProtocolErrorEvent(player, payload, "chunk_limit", "Chunk count exceeds server limit");
+            }
             return false;
         }
 
@@ -1372,7 +1403,6 @@ public:
 
         // Store chunk with thread safety
         std::lock_guard<std::mutex> lock(s_ChunkedMessagesMutex);
-        auto& chunkedMsg = s_ChunkedMessages[accountId];
         if (chunkIndex == 0)
         {
             // Security: Check if adding this would exceed max pending chunks
@@ -1380,15 +1410,29 @@ public:
             if (s_ChunkedMessages.find(accountId) == s_ChunkedMessages.end() &&
                 s_ChunkedMessages.size() >= s_AddonConfig.MaxPendingChunks * 10)  // Global limit = per-account * 10
             {
+                g_ProtocolMetrics.parseErrors++;
                 LOG_WARN("module.dc", "[DC-CHUNK] player={}, REJECTED: global pending chunks limit reached ({})",
                     player->GetName(), s_ChunkedMessages.size());
+                if (s_AddonConfig.EnableProtocolLogging)
+                {
+                    LogProtocolErrorEvent(player, payload, "chunk_pending_limit", "Too many pending chunked messages");
+                }
                 return false;
             }
 
             // First chunk - reset buffer
-            chunkedMsg = DCAddon::ChunkedMessage();
+            s_ChunkedMessages[accountId] = DCAddon::ChunkedMessage();
             s_ChunkStartTimes[accountId] = GameTime::GetGameTime().count() * 1000;
         }
+
+        auto chunkIt = s_ChunkedMessages.find(accountId);
+        if (chunkIt == s_ChunkedMessages.end())
+        {
+            s_ChunkedMessages[accountId] = DCAddon::ChunkedMessage();
+            chunkIt = s_ChunkedMessages.find(accountId);
+        }
+
+        auto& chunkedMsg = chunkIt->second;
 
         bool complete = chunkedMsg.AddChunk(payload);
 
@@ -1423,6 +1467,7 @@ public:
 
         // Skip the "DC\t" prefix
         std::string rawPayload = msg.substr(3);  // Everything after "DC\t"
+        g_ProtocolMetrics.messagesReceived++;
 
         // Check if this is a chunked message that needs reassembly
         std::string reassembledPayload;
@@ -1446,8 +1491,26 @@ public:
         // Security limit: reject oversized payloads to prevent JSON parsing attacks
         if (payload.length() > s_AddonConfig.MaxJsonPayloadSize)
         {
+            g_ProtocolMetrics.parseErrors++;
             LOG_WARN("module.dc", "[DC-SECURITY] player={}, REJECTED: payload size {} exceeds limit {}",
                 player->GetName(), payload.length(), s_AddonConfig.MaxJsonPayloadSize);
+
+            if (s_AddonConfig.EnableProtocolLogging)
+            {
+                LogProtocolErrorEvent(player, payload, "payload_too_large", "Payload exceeds configured size limit");
+                UpdateProtocolStats(player, "CORE", true, false, true);
+            }
+
+            if (player && player->GetSession())
+            {
+                DCAddon::SendError(
+                    player,
+                    DCAddon::Module::CORE,
+                    "Payload too large",
+                    DCAddon::ErrorCode::BAD_FORMAT,
+                    DCAddon::Opcode::Core::SMSG_ERROR);
+            }
+
             msg.clear();
             return;
         }
@@ -1487,36 +1550,98 @@ public:
 
         // Register pending request if request ID is present
         DCAddon::ParsedMessage parsed(payload);
-        if (parsed.IsValid())
+        if (!parsed.IsValid())
         {
-            RegisterPendingRequest(player, parsed);
+            g_ProtocolMetrics.parseErrors++;
 
-            // Capture handshake caps even if CORE module is disabled
-            if (parsed.GetModule() == DCAddon::Module::CORE && parsed.GetOpcode() == DCAddon::Opcode::Core::CMSG_HANDSHAKE)
+            if (s_AddonConfig.EnableProtocolLogging)
             {
-                std::string clientVersionStr = NormalizeHandshakeVersionString(parsed);
-                auto clientVersion = DCAddon::ProtocolVersion::ParseClientVersion(clientVersionStr);
-                auto serverVersion = DCAddon::ProtocolVersion::GetServerVersion();
-                uint32 negotiatedCaps = clientVersion.capabilities & serverVersion.capabilities;
-                StoreClientCaps(player, clientVersionStr, clientVersion.capabilities, negotiatedCaps);
+                LogProtocolErrorEvent(player, payload, "bad_format", "Malformed addon message");
+                UpdateProtocolStats(player, moduleStr, true, false, true);
+                LogC2SMessage(player, payload, false, "Malformed addon message");
             }
+
+            DCAddon::SendError(
+                player,
+                DCAddon::Module::CORE,
+                "Invalid message format",
+                DCAddon::ErrorCode::BAD_FORMAT,
+                DCAddon::Opcode::Core::SMSG_ERROR);
+
+            msg.clear();
+            return;
         }
 
+        RegisterPendingRequest(player, parsed);
+
+        // Capture handshake caps even if CORE module is disabled
+        if (parsed.GetModule() == DCAddon::Module::CORE &&
+            parsed.GetOpcode() == DCAddon::Opcode::Core::CMSG_HANDSHAKE)
+        {
+            std::string clientVersionStr = NormalizeHandshakeVersionString(parsed);
+            auto clientVersion = DCAddon::ProtocolVersion::ParseClientVersion(clientVersionStr);
+            auto serverVersion = DCAddon::ProtocolVersion::GetServerVersion();
+            uint32 negotiatedCaps = clientVersion.capabilities & serverVersion.capabilities;
+            StoreClientCaps(player, clientVersionStr, clientVersion.capabilities, negotiatedCaps);
+        }
+
+        auto& router = DCAddon::MessageRouter::Instance();
+        bool moduleEnabled = router.IsModuleEnabled(parsed.GetModule());
+        bool hadRegisteredHandler =
+            router.HasHandler(parsed.GetModule(), parsed.GetOpcode());
+
         // Route the message
-        bool handled = DCAddon::MessageRouter::Instance().Route(player, payload);
+        bool handled = false;
+        bool handlerException = false;
+        try
+        {
+            handled = router.Route(player, payload);
+        }
+        catch (...)
+        {
+            handlerException = true;
+            g_ProtocolMetrics.handlerErrors++;
+
+            LOG_ERROR(
+                "module.dc",
+                "Unhandled exception while routing addon payload from {} (module={}, opcode=0x{:02X})",
+                player->GetName(),
+                parsed.GetModule(),
+                parsed.GetOpcode());
+
+            if (s_AddonConfig.EnableProtocolLogging)
+            {
+                LogProtocolErrorEvent(player, payload, "handler_exception", "Unhandled exception while routing addon message");
+            }
+
+            DCAddon::SendError(
+                player,
+                parsed.GetModule().empty() ? DCAddon::Module::CORE : parsed.GetModule(),
+                "Internal handler error",
+                DCAddon::ErrorCode::UNKNOWN,
+                DCAddon::Opcode::Core::SMSG_ERROR);
+        }
 
         // Log to database if protocol logging is enabled
         if (s_AddonConfig.EnableProtocolLogging && !moduleStr.empty())
         {
             std::string errorMsg;
-            if (!handled)
+            if (handlerException)
+                errorMsg = "Unhandled handler exception";
+            else if (!moduleEnabled)
+                errorMsg = "Module is disabled";
+            else if (!handled && hadRegisteredHandler)
+                errorMsg = "Handler execution failed";
+            else if (!handled)
                 errorMsg = "No handler for module/opcode";
 
             LogC2SMessage(player, payload, handled, errorMsg);
-            UpdateProtocolStats(player, moduleStr, true, false, !handled);  // request-side errors are tracked
+            UpdateProtocolStats(player, moduleStr, true, false, (handlerException || !handled));  // request-side errors are tracked
 
-            if (!handled)
+            if (!handled && !handlerException && moduleEnabled && !hadRegisteredHandler)
                 LogProtocolErrorEvent(player, payload, "unhandled", errorMsg);
+            else if (!handled && !handlerException && moduleEnabled && hadRegisteredHandler)
+                LogProtocolErrorEvent(player, payload, "handler_error", errorMsg);
         }
 
         if (handled)

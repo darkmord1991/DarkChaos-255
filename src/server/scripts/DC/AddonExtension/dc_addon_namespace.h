@@ -757,8 +757,30 @@ namespace DCAddon
             }
 
             _module = tokens[0];
+            if (_module.empty() || _module.size() > 8)
+            {
+                _valid = false;
+                return;
+            }
+
+            for (unsigned char c : _module)
+            {
+                if (!(std::isalnum(c) || c == '_'))
+                {
+                    _valid = false;
+                    return;
+                }
+            }
+
             try {
-                _opcode = static_cast<uint8>(std::stoi(tokens[1]));
+                int32 parsedOpcode = std::stoi(tokens[1]);
+                if (parsedOpcode < 0 || parsedOpcode > 255)
+                {
+                    _valid = false;
+                    return;
+                }
+
+                _opcode = static_cast<uint8>(parsedOpcode);
             } catch (...) {
                 _valid = false;
                 return;
@@ -1031,6 +1053,12 @@ namespace DCAddon
             _handlers[key] = handler;
         }
 
+        bool HasHandler(const std::string& module, uint8 opcode) const
+        {
+            std::string key = module + "_" + std::to_string(opcode);
+            return _handlers.find(key) != _handlers.end();
+        }
+
         // Route an incoming message to the appropriate handler
         bool Route(Player* player, const std::string& rawMessage)
         {
@@ -1078,7 +1106,32 @@ namespace DCAddon
                     return false;
                 }
 
-                it->second(player, msg);
+                try
+                {
+                    it->second(player, msg);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(
+                        "module.dc",
+                        "[MessageRouter] Handler exception: player={}, module={}, opcode=0x{:02X}",
+                        player ? player->GetName() : "NULL",
+                        msg.GetModule(),
+                        msg.GetOpcode());
+
+                    if (player && player->GetSession())
+                    {
+                        SendError(
+                            player,
+                            msg.GetModule(),
+                            "Internal handler error",
+                            ErrorCode::UNKNOWN,
+                            Opcode::Core::SMSG_ERROR);
+                    }
+
+                    return false;
+                }
+
                 return true;
             }
 
@@ -1190,8 +1243,20 @@ namespace DCAddon
             if (!std::getline(ss, indexStr, '|') || !std::getline(ss, totalStr, '|'))
                 return false;
 
-            uint32 index = std::stoul(indexStr);
-            uint32 total = std::stoul(totalStr);
+            uint32 index = 0;
+            uint32 total = 0;
+            try
+            {
+                index = static_cast<uint32>(std::stoul(indexStr));
+                total = static_cast<uint32>(std::stoul(totalStr));
+            }
+            catch (...)
+            {
+                return false;
+            }
+
+            if (total == 0 || index >= total)
+                return false;
 
             if (_totalChunks == 0)
             {
@@ -1208,8 +1273,11 @@ namespace DCAddon
             std::getline(ss, data);
 
             _chunks[index] = data;
-            _received[index] = true;
-            _receivedCount++;
+            if (!_received[index])
+            {
+                _received[index] = true;
+                _receivedCount++;
+            }
 
             return _receivedCount == _totalChunks;
         }

@@ -70,10 +70,6 @@ namespace MythicPlus
     // Send current week's affixes
     static void SendAffixes(Player* player)
     {
-        // Calculate current week number
-        uint32 weekStart = sMythicRuns->GetWeekStartTimestamp();
-        uint32 weekNumber = (weekStart / (7 * 24 * 60 * 60)) % 52;
-
         std::vector<MythicPlusRunManager::WeeklyAffixInfo> affixes;
         if (sConfigMgr->GetOption<bool>("MythicPlus.Affixes.Enabled", false))
             affixes = sMythicRuns->GetWeeklyAffixInfo(sMythicRuns->GetCurrentSeasonId());

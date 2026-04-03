@@ -192,6 +192,114 @@ local function ResolveMountPreviewDisplayId(item)
         ToPositiveNumber(def.creatureID)
 end
 
+local function ResolveMountPreviewCreatureId(item)
+    if type(item) ~= "table" then
+        return nil
+    end
+
+    local spellId =
+        ToPositiveNumber(item.id) or
+        ToPositiveNumber(item.spellId) or
+        ToPositiveNumber(item.spell_id)
+
+    if item.collected then
+        local companionCreatureId = GetMountCompanionDisplayIdBySpell(spellId)
+        if companionCreatureId then
+            return companionCreatureId
+        end
+    end
+
+    local def = item.definition or {}
+    return
+        ToPositiveNumber(def.creatureId) or
+        ToPositiveNumber(def.creature_id) or
+        ToPositiveNumber(def.creatureID) or
+        ToPositiveNumber(def.entryId) or
+        ToPositiveNumber(def.entry_id) or
+        ToPositiveNumber(def.entry) or
+        ToPositiveNumber(item.creatureId) or
+        ToPositiveNumber(item.creature_id) or
+        ToPositiveNumber(item.creatureID)
+end
+
+local function HasLoadedModel(model)
+    if not model or type(model.GetModel) ~= "function" then
+        return true
+    end
+
+    local currentModel = model:GetModel()
+    return currentModel ~= nil and currentModel ~= ""
+end
+
+local function TrySetModelById(model, modelId)
+    local resolvedId = ToPositiveNumber(modelId)
+    if not model or not resolvedId then
+        return false
+    end
+
+    if type(model.SetDisplayInfo) == "function" then
+        local okDisplay = pcall(model.SetDisplayInfo, model, resolvedId)
+        if okDisplay then
+            return true
+        end
+    end
+
+    if type(model.SetCreature) == "function" then
+        local okCreature = pcall(model.SetCreature, model, resolvedId)
+        if okCreature then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function ReportMountPreviewIssue(item, reason)
+    if not DC or type(item) ~= "table" then
+        return
+    end
+
+    local spellId =
+        ToPositiveNumber(item.id) or
+        ToPositiveNumber(item.spellId) or
+        ToPositiveNumber(item.spell_id)
+    local key = string.format("%s:%s", tostring(spellId or item.id or "?"), tostring(reason or "unknown"))
+
+    DC._mountPreviewIssueSeen = DC._mountPreviewIssueSeen or {}
+    if DC._mountPreviewIssueSeen[key] then
+        return
+    end
+    DC._mountPreviewIssueSeen[key] = true
+
+    local message = string.format("Mount preview issue: %s (spellId=%s, name=%s)",
+        tostring(reason or "unknown"),
+        tostring(spellId or "?"),
+        tostring(item.name or "?"))
+
+    if type(DC.Debug) == "function" then
+        DC:Debug(message)
+    end
+
+    if type(DC.LogNetEvent) == "function" then
+        DC:LogNetEvent("warn", "mount", message, {
+            spellId = spellId,
+            name = item.name,
+            reason = reason,
+        })
+    end
+
+    local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+    local last = tonumber(DC._lastMountPreviewIssuePrintAt or 0) or 0
+    if now <= 0 or (now - last) >= 6 then
+        if now > 0 then
+            DC._lastMountPreviewIssuePrintAt = now
+        end
+        if type(DC.Print) == "function" then
+            DC:Print("|cffffcc00[Mount Preview]|r Some mounts could not be previewed. Use /dcc netlog 40 for details.")
+        end
+    end
+end
+
 function DC:ResolveDefinitionIcon(collType, id, def)
     if def and def.icon and def.icon ~= "" then
         return def.icon
@@ -505,7 +613,7 @@ function DC:CreateTabBar(parent)
         { key = "overview",     text = "My Collection",       icon = "Interface\\Icons\\INV_Misc_Book_09" },
         { key = "wardrobe",     text = "Wardrobe",            icon = "Interface\\Icons\\INV_Chest_Cloth_17" },
         { key = "mounts",       text = L["TAB_MOUNTS"] or "Mounts",       icon = "Interface\\Icons\\Ability_Mount_RidingHorse" },
-        { key = "pets",         text = L["TAB_PETS"] or "Companions",   icon = "Interface\\Icons\\INV_Box_PetCarrier_01" },
+        { key = "pets",         text = L["TAB_PETS"] or "Pets",   icon = "Interface\\Icons\\INV_Box_PetCarrier_01" },
         { key = "heirlooms",    text = L["TAB_HEIRLOOMS"] or "Heirlooms",    icon = "Interface\\Icons\\INV_Sword_43" },
         { key = "titles",       text = L["TAB_TITLES"] or "Titles",       icon = "Interface\\Icons\\INV_Scroll_11" },
         { key = "achievements", text = L["TAB_ACHIEVEMENTS"] or "Achievements", icon = "Interface\\Icons\\Achievement_General" },
@@ -1220,9 +1328,14 @@ function DC:ClearDetailsPanel()
 end
 
 function DC:UpdateMountPreview(item)
-    if not self.MainFrame or not self.MainFrame.Content or not self.MainFrame.Content.mountPreview then return end
+    if not self.MainFrame or not self.MainFrame.Content or
+        not self.MainFrame.Content.mountPreview then
+        return
+    end
+
     local p = self.MainFrame.Content.mountPreview
-    
+    p._modelVerifyToken = (p._modelVerifyToken or 0) + 1
+
     if not item then
         p.info.name:SetText("Select a Mount")
         p.info.source:SetText("")
@@ -1232,19 +1345,17 @@ function DC:UpdateMountPreview(item)
         p.favBtn:Hide()
         return
     end
-    
+
     local r, g, b = GetRarityColor(self, item.rarity or 1)
     p.info.name:SetText(item.name or "Unknown")
     p.info.name:SetTextColor(r, g, b)
-    
+
     local sourceText = item.sourceText or self:FormatSource(item.source)
     p.info.source:SetText(sourceText or "")
-    
+
     p.info.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-    
-    -- Model
+
     p.model:ClearModel()
-    -- Reset interactive zoom/rotation so new selections don't inherit odd camera state.
     p.model.zoom = 0
     p.model.rotation = 0
     p.model.cameraDistance = 1.6
@@ -1258,6 +1369,7 @@ function DC:UpdateMountPreview(item)
     p.model._dcModelScaleStep = 0.08
     p.model._dcUseModelScaleZoom = false
     p.model._dcBaseDistanceForScale = 1.6
+
     if p.model.SetPosition then
         p.model:SetPosition(0, 0, 0)
     end
@@ -1265,93 +1377,212 @@ function DC:UpdateMountPreview(item)
         pcall(function() p.model:SetModelScale(1.0) end)
     end
 
-    -- Toggle between showing the mount model and the player's model.
-    -- Note: 3.3.5a cannot render "player mounted on the mount" in this simple preview;
-    -- this is a pragmatic toggle so the checkbox has an effect.
-    if self.showPlayerInMountPreview then
-        if p.model.SetUnit then
-            p.model:SetUnit("player")
-            -- Show the equipped character (not naked).
+    local function ResetModelPose()
+        p.model.zoom = 0
+        p.model.rotation = 0
+        if p.model.SetPosition then
+            p.model:SetPosition(0, 0, 0)
+        end
+        if p.model.SetFacing then
+            p.model:SetFacing(0)
+        end
+    end
+
+    local function ConfigureCreatureZoom()
+        p.model._dcUseSimpleCreatureZoom = true
+        p.model._dcDefaultModelScale = 0.85
+        p.model._dcModelScale = p.model._dcDefaultModelScale
+        p.model._dcMinModelScale = 0.45
+        p.model._dcMaxModelScale = 1.75
+        p.model.baseCamDistanceScale = 1.0
+        p.model._dcDefaultCamDist = 1.0
+        p.model.cameraDistance = p.model._dcDefaultCamDist
+        p.model._dcCameraId = 0
+        p.model._dcMinCamDist = 0.8
+        p.model._dcMaxCamDist = 4.8
+        p.model._dcCamStep = 0.15
+        p.model._dcUseModelScaleZoom = false
+        p.model._dcBaseDistanceForScale = p.model._dcDefaultCamDist
+
+        if p.model.SetModelScale then
+            pcall(function()
+                p.model:SetModelScale(p.model._dcModelScale or 1.0)
+            end)
+        end
+        p.model._dcPendingCameraApply = 0
+    end
+
+    local function ConfigurePlayerCamera()
+        p.model.baseCamDistanceScale = 3.4
+        p.model._dcDefaultCamDist = 2.6
+        p.model.cameraDistance = p.model._dcDefaultCamDist
+        p.model._dcCameraId = 0
+        p.model._dcMinCamDist = 1.4
+        p.model._dcMaxCamDist = 6.5
+        p.model._dcCamStep = 0.20
+        p.model._dcUseSimpleCreatureZoom = false
+        p.model._dcUseModelScaleZoom = false
+        p.model._dcBaseDistanceForScale = p.model._dcDefaultCamDist
+
+        ResetModelPose()
+        ApplyStableModelCamera(p.model)
+        p.model._dcPendingCameraApply = 1
+    end
+
+    local function TrySetCreature(modelId)
+        local resolvedId = ToPositiveNumber(modelId)
+        if not resolvedId or type(p.model.SetCreature) ~= "function" then
+            return false
+        end
+
+        local ok = pcall(p.model.SetCreature, p.model, resolvedId)
+        if ok then
+            ResetModelPose()
+            return true
+        end
+
+        return false
+    end
+
+    local function TrySetDisplay(displayInfoId)
+        local resolvedId = ToPositiveNumber(displayInfoId)
+        if not resolvedId or type(p.model.SetDisplayInfo) ~= "function" then
+            return false
+        end
+
+        local ok = pcall(p.model.SetDisplayInfo, p.model, resolvedId)
+        if ok then
+            ResetModelPose()
+            return true
+        end
+
+        return false
+    end
+
+    local function ApplyMountModel(displayId, creatureId)
+        local modelShown = false
+
+        if creatureId then
+            modelShown = TrySetCreature(creatureId)
+        end
+
+        if not modelShown and displayId then
+            modelShown = TrySetDisplay(displayId)
+            if not modelShown then
+                modelShown = TrySetCreature(displayId)
+            end
+        end
+
+        if not modelShown and creatureId then
+            modelShown = TrySetCreature(creatureId)
+        end
+
+        return modelShown
+    end
+
+    local displayId = ResolveMountPreviewDisplayId(item)
+    local creatureId = ResolveMountPreviewCreatureId(item)
+    local renderedPlayer = false
+
+    if self.showPlayerInMountPreview and type(p.model.SetUnit) == "function" then
+        local okSetUnit = pcall(p.model.SetUnit, p.model, "player")
+        if okSetUnit then
+            renderedPlayer = true
             if p.model.Dress then
                 p.model:Dress()
             end
             if p.model.SetPortraitZoom then
                 p.model:SetPortraitZoom(0)
             end
-            -- Player models: use a wider zoom-out range and avoid portrait-style cameras.
-            p.model.baseCamDistanceScale = 3.4
-            p.model._dcDefaultCamDist = 2.6
-            p.model.cameraDistance = p.model._dcDefaultCamDist
-            p.model._dcCameraId = 0
-            p.model._dcMinCamDist = 1.4
-            p.model._dcMaxCamDist = 6.5
-            p.model._dcCamStep = 0.20
-            p.model._dcUseSimpleCreatureZoom = false
-            p.model._dcUseModelScaleZoom = false
-            p.model._dcBaseDistanceForScale = p.model._dcDefaultCamDist
-            if p.model.SetPosition then
-                p.model:SetPosition(0, 0, 0)
-            end
-            if p.model.SetFacing then
-                p.model:SetFacing(0)
-            end
-            ApplyStableModelCamera(p.model)
-            p.model._dcPendingCameraApply = 1
-        end
-        -- Still update buttons below.
-    else
-        local displayId = ResolveMountPreviewDisplayId(item)
-
-        if displayId then
-            if p.model.SetCreature then
-                p.model:SetCreature(displayId)
-            elseif p.model.SetDisplayInfo then
-                p.model:SetDisplayInfo(displayId)
-            end
-            -- Blizzard-like companion preview: stable creature model + scale-based zoom.
-            p.model._dcUseSimpleCreatureZoom = true
-            p.model._dcDefaultModelScale = 0.85
-            p.model._dcModelScale = p.model._dcDefaultModelScale
-            p.model._dcMinModelScale = 0.45
-            p.model._dcMaxModelScale = 1.75
-            p.model.baseCamDistanceScale = 1.0
-            p.model._dcDefaultCamDist = 1.0
-            p.model.cameraDistance = p.model._dcDefaultCamDist
-            p.model._dcCameraId = 0
-            p.model._dcMinCamDist = 0.8
-            p.model._dcMaxCamDist = 4.8
-            p.model._dcCamStep = 0.15
-            p.model._dcUseModelScaleZoom = false
-            p.model._dcBaseDistanceForScale = p.model._dcDefaultCamDist
-        else
-            -- If no valid display ID is available, avoid showing a broken head close-up.
-            p.model:ClearModel()
-        end
-
-        if p.model._dcUseSimpleCreatureZoom then
-            if p.model.SetModelScale then
-                pcall(function()
-                    p.model:SetModelScale(p.model._dcModelScale or 1.0)
-                end)
-            end
-            p.model._dcPendingCameraApply = 0
-        else
-            if p.model.SetPosition then
-                p.model:SetPosition(0, 0, 0)
-            end
-            if p.model.SetFacing then
-                p.model:SetFacing(0)
-            end
-            if p.model.SetCamera then
-                pcall(function()
-                    p.model:SetCamera(0)
-                end)
-            end
-            p.model._dcPendingCameraApply = 0
+            ConfigurePlayerCamera()
         end
     end
-    
-    -- Buttons
+
+    if renderedPlayer then
+        local verifyToken = p._modelVerifyToken
+        local function VerifyPlayerModelLoaded()
+            if p._modelVerifyToken ~= verifyToken then
+                return
+            end
+
+            local selected = self.selectedItem
+            if not selected or tostring(selected.id or "") ~= tostring(item.id or "") then
+                return
+            end
+
+            if HasLoadedModel(p.model) then
+                return
+            end
+
+            local recovered = ApplyMountModel(displayId, creatureId)
+            if recovered then
+                ConfigureCreatureZoom()
+                return
+            end
+
+            p.model:ClearModel()
+            if displayId or creatureId then
+                ReportMountPreviewIssue(item, "player_model_apply_failed")
+            else
+                ReportMountPreviewIssue(item, "missing_model_data")
+            end
+        end
+
+        if type(self.After) == "function" then
+            self.After(0.12, VerifyPlayerModelLoaded)
+        else
+            VerifyPlayerModelLoaded()
+        end
+    else
+        local modelShown = ApplyMountModel(displayId, creatureId)
+
+        if modelShown then
+            ConfigureCreatureZoom()
+        else
+            p.model:ClearModel()
+            if displayId or creatureId then
+                ReportMountPreviewIssue(item, "model_apply_failed")
+            else
+                ReportMountPreviewIssue(item, "missing_model_data")
+            end
+        end
+
+        local verifyToken = p._modelVerifyToken
+        local function VerifyModelLoaded()
+            if p._modelVerifyToken ~= verifyToken then
+                return
+            end
+
+            local selected = self.selectedItem
+            if not selected or tostring(selected.id or "") ~= tostring(item.id or "") then
+                return
+            end
+
+            if HasLoadedModel(p.model) then
+                return
+            end
+
+            local recovered = ApplyMountModel(displayId, creatureId)
+            if recovered then
+                ConfigureCreatureZoom()
+                return
+            end
+
+            p.model:ClearModel()
+            if displayId or creatureId then
+                ReportMountPreviewIssue(item, "model_async_load_failed")
+            else
+                ReportMountPreviewIssue(item, "missing_model_data")
+            end
+        end
+
+        if type(self.After) == "function" then
+            self.After(0.12, VerifyModelLoaded)
+        else
+            VerifyModelLoaded()
+        end
+    end
+
     if item.collected then
         p.summonBtn:Enable()
         p.summonBtn:SetText(L["SUMMON"] or "Summon")
@@ -1359,7 +1590,7 @@ function DC:UpdateMountPreview(item)
         p.summonBtn:Disable()
         p.summonBtn:SetText(L["NOT_COLLECTED"] or "Not Collected")
     end
-    
+
     p.favBtn:Show()
     if item.is_favorite then
         p.favBtn:SetNormalTexture("Interface\\Icons\\Achievement_GuildPerk_HappyHour")
@@ -1367,7 +1598,7 @@ function DC:UpdateMountPreview(item)
             p.favBtn:GetNormalTexture():SetDesaturated(false)
         end
     else
-        p.favBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Star_01") -- Or empty star
+        p.favBtn:SetNormalTexture("Interface\\Icons\\INV_Misc_Star_01")
         if p.favBtn:GetNormalTexture() then
             p.favBtn:GetNormalTexture():SetDesaturated(true)
         end
@@ -1589,15 +1820,21 @@ function DC:UpdateDetailsPanel(item)
                 end
                 model:SetCamera(0)
             elseif (collType == "mounts" or collType == "pets") and displayId and displayId > 0 then
-                if model.SetCreature then
-                    model:SetCreature(displayId)
-                elseif model.SetDisplayInfo then
-                    model:SetDisplayInfo(displayId)
+                local appliedModel = TrySetModelById(model, displayId)
+                if appliedModel then
+                    model:SetCamera(0)
+                else
+                    modelPanel:Hide()
+                    return
                 end
-                model:SetCamera(0)
-            elseif displayId and displayId > 0 and model.SetDisplayInfo then
-                model:SetDisplayInfo(displayId)
-                model:SetCamera(0)
+            elseif displayId and displayId > 0 then
+                local appliedModel = TrySetModelById(model, displayId)
+                if appliedModel then
+                    model:SetCamera(0)
+                else
+                    modelPanel:Hide()
+                    return
+                end
             elseif collType == "mounts" then
                 -- If we don't have a display ID, we can't show the mount.
                 modelPanel:Hide()
@@ -1794,6 +2031,10 @@ function DC:ShowMainFrame()
     
     self.MainFrame:Show()
 
+    if type(self.RefreshSyncProgressUI) == "function" then
+        self:RefreshSyncProgressUI(false)
+    end
+
     -- If we open very early on login, the protocol may not be ready yet.
     -- Kick a short retry loop so data appears without requiring re-open.
     if type(self.RequestInitialDataWithRetry) == "function" then
@@ -1903,6 +2144,22 @@ function DC:SelectTab(tabKey)
         content.mountList:Show()
         content.mountPreview:Show()
 
+        -- Cached sessions can skip heavy initial sync, which may leave stale mount
+        -- definitions after server-side fixes. Refresh mounts periodically on tab open.
+        do
+            local now = (type(GetTime) == "function" and GetTime()) or (type(time) == "function" and time()) or 0
+            local last = tonumber(self._lastMountDefsRefreshAt or 0) or 0
+            if now <= 0 or (now - last) >= 20 then
+                self._lastMountDefsRefreshAt = now
+                if type(self.RequestDefinitions) == "function" then
+                    self:RequestDefinitions("mounts", 0)
+                end
+                if type(self.RequestCollection) == "function" then
+                    self:RequestCollection("mounts")
+                end
+            end
+        end
+
         if footer then
             if footer.mountFavBtn then footer.mountFavBtn:Show() end
             if footer.mountSummonBtn then footer.mountSummonBtn:Show() end
@@ -1998,8 +2255,14 @@ function DC:RefreshCurrentTab()
     end
     
     self:UpdateHeader()
-    
-    if self.activeTab == "mounts" then
+
+    if self.activeTab == "overview" then
+        -- Overview is driven by MyCollectionFrame stats/recent widgets,
+        -- not by collection definitions/collections requests.
+        if DC.MyCollection and type(DC.MyCollection.Update) == "function" then
+            DC.MyCollection:Update()
+        end
+    elseif self.activeTab == "mounts" then
         self:PopulateMountList()
     elseif self.activeTab == "pets" then
         if DC.PetJournal then
@@ -2258,6 +2521,23 @@ function DC:PopulateMountList()
     self.MainFrame.Footer.pageInfo:SetText(string.format("Page %d of %d", self.currentPage, totalPages))
     SetWidgetEnabled(self.MainFrame.Footer.prevBtn, self.currentPage > 1)
     SetWidgetEnabled(self.MainFrame.Footer.nextBtn, self.currentPage < totalPages)
+
+    if self.selectedItem and self.selectedItem.type ~= "mounts" then
+        self.selectedItem = nil
+    end
+
+    if self.selectedItem then
+        local selectedId = tostring(self.selectedItem.id or "")
+        local matched = nil
+        for _, listed in ipairs(items) do
+            if tostring(listed.id or "") == selectedId then
+                matched = listed
+                break
+            end
+        end
+
+        self.selectedItem = matched
+    end
     
     -- Update preview if nothing selected
     if not self.selectedItem and items[1] then
@@ -2274,6 +2554,13 @@ end
 
 function DC:PopulateGrid()
     if not self.MainFrame then return end
+
+    -- Overview/achievements/wardrobe do not use the generic grid data model.
+    -- Guard against accidental calls from generic refresh hooks.
+    local collType = self.activeTab
+    if collType == "overview" or collType == "achievements" or collType == "wardrobe" then
+        return
+    end
     
     local scrollChild = self.MainFrame.Content.scrollChild
     
@@ -2292,7 +2579,6 @@ function DC:PopulateGrid()
     local items = self:GetFilteredItems()
     
     -- Check if we're still loading data
-    local collType = self.activeTab
     if collType ~= "shop" and #items == 0 then
         local defs = self.definitions[collType] or {}
         local defCount = 0
@@ -2306,7 +2592,7 @@ function DC:PopulateGrid()
             end
             
             if self._transmogDefLoading and collType == "transmog" then
-                scrollChild.loadingText:SetText("Loading transmog definitions...")
+                scrollChild.loadingText:SetText("Loading wardrobe appearances...")
             else
                 scrollChild.loadingText:SetText("Loading " .. collType .. " data...")
             end

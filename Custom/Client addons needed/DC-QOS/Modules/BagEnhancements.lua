@@ -87,6 +87,12 @@ local bagProxies = {}   -- [bagID] = Frame
 local itemButtons = {}  -- [bagID][slot] = Button
 local newItems = {}     -- [bag:slot] = time
 local searchBoxes = {}  -- [frameName] = EditBox
+local activeSortState = nil
+local LayoutFrame
+
+local SORT_BUTTON_TEXT = "Sort"
+local SORT_BUSY_TEXT = "Busy"
+local SORT_STEP_DELAY = 0.05
 
 -- ============================================================
 -- Helper Functions
@@ -117,6 +123,315 @@ local function NormalizeSearchText(text)
     text = text:gsub("^%s+", "")
     text = text:gsub("%s+$", "")
     return text
+end
+
+local function CursorHasPayload()
+    if GetCursorInfo then
+        return GetCursorInfo() ~= nil
+    end
+
+    if CursorHasItem then
+        return CursorHasItem()
+    end
+
+    return false
+end
+
+local function GetBagFamilyMask(bag)
+    local _, family = GetContainerNumFreeSlots(bag)
+    return tonumber(family) or 0
+end
+
+local function GetItemIdFromLink(link)
+    if not link then return 0 end
+    return tonumber(string.match(link, "item:(%d+)")) or 0
+end
+
+local function GetSortRecord(bag, slot)
+    local texture, count, locked, quality, readable, lootable, link =
+        GetContainerItemInfo(bag, slot)
+
+    if not link then
+        link = GetContainerItemLink(bag, slot)
+    end
+
+    if not texture then
+        return nil
+    end
+
+    local itemName, itemQuality, itemLevel, itemType, itemSubType, equipLoc
+    if link then
+        itemName, _, itemQuality, itemLevel, _, itemType, itemSubType,
+            _, equipLoc = GetItemInfo(link)
+    end
+
+    if (not quality or quality < 0) and itemQuality then
+        quality = itemQuality
+    end
+
+    return {
+        bag = bag,
+        slot = slot,
+        count = count or 1,
+        equipLoc = (equipLoc and _G[equipLoc]) or equipLoc or "",
+        itemId = GetItemIdFromLink(link),
+        itemLevel = itemLevel or 0,
+        itemSubType = itemSubType or "",
+        itemType = itemType or "",
+        link = link,
+        locked = locked,
+        name = itemName or link or "",
+        quality = quality or -1,
+    }
+end
+
+local function CompareSortRecords(left, right)
+    if not left then return false end
+    if not right then return true end
+
+    if left.quality ~= right.quality then
+        return left.quality > right.quality
+    end
+
+    if left.itemType ~= right.itemType then
+        return left.itemType < right.itemType
+    end
+
+    if left.itemSubType ~= right.itemSubType then
+        return left.itemSubType < right.itemSubType
+    end
+
+    if left.equipLoc ~= right.equipLoc then
+        return left.equipLoc < right.equipLoc
+    end
+
+    if left.itemLevel ~= right.itemLevel then
+        return left.itemLevel > right.itemLevel
+    end
+
+    if left.name ~= right.name then
+        return left.name < right.name
+    end
+
+    if left.count ~= right.count then
+        return left.count > right.count
+    end
+
+    if left.itemId ~= right.itemId then
+        return left.itemId < right.itemId
+    end
+
+    if left.bag ~= right.bag then
+        return left.bag < right.bag
+    end
+
+    return left.slot < right.slot
+end
+
+local function BuildSortGroups(frameDefName)
+    local def = FRAMES[frameDefName]
+    if not def then return {} end
+
+    local groups = {}
+    local groupsByFamily = {}
+
+    for _, bag in ipairs(def.bags) do
+        local numSlots = GetContainerNumSlots(bag)
+        if numSlots and numSlots > 0 then
+            local family = GetBagFamilyMask(bag)
+
+            if not groupsByFamily[family] then
+                groupsByFamily[family] = {}
+                tinsert(groups, groupsByFamily[family])
+            end
+
+            for slot = 1, numSlots do
+                tinsert(groupsByFamily[family], {
+                    bag = bag,
+                    slot = slot,
+                })
+            end
+        end
+    end
+
+    return groups
+end
+
+local function GroupHasLockedItems(group)
+    for _, slotRef in ipairs(group) do
+        local record = GetSortRecord(slotRef.bag, slotRef.slot)
+        if record and record.locked then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function MoveOrSwapSlots(targetSlot, sourceSlot)
+    if not targetSlot or not sourceSlot then return true end
+    if targetSlot.bag == sourceSlot.bag and targetSlot.slot == sourceSlot.slot then
+        return true
+    end
+
+    local targetHasItem = GetContainerItemInfo(targetSlot.bag, targetSlot.slot)
+    local sourceHasItem = GetContainerItemInfo(sourceSlot.bag, sourceSlot.slot)
+
+    if not sourceHasItem then
+        return true
+    end
+
+    if ClearCursor then
+        ClearCursor()
+    end
+
+    PickupContainerItem(sourceSlot.bag, sourceSlot.slot)
+    if not CursorHasPayload() then
+        return false
+    end
+
+    PickupContainerItem(targetSlot.bag, targetSlot.slot)
+    if targetHasItem and CursorHasPayload() then
+        PickupContainerItem(sourceSlot.bag, sourceSlot.slot)
+    end
+
+    if CursorHasPayload() and ClearCursor then
+        ClearCursor()
+    end
+
+    return not CursorHasPayload()
+end
+
+local function UpdateSortButtons()
+    for frameName, frame in pairs(frames) do
+        local button = frame and frame.sortButton
+        if button then
+            local isActive = activeSortState and activeSortState.frameDefName == frameName
+            button:SetText(isActive and SORT_BUSY_TEXT or SORT_BUTTON_TEXT)
+
+            if activeSortState then
+                button:Disable()
+            else
+                button:Enable()
+            end
+        end
+    end
+end
+
+local function FinishBagSort(message)
+    local frameDefName = activeSortState and activeSortState.frameDefName
+
+    activeSortState = nil
+    UpdateSortButtons()
+
+    if frameDefName and frames[frameDefName] and frames[frameDefName]:IsShown() then
+        LayoutFrame(frameDefName)
+    end
+
+    if message then
+        addon:Print(message, true)
+    end
+end
+
+local function ContinueBagSort()
+    local state = activeSortState
+    if not state then return end
+
+    while state do
+        if state.groupIndex > #state.groups then
+            local message = nil
+            if state.swapCount == 0 then
+                message = "Bags are already sorted."
+            end
+            FinishBagSort(message)
+            return
+        end
+
+        local group = state.groups[state.groupIndex]
+        if GroupHasLockedItems(group) then
+            state.lockRetryCount = (state.lockRetryCount or 0) + 1
+            if state.lockRetryCount > 40 then
+                FinishBagSort("Cannot sort while items are locked.")
+                return
+            end
+
+            addon:DelayedCall(SORT_STEP_DELAY, ContinueBagSort)
+            return
+        end
+
+        state.lockRetryCount = 0
+
+        if state.slotIndex >= #group then
+            state.groupIndex = state.groupIndex + 1
+            state.slotIndex = 1
+        else
+            local currentIndex = state.slotIndex
+            local bestIndex = currentIndex
+            local bestRecord = GetSortRecord(
+                group[currentIndex].bag,
+                group[currentIndex].slot
+            )
+
+            for idx = currentIndex + 1, #group do
+                local candidate = group[idx]
+                local candidateRecord = GetSortRecord(candidate.bag, candidate.slot)
+                if CompareSortRecords(candidateRecord, bestRecord) then
+                    bestIndex = idx
+                    bestRecord = candidateRecord
+                end
+            end
+
+            state.slotIndex = state.slotIndex + 1
+
+            if bestIndex ~= currentIndex then
+                local success = MoveOrSwapSlots(group[currentIndex], group[bestIndex])
+                if not success then
+                    FinishBagSort("Bag sort stopped because an item could not be moved.")
+                    return
+                end
+
+                state.swapCount = state.swapCount + 1
+                addon:DelayedCall(SORT_STEP_DELAY, ContinueBagSort)
+                return
+            end
+        end
+
+        state = activeSortState
+    end
+end
+
+local function StartBagSort(frameDefName)
+    if activeSortState then
+        addon:Print("Bag sorting is already in progress.", true)
+        return
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        addon:Print("Cannot sort bags in combat.", true)
+        return
+    end
+
+    if CursorHasPayload() then
+        addon:Print("Cannot sort while the cursor is busy.", true)
+        return
+    end
+
+    local groups = BuildSortGroups(frameDefName)
+    if #groups == 0 then
+        addon:Print("No bag slots are available to sort.", true)
+        return
+    end
+
+    activeSortState = {
+        frameDefName = frameDefName,
+        groupIndex = 1,
+        groups = groups,
+        slotIndex = 1,
+        swapCount = 0,
+    }
+
+    UpdateSortButtons()
+    ContinueBagSort()
 end
 
 local function IsItemNew(bag, slot)
@@ -201,6 +516,10 @@ local function UpdateButtonVisuals(button, bag, slot, searchText)
     button:SetAlpha(1)
     
     local texture, count, locked, quality, readable, lootable, link = GetContainerItemInfo(bag, slot)
+
+    if not link then
+        link = GetContainerItemLink(bag, slot)
+    end
     
     if not texture then return end
     
@@ -291,6 +610,10 @@ end
 -- Update the item display on a button (texture, count, quality)
 local function UpdateButtonItem(button, bag, slot)
     local texture, count, locked, quality, readable, lootable, link = GetContainerItemInfo(bag, slot)
+
+    if not link then
+        link = GetContainerItemLink(bag, slot)
+    end
     
     -- Set item texture
     SetItemButtonTexture(button, texture)
@@ -319,7 +642,7 @@ local function UpdateButtonItem(button, bag, slot)
     end
 end
 
-local function LayoutFrame(frameDefName)
+LayoutFrame = function(frameDefName)
     local frame = frames[frameDefName]
     if not frame then return end
     
@@ -449,15 +772,9 @@ local function CreateBagFrame(frameDefName)
         GameTooltip:Hide()
     end)
     sortBtn:SetScript("OnClick", function()
-        if frameDefName == "inventory" then
-            if SortBags then SortBags() end
-        else
-            if SortBankBags then SortBankBags() end
-        end
-        if frames[frameDefName] and frames[frameDefName]:IsShown() then
-            LayoutFrame(frameDefName)
-        end
+        StartBagSort(frameDefName)
     end)
+    f.sortButton = sortBtn
     
     local ph = search:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     ph:SetPoint("LEFT", 5, 0)

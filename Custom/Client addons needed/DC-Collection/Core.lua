@@ -1736,6 +1736,15 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
 
     if cacheFresh and hasDefs and not forceRefresh then
         self:Debug("Cache is fresh; skipping heavy server requests (definitions/collections)")
+
+        if type(self.BeginSyncProgress) == "function" then
+            self:BeginSyncProgress("initial-cache", {
+                { key = "currency", label = "currency" },
+                { key = "stats", label = "stats" },
+                { key = "coll:titles", label = "collection: titles" },
+            })
+        end
+
         -- Only request lightweight data: currency + stats (for live balance updates).
         self:RequestCurrency()
         self:RequestStats()
@@ -1753,9 +1762,31 @@ function DC:RequestInitialData(skipHandshake, forceRefresh)
         if not self._handshakeRequested and not self._handshakeAcked then
             self._handshakeRequested = true
             self:Debug("Sending handshake...")
+            if type(self.BeginSyncProgress) == "function" then
+                self:BeginSyncProgress("initial-handshake", {
+                    { key = "handshake", label = "handshake" },
+                })
+            end
             self:RequestHandshake()
             return
         end
+    end
+
+    if type(self.BeginSyncProgress) == "function" then
+        self:BeginSyncProgress("initial-full", {
+            { key = "currency", label = "currency" },
+            { key = "stats", label = "stats" },
+            { key = "defs:mounts", label = "definitions: mounts" },
+            { key = "defs:pets", label = "definitions: pets" },
+            { key = "defs:heirlooms", label = "definitions: heirlooms" },
+            { key = "defs:titles", label = "definitions: titles" },
+            { key = "coll:mounts", label = "collection: mounts" },
+            { key = "coll:pets", label = "collection: pets" },
+            { key = "coll:heirlooms", label = "collection: heirlooms" },
+            { key = "coll:titles", label = "collection: titles" },
+            { key = "coll:transmog", label = "collection: transmog" },
+            { key = "shop", label = "shop data" },
+        })
     end
     
     -- Request currency first
