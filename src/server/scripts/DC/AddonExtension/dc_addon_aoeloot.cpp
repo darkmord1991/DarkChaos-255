@@ -15,12 +15,25 @@
 #include "Config.h"
 #include "Log.h"
 #include "Chat.h"
+#include "StringFormat.h"
+#include <algorithm>
+#include <cctype>
 #include <mutex>
+#include <sstream>
 
 // Forward declaration from dc_aoeloot_extensions.cpp to get live in-memory stats
 namespace DCAoELootExt
 {
     void GetDetailedStats(ObjectGuid playerGuid, uint32& itemsLooted, uint32& goldLooted, uint32& upgradesFound);
+    bool GetPlayerShowMessages(ObjectGuid playerGuid);
+    bool IsPlayerAoELootEnabled(ObjectGuid playerGuid);
+    uint8 GetPlayerMinQuality(ObjectGuid playerGuid);
+    bool GetPlayerAutoSkin(ObjectGuid playerGuid);
+    bool GetPlayerSmartLoot(ObjectGuid playerGuid);
+    bool GetPlayerAutoVendorPoor(ObjectGuid playerGuid);
+    bool GetPlayerGoldOnly(ObjectGuid playerGuid);
+    float GetPlayerLootRange(ObjectGuid playerGuid);
+    uint32 GetPlayerIgnoredCount(ObjectGuid playerGuid);
     void GetQualityStats(ObjectGuid playerGuid,
                          uint32& poor, uint32& common, uint32& uncommon,
                          uint32& rare, uint32& epic, uint32& legendary,
@@ -31,6 +44,12 @@ namespace DCAoELootExt
     void SetPlayerMinQuality(ObjectGuid playerGuid, uint8 quality);
     void SetPlayerAoELootEnabled(ObjectGuid playerGuid, bool enabled);
     void SetPlayerShowMessages(ObjectGuid playerGuid, bool value);
+    void SetPlayerAutoSkin(ObjectGuid playerGuid, bool value);
+    void SetPlayerSmartLoot(ObjectGuid playerGuid, bool value);
+    void SetPlayerAutoVendorPoor(ObjectGuid playerGuid, bool value);
+    void SetPlayerGoldOnly(ObjectGuid playerGuid, bool value);
+    void SetPlayerLootRange(ObjectGuid playerGuid, float value);
+    void TogglePlayerIgnoredItem(ObjectGuid playerGuid, uint32 itemId);
 }
 
 namespace DCAddon
@@ -45,11 +64,130 @@ namespace AOELoot
         uint8 minQuality = 0;
         bool autoSkin = false;
         bool smartLoot = true;
+        bool autoVendorPoor = false;
+        bool goldOnly = false;
         float lootRange = 30.0f;
     };
 
     static std::unordered_map<uint32, PlayerAOESettings> s_PlayerSettings;
     static std::mutex s_SettingsMutex;  // Thread safety for settings access
+
+    struct PreferenceSchemaInfo
+    {
+        bool initialized = false;
+        bool hasShowMessages = false;
+        bool hasAutoVendorPoor = false;
+        bool hasGoldOnly = false;
+        bool hasLootRange = false;
+    };
+
+    static PreferenceSchemaInfo s_PreferenceSchema;
+
+    static std::string JoinStringList(std::vector<std::string> const& values, char const* separator = ", ")
+    {
+        std::ostringstream ss;
+        for (size_t i = 0; i < values.size(); ++i)
+        {
+            if (i > 0)
+                ss << separator;
+            ss << values[i];
+        }
+        return ss.str();
+    }
+
+    static PreferenceSchemaInfo const& GetPreferenceSchemaInfo()
+    {
+        if (s_PreferenceSchema.initialized)
+            return s_PreferenceSchema;
+
+        s_PreferenceSchema.initialized = true;
+
+        QueryResult result = CharacterDatabase.Query(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dc_aoeloot_preferences'");
+
+        if (!result)
+        {
+            LOG_WARN("dc.addon.aoe", "Could not inspect dc_aoeloot_preferences schema. Using base-column fallback.");
+            return s_PreferenceSchema;
+        }
+
+        do
+        {
+            std::string const column = (*result)[0].Get<std::string>();
+            if (column == "show_messages")
+                s_PreferenceSchema.hasShowMessages = true;
+            else if (column == "auto_vendor_poor")
+                s_PreferenceSchema.hasAutoVendorPoor = true;
+            else if (column == "gold_only")
+                s_PreferenceSchema.hasGoldOnly = true;
+            else if (column == "loot_range")
+                s_PreferenceSchema.hasLootRange = true;
+        } while (result->NextRow());
+
+        LOG_INFO("dc.addon.aoe", "AOE addon schema: show_messages={}, auto_vendor_poor={}, gold_only={}, loot_range={}",
+            s_PreferenceSchema.hasShowMessages ? "yes" : "no",
+            s_PreferenceSchema.hasAutoVendorPoor ? "yes" : "no",
+            s_PreferenceSchema.hasGoldOnly ? "yes" : "no",
+            s_PreferenceSchema.hasLootRange ? "yes" : "no");
+
+        return s_PreferenceSchema;
+    }
+
+    static bool JsonGetBool(const JsonValue& json, const std::string& key, bool defaultValue = false)
+    {
+        JsonValue const& value = json[key];
+        if (value.IsBool())
+            return value.AsBool();
+        if (value.IsNumber())
+            return value.AsInt32() != 0;
+        if (value.IsString())
+        {
+            std::string lower = value.AsString();
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return lower == "1" || lower == "true" || lower == "yes" || lower == "on";
+        }
+        return defaultValue;
+    }
+
+    static uint32 JsonGetUInt(const JsonValue& json, const std::string& key, uint32 defaultValue = 0)
+    {
+        JsonValue const& value = json[key];
+        if (value.IsNumber())
+            return value.AsUInt32();
+        if (value.IsString())
+        {
+            try
+            {
+                return static_cast<uint32>(std::stoul(value.AsString()));
+            }
+            catch (...)
+            {
+                return defaultValue;
+            }
+        }
+        return defaultValue;
+    }
+
+    static float JsonGetFloat(const JsonValue& json, const std::string& key, float defaultValue = 0.0f)
+    {
+        JsonValue const& value = json[key];
+        if (value.IsNumber())
+            return static_cast<float>(value.AsNumber());
+        if (value.IsString())
+        {
+            try
+            {
+                return std::stof(value.AsString());
+            }
+            catch (...)
+            {
+                return defaultValue;
+            }
+        }
+        return defaultValue;
+    }
 
     // Load settings from DB for player
     // Uses dc_aoeloot_preferences (same table as dc_aoeloot_extensions.cpp)
@@ -57,21 +195,74 @@ namespace AOELoot
     {
         uint32 guid = player->GetGUID().GetCounter();
 
-        QueryResult result = CharacterDatabase.Query(
-            "SELECT aoe_enabled, show_messages, min_quality, auto_skin, smart_loot "
-            "FROM dc_aoeloot_preferences WHERE player_guid = {}", guid);
-
         PlayerAOESettings settings;
+        settings.enabled = DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID());
+        settings.showMessages = DCAoELootExt::GetPlayerShowMessages(player->GetGUID());
+        settings.minQuality = DCAoELootExt::GetPlayerMinQuality(player->GetGUID());
+        settings.autoSkin = DCAoELootExt::GetPlayerAutoSkin(player->GetGUID());
+        settings.smartLoot = DCAoELootExt::GetPlayerSmartLoot(player->GetGUID());
+        settings.autoVendorPoor = DCAoELootExt::GetPlayerAutoVendorPoor(player->GetGUID());
+        settings.goldOnly = DCAoELootExt::GetPlayerGoldOnly(player->GetGUID());
+        settings.lootRange = DCAoELootExt::GetPlayerLootRange(player->GetGUID());
+
+        PreferenceSchemaInfo const& schema = GetPreferenceSchemaInfo();
+
+        std::vector<std::string> columns =
+        {
+            "aoe_enabled",
+            "min_quality",
+            "auto_skin",
+            "smart_loot"
+        };
+
+        if (schema.hasShowMessages)
+            columns.push_back("show_messages");
+        if (schema.hasAutoVendorPoor)
+            columns.push_back("auto_vendor_poor");
+        if (schema.hasGoldOnly)
+            columns.push_back("gold_only");
+        if (schema.hasLootRange)
+            columns.push_back("loot_range");
+
+        std::string query = Acore::StringFormat(
+            "SELECT {} FROM dc_aoeloot_preferences WHERE player_guid = {}",
+            JoinStringList(columns), guid);
+
+        QueryResult result = CharacterDatabase.Query(query);
         if (result)
         {
             Field* fields = result->Fetch();
-            settings.enabled = fields[0].Get<bool>();
-            settings.showMessages = fields[1].Get<bool>();
-            settings.minQuality = fields[2].Get<uint8>();
-            settings.autoSkin = fields[3].Get<bool>();
-            settings.smartLoot = fields[4].Get<bool>();
-            // lootRange is server-controlled, not stored per-player
+            uint8 idx = 0;
+            settings.enabled = fields[idx++].Get<bool>();
+            settings.minQuality = fields[idx++].Get<uint8>();
+            settings.autoSkin = fields[idx++].Get<bool>();
+            settings.smartLoot = fields[idx++].Get<bool>();
+
+            if (schema.hasShowMessages)
+                settings.showMessages = fields[idx++].Get<bool>();
+
+            if (schema.hasAutoVendorPoor)
+                settings.autoVendorPoor = fields[idx++].Get<bool>();
+
+            if (schema.hasGoldOnly)
+                settings.goldOnly = fields[idx++].Get<bool>();
+
+            if (schema.hasLootRange)
+            {
+                settings.lootRange = fields[idx++].Get<float>();
+                if (settings.lootRange < 5.0f || settings.lootRange > 100.0f)
+                    settings.lootRange = DCAoELootExt::GetPlayerLootRange(player->GetGUID());
+            }
         }
+
+        DCAoELootExt::SetPlayerAoELootEnabled(player->GetGUID(), settings.enabled);
+        DCAoELootExt::SetPlayerShowMessages(player->GetGUID(), settings.showMessages);
+        DCAoELootExt::SetPlayerMinQuality(player->GetGUID(), settings.minQuality);
+        DCAoELootExt::SetPlayerAutoSkin(player->GetGUID(), settings.autoSkin);
+        DCAoELootExt::SetPlayerSmartLoot(player->GetGUID(), settings.smartLoot);
+        DCAoELootExt::SetPlayerAutoVendorPoor(player->GetGUID(), settings.autoVendorPoor);
+        DCAoELootExt::SetPlayerGoldOnly(player->GetGUID(), settings.goldOnly);
+        DCAoELootExt::SetPlayerLootRange(player->GetGUID(), settings.lootRange);
 
         std::lock_guard<std::mutex> lock(s_SettingsMutex);
         s_PlayerSettings[guid] = settings;
@@ -90,12 +281,79 @@ namespace AOELoot
                 return;
             snapshot = it->second;
         }
-        CharacterDatabase.Execute(
-            "REPLACE INTO dc_aoeloot_preferences "
-            "(player_guid, aoe_enabled, show_messages, min_quality, auto_skin, smart_loot) "
-            "VALUES ({}, {}, {}, {}, {}, {})",
-            guid, snapshot.enabled ? 1 : 0, snapshot.showMessages ? 1 : 0, snapshot.minQuality,
-            snapshot.autoSkin ? 1 : 0, snapshot.smartLoot ? 1 : 0);
+
+        snapshot.enabled = DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID());
+        snapshot.showMessages = DCAoELootExt::GetPlayerShowMessages(player->GetGUID());
+        snapshot.minQuality = DCAoELootExt::GetPlayerMinQuality(player->GetGUID());
+        snapshot.autoSkin = DCAoELootExt::GetPlayerAutoSkin(player->GetGUID());
+        snapshot.smartLoot = DCAoELootExt::GetPlayerSmartLoot(player->GetGUID());
+        snapshot.autoVendorPoor = DCAoELootExt::GetPlayerAutoVendorPoor(player->GetGUID());
+        snapshot.goldOnly = DCAoELootExt::GetPlayerGoldOnly(player->GetGUID());
+        snapshot.lootRange = DCAoELootExt::GetPlayerLootRange(player->GetGUID());
+
+        PreferenceSchemaInfo const& schema = GetPreferenceSchemaInfo();
+
+        std::vector<std::string> columns =
+        {
+            "player_guid",
+            "aoe_enabled",
+            "min_quality",
+            "auto_skin",
+            "smart_loot"
+        };
+
+        std::vector<std::string> values =
+        {
+            std::to_string(guid),
+            snapshot.enabled ? "1" : "0",
+            std::to_string(snapshot.minQuality),
+            snapshot.autoSkin ? "1" : "0",
+            snapshot.smartLoot ? "1" : "0"
+        };
+
+        std::vector<std::string> updates =
+        {
+            "aoe_enabled = VALUES(aoe_enabled)",
+            "min_quality = VALUES(min_quality)",
+            "auto_skin = VALUES(auto_skin)",
+            "smart_loot = VALUES(smart_loot)"
+        };
+
+        if (schema.hasShowMessages)
+        {
+            columns.push_back("show_messages");
+            values.push_back(snapshot.showMessages ? "1" : "0");
+            updates.push_back("show_messages = VALUES(show_messages)");
+        }
+
+        if (schema.hasAutoVendorPoor)
+        {
+            columns.push_back("auto_vendor_poor");
+            values.push_back(snapshot.autoVendorPoor ? "1" : "0");
+            updates.push_back("auto_vendor_poor = VALUES(auto_vendor_poor)");
+        }
+
+        if (schema.hasGoldOnly)
+        {
+            columns.push_back("gold_only");
+            values.push_back(snapshot.goldOnly ? "1" : "0");
+            updates.push_back("gold_only = VALUES(gold_only)");
+        }
+
+        if (schema.hasLootRange)
+        {
+            float persistedRange = snapshot.lootRange;
+            if (persistedRange < 5.0f || persistedRange > 100.0f)
+                persistedRange = DCAoELootExt::GetPlayerLootRange(player->GetGUID());
+
+            columns.push_back("loot_range");
+            values.push_back(Acore::StringFormat("{}", persistedRange));
+            updates.push_back("loot_range = VALUES(loot_range)");
+        }
+
+        CharacterDatabase.Execute(Acore::StringFormat(
+            "INSERT INTO dc_aoeloot_preferences ({}) VALUES ({}) ON DUPLICATE KEY UPDATE {}",
+            JoinStringList(columns), JoinStringList(values), JoinStringList(updates)));
     }
 
     // Get player stats - uses live in-memory stats from dc_aoeloot_extensions first,
@@ -161,21 +419,58 @@ namespace AOELoot
             snapshot = it->second;
         }
 
+        snapshot.enabled = DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID());
+        snapshot.showMessages = DCAoELootExt::GetPlayerShowMessages(player->GetGUID());
+        snapshot.minQuality = DCAoELootExt::GetPlayerMinQuality(player->GetGUID());
+        snapshot.autoSkin = DCAoELootExt::GetPlayerAutoSkin(player->GetGUID());
+        snapshot.smartLoot = DCAoELootExt::GetPlayerSmartLoot(player->GetGUID());
+        snapshot.autoVendorPoor = DCAoELootExt::GetPlayerAutoVendorPoor(player->GetGUID());
+        snapshot.goldOnly = DCAoELootExt::GetPlayerGoldOnly(player->GetGUID());
+        snapshot.lootRange = DCAoELootExt::GetPlayerLootRange(player->GetGUID());
+
+        {
+            std::lock_guard<std::mutex> lock(s_SettingsMutex);
+            s_PlayerSettings[guid] = snapshot;
+        }
+
         Message(Module::AOE_LOOT, Opcode::AOE::SMSG_SETTINGS_SYNC)
                 .Add(snapshot.enabled)
                 .Add(snapshot.showMessages)
                 .Add(snapshot.minQuality)
                 .Add(snapshot.autoSkin)
                 .Add(snapshot.smartLoot)
+                .Add(snapshot.autoVendorPoor)
+                .Add(snapshot.goldOnly)
                 .Add(snapshot.lootRange)
             .Send(player);
+    }
+
+    static bool GetRequestBool(const ParsedMessage& msg, const std::string& key, bool defaultValue = false)
+    {
+        if (IsJsonMessage(msg))
+            return JsonGetBool(GetJsonData(msg), key, defaultValue);
+        return msg.GetDataCount() > 0 ? msg.GetBool(0) : defaultValue;
+    }
+
+    static uint32 GetRequestUInt(const ParsedMessage& msg, const std::string& key, uint32 defaultValue = 0)
+    {
+        if (IsJsonMessage(msg))
+            return JsonGetUInt(GetJsonData(msg), key, defaultValue);
+        return msg.GetDataCount() > 0 ? msg.GetUInt32(0) : defaultValue;
+    }
+
+    static float GetRequestFloat(const ParsedMessage& msg, const std::string& key, float defaultValue = 0.0f)
+    {
+        if (IsJsonMessage(msg))
+            return JsonGetFloat(GetJsonData(msg), key, defaultValue);
+        return msg.GetDataCount() > 0 ? msg.GetFloat(0) : defaultValue;
     }
 
     // Handler: Toggle AOE loot enabled
     static void HandleToggleEnabled(Player* player, const ParsedMessage& msg)
     {
         uint32 guid = player->GetGUID().GetCounter();
-        bool enabled = msg.GetBool(0);
+        bool enabled = GetRequestBool(msg, "enabled", true);
 
         {
             std::lock_guard<std::mutex> lock(s_SettingsMutex);
@@ -195,7 +490,15 @@ namespace AOELoot
     static void HandleSetQuality(Player* player, const ParsedMessage& msg)
     {
         uint32 guid = player->GetGUID().GetCounter();
-        uint8 quality = static_cast<uint8>(msg.GetUInt32(0));
+        uint32 qualityValue = GetRequestUInt(msg, "quality", 0);
+        if (IsJsonMessage(msg))
+        {
+            JsonValue json = GetJsonData(msg);
+            if (!json["quality"].IsNumber())
+                qualityValue = JsonGetUInt(json, "minQuality", qualityValue);
+        }
+
+        uint8 quality = static_cast<uint8>(qualityValue);
         if (quality > 6) quality = 0;
 
         {
@@ -229,12 +532,14 @@ namespace AOELoot
     static void HandleSetAutoSkin(Player* player, const ParsedMessage& msg)
     {
         uint32 guid = player->GetGUID().GetCounter();
-        bool enabled = msg.GetBool(0);
+        bool enabled = GetRequestBool(msg, "enabled", false);
 
         {
             std::lock_guard<std::mutex> lock(s_SettingsMutex);
             s_PlayerSettings[guid].autoSkin = enabled;
         }
+
+        DCAoELootExt::SetPlayerAutoSkin(player->GetGUID(), enabled);
         SavePlayerSettings(player);
         SendSettingsSync(player);
 
@@ -245,7 +550,7 @@ namespace AOELoot
     static void HandleSetRange(Player* player, const ParsedMessage& msg)
     {
         uint32 guid = player->GetGUID().GetCounter();
-        float range = msg.GetFloat(0);
+        float range = GetRequestFloat(msg, "range", 30.0f);
         if (range < 5.0f) range = 5.0f;
         if (range > 100.0f) range = 100.0f;
 
@@ -253,10 +558,28 @@ namespace AOELoot
             std::lock_guard<std::mutex> lock(s_SettingsMutex);
             s_PlayerSettings[guid].lootRange = range;
         }
+
+        DCAoELootExt::SetPlayerLootRange(player->GetGUID(), range);
         SavePlayerSettings(player);
         SendSettingsSync(player);
 
         LOG_DEBUG("dc.addon.aoe", "Player {} set loot range to {}", player->GetName(), range);
+    }
+
+    // Handler: Toggle ignored item filter
+    static void HandleIgnoreItem(Player* player, const ParsedMessage& msg)
+    {
+        uint32 itemId = GetRequestUInt(msg, "itemId", 0);
+        if (itemId == 0)
+        {
+            LOG_DEBUG("dc.addon.aoe", "Player {} sent invalid ignore item id", player->GetName());
+            return;
+        }
+
+        DCAoELootExt::TogglePlayerIgnoredItem(player->GetGUID(), itemId);
+        SendSettingsSync(player);
+
+        LOG_DEBUG("dc.addon.aoe", "Player {} toggled ignored item {}", player->GetName(), itemId);
     }
 
     // Handler: Get settings
@@ -304,6 +627,7 @@ namespace AOELoot
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_SET_AUTO_SKIN, HandleSetAutoSkin);
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_SET_RANGE, HandleSetRange);
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_GET_SETTINGS, HandleGetSettings);
+        DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_IGNORE_ITEM, HandleIgnoreItem);
         DC_REGISTER_HANDLER(Module::AOE_LOOT, Opcode::AOE::CMSG_GET_QUALITY_STATS, HandleGetQualityStats);
 
         LOG_INFO("dc.addon", "AOE Loot module handlers registered");

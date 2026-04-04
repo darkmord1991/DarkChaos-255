@@ -47,7 +47,12 @@ set(SCRIPTS_DC_GiantIsles
 
 # AoE Loot System (Unified)
 set(SCRIPTS_DC_AoELoot
-    dc_aoeloot_unified.cpp
+    QOL/dc_aoeloot_unified.cpp
+)
+
+# Quality of Life scripts
+set(SCRIPTS_DC_QOL
+    QOL/dc_looter_pet.cpp
 )
 
 # Phased Duels System
@@ -302,6 +307,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_ChallengeMode}
     ${SCRIPTS_DC_Hotspot}
     ${SCRIPTS_DC_AoELoot}
+    ${SCRIPTS_DC_QOL}
     ${SCRIPTS_DC_PhasedDuels}
     ${SCRIPTS_DC_FakePlayers}
     ${SCRIPTS_DC_AC}

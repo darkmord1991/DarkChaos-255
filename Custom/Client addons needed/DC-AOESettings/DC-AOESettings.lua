@@ -36,6 +36,7 @@ addon.defaults = {
     smartLoot = true,
     autoVendorPoor = false,
     goldOnly = false,    -- Only loot gold (quest items still looted)
+    looterPet = false,   -- Server-side companion-bound loot pulse helper
     debugMessages = false, -- Verbose debug messages (sync status etc)
     -- Fast Looting settings (adapted from Leatrix Plus)
     fastLoot = true,         -- Enable faster looting
@@ -121,6 +122,75 @@ function addon:Confirm(settingName, value)
     print("|cff00ff00[DC AoE Loot]|r " .. settingName .. " set to " .. valueStr)
 end
 
+-- Companion detection for looter-pet status line (client-side view)
+local companionStatusColors = {
+    none = "|cff888888",
+    demon = "|cffd98cff",
+    charmed = "|cffff7f50",
+    guardian = "|cff66ccff",
+    pet = "|cff66ff66",
+    unknown = "|cffffff66",
+}
+
+function addon:GetDetectedCompanionInfo()
+    if not UnitExists or not UnitExists("pet") then
+        return "none", nil, nil
+    end
+
+    local companionName = UnitName("pet") or "Unknown"
+    local companionType = "Companion"
+    local companionClass = "unknown"
+
+    if UnitIsCharmed and UnitIsCharmed("pet") then
+        companionType = "Charmed"
+        companionClass = "charmed"
+    else
+        local creatureType = UnitCreatureType and UnitCreatureType("pet") or nil
+        if creatureType == "Demon" then
+            companionType = "Demon"
+            companionClass = "demon"
+        elseif UnitPlayerControlled and UnitPlayerControlled("pet") then
+            companionType = "Pet"
+            companionClass = "pet"
+        else
+            companionType = "Guardian"
+            companionClass = "guardian"
+        end
+
+        local family = UnitCreatureFamily and UnitCreatureFamily("pet") or nil
+        if family and family ~= "" then
+            companionType = family
+        end
+    end
+
+    return companionClass, companionType, companionName
+end
+
+function addon:GetCompanionStatusLineText()
+    local companionClass, companionType, companionName = self:GetDetectedCompanionInfo()
+    if companionClass == "none" or not companionType then
+        return "|cff888888Detected Companion: None|r"
+    end
+
+    local color = companionStatusColors[companionClass] or companionStatusColors.unknown
+
+    return string.format(
+        "%sDetected Companion: %s - %s|r",
+        color,
+        companionType,
+        companionName)
+end
+
+function addon:UpdateCompanionStatusLine()
+    local statusText = self:GetCompanionStatusLineText()
+    if self.companionStatusLine then
+        self.companionStatusLine:SetText(statusText)
+    end
+    if self.optionCompanionStatusLine then
+        self.optionCompanionStatusLine:SetText(statusText)
+    end
+end
+
 -- ============================================================
 -- 3.3.5a Compatibility - Timer replacement
 -- ============================================================
@@ -197,22 +267,39 @@ function addon:SyncSettingToServer(settingKey, value)
     -- This prevents the UI from flickering when server sends back the old value
     self.ignoreSync = true
     self.ignoreSyncUntil = GetTime() + 2.0
+
+    local handled = false
     
     -- Use DCAddonProtocol if available
     if self.useDCProtocol and DC then
         if settingKey == "enabled" then
             DC.AOE.Toggle(value)
+            handled = true
         elseif settingKey == "minQuality" then
             DC.AOE.SetQuality(value)
+            handled = true
         elseif settingKey == "autoSkin" then
             DC.AOE.SetAutoSkin(value)
+            handled = true
         elseif settingKey == "showMessages" then
-            -- TODO: Add showMessages to protocol
             self:SendServerCommand(value and ".lp msg 1" or ".lp msg 0")
+            handled = true
         elseif settingKey == "smartLoot" then
-            -- TODO: Add smartLoot to protocol
-            self:SendServerCommand(".lp smart")
+            self:SendServerCommand(value and ".lp smartset 1" or ".lp smartset 0")
+            handled = true
+        elseif settingKey == "autoVendorPoor" then
+            self:SendServerCommand(value and ".lp autovendor 1" or ".lp autovendor 0")
+            handled = true
+        elseif settingKey == "goldOnly" then
+            self:SendServerCommand(value and ".lp goldonly 1" or ".lp goldonly 0")
+            handled = true
+        elseif settingKey == "looterPet" then
+            self:SendServerCommand(value and ".lpet on" or ".lpet off")
+            handled = true
         end
+    end
+
+    if handled then
         return
     end
     
@@ -238,12 +325,28 @@ function addon:SyncSettingToServer(settingKey, value)
             self:SendServerCommand(".lp skinset 0")
         end
     elseif settingKey == "smartLoot" then
-        self:SendServerCommand(".lp smart")
+        if value then
+            self:SendServerCommand(".lp smartset 1")
+        else
+            self:SendServerCommand(".lp smartset 0")
+        end
+    elseif settingKey == "autoVendorPoor" then
+        if value then
+            self:SendServerCommand(".lp autovendor 1")
+        else
+            self:SendServerCommand(".lp autovendor 0")
+        end
     elseif settingKey == "goldOnly" then
         if value then
             self:SendServerCommand(".lp goldonly 1")
         else
             self:SendServerCommand(".lp goldonly 0")
+        end
+    elseif settingKey == "looterPet" then
+        if value then
+            self:SendServerCommand(".lpet on")
+        else
+            self:SendServerCommand(".lpet off")
         end
     end
 end
@@ -269,6 +372,8 @@ function addon:Initialize()
     self.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     self.eventFrame:RegisterEvent("PLAYER_LOGIN")
     self.eventFrame:RegisterEvent("PLAYER_LOGOUT")
+    self.eventFrame:RegisterEvent("UNIT_PET")
+    self.eventFrame:RegisterEvent("UNIT_CHARM")
     self.eventFrame:SetScript("OnEvent", function(_, event, ...)
         addon:OnEvent(event, ...)
     end)
@@ -320,6 +425,11 @@ function addon:OnEvent(event, ...)
     elseif event == "PLAYER_LOGOUT" then
         -- Save settings on logout
         self:SaveSettingsLocal()
+    elseif event == "UNIT_PET" or event == "UNIT_CHARM" then
+        local unit = ...
+        if unit == "player" then
+            self:UpdateCompanionStatusLine()
+        end
     end
 end
 
@@ -367,7 +477,7 @@ function addon:RegisterDCHandlers(DC)
             if json.range then addon.settings.range = json.range end
         else
             -- Pipe-delimited format
-            local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor, goldOnly = args[1], args[2], args[3], args[4], args[5], args[6], args[7]
+            local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor, goldOnly, range = args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]
             addon.settings.enabled = (enabled == "1" or enabled == 1 or enabled == true)
             addon.settings.showMessages = (showMessages == "1" or showMessages == 1 or showMessages == true or showMessages == nil)
             addon.settings.minQuality = Clamp(tonumber(minQuality) or 0, 0, 5)
@@ -375,6 +485,7 @@ function addon:RegisterDCHandlers(DC)
             addon.settings.smartLoot = (smartLoot == "1" or smartLoot == 1 or smartLoot == true)
             addon.settings.autoVendorPoor = (autoVendorPoor == "1" or autoVendorPoor == 1 or autoVendorPoor == true)
             addon.settings.goldOnly = (goldOnly == "1" or goldOnly == 1 or goldOnly == true)
+            if range then addon.settings.range = tonumber(range) or addon.settings.range end
         end
         
         addon:SaveSettingsLocal()
@@ -505,12 +616,16 @@ function addon:SendToServer(messageType, data)
         elseif messageType == "SAVE_SETTINGS" then
             -- Parse data and send individual settings via protocol
             if data then
-                local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor = strsplit(",", data)
-                -- The new protocol handles individual setting changes
-                -- For bulk save, we'll send each setting
+                local enabled, showMessages, minQuality, autoSkin, smartLoot, autoVendorPoor, goldOnly = strsplit(",", data)
+
                 DC.AOE.Toggle(tonumber(enabled) == 1)
                 DC.AOE.SetQuality(tonumber(minQuality) or 0)
                 DC.AOE.SetAutoSkin(tonumber(autoSkin) == 1)
+
+                self:SendServerCommand((tonumber(showMessages) == 1) and ".lp msg 1" or ".lp msg 0")
+                self:SendServerCommand((tonumber(smartLoot) == 1) and ".lp smartset 1" or ".lp smartset 0")
+                self:SendServerCommand((tonumber(autoVendorPoor) == 1) and ".lp autovendor 1" or ".lp autovendor 0")
+                self:SendServerCommand((tonumber(goldOnly) == 1) and ".lp goldonly 1" or ".lp goldonly 0")
             end
             return
         elseif messageType == "GET_STATS" then
@@ -650,6 +765,20 @@ function addon:CreateOptionsPanel()
         "Only loot gold from corpses. Quest items will still be picked up automatically.",
         xPos, yPos, "goldOnly")
     yPos = yPos - 40
+
+    -- Looter Pet checkbox
+    local looterPetCB = self:CreateOptionsCheckbox(panel, "Enable Looter Pet", 
+        "Binds looter role to active class companion (.lpet on/off).",
+        xPos, yPos, "looterPet")
+    yPos = yPos - 30
+
+    local companionStatusLine = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    companionStatusLine:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
+    companionStatusLine:SetWidth(340)
+    companionStatusLine:SetJustifyH("LEFT")
+    companionStatusLine:SetText(self:GetCompanionStatusLineText())
+    self.optionCompanionStatusLine = companionStatusLine
+    yPos = yPos - 22
     
     -- Fast Loot Section Header
     local fastLootHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -932,7 +1061,7 @@ function addon:CreateMainFrame()
     -- Create base frame without template (3.3.5a doesn't have BasicFrameTemplateWithInset)
     local frame = CreateFrame("Frame", "DCAoELootSettingsFrame", UIParent)
     frame:SetWidth(350)
-    frame:SetHeight(430)  -- Increased height for Fast Loot section
+    frame:SetHeight(495)  -- Extra room for looter pet + companion status + fast loot controls
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -1040,6 +1169,24 @@ function addon:CreateMainFrame()
             self:SyncSettingToServer("goldOnly", checked)
         end)
     yPos = yPos - 35
+
+    -- Looter Pet checkbox
+    self.checkboxes.looterPet = self:CreateCheckbox(frame, "Enable Looter Pet", xPos, yPos,
+        function(checked)
+            self.settings.looterPet = checked
+            self:Confirm("Looter Pet", checked)
+            self:SaveSettingsLocal()
+            self:SyncSettingToServer("looterPet", checked)
+        end)
+    yPos = yPos - 30
+
+    local companionStatusLine = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    companionStatusLine:SetPoint("TOPLEFT", frame, "TOPLEFT", xPos + 8, yPos)
+    companionStatusLine:SetWidth(300)
+    companionStatusLine:SetJustifyH("LEFT")
+    companionStatusLine:SetText(self:GetCompanionStatusLineText())
+    self.companionStatusLine = companionStatusLine
+    yPos = yPos - 22
     
     -- Fast Loot Section
     local fastLootLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1167,9 +1314,14 @@ function addon:UpdateUI()
     if self.checkboxes.goldOnly then
         self.checkboxes.goldOnly:SetChecked(self.settings.goldOnly)
     end
+    if self.checkboxes.looterPet then
+        self.checkboxes.looterPet:SetChecked(self.settings.looterPet)
+    end
     if self.checkboxes.fastLoot then
         self.checkboxes.fastLoot:SetChecked(self.settings.fastLoot)
     end
+
+    self:UpdateCompanionStatusLine()
     
     self:UpdateQualityButtons()
     self:UpdateOptionsQualityButtons()
@@ -1263,6 +1415,7 @@ SlashCmdList["DCAOELOOT"] = function(msg)
         print("  Min Quality: " .. (DCAoELootSettings.qualityNames[DCAoELootSettings.settings.minQuality] or "?"))
         print("  Auto-Skin: " .. (DCAoELootSettings.settings.autoSkin and "YES" or "NO"))
         print("  Smart Loot: " .. (DCAoELootSettings.settings.smartLoot and "YES" or "NO"))
+        print("  Looter Pet: " .. (DCAoELootSettings.settings.looterPet and "YES" or "NO"))
     elseif msg == "config" or msg == "options" then
         InterfaceOptionsFrame_OpenToCategory(DCAoELootSettings.optionsPanel)
         InterfaceOptionsFrame_OpenToCategory(DCAoELootSettings.optionsPanel) -- Call twice for WoW bug

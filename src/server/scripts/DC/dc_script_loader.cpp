@@ -52,7 +52,10 @@ void AddSC_heirloom_scaling_255();            // ItemUpgrades/heirloom_scaling_2
 void AddSC_go_heirloom_cache();               // ItemUpgrades/go_heirloom_cache.cpp
 
 // --- AoE loot system ---
-void AddSC_dc_aoeloot_unified();              // dc_aoeloot_unified.cpp
+void AddSC_dc_aoeloot_unified();              // QOL/dc_aoeloot_unified.cpp
+
+// --- QOL scripts ---
+void AddSC_dc_looter_pet_qol();               // QOL/dc_looter_pet.cpp
 
 // --- Hotspots system ---
 void AddSC_ac_hotspots();                     // Hotspot/ac_hotspots.cpp
@@ -253,6 +256,9 @@ void AddDCScripts()
 
     LogSection("AoE Loot System");
     DC_LOAD(AddSC_dc_aoeloot_unified);
+
+    LogSection("QOL Scripts");
+    DC_LOAD(AddSC_dc_looter_pet_qol);
 
     LogSection("Hotspots System");
     // AddSC_ac_hotspots also registers hotspot command handlers.
