@@ -21,10 +21,10 @@ local L = DC.L
     Thresholds:
     - 25 mounts:  +2% mount speed (Spell 300510)
     - 50 mounts:  +3% mount speed (Spell 300511)
-    - 100 mounts: +3% mount speed (Spell 300512)
-    - 150 mounts: +2% mount speed (Spell 300513)
+    - 100 mounts: +4% mount speed (Spell 300512)
+    - 200 mounts: +5% mount speed (Spell 300513)
     
-    Total: +10% at 150+ mounts
+    Highest tier: +5% at 200+ mounts
     
     Additional bonuses can be purchased from the shop.
 ]]
@@ -36,8 +36,8 @@ local L = DC.L
 DC.MOUNT_SPEED_THRESHOLDS = {
     { count = 25,  bonus = 2, spellId = 300510 },
     { count = 50,  bonus = 3, spellId = 300511 },
-    { count = 100, bonus = 3, spellId = 300512 },
-    { count = 150, bonus = 2, spellId = 300513 },
+    { count = 100, bonus = 4, spellId = 300512 },
+    { count = 200, bonus = 5, spellId = 300513 },
 }
 
 -- ============================================================================
@@ -59,8 +59,8 @@ function DC:GetMountSpeedBreakdown()
             current = mountCount,
             required = threshold.count,
         })
-        if earned then
-            naturalBonus = naturalBonus + threshold.bonus
+        if earned and threshold.bonus > naturalBonus then
+            naturalBonus = threshold.bonus
         end
     end
     
@@ -123,7 +123,7 @@ function DC:ShowMountSpeedTooltip(anchor)
         1, 1, 1
     )
     
-    if data.totalBonus < 10 then
+    if data.totalBonus < 5 then
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(L["COLLECT_MORE_MOUNTS"] or "Collect more mounts to earn additional speed bonuses!", 0.5, 0.5, 0.5, true)
     end

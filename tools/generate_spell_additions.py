@@ -5,7 +5,7 @@ spell_csv = Path('Custom/CSV DBC/Spell.csv')
 out_csv = Path('Custom/CSV DBC/Spell.collection_additions.csv')
 
 # IDs and base points for tiers
-tiers = [ (300510, 1), (300511, 2), (300512, 3), (300513, 5) ]
+tiers = [ (300510, 2), (300511, 3), (300512, 4), (300513, 5) ]
 
 with open(spell_csv, newline='', encoding='utf-8') as f:
     reader = csv.reader(f)
@@ -30,9 +30,11 @@ name_idx = header.index('Name_Lang_enUS')
 desc_idx = header.index('Description_Lang_enUS')
 aura_desc_idx = header.index('AuraDescription_Lang_enUS')
 spellIcon_idx = header.index('SpellIconID')
+attributes_idx = header.index('Attributes')
+attributes_ex_idx = header.index('AttributesEx')
 
 new_rows = []
-for spell_id, base in tiers:
+for tier_index, (spell_id, base) in enumerate(tiers, start=1):
     row = template.copy()
     row[id_idx] = str(spell_id)
     # set both effect base points if present (some templates use two)
@@ -40,10 +42,14 @@ for spell_id, base in tiers:
     row[eff_base_2] = str(base)
     # Ensure Aura (EffectAura_1) is 130 (mounted speed not stacking)
     row[aura_eff_1] = '130'
+    # Keep aura visible and non-removable (SPELL_ATTR0_IS_ABILITY | SPELL_ATTR0_NO_AURA_CANCEL).
+    row[attributes_idx] = '2147483664'
+    row[attributes_ex_idx] = '128'
     # Set Icon
     row[spellIcon_idx] = '2035'
     # Set names and descriptions
-    row[name_idx] = f"Collector's Speed {'I' if base==1 else 'II' if base==2 else 'III' if base==3 else 'IV'}"
+    roman = ["I", "II", "III", "IV"][tier_index - 1]
+    row[name_idx] = f"Collector's Speed {roman}"
     row[desc_idx] = f"Your mount collection grants +{base}% mount speed."
     row[aura_desc_idx] = f"Mount speed increased by {base}%."
     new_rows.append(row)

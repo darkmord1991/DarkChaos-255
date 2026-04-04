@@ -1243,7 +1243,7 @@ DCCollection.MountBonuses.Enable = 1
 #
 #    DCCollection.MountBonuses.Threshold[1-4]
 #        Description: Mount bonus thresholds "mounts_needed,bonus_percent"
-#        Defaults:    25=+2%, 50=+3%, 100=+3%, 150=+2% (total +10%)
+#        Defaults:    25=+2%, 50=+3%, 100=+4%, 200=+5%
 #
 # -----------------------------------------------------------------------------
 # Pet Definition Maintenance

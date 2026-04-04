@@ -128,9 +128,9 @@ namespace DCCollection
 
     // Mount speed bonus spell IDs (custom spells in Spell.csv)
     // Range: 300510-300513 (verified free in Spell.csv)
-    constexpr uint32 SPELL_MOUNT_SPEED_TIER1 = 300510;  // +1% mount speed (25+ mounts)
-    constexpr uint32 SPELL_MOUNT_SPEED_TIER2 = 300511;  // +2% mount speed (50+ mounts)
-    constexpr uint32 SPELL_MOUNT_SPEED_TIER3 = 300512;  // +3% mount speed (100+ mounts)
+    constexpr uint32 SPELL_MOUNT_SPEED_TIER1 = 300510;  // +2% mount speed (25+ mounts)
+    constexpr uint32 SPELL_MOUNT_SPEED_TIER2 = 300511;  // +3% mount speed (50+ mounts)
+    constexpr uint32 SPELL_MOUNT_SPEED_TIER3 = 300512;  // +4% mount speed (100+ mounts)
     constexpr uint32 SPELL_MOUNT_SPEED_TIER4 = 300513;  // +5% mount speed (200+ mounts)
 
     // Mount count thresholds for speed bonuses
@@ -1943,11 +1943,11 @@ namespace DCCollection
         if (mountCount >= MOUNT_THRESHOLD_TIER4)
             return 5;
         else if (mountCount >= MOUNT_THRESHOLD_TIER3)
-            return 3;
+            return 4;
         else if (mountCount >= MOUNT_THRESHOLD_TIER2)
-            return 2;
+            return 3;
         else if (mountCount >= MOUNT_THRESHOLD_TIER1)
-            return 1;
+            return 2;
         return 0;
     }
 
