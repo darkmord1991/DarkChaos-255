@@ -652,6 +652,33 @@ AoELoot.AutoStoreWindowSeconds = 5
 AoELoot.DebugPerCorpse = 0
 
 # -----------------------------------------------------------------------------
+# AoE Loot Companion-Bound Looter Pet
+# -----------------------------------------------------------------------------
+
+#
+#    AoELoot.LooterPet.Enable
+#        Description: Enable companion-bound looter pulse behavior
+#                     (pet/guardian/charm can trigger periodic AoE looting)
+#        Default:     1 (Enabled)
+#
+AoELoot.LooterPet.Enable = 1
+
+#
+#    AoELoot.LooterPet.AllowInCombat
+#        Description: Allow companion looter pulses while the player is in combat
+#        Default:     0 (Disabled)
+#
+AoELoot.LooterPet.AllowInCombat = 0
+
+#
+#    AoELoot.LooterPet.PulseMs
+#        Description: Interval in milliseconds between looter pulse checks
+#        Range:       500 - 10000
+#        Default:     1500
+#
+AoELoot.LooterPet.PulseMs = 1500
+
+# -----------------------------------------------------------------------------
 # AoE Loot Extensions: Quality Filtering
 # -----------------------------------------------------------------------------
 

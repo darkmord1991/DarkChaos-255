@@ -954,7 +954,7 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
 
             if (player->GetSession())
-                ChatHandler(player->GetSession()).PSendSysMessage("%s", activationMsg.c_str());
+                ChatHandler(player->GetSession()).PSendSysMessage("{}", activationMsg);
 
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;
@@ -1316,7 +1316,7 @@ public:
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "-----------------------------------", GOSSIP_SENDER_MAIN, 9999);
             AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cffFF0000[Close]|r", GOSSIP_SENDER_MAIN, ACTION_GOSSIP_CLOSE);
 
-            ChatHandler(player->GetSession()).PSendSysMessage("%s", activationMsg.c_str());
+            ChatHandler(player->GetSession()).PSendSysMessage("{}", activationMsg);
 
             SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, go->GetGUID());
             return true;

@@ -424,7 +424,7 @@ public:
             return;
 
         // Send welcome message
-        ChatHandler(player->GetSession()).PSendSysMessage("%s", ZONE_ENTER_MESSAGE);
+        ChatHandler(player->GetSession()).PSendSysMessage("{}", ZONE_ENTER_MESSAGE);
 
         // Check which boss is active and inform player
         uint32 activeBoss = GetActiveBossEntry();

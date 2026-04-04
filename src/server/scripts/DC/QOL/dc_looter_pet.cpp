@@ -1,8 +1,9 @@
 /*
  * DarkChaos QoL - Looter Pet (v2)
  *
- * Binds looter role to an active class companion
- * (pet/demon/guardian/charm) and periodically triggers AoE loot.
+ * Binds looter role to an active companion
+ * (pet/demon/guardian/charm or summoned critter companion)
+ * and periodically triggers AoE loot.
  * No helper summon is created in this mode.
  */
 
@@ -15,6 +16,7 @@
 #include "Chat.h"
 #include "Config.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 
 #include <unordered_map>
 
@@ -23,6 +25,8 @@ using namespace Acore::ChatCommands;
 namespace DCAoELootExt
 {
     bool IsPlayerAoELootEnabled(ObjectGuid playerGuid);
+    uint8 GetPlayerMinQuality(ObjectGuid playerGuid);
+    bool GetPlayerGoldOnly(ObjectGuid playerGuid);
     bool TriggerLooterPetLootPulse(Player* player, WorldObject const* searchAnchor);
 }
 
@@ -66,7 +70,7 @@ static bool IsLooterPetEnabled(ObjectGuid guid)
     return it != sLooterPetStates.end() && it->second.enabled;
 }
 
-static Unit* GetActiveClassCompanion(Player* player)
+static Unit* GetActiveLooterCompanion(Player* player)
 {
     if (!player || !player->IsInWorld())
         return nullptr;
@@ -92,6 +96,12 @@ static Unit* GetActiveClassCompanion(Player* player)
         {
             return charm;
         }
+    }
+
+    if (Unit* critter = ObjectAccessor::GetUnit(*player, player->GetCritterGUID()))
+    {
+        if (critter->IsInWorld() && critter->IsAlive())
+            return critter;
     }
 
     return nullptr;
@@ -163,14 +173,25 @@ public:
             return;
 
         LooterPetState& state = it->second;
-        Unit* companion = GetActiveClassCompanion(player);
+        Unit* companion = GetActiveLooterCompanion(player);
         if (!companion)
         {
             state.boundCompanionGuid.Clear();
             return;
         }
 
-        state.boundCompanionGuid = companion->GetGUID();
+        ObjectGuid const companionGuid = companion->GetGUID();
+        if (state.boundCompanionGuid != companionGuid)
+        {
+            state.boundCompanionGuid = companionGuid;
+
+            if (WorldSession* session = player->GetSession())
+            {
+                ChatHandler(session).PSendSysMessage(
+                    "|cff00ff00[Looter Pet]|r New companion: {}",
+                    companion->GetName());
+            }
+        }
 
         uint32 const elapsed = state.elapsedMs + diff;
         if (elapsed < sLooterPetConfig.pulseMs)
@@ -220,23 +241,27 @@ public:
         SetLooterPetEnabled(player, next);
 
         handler->PSendSysMessage(
-            "|cff00ff00[Looter Pet]|r %s",
+            "|cff00ff00[Looter Pet]|r {}",
             next ? "Enabled" : "Disabled");
 
         if (!next)
             return true;
 
-        if (Unit* companion = GetActiveClassCompanion(player))
+        if (Unit* companion = GetActiveLooterCompanion(player))
         {
+            auto stateIt = sLooterPetStates.find(player->GetGUID());
+            if (stateIt != sLooterPetStates.end())
+                stateIt->second.boundCompanionGuid = companion->GetGUID();
+
             handler->PSendSysMessage(
-                "|cff00ff00[Looter Pet]|r Bound to companion: %s",
-                companion->GetName().c_str());
+                "|cff00ff00[Looter Pet]|r Bound to companion: {}",
+                companion->GetName());
         }
         else
         {
             handler->SendSysMessage(
-                "|cff00ff00[Looter Pet]|r Waiting for an active class "
-                "companion (pet/demon/guardian/charm).");
+                "|cff00ff00[Looter Pet]|r Waiting for an active companion "
+                "(pet/demon/guardian/charm/companion pet).");
         }
 
         return true;
@@ -260,22 +285,46 @@ public:
 
         auto it = sLooterPetStates.find(player->GetGUID());
         bool const enabled = it != sLooterPetStates.end() && it->second.enabled;
-        Unit* companion = enabled ? GetActiveClassCompanion(player) : nullptr;
+        bool const aoeEnabled = DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID());
+        bool const goldOnly = DCAoELootExt::GetPlayerGoldOnly(player->GetGUID());
+        uint8 const minQuality = DCAoELootExt::GetPlayerMinQuality(player->GetGUID());
+        Unit* companion = GetActiveLooterCompanion(player);
 
         handler->PSendSysMessage(
-            "|cff00ff00[Looter Pet]|r State: %s",
+            "|cff00ff00[Looter Pet]|r State: {}",
             enabled ? "Enabled" : "Disabled");
         handler->PSendSysMessage(
-            "|cff00ff00[Looter Pet]|r Mode: class companion bound");
+            "|cff00ff00[Looter Pet]|r AoE Loot: {}",
+            aoeEnabled ? "Enabled" : "Disabled");
         handler->PSendSysMessage(
-            "|cff00ff00[Looter Pet]|r Companion: %s",
-            companion ? companion->GetName().c_str() : "None");
+            "|cff00ff00[Looter Pet]|r Mode: companion bound");
         handler->PSendSysMessage(
-            "|cff00ff00[Looter Pet]|r Pulse: %u ms",
+            "|cff00ff00[Looter Pet]|r Companion: {}",
+            companion ? companion->GetName() : "None");
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Pulse: {} ms",
             sLooterPetConfig.pulseMs);
         handler->PSendSysMessage(
-            "|cff00ff00[Looter Pet]|r Combat: %s",
+            "|cff00ff00[Looter Pet]|r Combat: {}",
             sLooterPetConfig.allowInCombat ? "Allowed" : "Paused");
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Gold-Only: {}",
+            goldOnly ? "On" : "Off");
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Min Quality: {}",
+            minQuality);
+
+        if (!aoeEnabled)
+            handler->SendSysMessage("|cffff9900[Looter Pet]|r AoE Loot is disabled. Enable with .lp enable");
+
+        if (!sLooterPetConfig.allowInCombat && player->IsInCombat())
+            handler->SendSysMessage("|cffff9900[Looter Pet]|r Pulse currently paused while in combat.");
+
+        if (enabled && !companion)
+            handler->SendSysMessage("|cffff9900[Looter Pet]|r No active companion currently bound.");
+
+        if (enabled)
+            handler->SendSysMessage("|cffff9900[Looter Pet]|r Gold has no minimum threshold; any gold on eligible corpses is looted.");
 
         return true;
     }

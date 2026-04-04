@@ -129,41 +129,63 @@ local companionStatusColors = {
     charmed = "|cffff7f50",
     guardian = "|cff66ccff",
     pet = "|cff66ff66",
+    companion = "|cffffd700",
     unknown = "|cffffff66",
 }
 
+local function GetActiveCritterCompanionName()
+    if not GetNumCompanions or not GetCompanionInfo then
+        return nil
+    end
+
+    local critterCount = GetNumCompanions("CRITTER") or 0
+    for i = 1, critterCount do
+        local _, critterName, _, _, isSummoned = GetCompanionInfo("CRITTER", i)
+        if isSummoned and critterName and critterName ~= "" then
+            return critterName
+        end
+    end
+
+    return nil
+end
+
 function addon:GetDetectedCompanionInfo()
-    if not UnitExists or not UnitExists("pet") then
-        return "none", nil, nil
-    end
+    if UnitExists and UnitExists("pet") then
+        local companionName = UnitName("pet") or "Unknown"
+        local companionType = "Companion"
+        local companionClass = "unknown"
 
-    local companionName = UnitName("pet") or "Unknown"
-    local companionType = "Companion"
-    local companionClass = "unknown"
-
-    if UnitIsCharmed and UnitIsCharmed("pet") then
-        companionType = "Charmed"
-        companionClass = "charmed"
-    else
-        local creatureType = UnitCreatureType and UnitCreatureType("pet") or nil
-        if creatureType == "Demon" then
-            companionType = "Demon"
-            companionClass = "demon"
-        elseif UnitPlayerControlled and UnitPlayerControlled("pet") then
-            companionType = "Pet"
-            companionClass = "pet"
+        if UnitIsCharmed and UnitIsCharmed("pet") then
+            companionType = "Charmed"
+            companionClass = "charmed"
         else
-            companionType = "Guardian"
-            companionClass = "guardian"
+            local creatureType = UnitCreatureType and UnitCreatureType("pet") or nil
+            if creatureType == "Demon" then
+                companionType = "Demon"
+                companionClass = "demon"
+            elseif UnitPlayerControlled and UnitPlayerControlled("pet") then
+                companionType = "Pet"
+                companionClass = "pet"
+            else
+                companionType = "Guardian"
+                companionClass = "guardian"
+            end
+
+            local family = UnitCreatureFamily and UnitCreatureFamily("pet") or nil
+            if family and family ~= "" then
+                companionType = family
+            end
         end
 
-        local family = UnitCreatureFamily and UnitCreatureFamily("pet") or nil
-        if family and family ~= "" then
-            companionType = family
-        end
+        return companionClass, companionType, companionName
     end
 
-    return companionClass, companionType, companionName
+    local critterName = GetActiveCritterCompanionName()
+    if critterName then
+        return "companion", "Companion", critterName
+    end
+
+    return "none", nil, nil
 end
 
 function addon:GetCompanionStatusLineText()
@@ -374,6 +396,7 @@ function addon:Initialize()
     self.eventFrame:RegisterEvent("PLAYER_LOGOUT")
     self.eventFrame:RegisterEvent("UNIT_PET")
     self.eventFrame:RegisterEvent("UNIT_CHARM")
+    self.eventFrame:RegisterEvent("COMPANION_UPDATE")
     self.eventFrame:SetScript("OnEvent", function(_, event, ...)
         addon:OnEvent(event, ...)
     end)
@@ -392,6 +415,25 @@ end
 
 -- Flag to prevent double handler registration
 local _handlersRegistered = false
+local _lastLooterPetRuntimeSync = 0
+
+function addon:SyncLooterPetRuntimeState(reason)
+    if not self.settings or self.settings.looterPet == nil then
+        return
+    end
+
+    local now = GetTime and GetTime() or 0
+    if now > 0 and (now - _lastLooterPetRuntimeSync) < 2.0 then
+        return
+    end
+    _lastLooterPetRuntimeSync = now
+
+    self:SendServerCommand(self.settings.looterPet and ".lpet on" or ".lpet off")
+
+    if self.settings.debugMessages then
+        self:Print("Synced looter-pet runtime state (" .. (reason or "sync") .. ")", false)
+    end
+end
 
 function addon:OnEvent(event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -412,6 +454,11 @@ function addon:OnEvent(event, ...)
         DelayedCall(2, function()
             addon:RequestSettings()
         end)
+
+        -- Looter-pet runtime state is not persisted server-side; re-apply local preference.
+        DelayedCall(2.5, function()
+            addon:SyncLooterPetRuntimeState("PLAYER_ENTERING_WORLD")
+        end)
     elseif event == "PLAYER_LOGIN" then
         -- Re-check DC availability (in case it loaded after us)
         if not _handlersRegistered then
@@ -422,12 +469,21 @@ function addon:OnEvent(event, ...)
                 addon:Print("Connected to server via DCAddonProtocol", true)
             end
         end
+
+        DelayedCall(1.0, function()
+            addon:SyncLooterPetRuntimeState("PLAYER_LOGIN")
+        end)
     elseif event == "PLAYER_LOGOUT" then
         -- Save settings on logout
         self:SaveSettingsLocal()
     elseif event == "UNIT_PET" or event == "UNIT_CHARM" then
         local unit = ...
         if unit == "player" then
+            self:UpdateCompanionStatusLine()
+        end
+    elseif event == "COMPANION_UPDATE" then
+        local companionType = ...
+        if companionType == nil or companionType == "CRITTER" then
             self:UpdateCompanionStatusLine()
         end
     end

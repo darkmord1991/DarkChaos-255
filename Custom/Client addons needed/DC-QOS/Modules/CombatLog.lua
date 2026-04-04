@@ -1763,9 +1763,12 @@ local function ShowDeathRecap()
     for i = #entries - count + 1, #entries do
         local entry = entries[i]
         if entry then
+            local hp = entry.hp or entry.health
+            local maxhp = entry.maxhp or entry.healthMax
+            local hpPercent = entry.hpPercent or entry.healthPct
             local hpText = ""
-            if entry.hp and entry.maxhp then
-                hpText = string.format(" [HP: %d/%d - %.1f%%]", entry.hp, entry.maxhp, entry.hpPercent or 0)
+            if hp and maxhp and maxhp > 0 then
+                hpText = string.format(" [HP: %d/%d - %.1f%%]", hp, maxhp, hpPercent or (hp / maxhp * 100))
             end
             local extraText = ""
             if entry.overkill and entry.overkill > 0 then
@@ -1774,8 +1777,18 @@ local function ShowDeathRecap()
             if entry.absorbed and entry.absorbed > 0 then
                 extraText = extraText .. string.format(" |cff00ff00Absorbed: %s|r", FormatNumber(entry.absorbed))
             end
-            local sourceText = entry.source or "Unknown"
-            local spellText = entry.spell or "Unknown"
+            local sourceText = entry.sourceName or entry.source or "Unknown"
+            local spellText = entry.spellName or entry.spell
+            if (not spellText or spellText == "") and entry.spellId and entry.spellId > 0 then
+                spellText = GetSpellInfo(entry.spellId)
+            end
+            if not spellText or spellText == "" then
+                if entry.eventType == "damage" and entry.spellId == 0 then
+                    spellText = "Melee"
+                else
+                    spellText = "Unknown"
+                end
+            end
             print(string.format("  |cffff6600%s|r from %s (%s)%s%s", 
                 FormatNumber(entry.amount), 
                 sourceText, 
@@ -2592,6 +2605,7 @@ local function OnCombatLogEvent(...)
                 end
 
                 AddDeathLogEntry(destGUID, "damage", {
+                    sourceGUID = sourceGUID,
                     sourceName = sourceName,
                     spellName = "Melee",
                     spellId = 0,
@@ -2639,6 +2653,7 @@ local function OnCombatLogEvent(...)
                 end
 
                 AddDeathLogEntry(destGUID, "damage", {
+                    sourceGUID = sourceGUID,
                     sourceName = sourceName,
                     spellName = spellName,
                     spellId = spellId,
@@ -2659,6 +2674,7 @@ local function OnCombatLogEvent(...)
                 destData.damageTakenBySpell[-1].hits = destData.damageTakenBySpell[-1].hits + 1
 
                 AddDeathLogEntry(destGUID, "damage", {
+                    sourceGUID = sourceGUID,
                     sourceName = envType,
                     spellName = envType,
                     spellId = -1,
@@ -2705,6 +2721,7 @@ local function OnCombatLogEvent(...)
                     destData.healingTaken = (destData.healingTaken or 0) + effectiveHeal
 
                     AddDeathLogEntry(destGUID, "heal", {
+                        sourceGUID = sourceGUID,
                         sourceName = sourceName,
                         spellName = spellName,
                         spellId = spellId,
@@ -2717,9 +2734,19 @@ local function OnCombatLogEvent(...)
                 local spellName = arg10
                 local auraType = arg12
                 if auraType == "BUFF" then
-                    AddDeathLogEntry(destGUID, "buff", { spellName = spellName, spellId = spellId })
+                    AddDeathLogEntry(destGUID, "buff", {
+                        sourceGUID = sourceGUID,
+                        sourceName = sourceName,
+                        spellName = spellName,
+                        spellId = spellId,
+                    })
                 else
-                    AddDeathLogEntry(destGUID, "debuff", { spellName = spellName, spellId = spellId })
+                    AddDeathLogEntry(destGUID, "debuff", {
+                        sourceGUID = sourceGUID,
+                        sourceName = sourceName,
+                        spellName = spellName,
+                        spellId = spellId,
+                    })
                 end
             elseif event == "UNIT_DIED" then
                 if destGUID ~= playerGUID then

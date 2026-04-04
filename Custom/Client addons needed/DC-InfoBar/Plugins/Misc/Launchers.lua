@@ -76,6 +76,20 @@ local function OpenItemUpgrade(subcmd)
     RunSlashCommand(cmd)
 end
 
+local function HasAoELootSettings()
+    return (IsAddOnLoaded and IsAddOnLoaded("DC-AOESettings"))
+        or (rawget(_G, "DCAoELootSettings") ~= nil)
+        or (_G.SlashCmdList and type(_G.SlashCmdList["DCAOELOOT"]) == "function")
+end
+
+local function OpenAoELootSettings()
+    if _G.SlashCmdList and type(_G.SlashCmdList["DCAOELOOT"]) == "function" then
+        _G.SlashCmdList["DCAOELOOT"]("config")
+    else
+        RunSlashCommand("/aoeloot config")
+    end
+end
+
 local function ApplyIconStyle(icon)
     if not icon then return end
     -- Crop default icon borders to keep a consistent look.
@@ -271,22 +285,14 @@ local function BuildSettingsList()
     end
 
     -- AOE Loot Settings (client addon)
-    local hasAoeLootSettings = (IsAddOnLoaded and IsAddOnLoaded("DC-AOESettings"))
-        or (rawget(_G, "DCAoELootSettings") ~= nil)
-        or (_G.SlashCmdList and type(_G.SlashCmdList["DCAOELOOT"]) == "function")
+    local hasAoeLootSettings = HasAoELootSettings()
 
     if hasAoeLootSettings then
         local aoeEntry = {
             key = "aoeloot",
             name = "AOE Loot Settings",
             icon = "Interface\\AddOns\\DC-Welcome\\Textures\\Icons\\AOESettings_64.tga",
-            onClick = function()
-                if _G.SlashCmdList and type(_G.SlashCmdList["DCAOELOOT"]) == "function" then
-                    _G.SlashCmdList["DCAOELOOT"]("config")
-                else
-                    RunSlashCommand("/aoeloot config")
-                end
-            end,
+            onClick = OpenAoELootSettings,
         }
 
         local inserted = false
@@ -723,6 +729,11 @@ function LaunchersPlugin:ToggleQoSMenu(anchorButton)
             end,
         },
         {
+            name = "AoE Loot Settings",
+            icon = "Interface\\AddOns\\DC-Welcome\\Textures\\Icons\\AOESettings_64.tga",
+            onClick = OpenAoELootSettings,
+        },
+        {
             name = "CombatLog Window",
             icon = "Interface\\Icons\\Ability_DualWield",
             onClick = function()
@@ -756,6 +767,10 @@ function LaunchersPlugin:ToggleQoSMenu(anchorButton)
             end,
         },
     }
+
+    if not HasAoELootSettings() then
+        table.remove(entries, 2)
+    end
 
     local iconSize = tonumber(DCInfoBar:GetPluginSetting(self.id, "iconSize")) or 16
     ShowMenu(self._qosMenu, anchorButton, entries, iconSize)

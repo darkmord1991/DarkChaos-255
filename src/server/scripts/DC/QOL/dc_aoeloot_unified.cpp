@@ -1191,7 +1191,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
         ss << "|cFF00FF00[AoE Loot]|r Looted " << processed << " corpses. ";
         if (!itemsToAdd.empty()) ss << "Items: " << itemsToAdd.size() << ". ";
         if (mergedGold > 0) ss << "Gold: " << FormatCoins(mergedGold);
-        ChatHandler(player->GetSession()).PSendSysMessage("%s", ss.str().c_str());
+        ChatHandler(player->GetSession()).PSendSysMessage("{}", ss.str());
     }
     return true;
 }
@@ -1687,7 +1687,7 @@ public:
         if (!player) return true;
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         prefs.aoeLootEnabled = enabled.value_or(!prefs.aoeLootEnabled);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r %s", prefs.aoeLootEnabled ? "Enabled" : "Disabled");
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r {}", prefs.aoeLootEnabled ? "Enabled" : "Disabled");
         return true;
     }
 
@@ -1715,7 +1715,7 @@ public:
         if (!player) return true;
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         prefs.showMessages = enabled.value_or(!prefs.showMessages);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Messages: %s", prefs.showMessages ? "On" : "Off");
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Messages: {}", prefs.showMessages ? "On" : "Off");
         return true;
     }
 
@@ -1725,7 +1725,7 @@ public:
         if (!player) return true;
         if (quality > 6) quality = 6;
         sPlayerPrefs[player->GetGUID()].minQuality = quality;
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Min quality: %s", GetQualityName(quality));
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Min quality: {}", GetQualityName(quality));
         return true;
     }
 
@@ -1735,7 +1735,7 @@ public:
         if (!player) return true;
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         prefs.autoSkin = enabled.value_or(!prefs.autoSkin);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Auto-Skin: %s", prefs.autoSkin ? "On" : "Off");
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Auto-Skin: {}", prefs.autoSkin ? "On" : "Off");
         return true;
     }
 
@@ -1745,7 +1745,7 @@ public:
         if (!player) return true;
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         prefs.smartLootEnabled = enabled.value_or(!prefs.smartLootEnabled);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Smart Loot: %s", prefs.smartLootEnabled ? "On" : "Off");
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Smart Loot: {}", prefs.smartLootEnabled ? "On" : "Off");
         return true;
     }
 
@@ -1756,7 +1756,7 @@ public:
 
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         prefs.goldOnly = enabled.value_or(!prefs.goldOnly);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Gold-only mode: %s", prefs.goldOnly ? "On" : "Off");
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Gold-only mode: {}", prefs.goldOnly ? "On" : "Off");
         return true;
     }
 
@@ -1767,7 +1767,7 @@ public:
 
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         prefs.autoVendorPoor = enabled.value_or(!prefs.autoVendorPoor);
-        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Auto-vendor poor items: %s", prefs.autoVendorPoor ? "On" : "Off");
+        handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Auto-vendor poor items: {}", prefs.autoVendorPoor ? "On" : "Off");
         return true;
     }
 
@@ -1786,12 +1786,12 @@ public:
         if (it == ignored.end())
         {
             ignored.insert(itemId);
-            handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Item %u added to ignore list.", itemId);
+            handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Item {} added to ignore list.", itemId);
         }
         else
         {
             ignored.erase(it);
-            handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Item %u removed from ignore list.", itemId);
+            handler->PSendSysMessage("|cff00ff00[AoE Loot]|r Item {} removed from ignore list.", itemId);
         }
         return true;
     }
@@ -1803,34 +1803,34 @@ public:
 
         PlayerLootPreferences& prefs = sPlayerPrefs[player->GetGUID()];
         handler->SendSysMessage("|cff00ff00========== AoE LOOT SETTINGS ==========|r");
-        handler->PSendSysMessage("Enabled: %s", prefs.aoeLootEnabled ? "Yes" : "No");
-        handler->PSendSysMessage("Messages: %s", prefs.showMessages ? "On" : "Off");
-        handler->PSendSysMessage("Min Quality: %s", GetQualityName(prefs.minQuality));
-        handler->PSendSysMessage("Auto-Skin: %s", prefs.autoSkin ? "On" : "Off");
-        handler->PSendSysMessage("Smart Loot: %s", prefs.smartLootEnabled ? "On" : "Off");
-        handler->PSendSysMessage("Gold-Only: %s", prefs.goldOnly ? "On" : "Off");
-        handler->PSendSysMessage("Auto-Vendor Poor: %s", prefs.autoVendorPoor ? "On" : "Off");
-        handler->PSendSysMessage("Ignored Items: %u", static_cast<uint32>(prefs.ignoredItemIds.size()));
+        handler->PSendSysMessage("Enabled: {}", prefs.aoeLootEnabled ? "Yes" : "No");
+        handler->PSendSysMessage("Messages: {}", prefs.showMessages ? "On" : "Off");
+        handler->PSendSysMessage("Min Quality: {}", GetQualityName(prefs.minQuality));
+        handler->PSendSysMessage("Auto-Skin: {}", prefs.autoSkin ? "On" : "Off");
+        handler->PSendSysMessage("Smart Loot: {}", prefs.smartLootEnabled ? "On" : "Off");
+        handler->PSendSysMessage("Gold-Only: {}", prefs.goldOnly ? "On" : "Off");
+        handler->PSendSysMessage("Auto-Vendor Poor: {}", prefs.autoVendorPoor ? "On" : "Off");
+        handler->PSendSysMessage("Ignored Items: {}", static_cast<uint32>(prefs.ignoredItemIds.size()));
 
         auto it = sDetailedStats.find(player->GetGUID());
         if (it != sDetailedStats.end())
         {
             DetailedLootStats& s = it->second;
             handler->SendSysMessage("|cff00ff00========== STATISTICS ==========|r");
-            handler->PSendSysMessage("Items Looted: %u", s.totalItemsLooted);
-            handler->PSendSysMessage("Gold Looted: %s", FormatCoins(s.totalGoldLooted).c_str());
-            handler->PSendSysMessage("Skinned: %u", s.skinnedCorpses);
+            handler->PSendSysMessage("Items Looted: {}", s.totalItemsLooted);
+            handler->PSendSysMessage("Gold Looted: {}", FormatCoins(s.totalGoldLooted));
+            handler->PSendSysMessage("Skinned: {}", s.skinnedCorpses);
         }
         return true;
     }
 
     static bool HandleInfo(ChatHandler* handler)
     {
-        handler->PSendSysMessage("AoE Loot: %s", sConfig.enabled ? "Enabled" : "Disabled");
+        handler->PSendSysMessage("AoE Loot: {}", sConfig.enabled ? "Enabled" : "Disabled");
         if (sConfig.enabled)
         {
-            handler->PSendSysMessage("  Range: %.1f yards", sConfig.range);
-            handler->PSendSysMessage("  Max Corpses: %u", sConfig.maxCorpses);
+            handler->PSendSysMessage("  Range: {:.1f} yards", sConfig.range);
+            handler->PSendSysMessage("  Max Corpses: {}", sConfig.maxCorpses);
         }
         return true;
     }
