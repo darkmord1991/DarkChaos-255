@@ -43,8 +43,15 @@ local function CreateMailUI()
             addon.protocol:RequestCollectAllMail()
             collectAllBtn:Disable() -- Prevent spam
             addon:DelayedCall(2, function() collectAllBtn:Enable() end)
+            if addon.Notify then
+                addon:Notify("Collect All request sent to the server.", "info", { title = "Mail", chatFallback = false })
+            end
         else
-            addon:Print("Cannot collect mail: Not connected to server.", true)
+            if addon.Notify then
+                addon:Notify("Cannot collect mail: not connected to the server.", "warning", { title = "Mail" })
+            else
+                addon:Print("Cannot collect mail: Not connected to server.", true)
+            end
         end
     end)
     

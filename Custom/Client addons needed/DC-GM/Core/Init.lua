@@ -17,8 +17,18 @@
 -------------------------------------------------------------------------------------------------------------
 
 -- Guard against missing global chat strings (prevents ChatFrame format errors)
+local notInLfgText = "You are not in Looking For Group channel."
+
 if not _G.CHAT_NOT_IN_LFG then
-  _G.CHAT_NOT_IN_LFG = "You are not in Looking For Group channel."
+  _G.CHAT_NOT_IN_LFG = notInLfgText
+end
+
+if not _G.CHAT_NOT_IN_LFG_NOTICE then
+  _G.CHAT_NOT_IN_LFG_NOTICE = notInLfgText
+end
+
+if not _G.CHAT_NOT_IN_LFG_NOTICE_BN then
+  _G.CHAT_NOT_IN_LFG_NOTICE_BN = _G.CHAT_NOT_IN_LFG_NOTICE
 end
 
 --Convention:

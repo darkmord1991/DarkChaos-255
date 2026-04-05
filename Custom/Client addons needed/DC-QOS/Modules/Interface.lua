@@ -19,6 +19,64 @@ local Interface = {
 -- Event frames storage for cleanup (must be defined before functions that use it)
 local eventFrames = {}
 local zoomSettingHookRegistered = false
+local questLevelHookRegistered = false
+
+local combatPlatesState = { active = false, previousShowEnemies = nil }
+local gryphonState = { active = false, leftShown = nil, rightShown = nil }
+local worldMapState = { active = false, movable = nil, mouseEnabled = nil, onDragStart = nil, onDragStop = nil }
+local minimapState = { active = false, mouseWheelEnabled = nil, onMouseWheel = nil, zoomInShown = nil, zoomOutShown = nil }
+local cameraZoomState = { active = false, previousMaxFactor = nil }
+local buffFrameState = {
+    active = false,
+    hookInstalled = false,
+    pendingRestore = false,
+    restoreFrame = nil,
+    offsetX = 0,
+    offsetY = 0,
+    buffPoint = nil,
+    tempEnchantPoint = nil,
+}
+
+local function GetManagedEventFrame(key)
+    if not eventFrames[key] then
+        eventFrames[key] = CreateFrame("Frame")
+    end
+    return eventFrames[key]
+end
+
+local function CapturePoint(frame)
+    if not frame or not frame.GetPoint then
+        return nil
+    end
+
+    local point, relativeTo, relativePoint, x, y = frame:GetPoint()
+    if not point then
+        return nil
+    end
+
+    return {
+        point = point,
+        relativeTo = relativeTo,
+        relativePoint = relativePoint,
+        x = x or 0,
+        y = y or 0,
+    }
+end
+
+local function RestorePoint(frame, pointData)
+    if not frame or not pointData then
+        return
+    end
+
+    frame:ClearAllPoints()
+    frame:SetPoint(
+        pointData.point,
+        pointData.relativeTo,
+        pointData.relativePoint,
+        pointData.x or 0,
+        pointData.y or 0
+    )
+end
 
 local function SafeSetCVar(name, value)
     if type(SetCVar) ~= "function" then
@@ -45,24 +103,29 @@ end
 local function SetupCombatPlates()
     local settings = addon.settings.interface
     if not settings.enabled or not settings.combatPlates then return end
-    
-    local frame = CreateFrame("Frame")
-    table.insert(eventFrames, frame)
+
+    if not combatPlatesState.active and type(GetCVar) == "function" then
+        combatPlatesState.previousShowEnemies = GetCVar("nameplateShowEnemies")
+    end
+    combatPlatesState.active = true
+
+    local frame = GetManagedEventFrame("combatPlates")
+    frame:UnregisterAllEvents()
     frame:RegisterEvent("PLAYER_REGEN_DISABLED")  -- Enter combat
     frame:RegisterEvent("PLAYER_REGEN_ENABLED")   -- Leave combat
     frame:SetScript("OnEvent", function(self, event)
         if event == "PLAYER_REGEN_DISABLED" then
-            SetCVar("nameplateShowEnemies", 1)
+            SafeSetCVar("nameplateShowEnemies", "1")
         else
-            SetCVar("nameplateShowEnemies", 0)
+            SafeSetCVar("nameplateShowEnemies", "0")
         end
     end)
     
     -- Set initial state based on current combat status
     if UnitAffectingCombat("player") then
-        SetCVar("nameplateShowEnemies", 1)
+        SafeSetCVar("nameplateShowEnemies", "1")
     else
-        SetCVar("nameplateShowEnemies", 0)
+        SafeSetCVar("nameplateShowEnemies", "0")
     end
 end
 
@@ -72,9 +135,9 @@ end
 local function SetupAutoQuestWatch()
     local settings = addon.settings.interface
     if not settings.enabled or not settings.autoQuestWatch then return end
-    
-    local frame = CreateFrame("Frame")
-    table.insert(eventFrames, frame)
+
+    local frame = GetManagedEventFrame("autoQuestWatch")
+    frame:UnregisterAllEvents()
     frame:RegisterEvent("QUEST_ACCEPTED")
     frame:SetScript("OnEvent", function(self, event, questLogIndex, questId)
         if questLogIndex then
@@ -87,20 +150,24 @@ end
 -- Quest Level Text
 -- ============================================================
 local function SetupQuestLevelText()
-    local settings = addon.settings.interface
-    if not settings.enabled or not settings.questLevelText then return end
-    
+    if questLevelHookRegistered then return end
+    questLevelHookRegistered = true
+
     -- Hook the quest log title button update
     hooksecurefunc("QuestLog_Update", function()
+        local settings = addon.settings and addon.settings.interface
+        if not settings or not settings.enabled or not settings.questLevelText then
+            return
+        end
+
         local numQuests = QUESTS_DISPLAYED or 6
         for i = 1, numQuests do
             local questLogTitle = _G["QuestLogTitle" .. i]
             if questLogTitle then
                 local questIndex = questLogTitle:GetID()
                 local title, level, tag, suggestedGroup, isHeader, isCollapsed, isComplete = GetQuestLogTitle(questIndex)
-                
+
                 if title and not isHeader then
-                    local levelColor = GetQuestDifficultyColor(level)
                     local newTitle = string.format("[%d] %s", level, title)
                     questLogTitle:SetText(newTitle)
                     questLogTitle:SetNormalFontObject("GameFontNormal")
@@ -116,6 +183,16 @@ end
 local function SetupHideGryphons()
     local settings = addon.settings.interface
     if not settings.enabled or not settings.hideGryphons then return end
+
+    if not gryphonState.active then
+        if MainMenuBarLeftEndCap and MainMenuBarLeftEndCap.IsShown then
+            gryphonState.leftShown = MainMenuBarLeftEndCap:IsShown()
+        end
+        if MainMenuBarRightEndCap and MainMenuBarRightEndCap.IsShown then
+            gryphonState.rightShown = MainMenuBarRightEndCap:IsShown()
+        end
+    end
+    gryphonState.active = true
     
     if MainMenuBarLeftEndCap then
         MainMenuBarLeftEndCap:Hide()
@@ -131,6 +208,18 @@ end
 local function SetupLargerWorldMap()
     local settings = addon.settings.interface
     if not settings.enabled or not settings.largerWorldMap then return end
+
+    if not WorldMapFrame then
+        return
+    end
+
+    if not worldMapState.active then
+        worldMapState.active = true
+        worldMapState.movable = WorldMapFrame.IsMovable and WorldMapFrame:IsMovable() or false
+        worldMapState.mouseEnabled = WorldMapFrame.IsMouseEnabled and WorldMapFrame:IsMouseEnabled() or true
+        worldMapState.onDragStart = WorldMapFrame.GetScript and WorldMapFrame:GetScript("OnDragStart") or nil
+        worldMapState.onDragStop = WorldMapFrame.GetScript and WorldMapFrame:GetScript("OnDragStop") or nil
+    end
     
     -- Make world map movable and resizable
     WorldMapFrame:SetMovable(true)
@@ -147,62 +236,127 @@ end
 -- ============================================================
 -- Buff/Aura Frame Position
 -- ============================================================
+local function ApplyBuffFramePosition()
+    if InCombatLockdown() then return end
+
+    if BuffFrame then
+        if not buffFrameState.buffPoint then
+            buffFrameState.buffPoint = CapturePoint(BuffFrame)
+        end
+
+        BuffFrame:SetMovable(true)
+        BuffFrame:SetUserPlaced(true)
+        BuffFrame._dcqosRepositioning = true
+        BuffFrame:ClearAllPoints()
+        BuffFrame:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", buffFrameState.offsetX, buffFrameState.offsetY)
+        BuffFrame._dcqosRepositioning = nil
+
+        if not buffFrameState.hookInstalled then
+            buffFrameState.hookInstalled = true
+            hooksecurefunc(BuffFrame, "SetPoint", function(self, ...)
+                if not buffFrameState.active or self._dcqosRepositioning then return end
+                self._dcqosRepositioning = true
+                self:ClearAllPoints()
+                self:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", buffFrameState.offsetX, buffFrameState.offsetY)
+                self._dcqosRepositioning = nil
+            end)
+        end
+    end
+
+    if TemporaryEnchantFrame then
+        if not buffFrameState.tempEnchantPoint then
+            buffFrameState.tempEnchantPoint = CapturePoint(TemporaryEnchantFrame)
+        end
+
+        TemporaryEnchantFrame:ClearAllPoints()
+        TemporaryEnchantFrame:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", buffFrameState.offsetX, buffFrameState.offsetY)
+    end
+end
+
+local function RestoreBuffFramePosition()
+    if InCombatLockdown() then
+        buffFrameState.pendingRestore = true
+        if not buffFrameState.restoreFrame then
+            buffFrameState.restoreFrame = CreateFrame("Frame")
+        end
+        buffFrameState.restoreFrame:UnregisterAllEvents()
+        buffFrameState.restoreFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        buffFrameState.restoreFrame:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            self:SetScript("OnEvent", nil)
+            RestoreBuffFramePosition()
+        end)
+        return false
+    end
+
+    buffFrameState.pendingRestore = false
+    if buffFrameState.restoreFrame then
+        buffFrameState.restoreFrame:UnregisterAllEvents()
+        buffFrameState.restoreFrame:SetScript("OnEvent", nil)
+    end
+
+    if BuffFrame then
+        BuffFrame._dcqosRepositioning = true
+        RestorePoint(BuffFrame, buffFrameState.buffPoint)
+        BuffFrame._dcqosRepositioning = nil
+        if BuffFrame.SetUserPlaced then
+            BuffFrame:SetUserPlaced(false)
+        end
+    end
+
+    if TemporaryEnchantFrame then
+        RestorePoint(TemporaryEnchantFrame, buffFrameState.tempEnchantPoint)
+    end
+
+    return true
+end
+
 local function SetupBuffFramePosition()
     local settings = addon.settings.interface
     if not settings.enabled or not settings.buffFrameMove then return end
 
-    local x = settings.buffFrameOffsetX or 0
-    local y = settings.buffFrameOffsetY or 0
-
-    local function ApplyPosition()
-        if InCombatLockdown() then return end
-        
-        if BuffFrame then
-            -- Make it movable and prevent Blizzard from overriding
-            BuffFrame:SetMovable(true)
-            BuffFrame:SetUserPlaced(true)
-            BuffFrame:ClearAllPoints()
-            BuffFrame:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", x, y)
-            
-            -- Hook to prevent repositioning
-            if not BuffFrame._dcqosHooked then
-                BuffFrame._dcqosHooked = true
-                hooksecurefunc(BuffFrame, "SetPoint", function(self, ...)
-                    if self._dcqosRepositioning then return end
-                    self._dcqosRepositioning = true
-                    self:ClearAllPoints()
-                    self:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", x, y)
-                    self._dcqosRepositioning = nil
-                end)
-            end
-        end
-
-        if TemporaryEnchantFrame then
-            TemporaryEnchantFrame:ClearAllPoints()
-            TemporaryEnchantFrame:SetPoint("TOPRIGHT", MinimapCluster or UIParent, "TOPLEFT", x, y)
-        end
+    buffFrameState.active = true
+    buffFrameState.pendingRestore = false
+    if buffFrameState.restoreFrame then
+        buffFrameState.restoreFrame:UnregisterAllEvents()
+        buffFrameState.restoreFrame:SetScript("OnEvent", nil)
     end
-    
+    buffFrameState.offsetX = settings.buffFrameOffsetX or 0
+    buffFrameState.offsetY = settings.buffFrameOffsetY or 0
+
     -- Use a frame to handle positioning after combat/loading
-    local positioner = CreateFrame("Frame")
+    local positioner = GetManagedEventFrame("buffPositioner")
+    positioner:UnregisterAllEvents()
     positioner:RegisterEvent("PLAYER_ENTERING_WORLD")
     positioner:RegisterEvent("PLAYER_REGEN_ENABLED")
-    positioner:SetScript("OnEvent", ApplyPosition)
+    positioner:SetScript("OnEvent", ApplyBuffFramePosition)
     
     -- Apply immediately if not in combat
     if not InCombatLockdown() then
-        ApplyPosition()
+        ApplyBuffFramePosition()
     end
     
     -- Also try after a short delay for late-loading UI
-    addon:DelayedCall(0.5, ApplyPosition)
-    addon:DelayedCall(2.0, ApplyPosition)
+    addon:DelayedCall(0.5, ApplyBuffFramePosition)
+    addon:DelayedCall(2.0, ApplyBuffFramePosition)
 end
 
 -- ============================================================
 -- Enhanced Minimap
 -- ============================================================
 local function SetupEnhancedMinimap()
+    if not Minimap then
+        return
+    end
+
+    if not minimapState.active then
+        minimapState.active = true
+        minimapState.mouseWheelEnabled = Minimap.IsMouseWheelEnabled and Minimap:IsMouseWheelEnabled() or false
+        minimapState.onMouseWheel = Minimap.GetScript and Minimap:GetScript("OnMouseWheel") or nil
+        minimapState.zoomInShown = MinimapZoomIn and MinimapZoomIn.IsShown and MinimapZoomIn:IsShown() or false
+        minimapState.zoomOutShown = MinimapZoomOut and MinimapZoomOut.IsShown and MinimapZoomOut:IsShown() or false
+    end
+
     -- Allow scrolling to zoom minimap
     Minimap:EnableMouseWheel(true)
     Minimap:SetScript("OnMouseWheel", function(self, delta)
@@ -237,10 +391,15 @@ local function SetupCameraZoomDistance()
     local settings = addon.settings.interface
     if not settings or not settings.enabled then return end
 
+    if not cameraZoomState.active and type(GetCVar) == "function" then
+        cameraZoomState.previousMaxFactor = GetCVar("cameraDistanceMaxFactor")
+    end
+    cameraZoomState.active = true
+
     ApplyCameraZoomDistance()
 
-    local frame = CreateFrame("Frame")
-    table.insert(eventFrames, frame)
+    local frame = GetManagedEventFrame("cameraZoom")
+    frame:UnregisterAllEvents()
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
     frame:SetScript("OnEvent", function()
         ApplyCameraZoomDistance()
@@ -309,11 +468,83 @@ end
 function Interface.OnDisable()
     addon:Debug("Interface module disabling")
     -- Unregister all event frames to clean up
-    for _, frame in ipairs(eventFrames) do
+    for _, frame in pairs(eventFrames) do
         if frame and frame.UnregisterAllEvents then
             frame:UnregisterAllEvents()
             frame:SetScript("OnEvent", nil)
         end
+    end
+
+    if combatPlatesState.active then
+        SafeSetCVar("nameplateShowEnemies", tostring(combatPlatesState.previousShowEnemies or "0"))
+        combatPlatesState.active = false
+        combatPlatesState.previousShowEnemies = nil
+    end
+
+    if cameraZoomState.active then
+        SafeSetCVar("cameraDistanceMaxFactor", tostring(cameraZoomState.previousMaxFactor or "1"))
+        cameraZoomState.active = false
+        cameraZoomState.previousMaxFactor = nil
+    end
+
+    if gryphonState.active then
+        if MainMenuBarLeftEndCap then
+            if gryphonState.leftShown then MainMenuBarLeftEndCap:Show() else MainMenuBarLeftEndCap:Hide() end
+        end
+        if MainMenuBarRightEndCap then
+            if gryphonState.rightShown then MainMenuBarRightEndCap:Show() else MainMenuBarRightEndCap:Hide() end
+        end
+        gryphonState.active = false
+        gryphonState.leftShown = nil
+        gryphonState.rightShown = nil
+    end
+
+    if worldMapState.active and WorldMapFrame then
+        if WorldMapFrame.StopMovingOrSizing then
+            WorldMapFrame:StopMovingOrSizing()
+        end
+        WorldMapFrame:SetMovable(worldMapState.movable and true or false)
+        if WorldMapFrame.EnableMouse and worldMapState.mouseEnabled ~= nil then
+            WorldMapFrame:EnableMouse(worldMapState.mouseEnabled)
+        end
+        if WorldMapFrame.SetScript then
+            WorldMapFrame:SetScript("OnDragStart", worldMapState.onDragStart)
+            WorldMapFrame:SetScript("OnDragStop", worldMapState.onDragStop)
+        end
+        worldMapState.active = false
+        worldMapState.movable = nil
+        worldMapState.mouseEnabled = nil
+        worldMapState.onDragStart = nil
+        worldMapState.onDragStop = nil
+    end
+
+    if minimapState.active and Minimap then
+        if Minimap.EnableMouseWheel and minimapState.mouseWheelEnabled ~= nil then
+            Minimap:EnableMouseWheel(minimapState.mouseWheelEnabled)
+        end
+        if Minimap.SetScript then
+            Minimap:SetScript("OnMouseWheel", minimapState.onMouseWheel)
+        end
+        if MinimapZoomIn then
+            if minimapState.zoomInShown then MinimapZoomIn:Show() else MinimapZoomIn:Hide() end
+        end
+        if MinimapZoomOut then
+            if minimapState.zoomOutShown then MinimapZoomOut:Show() else MinimapZoomOut:Hide() end
+        end
+        minimapState.active = false
+        minimapState.mouseWheelEnabled = nil
+        minimapState.onMouseWheel = nil
+        minimapState.zoomInShown = nil
+        minimapState.zoomOutShown = nil
+    end
+
+    if buffFrameState.active then
+        buffFrameState.active = false
+        RestoreBuffFramePosition()
+    end
+
+    if type(QuestLog_Update) == "function" then
+        pcall(QuestLog_Update)
     end
 end
 

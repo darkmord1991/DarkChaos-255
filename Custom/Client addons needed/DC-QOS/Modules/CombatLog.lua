@@ -627,6 +627,8 @@ GetCombatTime = function()
     return 0
 end
 
+CombatLog.GetCombatTime = GetCombatTime
+
 local function GetClassColor(classToken)
     local color = CLASS_COLORS[classToken]
     if color then
@@ -1221,6 +1223,10 @@ end
 local function ShowTooltip(self)
     local data = self.data
     if not data then return end
+
+    if CombatLog.ShowEnhancedTooltip and CombatLog.ShowEnhancedTooltip(self) then
+        return
+    end
     
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:AddLine(data.name, 1, 1, 1)
@@ -1751,6 +1757,11 @@ local function ShowDeathRecap()
     if not settings.deathRecap then return end
 
     local data = GetPlayerData(playerGUID, playerName)
+
+    if CombatLog.ShowDeathRecap and CombatLog.ShowDeathRecap(data) then
+        return
+    end
+
     local entries = CombatLog.GetDeathLogEntries(data, false)
     if #entries == 0 then
         addon:Print("No damage recorded before death.", true)

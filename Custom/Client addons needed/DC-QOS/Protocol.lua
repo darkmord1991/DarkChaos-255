@@ -276,8 +276,17 @@ function protocol:HandleNotification(...)
         local notification = args[1]
         local msgType = notification.type or "info"
         local message = notification.message or ""
-        
-        if msgType == "error" then
+
+        if addon.Notify then
+            local title = "Server Notice"
+            if msgType == "error" then
+                title = "Server Error"
+            elseif msgType == "warning" then
+                title = "Server Warning"
+            end
+
+            addon:Notify(message, msgType, { title = title, chatFallback = true })
+        elseif msgType == "error" then
             addon:Print("|cffff0000Error:|r " .. message, true)
         elseif msgType == "warning" then
             addon:Print("|cffffd700Warning:|r " .. message, true)

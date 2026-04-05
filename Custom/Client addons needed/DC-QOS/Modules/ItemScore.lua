@@ -38,6 +38,9 @@ for k, v in pairs(defaults) do
     addon.defaults[k] = v
 end
 
+local itemScoreTooltipHooksInstalled = false
+local itemScoreEventRegistered = false
+
 -- ============================================================
 -- Stat Weights by Class/Spec (Based on Wowhead/Pawn)
 -- ============================================================
@@ -410,6 +413,9 @@ end
 -- Hook into Tooltips module
 -- ============================================================
 local function HookTooltips()
+    if itemScoreTooltipHooksInstalled then return end
+    itemScoreTooltipHooksInstalled = true
+
     -- Hook into item tooltip methods
     local tooltipsToHook = {
         GameTooltip,
@@ -443,6 +449,12 @@ function ItemScore:SetCustomWeights(class, weights)
     end
 end
 
+local function OnStatWeightsReceived(data)
+    if data and data.class and data.weights then
+        ItemScore:SetCustomWeights(data.class, data.weights)
+    end
+end
+
 -- ============================================================
 -- Module Callbacks
 -- ============================================================
@@ -456,11 +468,10 @@ function ItemScore.OnEnable()
     HookTooltips()
     
     -- Listen for server-sent weights
-    addon:RegisterEvent("STAT_WEIGHTS_RECEIVED", function(data)
-        if data and data.class and data.weights then
-            ItemScore:SetCustomWeights(data.class, data.weights)
-        end
-    end)
+    if not itemScoreEventRegistered then
+        itemScoreEventRegistered = true
+        addon:RegisterEvent("STAT_WEIGHTS_RECEIVED", OnStatWeightsReceived)
+    end
 end
 
 function ItemScore.OnDisable()

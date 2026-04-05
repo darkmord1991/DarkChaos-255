@@ -1622,6 +1622,12 @@ public:
                 DCAddon::Opcode::Core::SMSG_ERROR);
         }
 
+        // Fallback completion path for handled requests:
+        // if the handler consumed the request but did not emit a response packet
+        // carrying RID, close the pending RID entry here to avoid false timeouts.
+        if (handled && !handlerException && parsed.HasRequestId() && ShouldTrackPendingRequest(parsed))
+            DCAddon::NotifyResponseSent(player, parsed.GetRequestId());
+
         // Log to database if protocol logging is enabled
         if (s_AddonConfig.EnableProtocolLogging && !moduleStr.empty())
         {

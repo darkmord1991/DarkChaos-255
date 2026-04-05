@@ -21,7 +21,7 @@ addon.currentView = "Dashboard"
 local moduleCategories = {
     {
         name = "Core & Automation",
-        modules = { "Automation", "Interface", "Chat", "Tooltips", "DruidFix" }
+        modules = { "Experience", "Automation", "Interface", "Chat", "Tooltips", "DruidFix" }
     },
     {
         name = "Combat",
@@ -33,7 +33,7 @@ local moduleCategories = {
     },
     {
         name = "UI Customization",
-        modules = { "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Keybinds", "WeakAuras" }
+        modules = { "FrameMover", "Cooldowns", "ExtendedStats", "ActionBars", "Minimap", "Navigation", "Keybinds", "WeakAuras" }
     },
     {
         name = "Character",
@@ -47,6 +47,7 @@ local moduleCategories = {
 
 -- Display names for buttons
 local moduleDisplayNames = {
+    ["Experience"] = "Experience Shell",
     ["Automation"] = "Automation",
     ["Interface"] = "Interface",
     ["Chat"] = "Chat Enhancements",
@@ -64,6 +65,7 @@ local moduleDisplayNames = {
     ["ExtendedStats"] = "Extended Stats",
     ["ActionBars"] = "Action Bars",
     ["Minimap"] = "Minimap",
+    ["Navigation"] = "Navigation",
     ["Keybinds"] = "Keybinds",
     ["SocialEnhancements"] = "Social",
     ["Mail"] = "Mail",
@@ -74,6 +76,7 @@ local moduleDisplayNames = {
 
 -- Icons for buttons (standard WoW icons)
 local moduleIcons = {
+    ["Experience"] = "Interface\\Icons\\Ability_Hunter_MasterMarksman",
     ["Automation"] = "Interface\\Icons\\Inv_Gizmo_02",
     ["Interface"] = "Interface\\Icons\\Inv_Misc_Book_09",
     ["Chat"] = "Interface\\Icons\\Spell_Holy_Dizzy",
@@ -91,6 +94,7 @@ local moduleIcons = {
     ["ExtendedStats"] = "Interface\\Icons\\Spell_Holy_PowerWordShield",
     ["ActionBars"] = "Interface\\Icons\\Ability_Warrior_BattleShout",
     ["Minimap"] = "Interface\\Icons\\INV_Misc_Map_01",
+    ["Navigation"] = "Interface\\Icons\\INV_Misc_Map_01",
     ["Keybinds"] = "Interface\\Icons\\INV_Misc_Key_14",
     ["SocialEnhancements"] = "Interface\\Icons\\Spell_Holy_Stoicism",
     ["Mail"] = "Interface\\Icons\\Inv_Letter_02",
@@ -98,6 +102,18 @@ local moduleIcons = {
     ["Profiles"] = "Interface\\Icons\\INV_Misc_Note_02",
     ["TalentManager"] = "Interface\\Icons\\Ability_Marksmanship",
 }
+
+addon.dashboardDisplayNames = moduleDisplayNames
+
+local function CreateEmptyDashboardLabel(parent)
+    local label = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    label:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -18)
+    label:SetWidth(480)
+    label:SetJustifyH("LEFT")
+    label:SetText("No modules matched the current search.")
+    label:Hide()
+    return label
+end
 
 -- ============================================================
 -- Helper Functions
@@ -127,6 +143,12 @@ local function CreateDashboardButton(parent, moduleName, x, y)
     button:SetScript("OnClick", function()
         addon:ShowModule(moduleName)
     end)
+
+    button.moduleName = moduleName
+
+    if addon.StyleActionButton then
+        addon:StyleActionButton(button)
+    end
     
     return button
 end
@@ -357,6 +379,9 @@ function addon:CreateSettingsPanel()
     local panel = CreateFrame("Frame", "DCQoSSettingsPanel", InterfaceOptionsFramePanelContainer)
     panel.name = "DC-QoS"
     panel:Hide()
+    if addon.RegisterScalableFrame then
+        addon:RegisterScalableFrame(panel)
+    end
     
     -- Header
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
@@ -373,6 +398,21 @@ function addon:CreateSettingsPanel()
         addon:ShowDashboard()
     end)
     self.backButton = backBtn
+
+    if addon.StyleActionButton then
+        addon:StyleActionButton(backBtn)
+    end
+
+    local searchBox
+    if addon.CreateSearchBox then
+        searchBox = addon:CreateSearchBox(panel, "DCQoSModuleSearch", "Search modules and features...", 220)
+    else
+        searchBox = CreateFrame("EditBox", "DCQoSModuleSearch", panel, "InputBoxTemplate")
+        searchBox:SetSize(220, 20)
+        searchBox:SetAutoFocus(false)
+    end
+    searchBox:SetPoint("RIGHT", backBtn, "LEFT", -10, 1)
+    self.settingsSearchBox = searchBox
     
     -- Description (Dashboard only)
     local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
@@ -387,6 +427,8 @@ function addon:CreateSettingsPanel()
     dashboard:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -50)
     dashboard:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -10, 10)
     self.dashboardFrame = dashboard
+    dashboard.sections = {}
+    dashboard.emptyLabel = CreateEmptyDashboardLabel(dashboard)
     
     -- Populate Dashboard Buttons
     -- Populate Dashboard Buttons
@@ -398,32 +440,105 @@ function addon:CreateSettingsPanel()
     local currentY = startY
     
     for _, category in ipairs(moduleCategories) do
-        -- Category Header
-        local catHeader = dashboard:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        catHeader:SetPoint("TOPLEFT", startX, currentY)
-        catHeader:SetText(category.name)
-        catHeader:SetTextColor(1, 0.82, 0) -- Gold
-        
-        currentY = currentY - 18
-        
-        -- Buttons Grid (3 columns)
-        local col = 0
-        
+        local section = {
+            name = category.name,
+            header = dashboard:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall"),
+            buttons = {},
+        }
+        section.header:SetText(category.name)
+        section.header:SetTextColor(1, 0.82, 0)
+
         for _, modName in ipairs(category.modules) do
-            CreateDashboardButton(dashboard, modName, startX + (col * colWidth), currentY)
-            
-            col = col + 1
-            if col >= 3 then
-                col = 0
-                currentY = currentY - rowHeight
+            table.insert(section.buttons, CreateDashboardButton(dashboard, modName, startX, currentY))
+        end
+
+        table.insert(dashboard.sections, section)
+    end
+
+    local function LayoutDashboard(query)
+        local layoutY = startY
+        local anyVisible = false
+
+        for _, section in ipairs(dashboard.sections) do
+            local visibleButtons = {}
+
+            for _, button in ipairs(section.buttons) do
+                local matched = true
+                if addon.SearchMatches then
+                    matched = addon:SearchMatches(button.moduleName, query, section.name)
+                end
+
+                if matched then
+                    table.insert(visibleButtons, button)
+                    button:Show()
+                else
+                    button:Hide()
+                end
+            end
+
+            if #visibleButtons > 0 then
+                anyVisible = true
+                section.header:Show()
+                section.header:ClearAllPoints()
+                section.header:SetPoint("TOPLEFT", startX, layoutY)
+                layoutY = layoutY - 18
+
+                local col = 0
+                for _, button in ipairs(visibleButtons) do
+                    button:ClearAllPoints()
+                    button:SetPoint("TOPLEFT", dashboard, "TOPLEFT", startX + (col * colWidth), layoutY)
+                    col = col + 1
+                    if col >= 3 then
+                        col = 0
+                        layoutY = layoutY - rowHeight
+                    end
+                end
+
+                if col > 0 then
+                    layoutY = layoutY - rowHeight
+                end
+                layoutY = layoutY - 8
+            else
+                section.header:Hide()
             end
         end
-        
-        if col > 0 then
-            currentY = currentY - rowHeight
+
+        if dashboard.emptyLabel.SetShown then
+            dashboard.emptyLabel:SetShown(not anyVisible)
+        else
+            if anyVisible then
+                dashboard.emptyLabel:Hide()
+            else
+                dashboard.emptyLabel:Show()
+            end
         end
-        currentY = currentY - 8 -- spacer
     end
+
+    searchBox:SetScript("OnTextChanged", function(self)
+        LayoutDashboard(self:GetText())
+    end)
+    searchBox:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+        self:SetText("")
+    end)
+    searchBox:SetScript("OnEnterPressed", function(self)
+        local onlyMatch
+        local matchCount = 0
+
+        for _, section in ipairs(dashboard.sections) do
+            for _, button in ipairs(section.buttons) do
+                if button:IsShown() then
+                    matchCount = matchCount + 1
+                    onlyMatch = onlyMatch or button.moduleName
+                end
+            end
+        end
+
+        if matchCount == 1 and onlyMatch then
+            addon:ShowModule(onlyMatch)
+        end
+        self:ClearFocus()
+    end)
 
     -- 2. Create Frames for ALL known modules
     -- (We iterate category lists to find them all easily)
@@ -449,6 +564,8 @@ function addon:CreateSettingsPanel()
             end
         end
     end
+
+    LayoutDashboard("")
     
     -- 3. Show Dashboard initially
     self:ShowDashboard()

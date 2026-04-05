@@ -37,8 +37,8 @@ local SCHOOL_COLORS = {
 }
 
 function CombatLog.ShowEnhancedTooltip(self)
-    local data = self.playerData
-    if not data then return end
+    local data = self.playerData or self.data
+    if not data then return false end
 
     local settings = addon.settings and addon.settings.combatLog or {}
     local mode = settings.meterMode or "damage"
@@ -104,7 +104,7 @@ function CombatLog.ShowEnhancedTooltip(self)
                         end
                     end
                     if settings.showMitigationInTooltip ~= false and spell.absorbed > 0 then
-                        details = details .. addon.FormatNumber and addon.FormatNumber(spell.absorbed) or spell.absorbed .. " absorbed"
+                        details = details .. (((addon.FormatNumber and addon.FormatNumber(spell.absorbed)) or tostring(spell.absorbed)) .. " absorbed")
                     end
                     if details ~= "" then
                         GameTooltip:AddLine("  " .. details, 0.7, 0.7, 0.7, true)
@@ -187,7 +187,7 @@ function CombatLog.ShowEnhancedTooltip(self)
     
     -- Add summary stats
     GameTooltip:AddLine(" ")
-    local combatTime = addon.GetCombatTime and addon.GetCombatTime() or 0
+    local combatTime = CombatLog.GetCombatTime and CombatLog.GetCombatTime() or 0
     if combatTime > 0 then
         if data.damage > 0 then
             local dps = data.damage / combatTime
@@ -200,6 +200,7 @@ function CombatLog.ShowEnhancedTooltip(self)
     end
     
     GameTooltip:Show()
+    return true
 end
 
 -- ============================================================
@@ -211,7 +212,7 @@ local deathRecapFrame = nil
 function CombatLog.ShowDeathRecap(playerData)
     local entries = CombatLog.GetDeathLogEntries and CombatLog.GetDeathLogEntries(playerData, true) or (playerData and playerData.deathLog) or {}
     if not entries or #entries == 0 then
-        return
+        return false
     end
 
     local settings = addon.settings and addon.settings.combatLog or {}
@@ -388,7 +389,9 @@ function CombatLog.ShowDeathRecap(playerData)
         end
     end
     
+    deathRecapFrame.scrollChild:SetHeight(math.max(1, shown * 45))
     deathRecapFrame:Show()
+    return true
 end
 
 -- ============================================================

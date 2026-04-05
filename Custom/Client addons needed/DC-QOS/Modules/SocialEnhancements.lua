@@ -246,6 +246,9 @@ local function SetupAutoInvite()
             -- Invite the player
             InviteUnit(sender)
             addon:Debug("Auto-invited " .. sender .. " (keyword: " .. keyword .. ")")
+            if addon.Notify then
+                addon:Notify("Auto-invited " .. sender .. ".", "success", { title = "Social", chatFallback = false })
+            end
         end
     end)
 end
@@ -282,7 +285,11 @@ local function SetupQuickAddFriend()
             end
             
             AddFriend(name)
-            addon:Print("Added " .. name .. " to friends list.", true)
+            if addon.Notify then
+                addon:Notify("Added " .. name .. " to the friends list.", "success", { title = "Social" })
+            else
+                addon:Print("Added " .. name .. " to friends list.", true)
+            end
         end
     end
 end

@@ -63,6 +63,11 @@ local lastTooltipUpdate = 0
 local TOOLTIP_UPDATE_THROTTLE = 0.05  -- 50ms between updates
 local itemInfoCache = {}  -- Cache GetItemInfo results
 local ITEM_INFO_CACHE_DURATION = 60  -- 1 minute
+local itemTooltipHooksInstalled = false
+local unitTooltipHooksInstalled = false
+local spellTooltipHooksInstalled = false
+local healthBarHideHookInstalled = false
+local tooltipSettingsChangedRegistered = false
 
 -- ============================================================
 -- Item Upgrade/Tier Info Cache
@@ -244,6 +249,7 @@ addon:RegisterEvent("ITEM_UPGRADE_INFO_RECEIVED", OnUpgradeInfoReceived)
 
 -- Add upgrade/tier info to tooltip
 local function AddUpgradeInfo(tooltip, bag, slot, itemLink)
+    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showUpgradeInfo then return end
     if not itemLink then return end
     
@@ -448,7 +454,13 @@ end
 -- ============================================================
 local function SetTooltipScale()
     local settings = addon.settings.tooltips
-    local scale = settings.scale or 1.0
+    local accessibility = addon.settings.accessibility or {}
+    local readabilityScale = 1.0
+    if accessibility.enabled ~= false then
+        readabilityScale = tonumber(accessibility.tooltipScale) or tonumber(accessibility.fontScale) or 1.0
+    end
+
+    local scale = (settings.scale or 1.0) * readabilityScale
     
     -- Apply scale to various tooltip frames
     local tooltipFrames = {
@@ -474,10 +486,43 @@ local function SetTooltipScale()
     end
 end
 
+local function ApplyTooltipReadability()
+    local accessibility = addon.settings.accessibility or {}
+    local cleaner = accessibility.enabled ~= false and accessibility.cleanerTooltips ~= false
+    local highContrast = accessibility.enabled ~= false and accessibility.highContrast == true
+
+    local tooltipFrames = {
+        GameTooltip,
+        ItemRefTooltip,
+        ShoppingTooltip1,
+        ShoppingTooltip2,
+        ItemRefShoppingTooltip1,
+        ItemRefShoppingTooltip2,
+    }
+
+    for _, frame in ipairs(tooltipFrames) do
+        if frame then
+            if (cleaner or highContrast) and frame.SetBackdropColor then
+                local alpha = highContrast and 0.96 or 0.88
+                frame:SetBackdropColor(0.03, 0.03, 0.03, alpha)
+            end
+
+            if (cleaner or highContrast) and frame.SetBackdropBorderColor then
+                if highContrast then
+                    frame:SetBackdropBorderColor(0.96, 0.84, 0.28, 1)
+                else
+                    frame:SetBackdropBorderColor(0.45, 0.45, 0.45, 1)
+                end
+            end
+        end
+    end
+end
+
 -- ============================================================
 -- Item ID in Tooltips
 -- ============================================================
 local function AddItemId(tooltip, itemLink)
+    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showItemId then return end
     if not itemLink then return end
     
@@ -493,6 +538,7 @@ end
 -- Item Level in Tooltips
 -- ============================================================
 local function AddItemLevel(tooltip, itemLink)
+    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showItemLevel then return end
     if not itemLink then return end
 
@@ -523,6 +569,7 @@ end
 -- Spell ID in Tooltips
 -- ============================================================
 local function AddSpellId(tooltip, spellId)
+    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showSpellId then return end
     if not spellId then return end
 
@@ -770,6 +817,7 @@ end
 addon:RegisterEvent("NPC_INFO_RECEIVED", OnNpcInfoReceived)
 
 local function AddNpcId(tooltip, unit)
+    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showNpcId then return end
     if not unit then return end
     if UnitIsPlayer(unit) then return end
@@ -825,6 +873,7 @@ local function AddNpcId(tooltip, unit)
 end
 
 local function AddNpcKillCount(tooltip, unit)
+    if not addon.settings.tooltips.enabled then return end
     if not addon.settings.tooltips.showNpcKillCount then return end
     if not unit then return end
     if UnitIsPlayer(unit) then return end
@@ -921,6 +970,9 @@ end
 -- Item Tooltip Hooks
 -- ============================================================
 local function HookItemTooltips()
+    if itemTooltipHooksInstalled then return end
+    itemTooltipHooksInstalled = true
+
     -- Hook SetBagItem
     local origSetBagItem = GameTooltip.SetBagItem
     GameTooltip.SetBagItem = function(self, bag, slot, ...)
@@ -1071,6 +1123,9 @@ end
 -- Unit Tooltip Hooks
 -- ============================================================
 local function HookUnitTooltips()
+    if unitTooltipHooksInstalled then return end
+    unitTooltipHooksInstalled = true
+
     -- Hook OnTooltipSetUnit
     GameTooltip:HookScript("OnTooltipSetUnit", function(self)
         local _, unit = self:GetUnit()
@@ -1113,6 +1168,9 @@ end
 -- Spell Tooltip Hooks
 -- ============================================================
 local function HookSpellTooltips()
+    if spellTooltipHooksInstalled then return end
+    spellTooltipHooksInstalled = true
+
     -- Most spell tooltips (action buttons, racials, etc.) fire this script.
     -- This is the most reliable way to capture spell IDs in 3.3.5a.
     if not GameTooltip._dcqosHookedOnTooltipSetSpell then
@@ -1191,12 +1249,34 @@ end
 -- Health Bar Hiding
 -- ============================================================
 local function SetupHealthBarHiding()
-    if addon.settings.tooltips.hideHealthBar then
-        local tipHide = GameTooltip.Hide
+    if not healthBarHideHookInstalled then
+        healthBarHideHookInstalled = true
         GameTooltipStatusBar:HookScript("OnShow", function()
+            local settings = addon.settings and addon.settings.tooltips
+            if not settings or not settings.enabled or not settings.hideHealthBar then
+                return
+            end
             GameTooltipStatusBar:Hide()
         end)
+    end
+
+    if addon.settings.tooltips.enabled and addon.settings.tooltips.hideHealthBar then
         GameTooltipStatusBar:Hide()
+    end
+end
+
+local function OnTooltipSettingChanged(path)
+    if path == "tooltips.scale"
+        or path == "accessibility.tooltipScale"
+        or path == "accessibility.fontScale"
+        or path == "accessibility.enabled" then
+        SetTooltipScale()
+    end
+
+    if path == "accessibility.cleanerTooltips"
+        or path == "accessibility.highContrast"
+        or path == "accessibility.enabled" then
+        ApplyTooltipReadability()
     end
 end
 
@@ -1211,6 +1291,14 @@ function Tooltips.OnInitialize()
     
     -- Set initial scale
     SetTooltipScale()
+    ApplyTooltipReadability()
+
+    if addon.RegisterScalableFrame then
+        addon:RegisterScalableFrame(GameTooltip)
+        addon:RegisterScalableFrame(ItemRefTooltip)
+        addon:RegisterScalableFrame(ShoppingTooltip1)
+        addon:RegisterScalableFrame(ShoppingTooltip2)
+    end
 end
 
 function Tooltips.OnEnable()
@@ -1230,6 +1318,8 @@ function Tooltips.OnEnable()
     
     -- Setup health bar hiding
     SetupHealthBarHiding()
+    SetTooltipScale()
+    ApplyTooltipReadability()
 
     -- Kill tracker (NPC tooltips)
     if not killTrackerFrame then
@@ -1243,11 +1333,10 @@ function Tooltips.OnEnable()
     killTrackerFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     
     -- Listen for scale changes
-    addon:RegisterEvent("SETTING_CHANGED", function(path, value)
-        if path == "tooltips.scale" then
-            SetTooltipScale()
-        end
-    end)
+    if not tooltipSettingsChangedRegistered then
+        tooltipSettingsChangedRegistered = true
+        addon:RegisterEvent("SETTING_CHANGED", OnTooltipSettingChanged)
+    end
 end
 
 function Tooltips.OnDisable()

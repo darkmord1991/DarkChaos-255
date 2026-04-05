@@ -8,6 +8,14 @@
 
 local addon = DCQOS
 
+local function NotifyTalent(message, level, opts)
+    if addon.Notify then
+        addon:Notify(message, level or "info", opts or { title = "Talents" })
+    else
+        addon:Print(message, true)
+    end
+end
+
 -- ============================================================
 -- Module Configuration
 -- ============================================================
@@ -621,7 +629,7 @@ function TalentManager:CreateTemplate(name, talents, class)
     }
     
     self:SaveTemplates()
-    addon:Print("Template saved: " .. name .. " (" .. GetPointSummary(talents) .. ")")
+    NotifyTalent("Template saved: " .. name .. " (" .. GetPointSummary(talents) .. ")", "success", { title = "Talents" })
     return true
 end
 
@@ -642,7 +650,7 @@ function TalentManager:UpdateTemplate(name, talents, class)
     templates[class][name].modified = time()
     
     self:SaveTemplates()
-    addon:Print("Template updated: " .. name)
+    NotifyTalent("Template updated: " .. name, "success", { title = "Talents" })
     return true
 end
 
@@ -651,7 +659,7 @@ function TalentManager:DeleteTemplate(name, class)
     if templates[class] and templates[class][name] then
         templates[class][name] = nil
         self:SaveTemplates()
-        addon:Print("Template deleted: " .. name)
+        NotifyTalent("Template deleted: " .. name, "info", { title = "Talents" })
         return true
     end
     return false, "Template not found"
@@ -672,7 +680,7 @@ function TalentManager:RenameTemplate(oldName, newName, class)
     templates[class][oldName] = nil
     
     self:SaveTemplates()
-    addon:Print("Template renamed: " .. oldName .. " -> " .. newName)
+    NotifyTalent("Template renamed: " .. oldName .. " -> " .. newName, "success", { title = "Talents" })
     return true
 end
 
@@ -760,13 +768,13 @@ end
 function TalentManager:ApplyTemplate(templateName, pet)
     local template = self:GetTemplate(templateName)
     if not template then
-        addon:Print("Template not found: " .. templateName)
+        NotifyTalent("Template not found: " .. templateName, "warning", { title = "Talents" })
         return false
     end
     
     local canApply, info = self:CanApplyTemplate(template, pet)
     if not canApply then
-        addon:Print("Cannot apply template: " .. info)
+        NotifyTalent("Cannot apply template: " .. info, "warning", { title = "Talents" })
         return false
     end
     
@@ -826,7 +834,7 @@ function TalentManager:DoApplyTemplate(template, pet)
         end
     end
     
-    addon:Print("Applied template: " .. template.name .. " (" .. learned .. " points spent)")
+    NotifyTalent("Applied template: " .. template.name .. " (" .. learned .. " points spent)", "success", { title = "Talents" })
     
     -- Update display
     self:UpdateTalentDisplay()
@@ -934,7 +942,7 @@ function TalentManager:SaveInspection(unit)
         time = time(),
     }
     
-    addon:Print("Saved inspection: " .. name .. " (" .. class .. " " .. GetPointSummary(talents) .. ")")
+    NotifyTalent("Saved inspection: " .. name .. " (" .. class .. " " .. GetPointSummary(talents) .. ")", "info", { title = "Talents" })
     
     return inspections[name]
 end
@@ -993,7 +1001,7 @@ function TalentManager:SendTemplateToPlayer(templateName, targetPlayer)
         SendAddonMessage(COMM_PREFIX, msg, "WHISPER", targetPlayer)
     end
     
-    addon:Print("Sent template to " .. targetPlayer)
+    NotifyTalent("Sent template to " .. targetPlayer, "success", { title = "Talents" })
     return true
 end
 
@@ -1021,7 +1029,7 @@ function TalentManager:OnAddonMessage(prefix, msg, channel, sender)
                     talents.class = data.class
                     TalentManager:CreateTemplate(data.name .. " (from " .. data.sender .. ")", talents)
                 else
-                    addon:Print("Cannot save: wrong class (" .. data.class .. ")")
+                    NotifyTalent("Cannot save template: wrong class (" .. data.class .. ")", "warning", { title = "Talents" })
                 end
             end,
             timeout = 60,
@@ -1148,7 +1156,7 @@ end
 function TalentManager:SwitchSpec(specIndex)
     if specIndex <= self:GetNumSpecs() then
         if not SafeSetActiveTalentGroup(specIndex) then return false end
-        addon:Print("Switched to spec " .. specIndex)
+        NotifyTalent("Switched to spec " .. specIndex, "success", { title = "Talents" })
         return true
     end
     return false
@@ -1775,7 +1783,7 @@ function TalentManager:CreateMainFrame()
             if template then
                 targetTemplate = template
                 TalentManager:UpdateTalentDisplay()
-                addon:Print("Target set: " .. selected)
+                NotifyTalent("Target set: " .. selected, "info", { title = "Talents", chatFallback = false })
             end
         else
             targetTemplate = nil
@@ -1969,7 +1977,7 @@ function TalentManager:ShowImportDialog()
                 if success then
                     TalentManager:UpdateTemplateDropdown()
                 else
-                    addon:Print("Import failed: " .. (msg or "unknown"))
+                    NotifyTalent("Import failed: " .. (msg or "unknown"), "warning", { title = "Talents" })
                 end
             end
         end,

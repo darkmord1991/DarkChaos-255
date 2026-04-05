@@ -481,11 +481,17 @@ local function LockFrames()
     addon:Print("Frames LOCKED.", true)
 end
 
+local RefreshEditorOverlay
+
 local function ToggleLock()
     if isUnlocked then
         LockFrames()
     else
         UnlockFrames()
+    end
+
+    if RefreshEditorOverlay then
+        RefreshEditorOverlay()
     end
 end
 
@@ -545,6 +551,49 @@ local function UpdateGridOverlay()
     end
 
     gridOverlay:Show()
+
+    if RefreshEditorOverlay then
+        RefreshEditorOverlay()
+    end
+end
+
+RefreshEditorOverlay = function()
+    if not editorOverlay then return end
+
+    if editorOverlay.lockBtn then
+        editorOverlay.lockBtn:SetText(isUnlocked and "Lock" or "Unlock")
+    end
+
+    if editorOverlay.gridBtn then
+        editorOverlay.gridBtn:SetText(addon.settings.frameMover.showGrid and "Grid: On" or "Grid: Off")
+    end
+
+    if editorOverlay.snapBtn then
+        editorOverlay.snapBtn:SetText(addon.settings.frameMover.snapToGrid and "Snap: On" or "Snap: Off")
+    end
+
+    if editorOverlay.bindBtn then
+        editorOverlay.bindBtn:SetText(addon.keybindMode and "Bindings: On" or "Bindings: Off")
+    end
+
+    if editorOverlay.routeBtn then
+        local showPreview = not addon.settings.editMode or addon.settings.editMode.useNavigationPreview ~= false
+        if editorOverlay.routeBtn.SetShown then
+            editorOverlay.routeBtn:SetShown(showPreview)
+        else
+            if showPreview then
+                editorOverlay.routeBtn:Show()
+            else
+                editorOverlay.routeBtn:Hide()
+            end
+        end
+
+        if showPreview then
+            local nav = addon.Navigation
+            local hasRoute = nav and nav.HasManualWaypoint and nav:HasManualWaypoint()
+            editorOverlay.routeBtn:SetText(hasRoute and "Clear Route" or "Preview Route")
+        end
+    end
 end
 
 local function EnsureEditorOverlay()
@@ -552,9 +601,13 @@ local function EnsureEditorOverlay()
 
     editorOverlay = CreateFrame("Frame", "DCQOS_EditorOverlay", UIParent)
     editorOverlay:SetPoint("TOP", UIParent, "TOP", 0, -20)
-    editorOverlay:SetSize(460, 34)
+    editorOverlay:SetSize(760, 34)
     editorOverlay:SetFrameStrata("DIALOG")
     editorOverlay:Hide()
+
+    if addon.RegisterScalableFrame then
+        addon:RegisterScalableFrame(editorOverlay)
+    end
 
     editorOverlay.bg = editorOverlay:CreateTexture(nil, "BACKGROUND")
     editorOverlay.bg:SetAllPoints()
@@ -570,59 +623,155 @@ local function EnsureEditorOverlay()
     lockBtn:SetText("Lock")
     lockBtn:SetScript("OnClick", function()
         ToggleLock()
-        lockBtn:SetText(isUnlocked and "Lock" or "Unlock")
     end)
     editorOverlay.lockBtn = lockBtn
 
+    if addon.StyleActionButton then
+        addon:StyleActionButton(lockBtn)
+    end
+
     local gridBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
     gridBtn:SetPoint("LEFT", lockBtn, "RIGHT", 6, 0)
-    gridBtn:SetSize(70, 20)
+    gridBtn:SetSize(76, 20)
     gridBtn:SetText("Grid")
     gridBtn:SetScript("OnClick", function()
         addon.settings.frameMover.showGrid = not addon.settings.frameMover.showGrid
         addon:SaveSettings()
         UpdateGridOverlay()
     end)
+    editorOverlay.gridBtn = gridBtn
+
+    if addon.StyleActionButton then
+        addon:StyleActionButton(gridBtn)
+    end
 
     local snapBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
     snapBtn:SetPoint("LEFT", gridBtn, "RIGHT", 6, 0)
-    snapBtn:SetSize(70, 20)
+    snapBtn:SetSize(76, 20)
     snapBtn:SetText("Snap")
     snapBtn:SetScript("OnClick", function()
         addon.settings.frameMover.snapToGrid = not addon.settings.frameMover.snapToGrid
         addon:SaveSettings()
+        RefreshEditorOverlay()
+    end)
+    editorOverlay.snapBtn = snapBtn
+
+    if addon.StyleActionButton then
+        addon:StyleActionButton(snapBtn)
+    end
+
+    local bindBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
+    bindBtn:SetPoint("LEFT", snapBtn, "RIGHT", 6, 0)
+    bindBtn:SetSize(86, 20)
+    bindBtn:SetText("Bindings")
+    bindBtn:SetScript("OnClick", function()
+        if addon.ToggleKeybindMode then
+            addon:ToggleKeybindMode(false)
+        else
+            addon.keybindMode = not addon.keybindMode
+        end
+        RefreshEditorOverlay()
+    end)
+    editorOverlay.bindBtn = bindBtn
+
+    if addon.StyleActionButton then
+        addon:StyleActionButton(bindBtn)
+    end
+
+    local barsBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
+    barsBtn:SetPoint("LEFT", bindBtn, "RIGHT", 6, 0)
+    barsBtn:SetSize(82, 20)
+    barsBtn:SetText("Action Bars")
+    barsBtn:SetScript("OnClick", function()
+        if addon.OpenSettingsModule then
+            addon:OpenSettingsModule("ActionBars")
+        end
     end)
 
+    if addon.StyleActionButton then
+        addon:StyleActionButton(barsBtn)
+    end
+
+    local routeBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
+    routeBtn:SetPoint("LEFT", barsBtn, "RIGHT", 6, 0)
+    routeBtn:SetSize(94, 20)
+    routeBtn:SetText("Preview Route")
+    routeBtn:SetScript("OnClick", function()
+        local navigation = addon.Navigation
+        if not navigation then
+            addon:Notify("Navigation module is unavailable.", "warning", { title = "Navigation" })
+            return
+        end
+
+        if navigation.HasManualWaypoint and navigation:HasManualWaypoint() then
+            navigation:ClearManualWaypoint()
+            addon:Notify("Navigation preview cleared.", "info", { title = "Navigation", chatFallback = false })
+        elseif navigation.SetEditPreviewWaypoint then
+            local ok, err = navigation:SetEditPreviewWaypoint()
+            if ok then
+                addon:Notify("Navigation preview waypoint created.", "success", { title = "Navigation", chatFallback = false })
+            else
+                addon:Notify("Navigation: " .. tostring(err), "warning", { title = "Navigation" })
+            end
+        end
+
+        RefreshEditorOverlay()
+    end)
+    editorOverlay.routeBtn = routeBtn
+
+    if addon.StyleActionButton then
+        addon:StyleActionButton(routeBtn)
+    end
+
     local resetBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
-    resetBtn:SetPoint("LEFT", snapBtn, "RIGHT", 6, 0)
+    resetBtn:SetPoint("LEFT", routeBtn, "RIGHT", 6, 0)
     resetBtn:SetSize(70, 20)
     resetBtn:SetText("Reset")
     resetBtn:SetScript("OnClick", function()
         ResetAllFrames()
     end)
 
+    if addon.StyleActionButton then
+        addon:StyleActionButton(resetBtn)
+    end
+
     local closeBtn = CreateFrame("Button", nil, editorOverlay, "UIPanelButtonTemplate")
     closeBtn:SetPoint("LEFT", resetBtn, "RIGHT", 6, 0)
     closeBtn:SetSize(70, 20)
     closeBtn:SetText("Close")
     closeBtn:SetScript("OnClick", function()
-        addon.settings.frameMover.editorMode = false
-        addon:SaveSettings()
-        editorOverlay:Hide()
-        if gridOverlay then gridOverlay:Hide() end
-        LockFrames()
+        if addon.ExitEditMode then
+            addon:ExitEditMode()
+        else
+            addon.settings.frameMover.editorMode = false
+            addon:SaveSettings()
+            editorOverlay:Hide()
+            if gridOverlay then gridOverlay:Hide() end
+            LockFrames()
+        end
     end)
+
+    if addon.StyleActionButton then
+        addon:StyleActionButton(closeBtn)
+    end
+
+    RefreshEditorOverlay()
 end
 
 local function EnableEditorMode()
     EnsureEditorOverlay()
-    editorOverlay:Show()
+    if not addon.settings.editMode or addon.settings.editMode.showToolbar ~= false then
+        editorOverlay:Show()
+    else
+        editorOverlay:Hide()
+    end
     if not isUnlocked then
         UnlockFrames()
     end
     UpdateGridOverlay()
     addon.settings.frameMover.editorMode = true
     addon:SaveSettings()
+    RefreshEditorOverlay()
 end
 
 local function DisableEditorMode()
@@ -630,6 +779,7 @@ local function DisableEditorMode()
     if gridOverlay then gridOverlay:Hide() end
     addon.settings.frameMover.editorMode = false
     addon:SaveSettings()
+    RefreshEditorOverlay()
 end
 
 -- ============================================================
@@ -713,29 +863,31 @@ function FrameMover.OnEnable()
     end)
 
     if not FrameMover.eventFrame then
-        local ev = CreateFrame("Frame")
-        ev:RegisterEvent("PLAYER_ENTERING_WORLD")
-        ev:RegisterEvent("PLAYER_REGEN_ENABLED")
-        ev:RegisterEvent("UNIT_ENTERED_VEHICLE")
-        ev:RegisterEvent("UNIT_EXITED_VEHICLE")
-        ev:RegisterEvent("GROUP_ROSTER_UPDATE")
-        ev:SetScript("OnEvent", function(_, event, unit)
-            if event == "PLAYER_REGEN_ENABLED" then
-                ApplyPendingPositions()
-                return
-            end
-            if unit and unit ~= "player" then return end
-            addon:DelayedCall(0.3, function()
-                ApplyAllSavedPositions()
-                ApplyPendingPositions()
-                ApplySettingsToFrames()
-                if addon.settings.frameMover.editorMode then
-                    UpdateGridOverlay()
-                end
-            end)
-        end)
-        FrameMover.eventFrame = ev
+        FrameMover.eventFrame = CreateFrame("Frame")
     end
+
+    local ev = FrameMover.eventFrame
+    ev:UnregisterAllEvents()
+    ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+    ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+    ev:RegisterEvent("UNIT_ENTERED_VEHICLE")
+    ev:RegisterEvent("UNIT_EXITED_VEHICLE")
+    ev:RegisterEvent("GROUP_ROSTER_UPDATE")
+    ev:SetScript("OnEvent", function(_, event, unit)
+        if event == "PLAYER_REGEN_ENABLED" then
+            ApplyPendingPositions()
+            return
+        end
+        if unit and unit ~= "player" then return end
+        addon:DelayedCall(0.3, function()
+            ApplyAllSavedPositions()
+            ApplyPendingPositions()
+            ApplySettingsToFrames()
+            if addon.settings.frameMover.editorMode then
+                UpdateGridOverlay()
+            end
+        end)
+    end)
     
     -- Register slash commands
     SLASH_DCMOVE1 = "/dcmove"
@@ -750,7 +902,11 @@ function FrameMover.OnEnable()
                 DisableEditorMode()
                 LockFrames()
             else
-                EnableEditorMode()
+                if addon.ToggleEditMode then
+                    addon:ToggleEditMode()
+                else
+                    EnableEditorMode()
+                end
             end
         elseif msg == "lock" then
             LockFrames()
@@ -794,6 +950,10 @@ end
 
 function FrameMover.OnDisable()
     addon:Debug("FrameMover module disabling")
+    if FrameMover.eventFrame then
+        FrameMover.eventFrame:UnregisterAllEvents()
+        FrameMover.eventFrame:SetScript("OnEvent", nil)
+    end
     LockFrames()
     DisableEditorMode()
 end
@@ -1005,6 +1165,10 @@ end
 FrameMover.ToggleLock = ToggleLock
 FrameMover.LockFrames = LockFrames
 FrameMover.UnlockFrames = UnlockFrames
+FrameMover.EnableEditorMode = EnableEditorMode
+FrameMover.DisableEditorMode = DisableEditorMode
+FrameMover.UpdateGridOverlay = UpdateGridOverlay
+FrameMover.RefreshEditorOverlay = RefreshEditorOverlay
 FrameMover.ResetAllFrames = ResetAllFrames
 FrameMover.SaveProfile = SaveProfile
 FrameMover.LoadProfile = LoadProfile

@@ -7,6 +7,14 @@
 
 local addon = DCQOS
 
+local function NotifyVendor(message, level, opts)
+    if addon.Notify then
+        addon:Notify(message, level or "info", opts or { title = "Vendor" })
+    else
+        addon:Print(message, true)
+    end
+end
+
 -- ============================================================
 -- Module Configuration
 -- ============================================================
@@ -33,6 +41,10 @@ local VendorPlus = {
 for k, v in pairs(VendorPlus.defaults) do
     addon.defaults[k] = v
 end
+
+local tooltipHooksInstalled = false
+local contextMenuHookInstalled = false
+local merchantEventFrame = nil
 
 -- ============================================================
 -- Junk Management
@@ -67,7 +79,7 @@ local function MarkAsJunk(itemId)
     addon:SaveSettings()
     
     local itemName = GetItemInfo(itemId)
-    addon:Print("Marked " .. (itemName or itemId) .. " as junk.", true)
+    NotifyVendor("Marked " .. (itemName or itemId) .. " as junk.", "info", { title = "Vendor" })
 end
 
 local function MarkAsValuable(itemId)
@@ -82,7 +94,7 @@ local function MarkAsValuable(itemId)
     addon:SaveSettings()
     
     local itemName = GetItemInfo(itemId)
-    addon:Print("Marked " .. (itemName or itemId) .. " as valuable (never sell).", true)
+    NotifyVendor("Marked " .. (itemName or itemId) .. " as valuable.", "success", { title = "Vendor" })
 end
 
 local function IsCustomJunk(itemId)
@@ -175,6 +187,9 @@ local function AddSellPriceToTooltip(tooltip, itemLink)
 end
 
 local function SetupTooltipHooks()
+    if tooltipHooksInstalled then return end
+    tooltipHooksInstalled = true
+
     local function OnTooltipSetItem(tooltip)
         local _, itemLink = tooltip:GetItem()
         if itemLink then
@@ -303,7 +318,7 @@ local function SellAllJunk()
     end
     
     if itemCount > 0 then
-        addon:Print("Sold " .. itemCount .. " junk items for " .. GetCoinTextureString(totalValue), true)
+        NotifyVendor("Sold " .. itemCount .. " junk items for " .. GetCoinTextureString(totalValue), "success", { title = "Vendor" })
     end
 end
 
@@ -481,8 +496,16 @@ end
 -- Item Context Menu Integration
 -- ============================================================
 local function AddContextMenuOptions()
+    if contextMenuHookInstalled then return end
+    contextMenuHookInstalled = true
+
     -- Hook the item menu to add "Mark as Junk" / "Mark as Valuable" options
     hooksecurefunc("ContainerFrameItemButton_OnModifiedClick", function(self, button)
+        local settings = addon.settings and addon.settings.vendorPlus
+        if not settings or settings.enabled == false then
+            return
+        end
+
         if button == "RightButton" and IsControlKeyDown() then
             local bag = self:GetParent():GetID()
             local slot = self:GetID()
@@ -496,7 +519,7 @@ local function AddContextMenuOptions()
                         neverSellItems[itemId] = nil
                         addon.settings.vendorPlus.neverSellList[itemId] = nil
                         addon:SaveSettings()
-                        addon:Print("Removed " .. itemLink .. " from protected list.", true)
+                        NotifyVendor("Removed " .. itemLink .. " from the protected list.", "info", { title = "Vendor" })
                     elseif IsCustomJunk(itemId) then
                         MarkAsValuable(itemId)
                     else
@@ -603,7 +626,12 @@ function VendorPlus.OnEnable()
     SetupTooltipHooks()
     
     -- Setup merchant hooks
-    local merchantFrame = CreateFrame("Frame")
+    if not merchantEventFrame then
+        merchantEventFrame = CreateFrame("Frame")
+    end
+
+    merchantEventFrame:UnregisterAllEvents()
+    local merchantFrame = merchantEventFrame
     merchantFrame:RegisterEvent("MERCHANT_SHOW")
     merchantFrame:RegisterEvent("MERCHANT_CLOSED")
     merchantFrame:RegisterEvent("BAG_UPDATE")
@@ -628,6 +656,10 @@ end
 
 function VendorPlus.OnDisable()
     addon:Debug("VendorPlus module disabling")
+    if merchantEventFrame then
+        merchantEventFrame:UnregisterAllEvents()
+        merchantEventFrame:SetScript("OnEvent", nil)
+    end
     if repairCostFrame then repairCostFrame:Hide() end
     if sellJunkButton then sellJunkButton:Hide() end
     if sellJunkPreviewText then sellJunkPreviewText:Hide() end

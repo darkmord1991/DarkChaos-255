@@ -245,6 +245,7 @@ addon.settings = {}
 addon.db = nil
 addon.activeProfile = nil
 addon.keybindMode = false
+addon._editModePreviousKeybindState = false
 
 local function GetCharacterKey()
     local name = UnitName("player") or "Unknown"
@@ -254,6 +255,30 @@ end
 
 function addon:GetCharacterKey()
     return GetCharacterKey()
+end
+
+function addon:SetKeybindMode(enabled, silent)
+    local newState = enabled and true or false
+    if self.keybindMode == newState then
+        return newState
+    end
+
+    self.keybindMode = newState
+    self:FireEvent("KEYBIND_MODE_CHANGED", newState)
+
+    if not silent then
+        if self.Notify then
+            self:Notify("Keybind mode " .. (newState and "enabled" or "disabled") .. ".", "info", { chatFallback = true, title = "Keybinds" })
+        else
+            self:Print("Keybind mode: " .. (newState and "ENABLED" or "DISABLED"), true)
+        end
+    end
+
+    return newState
+end
+
+function addon:ToggleKeybindMode(silent)
+    return self:SetKeybindMode(not self.keybindMode, silent)
 end
 
 local function EnsureProfileTables(db, defaults)
@@ -940,9 +965,14 @@ SlashCmdList["DCQOS"] = function(msg)
         ReloadUI()
     elseif msg == "reload" then
         ReloadUI()
+    elseif msg == "edit" or msg == "editor" then
+        if addon.ToggleEditMode then
+            addon:ToggleEditMode()
+        else
+            addon:Print("Edit mode is not available yet.", true)
+        end
     elseif msg:find("^bind") then
-        addon.keybindMode = not addon.keybindMode
-        addon:Print("Keybind mode: " .. (addon.keybindMode and "ENABLED" or "DISABLED"), true)
+        addon:ToggleKeybindMode(false)
     elseif msg:find("^profile") then
         local args = {}
         for token in msg:gmatch("[^%s]+") do
@@ -1001,12 +1031,23 @@ SlashCmdList["DCQOS"] = function(msg)
             print("  /dcqos profile export <name>")
             print("  /dcqos profile import <name> <data>")
         end
+    elseif msg:find("^nav") then
+        local navMsg = strtrim(msg:gsub("^nav", "", 1))
+        if SlashCmdList["DCQOSNAV"] then
+            SlashCmdList["DCQOSNAV"](navMsg)
+        else
+            addon:Print("Navigation module is not loaded.", true)
+        end
     elseif msg == "help" then
         addon:Print("Commands:", true)
         print("  |cffffd700/dcqos|r - Open settings panel")
         print("  |cffffd700/dcqos debug|r - Toggle debug mode")
         print("  |cffffd700/dcqos reset|r - Reset all settings to defaults")
+        print("  |cffffd700/dcqos edit|r - Toggle unified edit mode")
         print("  |cffffd700/dcqos bind|r - Toggle keybind mode")
+        print("  |cffffd700/dcqos nav <x> <y>|r - Set manual navigation waypoint")
+        print("  |cffffd700/dcqos nav follow [questLogIndex]|r - Follow selected/indexed quest")
+        print("  |cffffd700/dcqos nav clear|r - Clear manual waypoint and followed quest")
         print("  |cffffd700/dcqos profile ...|r - Manage profiles")
         print("  |cffffd700/dcqos reload|r - Reload UI")
         print("  |cffffd700/dcqos help|r - Show this help message")

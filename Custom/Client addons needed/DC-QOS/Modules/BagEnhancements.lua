@@ -6,6 +6,14 @@
 
 local addon = DCQOS
 
+local function NotifyBag(message, level, opts)
+    if addon.Notify then
+        addon:Notify(message, level or "info", opts or { title = "Bags" })
+    else
+        addon:Print(message, true)
+    end
+end
+
 -- ============================================================
 -- Module Configuration
 -- ============================================================
@@ -318,7 +326,7 @@ local function UpdateSortButtons()
     end
 end
 
-local function FinishBagSort(message)
+local function FinishBagSort(message, level)
     local frameDefName = activeSortState and activeSortState.frameDefName
 
     activeSortState = nil
@@ -329,7 +337,7 @@ local function FinishBagSort(message)
     end
 
     if message then
-        addon:Print(message, true)
+        NotifyBag(message, level, { title = "Bags" })
     end
 end
 
@@ -339,11 +347,11 @@ local function ContinueBagSort()
 
     while state do
         if state.groupIndex > #state.groups then
-            local message = nil
             if state.swapCount == 0 then
-                message = "Bags are already sorted."
+                FinishBagSort("Bags are already sorted.", "info")
+            else
+                FinishBagSort("Bag sorting complete.", "success")
             end
-            FinishBagSort(message)
             return
         end
 
@@ -351,7 +359,7 @@ local function ContinueBagSort()
         if GroupHasLockedItems(group) then
             state.lockRetryCount = (state.lockRetryCount or 0) + 1
             if state.lockRetryCount > 40 then
-                FinishBagSort("Cannot sort while items are locked.")
+                FinishBagSort("Cannot sort while items are locked.", "warning")
                 return
             end
 
@@ -386,7 +394,7 @@ local function ContinueBagSort()
             if bestIndex ~= currentIndex then
                 local success = MoveOrSwapSlots(group[currentIndex], group[bestIndex])
                 if not success then
-                    FinishBagSort("Bag sort stopped because an item could not be moved.")
+                    FinishBagSort("Bag sort stopped because an item could not be moved.", "warning")
                     return
                 end
 
@@ -402,23 +410,23 @@ end
 
 local function StartBagSort(frameDefName)
     if activeSortState then
-        addon:Print("Bag sorting is already in progress.", true)
+        NotifyBag("Bag sorting is already in progress.", "info", { title = "Bags", chatFallback = false })
         return
     end
 
     if InCombatLockdown and InCombatLockdown() then
-        addon:Print("Cannot sort bags in combat.", true)
+        NotifyBag("Cannot sort bags in combat.", "warning", { title = "Bags" })
         return
     end
 
     if CursorHasPayload() then
-        addon:Print("Cannot sort while the cursor is busy.", true)
+        NotifyBag("Cannot sort while the cursor is busy.", "warning", { title = "Bags" })
         return
     end
 
     local groups = BuildSortGroups(frameDefName)
     if #groups == 0 then
-        addon:Print("No bag slots are available to sort.", true)
+        NotifyBag("No bag slots are available to sort.", "warning", { title = "Bags" })
         return
     end
 
@@ -961,7 +969,7 @@ local function OpenInventory()
     LayoutFrame("inventory")
     
     -- Force immediate refresh after a tiny delay to ensure items are loaded
-    C_Timer.After(0.1, function()
+    addon:DelayedCall(0.1, function()
         if f and f:IsShown() then
             LayoutFrame("inventory")
         end
@@ -1082,11 +1090,15 @@ end
 
 function BagEnhancements.OnEnable()
     local settings = addon.settings.bags
+
+    local function IsOneBagEnabled()
+        return addon.settings and addon.settings.bags and addon.settings.bags.oneBag
+    end
     
     -- ============================================================
     -- OneBag Mode: Replace bag functions (like Bagnon)
     -- ============================================================
-    if settings.oneBag then
+    if settings.oneBag and not BagEnhancements.oneBagHooksInstalled then
         local function IsInventoryBagSlot(bagSlot)
             for _, b in ipairs(FRAMES.inventory.bags) do
                 if b == bagSlot then
@@ -1114,7 +1126,7 @@ function BagEnhancements.OnEnable()
         end
 
         local function SyncInventoryToBlizzardState()
-            if not settings.oneBag then return end
+            if not IsOneBagEnabled() then return end
             if IsAnyInventoryContainerShown() then
                 OpenInventory()
                 HideDefaultBags()
@@ -1124,9 +1136,9 @@ function BagEnhancements.OnEnable()
         end
 
         local function QueueSyncInventoryToBlizzardState()
-            if not settings.oneBag then return end
-            C_Timer.After(0, function()
-                if not addon.settings or not addon.settings.bags or not addon.settings.bags.oneBag then
+            if not IsOneBagEnabled() then return end
+            addon:DelayedCall(0, function()
+                if not IsOneBagEnabled() then
                     return
                 end
                 SyncInventoryToBlizzardState()
@@ -1134,10 +1146,10 @@ function BagEnhancements.OnEnable()
         end
 
         local function QueueSyncOrToggleInventoryFallback()
-            if not settings.oneBag then return end
+            if not IsOneBagEnabled() then return end
             local wasShown = frames.inventory and frames.inventory:IsShown()
-            C_Timer.After(0, function()
-                if not addon.settings or not addon.settings.bags or not addon.settings.bags.oneBag then
+            addon:DelayedCall(0, function()
+                if not IsOneBagEnabled() then
                     return
                 end
 
@@ -1157,7 +1169,7 @@ function BagEnhancements.OnEnable()
         end
 
         hooksecurefunc("OpenBackpack", function()
-            if not settings.oneBag then return end
+            if not IsOneBagEnabled() then return end
             OpenInventory()
             HideDefaultBags()
         end)
@@ -1167,7 +1179,7 @@ function BagEnhancements.OnEnable()
         end)
 
         hooksecurefunc("ToggleBag", function(bagSlot)
-            if not settings.oneBag then return end
+            if not IsOneBagEnabled() then return end
             if not IsInventoryBagSlot(bagSlot) then return end
             QueueSyncOrToggleInventoryFallback()
         end)
@@ -1179,13 +1191,13 @@ function BagEnhancements.OnEnable()
         end
 
         hooksecurefunc("OpenAllBags", function()
-            if not settings.oneBag then return end
+            if not IsOneBagEnabled() then return end
             OpenInventory()
             HideDefaultBags()
         end)
 
         hooksecurefunc("OpenBag", function(bagSlot)
-            if not settings.oneBag then return end
+            if not IsOneBagEnabled() then return end
             if not IsInventoryBagSlot(bagSlot) then return end
             OpenInventory()
             HideDefaultBags()
@@ -1200,25 +1212,37 @@ function BagEnhancements.OnEnable()
         hooksecurefunc("CloseBackpack", function()
             QueueSyncInventoryToBlizzardState()
         end)
+
+        BagEnhancements.oneBagHooksInstalled = true
     end
     
     -- Default Frame Hooks (Fallback for non-OneBag mode)
-    hooksecurefunc("ContainerFrame_Update", function(frame)
-        if not settings.oneBag then
-            UpdateDefaultContainerFrame(frame)
-        end
-    end)
-    
-    if BankFrame_UpdateItems then
-        hooksecurefunc("BankFrame_UpdateItems", function()
-            if not settings.oneBag then
-                UpdateDefaultBankFrame()
+    if not BagEnhancements.defaultHooksInstalled then
+        hooksecurefunc("ContainerFrame_Update", function(frame)
+            if not IsOneBagEnabled() then
+                UpdateDefaultContainerFrame(frame)
             end
         end)
+        
+        if BankFrame_UpdateItems then
+            hooksecurefunc("BankFrame_UpdateItems", function()
+                if not IsOneBagEnabled() then
+                    UpdateDefaultBankFrame()
+                end
+            end)
+        end
+
+        BagEnhancements.defaultHooksInstalled = true
     end
     
     -- Events
-    local ev = CreateFrame("Frame")
+    local ev = BagEnhancements.eventFrame
+    if not ev then
+        ev = CreateFrame("Frame")
+        BagEnhancements.eventFrame = ev
+    end
+
+    ev:UnregisterAllEvents()
     ev:RegisterEvent("BAG_UPDATE")
     ev:RegisterEvent("PLAYER_MONEY")
     ev:RegisterEvent("GET_ITEM_INFO_RECEIVED")
@@ -1291,7 +1315,6 @@ function BagEnhancements.OnEnable()
             end
         end
     end)
-    BagEnhancements.eventFrame = ev
 
     if addon and addon.Debug then
         addon:Debug("Bag Enhancements Loaded. OneBag Mode: " .. ToDebugString(settings.oneBag))
@@ -1299,6 +1322,10 @@ function BagEnhancements.OnEnable()
 end
 
 function BagEnhancements.OnDisable()
+    if BagEnhancements.eventFrame then
+        BagEnhancements.eventFrame:UnregisterAllEvents()
+        BagEnhancements.eventFrame:SetScript("OnEvent", nil)
+    end
     if frames.inventory then frames.inventory:Hide() end
     if frames.bank then frames.bank:Hide() end
 end

@@ -268,11 +268,13 @@ WeakAurasModelPaths\ModelPaths.lua
 # ============================================================
 Core.lua
 Protocol.lua
+UI\SharedShell.lua
 
 # Settings UI
 UI\SettingsPanel.lua
 
 # Feature Modules
+Modules\Experience.lua
 Modules\Tooltips.lua
 Modules\Automation.lua
 Modules\Chat.lua
@@ -288,6 +290,7 @@ Modules\Mail.lua
 # UI Overhauls
 Modules\ActionBars.lua
 Modules\Minimap.lua
+Modules\Navigation.lua
 Modules\Keybinds.lua
 Modules\Profiles.lua
 

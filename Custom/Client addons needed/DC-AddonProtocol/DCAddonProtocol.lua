@@ -431,8 +431,17 @@ do
                 -- arg1 (notice type) is used to look up a global string in ChatFrame.lua
                 -- If the global string is missing, format() will throw. Provide a safe fallback.
                 local noticeType = ...
-                if type(noticeType) == "string" and not _G[noticeType] then
-                    _G[noticeType] = noticeType
+                if type(noticeType) == "string" and noticeType ~= "" then
+                    local noticeKey = "CHAT_" .. noticeType .. "_NOTICE"
+                    if not _G[noticeKey] then
+                        -- Keep fallback format-token free so string.format never errors.
+                        _G[noticeKey] = "Channel notice."
+                    end
+
+                    local noticeBNKey = noticeKey .. "_BN"
+                    if not _G[noticeBNKey] then
+                        _G[noticeBNKey] = _G[noticeKey]
+                    end
                 end
             end
             

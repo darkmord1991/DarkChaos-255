@@ -174,24 +174,30 @@ function ActionBars.OnEnable()
     ApplyActionBars()
 
     if not ActionBars.eventFrame then
-        local ev = CreateFrame("Frame")
-        ev:RegisterEvent("PLAYER_ENTERING_WORLD")
-        ev:RegisterEvent("UNIT_ENTERED_VEHICLE")
-        ev:RegisterEvent("UNIT_EXITED_VEHICLE")
-        ev:RegisterEvent("ACTIONBAR_UPDATE_STATE")
-        ev:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
-        ev:SetScript("OnEvent", function(_, event, unit)
-            if unit and unit ~= "player" then return end
-            addon:DelayedCall(0.2, function()
-                ApplyActionBars()
-            end)
-        end)
-        ActionBars.eventFrame = ev
+        ActionBars.eventFrame = CreateFrame("Frame")
     end
+
+    local ev = ActionBars.eventFrame
+    ev:UnregisterAllEvents()
+    ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+    ev:RegisterEvent("UNIT_ENTERED_VEHICLE")
+    ev:RegisterEvent("UNIT_EXITED_VEHICLE")
+    ev:RegisterEvent("ACTIONBAR_UPDATE_STATE")
+    ev:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
+    ev:SetScript("OnEvent", function(_, event, unit)
+        if unit and unit ~= "player" then return end
+        addon:DelayedCall(0.2, function()
+            ApplyActionBars()
+        end)
+    end)
 end
 
 function ActionBars.OnDisable()
     addon:Debug("ActionBars module disabling")
+    if ActionBars.eventFrame then
+        ActionBars.eventFrame:UnregisterAllEvents()
+        ActionBars.eventFrame:SetScript("OnEvent", nil)
+    end
 end
 
 function ActionBars.CreateSettings(parent)
