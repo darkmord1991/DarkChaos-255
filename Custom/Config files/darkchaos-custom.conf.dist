@@ -1263,9 +1263,9 @@ DC.RandomEnchants.MaxEnchantsPerItem = 3
 #    DC.RandomEnchants.MaxQuality
 #        Description: Item quality gate for random enchant rolls
 #                     0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary
-#        Defaults:    1 / 5
+#        Defaults:    2 / 5
 #
-DC.RandomEnchants.MinQuality = 1
+DC.RandomEnchants.MinQuality = 2
 DC.RandomEnchants.MaxQuality = 5
 
 #

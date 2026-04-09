@@ -42,6 +42,24 @@ local Automation = {
 -- Use shared utility for default merging
 addon:MergeModuleDefaults(Automation.defaults)
 
+local function NotifyAutomation(message, level, opts)
+    if addon.Notify then
+        local payload = opts or {}
+        if payload.title == nil then
+            payload.title = "Automation"
+        end
+        if payload.chatFallback == nil then
+            payload.chatFallback = false
+        end
+        if payload.forceChat == nil then
+            payload.forceChat = true
+        end
+        addon:Notify(message, level or "info", payload)
+    else
+        addon:Print(message, true)
+    end
+end
+
 -- Event frames storage for cleanup
 local eventFrames = {}
 
@@ -60,13 +78,14 @@ local function SetupAutoRepair()
             local repairCost, canRepair = GetRepairAllCost()
             if canRepair and repairCost > 0 then
                 local guildRepair = settings.autoRepairGuild and CanGuildBankRepair()
+                local costText = GetCoinTextureString(repairCost)
                 
                 if guildRepair then
                     RepairAllItems(true)  -- Use guild funds
-                    addon:Print("Repaired all items using guild funds (" .. GetCoinTextureString(repairCost) .. ")")
+                    NotifyAutomation("Auto-repaired for " .. costText .. " (guild funds).", "success")
                 else
                     RepairAllItems(false) -- Use personal funds
-                    addon:Print("Repaired all items (" .. GetCoinTextureString(repairCost) .. ")")
+                    NotifyAutomation("Auto-repaired for " .. costText .. " (personal funds).", "success")
                 end
             end
         end
@@ -78,6 +97,7 @@ end
 -- ============================================================
 local function SetupAutoSellJunk()
     local frame = CreateFrame("Frame")
+    table.insert(eventFrames, frame)
     frame:RegisterEvent("MERCHANT_SHOW")
     frame:SetScript("OnEvent", function(self, event)
         local settings = addon.settings.automation
@@ -85,6 +105,7 @@ local function SetupAutoSellJunk()
         
         local totalPrice = 0
         local itemCount = 0
+        local soldSlots = 0
         
         -- Iterate through all bags
         for bag = 0, 4 do
@@ -92,13 +113,17 @@ local function SetupAutoSellJunk()
             for slot = 1, numSlots do
                 local itemLink = GetContainerItemLink(bag, slot)
                 if itemLink then
-                    local _, _, quality = GetItemInfo(itemLink)
+                    local _, count, _, quality = GetContainerItemInfo(bag, slot)
+                    if quality == nil then
+                        local _, _, rarity = GetItemInfo(itemLink)
+                        quality = rarity
+                    end
                     if quality == 0 then  -- Poor quality (grey)
-                        local _, count = GetContainerItemInfo(bag, slot)
                         local price = select(11, GetItemInfo(itemLink))
                         if price and price > 0 then
                             totalPrice = totalPrice + (price * (count or 1))
                             itemCount = itemCount + (count or 1)
+                            soldSlots = soldSlots + 1
                             UseContainerItem(bag, slot)
                         end
                     end
@@ -107,7 +132,12 @@ local function SetupAutoSellJunk()
         end
         
         if itemCount > 0 then
-            addon:Print("Sold " .. itemCount .. " junk items for " .. GetCoinTextureString(totalPrice))
+            local itemLabel = itemCount == 1 and "item" or "items"
+            local slotLabel = soldSlots == 1 and "stack" or "stacks"
+            NotifyAutomation(
+                "Auto-sold " .. itemCount .. " junk " .. itemLabel .. " (" .. soldSlots .. " " .. slotLabel .. ") for " .. GetCoinTextureString(totalPrice) .. ".",
+                "success"
+            )
         end
     end)
 end

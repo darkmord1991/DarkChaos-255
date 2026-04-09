@@ -338,9 +338,17 @@ local function SellAllJunk()
     end
     
     if itemCount > 0 then
-        NotifyVendor("Sold " .. itemCount .. " junk items for " .. GetCoinTextureString(totalValue), "success", { title = "Vendor" })
+        NotifyVendor(
+            "Sold " .. itemCount .. " junk items for " .. GetCoinTextureString(totalValue),
+            "success",
+            { title = "Vendor", chatFallback = false, forceChat = true }
+        )
     else
-        NotifyVendor("No junk found. Ctrl+Right-click an item to mark it as junk.", "info", { title = "Vendor" })
+        NotifyVendor(
+            "No junk found. Ctrl+Right-click an item to mark it as junk.",
+            "info",
+            { title = "Vendor", chatFallback = false, forceChat = true }
+        )
     end
 end
 
@@ -559,6 +567,15 @@ end
 local sellJunkButton = nil
 local sellJunkPreviewText = nil
 
+local function IsAutomationAutoSellActive()
+    local automation = addon.settings and addon.settings.automation
+    if not automation then
+        return false
+    end
+
+    return automation.enabled ~= false and automation.autoSellJunk == true
+end
+
 local function UpdateSellJunkPreview()
     if not sellJunkButton then return end
 
@@ -582,7 +599,11 @@ local function UpdateSellJunkPreview()
         -- Keep the button active so it can provide feedback instead of feeling broken.
         sellJunkButton:Enable()
         if sellJunkPreviewText then
-            sellJunkPreviewText:SetText("|cff888888No junk (Ctrl+Right-click to mark)|r")
+            if IsAutomationAutoSellActive() then
+                sellJunkPreviewText:SetText("|cff888888No junk (auto-sold on open)|r")
+            else
+                sellJunkPreviewText:SetText("|cff888888No junk (Ctrl+Right-click to mark)|r")
+            end
         end
     end
 end

@@ -49,7 +49,7 @@ struct RandomEnchantsConfig
 
     bool allowWeapons = true;
     bool allowArmor = true;
-    uint8 minQuality = ITEM_QUALITY_NORMAL;
+    uint8 minQuality = ITEM_QUALITY_UNCOMMON;
     uint8 maxQuality = ITEM_QUALITY_LEGENDARY;
 
     bool skipIfRandomPropertyPresent = true;
@@ -108,7 +108,7 @@ struct RandomEnchantsConfig
         minQuality = GetCompatOption<uint8>(
             "DC.RandomEnchants.MinQuality",
             "RandomEnchants.MinQuality",
-            ITEM_QUALITY_NORMAL);
+            ITEM_QUALITY_UNCOMMON);
         maxQuality = GetCompatOption<uint8>(
             "DC.RandomEnchants.MaxQuality",
             "RandomEnchants.MaxQuality",
@@ -200,6 +200,11 @@ struct EnchantPools
 RandomEnchantsConfig sConfig;
 EnchantPools sPools;
 
+bool IsSpellEnchantStoreReady()
+{
+    return sSpellItemEnchantmentStore.GetNumRows() > 0;
+}
+
 void AppendCandidates(std::vector<uint32>& out, std::vector<uint32> const& in)
 {
     out.insert(out.end(), in.begin(), in.end());
@@ -215,6 +220,65 @@ std::string ToUpper(std::string value)
     return value;
 }
 
+void DebugTrace(
+    Player const* player,
+    Item const* item,
+    char const* source,
+    char const* stage,
+    std::string const& detail = "")
+{
+    if (!sConfig.debug)
+        return;
+
+    std::string const playerName = player ? player->GetName() : "<null>";
+    std::string const suffix = detail.empty() ? "" : " | " + detail;
+
+    if (!item)
+    {
+        LOG_INFO(
+            "scripts.dc",
+            "DC-RandomEnchants: [{}:{}] player={} item=<null>{}",
+            source,
+            stage,
+            playerName,
+            suffix);
+        return;
+    }
+
+    ItemTemplate const* proto = item->GetTemplate();
+    if (!proto)
+    {
+        LOG_INFO(
+            "scripts.dc",
+            "DC-RandomEnchants: [{}:{}] player={} itemTemplate=<null>{}",
+            source,
+            stage,
+            playerName,
+            suffix);
+        return;
+    }
+
+    LOG_INFO(
+        "scripts.dc",
+        "DC-RandomEnchants: [{}:{}] player={} item={} ({}) q={} class={} "
+        "sub={} randomProp={} slots=[{},{},{},{},{}]{}",
+        source,
+        stage,
+        playerName,
+        proto->ItemId,
+        proto->Name1,
+        proto->Quality,
+        proto->Class,
+        proto->SubClass,
+        item->GetItemRandomPropertyId(),
+        item->GetEnchantmentId(PROP_ENCHANTMENT_SLOT_0),
+        item->GetEnchantmentId(PROP_ENCHANTMENT_SLOT_1),
+        item->GetEnchantmentId(PROP_ENCHANTMENT_SLOT_2),
+        item->GetEnchantmentId(PROP_ENCHANTMENT_SLOT_3),
+        item->GetEnchantmentId(PROP_ENCHANTMENT_SLOT_4),
+        suffix);
+}
+
 void LoadEnchantPools()
 {
     sPools.Clear();
@@ -222,6 +286,15 @@ void LoadEnchantPools()
     if (!sConfig.enabled)
     {
         LOG_INFO("scripts.dc", "DC-RandomEnchants: disabled by config");
+        return;
+    }
+
+    if (!IsSpellEnchantStoreReady())
+    {
+        LOG_INFO(
+            "scripts.dc",
+            "DC-RandomEnchants: SpellItemEnchantment store not ready yet; "
+            "deferring pool load");
         return;
     }
 
@@ -444,21 +517,63 @@ uint32 PickRandomEnchantId(
 
 void ApplyRandomEnchants(Player* player, Item* item, char const* source)
 {
-    if (!sConfig.enabled || !player || !item)
+    if (!sConfig.enabled)
+    {
+        DebugTrace(player, item, source, "skip_disabled");
         return;
+    }
+
+    if (!player)
+    {
+        DebugTrace(player, item, source, "skip_no_player");
+        return;
+    }
+
+    if (!item)
+    {
+        DebugTrace(player, item, source, "skip_no_item");
+        return;
+    }
+
+    DebugTrace(player, item, source, "evaluate");
 
     if (!sPools.loaded)
+    {
+        DebugTrace(player, item, source, "skip_pool_unloaded");
         return;
+    }
 
     if (!IsEligibleItem(item))
+    {
+        if (sConfig.debug)
+        {
+            LOG_INFO(
+                "scripts.dc",
+                "DC-RandomEnchants: [{}:skip_ineligible] qualityRange=[{},{}] "
+                "allowWeapons={} allowArmor={}",
+                source,
+                sConfig.minQuality,
+                sConfig.maxQuality,
+                sConfig.allowWeapons,
+                sConfig.allowArmor);
+        }
+
+        DebugTrace(player, item, source, "skip_ineligible");
         return;
+    }
 
     if (sConfig.skipIfRandomPropertyPresent && HasExistingRandomEnchant(item))
+    {
+        DebugTrace(player, item, source, "skip_existing_random_property");
         return;
+    }
 
     ItemTemplate const* proto = item->GetTemplate();
     if (!proto)
+    {
+        DebugTrace(player, item, source, "skip_no_template");
         return;
+    }
 
     std::array<float, 3> const chances =
     {
@@ -480,30 +595,102 @@ void ApplyRandomEnchants(Player* player, Item* item, char const* source)
     for (uint8 i = 0; i < sConfig.maxEnchantsPerItem; ++i)
     {
         if (!roll_chance_f(chances[i]))
+        {
+            if (sConfig.debug)
+            {
+                LOG_INFO(
+                    "scripts.dc",
+                    "DC-RandomEnchants: [{}:roll_failed] rollIndex={} chance={:.1f}",
+                    source,
+                    i + 1,
+                    chances[i]);
+            }
+
+            DebugTrace(player, item, source, "roll_failed");
             break;
+        }
 
         uint8 const tier = RollTierForQuality(proto->Quality);
         if (!tier)
+        {
+            DebugTrace(player, item, source, "skip_invalid_tier");
             break;
+        }
+
+        if (sConfig.debug)
+        {
+            LOG_INFO(
+                "scripts.dc",
+                "DC-RandomEnchants: [{}:tier_selected] rollIndex={} tier={}",
+                source,
+                i + 1,
+                tier);
+        }
+
+        DebugTrace(player, item, source, "tier_selected");
 
         uint32 const enchantId = PickRandomEnchantId(proto, tier, usedEnchantIds);
         if (!enchantId)
+        {
+            if (sConfig.debug)
+            {
+                LOG_INFO(
+                    "scripts.dc",
+                    "DC-RandomEnchants: [{}:skip_no_candidate] rollIndex={} tier={}",
+                    source,
+                    i + 1,
+                    tier);
+            }
+
+            DebugTrace(player, item, source, "skip_no_candidate");
             break;
+        }
 
         if (!sSpellItemEnchantmentStore.LookupEntry(enchantId))
+        {
+            if (sConfig.debug)
+            {
+                LOG_INFO(
+                    "scripts.dc",
+                    "DC-RandomEnchants: [{}:skip_invalid_enchant] rollIndex={} "
+                    "enchantId={}",
+                    source,
+                    i + 1,
+                    enchantId);
+            }
+
+            DebugTrace(player, item, source, "skip_invalid_enchant");
             continue;
+        }
 
         EnchantmentSlot const slot = slots[i];
         player->ApplyEnchantment(item, slot, false);
         item->SetEnchantment(slot, enchantId, 0, 0, player->GetGUID());
         player->ApplyEnchantment(item, slot, true);
 
+        if (sConfig.debug)
+        {
+            LOG_INFO(
+                "scripts.dc",
+                "DC-RandomEnchants: [{}:enchant_applied] rollIndex={} slot={} "
+                "enchantId={}",
+                source,
+                i + 1,
+                static_cast<uint32>(slot),
+                enchantId);
+        }
+
+        DebugTrace(player, item, source, "enchant_applied");
+
         usedEnchantIds.insert(enchantId);
         ++appliedCount;
     }
 
     if (!appliedCount)
+    {
+        DebugTrace(player, item, source, "done_no_enchant_applied");
         return;
+    }
 
     if (sConfig.notifyOnApply)
     {
@@ -537,24 +724,55 @@ class DCRandomEnchantsPlayerScript : public PlayerScript
 public:
     DCRandomEnchantsPlayerScript() : PlayerScript("DCRandomEnchantsPlayerScript") {}
 
-    void OnPlayerLootItem(Player* player, Item* item, uint32 /*count*/, ObjectGuid /*lootguid*/) override
+    void OnPlayerLootItem(Player* player, Item* item, uint32 count, ObjectGuid /*lootguid*/) override
     {
+        if (sConfig.debug)
+        {
+            LOG_INFO(
+                "scripts.dc",
+                "DC-RandomEnchants: [loot:hook_fired] count={} sourceEnabled={}",
+                count,
+                sConfig.onLoot);
+            DebugTrace(player, item, "loot", "hook_fired");
+        }
+
         if (!sConfig.onLoot)
             return;
 
         ApplyRandomEnchants(player, item, "loot");
     }
 
-    void OnPlayerCreateItem(Player* player, Item* item, uint32 /*count*/) override
+    void OnPlayerCreateItem(Player* player, Item* item, uint32 count) override
     {
+        if (sConfig.debug)
+        {
+            LOG_INFO(
+                "scripts.dc",
+                "DC-RandomEnchants: [create:hook_fired] count={} sourceEnabled={}",
+                count,
+                sConfig.onCreate);
+            DebugTrace(player, item, "create", "hook_fired");
+        }
+
         if (!sConfig.onCreate)
             return;
 
         ApplyRandomEnchants(player, item, "create");
     }
 
-    void OnPlayerQuestRewardItem(Player* player, Item* item, uint32 /*count*/) override
+    void OnPlayerQuestRewardItem(Player* player, Item* item, uint32 count) override
     {
+        if (sConfig.debug)
+        {
+            LOG_INFO(
+                "scripts.dc",
+                "DC-RandomEnchants: [quest_reward:hook_fired] count={} "
+                "sourceEnabled={}",
+                count,
+                sConfig.onQuestReward);
+            DebugTrace(player, item, "quest_reward", "hook_fired");
+        }
+
         if (!sConfig.onQuestReward)
             return;
 
@@ -564,10 +782,21 @@ public:
     void OnPlayerGroupRollRewardItem(
         Player* player,
         Item* item,
-        uint32 /*count*/,
+        uint32 count,
         RollVote /*voteType*/,
         Roll* /*roll*/) override
     {
+        if (sConfig.debug)
+        {
+            LOG_INFO(
+                "scripts.dc",
+                "DC-RandomEnchants: [group_roll:hook_fired] count={} "
+                "sourceEnabled={}",
+                count,
+                sConfig.onGroupRoll);
+            DebugTrace(player, item, "group_roll", "hook_fired");
+        }
+
         if (!sConfig.onGroupRoll)
             return;
 
@@ -583,6 +812,14 @@ public:
     void OnAfterConfigLoad(bool /*reload*/) override
     {
         sConfig.Load();
+        LoadEnchantPools();
+    }
+
+    void OnStartup() override
+    {
+        if (!sConfig.enabled || sPools.loaded)
+            return;
+
         LoadEnchantPools();
     }
 };

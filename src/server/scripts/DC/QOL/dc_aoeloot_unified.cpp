@@ -854,6 +854,7 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
 {
     if (!player || !creature) return false;
     if (creature->loot.empty()) return false;
+    if (creature->loot.isLooted()) return false;
     if (sConfig.playersOnly && !player->IsPlayer()) return false;
     if (sConfig.ignoreTapped && creature->hasLootRecipient())
     {
@@ -901,6 +902,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
         if (c->GetGUID() == mainCreature->GetGUID()) return true;
         if (!c->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE)) return true;
         if (c->loot.empty()) return true;
+        if (c->loot.isLooted()) return true;
         if (!player->isAllowedToLoot(c)) return true;
         return false;
     });
@@ -1141,12 +1143,8 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAut
     if (autoVendoredCopper > 0)
         CreditAutoVendorGold(player, autoVendoredCopper, autoVendoredItems);
 
-    if (processed == 0)
-    {
-        if (ShouldShowMessage(player))
-            ChatHandler(player->GetSession()).PSendSysMessage("AoE Loot: found corpses but none eligible");
-        return false;
-    }
+    // Do not abort if no extra corpses were merged; main corpse loot should
+    // still be processed (important for autonomous looter-pet pulses).
 
     for (auto const& it : itemsToAdd)
     {

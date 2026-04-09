@@ -199,8 +199,23 @@ public:
         if (player->IsInCombat())
             return;
 
-        if (player->GetLootGUID())
-            return;
+        if (ObjectGuid const lootGuid = player->GetLootGUID())
+        {
+            bool hasActiveLoot = false;
+
+            if (lootGuid.IsCreatureOrVehicle())
+            {
+                if (Creature* lootCreature = player->GetMap()->GetCreature(lootGuid))
+                {
+                    hasActiveLoot = lootCreature->HasDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+                }
+            }
+
+            if (hasActiveLoot)
+                return;
+
+            player->SendLootRelease(lootGuid);
+        }
 
         LooterPetState& state = it->second;
         Unit* companion = GetActiveLooterCompanion(player);

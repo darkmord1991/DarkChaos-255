@@ -431,6 +431,17 @@ local function ClearQuestPoiCache()
     state.questPoiCache = {}
 end
 
+local function ClearQuestPoiCacheForQuest(questId)
+    questId = tonumber(questId)
+    if not questId or questId <= 0 then
+        return
+    end
+
+    if state.questPoiCache then
+        state.questPoiCache[questId] = nil
+    end
+end
+
 local function AddQuestPoiCachePoint(questId, x, y, mapId, source)
     questId = tonumber(questId)
     if not questId or questId <= 0 then
@@ -581,19 +592,28 @@ local function GetCachedQuestPoiCoords(questId, playerX, playerY, mapId)
     return nil, nil, 0
 end
 
-local function GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId)
+local function GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, options)
     if type(QuestPOIGetIconInfo) ~= "function" then
         return nil, nil, questLogIndex, nil
     end
 
+    options = options or {}
+    local bypassCache = options.bypassCache == true
+
     local questId = GetQuestIdFromLogIndex(questLogIndex)
 
-    local cachedX, cachedY, cachedCount = GetCachedQuestPoiCoords(questId, playerX, playerY, mapId)
-    if cachedX and cachedY then
-        if cachedCount and cachedCount > 1 then
-            return cachedX, cachedY, questId, "poi-cache-multi"
+    if options.clearQuestCache == true then
+        ClearQuestPoiCacheForQuest(questId)
+    end
+
+    if not bypassCache then
+        local cachedX, cachedY, cachedCount = GetCachedQuestPoiCoords(questId, playerX, playerY, mapId)
+        if cachedX and cachedY then
+            if cachedCount and cachedCount > 1 then
+                return cachedX, cachedY, questId, "poi-cache-multi"
+            end
+            return cachedX, cachedY, questId, "poi-cache"
         end
-        return cachedX, cachedY, questId, "poi-cache"
     end
 
     local activeMapId = mapId or ((type(GetCurrentMapAreaID) == "function") and GetCurrentMapAreaID() or nil)
@@ -687,6 +707,37 @@ local function GetQuestTitleFromLogIndex(questLogIndex)
     return title, isHeader
 end
 
+local function IsQuestLogIndexCompleted(questLogIndex)
+    if type(GetQuestLogTitle) ~= "function" then
+        return false
+    end
+
+    local _, _, _, _, isHeader, isCollapsed, isComplete = GetQuestLogTitle(questLogIndex)
+    if isHeader then
+        return false
+    end
+
+    local completion = isComplete
+    if completion == nil and type(isCollapsed) == "number" then
+        completion = isCollapsed
+    end
+
+    if type(completion) == "number" then
+        return completion > 0
+    end
+
+    if type(completion) == "boolean" then
+        return completion
+    end
+
+    if type(completion) == "string" then
+        local lower = string.lower(completion)
+        return lower == "1" or lower == "true" or lower:find("complete", 1, true) ~= nil
+    end
+
+    return false
+end
+
 local function FindQuestLogIndexByQuestId(questId)
     if not questId or questId <= 0 then
         return nil
@@ -727,14 +778,19 @@ local function GetFollowedQuestTarget(playerX, playerY, mapId)
         return nil
     end
 
-    local qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId)
+    local isCompleted = IsQuestLogIndexCompleted(questLogIndex)
+    local poiOptions = isCompleted and { bypassCache = true, clearQuestCache = true } or nil
+
+    local qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
     if (not qx or not qy) and state.followedQuestId then
         local byIdIndex = FindQuestLogIndexByQuestId(state.followedQuestId)
         if byIdIndex and byIdIndex ~= questLogIndex then
             questLogIndex = byIdIndex
             title, isHeader = GetQuestTitleFromLogIndex(questLogIndex)
             if not isHeader then
-                qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId)
+                isCompleted = IsQuestLogIndexCompleted(questLogIndex)
+                poiOptions = isCompleted and { bypassCache = true, clearQuestCache = true } or nil
+                qx, qy, questId, poiSource = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
             end
         end
     end
@@ -1394,11 +1450,13 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
     end
 
     local playerX, playerY, mapId = GetPlayerMapPositionSafe()
-    local qx, qy, questId = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId)
+    local isCompleted = IsQuestLogIndexCompleted(questLogIndex)
+    local poiOptions = isCompleted and { bypassCache = true, clearQuestCache = true } or nil
+    local qx, qy, questId = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
     if not qx or not qy then
         MaybeSyncCurrentZoneMap(true)
         playerX, playerY, mapId = GetPlayerMapPositionSafe()
-        qx, qy, questId = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId)
+        qx, qy, questId = GetQuestPoiCoordsFromLogIndex(questLogIndex, playerX, playerY, mapId, poiOptions)
     end
 
     local hasPoiOnCurrentMap = qx and qy
@@ -1927,6 +1985,14 @@ function Navigation.OnEnable()
                 or event == "ZONE_CHANGED_INDOORS"
                 or event == "ZONE_CHANGED_NEW_AREA" then
                 ClearQuestPoiCache()
+            end
+
+            if event == "QUEST_LOG_UPDATE" or event == "QUEST_POI_UPDATE" then
+                if state.followedQuestId then
+                    ClearQuestPoiCacheForQuest(state.followedQuestId)
+                else
+                    ClearQuestPoiCache()
+                end
             end
 
             if event == "QUEST_LOG_UPDATE"
