@@ -107,6 +107,9 @@ void AddSC_ItemUpgradeTokenHooks();           // ItemUpgrades/ItemUpgradeTokenHo
 void AddSC_ItemUpgradeProcScaling();          // ItemUpgrades/ItemUpgradeProcScaling.cpp
 void AddSC_ItemUpgradeStatApplication();      // ItemUpgrades/ItemUpgradeStatApplication.cpp
 
+// --- Random enchants system ---
+void AddSC_dc_random_enchants();              // RandomEnchants/dc_random_enchants.cpp
+
 // --- Mythic+ dungeon system ---
 void AddMythicPlusScripts();                  // MythicPlus/dc_mythicplus_loader.cpp
 void AddSC_dc_mythic_spectator();             // MythicPlus/dc_mythicplus_spectator.cpp
@@ -307,6 +310,9 @@ void AddDCScripts()
     DC_LOAD(AddSC_ItemUpgradeTokenHooks);
     DC_LOAD(AddSC_ItemUpgradeProcScaling);
     DC_LOAD(AddSC_ItemUpgradeStatApplication);
+
+    LogSection("Random Enchants System");
+    DC_LOAD(AddSC_dc_random_enchants);
 
     LogSection("Mythic+ Dungeon System");
     // AddMythicPlusScripts loads core, portal, vault, vendors, and keystone item.

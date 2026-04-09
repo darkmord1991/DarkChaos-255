@@ -151,6 +151,11 @@ set(SCRIPTS_DC_ItemUpgrade_Phase4F
     ItemUpgrades/ItemUpgradeExchangeNPC.cpp
 )
 
+# DC Random Enchants System
+set(SCRIPTS_DC_RandomEnchants
+    RandomEnchants/dc_random_enchants.cpp
+)
+
 # DC Seasonal System - Independent Framework
 set(SCRIPTS_DC_SeasonalSystem
     Seasons/SeasonalSystem.h
@@ -315,6 +320,7 @@ set(SCRIPTS_WORLD
     ${SCRIPTS_DC_Gilneas}
     ${SCRIPTS_DC_DungeonQuests}
     ${SCRIPTS_DC_ItemUpgrade}
+    ${SCRIPTS_DC_RandomEnchants}
     ${SCRIPTS_DC_MythicPlus}
     ${SCRIPTS_DC_GreatVault}
     ${SCRIPTS_DC_Jadeforest}

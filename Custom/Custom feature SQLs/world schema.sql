@@ -3165,7 +3165,7 @@ CREATE TABLE IF NOT EXISTS `item_dbc` (
   PRIMARY KEY (`ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `item_enchantment_random_tiers` (
+CREATE TABLE IF NOT EXISTS `dc_item_enchantment_random_tiers` (
   `enchantID` int DEFAULT NULL,
   `tier` int DEFAULT NULL,
   `class` varchar(11) NOT NULL,

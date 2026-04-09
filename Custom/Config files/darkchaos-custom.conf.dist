@@ -20,6 +20,7 @@
 #   Section 4:  AoE Loot System
 #   Section 5:  Hotspots System
 #   Section 6:  Item Upgrade System
+#   Section 6A: Random Enchants System
 #   Section 7:  Collection System
 #
 # PART III - PVE CONTENT
@@ -1204,6 +1205,99 @@ ItemUpgrade.Test.EssenceGrant = 5000
 #        Default:     2500
 #
 ItemUpgrade.Test.TokensGrant = 2500
+
+
+###############################################################################
+#
+#  SECTION 6A: RANDOM ENCHANTS SYSTEM
+#
+#  Applies up to three random enchantments to newly acquired armor/weapons.
+#  This DC port uses dedicated random-property enchant slots to preserve
+#  tooltip consistency and avoid conflicts with permanent enchants.
+#
+###############################################################################
+
+#
+#    DC.RandomEnchants.Enable
+#        Description: Master toggle for the Random Enchants subsystem
+#        Default:     1 (Enabled)
+#
+DC.RandomEnchants.Enable = 1
+
+#
+#    DC.RandomEnchants.OnLoot
+#    DC.RandomEnchants.OnCreate
+#    DC.RandomEnchants.OnQuestReward
+#    DC.RandomEnchants.OnGroupRoll
+#        Description: Enable random-enchant rolls for each acquisition source
+#        Default:     1 (Enabled) for all
+#
+DC.RandomEnchants.OnLoot = 1
+DC.RandomEnchants.OnCreate = 1
+DC.RandomEnchants.OnQuestReward = 1
+DC.RandomEnchants.OnGroupRoll = 1
+
+#
+#    DC.RandomEnchants.EnchantChance1
+#    DC.RandomEnchants.EnchantChance2
+#    DC.RandomEnchants.EnchantChance3
+#        Description: Percent chance for each sequential enchant roll.
+#                     Roll #2 only occurs if #1 succeeds, etc.
+#        Range:       0.0 - 100.0
+#        Defaults:    70.0 / 65.0 / 60.0
+#
+DC.RandomEnchants.EnchantChance1 = 70.0
+DC.RandomEnchants.EnchantChance2 = 65.0
+DC.RandomEnchants.EnchantChance3 = 60.0
+
+#
+#    DC.RandomEnchants.MaxEnchantsPerItem
+#        Description: Maximum number of random enchants applied per item
+#        Range:       1 - 3
+#        Default:     3
+#
+DC.RandomEnchants.MaxEnchantsPerItem = 3
+
+#
+#    DC.RandomEnchants.MinQuality
+#    DC.RandomEnchants.MaxQuality
+#        Description: Item quality gate for random enchant rolls
+#                     0=Poor, 1=Common, 2=Uncommon, 3=Rare, 4=Epic, 5=Legendary
+#        Defaults:    1 / 5
+#
+DC.RandomEnchants.MinQuality = 1
+DC.RandomEnchants.MaxQuality = 5
+
+#
+#    DC.RandomEnchants.AllowWeapons
+#    DC.RandomEnchants.AllowArmor
+#        Description: Control whether weapon/armor classes are eligible
+#        Default:     1 (Enabled) for both
+#
+DC.RandomEnchants.AllowWeapons = 1
+DC.RandomEnchants.AllowArmor = 1
+
+#
+#    DC.RandomEnchants.SkipIfRandomPropertyPresent
+#        Description: Skip applying DC random enchants when the item already
+#                     has random property/suffix data or populated prop slots
+#        Default:     1 (Enabled)
+#
+DC.RandomEnchants.SkipIfRandomPropertyPresent = 1
+
+#
+#    DC.RandomEnchants.NotifyOnApply
+#        Description: Send player chat feedback when enchants are applied
+#        Default:     1 (Enabled)
+#
+DC.RandomEnchants.NotifyOnApply = 1
+
+#
+#    DC.RandomEnchants.Debug
+#        Description: Enable verbose debug logs for random enchant events
+#        Default:     0 (Disabled)
+#
+DC.RandomEnchants.Debug = 0
 
 
 ###############################################################################
