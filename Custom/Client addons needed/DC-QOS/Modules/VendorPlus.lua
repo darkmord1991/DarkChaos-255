@@ -98,11 +98,40 @@ local function MarkAsValuable(itemId)
 end
 
 local function IsCustomJunk(itemId)
-    return customJunkItems[itemId] == true
+    if not itemId then return false end
+    return customJunkItems[itemId] == true or customJunkItems[tostring(itemId)] == true
 end
 
 local function IsNeverSell(itemId)
-    return neverSellItems[itemId] == true
+    if not itemId then return false end
+    return neverSellItems[itemId] == true or neverSellItems[tostring(itemId)] == true
+end
+
+local function GetBagSlotJunkInfo(bag, slot, itemLink)
+    if not itemLink then
+        return nil
+    end
+
+    local _, count, _, quality = GetContainerItemInfo(bag, slot)
+    local itemId = tonumber(itemLink:match("item:(%d+)"))
+
+    -- Some clients/slots can return nil quality from GetContainerItemInfo.
+    -- Fall back to GetItemInfo rarity to avoid false "No junk items" states.
+    if quality == nil then
+        local _, _, rarity = GetItemInfo(itemLink)
+        quality = rarity
+    end
+
+    local isJunk = (quality == 0) or IsCustomJunk(itemId)
+    local isProtected = IsNeverSell(itemId)
+
+    return {
+        count = count or 1,
+        itemId = itemId,
+        quality = quality,
+        isJunk = isJunk,
+        isProtected = isProtected,
+    }
 end
 
 -- ============================================================
@@ -265,18 +294,13 @@ local function CalculateJunkValue()
         for slot = 1, numSlots do
             local itemLink = GetContainerItemLink(bag, slot)
             if itemLink then
-                local _, count, _, quality = GetContainerItemInfo(bag, slot)
-                local itemId = tonumber(itemLink:match("item:(%d+)"))
-                
-                -- Check if it's junk (grey quality or custom marked)
-                local isJunk = (quality == 0) or IsCustomJunk(itemId)
-                local isProtected = IsNeverSell(itemId)
-                
-                if isJunk and not isProtected then
-                    itemCount = itemCount + (count or 1)
+                local slotInfo = GetBagSlotJunkInfo(bag, slot, itemLink)
+
+                if slotInfo and slotInfo.isJunk and not slotInfo.isProtected then
+                    itemCount = itemCount + slotInfo.count
                     local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemLink)
                     if sellPrice and sellPrice > 0 then
-                        totalValue = totalValue + (sellPrice * (count or 1))
+                        totalValue = totalValue + (sellPrice * slotInfo.count)
                     end
                 end
             end
@@ -298,19 +322,15 @@ local function SellAllJunk()
         for slot = 1, numSlots do
             local itemLink = GetContainerItemLink(bag, slot)
             if itemLink then
-                local _, count, _, quality = GetContainerItemInfo(bag, slot)
-                local itemId = tonumber(itemLink:match("item:(%d+)"))
-                
-                local isJunk = (quality == 0) or IsCustomJunk(itemId)
-                local isProtected = IsNeverSell(itemId)
-                
-                if isJunk and not isProtected then
+                local slotInfo = GetBagSlotJunkInfo(bag, slot, itemLink)
+
+                if slotInfo and slotInfo.isJunk and not slotInfo.isProtected then
                     local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemLink)
                     if sellPrice and sellPrice > 0 then
-                        totalValue = totalValue + (sellPrice * (count or 1))
+                        totalValue = totalValue + (sellPrice * slotInfo.count)
                     end
 
-                    itemCount = itemCount + (count or 1)
+                    itemCount = itemCount + slotInfo.count
                     UseContainerItem(bag, slot)
                 end
             end
@@ -319,6 +339,8 @@ local function SellAllJunk()
     
     if itemCount > 0 then
         NotifyVendor("Sold " .. itemCount .. " junk items for " .. GetCoinTextureString(totalValue), "success", { title = "Vendor" })
+    else
+        NotifyVendor("No junk found. Ctrl+Right-click an item to mark it as junk.", "info", { title = "Vendor" })
     end
 end
 
@@ -557,9 +579,10 @@ local function UpdateSellJunkPreview()
             sellJunkPreviewText:SetText("|cff888888" .. junkCount .. " items - " .. GetCoinTextureString(junkValue) .. "|r")
         end
     else
-        sellJunkButton:Disable()
+        -- Keep the button active so it can provide feedback instead of feeling broken.
+        sellJunkButton:Enable()
         if sellJunkPreviewText then
-            sellJunkPreviewText:SetText("|cff888888No junk items|r")
+            sellJunkPreviewText:SetText("|cff888888No junk (Ctrl+Right-click to mark)|r")
         end
     end
 end

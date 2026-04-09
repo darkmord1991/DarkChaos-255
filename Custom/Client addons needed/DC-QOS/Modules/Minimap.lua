@@ -355,10 +355,18 @@ local function ApplyMinimapSkin()
         GameTimeFrame:Hide()
     end
 
-    if s.hideWorldMapButton and MiniMapWorldMapButton then
-        MiniMapWorldMapButton:Hide()
-        if MiniMapWorldMapButton.UnregisterAllEvents then
-            MiniMapWorldMapButton:UnregisterAllEvents()
+    if MiniMapWorldMapButton then
+        if s.hideWorldMapButton then
+            if MiniMapWorldMapButton.EnableMouse then
+                MiniMapWorldMapButton:EnableMouse(false)
+            end
+            -- Keep this frame visible for compatibility with quest/minimap POI updates.
+            MiniMapWorldMapButton:Show()
+        else
+            if MiniMapWorldMapButton.EnableMouse then
+                MiniMapWorldMapButton:EnableMouse(true)
+            end
+            MiniMapWorldMapButton:Show()
         end
     end
 

@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <random>
 #include <array>
+#include <unordered_set>
 
 // Helper to get base map safely
 static Map* GetBaseMapSafe(uint32 mapId)
@@ -98,6 +99,24 @@ static bool IsFarEnoughFromExistingHotspots(uint32 mapId, float x, float y)
     return true;
 }
 
+static constexpr uint32 DUNGEON_GRANT_ID_MASK = 0x80000000u;
+
+static uint32 BuildHotspotGrantId(Hotspot const* hotspot, Player const* player, bool isDungeonHotspot)
+{
+    if (hotspot)
+        return hotspot->id;
+
+    if (isDungeonHotspot && player)
+        return DUNGEON_GRANT_ID_MASK | player->GetMapId();
+
+    return 0;
+}
+
+static bool IsDungeonGrantId(uint32 grantId)
+{
+    return (grantId & DUNGEON_GRANT_ID_MASK) != 0;
+}
+
 static uint32 GetPrimaryHotspotAuraSpell()
 {
     if (sHotspotsConfig.auraSpell)
@@ -147,18 +166,6 @@ static void RemoveSecondaryHotspotAuras(Player* player)
     if (sHotspotsConfig.buffSpell != 0 &&
         sHotspotsConfig.buffSpell != primarySpellId)
         player->RemoveAura(sHotspotsConfig.buffSpell);
-}
-
-static void RemoveAllHotspotAuras(Player* player)
-{
-    if (!player)
-        return;
-
-    uint32 primarySpellId = GetPrimaryHotspotAuraSpell();
-    if (primarySpellId != 0)
-        player->RemoveAura(primarySpellId);
-
-    RemoveSecondaryHotspotAuras(player);
 }
 
 HotspotMgr* HotspotMgr::instance()
@@ -572,13 +579,34 @@ void HotspotMgr::CleanupExpiredHotspots()
         }
     }
 
-    // Clean player expiry
+    std::unordered_set<uint32> activeHotspotIds;
+    for (Hotspot const& activeHotspot : _grid.GetAll())
+        activeHotspotIds.insert(activeHotspot.id);
+
+    // Clean player expiry and stale one-time grant entries.
     {
         std::lock_guard<std::mutex> lock(_playerDataLock);
         for (auto it = _playerExpiry.begin(); it != _playerExpiry.end(); )
         {
             if (it->second <= now) it = _playerExpiry.erase(it);
             else ++it;
+        }
+
+        for (auto playerIt = _playerGrantedHotspots.begin(); playerIt != _playerGrantedHotspots.end(); )
+        {
+            auto& granted = playerIt->second;
+            for (auto grantIt = granted.begin(); grantIt != granted.end(); )
+            {
+                if (IsDungeonGrantId(*grantIt) || activeHotspotIds.find(*grantIt) != activeHotspotIds.end())
+                    ++grantIt;
+                else
+                    grantIt = granted.erase(grantIt);
+            }
+
+            if (granted.empty())
+                playerIt = _playerGrantedHotspots.erase(playerIt);
+            else
+                ++playerIt;
         }
     }
 
@@ -597,62 +625,11 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
     ObjectGuid const playerGuid = player->GetGUID();
     Hotspot const* hotspot = GetPlayerHotspot(player);
     bool isDungeonHotspot = sHotspotsConfig.dungeonHotspotsEnabled && player->GetMap() && player->GetMap()->IsDungeon();
-    bool shouldHaveAura = (hotspot != nullptr) || isDungeonHotspot;
+    bool isInHotspotContext = (hotspot != nullptr) || isDungeonHotspot;
     bool hasHotspotAura = PlayerHasAnyHotspotAura(player);
-    bool hasTrackedState = false;
 
+    if (!hasHotspotAura)
     {
-        std::lock_guard<std::mutex> lock(_playerDataLock);
-        hasTrackedState = _playerExpiry.find(playerGuid) != _playerExpiry.end() ||
-            _playerObjectives.find(playerGuid) != _playerObjectives.end();
-    }
-
-    if (shouldHaveAura)
-    {
-        bool isNewEntry = !hasHotspotAura && !hasTrackedState;
-        uint32 bonus = sHotspotsConfig.experienceBonus;
-        if (isDungeonHotspot)
-            bonus += sHotspotsConfig.dungeonBonusMultiplier;
-
-        EnsurePrimaryHotspotAura(player);
-        RemoveSecondaryHotspotAuras(player);
-
-        if (isNewEntry && player->GetSession())
-            ChatHandler(player->GetSession()).SendNotification(
-                "Hotspot joined: +{}% experience", bonus);
-
-        time_t expiryTime = GameTime::GetGameTime().count() + 3600;
-        if (hotspot)
-            expiryTime = hotspot->expireTime;
-
-        {
-            std::lock_guard<std::mutex> lock(_playerDataLock);
-            _playerExpiry[playerGuid] = expiryTime;
-
-            // Init objectives
-            if (sHotspotsConfig.objectivesEnabled)
-            {
-                auto& obj = _playerObjectives[playerGuid];
-                uint32 targetId = hotspot ? hotspot->id : 0; // 0 for generic dungeon hotspot ID for now? Or MapID?
-                if (isDungeonHotspot) targetId = player->GetMapId() + 100000; // Fake ID for dungeon maps
-
-                if (obj.hotspotId != targetId)
-                {
-                    obj = HotspotObjectives();
-                    obj.hotspotId = targetId;
-                    obj.entryTime = GameTime::GetGameTime().count();
-                }
-            }
-        }
-    }
-    else if (hasHotspotAura || hasTrackedState)
-    {
-        RemoveAllHotspotAuras(player);
-
-        if (player->GetSession())
-            ChatHandler(player->GetSession()).SendNotification(
-                "You left the hotspot area.");
-
         uint32 kills = 0;
         uint32 mins = 0;
         bool hasResults = false;
@@ -660,8 +637,8 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
             std::lock_guard<std::mutex> lock(_playerDataLock);
             _playerExpiry.erase(playerGuid);
 
-            // Results
-            if (sHotspotsConfig.objectivesEnabled)
+            // End objective session once the aura is gone and player is outside hotspot context.
+            if (!isInHotspotContext && sHotspotsConfig.objectivesEnabled)
             {
                 auto it = _playerObjectives.find(playerGuid);
                 if (it != _playerObjectives.end())
@@ -673,8 +650,61 @@ void HotspotMgr::CheckPlayerHotspotStatus(Player* player)
                 }
             }
         }
+
         if (hasResults && player->GetSession())
             ChatHandler(player->GetSession()).PSendSysMessage("|cFFFF6347[Hotspot Results]|r Session ended. Kills: {} | Survival: {} min", kills, mins);
+    }
+
+    if (!isInHotspotContext)
+        return;
+
+    RemoveSecondaryHotspotAuras(player);
+
+    if (hasHotspotAura)
+        return;
+
+    uint32 targetId = BuildHotspotGrantId(hotspot, player, isDungeonHotspot);
+    if (targetId == 0)
+        return;
+
+    bool alreadyGranted = false;
+    {
+        std::lock_guard<std::mutex> lock(_playerDataLock);
+        auto grantedIt = _playerGrantedHotspots.find(playerGuid);
+        if (grantedIt != _playerGrantedHotspots.end())
+            alreadyGranted = grantedIt->second.find(targetId) != grantedIt->second.end();
+    }
+
+    // One-time grant per hotspot: re-entering the same hotspot should never re-buff.
+    if (alreadyGranted)
+        return;
+
+    if (!EnsurePrimaryHotspotAura(player))
+        return;
+
+    uint32 bonus = sHotspotsConfig.experienceBonus;
+    if (isDungeonHotspot)
+        bonus += sHotspotsConfig.dungeonBonusMultiplier;
+
+    if (player->GetSession())
+        ChatHandler(player->GetSession()).SendNotification("Hotspot joined: +{}% experience", bonus);
+
+    time_t expiryTime = hotspot ? hotspot->expireTime : GameTime::GetGameTime().count() + 3600;
+    {
+        std::lock_guard<std::mutex> lock(_playerDataLock);
+        _playerExpiry[playerGuid] = expiryTime;
+        _playerGrantedHotspots[playerGuid].insert(targetId);
+
+        if (sHotspotsConfig.objectivesEnabled)
+        {
+            auto& obj = _playerObjectives[playerGuid];
+            if (obj.hotspotId != targetId)
+            {
+                obj = HotspotObjectives();
+                obj.hotspotId = targetId;
+                obj.entryTime = GameTime::GetGameTime().count();
+            }
+        }
     }
 }
 
@@ -684,65 +714,53 @@ void HotspotMgr::OnPlayerGiveXP(Player* player, uint32& amount, Unit* victim)
 
     bool isBuffed = PlayerHasAnyHotspotAura(player);
 
-    // Check server expiry fallback
     if (!isBuffed)
+        return;
+
+    // Check dungeon bonus
+    uint32 bonusPct = sHotspotsConfig.experienceBonus;
+    if (player->GetMap() && player->GetMap()->IsDungeon() && sHotspotsConfig.dungeonHotspotsEnabled)
+        bonusPct += sHotspotsConfig.dungeonBonusMultiplier;
+
+    uint32 bonus = (amount * bonusPct) / 100;
+    amount += bonus;
+
+    ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot XP]|r +{} XP ({}% bonus)", bonus, bonusPct);
+
+    // Track objectives
+    if (sHotspotsConfig.objectivesEnabled && victim) // victim might be null in some calls?
     {
-        {
-            std::lock_guard<std::mutex> lock(_playerDataLock);
-            auto it = _playerExpiry.find(player->GetGUID());
-            if (it != _playerExpiry.end())
-            {
-                if (it->second > GameTime::GetGameTime().count()) isBuffed = true;
-                else _playerExpiry.erase(it);
-            }
-        }
-    }
+         // Check valid context: Grid Hotspot OR Dungeon
+         Hotspot const* cur = GetPlayerHotspot(player);
+         bool isDungeon = sHotspotsConfig.dungeonHotspotsEnabled && player->GetMap() && player->GetMap()->IsDungeon();
 
-    if (isBuffed)
-    {
-        // Check dungeon bonus
-        uint32 bonusPct = sHotspotsConfig.experienceBonus;
-        if (player->GetMap() && player->GetMap()->IsDungeon() && sHotspotsConfig.dungeonHotspotsEnabled)
-            bonusPct += sHotspotsConfig.dungeonBonusMultiplier;
+         if (cur || isDungeon)
+         {
+             uint32 targetId = BuildHotspotGrantId(cur, player, isDungeon);
+             if (targetId == 0)
+                 return;
 
-        uint32 bonus = (amount * bonusPct) / 100;
-        amount += bonus;
-
-        ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFD700[Hotspot XP]|r +{} XP ({}% bonus)", bonus, bonusPct);
-
-        // Track objectives
-        if (sHotspotsConfig.objectivesEnabled && victim) // victim might be null in some calls?
-        {
-             // Check valid context: Grid Hotspot OR Dungeon
-             Hotspot const* cur = GetPlayerHotspot(player);
-             bool isDungeon = sHotspotsConfig.dungeonHotspotsEnabled && player->GetMap() && player->GetMap()->IsDungeon();
-
-             if (cur || isDungeon)
+             uint32 killCount = 0;
+             bool reportProgress = false;
              {
-                 uint32 targetId = cur ? cur->id : (player->GetMapId() + 100000); // Same fake ID logic
-
-                 uint32 killCount = 0;
-                 bool reportProgress = false;
+                 std::lock_guard<std::mutex> lock(_playerDataLock);
+                 auto& obj = _playerObjectives[player->GetGUID()];
+                 if (obj.hotspotId == targetId)
                  {
-                     std::lock_guard<std::mutex> lock(_playerDataLock);
-                     auto& obj = _playerObjectives[player->GetGUID()];
-                     if (obj.hotspotId == targetId)
-                     {
-                         obj.killCount++;
-                         killCount = obj.killCount;
-                         reportProgress = sHotspotsConfig.showObjectivesProgress;
-                     }
-                 }
-
-                 if (reportProgress)
-                 {
-                     if (killCount == sHotspotsConfig.objectiveKillGoal)
-                         ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Objective] Killed {}/{} creatures!|r", killCount, sHotspotsConfig.objectiveKillGoal);
-                     else if (killCount < sHotspotsConfig.objectiveKillGoal && (killCount % 10 == 0 || killCount == 1))
-                         ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00[Objective] Hotspot Kills: {}/{}|r", killCount, sHotspotsConfig.objectiveKillGoal);
+                     obj.killCount++;
+                     killCount = obj.killCount;
+                     reportProgress = sHotspotsConfig.showObjectivesProgress;
                  }
              }
-        }
+
+             if (reportProgress)
+             {
+                 if (killCount == sHotspotsConfig.objectiveKillGoal)
+                     ChatHandler(player->GetSession()).PSendSysMessage("|cFF00FF00[Objective] Killed {}/{} creatures!|r", killCount, sHotspotsConfig.objectiveKillGoal);
+                 else if (killCount < sHotspotsConfig.objectiveKillGoal && (killCount % 10 == 0 || killCount == 1))
+                     ChatHandler(player->GetSession()).PSendSysMessage("|cFFFFFF00[Objective] Hotspot Kills: {}/{}|r", killCount, sHotspotsConfig.objectiveKillGoal);
+             }
+         }
     }
 }
 

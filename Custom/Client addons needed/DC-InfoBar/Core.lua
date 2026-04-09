@@ -1765,7 +1765,11 @@ function DCInfoBar:Initialize()
     -- Setup slash commands
     self:SetupSlashCommands()
     
-    self:Print("DC-InfoBar v" .. self.VERSION .. " loaded. Type /infobar for options.")
+    if self.PrintToDcDebug then
+        self:PrintToDcDebug("DC-InfoBar v" .. self.VERSION .. " loaded. Type /infobar for options.")
+    else
+        self:Print("DC-InfoBar v" .. self.VERSION .. " loaded. Type /infobar for options.")
+    end
 end
 
 -- ============================================================================

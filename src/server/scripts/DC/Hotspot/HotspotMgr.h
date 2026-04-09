@@ -4,6 +4,7 @@
 #include "HotspotGrid.h"
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 class HotspotMgr
 {
@@ -18,6 +19,8 @@ private:
     std::unordered_map<ObjectGuid, HotspotObjectives> _playerObjectives;
     // Per-player server-side expiry check
     std::unordered_map<ObjectGuid, time_t> _playerExpiry;
+    // Per-player one-time hotspot grants (hotspotId or dungeon grant id)
+    std::unordered_map<ObjectGuid, std::unordered_set<uint32>> _playerGrantedHotspots;
     // Per-player tracking for XP calc
     struct PlayerHotspotTracking
     {

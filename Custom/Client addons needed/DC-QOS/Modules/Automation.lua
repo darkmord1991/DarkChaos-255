@@ -403,14 +403,146 @@ end
 -- ============================================================
 -- Faster Loot (3.3.5a compatible)
 -- ============================================================
+local lastSkippedHeirloom = {
+    at = 0,
+    noticeAt = 0,
+    itemId = nil,
+    itemLink = nil,
+}
+
+local function GetItemIdFromLink(link)
+    if type(link) ~= "string" then
+        return nil
+    end
+
+    return tonumber(link:match("item:(%d+)"))
+end
+
+local function IsLikelyInventoryFullError(message)
+    if type(message) ~= "string" then
+        return false
+    end
+
+    if ERR_INV_FULL and message == ERR_INV_FULL then
+        return true
+    end
+
+    if ERR_BAG_FULL and message == ERR_BAG_FULL then
+        return true
+    end
+
+    if ERR_CANT_CARRY_MORE_OF_THIS and message == ERR_CANT_CARRY_MORE_OF_THIS then
+        return true
+    end
+
+    return false
+end
+
+local function NotifyOwnedHeirloom(itemId, itemLink)
+    local itemLabel = itemLink
+    if (not itemLabel or itemLabel == "") and type(GetItemInfo) == "function" and itemId then
+        itemLabel = GetItemInfo(itemId)
+    end
+
+    if not itemLabel or itemLabel == "" then
+        itemLabel = "this heirloom"
+    end
+
+    local text = "Already own " .. itemLabel .. ". Duplicate heirloom skipped."
+    if addon.Notify then
+        addon:Notify(text, "info", { title = "Loot", chatFallback = true })
+    else
+        addon:Print(text, true)
+    end
+
+    lastSkippedHeirloom.noticeAt = GetTime() or 0
+end
+
+local function RememberSkippedHeirloom(itemId, itemLink)
+    local now = GetTime() or 0
+    local sameItem = itemId and itemId == lastSkippedHeirloom.itemId
+    local recentlyNotified = (now - (lastSkippedHeirloom.noticeAt or 0)) < 0.75
+
+    lastSkippedHeirloom.at = now
+    lastSkippedHeirloom.itemId = itemId
+    lastSkippedHeirloom.itemLink = itemLink
+
+    if not (sameItem and recentlyNotified) then
+        NotifyOwnedHeirloom(itemId, itemLink)
+    end
+end
+
+local function ShouldSkipFastLootSlot(slot)
+    if type(slot) ~= "number" or slot <= 0 then
+        return false, nil, nil
+    end
+
+    if type(GetLootSlotInfo) ~= "function" or type(GetLootSlotLink) ~= "function" then
+        return false, nil, nil
+    end
+
+    local _, _, _, quality = GetLootSlotInfo(slot)
+    if quality ~= 7 then
+        return false, nil, nil
+    end
+
+    local itemLink = GetLootSlotLink(slot)
+    if not itemLink then
+        return false, nil, nil
+    end
+
+    local itemId = GetItemIdFromLink(itemLink)
+    if not itemId then
+        return false, nil, nil
+    end
+
+    if type(GetItemInfo) ~= "function" or type(GetItemCount) ~= "function" then
+        return false, nil, nil
+    end
+
+    local _, _, _, _, _, _, _, maxStack = GetItemInfo(itemLink)
+    if maxStack ~= 1 then
+        return false, nil, nil
+    end
+
+    -- Avoid repeated "no bag space" style errors for unique heirlooms.
+    local ownedCount = GetItemCount(itemId, true) or 0
+    return ownedCount > 0, itemId, itemLink
+end
+
 local function SetupFasterLoot()
     local frame = CreateFrame("Frame")
+    table.insert(eventFrames, frame)
     -- Note: LOOT_READY doesn't exist in 3.3.5a, use LOOT_OPENED instead
     frame:RegisterEvent("LOOT_OPENED")
+    frame:RegisterEvent("UI_ERROR_MESSAGE")
     
-    frame:SetScript("OnEvent", function(self, event, autoLoot)
+    frame:SetScript("OnEvent", function(self, event, ...)
         local settings = addon.settings.automation
         if not settings.enabled or not settings.fasterLoot then return end
+
+        if event == "UI_ERROR_MESSAGE" then
+            local arg1, arg2 = ...
+            local message = (type(arg2) == "string") and arg2 or arg1
+            local now = GetTime() or 0
+            local recentlySkipped = (now - (lastSkippedHeirloom.at or 0)) <= 2
+
+            if recentlySkipped and IsLikelyInventoryFullError(message) then
+                if UIErrorsFrame and UIErrorsFrame.Clear then
+                    UIErrorsFrame:Clear()
+                end
+
+                if (now - (lastSkippedHeirloom.noticeAt or 0)) > 0.75 then
+                    NotifyOwnedHeirloom(lastSkippedHeirloom.itemId, lastSkippedHeirloom.itemLink)
+                end
+
+                lastSkippedHeirloom.at = 0
+            end
+
+            return
+        end
+
+        local autoLoot = ...
         
         -- Only process with auto-loot enabled (check CVar or passed autoLoot)
         local isAutoLoot = autoLoot or (GetCVar("autoLootDefault") == "1")
@@ -420,7 +552,12 @@ local function SetupFasterLoot()
         local numItems = GetNumLootItems()
         if numItems > 0 then
             for i = numItems, 1, -1 do
-                LootSlot(i)
+                local shouldSkip, itemId, itemLink = ShouldSkipFastLootSlot(i)
+                if shouldSkip then
+                    RememberSkippedHeirloom(itemId, itemLink)
+                else
+                    LootSlot(i)
+                end
             end
         end
     end)

@@ -57,6 +57,7 @@ local state = {
     followedQuestLogIndex = nil,
     followedQuestId = nil,
     followedQuestTitle = nil,
+    selectionSyncInProgress = false,
     selectionHooksInstalled = false,
     watchFrameHooksInstalled = false,
     poiDisplayHookInstalled = false,
@@ -1252,6 +1253,135 @@ function Navigation:SetEditPreviewWaypoint()
     return self:SetManualWaypoint(previewX, previewY, mapId, "Edit Preview")
 end
 
+local function EnsureQuestIsWatched(questLogIndex)
+    if type(questLogIndex) ~= "number" or questLogIndex <= 0 then
+        return false
+    end
+
+    if type(IsQuestWatched) == "function" and IsQuestWatched(questLogIndex) then
+        return true
+    end
+
+    if type(AddQuestWatch) ~= "function" then
+        return false
+    end
+
+    local beforeCount = (type(GetNumQuestWatches) == "function") and (GetNumQuestWatches() or 0) or nil
+    local ok = pcall(AddQuestWatch, questLogIndex)
+    if not ok then
+        return false
+    end
+
+    if type(IsQuestWatched) == "function" then
+        return IsQuestWatched(questLogIndex) == true
+    end
+
+    local afterCount = (type(GetNumQuestWatches) == "function") and (GetNumQuestWatches() or 0) or nil
+    if beforeCount and afterCount then
+        return afterCount >= beforeCount
+    end
+
+    return true
+end
+
+local function EnsureQuestMinimapTrackingEnabled()
+    if type(GetNumTrackingTypes) ~= "function"
+        or type(GetTrackingInfo) ~= "function"
+        or type(SetTracking) ~= "function" then
+        return false
+    end
+
+    local localizedTrackQuests = type(TRACK_QUESTS) == "string" and TRACK_QUESTS or nil
+    local numTracking = GetNumTrackingTypes() or 0
+
+    for i = 1, numTracking do
+        local name, texture, active = GetTrackingInfo(i)
+        local matches = false
+
+        if localizedTrackQuests and type(name) == "string" and name == localizedTrackQuests then
+            matches = true
+        end
+
+        if not matches and type(name) == "string" then
+            local lowerName = string.lower(name)
+            if lowerName:find("quest", 1, true) or lowerName:find("objective", 1, true) then
+                matches = true
+            end
+        end
+
+        if not matches and type(texture) == "string" then
+            local lowerTexture = string.lower(texture)
+            if lowerTexture:find("trackquest", 1, true) then
+                matches = true
+            end
+        end
+
+        if matches then
+            if not active then
+                pcall(SetTracking, i, true)
+            end
+            return true
+        end
+    end
+
+    return false
+end
+
+local function EnsureQuestSelectionFocused(questLogIndex)
+    if type(questLogIndex) ~= "number" or questLogIndex <= 0 then
+        return false
+    end
+
+    local selected = false
+
+    if type(QuestLog_SetSelection) == "function" then
+        state.selectionSyncInProgress = true
+        pcall(QuestLog_SetSelection, questLogIndex)
+        state.selectionSyncInProgress = false
+        selected = true
+    end
+
+    if type(QuestLog_OpenToQuestDetails) == "function" then
+        state.selectionSyncInProgress = true
+        pcall(QuestLog_OpenToQuestDetails, questLogIndex)
+        state.selectionSyncInProgress = false
+        selected = true
+    end
+
+    if type(WorldMapQuestShowObjectives) == "function" then
+        pcall(WorldMapQuestShowObjectives, questLogIndex)
+    end
+
+    return selected
+end
+
+local function RefreshQuestTrackingVisuals()
+    if type(QuestLog_Update) == "function" then
+        pcall(QuestLog_Update)
+    end
+    if type(QuestWatch_Update) == "function" then
+        pcall(QuestWatch_Update)
+    end
+    if type(WatchFrame_Update) == "function" then
+        pcall(WatchFrame_Update)
+    end
+
+    if WorldMapFrame and type(WorldMapFrame.IsShown) == "function" and WorldMapFrame:IsShown() then
+        if type(WorldMapFrame_Update) == "function" then
+            pcall(WorldMapFrame_Update)
+        end
+        if type(WorldMapFrame_UpdateQuests) == "function" then
+            pcall(WorldMapFrame_UpdateQuests)
+        end
+        if type(WorldMapQuestShowObjectives) == "function" then
+            pcall(WorldMapQuestShowObjectives)
+        end
+        if type(QuestMapUpdateAllQuests) == "function" then
+            pcall(QuestMapUpdateAllQuests)
+        end
+    end
+end
+
 function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
     questLogIndex = tonumber(questLogIndex)
     if not questLogIndex or questLogIndex <= 0 then
@@ -1277,12 +1407,34 @@ function Navigation:SetFollowQuestByLogIndex(questLogIndex, silent)
     state.followedQuestId = questId
     state.followedQuestTitle = title or ("Quest " .. tostring(questId or questLogIndex))
 
+    local selectionSynced = EnsureQuestSelectionFocused(questLogIndex)
+    if selectionSynced then
+        MaybeSyncCurrentZoneMap(true)
+    end
+
+    local watchSynced = EnsureQuestIsWatched(questLogIndex)
+    if watchSynced then
+        MaybeSyncCurrentZoneMap(true)
+    end
+
+    local minimapTrackingSynced = EnsureQuestMinimapTrackingEnabled()
+    if minimapTrackingSynced then
+        MaybeSyncCurrentZoneMap(true)
+    end
+
     if addon.settings.navigation.clearManualOnQuestSelect then
         local manual = addon.settings.navigation.manual
         if manual and manual.active then
             manual.active = false
             addon:SaveSettings()
         end
+    end
+
+    RefreshQuestTrackingVisuals()
+    if addon and addon.DelayedCall then
+        addon:DelayedCall(0, RefreshQuestTrackingVisuals)
+        addon:DelayedCall(0.05, RefreshQuestTrackingVisuals)
+        addon:DelayedCall(0.15, RefreshQuestTrackingVisuals)
     end
 
     state.dirty = true
@@ -1331,6 +1483,16 @@ local function TrySetFollowFromQuestLogSelection()
     local questLogIndex = GetQuestLogSelection()
     if questLogIndex and questLogIndex > 0 then
         Navigation:SetFollowQuestByLogIndex(questLogIndex, true)
+    end
+end
+
+local function ScheduleFollowFromQuestLogSelection()
+    TrySetFollowFromQuestLogSelection()
+
+    if addon and addon.DelayedCall then
+        addon:DelayedCall(0, TrySetFollowFromQuestLogSelection)
+        addon:DelayedCall(0.05, TrySetFollowFromQuestLogSelection)
+        addon:DelayedCall(0.15, TrySetFollowFromQuestLogSelection)
     end
 end
 
@@ -1410,7 +1572,7 @@ local function EnsureWatchFrameHooks()
 
         local okClick = pcall(frame.HookScript, frame, "OnClick", function(self)
             if not TrySetFollowFromTrackerClickFrame(self, false) then
-                TrySetFollowFromQuestLogSelection()
+                ScheduleFollowFromQuestLogSelection()
             end
         end)
         if okClick then
@@ -1419,7 +1581,7 @@ local function EnsureWatchFrameHooks()
 
         local okMouse = pcall(frame.HookScript, frame, "OnMouseUp", function(self)
             if not TrySetFollowFromTrackerClickFrame(self, false) then
-                TrySetFollowFromQuestLogSelection()
+                ScheduleFollowFromQuestLogSelection()
             end
         end)
         if okMouse then
@@ -1464,10 +1626,13 @@ local function EnsureSelectionHooks()
 
     if type(QuestLog_OpenToQuestDetails) == "function" then
         hooksecurefunc("QuestLog_OpenToQuestDetails", function(questLogIndex)
+            if state.selectionSyncInProgress then
+                return
+            end
             if type(questLogIndex) == "number" and questLogIndex > 0 then
                 Navigation:SetFollowQuestByLogIndex(questLogIndex, true)
             else
-                TrySetFollowFromQuestLogSelection()
+                ScheduleFollowFromQuestLogSelection()
             end
         end)
         hookedAny = true
@@ -1476,7 +1641,7 @@ local function EnsureSelectionHooks()
     if type(WatchFrameItem_OnClick) == "function" then
         hooksecurefunc("WatchFrameItem_OnClick", function(frame)
             if not TrySetFollowFromTrackerClickFrame(frame, false) then
-                TrySetFollowFromQuestLogSelection()
+                ScheduleFollowFromQuestLogSelection()
             end
         end)
         hookedAny = true
@@ -1485,7 +1650,16 @@ local function EnsureSelectionHooks()
     if type(QuestPOIButton_OnClick) == "function" then
         hooksecurefunc("QuestPOIButton_OnClick", function(frame)
             if not TrySetFollowFromTrackerClickFrame(frame, false) then
-                TrySetFollowFromQuestLogSelection()
+                ScheduleFollowFromQuestLogSelection()
+            end
+        end)
+        hookedAny = true
+    end
+
+    if type(WorldMapQuestPOI_OnClick) == "function" then
+        hooksecurefunc("WorldMapQuestPOI_OnClick", function(frame)
+            if not TrySetFollowFromTrackerClickFrame(frame, false) then
+                ScheduleFollowFromQuestLogSelection()
             end
         end)
         hookedAny = true
@@ -1494,7 +1668,7 @@ local function EnsureSelectionHooks()
     if type(QuestLogTitleButton_OnClick) == "function" then
         hooksecurefunc("QuestLogTitleButton_OnClick", function(frame)
             if not TrySetFollowFromTrackerClickFrame(frame, false) then
-                TrySetFollowFromQuestLogSelection()
+                ScheduleFollowFromQuestLogSelection()
             end
         end)
         hookedAny = true
@@ -1502,10 +1676,13 @@ local function EnsureSelectionHooks()
 
     if type(QuestLog_SetSelection) == "function" then
         hooksecurefunc("QuestLog_SetSelection", function(questLogIndex)
+            if state.selectionSyncInProgress then
+                return
+            end
             if type(questLogIndex) == "number" and questLogIndex > 0 then
                 Navigation:SetFollowQuestByLogIndex(questLogIndex, true)
             else
-                TrySetFollowFromQuestLogSelection()
+                ScheduleFollowFromQuestLogSelection()
             end
         end)
         hookedAny = true
@@ -1751,6 +1928,16 @@ function Navigation.OnEnable()
                 or event == "ZONE_CHANGED_NEW_AREA" then
                 ClearQuestPoiCache()
             end
+
+            if event == "QUEST_LOG_UPDATE"
+                or event == "QUEST_WATCH_UPDATE"
+                or event == "QUEST_POI_UPDATE" then
+                RefreshQuestTrackingVisuals()
+                if addon and addon.DelayedCall then
+                    addon:DelayedCall(0.05, RefreshQuestTrackingVisuals)
+                end
+            end
+
             state.dirty = true
         end)
     end

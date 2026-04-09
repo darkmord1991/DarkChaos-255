@@ -153,6 +153,84 @@ local function SetupQuestLevelText()
     if questLevelHookRegistered then return end
     questLevelHookRegistered = true
 
+    local function BuildQuestLevelLookup()
+        local questLevels = {}
+        if type(GetNumQuestLogEntries) ~= "function" or type(GetQuestLogTitle) ~= "function" then
+            return questLevels
+        end
+
+        local numEntries = GetNumQuestLogEntries() or 0
+        for questIndex = 1, numEntries do
+            local title, level, _, _, isHeader = GetQuestLogTitle(questIndex)
+            if title and not isHeader and type(level) == "number" and level > 0 then
+                questLevels[title] = level
+            end
+        end
+
+        return questLevels
+    end
+
+    local function StripQuestLevelPrefix(text)
+        if type(text) ~= "string" then
+            return text
+        end
+        return (text:gsub("^%[%d+%]%s*", ""))
+    end
+
+    local function ApplyQuestLevelsToWatchFrame()
+        local settings = addon.settings and addon.settings.interface
+        if not settings or not settings.enabled or not settings.questLevelText then
+            return
+        end
+        if not WatchFrame then
+            return
+        end
+
+        local questLevels = BuildQuestLevelLookup()
+        if not next(questLevels) then
+            return
+        end
+
+        local function UpdateFrameText(frame, depth)
+            if not frame or depth > 3 then
+                return
+            end
+
+            if type(frame.GetRegions) == "function" then
+                local regions = { frame:GetRegions() }
+                for i = 1, #regions do
+                    local region = regions[i]
+                    if region
+                        and type(region.GetObjectType) == "function"
+                        and region:GetObjectType() == "FontString"
+                        and type(region.GetText) == "function"
+                        and type(region.SetText) == "function" then
+                        local text = region:GetText()
+                        if type(text) == "string" and text ~= "" then
+                            local baseTitle = StripQuestLevelPrefix(text)
+                            local level = questLevels[baseTitle]
+                            if level then
+                                local withLevel = string.format("[%d] %s", level, baseTitle)
+                                if text ~= withLevel then
+                                    region:SetText(withLevel)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            if type(frame.GetChildren) == "function" then
+                local children = { frame:GetChildren() }
+                for i = 1, #children do
+                    UpdateFrameText(children[i], depth + 1)
+                end
+            end
+        end
+
+        UpdateFrameText(WatchFrame, 0)
+    end
+
     -- Hook the quest log title button update
     hooksecurefunc("QuestLog_Update", function()
         local settings = addon.settings and addon.settings.interface
@@ -175,6 +253,13 @@ local function SetupQuestLevelText()
             end
         end
     end)
+
+    if type(WatchFrame_Update) == "function" then
+        hooksecurefunc("WatchFrame_Update", ApplyQuestLevelsToWatchFrame)
+    end
+    if type(QuestWatch_Update) == "function" then
+        hooksecurefunc("QuestWatch_Update", ApplyQuestLevelsToWatchFrame)
+    end
 end
 
 -- ============================================================

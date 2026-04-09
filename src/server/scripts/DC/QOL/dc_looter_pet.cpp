@@ -25,9 +25,18 @@ using namespace Acore::ChatCommands;
 namespace DCAoELootExt
 {
     bool IsPlayerAoELootEnabled(ObjectGuid playerGuid);
+    void ReloadAoELootConfig();
     uint8 GetPlayerMinQuality(ObjectGuid playerGuid);
     bool GetPlayerGoldOnly(ObjectGuid playerGuid);
-    bool TriggerLooterPetLootPulse(Player* player, WorldObject const* searchAnchor);
+    bool GetLooterPetPathfindingEnabled();
+    void SetLooterPetPathfindingEnabled(bool value);
+    bool GetLooterPetPathAllowIncomplete();
+    void SetLooterPetPathAllowIncomplete(bool value);
+    bool GetLooterPetPathRejectShortcut();
+    void SetLooterPetPathRejectShortcut(bool value);
+    float GetLooterPetPathMaxLength();
+    uint32 GetLooterPetPathMaxChecks();
+    bool TriggerLooterPetLootPulse(Player* player, WorldObject* searchAnchor);
 }
 
 namespace
@@ -38,6 +47,9 @@ struct LooterPetConfig
     bool enabled = true;
     bool allowInCombat = false;
     uint32 pulseMs = 1500;
+    bool fallbackToPlayerAnchor = true;
+    bool companionLeashEnable = true;
+    float companionMaxDistance = 45.0f;
 
     void Load()
     {
@@ -46,11 +58,28 @@ struct LooterPetConfig
             "AoELoot.LooterPet.AllowInCombat", false);
         pulseMs = sConfigMgr->GetOption<uint32>(
             "AoELoot.LooterPet.PulseMs", 1500);
+        fallbackToPlayerAnchor = sConfigMgr->GetOption<bool>(
+            "AoELoot.LooterPet.FallbackToPlayerAnchor", true);
+        companionLeashEnable = sConfigMgr->GetOption<bool>(
+            "AoELoot.LooterPet.CompanionLeash.Enable", true);
+        companionMaxDistance = sConfigMgr->GetOption<float>(
+            "AoELoot.LooterPet.CompanionLeash.MaxDistance", 45.0f);
+
+        // Autonomous looter behavior is intentionally out-of-combat only.
+        if (allowInCombat)
+        {
+            LOG_WARN("scripts.dc", "AoELoot.LooterPet.AllowInCombat=1 is ignored; autonomous looter pulses are forced out-of-combat.");
+            allowInCombat = false;
+        }
 
         if (pulseMs < 500)
             pulseMs = 500;
         if (pulseMs > 10000)
             pulseMs = 10000;
+        if (companionMaxDistance < 5.0f)
+            companionMaxDistance = 5.0f;
+        if (companionMaxDistance > 150.0f)
+            companionMaxDistance = 150.0f;
     }
 };
 
@@ -166,7 +195,8 @@ public:
         if (!player->IsAlive() || player->IsFlying())
             return;
 
-        if (!sLooterPetConfig.allowInCombat && player->IsInCombat())
+        // Autonomous looter pulses are intentionally out-of-combat only.
+        if (player->IsInCombat())
             return;
 
         if (player->GetLootGUID())
@@ -193,6 +223,12 @@ public:
             }
         }
 
+        if (sLooterPetConfig.companionLeashEnable &&
+            companion->GetDistance(player) > sLooterPetConfig.companionMaxDistance)
+        {
+            return;
+        }
+
         uint32 const elapsed = state.elapsedMs + diff;
         if (elapsed < sLooterPetConfig.pulseMs)
         {
@@ -201,7 +237,9 @@ public:
         }
 
         state.elapsedMs = 0;
-        DCAoELootExt::TriggerLooterPetLootPulse(player, companion);
+        bool const didLoot = DCAoELootExt::TriggerLooterPetLootPulse(player, companion);
+        if (!didLoot && sLooterPetConfig.fallbackToPlayerAnchor)
+            DCAoELootExt::TriggerLooterPetLootPulse(player, player);
     }
 };
 
@@ -217,6 +255,12 @@ public:
             { "toggle", HandleToggle, SEC_PLAYER, Console::No },
             { "on", HandleOn, SEC_PLAYER, Console::No },
             { "off", HandleOff, SEC_PLAYER, Console::No },
+            { "fallback", HandleFallback, SEC_PLAYER, Console::No },
+            { "leash", HandleLeash, SEC_PLAYER, Console::No },
+            { "leashdist", HandleLeashDistance, SEC_PLAYER, Console::No },
+            { "path", HandlePathfinding, SEC_PLAYER, Console::No },
+            { "pathincomplete", HandlePathIncomplete, SEC_PLAYER, Console::No },
+            { "pathshortcutreject", HandlePathShortcutReject, SEC_PLAYER, Console::No },
             { "status", HandleStatus, SEC_PLAYER, Console::No },
             { "reload", HandleReload, SEC_ADMINISTRATOR, Console::No },
         };
@@ -277,6 +321,68 @@ public:
         return HandleToggle(handler, false);
     }
 
+    static bool HandleFallback(ChatHandler* handler, Optional<bool> enabled = {})
+    {
+        sLooterPetConfig.fallbackToPlayerAnchor = enabled.value_or(!sLooterPetConfig.fallbackToPlayerAnchor);
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Fallback anchor: {}",
+            sLooterPetConfig.fallbackToPlayerAnchor ? "Player" : "Off");
+        return true;
+    }
+
+    static bool HandleLeash(ChatHandler* handler, Optional<bool> enabled = {})
+    {
+        sLooterPetConfig.companionLeashEnable = enabled.value_or(!sLooterPetConfig.companionLeashEnable);
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Companion leash: {}",
+            sLooterPetConfig.companionLeashEnable ? "On" : "Off");
+        return true;
+    }
+
+    static bool HandleLeashDistance(ChatHandler* handler, float distance)
+    {
+        if (distance < 5.0f)
+            distance = 5.0f;
+        if (distance > 150.0f)
+            distance = 150.0f;
+
+        sLooterPetConfig.companionMaxDistance = distance;
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Companion leash distance: {:.1f} yd",
+            sLooterPetConfig.companionMaxDistance);
+        return true;
+    }
+
+    static bool HandlePathfinding(ChatHandler* handler, Optional<bool> enabled = {})
+    {
+        bool const next = enabled.value_or(!DCAoELootExt::GetLooterPetPathfindingEnabled());
+        DCAoELootExt::SetLooterPetPathfindingEnabled(next);
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Pathfinding: {}",
+            next ? "On" : "Off");
+        return true;
+    }
+
+    static bool HandlePathIncomplete(ChatHandler* handler, Optional<bool> enabled = {})
+    {
+        bool const next = enabled.value_or(!DCAoELootExt::GetLooterPetPathAllowIncomplete());
+        DCAoELootExt::SetLooterPetPathAllowIncomplete(next);
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Path incomplete: {}",
+            next ? "Allowed" : "Rejected");
+        return true;
+    }
+
+    static bool HandlePathShortcutReject(ChatHandler* handler, Optional<bool> enabled = {})
+    {
+        bool const next = enabled.value_or(!DCAoELootExt::GetLooterPetPathRejectShortcut());
+        DCAoELootExt::SetLooterPetPathRejectShortcut(next);
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Path shortcut reject: {}",
+            next ? "On" : "Off");
+        return true;
+    }
+
     static bool HandleStatus(ChatHandler* handler)
     {
         Player* player = handler->GetPlayer();
@@ -288,6 +394,12 @@ public:
         bool const aoeEnabled = DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID());
         bool const goldOnly = DCAoELootExt::GetPlayerGoldOnly(player->GetGUID());
         uint8 const minQuality = DCAoELootExt::GetPlayerMinQuality(player->GetGUID());
+        bool const pathfindingEnabled = DCAoELootExt::GetLooterPetPathfindingEnabled();
+        bool const allowIncomplete = DCAoELootExt::GetLooterPetPathAllowIncomplete();
+        bool const rejectShortcut = DCAoELootExt::GetLooterPetPathRejectShortcut();
+        float const maxPathLength = DCAoELootExt::GetLooterPetPathMaxLength();
+        uint32 const maxPathChecks = DCAoELootExt::GetLooterPetPathMaxChecks();
+        bool const moveMapsEnabled = sConfigMgr->GetOption<bool>("MoveMaps.Enable", false);
         Unit* companion = GetActiveLooterCompanion(player);
 
         handler->PSendSysMessage(
@@ -305,20 +417,42 @@ public:
             "|cff00ff00[Looter Pet]|r Pulse: {} ms",
             sLooterPetConfig.pulseMs);
         handler->PSendSysMessage(
-            "|cff00ff00[Looter Pet]|r Combat: {}",
-            sLooterPetConfig.allowInCombat ? "Allowed" : "Paused");
+            "|cff00ff00[Looter Pet]|r Combat: Paused (autonomous only)");
         handler->PSendSysMessage(
             "|cff00ff00[Looter Pet]|r Gold-Only: {}",
             goldOnly ? "On" : "Off");
         handler->PSendSysMessage(
             "|cff00ff00[Looter Pet]|r Min Quality: {}",
             minQuality);
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Fallback anchor: {}",
+            sLooterPetConfig.fallbackToPlayerAnchor ? "Player" : "Off");
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Companion leash: {} ({:.1f} yd)",
+            sLooterPetConfig.companionLeashEnable ? "On" : "Off",
+            sLooterPetConfig.companionMaxDistance);
+        handler->PSendSysMessage(
+            "|cff00ff00[Looter Pet]|r Pathfinding: {} (checks={}, maxLen={:.1f})",
+            pathfindingEnabled ? "On" : "Off",
+            maxPathChecks,
+            maxPathLength);
+
+        if (pathfindingEnabled)
+        {
+            handler->PSendSysMessage(
+                "|cff00ff00[Looter Pet]|r Path rules: incomplete={}, shortcutReject={}",
+                allowIncomplete ? "On" : "Off",
+                rejectShortcut ? "On" : "Off");
+        }
 
         if (!aoeEnabled)
             handler->SendSysMessage("|cffff9900[Looter Pet]|r AoE Loot is disabled. Enable with .lp enable");
 
-        if (!sLooterPetConfig.allowInCombat && player->IsInCombat())
+        if (player->IsInCombat())
             handler->SendSysMessage("|cffff9900[Looter Pet]|r Pulse currently paused while in combat.");
+
+        if (pathfindingEnabled && !moveMapsEnabled)
+            handler->SendSysMessage("|cffff9900[Looter Pet]|r MoveMaps.Enable is off; pathfinding quality may be reduced.");
 
         if (enabled && !companion)
             handler->SendSysMessage("|cffff9900[Looter Pet]|r No active companion currently bound.");
@@ -331,8 +465,9 @@ public:
 
     static bool HandleReload(ChatHandler* handler)
     {
+        DCAoELootExt::ReloadAoELootConfig();
         sLooterPetConfig.Load();
-        handler->SendSysMessage("Looter Pet config reloaded.");
+        handler->SendSysMessage("Looter Pet and AoE config reloaded.");
         return true;
     }
 };

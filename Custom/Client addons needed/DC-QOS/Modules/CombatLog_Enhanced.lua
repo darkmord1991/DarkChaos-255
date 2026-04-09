@@ -36,6 +36,65 @@ local SCHOOL_COLORS = {
     [0x40] = {r = 1.00, g = 0.50, b = 1.00, name = "Arcane"},    -- Pink
 }
 
+local BG_FELLEATHER = "Interface\\AddOns\\DC-QOS\\Textures\\Backgrounds\\FelLeather_512.tga"
+
+local RECAP_EVENT_STYLE = {
+    damage = {
+        bg = {0.12, 0.04, 0.04, 0.78},
+        border = {0.48, 0.16, 0.16, 0.95},
+        accent = {1.0, 0.25, 0.25, 1.0},
+        icon = "Interface\\Icons\\Ability_Creature_Cursed_05",
+    },
+    heal = {
+        bg = {0.04, 0.12, 0.04, 0.78},
+        border = {0.16, 0.45, 0.16, 0.95},
+        accent = {0.25, 1.0, 0.25, 1.0},
+        icon = "Interface\\Icons\\Spell_Holy_HolyBolt",
+    },
+    buff = {
+        bg = {0.05, 0.07, 0.14, 0.78},
+        border = {0.20, 0.30, 0.56, 0.95},
+        accent = {0.45, 0.60, 1.0, 1.0},
+        icon = "Interface\\Icons\\Spell_Holy_MagicalSentry",
+    },
+    debuff = {
+        bg = {0.12, 0.05, 0.12, 0.78},
+        border = {0.45, 0.18, 0.45, 0.95},
+        accent = {1.0, 0.45, 1.0, 1.0},
+        icon = "Interface\\Icons\\Spell_Shadow_CurseOfTounges",
+    },
+    default = {
+        bg = {0.07, 0.07, 0.07, 0.78},
+        border = {0.34, 0.34, 0.34, 0.95},
+        accent = {0.75, 0.75, 0.75, 1.0},
+        icon = "Interface\\Icons\\INV_Misc_QuestionMark",
+    },
+}
+
+local function GetRecapEventStyle(eventType)
+    return RECAP_EVENT_STYLE[eventType] or RECAP_EVENT_STYLE.default
+end
+
+local function GetRecapEventIcon(entry)
+    if type(GetSpellTexture) == "function" then
+        if entry and entry.spellId then
+            local spellTexture = GetSpellTexture(entry.spellId)
+            if spellTexture then
+                return spellTexture
+            end
+        end
+
+        if entry and entry.spellName then
+            local spellTexture = GetSpellTexture(entry.spellName)
+            if spellTexture then
+                return spellTexture
+            end
+        end
+    end
+
+    return GetRecapEventStyle(entry and entry.eventType).icon
+end
+
 function CombatLog.ShowEnhancedTooltip(self)
     local data = self.playerData or self.data
     if not data then return false end
@@ -218,11 +277,18 @@ function CombatLog.ShowDeathRecap(playerData)
     local settings = addon.settings and addon.settings.combatLog or {}
     local maxEntries = math.max(5, settings.deathRecapCount or 15)
     local showBuffs = settings.deathRecapShowBuffs ~= false
+
+    local function FormatAmount(value)
+        if addon.FormatNumber then
+            return addon.FormatNumber(value or 0)
+        end
+        return tostring(value or 0)
+    end
     
     -- Create frame if it doesn't exist
     if not deathRecapFrame then
         deathRecapFrame = CreateFrame("Frame", "DCQoS_DeathRecapFrame", UIParent)
-        deathRecapFrame:SetSize(450, 350)
+        deathRecapFrame:SetSize(520, 410)
         deathRecapFrame:SetPoint("CENTER")
         deathRecapFrame:SetFrameStrata("DIALOG")
         deathRecapFrame:SetMovable(true)
@@ -233,39 +299,98 @@ function CombatLog.ShowDeathRecap(playerData)
         deathRecapFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
         
         deathRecapFrame:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            bgFile = BG_FELLEATHER,
             edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            tile = true,
+            tileSize = 256,
             edgeSize = 32,
-            insets = { left = 11, right = 12, top = 12, bottom = 11 },
+            insets = { left = 8, right = 8, top = 8, bottom = 8 },
         })
-        deathRecapFrame:SetBackdropColor(0, 0, 0, 1)
+        deathRecapFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.92)
+        deathRecapFrame:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
+
+        local headerBg = deathRecapFrame:CreateTexture(nil, "BACKGROUND")
+        headerBg:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background")
+        headerBg:SetPoint("TOPLEFT", 14, -14)
+        headerBg:SetPoint("TOPRIGHT", -14, -14)
+        headerBg:SetHeight(28)
+        headerBg:SetVertexColor(0.08, 0.08, 0.12, 0.72)
+        deathRecapFrame.headerBg = headerBg
+
+        local headerLine = deathRecapFrame:CreateTexture(nil, "BORDER")
+        headerLine:SetTexture("Interface\\Buttons\\WHITE8x8")
+        headerLine:SetPoint("TOPLEFT", headerBg, "BOTTOMLEFT", 0, -1)
+        headerLine:SetPoint("TOPRIGHT", headerBg, "BOTTOMRIGHT", 0, -1)
+        headerLine:SetHeight(1)
+        headerLine:SetVertexColor(0.95, 0.78, 0.22, 0.8)
+        deathRecapFrame.headerLine = headerLine
         
         -- Title
         local title = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        title:SetPoint("TOP", 0, -20)
-        title:SetText("|cffFF0000Death Recap|r")
+        title:SetPoint("TOP", 0, -22)
+        title:SetText("|cffff4040Death Recap|r")
         deathRecapFrame.title = title
+
+        local subtitle = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        subtitle:SetPoint("TOP", title, "BOTTOM", 0, -2)
+        subtitle:SetText("|cffb8b8b8Recent events leading to your death|r")
+        deathRecapFrame.subtitle = subtitle
         
+        -- Template-backed panels in 3.3.5 expect named frames.
+        local recapFrameName = deathRecapFrame:GetName() or "DCQoS_DeathRecapFrame"
+
         -- Close button
-        local closeBtn = CreateFrame("Button", nil, deathRecapFrame, "UIPanelCloseButton")
+        local closeBtn = CreateFrame("Button", recapFrameName .. "CloseButton", deathRecapFrame, "UIPanelCloseButton")
         closeBtn:SetPoint("TOPRIGHT", -5, -5)
         closeBtn:SetScript("OnClick", function() deathRecapFrame:Hide() end)
         
-        -- Scroll frame for events
-        local scrollFrame = CreateFrame("ScrollFrame", nil, deathRecapFrame, "UIPanelScrollFrameTemplate")
-        scrollFrame:SetPoint("TOPLEFT", 20, -50)
-        scrollFrame:SetPoint("BOTTOMRIGHT", -40, 50)
+        -- Use a plain ScrollFrame here to avoid template handlers that require
+        -- strict named-frame conventions in older clients.
+        local scrollFrame = CreateFrame("ScrollFrame", recapFrameName .. "ScrollFrame", deathRecapFrame)
+        scrollFrame:SetPoint("TOPLEFT", 22, -68)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -42, 58)
+        scrollFrame:EnableMouseWheel(true)
         
         local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-        scrollChild:SetSize(scrollFrame:GetWidth(), 1)
+        scrollChild:SetSize(440, 1)
         scrollFrame:SetScrollChild(scrollChild)
+        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+            local child = self:GetScrollChild()
+            if not child then return end
+
+            local childHeight = child:GetHeight() or 0
+            local viewHeight = self:GetHeight() or 0
+            local maxScroll = math.max(0, childHeight - viewHeight)
+            local current = self:GetVerticalScroll() or 0
+            local nextValue = current - (delta * 24)
+            if nextValue < 0 then
+                nextValue = 0
+            elseif nextValue > maxScroll then
+                nextValue = maxScroll
+            end
+            self:SetVerticalScroll(nextValue)
+        end)
+        deathRecapFrame.scrollFrame = scrollFrame
         deathRecapFrame.scrollChild = scrollChild
+
+        local summaryText = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        summaryText:SetPoint("BOTTOMLEFT", 24, 26)
+        summaryText:SetWidth(300)
+        summaryText:SetJustifyH("LEFT")
+        summaryText:SetText("")
+        deathRecapFrame.summaryText = summaryText
         
         -- Survivability rating
         local survText = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        survText:SetPoint("BOTTOM", 0, 20)
+        survText:SetPoint("BOTTOMRIGHT", -24, 26)
+        survText:SetJustifyH("RIGHT")
         survText:SetText("")
         deathRecapFrame.survText = survText
+
+        local hintText = deathRecapFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        hintText:SetPoint("BOTTOM", 0, 10)
+        hintText:SetText("Mouse Wheel: Scroll  -  Drag: Move")
+        deathRecapFrame.hintText = hintText
     end
     
     -- Clear old entries
@@ -302,6 +427,15 @@ function CombatLog.ShowDeathRecap(playerData)
     
     deathRecapFrame.survText:SetText(string.format("Survivability: |cff%02x%02x%02x%s|r", 
         survColor.r * 255, survColor.g * 255, survColor.b * 255, survivability))
+
+    if deathRecapFrame.summaryText then
+        deathRecapFrame.summaryText:SetText(string.format(
+            "|cffd0d0d0Damage:|r %s   |cffd0d0d0Healing:|r %s   |cffd0d0d0Mitigations:|r %d",
+            FormatAmount(totalDamage),
+            FormatAmount(totalHealing),
+            mitigationEvents
+        ))
+    end
     
     -- Display events (most recent first)
     local yOffset = 0
@@ -317,20 +451,50 @@ function CombatLog.ShowDeathRecap(playerData)
             shown = shown + 1
         
             local eventFrame = CreateFrame("Frame", nil, deathRecapFrame.scrollChild)
-            eventFrame:SetSize(380, 40)
+            eventFrame:SetSize(430, 46)
             eventFrame:SetPoint("TOPLEFT", 0, yOffset)
+
+            local style = GetRecapEventStyle(entry.eventType)
+            eventFrame:SetBackdrop({
+                bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                tile = true,
+                tileSize = 16,
+                edgeSize = 10,
+                insets = { left = 2, right = 2, top = 2, bottom = 2 },
+            })
+            eventFrame:SetBackdropColor(style.bg[1], style.bg[2], style.bg[3], style.bg[4])
+            eventFrame:SetBackdropBorderColor(style.border[1], style.border[2], style.border[3], style.border[4])
+
+            local accent = eventFrame:CreateTexture(nil, "ARTWORK")
+            accent:SetTexture("Interface\\Buttons\\WHITE8x8")
+            accent:SetPoint("TOPLEFT", 3, -3)
+            accent:SetPoint("BOTTOMLEFT", 3, 3)
+            accent:SetWidth(4)
+            accent:SetVertexColor(style.accent[1], style.accent[2], style.accent[3], style.accent[4])
+
+            local icon = eventFrame:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(18, 18)
+            icon:SetPoint("TOPLEFT", 12, -11)
+            icon:SetTexture(GetRecapEventIcon(entry))
         
             -- Time
             local timeText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            timeText:SetPoint("TOPLEFT", 5, -5)
+            timeText:SetPoint("TOPLEFT", 35, -7)
             timeText:SetText(string.format("%.1fs", entry.timestamp or 0))
-            timeText:SetTextColor(0.7, 0.7, 0.7)
+            timeText:SetTextColor(0.75, 0.75, 0.75)
         
             -- Event description
             local descText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            descText:SetPoint("TOPLEFT", 50, -5)
-            descText:SetWidth(250)
+            descText:SetPoint("TOPLEFT", 35, -20)
+            descText:SetWidth(245)
             descText:SetJustifyH("LEFT")
+
+            local detailText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            detailText:SetPoint("TOPLEFT", descText, "BOTTOMLEFT", 0, -1)
+            detailText:SetWidth(245)
+            detailText:SetJustifyH("LEFT")
+            detailText:SetTextColor(0.75, 0.75, 0.75)
         
         if entry.eventType == "damage" then
             local color = entry.critical and {r=1, g=0.3, b=0.3} or {r=1, g=0.5, b=0.5}
@@ -340,40 +504,65 @@ function CombatLog.ShowDeathRecap(playerData)
                 entry.spellName or "Attack",
                 entry.critical and " (Crit!)" or ""
             ))
+            local detail = string.format("HP: %.0f%%", entry.healthPct or 0)
+            if entry.absorbed and entry.absorbed > 0 then
+                detail = detail .. "  Abs: " .. FormatAmount(entry.absorbed)
+            end
+            if entry.resisted and entry.resisted > 0 then
+                detail = detail .. "  Res: " .. FormatAmount(entry.resisted)
+            end
+            if entry.blocked and entry.blocked > 0 then
+                detail = detail .. "  Block: " .. FormatAmount(entry.blocked)
+            end
+            detailText:SetText(detail)
         elseif entry.eventType == "heal" then
             descText:SetTextColor(0.2, 1, 0.2)
             descText:SetText(string.format("%s's %s", 
                 entry.sourceName or "Unknown",
                 entry.spellName or "Heal"
             ))
+            detailText:SetText(string.format("HP: %.0f%%", entry.healthPct or 0))
         elseif entry.eventType == "buff" then
             descText:SetTextColor(0.5, 0.5, 1)
             descText:SetText(string.format("Buff: %s", entry.spellName or "Unknown"))
+            detailText:SetText(string.format("HP: %.0f%%", entry.healthPct or 0))
         elseif entry.eventType == "debuff" then
             descText:SetTextColor(1, 0.5, 1)
             descText:SetText(string.format("Debuff: %s", entry.spellName or "Unknown"))
+            detailText:SetText(string.format("HP: %.0f%%", entry.healthPct or 0))
+        else
+            descText:SetTextColor(0.85, 0.85, 0.85)
+            descText:SetText(string.format("%s", entry.spellName or entry.eventType or "Event"))
+            detailText:SetText(string.format("HP: %.0f%%", entry.healthPct or 0))
         end
         
             -- Amount
-            local amountText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            amountText:SetPoint("RIGHT", -5, -5)
+            local amountText = eventFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            amountText:SetPoint("TOPRIGHT", -10, -10)
         
         if entry.eventType == "damage" then
-            amountText:SetText(addon.FormatNumber and addon.FormatNumber(math.abs(entry.amount or 0)) or tostring(math.abs(entry.amount or 0)))
+            amountText:SetText(FormatAmount(math.abs(entry.amount or 0)))
             amountText:SetTextColor(1, 0.3, 0.3)
         elseif entry.eventType == "heal" then
-            amountText:SetText("+" .. (addon.FormatNumber and addon.FormatNumber(entry.amount or 0) or tostring(entry.amount or 0)))
+            amountText:SetText("+" .. FormatAmount(entry.amount or 0))
             amountText:SetTextColor(0.2, 1, 0.2)
+        else
+            amountText:SetText("")
         end
         
             -- Health bar
             if entry.healthMax and entry.healthMax > 0 then
                 local healthBar = CreateFrame("StatusBar", nil, eventFrame)
-                healthBar:SetSize(100, 8)
-                healthBar:SetPoint("RIGHT", amountText, "LEFT", -10, 0)
+                healthBar:SetSize(125, 8)
+                healthBar:SetPoint("BOTTOMRIGHT", -10, 8)
                 healthBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
                 healthBar:SetMinMaxValues(0, entry.healthMax)
                 healthBar:SetValue(entry.health or 0)
+
+                local healthBg = eventFrame:CreateTexture(nil, "BACKGROUND")
+                healthBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+                healthBg:SetAllPoints(healthBar)
+                healthBg:SetVertexColor(0, 0, 0, 0.45)
                 
                 local pct = entry.healthPct or 0
                 if pct > 50 then
@@ -385,11 +574,20 @@ function CombatLog.ShowDeathRecap(playerData)
                 end
             end
             
-            yOffset = yOffset - 45
+            yOffset = yOffset - 50
         end
     end
     
-    deathRecapFrame.scrollChild:SetHeight(math.max(1, shown * 45))
+    deathRecapFrame.scrollChild:SetHeight(math.max(1, shown * 50))
+    if deathRecapFrame.scrollFrame then
+        local childHeight = deathRecapFrame.scrollChild:GetHeight() or 0
+        local viewHeight = deathRecapFrame.scrollFrame:GetHeight() or 0
+        local maxScroll = math.max(0, childHeight - viewHeight)
+        local current = deathRecapFrame.scrollFrame:GetVerticalScroll() or 0
+        if current > maxScroll then
+            deathRecapFrame.scrollFrame:SetVerticalScroll(maxScroll)
+        end
+    end
     deathRecapFrame:Show()
     return true
 end

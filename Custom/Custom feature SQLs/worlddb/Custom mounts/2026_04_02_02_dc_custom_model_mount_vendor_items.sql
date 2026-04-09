@@ -108,7 +108,8 @@ VALUES
 (3461020,13,300388,0,0,0,0);
 
 -- -----------------------------------------------------------------------------
--- One-time purchase rules (hide mounts already learned by the player)
+-- Vendor visibility rules
+-- Keep all mount items visible even after the player learns the spell.
 -- -----------------------------------------------------------------------------
 
 DELETE FROM `conditions`
@@ -116,24 +117,6 @@ WHERE `SourceTypeOrReferenceId` = 23
 	AND `SourceGroup` = 3461020
 	AND `SourceEntry` IN (300382,300383,300384,300385,300386,300387,300388,300389,300390,300391,300392,300393,300394,300395)
 	AND `ConditionTypeOrReference` = 25;
-
-INSERT INTO `conditions`
-(`SourceTypeOrReferenceId`,`SourceGroup`,`SourceEntry`,`SourceId`,`ElseGroup`,`ConditionTypeOrReference`,`ConditionTarget`,`ConditionValue1`,`ConditionValue2`,`ConditionValue3`,`NegativeCondition`,`ErrorType`,`ErrorTextId`,`ScriptName`,`Comment`)
-VALUES
-(23,3461020,300389,0,0,25,0,300700,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Dreamowl Firemount if spell 300700 is not known.'),
-(23,3461020,300390,0,0,25,0,300701,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Felblaze Infernal if spell 300701 is not known.'),
-(23,3461020,300391,0,0,25,0,300702,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Netherwing Mount if spell 300702 is not known.'),
-(23,3461020,300392,0,0,25,0,300703,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Coldflame Infernal if spell 300703 is not known.'),
-(23,3461020,300393,0,0,25,0,300704,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Flarecore Infernal if spell 300704 is not known.'),
-(23,3461020,300394,0,0,25,0,300705,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Frostshard Infernal if spell 300705 is not known.'),
-(23,3461020,300395,0,0,25,0,300706,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Hellfire Infernal if spell 300706 is not known.'),
-(23,3461020,300382,0,0,25,0,300707,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Black Skeletal Warhorse II if spell 300707 is not known.'),
-(23,3461020,300383,0,0,25,0,300720,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Brown Skeletal Warhorse II if spell 300720 is not known.'),
-(23,3461020,300384,0,0,25,0,300721,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Green Skeletal Warhorse II if spell 300721 is not known.'),
-(23,3461020,300385,0,0,25,0,300722,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Midnight Skeletal Warhorse II if spell 300722 is not known.'),
-(23,3461020,300386,0,0,25,0,300723,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Purple Skeletal Warhorse II if spell 300723 is not known.'),
-(23,3461020,300387,0,0,25,0,300724,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the Red Skeletal Warhorse II if spell 300724 is not known.'),
-(23,3461020,300388,0,0,25,0,300725,0,0,1,0,0,'','Skeletal Stablemaster - only sell Reins of the White Skeletal Warhorse II if spell 300725 is not known.');
 
 -- -----------------------------------------------------------------------------
 -- DC-Collection mount definitions (required for Mount Journal definitions list)

@@ -251,6 +251,12 @@ local function SetupChatFrameHooks()
         if msg:find("%[DC AoE Loot%]", 1, false) then
             return true
         end
+        if msg:find("%[Looter Pet%]", 1, false) then
+            return true
+        end
+        if msg:find("Looter Pet", 1, true) then
+            return true
+        end
         if msg:find("^Mythic%+ HUD:") then
             return true
         end
@@ -288,6 +294,29 @@ local function SetupChatFrameHooks()
 
         -- HLBG sometimes embeds explicit markers
         if msg:find("HLBG Debug") or msg:find("HLBG Debug:") then
+            return true
+        end
+
+        -- Route known startup/sync info lines from DC addons to DCDebug.
+        -- These are informational and can clutter primary chat during login.
+        -- HLBG version lines can include color tags between HLBG and text.
+        if msg:find("HLBG", 1, true) and msg:find("addon version", 1, true) then
+            return true
+        end
+
+        if msg:find("DC ItemUpgrade", 1, true) and msg:find("/dcu help", 1, true) then
+            return true
+        end
+
+        if msg:find("%[DC%-QoS%]") and msg:find("Loaded successfully! Type", 1, true) then
+            return true
+        end
+
+        if msg:find("DC%-InfoBar v") and msg:find("/infobar", 1, true) then
+            return true
+        end
+
+        if msg:find("DC%-Collection: Accountwide sync complete") then
             return true
         end
 

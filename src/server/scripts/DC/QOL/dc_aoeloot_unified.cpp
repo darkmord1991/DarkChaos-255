@@ -30,6 +30,7 @@
 #include "Item.h"
 #include "StringFormat.h"
 #include "Spell.h"
+#include "PathGenerator.h"
 
 #include <vector>
 #include <list>
@@ -91,6 +92,13 @@ struct AoELootConfig
     // Statistics
     bool trackDetailedStats = true;
 
+    // Looter pet pathfinding safety
+    bool looterPetPathfindingEnable = true;
+    bool looterPetPathAllowIncomplete = true;
+    bool looterPetPathRejectShortcut = false;
+    float looterPetPathMaxLength = 80.0f;
+    uint32 looterPetPathMaxChecks = 12;
+
     void Load()
     {
         // Core settings
@@ -131,6 +139,17 @@ struct AoELootConfig
 
         trackDetailedStats = sConfigMgr->GetOption<bool>("AoELoot.Extensions.TrackDetailedStats", true);
 
+        looterPetPathfindingEnable = sConfigMgr->GetOption<bool>(
+            "AoELoot.LooterPet.Pathfinding.Enable", true);
+        looterPetPathAllowIncomplete = sConfigMgr->GetOption<bool>(
+            "AoELoot.LooterPet.Pathfinding.AllowIncomplete", true);
+        looterPetPathRejectShortcut = sConfigMgr->GetOption<bool>(
+            "AoELoot.LooterPet.Pathfinding.RejectShortcut", false);
+        looterPetPathMaxLength = sConfigMgr->GetOption<float>(
+            "AoELoot.LooterPet.Pathfinding.MaxPathLength", 80.0f);
+        looterPetPathMaxChecks = sConfigMgr->GetOption<uint32>(
+            "AoELoot.LooterPet.Pathfinding.MaxChecks", 12u);
+
         // Validate and clamp all numeric settings
         if (range < 5.0f) range = 5.0f;
         if (range > 100.0f) range = 100.0f;
@@ -150,6 +169,10 @@ struct AoELootConfig
         if (mythicPlusRangeMultiplier > 5.0f) mythicPlusRangeMultiplier = 5.0f;
         if (raidMaxCorpses < 1) raidMaxCorpses = 1;
         if (raidMaxCorpses > 100) raidMaxCorpses = 100;
+        if (looterPetPathMaxLength < 0.0f) looterPetPathMaxLength = 0.0f;
+        if (looterPetPathMaxLength > 500.0f) looterPetPathMaxLength = 500.0f;
+        if (looterPetPathMaxChecks < 1) looterPetPathMaxChecks = 1;
+        if (looterPetPathMaxChecks > 50) looterPetPathMaxChecks = 50;
     }
 };
 
@@ -613,6 +636,51 @@ void SetPlayerGoldOnly(ObjectGuid playerGuid, bool value)
     sPlayerPrefs[playerGuid].goldOnly = value;
 }
 
+bool GetLooterPetPathfindingEnabled()
+{
+    return sConfig.looterPetPathfindingEnable;
+}
+
+void SetLooterPetPathfindingEnabled(bool value)
+{
+    sConfig.looterPetPathfindingEnable = value;
+}
+
+void ReloadAoELootConfig()
+{
+    sConfig.Load();
+}
+
+bool GetLooterPetPathAllowIncomplete()
+{
+    return sConfig.looterPetPathAllowIncomplete;
+}
+
+void SetLooterPetPathAllowIncomplete(bool value)
+{
+    sConfig.looterPetPathAllowIncomplete = value;
+}
+
+bool GetLooterPetPathRejectShortcut()
+{
+    return sConfig.looterPetPathRejectShortcut;
+}
+
+void SetLooterPetPathRejectShortcut(bool value)
+{
+    sConfig.looterPetPathRejectShortcut = value;
+}
+
+float GetLooterPetPathMaxLength()
+{
+    return sConfig.looterPetPathMaxLength;
+}
+
+uint32 GetLooterPetPathMaxChecks()
+{
+    return sConfig.looterPetPathMaxChecks;
+}
+
 float GetPlayerLootRange(ObjectGuid playerGuid)
 {
     auto it = sPlayerPrefs.find(playerGuid);
@@ -806,7 +874,7 @@ static bool CanPlayerLootCorpse(Player* player, Creature* creature)
     return true;
 }
 
-static bool PerformAoELoot(Player* player, Creature* mainCreature)
+static bool PerformAoELoot(Player* player, Creature* mainCreature, bool forceAutoLoot = false)
 {
     if (!player || !mainCreature) return false;
     if (!IsPlayerAoELootEnabled(player->GetGUID()))
@@ -896,6 +964,7 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
 
     auto shouldAutoLootForPlayer = [&](Player* p) -> bool {
         if (!p) return false;
+        if (forceAutoLoot && !p->GetGroup()) return true;
         if (sConfig.autoLoot == 1) return true;
         if (sConfig.autoLoot == 2)
         {
@@ -1199,7 +1268,65 @@ static bool PerformAoELoot(Player* player, Creature* mainCreature)
 namespace DCAoELootExt
 {
 
-bool TriggerLooterPetLootPulse(Player* player, WorldObject const* searchAnchor)
+static bool IsPathReachableForLooterPet(WorldObject const* searchAnchor, WorldObject const* target)
+{
+    if (!searchAnchor || !target)
+        return false;
+
+    if (searchAnchor->GetMap() != target->GetMap())
+        return false;
+
+    PathGenerator path(searchAnchor);
+    path.SetUseStraightPath(false);
+    bool const result = path.CalculatePath(
+        target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), false);
+
+    PathType const pathType = path.GetPathType();
+    if (!result || (pathType & PATHFIND_NOPATH))
+        return false;
+
+    if (!sConfig.looterPetPathAllowIncomplete && (pathType & PATHFIND_INCOMPLETE))
+        return false;
+
+    if (sConfig.looterPetPathRejectShortcut && (pathType & PATHFIND_SHORTCUT))
+        return false;
+
+    if (sConfig.looterPetPathMaxLength > 0.0f &&
+        path.getPathLength() > sConfig.looterPetPathMaxLength)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+static void MoveCompanionTowardTarget(Player* player, WorldObject* searchAnchor, Creature* target)
+{
+    if (!player || !searchAnchor || !target)
+        return;
+
+    Unit* anchorUnit = searchAnchor->ToUnit();
+    if (!anchorUnit)
+        return;
+
+    if (anchorUnit->GetGUID() == player->GetGUID())
+        return;
+
+    Creature* companion = anchorUnit->ToCreature();
+    if (!companion || !companion->IsAlive())
+        return;
+
+    if (companion->GetDistance(target) <= 1.5f)
+        return;
+
+    companion->GetMotionMaster()->MovePoint(
+        9001,
+        target->GetPositionX(),
+        target->GetPositionY(),
+        target->GetPositionZ());
+}
+
+bool TriggerLooterPetLootPulse(Player* player, WorldObject* searchAnchor)
 {
     if (!player || !player->IsAlive())
         return false;
@@ -1220,8 +1347,8 @@ bool TriggerLooterPetLootPulse(Player* player, WorldObject const* searchAnchor)
     std::list<Creature*> nearby;
     searchAnchor->GetDeadCreatureListInGrid(nearby, lootRange);
 
-    Creature* target = nullptr;
-    float bestDistance = std::numeric_limits<float>::max();
+    std::vector<std::pair<Creature*, float>> candidates;
+    candidates.reserve(nearby.size());
 
     for (Creature* creature : nearby)
     {
@@ -1234,18 +1361,51 @@ bool TriggerLooterPetLootPulse(Player* player, WorldObject const* searchAnchor)
         if (player->GetGroup() && !sConfig.allowInGroup)
             continue;
 
-        float const distance = searchAnchor->GetDistance(creature);
-        if (!target || distance < bestDistance)
+        candidates.emplace_back(creature, searchAnchor->GetDistance(creature));
+    }
+
+    if (candidates.empty())
+        return false;
+
+    std::sort(candidates.begin(), candidates.end(),
+        [](std::pair<Creature*, float> const& left, std::pair<Creature*, float> const& right)
         {
-            target = creature;
-            bestDistance = distance;
+            return left.second < right.second;
+        });
+
+    Creature* target = nullptr;
+    if (!sConfig.looterPetPathfindingEnable)
+    {
+        target = candidates.front().first;
+    }
+    else
+    {
+        uint32 const checks = std::min<uint32>(
+            sConfig.looterPetPathMaxChecks,
+            static_cast<uint32>(candidates.size()));
+
+        for (uint32 i = 0; i < checks; ++i)
+        {
+            Creature* candidate = candidates[i].first;
+            if (IsPathReachableForLooterPet(searchAnchor, candidate))
+            {
+                target = candidate;
+                break;
+            }
         }
+
+        // Fail-open fallback: keep autonomous looting functional when
+        // path data is unavailable or all candidates are rejected.
+        if (!target)
+            target = candidates.front().first;
     }
 
     if (!target)
         return false;
 
-    return PerformAoELoot(player, target);
+    MoveCompanionTowardTarget(player, searchAnchor, target);
+
+    return PerformAoELoot(player, target, true);
 }
 
 bool TriggerLooterPetLootPulse(Player* player)

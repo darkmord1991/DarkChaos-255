@@ -18,6 +18,9 @@ addon.prefix = "DCAOE"  -- Legacy prefix (fallback)
 -- DCAddonProtocol integration
 local DC = rawget(_G, "DCAddonProtocol")
 addon.useDCProtocol = (DC ~= nil)
+addon.leashDistanceMin = 5
+addon.leashDistanceMax = 100
+addon.leashDistanceStep = 1
 
 -- Helper function to clamp a value within a range (defined early for use throughout)
 local function Clamp(value, minVal, maxVal)
@@ -37,6 +40,12 @@ addon.defaults = {
     autoVendorPoor = false,
     goldOnly = false,    -- Only loot gold (quest items still looted)
     looterPet = false,   -- Server-side companion-bound loot pulse helper
+    looterFallbackToPlayer = true,
+    looterCompanionLeash = true,
+    looterCompanionLeashDistance = 45,
+    looterPathfinding = true,
+    looterPathAllowIncomplete = true,
+    looterPathRejectShortcut = false,
     debugMessages = false, -- Verbose debug messages (sync status etc)
     -- Fast Looting settings (adapted from Leatrix Plus)
     fastLoot = true,         -- Enable faster looting
@@ -203,6 +212,29 @@ function addon:GetCompanionStatusLineText()
         companionName)
 end
 
+function addon:GetLeashDistanceStatusLineText()
+    local distance = math.floor(Clamp(
+        tonumber(self.settings.looterCompanionLeashDistance) or self.defaults.looterCompanionLeashDistance,
+        self.leashDistanceMin,
+        self.leashDistanceMax) + 0.5)
+
+    if self.settings.looterCompanionLeash then
+        return string.format("|cff66ff66Leash: %d yd|r", distance)
+    end
+
+    return string.format("|cff888888Leash: %d yd (off)|r", distance)
+end
+
+function addon:UpdateLeashDistanceStatusLine()
+    local statusText = self:GetLeashDistanceStatusLineText()
+    if self.leashDistanceStatusLine then
+        self.leashDistanceStatusLine:SetText(statusText)
+    end
+    if self.optionLeashDistanceStatusLine then
+        self.optionLeashDistanceStatusLine:SetText(statusText)
+    end
+end
+
 function addon:UpdateCompanionStatusLine()
     local statusText = self:GetCompanionStatusLineText()
     if self.companionStatusLine then
@@ -211,6 +243,8 @@ function addon:UpdateCompanionStatusLine()
     if self.optionCompanionStatusLine then
         self.optionCompanionStatusLine:SetText(statusText)
     end
+
+    self:UpdateLeashDistanceStatusLine()
 end
 
 -- ============================================================
@@ -249,6 +283,10 @@ function addon:LoadSettings()
     
     -- Validate loaded settings to ensure they're within valid ranges
     self.settings.minQuality = Clamp(self.settings.minQuality or 0, 0, 5)
+    self.settings.looterCompanionLeashDistance = math.floor(Clamp(
+        tonumber(self.settings.looterCompanionLeashDistance) or self.defaults.looterCompanionLeashDistance,
+        self.leashDistanceMin,
+        self.leashDistanceMax) + 0.5)
 end
 
 function addon:SaveSettingsLocal()
@@ -265,6 +303,12 @@ end
 -- Server Command Helpers (send settings via chat commands)
 -- ============================================================
 function addon:SendServerCommand(cmd)
+    -- Prefer direct chat API to avoid edit-box taint issues.
+    if SendChatMessage then
+        SendChatMessage(cmd, "SAY")
+        return
+    end
+
     -- Execute the command as if the player typed it in chat
     -- This works for server commands starting with . in WoW 3.3.5a
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
@@ -318,6 +362,28 @@ function addon:SyncSettingToServer(settingKey, value)
         elseif settingKey == "looterPet" then
             self:SendServerCommand(value and ".lpet on" or ".lpet off")
             handled = true
+        elseif settingKey == "looterFallbackToPlayer" then
+            self:SendServerCommand(value and ".lpet fallback on" or ".lpet fallback off")
+            handled = true
+        elseif settingKey == "looterCompanionLeash" then
+            self:SendServerCommand(value and ".lpet leash on" or ".lpet leash off")
+            handled = true
+        elseif settingKey == "looterCompanionLeashDistance" then
+            local distance = math.floor(Clamp(
+                tonumber(value) or self.settings.looterCompanionLeashDistance or self.defaults.looterCompanionLeashDistance,
+                self.leashDistanceMin,
+                self.leashDistanceMax) + 0.5)
+            self:SendServerCommand(string.format(".lpet leashdist %d", distance))
+            handled = true
+        elseif settingKey == "looterPathfinding" then
+            self:SendServerCommand(value and ".lpet path on" or ".lpet path off")
+            handled = true
+        elseif settingKey == "looterPathAllowIncomplete" then
+            self:SendServerCommand(value and ".lpet pathincomplete on" or ".lpet pathincomplete off")
+            handled = true
+        elseif settingKey == "looterPathRejectShortcut" then
+            self:SendServerCommand(value and ".lpet pathshortcutreject on" or ".lpet pathshortcutreject off")
+            handled = true
         end
     end
 
@@ -369,6 +435,42 @@ function addon:SyncSettingToServer(settingKey, value)
             self:SendServerCommand(".lpet on")
         else
             self:SendServerCommand(".lpet off")
+        end
+    elseif settingKey == "looterFallbackToPlayer" then
+        if value then
+            self:SendServerCommand(".lpet fallback on")
+        else
+            self:SendServerCommand(".lpet fallback off")
+        end
+    elseif settingKey == "looterCompanionLeash" then
+        if value then
+            self:SendServerCommand(".lpet leash on")
+        else
+            self:SendServerCommand(".lpet leash off")
+        end
+    elseif settingKey == "looterCompanionLeashDistance" then
+        local distance = math.floor(Clamp(
+            tonumber(value) or self.settings.looterCompanionLeashDistance or self.defaults.looterCompanionLeashDistance,
+            self.leashDistanceMin,
+            self.leashDistanceMax) + 0.5)
+        self:SendServerCommand(string.format(".lpet leashdist %d", distance))
+    elseif settingKey == "looterPathfinding" then
+        if value then
+            self:SendServerCommand(".lpet path on")
+        else
+            self:SendServerCommand(".lpet path off")
+        end
+    elseif settingKey == "looterPathAllowIncomplete" then
+        if value then
+            self:SendServerCommand(".lpet pathincomplete on")
+        else
+            self:SendServerCommand(".lpet pathincomplete off")
+        end
+    elseif settingKey == "looterPathRejectShortcut" then
+        if value then
+            self:SendServerCommand(".lpet pathshortcutreject on")
+        else
+            self:SendServerCommand(".lpet pathshortcutreject off")
         end
     end
 end
@@ -429,6 +531,30 @@ function addon:SyncLooterPetRuntimeState(reason)
     _lastLooterPetRuntimeSync = now
 
     self:SendServerCommand(self.settings.looterPet and ".lpet on" or ".lpet off")
+
+    if self.settings.looterFallbackToPlayer ~= nil then
+        self:SendServerCommand(self.settings.looterFallbackToPlayer and ".lpet fallback on" or ".lpet fallback off")
+    end
+    if self.settings.looterCompanionLeash ~= nil then
+        self:SendServerCommand(self.settings.looterCompanionLeash and ".lpet leash on" or ".lpet leash off")
+    end
+    if self.settings.looterCompanionLeashDistance ~= nil then
+        local distance = math.floor(Clamp(
+            tonumber(self.settings.looterCompanionLeashDistance) or self.defaults.looterCompanionLeashDistance,
+            self.leashDistanceMin,
+            self.leashDistanceMax) + 0.5)
+        self.settings.looterCompanionLeashDistance = distance
+        self:SendServerCommand(string.format(".lpet leashdist %d", distance))
+    end
+    if self.settings.looterPathfinding ~= nil then
+        self:SendServerCommand(self.settings.looterPathfinding and ".lpet path on" or ".lpet path off")
+    end
+    if self.settings.looterPathAllowIncomplete ~= nil then
+        self:SendServerCommand(self.settings.looterPathAllowIncomplete and ".lpet pathincomplete on" or ".lpet pathincomplete off")
+    end
+    if self.settings.looterPathRejectShortcut ~= nil then
+        self:SendServerCommand(self.settings.looterPathRejectShortcut and ".lpet pathshortcutreject on" or ".lpet pathshortcutreject off")
+    end
 
     if self.settings.debugMessages then
         self:Print("Synced looter-pet runtime state (" .. (reason or "sync") .. ")", false)
@@ -828,12 +954,47 @@ function addon:CreateOptionsPanel()
         xPos, yPos, "looterPet")
     yPos = yPos - 30
 
+    local fallbackCB = self:CreateOptionsCheckbox(panel, "Looter Fallback to Player Anchor",
+        "If companion anchor finds no target, retry from player anchor.",
+        xPos, yPos, "looterFallbackToPlayer")
+    yPos = yPos - 26
+
+    local leashCB = self:CreateOptionsCheckbox(panel, "Companion Leash Guard",
+        "Only allow autonomous pulses when companion is near the player.",
+        xPos, yPos, "looterCompanionLeash")
+    yPos = yPos - 26
+
+    yPos = self:CreateLooterLeashDistanceControl(panel, xPos, yPos,
+        "DCAoELootOptLeashDistanceSlider", "ARTWORK")
+
+    local pathCB = self:CreateOptionsCheckbox(panel, "Looter Pathfinding Checks",
+        "Validate reachable corpse targets with server pathfinding.",
+        xPos, yPos, "looterPathfinding")
+    yPos = yPos - 26
+
+    local pathIncompleteCB = self:CreateOptionsCheckbox(panel, "Allow Incomplete Paths",
+        "Permit partial path results for looter targeting.",
+        xPos, yPos, "looterPathAllowIncomplete")
+    yPos = yPos - 26
+
+    local pathShortcutCB = self:CreateOptionsCheckbox(panel, "Reject Shortcut Paths",
+        "Reject shortcut path types for stricter targeting.",
+        xPos, yPos, "looterPathRejectShortcut")
+    yPos = yPos - 28
+
     local companionStatusLine = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     companionStatusLine:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 10, yPos)
-    companionStatusLine:SetWidth(340)
+    companionStatusLine:SetWidth(240)
     companionStatusLine:SetJustifyH("LEFT")
     companionStatusLine:SetText(self:GetCompanionStatusLineText())
     self.optionCompanionStatusLine = companionStatusLine
+
+    local leashStatusLine = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    leashStatusLine:SetPoint("TOPLEFT", panel, "TOPLEFT", xPos + 255, yPos)
+    leashStatusLine:SetWidth(120)
+    leashStatusLine:SetJustifyH("RIGHT")
+    leashStatusLine:SetText(self:GetLeashDistanceStatusLineText())
+    self.optionLeashDistanceStatusLine = leashStatusLine
     yPos = yPos - 22
     
     -- Fast Loot Section Header
@@ -1110,59 +1271,218 @@ function addon:CreateOptionsCheckbox(parent, label, tooltip, x, y, settingKey)
     return cb
 end
 
+function addon:SetLooterLeashDistance(value, shouldSync, suppressConfirm)
+    local distance = math.floor(Clamp(
+        tonumber(value) or self.settings.looterCompanionLeashDistance or self.defaults.looterCompanionLeashDistance,
+        self.leashDistanceMin,
+        self.leashDistanceMax) + 0.5)
+
+    local changed = (self.settings.looterCompanionLeashDistance ~= distance)
+    self.settings.looterCompanionLeashDistance = distance
+    self:SaveSettingsLocal()
+    self:RefreshLooterLeashDistanceControls()
+    self:UpdateLeashDistanceStatusLine()
+
+    if shouldSync then
+        self:SyncSettingToServer("looterCompanionLeashDistance", distance)
+    end
+
+    if changed and not suppressConfirm then
+        self:Confirm("Companion Leash Distance", string.format("%d yd", distance))
+    end
+
+    return distance
+end
+
+function addon:RefreshLooterLeashDistanceControls()
+    local distance = math.floor(Clamp(
+        tonumber(self.settings.looterCompanionLeashDistance) or self.defaults.looterCompanionLeashDistance,
+        self.leashDistanceMin,
+        self.leashDistanceMax) + 0.5)
+
+    local function UpdateControl(slider, editBox)
+        if not slider then
+            return
+        end
+
+        slider._internalUpdate = true
+        slider:SetValue(distance)
+        slider._internalUpdate = false
+
+        if slider.valueText then
+            slider.valueText:SetText(string.format("%d yd", distance))
+        end
+
+        if editBox and not editBox:HasFocus() then
+            editBox:SetText(tostring(distance))
+        end
+    end
+
+    UpdateControl(self.leashDistanceSlider, self.leashDistanceInput)
+    UpdateControl(self.optionLeashDistanceSlider, self.optionLeashDistanceInput)
+    self:UpdateLeashDistanceStatusLine()
+end
+
+function addon:CreateLooterLeashDistanceControl(parent, x, y, sliderName, fontLayer)
+    local textLayer = fontLayer or "OVERLAY"
+
+    local label = parent:CreateFontString(nil, textLayer, "GameFontNormalSmall")
+    label:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 18, y)
+    label:SetText("Companion Leash Distance (yd)")
+
+    local slider = CreateFrame("Slider", sliderName, parent, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 18, y - 18)
+    slider:SetWidth(155)
+    slider:SetMinMaxValues(self.leashDistanceMin, self.leashDistanceMax)
+    slider:SetValueStep(self.leashDistanceStep)
+    if slider.SetObeyStepOnDrag then
+        slider:SetObeyStepOnDrag(true)
+    end
+
+    local low = _G[sliderName .. "Low"]
+    local high = _G[sliderName .. "High"]
+    local valueText = _G[sliderName .. "Text"]
+    if low then low:SetText(tostring(self.leashDistanceMin)) end
+    if high then high:SetText(tostring(self.leashDistanceMax)) end
+    if valueText then valueText:SetText("") end
+
+    slider.valueText = parent:CreateFontString(nil, textLayer, "GameFontNormalSmall")
+    slider.valueText:SetPoint("BOTTOM", slider, "TOP", 0, 2)
+
+    local input = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    input:SetAutoFocus(false)
+    input:SetWidth(42)
+    input:SetHeight(20)
+    input:SetPoint("LEFT", slider, "RIGHT", 16, 0)
+    if input.SetNumeric then
+        input:SetNumeric(true)
+    end
+
+    input:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+    end)
+
+    input:SetScript("OnEditFocusLost", function(self)
+        if self._cancelNextFocusLost then
+            self._cancelNextFocusLost = nil
+            addon:RefreshLooterLeashDistanceControls()
+            return
+        end
+        addon:SetLooterLeashDistance(self:GetText(), true, false)
+    end)
+
+    input:SetScript("OnEscapePressed", function(self)
+        self._cancelNextFocusLost = true
+        self:ClearFocus()
+        addon:RefreshLooterLeashDistanceControls()
+    end)
+
+    slider:SetScript("OnValueChanged", function(self, value)
+        if self._internalUpdate then
+            return
+        end
+        addon:SetLooterLeashDistance(value, true, true)
+    end)
+
+    if sliderName == "DCAoELootOptLeashDistanceSlider" then
+        self.optionLeashDistanceSlider = slider
+        self.optionLeashDistanceInput = input
+    else
+        self.leashDistanceSlider = slider
+        self.leashDistanceInput = input
+    end
+
+    self:RefreshLooterLeashDistanceControls()
+
+    local note = parent:CreateFontString(nil, textLayer, "GameFontNormalSmall")
+    note:SetPoint("TOPLEFT", parent, "TOPLEFT", x + 18, y - 45)
+    note:SetText("|cff888888Matched to AoE loot distance window (5-100 yd).|r")
+
+    return y - 60
+end
+
 -- ============================================================
 -- UI Creation (3.3.5a Compatible) - Standalone Panel
 -- ============================================================
 function addon:CreateMainFrame()
     -- Create base frame without template (3.3.5a doesn't have BasicFrameTemplateWithInset)
-    local frame = CreateFrame("Frame", "DCAoELootSettingsFrame", UIParent)
-    frame:SetWidth(350)
-    frame:SetHeight(495)  -- Extra room for looter pet + companion status + fast loot controls
-    frame:SetPoint("CENTER")
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-    frame:Hide()
+    local window = CreateFrame("Frame", "DCAoELootSettingsFrame", UIParent)
+    window:SetWidth(390)
+    window:SetHeight(620)
+    window:SetPoint("CENTER")
+    window:SetMovable(true)
+    window:EnableMouse(true)
+    window:RegisterForDrag("LeftButton")
+    window:SetScript("OnDragStart", window.StartMoving)
+    window:SetScript("OnDragStop", window.StopMovingOrSizing)
+    window:Hide()
     
     -- Create background
-    frame:SetBackdrop({
+    window:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
         tile = true, tileSize = 32, edgeSize = 32,
         insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
-    frame:SetBackdropColor(0, 0, 0, 0)
+    window:SetBackdropColor(0, 0, 0, 0)
 
     do
         local BG_FELLEATHER = "Interface\\AddOns\\DC-AOESettings\\Textures\\Backgrounds\\FelLeather_512.tga"
         local BG_TINT_ALPHA = 0.60
 
-        local bg = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+        local bg = window:CreateTexture(nil, "BACKGROUND", nil, 0)
         bg:SetAllPoints()
         bg:SetTexture(BG_FELLEATHER)
         if bg.SetHorizTile then bg:SetHorizTile(false) end
         if bg.SetVertTile then bg:SetVertTile(false) end
 
-        local tint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+        local tint = window:CreateTexture(nil, "BACKGROUND", nil, 1)
         tint:SetAllPoints()
         tint:SetTexture(0, 0, 0, BG_TINT_ALPHA)
 
-        frame.__dcBg = bg
-        frame.__dcTint = tint
+        window.__dcBg = bg
+        window.__dcTint = tint
     end
     
     -- Create close button
-    local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -5, -5)
+    local closeBtn = CreateFrame("Button", nil, window, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", window, "TOPRIGHT", -5, -5)
     
     -- Title
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    frame.title:SetPoint("TOP", frame, "TOP", 0, -15)
-    frame.title:SetText("|cff00ff00DarkChaos|r AoE Loot Settings")
-    
-    self.frame = frame
+    window.title = window:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    window.title:SetPoint("TOP", window, "TOP", 0, -15)
+    window.title:SetText("|cff00ff00DarkChaos|r AoE Loot Settings")
+
+    local scrollFrame = CreateFrame("ScrollFrame", "DCAoELootSettingsScrollFrame", window, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", window, "TOPLEFT", 20, -38)
+    scrollFrame:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -34, 44)
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local scrollBar = _G[self:GetName() .. "ScrollBar"]
+        if not scrollBar then
+            return
+        end
+
+        local minVal, maxVal = scrollBar:GetMinMaxValues()
+        local nextValue = scrollBar:GetValue() - (delta * 30)
+        if nextValue < minVal then
+            nextValue = minVal
+        elseif nextValue > maxVal then
+            nextValue = maxVal
+        end
+        scrollBar:SetValue(nextValue)
+    end)
+
+    local content = CreateFrame("Frame", "DCAoELootSettingsScrollChild", scrollFrame)
+    content:SetWidth(320)
+    content:SetHeight(980)
+    scrollFrame:SetScrollChild(content)
+
+    window.scrollFrame = scrollFrame
+    window.scrollChild = content
+
+    self.frame = window
+    local frame = content
     
     local yPos = -45
     local xPos = 20
@@ -1236,12 +1556,67 @@ function addon:CreateMainFrame()
         end)
     yPos = yPos - 30
 
+    self.checkboxes.looterFallbackToPlayer = self:CreateCheckbox(frame, "Fallback to Player Anchor", xPos, yPos,
+        function(checked)
+            self.settings.looterFallbackToPlayer = checked
+            self:Confirm("Looter Fallback", checked)
+            self:SaveSettingsLocal()
+            self:SyncSettingToServer("looterFallbackToPlayer", checked)
+        end)
+    yPos = yPos - 26
+
+    self.checkboxes.looterCompanionLeash = self:CreateCheckbox(frame, "Companion Leash Guard", xPos, yPos,
+        function(checked)
+            self.settings.looterCompanionLeash = checked
+            self:Confirm("Companion Leash", checked)
+            self:SaveSettingsLocal()
+            self:SyncSettingToServer("looterCompanionLeash", checked)
+        end)
+    yPos = yPos - 26
+
+    yPos = self:CreateLooterLeashDistanceControl(frame, xPos, yPos,
+        "DCAoELootMainLeashDistanceSlider", "OVERLAY")
+
+    self.checkboxes.looterPathfinding = self:CreateCheckbox(frame, "Pathfinding Checks", xPos, yPos,
+        function(checked)
+            self.settings.looterPathfinding = checked
+            self:Confirm("Pathfinding Checks", checked)
+            self:SaveSettingsLocal()
+            self:SyncSettingToServer("looterPathfinding", checked)
+        end)
+    yPos = yPos - 26
+
+    self.checkboxes.looterPathAllowIncomplete = self:CreateCheckbox(frame, "Allow Incomplete Paths", xPos, yPos,
+        function(checked)
+            self.settings.looterPathAllowIncomplete = checked
+            self:Confirm("Allow Incomplete Paths", checked)
+            self:SaveSettingsLocal()
+            self:SyncSettingToServer("looterPathAllowIncomplete", checked)
+        end)
+    yPos = yPos - 26
+
+    self.checkboxes.looterPathRejectShortcut = self:CreateCheckbox(frame, "Reject Shortcut Paths", xPos, yPos,
+        function(checked)
+            self.settings.looterPathRejectShortcut = checked
+            self:Confirm("Reject Shortcut Paths", checked)
+            self:SaveSettingsLocal()
+            self:SyncSettingToServer("looterPathRejectShortcut", checked)
+        end)
+    yPos = yPos - 28
+
     local companionStatusLine = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     companionStatusLine:SetPoint("TOPLEFT", frame, "TOPLEFT", xPos + 8, yPos)
-    companionStatusLine:SetWidth(300)
+    companionStatusLine:SetWidth(200)
     companionStatusLine:SetJustifyH("LEFT")
     companionStatusLine:SetText(self:GetCompanionStatusLineText())
     self.companionStatusLine = companionStatusLine
+
+    local leashStatusLine = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    leashStatusLine:SetPoint("TOPLEFT", frame, "TOPLEFT", xPos + 215, yPos)
+    leashStatusLine:SetWidth(105)
+    leashStatusLine:SetJustifyH("RIGHT")
+    leashStatusLine:SetText(self:GetLeashDistanceStatusLineText())
+    self.leashDistanceStatusLine = leashStatusLine
     yPos = yPos - 22
     
     -- Fast Loot Section
@@ -1319,7 +1694,7 @@ function addon:CreateMainFrame()
     local saveBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     saveBtn:SetWidth(120)
     saveBtn:SetHeight(25)
-    saveBtn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, 15)
+    saveBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", xPos, yPos)
     saveBtn:SetText("Save Settings")
     saveBtn:SetScript("OnClick", function()
         self:SaveSettings()
@@ -1329,12 +1704,22 @@ function addon:CreateMainFrame()
     local statsBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     statsBtn:SetWidth(120)
     statsBtn:SetHeight(25)
-    statsBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 15)
+    statsBtn:SetPoint("TOPLEFT", frame, "TOPLEFT", xPos + 145, yPos)
     statsBtn:SetText("Show Stats")
     statsBtn:SetScript("OnClick", function()
         -- Try server command first (more reliable than addon message)
         SendChatMessage(".lp stats", "SAY")
     end)
+
+    yPos = yPos - 45
+
+    local contentHeight = math.max(980, math.floor(math.abs(yPos) + 80))
+    content:SetHeight(contentHeight)
+
+    local scrollBar = _G["DCAoELootSettingsScrollFrameScrollBar"]
+    if scrollBar then
+        scrollBar:SetValue(0)
+    end
 end
 
 function addon:CreateCheckbox(parent, label, x, y, onChange)
@@ -1373,9 +1758,26 @@ function addon:UpdateUI()
     if self.checkboxes.looterPet then
         self.checkboxes.looterPet:SetChecked(self.settings.looterPet)
     end
+    if self.checkboxes.looterFallbackToPlayer then
+        self.checkboxes.looterFallbackToPlayer:SetChecked(self.settings.looterFallbackToPlayer)
+    end
+    if self.checkboxes.looterCompanionLeash then
+        self.checkboxes.looterCompanionLeash:SetChecked(self.settings.looterCompanionLeash)
+    end
+    if self.checkboxes.looterPathfinding then
+        self.checkboxes.looterPathfinding:SetChecked(self.settings.looterPathfinding)
+    end
+    if self.checkboxes.looterPathAllowIncomplete then
+        self.checkboxes.looterPathAllowIncomplete:SetChecked(self.settings.looterPathAllowIncomplete)
+    end
+    if self.checkboxes.looterPathRejectShortcut then
+        self.checkboxes.looterPathRejectShortcut:SetChecked(self.settings.looterPathRejectShortcut)
+    end
     if self.checkboxes.fastLoot then
         self.checkboxes.fastLoot:SetChecked(self.settings.fastLoot)
     end
+
+    self:RefreshLooterLeashDistanceControls()
 
     self:UpdateCompanionStatusLine()
     
@@ -1646,7 +2048,9 @@ do
         delaySlider:SetWidth(150)
         delaySlider:SetMinMaxValues(0.1, 0.5)
         delaySlider:SetValueStep(0.05)
-        delaySlider:SetObeyStepOnDrag(true)
+        if delaySlider.SetObeyStepOnDrag then
+            delaySlider:SetObeyStepOnDrag(true)
+        end
         delaySlider:SetValue(self.settings.fastLootDelay or 0.3)
         
         local low = _G["DCAoEFastLootDelaySliderLow"]

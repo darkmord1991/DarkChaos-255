@@ -665,8 +665,8 @@ AoELoot.LooterPet.Enable = 1
 
 #
 #    AoELoot.LooterPet.AllowInCombat
-#        Description: Allow companion looter pulses while the player is in combat
-#        Default:     0 (Disabled)
+#        Description: Legacy flag (autonomous looter mode is forced out-of-combat)
+#        Default:     0
 #
 AoELoot.LooterPet.AllowInCombat = 0
 
@@ -677,6 +677,67 @@ AoELoot.LooterPet.AllowInCombat = 0
 #        Default:     1500
 #
 AoELoot.LooterPet.PulseMs = 1500
+
+#
+#    AoELoot.LooterPet.FallbackToPlayerAnchor
+#        Description: If companion-anchor pulse finds no eligible corpse, retry from player anchor
+#        Default:     1 (Enabled)
+#
+AoELoot.LooterPet.FallbackToPlayerAnchor = 1
+
+#
+#    AoELoot.LooterPet.CompanionLeash.Enable
+#        Description: Require companion to stay within leash distance of player for autonomous pulses
+#        Default:     1 (Enabled)
+#
+AoELoot.LooterPet.CompanionLeash.Enable = 1
+
+#
+#    AoELoot.LooterPet.CompanionLeash.MaxDistance
+#        Description: Maximum companion distance (yards) from player to allow autonomous pulses
+#        Range:       5.0 - 150.0
+#        Default:     45.0
+#
+AoELoot.LooterPet.CompanionLeash.MaxDistance = 45.0
+
+#
+#    AoELoot.LooterPet.Pathfinding.Enable
+#        Description: Use server pathfinding checks before selecting a corpse anchor target
+#                     for looter-pet pulses. Recommended when MoveMaps.Enable = 1.
+#        Default:     1 (Enabled)
+#
+AoELoot.LooterPet.Pathfinding.Enable = 1
+
+#
+#    AoELoot.LooterPet.Pathfinding.AllowIncomplete
+#        Description: Allow partial path solutions (PATHFIND_INCOMPLETE) for pulse targeting
+#        Default:     1 (Enabled)
+#
+AoELoot.LooterPet.Pathfinding.AllowIncomplete = 1
+
+#
+#    AoELoot.LooterPet.Pathfinding.RejectShortcut
+#        Description: Reject shortcut path types (PATHFIND_SHORTCUT) for stricter reachability
+#        Default:     0 (Disabled)
+#
+AoELoot.LooterPet.Pathfinding.RejectShortcut = 0
+
+#
+#    AoELoot.LooterPet.Pathfinding.MaxPathLength
+#        Description: Maximum allowed computed path length (yards) from companion anchor to corpse
+#                     0 disables this cap.
+#        Range:       0.0 - 500.0
+#        Default:     80.0
+#
+AoELoot.LooterPet.Pathfinding.MaxPathLength = 80.0
+
+#
+#    AoELoot.LooterPet.Pathfinding.MaxChecks
+#        Description: Maximum nearest corpse candidates to evaluate per pulse
+#        Range:       1 - 50
+#        Default:     12
+#
+AoELoot.LooterPet.Pathfinding.MaxChecks = 12
 
 # -----------------------------------------------------------------------------
 # AoE Loot Extensions: Quality Filtering
