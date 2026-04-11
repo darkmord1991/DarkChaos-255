@@ -107,6 +107,11 @@ local function IsNeverSell(itemId)
     return neverSellItems[itemId] == true or neverSellItems[tostring(itemId)] == true
 end
 
+local function GetItemIdFromLink(itemLink)
+    if not itemLink then return nil end
+    return tonumber(itemLink:match("item:(%d+)"))
+end
+
 local function GetBagSlotJunkInfo(bag, slot, itemLink)
     if not itemLink then
         return nil
@@ -215,6 +220,53 @@ local function AddSellPriceToTooltip(tooltip, itemLink)
     end
 end
 
+local function GetTooltipItemQuality(itemLink, bag, slot)
+    local quality
+
+    if bag ~= nil and slot ~= nil then
+        local _, _, _, bagQuality = GetContainerItemInfo(bag, slot)
+        quality = bagQuality
+    end
+
+    if quality == nil and itemLink then
+        local _, _, rarity = GetItemInfo(itemLink)
+        quality = rarity
+    end
+
+    return quality
+end
+
+local function AddJunkStatusToTooltip(tooltip, itemLink, bag, slot)
+    local settings = addon.settings.vendorPlus
+    if not settings or settings.enabled == false then return end
+    if not itemLink then return end
+    if tooltip._dcVendorJunkShown then return end
+
+    local itemId = GetItemIdFromLink(itemLink)
+    if not itemId then return end
+
+    local quality = GetTooltipItemQuality(itemLink, bag, slot)
+    local isPoorQuality = (quality == 0)
+    local isCustomJunk = IsCustomJunk(itemId)
+    local isProtected = IsNeverSell(itemId)
+    local isJunk = (isPoorQuality or isCustomJunk) and not isProtected
+
+    if isProtected then
+        tooltip:AddLine("|cff66ccffProtected: Marked as valuable|r")
+        tooltip._dcVendorJunkShown = true
+        return
+    end
+
+    if isJunk then
+        if isCustomJunk then
+            tooltip:AddLine("|cffff6666Junk: Marked for auto-sell|r")
+        else
+            tooltip:AddLine("|cff9d9d9dJunk: Poor quality auto-sell|r")
+        end
+        tooltip._dcVendorJunkShown = true
+    end
+end
+
 local function SetupTooltipHooks()
     if tooltipHooksInstalled then return end
     tooltipHooksInstalled = true
@@ -223,12 +275,14 @@ local function SetupTooltipHooks()
         local _, itemLink = tooltip:GetItem()
         if itemLink then
             AddSellPriceToTooltip(tooltip, itemLink)
+            AddJunkStatusToTooltip(tooltip, itemLink)
         end
     end
     
     -- Clear flag when tooltip is cleared
     GameTooltip:HookScript("OnTooltipCleared", function(self)
         self._dcVendorPriceShown = nil
+        self._dcVendorJunkShown = nil
     end)
 
     -- Catch generic item tooltips (not just bag/inventory hooks)
@@ -240,6 +294,7 @@ local function SetupTooltipHooks()
     if ShoppingTooltip1 and ShoppingTooltip1.HookScript then
         ShoppingTooltip1:HookScript("OnTooltipCleared", function(self)
             self._dcVendorPriceShown = nil
+            self._dcVendorJunkShown = nil
         end)
         ShoppingTooltip1:HookScript("OnTooltipSetItem", function(self)
             OnTooltipSetItem(self)
@@ -248,6 +303,7 @@ local function SetupTooltipHooks()
     if ShoppingTooltip2 and ShoppingTooltip2.HookScript then
         ShoppingTooltip2:HookScript("OnTooltipCleared", function(self)
             self._dcVendorPriceShown = nil
+            self._dcVendorJunkShown = nil
         end)
         ShoppingTooltip2:HookScript("OnTooltipSetItem", function(self)
             OnTooltipSetItem(self)
@@ -259,6 +315,7 @@ local function SetupTooltipHooks()
         local itemLink = GetContainerItemLink(bag, slot)
         if itemLink then
             AddSellPriceToTooltip(self, itemLink)
+            AddJunkStatusToTooltip(self, itemLink, bag, slot)
         end
     end)
     
@@ -266,6 +323,7 @@ local function SetupTooltipHooks()
         local itemLink = GetInventoryItemLink(unit, slot)
         if itemLink then
             AddSellPriceToTooltip(self, itemLink)
+            AddJunkStatusToTooltip(self, itemLink)
         end
     end)
     
@@ -273,6 +331,7 @@ local function SetupTooltipHooks()
         local itemLink = GetMerchantItemLink(slot)
         if itemLink then
             AddSellPriceToTooltip(self, itemLink)
+            AddJunkStatusToTooltip(self, itemLink)
         end
     end)
 end

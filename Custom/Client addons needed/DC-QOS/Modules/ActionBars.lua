@@ -14,6 +14,43 @@ local function GetSetting()
     return addon.settings.actionBars or {}
 end
 
+local function SetBarFrameSize(frame, columns, rows, size, spacing)
+    if not frame then return end
+    local width = columns * size + (columns - 1) * spacing
+    local height = rows * size + (rows - 1) * spacing
+    frame:SetSize(width, height)
+end
+
+local function ReanchorAuxiliaryBars(anchorFrame, gap)
+    if not anchorFrame then return end
+
+    local baseSpacing = math.max(8, gap or 0)
+    local stack = anchorFrame
+    local seen = {}
+    local bars = {
+        _G.PossessBarFrame,
+        _G.PetActionBarFrame,
+        _G.StanceBarFrame,
+        _G.ShapeshiftBarFrame,
+        _G.BonusActionBarFrame,
+    }
+
+    for _, bar in ipairs(bars) do
+        if bar and not seen[bar] then
+            seen[bar] = true
+            local yOffset = baseSpacing
+            if bar == _G.StanceBarFrame or bar == _G.ShapeshiftBarFrame then
+                yOffset = yOffset + 4
+            end
+            bar:ClearAllPoints()
+            bar:SetPoint("BOTTOM", stack, "TOP", 0, yOffset)
+            if bar:IsShown() then
+                stack = bar
+            end
+        end
+    end
+end
+
 local function ApplyButtonLayout(prefix, parent, anchorPoint, relPoint, startX, startY, size, spacing, columns, rows)
     local index = 1
     for r = 1, rows do
@@ -72,6 +109,21 @@ local function ApplyBlizzardMode()
     if s.showBottomRight == false and MultiBarBottomRight then MultiBarBottomRight:Hide() else if MultiBarBottomRight then MultiBarBottomRight:Show() end end
     if s.showRightBar1 == false and MultiBarRight then MultiBarRight:Hide() else if MultiBarRight then MultiBarRight:Show() end end
     if s.showRightBar2 == false and MultiBarLeft then MultiBarLeft:Hide() else if MultiBarLeft then MultiBarLeft:Show() end end
+
+    local auxAnchor = MainMenuBar
+    if s.showMainBar == false then
+        if s.showBottomLeft ~= false and MultiBarBottomLeft then
+            auxAnchor = MultiBarBottomLeft
+        elseif s.showBottomRight ~= false and MultiBarBottomRight then
+            auxAnchor = MultiBarBottomRight
+        end
+    end
+
+    local btn = _G.ActionButton1
+    local baseHeight = btn and btn:GetHeight() or 36
+    local scaledHeight = baseHeight * scale
+    local gap = math.floor(math.max(6, 6 + (scaledHeight - baseHeight)))
+    ReanchorAuxiliaryBars(auxAnchor, gap)
 end
 
 local function ApplyCustomMode()
@@ -91,7 +143,9 @@ local function ApplyCustomMode()
         ActionBars.customFrames.main = CreateFrame("Frame", "DCQOS_CustomBar_Main", UIParent)
     end
     local main = ActionBars.customFrames.main
+    main:ClearAllPoints()
     main:SetPoint(anchor.point, UIParent, anchor.relPoint, anchor.x, anchor.y)
+    SetBarFrameSize(main, 12, 1, size, spacing)
 
     HideMainMenuArt()
 
@@ -106,7 +160,9 @@ local function ApplyCustomMode()
         ActionBars.customFrames.bottomLeft = CreateFrame("Frame", "DCQOS_CustomBar_BottomLeft", UIParent)
     end
     local bottomLeft = ActionBars.customFrames.bottomLeft
+    bottomLeft:ClearAllPoints()
     bottomLeft:SetPoint("TOPLEFT", main, "BOTTOMLEFT", 0, -spacing)
+    SetBarFrameSize(bottomLeft, 12, 1, size, spacing)
 
     if s.showBottomLeft ~= false then
         ApplyButtonLayout("MultiBarBottomLeftButton", bottomLeft, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, size, spacing, 12, 1)
@@ -119,7 +175,9 @@ local function ApplyCustomMode()
         ActionBars.customFrames.bottomRight = CreateFrame("Frame", "DCQOS_CustomBar_BottomRight", UIParent)
     end
     local bottomRight = ActionBars.customFrames.bottomRight
+    bottomRight:ClearAllPoints()
     bottomRight:SetPoint("TOPLEFT", bottomLeft, "BOTTOMLEFT", 0, -spacing)
+    SetBarFrameSize(bottomRight, 12, 1, size, spacing)
 
     if s.showBottomRight ~= false then
         ApplyButtonLayout("MultiBarBottomRightButton", bottomRight, "BOTTOMLEFT", "BOTTOMLEFT", 0, 0, size, spacing, 12, 1)
@@ -132,7 +190,9 @@ local function ApplyCustomMode()
         ActionBars.customFrames.right1 = CreateFrame("Frame", "DCQOS_CustomBar_Right1", UIParent)
     end
     local right1 = ActionBars.customFrames.right1
+    right1:ClearAllPoints()
     right1:SetPoint("RIGHT", UIParent, "RIGHT", -10, 0)
+    SetBarFrameSize(right1, 1, 12, size, spacing)
 
     if s.showRightBar1 ~= false then
         ApplyButtonLayout("MultiBarRightButton", right1, "TOPLEFT", "TOPLEFT", 0, 0, size, spacing, 1, 12)
@@ -145,7 +205,9 @@ local function ApplyCustomMode()
         ActionBars.customFrames.right2 = CreateFrame("Frame", "DCQOS_CustomBar_Right2", UIParent)
     end
     local right2 = ActionBars.customFrames.right2
+    right2:ClearAllPoints()
     right2:SetPoint("RIGHT", right1, "LEFT", -(size + spacing), 0)
+    SetBarFrameSize(right2, 1, 12, size, spacing)
 
     if s.showRightBar2 ~= false then
         ApplyButtonLayout("MultiBarLeftButton", right2, "TOPLEFT", "TOPLEFT", 0, 0, size, spacing, 1, 12)
@@ -153,6 +215,18 @@ local function ApplyCustomMode()
     else
         right2:Hide()
     end
+
+    local auxAnchor = main
+    if s.showMainBar == false then
+        if s.showBottomLeft ~= false then
+            auxAnchor = bottomLeft
+        elseif s.showBottomRight ~= false then
+            auxAnchor = bottomRight
+        end
+    end
+
+    local gap = math.max(8, spacing + math.floor(size * 0.2))
+    ReanchorAuxiliaryBars(auxAnchor, gap)
 end
 
 local function ApplyActionBars()
@@ -182,6 +256,12 @@ function ActionBars.OnEnable()
     ev:RegisterEvent("PLAYER_ENTERING_WORLD")
     ev:RegisterEvent("UNIT_ENTERED_VEHICLE")
     ev:RegisterEvent("UNIT_EXITED_VEHICLE")
+    ev:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+    ev:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
+    ev:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
+    ev:RegisterEvent("UNIT_PET")
+    ev:RegisterEvent("PET_BAR_UPDATE")
+    ev:RegisterEvent("PET_BAR_UPDATE_USABLE")
     ev:RegisterEvent("ACTIONBAR_UPDATE_STATE")
     ev:RegisterEvent("ACTIONBAR_UPDATE_USABLE")
     ev:SetScript("OnEvent", function(_, event, unit)

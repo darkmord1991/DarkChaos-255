@@ -68,6 +68,35 @@ local function ResolveAffixInfo(affix)
     return nil, nil, nil, nil
 end
 
+local function DecodePayloadTable(value)
+    if type(value) ~= "string" then
+        return value
+    end
+
+    local proto = rawget(_G, "DCAddonProtocol")
+    local decodeFn
+    if proto and type(proto.DecodeJSON) == "function" then
+        decodeFn = function(text)
+            return proto:DecodeJSON(text)
+        end
+    elseif namespace and type(namespace.DecodeJSON) == "function" then
+        decodeFn = namespace.DecodeJSON
+    end
+
+    if not decodeFn then
+        return value
+    end
+
+    local ok, decoded = pcall(function()
+        return decodeFn(value)
+    end)
+    if ok and type(decoded) == "table" then
+        return decoded
+    end
+
+    return value
+end
+
 KUI.currentState = KUI.STATE.IDLE
 KUI.keystoneData = nil
 KUI.readyStates = {}
@@ -170,7 +199,7 @@ function KUI:CreateActivationFrame()
     local keystoneIcon = keystoneSection:CreateTexture(nil, "ARTWORK")
     keystoneIcon:SetSize(80, 80)
     keystoneIcon:SetPoint("LEFT", 20, 0)
-    keystoneIcon:SetTexture("Interface\\Icons\\INV_Relics_Hourglass") -- Keystone placeholder
+    keystoneIcon:SetTexture("Interface\\Icons\\inv_staff_2h_plunderkey_c_02_gold") -- Keystone placeholder
     frame.keystoneIcon = keystoneIcon
     
     -- Keystone icon border
@@ -472,6 +501,7 @@ function KUI:SetPartyMembers(members)
         if members and members[i] then
             local member = members[i]
             slot.nameText:SetText(member.name or ("Player " .. i))
+            slot.memberGuid = member.guid
             
             -- Set role icon
             if member.role == "TANK" then
@@ -493,6 +523,7 @@ function KUI:SetPartyMembers(members)
             
             slot:Show()
         else
+            slot.memberGuid = nil
             slot:Hide()
         end
     end
@@ -691,19 +722,66 @@ end
 
 -- Called when server sends keystone ready check data
 function KUI:OnKeystoneReadyCheck(data)
-    if data.keystoneInfo then
-        self:SetKeystoneData(data.keystoneInfo)
+    if type(data) ~= "table" then
+        return
     end
-    if data.partyMembers then
-        self:SetPartyMembers(data.partyMembers)
+
+    local keystoneInfo = data.keystoneInfo
+    if type(keystoneInfo) ~= "table" then
+        keystoneInfo = {
+            dungeon = data.dungeon or data.dungeonName,
+            level = tonumber(data.level) or tonumber(data.keyLevel),
+            timeLimit = tonumber(data.timeLimit),
+            affixes = DecodePayloadTable(data.affixes),
+        }
+    else
+        keystoneInfo.affixes = DecodePayloadTable(keystoneInfo.affixes)
     end
-    self:Show(data.keystoneInfo, data.isLeader)
+
+    local partyMembers = DecodePayloadTable(data.partyMembers)
+    if type(partyMembers) ~= "table" then
+        partyMembers = data.partyMembers
+    end
+
+    local isLeader = data.isLeader
+    if isLeader == nil then
+        isLeader = (type(UnitIsRaidLeader) == "function" and UnitIsRaidLeader("player"))
+            or (type(UnitIsPartyLeader) == "function" and UnitIsPartyLeader("player"))
+            or false
+    end
+
+    if keystoneInfo then
+        self:SetKeystoneData(keystoneInfo)
+    end
+    if type(partyMembers) == "table" then
+        self:SetPartyMembers(partyMembers)
+    end
+    self:Show(keystoneInfo, isLeader and true or false)
 end
 
 -- Called when a player's ready state changes
 function KUI:OnPlayerReadyUpdate(data)
-    if data.playerName and data.ready ~= nil then
-        self:UpdateReadyState(data.playerName, data.ready)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local ready = data.ready
+    if ready == nil and data.state ~= nil then
+        ready = (tonumber(data.state) == 1)
+    end
+
+    local playerName = data.playerName
+    if (not playerName or playerName == "") and data.playerGuid and self.frame then
+        for _, slot in ipairs(self.frame.partySlots or {}) do
+            if slot and slot:IsShown() and slot.memberGuid and slot.memberGuid == data.playerGuid then
+                playerName = slot.nameText and slot.nameText:GetText() or nil
+                break
+            end
+        end
+    end
+
+    if playerName and ready ~= nil then
+        self:UpdateReadyState(playerName, ready and true or false)
     end
 end
 

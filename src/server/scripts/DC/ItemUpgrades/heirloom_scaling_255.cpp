@@ -27,13 +27,13 @@
  *
  * Features:
  * - Scales heirloom armor/weapons PRIMARY stats (Strength, Stamina, etc.) with player level
+ * - Scales heirloom weapon DPS beyond the last available ScalingStatValues row
  * - Scales heirloom bag slots (containers get more slots at higher levels)
  * - Respects upgrade system for secondary stat bonuses
  *
  * How it works:
- * - Intercepts the ScalingStatValue lookup before DBC capping occurs
- * - For heirloom items (Quality 7), uses level 80 scaling data
- *   and extrapolates it with linear scaling for levels 81-255
+ * - Uses the nearest available ScalingStatValues row as a baseline
+ * - Extrapolates scaling with a gentle progressive curve when player level exceeds that baseline
  * - Maintains proper stat scaling ratios while extending the level range
  * - For bags: increases ContainerSlots based on player level
  */
@@ -42,6 +42,8 @@ namespace {
     constexpr uint32 HEIRLOOM_BAG_MIN_SLOTS   = 16;
     constexpr uint32 HEIRLOOM_BAG_MAX_SLOTS   = 36; // Client hard cap
     constexpr uint32 HEIRLOOM_BAG_MAX_LEVEL   = 130;
+    constexpr float HEIRLOOM_MAX_SCALING_BOOST = 4.0f;
+    constexpr float HEIRLOOM_PROGRESSIVE_CURVE = 0.08f;
 
     uint32 CalculateHeirloomBagSlots(uint32 playerLevel)
     {
@@ -101,6 +103,57 @@ namespace {
         updateRange(INVENTORY_SLOT_BAG_START, INVENTORY_SLOT_BAG_END);
         updateRange(BANK_SLOT_BAG_START, BANK_SLOT_BAG_END);
     }
+
+    uint32 GetNearestAvailableScalingLevel(uint32 requestedLevel)
+    {
+        if (requestedLevel == 0)
+            return 0;
+
+        uint32 level = requestedLevel;
+        uint32 const rowCount = sScalingStatValuesStore.GetNumRows();
+        if (rowCount == 0)
+            return 0;
+
+        if (level >= rowCount)
+            level = rowCount - 1;
+
+        for (; level > 0; --level)
+            if (ScalingStatValuesEntry const* ssv = sScalingStatValuesStore.LookupEntry(level))
+                return ssv->Level;
+
+        return 0;
+    }
+
+    float GetHeirloomScalingBoost(Player* player, ItemTemplate const* proto)
+    {
+        if (!player || !proto)
+            return 1.0f;
+
+        if (proto->Quality != ITEM_QUALITY_HEIRLOOM || !proto->ScalingStatDistribution)
+            return 1.0f;
+
+        ScalingStatDistributionEntry const* ssd =
+            sScalingStatDistributionStore.LookupEntry(proto->ScalingStatDistribution);
+        if (!ssd)
+            return 1.0f;
+
+        uint32 requestedLevel = player->GetLevel();
+        if (requestedLevel > ssd->MaxLevel)
+            requestedLevel = ssd->MaxLevel;
+
+        uint32 referenceLevel = GetNearestAvailableScalingLevel(requestedLevel);
+        if (referenceLevel == 0 || player->GetLevel() <= referenceLevel)
+            return 1.0f;
+
+        float normalizedDelta =
+            float(player->GetLevel() - referenceLevel) / float(referenceLevel);
+        float scalingBoost =
+            1.0f + normalizedDelta + HEIRLOOM_PROGRESSIVE_CURVE * normalizedDelta * normalizedDelta;
+        if (scalingBoost > HEIRLOOM_MAX_SCALING_BOOST)
+            scalingBoost = HEIRLOOM_MAX_SCALING_BOOST;
+
+        return scalingBoost;
+    }
 }
 
 class heirloom_scaling_255 : public PlayerScript
@@ -108,73 +161,8 @@ class heirloom_scaling_255 : public PlayerScript
 public:
     heirloom_scaling_255() : PlayerScript("heirloom_scaling_255") { }
 
-    // Hook before ScalingStatValue is processed
-    void OnPlayerCustomScalingStatValueBefore(Player* player, ItemTemplate const* proto, uint8 /*slot*/, bool /*apply*/, uint32& CustomScalingStatValue) override
-    {
-        if (!player || !proto)
-            return;
-
-        // Only process heirloom items (Quality 7, Flags 134221824)
-        if (proto->Quality != ITEM_QUALITY_HEIRLOOM)
-            return;
-
-        // Check if item has ScalingStatDistribution (heirlooms do)
-        if (!proto->ScalingStatDistribution)
-            return;
-
-        ScalingStatDistributionEntry const* ssd = sScalingStatDistributionStore.LookupEntry(proto->ScalingStatDistribution);
-        if (!ssd)
-            return;
-
-        uint32 playerLevel = player->GetLevel();
-
-        // If player is at or below the DBC max level, let normal scaling handle it
-        if (playerLevel <= ssd->MaxLevel)
-            return;
-
-        // For levels above MaxLevel (typically 80), we need to extend scaling
-        // We'll use the ScalingStatValue from MaxLevel as the base
-        // and apply linear extrapolation for higher levels
-
-        // The ScalingStatValue determines which row of ScalingStatValues.dbc to use
-        // We want to use the level 80 entry as reference
-        uint32 baseScalingValue = proto->ScalingStatValue;
-
-        if (baseScalingValue == 0)
-            return;
-
-        // Get the level 80 (MaxLevel) entry as our baseline
-        ScalingStatValuesEntry const* baseSSV = sScalingStatValuesStore.LookupEntry(ssd->MaxLevel);
-        if (!baseSSV)
-            return;
-
-        // Calculate scaling factor: how much more powerful should the item be at this level
-        // Linear scaling: normal rate for levels above 80
-        // Formula: 1.0 + (current_level - max_dbc_level) / max_dbc_level
-        // Examples:
-        //   Level 80:  1.0x (baseline)
-        //   Level 120: 1.5x
-        //   Level 160: 2.0x
-        //   Level 200: 2.5x
-        //   Level 240: 3.0x
-        float levelDifference = float(playerLevel - ssd->MaxLevel);
-        float scalingBoost = 1.0f + (levelDifference / float(ssd->MaxLevel));
-
-        // For extreme high levels, cap the boost to prevent absurd values
-        const float MAX_SCALING_BOOST = 4.0f; // Max 4x the level 80 stats at level 255
-        if (scalingBoost > MAX_SCALING_BOOST)
-            scalingBoost = MAX_SCALING_BOOST;
-
-        // We can't modify the DBC data directly, but we can influence the stat calculation
-        // by overriding CustomScalingStatValue to signal our custom handler
-        // We'll encode the boost information in the upper bits
-
-        // Store: original value in lower 16 bits, boost multiplier * 100 in upper 16 bits
-        uint32 boostEncoded = uint32(scalingBoost * 100.0f);
-        CustomScalingStatValue = (boostEncoded << 16) | (baseScalingValue & 0xFFFF);
-    }
-
-    // Hook during stat calculation to apply our custom scaling
+    // Hook during stat calculation to extend heirloom scaling past the last
+    // available ScalingStatValues.dbc row.
     void OnPlayerCustomScalingStatValue(Player* player, ItemTemplate const* proto, uint32& statType, int32& val,
                                        uint8 itemProtoStatNumber, uint32 ScalingStatValue, ScalingStatValuesEntry const* ssv) override
     {
@@ -185,14 +173,12 @@ public:
         if (proto->Quality != ITEM_QUALITY_HEIRLOOM)
             return;
 
-        // Check if this is our custom encoded value
-        if (ScalingStatValue == 0 || (ScalingStatValue >> 16) == 0)
+        if (!proto->ScalingStatDistribution || !ScalingStatValue)
             return;
 
-        // Decode the boost multiplier
-        uint32 boostEncoded = ScalingStatValue >> 16;
-        uint32 baseScalingValue = ScalingStatValue & 0xFFFF;
-        float scalingBoost = float(boostEncoded) / 100.0f;
+        float scalingBoost = GetHeirloomScalingBoost(player, proto);
+        if (scalingBoost <= 1.0f)
+            return;
 
         ScalingStatDistributionEntry const* ssd = proto->ScalingStatDistribution ?
             sScalingStatDistributionStore.LookupEntry(proto->ScalingStatDistribution) : nullptr;
@@ -200,27 +186,22 @@ public:
         if (!ssd)
             return;
 
-        // Get player's actual level
-        uint32 playerLevel = player->GetLevel();
-
-        // Only apply boost for levels above MaxLevel
-        if (playerLevel <= ssd->MaxLevel)
-            return;
-
-        // Get the base stats from level 80 (or whatever MaxLevel is)
-        ScalingStatValuesEntry const* baseSSV = sScalingStatValuesStore.LookupEntry(ssd->MaxLevel);
-        if (!baseSSV)
-            return;
-
-        // Calculate the stat value at max DBC level
         if (ssd->StatMod[itemProtoStatNumber] >= 0)
         {
             statType = ssd->StatMod[itemProtoStatNumber];
-            int32 baseVal = (baseSSV->getssdMultiplier(baseScalingValue) * ssd->Modifier[itemProtoStatNumber]) / 10000;
-
-            // Apply the scaling boost
-            val = int32(float(baseVal) * scalingBoost);
+            val = int32(float(val) * scalingBoost);
         }
+    }
+
+    void OnPlayerApplyWeaponDamage(Player* player, uint8 /*slot*/, ItemTemplate const* proto,
+        float& minDamage, float& maxDamage, uint8 /*damageIndex*/) override
+    {
+        float scalingBoost = GetHeirloomScalingBoost(player, proto);
+        if (scalingBoost <= 1.0f)
+            return;
+
+        minDamage *= scalingBoost;
+        maxDamage *= scalingBoost;
     }
 
     // Hook when player equips an item to scale bag slots for heirloom bags

@@ -121,6 +121,11 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
     if (!sConfigMgr->GetOption<bool>("MythicPlus.BossLoot.Enabled", true))
         return;
 
+    bool rewardsAtRunEndOnly =
+        sConfigMgr->GetOption<bool>("MythicPlus.RewardsAtRunEndOnly", true);
+    if (rewardsAtRunEndOnly && !state->completed)
+        return;
+
     bool suppressNativeLoot = ShouldSuppressLoot(boss);
     boss->loot.clear();
     boss->RemoveDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
@@ -180,19 +185,76 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
     std::shuffle(shuffled.begin(), shuffled.end(), gen);
 
     uint32 desiredCount = isFinalBoss
-        ? sConfigMgr->GetOption<uint32>("MythicPlus.FinalBossItems", 2)
-        : sConfigMgr->GetOption<uint32>("MythicPlus.BossItems", 1);
-    desiredCount = std::max<uint32>(1, std::min<uint32>(desiredCount, 5));
-    uint32 itemsRequested = std::min<uint32>(desiredCount, shuffled.size());
+        ? std::min<uint32>(
+            sConfigMgr->GetOption<uint32>("MythicPlus.FinalBossItems", 2),
+            5)
+        : std::min<uint32>(
+            sConfigMgr->GetOption<uint32>("MythicPlus.BossItems", 1),
+            5);
+
+    if (rewardsAtRunEndOnly)
+    {
+        uint32 regularBossItems = std::min<uint32>(
+            sConfigMgr->GetOption<uint32>("MythicPlus.BossItems", 1),
+            5);
+        uint32 finalBossItems = std::min<uint32>(
+            sConfigMgr->GetOption<uint32>("MythicPlus.FinalBossItems", 2),
+            5);
+
+        uint32 totalBossRewards = 0;
+        uint32 finalBossRewards = 0;
+
+        if (!state->bossKillStamps.empty())
+        {
+            for (auto const& stamp : state->bossKillStamps)
+            {
+                ++totalBossRewards;
+                if (IsFinalBoss(state->mapId, stamp.first))
+                    ++finalBossRewards;
+            }
+
+            if (finalBossRewards == 0 && isFinalBoss)
+                finalBossRewards = 1;
+        }
+        else
+        {
+            totalBossRewards = std::max<uint32>(1, state->bossesKilled);
+            finalBossRewards = isFinalBoss ? 1u : 0u;
+        }
+
+        if (finalBossRewards > totalBossRewards)
+            finalBossRewards = totalBossRewards;
+
+        uint32 regularBossRewards = totalBossRewards - finalBossRewards;
+        desiredCount =
+            (regularBossRewards * regularBossItems) +
+            (finalBossRewards * finalBossItems);
+
+        constexpr uint32 kRunEndRewardSafetyCap = 100;
+        if (desiredCount > kRunEndRewardSafetyCap)
+        {
+            LOG_WARN("mythic.loot", "Run-end reward count {} exceeded safety cap {} for map {} instance {}",
+                     desiredCount, kRunEndRewardSafetyCap, state->mapId,
+                     state->instanceId);
+            desiredCount = kRunEndRewardSafetyCap;
+        }
+    }
+
+    desiredCount = std::max<uint32>(1, desiredCount);
+    uint32 itemsRequested = desiredCount;
     uint32 itemsGenerated = 0;
 
-    LOG_INFO("mythic.loot", "Boss {} dropping {} spec-tailored items (M+{}, final: {}). Eligible players: {}",
-             boss->GetName(), itemsRequested, state->keystoneLevel, isFinalBoss ? "yes" : "no", participants.size());
+    LOG_INFO("mythic.loot", "Boss {} preparing {} spec-tailored item{} (M+{}, final: {}, rewardsAtRunEndOnly: {}). Eligible players: {}",
+             boss->GetName(), itemsRequested, itemsRequested == 1 ? "" : "s",
+             state->keystoneLevel, isFinalBoss ? "yes" : "no",
+             rewardsAtRunEndOnly ? "yes" : "no", participants.size());
 
-    for (Player* player : shuffled)
+    uint32 attempts = 0;
+    uint32 maxAttempts = std::max<uint32>(itemsRequested * 4, shuffled.size());
+    while (itemsGenerated < itemsRequested && attempts < maxAttempts)
     {
-        if (itemsGenerated >= itemsRequested)
-            break;
+        Player* player = shuffled[attempts % shuffled.size()];
+        ++attempts;
 
         if (!player)
             continue;
@@ -221,12 +283,13 @@ void MythicPlusRunManager::GenerateBossLoot(Creature* boss, Map* map, InstanceSt
         LOG_INFO("mythic.loot", "Delivered loot item {} ({}) to player {} (ilvl {})", itemId, itemTemplate->Name1, player->GetName(), targetItemLevel);
 
         ChatHandler(player->GetSession()).SendSysMessage(
-            Acore::StringFormat("|cff00ff00[Mythic+]|r Final boss prepared loot tailored for you: |cff0070dd[{}]|r (ilvl {})",
+            Acore::StringFormat("|cff00ff00[Mythic+]|r Run completion reward: |cff0070dd[{}]|r (ilvl {})",
                                  itemTemplate->Name1, targetItemLevel));
     }
 
     if (!itemsGenerated)
     {
-        LOG_WARN("mythic.loot", "Final boss {} generated no loot for map {} instance {}", boss->GetName(), state->mapId, state->instanceId);
+        LOG_WARN("mythic.loot", "Mythic+ run generated no loot for map {} instance {}",
+                 state->mapId, state->instanceId);
     }
 }

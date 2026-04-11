@@ -62,6 +62,58 @@ local mockLiveRuns = {
     },
 }
 
+local function ResolveRunsPayload(runs)
+    if type(runs) == "string" then
+        local DC = rawget(_G, "DCAddonProtocol")
+        if DC and type(DC.DecodeJSON) == "function" then
+            runs = DC:DecodeJSON(runs)
+        end
+    end
+
+    if type(runs) == "table" and type(runs.runs) == "table" then
+        runs = runs.runs
+    end
+
+    if type(runs) ~= "table" then
+        return {}
+    end
+
+    if runs[1] == nil then
+        local normalized = {}
+        for _, entry in pairs(runs) do
+            if type(entry) == "table" then
+                table.insert(normalized, entry)
+            end
+        end
+        runs = normalized
+    end
+
+    return runs
+end
+
+local function NormalizeRunEntry(run)
+    if type(run) ~= "table" then
+        return nil
+    end
+
+    local runId = tonumber(run.runId or run.run_id or run.id)
+    local keyLevel = tonumber(run.keyLevel or run.level) or 0
+
+    return {
+        runId = runId,
+        dungeon = run.dungeon or run.dungeonName or (run.mapId and ("Map " .. tostring(run.mapId))) or "Unknown",
+        level = keyLevel,
+        timer = tostring(run.timer or run.elapsed or "--:--"),
+        timerRemaining = tostring(run.timerRemaining or run.remaining or "--:--"),
+        progress = tostring(run.progress or run.enemyProgress or "0%"),
+        deaths = tonumber(run.deaths) or 0,
+        leader = run.leader or run.leaderName or "Unknown",
+        privacy = tonumber(run.privacy) or SPECTATOR_PRIVACY.PUBLIC,
+        spectators = tonumber(run.spectators or run.viewerCount or run.watchers) or 0,
+        maxSpectators = tonumber(run.maxSpectators or run.max_spectators) or 10,
+    }
+end
+
 -- =====================================================================
 -- Create Live Runs Tab
 -- =====================================================================
@@ -364,6 +416,8 @@ end
 function GF:PopulateLiveRuns(runs)
     local scrollChild = self.LiveRunsTabContent.scrollChild
     if not scrollChild then return end
+
+    runs = ResolveRunsPayload(runs)
     
     -- Clear existing
     for _, child in ipairs({ scrollChild:GetChildren() }) do
@@ -371,10 +425,27 @@ function GF:PopulateLiveRuns(runs)
         child:SetParent(nil)
     end
     
+    local normalizedRuns = {}
+    for _, run in ipairs(runs) do
+        local normalized = NormalizeRunEntry(run)
+        if normalized then
+            table.insert(normalizedRuns, normalized)
+        end
+    end
+
     local yOffset = 0
     local rowHeight = 80
     
-    for i, run in ipairs(runs) do
+    if #normalizedRuns == 0 then
+        local empty = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        empty:SetPoint("TOPLEFT", 10, -12)
+        empty:SetText("No live spectatable runs found.")
+        empty:SetTextColor(0.75, 0.75, 0.75)
+        scrollChild:SetHeight(24)
+        return
+    end
+
+    for _, run in ipairs(normalizedRuns) do
         local row = CreateFrame("Frame", nil, scrollChild)
         row:SetSize(scrollChild:GetWidth() - 10, rowHeight - 4)
         row:SetPoint("TOPLEFT", 5, -yOffset)
@@ -400,7 +471,7 @@ function GF:PopulateLiveRuns(runs)
         timerText:SetPoint("TOPLEFT", 10, -28)
         timerText:SetText(string.format("Timer: %s  |  Remaining: |cff%s%s|r",
             run.timer,
-            run.timerRemaining:match("^%-") and "ff4444" or "44ff44",
+            tostring(run.timerRemaining):match("^%-") and "ff4444" or "44ff44",
             run.timerRemaining))
         
         -- Progress + Deaths
@@ -429,13 +500,13 @@ function GF:PopulateLiveRuns(runs)
         watchBtn:SetSize(70, 26)
         watchBtn:SetPoint("RIGHT", -10, 0)
         
-        if run.spectators >= run.maxSpectators then
+        if run.maxSpectators > 0 and run.spectators >= run.maxSpectators then
             watchBtn:SetText("Full")
             watchBtn:Disable()
         else
             watchBtn:SetText("Watch")
             watchBtn:SetScript("OnClick", function()
-                GF:RequestSpectate(run.id, run.leader)
+                GF:RequestSpectate(run.runId, run.leader)
             end)
         end
         
@@ -448,17 +519,39 @@ end
 function GF:RefreshLiveRuns()
     GF.Print("Refreshing live runs...")
     local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        DC:Request("MPLUS", 0x20, { action = "list_live_runs" })
+    if not DC then
+        return
     end
+
+    if DC.GroupFinder and type(DC.GroupFinder.GetSpectateList) == "function" then
+        DC.GroupFinder.GetSpectateList()
+        return
+    end
+
+    local gfOps = DC.GroupFinderOpcodes or {}
+    DC:Request("GRPF", gfOps.CMSG_GET_SPECTATE_LIST or 0x27, {})
 end
 
 function GF:RequestSpectate(runId, leader)
+    runId = tonumber(runId) or 0
+    if runId <= 0 then
+        GF.Print("|cffff4444Error:|r Invalid run id for spectate request.")
+        return
+    end
+
     GF.Print(string.format("Requesting to spectate %s's run...", leader))
     local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        DC:Request("MPLUS", 0x21, { run_id = runId, leader = leader })
+    if not DC then
+        return
     end
+
+    if DC.GroupFinder and type(DC.GroupFinder.StartSpectate) == "function" then
+        DC.GroupFinder.StartSpectate(runId)
+        return
+    end
+
+    local gfOps = DC.GroupFinderOpcodes or {}
+    DC:Request("GRPF", gfOps.CMSG_START_SPECTATE or 0x25, { runId = runId })
 end
 
 function GF:SaveSpectatorSettings()
@@ -466,14 +559,6 @@ function GF:SaveSpectatorSettings()
     local privacy = 1 -- Default public
     
     GF.Print(string.format("Saving spectator settings: Max=%d, Privacy=%d", maxSpec, privacy))
-    
-    local DC = rawget(_G, "DCAddonProtocol")
-    if DC then
-        DC:Request("MPLUS", 0x22, {
-            max_spectators = maxSpec,
-            privacy = privacy
-        })
-    end
     
     -- Save locally
     DCMythicPlusHUDDB = DCMythicPlusHUDDB or {}
@@ -561,7 +646,12 @@ function GF:LeaveSpectate()
     
     local DC = rawget(_G, "DCAddonProtocol")
     if DC then
-        DC:Request("MPLUS", 0x23, { action = "leave_spectate" })
+        if DC.GroupFinder and type(DC.GroupFinder.StopSpectate) == "function" then
+            DC.GroupFinder.StopSpectate()
+        else
+            local gfOps = DC.GroupFinderOpcodes or {}
+            DC:Request("GRPF", gfOps.CMSG_STOP_SPECTATE or 0x26, {})
+        end
     end
     
     if self.spectatorHUD then
@@ -586,10 +676,12 @@ function GF:JoinBySpectatorCode(code)
     
     local DC = rawget(_G, "DCAddonProtocol")
     if DC then
-        DC:Request("MPLUS", 0x24, { 
-            action = "join_by_code",
-            code = code
-        })
+        local runId = tonumber(code)
+        if runId then
+            GF:RequestSpectate(runId, "Run " .. tostring(runId))
+        else
+            GF.Print("|cffff4444Error:|r Spectator code join is not supported by the current server handler. Use numeric run id from the live list.")
+        end
     else
         -- Demo mode - simulate joining
         GF.Print("|cff44ff44Demo mode:|r Would join spectate session with code " .. code)
@@ -617,7 +709,8 @@ end
 function GF:GetMySpectatorCode()
     local DC = rawget(_G, "DCAddonProtocol")
     if DC then
-        DC:Request("MPLUS", 0x25, { action = "get_my_code" })
+        GF.Print("|cffffcc00Info:|r Spectator share-code requests are not supported by the current server handler.")
+        return nil
     else
         -- Demo mode - generate a fake code
         local chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

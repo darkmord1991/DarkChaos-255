@@ -39,7 +39,7 @@ local MAX_RECENT_ITEMS = 12
 -- Collection type definitions with icons and display info
 local COLLECTION_TYPES = {
     { key = "mounts",    name = "Mounts",      icon = "Interface\\Icons\\Ability_Mount_RidingHorse",       color = {0.4, 0.8, 1.0} },
-    { key = "pets",      name = "Companions",  icon = "Interface\\Icons\\INV_Box_PetCarrier_01",           color = {0.2, 0.9, 0.4} },
+    { key = "pets",      name = "Pets",        icon = "Interface\\Icons\\INV_Box_PetCarrier_01",           color = {0.2, 0.9, 0.4} },
     { key = "transmog",  name = "Appearances", icon = "Interface\\Icons\\INV_Chest_Cloth_17",              color = {0.9, 0.6, 0.2} },
     { key = "titles",    name = "Titles",      icon = "Interface\\Icons\\INV_Scroll_11",                   color = {0.8, 0.8, 0.2} },
     { key = "heirlooms", name = "Heirlooms",   icon = "Interface\\Icons\\INV_Sword_43",                    color = {0.9, 0.8, 0.5} },
@@ -110,6 +110,318 @@ local function OpenWardrobeInMainUI()
 
     if type(DC.SelectTab) == "function" then
         DC:SelectTab("wardrobe")
+    end
+end
+
+local function ToPositiveNumber(value)
+    local n = tonumber(value)
+    if n and n > 0 then
+        return n
+    end
+    return nil
+end
+
+local function ResolveRecentCollectionType(rawType)
+    local collType = rawType
+
+    if DC and type(DC.NormalizeCollectionType) == "function" then
+        collType = DC:NormalizeCollectionType(rawType)
+    elseif type(rawType) == "string" then
+        collType = string.lower(rawType)
+    end
+
+    if collType == "companions" then
+        return "pets"
+    end
+
+    return collType
+end
+
+local function GetRecentTypeDisplayInfo(rawType)
+    local recentType = ResolveRecentCollectionType(rawType)
+    if type(recentType) == "string" then
+        recentType = string.lower(recentType)
+    end
+
+    for _, typeDef in ipairs(COLLECTION_TYPES) do
+        if typeDef.key == recentType then
+            return typeDef.name, typeDef.color
+        end
+    end
+
+    local aliases = {
+        mount = "mounts",
+        mounts = "mounts",
+        pet = "pets",
+        pets = "pets",
+        companion = "pets",
+        companions = "pets",
+        transmog = "transmog",
+        appearance = "transmog",
+        appearances = "transmog",
+        title = "titles",
+        titles = "titles",
+        heirloom = "heirlooms",
+        heirlooms = "heirlooms",
+    }
+
+    local canonical = aliases[recentType or ""]
+    if canonical then
+        for _, typeDef in ipairs(COLLECTION_TYPES) do
+            if typeDef.key == canonical then
+                return typeDef.name, typeDef.color
+            end
+        end
+    end
+
+    local label = tostring(recentType or rawType or "Unknown")
+    label = string.gsub(label, "_", " ")
+    label = string.gsub(label, "(%a)([%w']*)", function(first, rest)
+        return string.upper(first) .. string.lower(rest)
+    end)
+
+    return label, { 1, 1, 1 }
+end
+
+local function FindRecentTargetInList(list, recentData)
+    if type(list) ~= "table" or type(recentData) ~= "table" then
+        return nil, nil
+    end
+
+    local wantedId = tostring(recentData.id or "")
+    local wantedSpellId = ToPositiveNumber(recentData.spellId)
+    local wantedItemId = ToPositiveNumber(recentData.itemId)
+    local wantedName =
+        type(recentData.name) == "string" and string.lower(recentData.name) or nil
+
+    local function Matches(entry)
+        if type(entry) ~= "table" then
+            return false
+        end
+
+        local def = entry.definition or {}
+
+        if wantedId ~= "" and tostring(entry.id or "") == wantedId then
+            return true
+        end
+
+        if wantedSpellId then
+            local spellId =
+                ToPositiveNumber(entry.spellId) or
+                ToPositiveNumber(entry.spell_id) or
+                ToPositiveNumber(def.spellId) or
+                ToPositiveNumber(def.spell_id)
+            if spellId and spellId == wantedSpellId then
+                return true
+            end
+        end
+
+        if wantedItemId then
+            local itemId =
+                ToPositiveNumber(entry.itemId) or
+                ToPositiveNumber(entry.item_id) or
+                ToPositiveNumber(def.itemId) or
+                ToPositiveNumber(def.item_id)
+            if itemId and itemId == wantedItemId then
+                return true
+            end
+        end
+
+        if wantedName and wantedName ~= "" then
+            local entryName = entry.name or def.name
+            if type(entryName) == "string" and string.lower(entryName) == wantedName then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    for idx, entry in ipairs(list) do
+        if Matches(entry) then
+            return entry, idx
+        end
+    end
+
+    return nil, nil
+end
+
+local function EstimateButtonsPerPage(container, petButtonMode)
+    if not container then
+        return 1
+    end
+
+    local count = 0
+    for _, child in ipairs({ container:GetChildren() }) do
+        if petButtonMode then
+            if child and child.petData then
+                count = count + 1
+            end
+        else
+            if child and child.GetObjectType and child:GetObjectType() == "Button" then
+                count = count + 1
+            end
+        end
+    end
+
+    if count > 0 then
+        return count
+    end
+
+    return 1
+end
+
+local function FocusRecentMount(data)
+    if not DC then
+        return
+    end
+
+    if type(DC.SelectTab) == "function" then
+        DC:SelectTab("mounts")
+    end
+
+    if type(DC.GetFilteredItems) ~= "function" then
+        return
+    end
+
+    local items = DC:GetFilteredItems() or {}
+    local target, targetIndex = FindRecentTargetInList(items, data)
+    if not target then
+        return
+    end
+
+    DC.selectedItem = target
+
+    if targetIndex and targetIndex > 0 then
+        local mountListChild =
+            DC.MainFrame and DC.MainFrame.Content and DC.MainFrame.Content.mountListChild
+        local perPage = EstimateButtonsPerPage(mountListChild, false)
+        DC.currentPage = math.max(1, math.ceil(targetIndex / perPage))
+    end
+
+    if type(DC.PopulateMountList) == "function" then
+        DC:PopulateMountList()
+    end
+
+    if type(DC.UpdateMountPreview) == "function" then
+        DC:UpdateMountPreview(target)
+    end
+end
+
+local function FocusRecentPet(data)
+    if not DC then
+        return
+    end
+
+    if type(DC.SelectTab) == "function" then
+        DC:SelectTab("pets")
+    end
+
+    local petJournal = DC.PetJournal
+    if not petJournal then
+        return
+    end
+
+    if type(petJournal.UpdatePetList) == "function" then
+        petJournal:UpdatePetList()
+    end
+
+    local pets = petJournal.filteredPets or {}
+    local target, targetIndex = FindRecentTargetInList(pets, data)
+    if not target then
+        return
+    end
+
+    if targetIndex and targetIndex > 0 then
+        local scrollChild =
+            petJournal.frame and petJournal.frame.listFrame and petJournal.frame.listFrame.scrollChild
+        local perPage = EstimateButtonsPerPage(scrollChild, true)
+        petJournal.currentPage = math.max(1, math.ceil(targetIndex / perPage))
+    end
+
+    if type(petJournal.RefreshList) == "function" then
+        petJournal:RefreshList()
+    end
+
+    if type(petJournal.SelectPet) == "function" then
+        petJournal:SelectPet(target)
+    end
+end
+
+local function FocusRecentGridItem(tabKey, data)
+    if not DC then
+        return
+    end
+
+    if type(DC.SelectTab) == "function" then
+        DC:SelectTab(tabKey)
+    end
+
+    if type(DC.GetFilteredItems) ~= "function" then
+        return
+    end
+
+    local items = DC:GetFilteredItems() or {}
+    local target, targetIndex = FindRecentTargetInList(items, data)
+    if not target then
+        return
+    end
+
+    if targetIndex and targetIndex > 0 then
+        local scrollChild =
+            DC.MainFrame and DC.MainFrame.Content and DC.MainFrame.Content.scrollChild
+        local perPage = EstimateButtonsPerPage(scrollChild, false)
+        DC.currentPage = math.max(1, math.ceil(targetIndex / perPage))
+    end
+
+    if type(DC.PopulateGrid) == "function" then
+        DC:PopulateGrid()
+    end
+
+    if type(DC.UpdateDetailsPanel) == "function" then
+        DC:UpdateDetailsPanel(target)
+    end
+end
+
+local function FocusRecentTransmog(data)
+    OpenWardrobeInMainUI()
+
+    if not DC or not DC.Wardrobe or type(DC.Wardrobe.PreviewAppearance) ~= "function" then
+        return
+    end
+
+    local previewItemId = ToPositiveNumber(data and data.itemId) or ToPositiveNumber(data and data.id)
+    if not previewItemId then
+        return
+    end
+
+    local function Preview()
+        DC.Wardrobe:PreviewAppearance(previewItemId)
+        if type(DC.Wardrobe.ShowTooltipPreview) == "function" then
+            DC.Wardrobe:ShowTooltipPreview(previewItemId)
+        end
+    end
+
+    if type(DC.After) == "function" then
+        DC.After(0.05, Preview)
+    else
+        Preview()
+    end
+end
+
+local function OpenRecentItem(data)
+    local collType = ResolveRecentCollectionType(data and data.type)
+
+    if collType == "mounts" then
+        FocusRecentMount(data)
+    elseif collType == "pets" then
+        FocusRecentPet(data)
+    elseif collType == "transmog" then
+        FocusRecentTransmog(data)
+    elseif collType == "titles" or collType == "heirlooms" then
+        FocusRecentGridItem(collType, data)
+    elseif type(DC.SelectTab) == "function" and type(collType) == "string" and collType ~= "" then
+        DC:SelectTab(collType)
     end
 end
 
@@ -365,14 +677,8 @@ function MyCollection:CreateRecentIcons(parent)
             GameTooltip:AddLine(data.name or "Unknown", 1, 1, 1)
             
             -- Show type
-            local typeColor = {1, 1, 1}
-            for _, typeDef in ipairs(COLLECTION_TYPES) do
-                if typeDef.key == data.type then
-                    typeColor = typeDef.color
-                    GameTooltip:AddLine(typeDef.name, typeColor[1], typeColor[2], typeColor[3])
-                    break
-                end
-            end
+            local typeLabel, typeColor = GetRecentTypeDisplayInfo(data.type)
+            GameTooltip:AddLine(typeLabel, typeColor[1], typeColor[2], typeColor[3])
 
             -- If item, show item tooltip
             if data.itemId then
@@ -410,13 +716,8 @@ function MyCollection:CreateRecentIcons(parent)
         btn:SetScript("OnClick", function(self)
             if not self.itemData then return end
             local data = self.itemData
-            
-            -- Navigate to that collection type
-            if data.type == "transmog" then
-                OpenWardrobeInMainUI()
-            elseif DC.SelectTab then
-                DC:SelectTab(data.type)
-            end
+
+            OpenRecentItem(data)
         end)
 
         btn:Hide()

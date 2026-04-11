@@ -155,6 +155,32 @@ local function GetItemIdFromLink(link)
     return tonumber(string.match(link, "item:(%d+)")) or 0
 end
 
+local function IsBagSlotLocked(lockedValue)
+    -- Some client forks can return extra numeric flags in this slot.
+    -- Treat only strict lock values as locked to avoid accidental greyscale.
+    return lockedValue == true or lockedValue == 1
+end
+
+local function IsItemIdListed(list, itemId)
+    if not list or not itemId or itemId <= 0 then return false end
+    return list[itemId] == true or list[tostring(itemId)] == true
+end
+
+local function GetJunkStateForItem(itemId, quality)
+    local vendorSettings = addon.settings and addon.settings.vendorPlus
+    local poorQuality = (quality == 0)
+
+    if not vendorSettings then
+        return poorQuality, false
+    end
+
+    local isCustomJunk = IsItemIdListed(vendorSettings.junkList, itemId)
+    local isNeverSell = IsItemIdListed(vendorSettings.neverSellList, itemId)
+    local isJunk = (poorQuality or isCustomJunk) and not isNeverSell
+
+    return isJunk, isNeverSell
+end
+
 local function GetSortRecord(bag, slot)
     local texture, count, locked, quality, readable, lootable, link =
         GetContainerItemInfo(bag, slot)
@@ -477,7 +503,7 @@ local function CreateButtonVisuals(button)
     -- Dim (Junk)
     local dim = button:CreateTexture(nil, "OVERLAY")
     dim:SetAllPoints()
-    dim:SetTexture(0, 0, 0, 0.6)
+    dim:SetTexture(0, 0, 0, 0.35)
     dim:Hide()
     visuals.dim = dim
     
@@ -530,23 +556,38 @@ local function UpdateButtonVisuals(button, bag, slot, searchText)
     end
     
     if not texture then return end
+
+    if quality ~= nil then
+        quality = tonumber(quality)
+    end
     
     -- Quality Fallback
     if (not quality or quality < 0) and link then
         local _, _, q = GetItemInfo(link)
         if q then quality = q end
     end
+
+    local itemId = GetItemIdFromLink(link)
+    local isJunk, isNeverSell = GetJunkStateForItem(itemId, quality)
     
-    -- 1. Quality Border
-    if settings.qualityBorders and quality and quality >= 1 then
+    -- 1. Quality / Classification Border
+    if settings.qualityBorders and quality and quality >= 0 then
         local r, g, b = GetItemQualityColor(quality)
         visuals.border:SetVertexColor(r, g, b)
         visuals.border:Show()
     end
-    
-    -- 2. Junk
-    if settings.junkHighlight and quality and quality == 0 then
-        visuals.dim:Show()
+
+    -- 2. Junk / Never-Sell overrides
+    if settings.junkHighlight then
+        if isJunk then
+            visuals.dim:Show()
+            visuals.border:SetVertexColor(0.90, 0.25, 0.25)
+            visuals.border:Show()
+        elseif isNeverSell then
+            -- Items explicitly marked as valuable should be visually distinct.
+            visuals.border:SetVertexColor(0.25, 0.70, 1.00)
+            visuals.border:Show()
+        end
     end
     
     -- 3. New Item
@@ -630,7 +671,7 @@ local function UpdateButtonItem(button, bag, slot)
     SetItemButtonCount(button, count)
     
     -- Set locked state (grayed out)
-    SetItemButtonDesaturated(button, locked)
+    SetItemButtonDesaturated(button, IsBagSlotLocked(locked))
     
     -- Update cooldown
     local cooldown = _G[button:GetName() .. "Cooldown"]
@@ -1355,7 +1396,7 @@ function BagEnhancements.CreateSettings(parent)
     
     CreateCb("Enable OneBag View (Requires Reload)", "oneBag")
     CreateCb("Show Quality Borders", "qualityBorders")
-    CreateCb("Dim Junk Items", "junkHighlight")
+    CreateCb("Highlight Junk Items (red border + dim)", "junkHighlight")
     CreateCb("Show Item Level", "showIlvl")
     CreateCb("Enable Search", "searchHighlight")
     

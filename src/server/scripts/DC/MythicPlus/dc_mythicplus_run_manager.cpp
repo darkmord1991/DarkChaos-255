@@ -43,7 +43,6 @@ constexpr float MYTHIC_BASE_MULTIPLIER = 2.0f;
 constexpr float KEYSTONE_LEVEL_STEP = 0.25f;
 constexpr uint8 DEFAULT_VAULT_THRESHOLDS[3] = { 1, 4, 8 };
 constexpr uint32 DEFAULT_VAULT_TOKENS[3] = { 50, 100, 150 };
-constexpr uint32 COUNTDOWN_ROOT_SPELL = 33786;  // Cyclone - roots but allows spell casting/eating/drinking
 constexpr uint32 DEFAULT_HUD_TIMER_SECONDS = 2400; // 40 minutes baseline
 constexpr uint32 DEFAULT_HUD_PER_BOSS = 60;        // +1 minute per boss over baseline
 constexpr uint32 DEFAULT_HUD_UPDATE_INTERVAL = 1;  // seconds
@@ -181,7 +180,9 @@ void MythicPlusRunManager::PersistHudSnapshot(InstanceState* state, std::string_
     std::string escapedPayload = serialized;
     CharacterDatabase.EscapeString(escapedPayload);
 
-    uint64 updatedAt = GameTime::GetGameTime().count();
+    // Use millisecond precision so rapid state transitions (e.g. countdown -> start)
+    // are never collapsed into the same cache version.
+    uint64 updatedAt = GameTime::GetGameTimeMS().count();
     CharacterDatabase.DirectExecute(
         "INSERT INTO `{}` (`instance_key`, `map_id`, `instance_id`, `owner_guid`, `keystone_level`, `season_id`, `payload`, `updated_at`) "
         "VALUES ({}, {}, {}, {}, {}, {}, '{}', {}) "
@@ -422,7 +423,7 @@ void MythicPlusRunManager::HandlePlayerDeath(Player* player, Creature* killer)
     {
         uint32 remaining = (profile->deathBudget > state->deaths) ? (profile->deathBudget - state->deaths) : 0;
         if (Player* owner = ObjectAccessor::FindConnectedPlayer(state->ownerGuid))
-            ChatHandler(owner->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r Death recorded. %u remaining.", remaining);
+            ChatHandler(owner->GetSession()).PSendSysMessage("|cffff8000[Mythic+]|r Death recorded. {} remaining.", remaining);
     }
 
     // Track per-player deaths
@@ -538,18 +539,43 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSSES_KILLED, state->bossesKilled);
     UpdateHud(state, map, true, "boss_kill");
 
-    // Determine if this encounter should be treated as the final boss
-    bool isFinalEncounter = IsFinalBossEncounter(state, creature);
+    bool rewardsAtRunEndOnly =
+        sConfigMgr->GetOption<bool>("MythicPlus.RewardsAtRunEndOnly", true);
 
-    // Generate retail-like spec-based loot for the boss
-    GenerateBossLoot(creature, map, state);
+    // Optional legacy mode: immediate boss rewards.
+    if (!rewardsAtRunEndOnly)
+        GenerateBossLoot(creature, map, state);
+
+    uint32 totalBosses = state->bossOrder.empty() ?
+        GetTotalBossesForDungeon(state->mapId) :
+        static_cast<uint32>(state->bossOrder.size());
+    uint32 killedBosses = state->bossOrder.empty() ?
+        state->bossesKilled :
+        static_cast<uint32>(state->bossKillStamps.size());
+
+    if (totalBosses == 0)
+        totalBosses = std::max<uint32>(killedBosses, state->bossesKilled);
 
     // Announce boss kill to the group
     std::string bossName = creature->GetName();
-    AnnounceToInstance(map, "|cffff8000[Mythic+]|r Boss defeated: |cff00ff00" + bossName + "|r (" + std::to_string(state->bossesKilled) + "/" + std::to_string(GetTotalBossesForDungeon(state->mapId)) + ")");
+    AnnounceToInstance(map, "|cffff8000[Mythic+]|r Boss defeated: |cff00ff00" +
+        bossName + "|r (" + std::to_string(killedBosses) + "/" +
+        std::to_string(totalBosses) + ")");
 
-    if (!isFinalEncounter)
+    if (!AreCompletionObjectivesMet(state))
+    {
+        uint32 remainingBosses = (totalBosses > killedBosses) ?
+            (totalBosses - killedBosses) : 0;
+        if (remainingBosses > 0 && IsFinalBoss(state->mapId, creature->GetEntry()))
+        {
+            AnnounceToInstance(map, Acore::StringFormat(
+                "|cffffa500[Mythic+]|r Final boss defeated, but {} required "
+                "boss objective{} remain.",
+                remainingBosses,
+                remainingBosses == 1 ? "" : "s"));
+        }
         return;
+    }
 
     state->completed = true;
     state->failed = false;
@@ -557,6 +583,10 @@ void MythicPlusRunManager::HandleBossDeath(Creature* creature, Unit* /*killer*/)
     SetHudWorldState(state, map, MythicPlusConstants::Hud::RESULT, 1);
     SetHudWorldState(state, map, MythicPlusConstants::Hud::ACTIVE, 0);
     UpdateHud(state, map, true, "complete");
+
+    // End-of-run reward mode: generate all loot now, never at kill time.
+    if (rewardsAtRunEndOnly)
+        GenerateBossLoot(creature, map, state);
 
     AwardTokens(state, creature->GetEntry());
     RecordRunResult(state, true, creature->GetEntry());
@@ -713,7 +743,8 @@ bool MythicPlusRunManager::ClaimVaultSlot(Player* player, uint8 slot)
                                     slot, tokenCount, guidLow, seasonId, weekStart);
 
     InsertTokenLog(guidLow, 0, DUNGEON_DIFFICULTY_EPIC, 0, player->GetLevel(), 0, tokenCount);
-    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r You claimed slot %u and received %u tokens.", slot, tokenCount);
+    ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r You claimed slot {} and received {} tokens.",
+        static_cast<uint32>(slot), tokenCount);
     return true;
 }
 
@@ -866,8 +897,9 @@ void MythicPlusRunManager::ApplyEntryBarrier(Map* map) const
         if (!player || !player->GetSession())
             continue;
 
-        // Remove any existing root from countdown
-        player->RemoveAurasDueToSpell(COUNTDOWN_ROOT_SPELL);
+        // Countdown uses a unit root state, so ensure it is cleared at run start.
+        if (player->HasUnitState(UNIT_STATE_ROOT))
+            player->SetControlled(false, UNIT_STATE_ROOT);
     }
 }
 
@@ -877,16 +909,22 @@ void MythicPlusRunManager::ApplyCountdownRoot(Map* map) const
         return;
 
     Map::PlayerList const& players = map->GetPlayers();
+    uint32 countdownDuration = sConfigMgr->GetOption<uint32>("MythicPlus.CountdownDuration", 10);
     for (auto const& ref : players)
     {
         Player* player = ref.GetSource();
         if (!player || !player->GetSession())
             continue;
 
-        // Apply root that allows casting/eating/drinking but prevents movement
-        player->CastSpell(player, COUNTDOWN_ROOT_SPELL, true);
-
-        ChatHandler(player->GetSession()).SendSysMessage("|cffffff00[Countdown]|r You are rooted for 10 seconds. You may cast spells, eat, or drink.");
+        bool wasRooted = player->HasUnitState(UNIT_STATE_ROOT);
+        if (!wasRooted)
+        {
+            // Root via movement state (no aura dependency) so players can still cast/eat/drink.
+            player->SetControlled(true, UNIT_STATE_ROOT);
+            ChatHandler(player->GetSession()).PSendSysMessage(
+                "|cffffff00[Countdown]|r You are rooted for {} seconds. You may cast spells, eat, or drink.",
+                countdownDuration);
+        }
     }
 }
 
@@ -992,16 +1030,16 @@ void MythicPlusRunManager::RecordRunResult(const InstanceState* state, bool succ
         scoreValue = 0;
 
     std::string groupBlob = SerializeParticipants(state);
+    CharacterDatabase.EscapeString(groupBlob);
 
     uint32 unsignedScore = static_cast<uint32>(scoreValue);
 
-    // Log the run result
+    // Log the run result using the current character DB schema.
     CharacterDatabase.Execute(
-        "INSERT INTO dc_mplus_runs (run_id, map_id, season_id, keystone_level, duration, completed, success, deaths, score, owner_guid, participants, completed_at) "
-        "VALUES ('{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', {})",
-        state->instanceKey, state->mapId, state->seasonId, state->keystoneLevel, duration,
-        state->completed ? 1 : 0, success ? 1 : 0, state->deaths, unsignedScore,
-        state->ownerGuid.GetCounter(), SerializeParticipants(state), now);
+        "INSERT INTO dc_mplus_runs (character_guid, season_id, map_id, keystone_level, score, deaths, wipes, completion_time, success, group_members, completed_at) "
+        "VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', FROM_UNIXTIME({}))",
+        state->ownerGuid.GetCounter(), state->seasonId, state->mapId, state->keystoneLevel,
+        unsignedScore, state->deaths, state->wipes, duration, success ? 1 : 0, groupBlob, now);
 
     // Track Dungeon Statistics
     // runs_started is incremented when keystone is activated (TODO: Add hook there too)
@@ -1114,7 +1152,7 @@ void MythicPlusRunManager::AwardTokens(InstanceState* state, uint32 bossEntry)
         }
 
         InsertTokenLog(player->GetGUID().GetCounter(), state->mapId, state->difficulty, state->keystoneLevel, player->GetLevel(), bossEntry, tokenCount);
-        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Awarded %u tokens.", tokenCount);
+        ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00[Mythic+]|r Awarded {} tokens.", tokenCount);
 
         // Track tokens for run summary (only for keystone owner)
         if (player->GetGUID() == state->ownerGuid)
@@ -1621,7 +1659,8 @@ void MythicPlusRunManager::GenerateNewKeystone(ObjectGuid::LowType playerGuid, u
             if (keystoneItem)
             {
                 ChatHandler(player->GetSession()).PSendSysMessage(
-                    "|cff00ff00[Mythic+]|r New keystone generated (M+%u)", level);
+                    "|cff00ff00[Mythic+]|r New keystone generated (M+{})",
+                    static_cast<uint32>(level));
             }
         }
     }
@@ -1653,22 +1692,25 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
     if (MapEntry const* mapEntry = sMapStore.LookupEntry(state->mapId))
         dungeonName = mapEntry->name[0];
 
-    handler.PSendSysMessage("|cffffd700Dungeon:|r %s", dungeonName.c_str());
-    handler.PSendSysMessage("|cffffd700Keystone Level:|r +%u", state->keystoneLevel);
-    handler.PSendSysMessage("|cffffd700Duration:|r %u min %u sec", minutes, seconds);
+    handler.PSendSysMessage("|cffffd700Dungeon:|r {}", dungeonName);
+    handler.PSendSysMessage("|cffffd700Keystone Level:|r +{}",
+        static_cast<uint32>(state->keystoneLevel));
+    handler.PSendSysMessage("|cffffd700Duration:|r {} min {} sec", minutes, seconds);
     handler.SendSysMessage("|cff00ff00----------------------------------------|r");
 
     // Combat statistics
     handler.SendSysMessage("|cffff8000Combat Statistics:|r");
-    handler.PSendSysMessage("|cffffffff  Bosses Killed:|r %u", state->bossesKilled);
-    handler.PSendSysMessage("|cffffffff  Enemies Killed:|r %u", state->npcsKilled);
-    handler.PSendSysMessage("|cffffffff  Total Deaths:|r %u", state->deaths);
-    handler.PSendSysMessage("|cffffffff  Group Wipes:|r %u", state->wipes);
+    handler.PSendSysMessage("|cffffffff  Bosses Killed:|r {}", state->bossesKilled);
+    handler.PSendSysMessage("|cffffffff  Enemies Killed:|r {}", state->npcsKilled);
+    handler.PSendSysMessage("|cffffffff  Total Deaths:|r {}",
+        static_cast<uint32>(state->deaths));
+    handler.PSendSysMessage("|cffffffff  Group Wipes:|r {}",
+        static_cast<uint32>(state->wipes));
     handler.SendSysMessage("|cff00ff00----------------------------------------|r");
 
     // Rewards
     handler.SendSysMessage("|cffff8000Rewards:|r");
-    handler.PSendSysMessage("|cffffffff  Tokens Awarded:|r %u", state->tokensAwarded);
+    handler.PSendSysMessage("|cffffffff  Tokens Awarded:|r {}", state->tokensAwarded);
 
     if (state->keystoneUpgraded)
     {
@@ -1677,11 +1719,14 @@ void MythicPlusRunManager::SendRunSummary(InstanceState* state, Player* player)
         int8 levelChange = static_cast<int8>(newLevel) - static_cast<int8>(oldLevel);
 
         if (levelChange > 0)
-            handler.PSendSysMessage("|cff00ff00  Keystone:|r Upgraded from +%u to |cff00ff00+%u|r (+%d)", oldLevel, newLevel, levelChange);
+            handler.PSendSysMessage("|cff00ff00  Keystone:|r Upgraded from +{} to |cff00ff00+{}|r (+{})",
+                static_cast<uint32>(oldLevel), static_cast<uint32>(newLevel), static_cast<int32>(levelChange));
         else if (levelChange < 0)
-            handler.PSendSysMessage("|cffffaa00  Keystone:|r Downgraded from +%u to |cffffaa00+%u|r (%d)", oldLevel, newLevel, levelChange);
+            handler.PSendSysMessage("|cffffaa00  Keystone:|r Downgraded from +{} to |cffffaa00+{}|r ({})",
+                static_cast<uint32>(oldLevel), static_cast<uint32>(newLevel), static_cast<int32>(levelChange));
         else
-            handler.PSendSysMessage("|cffffffff  Keystone:|r Maintained at +%u", newLevel);
+            handler.PSendSysMessage("|cffffffff  Keystone:|r Maintained at +{}",
+                static_cast<uint32>(newLevel));
     }
     else if (player->GetGUID() == state->ownerGuid)
     {
@@ -1875,11 +1920,16 @@ void MythicPlusRunManager::ProcessCountdowns()
         if (!map)
         {
             state.countdownActive = false;
+            announcedIntervals.erase(key);
             continue;
         }
 
+        // Re-apply root as needed in case players join late or lose root unexpectedly.
+        ApplyCountdownRoot(map);
+
         SetHudWorldState(&state, map, MythicPlusConstants::Hud::COUNTDOWN_REMAINING, remaining);
-        UpdateHud(&state, map, false, "countdown");
+        // Force countdown HUD pushes so clients receive each second consistently.
+        UpdateHud(&state, map, true, "countdown");
 
         // The activation routine already announces the initial countdown duration.
         // Skip re-broadcasting the same value so the 10-second warning is not duplicated.
@@ -1900,10 +1950,30 @@ void MythicPlusRunManager::ProcessCountdowns()
             state.countdownActive = false;
             announcedIntervals.erase(key);
 
-            // Find the keystone owner to start the run
+            // Prefer the keystone owner, but fall back to any present participant.
             Player* owner = ObjectAccessor::GetPlayer(map, state.ownerGuid);
+            if (!owner)
+            {
+                Map::PlayerList const& players = map->GetPlayers();
+                for (auto const& ref : players)
+                {
+                    Player* candidate = ref.GetSource();
+                    if (!candidate)
+                        continue;
+
+                    if (state.participants.find(candidate->GetGUID().GetCounter()) == state.participants.end())
+                        continue;
+
+                    owner = candidate;
+                    break;
+                }
+            }
+
             if (owner)
                 StartRunAfterCountdown(&state, map, owner);
+            else
+                LOG_WARN("mythic.run", "Countdown finished for instance {} (map {}) but no participant was online to start the run",
+                    state.instanceId, state.mapId);
         }
     }
 }
@@ -2021,37 +2091,60 @@ void MythicPlusRunManager::TeleportPlayerToEntrance(Player* player, Map* map)
     if (!player || !map)
         return;
 
-    // Reuse existing areatrigger_teleport coordinates (same as dungeon entrance portals)
-    // This table already contains entrance coordinates for all dungeons
-    QueryResult result = WorldDatabase.Query(
-        "SELECT target_position_x, target_position_y, target_position_z, target_orientation "
-        "FROM areatrigger_teleport "
-        "WHERE target_map = {} "
-        "ORDER BY id ASC LIMIT 1",
-        map->GetId()
-    );
-
-    if (result)
+    struct EntranceLocation
     {
-        Field* fields = result->Fetch();
-        float x = fields[0].Get<float>();
-        float y = fields[1].Get<float>();
-        float z = fields[2].Get<float>();
-        float o = fields[3].Get<float>();
+        bool loaded = false;
+        bool valid = false;
+        uint32 targetMap = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float o = 0.0f;
+    };
 
-        player->TeleportTo(map->GetId(), x, y, z, o);
-        ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Teleported to dungeon entrance.|r");
+    static std::unordered_map<uint32, EntranceLocation> entranceCache;
+    uint32 mapId = map->GetId();
+    EntranceLocation& loc = entranceCache[mapId];
 
-        LOG_DEBUG("mythic.run", "Teleported {} to entrance of map {} at ({}, {}, {})",
-                  player->GetName(), map->GetId(), x, y, z);
+    if (!loc.loaded)
+    {
+        loc.loaded = true;
+
+        // Reuse existing areatrigger_teleport coordinates (same as dungeon entrance portals).
+        QueryResult result = WorldDatabase.Query(
+            "SELECT target_position_x, target_position_y, target_position_z, target_orientation "
+            "FROM areatrigger_teleport "
+            "WHERE target_map = {} "
+            "ORDER BY id ASC LIMIT 1",
+            mapId
+        );
+
+        if (result)
+        {
+            Field* fields = result->Fetch();
+            loc.targetMap = mapId;
+            loc.x = fields[0].Get<float>();
+            loc.y = fields[1].Get<float>();
+            loc.z = fields[2].Get<float>();
+            loc.o = fields[3].Get<float>();
+            loc.valid = true;
+        }
     }
-    else
+
+    if (!loc.valid)
     {
         LOG_WARN("mythic.run", "No entrance areatrigger found for map {} - player not teleported",
-                 map->GetId());
+                 mapId);
         ChatHandler(player->GetSession()).SendSysMessage(
             "|cffff0000Warning:|r No entrance coordinates found for this dungeon.");
+        return;
     }
+
+    player->TeleportTo(loc.targetMap, loc.x, loc.y, loc.z, loc.o);
+    ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00Teleported to dungeon entrance.|r");
+
+    LOG_DEBUG("mythic.run", "Teleported {} to entrance of map {} at ({}, {}, {})",
+              player->GetName(), mapId, loc.x, loc.y, loc.z);
 }
 
 // ============================================================
@@ -2077,7 +2170,8 @@ void MythicPlusRunManager::StartRunAfterCountdown(InstanceState* state, Map* map
         Player* player = ref.GetSource();
         if (player)
         {
-            player->RemoveAurasDueToSpell(COUNTDOWN_ROOT_SPELL);
+            if (player->HasUnitState(UNIT_STATE_ROOT))
+                player->SetControlled(false, UNIT_STATE_ROOT);
         }
     }
 
@@ -2323,12 +2417,13 @@ void MythicPlusRunManager::MarkBossKilled(InstanceState* state, Map* map, uint32
     if (!state || !map)
         return;
 
+    uint64 now = GameTime::GetGameTime().count();
+    state->bossKillStamps[bossEntry] = now;
+
     int32 idx = GetBossIndex(state, bossEntry);
     if (idx < 0)
         return;
 
-    uint64 now = GameTime::GetGameTime().count();
-    state->bossKillStamps[bossEntry] = now;
     uint32 killAt = (state->startedAt && now >= state->startedAt) ? static_cast<uint32>(now - state->startedAt) : 0;
     SetHudWorldState(state, map, MythicPlusConstants::Hud::BOSS_KILLTIME_BASE + static_cast<uint32>(idx), killAt);
 }
@@ -2338,8 +2433,7 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     if (!state || !map)
         return;
 
-    if (!sConfigMgr->GetOption<bool>("MythicPlus.Hud.Aio.Enabled", true))
-        return;
+    bool aioEnabled = sConfigMgr->GetOption<bool>("MythicPlus.Hud.Aio.Enabled", true);
 
     uint32 intervalMs = sConfigMgr->GetOption<uint32>("MythicPlus.Hud.Aio.IntervalMS", 1500u);
     uint64 nowMs = GameTime::GetGameTimeMS().count();
@@ -2362,6 +2456,13 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     uint32 totalBosses = state->bossOrder.empty() ? GetTotalBossesForDungeon(state->mapId) : static_cast<uint32>(state->bossOrder.size());
     uint32 bestTime = GetBestRunDuration(state->mapId, state->keystoneLevel);
     std::string mapName = GetMapDisplayName(state->mapId);
+    bool inProgress = !state->completed && !state->failed && (state->countdownActive || state->startedAt > 0);
+    int32 keyChange = 0;
+    if (state->keystoneUpgraded)
+    {
+        keyChange = static_cast<int32>(state->upgradeLevel) -
+            static_cast<int32>(state->keystoneLevel);
+    }
 
     std::ostringstream payload;
     payload << '{';
@@ -2371,7 +2472,9 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     payload << "\"mapName\":\"" << EscapeJson(mapName) << "\",";
     payload << "\"instance\":" << state->instanceId << ',';
     payload << "\"keystone\":" << uint32(state->keystoneLevel) << ',';
+    payload << "\"keyLevel\":" << uint32(state->keystoneLevel) << ',';
     payload << "\"owner\":" << state->ownerGuid.GetCounter() << ',';
+    payload << "\"inProgress\":" << (inProgress ? 1 : 0) << ',';
     payload << "\"started\":" << state->startedAt << ',';
     payload << "\"duration\":" << state->hudTimerDuration << ',';
     payload << "\"remaining\":" << remaining << ',';
@@ -2385,6 +2488,11 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
     payload << "\"bossesTotal\":" << totalBosses << ',';
     payload << "\"completed\":" << (state->completed ? 1 : 0) << ',';
     payload << "\"failed\":" << (state->failed ? 1 : 0) << ',';
+    payload << "\"tokensAwarded\":" << state->tokensAwarded << ',';
+    payload << "\"upgradeLevel\":" << uint32(state->upgradeLevel) << ',';
+    payload << "\"keystoneUpgraded\":" <<
+        (state->keystoneUpgraded ? 1 : 0) << ',';
+    payload << "\"keyChange\":" << keyChange << ',';
     payload << "\"reason\":\"" << EscapeJson(reason) << "\",";
     payload << "\"bestTime\":" << bestTime << ',';
 
@@ -2435,6 +2543,9 @@ void MythicPlusRunManager::MaybeSendAioSnapshot(InstanceState* state, Map* map, 
 
     std::string data = payload.str();
     PersistHudSnapshot(state, data, forceBroadcast);
+
+    if (!aioEnabled)
+        return;
 
 #ifndef HAS_AIO
     (void)map;
@@ -2559,6 +2670,32 @@ bool MythicPlusRunManager::IsFinalBossEncounter(const InstanceState* state, cons
     return state->bossesKilled >= totalBosses;
 }
 
+bool MythicPlusRunManager::AreCompletionObjectivesMet(InstanceState const* state) const
+{
+    if (!state)
+        return false;
+
+    if (!state->bossOrder.empty())
+    {
+        for (uint32 bossEntry : state->bossOrder)
+        {
+            if (state->bossKillStamps.find(bossEntry) ==
+                state->bossKillStamps.end())
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    uint32 totalBosses = GetTotalBossesForDungeon(state->mapId);
+    if (totalBosses == 0)
+        return false;
+
+    return state->bossesKilled >= totalBosses;
+}
+
 MythicPlusRunManager::InstanceState const* MythicPlusRunManager::GetRunState(Map* map) const
 {
     return GetState(map);
@@ -2590,7 +2727,10 @@ bool MythicPlusRunManager::ShouldSuppressLoot(Creature* creature) const
     if (!creature || !creature->GetMap())
         return false;
 
-    if (!sConfigMgr->GetOption<bool>("MythicPlus.SuppressTrashLoot", true))
+    bool rewardsAtRunEndOnly =
+        sConfigMgr->GetOption<bool>("MythicPlus.RewardsAtRunEndOnly", true);
+    if (!rewardsAtRunEndOnly &&
+        !sConfigMgr->GetOption<bool>("MythicPlus.SuppressTrashLoot", true))
         return false;
 
     Map* map = creature->GetMap();
@@ -2603,11 +2743,7 @@ bool MythicPlusRunManager::ShouldSuppressLoot(Creature* creature) const
 
     if (state->completed || state->failed)
         return false;
-
-    // Always allow final boss loot handling to proceed through GenerateBossLoot
-    if (IsFinalBossEncounter(state, creature))
-        return false;
-
+    // While the run is active, suppress kill-time loot. Rewards are delivered at run end.
     return true;
 }
 

@@ -270,8 +270,15 @@ private:
         if (!group)
             return;
 
+        struct ReadyMemberInfo
+        {
+            std::string name;
+            std::string role;
+            std::string guid;
+        };
+
         // Build party members list
-        std::vector<std::pair<std::string, std::string>> members;
+        std::vector<ReadyMemberInfo> members;
         for (GroupReference* ref = group->GetFirstMember(); ref != nullptr; ref = ref->next())
         {
             if (Player* member = ref->GetSource())
@@ -283,7 +290,7 @@ private:
                 else if (member->HasHealSpec())
                     role = "HEALER";
 
-                members.push_back({member->GetName(), role});
+                members.push_back({member->GetName(), role, member->GetGUID().ToString()});
             }
         }
 
@@ -305,9 +312,9 @@ private:
                 {
                     if (i > 0) membersJson += ",";
                     membersJson += Acore::StringFormat("{\"name\":\"%s\",\"role\":\"%s\",\"guid\":\"%s\"}",
-                        members[i].first.c_str(),
-                        members[i].second.c_str(),
-                        member->GetGUID().ToString().c_str());
+                        members[i].name.c_str(),
+                        members[i].role.c_str(),
+                        members[i].guid.c_str());
                 }
                 membersJson += "]";
 
@@ -381,9 +388,11 @@ public:
             if (Player* member = ref->GetSource())
             {
                 AIO().Handle(member, "MPLUS", "KEYSTONE_STATUS", Acore::StringFormat(
-                    "{\"playerGuid\":\"%s\",\"state\":%d}",
+                    "{\"playerGuid\":\"%s\",\"playerName\":\"%s\",\"state\":%d,\"ready\":%s}",
                     player->GetGUID().ToString().c_str(),
-                    accepted ? 1 : 2
+                    player->GetName().c_str(),
+                    accepted ? 1 : 2,
+                    accepted ? "true" : "false"
                 ));
             }
         }

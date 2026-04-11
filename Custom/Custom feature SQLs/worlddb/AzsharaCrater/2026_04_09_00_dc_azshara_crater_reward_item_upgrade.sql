@@ -6,6 +6,7 @@
 UPDATE `quest_template`
 SET
     `RewardItem1` = CASE
+        WHEN `ID` = 300100 THEN 300365            -- Heirloom Adventurer's Shirt (Welcome to Crater)
         WHEN `QuestLevel` BETWEEN 1 AND 10 THEN 6542   -- Willow Cape (Req 10)
         WHEN `QuestLevel` BETWEEN 11 AND 20 THEN 6314  -- Wolfmaster Cape (Req 20)
         WHEN `QuestLevel` BETWEEN 21 AND 30 THEN 13108 -- Tigerstrike Mantle (Req 29)

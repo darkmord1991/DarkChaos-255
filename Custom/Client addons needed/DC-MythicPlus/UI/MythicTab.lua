@@ -419,6 +419,32 @@ function GF:CreateMythicBrowsePanel(parent)
 end
 
 function GF:PopulateMythicGroups(groups)
+    -- Protocol payloads can arrive as JSON strings or wrapped tables; normalize to a list for ipairs.
+    if type(groups) == "string" then
+        local decoded = nil
+        local DC = rawget(_G, "DCAddonProtocol")
+        if DC and type(DC.DecodeJSON) == "function" then
+            decoded = DC:DecodeJSON(groups)
+        end
+        groups = decoded
+    end
+
+    if type(groups) == "table" and type(groups.groups) == "table" then
+        groups = groups.groups
+    end
+
+    if type(groups) ~= "table" then
+        groups = {}
+    elseif groups[1] == nil then
+        local normalized = {}
+        for _, entry in pairs(groups) do
+            if type(entry) == "table" then
+                table.insert(normalized, entry)
+            end
+        end
+        groups = normalized
+    end
+
     local panel = self.MythicBrowsePanel
     if not panel or not panel.scrollChild then return end
     
@@ -1290,7 +1316,7 @@ function GF:CreateMythicKeystonePanel(parent)
     local keystoneIcon = keystoneFrame:CreateTexture(nil, "ARTWORK")
     keystoneIcon:SetSize(54, 54)
     keystoneIcon:SetPoint("LEFT", 15, 0)
-    keystoneIcon:SetTexture("Interface\\Icons\\INV_Relics_Hourglass")
+    keystoneIcon:SetTexture("Interface\\Icons\\inv_staff_2h_plunderkey_c_02_gold")
     panel.keystoneIcon = keystoneIcon
     
     local keystoneName = keystoneFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")

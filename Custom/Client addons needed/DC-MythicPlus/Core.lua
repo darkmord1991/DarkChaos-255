@@ -65,6 +65,17 @@ end
 local DC = rawget(_G, "DCAddonProtocol")
 namespace.useDCProtocol = (DC ~= nil)
 
+local function RefreshDCProtocol()
+    local protocol = rawget(_G, "DCAddonProtocol")
+    if protocol then
+        DC = protocol
+    end
+    namespace.useDCProtocol = (DC ~= nil)
+    return DC
+end
+
+RefreshDCProtocol()
+
 local AIO = rawget(_G, "AIO")
 if not AIO then
     local ok, mod = pcall(function()
@@ -115,7 +126,19 @@ local playerText
 local bossText
 local enemyText
 local reasonText
+local resultFrame
+local resultTitleText
+local resultDungeonText
+local resultDurationText
+local resultBossesText
+local resultDeathsText
+local resultRewardsText
+local resultKeystoneText
+local centerCountdownFrame
+local centerCountdownText
+local lastCenterCountdownValue
 local lastPayload
+local lastResultPopupKey
 local lastRequestTime = 0
 local REQUEST_COOLDOWN = 1.0
 
@@ -186,8 +209,34 @@ local function GetTrackableInstanceInfo()
     }
 end
 
+local function IsFlagSet(value)
+    return value == true or value == 1 or value == "1"
+end
+
+local function IsRunInProgress(data)
+    if type(data) ~= "table" then
+        return false
+    end
+
+    if IsFlagSet(data.completed) or IsFlagSet(data.failed) then
+        return false
+    end
+
+    local countdown = tonumber(data.countdown or 0) or 0
+    if countdown > 0 then
+        return true
+    end
+
+    if IsFlagSet(data.inProgress) then
+        return true
+    end
+
+    local started = tonumber(data.started or 0) or 0
+    return started > 0
+end
+
 local function IsMythicRunActive()
-    return activeState and activeState.inProgress
+    return IsRunInProgress(activeState)
 end
 
 local function ResetLocalRunTimer(keepActiveIfInInstance)
@@ -257,6 +306,66 @@ local function Print(msg)
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage("|cff32c4ffMythic+ HUD:|r " .. (msg or ""))
     end
+end
+
+-- Trace is intentionally runtime-only: always start disabled on load.
+DCMythicPlusHUDDB.debugTrace = false
+
+local function Trace(msg)
+    if not DCMythicPlusHUDDB.debugTrace then
+        return
+    end
+    Print("|cffffaa00[trace]|r " .. tostring(msg or ""))
+end
+
+local TRACE_TICK_INTERVAL_SECONDS = 10
+local lastTimerTickTraceAt = 0
+
+local function ShouldTraceTimerPayload(reason)
+    if not DCMythicPlusHUDDB.debugTrace then
+        return false
+    end
+
+    if reason ~= "tick" then
+        return true
+    end
+
+    local now = (type(GetTime) == "function" and tonumber(GetTime())) or 0
+    if now <= 0 then
+        return false
+    end
+
+    if (now - lastTimerTickTraceAt) >= TRACE_TICK_INTERVAL_SECONDS then
+        lastTimerTickTraceAt = now
+        return true
+    end
+
+    return false
+end
+
+local lastVisibilityTraceKey
+local function TraceVisibility(reason, shown)
+    if not DCMythicPlusHUDDB.debugTrace then
+        return
+    end
+
+    local key = tostring(reason) .. "|" .. (shown and "1" or "0")
+    if key == lastVisibilityTraceKey then
+        return
+    end
+    lastVisibilityTraceKey = key
+
+    local runActive = activeState and IsRunInProgress(activeState) or false
+    local countdown = activeState and (tonumber(activeState.countdown or 0) or 0) or 0
+    Trace(string.format(
+        "visibility=%s reason=%s run=%s countdown=%d suppress=%s hidden=%s",
+        shown and "show" or "hide",
+        tostring(reason),
+        tostring(runActive),
+        countdown,
+        tostring(namespace._suppressHudThisSession == true),
+        tostring(DCMythicPlusHUDDB.hidden == true)
+    ))
 end
 
 local function Trim(str)
@@ -361,7 +470,7 @@ local function GetMapIdFromState(data)
 end
 
 local function GetKeystoneFromState(data)
-    return data and (data.keystone or data.keyLevel or data.level)
+    return data and (data.keystone or data.keyLevel or data.keystoneLevel or data.level)
 end
 
 local function GetRunKey(mapId, keystone)
@@ -458,6 +567,7 @@ end
 local function ResetRunTracking(runKey, mapId, keystone)
     runTracker.active = true
     runTracker.endLogged = false
+    lastResultPopupKey = nil
     runTracker.runKey = runKey
     runTracker.mapId = mapId
     runTracker.keystone = keystone
@@ -978,16 +1088,286 @@ local function BuildBossLine(killed, total)
 end
 
 local function BuildStatus(data)
-    if data.failed == 1 then
+    if IsFlagSet(data.failed) then
         return "Status: |cffff5050Failed|r"
     end
-    if data.completed == 1 then
+    if IsFlagSet(data.completed) then
         return "Status: |cff50ff7aCompleted|r"
     end
-    if data.countdown and data.countdown > 0 then
-        return string.format("Status: |cffffff78Countdown %ss|r", data.countdown)
+    local countdown = tonumber(data.countdown or 0) or 0
+    if countdown > 0 then
+        return string.format("Status: |cffffff78Countdown %ss|r", countdown)
     end
     return "Status: |cff78beffIn progress|r"
+end
+
+local function GetClientNowSeconds()
+    if type(GetTime) == "function" then
+        local now = tonumber(GetTime()) or 0
+        if now > 0 then
+            return now
+        end
+    end
+    return 0
+end
+
+local function BuildTimerLine(data)
+    local elapsedSec = tonumber(data and data.elapsed or 0) or 0
+    local remainingSec = tonumber(data and data.remaining or 0) or 0
+
+    local maxSec = tonumber(data and (data.duration or data.timeLimit) or 0) or 0
+    if maxSec <= 0 then
+        maxSec = elapsedSec + remainingSec
+    end
+
+    -- Smooth timer rendering client-side between server snapshots.
+    -- Server remains authoritative for run validation and final result.
+    local countdown = tonumber(data and data.countdown or 0) or 0
+    if data and IsRunInProgress(data) and countdown <= 0 then
+        local anchorAt = tonumber(data._timerAnchorClient or 0) or 0
+        if anchorAt > 0 then
+            local baseElapsed = tonumber(data._timerElapsedBase or elapsedSec) or elapsedSec
+            local baseRemaining = tonumber(data._timerRemainingBase or remainingSec) or remainingSec
+            local anchoredMax = tonumber(data._timerMax or maxSec) or maxSec
+            local delta = math.floor(math.max(0, GetClientNowSeconds() - anchorAt))
+
+            if delta > 0 then
+                elapsedSec = baseElapsed + delta
+                if anchoredMax > 0 then
+                    maxSec = anchoredMax
+                    remainingSec = math.max(0, maxSec - elapsedSec)
+                else
+                    remainingSec = math.max(0, baseRemaining - delta)
+                    maxSec = elapsedSec + remainingSec
+                end
+            end
+        end
+    end
+
+    if maxSec < elapsedSec then
+        maxSec = elapsedSec
+    end
+
+    local line = string.format(
+        "Timer: |cff99ff99%s|r / |cffffd27a%s|r",
+        FormatSeconds(elapsedSec),
+        FormatSeconds(maxSec)
+    )
+
+    if remainingSec > 0 then
+        line = line .. string.format("  |cff8fd0ff(%s left)|r", FormatSeconds(remainingSec))
+    end
+
+    return line
+end
+
+local function BuildFullTimerLine(data)
+    local timerLine = BuildTimerLine(data)
+    if data.bestTime and data.bestTime > 0 then
+        timerLine = timerLine .. string.format(" | Best: %s", FormatSeconds(data.bestTime))
+    end
+
+    local mapId = GetMapIdFromState(data)
+    local keystone = GetKeystoneFromState(data)
+    if mapId and keystone then
+        local pb = GetPersonalBest(mapId, keystone)
+        if pb and pb > 0 then
+            timerLine = timerLine .. string.format(" | PB: %s", FormatSeconds(pb))
+        end
+        local goal = GetGoal(mapId, keystone)
+        if goal and goal > 0 then
+            timerLine = timerLine .. string.format(" | Goal: %s", FormatSeconds(goal))
+        end
+    end
+
+    return timerLine
+end
+
+local function BuildResultPopupKey(data, success)
+    if type(data) ~= "table" then
+        return nil
+    end
+
+    local mapId = GetMapIdFromState(data) or GetMapIdFromState(activeState) or GetMapIdFromState(lastPayload) or "?"
+    local keystone = GetKeystoneFromState(data) or GetKeystoneFromState(activeState) or GetKeystoneFromState(lastPayload) or "?"
+    local elapsed = tonumber(data.elapsed or data.timeElapsed or 0) or 0
+    local successFlag = success and 1 or 0
+    return tostring(mapId) .. ":" .. tostring(keystone) .. ":" .. tostring(elapsed) .. ":" .. tostring(successFlag)
+end
+
+local function BuildKeystoneResultLine(data, keyLevel)
+    local oldLevel = tonumber(keyLevel or 0) or 0
+    local newLevel = tonumber(data.upgradeLevel or oldLevel) or oldLevel
+    local keyChange = tonumber(data.keyChange)
+    if not keyChange then
+        keyChange = newLevel - oldLevel
+    end
+
+    if keyChange > 0 then
+        return string.format("Keystone: +%d -> +%d (+%d)", oldLevel, newLevel, keyChange)
+    end
+    if keyChange < 0 then
+        return string.format("Keystone: +%d -> +%d (%d)", oldLevel, newLevel, keyChange)
+    end
+    return string.format("Keystone: +%d", newLevel)
+end
+
+local function EnsureResultFrame()
+    if resultFrame then
+        return resultFrame
+    end
+
+    resultFrame = CreateFrame("Frame", "DCMythicPlusResultFrame", UIParent)
+    resultFrame:SetSize(420, 238)
+    resultFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
+    resultFrame:SetFrameStrata("DIALOG")
+    resultFrame:EnableMouse(true)
+    resultFrame:SetMovable(true)
+    resultFrame:RegisterForDrag("LeftButton")
+    resultFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    resultFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+
+    if resultFrame.SetBackdrop then
+        resultFrame:SetBackdrop({
+            bgFile = "Interface/Tooltips/UI-Tooltip-Background",
+            edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+            tile = true,
+            tileSize = 16,
+            edgeSize = 16,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        })
+        resultFrame:SetBackdropColor(0.04, 0.05, 0.10, 0.95)
+        resultFrame:SetBackdropBorderColor(0.30, 0.48, 0.90, 0.95)
+    end
+
+    if type(UISpecialFrames) == "table" then
+        table.insert(UISpecialFrames, "DCMythicPlusResultFrame")
+    end
+
+    local titleBg = resultFrame:CreateTexture(nil, "ARTWORK")
+    titleBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    titleBg:SetVertexColor(0.10, 0.16, 0.28, 0.90)
+    titleBg:SetPoint("TOPLEFT", resultFrame, "TOPLEFT", 4, -4)
+    titleBg:SetPoint("TOPRIGHT", resultFrame, "TOPRIGHT", -4, -4)
+    titleBg:SetHeight(34)
+
+    local closeBtn = CreateFrame("Button", nil, resultFrame, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", resultFrame, "TOPRIGHT", 1, 1)
+
+    resultTitleText = resultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    resultTitleText:SetPoint("TOP", resultFrame, "TOP", 0, -14)
+    resultTitleText:SetFont("Fonts\\FRIZQT__.TTF", 18, "OUTLINE")
+    resultTitleText:SetText("MYTHIC+ COMPLETE")
+
+    resultDungeonText = resultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    resultDungeonText:SetPoint("TOPLEFT", resultFrame, "TOPLEFT", 14, -52)
+    resultDungeonText:SetWidth(392)
+    resultDungeonText:SetJustifyH("LEFT")
+
+    resultDurationText = resultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    resultDurationText:SetPoint("TOPLEFT", resultDungeonText, "BOTTOMLEFT", 0, -10)
+    resultDurationText:SetWidth(392)
+    resultDurationText:SetJustifyH("LEFT")
+
+    resultBossesText = resultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    resultBossesText:SetPoint("TOPLEFT", resultDurationText, "BOTTOMLEFT", 0, -10)
+    resultBossesText:SetWidth(392)
+    resultBossesText:SetJustifyH("LEFT")
+
+    resultDeathsText = resultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    resultDeathsText:SetPoint("TOPLEFT", resultBossesText, "BOTTOMLEFT", 0, -10)
+    resultDeathsText:SetWidth(392)
+    resultDeathsText:SetJustifyH("LEFT")
+
+    resultRewardsText = resultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    resultRewardsText:SetPoint("TOPLEFT", resultDeathsText, "BOTTOMLEFT", 0, -10)
+    resultRewardsText:SetWidth(392)
+    resultRewardsText:SetJustifyH("LEFT")
+
+    resultKeystoneText = resultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    resultKeystoneText:SetPoint("TOPLEFT", resultRewardsText, "BOTTOMLEFT", 0, -10)
+    resultKeystoneText:SetWidth(392)
+    resultKeystoneText:SetJustifyH("LEFT")
+
+    local okBtn = CreateFrame("Button", nil, resultFrame, "UIPanelButtonTemplate")
+    okBtn:SetSize(92, 22)
+    okBtn:SetPoint("BOTTOM", resultFrame, "BOTTOM", 0, 12)
+    okBtn:SetText("Close")
+    okBtn:SetScript("OnClick", function()
+        if resultFrame then
+            resultFrame:Hide()
+        end
+    end)
+
+    resultFrame:Hide()
+    return resultFrame
+end
+
+local function ShowRunResultPopup(data, success)
+    if type(data) ~= "table" then
+        return
+    end
+
+    local popupKey = BuildResultPopupKey(data, success)
+    if popupKey and popupKey == lastResultPopupKey then
+        return
+    end
+    lastResultPopupKey = popupKey
+
+    local f = EnsureResultFrame()
+    local mapId = GetMapIdFromState(data) or GetMapIdFromState(activeState) or GetMapIdFromState(lastPayload)
+    local keyLevel = tonumber(GetKeystoneFromState(data) or GetKeystoneFromState(activeState) or GetKeystoneFromState(lastPayload) or 0) or 0
+    local mapName = data.mapName or data.dungeonName or MapNameForId(mapId)
+    local elapsed = tonumber(data.elapsed or data.timeElapsed or 0) or 0
+    local bossesKilled = tonumber(data.bossesKilled or 0) or 0
+    local bossesTotal = tonumber(data.bossesTotal or 0) or 0
+    local deaths = tonumber(data.deaths or 0) or 0
+    local wipes = tonumber(data.wipes or 0) or 0
+    local tokensAwarded = tonumber(data.tokensAwarded or 0) or 0
+
+    if success then
+        resultTitleText:SetText("MYTHIC+ COMPLETE")
+        resultTitleText:SetTextColor(0.40, 1.00, 0.45, 1)
+    else
+        resultTitleText:SetText("MYTHIC+ FAILED")
+        resultTitleText:SetTextColor(1.00, 0.45, 0.38, 1)
+    end
+
+    resultDungeonText:SetText(string.format("Dungeon: %s  |  Keystone: +%d", mapName or "Unknown", keyLevel))
+    resultDurationText:SetText("Duration: " .. FormatSeconds(elapsed))
+    resultBossesText:SetText(string.format("Bosses: %d / %d", bossesKilled, bossesTotal))
+    resultDeathsText:SetText(string.format("Deaths: %d  |  Wipes: %d", deaths, wipes))
+
+    if success then
+        resultRewardsText:SetText(string.format("Tokens Awarded: %d", tokensAwarded))
+        resultRewardsText:SetTextColor(1.00, 0.85, 0.35, 1)
+        resultKeystoneText:SetText(BuildKeystoneResultLine(data, keyLevel))
+        resultKeystoneText:SetTextColor(0.75, 0.92, 1.00, 1)
+    else
+        resultRewardsText:SetText("Rewards: Not awarded")
+        resultRewardsText:SetTextColor(1.00, 0.60, 0.60, 1)
+        resultKeystoneText:SetText("Run failed before full completion")
+        resultKeystoneText:SetTextColor(1.00, 0.75, 0.45, 1)
+    end
+
+    f:Show()
+end
+
+local function EnsureCenterCountdownOverlay()
+    if centerCountdownText then
+        return
+    end
+
+    centerCountdownFrame = CreateFrame("Frame", "DCMythicPlusCenterCountdown", UIParent)
+    centerCountdownFrame:SetAllPoints(UIParent)
+    centerCountdownFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+    centerCountdownFrame:EnableMouse(false)
+
+    centerCountdownText = centerCountdownFrame:CreateFontString(nil, "OVERLAY")
+    centerCountdownText:SetFont("Fonts\\FRIZQT__.TTF", 56, "OUTLINE")
+    centerCountdownText:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+    centerCountdownText:SetText("")
+    centerCountdownText:Hide()
 end
 
 local function EnsureFrame()
@@ -995,7 +1375,7 @@ local function EnsureFrame()
         return frame
     end
     frame = CreateFrame("Frame", "DCMythicPlusHUDFrame", UIParent)
-    frame:SetSize(280, 170)
+    frame:SetSize(340, 206)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -1011,8 +1391,23 @@ local function EnsureFrame()
             edgeSize = 16,
             insets = { left = 3, right = 3, top = 3, bottom = 3 },
         })
-        frame:SetBackdropColor(0, 0, 0, 0.85)
+        frame:SetBackdropColor(0.02, 0.06, 0.16, 0.92)
+        frame:SetBackdropBorderColor(0.26, 0.52, 0.90, 0.95)
     end
+
+    local headerBg = frame:CreateTexture(nil, "ARTWORK")
+    headerBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    headerBg:SetVertexColor(0.09, 0.20, 0.40, 0.72)
+    headerBg:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4)
+    headerBg:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
+    headerBg:SetHeight(28)
+
+    local divider = frame:CreateTexture(nil, "BORDER")
+    divider:SetTexture("Interface\\Buttons\\WHITE8x8")
+    divider:SetVertexColor(0.20, 0.45, 0.80, 0.85)
+    divider:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -34)
+    divider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -34)
+    divider:SetHeight(1)
 
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
@@ -1032,66 +1427,59 @@ local function EnsureFrame()
     end)
 
     headerText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    headerText:SetPoint("TOP", frame, "TOP", 0, -12)
+    headerText:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -10)
+    headerText:SetJustifyH("LEFT")
+    headerText:SetFont("Fonts\\FRIZQT__.TTF", 22, "OUTLINE")
     headerText:SetText("Mythic+ HUD")
-    headerText:SetTextColor(1, 0.82, 0, 1)
+    headerText:SetTextColor(1, 0.84, 0.24, 1)
 
     -- Close button (hides HUD until re-enabled)
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    closeBtn:SetSize(46, 18)
-    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -10)
+    closeBtn:SetSize(52, 20)
+    closeBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -7)
     closeBtn:SetText("Close")
     closeBtn:SetScript("OnClick", function()
         DCMythicPlusHUDDB.hidden = true
         if frame then frame:Hide() end
     end)
 
-    -- Reset button (resets local run timer; does not affect Mythic+ server timer)
-    local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    resetBtn:SetSize(46, 18)
-    resetBtn:SetPoint("TOPRIGHT", closeBtn, "TOPLEFT", -6, 0)
-    resetBtn:SetText("Reset")
-    resetBtn:SetScript("OnClick", function()
-        ResetLocalRunTimer(true)
-        UpdateLocalRunTrackingFromInstance()
-    end)
-
     timerText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    timerText:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -40)
-    timerText:SetText("Timer: --")
+    timerText:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -46)
+    timerText:SetFont("Fonts\\FRIZQT__.TTF", 15, "OUTLINE")
+    timerText:SetText("Timer: --:-- / --:--")
 
     statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    statusText:SetPoint("TOPLEFT", timerText, "BOTTOMLEFT", 0, -6)
+    statusText:SetPoint("TOPLEFT", timerText, "BOTTOMLEFT", 0, -8)
     statusText:SetText("Status: Waiting")
 
     deathText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    deathText:SetPoint("TOPLEFT", statusText, "BOTTOMLEFT", 0, -6)
+    deathText:SetPoint("TOPLEFT", statusText, "BOTTOMLEFT", 0, -7)
     deathText:SetText("Deaths: 0 | Wipes: 0")
 
     playerText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    playerText:SetPoint("TOPLEFT", deathText, "BOTTOMLEFT", 0, -6)
+    playerText:SetPoint("TOPLEFT", deathText, "BOTTOMLEFT", 0, -7)
     playerText:SetText("Players: 0")
 
     bossText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    bossText:SetPoint("TOPLEFT", playerText, "BOTTOMLEFT", 0, -6)
+    bossText:SetPoint("TOPLEFT", playerText, "BOTTOMLEFT", 0, -7)
     bossText:SetText("Bosses: 0")
 
     enemyText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    enemyText:SetPoint("TOPLEFT", bossText, "BOTTOMLEFT", 0, -6)
+    enemyText:SetPoint("TOPLEFT", bossText, "BOTTOMLEFT", 0, -7)
     enemyText:SetText("Enemies: 0")
 
     affixText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    affixText:SetPoint("TOPLEFT", enemyText, "BOTTOMLEFT", 0, -6)
-    affixText:SetWidth(256)
+    affixText:SetPoint("TOPLEFT", enemyText, "BOTTOMLEFT", 0, -7)
+    affixText:SetWidth(314)
     affixText:SetJustifyH("LEFT")
     affixText:SetText("Affixes: none")
 
     countdownText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    countdownText:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 12, 10)
+    countdownText:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 12, 8)
     countdownText:SetText("")
 
     reasonText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    reasonText:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, 10)
+    reasonText:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, 8)
     reasonText:SetText("")
 
     frame:Hide()
@@ -1112,11 +1500,12 @@ end
 
 local function IsInMythicOrMythicPlusInstance()
     -- Ensure we are in an instance and check for mythic or mythic+ difficulty
-    if not activeState or not activeState.inProgress then
+    if not activeState or not IsRunInProgress(activeState) then
         return false
     end
     -- If the state indicates a key level, it's a mythic+ run
-    if activeState.keyLevel and tonumber(activeState.keyLevel) and tonumber(activeState.keyLevel) > 0 then
+    local keyLevel = tonumber(GetKeystoneFromState(activeState))
+    if keyLevel and keyLevel > 0 then
         -- Still ensure player is actually inside an instance
         if type(IsInInstance) == "function" then
             local inInstance = select(1, IsInInstance())
@@ -1147,7 +1536,7 @@ local function IsInMythicOrMythicPlusInstance()
             return true
         end
         -- As a last resort, assume party-type instances are dungeons; if activeState indicates a run
-        if instanceType and instanceType == "party" and activeState and activeState.inProgress then
+        if instanceType and instanceType == "party" and IsRunInProgress(activeState) then
             return true
         end
     end
@@ -1160,22 +1549,26 @@ local function SetFrameVisibility(shouldShow)
     end
 
     if namespace._suppressHudThisSession then
+        TraceVisibility("suppressed_session", false)
         frame:Hide()
         return
     end
 
     if IsOnGMIsland() then
+        TraceVisibility("gm_island", false)
         frame:Hide()
         return
     end
 
-    if DCMythicPlusHUDDB.hidden then
+    if DCMythicPlusHUDDB.hidden and not (activeState and IsRunInProgress(activeState)) then
+        TraceVisibility("user_hidden", false)
         frame:Hide()
         return
     end
 
     -- Mythic/Mythic+ server-driven HUD
-    if IsInMythicOrMythicPlusInstance() and activeState and activeState.inProgress then
+    if IsInMythicOrMythicPlusInstance() and activeState and IsRunInProgress(activeState) then
+        TraceVisibility("mythic_active", true)
         frame:Show()
         return
     end
@@ -1184,14 +1577,17 @@ local function SetFrameVisibility(shouldShow)
     -- Only show if strictly inside a trackable instance (party/raid)
     local trackable = GetTrackableInstanceInfo()
     if (localRun.active or localRun.finished) and trackable then
+        TraceVisibility("local_timer", true)
         frame:Show()
         return
     end
 
     -- Fallback
     if shouldShow then
+        TraceVisibility("fallback", true)
         frame:Show()
     else
+        TraceVisibility("fallback", false)
         frame:Hide()
     end
 end
@@ -1235,7 +1631,7 @@ local function UpdateFrameFromLocalRun()
     else
         elapsed = localRun.finishedElapsed or 0
     end
-    timerText:SetText(string.format("Timer: %s elapsed", FormatSeconds(elapsed)))
+    timerText:SetText(string.format("Timer: %s / --:--", FormatSeconds(elapsed)))
     statusText:SetText(localRun.active and "Status: |cff78beffTracking|r" or "Status: |cff50ff7aFinished|r")
 
     -- Keep the rest minimal for non-Mythic runs
@@ -1246,6 +1642,10 @@ local function UpdateFrameFromLocalRun()
     affixText:SetText("")
     countdownText:SetText("")
     reasonText:SetText("")
+    lastCenterCountdownValue = nil
+    if centerCountdownText then
+        centerCountdownText:Hide()
+    end
 
     SetFrameVisibility(true)
 end
@@ -1389,10 +1789,13 @@ local function ScanInventoryForKeystone()
         -- Only announce "none" if we previously had a key, or if we've been in-world for a few seconds.
         local now = (GetTime and GetTime()) or 0
         local inWorldFor = now - (namespace._enteredWorldAt or 0)
+        local runActive = IsRunInProgress(activeState)
 
         if sig ~= lastSig then
             if sig == "none" then
-                if lastSig and lastSig ~= "none" then
+                if runActive then
+                    namespace._lastInvKeyAnnouncedSig = sig
+                elseif lastSig and lastSig ~= "none" then
                     Print("No inventory keystone detected")
                     namespace._lastInvKeyAnnouncedSig = sig
                 elseif inWorldFor >= 5 then
@@ -1417,19 +1820,36 @@ local function ScanInventoryForKeystone()
 end
 
 local scanFrame = CreateFrame("Frame")
+local inventoryScanQueued = false
+
+local function ScheduleInventoryScan(delay)
+    if inventoryScanQueued then
+        return
+    end
+
+    inventoryScanQueued = true
+    C_Timer.After(delay or 0.15, function()
+        inventoryScanQueued = false
+        ScanInventoryForKeystone()
+    end)
+end
+
 scanFrame:RegisterEvent("BAG_UPDATE")
 scanFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 scanFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         namespace._enteredWorldAt = (GetTime and GetTime()) or 0
-    end
-    ScanInventoryForKeystone()
-    if event == "PLAYER_ENTERING_WORLD" then
+        ScanInventoryForKeystone()
         -- Request canonical keystone mapping from server to ensure client knows IDs
-        if DC and DC.MythicPlus and type(DC.MythicPlus.GetKeystoneList) == 'function' then
-            DC.MythicPlus.GetKeystoneList()
+        local protocol = RefreshDCProtocol()
+        if protocol and protocol.MythicPlus and type(protocol.MythicPlus.GetKeystoneList) == 'function' then
+            protocol.MythicPlus.GetKeystoneList()
         end
+        return
     end
+
+    -- BAG_UPDATE can fire many times per single loot/swap; batch into one scan.
+    ScheduleInventoryScan(0.15)
 end)
 
 -- Expose scanner function on namespace for other modules to call
@@ -1441,10 +1861,11 @@ local function ShowIdleState()
     if not f then
         return
     end
+    EnsureCenterCountdownOverlay()
     activeState = nil
     lastPayload = nil
     headerText:SetText("Mythic+ HUD")
-    timerText:SetText("Timer: --")
+    timerText:SetText("Timer: --:-- / --:--")
     statusText:SetText("Status: Waiting for server data")
     deathText:SetText("Deaths: 0 | Wipes: 0")
     playerText:SetText("Players: 0")
@@ -1455,16 +1876,39 @@ local function ShowIdleState()
     affixText:SetText("Affixes: none")
     countdownText:SetText("")
     reasonText:SetText("")
+    lastCenterCountdownValue = nil
+    if centerCountdownText then
+        centerCountdownText:Hide()
+    end
 end
 
 local function UpdateCountdown(data)
     if not countdownText then
         return
     end
-    if data.countdown and data.countdown > 0 then
-        countdownText:SetText(string.format("Countdown: %ss", data.countdown))
+    EnsureCenterCountdownOverlay()
+
+    local countdown = tonumber(data and data.countdown or 0) or 0
+    if countdown > 0 then
+        countdownText:SetText(string.format("Countdown: %ss", countdown))
+        local color = countdown <= 3 and "|cffff4040" or "|cffffff00"
+        centerCountdownText:SetText(string.format("%s%d|r", color, countdown))
+        centerCountdownText:Show()
+        lastCenterCountdownValue = countdown
     else
         countdownText:SetText("")
+        if lastCenterCountdownValue then
+            centerCountdownText:SetText("|cff00ff00GO!|r")
+            centerCountdownText:Show()
+            C_Timer.After(1.0, function()
+                if centerCountdownText then
+                    centerCountdownText:Hide()
+                end
+            end)
+            lastCenterCountdownValue = nil
+        elseif centerCountdownText then
+            centerCountdownText:Hide()
+        end
     end
 end
 
@@ -1479,8 +1923,11 @@ local function UpdateReason(reason)
 end
 
 local function RequestServerSnapshot(reason)
+    local protocol = RefreshDCProtocol()
+    local reqReason = reason or "client"
+
     -- Try DCAddonProtocol first (new C++ backend)
-    if namespace.useDCProtocol and DC and DC.MythicPlus and DC.MythicPlus.RequestHUD then
+    if namespace.useDCProtocol and protocol and protocol.MythicPlus and protocol.MythicPlus.RequestHUD then
         local now = (type(GetTime) == "function" and GetTime()) or 0
         if now <= 0 and type(time) == "function" then
             now = time()
@@ -1491,12 +1938,31 @@ local function RequestServerSnapshot(reason)
             end
         end
         lastRequestTime = now > 0 and now or lastRequestTime
-        DC.MythicPlus.RequestHUD(reason or "client")
+        Trace("RequestHUD via DC wrapper, reason=" .. tostring(reqReason))
+        protocol.MythicPlus.RequestHUD(reqReason)
+        return
+    end
+
+    -- Fallback for DC protocol environments without MythicPlus helper wrappers.
+    if namespace.useDCProtocol and protocol and type(protocol.Send) == "function" then
+        local now = (type(GetTime) == "function" and GetTime()) or 0
+        if now <= 0 and type(time) == "function" then
+            now = time()
+        end
+        if REQUEST_COOLDOWN > 0 and lastRequestTime > 0 and now > 0 then
+            if (now - lastRequestTime) < REQUEST_COOLDOWN then
+                return
+            end
+        end
+        lastRequestTime = now > 0 and now or lastRequestTime
+        Trace("RequestHUD via DC:Send, reason=" .. tostring(reqReason))
+        protocol:Send("MPLUS", 0x05, reqReason)
         return
     end
     
     -- Fallback to AIO (old Lua backend)
     if not AIO or type(AIO.Handle) ~= "function" then
+        Trace("RequestHUD skipped: no DC or AIO transport available")
         return
     end
     local now = (type(GetTime) == "function" and GetTime()) or 0
@@ -1509,8 +1975,9 @@ local function RequestServerSnapshot(reason)
         end
     end
     lastRequestTime = now > 0 and now or lastRequestTime
+    Trace("RequestHUD via AIO, reason=" .. tostring(reqReason))
     local ok, err = pcall(function()
-        AIO.Handle(SERVER_ADDON_NAME, "RequestHud", reason or "client")
+        AIO.Handle(SERVER_ADDON_NAME, "RequestHud", reqReason)
     end)
     if not ok then
         Print("Failed to request HUD data: " .. tostring(err))
@@ -1702,8 +2169,55 @@ local function DecodeJSON(input)
     return nil
 end
 
+namespace.DecodeJSON = DecodeJSON
+
+local function NormalizeHudState(data)
+    if type(data) ~= "table" then
+        return data
+    end
+
+    data.countdown = tonumber(data.countdown or 0) or 0
+
+    local keyLevel = tonumber(data.keystone)
+        or tonumber(data.keyLevel)
+        or tonumber(data.keystoneLevel)
+        or tonumber(data.level)
+    if keyLevel then
+        data.keystone = keyLevel
+        data.keyLevel = keyLevel
+    end
+
+    if not data.mapName and data.dungeonName then
+        data.mapName = data.dungeonName
+    end
+
+    data.inProgress = IsRunInProgress(data)
+
+    if data.inProgress and data.countdown <= 0 then
+        data._timerAnchorClient = GetClientNowSeconds()
+        data._timerElapsedBase = tonumber(data.elapsed or 0) or 0
+        data._timerRemainingBase = tonumber(data.remaining or 0) or 0
+
+        local maxSec = tonumber(data.duration or data.timeLimit or 0) or 0
+        if maxSec <= 0 then
+            maxSec = data._timerElapsedBase + data._timerRemainingBase
+        end
+        data._timerMax = maxSec
+    end
+
+    return data
+end
+
 local function UpdateFrameFromState(data)
+    data = NormalizeHudState(data)
     activeState = data
+    if IsRunInProgress(data) then
+        if DCMythicPlusHUDDB.hidden then
+            DCMythicPlusHUDDB.hidden = false
+            Trace("Auto-cleared hidden flag because active Mythic+ run data arrived")
+        end
+        ClearFirstLoginSuppression()
+    end
     local f = EnsureFrame()
     ApplySavedPosition()
 
@@ -1713,38 +2227,21 @@ local function UpdateFrameFromState(data)
     local mapId = GetMapIdFromState(data)
     local keystone = GetKeystoneFromState(data)
     local runKey = GetRunKey(mapId, keystone)
-    if data and data.inProgress then
+    if IsRunInProgress(data) then
         if not runTracker.active then
             ResetRunTracking(runKey or "unknown", mapId, keystone)
         elseif runKey and runTracker.runKey ~= runKey then
             ResetRunTracking(runKey, mapId, keystone)
         end
-    elseif (not data or not data.inProgress) and runTracker.active and not runTracker.endLogged then
+    elseif runTracker.active and not runTracker.endLogged and not IsFlagSet(data.completed) and not IsFlagSet(data.failed) then
         StopRunTracking(false, data and data.elapsed or nil)
     end
 
-    local mapName = data.mapName or MapNameForId(data.map)
-    local keystoneDisplay = tonumber(data.keystone) or tonumber(keystone) or 0
+    local mapName = data.mapName or MapNameForId(mapId)
+    local keystoneDisplay = tonumber(keystone) or 0
     headerText:SetText(string.format("%s |cffffaa33+%d|r", mapName, keystoneDisplay))
 
-    local elapsed = FormatSeconds(data.elapsed)
-    local remaining = FormatSeconds(data.remaining)
-    local timerLine = string.format("Timer: %s elapsed | %s left", elapsed, remaining)
-    if data.bestTime and data.bestTime > 0 then
-        timerLine = timerLine .. string.format(" | Best: %s", FormatSeconds(data.bestTime))
-    end
-
-    if mapId and keystone then
-        local pb = GetPersonalBest(mapId, keystone)
-        if pb and pb > 0 then
-            timerLine = timerLine .. string.format(" | PB: %s", FormatSeconds(pb))
-        end
-        local goal = GetGoal(mapId, keystone)
-        if goal and goal > 0 then
-            timerLine = timerLine .. string.format(" | Goal: %s", FormatSeconds(goal))
-        end
-    end
-    timerText:SetText(timerLine)
+    timerText:SetText(BuildFullTimerLine(data))
 
     statusText:SetText(BuildStatus(data))
 
@@ -1752,7 +2249,7 @@ local function UpdateFrameFromState(data)
 
     local playerCount = CountTableValues(data.participants)
     local playerLine = string.format("Players: %d", playerCount)
-    if data and data.inProgress and runTracker.active then
+    if IsRunInProgress(data) and runTracker.active then
         local top = GetTopDeathSummary(3)
         if top and top ~= "" then
             playerLine = playerLine .. " | Deaths: " .. top
@@ -1773,15 +2270,19 @@ local function UpdateFrameFromState(data)
 
     lastPayload = data
     -- Update visibility based on current state (mythic or local)
-    SetFrameVisibility(data and data.inProgress)
+    SetFrameVisibility(IsRunInProgress(data))
 
-    if data and data.completed and mapId and keystone and not runTracker.endLogged then
-        local improved = AddPersonalBestIfImproved(mapId, keystone, data.elapsed)
-        if improved then
-            Print(string.format("New Personal Best for %s +%d: %s", mapName or "Dungeon", tonumber(keystone) or 0, FormatSeconds(data.elapsed)))
+    if IsFlagSet(data.completed) and runTracker.active and not runTracker.endLogged then
+        ShowRunResultPopup(data, true)
+        if mapId and keystone then
+            local improved = AddPersonalBestIfImproved(mapId, keystone, data.elapsed)
+            if improved then
+                Print(string.format("New Personal Best for %s +%d: %s", mapName or "Dungeon", tonumber(keystone) or 0, FormatSeconds(data.elapsed)))
+            end
         end
         StopRunTracking(true, data.elapsed)
-    elseif data and data.failed and not runTracker.endLogged then
+    elseif IsFlagSet(data.failed) and runTracker.active and not runTracker.endLogged then
+        ShowRunResultPopup(data, false)
         StopRunTracking(false, data.elapsed)
     end
 end
@@ -1807,28 +2308,174 @@ local function HandleIncomingPayload(payload)
     UpdateFrameFromState(data)
 end
 
+local function HandleTimerUpdatePayload(...)
+    local args = {...}
+    local payload = args[1]
+
+    -- Preferred path: use shared HUD payload handler for both tables and JSON strings.
+    if type(payload) == "table" then
+        local reason = tostring(payload.reason or "")
+        if ShouldTraceTimerPayload(reason) then
+            Trace("MPLUS 0x15 received payloadType=table")
+            Trace(string.format(
+                "MPLUS 0x15 table inProgress=%s countdown=%s started=%s remaining=%s elapsed=%s reason=%s",
+                tostring(payload.inProgress),
+                tostring(payload.countdown),
+                tostring(payload.started),
+                tostring(payload.remaining),
+                tostring(payload.elapsed),
+                reason
+            ))
+        end
+        HandleIncomingPayload(payload)
+        return
+    end
+
+    if type(payload) == "string" and payload ~= "" then
+        local decoded = DecodeJSON(payload)
+        if type(decoded) == "table" then
+            local reason = tostring(decoded.reason or "")
+            if ShouldTraceTimerPayload(reason) then
+                Trace("MPLUS 0x15 received payloadType=string")
+                Trace(string.format(
+                    "MPLUS 0x15 json inProgress=%s countdown=%s started=%s remaining=%s elapsed=%s reason=%s",
+                    tostring(decoded.inProgress),
+                    tostring(decoded.countdown),
+                    tostring(decoded.started),
+                    tostring(decoded.remaining),
+                    tostring(decoded.elapsed),
+                    reason
+                ))
+            end
+            HandleIncomingPayload(decoded)
+            return
+        end
+        if ShouldTraceTimerPayload("decode_error") then
+            Trace("MPLUS 0x15 string payload not decodable as JSON")
+        end
+    end
+
+    -- Legacy fallback: pipe-delimited format (elapsed, timeLimit, deaths).
+    local elapsed, timeLimit, deaths = tonumber(args[1]), tonumber(args[2]), tonumber(args[3])
+    if ShouldTraceTimerPayload("legacy") then
+        Trace(string.format(
+            "MPLUS 0x15 legacy elapsed=%s timeLimit=%s deaths=%s activeState=%s",
+            tostring(elapsed),
+            tostring(timeLimit),
+            tostring(deaths),
+            tostring(activeState ~= nil)
+        ))
+    end
+    if activeState then
+        activeState.elapsed = elapsed
+        activeState.timeLimit = timeLimit
+        activeState.deaths = deaths or activeState.deaths
+        activeState.inProgress = IsRunInProgress(activeState)
+        UpdateFrameFromState(activeState)
+    end
+end
+
 local retryTicker
 local function TryRegisterHandlers()
+    local protocol = RefreshDCProtocol()
+    local dcReady = namespace.useDCProtocol and protocol and type(protocol.RegisterHandler) == "function"
+
+    if dcReady and not namespace._dcRuntimeHudHandlerBound then
+        local okBind, bindErr = pcall(function()
+            protocol:RegisterHandler("MPLUS", 0x15, HandleTimerUpdatePayload)
+        end)
+        if okBind then
+            namespace._dcRuntimeHudHandlerBound = true
+            Trace("Runtime-bound MPLUS 0x15 handler")
+        else
+            Trace("Failed runtime bind MPLUS 0x15: " .. tostring(bindErr))
+        end
+    end
+
     if namespace.handlersRegistered then
         return true
     end
-    if not AIO or type(AIO.AddHandlers) ~= "function" then
+
+    local function DecodeAioPayload(payload)
+        if type(payload) == "table" then
+            return payload
+        end
+        if type(payload) == "string" and payload ~= "" then
+            return DecodeJSON(payload)
+        end
+        return nil
+    end
+
+    local aioReady = false
+    if AIO and type(AIO.AddHandlers) == "function" then
+        local ok, handlers = pcall(function()
+            return AIO.AddHandlers(SERVER_ADDON_NAME, {})
+        end)
+        if ok and type(handlers) == "table" then
+            handlers[SERVER_MESSAGE_KEY] = function(_, payload)
+                HandleIncomingPayload(payload)
+            end
+
+            local okMplus, mplusHandlers = pcall(function()
+                return AIO.AddHandlers("MPLUS", {})
+            end)
+            if okMplus and type(mplusHandlers) == "table" then
+                mplusHandlers.KEYSTONE_ACTIVATE = function(_, payload)
+                    local data = DecodeAioPayload(payload) or {}
+                    if namespace.KeystoneUI and type(namespace.KeystoneUI.OnKeystoneReadyCheck) == "function" then
+                        namespace.KeystoneUI:OnKeystoneReadyCheck(data)
+                    end
+                end
+
+                mplusHandlers.KEYSTONE_STATUS = function(_, payload)
+                    local data = DecodeAioPayload(payload) or {}
+                    if namespace.KeystoneUI and type(namespace.KeystoneUI.OnPlayerReadyUpdate) == "function" then
+                        namespace.KeystoneUI:OnPlayerReadyUpdate(data)
+                    end
+                end
+
+                mplusHandlers.KEYSTONE_COUNTDOWN = function(_, payload)
+                    local data = DecodeAioPayload(payload) or {}
+                    if namespace.KeystoneUI and type(namespace.KeystoneUI.OnCountdownStart) == "function" then
+                        namespace.KeystoneUI:OnCountdownStart(data)
+                    end
+                end
+
+                mplusHandlers.KEYSTONE_CANCEL = function(_, payload)
+                    local data = DecodeAioPayload(payload) or {}
+                    if namespace.KeystoneUI and type(namespace.KeystoneUI.OnActivationCancelled) == "function" then
+                        namespace.KeystoneUI:OnActivationCancelled(data)
+                    end
+                end
+            end
+
+            aioReady = true
+        end
+    end
+
+    Trace(string.format(
+        "TryRegisterHandlers aioReady=%s dcReady=%s useDC=%s",
+        tostring(aioReady),
+        tostring(dcReady),
+        tostring(namespace.useDCProtocol)
+    ))
+
+    if not aioReady and not dcReady then
+        Trace("TryRegisterHandlers waiting for transport")
         return false
     end
-    local ok, handlers = pcall(function()
-        return AIO.AddHandlers(SERVER_ADDON_NAME, {})
-    end)
-    if not ok or type(handlers) ~= "table" then
-        return false
-    end
-    handlers[SERVER_MESSAGE_KEY] = function(_, payload)
-        HandleIncomingPayload(payload)
-    end
+
     namespace.handlersRegistered = true
     if retryTicker then
         retryTicker:SetScript("OnUpdate", nil)
     end
-    Print("AIO handler ready")
+    if DCMythicPlusHUDDB.debugTrace then
+        if aioReady then
+            Print("AIO handler ready")
+        elseif dcReady then
+            Print("DC protocol handler ready")
+        end
+    end
     RequestServerSnapshot("register")
     if lastPayload then
         HandleIncomingPayload(lastPayload)
@@ -1909,7 +2556,7 @@ SlashCmdList.DCM = function(msg)
         ClearFirstLoginSuppression()
         UpdateLocalRunTrackingFromInstance()
         SetFrameVisibility(true)
-        if (activeState and activeState.inProgress) or localRun.active or localRun.finished then
+        if IsRunInProgress(activeState) or localRun.active or localRun.finished then
             Print("HUD shown")
         else
             Print("HUD will show when you enter a dungeon/raid (or when a Mythic+ run starts)")
@@ -2059,6 +2706,18 @@ SlashCmdList.DCM = function(msg)
         Print("  DCAddonProtocol: " .. dcAvail)
         Print("  AIO: " .. aioAvail)
         Print("  JSON mode: " .. (DCMythicPlusHUDDB.useDCProtocolJSON and "ON" or "OFF"))
+        Print("  Trace: " .. (DCMythicPlusHUDDB.debugTrace and "ON" or "OFF"))
+    elseif cmd == "trace" then
+        local sub = rest and Trim(rest) or ""
+        if sub == "on" then
+            DCMythicPlusHUDDB.debugTrace = true
+        elseif sub == "off" then
+            DCMythicPlusHUDDB.debugTrace = false
+        else
+            DCMythicPlusHUDDB.debugTrace = not DCMythicPlusHUDDB.debugTrace
+        end
+        lastVisibilityTraceKey = nil
+        Print("Trace " .. (DCMythicPlusHUDDB.debugTrace and "enabled" or "disabled"))
     elseif cmd == "vault" then
         if namespace.GreatVault then
             namespace.GreatVault:Toggle()
@@ -2101,6 +2760,7 @@ SlashCmdList.DCM = function(msg)
         Print("  /dcm deaths - Show deaths by player")
         Print("  /dcm deaths loc [n] - Show last death locations")
         Print("  /dcm protocol - Show protocol status")
+        Print("  /dcm trace [on|off] - Toggle temporary debug trace")
         Print("  /dcm finder - Open Group Finder")
         Print("  /dcgf - Open Group Finder (shortcut)")
     else
@@ -2113,6 +2773,9 @@ loader:RegisterEvent("PLAYER_LOGIN")
 loader:RegisterEvent("PLAYER_ENTERING_WORLD")
 loader:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 loader:SetScript("OnEvent", function(self, event)
+    RefreshDCProtocol()
+    Trace("loader event=" .. tostring(event) .. " useDC=" .. tostring(namespace.useDCProtocol))
+
     -- Clear any stale activeState on login
     if event == "PLAYER_LOGIN" then
         local key = GetCharacterKey()
@@ -2135,7 +2798,7 @@ loader:SetScript("OnEvent", function(self, event)
     end
     if event == "PLAYER_ENTERING_WORLD" then
         UpdateLocalRunTrackingFromInstance()
-        if activeState and activeState.inProgress then
+        if IsRunInProgress(activeState) then
             UpdateFrameFromState(activeState)
         else
             UpdateFrameFromLocalRun()
@@ -2143,8 +2806,12 @@ loader:SetScript("OnEvent", function(self, event)
         end
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         UpdateLocalRunTrackingFromInstance()
-        UpdateFrameFromLocalRun()
-        SetFrameVisibility(false)
+        if IsRunInProgress(activeState) then
+            UpdateFrameFromState(activeState)
+        else
+            UpdateFrameFromLocalRun()
+            SetFrameVisibility(false)
+        end
     end
 end)
 
@@ -2157,6 +2824,11 @@ localTicker:SetScript("OnUpdate", function(self, elapsed)
         return
     end
     self.elapsed = 0
+
+    if activeState and IsRunInProgress(activeState) and timerText then
+        timerText:SetText(BuildFullTimerLine(activeState))
+    end
+
     UpdateLocalRunTrackingFromInstance()
     UpdateFrameFromLocalRun()
 end)
@@ -2168,6 +2840,7 @@ end)
 -- Settings toggle for JSON vs pipe-delimited
 DCMythicPlusHUDDB.useDCProtocolJSON = (DCMythicPlusHUDDB.useDCProtocolJSON ~= false)  -- Prefer JSON by default
 
+RefreshDCProtocol()
 if DC then
     -- Helper to get value from table or raw args depending on format
     -- In JSON mode, DC protocol passes the decoded object directly to handlers
@@ -2239,13 +2912,15 @@ if DC then
             }
         end
         
-        if data.success then
+        if IsFlagSet(data.success) then
             Print("Run completed! Key upgraded by " .. (data.keyChange or 0))
             if data.score then
                 Print("Score: " .. data.score)
             end
+            ShowRunResultPopup(data, true)
         else
             Print("Run failed.")
+            ShowRunResultPopup(data, false)
         end
 
         -- Event-driven Vault refresh: runs affect Vault progress
@@ -2260,52 +2935,9 @@ if DC then
     
     -- SMSG_TIMER_UPDATE (0x15) - Timer sync / HUD update
     DC:RegisterHandler("MPLUS", 0x15, function(...)
-        local args = {...}
-        
-        if type(args[1]) == "table" then
-            -- JSON format with full run state
-            local json = args[1]
-            if not activeState then
-                activeState = { inProgress = true }
-            end
-            activeState.elapsed = json.elapsed or activeState.elapsed
-            activeState.timeLimit = json.remaining and (json.elapsed + json.remaining) or activeState.timeLimit
-            activeState.deaths = json.deaths or activeState.deaths
-            activeState.bossesKilled = json.bossesKilled or activeState.bossesKilled
-            activeState.bossesTotal = json.bossesTotal or activeState.bossesTotal
-            activeState.enemyCount = json.enemyCount or activeState.enemyCount
-            activeState.enemyRequired = json.enemyRequired or activeState.enemyRequired
-            
-            if json.failed then
-                Print("Run failed!")
-                activeState = nil
-                ShowIdleState()
-                return
-            end
-            
-            if json.completed then
-                Print("Run completed!")
-
-                -- Event-driven Vault refresh: completion affects Vault progress
-                if namespace.GreatVault and namespace.GreatVault.IsShown and namespace.GreatVault:IsShown() then
-                    if namespace.RequestVaultInfo then
-                        namespace.RequestVaultInfo()
-                    end
-                end
-            end
-            
-            UpdateFrameFromState(activeState)
-        else
-            -- Pipe-delimited format
-            local elapsed, timeLimit, deaths = tonumber(args[1]), tonumber(args[2]), tonumber(args[3])
-            if activeState then
-                activeState.elapsed = elapsed
-                activeState.timeLimit = timeLimit
-                activeState.deaths = deaths or activeState.deaths
-                UpdateFrameFromState(activeState)
-            end
-        end
+        HandleTimerUpdatePayload(...)
     end)
+    namespace._dcRuntimeHudHandlerBound = true
     
     -- SMSG_OBJECTIVE_UPDATE (0x16) - Boss/enemy count update
     DC:RegisterHandler("MPLUS", 0x16, function(...)
@@ -2553,17 +3185,6 @@ if DC then
     -- Group Finder Protocol Handlers
     -- =========================================================================
     
-    -- SMSG_GROUP_LIST (0x13) - List of available groups
-    DC:RegisterHandler("MPLUS", 0x13, function(...)
-        local args = {...}
-        if type(args[1]) == "table" then
-            local data = args[1]
-            if namespace.GroupFinder then
-                namespace.GroupFinder:PopulateMythicGroups(data.groups or {})
-            end
-        end
-    end)
-    
     -- SMSG_LIVE_RUNS (0x20) - List of spectatable runs
     DC:RegisterHandler("MPLUS", 0x20, function(...)
         local args = {...}
@@ -2597,8 +3218,12 @@ if DC then
         local args = {...}
         if type(args[1]) == "table" then
             local data = args[1]
+            local events = data.events or {}
+            if type(events) == "string" and type(DC.DecodeJSON) == "function" then
+                events = DC:DecodeJSON(events) or {}
+            end
             if namespace.GroupFinder then
-                namespace.GroupFinder:PopulateScheduledEvents(data.events or {})
+                namespace.GroupFinder:PopulateScheduledEvents(events)
             end
         end
     end)

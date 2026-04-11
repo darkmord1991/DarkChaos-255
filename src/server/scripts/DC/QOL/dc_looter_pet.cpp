@@ -17,6 +17,7 @@
 #include "Config.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
+#include "../MythicPlus/dc_mythicplus_run_manager.h"
 
 #include <unordered_map>
 
@@ -190,6 +191,9 @@ public:
             return;
 
         if (!DCAoELootExt::IsPlayerAoELootEnabled(player->GetGUID()))
+            return;
+
+        if (sMythicRuns->IsMythicPlusActive(player->GetMap()))
             return;
 
         if (!player->IsAlive() || player->IsFlying())
@@ -415,6 +419,7 @@ public:
         float const maxPathLength = DCAoELootExt::GetLooterPetPathMaxLength();
         uint32 const maxPathChecks = DCAoELootExt::GetLooterPetPathMaxChecks();
         bool const moveMapsEnabled = sConfigMgr->GetOption<bool>("MoveMaps.Enable", false);
+        bool const mythicPlusActive = sMythicRuns->IsMythicPlusActive(player->GetMap());
         Unit* companion = GetActiveLooterCompanion(player);
 
         handler->PSendSysMessage(
@@ -465,6 +470,9 @@ public:
 
         if (player->IsInCombat())
             handler->SendSysMessage("|cffff9900[Looter Pet]|r Pulse currently paused while in combat.");
+
+        if (enabled && mythicPlusActive)
+            handler->SendSysMessage("|cffff9900[Looter Pet]|r Pulse currently paused while Mythic+ run is active.");
 
         if (pathfindingEnabled && !moveMapsEnabled)
             handler->SendSysMessage("|cffff9900[Looter Pet]|r MoveMaps.Enable is off; pathfinding quality may be reduced.");

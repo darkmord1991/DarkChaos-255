@@ -34,9 +34,12 @@ local ExtendedStats = {
             enabled = true,
             show = true,
             hideUnavailable = true,
-            -- Slight overlap to avoid a visible seam between the two bordered frames.
-            anchorOffsetX = -6,
+            -- Horizontal seam fine-tune applied on top of joinPreset.
+            anchorOffsetX = 0,
             anchorOffsetY = 0,
+            -- Preset controls baseline seam overlap between CharacterFrame and ExtendedStats.
+            -- Valid values: "flush", "tight", "overlap"
+            joinPreset = "overlap",
             -- General
             showMovementSpeed = true,
             -- Melee
@@ -353,12 +356,35 @@ local function TryBuildUI()
     -- Main stats frame (parented to CharacterFrame)
     local frame = CreateFrame("Frame", "DCQoSExtendedStatsFrame", CharacterFrame)
     frame:SetBackdrop({
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 16, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
     })
     
     ApplyStyle(frame)
+
+    if CharacterFrame and CharacterFrame.GetBackdropBorderColor and frame.SetBackdropBorderColor then
+        local r, g, b, a = CharacterFrame:GetBackdropBorderColor()
+        if r and g and b then
+            frame:SetBackdropBorderColor(r, g, b, a or 1)
+        end
+    end
+
+    local seamBridge = frame:CreateTexture(nil, "BORDER")
+    seamBridge:SetPoint("TOPLEFT", frame, "TOPLEFT", -1, -12)
+    seamBridge:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", -1, 12)
+    seamBridge:SetWidth(2)
+    seamBridge:SetTexture("Interface\\Buttons\\WHITE8x8")
+    do
+        local sr, sg, sb = 0.18, 0.15, 0.12
+        if CharacterFrame and CharacterFrame.GetBackdropBorderColor then
+            local r, g, b = CharacterFrame:GetBackdropBorderColor()
+            if r and g and b then
+                sr, sg, sb = r, g, b
+            end
+        end
+        seamBridge:SetVertexColor(sr, sg, sb, 0.42)
+    end
 
     local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     title:SetPoint("TOP", 0, -8)
@@ -379,6 +405,153 @@ local function TryBuildUI()
         end
     end)
 
+    local DEFAULT_ATTACH_OFFSET_X = 0
+    local MIN_ATTACH_OFFSET_X = -20
+    local MAX_ATTACH_OFFSET_X = 20
+    local MIN_ATTACH_OFFSET_Y = -18
+    local MAX_ATTACH_OFFSET_Y = 18
+    local JOIN_PRESET_X = {
+        flush = 0,
+        tight = -8,
+        overlap = -14,
+    }
+
+    local RIGHT_EDGE_REGION_NAMES = {
+        "CharacterFrameTopRight",
+        "CharacterFrameRight",
+        "CharacterFrameRightBorder",
+        "CharacterFrameBotRight",
+        "CharacterFrameBackgroundTopRight",
+        "CharacterFrameBackgroundRight",
+        "CharacterFrameInsetRight",
+    }
+
+    local function GetJoinPreset()
+        local preset = addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.joinPreset
+        if preset ~= "flush" and preset ~= "tight" and preset ~= "overlap" then
+            return "tight"
+        end
+        return preset
+    end
+
+    local function GetJoinPresetOffsetX()
+        return JOIN_PRESET_X[GetJoinPreset()] or JOIN_PRESET_X.tight
+    end
+
+    local function GetCharacterJoinRightEdge()
+        local bestRight
+
+        for _, regionName in ipairs(RIGHT_EDGE_REGION_NAMES) do
+            local region = _G[regionName]
+            if region and region.GetRight then
+                local right = region:GetRight()
+                if right and (not bestRight or right > bestRight) then
+                    bestRight = right
+                end
+            end
+        end
+
+        if CharacterFrame and CharacterFrame.GetRegions then
+            local frameTop = CharacterFrame:GetTop() or 0
+            local frameBottom = CharacterFrame:GetBottom() or 0
+
+            for _, region in ipairs({ CharacterFrame:GetRegions() }) do
+                if region and region.GetObjectType and region:GetObjectType() == "Texture" and region.GetRight then
+                    local left = region:GetLeft()
+                    local right = region:GetRight()
+                    local top = region:GetTop()
+                    local bottom = region:GetBottom()
+
+                    if left and right and top and bottom then
+                        local width = right - left
+                        local overlapsBody = (top > frameBottom + 40) and (bottom < frameTop - 40)
+                        local plausibleWidth = width > 8 and width < 200
+
+                        if overlapsBody and plausibleWidth then
+                            local name = region.GetName and region:GetName() or nil
+                            if name then
+                                local lname = string.lower(name)
+                                if string.find(lname, "right", 1, true) then
+                                    if not bestRight or right > bestRight then
+                                        bestRight = right
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Fallback from visible equipment column when texture names are unavailable.
+        local slotRight
+        local slotFrames = {
+            _G.CharacterSecondaryHandSlot,
+            _G.CharacterHandsSlot,
+            _G.CharacterBackSlot,
+            _G.CharacterRangedSlot,
+            _G.CharacterWristSlot,
+        }
+        for _, slot in ipairs(slotFrames) do
+            if slot and slot.GetRight then
+                local right = slot:GetRight()
+                if right and (not slotRight or right > slotRight) then
+                    slotRight = right
+                end
+            end
+        end
+        if slotRight and (not bestRight or (slotRight + 18) > bestRight) then
+            bestRight = slotRight + 18
+        end
+
+        if bestRight then
+            return bestRight
+        end
+
+        return CharacterFrame and CharacterFrame:GetRight() or nil
+    end
+
+    local function EnsureJoinPresetMigration()
+        local cfg = addon.settings and addon.settings.extendedStats
+        if not cfg then
+            return
+        end
+
+        if cfg._joinPresetMigrated == true then
+            return
+        end
+
+        cfg.joinPreset = "overlap"
+        cfg.anchorOffsetX = 0
+        cfg._joinPresetMigrated = true
+        addon:SaveSettings()
+    end
+
+    local function NormalizeAnchorOffsets(rawX, rawY)
+        local x = tonumber(rawX)
+        local y = tonumber(rawY)
+
+        if not x then
+            x = DEFAULT_ATTACH_OFFSET_X
+        end
+        if not y then
+            y = 0
+        end
+
+        -- Keep the panel visually attached to CharacterFrame.
+        if x < MIN_ATTACH_OFFSET_X or x > MAX_ATTACH_OFFSET_X then
+            x = DEFAULT_ATTACH_OFFSET_X
+        end
+
+        if y < MIN_ATTACH_OFFSET_Y then
+            y = MIN_ATTACH_OFFSET_Y
+        elseif y > MAX_ATTACH_OFFSET_Y then
+            y = MAX_ATTACH_OFFSET_Y
+        end
+
+        return x, y
+    end
+
     local function SaveAnchorOffsets()
         if not CharacterFrame then
             return
@@ -386,12 +559,14 @@ local function TryBuildUI()
 
         local left = frame:GetLeft()
         local top = frame:GetTop()
-        local charRight = CharacterFrame:GetRight()
+        local joinRight = GetCharacterJoinRightEdge()
         local charTop = CharacterFrame:GetTop()
+        local presetX = GetJoinPresetOffsetX()
 
-        if left and top and charRight and charTop then
-            addon:SetSetting("extendedStats.anchorOffsetX", left - charRight)
-            addon:SetSetting("extendedStats.anchorOffsetY", top - charTop)
+        if left and top and joinRight and charTop then
+            local dx, dy = NormalizeAnchorOffsets((left - joinRight) - presetX, top - charTop)
+            addon:SetSetting("extendedStats.anchorOffsetX", dx)
+            addon:SetSetting("extendedStats.anchorOffsetY", dy)
         end
     end
 
@@ -449,7 +624,7 @@ local function TryBuildUI()
     toggleBtn:Show()
 
     local function ReanchorExternalButtons()
-        local prev = toggleBtn
+        local prev
         local function Attach(btn)
             if not btn or not btn.ClearAllPoints or not btn.SetPoint then
                 return
@@ -460,12 +635,19 @@ local function TryBuildUI()
             end
 
             if btn.SetParent then
-                btn:SetParent(CharacterFrame)
+                btn:SetParent(frame)
             end
             btn:ClearAllPoints()
-            btn:SetPoint("TOP", prev, "BOTTOM", 0, -5)
+            if not prev then
+                btn:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, -56)
+            else
+                btn:SetPoint("TOP", prev, "BOTTOM", 0, -5)
+            end
             if btn.SetFrameStrata then
                 btn:SetFrameStrata("HIGH")
+            end
+            if btn.SetFrameLevel and frame.GetFrameLevel then
+                btn:SetFrameLevel(frame:GetFrameLevel() + 6)
             end
             btn:Show()
             prev = btn
@@ -480,29 +662,32 @@ local function TryBuildUI()
 
     local function UpdateLayout()
         frame:ClearAllPoints()
-        -- Attach to the Character window (right side), with user offsets
-        local dx = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetX)
-        if dx == nil then
-            dx = -18
-        end
-        dx = tonumber(dx) or -18
+        -- Attach to CharacterFrame with deterministic join preset + small fine-tune.
+        EnsureJoinPresetMigration()
 
-        -- Never allow a visible gap between the CharacterFrame and this panel.
-        -- Any offset that isn't sufficiently negative can leave a seam between borders.
-        if dx > 0 then
-            dx = -6
-            addon:SetSetting("extendedStats.anchorOffsetX", dx)
+        local savedX = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetX)
+        local savedY = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetY)
+        local fineX, dy = NormalizeAnchorOffsets(savedX, savedY)
+        local charRight = CharacterFrame and CharacterFrame:GetRight() or nil
+        local joinRight = GetCharacterJoinRightEdge()
+        local anchorRegionAdjust = 0
+        local dx
+
+        if charRight and joinRight then
+            anchorRegionAdjust = joinRight - charRight
         end
 
-        -- Avoid huge gaps caused by accidentally saved drag offsets.
-        -- Keep the panel snapped close to the Character window by default.
-        if dx > 40 or dx < -80 then
-            dx = -6
-            addon:SetSetting("extendedStats.anchorOffsetX", dx)
+        dx = GetJoinPresetOffsetX() + fineX + anchorRegionAdjust
+
+        if tonumber(savedX) ~= fineX then
+            addon:SetSetting("extendedStats.anchorOffsetX", fineX)
         end
-        local dy = (addon.settings and addon.settings.extendedStats and addon.settings.extendedStats.anchorOffsetY) or 0
+        if tonumber(savedY) ~= dy then
+            addon:SetSetting("extendedStats.anchorOffsetY", dy)
+        end
+
         frame:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", dx, dy)
-        frame:SetHeight(CharacterFrame:GetHeight() - 24)
+        frame:SetPoint("BOTTOMLEFT", CharacterFrame, "BOTTOMRIGHT", dx, dy)
 
         -- Fixed width: keeps the panel compact and avoids pushing into the world view.
         frame:SetWidth(290)
@@ -513,47 +698,108 @@ local function TryBuildUI()
     UpdateLayout()
     
     -- Visibility logic
+    local visibilityRevision = 0
+    local PANEL_FADE_IN = 0.16
+    local PANEL_FADE_OUT = 0.12
+
+    local function HideExternalButtons()
+        if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
+        if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
+        if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
+        if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+    end
+
+    local function ShowExternalButtons()
+        if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Show() end
+        if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Show() end
+        if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Show() end
+        if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Show() end
+    end
+
+    local function StopPanelFade()
+        if UIFrameFadeRemoveFrame then
+            UIFrameFadeRemoveFrame(frame)
+        end
+    end
+
+    local function ShowPanelSmooth()
+        StopPanelFade()
+
+        if frame:IsShown() then
+            frame:SetAlpha(1)
+            return
+        end
+
+        frame:SetAlpha(0)
+        frame:Show()
+
+        if UIFrameFadeIn then
+            UIFrameFadeIn(frame, PANEL_FADE_IN, 0, 1)
+        else
+            frame:SetAlpha(1)
+        end
+    end
+
+    local function HidePanelSmooth(revision)
+        if not frame:IsShown() then
+            frame:SetAlpha(1)
+            return
+        end
+
+        StopPanelFade()
+
+        if UIFrameFadeOut then
+            UIFrameFadeOut(frame, PANEL_FADE_OUT, frame:GetAlpha() or 1, 0)
+            addon:DelayedCall(PANEL_FADE_OUT + 0.02, function()
+                if visibilityRevision ~= revision then
+                    return
+                end
+                frame:Hide()
+                frame:SetAlpha(1)
+            end)
+        else
+            frame:Hide()
+            frame:SetAlpha(1)
+        end
+    end
+
     local function UpdateVisibility()
-        local show = addon.settings.extendedStats.show
-        
-        -- Check if we're on the Character tab (PaperDoll)
-        local isCharacterTab = (PaperDollFrame and PaperDollFrame:IsShown()) or false
-        
-        if show then
-            frame:Show()
+        local show = addon.settings.extendedStats.show ~= false
+        local isCharacterTab = ((PaperDollFrame and PaperDollFrame:IsShown()) or (PaperDollItemsFrame and PaperDollItemsFrame:IsShown())) or false
+        local characterVisible = CharacterFrame and CharacterFrame:IsShown() or false
+        local shouldShowPanel = show and characterVisible and isCharacterTab
+
+        visibilityRevision = visibilityRevision + 1
+        local revision = visibilityRevision
+
+        if shouldShowPanel then
+            ShowPanelSmooth()
             settingsBtn:Show()
             toggleBtn:Show()
             toggleBtn:ClearAllPoints()
-            toggleBtn:SetPoint("LEFT", frame, "RIGHT", 4, 20)
+            toggleBtn:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, -16)
             -- Re-anchor 3rd-party buttons after we show
             ReanchorExternalButtons()
             toggleBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up")
             toggleBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Down")
-            
-            -- Show/hide external buttons based on tab
-            if isCharacterTab then
-                if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Show() end
-                if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Show() end
-                if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Show() end
-                if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Show() end
-            else
-                if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
-                if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
-                if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
-                if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
-            end
-        else
-            frame:Hide()
+
+            ShowExternalButtons()
+        elseif characterVisible and isCharacterTab then
+            HidePanelSmooth(revision)
             settingsBtn:Hide()
             toggleBtn:Show()
             toggleBtn:ClearAllPoints()
             toggleBtn:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 4, -40)
-            if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
-            if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
-            if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
-            if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+            HideExternalButtons()
             toggleBtn:SetNormalTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Up")
             toggleBtn:SetPushedTexture("Interface\\Buttons\\UI-SpellbookIcon-NextPage-Down")
+        else
+            StopPanelFade()
+            frame:Hide()
+            frame:SetAlpha(1)
+            settingsBtn:Hide()
+            toggleBtn:Hide()
+            HideExternalButtons()
         end
     end
 
@@ -573,12 +819,12 @@ local function TryBuildUI()
     -- Some buttons load later; re-anchor shortly after.
     if addon.DelayedCall then
         addon:DelayedCall(0.2, function()
-            if addon.settings.extendedStats.show then
+            if frame and frame:IsShown() then
                 ReanchorExternalButtons()
             end
         end)
         addon:DelayedCall(1.0, function()
-            if addon.settings.extendedStats.show then
+            if frame and frame:IsShown() then
                 ReanchorExternalButtons()
             end
         end)
@@ -962,6 +1208,7 @@ local function TryBuildUI()
 
     frame.UpdateStats = UpdateStats
     frame.ReflowLayout = ReflowLayout
+    frame.UpdateVisibility = UpdateVisibility
 
     -- Update events while frame is visible
     frame:SetScript("OnShow", function()
@@ -986,59 +1233,74 @@ local function TryBuildUI()
 
     -- Always show on the Character (PaperDoll) tab
     local showHook = PaperDollItemsFrame or PaperDollFrame
-    showHook:HookScript("OnShow", function()
-        -- Next frame: anchors/sizes are reliable once the panel is visible.
-        addon:DelayedCall(0, function()
+    local refreshQueued = false
+    local function RequestLayoutVisibilityRefresh()
+        if refreshQueued then
+            return
+        end
+
+        local function RunRefresh()
+            refreshQueued = false
             UpdateLayout()
             UpdateVisibility()
-        end)
+        end
+
+        refreshQueued = true
+        if addon.DelayedCall then
+            -- Next frame: anchors/sizes are reliable once the panel is visible.
+            addon:DelayedCall(0, RunRefresh)
+        else
+            RunRefresh()
+        end
+    end
+
+    showHook:HookScript("OnShow", function()
+        RequestLayoutVisibilityRefresh()
     end)
+
+    if CharacterFrame and CharacterFrame.HookScript then
+        CharacterFrame:HookScript("OnShow", function()
+            RequestLayoutVisibilityRefresh()
+        end)
+
+        CharacterFrame:HookScript("OnSizeChanged", function()
+            UpdateLayout()
+        end)
+    end
+
     showHook:HookScript("OnHide", function()
+        StopPanelFade()
         frame:Hide()
+        frame:SetAlpha(1)
         if toggleBtn then
             toggleBtn:Hide()
         end
         -- Hide external buttons when leaving Character tab
-        if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
-        if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
-        if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
-        if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+        HideExternalButtons()
     end)
     
     -- Hook other tabs to hide buttons when they're shown
     if PetPaperDollFrame then
         PetPaperDollFrame:HookScript("OnShow", function()
-            if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
-            if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
-            if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
-            if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+            HideExternalButtons()
         end)
     end
     
     if ReputationFrame then
         ReputationFrame:HookScript("OnShow", function()
-            if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
-            if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
-            if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
-            if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+            HideExternalButtons()
         end)
     end
     
     if SkillFrame then
         SkillFrame:HookScript("OnShow", function()
-            if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
-            if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
-            if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
-            if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+            HideExternalButtons()
         end)
     end
     
     if TokenFrame then
         TokenFrame:HookScript("OnShow", function()
-            if _G.DC_ItemUpgrade_CharFrameButton then _G.DC_ItemUpgrade_CharFrameButton:Hide() end
-            if _G.DC_ItemUpgrade_HeirloomButton then _G.DC_ItemUpgrade_HeirloomButton:Hide() end
-            if _G.DC_Collection_CharFrameButton then _G.DC_Collection_CharFrameButton:Hide() end
-            if _G.DC_Transmog_CharFrameButton then _G.DC_Transmog_CharFrameButton:Hide() end
+            HideExternalButtons()
         end)
     end
 
@@ -1057,11 +1319,18 @@ function ExtendedStats.OnEnable()
 
     addon:DelayedCall(0, function()
         if TryBuildUI() then
-            -- Initialize visibility state based on current UI
-            if PaperDollFrame and PaperDollFrame:IsShown() then
-                ExtendedStats._frame:Show()
+            if ExtendedStats._frame.UpdateLayout then
+                ExtendedStats._frame:UpdateLayout()
+            end
+            if ExtendedStats._frame.UpdateVisibility then
+                ExtendedStats._frame:UpdateVisibility()
             else
-                ExtendedStats._frame:Hide()
+                -- Fallback for safety if UpdateVisibility was not attached.
+                if PaperDollFrame and PaperDollFrame:IsShown() then
+                    ExtendedStats._frame:Show()
+                else
+                    ExtendedStats._frame:Hide()
+                end
             end
         end
     end)
@@ -1182,6 +1451,64 @@ function ExtendedStats.CreateSettings(parent)
         end
     end)
     yOffset = yOffset - 30
+
+    local joinPresetLabel = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    joinPresetLabel:SetPoint("TOPLEFT", 16, yOffset)
+    joinPresetLabel:SetText("Window Join Preset")
+
+    local dropdownName = "DCQoSExtendedStatsJoinPresetDropdown"
+    local joinPresetDropdown = _G[dropdownName]
+    if not joinPresetDropdown then
+        joinPresetDropdown = CreateFrame("Frame", dropdownName, parent, "UIDropDownMenuTemplate")
+    else
+        joinPresetDropdown:SetParent(parent)
+    end
+    joinPresetDropdown:ClearAllPoints()
+    joinPresetDropdown:SetPoint("TOPLEFT", joinPresetLabel, "BOTTOMLEFT", -15, -2)
+    UIDropDownMenu_SetWidth(joinPresetDropdown, 150)
+
+    local presetLabels = {
+        flush = "Flush",
+        tight = "Tight",
+        overlap = "Overlap",
+    }
+
+    UIDropDownMenu_Initialize(joinPresetDropdown, function(self, level)
+        if level ~= 1 then return end
+
+        local function AddPresetOption(value)
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = presetLabels[value]
+            info.checked = (settings.joinPreset == value)
+            info.func = function()
+                addon:SetSetting("extendedStats.joinPreset", value)
+                addon:SetSetting("extendedStats.anchorOffsetX", 0)
+                UIDropDownMenu_SetText(joinPresetDropdown, presetLabels[value])
+                if ExtendedStats._frame and ExtendedStats._frame.UpdateLayout then
+                    ExtendedStats._frame:UpdateLayout()
+                end
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+
+        AddPresetOption("flush")
+        AddPresetOption("tight")
+        AddPresetOption("overlap")
+    end)
+
+    local activePreset = settings.joinPreset
+    if activePreset ~= "flush" and activePreset ~= "tight" and activePreset ~= "overlap" then
+        activePreset = "tight"
+    end
+    UIDropDownMenu_SetText(joinPresetDropdown, presetLabels[activePreset])
+
+    local joinPresetHelp = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    joinPresetHelp:SetPoint("TOPLEFT", joinPresetLabel, "BOTTOMLEFT", 170, -2)
+    joinPresetHelp:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
+    joinPresetHelp:SetJustifyH("LEFT")
+    joinPresetHelp:SetText("Flush: minimal overlap  |  Tight: recommended  |  Overlap: strongest seam blend")
+
+    yOffset = yOffset - 54
     yOffset = yOffset - 40
     
     local function CreateStatToggle(label, settingKey, col)

@@ -80,7 +80,7 @@ struct ACGuardPOI {
 // candidate for being moved to a configuration file in a future change.
 static const ACGuardPOI ac_guard_pois[] = {
     // Teleport entries
-    {"Startcamp",            37,  131.000f, 1012.000f, 295.000f, 5.000f,      true,  ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Spell_Fire_CampFire",        GOSSIP_ICON_TAXI},
+    {"Startcamp",            37,  131.000f, 1012.000f, 295.000f, 5.000f,      true,  ICON_POI_SMALL_HOUSE, "Interface\\Icons\\Spell_Shadow_Teleport",      GOSSIP_ICON_TAXI},
     {"Flightmaster Startcamp", 37, 72.5327f, 932.2570f, 339.3900f, 0.0680255f, true, ICON_POI_BLUETOWER,   "Interface\\Icons\\Ability_Mount_Wyvern_01",    GOSSIP_ICON_TAXI},
 
     // Map/minimap POI entries
@@ -91,11 +91,14 @@ static const ACGuardPOI ac_guard_pois[] = {
     {"Profession Trainers",  37,   43.905f, 1172.420f, 367.342f, 2.560f,      false, ICON_POI_BWTOWER,     "Interface\\Icons\\Trade_Engineering",          GOSSIP_ICON_TRAINER},
     {"Weapon Trainer",       37,  100.351f, 1004.96f, 296.329f, 0.258275f,    false, ICON_POI_GREYTOWER,   "Interface\\Icons\\INV_Sword_04",              GOSSIP_ICON_TRAINER},
     {"Violet Temple",        37, -574.179f, -208.159f, 355.034f, 3.8202f,     false, ICON_POI_BWTOWER,     "Interface\\Icons\\Spell_Arcane_PortalDalaran", GOSSIP_ICON_CHAT},
-    {"Dragon Statues",       37,  -53.4259f, -40.4419f, 271.541f, 3.42052f,   false, ICON_POI_TOMBSTONE,   "Interface\\Icons\\INV_Misc_Head_Dragon_01",    GOSSIP_ICON_DOT}
+    {"Dragon Statues",       37,  -53.4259f, -40.4419f, 271.541f, 3.42052f,   false, ICON_POI_GREYTOWER,   "Interface\\Icons\\INV_Misc_Head_Dragon_01",    GOSSIP_ICON_DOT}
 };
 
 namespace
 {
+    constexpr uint32 AC_GOSSIP_POI_FLAGS = 99;
+    constexpr uint32 AC_GOSSIP_POI_IMPORTANCE = 0;
+
     void SendPoiMarker(Player* player, float x, float y, uint32 icon, uint32 flags, uint32 importance, std::string const& name)
     {
         if (!player || !player->GetSession())
@@ -157,7 +160,7 @@ public:
         // Default behavior: just show a POI marker on the map/minimap.
         if (!poi.teleport)
         {
-            SendPoiMarker(player, poi.x, poi.y, poi.poiIcon, 0, 0, poiPrefix + std::string(poi.name));
+            SendPoiMarker(player, poi.x, poi.y, poi.poiIcon, AC_GOSSIP_POI_FLAGS, AC_GOSSIP_POI_IMPORTANCE, poiPrefix + std::string(poi.name));
             ChatHandler(player->GetSession()).PSendSysMessage("Marked on map: {}", poiPrefix + std::string(poi.name));
 
             // Keep the menu open for quick browsing.

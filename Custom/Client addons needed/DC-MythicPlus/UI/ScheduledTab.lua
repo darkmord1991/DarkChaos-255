@@ -218,6 +218,32 @@ function GF:CreateScheduledTab()
 end
 
 function GF:PopulateScheduledEvents(events)
+    -- Protocol payloads can arrive as JSON strings or wrapped tables; normalize to an array.
+    if type(events) == "string" then
+        local decoded = nil
+        local DC = rawget(_G, "DCAddonProtocol")
+        if DC and type(DC.DecodeJSON) == "function" then
+            decoded = DC:DecodeJSON(events)
+        end
+        events = decoded
+    end
+
+    if type(events) == "table" and type(events.events) == "table" then
+        events = events.events
+    end
+
+    if type(events) ~= "table" then
+        events = {}
+    elseif events[1] == nil then
+        local normalized = {}
+        for _, entry in pairs(events) do
+            if type(entry) == "table" then
+                table.insert(normalized, entry)
+            end
+        end
+        events = normalized
+    end
+
     if not self.ScheduledTabContent then return end
     local scrollChild = self.ScheduledTabContent.scrollChild
     if not scrollChild then return end

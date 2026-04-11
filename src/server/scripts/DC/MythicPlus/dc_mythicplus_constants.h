@@ -159,7 +159,9 @@ namespace MythicPlusConstants
 
     namespace Hud
     {
-        constexpr uint32 WORLD_STATE_BASE      = 0x6100;
+        // Keep custom world states in a high, isolated range to avoid clashing
+        // with Blizzard-native world states that can spawn unwanted UI widgets.
+        constexpr uint32 WORLD_STATE_BASE      = 0xF100;
         constexpr uint32 ACTIVE                = WORLD_STATE_BASE + 0;
         constexpr uint32 TIMER_REMAINING       = WORLD_STATE_BASE + 1;
         constexpr uint32 TIMER_ELAPSED         = WORLD_STATE_BASE + 2;

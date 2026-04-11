@@ -202,6 +202,7 @@ private:
     void TeleportGroupToEntrance(Player* activator, Map* map);
     void TeleportPlayerToEntrance(Player* player, Map* map);
     void StartRunAfterCountdown(InstanceState* state, Map* map, Player* activator);
+    bool AreCompletionObjectivesMet(InstanceState const* state) const;
     bool IsFinalBossEncounter(const InstanceState* state, const Creature* creature) const;
 
     // Seasonal validation and affix system (NEW)

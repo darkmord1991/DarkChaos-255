@@ -4,6 +4,10 @@ Azshara Crater Quest POI Generator
 Generates SQL INSERT statements for all quest POIs without using stored procedures
 """
 
+MAP_ID = 37
+ZONE_AREA_ID = 268
+WORLD_MAP_AREA_ID = 613
+
 # Quest data: (quest_id, creature_entry, questgiver_entry, is_travel_quest)
 QUESTS = [
     # Zone 1 Kill Quests
@@ -139,38 +143,38 @@ def generate_poi_sql(quest_id, creature_entry, questgiver_entry, is_travel):
     if is_travel:
         # Travel quest: target NPC is both objective and completion
         sql.append(f"INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)")
-        sql.append(f"SELECT {quest_id}, 0, 0, 37, 268, 0, 0, 3, 0")
-        sql.append(f"FROM creature c WHERE c.map = 37 AND c.id1 = {creature_entry} LIMIT 1;")
+        sql.append(f"SELECT {quest_id}, 0, 0, {MAP_ID}, {WORLD_MAP_AREA_ID}, 0, 0, 3, 0")
+        sql.append(f"FROM creature c WHERE c.map = {MAP_ID} AND c.id1 = {creature_entry} LIMIT 1;")
         sql.append("")
         sql.append(f"INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)")
         sql.append(f"SELECT {quest_id}, 0, 0, c.position_x, c.position_y, 0")
-        sql.append(f"FROM creature c WHERE c.map = 37 AND c.id1 = {creature_entry} LIMIT 1;")
+        sql.append(f"FROM creature c WHERE c.map = {MAP_ID} AND c.id1 = {creature_entry} LIMIT 1;")
         sql.append("")
         sql.append(f"INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)")
-        sql.append(f"SELECT {quest_id}, 1, -1, 37, 268, 0, 0, 1, 0")
-        sql.append(f"FROM creature c WHERE c.map = 37 AND c.id1 = {creature_entry} LIMIT 1;")
+        sql.append(f"SELECT {quest_id}, 1, -1, {MAP_ID}, {WORLD_MAP_AREA_ID}, 0, 0, 1, 0")
+        sql.append(f"FROM creature c WHERE c.map = {MAP_ID} AND c.id1 = {creature_entry} LIMIT 1;")
         sql.append("")
         sql.append(f"INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)")
         sql.append(f"SELECT {quest_id}, 1, 0, c.position_x, c.position_y, 0")
-        sql.append(f"FROM creature c WHERE c.map = 37 AND c.id1 = {creature_entry} LIMIT 1;")
+        sql.append(f"FROM creature c WHERE c.map = {MAP_ID} AND c.id1 = {creature_entry} LIMIT 1;")
     else:
         # Kill quest: creature spawn + quest giver
         sql.append(f"INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)")
-        sql.append(f"SELECT {quest_id}, 0, 0, 37, 268, 0, 0, 3, 0")
-        sql.append(f"FROM creature c WHERE c.map = 37 AND c.id1 = {creature_entry} LIMIT 1;")
+        sql.append(f"SELECT {quest_id}, 0, 0, {MAP_ID}, {WORLD_MAP_AREA_ID}, 0, 0, 3, 0")
+        sql.append(f"FROM creature c WHERE c.map = {MAP_ID} AND c.id1 = {creature_entry} LIMIT 1;")
         sql.append("")
         sql.append(f"INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)")
         sql.append(f"SELECT {quest_id}, 0, 0, ROUND(AVG(c.position_x)), ROUND(AVG(c.position_y)), 0")
-        sql.append(f"FROM creature c WHERE c.map = 37 AND c.id1 = {creature_entry}")
+        sql.append(f"FROM creature c WHERE c.map = {MAP_ID} AND c.id1 = {creature_entry}")
         sql.append(f"HAVING AVG(c.position_x) IS NOT NULL;")
         sql.append("")
         sql.append(f"INSERT INTO `quest_poi` (`QuestID`, `id`, `ObjectiveIndex`, `MapID`, `WorldMapAreaId`, `Floor`, `Priority`, `Flags`, `VerifiedBuild`)")
-        sql.append(f"SELECT {quest_id}, 1, -1, 37, 268, 0, 0, 1, 0")
-        sql.append(f"FROM creature c WHERE c.map = 37 AND c.id1 = {questgiver_entry} LIMIT 1;")
+        sql.append(f"SELECT {quest_id}, 1, -1, {MAP_ID}, {WORLD_MAP_AREA_ID}, 0, 0, 1, 0")
+        sql.append(f"FROM creature c WHERE c.map = {MAP_ID} AND c.id1 = {questgiver_entry} LIMIT 1;")
         sql.append("")
         sql.append(f"INSERT INTO `quest_poi_points` (`QuestID`, `Idx1`, `Idx2`, `X`, `Y`, `VerifiedBuild`)")
         sql.append(f"SELECT {quest_id}, 1, 0, c.position_x, c.position_y, 0")
-        sql.append(f"FROM creature c WHERE c.map = 37 AND c.id1 = {questgiver_entry} LIMIT 1;")
+        sql.append(f"FROM creature c WHERE c.map = {MAP_ID} AND c.id1 = {questgiver_entry} LIMIT 1;")
     
     sql.append("")
     return "\n".join(sql)
@@ -184,7 +188,7 @@ def main():
     output.append("-- Azshara Crater Quest POI Generator - COMPLETE")
     output.append("-- " + "=" * 76)
     output.append("-- Generated automatically for all Azshara Crater quests")
-    output.append("-- Map: 37 | Zone: 268")
+    output.append(f"-- Map: {MAP_ID} | Zone/Area: {ZONE_AREA_ID} | WorldMapAreaId: {WORLD_MAP_AREA_ID}")
     output.append("-- " + "=" * 76)
     output.append("")
     

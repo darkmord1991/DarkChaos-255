@@ -53,11 +53,13 @@ public:
         if (!quest)
             return;
 
+        std::string questLabel = "Quest: " + label;
+
         QuestStatus status = player->GetQuestStatus(questId);
         if (status == QUEST_STATUS_COMPLETE)
         {
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
-                MakeLargeGossipText("Interface\\Icons\\Achievement_Quests_Completed_08", label + " |cFF00FF00(Complete)|r"),
+                MakeLargeGossipText("Interface\\Icons\\Achievement_Quests_Completed_08", questLabel + " |cFF00FF00(Complete)|r"),
                 HLBG_GOSSIP_SENDER_QUEST_REWARD, questId);
             return;
         }
@@ -65,15 +67,15 @@ public:
         if (status == QUEST_STATUS_INCOMPLETE)
         {
             AddGossipItemFor(player, GOSSIP_ICON_INTERACT_2,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", label + " |cFFFFFF00(In Progress)|r"),
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", questLabel + " |cFFFFFF00(In Progress)|r"),
                 GOSSIP_SENDER_MAIN, ACTION_QUEST_PROGRESS);
             return;
         }
 
         if (status == QUEST_STATUS_NONE && player->CanTakeQuest(quest, false))
         {
-            AddGossipItemFor(player, GOSSIP_ICON_CHAT,
-                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", label),
+            AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1,
+                MakeLargeGossipText("Interface\\Icons\\INV_Misc_Note_01", questLabel),
                 HLBG_GOSSIP_SENDER_QUEST_MANUAL, questId);
         }
     }

@@ -6740,7 +6740,21 @@ void Player::_ApplyItemBonuses(ItemTemplate const* proto, uint8 slot, bool apply
     if (ssd && ssd_level > ssd->MaxLevel)
         ssd_level = ssd->MaxLevel;
 
-    ScalingStatValuesEntry const* ssv = proto->ScalingStatValue ? sScalingStatValuesStore.LookupEntry(ssd_level) : nullptr;
+    ScalingStatValuesEntry const* ssv = nullptr;
+    if (ScalingStatValue)
+    {
+        ssv = sScalingStatValuesStore.LookupEntry(ssd_level);
+        if (!ssv)
+        {
+            uint32 fallbackLevel = ssd_level;
+            uint32 const ssvRowCount = sScalingStatValuesStore.GetNumRows();
+            if (ssvRowCount > 0 && fallbackLevel >= ssvRowCount)
+                fallbackLevel = ssvRowCount - 1;
+
+            for (; fallbackLevel > 0 && !ssv; --fallbackLevel)
+                ssv = sScalingStatValuesStore.LookupEntry(fallbackLevel);
+        }
+    }
     if (only_level_scale && !ssv)
         return;
 
@@ -6758,6 +6772,9 @@ void Player::_ApplyItemBonuses(ItemTemplate const* proto, uint8 slot, bool apply
 
                 statType = ssd->StatMod[i];
                 val = (ssv->getssdMultiplier(ScalingStatValue) * ssd->Modifier[i]) / 10000;
+
+                // Allow scripts to customize values for distribution-based scaling too.
+                sScriptMgr->OnPlayerCustomScalingStatValue(this, proto, statType, val, i, ScalingStatValue, ssv);
             }
             else
             {
@@ -7038,7 +7055,20 @@ void Player::_ApplyWeaponDamage(uint8 slot, ItemTemplate const* proto, ScalingSt
         if (ssd && ssd_level > ssd->MaxLevel)
             ssd_level = ssd->MaxLevel;
 
-        ssv = ScalingStatValue ? sScalingStatValuesStore.LookupEntry(ssd_level) : nullptr;
+        if (ScalingStatValue)
+        {
+            ssv = sScalingStatValuesStore.LookupEntry(ssd_level);
+            if (!ssv)
+            {
+                uint32 fallbackLevel = ssd_level;
+                uint32 const ssvRowCount = sScalingStatValuesStore.GetNumRows();
+                if (ssvRowCount > 0 && fallbackLevel >= ssvRowCount)
+                    fallbackLevel = ssvRowCount - 1;
+
+                for (; fallbackLevel > 0 && !ssv; --fallbackLevel)
+                    ssv = sScalingStatValuesStore.LookupEntry(fallbackLevel);
+            }
+        }
     }
 
     WeaponAttackType attType = Player::GetAttackBySlot(slot);
