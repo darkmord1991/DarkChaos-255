@@ -49,7 +49,6 @@ namespace DarkChaos
         void SeasonalRewardManager::LoadConfiguration()
         {
             config_.enabled = sConfigMgr->GetOption<bool>("SeasonalRewards.Enable", true);
-            config_.consolidateItemUpgradeHooks = sConfigMgr->GetOption<bool>("SeasonalRewards.ConsolidateItemUpgradeHooks", true);
 
             // Try to get active season from generic seasonal system first
             if (Seasonal::GetSeasonalManager())
@@ -90,7 +89,6 @@ namespace DarkChaos
             LOG_INFO("module.dc", ">> [SeasonalRewards] Configuration loaded:");
             LOG_INFO("module.dc", ">>   Active Season: {}", config_.activeSeason);
             LOG_INFO("module.dc", ">>   Token Item: {}, Essence Item: {}", config_.tokenItemId, config_.essenceItemId);
-            LOG_INFO("module.dc", ">>   Consolidate ItemUpgrade Hooks: {}", config_.consolidateItemUpgradeHooks ? "enabled" : "disabled");
             LOG_INFO("module.dc", ">>   Weekly Caps: {} tokens, {} essence",
                 config_.weeklyTokenCap == 0 ? "unlimited" : std::to_string(config_.weeklyTokenCap),
                 config_.weeklyEssenceCap == 0 ? "unlimited" : std::to_string(config_.weeklyEssenceCap));

@@ -258,8 +258,7 @@ namespace DarkChaos
 
         static bool IsSeasonalConsolidationEnabled()
         {
-            return sConfigMgr->GetOption<bool>("SeasonalRewards.Enable", true) &&
-                   sConfigMgr->GetOption<bool>("SeasonalRewards.ConsolidateItemUpgradeHooks", true);
+            return sConfigMgr->GetOption<bool>("SeasonalRewards.Enable", true);
         }
 
         // =====================================================================

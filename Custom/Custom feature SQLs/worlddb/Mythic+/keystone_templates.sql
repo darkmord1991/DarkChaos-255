@@ -179,13 +179,13 @@ VALUES (101000, 0, 0, 0, 0, 0, 26095, 0, 0, 0, 'Keystone - Mythic +10', 'M+10 Di
 -- ============================================================
 
 -- Generic keystone placement GO (M+2-M+10, type = spell_focus/placeholder)
-DELETE FROM gameobject_template WHERE entry = 300200;
+DELETE FROM gameobject_template WHERE entry = 700001;
 INSERT INTO gameobject_template (entry, type, displayId, name, IconName, castBarCaption, unk1, 
     data0, data1, data2, data3, data4, data5, data6, data7, data8, data9, data10, data11, data12, 
     data13, data14, data15, data16, data17, data18, data19, data20, data21, data22, data23, data24, 
     data25, data26, data27, data28, data29, data30, data31, data32, data33, data34, AIName, 
     ScriptName, VerifiedBuild)
-VALUES (300200, 24, 9367, 'Mythic+ Keystone Pedestal', '', '', '', 0, 0, 0, 0, 0, 0, 0, 0, 
+VALUES (700001, 24, 9367, 'Mythic+ Keystone Pedestal', '', '', '', 0, 0, 0, 0, 0, 0, 0, 0, 
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', 
     'go_mythic_plus_font_of_power', 0);
 
@@ -196,8 +196,8 @@ VALUES (300200, 24, 9367, 'Mythic+ Keystone Pedestal', '', '', '', 0, 0, 0, 0, 0
 /*
  * To place keystones in the world:
  * 1. Place keystone NPCs (100200-101000) at dungeon entrances or hubs
- * 2. Use admin command: .gobject add 300200 <x> <y> <z> [map]
- * 3. Example: .gobject add 300200 1234.5 5678.9 12.3 1481  (Siege of Boralus)
+ * 2. Use admin command: .gobject add 700001 <x> <y> <z> [map]
+ * 3. Example: .gobject add 700001 1234.5 5678.9 12.3 1481  (Siege of Boralus)
  * 
  * Suggested Locations:
  * - Dungeon hubs in capitals

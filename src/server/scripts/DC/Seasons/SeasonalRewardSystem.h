@@ -38,7 +38,6 @@ namespace DarkChaos
         struct SeasonalConfig
         {
             bool enabled = true;
-            bool consolidateItemUpgradeHooks = true;
             uint32 activeSeason = 1;
             uint32 tokenItemId = 49426;                     // Default token item ID
             uint32 essenceItemId = 47241;                   // Default essence item ID

@@ -20,7 +20,17 @@
 #include "StringFormat.h"
 #include "DatabaseEnv.h"
 #include <cmath>
+#include <limits>
 #include <sstream>
+
+namespace
+{
+GuidUnorderedSet& GetMythicSelectLevelProcessedCreatures()
+{
+    static thread_local GuidUnorderedSet processedCreatures;
+    return processedCreatures;
+}
+}
 
 // Forward declaration
 void RegisterMythicPlusAffixHandlers();
@@ -121,6 +131,25 @@ public:
 
         Difficulty difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
 
+        // Track creatures that successfully pass through the SelectLevel path,
+        // so OnCreatureAddWorld can avoid re-processing them.
+        switch (difficulty)
+        {
+            case DUNGEON_DIFFICULTY_HEROIC:
+                if (!profile->heroicEnabled)
+                    return;
+                break;
+            case DUNGEON_DIFFICULTY_EPIC:
+                if (!profile->mythicEnabled)
+                    return;
+                break;
+            default:
+                return;
+        }
+
+        auto& processedCreatures = GetMythicSelectLevelProcessedCreatures();
+        processedCreatures.insert(creature->GetGUID());
+
         // Determine multipliers based on difficulty
         float hpMult = 1.0f;
         float damageMult = 1.0f;
@@ -128,22 +157,12 @@ public:
 
         switch (difficulty)
         {
-            case DUNGEON_DIFFICULTY_NORMAL:
-                // No additional scaling for Normal
-                break;
-
             case DUNGEON_DIFFICULTY_HEROIC:
-                if (!profile->heroicEnabled)
-                    break;
-
                 hpMult = profile->heroicHealthMult;
                 damageMult = profile->heroicDamageMult;
                 break;
 
             case DUNGEON_DIFFICULTY_EPIC: // Mythic
-                if (!profile->mythicEnabled)
-                    break;
-
                 hpMult = profile->mythicHealthMult;
                 damageMult = profile->mythicDamageMult;
 
@@ -207,17 +226,56 @@ public:
         if (!map || !map->IsDungeon())
             return;
 
-        // Only process in Mythic difficulty
-        if (sMythicScaling->ResolveDungeonDifficulty(map) != DUNGEON_DIFFICULTY_EPIC)
-            return;
+        Difficulty difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
 
         // Despawn quest givers cleanly (remove from world immediately - no corpse)
-        if (creature->IsQuestGiver())
+        if (difficulty == DUNGEON_DIFFICULTY_EPIC && creature->IsQuestGiver())
         {
             LOG_INFO("mythic.scaling", "Despawning quest giver {} (entry {}) in Mythic mode",
                      creature->GetName(), creature->GetEntry());
             creature->RemoveFromWorld();
+            return;
         }
+
+        // Defensive fallback: some summon paths can alter creature state after
+        // SelectLevel. Re-run SelectLevel once for summoned dungeon NPCs if
+        // this creature did not pass through our SelectLevel hook.
+        if (!creature->IsSummon() || creature->IsTrigger())
+            return;
+
+        if (TempSummon* summon = creature->ToTempSummon())
+            if (Unit* summoner = summon->GetSummonerUnit())
+                if (summoner->IsPlayer())
+                    return;
+
+        DungeonProfile* profile = sMythicScaling->GetDungeonProfile(map->GetId());
+        if (!profile)
+            return;
+
+        if (difficulty == DUNGEON_DIFFICULTY_HEROIC && !profile->heroicEnabled)
+            return;
+        if (difficulty == DUNGEON_DIFFICULTY_EPIC && !profile->mythicEnabled)
+            return;
+        if (difficulty != DUNGEON_DIFFICULTY_HEROIC && difficulty != DUNGEON_DIFFICULTY_EPIC)
+            return;
+
+        auto& processedCreatures = GetMythicSelectLevelProcessedCreatures();
+        if (processedCreatures.find(creature->GetGUID()) != processedCreatures.end())
+            return;
+
+        LOG_DEBUG("mythic.scaling", "Re-running SelectLevel fallback for summoned creature {} (entry {}) on map {} instance {}",
+                  creature->GetName(), creature->GetEntry(), map->GetId(), map->GetInstanceId());
+
+        creature->SelectLevel();
+    }
+
+    void OnCreatureRemoveWorld(Creature* creature) override
+    {
+        if (!creature)
+            return;
+
+        auto& processedCreatures = GetMythicSelectLevelProcessedCreatures();
+        processedCreatures.erase(creature->GetGUID());
     }
 };
 
@@ -294,7 +352,7 @@ public:
 
         // Announce difficulty on dungeon entry
         Difficulty diff = sMythicScaling->ResolveDungeonDifficulty(map);
-        std::string diffName;
+        std::string instanceTypeLabel;
         std::string scaling;
 
         if (map->IsRaid())
@@ -302,19 +360,19 @@ public:
             switch (map->GetDifficulty())
             {
                 case RAID_DIFFICULTY_10MAN_NORMAL:
-                    diffName = "|cffffffff10 Player|r";
+                    instanceTypeLabel = "10 Player";
                     break;
                 case RAID_DIFFICULTY_25MAN_NORMAL:
-                    diffName = "|cffffffff25 Player|r";
+                    instanceTypeLabel = "25 Player";
                     break;
                 case RAID_DIFFICULTY_10MAN_HEROIC:
-                    diffName = "|cff0070dd10 Player (Heroic)|r";
+                    instanceTypeLabel = "10 Player (Heroic)";
                     break;
                 case RAID_DIFFICULTY_25MAN_HEROIC:
-                    diffName = "|cff0070dd25 Player (Heroic)|r";
+                    instanceTypeLabel = "25 Player (Heroic)";
                     break;
                 default:
-                    diffName = "|cffff0000Raid|r";
+                    instanceTypeLabel = "Raid";
                     break;
             }
         }
@@ -323,33 +381,34 @@ public:
             switch (diff)
             {
                 case DUNGEON_DIFFICULTY_NORMAL:
-                    diffName = "|cffffffffNormal|r";
+                    instanceTypeLabel = "5 Player";
                     scaling = "Base creature stats";
                     break;
                 case DUNGEON_DIFFICULTY_HEROIC:
-                    diffName = "|cff0070ddHeroic|r";
+                    instanceTypeLabel = "5 Player (Heroic)";
                     scaling = profile ? FormatScalingText(profile->heroicHealthMult, profile->heroicDamageMult)
                                     : "+15% HP, +10% Damage";
                     break;
                 case DUNGEON_DIFFICULTY_EPIC:
-                    diffName = "|cffff8000Mythic|r";
+                    instanceTypeLabel = "5 Player (Mythic)";
                     scaling = profile ? FormatScalingText(profile->mythicHealthMult, profile->mythicDamageMult)
                                     : "+35% HP, +20% Damage";
                     break;
                 default:
-                    diffName = "Unknown";
+                    instanceTypeLabel = "Unknown Difficulty";
                     break;
             }
         }
+
+        std::string welcomeLine = Acore::StringFormat("Welcome to {} ({}).", dungeonName, instanceTypeLabel);
+        ChatHandler(player->GetSession()).SendSysMessage(welcomeLine.c_str());
 
         // Check if this is a Mythic+ run
         uint8 keystoneLevel = sMythicScaling->GetKeystoneLevel(map);
         if (keystoneLevel > 0)
         {
             // Mythic+ run - show simplified message
-                ChatHandler(player->GetSession()).SendSysMessage("|cff00ff00=== Dungeon Entered ===");
-            ChatHandler(player->GetSession()).SendSysMessage(("Dungeon: |cffffffff" + dungeonName + "|r").c_str());
-                ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff8000Keystone Level: |r|cffff8000+{}|r", keystoneLevel));
+            ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat("|cffff8000Keystone Level: |r|cffff8000+{}|r", keystoneLevel));
 
             // Show M+ specific scaling (multiplicative on top of Mythic base)
             float mplusHpMult = 1.0f;
@@ -381,11 +440,6 @@ public:
         }
         else
         {
-            // Regular difficulty - universal display
-            ChatHandler(player->GetSession()).PSendSysMessage("|cff00ff00=== Dungeon Entered ===");
-            ChatHandler(player->GetSession()).SendSysMessage(("Dungeon: |cffffffff" + dungeonName + "|r").c_str());
-            ChatHandler(player->GetSession()).SendSysMessage(("Difficulty: " + diffName).c_str());
-
             // Only show Scaling info if a profile exists and thus scaling is actually active
             if (profile)
             {
@@ -531,6 +585,80 @@ class MythicPlusUnitScript : public UnitScript
 {
 public:
     MythicPlusUnitScript() : UnitScript("MythicPlusUnitScript") { }
+
+    uint32 DealDamage(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType damagetype) override
+    {
+        if (!attacker || !victim || !damage)
+            return damage;
+
+        // Base creature melee is already scaled via stat multipliers in
+        // OnCreatureSelectLevel. Apply dynamic multiplier only to spell hit types.
+        if (damagetype != SPELL_DIRECT_DAMAGE && damagetype != DOT)
+            return damage;
+
+        Creature* attackerCreature = attacker->ToCreature();
+        if (!attackerCreature)
+            return damage;
+
+        // Do not scale player-controlled pets/guardians here.
+        if (attackerCreature->IsControlledByPlayer())
+            return damage;
+
+        Map* map = attackerCreature->GetMap();
+        if (!map || !map->IsDungeon())
+            return damage;
+
+        DungeonProfile* profile = sMythicScaling->GetDungeonProfile(map->GetId());
+        if (!profile)
+            return damage;
+
+        Difficulty difficulty = sMythicScaling->ResolveDungeonDifficulty(map);
+        float spellDamageMult = 1.0f;
+
+        switch (difficulty)
+        {
+            case DUNGEON_DIFFICULTY_HEROIC:
+                if (!profile->heroicEnabled)
+                    return damage;
+
+                spellDamageMult = profile->heroicDamageMult;
+                break;
+
+            case DUNGEON_DIFFICULTY_EPIC:
+                if (!profile->mythicEnabled)
+                    return damage;
+
+                spellDamageMult = profile->mythicDamageMult;
+
+                if (uint32 keystoneLevel = sMythicScaling->GetKeystoneLevel(map); keystoneLevel > 0)
+                {
+                    float mplusHpMult = 1.0f;
+                    float mplusDamageMult = 1.0f;
+                    sMythicScaling->CalculateMythicPlusMultipliers(keystoneLevel, mplusHpMult, mplusDamageMult);
+                    spellDamageMult *= mplusDamageMult;
+                }
+                break;
+
+            default:
+                return damage;
+        }
+
+        if (spellDamageMult == 1.0f)
+            return damage;
+
+        float scaledFloat = static_cast<float>(damage) * spellDamageMult;
+        if (scaledFloat <= 0.0f)
+            return 1;
+
+        uint64 scaledRounded = static_cast<uint64>(std::round(scaledFloat));
+        if (scaledRounded == 0)
+            return 1;
+
+        if (scaledRounded >= std::numeric_limits<uint32>::max())
+            return std::numeric_limits<uint32>::max();
+
+        return static_cast<uint32>(scaledRounded);
+    }
 
     void OnUnitDeath(Unit* unit, Unit* killer) override
     {
